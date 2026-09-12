@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import decktalk
 from decktalk import ConfigError, Project, load_settings
 from decktalk.artifacts import (
     Beats,
@@ -18,6 +19,7 @@ from decktalk.artifacts import (
     Word,
     parse_beats_string,
 )
+from decktalk.cli import build_parser, main
 from decktalk.config import Settings
 from decktalk.stages.assemble import fade_flags, timeline_targets
 from decktalk.stages.beats import Cue, find_phrase, resolve_cue
@@ -255,3 +257,42 @@ def test_fade_flags_follow_dips_and_page_fade_in(tmp_path):
     assert flags["02"] == (False, False)
     p2 = Project.load(write_project(tmp_path, MINIMAL_TOML), environ={})  # no dips key: every cut dips
     assert fade_flags(p2)["01"] == (False, True)
+
+
+# ---- package and cli -----------------------------------------------------------------------
+
+
+def test_package_exports_every_public_name():
+    for name in decktalk.__all__:
+        assert hasattr(decktalk, name), name
+    for name in ("AssembleResult", "BuildResult", "Voice", "SpeechProvider", "register", "__version__"):
+        assert name in decktalk.__all__
+
+
+def test_cli_verbose_and_quiet_parse_on_either_side_of_the_command():
+    parser = build_parser()
+    for argv in (["-v", "status"], ["status", "-v"], ["-p", "d", "status", "-v"], ["status", "-v", "-p", "d"]):
+        args = parser.parse_args(argv)
+        assert getattr(args, "verbose", False) is True, argv
+        assert getattr(args, "quiet", False) is False, argv
+    args = parser.parse_args(["init", "d", "-q"])
+    assert args.quiet is True and args.dir == "d"
+    args = parser.parse_args(["build", "-p", "d", "--only", "1", "--only", "2"])
+    assert args.project == "d" and args.only == [1, 2]
+
+
+def test_cli_missing_project_is_a_clean_error(tmp_path, capsys):
+    assert main(["status", "-v", "-p", str(tmp_path / "nowhere")]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: ") and "Traceback" not in err
+
+
+def test_cli_unexpected_exception_is_reported_and_reraised_with_verbose(tmp_path, capsys, monkeypatch):
+    def boom(args):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr("decktalk.cli.cmd_doctor", boom)
+    assert main(["doctor"]) == 1
+    assert capsys.readouterr().err == "error: RuntimeError: kaboom (add -v for the traceback)\n"
+    with pytest.raises(RuntimeError, match="kaboom"):
+        main(["doctor", "-v"])

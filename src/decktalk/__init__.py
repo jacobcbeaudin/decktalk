@@ -1,16 +1,21 @@
 """DeckTalk: narrated presentation videos, cut to the word.
 
-Public API (stable within a minor version once 1.0 is reached; before that, the file
-formats and the page contract are stable and the Python names below may still move):
+Public API. The file formats and the page contract are covered by the changelog: a change
+to them bumps the minor version and ships with a migration note. The Python names below may
+still move, and a rename is a breaking change once the project leaves the 0.x series.
 
     Project, Section types, Settings, load_settings
+    project tables: Voice, Mix, Soundscape, Transition
     errors: DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
     artifacts: Manifest, Timeline, Beats, Word, Sidecar
     stages: narrate, resolve_beats, record, measure, check, assemble, verify, shoot,
             soundscape, build
+    results: NarrateResult, BeatsResult, Recording, LeadMeasurement, RecordingCheck,
+             AssembleResult, VerifyResult, SoundscapeItem, BuildResult
+    speech: SpeechProvider, SpeechRequest, register
 
-Everything under decktalk.media, decktalk.providers and names starting with an
-underscore is internal.
+Everything under decktalk.media, everything under decktalk.providers other than the
+three speech names above, and every name starting with an underscore is internal.
 """
 
 from __future__ import annotations
@@ -20,8 +25,29 @@ from importlib.metadata import PackageNotFoundError, version
 from .artifacts import Beats, Manifest, Sidecar, Timeline, Word
 from .config import Settings, load_settings
 from .errors import ConfigError, DeckTalkError, MissingInputError, ProviderError, ToolError
-from .project import ClipSection, PageSection, Project, Section
-from .stages import assemble, build, check, measure, narrate, record, resolve_beats, shoot, soundscape, verify
+from .project import ClipSection, Mix, PageSection, Project, Section, Soundscape, Transition, Voice
+from .providers.speech import SpeechProvider, SpeechRequest, register
+from .stages import (
+    AssembleResult,
+    BeatsResult,
+    BuildResult,
+    LeadMeasurement,
+    NarrateResult,
+    Recording,
+    RecordingCheck,
+    SoundscapeItem,
+    VerifyResult,
+    assemble,
+    build,
+    check,
+    measure,
+    narrate,
+    record,
+    resolve_beats,
+    shoot,
+    soundscape,
+    verify,
+)
 
 try:
     __version__ = version("decktalk")
@@ -29,20 +55,35 @@ except PackageNotFoundError:  # running from a checkout without an install
     __version__ = "0+unknown"
 
 __all__ = [
+    "AssembleResult",
     "Beats",
+    "BeatsResult",
+    "BuildResult",
     "ClipSection",
     "ConfigError",
     "DeckTalkError",
+    "LeadMeasurement",
     "Manifest",
     "MissingInputError",
+    "Mix",
+    "NarrateResult",
     "PageSection",
     "Project",
     "ProviderError",
+    "Recording",
+    "RecordingCheck",
     "Section",
     "Settings",
     "Sidecar",
+    "Soundscape",
+    "SoundscapeItem",
+    "SpeechProvider",
+    "SpeechRequest",
     "Timeline",
     "ToolError",
+    "Transition",
+    "VerifyResult",
+    "Voice",
     "Word",
     "__version__",
     "assemble",
@@ -52,6 +93,7 @@ __all__ = [
     "measure",
     "narrate",
     "record",
+    "register",
     "resolve_beats",
     "shoot",
     "soundscape",
