@@ -1,7 +1,7 @@
 """External tools: ffmpeg/ffprobe resolution and small subprocess helpers.
 
 ffmpeg and ffprobe come from PATH when present; otherwise the static-ffmpeg package
-fetches platform binaries on first use (`cuecut setup` does this ahead of time).
+fetches platform binaries on first use (`decktalk setup` does this ahead of time).
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from pathlib import Path
 
 @lru_cache(maxsize=1)
 def ffmpeg_paths() -> tuple[str, str]:
-    """(ffmpeg, ffprobe) executables. Env CUECUT_FFMPEG / CUECUT_FFPROBE override."""
-    env_ff, env_fp = os.environ.get("CUECUT_FFMPEG"), os.environ.get("CUECUT_FFPROBE")
+    """(ffmpeg, ffprobe) executables. Env DECKTALK_FFMPEG / DECKTALK_FFPROBE override."""
+    env_ff, env_fp = os.environ.get("DECKTALK_FFMPEG"), os.environ.get("DECKTALK_FFPROBE")
     if env_ff and env_fp:
         return env_ff, env_fp
     on_path = shutil.which("ffmpeg"), shutil.which("ffprobe")
@@ -31,7 +31,7 @@ def ffmpeg_paths() -> tuple[str, str]:
     except Exception as exc:  # pragma: no cover - network / platform dependent
         sys.exit(
             "error: ffmpeg/ffprobe not found on PATH and static-ffmpeg could not provide them "
-            f"({exc}). Run `cuecut setup` with network access, or install ffmpeg."
+            f"({exc}). Run `decktalk setup` with network access, or install ffmpeg."
         )
 
 

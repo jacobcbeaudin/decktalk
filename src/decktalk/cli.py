@@ -1,21 +1,21 @@
-"""cuecut command line.
+"""decktalk command line.
 
-    cuecut init DIR                 scaffold a project (script, scenes, cues, deck with the runtime)
-    cuecut setup                    fetch headless Chromium and ffmpeg (once per machine)
-    cuecut doctor                   report what is installed
-    cuecut narrate [--silent]       script.md -> build/audio (ElevenLabs, word timestamps, timeline)
-    cuecut beats                    cues.json -> build/audio/beats.json
-    cuecut soundscape               ambience, sfx, underscore (ElevenLabs)
-    cuecut broll --prompt "..."     text-to-video clip -> media/broll/
-    cuecut record                   pages -> build/rec/NN-scene.webm (Playwright)
-    cuecut measure                  find narration t=0 in each recording
-    cuecut check                    recording sanity (black / truncated)
-    cuecut assemble                 ffmpeg -> build/out/<name>.mp4
-    cuecut verify [SEC:CUE ...]     section starts (+ cue landings) on the final mp4
-    cuecut shots                    per-step screenshots, or frames from a playing section
-    cuecut build [--silent]         narrate -> beats -> record -> measure -> check -> assemble -> verify
-    cuecut status                   timeline and what is built
-    cuecut runtime                  copy the packaged cuecut-runtime.js into the project
+    decktalk init DIR                 scaffold a project (script, scenes, cues, deck with the runtime)
+    decktalk setup                    fetch headless Chromium and ffmpeg (once per machine)
+    decktalk doctor                   report what is installed
+    decktalk narrate [--silent]       script.md -> build/audio (ElevenLabs, word timestamps, timeline)
+    decktalk beats                    cues.json -> build/audio/beats.json
+    decktalk soundscape               ambience, sfx, underscore (ElevenLabs)
+    decktalk broll --prompt "..."     text-to-video clip -> media/broll/
+    decktalk record                   pages -> build/rec/NN-scene.webm (Playwright)
+    decktalk measure                  find narration t=0 in each recording
+    decktalk check                    recording sanity (black / truncated)
+    decktalk assemble                 ffmpeg -> build/out/<name>.mp4
+    decktalk verify [SEC:CUE ...]     section starts (+ cue landings) on the final mp4
+    decktalk shots                    per-step screenshots, or frames from a playing section
+    decktalk build [--silent]         narrate -> beats -> record -> measure -> check -> assemble -> verify
+    decktalk status                   timeline and what is built
+    decktalk runtime                  copy the packaged decktalk-runtime.js into the project
 
 Every project command takes --project/-p DIR (default: the current directory).
 """
@@ -181,9 +181,9 @@ def cmd_status(args: argparse.Namespace) -> int:
 
         print_timeline(tl)
     else:
-        print("timeline none (run `cuecut narrate`)")
+        print("timeline none (run `decktalk narrate`)")
     beats = project.beats_data()
-    print(f"beats    {len(beats)} section(s) with resolved cues" if beats else "beats    none (run `cuecut beats`)")
+    print(f"beats    {len(beats)} section(s) with resolved cues" if beats else "beats    none (run `decktalk beats`)")
     if project.final.exists():
         from .tools import ffprobe_duration
 
@@ -228,9 +228,9 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="cuecut", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        prog="decktalk", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--version", action="version", version=f"cuecut {__version__}")
+    p.add_argument("--version", action="version", version=f"decktalk {__version__}")
     p.add_argument("--project", "-p", default=None, help="project directory (default: .)")
     sub = p.add_subparsers(dest="cmd", required=True)
 

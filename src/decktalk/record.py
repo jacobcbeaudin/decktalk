@@ -7,7 +7,7 @@ build/audio/timeline.json plus the section's extra_seconds. The page is opened a
 
 t0 is the number of seconds after load at which narration t=0 falls (the recorder
 waits `settle` seconds after load, then starts the clock). Exactly then it flashes
-the whole frame magenta for ~120 ms; `cuecut measure` finds the last magenta frame
+the whole frame magenta for ~120 ms; `decktalk measure` finds the last magenta frame
 so the assembler can trim the recording head to narration t=0 regardless of
 Chromium's start-up latency. A page may set window.__sceneReady (a Promise) to
 delay the clock until it has loaded fonts or data.
@@ -57,7 +57,7 @@ def scene_url(project: Project, file: str, scene: Any, params: dict[str, Any], s
 
 
 def record_one(browser: Any, url: str, seconds: float, out: Path, settle: float) -> dict[str, Any]:
-    tmp_dir = Path(tempfile.mkdtemp(prefix="cuecut-rec-"))
+    tmp_dir = Path(tempfile.mkdtemp(prefix="decktalk-rec-"))
     context = browser.new_context(
         viewport={"width": WIDTH, "height": HEIGHT},
         device_scale_factor=1,
@@ -100,7 +100,7 @@ def record_one(browser: Any, url: str, seconds: float, out: Path, settle: float)
         "t0_seconds": settle,
         "load_seconds": round(loaded - created, 3),
         "lead_seconds": round(started - created, 3),
-        "marker": f"magenta flash {MARKER_MS}ms at narration t=0; `cuecut measure` writes lead_in_seconds",
+        "marker": f"magenta flash {MARKER_MS}ms at narration t=0; `decktalk measure` writes lead_in_seconds",
     }
     out.with_suffix(".json").write_text(json.dumps(sidecar, indent=2) + "\n")
     return {"out": out, "wall": round(time.monotonic() - started, 1), "lead": sidecar["lead_seconds"]}
@@ -128,7 +128,7 @@ def record(
     manifest = project.manifest_data()
     beats = {} if no_beats else project.beats_data()
     if not manifest and seconds is None:
-        raise SystemExit(f"error: {project.manifest} not found; run `cuecut narrate` first or pass --seconds N")
+        raise SystemExit(f"error: {project.manifest} not found; run `decktalk narrate` first or pass --seconds N")
 
     jobs: list[dict[str, Any]] = []
     for section in project.sections:
@@ -163,7 +163,7 @@ def record(
         try:
             browser = pw.chromium.launch()
         except Exception as exc:
-            raise SystemExit(f"error: could not launch Chromium ({exc}). Run `cuecut setup`.") from exc
+            raise SystemExit(f"error: could not launch Chromium ({exc}). Run `decktalk setup`.") from exc
         try:
             for job in jobs:
                 print(f"[rec ] {job['label']}  {job['seconds']:.1f}s ...", end="", flush=True)

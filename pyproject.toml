@@ -1,5 +1,5 @@
 [project]
-name = "cuecut"
+name = "decktalk"
 version = "0.1.0"
 description = "Narrated presentation videos: a markdown script, a cloned voice, HTML scenes cut to the word."
 readme = "README.md"
@@ -8,7 +8,7 @@ license = "MIT"
 dependencies = ["playwright>=1.50", "static-ffmpeg>=2.7"]
 
 [project.scripts]
-cuecut = "cuecut.cli:main"
+decktalk = "decktalk.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.8.0,<0.12.0"]

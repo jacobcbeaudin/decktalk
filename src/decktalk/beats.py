@@ -6,7 +6,7 @@ cues.json shape
                                  {"step": "3.x", "on": "Zero", "occurrence": 2, "case_sensitive": true},
                                  {"step": "15.2", "on": "$end", "offset": 0.3}]}}}
 
-    step    a cue id the page understands (see cuecut-runtime.js)
+    step    a cue id the page understands (see decktalk-runtime.js)
     on      a word or short phrase from that section's narration: first occurrence,
             case-insensitive, punctuation ignored. "$start" = 0, "$end" = end of speech.
     occurrence / case_sensitive / offset (seconds) refine the match.
@@ -91,7 +91,7 @@ def beats(project: Project) -> int:
         return 0
     manifest = project.manifest_data()
     if not manifest:
-        raise SystemExit(f"error: manifest not found: {project.manifest} (run `cuecut narrate` first)")
+        raise SystemExit(f"error: manifest not found: {project.manifest} (run `decktalk narrate` first)")
     cues = json.loads(project.cues.read_text()).get("sections", {})
     segments = manifest.get("segments", {})
     estimated = bool(manifest.get("estimated"))

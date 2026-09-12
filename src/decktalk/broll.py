@@ -1,8 +1,8 @@
 """Generate a b-roll clip with a text-to-video model (Google Veo via Gemini, or Kling via fal.ai).
 
-    cuecut broll --prompt "..." --name cold-open         # -> media/broll/cold-open.mp4
-    cuecut broll --prompt "..." --name intro --takes 3   # intro-1..3.mp4, first copied to intro.mp4
-    cuecut broll --prompt "..." --dry-run                # print provider, endpoint and request
+    decktalk broll --prompt "..." --name cold-open         # -> media/broll/cold-open.mp4
+    decktalk broll --prompt "..." --name intro --takes 3   # intro-1..3.mp4, first copied to intro.mp4
+    decktalk broll --prompt "..." --dry-run                # print provider, endpoint and request
 
 Provider (auto): GEMINI_API_KEY in .env -> Gemini API, Veo 3.1 (predictLongRunning, polled);
 else FAL_KEY -> fal.ai queue, Kling 2.5 Turbo Pro. Keys are never printed. Reference the

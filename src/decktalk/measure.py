@@ -6,7 +6,7 @@ the assembler trims that much off the head of the video (lead_in_seconds in the
 sidecar build/rec/NN-scene.json). Without a marker the fallback is the first painted
 frame plus the recorded settle; failing that 1.1 s plus settle.
 
-Also the recording sanity check (`cuecut check`): duration against what was asked
+Also the recording sanity check (`decktalk check`): duration against what was asked
 for, and luma at 10/50/90 % so a black or truncated recording is caught before
 assembly.
 """
@@ -71,7 +71,7 @@ def recordings(project: Project, only: list[int] | None = None) -> list[Path]:
 def measure(project: Project, only: list[int] | None = None) -> int:
     files = recordings(project, only)
     if not files:
-        raise SystemExit(f"error: no recordings in {project.rec_dir} (run `cuecut record`)")
+        raise SystemExit(f"error: no recordings in {project.rec_dir} (run `decktalk record`)")
     print(f"{'sec':>3} {'lead_in':>8} {'wallclock':>9}  method")
     for webm in files:
         sidecar = webm.with_suffix(".json")
@@ -98,7 +98,7 @@ def check(project: Project, only: list[int] | None = None) -> int:
     """Duration and luma sanity per recording. Returns the number of suspect recordings."""
     files = recordings(project, only)
     if not files:
-        raise SystemExit(f"error: no recordings in {project.rec_dir} (run `cuecut record`)")
+        raise SystemExit(f"error: no recordings in {project.rec_dir} (run `decktalk record`)")
     print(f"{'sec':<4} {'webm_s':<8} {'want_s':<8} {'Y10':<6} {'Y50':<6} {'Y90':<6} {'MAX50':<6}  verdict")
     bad = 0
     for f in files:

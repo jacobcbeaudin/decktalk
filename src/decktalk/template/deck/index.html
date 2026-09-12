@@ -10,7 +10,7 @@
   :root { --bg: #0b0f14; --surface: #151b23; --text: #f4f6f8; --muted: #9aa4b2; --accent: #7ee787; }
   html, body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, -apple-system, Helvetica, Arial, sans-serif; }
   body { width: 100vw; height: 100vh; overflow: hidden; }
-  #cc-stage { background: var(--bg); }
+  #dt-stage { background: var(--bg); }
   .slide { position: absolute; inset: 0; padding: 120px 160px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
   .hero { font-size: 96px; font-weight: 700; letter-spacing: -2px; line-height: 1.05; margin: 0; }
   .line { font-size: 44px; line-height: 1.3; margin: 0; }
@@ -25,7 +25,7 @@
 </style>
 </head>
 <body>
-<script src="cuecut-runtime.js"></script>
+<script src="decktalk-runtime.js"></script>
 <script>
 // Everything on screen lives here. Scene numbers are script sections; step ids are cue ids.
 // `cues.json` maps each id to the spoken phrase it lands on. Open this file with no query
@@ -36,16 +36,16 @@ const CONTENT = {
   3: { eq: "\\frac{d}{dx}\\,x^2 = 2x", note: "Equations typeset with KaTeX when it loads; plain text otherwise." },
 };
 
-Cuecut.scene(1, { name: "Open", camera: "push", steps: [
+DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
   { id: "1", hold: 8, render: () => `
     <div class="slide">
       <h1 class="hero" data-cue="1a">${CONTENT[1].title}</h1>
       <p class="line" data-cue="1b">${CONTENT[1].sub}</p>
-      <div class="lower" data-cue="1c" data-type="40" data-fx="fade">cuecut · scene 1</div>
+      <div class="lower" data-cue="1c" data-type="40" data-fx="fade">decktalk · scene 1</div>
     </div>` },
 ]});
 
-Cuecut.scene(2, { name: "Three lines", camera: "push", steps: [
+DeckTalk.scene(2, { name: "Three lines", camera: "push", steps: [
   { id: "2.1", hold: 12, render: () => `
     <div class="slide">
       <p class="caption">How it works</p>
@@ -59,7 +59,7 @@ Cuecut.scene(2, { name: "Three lines", camera: "push", steps: [
     </div>` },
 ]});
 
-Cuecut.scene(3, { name: "A curve and an equation", camera: "push", steps: [
+DeckTalk.scene(3, { name: "A curve and an equation", camera: "push", steps: [
   { id: "3.1", hold: 10, cues: { "3.1draw": 0.5, "3.1eq": 5 }, render: () => `
     <div class="slide">
       <svg viewBox="0 0 1600 500" width="1600" height="500" style="overflow:visible">

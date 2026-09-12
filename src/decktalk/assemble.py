@@ -136,7 +136,7 @@ def section_slate(project: Project, sec: Section) -> Path | None:
             title=sec.title or f"Section {sec.index}",
             sub="Your clip goes here",
             eyebrow=f"section {sec.index} · slate",
-            foot=f"drop it at {sec.data['video']} and run `cuecut assemble`",
+            foot=f"drop it at {sec.data['video']} and run `decktalk assemble`",
         )
     except Exception as exc:  # Chromium unavailable: fall back to a plain frame
         warn(f"could not render a slate ({exc}); using a plain frame")
@@ -249,7 +249,7 @@ def render_sections(
         else:
             total = targets.get(sec.key, 0.0)
             if total <= 0:
-                raise SystemExit(f"error: section {sec.key} has no span in {project.timeline} (run `cuecut narrate`)")
+                raise SystemExit(f"error: section {sec.key} has no span in {project.timeline} (run `decktalk narrate`)")
             if sec.hold_seconds > 0:
                 if sec.key != last_tts:
                     raise SystemExit(
@@ -393,7 +393,7 @@ def plan_mix(
         )
         labels.append("[music]")
     elif music_rel:
-        warn(f"underscore missing ({music}); no music (`cuecut soundscape`)")
+        warn(f"underscore missing ({music}); no music (`decktalk soundscape`)")
 
     # ambience bed under flagged sections
     amb_rel = None if nomix else (mix.get("ambience") or mix.get("crowd"))
@@ -489,9 +489,9 @@ def assemble(
 ) -> int:
     timeline = project.timeline_data()
     if not timeline:
-        raise SystemExit(f"error: {project.timeline} not found; run `cuecut narrate` first")
-    preset = preset or os.environ.get("CUECUT_PRESET", "medium")
-    crf = crf if crf is not None else int(os.environ.get("CUECUT_CRF", "18"))
+        raise SystemExit(f"error: {project.timeline} not found; run `decktalk narrate` first")
+    preset = preset or os.environ.get("DECKTALK_PRESET", "medium")
+    crf = crf if crf is not None else int(os.environ.get("DECKTALK_CRF", "18"))
     out_dir = project.out_dir
     rows = render_sections(project, timeline, preset=preset, crf=crf, strict=strict)
 

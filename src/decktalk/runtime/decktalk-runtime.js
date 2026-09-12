@@ -1,17 +1,17 @@
-/* cuecut-runtime.js — gives an HTML page the recorder's page contract.
+/* decktalk-runtime.js — gives an HTML page the recorder's page contract.
  *
- * Include it, define scenes, and `cuecut record` can drive the page from narration:
+ * Include it, define scenes, and `decktalk record` can drive the page from narration:
  *
- *   <script src="cuecut-runtime.js"></script>
+ *   <script src="decktalk-runtime.js"></script>
  *   <script>
- *     Cuecut.scene(3, { name: "How often", camera: "push", steps: [
+ *     DeckTalk.scene(3, { name: "How often", camera: "push", steps: [
  *       { id: "3.1", hold: 8, render: () => `
  *           <h1>Value still listed</h1>
  *           <p data-at="1.2">by hour, through first pitch</p>
  *           <div class="tile" data-cue="3.1b" data-count>1 in 10</div>` },
  *       { id: "3.2", hold: 6, render: () => `…` },
  *     ]});
- *     Cuecut.on("3.2b", () => document.querySelector(".bars").classList.add("grow"));
+ *     DeckTalk.on("3.2b", () => document.querySelector(".bars").classList.add("grow"));
  *   </script>
  *
  * URL contract (what the recorder and the screenshot tool send)
@@ -39,44 +39,44 @@
  * Cue ownership: a cue belongs to the step with the same id, or whose `cues` list names
  * it, or whose id is the longest prefix of the cue id ("4.2b1" -> step "4.2", "9a" -> "9").
  *
- * The page exposes window.__cuecut { mode, scene, step, cues, fired, catalog, now() } and
+ * The page exposes window.__decktalk { mode, scene, step, cues, fired, catalog, now() } and
  * sets window.__sceneReady (fonts loaded) unless the page set its own.
  */
 (function () {
   "use strict";
 
   const CSS = `
-  #cc-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0}
-  #cc-cam,#cc-pan{position:absolute;inset:0}
-  #cc-cam.cc-push{animation:cc-push var(--cc-scene-dur,20s) linear forwards}
-  @keyframes cc-push{from{transform:scale(1)}to{transform:scale(1.03)}}
-  .cc-slide{position:absolute;inset:0}
-  .cc-slide.cc-enter{animation:cc-fadein var(--cc-xfade,.35s) ease both}
-  .cc-slide.cc-enter.cc-first{animation:cc-slidein .3s ease both}
-  .cc-slide.cc-leave{animation:cc-fadeout var(--cc-xfade,.35s) ease both;pointer-events:none}
-  @keyframes cc-slidein{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
-  @keyframes cc-fadein{from{opacity:0}to{opacity:1}}
-  @keyframes cc-fadeout{from{opacity:1}to{opacity:0}}
-  .cc-reveal{opacity:0}
-  .cc-reveal[data-fx=dim]{opacity:1}
-  .cc-reveal.cc-on{opacity:1;animation:cc-rise .7s cubic-bezier(.2,.7,.2,1) both}
-  @keyframes cc-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-  .cc-reveal.cc-on[data-fx=fade]{animation-name:cc-fadein}
-  .cc-reveal.cc-on[data-fx=draw]{animation-name:cc-draw;animation-timing-function:linear;stroke-dasharray:1;stroke-dashoffset:1}
-  @keyframes cc-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
-  .cc-reveal.cc-on[data-fx=drop]{animation-name:cc-drop;animation-duration:.5s}
-  @keyframes cc-drop{from{opacity:0;transform:translateY(-24px)}to{opacity:1;transform:none}}
-  .cc-reveal.cc-on[data-fx=pop]{animation-name:cc-pop;animation-duration:.9s}
-  @keyframes cc-pop{0%{opacity:0;transform:scale(.4)}60%{opacity:1;transform:scale(1.12)}100%{opacity:1;transform:scale(1)}}
-  .cc-reveal.cc-on[data-fx=dim]{animation-name:cc-dim;animation-duration:1.2s}
-  @keyframes cc-dim{from{opacity:1}to{opacity:.16}}
-  .cc-reveal.cc-on[data-fx=none]{animation:none}
-  .cc-frozen .cc-reveal.cc-on,.cc-frozen .cc-slide,.cc-frozen #cc-cam{animation-duration:0s!important;animation-delay:0s!important}
-  #cc-hud{position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}
-  #cc-index{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:#eee}
-  #cc-index h1{font-size:28px}#cc-index h2{font-size:20px;margin-top:28px}
-  #cc-index a{color:#7ee787;text-decoration:none;margin-right:16px}#cc-index code{color:#9aa4b2}
-  #cc-index .cc-steps{display:flex;flex-wrap:wrap;gap:8px 4px}
+  #dt-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0}
+  #dt-cam,#dt-pan{position:absolute;inset:0}
+  #dt-cam.dt-push{animation:dt-push var(--dt-scene-dur,20s) linear forwards}
+  @keyframes dt-push{from{transform:scale(1)}to{transform:scale(1.03)}}
+  .dt-slide{position:absolute;inset:0}
+  .dt-slide.dt-enter{animation:dt-fadein var(--dt-xfade,.35s) ease both}
+  .dt-slide.dt-enter.dt-first{animation:dt-slidein .3s ease both}
+  .dt-slide.dt-leave{animation:dt-fadeout var(--dt-xfade,.35s) ease both;pointer-events:none}
+  @keyframes dt-slidein{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+  @keyframes dt-fadein{from{opacity:0}to{opacity:1}}
+  @keyframes dt-fadeout{from{opacity:1}to{opacity:0}}
+  .dt-reveal{opacity:0}
+  .dt-reveal[data-fx=dim]{opacity:1}
+  .dt-reveal.dt-on{opacity:1;animation:dt-rise .7s cubic-bezier(.2,.7,.2,1) both}
+  @keyframes dt-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .dt-reveal.dt-on[data-fx=fade]{animation-name:dt-fadein}
+  .dt-reveal.dt-on[data-fx=draw]{animation-name:dt-draw;animation-timing-function:linear;stroke-dasharray:1;stroke-dashoffset:1}
+  @keyframes dt-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+  .dt-reveal.dt-on[data-fx=drop]{animation-name:dt-drop;animation-duration:.5s}
+  @keyframes dt-drop{from{opacity:0;transform:translateY(-24px)}to{opacity:1;transform:none}}
+  .dt-reveal.dt-on[data-fx=pop]{animation-name:dt-pop;animation-duration:.9s}
+  @keyframes dt-pop{0%{opacity:0;transform:scale(.4)}60%{opacity:1;transform:scale(1.12)}100%{opacity:1;transform:scale(1)}}
+  .dt-reveal.dt-on[data-fx=dim]{animation-name:dt-dim;animation-duration:1.2s}
+  @keyframes dt-dim{from{opacity:1}to{opacity:.16}}
+  .dt-reveal.dt-on[data-fx=none]{animation:none}
+  .dt-frozen .dt-reveal.dt-on,.dt-frozen .dt-slide,.dt-frozen #dt-cam{animation-duration:0s!important;animation-delay:0s!important}
+  #dt-hud{position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}
+  #dt-index{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:#eee}
+  #dt-index h1{font-size:28px}#dt-index h2{font-size:20px;margin-top:28px}
+  #dt-index a{color:#7ee787;text-decoration:none;margin-right:16px}#dt-index code{color:#9aa4b2}
+  #dt-index .dt-steps{display:flex;flex-wrap:wrap;gap:8px 4px}
   `;
 
   const params = new URLSearchParams(location.search);
@@ -110,24 +110,24 @@
   function ensureStage() {
     if (stage) return;
     const style = document.createElement("style");
-    style.id = "cc-style";
+    style.id = "dt-style";
     style.textContent = CSS;
     document.head.appendChild(style);
-    stage = document.getElementById("cc-stage");
+    stage = document.getElementById("dt-stage");
     if (!stage) {
       stage = document.createElement("div");
-      stage.id = "cc-stage";
+      stage.id = "dt-stage";
       document.body.appendChild(stage);
     }
     cam = document.createElement("div");
-    cam.id = "cc-cam";
+    cam.id = "dt-cam";
     pan = document.createElement("div");
-    pan.id = "cc-pan";
+    pan.id = "dt-pan";
     cam.appendChild(pan);
     stage.appendChild(cam);
     if (HUD) {
       hud = document.createElement("div");
-      hud.id = "cc-hud";
+      hud.id = "dt-hud";
       document.body.appendChild(hud);
     }
     fitStage();
@@ -152,7 +152,7 @@
       on: st.on || {},
     }));
     SCENES.set(sid, { id: sid, name: def.name || `Scene ${sid}`, camera: def.camera || null, steps });
-    return Cuecut;
+    return DeckTalk;
   }
   // cues: ["a","b"] (ownership only) or {a: 1.5, b: 3} (ownership + autoplay seconds after mount)
   function normalizeCues(c) {
@@ -165,7 +165,7 @@
     const list = HANDLERS.get(String(id)) || [];
     list.push(fn);
     HANDLERS.set(String(id), list);
-    return Cuecut;
+    return DeckTalk;
   }
   function findStep(stepId) {
     for (const sc of SCENES.values()) {
@@ -189,8 +189,8 @@
 
   // ---- reveals --------------------------------------------------------------------
   function reveal(el) {
-    if (el.classList.contains("cc-on")) return;
-    el.classList.add("cc-on");
+    if (el.classList.contains("dt-on")) return;
+    el.classList.add("dt-on");
     if (el.hasAttribute("data-count")) countUp(el);
     if (el.hasAttribute("data-type")) typewriter(el);
   }
@@ -234,9 +234,9 @@
   // ---- mounting -------------------------------------------------------------------
   let mounted = 0;
   function mountStep(sc, st, listedCues) {
-    const old = pan.querySelector(".cc-slide:not(.cc-leave)");
+    const old = pan.querySelector(".dt-slide:not(.dt-leave)");
     const slide = document.createElement("div");
-    slide.className = `cc-slide cc-enter${mounted === 0 ? " cc-first" : ""}`;
+    slide.className = `dt-slide dt-enter${mounted === 0 ? " dt-first" : ""}`;
     slide.dataset.step = st.id;
     slide.innerHTML = st.render({ scene: sc, step: st, frozen });
     mounted++;
@@ -245,7 +245,7 @@
     state.step = st;
     state.lastMountAt = mountT;
     slide.querySelectorAll("[data-cue],[data-at]").forEach((el) => {
-      el.classList.add("cc-reveal");
+      el.classList.add("dt-reveal");
       if (el.hasAttribute("data-count") || el.hasAttribute("data-type")) el.dataset.ccFull = el.textContent;
       if (el.dataset.dur) el.style.animationDuration = `${parseFloat(el.dataset.dur) / (state.mode === "autoplay" ? SPEED : 1)}s`;
       if (frozen) { reveal(el); return; }
@@ -254,14 +254,14 @@
       const at = (parseFloat(el.dataset.at) || 0) / (state.mode === "autoplay" ? SPEED : 1);
       if (at <= 0) reveal(el); else schedule(mountT + at, "reveal", cueId || "", () => reveal(el));
     });
-    if (old) { old.classList.remove("cc-enter"); old.classList.add("cc-leave"); setTimeout(() => old.remove(), 400); }
+    if (old) { old.classList.remove("dt-enter"); old.classList.add("dt-leave"); setTimeout(() => old.remove(), 400); }
     pan.appendChild(slide);
     if (st.enter) { try { st.enter(slide, { frozen }); } catch (e) { console.error(e); } }
     return slide;
   }
   function fireCue(id) {
     state.fired.push(id);
-    pan.querySelectorAll(`.cc-slide:not(.cc-leave) [data-cue="${CSS_escape(id)}"]`).forEach(reveal);
+    pan.querySelectorAll(`.dt-slide:not(.dt-leave) [data-cue="${CSS_escape(id)}"]`).forEach(reveal);
     const st = state.step;
     if (st && typeof st.on[id] === "function") { try { st.on[id](); } catch (e) { console.error(e); } }
     (HANDLERS.get(id) || []).forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
@@ -269,8 +269,8 @@
   const CSS_escape = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&"));
   function startCamera(sc, seconds) {
     if (sc.camera !== "push" || frozen) return;
-    cam.style.setProperty("--cc-scene-dur", `${Math.max(4, seconds)}s`);
-    cam.classList.add("cc-push");
+    cam.style.setProperty("--dt-scene-dur", `${Math.max(4, seconds)}s`);
+    cam.classList.add("dt-push");
   }
 
   // ---- modes ----------------------------------------------------------------------
@@ -288,11 +288,11 @@
     const mountAt = new Map(); // step -> t
     for (const c of cues) {
       const owner = ownerOf(c.id, sc);
-      if (!owner) { if (!HANDLERS.has(c.id)) console.warn("cuecut: unknown cue id", c.id); continue; }
+      if (!owner) { if (!HANDLERS.has(c.id)) console.warn("decktalk: unknown cue id", c.id); continue; }
       mountAt.set(owner.step, Math.min(mountAt.get(owner.step) ?? Infinity, c.t));
     }
     const steps = [...mountAt.entries()].sort((a, b) => a[1] - b[1]);
-    if (!steps.length) { console.warn("cuecut: no step owns any listed cue"); return; }
+    if (!steps.length) { console.warn("decktalk: no step owns any listed cue"); return; }
     // The first cued step mounts at narration t=0 so the section never opens on an empty
     // stage; its listed reveals still wait for their own cues.
     steps[0][1] = Math.min(steps[0][1], 0);
@@ -323,7 +323,7 @@
     if (!found) return renderIndex(`unknown step ${esc(stepId)}`);
     state.mode = "frozen";
     state.scene = found.scene;
-    document.documentElement.classList.add("cc-frozen");
+    document.documentElement.classList.add("dt-frozen");
     mountStep(found.scene, found.step, null);
     found.step.cues.forEach((_d, id) => fireCue(id));
     document.body.dataset.done = "1";
@@ -333,13 +333,13 @@
     if (stage) stage.style.display = "none";
     document.body.style.overflow = "auto";
     const div = document.createElement("div");
-    div.id = "cc-index";
-    const title = document.title || "cuecut scenes";
+    div.id = "dt-index";
+    const title = document.title || "decktalk scenes";
     div.innerHTML = `<h1>${esc(title)}</h1>${note ? `<p><b>${note}</b></p>` : ""}
       <p>1920×1080. <code>?scene=N</code> autoplays a scene; <code>?step=ID</code> freezes a step; <code>&amp;speed=2</code> runs faster;
       <code>&amp;hud=1</code> shows the clock; <code>&amp;beats=id@s,…</code> (+<code>&amp;t0=</code>) cues from narration.</p>
       ${[...SCENES.values()].map((sc) => `<h2>Scene ${esc(sc.id)} — ${esc(sc.name)} <a href="?scene=${esc(sc.id)}">▶ play</a></h2>
-        <div class="cc-steps">${sc.steps.map((st) => `<a href="?step=${esc(st.id)}">step ${esc(st.id)} <code>(${st.hold}s${st.cues.size ? `, cues ${[...st.cues.keys()].join(" ")}` : ""})</code></a>`).join("")}</div>`).join("")}`;
+        <div class="dt-steps">${sc.steps.map((st) => `<a href="?step=${esc(st.id)}">step ${esc(st.id)} <code>(${st.hold}s${st.cues.size ? `, cues ${[...st.cues.keys()].join(" ")}` : ""})</code></a>`).join("")}</div>`).join("")}`;
     document.body.appendChild(div);
   }
 
@@ -367,9 +367,9 @@
   }
   document.addEventListener("DOMContentLoaded", () => { if (SCENES.size) start(); });
 
-  const Cuecut = { scene, on, start, reveal, fireCue, findStep, get scenes() { return SCENES; }, params };
-  window.Cuecut = Cuecut;
-  window.__cuecut = {
+  const DeckTalk = { scene, on, start, reveal, fireCue, findStep, get scenes() { return SCENES; }, params };
+  window.DeckTalk = DeckTalk;
+  window.__decktalk = {
     get mode() { return state.mode; },
     get scene() { return state.scene?.id ?? null; },
     get step() { return state.step?.id ?? null; },

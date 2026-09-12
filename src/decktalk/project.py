@@ -1,4 +1,4 @@
-"""A cuecut project: a directory with scenes.json, a script, cues, HTML pages and media.
+"""A decktalk project: a directory with scenes.json, a script, cues, HTML pages and media.
 
 Layout (all paths in scenes.json are relative to the project directory):
 
@@ -6,7 +6,7 @@ Layout (all paths in scenes.json are relative to the project directory):
       scenes.json        the plan: name, script, sections, transitions, mix, soundscape
       script.md          narration; "## N. Title" sections, [bracketed directions] unspoken
       cues.json          which spoken phrase each visual lands on
-      deck/index.html    HTML scenes (cuecut-runtime.js gives them the ?beats= contract)
+      deck/index.html    HTML scenes (decktalk-runtime.js gives them the ?beats= contract)
       media/             your clips, b-roll, slate, markers.json
       .env               ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID (never committed)
       build/             everything generated (git-ignored)
@@ -105,14 +105,14 @@ class Project:
     # ---- loading -------------------------------------------------------------
     @classmethod
     def load(cls, where: Path | str | None = None) -> Project:
-        root = Path(where or os.environ.get("CUECUT_PROJECT") or ".").resolve()
+        root = Path(where or os.environ.get("DECKTALK_PROJECT") or ".").resolve()
         if root.is_file() and root.name == SCENES_FILE:
             root = root.parent
         scenes = root / SCENES_FILE
         if not scenes.exists():
             sys.exit(
                 f"error: {scenes} not found. Run from a project directory, pass --project DIR, "
-                "or create one with `cuecut init DIR`."
+                "or create one with `decktalk init DIR`."
             )
         try:
             data = json.loads(scenes.read_text())

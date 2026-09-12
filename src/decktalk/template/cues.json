@@ -3,7 +3,7 @@
     "Which spoken phrase each visual lands on. `step` is a cue id the page understands (see deck/index.html);",
     "`on` is a word or short phrase from that section of script.md: first occurrence, case-insensitive,",
     "punctuation ignored. `$start` = section start, `$end` = end of speech; `offset` shifts in seconds;",
-    "`occurrence` picks a later match. `cuecut beats` reports any phrase it cannot find."
+    "`occurrence` picks a later match. `decktalk beats` reports any phrase it cannot find."
   ],
   "sections": {
     "1": {

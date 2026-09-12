@@ -1,11 +1,11 @@
 """Screenshots for review: one PNG per step, or frames from a section as it plays.
 
-    cuecut shots                          # every step of every page in scenes.json -> build/shots/
-    cuecut shots --page deck/index.html   # one page
-    cuecut shots --section 3 --at 4.5 --at 10   # frames while section 3 plays with its resolved cues
+    decktalk shots                          # every step of every page in scenes.json -> build/shots/
+    decktalk shots --page deck/index.html   # one page
+    decktalk shots --section 3 --at 4.5 --at 10   # frames while section 3 plays with its resolved cues
 
 Step mode loads each page with no query (the runtime's index mode) and reads
-window.__cuecut.catalog for the scene and step ids, then opens ?step=ID for each,
+window.__decktalk.catalog for the scene and step ids, then opens ?step=ID for each,
 which mounts that step with everything revealed. Frame mode opens the page exactly
 as the recorder does (?scene=&beats=&t0=) and screenshots at the given seconds
 after narration t=0, so you can check that a reveal lands on its word before
@@ -27,7 +27,7 @@ def _launch(pw: Any) -> Any:
     try:
         return pw.chromium.launch()
     except Exception as exc:
-        raise SystemExit(f"error: could not launch Chromium ({exc}). Run `cuecut setup`.") from exc
+        raise SystemExit(f"error: could not launch Chromium ({exc}). Run `decktalk setup`.") from exc
 
 
 def shots_steps(project: Project, pages: list[str] | None = None, steps: list[str] | None = None) -> int:
@@ -48,9 +48,9 @@ def shots_steps(project: Project, pages: list[str] | None = None, steps: list[st
                 continue
             base = html.resolve().as_uri()
             page.goto(base)
-            catalog = page.evaluate("() => (window.__cuecut && window.__cuecut.catalog) || null")
+            catalog = page.evaluate("() => (window.__decktalk && window.__decktalk.catalog) || null")
             if not catalog:
-                print(f"[skip] {rel}: no window.__cuecut.catalog (is cuecut-runtime.js included?)")
+                print(f"[skip] {rel}: no window.__decktalk.catalog (is decktalk-runtime.js included?)")
                 continue
             ids = [s for scene in catalog for s in scene["steps"]]
             if steps:
@@ -99,7 +99,7 @@ def shots_frames(project: Project, section: int, at: list[float], settle: float 
             page.wait_for_function("(ms) => performance.now() >= ms", arg=clock0 + t * 1000)
             target = out_dir / f"section-{sec.key}-at-{t:g}s.png"
             page.screenshot(path=str(target))
-            fired = page.evaluate("() => (window.__cuecut && window.__cuecut.fired) || []")
+            fired = page.evaluate("() => (window.__decktalk && window.__decktalk.fired) || []")
             print(f"wrote {target.relative_to(project.root)}  fired: {', '.join(fired) or '-'}")
         browser.close()
     return 0

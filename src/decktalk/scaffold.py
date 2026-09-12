@@ -1,4 +1,4 @@
-"""`cuecut init DIR` scaffolds a project; `cuecut setup` fetches Chromium and ffmpeg."""
+"""`decktalk init DIR` scaffolds a project; `decktalk setup` fetches Chromium and ffmpeg."""
 
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ TEMPLATE_FILES = [
 
 
 def package_file(rel: str) -> Path:
-    return Path(str(resources.files("cuecut").joinpath(rel)))
+    return Path(str(resources.files("decktalk").joinpath(rel)))
 
 
 def runtime_path() -> Path:
-    return package_file("runtime/cuecut-runtime.js")
+    return package_file("runtime/decktalk-runtime.js")
 
 
 def title_from(name: str) -> str:
@@ -44,24 +44,24 @@ def init(target: Path, *, name: str | None = None, force: bool = False) -> int:
         dst.parent.mkdir(parents=True, exist_ok=True)
         text = src.read_text().replace("__NAME__", name).replace("__TITLE__", title)
         dst.write_text(text)
-    shutil.copyfile(runtime_path(), target / "deck" / "cuecut-runtime.js")
+    shutil.copyfile(runtime_path(), target / "deck" / "decktalk-runtime.js")
     shutil.copyfile(package_file("template/env.example"), target / ".env.example")
     print(f"created {target}")
     print("  script.md      the narration (## N. sections)")
     print("  scenes.json    the plan: sections -> pages or clips, mix, soundscape")
     print("  cues.json      which spoken phrase each visual lands on")
-    print("  deck/          index.html + cuecut-runtime.js (open index.html for the scene index)")
+    print("  deck/          index.html + decktalk-runtime.js (open index.html for the scene index)")
     print("  media/         your clips, b-roll, markers.json")
-    print("next: cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID), then `cuecut build`")
-    print("      or `cuecut build --silent` to render with placeholder narration and no API key")
+    print("next: cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID), then `decktalk build`")
+    print("      or `decktalk build --silent` to render with placeholder narration and no API key")
     return 0
 
 
 def update_runtime(project_root: Path) -> int:
-    """Copy the packaged runtime over every deck/cuecut-runtime.js in the project."""
-    found = list(project_root.rglob("cuecut-runtime.js"))
+    """Copy the packaged runtime over every deck/decktalk-runtime.js in the project."""
+    found = list(project_root.rglob("decktalk-runtime.js"))
     if not found:
-        found = [project_root / "deck" / "cuecut-runtime.js"]
+        found = [project_root / "deck" / "decktalk-runtime.js"]
     for dst in found:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(runtime_path(), dst)
@@ -104,7 +104,7 @@ def doctor() -> int:
                 b.close()
             except Exception as exc:
                 ok = False
-                print(f"chromium MISSING: {str(exc).splitlines()[0]}  -> run `cuecut setup`")
+                print(f"chromium MISSING: {str(exc).splitlines()[0]}  -> run `decktalk setup`")
     except ImportError:
         ok = False
         print("playwright MISSING (pip package)")

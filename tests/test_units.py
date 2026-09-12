@@ -1,6 +1,6 @@
-from cuecut.assemble import timeline_targets
-from cuecut.beats import find_phrase, parse_beats_string, resolve_cue
-from cuecut.narrate import estimated_words, parse_script, strip_markdown
+from decktalk.assemble import timeline_targets
+from decktalk.beats import find_phrase, parse_beats_string, resolve_cue
+from decktalk.narrate import estimated_words, parse_script, strip_markdown
 
 SCRIPT = """# Title
 

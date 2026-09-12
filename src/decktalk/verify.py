@@ -59,7 +59,7 @@ def verify_starts(project: Project) -> int:
     final = project.final
     starts, total = section_starts(project)
     if not starts or not final.exists():
-        raise SystemExit("error: need build/out/NN-section.mp4 files and the final mp4 (run `cuecut assemble`)")
+        raise SystemExit("error: need build/out/NN-section.mp4 files and the final mp4 (run `decktalk assemble`)")
     print(f"{'sec':>3} {'start':>8} {'probe':>8} {'YAVG':>6} {'YMAX':>6}  result")
     bad = 0
     for key, t in starts.items():
