@@ -1,68 +1,75 @@
 ---
 title: Quickstart
-description: From nothing to a finished mp4.
+description: From an empty directory to a finished mp4.
 ---
 
 ## Install
 
-Everything is bundled. Playwright's Python package carries its own browser driver and
-`static-ffmpeg` carries ffmpeg and ffprobe for your platform. Python 3.12 or later; no Node.
+Everything DeckTalk needs arrives through Python packages. Playwright's package carries
+its own browser driver, and `static-ffmpeg` carries ffmpeg and ffprobe for your platform.
+You need Python 3.12 or later. You do not need Node.
 
 ```console
 uv tool install decktalk        # or: pipx install decktalk
-decktalk setup                  # fetches headless Chromium (~100 MB) and ffmpeg, once per machine
-decktalk doctor                 # confirms both are usable
+decktalk setup                  # fetches headless Chromium (about 100 MB) and ffmpeg, once per machine
+decktalk doctor                 # confirms that both work
 ```
 
 ## Scaffold and build
 
 ```console
 decktalk init my-lesson && cd my-lesson
-decktalk build --silent         # a full render with placeholder narration, no key needed
+decktalk build --silent         # a full render with placeholder narration and no key
 open build/out/my-lesson.mp4
 ```
 
-The scaffold has four sections. Section 0 is a *clip section*: your own video, with its own audio, expected at `media/open.mp4`. The file does not exist yet, so a titled slate plays there. Sections 1 to 3 are *page sections*: three scenes in `deck/index.html`, recorded and cut to the narration. Run it as-is first, then either drop a video at `media/open.mp4` or delete section 0 from both `decktalk.toml` and `script.md`.
+The scaffold has four sections. Section 0 is a clip section. It expects your own video,
+with its own audio, at `media/open.mp4`. That file does not exist yet, so a titled slate
+plays in its place. Sections 1 to 3 are page sections. They are three scenes in
+`deck/index.html`, and DeckTalk records them and cuts them to the narration. Run the
+scaffold as it is first. Then either drop a video at `media/open.mp4` or delete section 0
+from both `decktalk.toml` and `script.md`.
 
 ## Add your voice
 
-Copy `.env.example` to `.env` and set `ELEVENLABS_API_KEY` (ElevenLabs, Profile, API keys) and
-`ELEVENLABS_VOICE_ID` (Voices, My Voices, the ID on the voice's card; a cloned voice works
-well). Keys stay in `.env`, which is git-ignored and never printed. Then:
+Copy `.env.example` to `.env`. Set `ELEVENLABS_API_KEY`, which you create under Profile
+and API keys on the ElevenLabs site. Set `ELEVENLABS_VOICE_ID`, which appears on the
+voice's card under Voices and My Voices. A cloned voice works well. Both values stay in
+`.env`, which git ignores and DeckTalk never prints. Then build the project again:
 
 ```console
 decktalk build
 ```
 
-DeckTalk caches narration by each section's text, so a later edit re-synthesizes only the
-sections whose words changed.
+DeckTalk caches the narration of each section by its text. A later edit re-synthesizes
+only the sections whose words changed.
 
 ## When a phrase is not found
 
-`decktalk beats` (and `build`) prints `phrase not found: '…'` for any cue it cannot match,
-and `build` stops there, because a step whose only cues are unresolved would never appear.
-Fix the phrase to match the words as written in `script.md` (matching is case-insensitive
-and ignores punctuation; use `"occurrence": 2` for a later repeat), then rerun.
-`--allow-unresolved` builds anyway.
+The `beats` stage prints `phrase not found` for any cue it cannot match, and `build`
+stops there. It stops because a step whose only cues are unresolved would never appear.
+Fix the phrase so that it matches the words in `script.md` exactly. Matching
+ignores case and punctuation, and `"occurrence": 2` selects a later repeat of the same
+words. Then run the build again. The `--allow-unresolved` flag builds anyway.
 
 ## Review a page
 
-Open `deck/index.html` in any browser with no query string for an index of every scene
-and step. `?scene=2` autoplays a scene, `?step=2.1` freezes one step with everything
-revealed, and `&hud=1` overlays the clock. `decktalk shots` writes the same frozen steps
-to `build/shots/` as PNGs; `decktalk shots --section 3 --at 4.5` grabs a frame from a
-section as it plays with its real cues.
+Open `deck/index.html` in any browser with no query string. The page shows an index of
+every scene and step. Add `?scene=2` to play a scene, or `?step=2.1` to freeze one step
+with everything revealed, or `&hud=1` to overlay the clock. The `shots` command writes the
+same frozen steps to `build/shots/` as PNG files. The command `decktalk shots --section 3
+--at 4.5` captures a frame from a section while it plays with its real cues.
 
 ## What is in a project
 
-| Path | What |
+| Path | What it holds |
 |---|---|
-| `decktalk.toml` | The plan: one `[[section]]` per script section, voice, transitions, mix, soundscape prompts, optional tuning. |
-| `script.md` | The narration. `## N. Title` sections are the cut points. `[Bracketed directions]` are not spoken. |
-| `cues.json` | For each visual, the spoken phrase it lands on. |
-| `deck/index.html` | Your slides, with `decktalk-runtime.js`. |
+| `decktalk.toml` | The plan. It has one `[[section]]` per script section, the voice, the transitions, the mix, the soundscape prompts, and any tuning. |
+| `script.md` | The narration. Each `## N. Title` heading starts a section, and text inside square brackets is a stage direction that is not spoken. |
+| `cues.json` | The phrase that each visual lands on. |
+| `deck/index.html` | Your slides, with `decktalk-runtime.js` beside them. |
 | `media/` | Your own clips and the underscore markers. |
-| `build/` | Everything generated. Git-ignored. |
+| `build/` | Everything DeckTalk generates. Git ignores it. |
 
-<Tip>Write numbers and symbols in the script the way you want them said. A cue matches
-the spoken words "two x"; the slide shows the symbols.</Tip>
+<Tip>Write numbers and symbols in the script the way you want them spoken. A cue matches
+the spoken words "two x", while the slide shows the symbols.</Tip>

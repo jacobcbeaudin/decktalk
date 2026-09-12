@@ -3,36 +3,36 @@ title: CLI
 description: Every command, and what it produces.
 ---
 
-Every project command takes `--project DIR` (`-p DIR`; default: the current directory) and reads
-`.env` from the project. Keys are never printed. `-v` shows every ffmpeg command line;
-`-q` shows warnings only.
+Every project command takes `--project DIR`, or `-p DIR`, and defaults to the current
+directory. Each one reads `.env` from the project and never prints a key. The `-v` flag
+shows every ffmpeg command line, and `-q` shows warnings only.
 
-| Command | Does |
+| Command | What it does |
 |---|---|
-| `decktalk init DIR` | Scaffold a project with a working example deck. |
-| `decktalk setup` | Fetch headless Chromium and ffmpeg. |
-| `decktalk doctor` | Report what is installed. |
-| `decktalk narrate [--dry-run] [--silent] [--only N] [--force] [--allow-placeholders] [--model M]` | Script to per-section audio with word timestamps, plus the continuous track and `timeline.json`. Cached by text hash. |
-| `decktalk beats` | Resolve every cue phrase to a second; reports any phrase it cannot find and exits 1 if any. |
-| `decktalk soundscape [--dry-run] [--only NAME]` | Ambience, one-shot sfx and an underscore from prompts in `decktalk.toml`. |
-| `decktalk record [--only N] [--seconds S] [--settle S] [--no-beats]` | Record the pages with headless Chromium. |
-| `decktalk measure [--only N]` | Find narration t=0 in each recording from the magenta marker. |
-| `decktalk check [--only N] [--strict]` | Flag black or truncated recordings. |
-| `decktalk assemble [--preset P] [--crf N] [--nomix] [--no-loudnorm] [--strict]` | Cut, concatenate, mix, normalize, publish. |
-| `decktalk verify [SEC:CUE ...]` | Every section opens on a real frame; the picture changes at the named cues. |
-| `decktalk shots [--page F] [--step ID] [--section N --at S]` | One PNG per step, or frames from a section as it plays with its real cues. |
-| `decktalk build [--silent] [--force] [--only N] [--nomix] [--no-loudnorm] [--strict] [--allow-unresolved] [--preset P] [--crf N]` | The whole pipeline in order. |
-| `decktalk status` | The timeline and what is built. |
-| `decktalk runtime` | Copy the packaged `decktalk-runtime.js` over the project's copy after an upgrade. |
+| `decktalk init DIR` | Scaffolds a project with a working example deck. |
+| `decktalk setup` | Fetches headless Chromium and ffmpeg. |
+| `decktalk doctor` | Reports what is installed. |
+| `decktalk narrate [--dry-run] [--silent] [--only N] [--force] [--allow-placeholders] [--model M]` | Turns the script into per-section audio with word timestamps, then builds the continuous track and `timeline.json`. It caches each section by text. |
+| `decktalk beats` | Resolves every cue phrase to a second. It reports any phrase it cannot find and exits with status 1 if there is one. |
+| `decktalk soundscape [--dry-run] [--only NAME]` | Generates the ambience, the sound effects, and the underscore from the prompts in `decktalk.toml`. |
+| `decktalk record [--only N] [--seconds S] [--settle S] [--no-beats]` | Records the pages with headless Chromium. |
+| `decktalk measure [--only N]` | Finds narration t=0 in each recording from the magenta marker. |
+| `decktalk check [--only N] [--strict]` | Flags black or truncated recordings. |
+| `decktalk assemble [--preset P] [--crf N] [--nomix] [--no-loudnorm] [--strict]` | Cuts, concatenates, mixes, normalizes, and publishes the film. |
+| `decktalk verify [SEC:CUE ...]` | Confirms that every section opens on a real frame and that the picture changes at each named cue. |
+| `decktalk shots [--page F] [--step ID] [--section N --at S]` | Writes one PNG per step, or frames from a section while it plays with its real cues. |
+| `decktalk build [--silent] [--force] [--only N] [--nomix] [--no-loudnorm] [--strict] [--allow-unresolved] [--preset P] [--crf N]` | Runs the whole pipeline in order. |
+| `decktalk status` | Prints the timeline and what is built. |
+| `decktalk runtime` | Copies the packaged `decktalk-runtime.js` over the project's copy after an upgrade. |
 
 ## Build artifacts
 
-| File | Shape |
+| File | What it holds |
 |---|---|
-| `build/audio/NN-slug.mp3` and `.words.json` | One per narrated section; words as `[{word, start, end}]`. |
-| `build/audio/narration.mp3` and `timeline.json` | The continuous track and each section's absolute span and words in it. |
-| `build/audio/beats.json` | `{"NN": "cue@seconds,..."}`, seconds relative to the section start. |
-| `build/rec/NN-scene.webm` and `.json` | The recording and its sidecar (settle, lead-in, method). |
+| `build/audio/NN-slug.mp3` and `.words.json` | One pair per narrated section. The words file holds `[{word, start, end}]`. |
+| `build/audio/narration.mp3` and `timeline.json` | The continuous track, and each section's absolute span and words within it. |
+| `build/audio/beats.json` | `{"NN": "cue@seconds,..."}`, with seconds relative to the section start. |
+| `build/rec/NN-scene.webm` and `.json` | The recording and its sidecar, which records the settle, the lead-in, and the method. |
 | `build/out/NN-section.mp4` | Each section cut to its span. |
 | `build/out/<name>.mp4` | The film, plus a timestamped copy. |
 | `build/shots/` | Review screenshots. |
