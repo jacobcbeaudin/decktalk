@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..errors import ConfigError
 from ..project import Project
 from .assemble import AssembleResult, assemble
 from .beats import BeatsResult, resolve_beats
@@ -44,6 +45,7 @@ def build(
     nomix: bool = False,
     loudnorm: bool = True,
     strict: bool = False,
+    allow_unresolved: bool = False,
     report: Reporter | None = None,
 ) -> BuildResult:
     """Run every stage. `report(stage, result)` is called after each one, for the CLI's tables."""
@@ -59,6 +61,12 @@ def build(
     log.info("===== beats =====")
     out.beats = resolve_beats(project)
     emit("beats", out.beats)
+    if out.beats.unresolved and not allow_unresolved:
+        raise ConfigError(
+            f"{out.beats.unresolved} cue(s) could not be matched to the narration; a step whose cues are "
+            "unresolved never appears. Fix the phrases in cues.json (see the notes above) or pass "
+            "allow_unresolved=True / --allow-unresolved:\n  " + "\n  ".join(out.beats.problems)
+        )
     log.info("===== record =====")
     out.recordings = record(project, only=only)
     emit("record", out.recordings)

@@ -6,7 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 T=tests/out/smoke
 rm -rf "$T"; mkdir -p tests/out
 uv run decktalk init "$T" --name smoke
-FF="$(uv run python -c 'from decktalk.media.ffmpeg import ffmpeg; print(ffmpeg())')"
+FF="$(uv run python -c 'from decktalk.media.ffmpeg import ffmpeg; print(ffmpeg().replace(chr(92), chr(47)))')"
 # a synthetic "on camera" clip: 3 s, 1280x720 (exercises scale/pad), a 440 Hz tone as the voice
 "$FF" -hide_banner -loglevel error -y -f lavfi -i "testsrc2=s=1280x720:r=30" -f lavfi -i "sine=f=440:r=48000" -t 3 -c:v libx264 -pix_fmt yuv420p -c:a aac "$T/media/open.mp4"
 mkdir -p "$T/build/music"

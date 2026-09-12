@@ -1,0 +1,28 @@
+---
+title: Configuration
+description: Defaults, decktalk.toml, environment variables.
+---
+
+Three layers, lowest to highest precedence:
+
+1. Defaults in `decktalk.config`, one dataclass per concern.
+2. Tables of the same names in the project's `decktalk.toml`, for example `[video] preset = "veryfast"`.
+3. Environment variables `DECKTALK_<SECTION>_<FIELD>`, for example `DECKTALK_VIDEO_PRESET=veryfast`.
+
+A few CLI flags (`--preset`, `--crf`, `--settle`, `--model`) override for one run.
+
+Per-presentation content (sections, voice, mix levels, soundscape prompts) lives in the
+same file as the document rather than as tuning: see [the project file](/concepts/project-file).
+Secrets live only in `.env`.
+
+| Section | Fields |
+|---|---|
+| `video` | `width` 1920, `height` 1080, `fps` 30, `preset` medium, `crf` 18, `audio_bitrate` 192k, `sample_rate` 44100, `channels` 2, `slate_color` |
+| `narration` | `model`, `output_format`, `mp3_bitrate`, `words_per_minute` 140, `silent_words_per_minute` 150, `lead_break_seconds` 0.7, `direction_break_seconds` 0.7, `tail_break_seconds` 0.35, `min_tail_seconds` 0.35, `tail_slack_seconds` 0.05, `context_chars` 1500, `timeout_seconds` 180 |
+| `record` | `settle_seconds` 0.5, `marker_ms` 120, `color_scheme` light, `shot_settle_ms` 400 |
+| `align` | `scan_seconds` 4, `fallback_first_paint_seconds` 1.1, magenta luma and chroma thresholds, `painted_ymax` 60, `painted_yavg_max` 120, `black_ymax` 40, `truncated_slack_seconds` 0.5 |
+| `audio` | `duck_ramp_seconds` 0.5, `ambience_ramp_seconds` 1, `ambience_pad_seconds` 0.5, marker ramps, `limiter` 0.95 |
+| `verify` | `after_dip_seconds` 0.2, `after_cue_seconds` 0.7, `window_seconds` 1.2, `diff_level` 48, `min_changed_percent` 0.15, `visible_ymax` 60, probe size |
+| `elevenlabs` | `api_base`, `sound_model`, `music_model`, `music_bitrate`, `max_music_chunk_seconds` 300, `music_crossfade_seconds` 2, default sound durations and prompt influence, `timeout_seconds` 600 |
+
+The authoritative list, with a comment on every field, is `src/decktalk/config.py`.

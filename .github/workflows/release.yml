@@ -11,7 +11,7 @@
 #   (optionally require your own approval on it).
 #
 # Cutting a release:
-#   1. bump `version` in pyproject.toml, commit
+#   1. `uv version 0.1.0` (updates pyproject.toml and uv.lock), commit
 #   2. git tag v0.1.0 && git push --tags
 name: release
 
@@ -23,8 +23,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: Tag must match pyproject version
         run: |
           version="$(uv version --short)"
@@ -33,10 +33,12 @@ jobs:
             echo "pyproject version $version does not match tag $tag" >&2
             exit 1
           fi
-      - run: uv sync --group dev
+      - run: uv sync --locked --group dev
       - run: uv run ruff check src tests && uv run ty check src && uv run pytest -q
       - run: uv build
-      - uses: actions/upload-artifact@v4
+      - name: Smoke-test the built wheel from a clean environment
+        run: uv run --isolated --no-project --with dist/decktalk-*.whl -- decktalk init /tmp/wheelcheck --name wheelcheck
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -49,12 +51,12 @@ jobs:
       id-token: write   # trusted publishing
       contents: write   # GitHub release
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true

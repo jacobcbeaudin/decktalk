@@ -1,7 +1,18 @@
-# decktalk.toml reference
+---
+title: The project file
+description: Every key in decktalk.toml, and cues.json.
+---
 
-One file per project. Paths are relative to the project directory. Unknown top-level
-tables are an error, so a typo cannot silently do nothing.
+One file per project. Paths are relative to the project directory. An unknown top-level
+table fails the load, so a typo cannot silently do nothing.
+
+Five words the docs use:
+
+- **section**: one `## N.` block of `script.md` and its `[[section]]` table; the unit of narration, recording and cutting.
+- **scene**: what a page plays for one section: `DeckTalk.scene(id, …)`, selected with `?scene=`.
+- **step**: one slide state inside a scene; `?step=ID` freezes it.
+- **cue**: a named moment. In `cues.json` it is a spoken phrase to find; in the page it is an id that reveals elements or runs handlers.
+- **beat**: a cue resolved to seconds after the section's narration starts (`id@s`), stored in `beats.json` and passed to the page as `?beats=`.
 
 ## `[project]`
 
@@ -19,6 +30,7 @@ ElevenLabs voice settings for this presentation. `model` overrides the tool defa
 
 | Key | Default |
 |---|---|
+| `provider` | `elevenlabs` (the only one today; see the Python API for adding one) |
 | `model` | tool default |
 | `stability` | 0.55 |
 | `similarity_boost` | 0.75 |
@@ -81,7 +93,7 @@ section must have one. A section is either a page or a clip.
 
 ## `[soundscape]`
 
-Prompts for `decktalk soundscape`. Outputs default to the paths named in `[mix]`.
+Prompts for `decktalk soundscape`. Ambience and music write to the `[mix] ambience` and `underscore` paths (or `build/sfx/ambience.mp3` and `build/music/underscore.mp3` when `[mix]` names none); each sfx writes to `build/sfx/<name>.mp3` unless `out` is set.
 
 | Table | Keys |
 |---|---|
@@ -114,6 +126,6 @@ per run with `DECKTALK_<SECTION>_<FIELD>`. The fields and defaults are the datac
             { "step": "3.1eq", "on": "equation", "offset": 0.2, "occurrence": 1 } ] } } }
 ```
 
-`step` is a cue id the page understands; `on` is a spoken phrase from that section
+`step` (or its synonym `cue`) is a cue id the page understands; `on` is a spoken phrase from that section
 (first occurrence, case-insensitive, punctuation ignored), `$start`, or `$end`.
 `min_seconds` warns when the narration is shorter than the visuals need.

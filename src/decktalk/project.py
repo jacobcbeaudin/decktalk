@@ -83,6 +83,7 @@ Section = ClipSection | PageSection
 class Voice:
     """ElevenLabs voice settings. `model` may be overridden per project too."""
 
+    provider: str = "elevenlabs"  # a registered SpeechProvider name
     model: str | None = None  # falls back to settings.narration.model
     stability: float = 0.55
     similarity_boost: float = 0.75
@@ -265,6 +266,7 @@ def _parse_voice(doc: dict[str, Any]) -> Voice:
         return Voice()
     t = _Table(raw, f"{PROJECT_FILE}: [voice]")
     return Voice(
+        provider=t.get_str("provider", "elevenlabs"),
         model=t.get_str("model"),
         stability=t.get_num("stability", 0.55),
         similarity_boost=t.get_num("similarity_boost", 0.75),

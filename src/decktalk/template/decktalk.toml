@@ -1,5 +1,5 @@
 # DeckTalk project. Paths are relative to this directory.
-# Full reference: docs/project-file.md in the DeckTalk repo.
+# Full reference: https://docs.decktalk.app/concepts/project-file
 
 [project]
 name = "__NAME__"

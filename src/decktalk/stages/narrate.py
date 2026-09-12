@@ -31,7 +31,8 @@ from ..config import NarrationConfig
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
 from ..project import Project
-from ..providers.elevenlabs import ElevenLabs
+from ..providers import elevenlabs as _elevenlabs  # noqa: F401  (registers the default provider)
+from ..providers.speech import SpeechProvider, SpeechRequest, get_provider
 
 log = logging.getLogger(__name__)
 
@@ -220,10 +221,9 @@ def estimated_words(segment: Segment, duration: float, cfg: NarrationConfig) -> 
     ]
 
 
-def text_hash(segment: Segment, cfg: NarrationConfig, model: str, voice_id: str, settings: dict[str, Any]) -> str:
-    payload = (
-        f"{model}\n{voice_id}\n{cfg.output_format}\n{json.dumps(settings, sort_keys=True)}\n{segment.tts_text(cfg)}"
-    )
+def text_hash(segment: Segment, cfg: NarrationConfig, provider_key: str, settings: dict[str, Any]) -> str:
+    """Cache key for one section: provider identity, voice settings and the exact text sent."""
+    payload = f"{provider_key}\n{json.dumps(settings, sort_keys=True)}\n{segment.tts_text(cfg)}"
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
@@ -302,14 +302,12 @@ def narrate(
     if previous is not None and previous.estimated == silent:
         manifest.segments = dict(previous.segments)
 
-    client: ElevenLabs | None = None
-    voice_id = ""
+    provider: SpeechProvider | None = None
     if not silent:
         unfilled = sorted({p for s in targets for p in s.placeholders})
         if unfilled and not allow_placeholders:
             raise ConfigError(f"unfilled placeholders {unfilled} in the script; fill them or pass allow_placeholders")
-        api_key, voice_id = project.require_env("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
-        client = ElevenLabs(api_key, project.settings.elevenlabs)
+        provider = get_provider(project)
 
     by_index = {s.index: s for s in all_segments}
     order = [s.index for s in all_segments]
@@ -341,8 +339,14 @@ def narrate(
             )
             synthesized.append(seg.key)
             continue
-        assert client is not None
-        digest = text_hash(seg, cfg, model, voice_id, voice_settings)
+        assert provider is not None
+        request = SpeechRequest(
+            text=seg.tts_text(cfg),
+            model=model,
+            voice_settings=voice_settings,
+            output_format=cfg.output_format,
+        )
+        digest = text_hash(seg, cfg, provider.cache_key(request), voice_settings)
         entry = manifest.segments.get(seg.key)
         if (
             not force
@@ -359,17 +363,15 @@ def narrate(
         prev_seg = by_index[order[pos - 1]] if pos > 0 else None
         next_seg = by_index[order[pos + 1]] if pos + 1 < len(order) else None
         log.info("[tts ] %s  %d words, est %.1fs ...", seg.filename, seg.word_count, seg.est_seconds(cfg))
-        audio, words = client.speak(
-            seg.tts_text(cfg),
-            voice_id=voice_id,
+        request = SpeechRequest(
+            text=request.text,
             model=model,
             voice_settings=voice_settings,
             output_format=cfg.output_format,
             previous_text=prev_seg.spoken if prev_seg else None,
             next_text=next_seg.spoken if next_seg else None,
-            context_chars=cfg.context_chars,
-            timeout=cfg.timeout_seconds,
         )
+        audio, words = provider.speak(request)
         out_path.write_bytes(audio)
         write_words(words_path, words)
         added = ensure_tail(out_path, cfg)

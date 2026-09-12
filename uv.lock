@@ -258,7 +258,7 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.11" },
-    { name = "ty" },
+    { name = "ty", specifier = ">=0.0.1" },
 ]
 
 [[package]]

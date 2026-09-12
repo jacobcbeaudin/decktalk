@@ -1,0 +1,68 @@
+---
+title: Quickstart
+description: From nothing to a finished mp4.
+---
+
+## Install
+
+Everything is bundled. Playwright's Python package carries its own browser driver and
+`static-ffmpeg` carries ffmpeg and ffprobe for your platform. Python 3.12 or later; no Node.
+
+```console
+uv tool install decktalk        # or: pipx install decktalk
+decktalk setup                  # fetches headless Chromium (~100 MB) and ffmpeg, once per machine
+decktalk doctor                 # confirms both are usable
+```
+
+## Scaffold and build
+
+```console
+decktalk init my-lesson && cd my-lesson
+decktalk build --silent         # a full render with placeholder narration, no key needed
+open build/out/my-lesson.mp4
+```
+
+The scaffold has four sections. Section 0 is a *clip section*: your own video, with its own audio, expected at `media/open.mp4`. The file does not exist yet, so a titled slate plays there. Sections 1 to 3 are *page sections*: three scenes in `deck/index.html`, recorded and cut to the narration. Run it as-is first, then either drop a video at `media/open.mp4` or delete section 0 from both `decktalk.toml` and `script.md`.
+
+## Add your voice
+
+Copy `.env.example` to `.env` and set `ELEVENLABS_API_KEY` (ElevenLabs, Profile, API keys) and
+`ELEVENLABS_VOICE_ID` (Voices, My Voices, the ID on the voice's card; a cloned voice works
+well). Keys stay in `.env`, which is git-ignored and never printed. Then:
+
+```console
+decktalk build
+```
+
+DeckTalk caches narration by each section's text, so a later edit re-synthesizes only the
+sections whose words changed.
+
+## When a phrase is not found
+
+`decktalk beats` (and `build`) prints `phrase not found: '…'` for any cue it cannot match,
+and `build` stops there, because a step whose only cues are unresolved would never appear.
+Fix the phrase to match the words as written in `script.md` (matching is case-insensitive
+and ignores punctuation; use `"occurrence": 2` for a later repeat), then rerun.
+`--allow-unresolved` builds anyway.
+
+## Review a page
+
+Open `deck/index.html` in any browser with no query string for an index of every scene
+and step. `?scene=2` autoplays a scene, `?step=2.1` freezes one step with everything
+revealed, and `&hud=1` overlays the clock. `decktalk shots` writes the same frozen steps
+to `build/shots/` as PNGs; `decktalk shots --section 3 --at 4.5` grabs a frame from a
+section as it plays with its real cues.
+
+## What is in a project
+
+| Path | What |
+|---|---|
+| `decktalk.toml` | The plan: one `[[section]]` per script section, voice, transitions, mix, soundscape prompts, optional tuning. |
+| `script.md` | The narration. `## N. Title` sections are the cut points. `[Bracketed directions]` are not spoken. |
+| `cues.json` | For each visual, the spoken phrase it lands on. |
+| `deck/index.html` | Your slides, with `decktalk-runtime.js`. |
+| `media/` | Your own clips and the underscore markers. |
+| `build/` | Everything generated. Git-ignored. |
+
+<Tip>Write numbers and symbols in the script the way you want them said. A cue matches
+the spoken words "two x"; the slide shows the symbols.</Tip>

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "DeckTalk",
+  "description": "Narrated presentations, cut to the word.",
+  "colors": { "primary": "#2c1fea", "light": "#7e95fc", "dark": "#2c1fea" },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "groups": [
+      { "group": "Get started", "pages": ["index", "quickstart"] },
+      { "group": "Concepts", "pages": ["concepts/project-file", "concepts/page-contract"] },
+      { "group": "Reference", "pages": ["reference/cli", "reference/configuration", "reference/python-api"] }
+    ]
+  },
+  "navbar": {
+    "links": [{ "label": "GitHub", "href": "https://github.com/jacobcbeaudin/decktalk" }],
+    "primary": { "type": "button", "label": "PyPI", "href": "https://pypi.org/project/decktalk/" }
+  },
+  "footer": { "socials": { "github": "https://github.com/jacobcbeaudin/decktalk" } }
+}

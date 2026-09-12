@@ -1,4 +1,7 @@
-# The page contract
+---
+title: The page contract
+description: How a slide talks to the recorder.
+---
 
 A DeckTalk page is an HTML file that `decktalk record` can drive from the narration. The
 contract is a handful of URL parameters and one global. `decktalk-runtime.js` implements
@@ -9,7 +12,7 @@ it; a page can also implement it by hand.
 | Parameter | Meaning |
 |---|---|
 | `scene=N` | Play scene N. Scene ids are strings; the scaffold uses the script's section numbers. |
-| `beats=id@s,id@s,…` | Cue mode. Fire cue `id` at `s` seconds after narration t=0. Times come from `build/audio/beats.json`, relative to the section's start in the continuous narration. |
+| `beats=id@s,id@s,…` | Beat mode: cues resolved to times. Fire cue `id` at `s` seconds after narration t=0. Times come from `build/audio/beats.json`, relative to the section's start in the continuous narration. |
 | `t0=S` | Seconds after the page's `load` event at which narration t=0 falls. The recorder waits `S` (default 0.5) after load, then starts the clock and flashes the frame magenta so the assembler can align exactly. |
 | `step=ID` | Freeze mode. Mount step ID with every reveal in its end state and its handler cues fired. Used by `decktalk shots` and for review. |
 | `speed=X` | Autoplay time scale. Ignored in cue mode. |
@@ -63,9 +66,9 @@ DeckTalk.on("3.1draw", fn);             // global cue handler
 DeckTalk.start();                       // automatic on DOMContentLoaded when scenes exist
 ```
 
-Markup attributes inside a step: `data-cue`, `data-at`, `data-fx`, `data-dur`,
+Markup attributes inside a step: `data-cue`, `data-at`, `data-fx` (`rise` by default, `fade`, `draw` for SVG paths with `pathLength="1"`, `drop`, `pop`, `dim`, `none`), `data-dur` (seconds; a count-up defaults to 0.9),
 `data-count` (`first` to count the first number instead of the last), `data-type`
-(ms per character), `data-tex` (+ `data-display` for display math).
+(ms per character, default 40), `data-tex` (+ `data-display` for display math).
 
 The runtime creates `#dt-stage` (1920×1080, scaled to fit the window) with `#dt-cam`
 and `#dt-pan` inside; slides are `.dt-slide` children of the pan layer. Style the stage
@@ -84,5 +87,5 @@ and your slides however you like; the runtime's own CSS is prefixed `dt-`.
 
 The recorder opens the page, waits for `load`, awaits `__sceneReady`, waits `t0`
 seconds, then injects a full-frame magenta div for 120 ms. `decktalk measure` finds the
-last magenta frame in the webm and writes `lead_in_seconds` to the sidecar; the
-assembler trims that off the head so video t=0 equals narration t=0 to within a frame.
+last magenta frame in the webm and writes `lead_in_seconds` to the sidecar. The assembler
+trims that lead-in, so video t=0 equals narration t=0 to within a frame.

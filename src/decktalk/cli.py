@@ -130,8 +130,9 @@ def cmd_narrate(args: argparse.Namespace) -> int:
 def cmd_beats(args: argparse.Namespace) -> int:
     from .stages.beats import resolve_beats
 
-    print(_report.beats_table(resolve_beats(_project(args))))
-    return 0
+    result = resolve_beats(_project(args))
+    print(_report.beats_table(result))
+    return 1 if result.unresolved else 0
 
 
 def cmd_soundscape(args: argparse.Namespace) -> int:
@@ -240,6 +241,7 @@ def cmd_build(args: argparse.Namespace) -> int:
         nomix=args.nomix,
         loudnorm=not args.no_loudnorm,
         strict=args.strict,
+        allow_unresolved=args.allow_unresolved,
         report=report,
     )
     if result.assembly:
@@ -338,6 +340,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--nomix", action="store_true")
     s.add_argument("--no-loudnorm", action="store_true")
     s.add_argument("--strict", action="store_true")
+    s.add_argument("--allow-unresolved", action="store_true", help="build even if some cue phrases were not found")
     encoding(s)
     s.set_defaults(fn=cmd_build)
     return p
