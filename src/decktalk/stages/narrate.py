@@ -1,8 +1,9 @@
 """Stage 1: the script becomes one mp3 per section with word timestamps, plus the continuous track.
 
 The script is markdown with "## N. Title" sections. Bracketed directions such as
-[Deck. The curve draws.] are not spoken and become a short pause; markdown formatting
-is stripped; ALL-CAPS placeholders like [NUMBER] refuse a real run. Sections that the
+[Deck. The curve draws.] or [beat] are not spoken and become a short pause, and a
+[pause N] direction becomes a pause of N seconds instead. Markdown formatting is
+stripped, and ALL-CAPS placeholders like [NUMBER] refuse a real run. Sections that the
 project maps to a clip are skipped.
 
 Each section is synthesized with word timestamps, cached by a hash of model, voice,
@@ -42,6 +43,8 @@ SECTION_RE = re.compile(
     r"^##\s+(?P<num>\d+)\.\s+(?P<title>.+?)(?:\s+[—–-]+\s+(?P<start>\d+:\d{2})\s+to\s+(?P<end>\d+:\d{2}))?\s*$"
 )
 DIRECTION_RE = re.compile(r"\[(?![A-Z][A-Z0-9_]*\])[^\]]*\]")
+# "[pause 3]" or "[pause 2.5]": a timed pause, in seconds, in place of the default direction pause.
+PAUSE_RE = re.compile(r"\[\s*pause\s+(?P<seconds>\d+(?:\.\d+)?)\s*\]", re.IGNORECASE)
 PLACEHOLDER_RE = re.compile(r"\[([A-Z][A-Z0-9_]*)\]")
 BREAK_RE = re.compile(r'<break time="([0-9.]+)s"\s*/>')
 PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
@@ -116,8 +119,12 @@ def slugify(title: str) -> str:
 
 
 def strip_markdown(text: str, *, direction_break_seconds: float) -> str:
+    """Prose ready for speech. Every direction becomes a break tag appended to the paragraph before it."""
     text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)  # links, before directions
-    text = DIRECTION_RE.sub(f"\n\n{DIRECTION_MARK}\n\n", text)
+    # A timed pause carries its own length through the direction marker, and every other
+    # direction carries the default.
+    text = PAUSE_RE.sub(lambda m: f"\n\n{DIRECTION_MARK}{float(m.group('seconds')):g}\n\n", text)
+    text = DIRECTION_RE.sub(f"\n\n{DIRECTION_MARK}{direction_break_seconds:g}\n\n", text)
     text = re.sub(r"`([^`]*)`", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"(?<!\w)[*_]([^*_]+)[*_](?!\w)", r"\1", text)
@@ -127,14 +134,18 @@ def strip_markdown(text: str, *, direction_break_seconds: float) -> str:
     paragraphs = [re.sub(r"\s+", " ", p).strip() for p in re.split(r"\n\s*\n", text)]
     paragraphs = [p for p in paragraphs if p]
     out: list[str] = []
-    pending = False
+    pending: float | None = None  # seconds of pause owed to the paragraph before the next one
     for p in paragraphs:
-        if p == DIRECTION_MARK:
-            pending = bool(out)
+        if p.startswith(DIRECTION_MARK):
+            # A direction before any prose has nothing to pause after, and back-to-back
+            # directions keep the longest pause rather than stacking.
+            seconds = float(p.removeprefix(DIRECTION_MARK))
+            if out:
+                pending = seconds if pending is None else max(pending, seconds)
             continue
-        if pending:
-            out[-1] = f"{out[-1]} {break_tag(direction_break_seconds)}"
-            pending = False
+        if pending is not None:
+            out[-1] = f"{out[-1]} {break_tag(pending)}"
+            pending = None
         out.append(p)
     return "\n\n".join(out)
 

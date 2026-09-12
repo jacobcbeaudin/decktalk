@@ -40,8 +40,12 @@
  * Cue ownership: a cue belongs to the step with the same id, or whose `cues` list names
  * it, or whose id is the longest prefix of the cue id ("4.2b1" -> step "4.2", "9a" -> "9").
  *
- * The page exposes window.__decktalk { mode, scene, step, cues, fired, catalog, now() } and
- * sets window.__sceneReady (fonts loaded) unless the page set its own.
+ * The page exposes window.__decktalk { mode, scene, step, cues, fired, catalog, warnings, now() }
+ * and sets window.__sceneReady unless the page set its own. That promise resolves once fonts
+ * are loaded and, when the page uses [data-tex] or loads KaTeX, once window.katex exists
+ * (polled for up to 5 s). Anything the runtime cannot honor (an unknown cue id, a cue no
+ * step owns, KaTeX never arriving) is pushed onto __decktalk.warnings, which the recorder
+ * reads back and logs.
  */
 (function () {
   "use strict";
@@ -94,6 +98,7 @@
     cues: [],
     fired: [],
     catalog: [],
+    warnings: [], // what the runtime could not honor, read back by the recorder
     origin: null, // performance.now() at window load (ms)
     queue: [], // [{t, kind, id, run}] sorted by t
     started: false,
@@ -143,6 +148,12 @@
     stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
   }
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  // Each distinct warning is recorded once and echoed to the console.
+  function warn(msg) {
+    if (state.warnings.includes(msg)) return;
+    state.warnings.push(msg);
+    console.warn("decktalk: " + msg);
+  }
 
   // ---- scenes ---------------------------------------------------------------------
   function scene(id, def) {
@@ -222,6 +233,21 @@
       try { window.katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: el.hasAttribute("data-display") }); el.dataset.typeset = "1"; } catch (_) { /* keep plain text */ }
     });
   }
+  // Resolves once window.katex exists, when the page needs it, or after 5 s with a warning.
+  // A page needs KaTeX when it has a [data-tex] element in the document or a KaTeX script tag.
+  function katexReady() {
+    const wants = document.querySelector("[data-tex]") || document.querySelector('script[src*="katex"]');
+    if (!wants || window.katex) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const started = performance.now();
+      const tick = () => {
+        if (window.katex) { if (pan) typeset(pan); resolve(true); return; }
+        if (performance.now() - started > 5000) { warn("KaTeX did not load within 5 s, so [data-tex] elements stay plain text"); resolve(true); return; }
+        setTimeout(tick, 100);
+      };
+      tick();
+    });
+  }
 
   // ---- queue ----------------------------------------------------------------------
   function schedule(t, kind, id, run) {
@@ -292,11 +318,11 @@
     const mountAt = new Map(); // step -> t
     for (const c of cues) {
       const owner = ownerOf(c.id, sc);
-      if (!owner) { if (!HANDLERS.has(c.id)) console.warn("decktalk: unknown cue id", c.id); continue; }
+      if (!owner) { if (!HANDLERS.has(c.id)) warn(`unknown cue id ${c.id} (no step id or cues list matches it)`); continue; }
       mountAt.set(owner.step, Math.min(mountAt.get(owner.step) ?? Infinity, c.t));
     }
     const steps = [...mountAt.entries()].sort((a, b) => a[1] - b[1]);
-    if (!steps.length) { console.warn("decktalk: no step owns any listed cue"); return; }
+    if (!steps.length) { warn("no step owns any listed cue, so nothing will mount"); return; }
     // The first cued step mounts at narration t=0 so the section never opens on an empty
     // stage; its listed reveals still wait for their own cues.
     steps[0][1] = Math.min(steps[0][1], 0);
@@ -352,7 +378,6 @@
     if (state.started) return;
     state.started = true;
     state.catalog = [...SCENES.values()].map((sc) => ({ scene: sc.id, name: sc.name, steps: sc.steps.map((s) => s.id) }));
-    if (!window.__sceneReady) window.__sceneReady = document.fonts ? document.fonts.ready.then(() => true) : Promise.resolve(true);
     ensureStage();
     const beatsRaw = params.get("beats");
     const cues = beatsRaw ? parseBeats(beatsRaw) : [];
@@ -367,6 +392,11 @@
     } else {
       renderIndex();
     }
+    // Set after the mode has mounted its first step, so a frozen step's [data-tex] is in the DOM.
+    if (!window.__sceneReady) {
+      const fonts = document.fonts ? document.fonts.ready : Promise.resolve();
+      window.__sceneReady = fonts.then(katexReady);
+    }
     requestAnimationFrame(loop);
   }
   document.addEventListener("DOMContentLoaded", () => { if (SCENES.size) start(); });
@@ -379,6 +409,7 @@
     get step() { return state.step?.id ?? null; },
     get cues() { return state.cues; },
     get fired() { return state.fired; },
+    get warnings() { return state.warnings; },
     get catalog() { return state.catalog.length ? state.catalog : [...SCENES.values()].map((sc) => ({ scene: sc.id, name: sc.name, steps: sc.steps.map((s) => s.id) })); },
     now,
   };
