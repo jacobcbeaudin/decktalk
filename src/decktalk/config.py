@@ -51,7 +51,7 @@ class NarrationConfig:
     lead_break_seconds: float = 0.7  # opens the first spoken section
     direction_break_seconds: float = 0.7  # pause where a bracketed direction sat
     tail_break_seconds: float = 0.35  # requested at the end of every section
-    min_tail_seconds: float = 0.35  # guaranteed silence after the last word
+    min_tail_seconds: float = 0.7  # guaranteed silence after the last word, so a cut never lands on its tail
     tail_slack_seconds: float = 0.05  # extra padding added when the tail is short
     context_chars: int = 1500  # previous_text / next_text sent for prosody continuity
     timeout_seconds: int = 180
@@ -107,6 +107,8 @@ class VerifyConfig:
     onset_diff_level: int = 12  # Luma steps for the onset scan only, so a fade or a low-contrast panel registers early.
     max_offset_frames: int = 2  # Frames the first changed frame may sit from the cue before the check fails.
     visible_ymax: float = 60
+    cut_window_seconds: float = 0.15  # audio measured just before every cut
+    cut_max_db: float = -40.0  # louder than this at a cut means speech was still going
     probe_width: int = 480
     probe_height: int = 270
 

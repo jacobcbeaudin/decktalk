@@ -119,6 +119,18 @@ def write_silence(out: Path, seconds: float, *, sample_rate: int, bitrate: str) 
     )
 
 
+def rms_db(path: Path, start: float, seconds: float) -> float:
+    """The RMS level in dBFS of the audio between start and start + seconds."""
+    err = stderr(
+        "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", "-i", str(path), "-vn",
+        "-af", "astats=measure_perchannel=none:measure_overall=RMS_level", "-f", "null", "-",
+    )  # fmt: skip
+    m = re.findall(r"RMS level dB: (-?[0-9.]+|-inf)", err)
+    if not m:
+        return -120.0
+    return -120.0 if m[-1] == "-inf" else float(m[-1])
+
+
 def trailing_silence(path: Path, *, noise_db: int = -35, min_run: float = 0.05) -> float:
     """Seconds of silence at the end of an audio file."""
     duration = probe_duration(path)

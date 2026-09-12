@@ -53,9 +53,15 @@ number = 4
 title = "Before and after"
 page = "deck/index.html"
 scene = 4
+ambience = false        # true plays the ambience bed under this section
+
+[[section]]
+number = 5
+title = "Close"
+page = "deck/index.html"
+scene = 5
 extra_seconds = 2
 hold_seconds = 2        # allowed only on the last page section
-ambience = false        # true plays the ambience bed under this section
 
 [transition]
 dips = []               # boundaries that dip to black, as [from, to] pairs. Omit the key to dip at every cut.

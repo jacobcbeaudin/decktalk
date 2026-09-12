@@ -2,6 +2,8 @@
 
 starts   every section opens on a real frame: past the dip-to-black, YMAX above
          visible_ymax means content is on screen.
+cuts     the audio in the last cut_window_seconds before every cut is quieter than
+         cut_max_db, so no cut lands on speech.
 cues     for each SECTION:CUE, the picture changes across the cue. The reference frame
          sits lead_seconds before the cue. For each delay in probe_delays, the share of
          pixels that change by more than diff_level between the reference and the probe
@@ -56,6 +58,16 @@ class StartCheck:
 
 
 @dataclass
+class CutCheck:
+    """The audio just before a cut. Speech still sounding there means the cut is early."""
+
+    key: str
+    cut_at: float
+    rms_db: float
+    ok: bool
+
+
+@dataclass
 class CueCheck:
     check: str
     cue_seconds: float | None
@@ -71,11 +83,12 @@ class CueCheck:
 class VerifyResult:
     total_seconds: float
     starts: list[StartCheck] = field(default_factory=list)
+    cuts: list[CutCheck] = field(default_factory=list)
     cues: list[CueCheck] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return all(s.ok for s in self.starts) and all(c.ok for c in self.cues)
+        return all(s.ok for s in self.starts) and all(c.ok for c in self.cuts) and all(c.ok for c in self.cues)
 
     @property
     def black_starts(self) -> int:
@@ -95,6 +108,14 @@ def verify(project: Project, checks: list[str] | None = None) -> VerifyResult:
         result.starts.append(
             StartCheck(key=key, start=t, probe_at=probe, yavg=yavg, ymax=ymax, ok=ymax > cfg.visible_ymax)
         )
+    keys = list(starts)
+    clips = {f"{n:02d}" for n in project.clip_numbers}
+    for i, key in enumerate(keys):
+        if key in clips:
+            continue  # A clip carries its own audio, and its tail is the author's business.
+        cut = starts[keys[i + 1]] if i + 1 < len(keys) else total
+        level = ffmpeg.rms_db(final, max(0.0, cut - cfg.cut_window_seconds), cfg.cut_window_seconds)
+        result.cuts.append(CutCheck(key=key, cut_at=cut, rms_db=level, ok=level <= cfg.cut_max_db))
     if not checks:
         return result
     beats = project.beats()

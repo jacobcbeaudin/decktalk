@@ -33,7 +33,8 @@ uv run decktalk -p "$T" verify \
   1:1.1b 1:1.1c \
   2:2.1a 2:2.1b 2:2.1c 2:2.1d 2:2.2 2:2.2edit \
   3:3.1draw 3:3.1a 3:3.1b 3:3.1think 3:3.1c \
-  4:4.1ask 4:4.1r1 4:4.1r2 4:4.1r3 4:4.2 4:4.2ask 4:4.2reply
+  4:4.1ask 4:4.1r1 4:4.1r2 4:4.1r3 4:4.2 4:4.2ask 4:4.2reply \
+  5:5.1a 5:5.1b 5:5.1c 5:5.2 5:5.2a 5:5.2b
 uv run decktalk -p "$T" status
 uv run python -c "import decktalk; p = decktalk.Project.load('$T'); print('python api ok:', p.name, len(p.sections), 'sections')"
 # post-production checks on the final file: picture and sound both start at 0, every section

@@ -56,3 +56,15 @@ Nothing here is something a student could hold on to.
 Now ask for what you actually want. [beat] Explain it to a ninth grader, in three
 sentences, and end with one thing they could test at home. [beat] Same model, better
 prompt, and a reply a class could use.
+
+## 5. Close
+
+[Deck scene 5. Three lines return, then the end card.]
+
+That is the whole idea. [beat] Write the script. [beat] Narrate it in your own voice.
+[beat] And every reveal lands on its word.
+
+[Step 5.2. The end card.]
+
+The script is the edit. [beat] Change a sentence, and only that section renders again.
+[beat] Made with DeckTalk.

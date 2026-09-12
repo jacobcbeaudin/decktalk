@@ -21,7 +21,7 @@ of the same name.
 | `measure` | Finds the first clean frame after the magenta cover in each recording. That frame is narration t=0. | `lead_in_seconds` in each sidecar |
 | `check` | Flags a recording that is black, shorter than requested, has no cover, or whose equations never typeset. | nothing |
 | `assemble` | Trims each recording at t=0, cuts it to its section's span, scales clips, renders slates, concatenates, mixes the soundscape, normalizes loudness, writes captions and chapters, and publishes the video atomically. | `build/out/NN-section.mp4`, `<name>.mp4`, `<name>.srt`, `<name>.vtt`, `<name>.chapters.txt` |
-| `verify` | Confirms that every section opens on a real frame, and, when asked, that each named cue changed the picture on time. | nothing |
+| `verify` | Confirms that every section opens on a real frame and that no cut lands on speech, and, when asked, that each named cue changed the picture on time. | nothing |
 
 A clip section skips `narrate`, `record`, and `measure`. Its own audio plays for its
 span. [Build artifacts](/reference/artifacts) gives the shape of every file.
@@ -57,7 +57,7 @@ matches the narration. Nothing in the chain depends on wall-clock time.
 
 ## What verify measures
 
-`build` verifies section starts only. It probes each section shortly after its start, past
+`build` verifies section starts and cuts only. It measures the audio in the last 150 ms before every cut and fails the build when speech is still sounding there, so a narration tail that is too short is caught rather than heard. It probes each section shortly after its start, past
 any dip to black, and reports `BLACK` when nothing is on screen. `decktalk verify` with
 `SECTION:CUE` arguments also measures each named cue in the finished mp4.
 

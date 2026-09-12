@@ -42,7 +42,7 @@ def page(deck):
 def test_index_mode_exposes_catalog(page, deck):
     page.goto(deck.as_uri())
     catalog = page.evaluate("() => window.__decktalk.catalog")
-    assert [c["scene"] for c in catalog] == ["1", "2", "3", "4"]
+    assert [c["scene"] for c in catalog] == ["1", "2", "3", "4", "5"]
     assert catalog[1]["steps"] == ["2.1", "2.2"]
     assert catalog[3]["steps"] == ["4.1", "4.2"]
     assert page.evaluate("() => window.__decktalk.mode") == "index"
