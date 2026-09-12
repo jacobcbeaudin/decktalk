@@ -5,7 +5,25 @@ description = "Narrated presentation videos: a markdown script, a cloned voice, 
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
+authors = [{ name = "Jacob Beaudin" }]
+keywords = ["presentation", "narration", "elevenlabs", "video", "slides", "text-to-speech"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
 dependencies = ["playwright>=1.50", "static-ffmpeg>=2.7"]
+
+[project.urls]
+Homepage = "https://decktalk.app"
+Repository = "https://github.com/jacobcbeaudin/decktalk"
+Changelog = "https://github.com/jacobcbeaudin/decktalk/blob/main/CHANGELOG.md"
 
 [project.scripts]
 decktalk = "decktalk.cli:main"
@@ -32,3 +50,5 @@ python-version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["browser: needs headless Chromium (run `decktalk setup` first)"]
+addopts = "-m 'not browser'"

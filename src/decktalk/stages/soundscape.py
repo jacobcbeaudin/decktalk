@@ -1,0 +1,183 @@
+"""Beds and one-shots from ElevenLabs: ambience, sfx, and an underscore, from decktalk.toml [soundscape].
+
+Ambience and sfx use sound generation (billed per second when a duration is set);
+music is requested in chunks of at most max_music_chunk_seconds and joined with a
+crossfade. Every output has a manifest with the request hash, so unchanged requests
+are skipped. dry_run reports the requests without calling the API.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import math
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from ..config import ElevenLabsConfig
+from ..media import ffmpeg
+from ..project import MusicSpec, Project, SoundSpec
+from ..providers.elevenlabs import ElevenLabs
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class SoundscapeItem:
+    name: str
+    out: Path
+    endpoint: str
+    requests: list[dict[str, Any]]
+    status: str  # "planned" (dry run), "unchanged", "generated"
+    duration_seconds: float | None = None
+
+
+def request_hash(endpoint: str, body: Any) -> str:
+    return hashlib.sha256(f"{endpoint}\n{json.dumps(body, sort_keys=True)}".encode()).hexdigest()[:16]
+
+
+def _load(path: Path) -> dict[str, Any]:
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
+def _save(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def sound_body(spec: SoundSpec, cfg: ElevenLabsConfig, *, loop: bool) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "text": spec.text,
+        "duration_seconds": spec.duration_seconds
+        if spec.duration_seconds is not None
+        else (cfg.ambience_seconds if loop else cfg.sfx_seconds),
+        "prompt_influence": spec.prompt_influence
+        if spec.prompt_influence is not None
+        else (cfg.ambience_prompt_influence if loop else cfg.sfx_prompt_influence),
+        "model_id": spec.model_id or cfg.sound_model,
+    }
+    if loop:
+        body["loop"] = True
+    return body
+
+
+def music_chunks(spec: MusicSpec, cfg: ElevenLabsConfig) -> list[dict[str, Any]]:
+    n = max(1, math.ceil(spec.seconds / cfg.max_music_chunk_seconds))
+    per = spec.seconds / n
+    bodies = []
+    for i in range(n):
+        body: dict[str, Any] = {
+            "prompt": spec.prompt,
+            "force_instrumental": spec.force_instrumental,
+            "model_id": spec.model_id or cfg.music_model,
+            "music_length_ms": int(per * 1000),
+        }
+        if n > 1:
+            body["prompt"] += f" (part {i + 1} of {n}, same key and tempo, seamless mood)"
+        bodies.append(body)
+    return bodies
+
+
+def _sound(
+    name: str,
+    spec: SoundSpec,
+    out: Path,
+    client: ElevenLabs | None,
+    cfg: ElevenLabsConfig,
+    fmt: str,
+    *,
+    loop: bool,
+    force: bool,
+) -> SoundscapeItem:
+    body = sound_body(spec, cfg, loop=loop)
+    endpoint = f"{cfg.api_base}/sound-generation"
+    item = SoundscapeItem(name=name, out=out, endpoint=endpoint, requests=[body], status="planned")
+    if client is None:
+        return item
+    manifest_path = out.with_suffix(".manifest.json")
+    digest = request_hash(endpoint, body)
+    manifest = _load(manifest_path)
+    if not force and out.exists() and manifest.get("hash") == digest:
+        item.status, item.duration_seconds = "unchanged", manifest.get("duration_seconds")
+        return item
+    out.parent.mkdir(parents=True, exist_ok=True)
+    log.info("[gen ] %s -> %s", name, out)
+    out.write_bytes(client.sound_effect(body, output_format=fmt))
+    item.duration_seconds = ffmpeg.probe_duration(out)
+    _save(manifest_path, {"hash": digest, "file": out.name, "duration_seconds": item.duration_seconds, "request": body})
+    item.status = "generated"
+    return item
+
+
+def _music(
+    spec: MusicSpec, out: Path, client: ElevenLabs | None, cfg: ElevenLabsConfig, fmt: str, *, force: bool
+) -> SoundscapeItem:
+    chunks = music_chunks(spec, cfg)
+    endpoint = f"{cfg.api_base}/music"
+    item = SoundscapeItem(name="music", out=out, endpoint=endpoint, requests=chunks, status="planned")
+    if client is None:
+        return item
+    manifest_path = out.with_suffix(".manifest.json")
+    digest = request_hash(endpoint, {"chunks": chunks, "xfade": cfg.music_crossfade_seconds})
+    manifest = _load(manifest_path)
+    if not force and out.exists() and manifest.get("hash") == digest:
+        item.status, item.duration_seconds = "unchanged", manifest.get("duration_seconds")
+        return item
+    out.parent.mkdir(parents=True, exist_ok=True)
+    parts: list[Path] = []
+    for i, body in enumerate(chunks):
+        part = out.with_name(f"{out.stem}-part{i + 1}.mp3")
+        part_hash = request_hash(endpoint, body)
+        if not force and part.exists() and manifest.get("parts", {}).get(part.name) == part_hash:
+            log.info("[skip] %s unchanged", part.name)
+        else:
+            log.info("[gen ] %s ...", part.name)
+            part.write_bytes(client.music(body, output_format=fmt))
+            manifest.setdefault("parts", {})[part.name] = part_hash
+            _save(manifest_path, manifest)
+        parts.append(part)
+    ffmpeg.crossfade_join(parts, out, crossfade_seconds=cfg.music_crossfade_seconds, bitrate=cfg.music_bitrate)
+    item.duration_seconds = ffmpeg.probe_duration(out)
+    manifest.update({"hash": digest, "file": out.name, "duration_seconds": item.duration_seconds, "request": chunks})
+    _save(manifest_path, manifest)
+    item.status = "generated"
+    return item
+
+
+def soundscape(
+    project: Project, *, only: list[str] | None = None, force: bool = False, dry_run: bool = False
+) -> list[SoundscapeItem]:
+    spec = project.soundscape
+    if spec.empty:
+        log.info("no [soundscape] in decktalk.toml; nothing to generate")
+        return []
+    cfg = project.settings.elevenlabs
+    fmt = project.settings.narration.output_format
+    client = None if dry_run else ElevenLabs(project.require_env("ELEVENLABS_API_KEY")[0], cfg)
+    wanted = set(only or [])
+
+    def want(name: str) -> bool:
+        return not wanted or name in wanted
+
+    items: list[SoundscapeItem] = []
+    if spec.ambience and want("ambience"):
+        out = project.path(spec.ambience.out or project.mix.ambience or "build/sfx/ambience.mp3")
+        items.append(_sound("ambience", spec.ambience, out, client, cfg, fmt, loop=True, force=force))
+    for name, s in spec.sfx.items():
+        if want(name):
+            items.append(
+                _sound(
+                    name, s, project.path(s.out or f"build/sfx/{name}.mp3"), client, cfg, fmt, loop=False, force=force
+                )
+            )
+    if spec.music and want("music"):
+        out = project.path(spec.music.out or project.mix.underscore or "build/music/underscore.mp3")
+        items.append(_music(spec.music, out, client, cfg, fmt, force=force))
+    return items

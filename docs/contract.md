@@ -1,6 +1,6 @@
 # The page contract
 
-A decktalk page is an HTML file that `decktalk record` can drive from the narration. The
+A DeckTalk page is an HTML file that `decktalk record` can drive from the narration. The
 contract is a handful of URL parameters and one global. `decktalk-runtime.js` implements
 it; a page can also implement it by hand.
 
@@ -18,12 +18,12 @@ it; a page can also implement it by hand.
 
 ## Globals
 
-- `window.__sceneReady` — optional Promise. The recorder awaits it before starting the
+- `window.__sceneReady`: optional Promise. The recorder awaits it before starting the
   clock, so a page can wait for fonts, images or data. The runtime sets it to
   `document.fonts.ready` unless the page set its own.
-- `window.__decktalk` — `{ mode, scene, step, cues, fired, catalog, now() }`. `catalog`
-  lists every scene and its step ids (used by `decktalk shots`); `fired` is the list of cue
-  ids fired so far (printed by `decktalk shots --section N --at S`).
+- `window.__decktalk`: `{ mode, scene, step, cues, fired, catalog, now() }`. `catalog`
+  lists every scene and its step ids (used by `decktalk shots`); `fired` is the list of
+  cue ids fired so far.
 - `document.body.dataset.done = "1"` once the last step has mounted.
 
 ## Timing semantics (cue mode)
@@ -59,8 +59,8 @@ DeckTalk.scene(id, {
     on: { "3.1draw": () => {} },        // per-step cue handlers
   }],
 });
-DeckTalk.on("3.1draw", fn);               // global cue handler
-DeckTalk.start();                         // automatic on DOMContentLoaded when scenes exist
+DeckTalk.on("3.1draw", fn);             // global cue handler
+DeckTalk.start();                       // automatic on DOMContentLoaded when scenes exist
 ```
 
 Markup attributes inside a step: `data-cue`, `data-at`, `data-fx`, `data-dur`,
@@ -70,6 +70,15 @@ Markup attributes inside a step: `data-cue`, `data-at`, `data-fx`, `data-dur`,
 The runtime creates `#dt-stage` (1920×1080, scaled to fit the window) with `#dt-cam`
 and `#dt-pan` inside; slides are `.dt-slide` children of the pan layer. Style the stage
 and your slides however you like; the runtime's own CSS is prefixed `dt-`.
+
+## Build artifacts a page or script may read
+
+| File | Shape |
+|---|---|
+| `build/audio/timeline.json` | `{narration, total_seconds, estimated, sections: {"NN": {title, start, end, duration, speech_end, words: [{word, start, end}]}}}`, absolute seconds in `narration.mp3`. |
+| `build/audio/beats.json` | `{"NN": "cue@seconds,…"}`, seconds relative to the section start. |
+| `build/audio/manifest.json` | One entry per narrated section: file, words file, hash, durations. |
+| `build/rec/NN-scene.json` | What the recorder did and where narration t=0 sits in the webm. |
 
 ## Recording alignment
 
