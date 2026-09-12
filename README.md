@@ -9,7 +9,7 @@
 DeckTalk turns a markdown script and plain HTML slides into one narrated mp4 in which every reveal lands on the word that introduces it. Change a sentence and only that section renders again. The script is the edit.</p>
 
 <p align="center">
-<a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/v/decktalk?color=2c1fea&label=pypi" alt="PyPI"></a>
+<a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/v/decktalk?label=pypi&color=2c1fea" alt="PyPI"></a>
 <a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/pyversions/decktalk?color=2c1fea" alt="Python versions"></a>
 <a href="https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml"><img src="https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
 <a href="https://docs.decktalk.app"><img src="https://img.shields.io/badge/docs-docs.decktalk.app-2c1fea" alt="docs"></a>
