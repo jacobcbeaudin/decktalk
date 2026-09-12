@@ -314,18 +314,20 @@ def luma_at(path: Path, t: float, *, crop: str | None = None) -> tuple[float, fl
 def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, width: int, height: int) -> float:
     """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2.
 
-    Both inputs are seeked before decoding, so the cost is two keyframe seeks rather than a
-    decode from the start of the file.
+    Each frame is extracted once as an image and the two images are compared, which every
+    ffmpeg build handles the same way and costs two keyframe seeks.
     """
-    fc = (
-        f"[0:v]trim=duration=0.05,setpts=PTS-STARTPTS,scale={width}:{height}[a];"
-        f"[1:v]trim=duration=0.05,setpts=PTS-STARTPTS,scale={width}:{height}[b];"
-        f"[a][b]blend=all_mode=difference,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,signalstats,metadata=print"
-    )
-    err = stderr(
-        "-ss", f"{t1:.3f}", "-i", str(path), "-ss", f"{t2:.3f}", "-i", str(path),
-        "-filter_complex", fc, "-frames:v", "1", "-f", "null", "-",
-    )  # fmt: skip
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        a, b = Path(tmp) / "a.png", Path(tmp) / "b.png"
+        for t, target in ((t1, a), (t2, b)):
+            run("-ss", f"{t:.3f}", "-i", str(path), "-frames:v", "1", "-vf", f"scale={width}:{height}", str(target))
+        err = stderr(
+            "-i", str(a), "-i", str(b), "-filter_complex",
+            f"[0:v][1:v]blend=all_mode=difference,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,signalstats,metadata=print",
+            "-frames:v", "1", "-f", "null", "-",
+        )  # fmt: skip
     m = re.search(r"YAVG=([0-9.]+)", err)
     return (float(m.group(1)) / 255 * 100) if m else 0.0
 

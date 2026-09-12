@@ -123,6 +123,7 @@ t=0 sits in the webm.
 | `settle_seconds` | How long the recorder waited after load before starting the clock. |
 | `load_seconds`, `lead_seconds` | Wall-clock estimates from the recorder. |
 | `lead_in_seconds` | The first clean frame after the magenta cover, written by `measure`. The assembler trims here. |
+| `frame_gaps` | Seconds and milliseconds of every gap between two page frames longer than 100 ms, which `check` reports as `STALLED` past `stall_ms`. |
 | `lead_method` | How `measure` found it. A value beginning `NO COVER` is a guess. |
 | `warnings` | `window.__decktalk.warnings` read from the page after the recording, such as an unknown cue id or a KaTeX that never loaded. |
 

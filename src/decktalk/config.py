@@ -66,6 +66,7 @@ class RecordConfig:
     settle_seconds: float = 0.5  # after load, before narration t=0
     min_lead_seconds: float = 1.5  # t=0 never comes sooner than this after the recorder starts
     color_scheme: str = "light"
+    retries: int = 2  # how many times a section is recorded again after its page stalled
     shot_settle_ms: int = 400  # wait before a review screenshot
 
 
@@ -82,6 +83,7 @@ class AlignConfig:
     painted_yavg_max: float = 120  # and it is not a white flash
     black_ymax: float = 40  # check: a frame darker than this is "black"
     truncated_slack_seconds: float = 0.5
+    stall_ms: int = 150  # a gap between two page frames longer than this marks the recording as stalled
 
 
 @dataclass
@@ -109,6 +111,7 @@ class VerifyConfig:
     onset_diff_level: int = 12  # Luma steps for the onset scan only, so a fade or a low-contrast panel registers early.
     click_search_seconds: float = 0.25  # how far from the cue a silent build's click may sit and still be found
     max_offset_frames: int = 2  # Frames the first changed frame may sit from the cue before the check fails.
+    max_av_frames: int = 3  # Frames the picture may sit from a silent build's click, which carries encoding jitter too.
     visible_ymax: float = 60
     cut_window_seconds: float = 0.15  # audio measured just before every cut
     cut_max_db: float = -40.0  # louder than this at a cut means speech was still going

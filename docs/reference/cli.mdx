@@ -139,6 +139,7 @@ sec  webm_s   want_s   Y10    Y50    Y90    MAX50   verdict
 | `BLACK?` | The brightest pixel at the midpoint is below `black_ymax`, so the page probably drew nothing. |
 | `TRUNCATED` | The recording is shorter than requested by more than `truncated_slack_seconds`. |
 | `KATEX?` | The page reported that KaTeX never loaded, so its equations stayed plain text. |
+| `STALLED` | The page went longer than `stall_ms` between two frames while recording, so a reveal may have been captured late. The recorder already retried up to `retries` times. |
 
 Several verdicts may appear together, separated by spaces.
 
