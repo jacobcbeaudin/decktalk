@@ -3,30 +3,110 @@
   "theme": "mint",
   "name": "DeckTalk",
   "description": "Narrated presentations, cut to the word.",
-  "colors": { "primary": "#2c1fea", "light": "#7c8cff", "dark": "#2c1fea" },
-  "logo": { "light": "/logo/light.svg", "dark": "/logo/dark.svg", "href": "https://decktalk.app" },
+  "colors": {
+    "primary": "#2c1fea",
+    "light": "#7c8cff",
+    "dark": "#2c1fea"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg",
+    "href": "https://decktalk.app"
+  },
   "favicon": "/favicon.svg",
-  "fonts": { "heading": { "family": "Inter Tight" }, "body": { "family": "Inter" } },
-  "appearance": { "default": "system" },
-  "contextual": { "options": ["copy", "view", "chatgpt", "claude", "cursor"] },
+  "fonts": {
+    "heading": {
+      "family": "Inter Tight"
+    },
+    "body": {
+      "family": "Inter"
+    }
+  },
+  "appearance": {
+    "default": "system"
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "cursor"
+    ]
+  },
   "navigation": {
     "groups": [
-      { "group": "Get started", "pages": ["index", "quickstart", "guides/first-deck"] },
-      { "group": "Concepts", "pages": ["concepts/how-it-works", "concepts/project-file", "concepts/cues", "concepts/page-contract", "concepts/sound"] },
-      { "group": "Reference", "pages": ["reference/card", "reference/cli", "reference/configuration", "reference/artifacts", "reference/python-api"] },
-      { "group": "Help", "pages": ["help/troubleshooting", "help/faq"] }
+      {
+        "group": "Get started",
+        "pages": [
+          "index",
+          "quickstart",
+          "guides/first-deck"
+        ]
+      },
+      {
+        "group": "Concepts",
+        "pages": [
+          "concepts/how-it-works",
+          "concepts/project-file",
+          "concepts/cues",
+          "concepts/page-contract",
+          "concepts/sound"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/card",
+          "reference/cli",
+          "reference/configuration",
+          "reference/artifacts",
+          "reference/python-api"
+        ]
+      },
+      {
+        "group": "Help",
+        "pages": [
+          "help/troubleshooting",
+          "help/faq",
+          "changelog"
+        ]
+      }
     ]
   },
   "navbar": {
     "links": [
-      { "label": "GitHub", "href": "https://github.com/jacobcbeaudin/decktalk" },
-      { "label": "Changelog", "href": "https://github.com/jacobcbeaudin/decktalk/blob/main/CHANGELOG.md" }
+      {
+        "label": "PyPI",
+        "href": "https://pypi.org/project/decktalk/",
+        "icon": "python"
+      },
+      {
+        "label": "Changelog",
+        "href": "/changelog",
+        "icon": "list"
+      }
     ],
-    "primary": { "type": "button", "label": "PyPI", "href": "https://pypi.org/project/decktalk/" }
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/jacobcbeaudin/decktalk"
+    }
   },
-  "footer": { "socials": { "github": "https://github.com/jacobcbeaudin/decktalk", "website": "https://decktalk.app" } },
-  "seo": { "metatags": { "og:site_name": "DeckTalk" } },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/jacobcbeaudin/decktalk",
+      "website": "https://decktalk.app"
+    }
+  },
+  "seo": {
+    "metatags": {
+      "og:site_name": "DeckTalk"
+    }
+  },
   "redirects": [
-    { "source": "/concepts/pipeline", "destination": "/concepts/how-it-works" }
+    {
+      "source": "/concepts/pipeline",
+      "destination": "/concepts/how-it-works"
+    }
   ]
 }

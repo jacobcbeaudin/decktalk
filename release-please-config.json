@@ -11,6 +11,13 @@
           "path": "uv.lock",
           "jsonpath": "$.package[?(@.name.value=='decktalk')].version"
         }
+      ],
+      "exclude-paths": [
+        "site",
+        "assets",
+        "docs/images",
+        "docs/logo",
+        ".github"
       ]
     }
   }
