@@ -223,3 +223,203 @@ class Sidecar:
     @property
     def trim_seconds(self) -> float:
         return self.lead_in_seconds if self.lead_in_seconds is not None else self.lead_seconds
+
+
+# ---- captions and chapters -----------------------------------------------------------
+#
+# These are written by `decktalk assemble` next to the final mp4:
+#
+#     build/out/<name>.srt          captions from the word timestamps, absolute in the mp4
+#     build/out/<name>.vtt          the same cues as WebVTT
+#     build/out/<name>.chapters.txt an ffmetadata file with one [CHAPTER] per section
+
+CAPTION_MAX_CHARS = 42  # The longest line a cue may carry, in characters.
+CAPTION_MAX_LINES = 2
+CAPTION_MAX_GAP = 1.5  # A pause longer than this between two words ends the cue.
+CAPTION_MAX_SECONDS = 7.0  # No cue stays on screen longer than this.
+CAPTION_TAIL = 0.2  # Seconds a cue lingers after its last word, unless the next cue begins first.
+
+_SENTENCE_END = (".", "?", "!")
+_CLAUSE_END = (",", ";", ":", "—", "-")
+
+
+@dataclass(frozen=True)
+class CaptionCue:
+    start: float
+    end: float
+    lines: tuple[str, ...]
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.lines)
+
+
+def _chars(words: list[Word]) -> int:
+    return sum(len(w.word) for w in words) + max(len(words) - 1, 0)
+
+
+def _caption_lines(words: list[Word], max_chars: int) -> list[list[Word]]:
+    """Split one run of words into lines of at most max_chars, preferring punctuation breaks."""
+    lines: list[list[Word]] = []
+    cur: list[Word] = []
+    for w in words:
+        if cur and _chars([*cur, w]) > max_chars:
+            # Back up to the last clause break inside the line when it leaves a reasonable line behind.
+            cut = next(
+                (
+                    i + 1
+                    for i in range(len(cur) - 2, -1, -1)
+                    if cur[i].word.endswith(_CLAUSE_END) and _chars(cur[: i + 1]) >= max_chars // 2
+                ),
+                None,
+            )
+            if cut is None:
+                lines.append(cur)
+                cur = []
+            else:
+                lines.append(cur[:cut])
+                cur = cur[cut:]
+                # The carried tail plus the new word can still overflow, so flush it as its own line.
+                if _chars([*cur, w]) > max_chars:
+                    lines.append(cur)
+                    cur = []
+        cur.append(w)
+        if w.word.endswith(_SENTENCE_END) and _chars(cur) >= max_chars // 2:
+            lines.append(cur)
+            cur = []
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def display_words(words: list[Word], text: str) -> list[Word]:
+    """The same words carrying the script's own spelling, so captions keep punctuation and case.
+
+    Word lists come back from the voice with punctuation stripped. The script text is
+    walked in step with them, matching each word to the next token whose letters agree,
+    and a token that matches supplies the display form. When the two cannot be aligned,
+    the words are returned as they are.
+    """
+    tokens = text.split()
+    out: list[Word] = []
+    j = 0
+    for w in words:
+        key = _letters(w.word)
+        k = j
+        while k < len(tokens) and k < j + 3 and _letters(tokens[k]) != key:
+            k += 1
+        if k < len(tokens) and k < j + 3:
+            out.append(Word(tokens[k], w.start, w.end))
+            j = k + 1
+        else:
+            return list(words)
+    return out
+
+
+def _letters(token: str) -> str:
+    return "".join(ch for ch in token.lower() if ch.isalnum())
+
+
+def caption_cues(
+    words: list[Word],
+    *,
+    max_chars: int = CAPTION_MAX_CHARS,
+    max_lines: int = CAPTION_MAX_LINES,
+    max_gap: float = CAPTION_MAX_GAP,
+    max_seconds: float = CAPTION_MAX_SECONDS,
+) -> list[CaptionCue]:
+    """Cues for one section's words, so a cue never spans a section boundary.
+
+    Words are grouped into lines of at most max_chars, broken at punctuation where the line
+    would overflow, and lines are paired into cues of at most max_lines. A sentence end,
+    a pause longer than max_gap, or a cue running past max_seconds also closes the cue.
+    """
+    if not words:
+        return []
+    runs: list[list[Word]] = [[]]
+    for w in words:
+        if runs[-1] and w.start - runs[-1][-1].end > max_gap:
+            runs.append([])
+        runs[-1].append(w)
+    cues: list[CaptionCue] = []
+    for run in runs:
+        pending: list[list[Word]] = []
+        for line in _caption_lines(run, max_chars):
+            pending.append(line)
+            closes = (
+                len(pending) >= max_lines
+                or line[-1].word.endswith(_SENTENCE_END)
+                or line[-1].end - pending[0][0].start >= max_seconds
+            )
+            if closes:
+                cues.append(_cue(pending))
+                pending = []
+        if pending:
+            cues.append(_cue(pending))
+    # A cue lingers briefly after its last word, but never into the next cue.
+    out: list[CaptionCue] = []
+    for i, cue in enumerate(cues):
+        end = cue.end + CAPTION_TAIL
+        if i + 1 < len(cues):
+            end = min(end, cues[i + 1].start)
+        out.append(CaptionCue(cue.start, round(max(end, cue.end), 3), cue.lines))
+    return out
+
+
+def _cue(lines: list[list[Word]]) -> CaptionCue:
+    return CaptionCue(
+        start=round(lines[0][0].start, 3),
+        end=round(lines[-1][-1].end, 3),
+        lines=tuple(" ".join(w.word for w in line) for line in lines),
+    )
+
+
+def _stamp(seconds: float, sep: str) -> str:
+    ms = int(round(seconds * 1000))
+    h, rem = divmod(ms, 3_600_000)
+    m, rem = divmod(rem, 60_000)
+    s, ms = divmod(rem, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d}{sep}{ms:03d}"
+
+
+def write_srt(path: Path, cues: list[CaptionCue]) -> None:
+    blocks = [f"{i}\n{_stamp(c.start, ',')} --> {_stamp(c.end, ',')}\n{c.text}\n" for i, c in enumerate(cues, 1)]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(blocks), encoding="utf-8")
+
+
+def write_vtt(path: Path, cues: list[CaptionCue]) -> None:
+    blocks = [f"{_stamp(c.start, '.')} --> {_stamp(c.end, '.')}\n{c.text}\n" for c in cues]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("WEBVTT\n\n" + "\n".join(blocks), encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class Chapter:
+    start: float
+    end: float
+    title: str
+
+
+def ffmetadata_escape(value: str) -> str:
+    """Escape the characters ffmetadata treats specially, so a title survives the round trip."""
+    out = value.replace("\\", "\\\\")
+    for ch in "=;#":
+        out = out.replace(ch, "\\" + ch)
+    return out.replace("\n", "\\\n")
+
+
+def write_chapters(path: Path, chapters: list[Chapter]) -> None:
+    """An ffmetadata file whose [CHAPTER] blocks ffmpeg muxes with -map_metadata."""
+    lines = [";FFMETADATA1"]
+    for ch in chapters:
+        lines += [
+            "",
+            "[CHAPTER]",
+            "TIMEBASE=1/1000",
+            f"START={int(round(ch.start * 1000))}",
+            f"END={int(round(ch.end * 1000))}",
+            f"title={ffmetadata_escape(ch.title)}",
+        ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
