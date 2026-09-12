@@ -202,6 +202,10 @@ def doctor() -> list[tuple[str, bool, str]]:
         rows.append(("ffprobe", True, fp))
     except ToolError as exc:
         rows.append(("ffmpeg", False, str(exc)))
+    from .config import user_config_path
+
+    cfg_path = user_config_path()
+    rows.append(("config", True, str(cfg_path) if cfg_path.exists() else f"none (optional, at {cfg_path})"))
     cached = katex_cached()
     if cached:
         rows.append(("katex", True, str(cached)))

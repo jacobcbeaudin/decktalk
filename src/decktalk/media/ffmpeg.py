@@ -1,7 +1,7 @@
 """ffmpeg and ffprobe: resolution, invocation, probing, and the frame-analysis helpers.
 
-Binaries come from PATH when present; otherwise the static-ffmpeg package fetches
-platform builds on first use (`decktalk setup` does this ahead of time).
+Binaries come from the static-ffmpeg package, which `decktalk setup` fetches ahead of time,
+so every machine renders with the same build. An ffmpeg on PATH is the fallback, and
 DECKTALK_FFMPEG and DECKTALK_FFPROBE override both.
 """
 
@@ -28,18 +28,21 @@ def ffmpeg_paths() -> tuple[str, str]:
     env_ff, env_fp = os.environ.get("DECKTALK_FFMPEG"), os.environ.get("DECKTALK_FFPROBE")
     if env_ff and env_fp:
         return env_ff, env_fp
-    on_path = shutil.which("ffmpeg"), shutil.which("ffprobe")
-    if on_path[0] and on_path[1]:
-        return on_path[0], on_path[1]
+    # The bundled build comes first, so every machine renders with the same ffmpeg. A
+    # system ffmpeg on PATH is the fallback, and DECKTALK_FFMPEG/DECKTALK_FFPROBE override both.
     try:
         from static_ffmpeg import run as static_run
 
         ff, fp = static_run.get_or_fetch_platform_executables_else_raise()
         return str(ff), str(fp)
     except Exception as exc:  # pragma: no cover - network / platform dependent
+        on_path = shutil.which("ffmpeg"), shutil.which("ffprobe")
+        if on_path[0] and on_path[1]:
+            log.debug("static-ffmpeg unavailable (%s); using %s", exc, on_path[0])
+            return on_path[0], on_path[1]
         raise ToolError(
-            "ffmpeg/ffprobe not found on PATH and static-ffmpeg could not provide them "
-            f"({exc}). Run `decktalk setup` with network access, or install ffmpeg."
+            "ffmpeg/ffprobe not found: static-ffmpeg could not provide them "
+            f"({exc}) and none is on PATH. Run `decktalk setup` with network access, or install ffmpeg."
         ) from exc
 
 
@@ -82,6 +85,22 @@ def probe_duration(path: Path | str) -> float:
     if proc.returncode != 0 or not proc.stdout.strip():
         raise ToolError(f"ffprobe could not read {path}: {proc.stderr.strip()[-200:]}")
     return round(float(proc.stdout.strip()), 3)
+
+
+def decoded_duration(path: Path | str, *, sample_rate: int = 48000) -> float:
+    """The length of the audio as it decodes, in seconds.
+
+    A container's reported duration can include encoder padding that the decoder trims,
+    which for MP3 is 30 to 50 ms per file. Positions in a concatenated track add up from
+    decoded lengths, so anything that maps section times onto that track must use these.
+    """
+    out = subprocess.run(
+        [ffmpeg(), "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-"],
+        capture_output=True,
+    )
+    if out.returncode != 0:
+        raise ToolError(f"ffmpeg could not decode {path}: {out.stderr.decode(errors='replace').strip()[-200:]}")
+    return round(len(out.stdout) / 2 / sample_rate, 4)
 
 
 def has_audio(path: Path | str) -> bool:
@@ -142,6 +161,61 @@ def trailing_silence(path: Path, *, noise_db: int = -35, min_run: float = 0.05) 
     if len(ends) < len(starts) or float(ends[-1]) >= duration - 0.05:
         return round(duration - float(starts[-1]), 3)
     return 0.0
+
+
+def write_clicks(
+    path: Path, duration: float, times: list[float], *, sample_rate: int, bitrate: str, level_db: float = -24.0
+) -> None:
+    """A placeholder track for silent builds: silence with a soft click at each word start.
+
+    The clicks let `verify` measure the finished file's audio against its picture, and
+    they make a silent draft reviewable for pacing.
+    """
+    import array
+    import math
+    import wave
+
+    n = int(round(duration * sample_rate))
+    samples = array.array("h", bytes(2 * n))
+    amp = int(32767 * 10 ** (level_db / 20))
+    click = int(0.008 * sample_rate)
+    for t in times:
+        start = int(round(t * sample_rate))
+        for i in range(click):
+            j = start + i
+            if 0 <= j < n:
+                env = math.sin(math.pi * i / click)
+                samples[j] = int(amp * env * math.sin(2 * math.pi * 1000 * i / sample_rate))
+    wav = path.with_suffix(".clicks.wav")
+    with wave.open(str(wav), "wb") as fh:
+        fh.setnchannels(1)
+        fh.setsampwidth(2)
+        fh.setframerate(sample_rate)
+        fh.writeframes(samples.tobytes())
+    run("-i", str(wav), "-c:a", "libmp3lame", "-b:a", bitrate, str(path))
+    wav.unlink()
+
+
+def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int = 48000) -> list[int]:
+    """Mono 16-bit samples of the audio between start and start + seconds."""
+    out = subprocess.run(
+        [ffmpeg(), "-v", "error", "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", "-i", str(path), "-vn",
+         "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-"],
+        capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    import array
+
+    a = array.array("h")
+    a.frombytes(out[: len(out) - len(out) % 2])
+    return list(a)
+
+
+def pad_head(path: Path, seconds: float, *, bitrate: str) -> None:
+    """Prepend silence, so the first section does not start on its first syllable."""
+    tmp = path.with_suffix(".pad.mp3")
+    ms = int(round(seconds * 1000))
+    run("-i", str(path), "-af", f"adelay={ms}:all=1", "-c:a", "libmp3lame", "-b:a", bitrate, str(tmp))
+    tmp.replace(path)
 
 
 def pad_tail(path: Path, seconds: float, *, bitrate: str) -> None:
@@ -261,22 +335,28 @@ def changed_series(
 ) -> list[tuple[float, float]]:
     """Changed share against the frame at ref_t for every frame from start to end, as (time, percent) pairs.
 
-    One ffmpeg run decodes the span once and compares each frame with the reference, so
-    stepping through a reveal frame by frame costs one process rather than one per frame.
-    Times are the frames' own positions on the 1/fps grid, since the seek lands on the
-    first frame at or after `start`.
+    The reference frame is extracted once as an image and looped for the span, which every
+    ffmpeg build handles the same way, and one run then compares each frame of the span
+    with it. Times are the frames' own positions on the 1/fps grid.
     """
-    fc = (
-        f"[0:v]trim=duration=0.05,setpts=PTS-STARTPTS,scale={width}:{height},tpad=stop_mode=clone:stop=-1[a];"
-        f"[1:v]scale={width}:{height},setpts=PTS-STARTPTS[b];"
-        f"[a][b]blend=all_mode=difference:shortest=1,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,"
-        "signalstats,metadata=print"
-    )
-    span = f"{max(end - start, 0):.3f}"
-    err = stderr(
-        "-ss", f"{ref_t:.3f}", "-i", str(path), "-ss", f"{start:.3f}", "-t", span, "-i", str(path),
-        "-filter_complex", fc, "-f", "null", "-",
-    )  # fmt: skip
+    import tempfile
+
+    span = max(end - start, 0.0)
+    if span <= 0:
+        return []
+    with tempfile.TemporaryDirectory() as tmp:
+        ref = Path(tmp) / "ref.png"
+        run("-ss", f"{ref_t:.3f}", "-i", str(path), "-frames:v", "1", "-vf", f"scale={width}:{height}", str(ref))
+        fc = (
+            f"[1:v]scale={width}:{height},setpts=PTS-STARTPTS[b];"
+            f"[0:v][b]blend=all_mode=difference:shortest=1,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,"
+            "signalstats,metadata=print"
+        )
+        err = stderr(
+            "-loop", "1", "-framerate", str(fps), "-t", f"{span + 0.2:.3f}", "-i", str(ref),
+            "-ss", f"{start:.3f}", "-t", f"{span:.3f}", "-i", str(path),
+            "-filter_complex", fc, "-f", "null", "-",
+        )  # fmt: skip
     first = math.ceil(start * fps - 1e-6) / fps
     out: list[tuple[float, float]] = []
     pts: float | None = None
@@ -287,7 +367,7 @@ def changed_series(
             continue
         mm = re.search(r"lavfi\.signalstats\.YAVG=([0-9.]+)", line)
         if mm and pts is not None:
-            out.append((round(first + pts, 3), float(mm.group(1)) / 255 * 100))
+            out.append((round(first + pts, 3), round(float(mm.group(1)) / 255 * 100, 4)))
             pts = None
     return out
 

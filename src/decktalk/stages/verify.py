@@ -77,6 +77,7 @@ class CueCheck:
     ok: bool
     note: str = ""
     offset_ms: int | None = None  # Where the first changed frame sits relative to the cue.
+    av_ms: int | None = None  # Picture onset minus the placeholder click, in a silent build.
 
 
 @dataclass
@@ -108,19 +109,28 @@ def verify(project: Project, checks: list[str] | None = None) -> VerifyResult:
         result.starts.append(
             StartCheck(key=key, start=t, probe_at=probe, yavg=yavg, ymax=ymax, ok=ymax > cfg.visible_ymax)
         )
-    keys = list(starts)
-    clips = {f"{n:02d}" for n in project.clip_numbers}
-    for i, key in enumerate(keys):
-        if key in clips:
-            continue  # A clip carries its own audio, and its tail is the author's business.
-        cut = starts[keys[i + 1]] if i + 1 < len(keys) else total
-        level = ffmpeg.rms_db(final, max(0.0, cut - cfg.cut_window_seconds), cfg.cut_window_seconds)
-        result.cuts.append(CutCheck(key=key, cut_at=cut, rms_db=level, ok=level <= cfg.cut_max_db))
+    # The cut check listens to the narration track alone, so an underscore or an effect
+    # at a boundary does not count as speech. A clip carries its own audio and is exempt.
+    timeline = project.timeline()
+    narration = project.audio_dir / (timeline.narration if timeline else "narration.mp3")
+    if timeline and narration.exists():
+        for key, sec in timeline.sections.items():
+            if key not in starts:
+                continue
+            window = min(cfg.cut_window_seconds, sec.duration)
+            level = ffmpeg.rms_db(narration, max(0.0, sec.end - window), window)
+            cut = starts[key] + sec.duration
+            result.cuts.append(CutCheck(key=key, cut_at=round(cut, 3), rms_db=level, ok=level <= cfg.cut_max_db))
     if not checks:
         return result
     beats = project.beats()
     probe_w, probe_h = cfg.probe_width, cfg.probe_height
     fps = project.settings.video.fps
+    manifest = project.manifest()
+    clicks = bool(manifest and manifest.estimated)
+    from .beats import read_anchors
+
+    anchors = read_anchors(project.beats_path.with_name("beats.anchors.json")) if clicks else {}
     for check in checks:
         if ":" not in check:
             raise ConfigError(f"malformed check {check!r}; want SECTION:CUE, e.g. 3:3.1draw")
@@ -148,12 +158,19 @@ def verify(project: Project, checks: list[str] | None = None) -> VerifyResult:
             chg = ffmpeg.changed_pixels_percent(
                 final, before, after, level=cfg.diff_level, width=probe_w, height=probe_h
             )
-            ctl_a = before - span
-            ctl = (
-                ffmpeg.changed_pixels_percent(final, ctl_a, before, level=cfg.diff_level, width=probe_w, height=probe_h)
-                if ctl_a >= floor
-                else 0.0
-            )
+            # The control is the quieter of two equal spans before the reference. Motion that
+            # is always there shows in both, while an earlier reveal still settling shows in one.
+            controls = []
+            for n in (1, 2):
+                ctl_b = before - (n - 1) * span
+                ctl_a = ctl_b - span
+                if ctl_a >= floor:
+                    controls.append(
+                        ffmpeg.changed_pixels_percent(
+                            final, ctl_a, ctl_b, level=cfg.diff_level, width=probe_w, height=probe_h
+                        )
+                    )
+            ctl = min(controls) if controls else 0.0
             margin = chg - ctl
             if best is None or margin > best[0]:
                 best = (margin, chg, ctl, after)
@@ -174,7 +191,20 @@ def verify(project: Project, checks: list[str] | None = None) -> VerifyResult:
         limit_ms = cfg.max_offset_frames * 1000 / fps
         on_time = abs(offset_ms) <= limit_ms + 0.5
         note = "" if on_time else f"first change {offset_ms:+d} ms from the cue, limit {limit_ms:.0f} ms"
-        result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, on_time, note, offset_ms))
+        av_ms = None
+        if clicks:
+            # A silent build carries a click at every word start, so the finished file's audio
+            # can be measured against its picture: the click nearest the cue is the word.
+            word_t = anchors.get(key, {}).get(cue, cue_t)
+            click_ms = click_offset_ms(final, sec_start + word_t, cfg.click_search_seconds)
+            if click_ms is not None:
+                # The picture's offset is measured from the cue and the click's from the cued
+                # word, so the difference already allows for the cue's own offset.
+                av_ms = offset_ms - click_ms
+                if abs(av_ms) > limit_ms + 0.5:
+                    on_time = False
+                    note = f"picture {av_ms:+d} ms from the click, limit {limit_ms:.0f} ms"
+        result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, on_time, note, offset_ms, av_ms))
     return result
 
 
@@ -196,12 +226,40 @@ def first_change_offset(
         width=cfg.probe_width,
         height=cfg.probe_height,
     )
-    return onset_offset_ms(series, before, cue_at, cfg.onset_percent)
+    return onset_offset_ms(series, before, cue_at, cfg.onset_percent, tolerance=(cfg.max_offset_frames + 0.5) / fps)
 
 
-def onset_offset_ms(series: list[tuple[float, float]], before: float, cue_at: float, onset: float) -> int | None:
-    """The first (time, percent) entry past the reference that exceeds both onset and the pre-cue floor."""
-    floor = max((pct for t, pct in series if t <= cue_at), default=0.0)
+def click_offset_ms(final: Path, expected: float, search: float) -> int | None:
+    """Milliseconds from `expected` to the loudest sample within ±search seconds, or None when nothing is there."""
+    rate = 48000
+    start = max(0.0, expected - search)
+    samples = ffmpeg.pcm_span(final, start, 2 * search, sample_rate=rate)
+    if not samples:
+        return None
+    peak = max(range(len(samples)), key=lambda i: abs(samples[i]))
+    if abs(samples[peak]) < 400:  # about -38 dBFS: no click in the window
+        return None
+    return int(round((start + peak / rate - expected) * 1000))
+
+
+def onset_offset_ms(
+    series: list[tuple[float, float]], before: float, cue_at: float, onset: float, tolerance: float = 0.0
+) -> int | None:
+    """Where the reveal begins, in milliseconds from the cue, from the changed share per frame.
+
+    A reveal is a step: between two consecutive frames the changed share jumps by at least
+    `onset`. Motion that is always there, such as a camera push or a curve still drawing,
+    is a slope that grows a little every frame and never jumps. The first jump after the
+    reference frame is the onset, and it may sit before the cue. When nothing jumps, the
+    first frame whose share exceeds the pre-cue floor is used instead, which catches a
+    reveal that grows slowly, such as text typing in.
+    """
+    prev: float | None = None
+    for t, pct in series:
+        if prev is not None and t > before and pct - prev >= onset:
+            return int(round((t - cue_at) * 1000))
+        prev = pct
+    floor = max((pct for t, pct in series if t <= cue_at - tolerance), default=0.0)
     threshold = max(onset, floor)
     for t, pct in series:
         if t > before and pct > threshold:

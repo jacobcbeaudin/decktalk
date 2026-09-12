@@ -199,7 +199,7 @@ def test_parse_script_sections_and_directions():
     one = segs[1]
     assert one.title == "Open" and one.target_seconds == 20 and one.placeholders == ["NUMBER"]
     assert "**" not in one.text and "`" not in one.text and "http" not in one.text
-    assert one.text.count("<break") == 1  # a direction between paragraphs becomes one pause
+    assert "<break" not in one.text and one.text.count(" —") == 1  # a direction between paragraphs becomes one beat
     assert one.word_count == 15
 
 
@@ -306,7 +306,8 @@ def test_pause_direction_yields_a_timed_break():
     from decktalk.stages.narrate import BREAK_RE
 
     seg = parse_script("## 1. A\n\nThink about it.\n\n[pause 3]\n\nOnly two x is left. [beat] Done.")[0]
-    assert BREAK_RE.findall(seg.text) == ["3", "0.7"]
+    assert BREAK_RE.findall(seg.text) == ["3"]  # only a timed pause becomes a break tag
+    assert seg.text.count(" —") == 1  # the beat is a dash
     assert 'Think about it. <break time="3s" />' in seg.text
     assert seg.spoken == "Think about it. Only two x is left. Done."
     # The silent placeholder honours the declared pauses, so the pause lengthens the section.
@@ -569,7 +570,7 @@ def test_loudness_problems_report_peaks_and_missed_targets(tmp_path):
     assert len(over) == 2 and "true peak -1.0 dBTP" in over[0] and "9.2 LU" in over[1]
 
 
-def test_onset_offset_uses_the_low_threshold_and_the_pre_cue_floor():
+def test_onset_offset_finds_the_jump_and_falls_back_to_the_floor():
     from decktalk.stages.verify import onset_offset_ms
 
     # A fade of a small element, as measured on the scaffold: change begins 60 ms after the cue
@@ -577,9 +578,13 @@ def test_onset_offset_uses_the_low_threshold_and_the_pre_cue_floor():
     fade = [(9.2, 0.0), (9.24, 0.0), (9.28, 0.0), (9.32, 0.0), (9.36, 0.018), (9.4, 0.038), (9.52, 0.103)]
     assert onset_offset_ms(fade, before=9.2, cue_at=9.3, onset=0.01) == 60
     assert onset_offset_ms(fade, before=9.2, cue_at=9.3, onset=0.1) == 220
-    # A camera push raises the floor before the cue, and the onset must clear it.
-    push = [(9.2, 0.0), (9.24, 0.02), (9.28, 0.02), (9.32, 0.02), (9.36, 0.05)]
-    assert onset_offset_ms(push, before=9.2, cue_at=9.3, onset=0.01) == 60
+    # A camera push is a slope: the share grows a little every frame and never jumps, so
+    # the onset is the first real jump, even though the slope crosses the threshold earlier.
+    push = [(9.2, 0.0), (9.24, 0.006), (9.28, 0.012), (9.32, 0.018), (9.36, 0.06), (9.4, 0.07)]
+    assert onset_offset_ms(push, before=9.2, cue_at=9.3, onset=0.02) == 60
+    # A reveal that lands a frame early reports a negative offset rather than being hidden.
+    early = [(9.2, 0.0), (9.24, 0.0), (9.28, 0.3), (9.32, 0.3), (9.36, 0.3)]
+    assert onset_offset_ms(early, before=9.2, cue_at=9.3, onset=0.02) == -20
     assert onset_offset_ms([(9.2, 0.0), (9.24, 0.0)], before=9.2, cue_at=9.3, onset=0.01) is None
     assert Settings().verify.max_offset_frames == 2 and Settings().verify.onset_percent == 0.002
 
@@ -603,3 +608,22 @@ def test_display_words_restores_punctuation_and_case():
     assert out[0].start == 0 and out[-1].end == 5
     # An alignment that cannot be made returns the words untouched.
     assert [w.word for w in display_words(words, "completely different text here")] == [w.word for w in words]
+
+
+# ---- per-machine settings file ------------------------------------------------------------------
+
+
+def test_user_settings_sit_between_defaults_and_the_project(tmp_path, monkeypatch):
+    from decktalk.config import load_settings, read_user_toml, user_config_path
+
+    user_file = tmp_path / "decktalk.toml"
+    user_file.write_text('[video]\npreset = "veryfast"\ncrf = 22\n[record]\nsettle_seconds = 0.9\n')
+    monkeypatch.setenv("DECKTALK_CONFIG", str(user_file))
+    assert user_config_path() == user_file
+    s = load_settings(toml={"video": {"crf": 20}}, environ={"DECKTALK_RECORD_SETTLE_SECONDS": "1.2"})
+    assert s.video.preset == "veryfast"  # from the user file
+    assert s.video.crf == 20  # the project wins over the user file
+    assert s.record.settle_seconds == 1.2  # the environment wins over both
+    user_file.write_text("[project]\nname = 'x'\n")
+    with pytest.raises(ConfigError):
+        read_user_toml(user_file)

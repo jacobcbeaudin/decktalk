@@ -44,7 +44,7 @@ scene = 2
 
 [[section]]
 number = 3
-title = "The derivative of x squared"
+title = "Gradient descent"
 page = "deck/index.html"
 scene = 3
 

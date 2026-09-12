@@ -5,66 +5,80 @@ icon: "pen-line"
 ---
 
 A DeckTalk project is four files that refer to each other by number and by id. This
-page writes one section, the derivation scene from the scaffold, and shows every
+page writes one section, the gradient descent scene from the scaffold, and shows every
 reference as it is made. Start from `decktalk init my-lesson` so that the runtime, the
 stylesheet, and KaTeX are in place. This is the finished section in all four files.
 
 <CodeGroup>
 
 ```md script.md
-## 3. The derivative of x squared — 0:40 to 1:10
+## 3. Gradient descent — 0:40 to 1:20
 
-[Deck scene 3. The curve draws, then the derivation appears one line at a time.]
+[Deck scene 3. A loss bowl draws, a point steps down it, and the update rule appears.]
 
-Now a short lesson. Here is the curve y equals x squared. [beat] Where does its slope come
-from? Start with the definition of the derivative, the limit of a difference quotient.
-[beat] Expand the square, and the x squared terms cancel. [beat] Every term that is left
-still has an h in it. Before I finish the line, pause and think: as h goes to zero, what
-is left?
+Now a short lesson. Here is gradient descent, at a high level. [beat] Start with a loss
+surface. Think of it as a bowl. [beat] Pick a point anywhere on it. [beat] The gradient
+says which way is uphill, so take a step the other way. [beat] The learning rate sets
+the size of that step. [beat] Step again. [beat] And again, and each step is smaller as
+the slope flattens out.
+
+[beat] Pause and think: what happens if the learning rate is too large?
 
 [pause 3]
 
-Only two x is left. The derivative of x squared is two x.
+You overshoot, and bounce from side to side. [beat] Small enough, and you settle at the
+bottom.
 ```
 
 ```toml decktalk.toml
 [[section]]
 number = 3
-title = "The derivative of x squared"
+title = "Gradient descent"
 page = "deck/index.html"
 scene = 3
 ```
 
 ```json cues.json
 "3": {
+  "min_seconds": 30,
   "cues": [
     { "cue": "3.1", "on": "$start" },
-    { "cue": "3.1draw", "on": "Here is the curve" },
-    { "cue": "3.1a", "on": "definition" },
-    { "cue": "3.1b", "on": "Expand" },
-    { "cue": "3.1think", "on": "pause and think" },
-    { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+    { "cue": "3.1bowl", "on": "loss surface" },
+    { "cue": "3.1p0", "on": "Pick a point" },
+    { "cue": "3.1p1", "on": "take a step" },
+    { "cue": "3.1eq", "on": "learning rate" },
+    { "cue": "3.1p2", "on": "Step again" },
+    { "cue": "3.1p3", "on": "And again" },
+    { "cue": "3.1think", "on": "Pause and think" },
+    { "cue": "3.1over", "on": "overshoot" },
+    { "cue": "3.1min", "on": "settle", "offset": 0.2 }
   ]
 }
 ```
 
 ```html deck/index.html
-DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
-  { id: "3.1", hold: 24, cues: { "3.1draw": 0.5, "3.1a": 5, "3.1b": 9, "3.1think": 13, "3.1c": 18 }, render: () => `
+DeckTalk.scene(3, { name: "Gradient descent", steps: [
+  { id: "3.1", hold: 26, cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1eq": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1min": 21 }, render: () => `
     <div class="slide">
-      <div class="cols">
-        <svg viewBox="0 0 700 520" width="700" height="520" style="overflow:visible;flex:none">
-          <line class="ax" x1="60" y1="480" x2="680" y2="480"/>
-          <line class="ax" x1="60" y1="20" x2="60" y2="480"/>
-          <path class="curve" pathLength="1" data-cue="3.1draw" data-fx="draw" data-dur="2"
-                d="M60,480 Q370,480 680,40"/>
-          <text class="axlabel" x="400" y="140" data-cue="3.1draw" data-fx="fade">y = x²</text>
+      <div class="row wide">
+        <svg viewBox="0 0 1000 520" width="1000" height="520" style="overflow:visible">
+          <line class="ax" x1="60" y1="470" x2="960" y2="470"/>
+          <line class="ax" x1="60" y1="40" x2="60" y2="470"/>
+          <path class="curve" pathLength="1" data-cue="3.1bowl" data-fx="draw" data-dur="1.6"
+                d="M80,70 Q510,880 940,70"/>
+          <path class="zig" pathLength="1" data-cue="3.1over" data-fx="draw" data-dur="1.4"
+                d="M190,200 L830,200 L230,320 L790,320 L300,410"/>
+          <g class="step" data-cue="3.1p0" data-fx="pop"><circle cx="190" cy="200" r="26"/></g>
+          <g class="step" data-cue="3.1p1" data-fx="pop"><line x1="190" y1="200" x2="330" y2="330"/><circle cx="330" cy="330" r="26"/></g>
+          <g class="step" data-cue="3.1p2" data-fx="pop"><line x1="330" y1="330" x2="420" y2="405"/><circle cx="420" cy="405" r="26"/></g>
+          <g class="step" data-cue="3.1p3" data-fx="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
+          <g class="step min" data-cue="3.1min" data-fx="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
         </svg>
-        <div>
-          <p class="math" data-cue="3.1a" data-tex="\\frac{d}{dx}\\,x^2 = \\lim_{h \\to 0} \\frac{(x+h)^2 - x^2}{h}" data-display>d/dx x^2 = lim (x+h)^2 - x^2 / h</p>
-          <p class="math" data-cue="3.1b" data-tex="= \\lim_{h \\to 0} \\frac{2xh + h^2}{h} = \\lim_{h \\to 0} (2x + h)" data-display>= lim (2xh + h^2) / h = lim (2x + h)</p>
-          <p class="caption" data-cue="3.1think">Pause and think: as h goes to zero, what is left?</p>
-          <p class="math answer" data-cue="3.1c" data-fx="pop" data-tex="\\frac{d}{dx}\\,x^2 = 2x" data-display>d/dx x^2 = 2x</p>
+        <div class="col">
+          <h2 class="h2">Gradient descent</h2>
+          <p class="caption">Follow the slope downhill, one step at a time.</p>
+          <div class="math" data-cue="3.1eq" data-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
+          <p class="caption" data-cue="3.1think" data-fx="fade">Pause and think: what if the learning rate is too large?</p>
         </div>
       </div>
     </div>` },
@@ -75,12 +89,13 @@ DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
 
 <Steps>
   <Step title="Write the section in script.md">
-    Each `## N. Title` heading starts a section. The optional `— 0:40 to 1:10` on the
+    Each `## N. Title` heading starts a section. The optional `— 0:40 to 1:20` on the
     heading is a time budget, which the narrate table compares with the real length. Text
-    in square brackets is a stage direction. It is not spoken, and it leaves a short pause
-    where it sat. `[beat]` is that short pause on its own, and `[pause 3]` is three seconds
-    of silence. Write numbers and symbols as you want them said, because cue phrases match
-    spoken words. [script.md](/reference/script-md) lists every rule.
+    in square brackets is a stage direction, and it is not spoken. A plain direction and
+    `[beat]` are beats, which the voice reads as a dash and a short pause, and `[pause 3]`
+    is three seconds of silence requested from the voice. Write numbers and symbols as you
+    want them said, because cue phrases match spoken words. The script says "learning
+    rate" and the slide shows η. [script.md](/reference/script-md) lists every rule.
   </Step>
 
   <Step title="Declare the section in decktalk.toml">
@@ -94,8 +109,12 @@ DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
     A cue pairs a cue id with the spoken phrase it lands on. Matching takes the first
     occurrence and ignores case and punctuation. The values `$start` and `$end` are the
     edges of the section's speech, `offset` shifts the moment in seconds, and `occurrence`
-    picks a later repeat of the same words. [Cues](/concepts/cues) has the matching rules
-    and the advice on choosing a phrase.
+    picks a later repeat of the same words. Here the bowl draws on `loss surface`, each
+    step of the point lands on the verb that takes it, the update rule appears on
+    `learning rate`, the overshoot path draws on `overshoot`, and the settled point trails
+    `settle` by a fifth of a second. The `min_seconds` key warns when the speech is
+    shorter than the thirty seconds the animation needs. [Cues](/concepts/cues) has the
+    matching rules and the advice on choosing a phrase.
 
     Run `decktalk beats` at any time to see where each phrase resolved. A phrase that is
     not among the section's words is reported as `phrase not found`, and `build` stops
@@ -103,7 +122,7 @@ DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
 
     ```text
     sec  speech   need  cues
-     03    37.1      -  3.1@0.0,3.1draw@1.85,3.1a@9.74,3.1b@14.38,3.1think@25.97,3.1c@31.27
+     03    46.2   30.0  3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1eq@21.63,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43
     ```
   </Step>
 
@@ -111,12 +130,16 @@ DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
     A page registers one scene per section. A scene is a list of steps, and each step
     renders one slide. Every cue here belongs to step `3.1`, because the step's `cues`
     object names it and because `3.1` is the longest prefix of each id. The elements
-    marked `data-cue` stay hidden until their cue fires. [The page contract](/concepts/page-contract)
-    explains ownership, and [the runtime reference](/reference/runtime) lists every
-    attribute.
+    marked `data-cue` stay hidden until their cue fires. The bowl is an SVG path with
+    `pathLength="1"` and `data-fx="draw"`, so its stroke draws itself over 1.6 seconds.
+    Each step of the point pops on its cue, and the steps shrink as the slope flattens.
+    The update rule is a `data-tex` element that KaTeX typesets, with the plain text as
+    its fallback. The overshoot path draws on `overshoot`, and the settled point pops
+    last. [The page contract](/concepts/page-contract) explains ownership, and
+    [the runtime reference](/reference/runtime) lists every attribute.
 
     Inside the backticks of a `render` template, write every backslash twice. The
-    `data-tex` value `\\frac{d}{dx}` reaches KaTeX as `\frac{d}{dx}`.
+    `data-tex` value `\\theta_{t+1}` reaches KaTeX as `\theta_{t+1}`.
   </Step>
 
   <Step title="Look before you build">
@@ -126,7 +149,7 @@ DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
 
     ```console
     decktalk shots
-    decktalk shots --section 3 --at 10
+    decktalk shots --section 3 --at 22
     ```
   </Step>
 
@@ -134,19 +157,27 @@ DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
     ```console
     decktalk build --silent          # placeholder voice, no key
     decktalk build                   # your voice
-    decktalk verify 3:3.1draw 3:3.1c
+    decktalk verify 3:3.1eq 3:3.1p1 5:5.1a
     ```
 
     The verify table shows, for each cue, the second at which it fired in the final mp4,
     the share of pixels that changed across it, the same measure over a quiet control
-    span just before it, and how far from the cue the first changed frame sits.
+    span just before it, and how far from the cue the first changed frame sits. After a
+    silent build it also shows `a/v`, the picture's first change measured against the
+    placeholder click at the cued word, which proves that the finished file's audio and
+    picture agree.
 
     ```text
-    check                 cue       at   chg %   ctl %   offset  result
-    3:3.1draw            1.85    33.93    0.33    0.00    +30ms  changed
-    3:3.1c              31.27    63.35    0.32    0.00    +10ms  changed
+    check                 cue       at   chg %   ctl %   offset     a/v  result
+    3:3.1eq             21.63    57.43    0.27    0.00    -30ms   -35ms  changed
+    3:3.1p1             18.18    53.98    0.15    0.00    -60ms   -74ms  changed
+    5:5.1a               2.55   132.43    0.41    0.00    -30ms   -63ms  changed
     ```
 
+    Every row is within the two-frame limit, and a negative number means the picture
+    moved a fraction of a frame before the word, which is what the eye wants. A reveal
+    further from its word than that limit is reported as `OFF CUE`, and the build's exit
+    code says so.
     [How it works](/concepts/how-it-works#what-verify-measures) explains the columns and
     the limit that turns `changed` into `OFF CUE`.
   </Step>
@@ -164,6 +195,7 @@ ignored. This table says which value matters where.
 | The `cues` object on a step | The seconds after the mount at which each handler cue fires. | Ownership only. The times come from `build/audio/beats.json`. |
 | `data-at` on an element | The seconds after the mount at which the element reveals. | Used only when the element's cue is not in `?beats=`, or when it has no `data-cue`. |
 | `data-cue` on an element | The element reveals at its `data-at` time, which defaults to zero. | The element reveals when the cue fires. |
+| `data-sync` on an element | The element reveals whole. | The element reveals one word at a time from the `?words=` list the recorder passes. |
 
 ## The naming chain
 
@@ -171,11 +203,11 @@ ignored. This table says which value matters where.
 |---|---|---|
 | `script.md` | `## 3.` | the section number |
 | `decktalk.toml` | `number = 3`, `scene = 3` | the same section, and the scene the page plays for it |
-| `cues.json` | `"3"`, `"cue": "3.1c"` | the section, and a cue id the page understands |
-| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1c"` | the scene, its step, and the element that reveals on the cue |
+| `cues.json` | `"3"`, `"cue": "3.1eq"` | the section, and a cue id the page understands |
+| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1eq"` | the scene, its step, and the element that reveals on the cue |
 
 ## Next
 
 Add a second section by repeating the steps with a new number.
-[Slide recipes](/guides/slide-recipes) has five slides to copy, and
+[Slide recipes](/guides/slide-recipes) has six slides to copy, and
 [Add a clip section](/guides/clip-section) opens the video with footage of your own.

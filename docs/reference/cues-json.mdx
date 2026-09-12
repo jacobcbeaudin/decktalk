@@ -20,10 +20,11 @@ file, shortened.
       ]
     },
     "3": {
-      "min_seconds": 25,
+      "min_seconds": 30,
       "cues": [
         { "cue": "3.1", "on": "$start" },
-        { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+        { "cue": "3.1eq", "on": "learning rate" },
+        { "cue": "3.1min", "on": "settle", "offset": 0.2 }
       ]
     }
   }
@@ -61,8 +62,8 @@ section in the form the page receives as `?beats=`.
 
 ```json build/audio/beats.json
 {
-  "01": "1.1a@0.0,1.1b@2.43,1.1c@6.77",
-  "03": "3.1@0.0,3.1draw@1.85,3.1a@9.74,3.1b@14.38,3.1think@25.97,3.1c@31.27"
+  "01": "1.1a@0.0,1.1b@1.13,1.1c@6.77",
+  "03": "3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1eq@21.63,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43"
 }
 ```
 

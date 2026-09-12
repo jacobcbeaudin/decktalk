@@ -57,18 +57,26 @@ icon: "play"
     decktalk build --silent          # every stage with placeholder narration, no key
     ```
 
-    The `--silent` flag runs every stage with a silent placeholder track and estimated
-    word times. It needs no account and costs nothing, so use it to prove that a project
-    builds before you spend credits. Each stage prints a table, and the build ends with
-    the path of the video.
+    The `--silent` flag runs every stage with a placeholder track, a soft click at every
+    estimated word start, and estimated word times. It needs no account and costs
+    nothing, so use it to prove that a project builds before you spend credits. Each
+    stage prints a table, and the build ends with the path of the video.
 
     ```text
     sec    start    probe   YAVG   YMAX  result
-     01     0.00     0.20     29    206  ok
-     02    10.16    10.36     28    166  ok
-     03    32.08    32.28     28    155  ok
-     04    69.56    69.76     28    162  ok
-    total 113.92s; 0 black section start(s)
+     01     0.00     0.20     29    226  ok
+     02    10.48    10.68     29    225  ok
+     03    32.80    33.00     29    229  ok
+     04    79.68    79.88     28    158  ok
+     05   126.88   127.08     28    159  ok
+    total 149.00s; 0 black section start(s)
+
+    sec   cut at  before cut  result
+     01    10.50   -128.4 dB  quiet
+     02    32.78   -123.3 dB  quiet
+     03    79.70   -125.4 dB  quiet
+     04   126.88   -128.4 dB  quiet
+     05   146.98   -120.0 dB  quiet
 
     built build/out/my-lesson.mp4
     ```
@@ -91,11 +99,13 @@ icon: "play"
       </Tab>
     </Tabs>
 
-    The scaffold is a short lesson in five sections: a title, three labeled lines, a
-    derivation that reveals line by line, a prompt before-and-after, and a closing card. All
-    five are page sections, which DeckTalk records from `deck/index.html` and cuts to the narration. A
-    commented-out section 0 shows how to open with a clip of your own, and
-    [Add a clip section](/guides/clip-section) walks through it.
+    The scaffold is a short lesson in five sections: a title whose subtitle follows the
+    voice word by word, three labeled lines, a gradient descent lesson in which a loss bowl
+    draws and a point steps down it, a query-review prompt before and after, and a closing
+    recap with an end card. All five are page sections, which DeckTalk records from
+    `deck/index.html` and cuts to the narration. A commented-out section 0 shows how to
+    open with a clip of your own, and [Add a clip section](/guides/clip-section) walks
+    through it.
   </Step>
 
   <Step title="Add your voice">
@@ -132,8 +142,8 @@ icon: "play"
 
     ```console
     decktalk shots                          # one PNG per step, under build/shots/
-    decktalk shots --section 3 --at 4.5     # a frame from section 3 as it plays with its real cues
-    decktalk verify 3:3.1c                  # measures when the cue changed the picture in the mp4
+    decktalk shots --section 3 --at 22      # a frame from section 3 as it plays with its real cues
+    decktalk verify 3:3.1eq                 # measures when the cue changed the picture in the mp4
     decktalk status                         # the timeline and what is built
     ```
   </Step>
@@ -152,7 +162,7 @@ icon: "play"
 | `build/` | Everything DeckTalk generates, including the video, captions, and chapters. Git ignores it. [Artifacts](/reference/artifacts). |
 
 <Tip>Write numbers and symbols in the script the way you want them spoken. A cue matches
-the spoken words "two x", while the slide shows the symbols.</Tip>
+the spoken words "learning rate", while the slide shows η.</Tip>
 
 ## Next
 

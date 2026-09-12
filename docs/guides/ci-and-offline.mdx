@@ -13,14 +13,19 @@ can be built and verified on every push. This is how DeckTalk's own repository d
 decktalk setup                            # Chromium, ffmpeg, and KaTeX, into per-user caches
 decktalk doctor                           # exits 1 when a tool is missing
 DECKTALK_VIDEO_PRESET=veryfast decktalk build --silent
-decktalk verify 3:3.1draw 3:3.1c          # exits 1 when a cue did not land
+decktalk verify 3:3.1eq 3:3.1p1 5:5.1a     # exits 1 when a cue did not land
 decktalk shots                            # one PNG per step, worth uploading as an artifact
 ```
 
 On Linux, `setup` passes `--with-deps` to Playwright so that Chromium's system libraries
 are installed too. The verify command with a list of `SECTION:CUE` checks is the test:
-`build` verifies section starts only, and the cue checks measure each reveal in the
-finished mp4.
+`build` verifies section starts and cuts, and the cue checks measure each reveal in the
+finished mp4. A silent build's placeholder track carries a click at every word start, so
+the cue table also reports an `a/v` column, the picture's first change measured against
+the click nearest the cue, and the job fails when the finished file's audio and picture
+disagree by more than `max_offset_frames`. That makes a silent build a test of the whole
+chain, not only of the cues.
+[How it works](/concepts/how-it-works#what-verify-measures) explains the columns.
 
 ## A GitHub Actions job
 
@@ -44,7 +49,7 @@ jobs:
       - run: decktalk build --silent
         env:
           DECKTALK_VIDEO_PRESET: veryfast
-      - run: decktalk verify 3:3.1draw 3:3.1c
+      - run: decktalk verify 3:3.1eq 3:3.1p1 5:5.1a
       - uses: actions/upload-artifact@v7
         with:
           name: video
@@ -63,8 +68,8 @@ job's secrets and export them. DeckTalk never prints either.
 ## Two flags that do not mix
 
 The `--strict` flag makes a missing clip, a missing recording, or a loudness miss an
-error. A silent build has nothing to measure, so its loudness report is meaningless and
-`--strict` would fail on it. Use `--strict` on voiced builds only.
+error. A silent build's mix is clicks and silence, so its loudness report is meaningless
+and `--strict` would fail on it. Use `--strict` on voiced builds only.
 
 ## The project directory
 

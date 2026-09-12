@@ -11,14 +11,14 @@ the recorder hands those seconds to the page as `?beats=`.
 
 ```json cues.json
 { "sections": { "3": { "cues": [
-  { "cue": "3.1a", "on": "definition" },
-  { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+  { "cue": "3.1eq", "on": "learning rate" },
+  { "cue": "3.1min", "on": "settle", "offset": 0.2 }
 ] } } }
 ```
 
 ```text
 sec  speech   need  cues
- 03    37.1      -  3.1@0.0,3.1draw@1.85,3.1a@9.74,3.1b@14.38,3.1think@25.97,3.1c@31.27
+ 03    46.2   30.0  3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1eq@21.63,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43
 ```
 
 [cues.json](/reference/cues-json) lists every key. This page is about how a phrase is
@@ -34,7 +34,10 @@ found and how to choose one.
 The words come from the voice, so a phrase must be written as it is spoken. The script
 says "two x" and the slide shows `2x`, and the cue says "two x". A number written as
 digits comes back in the form the voice chose to say, so digits in a cue phrase are
-fragile.
+fragile. Directions never reach the word list. A `[beat]` becomes a dash that the voice
+reads as a pause and a `[pause N]` becomes a break tag, and neither is a word, so a
+phrase that spans a direction still matches.
+[script.md](/reference/script-md#directions-and-placeholders) has the direction rules.
 
 A cue id may not contain `@` or a comma, because the resolved cues travel to the page as
 `id@seconds` pairs separated by commas.
@@ -57,8 +60,8 @@ The `beats` stage prints `phrase not found` for a cue it cannot match and exits 
 
 ```text
 sec  speech   need  cues
- 03    37.1      -  3.1@0.0,3.1draw@1.85,3.1a@9.74,3.1think@25.97,3.1c@31.27
-                    ! 3.1b: phrase not found: 'expand the 2'
+ 03    46.2   30.0  3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43
+                    ! 3.1eq: phrase not found: 'learning rate η'
 ```
 
 The `build` command stops at that point, because a step whose only cues are unresolved
@@ -73,7 +76,7 @@ resolve, but their times are placeholders and the table says so.
 These are the rules of thumb behind the scaffold's cues, and
 [Writing for the ear](/guides/writing-for-the-ear) explains each one.
 
-- Begin the phrase with the word that names the visual, because the cue lands on the first word of the phrase. A noun such as `definition` or a verb with a referent such as `Expand` works, and a connective such as "and then" does not.
+- Begin the phrase with the word that names the visual, because the cue lands on the first word of the phrase. A noun such as `loss surface` or a verb with a referent such as `Pick a point` works, and a connective such as "and then" does not.
 - Use two or three words when one word repeats in the section, or set `occurrence`.
 - Trail the word with a small positive `offset`, one or two tenths of a second, so that the word finishes before the visual moves. Lead the word with a negative offset only when the audience must read along.
 - Put a `[beat]` or a `[pause N]` before a reveal that should read as an event.

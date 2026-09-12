@@ -28,34 +28,38 @@ one take.
 
 And when a line comes out wrong, change a sentence and only that section re-renders.
 
-## 3. The derivative of x squared — 0:40 to 1:10
+## 3. Gradient descent — 0:40 to 1:20
 
-[Deck scene 3. The curve draws, then the derivation appears one line at a time.]
+[Deck scene 3. A loss bowl draws, a point steps down it, and the update rule appears.]
 
-Now a short lesson. Here is the curve y equals x squared. [beat] Where does its slope come
-from? Start with the definition of the derivative, the limit of a difference quotient.
-[beat] Expand the square, and the x squared terms cancel. [beat] Every term that is left
-still has an h in it. Before I finish the line, pause and think: as h goes to zero, what
-is left?
+Now a short lesson. Here is gradient descent, at a high level. [beat] Start with a loss
+surface. Think of it as a bowl. [beat] Pick a point anywhere on it. [beat] The gradient
+says which way is uphill, so take a step the other way. [beat] The learning rate sets
+the size of that step. [beat] Step again. [beat] And again, and each step is smaller as
+the slope flattens out.
+
+[beat] Pause and think: what happens if the learning rate is too large?
 
 [pause 3]
 
-Only two x is left. The derivative of x squared is two x.
+You overshoot, and bounce from side to side. [beat] Small enough, and you settle at the
+bottom.
 
 ## 4. Before and after
 
-[Deck scene 4. A vague prompt types in, and a flat reply fades in line by line.]
+[Deck scene 4. A vague prompt appears word by word, and a flat reply fades in.]
 
-The same idea works for teaching how to prompt. Watch a vague prompt first. [beat] Write
-about photosynthesis. [beat] The reply is true, and it is flat. [beat] One line says what
-it is. [beat] Another line says where it happens. [beat] And a third says what comes out.
-Nothing here is something a student could hold on to.
+The same idea works for teaching how to prompt. Here is a vague prompt. [beat] Is this
+query okay? [beat] The reply is polite, and it is useless. It tells you what the query
+does, which you already knew.
 
 [Step 4.2. A better prompt, and a better reply.]
 
-Now ask for what you actually want. [beat] Explain it to a ninth grader, in three
-sentences, and end with one thing they could test at home. [beat] Same model, better
-prompt, and a reply a class could use.
+Now give the model a role, the stakes, and a shape for its answer. [beat] You are
+reviewing a query that runs nightly on a two billion row orders table. List correctness
+and performance problems as a numbered list, most severe first, with a one-line fix for
+each. [beat] Same model, and now it finds the unindexed join, [beat] the filter that
+defeats the index, [beat] and the columns nobody reads.
 
 ## 5. Close
 

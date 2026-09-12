@@ -35,6 +35,9 @@
  *   data-dur="s"             animation length
  *   data-count               count the last number in the text up from 0 on reveal
  *   data-type="ms"           type the text at ms per character on reveal
+ *   data-sync                reveal the element word by word as each word is spoken. The text
+ *                            must match a run of the section's spoken words, which the recorder
+ *                            passes as &words=word@s,word@s,… (punctuation and case are ignored)
  *   data-tex="…"             typeset with KaTeX if window.katex is present
  *
  * Cue ownership: a cue belongs to the step with the same id, or whose `cues` list names
@@ -59,20 +62,22 @@
   .dt-slide.dt-enter{animation:dt-fadein var(--dt-xfade,.35s) ease both}
   .dt-slide.dt-enter.dt-first{animation:dt-slidein .3s ease both}
   .dt-slide.dt-leave{animation:dt-fadeout var(--dt-xfade,.35s) ease both;pointer-events:none}
+  .dt-w{opacity:0;transition:opacity .12s ease}
+  .dt-w.dt-on{opacity:1}
   @keyframes dt-slidein{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
   @keyframes dt-fadein{from{opacity:0}to{opacity:1}}
   @keyframes dt-fadeout{from{opacity:1}to{opacity:0}}
   .dt-reveal{opacity:0}
   .dt-reveal[data-fx=dim]{opacity:1}
-  .dt-reveal.dt-on{opacity:1;animation:dt-rise .7s cubic-bezier(.2,.7,.2,1) both}
-  @keyframes dt-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .dt-reveal.dt-on{opacity:1;animation:dt-rise .3s cubic-bezier(.2,.7,.2,1) both}
+  @keyframes dt-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   .dt-reveal.dt-on[data-fx=fade]{animation-name:dt-fadein}
   .dt-reveal.dt-on[data-fx=draw]{animation-name:dt-draw;animation-timing-function:linear;stroke-dasharray:1;stroke-dashoffset:1}
   @keyframes dt-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
-  .dt-reveal.dt-on[data-fx=drop]{animation-name:dt-drop;animation-duration:.5s}
+  .dt-reveal.dt-on[data-fx=drop]{animation-name:dt-drop;animation-duration:.35s}
   @keyframes dt-drop{from{opacity:0;transform:translateY(-24px)}to{opacity:1;transform:none}}
-  .dt-reveal.dt-on[data-fx=pop]{animation-name:dt-pop;animation-duration:.9s}
-  @keyframes dt-pop{0%{opacity:0;transform:scale(.4)}60%{opacity:1;transform:scale(1.12)}100%{opacity:1;transform:scale(1)}}
+  .dt-reveal.dt-on[data-fx=pop]{animation-name:dt-pop;animation-duration:.5s}
+  @keyframes dt-pop{0%{opacity:0;transform:scale(.6)}45%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}
   .dt-reveal.dt-on[data-fx=dim]{animation-name:dt-dim;animation-duration:1.2s}
   @keyframes dt-dim{from{opacity:1}to{opacity:.16}}
   .dt-reveal.dt-on[data-fx=none]{animation:none}
@@ -208,6 +213,48 @@
     el.classList.add("dt-on");
     if (el.hasAttribute("data-count")) countUp(el);
     if (el.hasAttribute("data-type")) typewriter(el);
+    if (el.hasAttribute("data-sync")) syncWords(el);
+  }
+  const wordKey = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, "");
+  function parseWords(raw) {
+    return raw.split(",").map((item) => { const at = item.lastIndexOf("@"); return { k: wordKey(item.slice(0, at)), t: parseFloat(item.slice(at + 1)) }; }).filter((w) => w.k && !isNaN(w.t));
+  }
+  // Reveal one word at a time, each at the second the voice reaches it. The element's text
+  // is matched against the section's spoken words, preferring the run nearest the cue.
+  function syncWords(el) {
+    const full = el.dataset.ccFull ?? el.textContent;
+    const words = state.words;
+    if (frozen || !words || !words.length) return;
+    const tokens = full.split(/(\s+)/);
+    const keys = tokens.filter((t) => t.trim()).map(wordKey).filter(Boolean);
+    if (!keys.length) return;
+    const t0 = now();
+    let start = -1;
+    for (let i = 0; i + keys.length <= words.length; i++) {
+      let ok = true;
+      for (let j = 0; j < keys.length; j++) if (words[i + j].k !== keys[j]) { ok = false; break; }
+      if (!ok) continue;
+      start = i;
+      if (words[i].t >= t0 - 1.5) break;
+    }
+    if (start < 0) { warn(`data-sync text not found in the spoken words: "${full.slice(0, 40)}"`); return; }
+    el.textContent = "";
+    let wi = 0;
+    tokens.forEach((t) => {
+      if (!t.trim()) { el.appendChild(document.createTextNode(t)); return; }
+      const span = document.createElement("span");
+      span.className = "dt-w";
+      span.textContent = t;
+      span.dataset.at = wordKey(t) ? words[start + wi++].t : -Infinity;
+      el.appendChild(span);
+    });
+    const tick = () => {
+      const n = now();
+      let pending = false;
+      el.querySelectorAll(".dt-w:not(.dt-on)").forEach((sp) => { if (n >= parseFloat(sp.dataset.at) - 0.02) sp.classList.add("dt-on"); else pending = true; });
+      if (pending) requestAnimationFrame(tick);
+    };
+    tick();
   }
   function countUp(el) {
     const full = el.dataset.ccFull ?? el.textContent;
@@ -223,6 +270,9 @@
     const full = el.dataset.ccFull ?? el.textContent;
     if (frozen) { el.textContent = full; return; }
     const ms = (parseFloat(el.dataset.type) || 40) / (state.mode === "autoplay" ? SPEED : 1);
+    // The box keeps the size of its finished text, so nothing around it shifts while typing.
+    el.style.minWidth = el.offsetWidth + "px";
+    el.style.minHeight = el.offsetHeight + "px";
     el.textContent = "";
     let i = 0;
     const id = setInterval(() => { el.textContent = full.slice(0, ++i); if (i >= full.length) clearInterval(id); }, ms);
@@ -276,7 +326,7 @@
     state.lastMountAt = mountT;
     slide.querySelectorAll("[data-cue],[data-at]").forEach((el) => {
       el.classList.add("dt-reveal");
-      if (el.hasAttribute("data-count") || el.hasAttribute("data-type")) el.dataset.ccFull = el.textContent;
+      if (el.hasAttribute("data-count") || el.hasAttribute("data-type") || el.hasAttribute("data-sync")) el.dataset.ccFull = el.textContent;
       if (el.dataset.dur) el.style.animationDuration = `${parseFloat(el.dataset.dur) / (state.mode === "autoplay" ? SPEED : 1)}s`;
       if (frozen) { reveal(el); return; }
       const cueId = el.dataset.cue;
@@ -381,6 +431,8 @@
     ensureStage();
     const beatsRaw = params.get("beats");
     const cues = beatsRaw ? parseBeats(beatsRaw) : [];
+    const wordsRaw = params.get("words");
+    state.words = wordsRaw ? parseWords(wordsRaw) : null;
     if (frozen) {
       freeze(params.get("step"));
     } else if (params.has("scene") || cues.length) {

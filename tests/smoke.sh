@@ -32,8 +32,8 @@ uv run decktalk -p "$T" shots --section 2 --at 1 --at 6
 uv run decktalk -p "$T" verify \
   1:1.1b 1:1.1c \
   2:2.1a 2:2.1b 2:2.1c 2:2.1d 2:2.2 2:2.2edit \
-  3:3.1draw 3:3.1a 3:3.1b 3:3.1think 3:3.1c \
-  4:4.1ask 4:4.1r1 4:4.1r2 4:4.1r3 4:4.2 4:4.2ask 4:4.2reply \
+  3:3.1bowl 3:3.1p0 3:3.1p1 3:3.1eq 3:3.1p2 3:3.1p3 3:3.1think 3:3.1over 3:3.1min\
+  4:4.1ask 4:4.1r1 4:4.2 4:4.2ask 4:4.2r1 4:4.2r2 4:4.2r3\
   5:5.1a 5:5.1b 5:5.1c 5:5.2 5:5.2a 5:5.2b
 uv run decktalk -p "$T" status
 uv run python -c "import decktalk; p = decktalk.Project.load('$T'); print('python api ok:', p.name, len(p.sections), 'sections')"

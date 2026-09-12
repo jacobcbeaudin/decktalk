@@ -1,10 +1,11 @@
 """Tool tuning: one dataclass per concern, composed into Settings.
 
-Three layers, lowest to highest precedence:
+Four layers, lowest to highest precedence:
 
   1. the defaults below
-  2. tables of the same names in the project's decktalk.toml ([video], [narration], ...)
-  3. DECKTALK_<SECTION>_<FIELD> environment variables, e.g. DECKTALK_VIDEO_PRESET=veryfast
+  2. the same tables in the user's own decktalk.toml, one per machine (see user_config_path)
+  3. tables of the same names in the project's decktalk.toml ([video], [narration], ...)
+  4. DECKTALK_<SECTION>_<FIELD> environment variables, e.g. DECKTALK_VIDEO_PRESET=veryfast
 
 Content that changes per presentation (sections, voice, mix levels, soundscape prompts)
 is the project document, not tuning; see project.py. Secrets live only in .env.
@@ -12,8 +13,10 @@ is the project document, not tuning; see project.py. Secrets live only in .env.
 
 from __future__ import annotations
 
+import os
+import sys
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -48,9 +51,8 @@ class NarrationConfig:
     mp3_bitrate: str = "128k"
     words_per_minute: int = 140  # pacing estimate shown in tables
     silent_words_per_minute: int = 150  # --silent placeholder pacing
-    lead_break_seconds: float = 0.7  # opens the first spoken section
-    direction_break_seconds: float = 0.7  # pause where a bracketed direction sat
-    tail_break_seconds: float = 0.35  # requested at the end of every section
+    lead_break_seconds: float = 0.7  # silence added before the first spoken section
+    direction_break_seconds: float = 0.7  # what a [beat] is assumed to cost when timings are estimated
     min_tail_seconds: float = 0.7  # guaranteed silence after the last word, so a cut never lands on its tail
     tail_slack_seconds: float = 0.05  # extra padding added when the tail is short
     context_chars: int = 1500  # previous_text / next_text sent for prosody continuity
@@ -105,6 +107,7 @@ class VerifyConfig:
     min_margin_percent: float = 0.1  # and by how much it must beat the control span
     onset_percent: float = 0.002  # A few pixels mark where a reveal begins, once they clear the pre-cue floor.
     onset_diff_level: int = 12  # Luma steps for the onset scan only, so a fade or a low-contrast panel registers early.
+    click_search_seconds: float = 0.25  # how far from the cue a silent build's click may sit and still be found
     max_offset_frames: int = 2  # Frames the first changed frame may sit from the cue before the check fails.
     visible_ymax: float = 60
     cut_window_seconds: float = 0.15  # audio measured just before every cut
@@ -141,6 +144,48 @@ class Settings:
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
 
 
+def user_config_path() -> Path:
+    """The per-machine settings file. DECKTALK_CONFIG overrides the standard location."""
+    override = os.environ.get("DECKTALK_CONFIG")
+    if override:
+        return Path(override)
+    if sys.platform == "darwin":
+        root = Path.home() / "Library" / "Application Support"
+    elif sys.platform == "win32":
+        root = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    else:
+        root = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return root / "decktalk" / PROJECT_FILE
+
+
+def read_user_toml(path: Path | None = None) -> dict[str, Any]:
+    """The user's tuning tables, or {} when the file is absent. Only settings tables are allowed there."""
+    path = path or user_config_path()
+    if not path.exists():
+        return {}
+    try:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: {exc}") from exc
+    allowed = {f.name for f in fields(Settings)}
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        raise ConfigError(f"{path}: {unknown} do not belong in a user settings file; only {sorted(allowed)} do")
+    return data
+
+
+def merge_tables(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
+    """`over` on top of `base`, one level deep, which is how settings tables nest."""
+    out = {k: dict(v) if isinstance(v, dict) else v for k, v in base.items()}
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k].update(v)
+        else:
+            out[k] = v
+    return out
+
+
 def read_project_toml(root: Path) -> dict[str, Any]:
     """Parsed decktalk.toml, or {} when the file is absent. Malformed TOML is a ConfigError."""
     path = root / PROJECT_FILE
@@ -159,9 +204,12 @@ def load_settings(
     *,
     toml: dict[str, Any] | None = None,
     environ: dict[str, str] | None = None,
+    user: dict[str, Any] | None = None,
 ) -> Settings:
-    """Settings for a project directory: defaults, then its decktalk.toml, then env."""
-    base = toml if toml is not None else (read_project_toml(root) if root else {})
+    """Settings for a project directory: defaults, the user's file, the project's decktalk.toml, then env."""
+    project = toml if toml is not None else (read_project_toml(root) if root else {})
+    machine = user if user is not None else read_user_toml()
+    base = merge_tables(machine, project)
     try:
         return from_env(Settings, prefixes=[ENV_PREFIX], base=base, environ=environ)
     except (TypeError, ValueError) as exc:

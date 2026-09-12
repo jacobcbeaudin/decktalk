@@ -101,7 +101,9 @@ def verify_table(result: VerifyResult) -> str:
             lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {'quiet' if c.ok else 'SPEECH AT CUT'}")
     if result.cues:
         lines.append("")
-        lines.append(f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7} {'offset':>8}  result")
+        av = any(c.av_ms is not None for c in result.cues)
+        head = f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7} {'offset':>8}"
+        lines.append(head + (f" {'a/v':>7}" if av else "") + "  result")
         for c in result.cues:
             if c.cue_seconds is None:
                 lines.append(f"{c.check:<18} {'-':>6} {'-':>8} {'-':>7} {'-':>7} {'-':>8}  {c.note or 'MISSING'}")
@@ -115,7 +117,9 @@ def verify_table(result: VerifyResult) -> str:
                 verdict = "NO CHANGE"
             lines.append(
                 f"{c.check:<18} {c.cue_seconds:>6.2f} {c.final_seconds or 0:>8.2f} {c.changed_percent or 0:>7.2f} "
-                f"{c.control_percent or 0:>7.2f} {offset:>8}  {verdict}"
+                f"{c.control_percent or 0:>7.2f} {offset:>8}"
+                + (f" {(f'{c.av_ms:+d}ms' if c.av_ms is not None else '-'):>7}" if av else "")
+                + f"  {verdict}"
             )
     return "\n".join(lines)
 
