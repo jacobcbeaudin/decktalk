@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>__NAME__</title>
+<!-- KaTeX is optional: equations in [data-tex] render as plain text until it loads. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<style>
+  :root { --bg: #0b0f14; --surface: #151b23; --text: #f4f6f8; --muted: #9aa4b2; --accent: #7ee787; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, -apple-system, Helvetica, Arial, sans-serif; }
+  body { width: 100vw; height: 100vh; overflow: hidden; }
+  #cc-stage { background: var(--bg); }
+  .slide { position: absolute; inset: 0; padding: 120px 160px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
+  .hero { font-size: 96px; font-weight: 700; letter-spacing: -2px; line-height: 1.05; margin: 0; }
+  .line { font-size: 44px; line-height: 1.3; margin: 0; }
+  .caption { font-size: 30px; color: var(--muted); margin: 0; }
+  .accent { color: var(--accent); }
+  .lower { position: absolute; left: 160px; bottom: 120px; font-size: 44px; color: var(--muted); }
+  .tile { display: inline-block; background: var(--surface); border-radius: 24px; padding: 32px 48px; font-size: 96px; font-weight: 700; color: var(--accent); }
+  .row { display: flex; gap: 40px; align-items: flex-end; }
+  .eq { font-size: 52px; }
+  .ax { stroke: var(--muted); stroke-width: 2; }
+  .curve { fill: none; stroke: var(--accent); stroke-width: 6; }
+</style>
+</head>
+<body>
+<script src="cuecut-runtime.js"></script>
+<script>
+// Everything on screen lives here. Scene numbers are script sections; step ids are cue ids.
+// `cues.json` maps each id to the spoken phrase it lands on. Open this file with no query
+// for an index of scenes and steps; ?step=ID freezes one for review.
+const CONTENT = {
+  1: { title: "__TITLE__", sub: "A narrated deck, cut to the word." },
+  2: { lines: ["Write the script in markdown.", "Narrate it in your own voice.", "Every reveal lands on a word."], tile: "3 steps" },
+  3: { eq: "\\frac{d}{dx}\\,x^2 = 2x", note: "Equations typeset with KaTeX when it loads; plain text otherwise." },
+};
+
+Cuecut.scene(1, { name: "Open", camera: "push", steps: [
+  { id: "1", hold: 8, render: () => `
+    <div class="slide">
+      <h1 class="hero" data-cue="1a">${CONTENT[1].title}</h1>
+      <p class="line" data-cue="1b">${CONTENT[1].sub}</p>
+      <div class="lower" data-cue="1c" data-type="40" data-fx="fade">cuecut · scene 1</div>
+    </div>` },
+]});
+
+Cuecut.scene(2, { name: "Three lines", camera: "push", steps: [
+  { id: "2.1", hold: 12, render: () => `
+    <div class="slide">
+      <p class="caption">How it works</p>
+      ${CONTENT[2].lines.map((l, i) => `<p class="line" data-cue="2.1${"abc"[i]}" data-at="${i * 2.5}">${l}</p>`).join("")}
+      <div class="row"><div class="tile" data-cue="2.1d" data-at="8" data-count>${CONTENT[2].tile}</div></div>
+    </div>` },
+  { id: "2.2", hold: 6, render: () => `
+    <div class="slide">
+      <p class="hero accent">One take.</p>
+      <p class="caption" data-at="1">Change a sentence and only that section re-renders.</p>
+    </div>` },
+]});
+
+Cuecut.scene(3, { name: "A curve and an equation", camera: "push", steps: [
+  { id: "3.1", hold: 10, cues: { "3.1draw": 0.5, "3.1eq": 5 }, render: () => `
+    <div class="slide">
+      <svg viewBox="0 0 1600 500" width="1600" height="500" style="overflow:visible">
+        <line class="ax" x1="80" y1="460" x2="1560" y2="460"/>
+        <line class="ax" x1="80" y1="40" x2="80" y2="460"/>
+        <path class="curve" pathLength="1" data-cue="3.1draw" data-fx="draw" data-dur="3"
+              d="M80,440 C400,430 800,300 1100,140 S1500,60 1560,50"/>
+      </svg>
+      <div class="row">
+        <div class="eq" data-cue="3.1eq" data-tex="${CONTENT[3].eq}">d/dx x^2 = 2x</div>
+        <p class="caption" data-cue="3.1eq" data-at="0.6">${CONTENT[3].note}</p>
+      </div>
+    </div>` },
+]});
+</script>
+</body>
+</html>

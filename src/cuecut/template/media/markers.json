@@ -1,0 +1,8 @@
+{
+  "_comment": "Underscore structure. Each marker swells the bed by boost_db for boost_seconds at a spoken phrase (or $start/$end of a section); mute_seconds silences it for one beat first.",
+  "boost_db": 3,
+  "boost_seconds": 2,
+  "markers": [
+    { "name": "open", "section": 1, "on": "$start" }
+  ]
+}

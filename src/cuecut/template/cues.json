@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "Which spoken phrase each visual lands on. `step` is a cue id the page understands (see deck/index.html);",
+    "`on` is a word or short phrase from that section of script.md: first occurrence, case-insensitive,",
+    "punctuation ignored. `$start` = section start, `$end` = end of speech; `offset` shifts in seconds;",
+    "`occurrence` picks a later match. `cuecut beats` reports any phrase it cannot find."
+  ],
+  "sections": {
+    "1": {
+      "cues": [
+        { "step": "1a", "on": "$start" },
+        { "step": "1b", "on": "narrated deck" },
+        { "step": "1c", "on": "lands on the word" }
+      ]
+    },
+    "2": {
+      "cues": [
+        { "step": "2.1a", "on": "First" },
+        { "step": "2.1b", "on": "Second" },
+        { "step": "2.1c", "on": "Third" },
+        { "step": "2.1d", "on": "Three steps" },
+        { "step": "2.2", "on": "Change a sentence" }
+      ]
+    },
+    "3": {
+      "cues": [
+        { "step": "3.1", "on": "$start" },
+        { "step": "3.1draw", "on": "curve draws" },
+        { "step": "3.1eq", "on": "equation", "offset": 0.2 }
+      ]
+    }
+  }
+}

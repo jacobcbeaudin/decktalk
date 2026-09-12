@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "The plan. Paths are relative to this directory. `sections` are the script's `## N.` sections:",
+    "{file, scene, extra_seconds?, ambience?, params?, hold_seconds?} records file?scene=N for the section's",
+    "span in the narration plus extra_seconds; {video, slate_seconds?} is your own clip with its audio.",
+    "dips: [from, to] boundaries that get a dip-to-black (video only); everything else is a straight cut.",
+    "hold_seconds is legal only on the last narrated section. mix.* and soundscape.* are optional."
+  ],
+  "name": "__NAME__",
+  "script": "script.md",
+  "cues": "cues.json",
+  "model": "eleven_multilingual_v2",
+  "voice_settings": { "stability": 0.55, "similarity_boost": 0.75, "style": 0.0, "use_speaker_boost": true, "speed": 1.0 },
+  "sections": {
+    "0": { "video": "media/open.mp4", "slate_seconds": 6, "title": "On camera — the open" },
+    "1": { "file": "deck/index.html", "scene": 1, "extra_seconds": 0.3 },
+    "2": { "file": "deck/index.html", "scene": 2, "extra_seconds": 0.3 },
+    "3": { "file": "deck/index.html", "scene": 3, "extra_seconds": 2, "hold_seconds": 2, "ambience": false }
+  },
+  "dips": [[0, 1]],
+  "transition": { "dip_seconds": 0.15, "page_fades_in": true },
+  "mix": {
+    "underscore": "build/music/underscore.mp3",
+    "underscore_db": -24,
+    "underscore_duck_db": -6,
+    "underscore_fade_in": 2,
+    "underscore_fade_out": 3,
+    "markers": "media/markers.json",
+    "ambience": "build/sfx/ambience.mp3",
+    "ambience_db": -20,
+    "sfx": [],
+    "loudnorm": { "I": -16, "TP": -1.5, "LRA": 11 }
+  },
+  "soundscape": {
+    "music": {
+      "prompt": "calm, minimal instrumental underscore for a lesson: soft piano and warm pads, slow, no drums, no melody hooks, unobtrusive under a narrator",
+      "seconds": 120,
+      "force_instrumental": true
+    }
+  }
+}
