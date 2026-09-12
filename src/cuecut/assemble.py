@@ -123,6 +123,26 @@ def resolve_marker_time(
     return None if idx is None else starts[key] + float(words[idx]["start"]) + offset
 
 
+def section_slate(project: Project, sec: Section) -> Path | None:
+    """A titled slate PNG for a section whose clip is missing (rendered once, cached in build/out)."""
+    out = project.out_dir / "slates" / f"{sec.key}-slate.png"
+    if out.exists():
+        return out
+    try:
+        from .slate import render_slate
+
+        return render_slate(
+            out,
+            title=sec.title or f"Section {sec.index}",
+            sub="Your clip goes here",
+            eyebrow=f"section {sec.index} · slate",
+            foot=f"drop it at {sec.data['video']} and run `cuecut assemble`",
+        )
+    except Exception as exc:  # Chromium unavailable: fall back to a plain frame
+        warn(f"could not render a slate ({exc}); using a plain frame")
+        return None
+
+
 # ---- stages --------------------------------------------------------------------
 
 
@@ -198,8 +218,9 @@ def render_sections(
                     raise SystemExit(f"error: clip missing: {clip}")
                 secs = sec.slate_seconds
                 warn(f"{sec.data['video']} missing; slate for {secs}s (drop your clip at that path)")
-                if slate and slate.exists():
-                    vin = ["-loop", "1", "-framerate", str(FPS), "-t", f"{secs}", "-i", str(slate)]
+                png = slate if slate and slate.exists() else section_slate(project, sec)
+                if png:
+                    vin = ["-loop", "1", "-framerate", str(FPS), "-t", f"{secs}", "-i", str(png)]
                 else:
                     vin = ["-f", "lavfi", "-t", f"{secs}", "-i", f"color=c=0x0e1116:s={W}x{H}:r={FPS}"]
                 fades = vfades(secs, fade_in, fade_out, dip)
