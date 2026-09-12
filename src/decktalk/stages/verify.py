@@ -201,9 +201,10 @@ def verify(project: Project, checks: list[str] | None = None) -> VerifyResult:
                 # The picture's offset is measured from the cue and the click's from the cued
                 # word, so the difference already allows for the cue's own offset.
                 av_ms = offset_ms - click_ms
-                if abs(av_ms) > limit_ms + 0.5:
+                av_limit_ms = cfg.max_av_frames * 1000 / fps
+                if abs(av_ms) > av_limit_ms + 0.5:
                     on_time = False
-                    note = f"picture {av_ms:+d} ms from the click, limit {limit_ms:.0f} ms"
+                    note = f"picture {av_ms:+d} ms from the click, limit {av_limit_ms:.0f} ms"
         result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, on_time, note, offset_ms, av_ms))
     return result
 

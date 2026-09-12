@@ -44,11 +44,16 @@ COVER_JS = """() => {
   if (document.documentElement) add(); else document.addEventListener("DOMContentLoaded", add, { once: true });
 }"""
 # Remove the cover and start the page clock in the same tick.
-START_JS = """() => {
+START_JS = """() => new Promise((resolve) => {
   const d = document.getElementById("__t0cover");
   if (d) d.remove();
-  if (window.DeckTalk && window.DeckTalk.startClock) window.DeckTalk.startClock();
-}"""
+  // The frame that shows the cover gone is composited on the next animation frame, and
+  // that frame is the recording's t=0, so the clock starts there rather than now.
+  requestAnimationFrame(() => {
+    if (window.DeckTalk && window.DeckTalk.startClock) window.DeckTalk.startClock();
+    resolve(performance.now());
+  });
+})"""
 # What the runtime could not honor: unknown cue ids, cues no step owns, KaTeX that never loaded.
 WARNINGS_JS = "() => (window.__decktalk && window.__decktalk.warnings) || []"
 
@@ -138,6 +143,11 @@ def record_page(
     started = time.monotonic()
     page.wait_for_timeout(seconds * 1000)
     warnings = page_warnings(page, out.stem)
+    gaps = page.evaluate("() => (window.__decktalk && window.__decktalk.frameGaps) || []")
+    frame_gaps = [(float(g["at"]), int(g["ms"])) for g in gaps if isinstance(g, dict)]
+    if frame_gaps:
+        worst = max(ms for _, ms in frame_gaps)
+        log.warning("[page] %s  %d frame stall(s), worst %d ms", out.stem, len(frame_gaps), worst)
     video = page.video
     context.close()
     src = Path(video.path()) if video else None
@@ -156,6 +166,7 @@ def record_page(
         load_seconds=round(loaded - created, 3),
         lead_seconds=round(started - created, 3),
         warnings=warnings,
+        frame_gaps=frame_gaps,
     )
     sidecar.save(out.with_suffix(".json"))
     return sidecar

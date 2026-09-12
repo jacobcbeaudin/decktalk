@@ -129,6 +129,8 @@ def check(project: Project, only: list[int] | None = None) -> list[RecordingChec
             verdicts.append("TRUNCATED")
         if side and any("katex" in w.lower() for w in side.warnings):
             verdicts.append("KATEX?")
+        if side and side.worst_stall_ms > cfg.stall_ms:
+            verdicts.append(f"STALLED {side.worst_stall_ms}ms")
         row = RecordingCheck(f.name[:2], dur, wanted, y10, y50, y90, max50, " ".join(verdicts) or "ok")
         if not row.ok:
             log.warning("[chk ] %s  %s", row.key, row.verdict)

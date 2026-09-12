@@ -208,7 +208,12 @@ class Sidecar:
     lead_seconds: float  # wall-clock estimate from the recorder
     lead_in_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
     lead_method: str | None = None
-    warnings: list[str] = field(default_factory=list)  # window.__decktalk.warnings read after the recording
+    warnings: list[str] = field(default_factory=list)
+    frame_gaps: list[tuple[float, int]] = field(default_factory=list)  # (seconds, ms) where the page stalled
+
+    @property
+    def worst_stall_ms(self) -> int:
+        return max((ms for _, ms in self.frame_gaps), default=0)  # window.__decktalk.warnings read after the recording
 
     @classmethod
     def load(cls, path: Path) -> Self | None:

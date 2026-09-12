@@ -95,17 +95,30 @@ def record(
     with chromium() as browser:
         for section, url, length, out in jobs:
             log.info("[rec ] section %s (%s?scene=%s)  %.1fs ...", section.key, section.page, section.scene, length)
-            sidecar = record_page(
-                browser,
-                url,
-                length,
-                out,
-                settle_seconds=cfg.settle_seconds,
-                min_lead_seconds=cfg.min_lead_seconds,
-                width=video.width,
-                height=video.height,
-                color_scheme=cfg.color_scheme,
-            )
+            for attempt in range(1, cfg.retries + 2):
+                sidecar = record_page(
+                    browser,
+                    url,
+                    length,
+                    out,
+                    settle_seconds=cfg.settle_seconds,
+                    min_lead_seconds=cfg.min_lead_seconds,
+                    width=video.width,
+                    height=video.height,
+                    color_scheme=cfg.color_scheme,
+                )
+                stall = sidecar.worst_stall_ms
+                if stall <= project.settings.align.stall_ms or attempt > cfg.retries:
+                    break
+                # A stalled page froze a reveal for a few frames, which no cut can repair, so
+                # the section is recorded again while the machine is quieter.
+                log.warning(
+                    "       frames stalled for %d ms; recording section %s again (%d/%d)",
+                    stall,
+                    section.key,
+                    attempt,
+                    cfg.retries,
+                )
             log.info("       %s  (lead %.2fs)", out.relative_to(project.root), sidecar.lead_seconds)
             results.append(Recording(section=section, path=out, sidecar=sidecar, seconds=length))
     return results

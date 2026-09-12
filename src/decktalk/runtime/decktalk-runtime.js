@@ -154,6 +154,19 @@
   }
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   // Each distinct warning is recorded once and echoed to the console.
+  // A recording is only as good as the frames the compositor produced. A gap between two
+  // animation frames longer than a few frames means a reveal was captured late, so the gap
+  // is recorded for the recorder to judge.
+  const frameGaps = [];
+  function watchFrames() {
+    let last = null;
+    const tick = (t) => {
+      if (last !== null && t - last > 100) frameGaps.push({ at: +now().toFixed(3), ms: Math.round(t - last) });
+      last = t;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
   function warn(msg) {
     if (state.warnings.includes(msg)) return;
     state.warnings.push(msg);
@@ -362,6 +375,7 @@
   }
   function playCues(sc, cues) {
     state.mode = "cues";
+    watchFrames();
     state.scene = sc;
     state.cues = cues;
     const listed = new Set(cues.map((c) => c.id));
@@ -456,6 +470,7 @@
   const DeckTalk = { scene, on, start, startClock: setOrigin, reveal, fireCue, findStep, get scenes() { return SCENES; }, params };
   window.DeckTalk = DeckTalk;
   window.__decktalk = {
+    get frameGaps() { return frameGaps; },
     get mode() { return state.mode; },
     get scene() { return state.scene?.id ?? null; },
     get step() { return state.step?.id ?? null; },

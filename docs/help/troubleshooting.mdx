@@ -60,6 +60,13 @@ the assembly.
     [Build in CI and offline](/guides/ci-and-offline#offline) has the tags. `decktalk doctor`
     shows whether the cache is present.
   </Accordion>
+  <Accordion title="STALLED in check, or a reveal that appears a few frames late">
+    The page reported a gap of more than `stall_ms` between two animation frames while it
+    was being recorded, which means the machine was too busy to paint, and a reveal that
+    fired inside the gap was captured late. The recorder records a section again when this
+    happens, up to `retries` times, before it gives up and leaves the verdict. Close other
+    work, or record on a quieter machine, and re-run `decktalk record --only N`.
+  </Accordion>
 
   <Accordion title="BLACK section start in verify">
     The final mp4 opens a section on a dark frame. Check that the first cued step of the
