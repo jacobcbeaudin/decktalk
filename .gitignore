@@ -11,3 +11,4 @@ tests/out/
 *.mp3
 *.webm
 *.wav
+.claude/
