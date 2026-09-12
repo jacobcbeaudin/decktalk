@@ -14,6 +14,6 @@ mkdir -p "$T/build/music"
 uv run decktalk -p "$T" build --silent --preset veryfast
 uv run decktalk -p "$T" shots
 uv run decktalk -p "$T" shots --section 2 --at 1 --at 6
-uv run decktalk -p "$T" verify 2:2.2 3:3.1draw
+uv run decktalk -p "$T" verify 1:1b 1:1c 2:2.1a 2:2.1b 2:2.1c 2:2.1d 2:2.2 3:3.1draw 3:3.1eq
 uv run decktalk -p "$T" status
 echo "smoke test OK: $T/build/out/smoke.mp4"

@@ -111,7 +111,7 @@ is in [docs/contract.md](docs/contract.md).
 | `decktalk broll --prompt "…" --name NAME` | A text-to-video clip (Veo via Gemini, or Kling via fal.ai) into `media/broll/`. |
 | `decktalk record [--only N]` | Record the pages. `decktalk measure` then finds narration t=0 in each. `decktalk check` flags black or truncated recordings. |
 | `decktalk assemble [--preset veryfast] [--nomix] [--strict]` | Cut, concatenate, mix, normalize, publish. |
-| `decktalk verify [SEC:CUE …]` | Every section opens on a real frame; the picture changes at the named cues. The cue check is coarse (mean frame difference), so use it on big reveals and `decktalk shots --section` on small ones. |
+| `decktalk verify [SEC:CUE …]` | Every section opens on a real frame; the picture changes at the named cues. The cue check counts the share of pixels that change across the cue, inside the section, so it sees a thin line or one line of text. |
 | `decktalk shots [--section N --at S …]` | One PNG per step of every page, or frames from a section as it plays with its real cues. Useful for review, and for showing an AI reviewer the frames. |
 | `decktalk build [--silent] [--only N]` | The whole pipeline in order. |
 | `decktalk status` | The timeline and what is built. |
