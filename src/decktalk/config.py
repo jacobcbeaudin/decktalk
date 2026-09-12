@@ -30,11 +30,11 @@ class VideoConfig:
 
     width: int = 1920
     height: int = 1080
-    fps: int = 30
+    fps: int = 25  # Chromium records at 25 fps, so 25 avoids a pulldown that duplicates every sixth frame.
     preset: str = "medium"  # x264 preset; veryfast for drafts
     crf: int = 18
     audio_bitrate: str = "192k"
-    sample_rate: int = 44100
+    sample_rate: int = 48000  # The video delivery rate, so every audio input is resampled once on the way in.
     channels: int = 2
     slate_color: str = "0x0e1116"  # plain frame when a slate cannot be rendered
 
@@ -91,7 +91,6 @@ class AudioConfig:
     ambience_pad_seconds: float = 0.5
     marker_mute_ramp_seconds: float = 0.04
     marker_boost_ramp_seconds: float = 0.3
-    limiter: float = 0.95
 
 
 @dataclass
@@ -104,6 +103,8 @@ class VerifyConfig:
     diff_level: int = 40  # luma steps a pixel must change to count
     min_changed_percent: float = 0.1  # share of the frame the best probe must change
     min_margin_percent: float = 0.1  # and by how much it must beat the control span
+    onset_percent: float = 0.002  # A few pixels mark where a reveal begins, since diff_level already excludes noise.
+    max_offset_frames: int = 2  # Frames the first changed frame may sit from the cue before the check fails.
     visible_ymax: float = 60
     probe_width: int = 480
     probe_height: int = 270

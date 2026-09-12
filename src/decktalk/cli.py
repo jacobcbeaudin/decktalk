@@ -211,6 +211,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"final    {project.final.relative_to(project.root)}  {_report.mmss(probe_duration(project.final))}")
     else:
         print("final    not built")
+    print(_report.outputs_lines(project))
     return 0
 
 
