@@ -1,10 +1,24 @@
+# Install once per clone: `pre-commit install` (installs both the pre-commit and commit-msg hooks).
+default_install_hook_types: [pre-commit, commit-msg]
+
 repos:
+  # Commit messages must follow Conventional Commits (https://www.conventionalcommits.org).
+  # release-please reads them to pick the next version and write CHANGELOG.md:
+  #   fix: -> patch   feat: -> minor   feat!: / BREAKING CHANGE: -> major (minor while 0.x)
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+
+  # Same lint + format rules CI enforces (config in pyproject.toml).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.13.0
+    rev: v0.16.7
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

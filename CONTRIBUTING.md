@@ -41,8 +41,15 @@ Stage functions take a `Project`, log progress to the `decktalk` logger, return 
 result, and raise `DeckTalkError` subclasses. The CLI is a thin layer that prints tables
 and maps errors to exit codes.
 
-## Releasing
+## Commits and releases
 
-`uv version 0.2.0`, commit, `git tag v0.2.0`, push the tag. The release workflow checks the
-tag against the version, builds, smoke-tests the wheel, publishes to PyPI through trusted
-publishing, and creates a GitHub release.
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `fix:`
+bumps the patch version, `feat:` the minor, `feat!:` or a `BREAKING CHANGE:` footer the major
+(minor while 0.x). `pre-commit install` adds a hook that checks the message; the `pr-title`
+workflow checks pull request titles, because a squash merge turns the title into the commit.
+
+release-please keeps a release pull request open against `main`. It bumps the version in
+`pyproject.toml` and `uv.lock`, writes `CHANGELOG.md`, and picks the bump from the commits
+landed since the last release. Merging that PR creates the tag and the GitHub release; the
+release workflow then builds, smoke-tests the wheel, and publishes to PyPI through trusted
+publishing. To force a version, put `Release-As: 1.0.0` in a commit body.

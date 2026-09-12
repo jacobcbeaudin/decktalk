@@ -30,6 +30,7 @@ Homepage = "https://decktalk.app"
 Repository = "https://github.com/jacobcbeaudin/decktalk"
 Documentation = "https://docs.decktalk.app"
 Issues = "https://github.com/jacobcbeaudin/decktalk/issues"
+Changelog = "https://github.com/jacobcbeaudin/decktalk/blob/main/CHANGELOG.md"
 
 [project.scripts]
 decktalk = "decktalk.cli:main"

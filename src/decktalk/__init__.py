@@ -26,7 +26,7 @@ from .stages import assemble, build, check, measure, narrate, record, resolve_be
 try:
     __version__ = version("decktalk")
 except PackageNotFoundError:  # running from a checkout without an install
-    __version__ = "0.0.0"
+    __version__ = "0+unknown"
 
 __all__ = [
     "Beats",
