@@ -5,44 +5,102 @@
 <title>__NAME__</title>
 <!-- KaTeX typesets every [data-tex] element. Without it the element keeps its plain text. -->
 __KATEX__
+<!-- three.js draws the loss surface of scene 3. Vendored, so the recorder needs no network. -->
+<script src="./vendor/three.min.js"></script>
 <style>
-  :root { --bg: #0b0f14; --surface: #151b23; --text: #f4f6f8; --muted: #9aa4b2; --accent: #7ee787; --ask: #1f3a5f; }
-  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, -apple-system, Helvetica, Arial, sans-serif; }
+  /* Bundled OFL fonts (deck/fonts/), so a recorder with no network never falls back to Helvetica. */
+  @font-face { font-family: "Inter Tight"; font-style: normal; font-weight: 100 900; font-display: block; src: url("./fonts/InterTight-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "Inter Tight"; font-style: normal; font-weight: 100 900; font-display: block; src: url("./fonts/InterTight-greek.woff2") format("woff2"); unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF; }
+  @font-face { font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: block; src: url("./fonts/Inter-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: block; src: url("./fonts/Inter-greek.woff2") format("woff2"); unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF; }
+  @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: block; src: url("./fonts/JetBrainsMono-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: block; src: url("./fonts/JetBrainsMono-greek.woff2") format("woff2"); unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF; }
+
+  /* Tokens. The accent belongs only to the thing being revealed right now. */
+  :root {
+    --ground: #ffffff; --ink: #0a0a0a; --mute: #595959; --dim: #a3a3ad; --hair: #e4e4e7; --block: #f4f4f5; --accent: #2c1fea;
+    --sans: "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --tight: "Inter Tight", "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
   body { width: 100vw; height: 100vh; overflow: hidden; }
-  #dt-stage { background: var(--bg); }
-  .slide { position: absolute; inset: 0; padding: 100px 160px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
-  .hero { font-size: 96px; font-weight: 700; letter-spacing: -2px; line-height: 1.05; margin: 0; }
-  .line { font-size: 44px; line-height: 1.3; margin: 0; }
-  .label { font-size: 56px; font-weight: 600; line-height: 1.2; margin: 0; }
-  .label b { color: var(--accent); font-weight: 700; margin-right: 24px; }
-  .caption { font-size: 30px; color: var(--muted); margin: 0; }
-  .h2 { font-size: 64px; font-weight: 700; letter-spacing: -1px; margin: 0 0 16px; }
-  .accent { color: var(--accent); }
-  .lower { position: absolute; left: 160px; bottom: 100px; font-size: 44px; color: var(--muted); }
-  .tile { display: inline-block; background: var(--surface); border-radius: 24px; padding: 32px 48px; font-size: 96px; font-weight: 700; color: var(--accent); }
-  .row { display: flex; gap: 40px; align-items: flex-end; }
-  .cols { display: flex; gap: 72px; align-items: center; }
-  .math { font-size: 40px; margin: 0; }
-  .math .katex-display { margin: 18px 0; }
-  .math .katex-display > .katex { text-align: left; }
-  .answer { color: var(--accent); font-size: 60px; }
-  .ax { stroke: var(--muted); stroke-width: 2; }
-  .axlabel { fill: var(--muted); font-size: 36px; }
-  .curve { fill: none; stroke: var(--accent); stroke-width: 8; }
-  .zig { fill: none; stroke: #ff6b6b; stroke-width: 4; stroke-dasharray: 14 10; }
-  .step line { stroke: var(--text); stroke-width: 5; opacity: .6; }
-  .step .ring { fill: none; stroke: var(--accent); stroke-width: 4; opacity: .5; }
-  .step circle { fill: var(--text); }
-  .step.min circle { fill: var(--accent); }
-  .row.wide { align-items: center; gap: 60px; }
-  .col { display: flex; flex-direction: column; gap: 24px; max-width: 640px; }
-  .chat { display: flex; flex-direction: column; gap: 24px; width: 1300px; }
-  .eyebrow { font-size: 30px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 8px; }
-  .bubble { font-size: 36px; line-height: 1.35; padding: 24px 36px; border-radius: 28px; max-width: 1000px; }
-  .ask { align-self: flex-end; background: var(--ask); border-bottom-right-radius: 6px; }
-  .reply { align-self: flex-start; background: var(--surface); border-bottom-left-radius: 6px; }
-  .reply p { margin: 0; }
-  .reply p + p { margin-top: 10px; }
+  #dt-stage { background: var(--ground); }
+  .slide { position: absolute; inset: 0; }
+  .slide * { box-sizing: border-box; }
+
+  /* Type scale at 1920 by 1080. */
+  .eyebrow { position: absolute; left: 120px; top: 98px; margin: 0; font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+  .title { position: absolute; left: 120px; top: 156px; margin: 0; max-width: 1200px; font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
+  .hero { font: 600 120px/1.05 var(--tight); letter-spacing: -.03em; color: var(--ink); }
+  .wordmark { font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
+  .body { font: 450 36px/1.4 var(--sans); color: var(--ink); }
+  .caption { font: 500 26px/1.4 var(--sans); color: var(--mute); }
+  .mono { font: 500 28px/41px var(--mono); color: var(--ink); }
+  .filelabel { font: 500 22px/28px var(--mono); color: var(--mute); }
+  .panel { position: absolute; background: var(--block); border-radius: 12px; }
+  .abs { position: absolute; }
+
+  /* Synced text: a word the voice has not reached yet is dim, and turns to the line's colour as it lands. */
+  .slide .dt-w { opacity: 1; color: var(--dim); transition: color .12s ease; }
+  .slide .dt-w.dt-on { opacity: 1; color: inherit; }
+  .snippet, .snippet .c, .term div { transition: color .25s ease; }
+  .lit .snippet, .lit .snippet .c { color: var(--dim); }
+  .lit .k { color: var(--accent); }
+
+  /* Footer: the mark at left, the scene tracker at right. It never carries a cue. */
+  .footer { position: absolute; left: 120px; right: 120px; top: 984px; height: 30px; display: flex; align-items: center; justify-content: space-between; }
+  .footer .brand, .footer .track { display: flex; align-items: center; gap: 14px; font: 500 22px/28px var(--mono); letter-spacing: .14em; color: var(--mute); }
+  .footer .mark line { stroke: var(--ink); stroke-width: 2; }
+  .footer .mark .tall { stroke: var(--accent); }
+  .footer .mark circle { fill: var(--accent); }
+  .footer .ticks rect { fill: var(--hair); }
+  .footer .ticks .cur { fill: var(--accent); }
+
+  /* Scene 1 */
+  .s1-line { position: absolute; left: 40px; top: 180px; display: flex; align-items: center; white-space: nowrap; }
+  .cursor { display: inline-block; width: 2px; height: 30px; margin-left: 6px; background: var(--ink); animation: blink 1s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+  .s1-ticks { position: absolute; left: 40px; top: 240px; width: 700px; height: 16px; }
+  .s1-ticks i { position: absolute; top: 0; width: 2px; height: 16px; background: var(--hair); }
+  .s1-ticks i.on { background: var(--accent); }
+  .s1-fig .ax { stroke: var(--hair); stroke-width: 2; }
+  .s1-fig .curve { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; }
+  .s1-big { position: absolute; left: 500px; top: 0; width: 264px; height: 400px; display: flex; align-items: center; justify-content: center; font: 600 160px/1 var(--tight); letter-spacing: -.03em; color: var(--accent); }
+  .s1-mark { position: absolute; left: 120px; top: 760px; display: flex; flex-direction: column; gap: 6px; }
+  .s1-mark .wordmark { font-size: 96px; line-height: 1.05; letter-spacing: -.03em; }
+
+  /* Scene 2 */
+  .col { position: absolute; width: 804px; }
+  .col .filelabel { margin: 0 0 8px; }
+  .snippet { margin: 0; height: 202px; background: var(--block); border-radius: 12px; padding: 20px 24px; font: 500 28px/41px var(--mono); white-space: pre; color: var(--ink); }
+  .snippet .c { color: var(--mute); }
+
+  /* Scene 3 */
+  .fig3 { position: absolute; left: 120px; top: 330px; width: 960px; height: 570px; }
+  .fig3 canvas { position: absolute; left: 0; top: 0; width: 960px; height: 570px; }
+  .fig3 .axlabel { position: absolute; left: 8px; top: 0; font: 500 28px/44px var(--mono); color: var(--mute); }
+  .eq { position: absolute; left: 1160px; top: 420px; display: flex; align-items: baseline; gap: 18px; font-size: 58px; color: var(--ink); white-space: nowrap; }
+  .eq .katex-display { margin: 0; display: inline-block; }
+  .eq .katex-display > .katex { text-align: left; }
+
+  /* Scene 4 */
+  .s4 .old.struck { color: var(--mute); text-decoration: line-through; text-decoration-thickness: 2px; }
+  .s4 .new { display: block; color: var(--accent); }
+  .s4 .final { color: var(--ink); }
+  .s4.lit .term div { color: var(--dim); }
+  .s4.lit .term div.final { color: var(--accent); }
+  .term { position: absolute; left: 996px; top: 360px; width: 804px; height: 400px; padding: 36px; }
+  .term div { white-space: pre; }
+  .script4 { position: absolute; left: 120px; top: 360px; width: 780px; height: 400px; padding: 36px; }
+  .script4 .filelabel { margin-bottom: 16px; }
+  .script4 div { white-space: pre; }
+  .script4 .c { color: var(--mute); }
+
+  /* Scene 5 */
+  .s5-made { position: absolute; left: 120px; top: 700px; display: flex; align-items: baseline; gap: 40px; }
+  .chip { font: 500 28px/44px var(--mono); color: var(--ink); background: var(--block); border-radius: 8px; padding: 0 18px; }
+  .chip .katex { font-size: 34px; }
 </style>
 </head>
 <body>
@@ -55,96 +113,460 @@ __KATEX__
 //
 // Edit only between the backticks. Copy a whole { id: ..., render: ... } block to add a
 // step. Inside the backticks, write every backslash twice.
-DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
-  { id: "1.1", hold: 8, render: () => `
+
+// The footer of every slide: the four-tick mark and DECKTALK at left, the scene tracker at right.
+const SCENES_TOTAL = 5;
+function footer(n) {
+  const ticks = Array.from({ length: SCENES_TOTAL }, (_, i) => {
+    const x = 1 + i * 12;
+    return i + 1 === n
+      ? `<rect class="cur" x="${x}" y="8" width="2" height="22"/><circle class="cur" cx="${x + 1}" cy="3" r="2"/>`
+      : `<rect x="${x}" y="14" width="2" height="16"/>`;
+  }).join("");
+  return `
+    <div class="footer">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+          <line x1="4" y1="10" x2="4" y2="22"/><line class="tall" x1="9.5" y1="6" x2="9.5" y2="22"/><circle cx="9.5" cy="2.5" r="1.5"/>
+          <line x1="15" y1="10" x2="15" y2="22"/><line x1="20.5" y1="10" x2="20.5" y2="22"/>
+        </svg>
+        <span>DECKTALK</span>
+      </div>
+      <div class="track">
+        <svg class="ticks" viewBox="0 0 52 30" width="52" height="30" aria-hidden="true">${ticks}</svg>
+        <span>0${n} / 0${SCENES_TOTAL}</span>
+      </div>
+    </div>`;
+}
+
+// ---- Scene 1: cold open ---------------------------------------------------------------
+// Ticks sit under each word of the script line. JetBrains Mono advances 0.6 em, so at 28 px a
+// character is 16.8 px and a word's centre is (start + length / 2) characters in.
+const S1_WORDS = [[0, 3], [4, 5], [10, 6], [17, 4], [22, 3], [26, 6], [33, 6]];
+const s1ticks = S1_WORDS.map(([start, len], i) => {
+  const x = Math.round((start + len / 2) * 16.8) - 1;
+  const cue = i === 1 ? "1.1curve" : i === 5 ? "1.1number" : null;
+  return `<i style="left:${x}px"></i>` + (cue ? `<i class="on" style="left:${x}px" data-cue="${cue}" data-fx="fade"></i>` : "");
+}).join("");
+
+DeckTalk.scene(1, { name: "Open", steps: [
+  { id: "1.1", hold: 22, cues: { "1.1curve": 0.4, "1.1number": 2.2, "1.1mark": 4.5, "1.1cap": 17 }, render: () => `
     <div class="slide">
-      <h1 class="hero" data-cue="1.1a">__TITLE__</h1>
-      <p class="line" data-cue="1.1b" data-sync data-fx="none">This is a narrated lesson, cut to the word.</p>
-      <div class="lower" data-cue="1.1c" data-type="40" data-fx="fade">decktalk · scene 1</div>
+      <div class="panel" style="left:120px;top:300px;width:780px;height:400px">
+        <div class="filelabel abs" style="left:40px;top:40px">script.md</div>
+        <div class="s1-line">
+          <span class="mono" data-at="0" data-sync data-fx="none">The curve rises, then the number lands.</span><span class="cursor"></span>
+        </div>
+        <div class="s1-ticks">${s1ticks}</div>
+      </div>
+      <div class="panel s1-fig" style="left:996px;top:300px;width:804px;height:400px">
+        <svg class="abs" style="left:40px;top:40px" viewBox="0 0 440 320" width="440" height="320">
+          <line class="ax" x1="20" y1="290" x2="420" y2="290"/>
+          <line class="ax" x1="20" y1="20" x2="20" y2="290"/>
+          <path class="curve" pathLength="1" data-cue="1.1curve" data-fx="draw" data-dur="1.2" d="M20,270 C150,268 250,240 420,40"/>
+        </svg>
+        <div class="s1-big" data-cue="1.1number" data-fx="pop">3×</div>
+      </div>
+      <div class="s1-mark">
+        <span class="wordmark" data-cue="1.1mark">DeckTalk</span>
+        <span class="body" data-cue="1.1cap" style="color:var(--mute)">One script, one voice, one mp4.</span>
+      </div>
+      ${footer(1)}
     </div>` },
 ]});
 
-DeckTalk.scene(2, { name: "Three lines", steps: [
-  { id: "2.1", hold: 12, render: () => `
+// ---- Scene 2: four files, one number --------------------------------------------------
+let s2slide = null;
+DeckTalk.scene(2, { name: "Four files", steps: [
+  { id: "2.1", hold: 28, cues: { "2.1script": 2.5, "2.1words": 5, "2.1cue": 8, "2.1slide": 11, "2.1one": 14 },
+    enter: (el) => { s2slide = el; },
+    on: { "2.1one": () => s2slide && s2slide.classList.add("lit") },
+    render: () => `
     <div class="slide">
-      <h2 class="h2">How it works</h2>
-      <p class="label" data-cue="2.1a" data-at="0"><b>1</b>Markdown script</p>
-      <p class="label" data-cue="2.1b" data-at="2.5"><b>2</b>Your voice</p>
-      <p class="label" data-cue="2.1c" data-at="5"><b>3</b>Reveals on words</p>
-      <div class="row"><div class="tile" data-cue="2.1d" data-at="8" data-count>3 steps</div></div>
-    </div>` },
-  { id: "2.2", hold: 6, render: () => `
-    <div class="slide">
-      <p class="hero accent">One take.</p>
-      <p class="caption" data-cue="2.2edit" data-at="1.5">Change a sentence and only that section re-renders.</p>
+      <p class="eyebrow">Four files</p>
+      <h1 class="title">A project is four files that refer to each other by one number.</h1>
+      <div class="col" data-cue="2.1script" style="left:120px;top:360px">
+        <div class="filelabel">script.md</div>
+        <pre class="snippet">Take a step, and the
+<span class="k">learning rate</span>, eta,
+sets its length.</pre>
+      </div>
+      <div class="col" data-cue="2.1words" style="left:996px;top:360px">
+        <div class="filelabel">03.words.json</div>
+        <pre class="snippet"><span class="k">{"word": "learning", "start": 14.29},
+{"word": "rate",     "start": 14.61},</span>
+{"word": "eta",      "start": 15.02},</pre>
+      </div>
+      <div class="col" data-cue="2.1cue" style="left:120px;top:616px">
+        <div class="filelabel">cues.json</div>
+        <pre class="snippet">{
+  "cue": "3.1eq",
+  <span class="k">"on": "learning rate"</span>
+}</pre>
+      </div>
+      <div class="col" data-cue="2.1slide" style="left:996px;top:616px">
+        <div class="filelabel">index.html</div>
+        <pre class="snippet">&lt;div <span class="k">data-cue="3.1eq"</span>
+     data-tex="\\eta"&gt;
+&lt;/div&gt;</pre>
+      </div>
+      ${footer(2)}
     </div>` },
 ]});
+
+// ---- Scene 3: gradient descent on a three-dimensional loss surface ----------------------
+// The surface, the contours, the ball, its trail, the two arrows, the overshoot ghost, and the
+// minimum ring are three.js objects. Cue handlers drive every animation from DeckTalk's clock.
+const S3 = { frozen: false, on: {} };
+function s3setup(slide, frozen) {
+  const host = slide.querySelector(".fig3");
+  const T = window.THREE;
+  S3.frozen = frozen;
+  S3.on = {};
+  if (!T) { console.warn("decktalk: three.js missing, so the scene 3 figure is empty"); return; }
+  let renderer;
+  try {
+    renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
+  } catch (e) { console.warn("decktalk: no WebGL, so the scene 3 figure is empty"); return; }
+  const W = 960, H = 570, R = 0.22, ACCENT = 0x2c1fea, INK = 0x0a0a0a;
+  renderer.setPixelRatio(1);
+  renderer.setSize(W, H);
+  renderer.setClearColor(0xffffff, 0);
+  host.appendChild(renderer.domElement);
+  const scene = new T.Scene();
+  const camera = new T.PerspectiveCamera(32, W / H, 0.1, 100);
+  camera.position.set(5.77, 6.47, 6.77);
+  camera.lookAt(0, 1.2, 0);
+  // r160 lights are physical, so the legacy intensities carry a factor of pi. Low ambient and a
+  // stronger key light keep the top of the bowl pale and shade the walls, so the form reads.
+  scene.add(new T.AmbientLight(0xffffff, 0.3 * Math.PI));
+  const sun = new T.DirectionalLight(0xffffff, 0.7 * Math.PI);
+  sun.position.set(3, 6, 2);
+  scene.add(sun);
+  const fill = new T.DirectionalLight(0xffffff, 0.3 * Math.PI);
+  fill.position.set(-3, 4, -2);
+  scene.add(fill);
+
+  const h = (x, z) => 0.18 * (x * x + 0.6 * z * z) + 0.35 * Math.sin(x) * Math.cos(z);
+  const grad = (x, z) => [0.36 * x + 0.35 * Math.cos(x) * Math.cos(z), 0.216 * z - 0.35 * Math.sin(x) * Math.sin(z)];
+  const normalAt = (x, z) => { const [gx, gz] = grad(x, z); return new T.Vector3(-gx, 1, -gz).normalize(); };
+  const MIN = [-0.7266, 0.0];
+  const clamp01 = (k) => Math.min(1, Math.max(0, k));
+  const easeInOut = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+  const easeOut = (k) => 1 - Math.pow(1 - k, 3);
+
+  // Every material carries a base opacity, a fade (0..1) and the scene-wide dim factor. A
+  // material at zero opacity is hidden outright, so it never writes depth over the surface.
+  const mats = [];
+  const track = (m, base) => { m.transparent = true; m.userData.base = base; m.userData.fade = 1; m.opacity = base; mats.push(m); return m; };
+  let dimK = 1;
+  const apply = () => mats.forEach((m) => { m.opacity = m.userData.base * m.userData.fade * dimK; m.visible = m.opacity > 0.002; });
+
+  // The surface, shaded pale, with iso-loss contours lifted just above it.
+  const N = 60;
+  const geo = new T.PlaneGeometry(6, 6, N, N);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, h(pos.getX(i), pos.getZ(i)));
+  geo.computeVertexNormals();
+  const surfMat = track(new T.MeshLambertMaterial({ color: 0xe9e9ec, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }), 1);
+  surfMat.userData.fade = 0;
+  scene.add(new T.Mesh(geo, surfMat));
+
+  // Contours by marching squares over the height grid, twelve levels from the minimum to the rim.
+  const contours = (() => {
+    const G = 90, step = 6 / G, LIFT = 0.01, out = [];
+    const grid = [];
+    for (let i = 0; i <= G; i++) { grid.push([]); for (let j = 0; j <= G; j++) grid[i].push(h(-3 + i * step, -3 + j * step)); }
+    const lo = h(MIN[0], MIN[1]), hi = 2.4, levels = 12;
+    for (let L = 1; L <= levels; L++) {
+      const c = lo + (hi - lo) * L / (levels + 0.5);
+      for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
+        const x0 = -3 + i * step, z0 = -3 + j * step, x1 = x0 + step, z1 = z0 + step;
+        const a = grid[i][j], b = grid[i + 1][j], d = grid[i + 1][j + 1], e = grid[i][j + 1]; // corners: (x0,z0) (x1,z0) (x1,z1) (x0,z1)
+        const idx = (a > c ? 1 : 0) | (b > c ? 2 : 0) | (d > c ? 4 : 0) | (e > c ? 8 : 0);
+        if (idx === 0 || idx === 15) continue;
+        const lerp = (p, q, vp, vq) => p + (q - p) * (c - vp) / (vq - vp);
+        const top = [lerp(x0, x1, a, b), z0], right = [x1, lerp(z0, z1, b, d)], bottom = [lerp(x0, x1, e, d), z1], left = [x0, lerp(z0, z1, a, e)];
+        const seg = (p, q) => out.push(p[0], c + LIFT, p[1], q[0], c + LIFT, q[1]);
+        switch (idx) {
+          case 1: case 14: seg(left, top); break;
+          case 2: case 13: seg(top, right); break;
+          case 3: case 12: seg(left, right); break;
+          case 4: case 11: seg(right, bottom); break;
+          case 5: seg(left, top); seg(right, bottom); break;
+          case 6: case 9: seg(top, bottom); break;
+          case 7: case 8: seg(left, bottom); break;
+          case 10: seg(top, right); seg(left, bottom); break;
+        }
+      }
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute("position", new T.Float32BufferAttribute(out, 3));
+    return g;
+  })();
+  const contourMat = track(new T.LineBasicMaterial({ color: ACCENT }), 0.45);
+  contourMat.userData.fade = 0;
+  scene.add(new T.LineSegments(contours, contourMat));
+
+  // Iterates of gradient descent, and the overshoot ghost's.
+  const iterate = (x, z, lr, n) => { const p = [[x, z]]; for (let i = 0; i < n; i++) { const [gx, gz] = grad(x, z); x -= lr * gx; z -= lr * gz; p.push([x, z]); } return p; };
+  const P = iterate(-2.4, 1.9, 0.9, 9);
+  const GH = iterate(-2.4, 1.9, 4.5, 4);
+  const lifted = (x, z, lift) => new T.Vector3(x, h(x, z) + lift, z);
+  const chord = (a, b, lift, n) => { const pts = []; for (let i = 0; i <= n; i++) { const s = i / n; pts.push(lifted(a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, lift)); } return pts; };
+
+  // A trail is a line that grows as its ball moves, hugging the surface.
+  function makeTrail(material, capacity, dashed) {
+    const g = new T.BufferGeometry();
+    g.setAttribute("position", new T.BufferAttribute(new Float32Array(capacity * 3), 3));
+    g.setDrawRange(0, 0);
+    const line = new T.Line(g, material);
+    line.frustumCulled = false;
+    scene.add(line);
+    const done = [];
+    const tr = { line, done, active: null };
+    tr.write = (extra) => {
+      const all = done.concat(extra);
+      const arr = g.attributes.position.array;
+      all.forEach((p, i) => { arr[i * 3] = p.x; arr[i * 3 + 1] = p.y; arr[i * 3 + 2] = p.z; });
+      g.setDrawRange(0, all.length);
+      g.attributes.position.needsUpdate = true;
+      if (dashed) line.computeLineDistances();
+      tr.active = extra;
+    };
+    tr.commit = (pts) => { done.push(...pts); tr.active = null; tr.write([]); };
+    return tr;
+  }
+  const trail = makeTrail(track(new T.LineBasicMaterial({ color: INK }), 0.7), 400, false);
+  const ghostTrail = makeTrail(track(new T.LineDashedMaterial({ color: INK, dashSize: 0.12, gapSize: 0.08 }), 0.4), 200, true);
+  ghostTrail.line.computeLineDistances();
+
+  // The ball, with a soft accent halo on the surface under it that marks the current point.
+  const ballMat = track(new T.MeshLambertMaterial({ color: ACCENT }), 1);
+  const ball = new T.Mesh(new T.SphereGeometry(R, 32, 24), ballMat);
+  ball.scale.setScalar(0.001);
+  scene.add(ball);
+  const haloMat = track(new T.MeshBasicMaterial({ color: ACCENT, depthWrite: false }), 0.4);
+  const halo = new T.Mesh(new T.CircleGeometry(0.36, 48), haloMat);
+  halo.scale.setScalar(0.001);
+  scene.add(halo);
+  const placeBall = (x, z, scale) => {
+    ball.position.copy(lifted(x, z, R));
+    const n = normalAt(x, z);
+    halo.position.copy(lifted(x, z, 0)).addScaledVector(n, 0.03);
+    halo.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), n);
+    if (scale !== undefined) { ball.scale.setScalar(scale); halo.scale.setScalar(scale); }
+  };
+  placeBall(P[0][0], P[0][1]);
+  const ghostMat = track(new T.MeshLambertMaterial({ color: ACCENT }), 0.35);
+  ghostMat.userData.fade = 0;
+  const ghost = new T.Mesh(new T.SphereGeometry(R, 32, 24), ghostMat);
+  ghost.position.copy(lifted(GH[0][0], GH[0][1], R));
+  scene.add(ghost);
+
+  // The two arrows at the first point: grey uphill along the gradient, accent the other way.
+  function arrow(color, dir, origin) {
+    const m = track(new T.MeshBasicMaterial({ color }), 1);
+    m.userData.fade = 0;
+    const g = new T.Group();
+    const shaft = new T.Mesh(new T.CylinderGeometry(0.04, 0.04, 0.7, 12), m);
+    shaft.position.y = 0.35;
+    const head = new T.Mesh(new T.ConeGeometry(0.13, 0.32, 16), m);
+    head.position.y = 0.86;
+    g.add(shaft, head);
+    g.position.copy(origin);
+    g.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir.clone().normalize());
+    scene.add(g);
+    return m;
+  }
+  const [g0x, g0z] = grad(P[0][0], P[0][1]);
+  const upDir = new T.Vector3(g0x, g0x * g0x + g0z * g0z, g0z).normalize();
+  const arrowOrigin = lifted(P[0][0], P[0][1], R + 0.02);
+  const upMat = arrow(0x595959, upDir, arrowOrigin);
+  const downMat = arrow(ACCENT, upDir.clone().negate(), arrowOrigin);
+
+  // The minimum ring, popped in with the final settle.
+  const ringMat = track(new T.MeshBasicMaterial({ color: ACCENT }), 1);
+  const ring = new T.Mesh(new T.TorusGeometry(0.42, 0.045, 12, 64), ringMat);
+  ring.position.copy(lifted(MIN[0], MIN[1], 0.045));
+  ring.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), normalAt(MIN[0], MIN[1]));
+  ring.scale.setScalar(0.001);
+  scene.add(ring);
+
+  // Animation: every active animation ticks from DeckTalk's clock; the scene renders while any
+  // is active and once after each state change otherwise.
+  const clock = () => window.__decktalk.now();
+  const anims = new Set();
+  let raf = 0, inStep = false;
+  const render = () => { apply(); renderer.render(scene, camera); };
+  const loop = () => {
+    if (raf || inStep) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0; inStep = true;
+      const t = clock();
+      for (const a of [...anims]) {
+        const k = clamp01((t - a.t0) / a.dur);
+        a.tick(k);
+        if (k >= 1) { anims.delete(a); if (a.done) a.done(); }
+      }
+      inStep = false;
+      render();
+      if (anims.size) loop();
+    });
+  };
+  const add = (dur, tick, done, owner) => { const a = { t0: clock(), dur, tick, done, owner }; if (!isFinite(a.t0)) a.t0 = 0; anims.add(a); tick(0); render(); loop(); return a; };
+  const fadeTo = (m, target, dur, done) => { const from = m.userData.fade; add(dur, (k) => { m.userData.fade = from + (target - from) * easeOut(k); }, done); };
+  const dimTo = (target, dur) => { const from = dimK; add(dur, (k) => { dimK = from + (target - from) * easeOut(k); }); };
+  // Move a ball from where it is to b over dur seconds along the chord lifted to the surface,
+  // growing its trail. A move that arrives while another is under way takes over from there.
+  const move = (mesh, tr, b, dur, done, place) => {
+    anims.forEach((x) => { if (x.owner === mesh) anims.delete(x); });
+    if (tr.active && tr.active.length) tr.commit(tr.active);
+    const a = [mesh.position.x, mesh.position.z];
+    const pts = chord(a, b, R, 20), tpts = chord(a, b, 0.02, 20);
+    add(dur, (k) => {
+      const s = easeInOut(k), f = s * 20, i = Math.floor(f), u = f - i;
+      const p = i >= 20 ? pts[20] : pts[i].clone().lerp(pts[i + 1], u);
+      if (place) place(p.x, p.z); else mesh.position.copy(p);
+      const tp = i >= 20 ? tpts[20] : tpts[i].clone().lerp(tpts[i + 1], u);
+      tr.write(tpts.slice(0, Math.min(i + 1, 21)).concat(i >= 20 ? [] : [tp]));
+    }, () => { tr.commit(tpts); if (done) done(); }, mesh);
+  };
+  const walk = (mesh, tr, path, from, to, dur, done, place) => {
+    if (from >= to) { if (done) done(); return; }
+    move(mesh, tr, path[from + 1], dur, () => walk(mesh, tr, path, from + 1, to, dur, done, place), place);
+  };
+  const pop = (mesh, dur) => add(dur, (k) => { const s = k < 0.45 ? 1.08 * easeOut(k / 0.45) : 1.08 - 0.08 * ((k - 0.45) / 0.55); mesh.scale.setScalar(Math.max(0.001, s)); });
+  const ballTo = (x, z) => placeBall(x, z);
+
+  if (frozen) {
+    // The end state at once: surface and contours up, the trail through every iterate, the
+    // ball at the minimum, the ring in place, the ghost and the arrows gone.
+    surfMat.userData.fade = 1; contourMat.userData.fade = 1;
+    for (let i = 0; i < 9; i++) trail.commit(chord(P[i], P[i + 1], 0.02, 20));
+    placeBall(P[9][0], P[9][1], 1);
+    ring.scale.setScalar(1);
+    render();
+    return;
+  }
+  // Warm up: draw one material of each program per frame at near-zero opacity, so SwiftShader
+  // links every program and uploads every buffer during the lead, not on the frame a cue first
+  // shows it, and no single frame stalls while it does.
+  const warm = [surfMat, contourMat, haloMat, ghostTrail.line.material];
+  let wi = 0;
+  const warmStep = () => {
+    if (wi >= warm.length) { render(); return; }
+    const m = warm[wi++];
+    mats.forEach((x) => { x.visible = x === m; });
+    const dw = m.depthWrite, op = m.opacity;
+    m.opacity = 0.01; m.depthWrite = false;
+    ghostTrail.line.geometry.setDrawRange(0, 2);
+    renderer.render(scene, camera);
+    ghostTrail.line.geometry.setDrawRange(0, 0);
+    m.depthWrite = dw; m.opacity = op;
+    requestAnimationFrame(warmStep);
+  };
+  warmStep();
+  S3.on = {
+    "3.1bowl": () => { surfMat.userData.fade = contourMat.userData.fade = 0.2; fadeTo(surfMat, 1, 0.5); fadeTo(contourMat, 1, 0.5); },
+    "3.1p0": () => add(0.3, (k) => placeBall(P[0][0], P[0][1], Math.max(0.001, easeOut(k)))),
+    "3.1up": () => fadeTo(upMat, 1, 0.3),
+    "3.1neg": () => fadeTo(downMat, 1, 0.3),
+    "3.1p1": () => { fadeTo(upMat, 0, 0.3); fadeTo(downMat, 0, 0.3); move(ball, trail, P[1], 0.9, null, ballTo); },
+    "3.1p2": () => move(ball, trail, P[2], 0.9, null, ballTo),
+    "3.1p3": () => walk(ball, trail, P, 2, 4, 0.5, null, ballTo),
+    "3.1think": () => dimTo(0.35, 0.6),
+    "3.1over": () => { ghostMat.userData.fade = 1; dimTo(1, 0.3); walk(ghost, ghostTrail, GH, 0, 4, 0.7); },
+    "3.1min": () => {
+      fadeTo(ghostMat, 0, 0.6); fadeTo(ghostTrail.line.material, 0, 0.6);
+      walk(ball, trail, P, 4, 9, 0.5, () => pop(ring, 0.5), ballTo);
+    },
+  };
+}
 
 DeckTalk.scene(3, { name: "Gradient descent", steps: [
-  { id: "3.1", hold: 26, cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1eq": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1min": 21 }, render: () => `
+  { id: "3.1", hold: 40,
+    cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1up": 5, "3.1neg": 7, "3.1p1": 9, "3.1eq": 11, "3.1p2": 13, "3.1p3": 15, "3.1eqA": 18, "3.1eqB": 19.5, "3.1eqC": 21, "3.1think": 23, "3.1over": 29, "3.1min": 32 },
+    enter: (el, { frozen }) => s3setup(el, frozen),
+    on: {
+      "3.1bowl": () => S3.on["3.1bowl"] && S3.on["3.1bowl"](),
+      "3.1p0": () => S3.on["3.1p0"] && S3.on["3.1p0"](),
+      "3.1up": () => S3.on["3.1up"] && S3.on["3.1up"](),
+      "3.1neg": () => S3.on["3.1neg"] && S3.on["3.1neg"](),
+      "3.1p1": () => S3.on["3.1p1"] && S3.on["3.1p1"](),
+      "3.1p2": () => S3.on["3.1p2"] && S3.on["3.1p2"](),
+      "3.1p3": () => S3.on["3.1p3"] && S3.on["3.1p3"](),
+      "3.1think": () => S3.on["3.1think"] && S3.on["3.1think"](),
+      "3.1over": () => S3.on["3.1over"] && S3.on["3.1over"](),
+      "3.1min": () => S3.on["3.1min"] && S3.on["3.1min"](),
+    },
+    render: () => `
     <div class="slide">
-      <div class="row wide">
-        <svg viewBox="0 0 1000 520" width="1000" height="520" style="overflow:visible">
-          <line class="ax" x1="60" y1="470" x2="960" y2="470"/>
-          <line class="ax" x1="60" y1="40" x2="60" y2="470"/>
-          <path class="curve" pathLength="1" data-cue="3.1bowl" data-fx="draw" data-dur="1.6"
-                d="M80,70 Q510,880 940,70"/>
-          <path class="zig" pathLength="1" data-cue="3.1over" data-fx="draw" data-dur="1.4"
-                d="M190,200 L830,200 L230,320 L790,320 L300,410"/>
-          <g class="step" data-cue="3.1p0" data-fx="pop"><circle cx="190" cy="200" r="26"/></g>
-          <g class="step" data-cue="3.1p1" data-fx="pop"><line x1="190" y1="200" x2="330" y2="330"/><circle cx="330" cy="330" r="26"/></g>
-          <g class="step" data-cue="3.1p2" data-fx="pop"><line x1="330" y1="330" x2="420" y2="405"/><circle cx="420" cy="405" r="26"/></g>
-          <g class="step" data-cue="3.1p3" data-fx="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
-          <g class="step min" data-cue="3.1min" data-fx="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
-        </svg>
-        <div class="col">
-          <h2 class="h2">Gradient descent</h2>
-          <p class="caption">Follow the slope downhill, one step at a time.</p>
-          <div class="math" data-cue="3.1eq" data-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
-          <p class="caption" data-cue="3.1think" data-fx="fade">Pause and think: what if the learning rate is too large?</p>
-        </div>
+      <p class="eyebrow">Gradient descent</p>
+      <h1 class="title">Gradient descent follows minus the gradient downhill, one step at a time.</h1>
+      <div class="fig3"><div class="axlabel">L(θ)</div></div>
+      <span class="chip abs" data-cue="3.1eq" data-tex="\\eta = 0.9" style="left:1160px;top:340px">η = 0.9</span>
+      <div class="eq">
+        <span data-cue="3.1eqA" data-display data-tex="\\theta_{t+1} = \\theta_t">θ(t+1) = θ(t)</span>
+        <span data-cue="3.1eqB" data-display data-tex="-\\,\\textcolor{#2c1fea}{\\eta}">− η</span>
+        <span data-cue="3.1eqC" data-display data-tex="\\nabla L(\\theta_t)">∇L(θ(t))</span>
       </div>
+      <p class="caption abs" data-cue="3.1eq" style="left:1160px;top:540px;margin:0">η is the step size.</p>
+      <p class="body abs" data-cue="3.1think" style="left:1160px;top:640px;width:640px;margin:0">Pause and think:<br>what if η is too large?</p>
+      ${footer(3)}
     </div>` },
 ]});
 
-DeckTalk.scene(4, { name: "Before and after", steps: [
-  { id: "4.1", hold: 14, cues: { "4.1ask": 1, "4.1r1": 5 }, render: () => `
-    <div class="slide">
-      <p class="eyebrow">Before</p>
-      <div class="chat">
-        <div class="bubble ask" data-cue="4.1ask" data-sync data-fx="none">Is this query okay?</div>
-        <div class="bubble reply" data-cue="4.1r1" data-fx="fade">
-          <p>Yes, the query looks fine. It selects orders joined to customers and filters them by date.</p>
-        </div>
+// ---- Scene 4: the edit ----------------------------------------------------------------
+let s4slide = null;
+DeckTalk.scene(4, { name: "The edit", steps: [
+  { id: "4.1", hold: 28,
+    cues: { "4.1change": 0.3, "4.1valley": 2.5, "4.1build": 5, "4.1s1": 7, "4.1s2": 9, "4.1s3": 11, "4.1s45": 14, "4.1out": 16.5, "4.1verify": 19, "4.1edit": 24 },
+    enter: (el) => { s4slide = el; },
+    on: {
+      "4.1valley": () => s4slide && s4slide.querySelector(".old").classList.add("struck"),
+      "4.1edit": () => s4slide && s4slide.querySelector(".s4").classList.add("lit"),
+    },
+    render: () => `
+    <div class="slide s4">
+      <p class="eyebrow">The edit</p>
+      <h1 class="title">Change a sentence, and only that section is built again.</h1>
+      <div class="panel script4 mono" data-cue="4.1change">
+        <div class="filelabel">script.md</div>
+        <div class="c">## 3. Gradient descent — 0:40</div>
+        <div> </div>
+        <div>Start with a loss surface.</div>
+        <div class="old">For this lesson it is a bowl.</div>
+        <span class="new" data-cue="4.1valley" data-type="40" data-fx="none">Think of it as a valley.</span>
+        <div>[beat] Pick a point, theta.</div>
       </div>
-    </div>` },
-  { id: "4.2", hold: 18, cues: { "4.2ask": 1, "4.2r1": 10, "4.2r2": 12, "4.2r3": 14 }, render: () => `
-    <div class="slide">
-      <p class="eyebrow">After</p>
-      <div class="chat">
-        <div class="bubble ask" data-cue="4.2ask" data-sync data-fx="none">You are reviewing a query that runs nightly on a two billion row orders table. List correctness and performance problems as a numbered list, most severe first, with a one-line fix for each.</div>
-        <div class="bubble reply" data-cue="4.2r1" data-fx="fade">
-          <p data-cue="4.2r1" data-fx="fade"><b>1.</b> The join on customer_email is not indexed, so every night scans the whole table. Join on customer_id.</p>
-          <p data-cue="4.2r2" data-fx="fade"><b>2.</b> The date filter wraps created_at in a function, which defeats the index. Compare against a computed boundary instead.</p>
-          <p data-cue="4.2r3" data-fx="fade"><b>3.</b> SELECT * returns forty columns the report never reads. Name the six it needs.</p>
-        </div>
+      <div class="panel term mono">
+        <div data-cue="4.1build" data-fx="fade">$ decktalk build</div>
+        <div data-cue="4.1s1" data-fx="fade">01  open        cached</div>
+        <div data-cue="4.1s2" data-fx="fade">02  four files  cached</div>
+        <div data-cue="4.1s3" data-fx="fade">03  gradient    synthesized  0:41</div>
+        <div data-cue="4.1s45" data-fx="fade">04  the edit    cached</div>
+        <div data-cue="4.1s45" data-fx="fade">05  close       cached</div>
+        <div data-cue="4.1out" data-fx="fade">built build/out/lesson.mp4</div>
+        <div class="final" data-cue="4.1verify" data-fx="fade">3:3.1eq  learning rate  +10ms  changed</div>
       </div>
+      ${footer(4)}
     </div>` },
 ]});
 
+// ---- Scene 5: close -------------------------------------------------------------------
 DeckTalk.scene(5, { name: "Close", steps: [
-  { id: "5.1", hold: 10, render: () => `
+  { id: "5.1", hold: 14, cues: { "5.1cap": 2.5, "5.1made": 7, "5.1docs": 10 }, render: () => `
     <div class="slide">
-      <p class="eyebrow">The whole idea</p>
-      <p class="line" data-cue="5.1a" data-sync data-fx="none">Write the script.</p>
-      <p class="line" data-cue="5.1b" data-sync data-fx="none">Narrate it in your own voice.</p>
-      <p class="line" data-cue="5.1c" data-sync data-fx="none">Every reveal lands on its word.</p>
-    </div>` },
-  { id: "5.2", hold: 6, render: () => `
-    <div class="slide">
-      <p class="hero accent">The script is the edit.</p>
-      <p class="caption" data-cue="5.2a" data-sync data-fx="none">Change a sentence and only that section renders again.</p>
-      <div class="lower" data-cue="5.2b" data-fx="fade">Made with DeckTalk</div>
+      <p class="hero abs" style="left:120px;top:300px;margin:0">The script is the edit.</p>
+      <p class="body abs" data-cue="5.1cap" data-sync data-fx="none" style="left:120px;top:470px;margin:0;color:var(--mute)">Change a sentence, and only that section renders again.</p>
+      <div class="s5-made">
+        <span class="wordmark" data-cue="5.1made">DeckTalk</span>
+        <span class="chip" data-cue="5.1made">uv tool install decktalk</span>
+      </div>
+      <p class="mono abs" data-cue="5.1docs" style="left:120px;top:800px;margin:0">docs.decktalk.app</p>
+      ${footer(5)}
     </div>` },
 ]});
 </script>

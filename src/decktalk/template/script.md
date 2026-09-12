@@ -1,74 +1,62 @@
 # __TITLE__ — narration script
 
 Each "## N." section is one cut of the video. Bracketed directions are not spoken: `[beat]`
-is a short pause, `[pause 3]` is a three second pause, and anything else in brackets is a
-note to yourself. Write numbers and symbols the way you want them said ("two x", not "2x"),
-because the cue phrases in `cues.json` match spoken words. To open with a clip of your own,
-follow the comment block in `decktalk.toml` and add a `## 0. On camera` heading above
-section 1.
+is a short pause, `[pause 4]` is a four second pause, and anything else in brackets is a
+note to yourself. Write numbers and symbols the way you want them said ("forty one", not
+"41"), because the cue phrases in `cues.json` match spoken words, and a `data-sync` line on a
+slide must be word for word what the voice says. To open with a clip of your own, follow the
+comment block in `decktalk.toml` and add a `## 0. On camera` heading above section 1.
 
 ---
 
 ## 1. Open
 
-[Deck scene 1. Title, then the subtitle, then the lower third types in.]
+[Deck scene 1. A line of script lights up word by word while the curve draws and the number lands.]
 
-Welcome. This is a narrated lesson, cut to the word. [beat] Every visual you see lands on
-the word that introduces it.
+The curve rises, then the number lands. [beat] You just watched DeckTalk. [beat] That
+sentence is a line of markdown. My cloned voice read it, and every reveal landed on its
+word, because the audio came back with a timestamp for every word. [beat] Here is how one
+file does that.
 
-## 2. Three lines
+## 2. Four files
 
-[Deck scene 2. Three labels reveal one at a time, then a tile counts up.]
+[Deck scene 2. Four panels rise in turn, then the shared phrase lights in every one.]
 
-Here is how it works. [beat] First, you write the script in markdown. [beat] Second, you
-narrate it in your own voice. [beat] Third, every reveal lands on a word. Three steps, and
-one take.
+A project is four files that refer to each other by one number. [beat] The script says
+what the voice says. [beat] The voice comes back with a time for every word. [beat] A cue
+names the phrase a visual waits for. [beat] And a slide names the cue. [beat] One number
+ties them together, so the picture can only ever land on the word. [beat] That is the tool.
+Now a lesson where every picture waits for its word.
 
-[Step 2.2.]
+## 3. Gradient descent — 0:40 to 1:00
 
-And when a line comes out wrong, change a sentence and only that section re-renders.
+[Deck scene 3. A loss surface fades up, a ball steps down it, and the update rule builds.]
 
-## 3. Gradient descent — 0:40 to 1:20
+Start with a loss surface. For this lesson it is a bowl. [beat] Pick a point, theta.
+[beat] The gradient points uphill, so follow minus the gradient. [beat] Take a step, and
+the learning rate, eta, sets its length. [beat] Again, [beat] and again. The steps shrink
+because the slope does. [beat] That is the rule. The next theta [beat] is this theta, minus
+eta [beat] times the gradient here.
 
-[Deck scene 3. A loss bowl draws, a point steps down it, and the update rule appears.]
+[beat] Pause and think: what if eta is too large?
 
-Now a short lesson. Here is gradient descent, at a high level. [beat] Start with a loss
-surface. Think of it as a bowl. [beat] Pick a point anywhere on it. [beat] The gradient
-says which way is uphill, so take a step the other way. [beat] The learning rate sets
-the size of that step. [beat] Step again. [beat] And again, and each step is smaller as
-the slope flattens out.
+[pause 4]
 
-[beat] Pause and think: what happens if the learning rate is too large?
+You overshoot and bounce across the bowl. [beat] Small enough, and you settle at the
+bottom, for this bowl. [beat] Now change one sentence of that lesson.
 
-[pause 3]
+## 4. The edit
 
-You overshoot, and bounce from side to side. [beat] Small enough, and you settle at the
-bottom.
+[Deck scene 4. One phrase is struck and retyped, and the build table fills in row by row.]
 
-## 4. Before and after
-
-[Deck scene 4. A vague prompt appears word by word, and a flat reply fades in.]
-
-The same idea works for teaching how to prompt. Here is a vague prompt. [beat] Is this
-query okay? [beat] The reply is polite, and it is useless. It tells you what the query
-does, which you already knew.
-
-[Step 4.2. A better prompt, and a better reply.]
-
-Now give the model a role, the stakes, and a shape for its answer. [beat] You are
-reviewing a query that runs nightly on a two billion row orders table. List correctness
-and performance problems as a numbered list, most severe first, with a one-line fix for
-each. [beat] Same model, and now it finds the unindexed join, [beat] the filter that
-defeats the index, [beat] and the columns nobody reads.
+Change one sentence. [beat] Say the bowl is a valley. [beat] Build again. [beat] Section
+one is cached. [beat] Two, cached. [beat] Three is synthesized, forty one seconds of new
+narration. [beat] Four and five, cached. [beat] The video is rebuilt, and verify measures
+the reveal on the word learning rate: ten milliseconds. [beat] The script is the edit.
 
 ## 5. Close
 
-[Deck scene 5. Three lines return, then the end card.]
-
-That is the whole idea. [beat] Write the script. [beat] Narrate it in your own voice.
-[beat] And every reveal lands on its word.
-
-[Step 5.2. The end card.]
+[Deck scene 5. The end card.]
 
 The script is the edit. [beat] Change a sentence, and only that section renders again.
-[beat] Made with DeckTalk.
+[beat] Made with DeckTalk. [beat] The docs are at docs dot decktalk dot app.
