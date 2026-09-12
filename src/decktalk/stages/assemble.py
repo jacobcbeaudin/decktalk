@@ -56,6 +56,7 @@ from .beats import find_phrase
 log = logging.getLogger(__name__)
 
 CLIP_FADE_SECONDS = 0.02  # Every clip's audio fades in and out over this long, so a cut never clicks.
+LIMITER_HEADROOM_DB = 0.3  # The limiter works on oversampled samples, so it sits a little under the true-peak ceiling.
 LIMITER_OVERSAMPLE_RATE = 192000  # The true-peak limiter runs at this rate and resamples back afterwards.
 LOUDNESS_TOLERANCE_LU = 1.0  # The measured result may sit this far from the integrated target.
 
@@ -529,11 +530,12 @@ def normalize_loudness(project: Project, src: Path, dst: Path) -> tuple[ffmpeg.L
     enc = _Encoder(project.settings.video)
     before = ffmpeg.measure_loudness(src, i=ln.i, tp=ln.tp, lra=ln.lra)
     gain = ln.i - before.i
+    ceiling = db(ln.tp - LIMITER_HEADROOM_DB)
     ffmpeg.run(
         "-i", str(src), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
         "-af",
         f"volume={gain:.2f}dB,aresample={LIMITER_OVERSAMPLE_RATE},"
-        f"alimiter=limit={db(ln.tp):.4f}:attack=5:release=50:level=false,aresample={enc.v.sample_rate}",
+        f"alimiter=limit={ceiling:.4f}:attack=5:release=50:level=false,aresample={enc.v.sample_rate}",
         *enc.aenc, "-movflags", "+faststart", str(dst),
     )  # fmt: skip
     after = ffmpeg.measure_loudness(dst, i=ln.i, tp=ln.tp, lra=ln.lra)

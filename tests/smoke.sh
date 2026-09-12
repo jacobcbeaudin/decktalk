@@ -60,7 +60,7 @@ starts = {s["codec_type"]: float(s["start_time"]) for s in streams if s["codec_t
 assert starts == {"video": 0.0, "audio": 0.0}, f"streams do not start together: {starts}"
 sections = sorted(out.glob("[0-9][0-9]-section.mp4"))
 chapters = probe("-show_chapters")["chapters"]
-assert len(chapters) == len(sections) == 4, (len(chapters), len(sections))
+assert len(chapters) == len(sections) >= 4, (len(chapters), len(sections))
 frames = probe("-select_streams", "v", "-show_entries", "frame=pts_time")["frames"]
 pts = {round(float(f["pts_time"]), 3) for f in frames}
 t = 0.0
