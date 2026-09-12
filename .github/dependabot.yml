@@ -1,0 +1,18 @@
+# Dependabot keeps the GitHub Actions and the locked Python dependencies current.
+# Updates arrive as one grouped pull request per ecosystem, once a week.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
