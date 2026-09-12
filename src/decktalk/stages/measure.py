@@ -5,7 +5,8 @@ assembler trims that much off the head of the video. Without a marker the fallba
 the first painted frame plus the settle; failing that a fixed guess.
 
 check: duration against what was requested, and luma at 10/50/90 %, so a black or
-truncated recording is caught before assembly.
+truncated recording is caught before assembly. The sidecar's runtime warnings add a
+KATEX? verdict when the page's equations were never typeset.
 """
 
 from __future__ import annotations
@@ -103,7 +104,7 @@ class RecordingCheck:
     y50: float
     y90: float
     max50: float
-    verdict: str  # "ok", "BLACK?", "TRUNCATED", or both
+    verdict: str  # "ok", or any of "NO COVER", "BLACK?", "TRUNCATED", "KATEX?" joined by spaces
 
     @property
     def ok(self) -> bool:
@@ -126,6 +127,8 @@ def check(project: Project, only: list[int] | None = None) -> list[RecordingChec
             verdicts.append("BLACK?")
         if wanted and dur < wanted - cfg.truncated_slack_seconds:
             verdicts.append("TRUNCATED")
+        if side and any("katex" in w.lower() for w in side.warnings):
+            verdicts.append("KATEX?")
         row = RecordingCheck(f.name[:2], dur, wanted, y10, y50, y90, max50, " ".join(verdicts) or "ok")
         if not row.ok:
             log.warning("[chk ] %s  %s", row.key, row.verdict)

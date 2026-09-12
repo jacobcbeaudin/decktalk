@@ -3,27 +3,31 @@
 
 [project]
 name = "__NAME__"
-script = "script.md"   # narration; "## N. Title" sections are the cut points
+script = "script.md"   # narration, where "## N. Title" sections are the cut points
 cues = "cues.json"     # which spoken phrase each visual lands on
-build = "build"        # everything generated (git-ignored)
+build = "build"        # everything generated, and git-ignored
 
 [voice]
-# model = "eleven_multilingual_v2"   # default from the tool; override per project here
+# model = "eleven_multilingual_v2"   # the tool's default, which you can override per project here
 stability = 0.55
 similarity_boost = 0.75
 style = 0.0
 speaker_boost = true
 speed = 1.0
 
-# One [[section]] per "## N." section of the script, in order. A section is either
-# a `page` (an HTML scene recorded and cut to the narration) or a `clip` (your own
-# video with its own audio; a titled slate plays if the file is missing).
+# One [[section]] per "## N." section of the script, in order. A section is either a
+# `page` (an HTML scene recorded and cut to the narration) or a `clip` (your own video
+# with its own audio, where a titled slate plays if the file is missing).
 
-[[section]]
-number = 0
-title = "On camera — the open"
-clip = "media/open.mp4"
-slate_seconds = 6
+# To open with a clip of your own, put the video at media/open.mp4, remove the leading
+# "# " from the five lines below, add a "## 0. On camera" heading above section 1 in
+# script.md, and set dips = [[0, 1]] under [transition] so the cut out of the clip dips
+# to black.
+# [[section]]
+# number = 0
+# title = "On camera"
+# clip = "media/open.mp4"
+# slate_seconds = 6       # a titled slate plays for this long when the file is missing
 
 [[section]]
 number = 1
@@ -40,15 +44,21 @@ scene = 2
 
 [[section]]
 number = 3
-title = "A curve and an equation"
+title = "The derivative of x squared"
 page = "deck/index.html"
 scene = 3
+
+[[section]]
+number = 4
+title = "Before and after"
+page = "deck/index.html"
+scene = 4
 extra_seconds = 2
 hold_seconds = 2        # allowed only on the last page section
-ambience = false        # true: the ambience bed plays under this section
+ambience = false        # true plays the ambience bed under this section
 
 [transition]
-dips = [[0, 1]]         # boundaries that dip to black; omit the key to dip at every cut
+dips = []               # boundaries that dip to black, as [from, to] pairs. Omit the key to dip at every cut.
 dip_seconds = 0.15
 page_fades_in = true    # pages fade themselves up, so no fade-in is added on their side
 

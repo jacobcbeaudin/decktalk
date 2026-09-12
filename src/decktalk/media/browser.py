@@ -38,6 +38,8 @@ START_JS = """() => {
   if (d) d.remove();
   if (window.DeckTalk && window.DeckTalk.startClock) window.DeckTalk.startClock();
 }"""
+# What the runtime could not honor: unknown cue ids, cues no step owns, KaTeX that never loaded.
+WARNINGS_JS = "() => (window.__decktalk && window.__decktalk.warnings) || []"
 
 SLATE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{{margin:0;width:{w}px;height:{h}px;background:{bg};color:#f4f6f8;
@@ -76,6 +78,18 @@ def await_ready(page: Any) -> None:
             pass
 
 
+def page_warnings(page: Any, label: str) -> list[str]:
+    """The runtime's warnings for this page, each logged as a warning under `label`."""
+    try:
+        found = page.evaluate(WARNINGS_JS)
+    except Exception:
+        return []
+    warnings = [str(w) for w in found] if isinstance(found, list) else []
+    for w in warnings:
+        log.warning("[page] %s  %s", label, w)
+    return warnings
+
+
 def record_page(
     browser: Any,
     url: str,
@@ -112,6 +126,7 @@ def record_page(
     page.evaluate(START_JS)
     started = time.monotonic()
     page.wait_for_timeout(seconds * 1000)
+    warnings = page_warnings(page, out.stem)
     video = page.video
     context.close()
     src = Path(video.path()) if video else None
@@ -129,6 +144,7 @@ def record_page(
         settle_seconds=round(started - loaded, 3),
         load_seconds=round(loaded - created, 3),
         lead_seconds=round(started - created, 3),
+        warnings=warnings,
     )
     sidecar.save(out.with_suffix(".json"))
     return sidecar
@@ -140,6 +156,7 @@ def screenshot(page: Any, url: str, out: Path, *, settle_ms: int) -> None:
     page.wait_for_timeout(settle_ms)
     out.parent.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(out))
+    page_warnings(page, out.stem)
 
 
 def render_slate(

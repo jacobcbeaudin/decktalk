@@ -3,74 +3,119 @@
 <head>
 <meta charset="utf-8">
 <title>__NAME__</title>
-<!-- KaTeX is optional: equations in [data-tex] render as plain text until it loads. -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<!-- KaTeX typesets every [data-tex] element. Without it the element keeps its plain text. -->
+__KATEX__
 <style>
-  :root { --bg: #0b0f14; --surface: #151b23; --text: #f4f6f8; --muted: #9aa4b2; --accent: #7ee787; }
+  :root { --bg: #0b0f14; --surface: #151b23; --text: #f4f6f8; --muted: #9aa4b2; --accent: #7ee787; --ask: #1f3a5f; }
   html, body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, -apple-system, Helvetica, Arial, sans-serif; }
   body { width: 100vw; height: 100vh; overflow: hidden; }
   #dt-stage { background: var(--bg); }
-  .slide { position: absolute; inset: 0; padding: 120px 160px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
+  .slide { position: absolute; inset: 0; padding: 100px 160px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
   .hero { font-size: 96px; font-weight: 700; letter-spacing: -2px; line-height: 1.05; margin: 0; }
   .line { font-size: 44px; line-height: 1.3; margin: 0; }
+  .label { font-size: 56px; font-weight: 600; line-height: 1.2; margin: 0; }
+  .label b { color: var(--accent); font-weight: 700; margin-right: 24px; }
   .caption { font-size: 30px; color: var(--muted); margin: 0; }
   .accent { color: var(--accent); }
-  .lower { position: absolute; left: 160px; bottom: 120px; font-size: 44px; color: var(--muted); }
+  .lower { position: absolute; left: 160px; bottom: 100px; font-size: 44px; color: var(--muted); }
   .tile { display: inline-block; background: var(--surface); border-radius: 24px; padding: 32px 48px; font-size: 96px; font-weight: 700; color: var(--accent); }
   .row { display: flex; gap: 40px; align-items: flex-end; }
-  .eq { font-size: 52px; }
+  .cols { display: flex; gap: 72px; align-items: center; }
+  .math { font-size: 40px; margin: 0; }
+  .math .katex-display { margin: 18px 0; }
+  .math .katex-display > .katex { text-align: left; }
+  .answer { color: var(--accent); font-size: 60px; }
   .ax { stroke: var(--muted); stroke-width: 2; }
-  .curve { fill: none; stroke: var(--accent); stroke-width: 6; }
+  .axlabel { fill: var(--muted); font-size: 36px; }
+  .curve { fill: none; stroke: var(--accent); stroke-width: 8; }
+  .chat { display: flex; flex-direction: column; gap: 24px; width: 1300px; }
+  .eyebrow { font-size: 30px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 8px; }
+  .bubble { font-size: 36px; line-height: 1.35; padding: 24px 36px; border-radius: 28px; max-width: 1000px; }
+  .ask { align-self: flex-end; background: var(--ask); border-bottom-right-radius: 6px; }
+  .reply { align-self: flex-start; background: var(--surface); border-bottom-left-radius: 6px; }
+  .reply p { margin: 0; }
+  .reply p + p { margin-top: 10px; }
 </style>
 </head>
 <body>
 <script src="decktalk-runtime.js"></script>
 <script>
-// Everything on screen lives here. Scene numbers are script sections; step ids are cue ids.
-// `cues.json` maps each id to the spoken phrase it lands on. Open this file with no query
-// for an index of scenes and steps; ?step=ID freezes one for review.
-const CONTENT = {
-  1: { title: "__TITLE__", sub: "A narrated deck, cut to the word." },
-  2: { lines: ["Write the script in markdown.", "Narrate it in your own voice.", "Every reveal lands on a word."], tile: "3 steps" },
-  3: { eq: "\\frac{d}{dx}\\,x^2 = 2x", note: "Equations typeset with KaTeX when it loads; plain text otherwise." },
-};
-
+// Scene numbers are the "## N." sections of script.md. Each step id is N.S and each cue id
+// is the step id plus a short word. cues.json maps every cue id to the spoken phrase it
+// lands on. Open this file with no query for an index of scenes and steps, and add
+// ?step=ID to freeze one step with everything revealed.
+//
+// Edit only between the backticks. Copy a whole { id: ..., render: ... } block to add a
+// step. Inside the backticks, write every backslash twice.
 DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
-  { id: "1", hold: 8, render: () => `
+  { id: "1.1", hold: 8, render: () => `
     <div class="slide">
-      <h1 class="hero" data-cue="1a">${CONTENT[1].title}</h1>
-      <p class="line" data-cue="1b">${CONTENT[1].sub}</p>
-      <div class="lower" data-cue="1c" data-type="40" data-fx="fade">decktalk · scene 1</div>
+      <h1 class="hero" data-cue="1.1a">__TITLE__</h1>
+      <p class="line" data-cue="1.1b">A narrated lesson, cut to the word.</p>
+      <div class="lower" data-cue="1.1c" data-type="40" data-fx="fade">decktalk · scene 1</div>
     </div>` },
 ]});
 
-DeckTalk.scene(2, { name: "Three lines", camera: "push", steps: [
+DeckTalk.scene(2, { name: "Three lines", steps: [
   { id: "2.1", hold: 12, render: () => `
     <div class="slide">
       <p class="caption">How it works</p>
-      ${CONTENT[2].lines.map((l, i) => `<p class="line" data-cue="2.1${"abc"[i]}" data-at="${i * 2.5}">${l}</p>`).join("")}
-      <div class="row"><div class="tile" data-cue="2.1d" data-at="8" data-count>${CONTENT[2].tile}</div></div>
+      <p class="label" data-cue="2.1a" data-at="0"><b>1</b>Markdown script</p>
+      <p class="label" data-cue="2.1b" data-at="2.5"><b>2</b>Your voice</p>
+      <p class="label" data-cue="2.1c" data-at="5"><b>3</b>Reveals on words</p>
+      <div class="row"><div class="tile" data-cue="2.1d" data-at="8" data-count>3 steps</div></div>
     </div>` },
   { id: "2.2", hold: 6, render: () => `
     <div class="slide">
       <p class="hero accent">One take.</p>
-      <p class="caption" data-at="1">Change a sentence and only that section re-renders.</p>
+      <p class="caption" data-cue="2.2edit" data-at="1.5">Change a sentence and only that section re-renders.</p>
     </div>` },
 ]});
 
-DeckTalk.scene(3, { name: "A curve and an equation", camera: "push", steps: [
-  { id: "3.1", hold: 10, cues: { "3.1draw": 0.5, "3.1eq": 5 }, render: () => `
+DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
+  { id: "3.1", hold: 24, cues: { "3.1draw": 0.5, "3.1a": 5, "3.1b": 9, "3.1think": 13, "3.1c": 18 }, render: () => `
     <div class="slide">
-      <svg viewBox="0 0 1600 500" width="1600" height="500" style="overflow:visible">
-        <line class="ax" x1="80" y1="460" x2="1560" y2="460"/>
-        <line class="ax" x1="80" y1="40" x2="80" y2="460"/>
-        <path class="curve" pathLength="1" data-cue="3.1draw" data-fx="draw" data-dur="3"
-              d="M80,440 C400,430 800,300 1100,140 S1500,60 1560,50"/>
-      </svg>
-      <div class="row">
-        <div class="eq" data-cue="3.1eq" data-tex="${CONTENT[3].eq}">d/dx x^2 = 2x</div>
-        <p class="caption" data-cue="3.1eq" data-at="0.6">${CONTENT[3].note}</p>
+      <div class="cols">
+        <svg viewBox="0 0 700 520" width="700" height="520" style="overflow:visible;flex:none">
+          <line class="ax" x1="60" y1="480" x2="680" y2="480"/>
+          <line class="ax" x1="60" y1="20" x2="60" y2="480"/>
+          <path class="curve" pathLength="1" data-cue="3.1draw" data-fx="draw" data-dur="2"
+                d="M60,480 Q370,480 680,40"/>
+          <text class="axlabel" x="400" y="140" data-cue="3.1draw" data-fx="fade">y = x²</text>
+        </svg>
+        <div>
+          <p class="math" data-cue="3.1a" data-tex="\\frac{d}{dx}\\,x^2 = \\lim_{h \\to 0} \\frac{(x+h)^2 - x^2}{h}" data-display>d/dx x^2 = lim (x+h)^2 - x^2 / h</p>
+          <p class="math" data-cue="3.1b" data-tex="= \\lim_{h \\to 0} \\frac{2xh + h^2}{h} = \\lim_{h \\to 0} (2x + h)" data-display>= lim (2xh + h^2) / h = lim (2x + h)</p>
+          <p class="caption" data-cue="3.1think">Pause and think: as h goes to zero, what is left?</p>
+          <p class="math answer" data-cue="3.1c" data-fx="pop" data-tex="\\frac{d}{dx}\\,x^2 = 2x" data-display>d/dx x^2 = 2x</p>
+        </div>
+      </div>
+    </div>` },
+]});
+
+DeckTalk.scene(4, { name: "Before and after", steps: [
+  { id: "4.1", hold: 14, cues: { "4.1ask": 1, "4.1r1": 5, "4.1r2": 7, "4.1r3": 9 }, render: () => `
+    <div class="slide">
+      <p class="eyebrow">Before</p>
+      <div class="chat">
+        <div class="bubble ask" data-cue="4.1ask" data-type="40" data-fx="fade">Write about photosynthesis.</div>
+        <div class="bubble reply" data-cue="4.1r1" data-fx="fade">
+          <p data-cue="4.1r1" data-fx="fade">Photosynthesis is the process by which plants convert light into energy.</p>
+          <p data-cue="4.1r2" data-fx="fade">It takes place in the chloroplasts.</p>
+          <p data-cue="4.1r3" data-fx="fade">It produces oxygen and glucose.</p>
+        </div>
+      </div>
+    </div>` },
+  { id: "4.2", hold: 14, cues: { "4.2ask": 1, "4.2reply": 7 }, render: () => `
+    <div class="slide">
+      <p class="eyebrow">After</p>
+      <div class="chat">
+        <div class="bubble ask" data-cue="4.2ask" data-type="30" data-fx="fade">Explain photosynthesis to a ninth grader in three sentences, and end with one thing they could test at home.</div>
+        <div class="bubble reply" data-cue="4.2reply" data-fx="pop">
+          <p>Plants catch sunlight and use it to turn water and air into sugar, breathing out oxygen as they go.</p>
+          <p>That sugar is the plant's food, so a plant kept in the dark slowly starves.</p>
+          <p>Try it: grow two bean seedlings and keep one under a shoebox for a week.</p>
+        </div>
       </div>
     </div>` },
 ]});

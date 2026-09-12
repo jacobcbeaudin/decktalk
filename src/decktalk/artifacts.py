@@ -208,6 +208,7 @@ class Sidecar:
     lead_seconds: float  # wall-clock estimate from the recorder
     lead_in_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
     lead_method: str | None = None
+    warnings: list[str] = field(default_factory=list)  # window.__decktalk.warnings read after the recording
 
     @classmethod
     def load(cls, path: Path) -> Self | None:
