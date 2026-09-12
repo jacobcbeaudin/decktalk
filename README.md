@@ -1,169 +1,179 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+  <img alt="DeckTalk. Three slides cross-fade while a narration line lights up word by word under a moving playhead." src="assets/banner-light.svg" width="100%">
+</picture>
+
+<div align="center">
+
 # DeckTalk
 
-Narrated presentation videos, cut to the word. [decktalk.app](https://decktalk.app)
+**Narrated presentations, cut to the word.**
 
-You write a script in markdown. ElevenLabs reads it in your voice and returns a
-timestamp for every word. Your slides are plain HTML pages; each reveal names the
-spoken phrase it should land on. DeckTalk records the pages with headless Chromium,
-cuts every section to the narration frame-exactly, mixes an optional underscore and
-ambience, normalizes loudness, and publishes one mp4. Change a sentence and only that
-section re-renders.
+[![PyPI](https://img.shields.io/pypi/v/decktalk?color=1f9d55)](https://pypi.org/project/decktalk/)
+[![Python](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/built%20with-uv-6E56CF?logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
+[![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
+[![ty](https://img.shields.io/badge/types-ty-261230)](https://github.com/astral-sh/ty)
+[![ElevenLabs](https://img.shields.io/badge/voice-ElevenLabs-000000)](https://elevenlabs.io/)
+[![Playwright](https://img.shields.io/badge/record-Playwright%20Chromium-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/python/)
+[![ffmpeg](https://img.shields.io/badge/cut-ffmpeg-007808?logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
+[![ci](https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml/badge.svg)](https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml)
 
-```
-script.md ───narrate──▶ build/audio/NN-slug.mp3 + .words.json, narration.mp3, timeline.json  (ElevenLabs)
-cues.json ───beats────▶ build/audio/beats.json          (which second each visual lands on)
-deck/*.html ─record───▶ build/rec/NN-scene.webm         (Chromium, driven by ?beats=…)
-             measure ─▶ narration t=0 found in each recording (magenta marker)
-             assemble ▶ build/out/NN-section.mp4 ▶ build/out/<name>.mp4  (ffmpeg: cut, mix, loudnorm)
-             verify ──▶ every section opens on a real frame; every cue lands
-```
+*A script in markdown. Your cloned voice reads it and returns a timestamp for every
+word. Your slides are plain HTML, and each reveal names the spoken phrase it lands
+on. DeckTalk records, cuts, mixes, and publishes one mp4.*
 
-## Install
+**Change a sentence and only that section re-renders.**
 
-Everything is bundled. Playwright's Python package carries its own browser driver and
-`static-ffmpeg` carries ffmpeg and ffprobe for your platform (a system ffmpeg on PATH is
-used when present). Python 3.12+; no Node, no npm.
+</div>
 
-```console
-$ uv tool install decktalk      # or: pipx install decktalk, or pip install decktalk
-$ decktalk setup                # fetches headless Chromium (~100 MB) and ffmpeg, once per machine
-$ decktalk doctor               # confirms both are usable
-```
+---
 
-From a checkout: `uv tool install -e .` or `uv run decktalk …`.
+A narrated deck has three parts that keep drifting apart: what you say, what is on
+screen, and when. DeckTalk pins them together with word timestamps. You never scrub a
+timeline. The script is the timeline.
 
-## Make a presentation
+## Quick start
 
 ```console
+$ uv tool install decktalk         # or: pipx install decktalk
+$ decktalk setup                   # fetches headless Chromium and ffmpeg, once per machine
 $ decktalk init my-lesson && cd my-lesson
-$ cp .env.example .env          # ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
-$ decktalk build                # narrate → beats → record → measure → check → assemble → verify
+$ decktalk build --silent          # a full render with placeholder narration, no key needed
 $ open build/out/my-lesson.mp4
 ```
 
-`decktalk build --silent` renders with silent placeholder narration and estimated word
-times, so you can iterate on the visuals with no key and no credits. The scaffold is a
-working three-scene deck: run it as-is first, then edit.
+Then add your ElevenLabs key and voice to `.env` and run `decktalk build` for the real
+thing. The scaffold is a working three-scene deck: run it as-is first, then edit.
 
-A project is a directory:
+## How it works
 
-| Path | What |
-|---|---|
-| `decktalk.toml` | The plan: one `[[section]]` per script section, pointing at a page and scene or at your own clip; voice settings; transitions; the mix; soundscape prompts; optional tool tuning. Reference: [docs/project-file.md](docs/project-file.md). |
-| `script.md` | The narration. `## N. Title` sections are the cut points. `[Bracketed directions]` are not spoken. Write numbers and symbols the way you want them said. |
-| `cues.json` | For each visual, the spoken phrase it lands on. `decktalk beats` reports any phrase it cannot find. |
-| `deck/index.html` | Your slides. One HTML file, styled how you like, with `decktalk-runtime.js` included. Open it in a browser for an index of every scene and step; `?step=ID` freezes one. |
-| `media/` | Your own clips, b-roll, the underscore markers. |
-| `build/` | Everything generated. Git-ignored. |
+```
+ script.md ──────► narrate ──► NN-slug.mp3 + word timestamps ──► narration.mp3 + timeline.json
+                                                                        │
+ cues.json ──────► beats ───► "cue 3.1eq lands at 5.80 s" ◄─────────────┘
+                                   │
+ deck/index.html ► record ──► Chromium plays each scene driven by ?beats=…, flashes a
+   (+ runtime)                marker at narration t=0 ──► NN-scene.webm
+                                   │
+                   measure ─► finds the marker, so video t=0 == audio t=0 to the frame
+                   assemble ► cuts every section to its span, concatenates, lays the
+                              narration under the picture, ducks the underscore, normalizes
+                   verify ──► every section opens on a real frame; every cue moves pixels
+```
 
-### The page contract
+| Principle | What it means in practice |
+| --- | --- |
+| **The script is the timeline** | Sections in the script are the cut points. Cues name spoken phrases, not seconds. Rewrite a line and the affected section re-narrates, re-records, and re-cuts; everything else is cached by text hash. |
+| **Pages, not a slide format** | A scene is an HTML file you style however you like. `decktalk-runtime.js` adds the contract: `data-cue="3.1eq"` reveals on that cue, `data-count` counts a number up, `data-tex` typesets with KaTeX. Open the page in a browser to review; `?step=ID` freezes any step. |
+| **Frame-exact, by measurement** | Chromium's recorder has a variable start-up latency. The recorder flashes the frame magenta exactly when the narration clock starts, and the assembler trims to that frame. No guessing, no drift. |
+| **Offline first** | `--silent` renders the whole film with placeholder narration and estimated word times, so layout passes cost nothing. The real voice is the last thing you add. |
+| **Nothing to install by hand** | Chromium comes through Playwright's Python package, ffmpeg through `static-ffmpeg`. `decktalk setup` fetches both; `decktalk doctor` confirms them. |
+| **Checks, not hope** | `check` catches a black or truncated recording before assembly. `verify` proves every section opens on a real frame and that the picture changes where each cue says it should. `shots` gives you a PNG per step to look at, or to hand to a reviewer. |
 
-`decktalk-runtime.js` is the only thing a page needs. It reads `?scene=N&beats=id@s,…&t0=S`
-from the recorder and fires each cue id at the right second. You declare scenes and steps;
-markup names its cue:
+## A project
+
+```
+my-lesson/
+  decktalk.toml      the plan: one [[section]] per script section → a page+scene, or your own clip;
+                     voice, transitions, mix, soundscape prompts, optional tuning
+  script.md          the narration; "## N. Title" sections, [bracketed directions] unspoken
+  cues.json          for each visual, the spoken phrase it lands on
+  deck/index.html    your slides, with decktalk-runtime.js
+  media/             your clips and the underscore markers
+  build/             everything generated (git-ignored)
+```
+
+A cue in `cues.json`:
+
+```json
+{ "sections": { "3": { "cues": [
+  { "step": "3.1",     "on": "$start" },
+  { "step": "3.1draw", "on": "curve draws" },
+  { "step": "3.1eq",   "on": "equation", "offset": 0.2 }
+]}}}
+```
+
+The step it drives, in `deck/index.html`:
 
 ```html
 <script src="decktalk-runtime.js"></script>
 <script>
-DeckTalk.scene(2, { name: "Three lines", camera: "push", steps: [
-  { id: "2.1", hold: 12, render: () => `
-      <p class="line" data-cue="2.1a">Write the script in markdown.</p>
-      <p class="line" data-cue="2.1b">Narrate it in your own voice.</p>
-      <div class="tile" data-cue="2.1c" data-count>3 steps</div>` },
-  { id: "2.2", hold: 6, render: () => `<p class="hero">One take.</p>` },
+DeckTalk.scene(3, { name: "A curve and an equation", camera: "push", steps: [
+  { id: "3.1", hold: 10, render: () => `
+      <svg …><path class="curve" pathLength="1" data-cue="3.1draw" data-fx="draw" data-dur="3" d="…"/></svg>
+      <div class="eq" data-cue="3.1eq" data-tex="\\frac{d}{dx}\\,x^2 = 2x">d/dx x^2 = 2x</div>` },
 ]});
-DeckTalk.on("2.1c", () => console.log("a cue can also run code"));
 </script>
 ```
 
-and `cues.json` says when:
-
-```json
-{ "sections": { "2": { "cues": [
-  { "step": "2.1a", "on": "First" },
-  { "step": "2.1b", "on": "Second" },
-  { "step": "2.1c", "on": "Three steps" },
-  { "step": "2.2",  "on": "One take" }
-]}}}
-```
-
-`data-cue` reveals on its cue; `data-at` reveals seconds after the step mounts; `data-fx`
-picks the animation (`rise`, `fade`, `draw`, `drop`, `pop`, `dim`, `none`); `data-count`
-counts a number up; `data-type` types text; `data-tex` typesets with KaTeX when it is on
-the page. Steps mount at their earliest cue and the last one holds. Without `?beats=` the
-page autoplays on its `hold` seconds, so you can review it in a browser. The full contract
-is in [docs/contract.md](docs/contract.md).
+Write numbers and symbols in the script the way you want them said: the cue matches the
+spoken words "two x", and the card shows the symbols. Full references:
+[decktalk.toml](docs/project-file.md) and [the page contract](docs/contract.md).
 
 ## Commands
 
 | Command | Does |
-|---|---|
+| --- | --- |
 | `decktalk init DIR` | Scaffold a project with a working example deck. |
 | `decktalk setup` / `doctor` | Fetch Chromium and ffmpeg / report what is installed. |
-| `decktalk narrate [--dry-run] [--silent] [--only N] [--force]` | Script to per-section audio with word timestamps, plus the continuous track and timeline. Cached by text hash, so an edit re-synthesizes only the sections whose text changed. |
-| `decktalk beats` | Resolve every cue phrase to a second. |
-| `decktalk soundscape [--dry-run]` | Ambience, one-shot sfx and an underscore from the prompts in `decktalk.toml` (ElevenLabs). |
-| `decktalk record [--only N]` | Record the pages. `decktalk measure` then finds narration t=0 in each. `decktalk check` flags black or truncated recordings. |
-| `decktalk assemble [--preset veryfast] [--nomix] [--strict]` | Cut, concatenate, mix, normalize, publish. |
-| `decktalk verify [SEC:CUE …]` | Every section opens on a real frame, and the picture changes at the named cues. Counts the share of pixels that change inside the section, so it sees a thin line or one line of text. |
-| `decktalk shots [--section N --at S …]` | One PNG per step of every page, or frames from a section as it plays with its real cues. Good for review, and for showing an AI reviewer the frames. |
+| `decktalk narrate [--dry-run] [--silent] [--only N]` | Script to per-section audio with word timestamps, plus the continuous track and timeline. |
+| `decktalk beats` | Resolve every cue phrase to a second. Reports any phrase it cannot find. |
+| `decktalk soundscape [--dry-run]` | Ambience, one-shot sfx and an underscore from prompts in `decktalk.toml`. |
+| `decktalk record` / `measure` / `check` | Record the pages; find narration t=0 in each; flag black or truncated recordings. |
+| `decktalk assemble [--preset veryfast] [--nomix]` | Cut, concatenate, mix, normalize, publish. |
+| `decktalk verify [SEC:CUE …]` | Section starts, and cue landings by the share of pixels that change inside the section. |
+| `decktalk shots [--section N --at S …]` | One PNG per step, or frames from a section as it plays with its real cues. |
 | `decktalk build [--silent] [--only N]` | The whole pipeline in order. |
 | `decktalk status` | The timeline and what is built. |
-| `decktalk runtime` | Copy the packaged runtime over the project's copy after upgrading DeckTalk. |
 
-Every project command takes `--project DIR` (default: the current directory) and reads
-`.env` from the project. Keys are never printed. `-v` shows every ffmpeg command line.
+Every project command takes `--project DIR` and reads `.env` from the project. Keys are
+never printed. `-v` shows every ffmpeg command line.
 
 ## Configuration
 
-Three layers, lowest to highest precedence:
-
-1. Defaults in the code (`decktalk.config`), one dataclass per concern: `video`,
-   `narration`, `record`, `align`, `audio`, `verify`, `elevenlabs`.
-2. Tables of the same names in the project's `decktalk.toml`, for example
-   `[video] preset = "veryfast"`.
-3. Environment variables `DECKTALK_<SECTION>_<FIELD>`, for example
-   `DECKTALK_VIDEO_PRESET=veryfast`, and a few CLI flags such as `--preset` for one run.
-
-Content that changes per presentation (sections, voice, mix levels, soundscape prompts)
-lives in `decktalk.toml` too, but as the document rather than tuning. Secrets live only
-in `.env`.
+Three layers, lowest to highest precedence: defaults in `decktalk.config`, tables of the
+same names in the project's `decktalk.toml` (`[video] preset = "veryfast"`), and
+`DECKTALK_<SECTION>_<FIELD>` environment variables. A few CLI flags such as `--preset`
+override for one run. Per-presentation content (sections, voice, mix levels, prompts)
+lives in the same file as the document rather than tuning; secrets live only in `.env`.
 
 ## Python API
-
-The CLI is a thin layer over a small stable API:
 
 ```python
 import decktalk
 
-project = decktalk.Project.load("my-lesson")       # validated decktalk.toml + settings
+project = decktalk.Project.load("my-lesson")     # validated decktalk.toml + settings
 project.settings.video.preset = "veryfast"
-result = decktalk.build(project, silent=True)       # or narrate(), resolve_beats(), record(), ...
+result = decktalk.build(project, silent=True)     # or narrate(), resolve_beats(), record(), …
 print(result.assembly.final, result.verification.ok)
 ```
 
 Stage functions return typed results and raise `decktalk.DeckTalkError` subclasses
-(`ConfigError`, `MissingInputError`, `ProviderError`, `ToolError`) instead of exiting.
-Progress goes to the `decktalk` logger. Modules under `decktalk.media` and
-`decktalk.providers`, and names starting with an underscore, are internal. Until 1.0 the
-Python names may move; the file formats, build artifacts and the page contract are treated
-as stable already.
+instead of exiting; progress goes to the `decktalk` logger. `decktalk.media`,
+`decktalk.providers` and underscore-prefixed names are internal. Until 1.0 the Python
+names may move; the file formats, build artifacts and the page contract are stable.
 
-## Costs and models
+## Costs
 
-Narration uses `eleven_multilingual_v2` with word timestamps at one credit per character;
-a six-minute script is about 6,000 credits per full take. Sound effects bill per second
-and music per minute. ElevenLabs' Creator plan covers a day of iteration comfortably.
-The voice model and settings are per project in `decktalk.toml` `[voice]`.
+Narration is billed per character with word timestamps: a six-minute script is about
+6,000 ElevenLabs credits per full take, and edits re-synthesize only the sections whose
+text changed. Sound effects bill per second, music per minute. A Creator plan covers a day
+of iteration.
 
 ## Development
 
 ```console
 $ uv sync --group dev
 $ uv run ruff check src tests && uv run ruff format --check src tests && uv run ty check src
-$ uv run pytest -q                 # unit tests; add -m browser for the Chromium runtime tests
-$ bash tests/smoke.sh              # scaffolds a project and builds it offline, ~1 min
+$ uv run pytest -q                 # unit tests
+$ uv run pytest -q -m browser      # the runtime contract, in a real Chromium
+$ bash tests/smoke.sh              # scaffold a project and build it offline, about a minute
 ```
+
+CI runs the checks on Linux, and the browser tests plus the offline build on Linux,
+macOS and Windows. Releases are cut by tag: bump the version, `git tag v0.1.0`, push,
+and the release workflow publishes to PyPI through trusted publishing.
 
 ## License
 

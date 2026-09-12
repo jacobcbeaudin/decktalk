@@ -15,13 +15,18 @@ jobs:
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
       - run: uv run ty check src
-      - run: uv run pytest -q -m "not browser"
+      - run: uv run pytest -q
 
   build:
+    name: build (${{ matrix.os }})
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -30,3 +35,11 @@ jobs:
       - run: uv run decktalk doctor
       - run: uv run pytest -q -m browser
       - run: bash tests/smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.os }}
+          path: |
+            tests/out/smoke/build/out/smoke.mp4
+            tests/out/smoke/build/shots/
+          if-no-files-found: ignore

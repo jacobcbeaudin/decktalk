@@ -1,0 +1,60 @@
+# Release: push a tag like v0.1.0 and this builds the wheel and sdist, publishes them to
+# PyPI through trusted publishing (no API token stored anywhere), and creates a GitHub
+# release with the files attached.
+#
+# One-time setup on PyPI (before the first tag):
+#   pypi.org -> your account -> Publishing -> "Add a new pending publisher":
+#     PyPI project name: decktalk
+#     Owner: jacobcbeaudin   Repository: decktalk
+#     Workflow name: release.yml   Environment name: pypi
+#   Then on GitHub: Settings -> Environments -> New environment "pypi"
+#   (optionally require your own approval on it).
+#
+# Cutting a release:
+#   1. bump `version` in pyproject.toml, commit
+#   2. git tag v0.1.0 && git push --tags
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Tag must match pyproject version
+        run: |
+          version="$(uv version --short)"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "pyproject version $version does not match tag $tag" >&2
+            exit 1
+          fi
+      - run: uv sync --group dev
+      - run: uv run ruff check src tests && uv run ty check src && uv run pytest -q
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # trusted publishing
+      contents: write   # GitHub release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
