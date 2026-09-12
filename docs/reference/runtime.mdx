@@ -43,7 +43,7 @@ slides.</Warning>
 </ResponseField>
 
 <ResponseField name="step" type="string">
-  Freeze mode. Mount this step with every reveal in its end state and its handler cues fired. Animations run with zero duration, count-ups show their final value, and typewriters show their full text.
+  Freeze mode. Mount this step with every reveal in its end state and its handler cues fired. Animations run with zero duration, count-ups show their final value, typewriters show their full text, and synced text shows whole.
 </ResponseField>
 
 <ResponseField name="speed" type="number" default="1">
@@ -52,6 +52,10 @@ slides.</Warning>
 
 <ResponseField name="hud" type="1">
   Overlay the mode, the scene, the step, and the clock in the top left corner. Never record with it on.
+</ResponseField>
+
+<ResponseField name="words" type="string">
+  The section's spoken words with their seconds after narration t=0, as `word@seconds` pairs separated by commas. The recorder builds it from `build/audio/timeline.json` and sends it with `beats`. Elements with `data-sync` reveal one word at a time from it, and without it they reveal whole, which is what a browser preview shows.
 </ResponseField>
 
 With no parameters the page shows the index, a list of every scene and step with play
@@ -110,7 +114,7 @@ Registers a scene and returns `DeckTalk`, so calls chain. Scenes start on
 </ResponseField>
 
 <ResponseField name="reveal(element)" type="function">
-  Reveals one element now, with its count-up or typewriter, as a cue would. An element already revealed is left alone.
+  Reveals one element now, with its count-up, typewriter, or word sync, as a cue would. An element already revealed is left alone.
 </ResponseField>
 
 <ResponseField name="fireCue(id)" type="function">
@@ -140,11 +144,11 @@ Registers a scene and returns `DeckTalk`, so calls chain. Scenes start on
 </ResponseField>
 
 <ResponseField name="data-fx" type="rise | fade | draw | drop | pop | dim | none" default="rise">
-  The reveal animation. [The page contract](/concepts/page-contract#reveal-effects) says what each one is for. `draw` needs an SVG path with `pathLength="1"`.
+  The reveal animation. [The page contract](/concepts/page-contract#reveal-effects) says what each one is for. `draw` needs an SVG path with `pathLength="1"`. The animations are short so that a reveal is visible on its word: `rise` and `fade` take 0.3 s, `drop` 0.35 s, `pop` 0.5 s, and `dim` 1.2 s, and `data-dur` overrides any of them.
 </ResponseField>
 
 <ResponseField name="data-dur" type="number">
-  The animation length in seconds. It also sets the count-up length, which otherwise takes 0.9 seconds.
+  The animation length in seconds, which overrides the effect's default. It also sets the count-up length, which otherwise takes 0.9 seconds.
 </ResponseField>
 
 <ResponseField name="data-count" type="&quot;&quot; | first">
@@ -152,7 +156,11 @@ Registers a scene and returns `DeckTalk`, so calls chain. Scenes start on
 </ResponseField>
 
 <ResponseField name="data-type" type="number" default="40">
-  Type the text at this many milliseconds per character on reveal. The element is emptied first, so give its container a fixed size or a background if the layout must not jump.
+  Type the text at this many milliseconds per character on reveal. The element keeps the size of its finished text while it types, so nothing around it shifts.
+</ResponseField>
+
+<ResponseField name="data-sync" type="flag">
+  Reveal the element one word at a time, each at the second the voice reaches it. The runtime matches the element's text against a run of the words in the `words` parameter, ignoring case and punctuation, and prefers the run nearest the cue, so a phrase the section says twice lands on the right occurrence. The text must be word for word what the voice says. When no run matches, the element reveals whole and a warning is recorded in `window.__decktalk.warnings`. Pair it with `data-fx="none"`, because a fade on the container fights the per-word reveal. In a browser preview, which has no `words`, the element reveals whole.
 </ResponseField>
 
 <ResponseField name="data-tex" type="string">
@@ -227,6 +235,7 @@ the `dt-` prefix and nothing else.
 | `--dt-scene-dur` | The length of the camera push. The runtime sets it per scene. |
 | `.dt-slide`, `.dt-enter`, `.dt-first`, `.dt-leave` | A slide, one arriving, the first one, and one leaving. A leaving slide is removed after 400 ms. |
 | `.dt-reveal`, `.dt-on` | An element with `data-cue` or `data-at`, and one that has revealed. |
+| `.dt-w` | One word of a `data-sync` element, which gains `.dt-on` as the voice reaches it. |
 | `.dt-push` | Set on `#dt-cam` while the camera pushes. |
 | `.dt-frozen` | Set on `<html>` in freeze mode, where every animation has zero duration. |
 | `#dt-hud`, `#dt-index`, `.dt-steps` | The overlay and the index page. |
@@ -241,6 +250,7 @@ prefix.
 | `unknown cue id X (no step id or cues list matches it)` | A cue in `beats` that no step owns and no handler is registered for. |
 | `no step owns any listed cue, so nothing will mount` | Every cue in `beats` is unknown, so the section would record an empty stage. |
 | `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page wants KaTeX and `window.katex` never appeared. |
+| `data-sync text not found in the spoken words: "…"` | The element's text matches no run of the `words` list, usually because the slide and the script differ by a word. The element revealed whole. |
 
 A `render` or `enter` function that throws is logged with `console.error`, and the
 recorder logs page errors as warnings.

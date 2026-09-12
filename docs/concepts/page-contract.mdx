@@ -26,11 +26,14 @@ In `cues` mode an element whose `data-cue` is in the list stays hidden until tha
 fires. Every other reveal fires `data-at` seconds after the mount, which covers an element
 with `data-at` alone and an element whose cue is not in the list. When a cue fires, the
 matching `data-cue` elements reveal first, then the step's `on[id]` handler runs, then
-every `DeckTalk.on(id, fn)` handler.
+every `DeckTalk.on(id, fn)` handler. An element with `data-sync` goes one step further and
+reveals one word at a time from the spoken words the recorder passes as `?words=`, so a
+line of text keeps pace with the voice.
+[The runtime reference](/reference/runtime#data-attributes-inside-a-step) has its rules.
 
 ## The handshake
 
-The recorder opens the page as `file:///…/deck/index.html?scene=N&beats=…&t0=signal`
+The recorder opens the page as `file:///…/deck/index.html?scene=N&beats=…&words=…&t0=signal`
 plus any `params` from the section. `t0=signal` tells the page not to start its clock at
 load. The recorder then waits for `load`, for `document.fonts.ready`, for
 `window.__sceneReady` when the page has one, for the settle time, and for a minimum lead
@@ -86,13 +89,16 @@ suits a kind of element, and each one has a case it makes worse.
 
 | Effect | For | Against |
 |---|---|---|
-| `rise` (default) | Lines of text, labels, and cards. It moves up 14 px as it fades in, which reads as a new line arriving. | Code, tables, and anything aligned to a grid, where the motion looks like a layout shift. |
-| `fade` | Code lines, chat bubbles, images, and anything that must not move. | A single small element on a large slide, where a fade alone can be missed. |
+| `rise` (default) | Lines of text, labels, and cards. It moves up 10 px as it fades in over 0.3 s, which reads as a new line arriving. | Code, tables, and anything aligned to a grid, where the motion looks like a layout shift. |
+| `fade` | Code lines, chat bubbles, images, and anything that must not move. It fades in over 0.3 s. | A single small element on a large slide, where a fade alone can be missed. |
 | `draw` | An SVG path with `pathLength="1"`. The stroke draws itself over `data-dur`. | Anything that is not a stroke. A filled shape does not draw. |
-| `drop` | A tile or a stamp that should land. It falls 24 px over half a second. | Body text, where the fall is too heavy. |
-| `pop` | The answer, the number, the one thing the section builds to. It overshoots to 112% and settles over 0.9 seconds. | More than one element per slide. Two pops compete. |
-| `dim` | An element that should recede when a cue fires. It starts visible and fades to 16%. | An element that has not been on screen long enough to be noticed. |
+| `drop` | A tile or a stamp that should land. It falls 24 px over 0.35 s. | Body text, where the fall is too heavy. |
+| `pop` | The answer, the number, the one thing the section builds to. It overshoots to 108% and settles over 0.5 s. | More than one element per slide. Two pops compete. |
+| `dim` | An element that should recede when a cue fires. It starts visible and fades to 16% over 1.2 s. | An element that has not been on screen long enough to be noticed. |
 | `none` | An element that should appear on the frame of its cue with no animation, such as a cursor or a highlight. | Text, where a hard cut looks like a glitch. |
+
+The animations are short on purpose, so that a reveal is visible on the word that cued it
+rather than still arriving on the next one, and `data-dur` overrides any of them.
 
 A scene may also set `camera: "push"`, a slow push from 100% to 103% over the scene.
 Use it on at most one scene, usually the open, because a push under every scene reads as

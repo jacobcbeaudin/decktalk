@@ -16,6 +16,7 @@ __KATEX__
   .label { font-size: 56px; font-weight: 600; line-height: 1.2; margin: 0; }
   .label b { color: var(--accent); font-weight: 700; margin-right: 24px; }
   .caption { font-size: 30px; color: var(--muted); margin: 0; }
+  .h2 { font-size: 64px; font-weight: 700; letter-spacing: -1px; margin: 0 0 16px; }
   .accent { color: var(--accent); }
   .lower { position: absolute; left: 160px; bottom: 100px; font-size: 44px; color: var(--muted); }
   .tile { display: inline-block; background: var(--surface); border-radius: 24px; padding: 32px 48px; font-size: 96px; font-weight: 700; color: var(--accent); }
@@ -28,6 +29,13 @@ __KATEX__
   .ax { stroke: var(--muted); stroke-width: 2; }
   .axlabel { fill: var(--muted); font-size: 36px; }
   .curve { fill: none; stroke: var(--accent); stroke-width: 8; }
+  .zig { fill: none; stroke: #ff6b6b; stroke-width: 4; stroke-dasharray: 14 10; }
+  .step line { stroke: var(--text); stroke-width: 5; opacity: .6; }
+  .step .ring { fill: none; stroke: var(--accent); stroke-width: 4; opacity: .5; }
+  .step circle { fill: var(--text); }
+  .step.min circle { fill: var(--accent); }
+  .row.wide { align-items: center; gap: 60px; }
+  .col { display: flex; flex-direction: column; gap: 24px; max-width: 640px; }
   .chat { display: flex; flex-direction: column; gap: 24px; width: 1300px; }
   .eyebrow { font-size: 30px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 8px; }
   .bubble { font-size: 36px; line-height: 1.35; padding: 24px 36px; border-radius: 28px; max-width: 1000px; }
@@ -51,7 +59,7 @@ DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
   { id: "1.1", hold: 8, render: () => `
     <div class="slide">
       <h1 class="hero" data-cue="1.1a">__TITLE__</h1>
-      <p class="line" data-cue="1.1b">A narrated lesson, cut to the word.</p>
+      <p class="line" data-cue="1.1b" data-sync data-fx="none">This is a narrated lesson, cut to the word.</p>
       <div class="lower" data-cue="1.1c" data-type="40" data-fx="fade">decktalk · scene 1</div>
     </div>` },
 ]});
@@ -59,7 +67,7 @@ DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
 DeckTalk.scene(2, { name: "Three lines", steps: [
   { id: "2.1", hold: 12, render: () => `
     <div class="slide">
-      <p class="caption">How it works</p>
+      <h2 class="h2">How it works</h2>
       <p class="label" data-cue="2.1a" data-at="0"><b>1</b>Markdown script</p>
       <p class="label" data-cue="2.1b" data-at="2.5"><b>2</b>Your voice</p>
       <p class="label" data-cue="2.1c" data-at="5"><b>3</b>Reveals on words</p>
@@ -72,49 +80,53 @@ DeckTalk.scene(2, { name: "Three lines", steps: [
     </div>` },
 ]});
 
-DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
-  { id: "3.1", hold: 24, cues: { "3.1draw": 0.5, "3.1a": 5, "3.1b": 9, "3.1think": 13, "3.1c": 18 }, render: () => `
+DeckTalk.scene(3, { name: "Gradient descent", steps: [
+  { id: "3.1", hold: 26, cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1eq": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1min": 21 }, render: () => `
     <div class="slide">
-      <div class="cols">
-        <svg viewBox="0 0 700 520" width="700" height="520" style="overflow:visible;flex:none">
-          <line class="ax" x1="60" y1="480" x2="680" y2="480"/>
-          <line class="ax" x1="60" y1="20" x2="60" y2="480"/>
-          <path class="curve" pathLength="1" data-cue="3.1draw" data-fx="draw" data-dur="2"
-                d="M60,480 Q370,480 680,40"/>
-          <text class="axlabel" x="400" y="140" data-cue="3.1draw" data-fx="fade">y = x²</text>
+      <div class="row wide">
+        <svg viewBox="0 0 1000 520" width="1000" height="520" style="overflow:visible">
+          <line class="ax" x1="60" y1="470" x2="960" y2="470"/>
+          <line class="ax" x1="60" y1="40" x2="60" y2="470"/>
+          <path class="curve" pathLength="1" data-cue="3.1bowl" data-fx="draw" data-dur="1.6"
+                d="M80,70 Q510,880 940,70"/>
+          <path class="zig" pathLength="1" data-cue="3.1over" data-fx="draw" data-dur="1.4"
+                d="M190,200 L830,200 L230,320 L790,320 L300,410"/>
+          <g class="step" data-cue="3.1p0" data-fx="pop"><circle cx="190" cy="200" r="26"/></g>
+          <g class="step" data-cue="3.1p1" data-fx="pop"><line x1="190" y1="200" x2="330" y2="330"/><circle cx="330" cy="330" r="26"/></g>
+          <g class="step" data-cue="3.1p2" data-fx="pop"><line x1="330" y1="330" x2="420" y2="405"/><circle cx="420" cy="405" r="26"/></g>
+          <g class="step" data-cue="3.1p3" data-fx="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
+          <g class="step min" data-cue="3.1min" data-fx="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
         </svg>
-        <div>
-          <p class="math" data-cue="3.1a" data-tex="\\frac{d}{dx}\\,x^2 = \\lim_{h \\to 0} \\frac{(x+h)^2 - x^2}{h}" data-display>d/dx x^2 = lim (x+h)^2 - x^2 / h</p>
-          <p class="math" data-cue="3.1b" data-tex="= \\lim_{h \\to 0} \\frac{2xh + h^2}{h} = \\lim_{h \\to 0} (2x + h)" data-display>= lim (2xh + h^2) / h = lim (2x + h)</p>
-          <p class="caption" data-cue="3.1think">Pause and think: as h goes to zero, what is left?</p>
-          <p class="math answer" data-cue="3.1c" data-fx="pop" data-tex="\\frac{d}{dx}\\,x^2 = 2x" data-display>d/dx x^2 = 2x</p>
+        <div class="col">
+          <h2 class="h2">Gradient descent</h2>
+          <p class="caption">Follow the slope downhill, one step at a time.</p>
+          <div class="math" data-cue="3.1eq" data-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
+          <p class="caption" data-cue="3.1think" data-fx="fade">Pause and think: what if the learning rate is too large?</p>
         </div>
       </div>
     </div>` },
 ]});
 
 DeckTalk.scene(4, { name: "Before and after", steps: [
-  { id: "4.1", hold: 14, cues: { "4.1ask": 1, "4.1r1": 5, "4.1r2": 7, "4.1r3": 9 }, render: () => `
+  { id: "4.1", hold: 14, cues: { "4.1ask": 1, "4.1r1": 5 }, render: () => `
     <div class="slide">
       <p class="eyebrow">Before</p>
       <div class="chat">
-        <div class="bubble ask" data-cue="4.1ask" data-type="40" data-fx="fade">Write about photosynthesis.</div>
+        <div class="bubble ask" data-cue="4.1ask" data-sync data-fx="none">Is this query okay?</div>
         <div class="bubble reply" data-cue="4.1r1" data-fx="fade">
-          <p data-cue="4.1r1" data-fx="fade">Photosynthesis is the process by which plants convert light into energy.</p>
-          <p data-cue="4.1r2" data-fx="fade">It takes place in the chloroplasts.</p>
-          <p data-cue="4.1r3" data-fx="fade">It produces oxygen and glucose.</p>
+          <p>Yes, the query looks fine. It selects orders joined to customers and filters them by date.</p>
         </div>
       </div>
     </div>` },
-  { id: "4.2", hold: 14, cues: { "4.2ask": 1, "4.2reply": 7 }, render: () => `
+  { id: "4.2", hold: 18, cues: { "4.2ask": 1, "4.2r1": 10, "4.2r2": 12, "4.2r3": 14 }, render: () => `
     <div class="slide">
       <p class="eyebrow">After</p>
       <div class="chat">
-        <div class="bubble ask" data-cue="4.2ask" data-type="30" data-fx="fade">Explain photosynthesis to a ninth grader in three sentences, and end with one thing they could test at home.</div>
-        <div class="bubble reply" data-cue="4.2reply" data-fx="pop">
-          <p>Plants catch sunlight and use it to turn water and air into sugar, breathing out oxygen as they go.</p>
-          <p>That sugar is the plant's food, so a plant kept in the dark slowly starves.</p>
-          <p>Try it: grow two bean seedlings and keep one under a shoebox for a week.</p>
+        <div class="bubble ask" data-cue="4.2ask" data-sync data-fx="none">You are reviewing a query that runs nightly on a two billion row orders table. List correctness and performance problems as a numbered list, most severe first, with a one-line fix for each.</div>
+        <div class="bubble reply" data-cue="4.2r1" data-fx="fade">
+          <p data-cue="4.2r1" data-fx="fade"><b>1.</b> The join on customer_email is not indexed, so every night scans the whole table. Join on customer_id.</p>
+          <p data-cue="4.2r2" data-fx="fade"><b>2.</b> The date filter wraps created_at in a function, which defeats the index. Compare against a computed boundary instead.</p>
+          <p data-cue="4.2r3" data-fx="fade"><b>3.</b> SELECT * returns forty columns the report never reads. Name the six it needs.</p>
         </div>
       </div>
     </div>` },
@@ -124,14 +136,14 @@ DeckTalk.scene(5, { name: "Close", steps: [
   { id: "5.1", hold: 10, render: () => `
     <div class="slide">
       <p class="eyebrow">The whole idea</p>
-      <p class="line" data-cue="5.1a">Write the script.</p>
-      <p class="line" data-cue="5.1b">Narrate it in your own voice.</p>
-      <p class="line" data-cue="5.1c">Every reveal lands on its word.</p>
+      <p class="line" data-cue="5.1a" data-sync data-fx="none">Write the script.</p>
+      <p class="line" data-cue="5.1b" data-sync data-fx="none">Narrate it in your own voice.</p>
+      <p class="line" data-cue="5.1c" data-sync data-fx="none">Every reveal lands on its word.</p>
     </div>` },
   { id: "5.2", hold: 6, render: () => `
     <div class="slide">
       <p class="hero accent">The script is the edit.</p>
-      <p class="caption" data-cue="5.2a">Change a sentence and only that section renders again.</p>
+      <p class="caption" data-cue="5.2a" data-sync data-fx="none">Change a sentence and only that section renders again.</p>
       <div class="lower" data-cue="5.2b" data-fx="fade">Made with DeckTalk</div>
     </div>` },
 ]});

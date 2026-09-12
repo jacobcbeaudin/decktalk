@@ -14,7 +14,7 @@
         },
         {
           "cue": "1.1b",
-          "on": "narrated lesson"
+          "on": "This is"
         },
         {
           "cue": "1.1c",
@@ -51,30 +51,47 @@
       ]
     },
     "3": {
+      "min_seconds": 30,
       "cues": [
         {
           "cue": "3.1",
           "on": "$start"
         },
         {
-          "cue": "3.1draw",
-          "on": "Here is the curve"
+          "cue": "3.1bowl",
+          "on": "loss surface"
         },
         {
-          "cue": "3.1a",
-          "on": "definition"
+          "cue": "3.1p0",
+          "on": "Pick a point"
         },
         {
-          "cue": "3.1b",
-          "on": "Expand"
+          "cue": "3.1p1",
+          "on": "take a step"
+        },
+        {
+          "cue": "3.1eq",
+          "on": "learning rate"
+        },
+        {
+          "cue": "3.1p2",
+          "on": "Step again"
+        },
+        {
+          "cue": "3.1p3",
+          "on": "each step is smaller"
         },
         {
           "cue": "3.1think",
-          "on": "pause and think"
+          "on": "Pause and think"
         },
         {
-          "cue": "3.1c",
-          "on": "Only two x",
+          "cue": "3.1over",
+          "on": "overshoot"
+        },
+        {
+          "cue": "3.1min",
+          "on": "settle",
           "offset": 0.2
         }
       ]
@@ -83,31 +100,31 @@
       "cues": [
         {
           "cue": "4.1ask",
-          "on": "Write about"
+          "on": "Is this query"
         },
         {
           "cue": "4.1r1",
-          "on": "One line"
-        },
-        {
-          "cue": "4.1r2",
-          "on": "another line"
-        },
-        {
-          "cue": "4.1r3",
-          "on": "a third"
+          "on": "The reply is polite"
         },
         {
           "cue": "4.2",
-          "on": "Now ask"
+          "on": "Now give the model"
         },
         {
           "cue": "4.2ask",
-          "on": "Explain it"
+          "on": "You are reviewing"
         },
         {
-          "cue": "4.2reply",
-          "on": "Same model"
+          "cue": "4.2r1",
+          "on": "unindexed join"
+        },
+        {
+          "cue": "4.2r2",
+          "on": "defeats the index"
+        },
+        {
+          "cue": "4.2r3",
+          "on": "columns nobody reads"
         }
       ]
     },
@@ -123,11 +140,11 @@
         },
         {
           "cue": "5.1b",
-          "on": "own voice"
+          "on": "Narrate it"
         },
         {
           "cue": "5.1c",
-          "on": "lands on its word"
+          "on": "every reveal"
         },
         {
           "cue": "5.2",

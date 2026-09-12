@@ -72,7 +72,10 @@ class Segment:
 
     @property
     def spoken(self) -> str:
-        return re.sub(r"\s*<break[^>]*/>\s*", " ", self.text).strip()
+        """The words the voice says, without break tags or the dashes that mark a beat."""
+        text = re.sub(r"\s*<break[^>]*/>\s*", " ", self.text)
+        text = re.sub(r"\s+—(?=\s|$)", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
 
     @property
     def word_count(self) -> int:
@@ -97,15 +100,20 @@ class Segment:
         return None
 
     def tts_text(self, cfg: NarrationConfig) -> str:
-        head = f"{break_tag(cfg.lead_break_seconds)} " if self.lead_break else ""
-        return f"{head}{self.text} {break_tag(cfg.tail_break_seconds)}"
+        """The text sent to the voice. Silence before the first section and after every last
+        word is added to the audio afterwards rather than requested with break tags."""
+        return self.text
 
     def est_seconds(self, cfg: NarrationConfig) -> float:
         return round(self.word_count / cfg.words_per_minute * 60, 1)
 
     def silent_seconds(self, cfg: NarrationConfig) -> float:
-        breaks = sum(float(t) for t in BREAK_RE.findall(self.tts_text(cfg)))
-        return round(self.word_count / cfg.silent_words_per_minute * 60 + breaks, 3)
+        breaks = sum(float(t) for t in BREAK_RE.findall(self.text))
+        beats = self.text.count(" —") * cfg.direction_break_seconds
+        lead = cfg.lead_break_seconds if self.lead_break else 0.0
+        return round(
+            self.word_count / cfg.silent_words_per_minute * 60 + breaks + beats + lead + cfg.min_tail_seconds, 3
+        )
 
 
 def _mmss(value: str) -> int:
@@ -124,7 +132,7 @@ def strip_markdown(text: str, *, direction_break_seconds: float) -> str:
     # A timed pause carries its own length through the direction marker, and every other
     # direction carries the default.
     text = PAUSE_RE.sub(lambda m: f"\n\n{DIRECTION_MARK}{float(m.group('seconds')):g}\n\n", text)
-    text = DIRECTION_RE.sub(f"\n\n{DIRECTION_MARK}{direction_break_seconds:g}\n\n", text)
+    text = DIRECTION_RE.sub(f"\n\n{DIRECTION_MARK}beat\n\n", text)
     text = re.sub(r"`([^`]*)`", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"(?<!\w)[*_]([^*_]+)[*_](?!\w)", r"\1", text)
@@ -134,17 +142,20 @@ def strip_markdown(text: str, *, direction_break_seconds: float) -> str:
     paragraphs = [re.sub(r"\s+", " ", p).strip() for p in re.split(r"\n\s*\n", text)]
     paragraphs = [p for p in paragraphs if p]
     out: list[str] = []
-    pending: float | None = None  # seconds of pause owed to the paragraph before the next one
+    pending: float | None = None  # the pause owed to the paragraph before the next one
     for p in paragraphs:
         if p.startswith(DIRECTION_MARK):
             # A direction before any prose has nothing to pause after, and back-to-back
-            # directions keep the longest pause rather than stacking.
-            seconds = float(p.removeprefix(DIRECTION_MARK))
+            # directions keep the longest pause rather than stacking. A plain direction
+            # is a beat, which the voice reads as a dash, and only a timed pause becomes
+            # a break tag, because break tags unsettle the voice when they are frequent.
+            value = p.removeprefix(DIRECTION_MARK)
+            seconds = 0.0 if value == "beat" else float(value)
             if out:
                 pending = seconds if pending is None else max(pending, seconds)
             continue
         if pending is not None:
-            out[-1] = f"{out[-1]} {break_tag(pending)}"
+            out[-1] = f"{out[-1]} {break_tag(pending)}" if pending > 0 else f"{out[-1]} —"
             pending = None
         out.append(p)
     return "\n\n".join(out)
@@ -247,7 +258,7 @@ def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -
     t = 0.0
     sections: dict[str, TimelineSection] = {}
     for k, f in zip(keys, files, strict=True):
-        dur = ffmpeg.probe_duration(f)
+        dur = ffmpeg.decoded_duration(f, sample_rate=project.settings.video.sample_rate)
         words = read_words(project.audio_dir / manifest.segments[k].words_file)
         sections[k] = TimelineSection(
             title=manifest.segments[k].title,
@@ -261,7 +272,7 @@ def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -
     timeline = Timeline(
         narration=narration.name,
         estimated=manifest.estimated,
-        total_seconds=ffmpeg.probe_duration(narration),
+        total_seconds=ffmpeg.decoded_duration(narration, sample_rate=project.settings.video.sample_rate),
         sections=sections,
     )
     timeline.save(project.timeline_path)
@@ -329,11 +340,15 @@ def narrate(
         words_path = project.audio_dir / seg.words_filename
         if silent:
             duration = seg.silent_seconds(cfg)
-            ffmpeg.write_silence(
-                out_path, duration, sample_rate=project.settings.video.sample_rate, bitrate=cfg.mp3_bitrate
+            words = estimated_words(seg, duration, cfg)
+            ffmpeg.write_clicks(
+                out_path,
+                duration,
+                [w.start for w in words],
+                sample_rate=project.settings.video.sample_rate,
+                bitrate=cfg.mp3_bitrate,
             )
             duration = ffmpeg.probe_duration(out_path)
-            words = estimated_words(seg, duration, cfg)
             write_words(words_path, words)
             log.info("[sil ] %s  %d words -> %.2fs (estimated words)", seg.filename, seg.word_count, duration)
             manifest.segments[seg.key] = ManifestSegment(
@@ -384,6 +399,12 @@ def narrate(
         )
         audio, words = provider.speak(request)
         out_path.write_bytes(audio)
+        if seg.lead_break and cfg.lead_break_seconds > 0:
+            ffmpeg.pad_head(out_path, cfg.lead_break_seconds, bitrate=cfg.mp3_bitrate)
+            words = [
+                Word(w.word, round(w.start + cfg.lead_break_seconds, 3), round(w.end + cfg.lead_break_seconds, 3))
+                for w in words
+            ]
         write_words(words_path, words)
         added = ensure_tail(out_path, cfg)
         duration = ffmpeg.probe_duration(out_path)

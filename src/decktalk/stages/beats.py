@@ -20,6 +20,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from ..artifacts import Beats, Word, read_words
 from ..errors import ConfigError, MissingInputError
@@ -112,12 +113,31 @@ def find_phrase(words: list[Word], phrase: str, occurrence: int = 1, case_sensit
 
 
 def resolve_cue(cue: Cue, words: list[Word]) -> float | None:
+    anchor = anchor_time(cue, words)
+    return None if anchor is None else round(anchor + cue.offset, 2)
+
+
+def anchor_time(cue: Cue, words: list[Word]) -> float | None:
+    """The moment the cue is anchored to, before its offset: the matched word's start, or an edge."""
     if cue.on == "$start":
-        return round(max(0.0, cue.offset), 2)
+        return 0.0
     if cue.on == "$end":
-        return round(words[-1].end + cue.offset, 2) if words else None
+        return words[-1].end if words else None
     idx = find_phrase(words, cue.on, cue.occurrence, cue.case_sensitive)
-    return None if idx is None else round(words[idx].start + cue.offset, 2)
+    return None if idx is None else words[idx].start
+
+
+def write_anchors(path: Path, anchors: dict[str, dict[str, float]]) -> None:
+    """Where each cue's word starts, without the cue's offset. verify uses it to find the word's click."""
+    import json as _json
+
+    path.write_text(_json.dumps(anchors, indent=1) + "\n")
+
+
+def read_anchors(path: Path) -> dict[str, dict[str, float]]:
+    import json as _json
+
+    return _json.loads(path.read_text()) if path.exists() else {}
 
 
 @dataclass
@@ -150,6 +170,7 @@ def resolve_beats(project: Project) -> BeatsResult:
     if not specs:
         log.info("no cues file at %s; pages will run their built-in timing", project.cues)
     beats = Beats()
+    anchors: dict[str, dict[str, float]] = {}
     rows: list[SectionBeats] = []
     unresolved = 0
     for spec in specs:
@@ -184,6 +205,9 @@ def resolve_beats(project: Project) -> BeatsResult:
             if t > entry.duration_seconds:
                 row.notes.append(f"{cue.step}: {t}s is past the end of the audio ({entry.duration_seconds}s)")
             row.resolved[cue.step] = t
+            anchor = anchor_time(cue, words)
+            if anchor is not None:
+                anchors.setdefault(key, {})[cue.step] = round(anchor, 2)
         if spec.min_seconds is not None and speech_end < spec.min_seconds:
             row.notes.append(
                 f"speech {speech_end:.1f}s is {spec.min_seconds - speech_end:.1f}s shorter than the visuals need"
@@ -192,5 +216,6 @@ def resolve_beats(project: Project) -> BeatsResult:
             beats.sections[key] = row.resolved
         rows.append(row)
     beats.save(project.beats_path)
+    write_anchors(project.beats_path.with_name("beats.anchors.json"), anchors)
     log.info("wrote %s (%d sections with cues; %d unresolved)", project.beats_path, len(beats.sections), unresolved)
     return BeatsResult(beats=beats, sections=rows, unresolved=unresolved, estimated=manifest.estimated)

@@ -16,9 +16,9 @@ All four live in the project directory. [Your first deck](/guides/first-deck) wr
 | File | Shape |
 |---|---|
 | `decktalk.toml` | `[project]` with `name`, `[voice]`, one `[[section]]` per script section with `number`, `title`, and either `page` + `scene` or `clip`, then optional `[transition]`, `[mix]`, `[soundscape]`, and tuning tables. `hold_seconds` is allowed only on the last page section and clones its last frame. A clip sits before the first page section or after the last. [decktalk.toml](/reference/decktalk-toml). |
-| `script.md` | `## N. Title` starts section `N`, and `## N. Title — 0:40 to 1:10` adds a time budget. `[bracketed]` text is a stage direction, not spoken, worth a 0.7 s pause. `[beat]` is that pause alone, `[pause N]` is N seconds. `[CAPITALS]` is a placeholder and fails `narrate`. `<break time="1s" />` pauses. A `---` line or a heading without a number ends the section. Markdown formatting is stripped. Length is about 140 words per minute plus 0.7 s per direction. [script.md](/reference/script-md). |
+| `script.md` | `## N. Title` starts section `N`, and `## N. Title — 0:40 to 1:10` adds a time budget. `[bracketed]` text is a stage direction, not spoken. A plain direction and `[beat]` are beats: the voice reads a dash there and no break tag is sent. `[pause N]` sends a `<break time="Ns" />` tag and is the only direction that does. `[CAPITALS]` is a placeholder and fails `narrate`. `<break time="1s" />` passes through as written. Silence before the first section (`lead_break_seconds`) and after every section's last word (`min_tail_seconds`, 0.7 s) is added by ffmpeg. A `---` line or a heading without a number ends the section. Markdown formatting is stripped. Length is about 140 words per minute plus 0.7 s per beat. [script.md](/reference/script-md). |
 | `cues.json` | `{"sections": {"N": {"min_seconds"?: s, "cues": [{"cue": id, "on": phrase \| "$start" \| "$end", "offset"?: s, "occurrence"?: n, "case_sensitive"?: bool}]}}}`. `step` is a synonym for `cue`, and other top-level keys such as `_comment` are ignored. Tokens split on whitespace only, so a hyphenated word is one token, then lose everything but letters, digits, and apostrophes, and case is ignored. The cue lands on the first word of the first occurrence. A cue id may not contain `@` or a comma. [cues.json](/reference/cues-json), [Cues](/concepts/cues). |
-| `deck/index.html` + `deck/decktalk-runtime.js` | `DeckTalk.scene(N, {name, camera?, steps: [{id, hold?, cues?, render, enter?, on?}]})`. Reveals use `data-cue="id"`, `data-at="s"`, `data-fx`, `data-dur`, `data-count`, `data-type`, `data-tex` with `data-display`. Inside the render backticks every backslash is doubled. The stage is 1920 by 1080. [Runtime](/reference/runtime), [Page contract](/concepts/page-contract). |
+| `deck/index.html` + `deck/decktalk-runtime.js` | `DeckTalk.scene(N, {name, camera?, steps: [{id, hold?, cues?, render, enter?, on?}]})`. Reveals use `data-cue="id"`, `data-at="s"`, `data-fx`, `data-dur`, `data-count`, `data-type`, `data-sync` (one word at a time as the voice says it, text word for word as spoken, with `data-fx="none"`), `data-tex` with `data-display`. Inside the render backticks every backslash is doubled. The stage is 1920 by 1080. [Runtime](/reference/runtime), [Page contract](/concepts/page-contract). |
 | `.env` | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`. Exported variables work too. Not needed with `--silent`. |
 
 The number `N` is the same in the script heading, the section table, the cues key, and
@@ -32,11 +32,11 @@ and the page records an id no step owns in `window.__decktalk.warnings`.
 decktalk setup                              # once per machine: Chromium, ffmpeg, KaTeX
 decktalk doctor                             # each tool and its path; exit 1 if one is missing
 decktalk init DIR [--name NAME] [--force]   # scaffold, with KaTeX vendored into deck/katex/
-decktalk build --silent                     # every stage with placeholder narration, no key
+decktalk build --silent                     # every stage with placeholder narration (a click per word), no key
 decktalk build                              # the video, at build/out/<name>.mp4
 decktalk build --only 3 --only 4 --preset veryfast   # re-record two sections, fast encode
 decktalk beats                              # where each cue phrase resolved; exit 1 if any is missing
-decktalk verify 3:3.1c 4:4.2reply           # measure each cue's offset in the final mp4
+decktalk verify 3:3.1eq 5:5.1a              # measure each cue's offset in the final mp4
 decktalk shots [--section N --at S]         # PNG per step, or a frame from a playing section
 decktalk status                             # timeline, what is built, captions and chapters
 decktalk narrate --dry-run                  # what would be sent to the voice, without sending it
@@ -47,8 +47,12 @@ decktalk runtime                            # refresh deck/decktalk-runtime.js a
 Every project command takes `-p DIR` or `--project DIR`, and the default is
 `DECKTALK_PROJECT`, then the current directory. `-v` and `-q` go before or after the
 command name. `--only` repeats and does not take commas. `build` verifies section starts
-only, and `verify SECTION:CUE …` measures cue landings and their offsets.
-[CLI](/reference/cli) lists every flag.
+and cuts, and `verify SECTION:CUE …` also measures cue landings and their offsets. Every
+cut must be quieter than -40 dBFS in its last 150 ms, reported as `quiet` or
+`SPEECH AT CUT`, and clip sections are exempt. In a silent build the placeholder track
+carries a click at every word start, and the cue table gains an `a/v` column, the
+picture's first change minus the click nearest the cue, which fails past
+`max_offset_frames`. [CLI](/reference/cli) lists every flag.
 
 ## Stages and artifacts
 

@@ -70,7 +70,7 @@ prints the section table and the timeline.
 | `--force` | Ignore the text-hash cache and synthesize every section. |
 | `--allow-placeholders` | Synthesize a section that still has a `[CAPITAL]` placeholder. |
 | `--dry-run` | Parse the script and print the exact text per section, the voice settings, and the table. No API calls. |
-| `--silent` | Write silent placeholders with estimated word times. No key needed. |
+| `--silent` | Write placeholder tracks, a soft click at every estimated word start, with estimated word times. No key needed. |
 | `--model M` | The ElevenLabs model for this run. |
 
 ### `decktalk beats`
@@ -164,20 +164,32 @@ video. It prints the final path and length.
 
 ### `decktalk verify [SECTION:CUE ...]`
 
-Confirms that every section opens on a real frame and that the audio is quiet just before every cut. With arguments, it also confirms
-that the picture changed at each named cue, and measures how far from the cue the first
-changed frame sits. It exits 1 when any check fails.
+Confirms that every section opens on a real frame and that the narration is quiet in
+the last 150 ms before every cut. With arguments, it also confirms that the picture
+changed at each named cue, and measures how far from the cue the first changed frame
+sits. After a silent build the cue table gains an `a/v` column, the picture's first change
+measured against the placeholder click at the cued word. It exits 1 when any check fails.
 
 ```text
-check                 cue       at   chg %   ctl %   offset  result
-3:3.1draw            1.85    33.93    0.33    0.00    +30ms  changed
+sec   cut at  before cut  result
+ 01    10.50   -128.4 dB  quiet
+ 02    32.78   -123.3 dB  quiet
+ 03    79.70   -125.4 dB  quiet
+ 04   126.88   -128.4 dB  quiet
+ 05   146.98   -120.0 dB  quiet
+
+check                 cue       at   chg %   ctl %   offset     a/v  result
+3:3.1eq             21.63    54.43    0.27    0.00    -70ms   -74ms  changed
+3:3.1p1             18.18    50.98    0.15    0.00   -100ms  -113ms  OFF CUE
+5:5.1a               2.55   129.43    0.41    0.00    -30ms   -62ms  changed
 ```
 
 | Result | Meaning |
 |---|---|
 | `ok` and `BLACK` | A section start on a real frame, or on a dark one. |
-| `changed` | The cue changed the picture within `max_offset_frames` of its time. |
-| `OFF CUE` | The picture changed, but the first change sits further from the cue than that. The note says by how much. |
+| `quiet` and `SPEECH AT CUT` | The narration in the last `cut_window_seconds` before the cut is below `cut_max_db`, or it is not. Clip sections are not listed. |
+| `changed` | The cue changed the picture within `max_offset_frames` of its time, and of the click after a silent build. |
+| `OFF CUE` | The picture changed, but the first change sits further from the cue, or from the click, than that. The note says by how much. |
 | `NO CHANGE` | The picture did not change enough, or no more than it was already changing. |
 | `MISSING` | The cue is unresolved or the section is not assembled. |
 
@@ -207,7 +219,7 @@ each stage's table. It stops with exit 1 when a cue phrase is not found, unless
 
 | Flag | Meaning |
 |---|---|
-| `--silent` | Placeholder narration. No key needed. |
+| `--silent` | Placeholder narration with a click at every word start. No key needed. |
 | `--force` | Re-synthesize every section. |
 | `--only N` | Re-record only these sections. Repeat the flag for several. |
 | `--allow-unresolved` | Build even if some cue phrases were not found. |
@@ -227,14 +239,16 @@ cues     cues.json  ok
   02  deck/index.html?scene=2                  rec cut
   03  deck/index.html?scene=3                  rec cut
   04  deck/index.html?scene=4                  rec cut
+  05  deck/index.html?scene=5                  rec cut
   #  section                  start     end  length
-  1  Open                      0:00    0:10    10.2
-  2  Three lines               0:10    0:32    21.9
-  3  The derivative of x sq    0:32    1:10    37.5
-  4  Before and after          1:10    1:52    42.4
-     narration total 1:52  (estimated: silent placeholders)
-beats    4 section(s) with resolved cues
-final    build/out/my-lesson.mp4  1:54
+  1  Open                      0:00    0:11    10.5
+  2  Three lines               0:11    0:33    22.3
+  3  Gradient descent          0:33    1:20    46.9
+  4  Before and after          1:20    2:07    47.2
+  5  Close                     2:07    2:27    20.1
+     narration total 2:27  (estimated: silent placeholders)
+beats    5 section(s) with resolved cues
+final    build/out/my-lesson.mp4  2:29
 captions build/out/my-lesson.srt  ok
 captions build/out/my-lesson.vtt  ok
 chapters build/out/my-lesson.chapters.txt  ok

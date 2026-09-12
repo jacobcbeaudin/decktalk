@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: What each DeckTalk warning, verdict, and failure means, from phrase not found and missing keys to NO COVER, BLACK?, TRUNCATED, KATEX?, OFF CUE, and NO CHANGE, and what to do about it.
+description: What each DeckTalk warning, verdict, and failure means, from phrase not found and missing keys to NO COVER, BLACK?, TRUNCATED, KATEX?, OFF CUE, NO CHANGE, SPEECH AT CUT, and the a/v offset, and what to do about it.
 icon: "life-ring"
 ---
 
@@ -14,8 +14,8 @@ the assembly.
     section, and `build` stopped.
 
     ```text
-     03    37.1      -  3.1@0.0,3.1draw@1.85,3.1a@9.74,3.1think@25.97,3.1c@31.27
-                        ! 3.1b: phrase not found: 'expand the 2'
+     03    46.2   30.0  3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43
+                        ! 3.1eq: phrase not found: 'learning rate η'
     ```
 
     Compare the phrase with the words in `build/audio/NN-slug.words.json`. The usual
@@ -85,13 +85,44 @@ the assembly.
     and raise `max_offset_frames` only when the delay is intended.
   </Accordion>
 
+  <Accordion title="SPEECH AT CUT in the before cut table">
+    The audio in the last 150 ms before a section's cut is louder than -40 dBFS, so the
+    voice was still sounding when the picture cut. Raise `min_tail_seconds` under
+    `[narration]` so that more silence is padded after the last word, or end the
+    section's script sooner. Clip sections carry their own audio and are not checked.
+    The window and the threshold are `cut_window_seconds` and `cut_max_db` under
+    `[verify]`.
+  </Accordion>
+
+  <Accordion title="a/v offset: picture N ms from the click">
+    In a silent build the placeholder track carries a click at every word start, and the
+    `a/v` column of the verify table is the picture's first change minus the click
+    nearest the cue. The click and the cue come from the same word time, so a value
+    beyond `max_offset_frames` means the audio and the picture of the finished file
+    drifted apart somewhere between the recording and the mix. Check that the section's
+    sidecar reports a `cover` lead method, re-record the section with `--only N`, and
+    confirm that the `offset` column is small on its own. A `-` in the column means no
+    click sits within `click_search_seconds` of the cue, which is usual for a cue on
+    `$start` or `$end` rather than on a word.
+  </Accordion>
+
+  <Accordion title="data-sync text not found in the spoken words">
+    An element with `data-sync` has text that matches no run of the section's spoken
+    words, so it revealed whole and the recorder logged the warning. Compare the
+    element's text with the sentence in `script.md`. They must agree word for word,
+    though case and punctuation are ignored, and a number written as digits on the slide
+    and as words in the script is the usual cause.
+  </Accordion>
+
   <Accordion title="A typewriter reveal fails the cue check">
     An element with `data-type` types one character every few tens of milliseconds, so
     the first probe after the cue sees only a few characters and a short line may fall
     under `min_changed_percent`. Give the element's container something that appears at
-    once on the same cue, as the scaffold's chat bubble does with `data-fx="fade"` on the
-    bubble and `data-type` on its text. Then the background lands on the cue and the
-    text follows.
+    once on the same cue, as the chat recipe in
+    [Slide recipes](/guides/slide-recipes#a-chat-before-and-after) does with
+    `data-fx="fade"` on the bubble and `data-type` on its text. Then the background lands
+    on the cue and the text follows. The same holds for a `data-sync` element, which
+    reveals one word at a time.
   </Accordion>
 
   <Accordion title="A section is early or late by a fixed amount">
@@ -126,7 +157,7 @@ the assembly.
   </Accordion>
 
   <Accordion title="Loudness warnings on a silent build">
-    A silent build's mix is silence, so the loudness pass has nothing to measure and
+    A silent build's mix is clicks and silence, so the loudness pass has nothing to measure and
     reports a miss. The warning is expected and harmless. Do not combine `--silent`
     with `--strict`, which turns the miss into an error.
   </Accordion>

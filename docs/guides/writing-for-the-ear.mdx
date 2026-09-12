@@ -28,10 +28,11 @@ screen.
 ## Give every reveal a noun to land on
 
 A cue resolves to the first word of its phrase, so the phrase should begin with the word
-that names the visual. "The definition of the derivative" lands on "definition", which is
-a noun the listener can attach to the line that appears. A phrase such as "and then" lands
-on nothing in particular. The scaffold's cues are all nouns or verbs with a concrete
-referent: `definition`, `Expand`, `Only two x`, `Write about`, `Same model`.
+that names the visual. "Start with a loss surface" cues on `loss surface` and lands on
+"loss", which is a noun the listener can attach to the bowl that draws. A phrase such as
+"and then" lands on nothing in particular. The scaffold's cues are all nouns or verbs with
+a concrete referent: `loss surface`, `Pick a point`, `learning rate`, `Is this query`,
+`Write the script`.
 
 ## One reveal per idea
 
@@ -43,30 +44,37 @@ all lets the picture go stale. When one sentence carries two ideas, split it.
 ## Put silence before a reveal
 
 A short silence before a reveal makes the reveal read as an event. Two directions do
-this. `[beat]` leaves the default pause of seven tenths of a second where it sits, and
-`[pause N]` leaves N seconds. The scaffold pauses for three seconds before the answer
-so that the audience can think.
+this, and they reach the voice differently. `[beat]` is a beat: the voice reads it as a
+dash at the end of the sentence before it and pauses there as it would at any dash, and
+nothing else is sent. `[pause N]` sends a `<break time="Ns" />` tag and is the only
+direction that does, because frequent break tags make the voice add fillers and breaths.
+Use beats freely and timed pauses sparingly. The scaffold pauses for three seconds before
+the answer so that the audience can think.
 
 ```md script.md
-Before I finish the line, pause and think: as h goes to zero, what is left?
+[beat] Pause and think: what happens if the learning rate is too large?
 
 [pause 3]
 
-Only two x is left. The derivative of x squared is two x.
+You overshoot, and bounce from side to side. [beat] Small enough, and you settle at the
+bottom.
 ```
 
-Anything else in square brackets is a stage direction. It is not spoken and it leaves a
-beat where it sat, so a direction such as `[Deck scene 3. The curve draws.]` is both a
-note to yourself and a pause. [script.md](/reference/script-md) lists every direction.
+Anything else in square brackets is a stage direction. It is not spoken and it is a beat
+where it sat, so a direction such as `[Deck scene 3. A loss bowl draws.]` is both a note
+to yourself and a pause. The silence before the first section and after every section's
+last word is added by ffmpeg rather than requested from the voice, so a script never
+needs a pause at either end. [script.md](/reference/script-md) lists every direction.
 
 ## Trail the word, and lead it only when the audience must read
 
 The `offset` key in `cues.json` shifts a cue in seconds. A small positive offset, one or
 two tenths of a second, lets the word finish before the visual moves, which feels like
-the narrator pointing at something. The scaffold trails `Only two x` by 0.2 seconds.
+the narrator pointing at something. The scaffold trails `settle` by 0.2 seconds, so the
+point reaches the bottom of the bowl as the word ends.
 
 ```json cues.json
-{ "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+{ "cue": "3.1min", "on": "settle", "offset": 0.2 }
 ```
 
 Lead the word with a negative offset only when the audience must read along with the
@@ -92,8 +100,11 @@ for symbols and abbreviations.
 `decktalk build --silent` runs every stage with a silent placeholder track and estimated
 word times, so it costs nothing and needs no key. The estimate paces the words at
 `silent_words_per_minute` and adds every declared pause, and the cues resolve to
-plausible times. Watch the result for pacing. A reveal that arrives too early in a silent
-rehearsal usually arrives too early with the real voice as well.
+plausible times. The placeholder track is not pure silence: it carries a soft click at
+every estimated word start, so the pacing is audible, and `decktalk verify` can measure
+the picture against the clicks. Watch the result for pacing. A reveal that arrives too
+early in a silent rehearsal usually arrives too early with the real voice as well.
+[How it works](/concepts/how-it-works#the-silent-build) explains what the clicks prove.
 
 ## Give a section a time budget
 
@@ -102,27 +113,29 @@ the estimate and, once the voice has spoken, with the real length. The estimate 
 word count at `words_per_minute`, which defaults to 140.
 
 ```md script.md
-## 3. The derivative of x squared — 0:40 to 1:10
+## 3. Gradient descent — 0:40 to 1:20
 ```
 
 ```text
  #  section                words    est  target  actual  placeholders
 ---------------------------------------------------------------------
- 1  open                      21   0:09    --      0:10  -
+ 1  open                      21   0:09    --      0:11  -
  2  three-lines               47   0:20    --      0:22  -
- 3  the-derivative-of-x-sq    80   0:34    0:30    0:37  -
- 4  before-and-after          91   0:39    --      0:42  -
+ 3  gradient-descent          94   0:40    0:40    0:47  -
+ 4  before-and-after         104   0:45    --      0:47  -
+ 5  close                     38   0:16    --      0:20  -
 ---------------------------------------------------------------------
-    total                    239   1:42            1:52
+    total                    304   2:10            2:27
 ```
 
-The `target` column is the budget's length. Section 3 was budgeted at thirty seconds and
-ran to thirty-seven, which is the signal to cut a sentence or to widen the budget. The
+The `target` column is the budget's length. Section 3 was budgeted at forty seconds and
+the silent rehearsal ran to forty-seven, which is the signal to cut a sentence or to widen
+the budget once the voice has spoken and the `actual` column is real. The
 `min_seconds` key on a section in `cues.json` works the other way around and warns when
 the speech is shorter than the visuals need.
 
 ## Next
 
-[Slide recipes](/guides/slide-recipes) pairs script lines with cues and markup for five
+[Slide recipes](/guides/slide-recipes) pairs script lines with cues and markup for six
 common slides. [Cues](/concepts/cues) has the matching rules and the placement rules of
 thumb in one list.

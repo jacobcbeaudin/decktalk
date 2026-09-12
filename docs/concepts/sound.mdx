@@ -38,7 +38,7 @@ the open.
 { "boost_db": 3, "boost_seconds": 2,
   "markers": [
     { "name": "open", "section": 1, "on": "$start" },
-    { "name": "answer", "section": 3, "on": "Only two x", "mute_seconds": 0.6 }
+    { "name": "answer", "section": 3, "on": "settle", "mute_seconds": 0.6 }
   ] }
 ```
 
@@ -82,7 +82,7 @@ decktalk soundscape --only music    # one item; --force regenerates it
 ```
 
 ```text
-== music -> /private/tmp/dtclip0/build/music/underscore.mp3  [planned]
+== music -> ~/my-lesson/build/music/underscore.mp3  [planned]
    POST https://api.elevenlabs.io/v1/music
    {'prompt': 'calm, minimal instrumental underscore for a lesson: soft piano and warm pads, slow, no drums, no melody hooks, unobtrusive under a narrator', 'force_instrumental': True, 'model_id': 'music_v2', 'music_length_ms': 120000}
 ```

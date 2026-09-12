@@ -27,8 +27,25 @@ def scene_url(project: Project, section: PageSection, params: dict[str, str], se
     page = project.path(section.page)
     if not page.exists():
         raise ConfigError(f"section {section.number}: page not found: {page}")
-    query = {"scene": section.scene, **params, "t0": "signal"}
+    query = {"scene": section.scene, **params}
+    words = words_query(project, section)
+    if words and "words" not in query:
+        query["words"] = words
+    query["t0"] = "signal"
     return page.resolve().as_uri() + "?" + urlencode(query)
+
+
+def words_query(project: Project, section: PageSection) -> str | None:
+    """The section's spoken words with their seconds after the section starts, for data-sync reveals."""
+    timeline = project.timeline()
+    if timeline is None or section.key not in timeline.sections:
+        return None
+    sec = timeline.sections[section.key]
+    if not sec.words:
+        return None
+    return ",".join(
+        f"{w.word.replace(',', '').replace('@', '')}@{max(0.0, w.start - sec.start):.2f}" for w in sec.words
+    )
 
 
 @dataclass

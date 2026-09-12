@@ -27,27 +27,26 @@ mode: "custom"
   <div className="mt-20">
     <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Follow one cue through the four files</h2>
     <p className="mt-2 max-w-3xl text-zinc-600 dark:text-zinc-400">
-      A project is four files that refer to each other by one number and one id. These four snippets come from the scaffold that <code>decktalk init</code> writes, and they follow the cue <code>3.1c</code> from the spoken phrase to the frame.
+      A project is four files that refer to each other by one number and one id. These four snippets come from the scaffold that <code>decktalk init</code> writes, and they follow the cue <code>3.1eq</code> from the spoken phrase to the frame.
     </p>
 
     <Columns cols={2}>
       <Card title="1. The script says it" icon="pen-line">
-        The words under a `## N.` heading are what the voice says. A time budget on the heading is optional, and a `[pause 3]` direction is three seconds of silence.
+        The words under a `## N.` heading are what the voice says. A time budget on the heading is optional, and a `[beat]` is a short pause that the voice reads as a dash.
 
         ```md script.md
-        ## 3. The derivative of x squared — 0:40 to 1:10
+        ## 3. Gradient descent — 0:40 to 1:20
 
-        [pause 3]
-
-        Only two x is left.
-        The derivative of x squared is two x.
+        The gradient says which way is uphill, so
+        take a step the other way. [beat] The
+        learning rate sets the size of that step.
         ```
       </Card>
       <Card title="2. The cue names the phrase" icon="crosshairs">
-        A cue pairs a cue id with the phrase it lands on. The `offset` trails the word by a fifth of a second, so the answer appears as the words finish.
+        A cue pairs a cue id with the phrase it lands on. The cue resolves to the first word of the phrase, so the update rule appears on "learning".
 
         ```json cues.json
-        { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+        { "cue": "3.1eq", "on": "learning rate" }
         ```
       </Card>
       <Card title="3. The project file maps the section" icon="file-code">
@@ -56,31 +55,30 @@ mode: "custom"
         ```toml decktalk.toml
         [[section]]
         number = 3
-        title = "The derivative of x squared"
+        title = "Gradient descent"
         page = "deck/index.html"
         scene = 3
         ```
       </Card>
       <Card title="4. The slide waits for the cue" icon="presentation-screen">
-        An element with `data-cue` stays hidden until its cue fires. KaTeX typesets the `data-tex` value, and the `pop` effect lands the answer.
+        An element with `data-cue` stays hidden until its cue fires. KaTeX typesets the `data-tex` value, and the plain text is the fallback.
 
         ```html deck/index.html
-        <p class="math answer" data-cue="3.1c"
-           data-fx="pop" data-display
-           data-tex="\\frac{d}{dx}\\,x^2 = 2x">
-          d/dx x^2 = 2x
-        </p>
+        <div class="math" data-cue="3.1eq" data-display
+             data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">
+          θ(t+1) = θ(t) − η ∇L(θ(t))
+        </div>
         ```
       </Card>
     </Columns>
 
     <p className="mt-6 max-w-3xl text-zinc-600 dark:text-zinc-400">
-      After the build, <code>decktalk verify 3:3.1c</code> measures the finished video and reports that the picture changed ten milliseconds after the cue.
+      After the build, <code>decktalk verify 3:3.1eq</code> measures the finished video and reports how far from the cue the picture first changed. After a silent build the <code>a/v</code> column also measures the picture against the placeholder click at the cued word.
     </p>
 
     ```text
-    check                 cue       at   chg %   ctl %   offset  result
-    3:3.1c              31.27    63.35    0.32    0.00    +10ms  changed
+    check                 cue       at   chg %   ctl %   offset     a/v  result
+    3:3.1eq             21.63    54.43    0.27    0.00    -70ms   -74ms  changed
     ```
   </div>
 

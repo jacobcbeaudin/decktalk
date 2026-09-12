@@ -9,16 +9,18 @@ and the text under it is what the voice says for that section. Everything else o
 page is how the text is cleaned before it is sent.
 
 ```md script.md
-## 3. The derivative of x squared — 0:40 to 1:10
+## 3. Gradient descent — 0:40 to 1:20
 
-[Deck scene 3. The curve draws, then the derivation appears one line at a time.]
+[Deck scene 3. A loss bowl draws, a point steps down it, and the update rule appears.]
 
-Now a short lesson. Here is the curve y equals x squared. [beat] Where does its slope come
-from? Start with the definition of the derivative, the limit of a difference quotient.
+Now a short lesson. Here is gradient descent, at a high level. [beat] Start with a loss
+surface. Think of it as a bowl. [beat] Pick a point anywhere on it.
+
+[beat] Pause and think: what happens if the learning rate is too large?
 
 [pause 3]
 
-Only two x is left. The derivative of x squared is two x.
+You overshoot, and bounce from side to side.
 ```
 
 ## Headings
@@ -38,17 +40,20 @@ is skipped by `narrate`, so its body can hold a stage direction that says what p
 
 | Text | Spoken | Effect |
 |---|---|---|
-| `[Deck scene 3. The curve draws.]` | no | A stage direction. It leaves a pause of `direction_break_seconds`, 0.7 by default, at the end of the paragraph before it. |
-| `[beat]` | no | The same pause on its own. |
-| `[pause 3]` or `[pause 2.5]` | no | A pause of that many seconds instead of the default. |
+| `[Deck scene 3. A loss bowl draws.]` | no | A stage direction, which is a beat. The voice reads it as a dash at the end of the paragraph before it and pauses there the way it would at any dash, and no break tag is sent. |
+| `[beat]` | no | The same beat on its own. |
+| `[pause 3]` or `[pause 2.5]` | no | A `<break time="3s" />` tag at the end of the paragraph before it. This is the only direction that sends a break tag, because frequent break tags make the voice add fillers and breaths. |
 | `[NUMBER]`, `[CLIENT_NAME]` | refused | A placeholder in capitals, digits, and underscores. `narrate` refuses a section that still has one unless `--allow-placeholders` is passed, and `--dry-run` lists them. |
 | `<break time="1.0s" />` | no | A pause of that length, passed to the voice as written. |
 
 A direction that stands before any prose in its section has nothing to pause after and
-is dropped. Two directions in a row keep the longest pause rather than adding them. The
-first spoken section of the video opens with a pause of `lead_break_seconds`, and every
-section ends with a pause of `tail_break_seconds`, then is padded so that speech ends at
-least `min_tail_seconds` before the file does. The pauses are `[narration]` keys in
+is dropped. Two directions in a row keep the longest pause rather than adding them, and a
+beat beside a timed pause yields the timed pause. Silence before the first spoken section
+and after every section's last word is added to the audio by ffmpeg rather than requested
+from the voice: `lead_break_seconds` opens the first section, and every section is padded
+so that speech ends at least `min_tail_seconds`, 0.7 by default, before the file does.
+`direction_break_seconds` is only the length a beat is assumed to take when a silent build
+estimates timings. All three are `[narration]` keys in
 [Configuration](/reference/configuration#narration).
 
 ## Markdown stripping
@@ -56,21 +61,22 @@ least `min_tail_seconds` before the file does. The pauses are `[narration]` keys
 The text is cleaned before it is sent, in this order.
 
 1. A link `[text](url)` becomes its text.
-2. Directions and pauses become pause markers.
+2. A beat becomes a dash and a timed pause becomes a break tag, each appended to the paragraph before it.
 3. Inline code, bold, and emphasis lose their markers.
 4. Heading marks, list bullets, and list numbers at the start of a line are removed.
 5. Paragraphs are joined on single spaces, and blank lines separate them.
 
-The cleaned text is what the words file and the captions reflect, so a cue phrase should
-match the plain words. `decktalk narrate --dry-run` prints the exact text for each
-section with its pauses.
+The cleaned text is what the voice receives. The spoken text, which cue matching and the
+captions reflect, has neither the dashes nor the tags, so a cue phrase should match the
+plain words. `decktalk narrate --dry-run` prints the exact text for each section with its
+pauses.
 
 ## Length
 
 The narrate table estimates each section at `words_per_minute`, which defaults to 140,
 and a silent build sizes its placeholder at `silent_words_per_minute`, which defaults to
 150, plus every declared pause. As a rule of thumb, a section runs about 140 words per
-minute plus 0.7 seconds per direction. [Writing for the ear](/guides/writing-for-the-ear)
+minute plus `direction_break_seconds`, 0.7 by default, per beat. [Writing for the ear](/guides/writing-for-the-ear)
 has the time-budget workflow.
 
 ## Numbers and symbols
