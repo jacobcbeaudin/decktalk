@@ -43,8 +43,8 @@ def test_index_mode_exposes_catalog(page, deck):
     page.goto(deck.as_uri())
     catalog = page.evaluate("() => window.__decktalk.catalog")
     assert [c["scene"] for c in catalog] == ["1", "2", "3", "4", "5"]
-    assert catalog[1]["steps"] == ["2.1", "2.2"]
-    assert catalog[3]["steps"] == ["4.1", "4.2"]
+    assert [c["steps"] for c in catalog] == [["1.1"], ["2.1"], ["3.1"], ["4.1"], ["5.1"]]
+    assert [c["name"] for c in catalog] == ["Open", "Four files", "Gradient descent", "The edit", "Close"]
     assert page.evaluate("() => window.__decktalk.mode") == "index"
     assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
@@ -59,30 +59,36 @@ def test_freeze_mode_reveals_everything(page, deck):
         "() => [...document.querySelectorAll('.dt-reveal')].filter(e => !e.classList.contains('dt-on')).length"
     )
     assert hidden == 0
-    assert page.evaluate("() => document.querySelector('.tile').textContent") == "3 steps"
+    # The listed cues fired too: 2.1one lights the shared phrase and dims the rest of every panel.
+    assert page.evaluate("() => window.__decktalk.fired") == ["2.1script", "2.1words", "2.1cue", "2.1slide", "2.1one"]
+    assert page.evaluate("() => document.querySelector('.dt-slide').classList.contains('lit')")
+    assert page.evaluate("() => document.querySelectorAll('.k').length") == 4
 
 
 def test_cue_mode_fires_in_order_and_first_step_mounts_at_zero(page, deck):
-    page.goto(f"{deck.as_uri()}?scene=2&t0=0&beats=2.1a@0.3,2.1b@0.9,2.2@1.6")
+    page.goto(f"{deck.as_uri()}?scene=2&t0=0&beats=2.1script@0.3,2.1words@0.9,2.1one@1.6")
     page.wait_for_timeout(120)
     # Step 2.1 mounted at t=0 even though its first cue is at 0.3 s, and its listed reveals wait.
     assert page.evaluate("() => window.__decktalk.step") == "2.1"
-    assert page.evaluate("() => document.querySelector('[data-cue=\"2.1a\"]').classList.contains('dt-on')") is False
+    hidden = "() => document.querySelector('[data-cue=\"2.1script\"]').classList.contains('dt-on')"
+    assert page.evaluate(hidden) is False
     page.wait_for_function("() => window.__decktalk.fired.length >= 1")
-    assert page.evaluate("() => window.__decktalk.fired") == ["2.1a"]
-    assert page.evaluate("() => document.querySelector('[data-cue=\"2.1a\"]').classList.contains('dt-on')") is True
-    page.wait_for_function("() => window.__decktalk.step === '2.2'")
-    assert page.evaluate("() => window.__decktalk.fired") == ["2.1a", "2.1b", "2.2"]
+    assert page.evaluate("() => window.__decktalk.fired") == ["2.1script"]
+    assert page.evaluate("() => document.querySelector('[data-cue=\"2.1script\"]').classList.contains('dt-on')") is True
+    page.wait_for_function("() => window.__decktalk.fired.length >= 3")
+    assert page.evaluate("() => window.__decktalk.fired") == ["2.1script", "2.1words", "2.1one"]
+    # The step's `on` handler ran for 2.1one, and the single step means the scene is done at mount.
+    assert page.evaluate("() => document.querySelector('.dt-slide').classList.contains('lit')")
     assert page.evaluate("() => document.body.dataset.done") == "1"
     assert not page.errors
 
 
 def test_handlers_and_unknown_cues(page, deck):
-    page.goto(f"{deck.as_uri()}?scene=1&t0=0&beats=1.1a@0.1,custom@0.2")
+    page.goto(f"{deck.as_uri()}?scene=1&t0=0&beats=1.1curve@0.1,custom@0.2")
     page.evaluate("() => { window.__hits = []; DeckTalk.on('custom', () => window.__hits.push('custom')); }")
     page.wait_for_function("() => window.__decktalk.fired.length >= 2")
     assert page.evaluate("() => window.__hits") == ["custom"]
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1a", "custom"]
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1curve", "custom"]
 
 
 def test_warnings_report_an_unknown_cue_id(page, deck):
@@ -95,19 +101,20 @@ def test_warnings_report_an_unknown_cue_id(page, deck):
 
 
 def test_autoplay_uses_holds(page, deck):
-    page.goto(f"{deck.as_uri()}?scene=2&speed=20")  # holds 12 s and 6 s become 0.6 s and 0.3 s
+    page.goto(f"{deck.as_uri()}?scene=2&speed=20")  # the 28 s hold becomes 1.4 s, and the listed cues fire inside it
     page.wait_for_function("() => document.body.dataset.done === '1'", timeout=5000)
     assert page.evaluate("() => window.__decktalk.mode") == "autoplay"
-    assert page.evaluate("() => window.__decktalk.step") == "2.2"
+    assert page.evaluate("() => window.__decktalk.step") == "2.1"
+    page.wait_for_function("() => window.__decktalk.fired.includes('2.1one')", timeout=5000)
 
 
 def test_signal_mode_waits_for_start_clock(page, deck):
     """With t0=signal the clock does not start at load, and starts when the recorder says so."""
-    page.goto(f"{deck.as_uri()}?scene=2&t0=signal&beats=2.1a@0.1")
+    page.goto(f"{deck.as_uri()}?scene=2&t0=signal&beats=2.1script@0.1")
     page.wait_for_timeout(400)
     assert page.evaluate("() => window.__decktalk.fired") == []
     page.evaluate("() => DeckTalk.startClock()")
-    page.wait_for_function("() => window.__decktalk.fired.includes('2.1a')", timeout=2000)
+    page.wait_for_function("() => window.__decktalk.fired.includes('2.1script')", timeout=2000)
 
 
 def test_katex_typesets_the_equation(page, deck):
@@ -117,9 +124,32 @@ def test_katex_typesets_the_equation(page, deck):
     assert (deck.parent / "katex" / "katex.min.js").exists()
     page.goto(f"{deck.as_uri()}?step=3.1")
     page.evaluate("() => window.__sceneReady")
-    assert page.evaluate("() => document.querySelectorAll('[data-tex][data-typeset] .katex').length") >= 1
+    # The learning rate chip and the three spans of the update rule.
+    assert page.evaluate("() => document.querySelectorAll('[data-tex][data-typeset] .katex').length") == 4
     assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
+
+
+def test_scene_3_draws_its_surface_in_webgl(page, deck):
+    """The frozen step 3.1 mounts a 960 by 570 three.js canvas in the figure region, with no page error."""
+    page.goto(f"{deck.as_uri()}?step=3.1")
+    page.evaluate("() => window.__sceneReady")
+    size = page.evaluate("() => { const c = document.querySelector('.fig3 canvas'); return c && [c.width, c.height]; }")
+    if size is None:
+        pytest.skip("no WebGL context in this Chromium")
+    assert size == [960, 570]
+    assert not page.errors
+
+
+def test_synced_words_stay_dim_until_spoken(page, deck):
+    """A data-sync line shows every word dim at mount and turns each one on at its spoken second."""
+    words = "The@0,curve@0.2,rises@0.4,then@5,the@5.2,number@5.4,lands@5.6"
+    page.goto(f"{deck.as_uri()}?scene=1&t0=0&beats=1.1curve@0.2&words={words}")
+    page.wait_for_function("() => document.querySelectorAll('.dt-w.dt-on').length >= 3", timeout=3000)
+    assert page.evaluate("() => document.querySelectorAll('.dt-w').length") == 7
+    assert page.evaluate("() => document.querySelectorAll('.dt-w.dt-on').length") == 3
+    assert page.evaluate("() => getComputedStyle(document.querySelector('.dt-w:not(.dt-on)')).opacity") == "1"
+    assert page.evaluate("() => window.__decktalk.warnings") == []
 
 
 def test_scene_ready_warns_when_katex_never_loads(page, tmp_path):

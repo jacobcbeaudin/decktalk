@@ -28,13 +28,13 @@ mkdir -p "$T/build/music"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i "sine=f=220:r=44100" -t 8 -af volume=0.5 -c:a libmp3lame "$T/build/music/underscore.mp3"
 DECKTALK_VIDEO_PRESET=veryfast uv run decktalk -p "$T" build --silent
 uv run decktalk -p "$T" shots
-uv run decktalk -p "$T" shots --section 2 --at 1 --at 6
+uv run decktalk -p "$T" shots --section 3 --at 8 --at 20 --at 38
 uv run decktalk -p "$T" verify \
-  1:1.1b 1:1.1c \
-  2:2.1a 2:2.1b 2:2.1c 2:2.1d 2:2.2 2:2.2edit \
-  3:3.1bowl 3:3.1p0 3:3.1p1 3:3.1eq 3:3.1p2 3:3.1p3 3:3.1think 3:3.1over 3:3.1min\
-  4:4.1ask 4:4.1r1 4:4.2 4:4.2ask 4:4.2r1 4:4.2r2 4:4.2r3\
-  5:5.1a 5:5.1b 5:5.1c 5:5.2 5:5.2a 5:5.2b
+  1:1.1curve 1:1.1number 1:1.1mark 1:1.1cap \
+  2:2.1script 2:2.1words 2:2.1cue 2:2.1slide 2:2.1one \
+  3:3.1bowl 3:3.1p0 3:3.1p1 3:3.1eq 3:3.1p2 3:3.1p3 3:3.1eqA 3:3.1eqB 3:3.1eqC 3:3.1think 3:3.1over 3:3.1min \
+  4:4.1valley 4:4.1build 4:4.1s1 4:4.1s2 4:4.1s3 4:4.1s45 4:4.1out 4:4.1verify 4:4.1edit \
+  5:5.1cap 5:5.1made 5:5.1docs
 uv run decktalk -p "$T" status
 uv run python -c "import decktalk; p = decktalk.Project.load('$T'); print('python api ok:', p.name, len(p.sections), 'sections')"
 # post-production checks on the final file: picture and sound both start at 0, every section

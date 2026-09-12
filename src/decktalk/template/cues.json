@@ -8,156 +8,59 @@
   "sections": {
     "1": {
       "cues": [
-        {
-          "cue": "1.1a",
-          "on": "$start"
-        },
-        {
-          "cue": "1.1b",
-          "on": "This is"
-        },
-        {
-          "cue": "1.1c",
-          "on": "lands on the word"
-        }
+        { "cue": "1.1curve", "on": "curve" },
+        { "cue": "1.1number", "on": "number" },
+        { "cue": "1.1mark", "on": "You just watched", "offset": 0.3 },
+        { "cue": "1.1cap", "on": "one file" }
       ]
     },
     "2": {
       "cues": [
-        {
-          "cue": "2.1a",
-          "on": "First"
-        },
-        {
-          "cue": "2.1b",
-          "on": "Second"
-        },
-        {
-          "cue": "2.1c",
-          "on": "Third"
-        },
-        {
-          "cue": "2.1d",
-          "on": "Three steps"
-        },
-        {
-          "cue": "2.2",
-          "on": "one take"
-        },
-        {
-          "cue": "2.2edit",
-          "on": "Change a sentence"
-        }
+        { "cue": "2.1script", "on": "The script says" },
+        { "cue": "2.1words", "on": "The voice comes back" },
+        { "cue": "2.1cue", "on": "A cue names" },
+        { "cue": "2.1slide", "on": "And a slide names" },
+        { "cue": "2.1one", "on": "One number", "occurrence": 2 }
       ]
     },
     "3": {
-      "min_seconds": 30,
+      "min_seconds": 40,
       "cues": [
-        {
-          "cue": "3.1",
-          "on": "$start"
-        },
-        {
-          "cue": "3.1bowl",
-          "on": "loss surface"
-        },
-        {
-          "cue": "3.1p0",
-          "on": "Pick a point"
-        },
-        {
-          "cue": "3.1p1",
-          "on": "take a step"
-        },
-        {
-          "cue": "3.1eq",
-          "on": "learning rate"
-        },
-        {
-          "cue": "3.1p2",
-          "on": "Step again"
-        },
-        {
-          "cue": "3.1p3",
-          "on": "each step is smaller"
-        },
-        {
-          "cue": "3.1think",
-          "on": "Pause and think"
-        },
-        {
-          "cue": "3.1over",
-          "on": "overshoot"
-        },
-        {
-          "cue": "3.1min",
-          "on": "settle",
-          "offset": 0.2
-        }
+        { "cue": "3.1bowl", "on": "loss surface" },
+        { "cue": "3.1p0", "on": "Pick a point" },
+        { "cue": "3.1up", "on": "gradient points" },
+        { "cue": "3.1neg", "on": "minus the gradient" },
+        { "cue": "3.1p1", "on": "Take a step" },
+        { "cue": "3.1eq", "on": "learning rate" },
+        { "cue": "3.1p2", "on": "Again" },
+        { "cue": "3.1p3", "on": "and again" },
+        { "cue": "3.1eqA", "on": "The next theta" },
+        { "cue": "3.1eqB", "on": "minus eta" },
+        { "cue": "3.1eqC", "on": "times the gradient" },
+        { "cue": "3.1think", "on": "Pause and think" },
+        { "cue": "3.1over", "on": "overshoot" },
+        { "cue": "3.1min", "on": "settle", "offset": 0.2 }
       ]
     },
     "4": {
       "cues": [
-        {
-          "cue": "4.1ask",
-          "on": "Is this query"
-        },
-        {
-          "cue": "4.1r1",
-          "on": "The reply is polite"
-        },
-        {
-          "cue": "4.2",
-          "on": "Now give the model"
-        },
-        {
-          "cue": "4.2ask",
-          "on": "You are reviewing"
-        },
-        {
-          "cue": "4.2r1",
-          "on": "unindexed join"
-        },
-        {
-          "cue": "4.2r2",
-          "on": "defeats the index"
-        },
-        {
-          "cue": "4.2r3",
-          "on": "columns nobody reads"
-        }
+        { "cue": "4.1change", "on": "Change one sentence" },
+        { "cue": "4.1valley", "on": "Say the bowl" },
+        { "cue": "4.1build", "on": "Build again" },
+        { "cue": "4.1s1", "on": "Section one" },
+        { "cue": "4.1s2", "on": "Two, cached" },
+        { "cue": "4.1s3", "on": "Three is synthesized" },
+        { "cue": "4.1s45", "on": "Four and five" },
+        { "cue": "4.1out", "on": "rebuilt" },
+        { "cue": "4.1verify", "on": "measures" },
+        { "cue": "4.1edit", "on": "The script is the edit" }
       ]
     },
     "5": {
       "cues": [
-        {
-          "cue": "5.1",
-          "on": "$start"
-        },
-        {
-          "cue": "5.1a",
-          "on": "Write the script"
-        },
-        {
-          "cue": "5.1b",
-          "on": "Narrate it"
-        },
-        {
-          "cue": "5.1c",
-          "on": "every reveal"
-        },
-        {
-          "cue": "5.2",
-          "on": "The script is the edit"
-        },
-        {
-          "cue": "5.2a",
-          "on": "Change a sentence"
-        },
-        {
-          "cue": "5.2b",
-          "on": "Made with DeckTalk"
-        }
+        { "cue": "5.1cap", "on": "Change a sentence" },
+        { "cue": "5.1made", "on": "Made with" },
+        { "cue": "5.1docs", "on": "docs" }
       ]
     }
   }

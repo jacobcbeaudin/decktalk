@@ -31,6 +31,8 @@ TEMPLATE_FILES = [
     ("gitignore", ".gitignore"),
     ("env.example", ".env.example"),
 ]
+# Directories copied whole and byte for byte: the bundled fonts and the vendored three.js.
+TEMPLATE_DIRS = ["deck/fonts", "deck/vendor"]
 RUNTIME_FILE = "decktalk-runtime.js"
 
 # KaTeX typesets the [data-tex] elements. `decktalk setup` caches one release and `decktalk init`
@@ -142,6 +144,8 @@ def init(target: Path, *, name: str | None = None, force: bool = False) -> Path:
         dst.parent.mkdir(parents=True, exist_ok=True)
         text = src.read_text().replace("__NAME__", name).replace("__TITLE__", title_from(name))
         dst.write_text(text.replace("__KATEX__", katex_tags))
+    for rel in TEMPLATE_DIRS:
+        shutil.copytree(package_file(f"template/{rel}"), target / rel, dirs_exist_ok=True)
     shutil.copyfile(runtime_path(), target / "deck" / RUNTIME_FILE)
     return target
 

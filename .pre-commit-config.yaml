@@ -23,6 +23,8 @@ repos:
     rev: v6.0.0
     hooks:
       - id: end-of-file-fixer
+        exclude: ^src/decktalk/template/deck/(fonts|vendor)/
       - id: trailing-whitespace
+        exclude: ^src/decktalk/template/deck/(fonts|vendor)/
       - id: check-toml
       - id: check-yaml

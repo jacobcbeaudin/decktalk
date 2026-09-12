@@ -7,6 +7,9 @@ script = "script.md"   # narration, where "## N. Title" sections are the cut poi
 cues = "cues.json"     # which spoken phrase each visual lands on
 build = "build"        # everything generated, and git-ignored
 
+[narration]
+min_tail_seconds = 0.45   # silence kept after the last word of a section, so a cut breathes rather than sits
+
 [voice]
 # model = "eleven_multilingual_v2"   # the tool's default, which you can override per project here
 stability = 0.55
@@ -38,7 +41,7 @@ extra_seconds = 0.3     # recorded past the narration, so the cut never lands on
 
 [[section]]
 number = 2
-title = "Three lines"
+title = "Four files"
 page = "deck/index.html"
 scene = 2
 
@@ -50,7 +53,7 @@ scene = 3
 
 [[section]]
 number = 4
-title = "Before and after"
+title = "The edit"
 page = "deck/index.html"
 scene = 4
 ambience = false        # true plays the ambience bed under this section
@@ -61,7 +64,7 @@ title = "Close"
 page = "deck/index.html"
 scene = 5
 extra_seconds = 2
-hold_seconds = 2        # allowed only on the last page section
+hold_seconds = 4        # allowed only on the last page section
 
 [transition]
 dips = []               # boundaries that dip to black, as [from, to] pairs. Omit the key to dip at every cut.
