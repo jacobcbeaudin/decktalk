@@ -26,9 +26,10 @@ uv run scripts/build_config_reference.py --check # so is docs/reference/configur
 No check needs an ElevenLabs key or network access after `decktalk setup`. Do not add a
 check that calls the API.
 
-CI runs the same checks, with the unit checks on Python 3.12 to 3.14. Pull requests run
-on Linux. Pushes to `main` and tags also run the browser tests and the smoke build on
-macOS and Windows, and upload the smoke video from each platform as an artifact.
+CI runs the same checks, with the unit checks on Python 3.12 to 3.14. Linux is the canary:
+every push and pull request runs the browser tests and the smoke build there. A tag runs
+them on macOS and Windows as well, and the Actions tab can run any platform on demand
+through "Run workflow". Each run uploads its smoke video as an artifact.
 
 ## Layout
 
