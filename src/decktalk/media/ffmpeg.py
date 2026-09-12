@@ -8,6 +8,7 @@ DECKTALK_FFMPEG and DECKTALK_FFPROBE override both.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import shutil
@@ -241,6 +242,42 @@ def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, widt
     )  # fmt: skip
     m = re.search(r"YAVG=([0-9.]+)", err)
     return (float(m.group(1)) / 255 * 100) if m else 0.0
+
+
+def changed_series(
+    path: Path, ref_t: float, start: float, end: float, *, fps: int, level: int, width: int, height: int
+) -> list[tuple[float, float]]:
+    """Changed share against the frame at ref_t for every frame from start to end, as (time, percent) pairs.
+
+    One ffmpeg run decodes the span once and compares each frame with the reference, so
+    stepping through a reveal frame by frame costs one process rather than one per frame.
+    Times are the frames' own positions on the 1/fps grid, since the seek lands on the
+    first frame at or after `start`.
+    """
+    fc = (
+        f"[0:v]trim=duration=0.05,setpts=PTS-STARTPTS,scale={width}:{height},tpad=stop_mode=clone:stop=-1[a];"
+        f"[1:v]scale={width}:{height},setpts=PTS-STARTPTS[b];"
+        f"[a][b]blend=all_mode=difference:shortest=1,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,"
+        "signalstats,metadata=print"
+    )
+    span = f"{max(end - start, 0):.3f}"
+    err = stderr(
+        "-ss", f"{ref_t:.3f}", "-i", str(path), "-ss", f"{start:.3f}", "-t", span, "-i", str(path),
+        "-filter_complex", fc, "-f", "null", "-",
+    )  # fmt: skip
+    first = math.ceil(start * fps - 1e-6) / fps
+    out: list[tuple[float, float]] = []
+    pts: float | None = None
+    for line in err.splitlines():
+        m = re.search(r"pts_time:([0-9.]+)", line)
+        if m:
+            pts = float(m.group(1))
+            continue
+        mm = re.search(r"lavfi\.signalstats\.YAVG=([0-9.]+)", line)
+        if mm and pts is not None:
+            out.append((round(first + pts, 3), float(mm.group(1)) / 255 * 100))
+            pts = None
+    return out
 
 
 # ---- loudness --------------------------------------------------------------------------

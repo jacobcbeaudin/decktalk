@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from .artifacts import Timeline
+from .project import Project
+from .stages.assemble import output_paths
 from .stages.beats import BeatsResult
 from .stages.measure import LeadMeasurement, RecordingCheck
 from .stages.narrate import NarrateResult, Segment
@@ -94,15 +96,32 @@ def verify_table(result: VerifyResult) -> str:
     lines.append(f"total {result.total_seconds:.2f}s; {result.black_starts} black section start(s)")
     if result.cues:
         lines.append("")
-        lines.append(f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7}  result")
+        lines.append(f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7} {'offset':>8}  result")
         for c in result.cues:
             if c.cue_seconds is None:
-                lines.append(f"{c.check:<18} {'-':>6} {'-':>8} {'-':>7} {'-':>7}  {c.note or 'MISSING'}")
+                lines.append(f"{c.check:<18} {'-':>6} {'-':>8} {'-':>7} {'-':>7} {'-':>8}  {c.note or 'MISSING'}")
+                continue
+            offset = f"{c.offset_ms:+d}ms" if c.offset_ms is not None else "-"
+            if c.ok:
+                verdict = "changed"
+            elif c.offset_ms is not None:
+                verdict = "OFF CUE"
             else:
-                lines.append(
-                    f"{c.check:<18} {c.cue_seconds:>6.2f} {c.final_seconds or 0:>8.2f} {c.changed_percent or 0:>7.2f} "
-                    f"{c.control_percent or 0:>7.2f}  {'changed' if c.ok else 'NO CHANGE'}"
-                )
+                verdict = "NO CHANGE"
+            lines.append(
+                f"{c.check:<18} {c.cue_seconds:>6.2f} {c.final_seconds or 0:>8.2f} {c.changed_percent or 0:>7.2f} "
+                f"{c.control_percent or 0:>7.2f} {offset:>8}  {verdict}"
+            )
+    return "\n".join(lines)
+
+
+def outputs_lines(project: Project) -> str:
+    """One line per file assemble writes beside the final mp4, for `decktalk status`."""
+    lines = []
+    for label, key in (("captions", "srt"), ("captions", "vtt"), ("chapters", "chapters")):
+        path = output_paths(project)[key]
+        state = "ok" if path.exists() else "not built"
+        lines.append(f"{label:<8} {path.relative_to(project.root)}  {state}")
     return "\n".join(lines)
 
 
