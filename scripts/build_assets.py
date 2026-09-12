@@ -518,6 +518,70 @@ def wordmark(pal: dict[str, str], name: tuple[str, float]) -> str:
 """
 
 
+# ---- social card -------------------------------------------------------------------------------
+
+
+def og(pal: dict[str, str], xs: list[float], widths: list[float]) -> str:
+    """The 1200 by 630 card that link previews show. It is the hero at rest with the wordmark."""
+    w, h = 1200, 630
+    css = [font_face()]
+    css.append(f".bg{{fill:{pal['bg']}}}")
+    css.append(f".lab{{font:500 13px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
+    css.append(f".w{{font:600 44px {SANS};letter-spacing:-.01em;fill:{pal['ink']}}}.cue{{fill:{pal['accent']}}}")
+    css.append(f".tick{{stroke:{pal['tick']};stroke-width:3;stroke-linecap:round}}.tick.on{{stroke:{pal['accent']}}}")
+    css.append(f".dot{{fill:{pal['accent']}}}.head{{fill:{pal['ink']}}}")
+    css.append(f".title{{font:600 30px {SANS};letter-spacing:-.02em;fill:{pal['ink']}}}")
+    css.append(f".tag{{font:400 26px {SANS};fill:{pal['mute']}}}")
+    css.append(f".block{{fill:{pal['block']}}}.axis{{stroke:{pal['hair']};stroke-width:2}}")
+    css.append(f".num{{font:700 64px {SANS};letter-spacing:-.03em;fill:{pal['accent']}}}")
+    scale = 44 / 32
+    words = "".join(
+        f'<tspan class="w {"cue" if i in CUE_WORDS else ""}" x="{x * scale:.1f}">{t}</tspan>'
+        for i, (t, x) in enumerate(zip(SENTENCE, xs, strict=True))
+    )
+    ticks = "".join(
+        f'<line class="tick {"on" if i in CUE_WORDS else ""}" x1="{x * scale + 1:.1f}" y1="0" x2="{x * scale + 1:.1f}" y2="22"/>'
+        for i, x in enumerate(xs)
+    )
+    dots = "".join(f'<circle class="dot" cx="{xs[i] * scale + 1:.1f}" cy="-8" r="5"/>' for i in CUE_WORDS)
+    head_x = xs[-1] * scale + widths[-1] * scale + 2
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label="DeckTalk">
+  <defs><style>{chr(10).join(css)}</style></defs>
+  <rect class="bg" width="{w}" height="{h}"/>
+  <g transform="translate(80 84) scale(1.4)">{mark_glyph(pal)}</g>
+  <text class="title" x="130" y="112">DeckTalk</text>
+  <text class="lab" x="80" y="230">NARRATION</text>
+  <g transform="translate(80 300)">
+    <text y="0">{words}</text>
+    <g transform="translate(0 34)">{ticks}{dots}<rect class="head" x="{head_x:.1f}" y="-16" width="3" height="52"/></g>
+  </g>
+  <g transform="translate(80 420)">
+    <rect class="block" width="300" height="130" rx="14"/>
+    <line class="axis" x1="26" y1="100" x2="160" y2="100"/><line class="axis" x1="26" y1="30" x2="26" y2="100"/>
+    <path d="M26,96 C60,94 96,76 130,46 S158,26 160,24" fill="none" stroke="{pal["accent"]}" stroke-width="4" stroke-linecap="round"/>
+    <text class="num" x="190" y="86">3×</text>
+  </g>
+  <text class="tag" x="420" y="470">Narrated presentations, cut to the word.</text>
+  <text class="tag" x="420" y="510">A markdown script and HTML slides in.</text>
+  <text class="tag" x="420" y="550">One mp4 out, every reveal on its word.</text>
+</svg>
+"""
+
+
+def render_png(svg: str, target: Path, width: int, height: int) -> None:
+    """Rasterize an SVG with Chromium, for the places that cannot show SVG such as link previews."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        b = pw.chromium.launch()
+        p = b.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
+        p.set_content(f"<style>html,body{{margin:0}}</style>{svg}")
+        p.wait_for_timeout(300)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        p.screenshot(path=str(target))
+        b.close()
+
+
 # ---- entry ------------------------------------------------------------------------------------
 
 
@@ -546,6 +610,7 @@ def build() -> dict[Path, str]:
         out[ASSETS / f"mark-{variant}.svg"] = mark(pal)
         out[docs / "logo" / f"{variant}.svg"] = wordmark(pal, name)
     out[docs / "favicon.svg"] = mark(LIGHT, size=32, background=True)
+    out[ASSETS / "og.svg"] = og(LIGHT, xs, widths)
     return {k: _clean(v) for k, v in out.items()}
 
 
@@ -563,6 +628,12 @@ def main() -> int:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(s)
         print(f"wrote {p.relative_to(ROOT)}  ({len(s) // 1024} KB)")
+    # The social card is also needed as a PNG. It is not part of --check because raster bytes
+    # vary between Chromium builds, so it is only refreshed when the SVG source was rewritten.
+    if ASSETS / "og.svg" in changed or not (ROOT / "site" / "og.png").exists():
+        for target in (ROOT / "site" / "og.png", ROOT / "docs" / "images" / "og.png"):
+            render_png(files[ASSETS / "og.svg"], target, 1200, 630)
+            print(f"wrote {target.relative_to(ROOT)}")
     return 0
 
 
