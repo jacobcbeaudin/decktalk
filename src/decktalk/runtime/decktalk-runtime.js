@@ -158,6 +158,7 @@
   // animation frames longer than a few frames means a reveal was captured late, so the gap
   // is recorded for the recorder to judge.
   const frameGaps = [];
+  const syncLog = [];  // what each data-sync element matched, for the recorder's sidecar
   function watchFrames() {
     let last = null;
     const tick = (t) => {
@@ -251,6 +252,7 @@
       if (words[i].t >= t0 - 1.5) break;
     }
     if (start < 0) { warn(`data-sync text not found in the spoken words: "${full.slice(0, 40)}"`); return; }
+    syncLog.push({ text: full.slice(0, 24), cueAt: +t0.toFixed(3), runAt: words[start].t, n: keys.length });
     el.textContent = "";
     let wi = 0;
     tokens.forEach((t) => {
@@ -261,10 +263,14 @@
       span.dataset.at = wordKey(t) ? words[start + wi++].t : -Infinity;
       el.appendChild(span);
     });
+    const entry = syncLog[syncLog.length - 1];
     const tick = () => {
       const n = now();
       let pending = false;
-      el.querySelectorAll(".dt-w:not(.dt-on)").forEach((sp) => { if (n >= parseFloat(sp.dataset.at) - 0.02) sp.classList.add("dt-on"); else pending = true; });
+      el.querySelectorAll(".dt-w:not(.dt-on)").forEach((sp) => {
+        if (n >= parseFloat(sp.dataset.at) - 0.02) { sp.classList.add("dt-on"); if (entry && entry.firstOn === undefined) entry.firstOn = +n.toFixed(3); }
+        else pending = true;
+      });
       if (pending) requestAnimationFrame(tick);
     };
     tick();
@@ -471,6 +477,7 @@
   window.DeckTalk = DeckTalk;
   window.__decktalk = {
     get frameGaps() { return frameGaps; },
+    get syncLog() { return syncLog; },
     get mode() { return state.mode; },
     get scene() { return state.scene?.id ?? null; },
     get step() { return state.step?.id ?? null; },
