@@ -255,3 +255,146 @@ def test_fade_flags_follow_dips_and_page_fade_in(tmp_path):
     assert flags["02"] == (False, False)
     p2 = Project.load(write_project(tmp_path, MINIMAL_TOML), environ={})  # no dips key: every cut dips
     assert fade_flags(p2)["01"] == (False, True)
+
+
+# ---- scaffold lesson: pauses, cue keys, KaTeX vendoring, runtime warnings ----------------------
+# Appended for the lesson-shaped scaffold. Everything above this line belongs to earlier work.
+
+
+def test_pause_direction_yields_a_timed_break():
+    from decktalk.stages.narrate import BREAK_RE
+
+    seg = parse_script("## 1. A\n\nThink about it.\n\n[pause 3]\n\nOnly two x is left. [beat] Done.")[0]
+    assert BREAK_RE.findall(seg.text) == ["3", "0.7"]
+    assert 'Think about it. <break time="3s" />' in seg.text
+    assert seg.spoken == "Think about it. Only two x is left. Done."
+    # The silent placeholder honours the declared pauses, so the pause lengthens the section.
+    short = parse_script("## 1. A\n\nThink about it.\n\nOnly two x is left. Done.")[0]
+    cfg = Settings().narration
+    assert abs((seg.silent_seconds(cfg) - short.silent_seconds(cfg)) - 3.7) < 1e-6
+
+
+def test_pause_direction_accepts_decimals_and_case():
+    seg = parse_script("## 1. A\n\nOne. [Pause 1.5] Two.")[0]
+    assert '<break time="1.5s" />' in seg.text
+    assert seg.spoken == "One. Two."
+
+
+def test_cues_load_with_cue_or_step_keys(tmp_path):
+    from decktalk.stages.beats import load_cues
+
+    root = write_project(tmp_path)
+    (root / "cues.json").write_text(
+        json.dumps({"sections": {"1": {"cues": [{"cue": "1.1a", "on": "$start"}, {"step": "1.1b", "on": "hello"}]}}})
+    )
+    project = Project.load(root, environ={})
+    (section,) = load_cues(project)
+    assert [c.step for c in section.cues] == ["1.1a", "1.1b"]
+    assert [c.on for c in section.cues] == ["$start", "hello"]
+
+
+def test_sidecar_warnings_default_and_roundtrip(tmp_path):
+    p = tmp_path / "s.json"
+    p.write_text(
+        json.dumps({"url": "u", "requested_seconds": 1, "settle_seconds": 0, "load_seconds": 0, "lead_seconds": 0})
+    )
+    old = Sidecar.load(p)
+    assert old is not None and old.warnings == []
+    old.warnings = ["KaTeX did not load within 5 s, so [data-tex] elements stay plain text"]
+    old.save(p)
+    again = Sidecar.load(p)
+    assert again is not None and again.warnings == old.warnings
+
+
+def _fake_katex_cache(cache_root: Path) -> Path:
+    from decktalk.scaffold import KATEX_VERSION
+
+    d = cache_root / "katex" / KATEX_VERSION
+    (d / "fonts").mkdir(parents=True)
+    (d / "katex.min.js").write_text("window.katex = {};")
+    (d / "katex.min.css").write_text(".katex{}")
+    (d / "fonts" / "KaTeX_Main-Regular.woff2").write_bytes(b"\0")
+    return d
+
+
+def test_init_vendors_cached_katex(tmp_path, monkeypatch):
+    from decktalk.scaffold import init, katex_cached
+
+    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "cache"))
+    _fake_katex_cache(tmp_path / "cache")
+    assert katex_cached() is not None
+    root = init(tmp_path / "proj", name="proj")
+    assert (root / "deck" / "katex" / "katex.min.js").exists()
+    assert (root / "deck" / "katex" / "fonts" / "KaTeX_Main-Regular.woff2").exists()
+    html = (root / "deck" / "index.html").read_text()
+    assert "./katex/katex.min.css" in html and "./katex/katex.min.js" in html
+    assert "cdnjs" not in html and "__KATEX__" not in html
+
+
+def test_init_falls_back_to_cdn_with_a_warning(tmp_path, monkeypatch, caplog):
+    from decktalk.scaffold import init, katex_cached
+
+    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
+    assert katex_cached() is None
+    with caplog.at_level("WARNING", logger="decktalk.scaffold"):
+        root = init(tmp_path / "proj", name="proj")
+    assert not (root / "deck" / "katex").exists()
+    html = (root / "deck" / "index.html").read_text()
+    assert "cdnjs.cloudflare.com/ajax/libs/KaTeX" in html and "__KATEX__" not in html
+    assert any("KaTeX is not cached" in r.getMessage() for r in caplog.records)
+
+
+def test_fetch_katex_unpacks_only_what_the_deck_needs(tmp_path, monkeypatch):
+    import io
+    import zipfile
+
+    from decktalk import scaffold
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("katex/katex.min.js", "js")
+        zf.writestr("katex/katex.min.css", "css")
+        zf.writestr("katex/katex.mjs", "not needed")
+        zf.writestr("katex/contrib/auto-render.min.js", "not needed")
+        zf.writestr("katex/fonts/KaTeX_Main-Regular.woff2", "font")
+        zf.writestr("katex/fonts/", "")
+
+    class Response(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.close()
+
+    monkeypatch.setattr(scaffold.urllib.request, "urlopen", lambda url, timeout: Response(buf.getvalue()))
+    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "cache"))
+    dest = scaffold.fetch_katex()
+    assert dest == scaffold.katex_cache_dir()
+    assert sorted(p.name for p in dest.iterdir()) == ["fonts", "katex.min.css", "katex.min.js"]
+    assert (dest / "fonts" / "KaTeX_Main-Regular.woff2").read_text() == "font"
+    assert scaffold.katex_cached() == dest
+
+
+def test_template_ids_agree_across_page_cues_and_script(tmp_path, monkeypatch):
+    """Every cue id in cues.json has an owning step in the page, and every phrase is in its section."""
+    import re
+
+    from decktalk.scaffold import init
+    from decktalk.stages.beats import load_cues
+
+    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
+    root = init(tmp_path / "proj", name="proj")
+    project = Project.load(root, environ={})
+    html = (root / "deck" / "index.html").read_text()
+    step_ids = re.findall(r'id: "([0-9.]+)"', html)
+    listed = set(re.findall(r'"([0-9.]+[a-z0-9]*)": [0-9.]+', html))
+    segments = {s.index: s for s in parse_script((root / "script.md").read_text())}
+    for section in load_cues(project):
+        words = [Word(w, i, i + 1) for i, w in enumerate(segments[section.number].spoken.split())]
+        for cue in section.cues:
+            owner = cue.step in step_ids or cue.step in listed or any(cue.step.startswith(s) for s in step_ids)
+            assert owner, f"cue {cue.step} has no owning step"
+            if not cue.on.startswith("$"):
+                assert find_phrase(words, cue.on) is not None, (
+                    f"cue {cue.step}: {cue.on!r} is not in section {section.number}"
+                )
