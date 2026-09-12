@@ -61,7 +61,7 @@ def test_settings_layering_defaults_toml_env():
     assert s.video.preset == "veryfast"  # from toml
     assert s.video.crf == 23  # env beats toml
     assert s.record.settle_seconds == 0.8  # env, float coerced
-    assert s.video.fps == 30  # default
+    assert s.video.fps == 25  # default
 
 
 def test_settings_bad_env_value_is_config_error():
@@ -439,3 +439,167 @@ def test_template_ids_agree_across_page_cues_and_script(tmp_path, monkeypatch):
                 assert find_phrase(words, cue.on) is not None, (
                     f"cue {cue.step}: {cue.on!r} is not in section {section.number}"
                 )
+
+
+# ---- post-production: dips, captions, chapters, the mix plan, loudness, verify offsets ----------
+#
+# Added with the post-production review fixes. Nothing here needs ffmpeg, Chromium or a build.
+
+
+def test_frame_dip_quantizes_to_whole_frames():
+    from decktalk.stages.assemble import frame_dip
+
+    assert frame_dip(0.15, 25) == 0.16  # 3.75 frames rounds up to 4
+    assert frame_dip(0.15, 30) == 0.1333  # 4.5 frames rounds to the even 4
+    assert frame_dip(0.001, 25) == 0.04  # never shorter than one frame
+    assert frame_dip(0.0, 25) == 0.0
+
+
+def _spoken(text: str, start: float = 0.0, step: float = 0.4, gap_after: str | None = None) -> list[Word]:
+    words: list[Word] = []
+    t = start
+    for w in text.split():
+        words.append(Word(w, round(t, 3), round(t + 0.3, 3)))
+        t += step
+        if gap_after is not None and w == gap_after:
+            t += 3.0
+    return words
+
+
+def test_caption_cues_keep_lines_short_and_break_on_punctuation():
+    from decktalk.artifacts import CAPTION_MAX_CHARS, caption_cues
+
+    text = (
+        "Welcome. This is a narrated deck, cut to the word. Every visual you see lands on the word "
+        "that names it, and nothing drifts. Short."
+    )
+    cues = caption_cues(_spoken(text))
+    assert cues, "words produce cues"
+    for cue in cues:
+        assert 1 <= len(cue.lines) <= 2
+        assert all(len(line) <= CAPTION_MAX_CHARS for line in cue.lines)
+    assert cues[0].lines[0].endswith(",")  # the overflow backed up to the clause break
+    assert cues[-1].lines[-1].endswith("Short.")
+    for a, b in zip(cues, cues[1:], strict=False):
+        assert a.end <= b.start  # a cue never overlaps the next one
+    assert cues[-1].end > cues[-1].start
+
+
+def test_caption_cues_split_on_a_long_pause_and_never_cross_sections():
+    from decktalk.artifacts import caption_cues
+    from decktalk.stages.assemble import build_captions
+
+    cues = caption_cues(_spoken("one two three four five six", gap_after="three"))
+    assert len(cues) == 2 and cues[0].text == "one two three" and cues[1].text == "four five six"
+    tl = Timeline(
+        narration="n",
+        total_seconds=4.0,
+        sections={
+            "01": TimelineSection("a", 0, 2.0, 2.0, None, _spoken("alpha beta", 0.1)),
+            "02": TimelineSection("b", 2.0, 4.0, 2.0, None, _spoken("gamma delta", 2.1)),
+        },
+    )
+    shifted = build_captions(tl, 3.0)  # narration starts three seconds into the final file
+    assert [c.text for c in shifted] == ["alpha beta", "gamma delta"]
+    assert shifted[0].start == 3.1 and shifted[1].start == 5.1
+    assert caption_cues([]) == []
+
+
+def test_caption_and_chapter_files(tmp_path):
+    from decktalk.artifacts import CaptionCue, Chapter, ffmetadata_escape, write_chapters, write_srt, write_vtt
+
+    cues = [CaptionCue(3.7, 10.5, ("Welcome.", "This is a deck.")), CaptionCue(3661.25, 3662.0, ("Late.",))]
+    write_srt(tmp_path / "c.srt", cues)
+    write_vtt(tmp_path / "c.vtt", cues)
+    srt = (tmp_path / "c.srt").read_text()
+    vtt = (tmp_path / "c.vtt").read_text()
+    assert srt.startswith("1\n00:00:03,700 --> 00:00:10,500\nWelcome.\nThis is a deck.\n\n2\n01:01:01,250 --> ")
+    assert vtt.startswith("WEBVTT\n\n00:00:03.700 --> 00:00:10.500\nWelcome.\nThis is a deck.\n")
+    assert ffmetadata_escape("a=b;c#d\\e") == "a\\=b\\;c\\#d\\\\e"
+    write_chapters(tmp_path / "ch.txt", [Chapter(0, 3.0, "On camera"), Chapter(3.0, 12.44, "Open; part = 1")])
+    text = (tmp_path / "ch.txt").read_text()
+    assert text.startswith(";FFMETADATA1\n")
+    assert "[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=3000\ntitle=On camera\n" in text
+    assert "START=3000\nEND=12440\ntitle=Open\\; part \\= 1\n" in text
+
+
+def test_plan_mix_delays_clip_audio_and_drops_the_limiter(tmp_path):
+    from decktalk.stages.assemble import RenderedSection, build_chapters, mix_input_args, output_paths, plan_mix
+
+    p = Project.load(write_project(tmp_path), environ={})
+    tl = Timeline(
+        narration="narration.mp3",
+        total_seconds=4.0,
+        sections={
+            "01": TimelineSection("Open", 0, 2.0, 2.0, 1.8),
+            "02": TimelineSection("Close", 2.0, 4.0, 2.0, 3.8),
+        },
+    )
+    rows = [
+        RenderedSection(p.sections[0], tmp_path / "00.mp4", 3.0, "clip", audio=tmp_path / "open.mp4"),
+        RenderedSection(p.sections[1], tmp_path / "01.mp4", 2.0, "page"),
+        RenderedSection(p.sections[2], tmp_path / "02.mp4", 3.5, "page"),
+    ]
+    plan = plan_mix(p, rows, tl, nomix=True)
+    assert plan.total == 8.5
+    assert plan.inputs[0] == ("lavfi", "anullsrc=r=48000:cl=stereo")
+    assert mix_input_args(plan)[:5] == ["-f", "lavfi", "-t", "8.500", "-i"]
+    assert "alimiter" not in plan.filter
+    assert "adelay=3000:all=1[narr]" in plan.filter  # narration starts with the first page section
+    assert "atrim=duration=3.000" in plan.filter and "afade=t=in:d=0.02,afade=t=out:st=2.980:d=0.02" in plan.filter
+    assert "adelay=0:all=1[clip00]" in plan.filter
+    assert plan.filter.endswith("[anchor][narr][clip00]amix=inputs=3:duration=first:normalize=0[a]")
+    chapters = build_chapters(rows)
+    assert [(c.start, c.end, c.title) for c in chapters] == [
+        (0.0, 3.0, "Section 0"),
+        (3.0, 5.0, "Section 1"),
+        (5.0, 8.5, "Section 2"),
+    ]
+    paths = output_paths(p)
+    assert paths["srt"].name == "t.srt" and paths["vtt"].name == "t.vtt" and paths["chapters"].name == "t.chapters.txt"
+
+
+def test_loudness_problems_report_peaks_and_missed_targets(tmp_path):
+    from decktalk.media.ffmpeg import Loudness
+    from decktalk.stages.assemble import loudness_problems
+
+    p = Project.load(write_project(tmp_path), environ={})
+    assert loudness_problems(p, Loudness(i=-16.4, tp=-1.6, lra=5, thresh=-27, offset=0)) == []
+    over = loudness_problems(p, Loudness(i=-25.2, tp=-1.0, lra=5, thresh=-27, offset=0))
+    assert len(over) == 2 and "true peak -1.0 dBTP" in over[0] and "9.2 LU" in over[1]
+
+
+def test_onset_offset_uses_the_low_threshold_and_the_pre_cue_floor():
+    from decktalk.stages.verify import onset_offset_ms
+
+    # A fade of a small element, as measured on the scaffold: change begins 60 ms after the cue
+    # but only crosses a tenth of the picture 220 ms after it.
+    fade = [(9.2, 0.0), (9.24, 0.0), (9.28, 0.0), (9.32, 0.0), (9.36, 0.018), (9.4, 0.038), (9.52, 0.103)]
+    assert onset_offset_ms(fade, before=9.2, cue_at=9.3, onset=0.01) == 60
+    assert onset_offset_ms(fade, before=9.2, cue_at=9.3, onset=0.1) == 220
+    # A camera push raises the floor before the cue, and the onset must clear it.
+    push = [(9.2, 0.0), (9.24, 0.02), (9.28, 0.02), (9.32, 0.02), (9.36, 0.05)]
+    assert onset_offset_ms(push, before=9.2, cue_at=9.3, onset=0.01) == 60
+    assert onset_offset_ms([(9.2, 0.0), (9.24, 0.0)], before=9.2, cue_at=9.3, onset=0.01) is None
+    assert Settings().verify.max_offset_frames == 2 and Settings().verify.onset_percent == 0.002
+
+
+def test_video_defaults_match_the_recorder():
+    v = Settings().video
+    assert v.fps == 25 and v.sample_rate == 48000
+    assert not hasattr(Settings().audio, "limiter")
+
+
+# ---- captions keep the script's punctuation -------------------------------------------------
+
+
+def test_display_words_restores_punctuation_and_case():
+    from decktalk.artifacts import Word, display_words
+
+    words = [Word("welcome", 0, 1), Word("this", 1, 2), Word("is", 2, 3), Word("two", 3, 4), Word("x", 4, 5)]
+    text = "Welcome. This is two x."
+    out = display_words(words, text)
+    assert [w.word for w in out] == ["Welcome.", "This", "is", "two", "x."]
+    assert out[0].start == 0 and out[-1].end == 5
+    # An alignment that cannot be made returns the words untouched.
+    assert [w.word for w in display_words(words, "completely different text here")] == [w.word for w in words]
