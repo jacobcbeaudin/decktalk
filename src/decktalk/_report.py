@@ -70,11 +70,8 @@ def beats_table(result: BeatsResult) -> str:
 
 
 def leads_table(rows: list[LeadMeasurement]) -> str:
-    lines = [f"{'sec':>3} {'trim':>7} {'flash':>6} {'wall':>7}  method"]
-    lines += [
-        f"{r.key:>3} {r.lead_in_seconds:>7.3f} {r.flash_seconds:>6.3f} {r.wallclock_seconds:>7.3f}  {r.method}"
-        for r in rows
-    ]
+    lines = [f"{'sec':>3} {'trim':>7} {'wall':>7}  method"]
+    lines += [f"{r.key:>3} {r.lead_in_seconds:>7.3f} {r.wallclock_seconds:>7.3f}  {r.method}" for r in rows]
     return "\n".join(lines)
 
 

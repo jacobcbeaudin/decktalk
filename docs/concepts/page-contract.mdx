@@ -13,7 +13,7 @@ implements it, and a page can also implement it by hand.
 |---|---|
 | `scene=N` | Play scene N. Scene ids are strings, and the scaffold uses the script's section numbers. |
 | `beats=id@s,id@s,…` | Beat mode. Fire cue `id` at `s` seconds after narration t=0. The times come from `build/audio/beats.json` and are relative to the section's start in the continuous narration. |
-| `t0=S` | The number of seconds after the page's `load` event at which narration t=0 falls. The recorder waits `S` seconds after load (0.5 by default), starts the clock, and flashes the frame magenta so that the assembler can align the two exactly. |
+| `t0=S` | The number of seconds after the page's `load` event at which narration t=0 falls. `t0=signal` makes the page wait for `DeckTalk.startClock()` instead. The recorder uses the signal form: it covers the page in magenta until it starts the clock, and the assembler cuts at the first clean frame. |
 | `step=ID` | Freeze mode. Mount step ID with every reveal in its end state and its handler cues fired. The `shots` command uses it, and so can you. |
 | `speed=X` | The autoplay time scale. Beat mode ignores it. |
 | `hud=1` | Overlay the mode, scene, step, and clock. Never record with it on. |

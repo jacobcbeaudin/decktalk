@@ -1,10 +1,11 @@
 """Stage 3: record each page section with headless Chromium, driven by the resolved cues.
 
 The page is opened as file:///<project>/<page>?scene=<scene>&<params>&t0=<settle>&beats=<id@t,...>
-and recorded for its span in the timeline plus extra_seconds. The recorder waits
-`settle` seconds after load, then flashes the frame magenta for marker_ms exactly when
-the narration clock starts, so `decktalk measure` can align the recording to narration
-t=0 regardless of Chromium's start-up latency.
+and recorded for its span in the timeline plus extra_seconds. The page is covered in
+magenta from its first paint until the recorder starts the narration clock, which it does
+only after `settle` seconds past load and at least `min_lead` seconds after the recorder
+was created. The first clean frame in the recording is therefore narration t=0, and
+`decktalk measure` finds it, regardless of when Chromium's capture actually began.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ def scene_url(project: Project, section: PageSection, params: dict[str, str], se
     page = project.path(section.page)
     if not page.exists():
         raise ConfigError(f"section {section.number}: page not found: {page}")
-    query = {"scene": section.scene, **params, "t0": f"{settle:g}"}
+    query = {"scene": section.scene, **params, "t0": "signal"}
     return page.resolve().as_uri() + "?" + urlencode(query)
 
 
@@ -83,7 +84,7 @@ def record(
                 length,
                 out,
                 settle_seconds=cfg.settle_seconds,
-                marker_ms=cfg.marker_ms,
+                min_lead_seconds=cfg.min_lead_seconds,
                 width=video.width,
                 height=video.height,
                 color_scheme=cfg.color_scheme,

@@ -62,7 +62,7 @@ class RecordConfig:
     """Headless Chromium recording."""
 
     settle_seconds: float = 0.5  # after load, before narration t=0
-    marker_ms: int = 120  # magenta flash length at t=0
+    min_lead_seconds: float = 1.5  # t=0 never comes sooner than this after the recorder starts
     color_scheme: str = "light"
     shot_settle_ms: int = 400  # wait before a review screenshot
 

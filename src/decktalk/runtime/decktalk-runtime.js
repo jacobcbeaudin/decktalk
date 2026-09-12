@@ -20,7 +20,8 @@
  *                            A step mounts at the earliest of its cues (the first cued step
  *                            at t=0, so the stage is never empty); steps with no cue never
  *                            show; the last cued step holds forever.
- *   &t0=S                    seconds after page load at which narration t=0 falls
+ *   &t0=S                    seconds after page load at which narration t=0 falls;
+ *                            t0=signal waits for DeckTalk.startClock() (what the recorder sends)
  *   ?step=ID                 freeze step ID with everything revealed (screenshots, review)
  *   &speed=X                 autoplay time scale (cue mode ignores it)
  *   &hud=1                   overlay scene · step · clock
@@ -80,7 +81,8 @@
   `;
 
   const params = new URLSearchParams(location.search);
-  const T0 = parseFloat(params.get("t0") || "0") || 0;
+  const SIGNAL = params.get("t0") === "signal"; // the recorder starts the clock itself
+  const T0 = SIGNAL ? 0 : parseFloat(params.get("t0") || "0") || 0;
   const SPEED = Math.max(0.05, parseFloat(params.get("speed") || "1") || 1);
   const HUD = params.get("hud") === "1";
   const SCENES = new Map(); // id (string) -> scene
@@ -101,8 +103,10 @@
 
   // ---- time ----------------------------------------------------------------------
   const setOrigin = () => { if (state.origin === null) state.origin = performance.now(); };
-  if (document.readyState === "complete") setOrigin();
-  else window.addEventListener("load", setOrigin, { once: true });
+  if (!SIGNAL) {
+    if (document.readyState === "complete") setOrigin();
+    else window.addEventListener("load", setOrigin, { once: true });
+  }
   const now = () => (state.origin === null ? -Infinity : (performance.now() - state.origin) / 1000);
 
   // ---- DOM ------------------------------------------------------------------------
@@ -367,7 +371,7 @@
   }
   document.addEventListener("DOMContentLoaded", () => { if (SCENES.size) start(); });
 
-  const DeckTalk = { scene, on, start, reveal, fireCue, findStep, get scenes() { return SCENES; }, params };
+  const DeckTalk = { scene, on, start, startClock: setOrigin, reveal, fireCue, findStep, get scenes() { return SCENES; }, params };
   window.DeckTalk = DeckTalk;
   window.__decktalk = {
     get mode() { return state.mode; },
