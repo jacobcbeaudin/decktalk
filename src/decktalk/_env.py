@@ -59,8 +59,12 @@ def from_env[T](
         elif is_optional(ftype):
             inner = get_args(ftype)[0]
             args[f.name] = raw if isinstance(raw, inner) else inner(raw)
+        elif get_origin(ftype) is tuple:
+            items = raw.split(",") if isinstance(raw, str) else list(raw)
+            inner = get_args(ftype)[0] if get_args(ftype) else str
+            args[f.name] = tuple(inner(x) for x in items)
         elif isinstance(ftype, type):
-            args[f.name] = raw if isinstance(ftype, type) and isinstance(raw, ftype) else ftype(raw)
+            args[f.name] = raw if isinstance(raw, ftype) else ftype(raw)
         else:
             args[f.name] = raw
     return cls(**args)

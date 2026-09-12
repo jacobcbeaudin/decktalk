@@ -99,10 +99,11 @@ class VerifyConfig:
     """Checks on the assembled mp4."""
 
     after_dip_seconds: float = 0.2
-    after_cue_seconds: float = 0.7
-    window_seconds: float = 1.2
-    diff_level: int = 48  # luma steps a pixel must change to count
-    min_changed_percent: float = 0.15
+    lead_seconds: float = 0.1  # the reference frame sits this long before the cue
+    probe_delays: tuple[float, ...] = (0.7, 1.5)  # seconds after the cue; the later one catches slow reveals
+    diff_level: int = 40  # luma steps a pixel must change to count
+    min_changed_percent: float = 0.1  # share of the frame the best probe must change
+    min_margin_percent: float = 0.1  # and by how much it must beat the control span
     visible_ymax: float = 60
     probe_width: int = 480
     probe_height: int = 270

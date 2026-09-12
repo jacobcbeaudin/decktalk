@@ -94,7 +94,7 @@ def verify_table(result: VerifyResult) -> str:
     lines.append(f"total {result.total_seconds:.2f}s; {result.black_starts} black section start(s)")
     if result.cues:
         lines.append("")
-        lines.append(f"{'check':<18} {'cue':>6} {'t_final':>8} {'chg %':>7} {'ctl %':>7}  result")
+        lines.append(f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7}  result")
         for c in result.cues:
             if c.cue_seconds is None:
                 lines.append(f"{c.check:<18} {'-':>6} {'-':>8} {'-':>7} {'-':>7}  {c.note or 'MISSING'}")

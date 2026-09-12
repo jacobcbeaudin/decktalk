@@ -2,12 +2,13 @@
 
 starts   every section opens on a real frame: past the dip-to-black, YMAX above
          visible_ymax means content is on screen.
-cues     for each SECTION:CUE, the picture changes across the cue: the share of pixels
-         that change by more than diff_level between (t - window) and t, where t is the
-         section start plus the cue plus after_cue_seconds, compared with the same
-         measure over a control window just before. Both windows are clamped inside
-         the section. "changed" when the share is at least min_changed_percent above
-         the control.
+cues     for each SECTION:CUE, the picture changes across the cue. The reference frame
+         sits lead_seconds before the cue. For each delay in probe_delays, the share of
+         pixels that change by more than diff_level between the reference and the probe
+         is compared with the same measure over an equal span that ends at the reference,
+         which captures anything else in motion, such as a camera push. A cue lands when
+         the best probe changes at least min_changed_percent of the pixels and exceeds
+         its control by min_margin_percent. Everything stays inside the section.
 
 Section starts are the cumulative lengths of build/out/NN-section.mp4, the same
 arithmetic the assembler uses.
@@ -99,15 +100,36 @@ def verify(project: Project, checks: list[str] | None = None) -> VerifyResult:
             )
             continue
         sec_start = starts[key]
-        tf = sec_start + cue_t + cfg.after_cue_seconds
-        before = max(sec_start + cfg.after_dip_seconds, tf - cfg.window_seconds)
-        chg = ffmpeg.changed_pixels_percent(final, before, tf, level=cfg.diff_level, width=probe_w, height=probe_h)
-        ctl_a = max(sec_start + cfg.after_dip_seconds, before - cfg.window_seconds)
-        ctl = (
-            ffmpeg.changed_pixels_percent(final, ctl_a, before, level=cfg.diff_level, width=probe_w, height=probe_h)
-            if before - ctl_a >= 0.3
-            else 0.0
-        )
-        landed = chg >= cfg.min_changed_percent and chg - ctl >= cfg.min_changed_percent
-        result.cues.append(CueCheck(check, cue_t, tf, chg, ctl, landed))
+        floor = sec_start + cfg.after_dip_seconds
+        sec_end = next((t for k, t in starts.items() if k > key), total)
+        # The reference frame sits just before the cue fires. Each probe after the cue is
+        # compared with it, and a control span of the same length that ends at the reference
+        # measures whatever else is moving (a camera push, an earlier reveal still settling).
+        before = max(floor, sec_start + cue_t - cfg.lead_seconds)
+        best: tuple[float, float, float] | None = None  # (margin, changed, control)
+        for delay in cfg.probe_delays:
+            after = sec_start + cue_t + delay
+            if after > sec_end - 0.05:
+                continue
+            span = after - before
+            chg = ffmpeg.changed_pixels_percent(
+                final, before, after, level=cfg.diff_level, width=probe_w, height=probe_h
+            )
+            ctl_a = before - span
+            ctl = (
+                ffmpeg.changed_pixels_percent(final, ctl_a, before, level=cfg.diff_level, width=probe_w, height=probe_h)
+                if ctl_a >= floor
+                else 0.0
+            )
+            margin = chg - ctl
+            if best is None or margin > best[0]:
+                best = (margin, chg, ctl)
+        if best is None:
+            result.cues.append(
+                CueCheck(check, cue_t, None, None, None, False, "cue too close to the section end to probe")
+            )
+            continue
+        margin, chg, ctl = best
+        landed = chg >= cfg.min_changed_percent and margin >= cfg.min_margin_percent
+        result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, landed))
     return result
