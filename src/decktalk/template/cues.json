@@ -1,32 +1,47 @@
 {
   "_comment": [
-    "Which spoken phrase each visual lands on. `step` is a cue id the page understands (see deck/index.html);",
-    "`on` is a word or short phrase from that section of script.md: first occurrence, case-insensitive,",
-    "punctuation ignored. `$start` = section start, `$end` = end of speech; `offset` shifts in seconds;",
-    "`occurrence` picks a later match. `decktalk beats` reports any phrase it cannot find."
+    "Which spoken phrase each visual lands on. `cue` is a cue id from deck/index.html (a step id plus a short word).",
+    "`on` is a word or short phrase from that section of script.md, matched at its first occurrence, ignoring",
+    "case and punctuation. `$start` is the section start and `$end` is the end of speech. `offset` shifts the",
+    "cue in seconds, and `occurrence` picks a later match. `decktalk beats` reports any phrase it cannot find."
   ],
   "sections": {
     "1": {
       "cues": [
-        { "step": "1a", "on": "$start" },
-        { "step": "1b", "on": "narrated deck" },
-        { "step": "1c", "on": "lands on the word" }
+        { "cue": "1.1a", "on": "$start" },
+        { "cue": "1.1b", "on": "narrated lesson" },
+        { "cue": "1.1c", "on": "lands on the word" }
       ]
     },
     "2": {
       "cues": [
-        { "step": "2.1a", "on": "First" },
-        { "step": "2.1b", "on": "Second" },
-        { "step": "2.1c", "on": "Third" },
-        { "step": "2.1d", "on": "Three steps" },
-        { "step": "2.2", "on": "Change a sentence" }
+        { "cue": "2.1a", "on": "First" },
+        { "cue": "2.1b", "on": "Second" },
+        { "cue": "2.1c", "on": "Third" },
+        { "cue": "2.1d", "on": "Three steps" },
+        { "cue": "2.2", "on": "one take" },
+        { "cue": "2.2edit", "on": "Change a sentence" }
       ]
     },
     "3": {
       "cues": [
-        { "step": "3.1", "on": "$start" },
-        { "step": "3.1draw", "on": "curve draws" },
-        { "step": "3.1eq", "on": "equation", "offset": 0.2 }
+        { "cue": "3.1", "on": "$start" },
+        { "cue": "3.1draw", "on": "Here is the curve" },
+        { "cue": "3.1a", "on": "definition" },
+        { "cue": "3.1b", "on": "Expand" },
+        { "cue": "3.1think", "on": "pause and think" },
+        { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+      ]
+    },
+    "4": {
+      "cues": [
+        { "cue": "4.1ask", "on": "Write about" },
+        { "cue": "4.1r1", "on": "One line" },
+        { "cue": "4.1r2", "on": "another line" },
+        { "cue": "4.1r3", "on": "a third" },
+        { "cue": "4.2", "on": "Now ask" },
+        { "cue": "4.2ask", "on": "Explain it" },
+        { "cue": "4.2reply", "on": "Same model" }
       ]
     }
   }
