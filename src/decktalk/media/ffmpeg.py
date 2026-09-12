@@ -365,13 +365,13 @@ def changed_series(
         pre, rest = frame_seek(ref_t)
         run(*pre, "-i", str(path), "-ss", rest, "-frames:v", "1", "-vf", f"scale={width}:{height}", str(ref))
         fc = (
-            f"[1:v]scale={width}:{height},setpts=PTS-STARTPTS[b];"
+            f"[1:v]trim=start={rest_s}:duration={span:.3f},setpts=PTS-STARTPTS,scale={width}:{height}[b];"
             f"[0:v][b]blend=all_mode=difference:shortest=1,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,"
             "signalstats,metadata=print"
         )
         err = stderr(
             "-loop", "1", "-framerate", str(fps), "-t", f"{span + 0.2:.3f}", "-i", str(ref),
-            *pre_s, "-i", str(path), "-ss", rest_s, "-t", f"{span:.3f}",
+            *pre_s, "-i", str(path),
             "-filter_complex", fc, "-f", "null", "-",
         )  # fmt: skip
     first = math.ceil(start * fps - 1e-6) / fps
