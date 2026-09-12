@@ -1,0 +1,95 @@
+---
+title: Add a clip section
+description: Open a DeckTalk video with a clip of your own, with its own audio, using the commented section 0 in the scaffold, a slate when the file is missing, and a dip to black at the cut.
+icon: "film"
+---
+
+A clip section is a video file of your own that plays in the sequence with its own
+audio. DeckTalk does not narrate it, and it scales and pads the picture to the frame
+size. The scaffold ships with a commented-out clip section so that a video can open on
+camera before the first slide.
+
+<Steps>
+  <Step title="Uncomment section 0 in decktalk.toml">
+    Remove the leading `# ` from the five lines of the clip section, and set the
+    transition so that the cut out of the clip dips to black.
+
+    ```toml decktalk.toml
+    [[section]]
+    number = 0
+    title = "On camera"
+    clip = "media/open.mp4"
+    slate_seconds = 6       # a titled slate plays for this long when the file is missing
+
+    [transition]
+    dips = [[0, 1]]
+    ```
+
+    `dips` lists the boundaries that fade through black as `[from, to]` pairs of section
+    numbers. The scaffold sets it to `[]`, which is straight cuts everywhere. Leave the
+    key out to dip at every cut.
+  </Step>
+
+  <Step title="Add the heading to script.md">
+    Every `[[section]]` needs a heading in the script, so add `## 0. On camera` above
+    section 1. Nothing under it is spoken, because narration skips clip sections, so the
+    body can be a stage direction that reminds you what plays there.
+
+    ```md script.md
+    ## 0. On camera
+
+    [Your clip at media/open.mp4 plays here, with its own sound.]
+
+    ## 1. Open
+    ```
+  </Step>
+
+  <Step title="Drop the file in place, or build without it">
+    Put the video at `media/open.mp4`. Git ignores `media/*.mp4` by default. A clip that
+    is not 1920 by 1080 is scaled to fit and padded with black, and a clip with no audio
+    track plays silent with a warning.
+
+    The file does not have to exist yet. A missing clip becomes a titled slate for
+    `slate_seconds`, with the section title and the path where the file belongs, so the
+    project builds before every asset does. The `--strict` flag on `build` or `assemble`
+    turns a missing clip into an error instead.
+
+    ```console
+    decktalk build --silent
+    ```
+
+    ```text
+    section 00: media/open.mp4 missing; slate for 6s (drop your clip at that path)
+    [cut ] 00  slate -> 00-section.mp4  (6.000s)
+    [cut ] 01  01-scene.webm (lead 1.4s trimmed) -> 01-section.mp4  (10.160s)
+    ```
+
+    The status report lists the clip with the others.
+
+    ```text
+      00  clip media/open.mp4                          cut
+      01  deck/index.html?scene=1                  rec cut
+    ```
+  </Step>
+</Steps>
+
+## Where a clip may sit
+
+The narration is one continuous track that begins with the first page section, and each
+page section is cut to its own span in that track. A clip therefore belongs before the
+first page section or after the last one. A clip placed between two page sections plays
+while the narration of the following section is already running, so that section's words
+and picture no longer agree. Open on a clip, close on a clip, or cut a clip's audio into
+the narration by hand, but do not put one in the middle.
+
+## The clip's sound
+
+The clip's own audio is mixed in at the section start, trimmed to its picture, and faded
+over twenty milliseconds at both ends so that a cut never clicks. The underscore ducks
+under a clip as it ducks under speech. [Sound](/concepts/sound) describes the mix.
+
+## Next
+
+[decktalk.toml](/reference/decktalk-toml#section) lists every key of a clip section, and
+[Rebuild one section](/guides/rebuild-one-section) explains that replacing the clip file
+needs only `decktalk assemble`, since a clip is never recorded.

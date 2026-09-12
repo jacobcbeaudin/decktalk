@@ -1,95 +1,106 @@
 ---
 title: The page contract
-description: How a slide talks to the recorder.
+description: How a DeckTalk page talks to the recorder, with the play modes, the t0=signal handshake, cue ownership, stage design at 1920 by 1080, and the reveal effects.
+icon: "window"
 ---
 
 A DeckTalk page is an HTML file that the recorder can drive from the narration. The
-contract consists of a few URL parameters and one global. The file `decktalk-runtime.js`
-implements it, and a page can also implement it by hand. Slides are plain HTML that you
-style yourself, and the runtime adds no styling beyond the stage.
+contract consists of a few URL parameters, one Promise, and one global.
+`decktalk-runtime.js` implements it, and [a page can implement it by hand](/guides/page-by-hand).
+Slides are plain HTML that you style yourself, and the runtime adds no styling beyond
+the stage. [The runtime reference](/reference/runtime) lists every parameter, field, and
+attribute with its default. This page explains how the pieces fit.
 
-## URL parameters
+## Modes
 
-| Parameter | Meaning |
+A page plays in one of four modes, and `window.__decktalk.mode` says which.
+
+| Mode | Opened as | What happens |
+|---|---|---|
+| `index` | no query | A list of every scene and step with play and freeze links. |
+| `autoplay` | `?scene=N` | The steps mount in order, each holding for `hold` seconds divided by `speed`. Reveals fire at `data-at`, and a step's `cues` object fires handler cues at those seconds after the mount. This is the browser preview. |
+| `cues` | `?scene=N&beats=id@s,…` | The resolved cues drive the page. Each step mounts at its earliest cue, the first cued step at t=0, and the last cued step holds until the recorder stops. A step with no cue never shows. This is the recording. |
+| `frozen` | `?step=ID` | One step with every reveal in its end state and its handler cues fired. `decktalk shots` uses it. |
+
+In `cues` mode an element whose `data-cue` is in the list stays hidden until that cue
+fires. Every other reveal fires `data-at` seconds after the mount, which covers an element
+with `data-at` alone and an element whose cue is not in the list. When a cue fires, the
+matching `data-cue` elements reveal first, then the step's `on[id]` handler runs, then
+every `DeckTalk.on(id, fn)` handler.
+
+## The handshake
+
+The recorder opens the page as `file:///…/deck/index.html?scene=N&beats=…&t0=signal`
+plus any `params` from the section. `t0=signal` tells the page not to start its clock at
+load. The recorder then waits for `load`, for `document.fonts.ready`, for
+`window.__sceneReady` when the page has one, for the settle time, and for a minimum lead
+after the recorder was created. Then it calls `DeckTalk.startClock()`, and every cue is
+scheduled from that instant. Without `t0=signal`, the page starts its clock at `load` plus
+the `t0` seconds given, which is what a browser preview does.
+
+After the recording, the recorder reads `window.__decktalk.warnings` and logs every
+string, and the `check` stage adds a `KATEX?` verdict when one of them says that KaTeX
+never loaded. [How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains the
+magenta cover that makes the first clean frame narration t=0.
+
+<Warning>A page written by hand must start its clock only when `DeckTalk.startClock()`
+is called. A page that starts at load fires every cue early by the settle time and the
+recorder's lead, and every reveal in the video lands before its word.</Warning>
+
+## Cue ownership
+
+A cue belongs to exactly one step, and the step mounts at the earliest of its cues. The
+runtime resolves the owner in this order.
+
+1. The step with the same id as the cue.
+2. The step whose `cues` list or object names the cue.
+3. The step whose id is the longest prefix of the cue id. The cue `4.2b1` belongs to step `4.2`, and `9a` belongs to `9`.
+
+A cue that no step owns is pushed onto `window.__decktalk.warnings` as an unknown cue id,
+unless a `DeckTalk.on` handler is registered for it. When no listed cue has an owner,
+nothing mounts and the page warns about that too. The scaffold names every cue in its
+step's `cues` object, which also gives the browser preview its autoplay timing.
+
+## Designing the stage
+
+The stage is 1920 by 1080 CSS pixels and scales to fit the window, so every size in the
+page is a pixel size at that frame. These are the sizes the scaffold uses, and they read
+well on a laptop screen and a phone alike.
+
+| Element | Size |
 |---|---|
-| `scene=N` | Play scene N. Scene ids are strings, and the scaffold uses the script's section numbers. |
-| `beats=id@s,id@s,…` | Beat mode. Fire cue `id` at `s` seconds after narration t=0. The times come from `build/audio/beats.json` and are relative to the section's start in the continuous narration. |
-| `t0=S` | The number of seconds after the page's `load` event at which narration t=0 falls. `t0=signal` makes the page wait for `DeckTalk.startClock()` instead. The recorder uses the signal form: it covers the page in magenta until it starts the clock, and the assembler cuts at the first clean frame. |
-| `step=ID` | Freeze mode. Mount step ID with every reveal in its end state and its handler cues fired. The `shots` command uses it, and so can you. |
-| `speed=X` | The autoplay time scale. Beat mode ignores it. |
-| `hud=1` | Overlay the mode, scene, step, and clock. Never record with it on. |
-| none | Show the index page, which lists every scene and step with play and freeze links. |
+| Safe margin | 96 px from every edge, and 160 px for titles. The scaffold pads slides by 100 px top and bottom and 160 px at the sides. |
+| Body text | 40 px or larger. |
+| Captions and eyebrows | 28 px to 30 px, in the muted color. |
+| Headlines | 88 px to 120 px. The scaffold's hero is 96 px. |
+| Labels and column headings | 56 px. |
 
-## Globals
+One idea per slide. A slide that reveals more than three or four elements reads as an
+animation, and a step with one headline and one supporting line is easier to cue than a
+dense one. Steps are cheap, so split a busy slide into two.
 
-- `window.__sceneReady` is an optional Promise. The recorder awaits it before it starts the clock, so a page can wait for fonts, images, or data. The runtime sets it to `document.fonts.ready` unless the page has set its own.
-- `window.__decktalk` exposes `{ mode, scene, step, cues, fired, catalog, now() }`. The `catalog` field lists every scene and its step ids, and the `shots` command reads it. The `fired` field lists the cue ids fired so far.
-- The runtime sets `document.body.dataset.done = "1"` once the last step has mounted.
+## Reveal effects
 
-## Timing in beat mode
+The `data-fx` attribute picks the animation an element plays when it reveals. Each one
+suits a kind of element, and each one has a case it makes worse.
 
-1. The runtime sorts the cues by time. Each cue belongs to a step. The owner is the step with the same id. Failing that, it is the step whose `cues` list names the cue, or the step whose id is the longest prefix of the cue id. For example, `4.2b1` belongs to `4.2`, and `9a` belongs to `9`.
-2. A step mounts at the earliest of its cues. The first cued step mounts at t=0 regardless, so a section never opens on an empty stage. A step with no cue never shows. The last cued step holds until the recorder stops.
-3. When a step mounts, any element whose `data-cue` is in the list stays hidden until that cue fires. Every other reveal fires `data-at` seconds after the mount, and the default is 0. That covers an element with `data-at`, and an element whose `data-cue` is not in the list.
-4. When a cue fires, the matching `data-cue` elements reveal first. Then the step's `on[id]` handler runs, and then every `DeckTalk.on(id, fn)` handler runs.
+| Effect | For | Against |
+|---|---|---|
+| `rise` (default) | Lines of text, labels, and cards. It moves up 14 px as it fades in, which reads as a new line arriving. | Code, tables, and anything aligned to a grid, where the motion looks like a layout shift. |
+| `fade` | Code lines, chat bubbles, images, and anything that must not move. | A single small element on a large slide, where a fade alone can be missed. |
+| `draw` | An SVG path with `pathLength="1"`. The stroke draws itself over `data-dur`. | Anything that is not a stroke. A filled shape does not draw. |
+| `drop` | A tile or a stamp that should land. It falls 24 px over half a second. | Body text, where the fall is too heavy. |
+| `pop` | The answer, the number, the one thing the section builds to. It overshoots to 112% and settles over 0.9 seconds. | More than one element per slide. Two pops compete. |
+| `dim` | An element that should recede when a cue fires. It starts visible and fades to 16%. | An element that has not been on screen long enough to be noticed. |
+| `none` | An element that should appear on the frame of its cue with no animation, such as a cursor or a highlight. | Text, where a hard cut looks like a glitch. |
 
-Without `beats=`, the page autoplays. The steps mount in order, and each one holds for
-`hold` seconds divided by `speed`. Reveals fire at `data-at`, and a step's
-`cues: { id: seconds }` object fires handler cues at those seconds after the mount.
-
-## Authoring API
-
-```js
-DeckTalk.scene(id, {
-  name: "Shown on the index",
-  camera: "push",                       // a slow 1.00 -> 1.03 push over the scene; omit for none
-  steps: [{
-    id: "3.1",                          // also a cue id; the default is "<scene>.<n>"
-    hold: 8,                            // autoplay seconds
-    cues: ["3.1draw"] | { "3.1draw": 0.5 },  // ownership, and autoplay timing for handler cues
-    render: ({ scene, step, frozen }) => "<div class='slide'>…</div>",
-    enter: (slideEl, { frozen }) => {}, // runs after the mount, for imperative setup
-    on: { "3.1draw": () => {} },        // per-step cue handlers
-  }],
-});
-DeckTalk.on("3.1draw", fn);             // a global cue handler
-DeckTalk.start();                       // runs automatically on DOMContentLoaded when scenes exist
-```
-
-The markup attributes inside a step are `data-cue`, `data-at`, `data-fx`, `data-dur`,
-`data-count`, `data-type`, and `data-tex`. The `data-fx` attribute selects the reveal
-animation. The default is `rise`, and the others are `fade`, `draw` for SVG paths with
-`pathLength="1"`, `drop`, `pop`, `dim`, and `none`. The `data-dur` attribute sets the
-animation length in seconds, and a count-up defaults to 0.9. The `data-count` attribute
-counts the last number in the text up from zero, and `data-count="first"` counts the first
-number instead. The `data-type` attribute types the text at the given milliseconds per character,
-with a default of 40. The `data-tex` attribute typesets its value with KaTeX when KaTeX
-is on the page, and `data-display` selects display math.
-
-The runtime creates `#dt-stage`, a 1920 by 1080 stage that scales to fit the window, with
-`#dt-cam` and `#dt-pan` inside it. Slides are `.dt-slide` children of the pan layer. You
-style the stage and your slides however you like. The runtime's own CSS uses the `dt-`
-prefix.
+A scene may also set `camera: "push"`, a slow push from 100% to 103% over the scene.
+Use it on at most one scene, usually the open, because a push under every scene reads as
+the whole video breathing. The `verify` stage's control span accounts for the push, so it
+does not disturb the cue checks.
 
 ## Build artifacts a page or a script may read
 
-| File | Shape |
-|---|---|
-| `build/audio/timeline.json` | `{narration, total_seconds, estimated, sections: {"NN": {title, start, end, duration, speech_end, words: [{word, start, end}]}}}`. The seconds are absolute within `narration.mp3`. |
-| `build/audio/beats.json` | `{"NN": "cue@seconds,…"}`. The seconds are relative to the section start. |
-| `build/audio/manifest.json` | One entry per narrated section, with its file, its words file, its hash, and its durations. |
-| `build/rec/NN-scene.json` | What the recorder did, and where narration t=0 sits in the webm. |
-
-## Recording alignment
-
-The recorder covers the page in magenta from its first paint. It opens the page with
-`t0=signal`, waits for `load`, awaits `__sceneReady`, waits the settle time and at least
-`min_lead_seconds` after the recorder was created, and then removes the cover and calls
-`DeckTalk.startClock()` in the same tick. The `measure` command finds the first clean
-frame after the magenta run and writes it to the sidecar as `lead_in_seconds`. The
-assembler trims the recording there, so video t=0 equals narration t=0 to within a frame
-on every platform. [How it works](/concepts/how-it-works#why-the-cuts-are-exact) has the
-picture.
-
-A page that implements the contract by hand must honor `t0=signal` by starting its clock
-in `DeckTalk.startClock()` or an equivalent global, or it will start early.
+The page receives its cues as `?beats=` from `build/audio/beats.json`, and a script of
+your own may read `build/audio/timeline.json` for every word with its absolute time.
+[Build artifacts](/reference/artifacts) has every shape.

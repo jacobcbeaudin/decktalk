@@ -1,0 +1,70 @@
+---
+title: cues.json
+description: The shape and every key of the DeckTalk cue file, with cue, on, offset, occurrence, case_sensitive, min_seconds, the step synonym, and ignored top-level keys.
+icon: "brackets-curly"
+---
+
+The cue file names the spoken phrase that each visual lands on. It is optional, and a
+project without one plays every page with its built-in timing. This is the scaffold's
+file, shortened.
+
+```json cues.json
+{
+  "_comment": "Which spoken phrase each visual lands on.",
+  "sections": {
+    "2": {
+      "cues": [
+        { "cue": "2.1a", "on": "First" },
+        { "cue": "2.1b", "on": "Second" },
+        { "cue": "2.2", "on": "one take" }
+      ]
+    },
+    "3": {
+      "min_seconds": 25,
+      "cues": [
+        { "cue": "3.1", "on": "$start" },
+        { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+      ]
+    }
+  }
+}
+```
+
+## Shape
+
+The file is one object with a `sections` key. Every other top-level key, such as
+`_comment`, is ignored. Each key of `sections` is a section number as a string, and it
+must name a `[[section]]` in `decktalk.toml`. Each section is an object with an optional
+`min_seconds` and a `cues` list.
+
+## Keys of a cue
+
+| Key | Required | Meaning |
+|---|---|---|
+| `cue` | yes | A cue id the page understands. `step` is accepted as a synonym, and `cue` wins when both are present. The id may not contain `@` or a comma. |
+| `on` | yes | A word or short phrase from that section's narration, or `$start`, or `$end`. |
+| `offset` | no | Seconds added to the match. It may be negative, except that `$start` never goes below zero. |
+| `occurrence` | no | Which repeat of the phrase to use. The default is 1, the first. |
+| `case_sensitive` | no | Match case as written. The default is false. |
+
+## Keys of a section
+
+| Key | Required | Meaning |
+|---|---|---|
+| `cues` | no | The list above. A section may have none. |
+| `min_seconds` | no | `beats` warns when the section's speech is shorter than this, so you learn early that the visuals will not fit. |
+
+## What beats writes
+
+`decktalk beats` resolves every cue and writes `build/audio/beats.json`, one string per
+section in the form the page receives as `?beats=`.
+
+```json build/audio/beats.json
+{
+  "01": "1.1a@0.0,1.1b@2.43,1.1c@6.77",
+  "03": "3.1@0.0,3.1draw@1.85,3.1a@9.74,3.1b@14.38,3.1think@25.97,3.1c@31.27"
+}
+```
+
+[Cues](/concepts/cues) has the matching rules, what happens to an unresolved cue, and
+how to choose a phrase.

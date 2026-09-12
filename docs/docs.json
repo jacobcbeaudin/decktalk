@@ -45,10 +45,21 @@
         ]
       },
       {
+        "group": "Guides",
+        "pages": [
+          "guides/writing-for-the-ear",
+          "guides/slide-recipes",
+          "guides/clip-section",
+          "guides/sfx-on-a-cue",
+          "guides/rebuild-one-section",
+          "guides/ci-and-offline",
+          "guides/page-by-hand"
+        ]
+      },
+      {
         "group": "Concepts",
         "pages": [
           "concepts/how-it-works",
-          "concepts/project-file",
           "concepts/cues",
           "concepts/page-contract",
           "concepts/sound"
@@ -58,6 +69,10 @@
         "group": "Reference",
         "pages": [
           "reference/card",
+          "reference/decktalk-toml",
+          "reference/script-md",
+          "reference/cues-json",
+          "reference/runtime",
           "reference/cli",
           "reference/configuration",
           "reference/artifacts",
@@ -100,13 +115,18 @@
   },
   "seo": {
     "metatags": {
-      "og:site_name": "DeckTalk"
+      "og:site_name": "DeckTalk",
+      "og:description": "DeckTalk turns a markdown script, plain HTML slides, and an ElevenLabs voice into one narrated video in which every reveal lands on the word that introduces it."
     }
   },
   "redirects": [
     {
       "source": "/concepts/pipeline",
       "destination": "/concepts/how-it-works"
+    },
+    {
+      "source": "/concepts/project-file",
+      "destination": "/reference/decktalk-toml"
     }
   ]
 }

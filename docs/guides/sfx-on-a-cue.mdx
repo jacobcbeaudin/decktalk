@@ -1,0 +1,79 @@
+---
+title: Put a sound effect on a cue
+description: Place a one-shot sound effect on a spoken cue in DeckTalk with [[mix.sfx]] in decktalk.toml, generate the effect with decktalk soundscape or bring your own file, and hear it in the mix.
+icon: "wand-magic-sparkles"
+---
+
+A sound effect lands where a cue resolved, so it follows the words like a visual does.
+The scaffold carries a commented example that puts a click on the tile that counts up in
+section 2.
+
+<Steps>
+  <Step title="Describe the effect, or bring a file">
+    A `[soundscape.sfx.<name>]` table holds a prompt for the ElevenLabs sound generator.
+    The effect is written to `build/sfx/<name>.mp3` unless the table's `out` key says
+    otherwise.
+
+    ```toml decktalk.toml
+    [soundscape.sfx.tick]
+    text = "soft interface click, single, short, no reverb"
+    ```
+
+    Any audio file that ffmpeg can read works in place of a generated one. Put it
+    anywhere in the project and name its path in the next step.
+  </Step>
+
+  <Step title="Generate it">
+    The dry run prints every request without sending it and needs no key.
+
+    ```console
+    decktalk soundscape --dry-run
+    decktalk soundscape --only tick
+    ```
+
+    ```text
+    == tick -> /private/tmp/dtclip0/build/sfx/tick.mp3  [planned]
+       POST https://api.elevenlabs.io/v1/sound-generation
+       {'text': 'soft interface click, single, short, no reverb', 'duration_seconds': 0.5, 'prompt_influence': 0.5, 'model_id': 'eleven_text_to_sound_v2'}
+    ```
+
+    Generated files are cached by their request, so a second run sends nothing unless the
+    prompt changed, and `--force` regenerates one on purpose.
+  </Step>
+
+  <Step title="Place it on a cue">
+    A `[[mix.sfx]]` table names the file, the section, and the cue id. The `db` key sets
+    the level and `offset` shifts the effect in seconds from the cue.
+
+    ```toml decktalk.toml
+    [[mix.sfx]]
+    file = "build/sfx/tick.mp3"
+    section = 2
+    cue = "2.1d"
+    db = -16
+    ```
+
+    The cue must be one that `decktalk beats` resolved for that section. The effect is
+    placed at the section's start in the video plus the cue's seconds plus the offset.
+  </Step>
+
+  <Step title="Assemble">
+    The mix is part of the `assemble` stage, so no recording changes.
+
+    ```console
+    decktalk assemble
+    ```
+
+    An effect whose file is missing, or whose cue did not resolve, is skipped with a
+    warning that names it, and the build continues.
+
+    ```text
+    sfx build/sfx/tick.mp3 missing; skipped
+    ```
+  </Step>
+</Steps>
+
+## Next
+
+[Sound](/concepts/sound) describes every part of the mix, including the underscore
+markers that swell or mute the music on a phrase with the same matching keys.

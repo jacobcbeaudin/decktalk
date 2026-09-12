@@ -1,7 +1,13 @@
 ---
 title: Python API
-description: The CLI is a thin layer over these names.
+description: Every public name in the DeckTalk Python package, with Project, Settings, the section and artifact types, the stage functions and their results, the errors, and the speech provider protocol.
+icon: "python"
+mode: "wide"
 ---
+
+The CLI is a thin layer over these names. Stage functions take a `Project`, log progress
+to the `decktalk` logger, return a typed result, and raise `DeckTalkError` subclasses.
+They never call `sys.exit` and never print.
 
 ```python
 import decktalk
@@ -12,47 +18,88 @@ result = decktalk.build(project, silent=True)
 print(result.assembly.final, result.verification.ok)
 ```
 
-## Functions and classes
+## The project
 
-| Name | What it does |
+| Name | What it is |
 |---|---|
-| `Project.load(dir)` | Parses and validates `decktalk.toml`. It raises `ConfigError` with the table and the field named. |
-| `Settings` and `load_settings()` | Hold the tuning tree, which is built from the defaults, then the TOML tables, then the `DECKTALK_*` environment. |
-| `PageSection` and `ClipSection` | Represent the two kinds of section. `project.sections` holds them in number order. |
-| `Manifest`, `Timeline`, `Beats`, `Sidecar`, and `Word` | Represent the build artifacts, and each one has `load` and `save`. |
-| `narrate(project, ...)` | Returns a `NarrateResult` with the manifest, the timeline, and the sections that reached the API. |
-| `resolve_beats(project)` | Returns a `BeatsResult` with the resolved cues and any unresolved notes. |
-| `record(project, ...)`, `measure(project)`, and `check(project)` | Return the recordings, the lead measurements, and the sanity checks. |
-| `assemble(project, ...)` | Returns an `AssembleResult` with the final path, the sections, the warnings, and the loudness before and after. |
-| `verify(project, checks)` | Returns a `VerifyResult`, whose `ok` is true when every start and cue passed. |
-| `shoot(project, ...)` | Returns the screenshot paths. |
-| `soundscape(project, ...)` | Returns the generated or planned items. |
-| `build(project, ..., report=fn)` | Runs everything in order and calls `report(stage, result)` after each stage. Returns a `BuildResult` whose `ok` mirrors the CLI's exit code. |
+| `Project.load(dir=None, *, environ=None)` | Parses and validates `decktalk.toml`. The directory defaults to `DECKTALK_PROJECT`, then the current directory, and a path to the file itself is accepted. It raises `ConfigError` with the table and field named. `Project.from_toml(root, doc)` builds one from a parsed mapping. |
+| `Project` | The loaded document: `root`, `name`, `script`, `cues`, `build`, `sections`, `voice`, `transition`, `mix`, `soundscape`, `settings`, plus the paths `audio_dir`, `rec_dir`, `out_dir`, `shots_dir`, `manifest_path`, `timeline_path`, `beats_path`, `final`, `env_file`, and the loaders `manifest()`, `timeline()`, `beats()`. |
+| `Section`, `PageSection`, `ClipSection` | The two kinds of section and their union. `project.sections` holds them in number order, and `page_sections`, `clip_sections`, `clip_numbers`, and `page_files` filter them. |
+| `Voice`, `Transition`, `Mix`, `Soundscape` | The document tables, as frozen dataclasses with the same keys as [decktalk.toml](/reference/decktalk-toml). |
+| `Settings`, `load_settings(root, *, toml, environ)` | The tuning tree, built from the defaults, then the TOML tables, then the `DECKTALK_*` environment. [Configuration](/reference/configuration) lists every field. |
+
+## Artifacts
+
+| Name | What it is |
+|---|---|
+| `Word` | `word`, `start`, `end`. |
+| `Manifest` | The narration cache, with `load(path)` and `save(path)`. |
+| `Timeline` | Section and word times absolute in `narration.mp3`, with `load`, `save`, `span(key)`, and `keys`. |
+| `Beats` | Resolved cues per section, with `load`, `save`, `query(key)` for the `?beats=` string, and `get(key, cue)`. |
+| `Sidecar` | What the recorder did for one section, with `load`, `save`, `trim_seconds`, and `warnings`. |
+
+[Build artifacts](/reference/artifacts) gives every field of every file.
+
+## Stages and results
+
+| Function | Returns |
+|---|---|
+| `narrate(project, *, only, force, allow_placeholders, silent, model)` | `NarrateResult` with `manifest`, `timeline`, `segments`, `synthesized`, and `cached`. |
+| `resolve_beats(project)` | `BeatsResult` with `beats`, `sections`, `unresolved`, `estimated`, and `problems`. |
+| `record(project, *, only, seconds, use_beats)` | A list of `Recording`, each with `section`, `path`, `sidecar`, and `seconds`. |
+| `measure(project, only)` | A list of `LeadMeasurement`, each with `key`, `lead_in_seconds`, `wallclock_seconds`, and `method`. |
+| `check(project, only)` | A list of `RecordingCheck`, each with the luma fields, `verdict`, and `ok`. |
+| `assemble(project, *, nomix, loudnorm, strict)` | `AssembleResult` with `final`, `stamped`, `duration`, `sections`, `warnings`, `loudness`, `captions_srt`, `captions_vtt`, and `chapters`. |
+| `verify(project, checks)` | `VerifyResult` with `total_seconds`, `starts`, `cues`, `ok`, and `black_starts`. |
+| `shoot(project, *, pages, steps, section, at)` | The screenshot paths. |
+| `soundscape(project, *, only, force, dry_run)` | A list of `SoundscapeItem`, each with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds`. |
+| `build(project, *, silent, force, only, nomix, loudnorm, strict, allow_unresolved, report)` | `BuildResult` with one field per stage and `ok`, which mirrors the CLI's exit code. `report(stage, result)` is called after each stage. |
 
 ## Errors and logging
 
-Stage functions never call `sys.exit` and never print. They raise subclasses of
-`DeckTalkError`. A `ConfigError` means the input is bad or inconsistent. A
-`MissingInputError` means an earlier stage has not run. A `ProviderError` means ElevenLabs
-refused or failed a request. A `ToolError` means ffmpeg or Chromium failed. Progress goes
-to the `decktalk` logger at the INFO level, so attach a handler to see it.
+| Error | Meaning |
+|---|---|
+| `DeckTalkError` | The base class of every error DeckTalk raises on purpose. |
+| `ConfigError` | `decktalk.toml`, `cues.json`, or `.env` is missing, malformed, or inconsistent. |
+| `MissingInputError` | A stage needs an artifact that an earlier stage has not produced. |
+| `ProviderError` | The speech provider refused or failed a request. |
+| `ToolError` | ffmpeg, ffprobe, or Chromium is unavailable or failed. |
+
+Progress goes to the `decktalk` logger at the INFO level, so attach a handler to see it.
+`__version__` is the installed version string.
+
+## Speech providers
+
+DeckTalk needs one thing from a voice: audio plus a start and end time for every word.
+The boundary is `SpeechProvider`, a protocol with a `name`, a `speak(request)` method
+that returns the audio bytes and a list of `Word`, and a `cache_key(request)` method
+that returns everything that changes the audio apart from the text. A `SpeechRequest`
+carries the `text` with break tags, the `model`, the `voice_settings`, the
+`output_format`, and the neighbouring `previous_text` and `next_text` for prosody.
+
+`register(name, factory)` is public. The factory receives the loaded `Project` and
+returns a provider, and `[voice]` with `provider = "name"` then selects it. ElevenLabs is
+the built-in provider and the only one today. There is no plugin loading, so a new
+provider is a pull request that adds a module under `src/decktalk/providers/` and
+registers it. A local text-to-speech engine paired with a forced aligner is the obvious
+candidate, and an issue that proposes one is welcome.
 
 ## Stability
 
 The file formats are stable already. That covers `decktalk.toml`, `cues.json`, the build
-artifacts, and the page contract. The Python names may move until version 1.0. Modules
-under `decktalk.media` and `decktalk.providers`, and any name that starts with an
-underscore, are internal.
+artifacts, and the page contract, and a change to any of them bumps the minor version
+with a migration note in the [changelog](/changelog). The Python names may still move,
+and a rename is a breaking change once the project leaves the 0.x series. Everything
+under `decktalk.media`, everything under `decktalk.providers` other than the three speech
+names above, and every name that starts with an underscore is internal.
 
-## Adding a speech provider
+## Every public name
 
-DeckTalk needs one thing from a voice: audio plus a start and end time for every word.
-The boundary is `decktalk.providers.speech.SpeechProvider`, a protocol with two methods.
-The `speak(request)` method returns the mp3 bytes and a list of `Word` objects. The
-`cache_key(request)` method returns everything that changes the audio apart from the
-text. ElevenLabs is the built-in provider and the only one today.
-
-There is no plugin loading yet. A new provider is a pull request that adds a module under
-`src/decktalk/providers/` and registers it with `register("name", factory)`, after which
-`[voice]` with `provider = "name"` selects it. A local text-to-speech engine paired with
-a forced aligner is the obvious next candidate, and an issue that proposes one is welcome.
+`AssembleResult`, `Beats`, `BeatsResult`, `BuildResult`, `ClipSection`, `ConfigError`,
+`DeckTalkError`, `LeadMeasurement`, `Manifest`, `MissingInputError`, `Mix`,
+`NarrateResult`, `PageSection`, `Project`, `ProviderError`, `Recording`,
+`RecordingCheck`, `Section`, `Settings`, `Sidecar`, `Soundscape`, `SoundscapeItem`,
+`SpeechProvider`, `SpeechRequest`, `Timeline`, `ToolError`, `Transition`,
+`VerifyResult`, `Voice`, `Word`, `__version__`, `assemble`, `build`, `check`,
+`load_settings`, `measure`, `narrate`, `record`, `register`, `resolve_beats`, `shoot`,
+`soundscape`, `verify`.

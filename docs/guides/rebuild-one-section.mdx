@@ -1,0 +1,80 @@
+---
+title: Rebuild one section
+description: What DeckTalk caches and reuses after an edit, and how to re-synthesize, re-record, or re-assemble a single section with --only, --force, and the stage commands.
+icon: "rotate"
+---
+
+`decktalk build` is safe to run after every edit, because each stage reuses what has not
+changed. This page says what is reused, and how to limit a build to one section when
+you want to save time or credits.
+
+## What an edit costs
+
+| You changed | What runs again |
+|---|---|
+| A sentence in one section of `script.md` | That section is synthesized and recorded again. The other sections' narration is cached, and their recordings are still valid, because cue times are relative to each section's own start. |
+| A phrase in `cues.json` | Nothing is synthesized. The section whose cues changed is recorded again. |
+| A slide in `deck/index.html` | Nothing is synthesized. Every section that uses the page should be recorded again. |
+| `[voice]` settings, or the model | Every section is synthesized again, because the cache key includes the voice id, the model, the output format, and the voice settings. |
+| A clip file, `hold_seconds`, `[transition]`, or `[mix]` | Only `assemble`. |
+| `extra_seconds` | The section is recorded again, because the recording's length changed. |
+
+The narration cache is `build/audio/manifest.json`. Each entry carries a hash of the
+provider, the voice settings, and the exact text sent, and `narrate` skips a section whose
+hash, file, and words file are all present. The recording stage has no cache of its own,
+so `--only` is how a recording is spared.
+
+## Limit a build to one section
+
+```console
+decktalk build --only 3                  # narrate everything (cached), re-record section 3, assemble, verify
+decktalk build --only 3 --only 4         # two sections; the flag repeats and does not take commas
+decktalk build --only 3 --preset veryfast
+```
+
+With `--only`, the `record`, `measure`, and `check` stages touch only the sections named.
+Narration still runs for every section, which costs nothing for the cached ones, and
+`assemble` still cuts every section, because the final mp4 needs all of them. Name every
+section whose text or page changed. A section left out keeps its old recording even if
+its words moved.
+
+## Run the stages by hand
+
+Each stage is also a command, and the sequence below is what `build --only 3` does for
+the recording.
+
+```console
+decktalk narrate                         # cached sections are skipped
+decktalk beats
+decktalk record --only 3
+decktalk measure --only 3
+decktalk check --only 3
+decktalk assemble
+decktalk verify 3:3.1c
+```
+
+After a page edit with no script change, `record --only N`, `measure --only N`, and
+`assemble` are enough. After replacing a clip file, `assemble` alone is enough.
+
+## Force a fresh synthesis
+
+```console
+decktalk narrate --force                 # ignore the hash and synthesize every section
+decktalk build --force
+```
+
+A forced run spends credits on every section. `decktalk narrate --dry-run` prints what
+would be sent, section by section, and the character count follows from it.
+
+## A silent build and a voiced build
+
+The manifest records whether its entries are silent placeholders. A voiced build after a
+silent one starts from an empty cache, and a silent build after a voiced one does the
+same, so switching between them never mixes the two. Neither overwrites the other's
+final mp4 until it finishes, and a timestamped copy of every finished video sits beside
+`build/out/<name>.mp4`.
+
+## Next
+
+[How it works](/concepts/how-it-works#caching-and-cost) explains why a section's
+recording stays valid when its neighbours change.

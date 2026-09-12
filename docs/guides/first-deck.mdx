@@ -1,103 +1,132 @@
 ---
 title: Your first deck
-description: One section, written from scratch, in all four files.
+description: Write one DeckTalk section from scratch in script.md, decktalk.toml, cues.json, and deck/index.html, then build the slide and verify that every reveal lands on its word.
+icon: "pen-line"
 ---
 
 A DeckTalk project is four files that refer to each other by number and by id. This
-page writes one section, the curve-and-equation scene from the scaffold, and shows every
-reference as it is made. Start from `decktalk init my-lesson` so that the runtime and the
-stylesheet are in place.
+page writes one section, the derivation scene from the scaffold, and shows every
+reference as it is made. Start from `decktalk init my-lesson` so that the runtime, the
+stylesheet, and KaTeX are in place. This is the finished section in all four files.
+
+<CodeGroup>
+
+```md script.md
+## 3. The derivative of x squared — 0:40 to 1:10
+
+[Deck scene 3. The curve draws, then the derivation appears one line at a time.]
+
+Now a short lesson. Here is the curve y equals x squared. [beat] Where does its slope come
+from? Start with the definition of the derivative, the limit of a difference quotient.
+[beat] Expand the square, and the x squared terms cancel. [beat] Every term that is left
+still has an h in it. Before I finish the line, pause and think: as h goes to zero, what
+is left?
+
+[pause 3]
+
+Only two x is left. The derivative of x squared is two x.
+```
+
+```toml decktalk.toml
+[[section]]
+number = 3
+title = "The derivative of x squared"
+page = "deck/index.html"
+scene = 3
+```
+
+```json cues.json
+"3": {
+  "cues": [
+    { "cue": "3.1", "on": "$start" },
+    { "cue": "3.1draw", "on": "Here is the curve" },
+    { "cue": "3.1a", "on": "definition" },
+    { "cue": "3.1b", "on": "Expand" },
+    { "cue": "3.1think", "on": "pause and think" },
+    { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+  ]
+}
+```
+
+```html deck/index.html
+DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
+  { id: "3.1", hold: 24, cues: { "3.1draw": 0.5, "3.1a": 5, "3.1b": 9, "3.1think": 13, "3.1c": 18 }, render: () => `
+    <div class="slide">
+      <div class="cols">
+        <svg viewBox="0 0 700 520" width="700" height="520" style="overflow:visible;flex:none">
+          <line class="ax" x1="60" y1="480" x2="680" y2="480"/>
+          <line class="ax" x1="60" y1="20" x2="60" y2="480"/>
+          <path class="curve" pathLength="1" data-cue="3.1draw" data-fx="draw" data-dur="2"
+                d="M60,480 Q370,480 680,40"/>
+          <text class="axlabel" x="400" y="140" data-cue="3.1draw" data-fx="fade">y = x²</text>
+        </svg>
+        <div>
+          <p class="math" data-cue="3.1a" data-tex="\\frac{d}{dx}\\,x^2 = \\lim_{h \\to 0} \\frac{(x+h)^2 - x^2}{h}" data-display>d/dx x^2 = lim (x+h)^2 - x^2 / h</p>
+          <p class="math" data-cue="3.1b" data-tex="= \\lim_{h \\to 0} \\frac{2xh + h^2}{h} = \\lim_{h \\to 0} (2x + h)" data-display>= lim (2xh + h^2) / h = lim (2x + h)</p>
+          <p class="caption" data-cue="3.1think">Pause and think: as h goes to zero, what is left?</p>
+          <p class="math answer" data-cue="3.1c" data-fx="pop" data-tex="\\frac{d}{dx}\\,x^2 = 2x" data-display>d/dx x^2 = 2x</p>
+        </div>
+      </div>
+    </div>` },
+]});
+```
+
+</CodeGroup>
 
 <Steps>
   <Step title="Write the section in script.md">
-    Each `## N. Title` heading starts a section. Text in square brackets is a stage
-    direction. It is not spoken, and it leaves a short pause where it sat. Write numbers
-    and symbols as you want them said, because cue phrases match spoken words.
-
-    ```md script.md
-    ## 3. A curve and an equation
-
-    [Deck scene 3. A curve draws, then the equation appears.]
-
-    Now a curve draws across the screen as I talk. And here is an equation: the derivative
-    of x squared is two x.
-    ```
+    Each `## N. Title` heading starts a section. The optional `— 0:40 to 1:10` on the
+    heading is a time budget, which the narrate table compares with the real length. Text
+    in square brackets is a stage direction. It is not spoken, and it leaves a short pause
+    where it sat. `[beat]` is that short pause on its own, and `[pause 3]` is three seconds
+    of silence. Write numbers and symbols as you want them said, because cue phrases match
+    spoken words. [script.md](/reference/script-md) lists every rule.
   </Step>
 
   <Step title="Declare the section in decktalk.toml">
     Every script section needs one `[[section]]` table with the same `number`. A section
     is either a page, which DeckTalk records and cuts, or a clip, which is your own video.
     The `scene` value is what the page receives as `?scene=`, and it defaults to the
-    section number.
-
-    ```toml decktalk.toml
-    [[section]]
-    number = 3
-    title = "A curve and an equation"
-    page = "deck/index.html"
-    scene = 3
-    extra_seconds = 2       # keep recording past the narration, so the last cut is never short
-    hold_seconds = 2        # hold the final frame; allowed only on the last page section
-    ```
+    section number. [decktalk.toml](/reference/decktalk-toml) lists every key.
   </Step>
 
   <Step title="Name the moments in cues.json">
     A cue pairs a cue id with the spoken phrase it lands on. Matching takes the first
-    occurrence, ignores case, and ignores punctuation. The values `$start` and `$end` are
-    the edges of the section's speech, `offset` shifts the moment in seconds, and
-    `occurrence` picks a later repeat of the same words.
-
-    ```json cues.json
-    { "sections": { "3": { "cues": [
-      { "step": "3.1",     "on": "$start" },
-      { "step": "3.1draw", "on": "curve draws" },
-      { "step": "3.1eq",   "on": "equation", "offset": 0.2 }
-    ] } } }
-    ```
+    occurrence and ignores case and punctuation. The values `$start` and `$end` are the
+    edges of the section's speech, `offset` shifts the moment in seconds, and `occurrence`
+    picks a later repeat of the same words. [Cues](/concepts/cues) has the matching rules
+    and the advice on choosing a phrase.
 
     Run `decktalk beats` at any time to see where each phrase resolved. A phrase that is
-    not in the section's words is reported as `phrase not found`, and `build` stops there
-    until you fix it or pass `--allow-unresolved`.
+    not among the section's words is reported as `phrase not found`, and `build` stops
+    there until you fix it or pass `--allow-unresolved`.
+
+    ```text
+    sec  speech   need  cues
+     03    37.1      -  3.1@0.0,3.1draw@1.85,3.1a@9.74,3.1b@14.38,3.1think@25.97,3.1c@31.27
+    ```
   </Step>
 
   <Step title="Build the slide in deck/index.html">
     A page registers one scene per section. A scene is a list of steps, and each step
-    renders some HTML. A cue belongs to the step with the same id, or to the step whose
-    `cues` names it, or to the step whose id is the longest prefix of the cue id. Here the
-    step is `3.1`, so `3.1draw` and `3.1eq` belong to it, and the elements marked
-    `data-cue` stay hidden until their cue fires.
+    renders one slide. Every cue here belongs to step `3.1`, because the step's `cues`
+    object names it and because `3.1` is the longest prefix of each id. The elements
+    marked `data-cue` stay hidden until their cue fires. [The page contract](/concepts/page-contract)
+    explains ownership, and [the runtime reference](/reference/runtime) lists every
+    attribute.
 
-    ```html deck/index.html
-    <script src="decktalk-runtime.js"></script>
-    <script>
-    DeckTalk.scene(3, { name: "A curve and an equation", steps: [
-      { id: "3.1", hold: 10, cues: { "3.1draw": 0.5, "3.1eq": 5 }, render: () => `
-        <div class="slide">
-          <svg viewBox="0 0 1600 500" width="1600" height="500">
-            <path class="curve" pathLength="1" data-cue="3.1draw" data-fx="draw" data-dur="3"
-                  d="M80,440 C400,430 800,300 1100,140 S1500,60 1560,50"/>
-          </svg>
-          <div class="eq" data-cue="3.1eq" data-tex="\\frac{d}{dx}\\,x^2 = 2x">d/dx x^2 = 2x</div>
-        </div>` },
-    ]});
-    </script>
-    ```
-
-    The `cues` object on the step gives autoplay times, which the page uses when you open
-    it in a browser without beats. During a recording the beats replace them. The
-    `data-fx` attribute picks the reveal animation, and `data-tex` typesets the text with
-    KaTeX when KaTeX is on the page. [The page contract](/concepts/page-contract) lists
-    every attribute.
+    Inside the backticks of a `render` template, write every backslash twice. The
+    `data-tex` value `\\frac{d}{dx}` reaches KaTeX as `\frac{d}{dx}`.
   </Step>
 
   <Step title="Look before you build">
-    Open `deck/index.html?step=3.1` in a browser to see the step with everything revealed,
-    or `?scene=3` to watch it autoplay. Then take screenshots of every step, and of the
-    scene at a given second with its real cues.
+    Open `deck/index.html?step=3.1` in a browser to see the step with everything
+    revealed, or `?scene=3` to watch it autoplay. Then take screenshots of every step, and
+    of the scene at a given second with its real cues.
 
     ```console
     decktalk shots
-    decktalk shots --section 3 --at 6
+    decktalk shots --section 3 --at 10
     ```
   </Step>
 
@@ -105,20 +134,36 @@ stylesheet are in place.
     ```console
     decktalk build --silent          # placeholder voice, no key
     decktalk build                   # your voice
-    decktalk verify 3:3.1draw 3:3.1eq
+    decktalk verify 3:3.1draw 3:3.1c
     ```
 
     The verify table shows, for each cue, the second at which it fired in the final mp4,
-    the share of pixels that changed across it, and the same measure over a quiet control
-    span just before it. A cue lands when the change beats the control by a margin.
+    the share of pixels that changed across it, the same measure over a quiet control
+    span just before it, and how far from the cue the first changed frame sits.
 
     ```text
-    check                 cue       at   chg %   ctl %  result
-    3:3.1draw            0.80    29.90    0.38    0.00  changed
-    3:3.1eq              5.80    34.90    0.96    0.02  changed
+    check                 cue       at   chg %   ctl %   offset  result
+    3:3.1draw            1.85    33.93    0.33    0.00    +30ms  changed
+    3:3.1c              31.27    63.35    0.32    0.00    +10ms  changed
     ```
+
+    [How it works](/concepts/how-it-works#what-verify-measures) explains the columns and
+    the limit that turns `changed` into `OFF CUE`.
   </Step>
 </Steps>
+
+## The browser preview and the recorded video
+
+A page plays two ways. In a browser with `?scene=3` it autoplays from the timings in the
+page. During a recording the resolved cues drive it and most of those timings are
+ignored. This table says which value matters where.
+
+| Value | In the browser preview | In the recorded video |
+|---|---|---|
+| `hold` on a step | The seconds the step stays before the next one mounts. | Ignored. A step mounts at its earliest cue and the last cued step holds until the recorder stops. |
+| The `cues` object on a step | The seconds after the mount at which each handler cue fires. | Ownership only. The times come from `build/audio/beats.json`. |
+| `data-at` on an element | The seconds after the mount at which the element reveals. | Used only when the element's cue is not in `?beats=`, or when it has no `data-cue`. |
+| `data-cue` on an element | The element reveals at its `data-at` time, which defaults to zero. | The element reveals when the cue fires. |
 
 ## The naming chain
 
@@ -126,11 +171,11 @@ stylesheet are in place.
 |---|---|---|
 | `script.md` | `## 3.` | the section number |
 | `decktalk.toml` | `number = 3`, `scene = 3` | the same section, and the scene the page plays for it |
-| `cues.json` | `"3"`, `"step": "3.1eq"` | the section, and a cue id the page understands |
-| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1eq"` | the scene, its step, and the element that reveals on the cue |
+| `cues.json` | `"3"`, `"cue": "3.1c"` | the section, and a cue id the page understands |
+| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1c"` | the scene, its step, and the element that reveals on the cue |
 
 ## Next
 
-Add a second section by repeating the steps with a new number. Add a clip of your own
-with `clip = "media/intro.mp4"` in a section table and a matching heading in the script.
-Then read [Sound](/concepts/sound) to add an underscore and a sound effect.
+Add a second section by repeating the steps with a new number.
+[Slide recipes](/guides/slide-recipes) has five slides to copy, and
+[Add a clip section](/guides/clip-section) opens the video with footage of your own.

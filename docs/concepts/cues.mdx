@@ -1,78 +1,89 @@
 ---
 title: Cues
-description: How a spoken phrase becomes the second at which a visual appears.
+description: How a DeckTalk cue phrase in cues.json becomes the second at which a visual appears, the matching rules, the tokenizer, unresolved cues, and how to choose the phrase.
+icon: "crosshairs"
 ---
 
 A cue is a named moment. In `cues.json` it is a spoken phrase to find in a section's
 narration. In the page it is an id that reveals elements or runs a handler. The `beats`
-stage joins the two by turning each phrase into seconds after the section starts.
+stage joins the two by turning each phrase into seconds after the section starts, and
+the recorder hands those seconds to the page as `?beats=`.
 
 ```json cues.json
-{ "sections": {
-  "3": {
-    "min_seconds": 25,
-    "cues": [
-      { "step": "3.1",     "on": "$start" },
-      { "step": "3.1draw", "on": "curve draws" },
-      { "step": "3.1eq",   "on": "equation", "offset": 0.2, "occurrence": 1 }
-    ]
-  }
-} }
+{ "sections": { "3": { "cues": [
+  { "cue": "3.1a", "on": "definition" },
+  { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+] } } }
 ```
 
-## Keys
+```text
+sec  speech   need  cues
+ 03    37.1      -  3.1@0.0,3.1draw@1.85,3.1a@9.74,3.1b@14.38,3.1think@25.97,3.1c@31.27
+```
 
-| Key | Required | Meaning |
-|---|---|---|
-| `step` | yes | A cue id the page understands. The key `cue` is accepted as a synonym. |
-| `on` | yes | A word or short phrase from that section's narration, or `$start`, or `$end`. |
-| `offset` | no | Seconds added to the match. It may be negative. |
-| `occurrence` | no | Which repeat of the phrase to use. The default is 1, the first. |
-| `case_sensitive` | no | Match case as written. The default is false. |
-| `min_seconds` | no | On the section, not the cue. DeckTalk warns when the section's speech is shorter than this, so you learn early that the visuals will not fit. |
-
-Every section key must exist in `decktalk.toml`, and a section may have no cues at all.
-A page section with no cues plays its autoplay timing from the page.
+[cues.json](/reference/cues-json) lists every key. This page is about how a phrase is
+found and how to choose one.
 
 ## Matching rules
 
-1. The phrase is split into words. Case is ignored unless `case_sensitive` is true, and punctuation is ignored on both sides.
-2. The section's words are scanned in order for a run that matches the phrase word for word. The `occurrence` key picks which run.
-3. The cue time is the start of the first word of that run, plus `offset`.
-4. `$start` is zero. `$end` is the end of the last spoken word in the section.
+1. The phrase and the section's words are both split on whitespace only. Each token then loses every character that is not a letter, a digit, or an apostrophe, and is lowercased unless `case_sensitive` is true. A hyphenated word such as "x-squared" is therefore one token, and it matches only a phrase written the same way.
+2. The section's words are scanned in order for a run that matches the phrase token for token. The `occurrence` key picks which run, and the default is the first.
+3. The cue time is the start of the first word of that run, plus `offset`, rounded to hundredths of a second.
+4. `$start` is zero plus the offset, never negative. `$end` is the end of the last spoken word in the section, plus the offset.
 
 The words come from the voice, so a phrase must be written as it is spoken. The script
 says "two x" and the slide shows `2x`, and the cue says "two x". A number written as
-digits in the script comes back from ElevenLabs in the form it chose to say, so digits in
-a cue phrase are fragile.
+digits comes back in the form the voice chose to say, so digits in a cue phrase are
+fragile.
+
+A cue id may not contain `@` or a comma, because the resolved cues travel to the page as
+`id@seconds` pairs separated by commas.
+
+## Which sections have cues
+
+Every section key in `cues.json` must exist in `decktalk.toml`, and a section may have
+no cues at all. A page section with no cues plays its autoplay timing from the page. A
+clip section has no narration, so its cues are reported as skipped.
+
+The `beats` stage never checks cue ids against the page. It resolves phrases to seconds,
+and the page decides what each id means when it plays. An id that no step owns is
+recorded by the page in `window.__decktalk.warnings`, which the recorder reads after the
+recording and logs. [The page contract](/concepts/page-contract#cue-ownership) explains
+which step owns a cue.
 
 ## Unresolved cues
 
-The `beats` stage prints `phrase not found` for a cue it cannot match and exits with
-status 1. The `build` command stops at that point, because a step whose only cues are
-unresolved would never appear on screen. Fix the phrase, or pass `--allow-unresolved` to
-build without that cue. The page then ignores the missing cue, and an element waiting for
-it reveals at its `data-at` time after its step mounts.
+The `beats` stage prints `phrase not found` for a cue it cannot match and exits 1.
 
-A silent build estimates word times from the word count. Cues resolve, but their times
-are placeholders, and the report says so.
+```text
+sec  speech   need  cues
+ 03    37.1      -  3.1@0.0,3.1draw@1.85,3.1a@9.74,3.1think@25.97,3.1c@31.27
+                    ! 3.1b: phrase not found: 'expand the 2'
+```
 
-## Cue ownership in the page
+The `build` command stops at that point, because a step whose only cues are unresolved
+never appears on screen. Fix the phrase, or pass `--allow-unresolved` to build without
+that cue. The page then ignores the missing cue, and an element waiting for it reveals at
+its `data-at` time after its step mounts. A cue that resolves past the end of the audio
+is kept with a note. A silent build estimates word times from the word count, so cues
+resolve, but their times are placeholders and the table says so.
 
-A cue belongs to one step, and the step mounts at its earliest cue. The runtime resolves
-the owner in this order.
+## Choosing the phrase
 
-1. The step with the same id as the cue.
-2. The step whose `cues` list or object names the cue.
-3. The step whose id is the longest prefix of the cue id. The cue `4.2b1` belongs to step `4.2`, and `9a` belongs to `9`.
+These are the rules of thumb behind the scaffold's cues, and
+[Writing for the ear](/guides/writing-for-the-ear) explains each one.
 
-The first cued step mounts at t=0 regardless of its cue time, so a section never opens
-on an empty stage. A step with no cue never shows. The last cued step holds until the
-recorder stops.
+- Begin the phrase with the word that names the visual, because the cue lands on the first word of the phrase. A noun such as `definition` or a verb with a referent such as `Expand` works, and a connective such as "and then" does not.
+- Use two or three words when one word repeats in the section, or set `occurrence`.
+- Trail the word with a small positive `offset`, one or two tenths of a second, so that the word finishes before the visual moves. Lead the word with a negative offset only when the audience must read along.
+- Put a `[beat]` or a `[pause N]` before a reveal that should read as an event.
+- Close a section on `$end` when a summary or a final state should appear as the voice stops.
+- Aim for roughly one cue every ten to fifteen seconds, and one reveal per idea.
+- Write numbers as words in the script, and show digits on the slide.
 
 ## Sound on cues
 
 A sound effect in `[[mix.sfx]]` names a `section` and a `cue`, and DeckTalk places the
-effect where that cue resolved. An underscore marker in the markers file uses the same
-`on`, `occurrence`, `case_sensitive`, and `offset` keys to swell or mute the music at a
-phrase. [Sound](/concepts/sound) has both formats.
+effect where that cue resolved. An underscore marker uses the same `on`, `occurrence`,
+`case_sensitive`, and `offset` keys to swell or mute the music at a phrase.
+[Sound](/concepts/sound) has both.
