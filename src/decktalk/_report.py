@@ -94,6 +94,11 @@ def verify_table(result: VerifyResult) -> str:
             f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {'ok' if s.ok else 'BLACK'}"
         )
     lines.append(f"total {result.total_seconds:.2f}s; {result.black_starts} black section start(s)")
+    if result.cuts:
+        lines.append("")
+        lines.append(f"{'sec':>3} {'cut at':>8} {'before cut':>11}  result")
+        for c in result.cuts:
+            lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {'quiet' if c.ok else 'SPEECH AT CUT'}")
     if result.cues:
         lines.append("")
         lines.append(f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7} {'offset':>8}  result")

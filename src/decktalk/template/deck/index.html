@@ -119,6 +119,22 @@ DeckTalk.scene(4, { name: "Before and after", steps: [
       </div>
     </div>` },
 ]});
+
+DeckTalk.scene(5, { name: "Close", steps: [
+  { id: "5.1", hold: 10, render: () => `
+    <div class="slide">
+      <p class="eyebrow">The whole idea</p>
+      <p class="line" data-cue="5.1a">Write the script.</p>
+      <p class="line" data-cue="5.1b">Narrate it in your own voice.</p>
+      <p class="line" data-cue="5.1c">Every reveal lands on its word.</p>
+    </div>` },
+  { id: "5.2", hold: 6, render: () => `
+    <div class="slide">
+      <p class="hero accent">The script is the edit.</p>
+      <p class="caption" data-cue="5.2a">Change a sentence and only that section renders again.</p>
+      <div class="lower" data-cue="5.2b" data-fx="fade">Made with DeckTalk</div>
+    </div>` },
+]});
 </script>
 </body>
 </html>

@@ -8,40 +8,139 @@
   "sections": {
     "1": {
       "cues": [
-        { "cue": "1.1a", "on": "$start" },
-        { "cue": "1.1b", "on": "narrated lesson" },
-        { "cue": "1.1c", "on": "lands on the word" }
+        {
+          "cue": "1.1a",
+          "on": "$start"
+        },
+        {
+          "cue": "1.1b",
+          "on": "narrated lesson"
+        },
+        {
+          "cue": "1.1c",
+          "on": "lands on the word"
+        }
       ]
     },
     "2": {
       "cues": [
-        { "cue": "2.1a", "on": "First" },
-        { "cue": "2.1b", "on": "Second" },
-        { "cue": "2.1c", "on": "Third" },
-        { "cue": "2.1d", "on": "Three steps" },
-        { "cue": "2.2", "on": "one take" },
-        { "cue": "2.2edit", "on": "Change a sentence" }
+        {
+          "cue": "2.1a",
+          "on": "First"
+        },
+        {
+          "cue": "2.1b",
+          "on": "Second"
+        },
+        {
+          "cue": "2.1c",
+          "on": "Third"
+        },
+        {
+          "cue": "2.1d",
+          "on": "Three steps"
+        },
+        {
+          "cue": "2.2",
+          "on": "one take"
+        },
+        {
+          "cue": "2.2edit",
+          "on": "Change a sentence"
+        }
       ]
     },
     "3": {
       "cues": [
-        { "cue": "3.1", "on": "$start" },
-        { "cue": "3.1draw", "on": "Here is the curve" },
-        { "cue": "3.1a", "on": "definition" },
-        { "cue": "3.1b", "on": "Expand" },
-        { "cue": "3.1think", "on": "pause and think" },
-        { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+        {
+          "cue": "3.1",
+          "on": "$start"
+        },
+        {
+          "cue": "3.1draw",
+          "on": "Here is the curve"
+        },
+        {
+          "cue": "3.1a",
+          "on": "definition"
+        },
+        {
+          "cue": "3.1b",
+          "on": "Expand"
+        },
+        {
+          "cue": "3.1think",
+          "on": "pause and think"
+        },
+        {
+          "cue": "3.1c",
+          "on": "Only two x",
+          "offset": 0.2
+        }
       ]
     },
     "4": {
       "cues": [
-        { "cue": "4.1ask", "on": "Write about" },
-        { "cue": "4.1r1", "on": "One line" },
-        { "cue": "4.1r2", "on": "another line" },
-        { "cue": "4.1r3", "on": "a third" },
-        { "cue": "4.2", "on": "Now ask" },
-        { "cue": "4.2ask", "on": "Explain it" },
-        { "cue": "4.2reply", "on": "Same model" }
+        {
+          "cue": "4.1ask",
+          "on": "Write about"
+        },
+        {
+          "cue": "4.1r1",
+          "on": "One line"
+        },
+        {
+          "cue": "4.1r2",
+          "on": "another line"
+        },
+        {
+          "cue": "4.1r3",
+          "on": "a third"
+        },
+        {
+          "cue": "4.2",
+          "on": "Now ask"
+        },
+        {
+          "cue": "4.2ask",
+          "on": "Explain it"
+        },
+        {
+          "cue": "4.2reply",
+          "on": "Same model"
+        }
+      ]
+    },
+    "5": {
+      "cues": [
+        {
+          "cue": "5.1",
+          "on": "$start"
+        },
+        {
+          "cue": "5.1a",
+          "on": "Write the script"
+        },
+        {
+          "cue": "5.1b",
+          "on": "own voice"
+        },
+        {
+          "cue": "5.1c",
+          "on": "lands on its word"
+        },
+        {
+          "cue": "5.2",
+          "on": "The script is the edit"
+        },
+        {
+          "cue": "5.2a",
+          "on": "Change a sentence"
+        },
+        {
+          "cue": "5.2b",
+          "on": "Made with DeckTalk"
+        }
       ]
     }
   }

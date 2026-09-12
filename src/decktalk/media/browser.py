@@ -28,6 +28,17 @@ COVER_JS = """() => {
     const d = document.createElement("div");
     d.id = "__t0cover";
     d.style.cssText = "position:fixed;inset:0;background:#ff00ff;z-index:2147483647;pointer-events:none";
+    // Chromium's screencast only emits a frame when the compositor paints one, and a static
+    // cover paints once. If that single paint lands before capture has attached, the cover is
+    // never recorded. A small element that never stops moving keeps frames flowing, so the
+    // first captured frame is magenta no matter when capture began.
+    const s = document.createElement("style");
+    s.textContent = "@keyframes __t0spin{to{transform:rotate(360deg)}}";
+    d.appendChild(s);
+    const m = document.createElement("div");
+    m.style.cssText = "position:absolute;left:8px;top:8px;width:6px;height:6px;background:#ff10ff;"
+      + "animation:__t0spin .5s linear infinite";
+    d.appendChild(m);
     (document.body || document.documentElement).appendChild(d);
   };
   if (document.documentElement) add(); else document.addEventListener("DOMContentLoaded", add, { once: true });
