@@ -1,6 +1,8 @@
 ---
 title: Build artifacts
-description: The shape of every file DeckTalk writes under build/.
+description: The shape of every file DeckTalk writes under build/, including the words files, manifest, timeline, beats, recording sidecars, section mp4s, the final video, captions, and chapters.
+icon: "folder-tree"
+mode: "wide"
 ---
 
 These files are part of the public contract. The page runtime reads `beats.json`, and
@@ -8,13 +10,37 @@ your own scripts may read any of them. Every JSON file is written atomically, so
 never sees a partial file. Field names in the JSON match the dataclasses in
 `decktalk.artifacts`.
 
+```text
+build/
+  audio/   NN-slug.mp3, NN-slug.words.json, manifest.json, narration.mp3, timeline.json, beats.json
+  rec/     NN-scene.webm, NN-scene.json
+  out/     NN-section.mp4, <name>.mp4, <name>-YYYYMMDD-HHMM.mp4, <name>.srt, <name>.vtt, <name>.chapters.txt, slates/
+  shots/   step-<id>.png, section-NN-at-<S>s.png
+  sfx/     ambience.mp3, <name>.mp3, and a .manifest.json beside each
+  music/   underscore.mp3, its parts, and its manifest
+```
+
 ## `build/audio/NN-slug.words.json`
 
-A list of words with absolute times within that section's mp3.
+A list of words with times within that section's mp3.
 
 ```json
-[{"word": "Now", "start": 0.71, "end": 0.93}, {"word": "a", "start": 0.93, "end": 1.02}]
+[
+ {
+  "word": "Welcome",
+  "start": 0.7,
+  "end": 1.113
+ },
+ {
+  "word": "This",
+  "start": 1.133,
+  "end": 1.547
+ }
+]
 ```
+
+The first word of the first spoken section starts after the lead break. Punctuation is
+stripped from each word.
 
 ## `build/audio/manifest.json`
 
@@ -22,38 +48,73 @@ One entry per narrated section. The `hash` is what the cache compares.
 
 | Field | Meaning |
 |---|---|
-| `script`, `model`, `output_format` | What produced the audio. |
-| `estimated`, `estimate_basis` | True after a silent build, with the pacing used. |
+| `script`, `model`, `output_format` | What produced the audio. A silent build records `silent-placeholder` as the model. |
+| `estimated`, `estimate_basis` | True after a silent build, with the pacing used, such as `150 wpm + declared pauses`. |
 | `total_seconds` | The sum of the segments. |
 | `segments.NN.index`, `.title` | The section. |
 | `segments.NN.file`, `.words_file` | The mp3 and the words file. |
-| `segments.NN.hash` | The text and voice hash. |
+| `segments.NN.hash` | The provider, voice, settings, and text hash, or `silent`. |
 | `segments.NN.words`, `.est_seconds`, `.duration_seconds` | The word count, the pacing estimate, and the real length. |
-| `segments.NN.target_seconds`, `.speech_end_seconds`, `.tail_padded_seconds` | The requested length, where speech ends, and how much silence was added. |
+| `segments.NN.target_seconds`, `.speech_end_seconds`, `.tail_padded_seconds` | The time budget from the heading, where speech ends, and how much silence was added. |
 
 ## `build/audio/timeline.json`
 
-Section and word times, absolute within `narration.mp3`.
+Section and word times, absolute within `narration.mp3`. `speech_end` is where the last
+word ends, and the section runs on to `end` in silence.
 
 ```json
-{ "narration": "narration.mp3", "total_seconds": 36.4, "estimated": false,
-  "sections": { "03": { "title": "A curve and an equation", "start": 26.1, "end": 36.4,
-                        "duration": 10.3, "speech_end": 35.9,
-                        "words": [{"word": "Now", "start": 26.81, "end": 27.03}] } } }
+{
+ "narration": "narration.mp3",
+ "total_seconds": 111.9,
+ "sections": {
+  "01": {
+   "title": "Open",
+   "start": 0.0,
+   "end": 10.15,
+   "duration": 10.15,
+   "speech_end": 9.78,
+   "words": [
+    {
+     "word": "Welcome",
+     "start": 0.7,
+     "end": 1.113
+    }
+   ]
+  }
+ },
+ "estimated": true
+}
 ```
 
 ## `build/audio/beats.json`
 
 The resolved cues per section, as the string the page receives in `?beats=`. The seconds
-are relative to the section's start.
+are relative to the section's start, and a section with no resolved cue is left out.
 
 ```json
-{ "01": "1a@0,1b@2.3,1c@6.3", "03": "3.1@0,3.1draw@0.8,3.1eq@5.8" }
+{
+  "01": "1.1a@0.0,1.1b@2.43,1.1c@6.77",
+  "02": "2.1a@2.3,2.1b@5.51,2.1c@9.19,2.1d@12.41,2.2@13.79,2.2edit@17.92"
+}
 ```
 
 ## `build/rec/NN-scene.json`
 
-What the recorder did for one section, and where narration t=0 sits in the webm.
+The sidecar of a recording: what the recorder did for one section, and where narration
+t=0 sits in the webm.
+
+```json
+{
+  "url": "file:///home/me/my-lesson/deck/index.html?scene=1&beats=1.1a%400.0%2C1.1b%402.43%2C1.1c%406.77&t0=signal",
+  "requested_seconds": 10.450000000000001,
+  "settle_seconds": 1.467,
+  "load_seconds": 0.038,
+  "lead_seconds": 1.504,
+  "lead_in_seconds": 1.44,
+  "lead_method": "cover (36 magenta frames)",
+  "warnings": []
+}
+```
 
 | Field | Meaning |
 |---|---|
@@ -63,12 +124,42 @@ What the recorder did for one section, and where narration t=0 sits in the webm.
 | `load_seconds`, `lead_seconds` | Wall-clock estimates from the recorder. |
 | `lead_in_seconds` | The first clean frame after the magenta cover, written by `measure`. The assembler trims here. |
 | `lead_method` | How `measure` found it. A value beginning `NO COVER` is a guess. |
+| `warnings` | `window.__decktalk.warnings` read from the page after the recording, such as an unknown cue id or a KaTeX that never loaded. |
 
 ## `build/out/`
 
 | File | Meaning |
 |---|---|
-| `NN-section.mp4` | Each section cut to its span, at the project's frame size. |
-| `<name>.mp4` | The film. |
-| `<name>-YYYYMMDD-HHMM.mp4` | A timestamped copy of the same film. |
-| `slates/` | Rendered slates for clip sections whose file is missing. |
+| `NN-section.mp4` | Each section cut to its span, at the project's frame size, video only. |
+| `<name>.mp4` | The video, with a chapter per section muxed in. |
+| `<name>-YYYYMMDD-HHMM.mp4` | A timestamped copy of the same video. |
+| `<name>.srt`, `<name>.vtt` | Captions from the word timestamps, absolute in the mp4, with the script's punctuation and case. A caption holds at most two lines of 42 characters, ends at a sentence, a pause longer than 1.5 seconds, or seven seconds, and never spans a section. |
+| `<name>.chapters.txt` | An ffmetadata file with one `[CHAPTER]` per section, titled from `decktalk.toml`, which is what the mp4 carries. |
+| `slates/NN-slate.png` | Rendered slates for clip sections whose file is missing. |
+
+```text build/out/my-lesson.srt
+1
+00:00:00,700 --> 00:00:06,767
+Welcome. This is a narrated lesson,
+cut to the word. Every visual you see
+
+2
+00:00:06,767 --> 00:00:09,980
+lands on the word that introduces it.
+```
+
+```text build/out/my-lesson.chapters.txt
+;FFMETADATA1
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=10160
+title=Open
+```
+
+## `build/shots/`
+
+`step-<id>.png` for each step, in a subdirectory named after the page when the project
+has several pages, and `section-NN-at-<S>s.png` for each frame taken from a playing
+section.

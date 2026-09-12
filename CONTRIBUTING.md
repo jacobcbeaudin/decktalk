@@ -26,9 +26,9 @@ uv run scripts/build_config_reference.py --check # so is docs/reference/configur
 No check needs an ElevenLabs key or network access after `decktalk setup`. Do not add a
 check that calls the API.
 
-CI runs the same checks. Pull requests run on Linux. Pushes to `main` and tags also run
-the browser tests and the smoke build on macOS and Windows, and upload the smoke video
-from each platform as an artifact.
+CI runs the same checks, with the unit checks on Python 3.12 to 3.14. Pull requests run
+on Linux. Pushes to `main` and tags also run the browser tests and the smoke build on
+macOS and Windows, and upload the smoke video from each platform as an artifact.
 
 ## Layout
 
@@ -62,7 +62,7 @@ and is documented at [docs.decktalk.app/concepts/page-contract](https://docs.dec
 The voice lives behind `providers/speech.py`, a two-method protocol. There is no plugin
 loading yet, so a new provider is a pull request.
 
-## What I want next
+## Roadmap
 
 - A local text-to-speech provider paired with a forced aligner, so a project can build with no API.
 - A second slide template with a lighter visual style.
@@ -77,11 +77,11 @@ semicolons, and version-specific wording that goes stale.
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `fix:`
 bumps the patch version, `feat:` the minor, `feat!:` or a `BREAKING CHANGE:` footer the major
-(minor while 0.x). `pre-commit install` adds a hook that checks the message; the `pr-title`
+(minor while 0.x). `pre-commit install` adds a hook that checks the message. The `pr-title`
 workflow checks pull request titles, because a squash merge turns the title into the commit.
 
 release-please keeps a release pull request open against `main`. It bumps the version in
 `pyproject.toml` and `uv.lock`, writes `CHANGELOG.md`, and picks the bump from the commits
-landed since the last release. Merging that PR creates the tag and the GitHub release; the
+landed since the last release. Merging that PR creates the tag and the GitHub release. The
 release workflow then builds, smoke-tests the wheel, and publishes to PyPI through trusted
 publishing. To force a version, put `Release-As: 1.0.0` in a commit body.

@@ -1,45 +1,101 @@
 ---
 title: Quickstart
-description: From an empty directory to a finished mp4.
+description: Install DeckTalk with uv, pipx, or pip, build the scaffold video without an API key, then add an ElevenLabs voice and build the narrated mp4.
+icon: "play"
 ---
 
 <Steps>
   <Step title="Install">
-    Everything DeckTalk needs arrives through Python packages. Playwright's package carries
-    its own browser driver, and `static-ffmpeg` carries ffmpeg and ffprobe for your
-    platform. You need Python 3.12 or later. You do not need Node.
+    DeckTalk needs Python 3.12 or later. Everything else arrives through Python packages
+    and one download. Playwright's package carries its own browser driver, and
+    `static-ffmpeg` carries ffmpeg and ffprobe for your platform. You do not need Node.
+
+    <Tabs>
+      <Tab title="uv">
+        ```console
+        uv tool install decktalk
+        ```
+
+        `uv` is a Python package manager from Astral. The command `uv tool install` puts a
+        command-line tool in its own environment and on your PATH.
+      </Tab>
+      <Tab title="pipx">
+        ```console
+        pipx install decktalk
+        ```
+      </Tab>
+      <Tab title="pip">
+        ```console
+        python -m venv .venv && source .venv/bin/activate
+        pip install decktalk
+        ```
+      </Tab>
+    </Tabs>
+
+    Then fetch the tools DeckTalk drives, once per machine, and confirm that they work.
 
     ```console
-    uv tool install decktalk        # or: pipx install decktalk
-    decktalk setup                  # fetches headless Chromium (about 100 MB) and ffmpeg, once per machine
-    decktalk doctor                 # confirms that both work
+    decktalk setup     # headless Chromium, ffmpeg, and KaTeX, into a per-user cache
+    decktalk doctor    # reports each tool and exits 1 when one is missing
     ```
 
-    <Accordion title="What is uv?">
-      `uv` is a Python package manager from Astral. The command `uv tool install` puts a
-      command-line tool in its own environment and on your PATH. If you do not have it,
-      `pipx install decktalk` does the same job, and so does `pip install decktalk` inside
-      a virtual environment.
-    </Accordion>
+    ```text
+    python    ok      3.13 (.venv/bin/python3)
+    chromium  ok      <version>
+    ffmpeg    ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffmpeg
+    ffprobe   ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffprobe
+    katex     ok      ~/Library/Caches/decktalk/katex/<version>
+    ```
+
+    Run `setup` before `init`, because `init` copies the cached KaTeX into the project so
+    that equations render with no network.
   </Step>
 
   <Step title="Scaffold and build">
     ```console
     decktalk init my-lesson && cd my-lesson
-    decktalk build --silent         # a full render with placeholder narration and no key
-    open build/out/my-lesson.mp4
+    decktalk build --silent          # every stage with placeholder narration, no key
     ```
 
-    The `--silent` flag runs every stage with a silent placeholder track and estimated word
-    times. It needs no API key and costs nothing. Use it to prove that a project builds
-    before you spend credits.
+    The `--silent` flag runs every stage with a silent placeholder track and estimated
+    word times. It needs no account and costs nothing, so use it to prove that a project
+    builds before you spend credits. Each stage prints a table, and the build ends with
+    the path of the video.
 
-    The scaffold has four sections. Section 0 is a clip section. It expects your own video,
-    with its own audio, at `media/open.mp4`. That file does not exist yet, so a titled slate
-    plays in its place. Sections 1 to 3 are page sections. They are three scenes in
-    `deck/index.html`, and DeckTalk records them and cuts them to the narration. Run the
-    scaffold as it is first. Then either drop a video at `media/open.mp4` or delete section
-    0 from both `decktalk.toml` and `script.md`.
+    ```text
+    sec    start    probe   YAVG   YMAX  result
+     01     0.00     0.20     29    206  ok
+     02    10.16    10.36     28    166  ok
+     03    32.08    32.28     28    155  ok
+     04    69.56    69.76     28    162  ok
+    total 113.92s; 0 black section start(s)
+
+    built build/out/my-lesson.mp4
+    ```
+
+    <Tabs>
+      <Tab title="macOS">
+        ```console
+        open build/out/my-lesson.mp4
+        ```
+      </Tab>
+      <Tab title="Linux">
+        ```console
+        xdg-open build/out/my-lesson.mp4
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```console
+        start build\out\my-lesson.mp4
+        ```
+      </Tab>
+    </Tabs>
+
+    The scaffold is a short lesson in four sections: a title, three labeled lines, a
+    derivation that reveals line by line, and a prompt before-and-after. All four are page
+    sections, which DeckTalk records from `deck/index.html` and cuts to the narration. A
+    commented-out section 0 shows how to open with a clip of your own, and
+    [Add a clip section](/guides/clip-section) walks through it.
   </Step>
 
   <Step title="Add your voice">
@@ -50,23 +106,23 @@ description: From an empty directory to a finished mp4.
     ELEVENLABS_VOICE_ID=...          # the id on a voice's card under Voices
     ```
 
-    Both values can also come from the environment. A value left as `<placeholder>` counts
-    as unset. DeckTalk never prints the key and never writes it under `build/`. Then build
-    the project again.
+    Both values can also come from the environment. A value left as `<placeholder>`
+    counts as unset. DeckTalk never prints the key and never writes it under `build/`.
+    Then build the project again.
 
     ```console
     decktalk build
     ```
 
-    <Note>You need an ElevenLabs plan with API access. The free tier has the API, but its
-    audio carries a watermark and a non-commercial license, so the Starter plan is the
-    practical floor. The [FAQ](/help/faq) has the arithmetic.</Note>
+    <Note>You need an ElevenLabs plan with API access. The [FAQ](/help/faq#what-does-it-cost)
+    names the plan and gives the arithmetic.</Note>
   </Step>
 
   <Step title="Change a sentence">
     Edit any sentence in `script.md` and run `decktalk build` again. DeckTalk hashes each
-    section by its text, so only the section you touched is re-synthesized and re-recorded.
-    The rest comes from the cache.
+    section by its text, so only the section you touched is synthesized and recorded
+    again. The rest comes from the cache.
+    [Rebuild one section](/guides/rebuild-one-section) explains what is reused.
   </Step>
 
   <Step title="Review">
@@ -76,8 +132,9 @@ description: From an empty directory to a finished mp4.
 
     ```console
     decktalk shots                          # one PNG per step, under build/shots/
-    decktalk shots --section 3 --at 4.5     # a frame from section 3 while it plays with its real cues
-    decktalk verify 3:3.1eq                 # proves that the cue changed the picture in the final mp4
+    decktalk shots --section 3 --at 4.5     # a frame from section 3 as it plays with its real cues
+    decktalk verify 3:3.1c                  # measures when the cue changed the picture in the mp4
+    decktalk status                         # the timeline and what is built
     ```
   </Step>
 </Steps>
@@ -86,12 +143,13 @@ description: From an empty directory to a finished mp4.
 
 | Path | What it holds |
 |---|---|
-| `decktalk.toml` | The plan. It has one `[[section]]` per script section, the voice, the transitions, the mix, the soundscape prompts, and any tuning. |
-| `script.md` | The narration. Each `## N. Title` heading starts a section, and text inside square brackets is a stage direction that is not spoken. |
-| `cues.json` | The phrase that each visual lands on. |
-| `deck/index.html` | Your slides, with `decktalk-runtime.js` beside them. |
+| `decktalk.toml` | The plan. One `[[section]]` per script section, the voice, the transitions, the mix, the soundscape prompts, and any tuning. [Reference](/reference/decktalk-toml). |
+| `script.md` | The narration. Each `## N. Title` heading starts a section, and text in square brackets is a stage direction that is not spoken. [Reference](/reference/script-md). |
+| `cues.json` | The phrase that each visual lands on. [Reference](/reference/cues-json). |
+| `deck/` | Your pages, with `decktalk-runtime.js` and a vendored copy of KaTeX beside them. [Runtime reference](/reference/runtime). |
 | `media/` | Your own clips and the underscore markers. |
-| `build/` | Everything DeckTalk generates. Git ignores it. |
+| `.env` | The ElevenLabs key and voice id. Git ignores it. |
+| `build/` | Everything DeckTalk generates, including the video, captions, and chapters. Git ignores it. [Artifacts](/reference/artifacts). |
 
 <Tip>Write numbers and symbols in the script the way you want them spoken. A cue matches
 the spoken words "two x", while the slide shows the symbols.</Tip>
@@ -99,4 +157,5 @@ the spoken words "two x", while the slide shows the symbols.</Tip>
 ## Next
 
 [Your first deck](/guides/first-deck) writes one section from scratch and shows how the
-four files refer to each other.
+four files refer to each other. [Writing for the ear](/guides/writing-for-the-ear) is the
+craft of a script that cues well.

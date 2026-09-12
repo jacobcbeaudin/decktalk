@@ -1,0 +1,128 @@
+---
+title: Writing for the ear
+description: How to write a DeckTalk narration script that cues well, with stage directions, beats, pauses, offsets, time budgets, and a silent rehearsal.
+icon: "ear-listen"
+---
+
+DeckTalk cuts the video to the words, so the script decides the timing. A script that
+reads well on paper can still cue badly, because a reveal needs a word to land on and
+a listener needs a moment to look. These are the habits that make the difference. They
+come from building the scaffold and from watching where reveals feel late or early.
+
+## Write the script first
+
+Write the whole narration before you touch a slide, and read it aloud once. The words
+that carry the argument are the words the visuals will land on, and you cannot pick them
+until they exist. A slide that is designed first tends to demand a sentence that nobody
+would say.
+
+## Say it, then show it
+
+Name the thing, and let the reveal follow the name. When the narration says "here is the
+curve" the curve should start drawing on "curve", not before it. A visual that appears
+ahead of its words makes the listener wonder what they are looking at, and a visual that
+appears long after them has already been imagined. The cue phrase is therefore the
+phrase that names the thing, and the rest of the sentence explains it while it is on
+screen.
+
+## Give every reveal a noun to land on
+
+A cue resolves to the first word of its phrase, so the phrase should begin with the word
+that names the visual. "The definition of the derivative" lands on "definition", which is
+a noun the listener can attach to the line that appears. A phrase such as "and then" lands
+on nothing in particular. The scaffold's cues are all nouns or verbs with a concrete
+referent: `definition`, `Expand`, `Only two x`, `Write about`, `Same model`.
+
+## One reveal per idea
+
+Give each idea its own reveal, and give each reveal its own sentence. Roughly one cue
+every ten to fifteen seconds is a comfortable rate for a lesson. Three reveals in one
+breath look like an animation rather than an explanation, and a minute with no reveal at
+all lets the picture go stale. When one sentence carries two ideas, split it.
+
+## Put silence before a reveal
+
+A short silence before a reveal makes the reveal read as an event. Two directions do
+this. `[beat]` leaves the default pause of seven tenths of a second where it sits, and
+`[pause N]` leaves N seconds. The scaffold pauses for three seconds before the answer
+so that the audience can think.
+
+```md script.md
+Before I finish the line, pause and think: as h goes to zero, what is left?
+
+[pause 3]
+
+Only two x is left. The derivative of x squared is two x.
+```
+
+Anything else in square brackets is a stage direction. It is not spoken and it leaves a
+beat where it sat, so a direction such as `[Deck scene 3. The curve draws.]` is both a
+note to yourself and a pause. [script.md](/reference/script-md) lists every direction.
+
+## Trail the word, and lead it only when the audience must read
+
+The `offset` key in `cues.json` shifts a cue in seconds. A small positive offset, one or
+two tenths of a second, lets the word finish before the visual moves, which feels like
+the narrator pointing at something. The scaffold trails `Only two x` by 0.2 seconds.
+
+```json cues.json
+{ "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+```
+
+Lead the word with a negative offset only when the audience must read along with the
+narration, such as a line of code that the voice is reading out. Then the text has to be
+on screen before the first word of it is spoken.
+
+## Close on $end
+
+The last visual of a section can land on `$end`, the end of the section's speech, so that
+a summary line or a final state appears as the voice stops. This is also the right place
+for a `hold_seconds` on the last page section, which holds the final frame after the
+narration ends. [cues.json](/reference/cues-json) documents `$start` and `$end`.
+
+## Write numbers as words
+
+The words come back from the voice, and a cue phrase must match them. A number written
+as digits comes back in whatever form the voice chose to say, so "2x" in the script is
+fragile as a cue. Write "two x" in the script and show `2x` on the slide. The same goes
+for symbols and abbreviations.
+
+## Rehearse with a silent build
+
+`decktalk build --silent` runs every stage with a silent placeholder track and estimated
+word times, so it costs nothing and needs no key. The estimate paces the words at
+`silent_words_per_minute` and adds every declared pause, and the cues resolve to
+plausible times. Watch the result for pacing. A reveal that arrives too early in a silent
+rehearsal usually arrives too early with the real voice as well.
+
+## Give a section a time budget
+
+A heading may carry a time budget after a dash, and the narrate table compares it with
+the estimate and, once the voice has spoken, with the real length. The estimate is the
+word count at `words_per_minute`, which defaults to 140.
+
+```md script.md
+## 3. The derivative of x squared — 0:40 to 1:10
+```
+
+```text
+ #  section                words    est  target  actual  placeholders
+---------------------------------------------------------------------
+ 1  open                      21   0:09    --      0:10  -
+ 2  three-lines               47   0:20    --      0:22  -
+ 3  the-derivative-of-x-sq    80   0:34    0:30    0:37  -
+ 4  before-and-after          91   0:39    --      0:42  -
+---------------------------------------------------------------------
+    total                    239   1:42            1:52
+```
+
+The `target` column is the budget's length. Section 3 was budgeted at thirty seconds and
+ran to thirty-seven, which is the signal to cut a sentence or to widen the budget. The
+`min_seconds` key on a section in `cues.json` works the other way around and warns when
+the speech is shorter than the visuals need.
+
+## Next
+
+[Slide recipes](/guides/slide-recipes) pairs script lines with cues and markup for five
+common slides. [Cues](/concepts/cues) has the matching rules and the placement rules of
+thumb in one list.

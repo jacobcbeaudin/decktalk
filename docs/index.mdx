@@ -1,56 +1,104 @@
 ---
-title: Overview
-description: Narrated presentations, cut to the word.
+title: DeckTalk
+sidebarTitle: Overview
+description: DeckTalk turns a markdown script, HTML slides, and an ElevenLabs voice into a narrated video with captions and chapters, where every reveal lands on the spoken word.
+icon: "house"
+mode: "custom"
 ---
 
-<Frame>
-  <img className="block dark:hidden" src="/images/hero-light.svg" alt="A playhead moves along a spoken sentence, one tick per word. The slide reacts on exactly the right words." />
-  <img className="hidden dark:block" src="/images/hero-dark.svg" alt="A playhead moves along a spoken sentence, one tick per word. The slide reacts on exactly the right words." />
-</Frame>
+<div className="mx-auto max-w-6xl px-6 pb-24 pt-10">
 
-DeckTalk turns a markdown script and plain HTML slides into one narrated mp4. An
-ElevenLabs voice reads the script and returns a timestamp for every word. Each visual
-names the phrase it should land on. DeckTalk records the slides in headless Chromium,
-cuts the recording to the narration, mixes an optional soundscape, and publishes the
-film. When you change a sentence, only that section renders again.
+  <div className="rounded-2xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
+    <img className="block w-full dark:hidden" src="/images/hero-light.svg" alt="A playhead moves along a spoken sentence, one tick per word. The slide reacts on exactly the right words." />
+    <img className="hidden w-full dark:block" src="/images/hero-dark.svg" alt="A playhead moves along a spoken sentence, one tick per word. The slide reacts on exactly the right words." />
+  </div>
 
-<CardGroup cols={2}>
-  <Card title="Quickstart" icon="play" href="/quickstart">Install DeckTalk, build the scaffold, and add your voice. Ten minutes.</Card>
-  <Card title="Your first deck" icon="pen-line" href="/guides/first-deck">Write a section, cue it, and build a slide for it. The four files and how they refer to each other.</Card>
-  <Card title="Reference card" icon="bolt" href="/reference/card">Every file, command, variable, and exit code on one page. Written for agents and for people in a hurry.</Card>
-  <Card title="Python API" icon="python" href="/reference/python-api">Drive the pipeline from your own code.</Card>
-</CardGroup>
+  <div className="mt-12 text-center">
+    <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-5xl">Narrated presentations, cut to the word.</h1>
+    <p className="mx-auto mt-5 max-w-3xl text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
+      DeckTalk turns a markdown script and plain HTML slides into one narrated video. Your voice reads the script and returns a time for every word, each slide names the phrase it lands on, and the cut follows the words. Change a sentence and only that section renders again.
+    </p>
+    <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <a href="/quickstart" className="rounded-lg bg-[#2c1fea] px-5 py-2.5 text-sm font-medium text-white no-underline hover:bg-[#2417c4] dark:bg-[#7c8cff] dark:text-zinc-950 dark:hover:bg-[#98a5ff]">Quickstart</a>
+      <a href="/reference/card" className="rounded-lg border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 no-underline hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900">One-page reference</a>
+    </div>
+  </div>
 
-## Five words
+  <div className="mt-20">
+    <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Follow one cue through the four files</h2>
+    <p className="mt-2 max-w-3xl text-zinc-600 dark:text-zinc-400">
+      A project is four files that refer to each other by one number and one id. These four snippets come from the scaffold that <code>decktalk init</code> writes, and they follow the cue <code>3.1c</code> from the spoken phrase to the frame.
+    </p>
 
-The documentation uses five words with fixed meanings.
+    <Columns cols={2}>
+      <Card title="1. The script says it" icon="pen-line">
+        The words under a `## N.` heading are what the voice says. A time budget on the heading is optional, and a `[pause 3]` direction is three seconds of silence.
 
-| Word | Meaning |
-|---|---|
-| **Section** | One `## N. Title` block of `script.md` together with its `[[section]]` table in `decktalk.toml`. A section is the unit of narration, recording, and cutting. |
-| **Scene** | What a page plays for one section. The page declares it with `DeckTalk.scene(N, …)`, and the recorder selects it with `?scene=N`. |
-| **Step** | One slide state inside a scene. The query `?step=ID` freezes it for review. |
-| **Cue** | A named moment. In `cues.json` it is a spoken phrase to find. In the page it is an id that reveals elements or runs a handler. |
-| **Beat** | A cue resolved to seconds after the section's narration begins. DeckTalk stores beats in `build/audio/beats.json` and hands them to the page as `?beats=`. |
+        ```md script.md
+        ## 3. The derivative of x squared — 0:40 to 1:10
 
-The same number `N` names a section in the script, its `[[section]]` table, its key in
-`cues.json`, and by default its scene in the page. Step ids and cue ids are strings that
-the page and `cues.json` agree on, and the scaffold prefixes them with the scene number.
+        [pause 3]
 
-## What DeckTalk is not
+        Only two x is left.
+        The derivative of x squared is two x.
+        ```
+      </Card>
+      <Card title="2. The cue names the phrase" icon="crosshairs">
+        A cue pairs a cue id with the phrase it lands on. The `offset` trails the word by a fifth of a second, so the answer appears as the words finish.
 
-DeckTalk is not a video editor and never makes a screen recording of you. It is not an
-avatar generator. It does not time visuals by frame in code, as Remotion and Motion
-Canvas do. It is for the case where the timing should come from the words and the slides
-are yours.
+        ```json cues.json
+        { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+        ```
+      </Card>
+      <Card title="3. The project file maps the section" icon="file-code">
+        Section 3 of the script is scene 3 of the page. DeckTalk records that scene and cuts it to the section's narration.
 
-## How the documentation is organized
+        ```toml decktalk.toml
+        [[section]]
+        number = 3
+        title = "The derivative of x squared"
+        page = "deck/index.html"
+        scene = 3
+        ```
+      </Card>
+      <Card title="4. The slide waits for the cue" icon="presentation-screen">
+        An element with `data-cue` stays hidden until its cue fires. KaTeX typesets the `data-tex` value, and the `pop` effect lands the answer.
 
-- **Get started** installs the tool and walks through authoring one section.
-- **Concepts** explains each input and the pipeline that turns them into a film.
-- **Reference** lists every command, key, field, artifact, and Python name.
-- **Help** covers the errors you can hit and the questions people ask before trying it.
+        ```html deck/index.html
+        <p class="math answer" data-cue="3.1c"
+           data-fx="pop" data-display
+           data-tex="\\frac{d}{dx}\\,x^2 = 2x">
+          d/dx x^2 = 2x
+        </p>
+        ```
+      </Card>
+    </Columns>
 
-<Note>Every page is also served as plain text for language models at
-[docs.decktalk.app/llms.txt](https://docs.decktalk.app/llms.txt) and
-[llms-full.txt](https://docs.decktalk.app/llms-full.txt).</Note>
+    <p className="mt-6 max-w-3xl text-zinc-600 dark:text-zinc-400">
+      After the build, <code>decktalk verify 3:3.1c</code> measures the finished video and reports that the picture changed ten milliseconds after the cue.
+    </p>
+
+    ```text
+    check                 cue       at   chg %   ctl %   offset  result
+    3:3.1c              31.27    63.35    0.32    0.00    +10ms  changed
+    ```
+  </div>
+
+  <div className="mt-20">
+    <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Where to go</h2>
+
+    <CardGroup cols={3}>
+      <Card title="Quickstart" icon="play" href="/quickstart">Install DeckTalk, build the scaffold without an API key, then add your voice.</Card>
+      <Card title="Your first deck" icon="pen-line" href="/guides/first-deck">Write one section in all four files and watch it land.</Card>
+      <Card title="Writing for the ear" icon="ear-listen" href="/guides/writing-for-the-ear">Say it, then show it. The craft of a script that cues well.</Card>
+      <Card title="How it works" icon="diagram-project" href="/concepts/how-it-works">The stages, the frame-exact alignment, and what verify measures.</Card>
+      <Card title="The page contract" icon="window" href="/concepts/page-contract">How a slide talks to the recorder, and how to design the stage.</Card>
+      <Card title="One-page reference" icon="bolt" href="/reference/card">Every file, command, rule, and exit code on one page, written for agents.</Card>
+    </CardGroup>
+  </div>
+
+  <div className="mt-16 rounded-xl border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+    Every page is also served as plain text for language models at <a href="https://docs.decktalk.app/llms.txt">docs.decktalk.app/llms.txt</a> and <a href="https://docs.decktalk.app/llms-full.txt">llms-full.txt</a>.
+  </div>
+
+</div>

@@ -1,0 +1,98 @@
+---
+title: Build in CI and offline
+description: Run DeckTalk in GitHub Actions or any CI with a silent build and cue verification, cache Chromium and ffmpeg, and render equations offline with the vendored KaTeX.
+icon: "server"
+---
+
+A silent build needs no API key and no network once the tools are cached, so a project
+can be built and verified on every push. This is how DeckTalk's own repository does it.
+
+## The commands
+
+```console
+decktalk setup                            # Chromium, ffmpeg, and KaTeX, into per-user caches
+decktalk doctor                           # exits 1 when a tool is missing
+DECKTALK_VIDEO_PRESET=veryfast decktalk build --silent
+decktalk verify 3:3.1draw 3:3.1c          # exits 1 when a cue did not land
+decktalk shots                            # one PNG per step, worth uploading as an artifact
+```
+
+On Linux, `setup` passes `--with-deps` to Playwright so that Chromium's system libraries
+are installed too. The verify command with a list of `SECTION:CUE` checks is the test:
+`build` verifies section starts only, and the cue checks measure each reveal in the
+finished mp4.
+
+## A GitHub Actions job
+
+```yaml .github/workflows/video.yml
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv tool install decktalk
+      - name: Cache Chromium and ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/decktalk
+          key: browsers-${{ runner.os }}
+      - run: decktalk setup
+      - run: decktalk doctor
+      - run: decktalk build --silent
+        env:
+          DECKTALK_VIDEO_PRESET: veryfast
+      - run: decktalk verify 3:3.1draw 3:3.1c
+      - uses: actions/upload-artifact@v7
+        with:
+          name: video
+          path: build/out/*.mp4
+```
+
+Chromium lives in Playwright's cache, which is `~/.cache/ms-playwright` on Linux,
+`~/Library/Caches/ms-playwright` on macOS, and `%LOCALAPPDATA%\ms-playwright` on Windows.
+KaTeX lives in DeckTalk's own cache, which follows the same platform rule under a
+`decktalk` directory, and `DECKTALK_CACHE_DIR` moves it. ffmpeg arrives with the
+`static-ffmpeg` package, so it is cached with the Python environment.
+
+To build a voiced video in CI, put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in the
+job's secrets and export them. DeckTalk never prints either.
+
+## Two flags that do not mix
+
+The `--strict` flag makes a missing clip, a missing recording, or a loudness miss an
+error. A silent build has nothing to measure, so its loudness report is meaningless and
+`--strict` would fail on it. Use `--strict` on voiced builds only.
+
+## The project directory
+
+Every project command takes `--project DIR`, and the `DECKTALK_PROJECT` variable sets
+the default, so a job can run from the repository root.
+
+```console
+DECKTALK_PROJECT=lessons/derivatives decktalk build --silent
+```
+
+## Offline
+
+After `decktalk setup`, nothing needs the network. `decktalk init` copies the cached
+KaTeX into `deck/katex/`, and the scaffold's page loads it from there. A project created
+before `setup` ran loads KaTeX from a CDN instead, which fails offline and leaves every
+equation as plain text with a `KATEX?` verdict in the check table. Run `setup`, then
+either run `init` again into a fresh directory or copy the cached `katex` directory into
+`deck/` and point the two tags at it.
+
+```html deck/index.html
+<link rel="stylesheet" href="./katex/katex.min.css">
+<script src="./katex/katex.min.js"></script>
+```
+
+A corporate proxy that blocks Playwright's download can be pointed elsewhere with
+`PLAYWRIGHT_DOWNLOAD_HOST`, as Playwright documents.
+
+## Next
+
+[The CLI reference](/reference/cli#exit-codes) lists every exit code, and
+[Troubleshooting](/help/troubleshooting) explains each verdict that a check can print.

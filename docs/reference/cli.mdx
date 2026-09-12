@@ -1,121 +1,187 @@
 ---
 title: CLI
-description: Every command, every flag, and what each one produces.
+description: Every DeckTalk command and flag, from setup, doctor, and init through narrate, beats, record, measure, check, assemble, verify, shots, build, and status, with the check verdicts and exit codes.
+icon: "terminal"
+mode: "wide"
 ---
 
 ```text
 decktalk [-v | -q] [-p DIR] <command> [flags]
 ```
 
-Every project command takes `--project DIR`, or `-p DIR`, and defaults to the current
-directory. Each one reads `.env` from the project and never prints a key. Progress goes
-to stderr. The `-v` flag shows debug logging, including every ffmpeg command line, and
-`-q` shows warnings only. Both go before the command name. `--version` prints the
-version.
+Every project command takes `--project DIR`, or `-p DIR`. The default is the
+`DECKTALK_PROJECT` variable, then the current directory. Each command reads `.env` from
+the project and never prints a key. Progress goes to stderr, and the tables go to stdout.
+`-v` shows debug logging, including every ffmpeg command line, and `-q` shows warnings
+only. Both go before or after the command name. `--version` prints the version. A flag
+that repeats, such as `--only`, takes one value each time and does not take commas.
 
-## Machine
+## Setting up a machine and a project
 
 ### `decktalk setup`
 
-Fetches headless Chromium through Playwright and ffmpeg through `static-ffmpeg`, once
-per machine. Both land in per-user caches, not in the project.
+Fetches headless Chromium through Playwright, ffmpeg and ffprobe through
+`static-ffmpeg`, and a KaTeX release, once per machine. All three land in per-user
+caches, not in the project. On Linux the Chromium install adds its system dependencies.
+When the KaTeX download fails, projects load it from a CDN instead, with a warning.
 
 ### `decktalk doctor`
 
-Reports the Python, Playwright, Chromium, and ffmpeg versions found, and exits 1 when
-one is missing.
+Reports the Python, Chromium, ffmpeg, ffprobe, and KaTeX found, and exits 1 when one is
+missing. It changes nothing.
+
+```text
+python    ok      3.13 (.venv/bin/python3)
+chromium  ok      <version>
+ffmpeg    ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffmpeg
+ffprobe   ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffprobe
+katex     ok      ~/Library/Caches/decktalk/katex/<version>
+```
+
+A `katex` row marked `MISSING` means the cache is empty, so `init` would write a page
+that loads KaTeX from a CDN. Run `setup` first.
 
 ### `decktalk init DIR`
 
-Scaffolds a project with a working example deck.
+Scaffolds a project with a working example deck, and copies the cached KaTeX into
+`deck/katex/`.
 
 | Flag | Meaning |
 |---|---|
-| `--name NAME` | The project name. The default is the directory name. |
+| `--name NAME` | The project name. The default is the directory name. It may contain letters, digits, dots, dashes, and underscores. |
 | `--force` | Write into a directory that is not empty. |
 
 ### `decktalk runtime`
 
-Copies the packaged `decktalk-runtime.js` over the project's copy. Run it after an
-upgrade.
+Copies the packaged `decktalk-runtime.js` over every copy in the project, or into
+`deck/` when there is none. Run it after an upgrade.
 
-## Stages
+## Turning the script into narration and cues
 
 ### `decktalk narrate`
 
 Turns the script into per-section audio with word timestamps, then builds the continuous
-track and `timeline.json`. It caches each section by text.
+track and `timeline.json`. It caches each section by its text and voice settings, and it
+prints the section table and the timeline.
 
 | Flag | Meaning |
 |---|---|
 | `--only N` | Only these section numbers. Repeat the flag for several. |
 | `--force` | Ignore the text-hash cache and synthesize every section. |
-| `--dry-run` | Parse the script and print what would be sent. No API calls. |
-| `--silent` | Write silent placeholders with estimated word times. No key needed. |
 | `--allow-placeholders` | Synthesize a section that still has a `[CAPITAL]` placeholder. |
+| `--dry-run` | Parse the script and print the exact text per section, the voice settings, and the table. No API calls. |
+| `--silent` | Write silent placeholders with estimated word times. No key needed. |
 | `--model M` | The ElevenLabs model for this run. |
 
 ### `decktalk beats`
 
 Resolves every cue phrase to a second and prints a table of sections, their speech end,
-and their resolved cues. It reports each phrase it cannot find and exits 1 if there is
-one.
+their `min_seconds`, and their resolved cues. It reports each phrase it cannot find and
+exits 1 if there is one.
 
 ### `decktalk soundscape`
 
 Generates the ambience, the sound effects, and the underscore from the prompts in
-`decktalk.toml`. It writes only files that do not exist yet.
+`decktalk.toml`. Each output has a manifest with its request hash, and an output whose
+manifest matches is skipped.
 
 | Flag | Meaning |
 |---|---|
-| `--only NAME` | One item: `ambience`, `music`, or an effect name. |
+| `--only NAME` | One item: `ambience`, `music`, or an effect name. Repeat for several. |
 | `--force` | Regenerate even if the file exists. |
-| `--dry-run` | Print every request without sending it. |
+| `--dry-run` | Print every request without sending it. No key needed. |
+
+## Recording the pages
 
 ### `decktalk record`
 
-Records each page section with headless Chromium.
+Records each page section with headless Chromium, for its span in the timeline plus
+`extra_seconds`.
 
 | Flag | Meaning |
 |---|---|
-| `--only N` | Only these sections. |
-| `--seconds S` | Override every duration. Useful for smoke tests. |
-| `--settle S` | Seconds after load before the clock starts. |
+| `--only N` | Only these section numbers. Repeat the flag for several. |
+| `--seconds S` | Override every duration. Useful for smoke tests, and it works without a timeline. |
+| `--settle S` | Seconds after load before the clock starts, for this run. |
 | `--no-beats` | Use the page's autoplay timing instead of `?beats=`. |
 
 ### `decktalk measure`
 
 Finds narration t=0 in each recording from the magenta cover and writes it to the
 sidecar. The table shows the trim point, the recorder's own wall-clock estimate, and the
-method. A method beginning `NO COVER` means the cover was not found and the trim is a
-guess.
+method.
+
+```text
+sec    trim    wall  method
+ 01   1.440   1.504  cover (36 magenta frames)
+```
+
+A method beginning `NO COVER` means the cover was not found and the trim is a guess.
+
+| Flag | Meaning |
+|---|---|
+| `--only N` | Only these section numbers. Repeat the flag for several. |
 
 ### `decktalk check`
 
-Flags a recording that is black, shorter than requested, or has no cover.
+Checks each recording's length against what was requested and its luma at ten, fifty,
+and ninety percent of the way through.
+
+```text
+sec  webm_s   want_s   Y10    Y50    Y90    MAX50   verdict
+01   12.9     10.5     106    30     30     238     ok
+```
+
+| Verdict | Meaning |
+|---|---|
+| `ok` | Nothing suspect. |
+| `NO COVER` | `measure` found no magenta run, so the alignment is a guess. |
+| `BLACK?` | The brightest pixel at the midpoint is below `black_ymax`, so the page probably drew nothing. |
+| `TRUNCATED` | The recording is shorter than requested by more than `truncated_slack_seconds`. |
+| `KATEX?` | The page reported that KaTeX never loaded, so its equations stayed plain text. |
+
+Several verdicts may appear together, separated by spaces.
 
 | Flag | Meaning |
 |---|---|
-| `--only N` | Only these sections. |
+| `--only N` | Only these section numbers. Repeat the flag for several. |
 | `--strict` | Exit 1 on a suspect recording. |
+
+## Assembling and checking the video
 
 ### `decktalk assemble`
 
-Cuts, concatenates, mixes, normalizes, and publishes the film.
+Cuts, concatenates, mixes, normalizes, writes captions and chapters, and publishes the
+video. It prints the final path and length.
 
 | Flag | Meaning |
 |---|---|
-| `--nomix` | Narration only. No beds, no effects. |
+| `--nomix` | Narration and clip audio only. No beds, no effects. |
 | `--no-loudnorm` | Skip loudness normalization. |
-| `--strict` | Fail on a missing clip or recording instead of substituting a slate. |
+| `--strict` | Fail on a missing clip or recording instead of substituting a slate or black, and fail on a loudness miss. |
 | `--preset P` | The x264 preset for this run. `veryfast` for drafts. |
 | `--crf N` | The x264 quality for this run. |
 
 ### `decktalk verify [SECTION:CUE ...]`
 
-Confirms that every section opens on a real frame. With arguments, it also confirms that
-the picture changed at each named cue, and prints the share of pixels that changed
-against a quiet control span. It exits 1 when any check fails.
+Confirms that every section opens on a real frame. With arguments, it also confirms
+that the picture changed at each named cue, and measures how far from the cue the first
+changed frame sits. It exits 1 when any check fails.
+
+```text
+check                 cue       at   chg %   ctl %   offset  result
+3:3.1draw            1.85    33.93    0.33    0.00    +30ms  changed
+```
+
+| Result | Meaning |
+|---|---|
+| `ok` and `BLACK` | A section start on a real frame, or on a dark one. |
+| `changed` | The cue changed the picture within `max_offset_frames` of its time. |
+| `OFF CUE` | The picture changed, but the first change sits further from the cue than that. The note says by how much. |
+| `NO CHANGE` | The picture did not change enough, or no more than it was already changing. |
+| `MISSING` | The cue is unresolved or the section is not assembled. |
+
+[How it works](/concepts/how-it-works#what-verify-measures) explains the columns.
 
 ### `decktalk shots`
 
@@ -123,30 +189,65 @@ Writes one PNG per step, or frames from a section while it plays with its real c
 
 | Flag | Meaning |
 |---|---|
-| `--page F` | One page file. The default is every page in `decktalk.toml`. |
-| `--step ID` | Only these step ids. |
+| `--page F` | A page file. Repeat for several. The default is every page in `decktalk.toml`. |
+| `--step ID` | Only these step ids. Repeat for several. |
 | `--section N` | Play this section with its resolved cues. |
-| `--at S` | Seconds after narration t=0 at which to capture. Repeat for several. |
+| `--at S` | Seconds after narration t=0 at which to capture. Repeat for several. The default is 0.5. |
 
-## Everything
+Step screenshots land at `build/shots/step-<id>.png`, in a subdirectory per page when
+there are several pages. Frames land at `build/shots/section-NN-at-<S>s.png`.
+
+## Everything at once
 
 ### `decktalk build`
 
-Runs narrate, beats, record, measure, check, assemble, and verify in order. It exits 1
-when a cue phrase is not found, unless `--allow-unresolved` is given, and when assembly
-or verification fails.
+Runs narrate, beats, record, measure, check, assemble, and verify in order and prints
+each stage's table. It stops with exit 1 when a cue phrase is not found, unless
+`--allow-unresolved` is given, and exits 1 when assembly or verification fails.
 
 | Flag | Meaning |
 |---|---|
 | `--silent` | Placeholder narration. No key needed. |
 | `--force` | Re-synthesize every section. |
-| `--only N` | Re-record only these sections. |
+| `--only N` | Re-record only these sections. Repeat the flag for several. |
 | `--allow-unresolved` | Build even if some cue phrases were not found. |
 | `--nomix`, `--no-loudnorm`, `--strict`, `--preset P`, `--crf N` | As for `assemble`. |
 
 ### `decktalk status`
 
-Prints the project, the timeline, what is built for each section, and the final path.
+Prints the project, whether the script and cues exist, each section with whether it is
+recorded and cut, the timeline, the beats, the final path and length, and the captions
+and chapters.
+
+```text
+project  ~/my-lesson  (name: my-lesson)
+script   script.md  ok
+cues     cues.json  ok
+  01  deck/index.html?scene=1                  rec cut
+  02  deck/index.html?scene=2                  rec cut
+  03  deck/index.html?scene=3                  rec cut
+  04  deck/index.html?scene=4                  rec cut
+  #  section                  start     end  length
+  1  Open                      0:00    0:10    10.2
+  2  Three lines               0:10    0:32    21.9
+  3  The derivative of x sq    0:32    1:10    37.5
+  4  Before and after          1:10    1:52    42.4
+     narration total 1:52  (estimated: silent placeholders)
+beats    4 section(s) with resolved cues
+final    build/out/my-lesson.mp4  1:54
+captions build/out/my-lesson.srt  ok
+captions build/out/my-lesson.vtt  ok
+chapters build/out/my-lesson.chapters.txt  ok
+```
+
+## Environment variables
+
+| Variable | Meaning |
+|---|---|
+| `DECKTALK_PROJECT` | The default project directory. |
+| `DECKTALK_CACHE_DIR` | Where the KaTeX cache lives. The default is the platform's cache directory under `decktalk`. Chromium's cache belongs to Playwright. |
+| `DECKTALK_<SECTION>_<FIELD>` | Any tuning field, for example `DECKTALK_VIDEO_PRESET=veryfast`. [Configuration](/reference/configuration) lists them. |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | The speech provider's secrets, also read from `.env`. |
 
 ## Exit codes
 
@@ -154,4 +255,8 @@ Prints the project, the timeline, what is built for each section, and the final 
 |---|---|
 | 0 | The command succeeded. |
 | 1 | An error, printed to stderr as `error: …`, or a failed check as described above. |
+| 2 | A usage error, such as an unknown flag or a missing command, with the usage printed. |
 | 130 | The command was interrupted. |
+
+An unexpected exception prints `error: <type>: <message> (add -v for the traceback)` and
+exits 1, and `-v` re-raises it instead.
