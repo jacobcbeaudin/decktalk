@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeckTalk</title>
+<meta name="description" content="Narrated presentations, cut to the word. A markdown script, plain HTML slides, and your cloned voice in. One mp4 out.">
+<meta property="og:title" content="DeckTalk">
+<meta property="og:description" content="Narrated presentations, cut to the word.">
+<meta property="og:url" content="https://decktalk.app">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0e0f" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23ffffff'/%3E%3Cg stroke-width='2.5' stroke-linecap='round'%3E%3Cline x1='4' y1='9' x2='4' y2='20' stroke='%23d4d4d8'/%3E%3Cline x1='12' y1='9' x2='12' y2='20' stroke='%232c1fea'/%3E%3Cline x1='20' y1='9' x2='20' y2='20' stroke='%23d4d4d8'/%3E%3C/g%3E%3Ccircle cx='12' cy='4.5' r='2.5' fill='%232c1fea'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff; --ink: #0a0a0a; --dim: #a3a3ad; --mute: #71717a; --block: #f4f4f5; --hair: #e4e4e7;
+    --bar: #d4d4d8; --tick: #c4c4c8; --blue: #2c1fea; --on-blue: #ffffff; --code: #f7f7f8;
+    --sans: "Inter Tight", "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0e0e0f; --ink: #f4f4f5; --dim: #52525b; --mute: #8b8b94; --block: #19191c; --hair: #27272a;
+            --bar: #3f3f46; --tick: #3f3f46; --blue: #7c8cff; --on-blue: #0e0e0f; --code: #141417; }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 17px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+  .lab { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+  code, .mono { font-family: var(--mono); }
+
+  /* nav */
+  nav { display: flex; align-items: center; justify-content: space-between; height: 72px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -.01em; }
+  .brand svg { width: 22px; height: 22px; }
+  .links { display: flex; gap: 28px; font-size: 15px; color: var(--mute); }
+  .links a:hover { color: var(--ink); }
+  .links .cta { color: var(--ink); font-weight: 600; }
+
+  /* hero */
+  .hero { padding: 72px 0 40px; }
+  h1 { font-size: clamp(44px, 7vw, 88px); line-height: .98; letter-spacing: -.035em; font-weight: 700; margin: 0 0 24px; max-width: 12ch; }
+  .lede { font-size: clamp(18px, 2vw, 22px); color: var(--mute); max-width: 56ch; margin: 0 0 36px; }
+  .install { display: inline-flex; align-items: center; gap: 14px; background: var(--code); border: 1px solid var(--hair); border-radius: 12px; padding: 12px 14px 12px 18px; font-family: var(--mono); font-size: 15px; }
+  .install .p { color: var(--mute); }
+  .install button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 0; background: var(--ink); color: var(--bg); cursor: pointer; }
+  .install button:active { transform: scale(.98); }
+  .ctas { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 20px; border-radius: 12px; font-weight: 600; font-size: 15px; border: 1px solid var(--hair); }
+  .btn.primary { background: var(--blue); color: var(--on-blue); border-color: transparent; }
+  .btn:hover { border-color: var(--ink); }
+  .btn.primary:hover { filter: brightness(1.08); }
+
+  /* the demo: scrub the playhead, the slide reacts on the cue words */
+  .demo { margin: 56px 0 0; border: 1px solid var(--hair); border-radius: 20px; padding: 36px 36px 30px; display: grid; grid-template-columns: 1.3fr 1fr; gap: 40px; align-items: center; background: var(--bg); }
+  .demo .lab { margin-bottom: 18px; display: block; }
+  .sentence { font-size: clamp(24px, 3.2vw, 36px); font-weight: 600; letter-spacing: -.015em; line-height: 1.3; margin: 0 0 14px; }
+  .sentence span { color: var(--dim); transition: color .25s; }
+  .sentence span.on { color: var(--ink); }
+  .sentence span.on.cue { color: var(--blue); }
+  .track { position: relative; height: 54px; margin: 0 0 8px; }
+  .track .ticks { position: absolute; inset: 0; }
+  .track .tk { position: absolute; top: 22px; width: 2.5px; height: 16px; border-radius: 2px; background: var(--tick); transition: background .2s; }
+  .track .tk.on { background: var(--blue); }
+  .track .dot { position: absolute; top: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); margin-left: -2.75px; opacity: 0; transition: opacity .2s; }
+  .track .dot.on { opacity: 1; }
+  .track input { position: absolute; left: -2px; right: -2px; top: 4px; width: calc(100% + 4px); height: 46px; margin: 0; -webkit-appearance: none; appearance: none; background: transparent; cursor: ew-resize; }
+  .track input::-webkit-slider-thumb { -webkit-appearance: none; width: 2px; height: 38px; background: var(--blue); border-radius: 1px; box-shadow: 0 0 0 14px transparent; }
+  .track input::-moz-range-thumb { width: 2px; height: 38px; background: var(--blue); border: 0; border-radius: 1px; }
+  .track input::-webkit-slider-runnable-track { height: 46px; background: transparent; }
+  .track input::-moz-range-track { height: 46px; background: transparent; }
+  .hint { font-size: 14px; color: var(--mute); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .hint button { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--hair); background: transparent; color: var(--ink); cursor: pointer; }
+  .hint button:hover { border-color: var(--ink); }
+  .slide { background: var(--block); border-radius: 14px; aspect-ratio: 348 / 164; position: relative; overflow: hidden; }
+  .slide svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .slide .axis { stroke: var(--hair); stroke-width: 2; }
+  .slide .curve { stroke: var(--blue); stroke-width: 4; fill: none; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+  .slide .num { font-family: var(--sans); font-weight: 700; font-size: 60px; letter-spacing: -.03em; fill: var(--blue); opacity: 0; transform-box: fill-box; transform-origin: center; transform: scale(.7); transition: opacity .25s, transform .3s cubic-bezier(.2,.9,.2,1); }
+  .slide .num.on { opacity: 1; transform: scale(1); }
+  .slide .titlebar { fill: var(--blue); }
+  .slide .bar { fill: var(--bar); }
+  .slide .b { opacity: 0; transform: translateX(24px); transition: opacity .3s, transform .35s cubic-bezier(.2,0,0,1); }
+  .slide .b.on { opacity: 1; transform: none; }
+  .slide .a { transition: opacity .25s, transform .3s cubic-bezier(.2,0,0,1); }
+  .slide .a.off { opacity: 0; transform: translateX(-24px); }
+
+  /* sections */
+  section { padding: 96px 0 0; }
+  h2 { font-size: clamp(30px, 4vw, 44px); letter-spacing: -.03em; line-height: 1.05; margin: 8px 0 18px; font-weight: 700; }
+  .sub { color: var(--mute); max-width: 60ch; font-size: 18px; margin: 0 0 40px; }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; }
+  .step .n { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; color: var(--mute); margin-bottom: 14px; }
+  .step h3 { font-size: 19px; letter-spacing: -.01em; margin: 0 0 8px; font-weight: 600; }
+  .step p { margin: 0; color: var(--mute); font-size: 15px; }
+  .step pre { margin: 0 0 18px; background: var(--code); border: 1px solid var(--hair); border-radius: 12px; padding: 14px 16px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; overflow: auto; color: var(--ink); }
+  .step pre .c { color: var(--mute); } .step pre .k { color: var(--blue); }
+  .feats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .feat { background: var(--block); border-radius: 16px; padding: 24px; }
+  .feat h3 { font-size: 17px; margin: 0 0 8px; letter-spacing: -.01em; font-weight: 600; }
+  .feat p { margin: 0; color: var(--mute); font-size: 15px; }
+  .feat .glyph { width: 22px; height: 22px; margin-bottom: 18px; }
+  .cmds { background: var(--ink); color: var(--bg); border-radius: 20px; padding: 40px 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+  .cmds pre { margin: 0; font-family: var(--mono); font-size: 14px; line-height: 1.8; }
+  .cmds .c { opacity: .55; }
+  .cmds h2 { color: var(--bg); margin: 0 0 12px; }
+  .cmds p { color: var(--bg); opacity: .7; margin: 0; }
+  footer { padding: 80px 0 40px; display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; color: var(--mute); font-size: 14px; }
+  footer .links a { font-size: 14px; }
+
+  @media (max-width: 880px) {
+    .demo { grid-template-columns: 1fr; padding: 26px 22px 22px; }
+    .steps, .feats { grid-template-columns: 1fr 1fr; }
+    .cmds { grid-template-columns: 1fr; padding: 30px 26px; }
+  }
+  @media (max-width: 560px) {
+    .links { gap: 18px; } .links a:not(.cta) { display: none; }
+    .steps, .feats { grid-template-columns: 1fr; }
+    section { padding-top: 72px; }
+    .install { flex-wrap: wrap; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="/">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><g stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="9" x2="4" y2="20" stroke="var(--bar)"/><line x1="12" y1="9" x2="12" y2="20" stroke="var(--blue)"/><line x1="20" y1="9" x2="20" y2="20" stroke="var(--bar)"/></g><circle cx="12" cy="4.5" r="2.5" fill="var(--blue)"/></svg>
+      DeckTalk
+    </a>
+    <div class="links">
+      <a href="https://github.com/jacobcbeaudin/decktalk">GitHub</a>
+      <a href="https://pypi.org/project/decktalk/">PyPI</a>
+      <a class="cta" href="https://docs.decktalk.app">Docs →</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <span class="lab">Open source · Apache-2.0</span>
+    <h1>Narrated presentations, cut to the word.</h1>
+    <p class="lede">You write a markdown script and plain HTML slides. Your cloned voice reads the script. DeckTalk produces one mp4 in which every reveal lands on the word that introduces it. Change a sentence and only that section renders again.</p>
+    <div class="ctas">
+      <div class="install"><span class="p">$</span><span id="cmd">uv tool install decktalk</span><button id="copy" type="button">Copy</button></div>
+      <a class="btn primary" href="https://docs.decktalk.app/quickstart">Quickstart</a>
+      <a class="btn" href="https://github.com/jacobcbeaudin/decktalk">Source</a>
+    </div>
+
+    <div class="demo" id="demo">
+      <div>
+        <span class="lab">Narration · drag the playhead</span>
+        <p class="sentence" id="sentence"></p>
+        <div class="track" id="track"><div class="ticks" id="ticks"></div><input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub the narration"></div>
+        <div class="hint"><button id="play" type="button">Play</button><span>A timestamp for every word. A cue for every reveal.</span></div>
+      </div>
+      <div>
+        <span class="lab">Slide</span>
+        <div class="slide">
+          <svg viewBox="0 0 348 164" aria-hidden="true">
+            <g class="a" id="slideA">
+              <line class="axis" x1="30" y1="126" x2="200" y2="126"/><line class="axis" x1="30" y1="38" x2="30" y2="126"/>
+              <path class="curve" id="curve" pathLength="1" d="M30,120 C70,118 110,98 150,64 S190,36 200,32"/>
+              <text class="num" id="num" x="228" y="106">3×</text>
+            </g>
+            <g class="b" id="slideB">
+              <rect class="titlebar" x="30" y="40" width="150" height="12" rx="6"/>
+              <rect class="bar" x="30" y="72" width="260" height="9" rx="4.5"/>
+              <rect class="bar" x="30" y="94" width="220" height="9" rx="4.5"/>
+              <rect class="bar" x="30" y="116" width="240" height="9" rx="4.5"/>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="how">
+    <span class="lab">How it works</span>
+    <h2>The script is the timeline.</h2>
+    <p class="sub">Narration comes back with a time for every word, so a slide reveal is tied to a phrase rather than to a second. There is nothing to scrub, and nothing to re-record.</p>
+    <div class="steps">
+      <div class="step"><div class="n">01 WRITE</div>
+        <pre><span class="c">## 3. A curve and an equation</span>
+Now a curve draws as I talk. And
+here is <span class="k">an equation</span>: the derivative
+of x squared is two x.</pre>
+        <h3>A script in markdown</h3><p>One heading per scene. Bracketed directions are not spoken.</p></div>
+      <div class="step"><div class="n">02 NARRATE</div>
+        <pre>03-a-curve.mp3
+{ "word": "curve",    "start": 0.82 }
+{ "word": "draws",    "start": 1.10 }
+{ "word": <span class="k">"equation"</span>, "start": 5.80 }</pre>
+        <h3>Your voice reads it</h3><p>ElevenLabs returns the audio and a timestamp for every word.</p></div>
+      <div class="step"><div class="n">03 CUE</div>
+        <pre>{ "step": "3.1draw",
+  "on": "curve draws" }
+{ "step": <span class="k">"3.1eq"</span>,
+  "on": <span class="k">"equation"</span> }</pre>
+        <h3>Name the phrase</h3><p>A cue is a spoken phrase. DeckTalk resolves it to a second.</p></div>
+      <div class="step"><div class="n">04 RECORD &amp; CUT</div>
+        <pre>&lt;path <span class="k">data-cue="3.1draw"</span>
+      data-fx="draw"/&gt;
+&lt;div  <span class="k">data-cue="3.1eq"</span>
+      data-tex="…"/&gt;</pre>
+        <h3>Slides reveal on the words</h3><p>Plain HTML, recorded in Chromium, cut by ffmpeg to the frame.</p></div>
+    </div>
+  </section>
+
+  <section id="what">
+    <span class="lab">What you get</span>
+    <h2>Built for the tenth edit, not the first take.</h2>
+    <div class="feats">
+      <div class="feat"><svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M4 18V6M12 18V6M20 18V6"/></svg><h3>Frame-exact cuts</h3><p>Each recording carries a visible mark at the moment narration starts. The cut is measured from the frames, not from a timer.</p></div>
+      <div class="feat"><svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M4 12h16M4 6h10M4 18h7"/></svg><h3>Cached narration</h3><p>Sections are hashed by text. An edit re-synthesizes only the sentences that changed, so you pay per change, not per build.</p></div>
+      <div class="feat"><svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M5 14v4M9 8v10M13 11v7M17 5v13M21 12v6"/></svg><h3>A soundscape</h3><p>An underscore that ducks under speech, ambience beds, effects on cues, broadcast loudness. Every part optional.</p></div>
+      <div class="feat"><svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><h3>Offline drafts</h3><p>A silent mode renders the whole film with placeholder narration and estimated word times. Layout passes cost nothing.</p></div>
+      <div class="feat"><svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M5 12l4 4L19 6"/></svg><h3>Verified output</h3><p>Black or truncated recordings stop before assembly. A cue that cannot be found stops the build. A check proves each cue moved pixels.</p></div>
+      <div class="feat"><svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg><h3>Nothing to install by hand</h3><p>Chromium and ffmpeg arrive through Python packages. One setup command fetches both, once per machine.</p></div>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="cmds">
+      <div><h2>Three commands to a video.</h2><p>The scaffold is a working deck. Add your ElevenLabs voice when you are ready; until then, build silently.</p></div>
+      <pre>$ uv tool install decktalk &amp;&amp; decktalk setup
+$ decktalk init my-lesson &amp;&amp; cd my-lesson
+$ decktalk build --silent   <span class="c"># no key needed</span>
+$ decktalk build            <span class="c"># your voice</span></pre>
+    </div>
+  </section>
+
+  <footer>
+    <div>DeckTalk · Apache-2.0 · Made by <a href="https://github.com/jacobcbeaudin" style="color:var(--ink)">Jacob Beaudin</a></div>
+    <div class="links"><a href="https://docs.decktalk.app">Docs</a><a href="https://github.com/jacobcbeaudin/decktalk">GitHub</a><a href="https://pypi.org/project/decktalk/">PyPI</a></div>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // The words, the second each is spoken, and which ones carry a cue.
+  const WORDS = [["The",0.00],["curve",0.42],["rises,",0.98],["then",1.62],["the",2.10],["number",2.46],["lands.",3.18]];
+  const END = 4.2, CURVE_AT = 0.42, NUM_AT = 2.46, SLIDE_AT = 3.9;
+  const sentence = document.getElementById("sentence"), ticks = document.getElementById("ticks");
+  const scrub = document.getElementById("scrub"), curve = document.getElementById("curve"), num = document.getElementById("num");
+  const slideA = document.getElementById("slideA"), slideB = document.getElementById("slideB"), play = document.getElementById("play");
+  const spans = WORDS.map(([w, t], i) => {
+    const s = document.createElement("span"); s.textContent = w; if (i === 1 || i === 5) s.classList.add("cue"); sentence.appendChild(s);
+    if (i < WORDS.length - 1) sentence.appendChild(document.createTextNode(" "));
+    return s;
+  });
+  // ticks sit under the words once layout is known
+  const tks = [], dots = {};
+  function layout() {
+    ticks.innerHTML = ""; tks.length = 0;
+    const base = sentence.getBoundingClientRect().left;
+    spans.forEach((s, i) => {
+      const x = s.getBoundingClientRect().left - base;
+      const tk = document.createElement("div"); tk.className = "tk"; tk.style.left = x + "px"; ticks.appendChild(tk); tks.push(tk);
+      if (i === 1 || i === 5) { const d = document.createElement("div"); d.className = "dot"; d.style.left = (x + 1.25) + "px"; ticks.appendChild(d); dots[i] = d; }
+    });
+    render(current);
+  }
+  let current = 0, timer = null;
+  function render(t) {
+    current = t;
+    WORDS.forEach(([, at], i) => { const on = t >= at; spans[i].classList.toggle("on", on); tks[i] && tks[i].classList.toggle("on", on); if (dots[i]) dots[i].classList.toggle("on", on); });
+    const draw = Math.min(1, Math.max(0, (t - CURVE_AT) / 1.4));
+    curve.style.strokeDashoffset = String(1 - draw);
+    num.classList.toggle("on", t >= NUM_AT);
+    slideA.classList.toggle("off", t >= SLIDE_AT); slideB.classList.toggle("on", t >= SLIDE_AT);
+    scrub.value = String(Math.round(t / END * 1000));
+  }
+  scrub.addEventListener("input", () => { stop(); render(scrub.value / 1000 * END); });
+  function stop() { if (timer) { cancelAnimationFrame(timer); timer = null; play.textContent = "Play"; } }
+  play.addEventListener("click", () => {
+    if (timer) return stop();
+    let t0 = performance.now() - (current >= END - 0.05 ? 0 : current * 1000);
+    play.textContent = "Pause";
+    const step = (now) => { const t = (now - t0) / 1000; render(Math.min(END, t)); if (t < END) timer = requestAnimationFrame(step); else { timer = null; play.textContent = "Replay"; } };
+    timer = requestAnimationFrame(step);
+  });
+  document.getElementById("copy").addEventListener("click", async (e) => {
+    try { await navigator.clipboard.writeText(document.getElementById("cmd").textContent); e.target.textContent = "Copied"; setTimeout(() => e.target.textContent = "Copy", 1400); } catch (_) {}
+  });
+  window.addEventListener("resize", layout);
+  document.fonts ? document.fonts.ready.then(layout) : layout();
+  // autoplay once when the demo scrolls into view, unless the viewer prefers reduced motion
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches && "IntersectionObserver" in window) {
+    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) { io.disconnect(); setTimeout(() => play.click(), 500); } }, { threshold: .5 });
+    io.observe(document.getElementById("demo"));
+  }
+})();
+</script>
+</body>
+</html>
