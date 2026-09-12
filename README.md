@@ -89,7 +89,7 @@ freeze any step, or take a screenshot of every step.
 
 ## Straight answers
 
-- **What does it cost?** A ten-minute narration is roughly 9,000 characters, which fits inside the smallest paid ElevenLabs tier. Because DeckTalk caches sections by text, you pay for the sentences you change rather than for every build.
+- **What does it cost?** You need an ElevenLabs plan with API access. The free tier has the API, but its audio carries a watermark and a non-commercial license, so the Starter plan is the practical floor. A ten-minute narration is roughly 9,000 characters, which fits inside that plan's monthly allowance. Because DeckTalk caches sections by text, you pay for the sentences you change rather than for every build.
 - **Am I locked into ElevenLabs?** It is the only provider today because it returns word timestamps. The provider lives in one file, and anything that returns word times can take its place. The `--silent` flag needs no provider at all.
 - **Why not record the screen?** You would record it again after every edit. Here, an edit rebuilds one section in the time it takes to synthesize one sentence.
 - **How does the voice sound?** It sounds like you, because it is your voice, cloned. Stability, similarity, and speed are settings in `decktalk.toml`.
