@@ -230,7 +230,13 @@ def _render_page(
         sidecar = Sidecar.load(side)
         if sidecar is not None:
             vlead = f"trim=start={sidecar.trim_seconds},setpts=PTS-STARTPTS,"
-            note += f" (lead {sidecar.trim_seconds}s trimmed)"
+            note += f" (lead {sidecar.trim_seconds}s trimmed"
+            if sidecar.flash_seconds > 0:
+                # The trim lands just past the marker flash. Hold the first clean frame for the
+                # flash span so the picture starts at narration t=0, not t=0 plus the flash.
+                vlead += f"tpad=start_mode=clone:start_duration={sidecar.flash_seconds},"
+                note += f", first frame held {sidecar.flash_seconds}s"
+            note += ")"
     else:
         if strict:
             raise MissingInputError(f"section {sec.number}: recording missing: {webm}")
