@@ -206,8 +206,7 @@ class Sidecar:
     settle_seconds: float
     load_seconds: float
     lead_seconds: float  # wall-clock estimate from the recorder
-    lead_in_seconds: float | None = None  # end of the magenta marker: trim the webm here
-    marker_start_seconds: float | None = None  # start of the marker: narration t=0 in the webm
+    lead_in_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
     lead_method: str | None = None
 
     @classmethod
@@ -223,10 +222,3 @@ class Sidecar:
     @property
     def trim_seconds(self) -> float:
         return self.lead_in_seconds if self.lead_in_seconds is not None else self.lead_seconds
-
-    @property
-    def flash_seconds(self) -> float:
-        """How long the marker covered after t=0; the assembler holds the first clean frame this long."""
-        if self.lead_in_seconds is None or self.marker_start_seconds is None:
-            return 0.0
-        return max(0.0, round(self.lead_in_seconds - self.marker_start_seconds, 3))

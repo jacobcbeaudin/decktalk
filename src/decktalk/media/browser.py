@@ -20,13 +20,23 @@ log = logging.getLogger(__name__)
 # The page may expose a Promise the recorder awaits before starting the narration clock.
 READY_JS = "() => (window.__sceneReady instanceof Promise ? window.__sceneReady : null)"
 FONTS_JS = "() => document.fonts.ready"
-# Full-frame magenta for `ms` milliseconds exactly when the narration clock starts.
-MARKER_JS = """(ms) => {
-  const d = document.createElement("div");
-  d.id = "__t0marker";
-  d.style.cssText = "position:fixed;inset:0;background:#ff00ff;z-index:2147483647;pointer-events:none";
-  document.documentElement.appendChild(d);
-  setTimeout(() => d.remove(), ms);
+# The page is covered in magenta from its first paint until the narration clock starts, so the
+# first clean frame in the recording is t=0 no matter when the recorder began capturing.
+COVER_JS = """() => {
+  const add = () => {
+    if (document.getElementById("__t0cover")) return;
+    const d = document.createElement("div");
+    d.id = "__t0cover";
+    d.style.cssText = "position:fixed;inset:0;background:#ff00ff;z-index:2147483647;pointer-events:none";
+    (document.body || document.documentElement).appendChild(d);
+  };
+  if (document.documentElement) add(); else document.addEventListener("DOMContentLoaded", add, { once: true });
+}"""
+# Remove the cover and start the page clock in the same tick.
+START_JS = """() => {
+  const d = document.getElementById("__t0cover");
+  if (d) d.remove();
+  if (window.DeckTalk && window.DeckTalk.startClock) window.DeckTalk.startClock();
 }"""
 
 SLATE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
@@ -73,7 +83,7 @@ def record_page(
     out: Path,
     *,
     settle_seconds: float,
-    marker_ms: int,
+    min_lead_seconds: float,
     width: int,
     height: int,
     color_scheme: str,
@@ -89,17 +99,18 @@ def record_page(
         record_video_size={"width": width, "height": height},
     )
     created = time.monotonic()
+    context.add_init_script(COVER_JS + "\n;(" + COVER_JS + ")();")
     page = context.new_page()
     page.on("pageerror", lambda e: log.warning("page error: %s", e))
     page.goto(url, wait_until="load")
     loaded = time.monotonic()
     await_ready(page)
-    page.wait_for_timeout(settle_seconds * 1000)
+    # Settle after load, and never start the clock before the recorder has certainly begun
+    # capturing (Windows starts its capture late); the cover makes the wait invisible.
+    wait = max(settle_seconds, min_lead_seconds - (time.monotonic() - created))
+    page.wait_for_timeout(wait * 1000)
+    page.evaluate(START_JS)
     started = time.monotonic()
-    try:
-        page.evaluate(MARKER_JS, marker_ms)
-    except Exception:
-        pass
     page.wait_for_timeout(seconds * 1000)
     video = page.video
     context.close()
@@ -115,7 +126,7 @@ def record_page(
     sidecar = Sidecar(
         url=url,
         requested_seconds=seconds,
-        settle_seconds=settle_seconds,
+        settle_seconds=round(started - loaded, 3),
         load_seconds=round(loaded - created, 3),
         lead_seconds=round(started - created, 3),
     )

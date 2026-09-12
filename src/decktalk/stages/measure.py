@@ -40,23 +40,22 @@ def is_magenta(f: ffmpeg.FrameStats, cfg: AlignConfig) -> bool:
     )
 
 
-def measure_lead(webm: Path, settle: float, cfg: AlignConfig) -> tuple[float, float | None, str]:
-    """(trim point, marker start, method). The trim point is just past the magenta flash; the
-    marker start is where narration t=0 truly sits, so the assembler can hold the first clean
-    frame for the difference and keep the picture on the words."""
+def measure_lead(webm: Path, settle: float, cfg: AlignConfig) -> tuple[float, str]:
+    """(trim point, method). The page is magenta until the narration clock starts, so the
+    first clean frame after the magenta run is narration t=0."""
     rows = ffmpeg.frame_stats(webm, cfg.scan_seconds)
     if not rows:
-        return round(cfg.fallback_first_paint_seconds + settle, 3), None, "no frames read; fallback"
+        return round(cfg.fallback_first_paint_seconds + settle, 3), "no frames read; fallback"
     frame_dt = 0.04
     if len(rows) > 1:
         frame_dt = max(0.02, (rows[-1].pts - rows[0].pts) / (len(rows) - 1))
     magenta = [f.pts for f in rows if is_magenta(f, cfg)]
     if magenta:
-        return round(magenta[-1] + frame_dt, 3), round(magenta[0], 3), f"marker ({len(magenta)} magenta frames)"
+        return round(magenta[-1] + frame_dt, 3), f"cover ({len(magenta)} magenta frames)"
     painted = [f.pts for f in rows if f.ymax > cfg.painted_ymax and f.yavg < cfg.painted_yavg_max]
     if painted:
-        return round(painted[0] + settle, 3), None, "first paint + settle (no marker)"
-    return round(cfg.fallback_first_paint_seconds + settle, 3), None, "fallback guess + settle"
+        return round(painted[0] + settle, 3), "NO COVER: first paint + settle"
+    return round(cfg.fallback_first_paint_seconds + settle, 3), "NO COVER: fallback guess + settle"
 
 
 @dataclass
@@ -65,7 +64,6 @@ class LeadMeasurement:
     lead_in_seconds: float
     wallclock_seconds: float
     method: str
-    flash_seconds: float = 0.0
 
 
 def measure(project: Project, only: list[int] | None = None) -> list[LeadMeasurement]:
@@ -80,21 +78,19 @@ def measure(project: Project, only: list[int] | None = None) -> list[LeadMeasure
             load_seconds=0,
             lead_seconds=0,
         )
-        lead_in, marker_start, method = measure_lead(webm, side.settle_seconds, cfg)
+        lead_in, method = measure_lead(webm, side.settle_seconds, cfg)
         side.lead_in_seconds = lead_in
-        side.marker_start_seconds = marker_start
         side.lead_method = method
         side.save(sidecar_path)
         out.append(
             LeadMeasurement(
-                key=webm.name[:2],
-                lead_in_seconds=lead_in,
-                wallclock_seconds=side.lead_seconds,
-                method=method,
-                flash_seconds=side.flash_seconds,
+                key=webm.name[:2], lead_in_seconds=lead_in, wallclock_seconds=side.lead_seconds, method=method
             )
         )
-        log.info("[lead] %s  trim %.3fs, flash %.3fs  (%s)", webm.name[:2], lead_in, side.flash_seconds, method)
+        if method.startswith("NO COVER"):
+            log.warning("[lead] %s  no magenta cover found; alignment is a guess (%s)", webm.name[:2], method)
+        else:
+            log.info("[lead] %s  trim %.3fs  (%s)", webm.name[:2], lead_in, method)
     return out
 
 
@@ -124,6 +120,8 @@ def check(project: Project, only: list[int] | None = None) -> list[RecordingChec
         y10, y50, y90 = (ffmpeg.luma_at(f, dur * k)[0] for k in (0.10, 0.50, 0.90))
         max50 = ffmpeg.luma_at(f, dur * 0.5)[1]
         verdicts = []
+        if side and side.lead_method and side.lead_method.startswith("NO COVER"):
+            verdicts.append("NO COVER")
         if max50 < cfg.black_ymax:
             verdicts.append("BLACK?")
         if wanted and dur < wanted - cfg.truncated_slack_seconds:

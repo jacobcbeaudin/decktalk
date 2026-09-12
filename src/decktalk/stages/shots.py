@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 
 from ..errors import ConfigError
-from ..media.browser import await_ready, chromium, screenshot
+from ..media.browser import START_JS, await_ready, chromium, screenshot
 from ..project import PageSection, Project
 from .record import scene_url
 
@@ -70,6 +70,7 @@ def shoot_frames(project: Project, section: int, at: list[float]) -> list[Path]:
         page.goto(url, wait_until="load")
         await_ready(page)
         page.wait_for_timeout(cfg.settle_seconds * 1000)
+        page.evaluate(START_JS)
         clock0 = page.evaluate("() => performance.now()")
         for t in sorted(at):
             page.wait_for_function("(ms) => performance.now() >= ms", arg=clock0 + t * 1000)

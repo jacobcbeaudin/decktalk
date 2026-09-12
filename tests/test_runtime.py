@@ -88,3 +88,13 @@ def test_autoplay_uses_holds(page, deck):
     page.wait_for_function("() => document.body.dataset.done === '1'", timeout=5000)
     assert page.evaluate("() => window.__decktalk.mode") == "autoplay"
     assert page.evaluate("() => window.__decktalk.step") == "2.2"
+
+
+@pytest.mark.browser
+def test_signal_mode_waits_for_start_clock(page, deck):
+    """With t0=signal the clock does not start at load; it starts when the recorder says so."""
+    page.goto(f"{deck.as_uri()}?scene=2&t0=signal&beats=2.1a@0.1")
+    page.wait_for_timeout(400)
+    assert page.evaluate("() => window.__decktalk.fired") == []
+    page.evaluate("() => DeckTalk.startClock()")
+    page.wait_for_function("() => window.__decktalk.fired.includes('2.1a')", timeout=2000)
