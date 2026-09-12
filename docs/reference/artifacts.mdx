@@ -1,0 +1,74 @@
+---
+title: Build artifacts
+description: The shape of every file DeckTalk writes under build/.
+---
+
+These files are part of the public contract. The page runtime reads `beats.json`, and
+your own scripts may read any of them. Every JSON file is written atomically, so a reader
+never sees a partial file. Field names in the JSON match the dataclasses in
+`decktalk.artifacts`.
+
+## `build/audio/NN-slug.words.json`
+
+A list of words with absolute times within that section's mp3.
+
+```json
+[{"word": "Now", "start": 0.71, "end": 0.93}, {"word": "a", "start": 0.93, "end": 1.02}]
+```
+
+## `build/audio/manifest.json`
+
+One entry per narrated section. The `hash` is what the cache compares.
+
+| Field | Meaning |
+|---|---|
+| `script`, `model`, `output_format` | What produced the audio. |
+| `estimated`, `estimate_basis` | True after a silent build, with the pacing used. |
+| `total_seconds` | The sum of the segments. |
+| `segments.NN.index`, `.title` | The section. |
+| `segments.NN.file`, `.words_file` | The mp3 and the words file. |
+| `segments.NN.hash` | The text and voice hash. |
+| `segments.NN.words`, `.est_seconds`, `.duration_seconds` | The word count, the pacing estimate, and the real length. |
+| `segments.NN.target_seconds`, `.speech_end_seconds`, `.tail_padded_seconds` | The requested length, where speech ends, and how much silence was added. |
+
+## `build/audio/timeline.json`
+
+Section and word times, absolute within `narration.mp3`.
+
+```json
+{ "narration": "narration.mp3", "total_seconds": 36.4, "estimated": false,
+  "sections": { "03": { "title": "A curve and an equation", "start": 26.1, "end": 36.4,
+                        "duration": 10.3, "speech_end": 35.9,
+                        "words": [{"word": "Now", "start": 26.81, "end": 27.03}] } } }
+```
+
+## `build/audio/beats.json`
+
+The resolved cues per section, as the string the page receives in `?beats=`. The seconds
+are relative to the section's start.
+
+```json
+{ "01": "1a@0,1b@2.3,1c@6.3", "03": "3.1@0,3.1draw@0.8,3.1eq@5.8" }
+```
+
+## `build/rec/NN-scene.json`
+
+What the recorder did for one section, and where narration t=0 sits in the webm.
+
+| Field | Meaning |
+|---|---|
+| `url` | The page URL the recorder opened, including `scene`, `beats`, and `t0=signal`. |
+| `requested_seconds` | How long the recording was asked to run. |
+| `settle_seconds` | How long the recorder waited after load before starting the clock. |
+| `load_seconds`, `lead_seconds` | Wall-clock estimates from the recorder. |
+| `lead_in_seconds` | The first clean frame after the magenta cover, written by `measure`. The assembler trims here. |
+| `lead_method` | How `measure` found it. A value beginning `NO COVER` is a guess. |
+
+## `build/out/`
+
+| File | Meaning |
+|---|---|
+| `NN-section.mp4` | Each section cut to its span, at the project's frame size. |
+| `<name>.mp4` | The film. |
+| `<name>-YYYYMMDD-HHMM.mp4` | A timestamped copy of the same film. |
+| `slates/` | Rendered slates for clip sections whose file is missing. |

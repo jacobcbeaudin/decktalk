@@ -1,38 +1,157 @@
 ---
 title: CLI
-description: Every command, and what it produces.
+description: Every command, every flag, and what each one produces.
 ---
 
+```text
+decktalk [-v | -q] [-p DIR] <command> [flags]
+```
+
 Every project command takes `--project DIR`, or `-p DIR`, and defaults to the current
-directory. Each one reads `.env` from the project and never prints a key. The `-v` flag
-shows every ffmpeg command line, and `-q` shows warnings only.
+directory. Each one reads `.env` from the project and never prints a key. Progress goes
+to stderr. The `-v` flag shows debug logging, including every ffmpeg command line, and
+`-q` shows warnings only. Both go before the command name. `--version` prints the
+version.
 
-| Command | What it does |
+## Machine
+
+### `decktalk setup`
+
+Fetches headless Chromium through Playwright and ffmpeg through `static-ffmpeg`, once
+per machine. Both land in per-user caches, not in the project.
+
+### `decktalk doctor`
+
+Reports the Python, Playwright, Chromium, and ffmpeg versions found, and exits 1 when
+one is missing.
+
+### `decktalk init DIR`
+
+Scaffolds a project with a working example deck.
+
+| Flag | Meaning |
 |---|---|
-| `decktalk init DIR` | Scaffolds a project with a working example deck. |
-| `decktalk setup` | Fetches headless Chromium and ffmpeg. |
-| `decktalk doctor` | Reports what is installed. |
-| `decktalk narrate [--dry-run] [--silent] [--only N] [--force] [--allow-placeholders] [--model M]` | Turns the script into per-section audio with word timestamps, then builds the continuous track and `timeline.json`. It caches each section by text. |
-| `decktalk beats` | Resolves every cue phrase to a second. It reports any phrase it cannot find and exits with status 1 if there is one. |
-| `decktalk soundscape [--dry-run] [--only NAME]` | Generates the ambience, the sound effects, and the underscore from the prompts in `decktalk.toml`. |
-| `decktalk record [--only N] [--seconds S] [--settle S] [--no-beats]` | Records the pages with headless Chromium. |
-| `decktalk measure [--only N]` | Finds narration t=0 in each recording from the magenta marker. |
-| `decktalk check [--only N] [--strict]` | Flags black or truncated recordings. |
-| `decktalk assemble [--preset P] [--crf N] [--nomix] [--no-loudnorm] [--strict]` | Cuts, concatenates, mixes, normalizes, and publishes the film. |
-| `decktalk verify [SEC:CUE ...]` | Confirms that every section opens on a real frame and that the picture changes at each named cue. |
-| `decktalk shots [--page F] [--step ID] [--section N --at S]` | Writes one PNG per step, or frames from a section while it plays with its real cues. |
-| `decktalk build [--silent] [--force] [--only N] [--nomix] [--no-loudnorm] [--strict] [--allow-unresolved] [--preset P] [--crf N]` | Runs the whole pipeline in order. |
-| `decktalk status` | Prints the timeline and what is built. |
-| `decktalk runtime` | Copies the packaged `decktalk-runtime.js` over the project's copy after an upgrade. |
+| `--name NAME` | The project name. The default is the directory name. |
+| `--force` | Write into a directory that is not empty. |
 
-## Build artifacts
+### `decktalk runtime`
 
-| File | What it holds |
+Copies the packaged `decktalk-runtime.js` over the project's copy. Run it after an
+upgrade.
+
+## Stages
+
+### `decktalk narrate`
+
+Turns the script into per-section audio with word timestamps, then builds the continuous
+track and `timeline.json`. It caches each section by text.
+
+| Flag | Meaning |
 |---|---|
-| `build/audio/NN-slug.mp3` and `.words.json` | One pair per narrated section. The words file holds `[{word, start, end}]`. |
-| `build/audio/narration.mp3` and `timeline.json` | The continuous track, and each section's absolute span and words within it. |
-| `build/audio/beats.json` | `{"NN": "cue@seconds,..."}`, with seconds relative to the section start. |
-| `build/rec/NN-scene.webm` and `.json` | The recording and its sidecar, which records the settle, the lead-in, and the method. |
-| `build/out/NN-section.mp4` | Each section cut to its span. |
-| `build/out/<name>.mp4` | The film, plus a timestamped copy. |
-| `build/shots/` | Review screenshots. |
+| `--only N` | Only these section numbers. Repeat the flag for several. |
+| `--force` | Ignore the text-hash cache and synthesize every section. |
+| `--dry-run` | Parse the script and print what would be sent. No API calls. |
+| `--silent` | Write silent placeholders with estimated word times. No key needed. |
+| `--allow-placeholders` | Synthesize a section that still has a `[CAPITAL]` placeholder. |
+| `--model M` | The ElevenLabs model for this run. |
+
+### `decktalk beats`
+
+Resolves every cue phrase to a second and prints a table of sections, their speech end,
+and their resolved cues. It reports each phrase it cannot find and exits 1 if there is
+one.
+
+### `decktalk soundscape`
+
+Generates the ambience, the sound effects, and the underscore from the prompts in
+`decktalk.toml`. It writes only files that do not exist yet.
+
+| Flag | Meaning |
+|---|---|
+| `--only NAME` | One item: `ambience`, `music`, or an effect name. |
+| `--force` | Regenerate even if the file exists. |
+| `--dry-run` | Print every request without sending it. |
+
+### `decktalk record`
+
+Records each page section with headless Chromium.
+
+| Flag | Meaning |
+|---|---|
+| `--only N` | Only these sections. |
+| `--seconds S` | Override every duration. Useful for smoke tests. |
+| `--settle S` | Seconds after load before the clock starts. |
+| `--no-beats` | Use the page's autoplay timing instead of `?beats=`. |
+
+### `decktalk measure`
+
+Finds narration t=0 in each recording from the magenta cover and writes it to the
+sidecar. The table shows the trim point, the recorder's own wall-clock estimate, and the
+method. A method beginning `NO COVER` means the cover was not found and the trim is a
+guess.
+
+### `decktalk check`
+
+Flags a recording that is black, shorter than requested, or has no cover.
+
+| Flag | Meaning |
+|---|---|
+| `--only N` | Only these sections. |
+| `--strict` | Exit 1 on a suspect recording. |
+
+### `decktalk assemble`
+
+Cuts, concatenates, mixes, normalizes, and publishes the film.
+
+| Flag | Meaning |
+|---|---|
+| `--nomix` | Narration only. No beds, no effects. |
+| `--no-loudnorm` | Skip loudness normalization. |
+| `--strict` | Fail on a missing clip or recording instead of substituting a slate. |
+| `--preset P` | The x264 preset for this run. `veryfast` for drafts. |
+| `--crf N` | The x264 quality for this run. |
+
+### `decktalk verify [SECTION:CUE ...]`
+
+Confirms that every section opens on a real frame. With arguments, it also confirms that
+the picture changed at each named cue, and prints the share of pixels that changed
+against a quiet control span. It exits 1 when any check fails.
+
+### `decktalk shots`
+
+Writes one PNG per step, or frames from a section while it plays with its real cues.
+
+| Flag | Meaning |
+|---|---|
+| `--page F` | One page file. The default is every page in `decktalk.toml`. |
+| `--step ID` | Only these step ids. |
+| `--section N` | Play this section with its resolved cues. |
+| `--at S` | Seconds after narration t=0 at which to capture. Repeat for several. |
+
+## Everything
+
+### `decktalk build`
+
+Runs narrate, beats, record, measure, check, assemble, and verify in order. It exits 1
+when a cue phrase is not found, unless `--allow-unresolved` is given, and when assembly
+or verification fails.
+
+| Flag | Meaning |
+|---|---|
+| `--silent` | Placeholder narration. No key needed. |
+| `--force` | Re-synthesize every section. |
+| `--only N` | Re-record only these sections. |
+| `--allow-unresolved` | Build even if some cue phrases were not found. |
+| `--nomix`, `--no-loudnorm`, `--strict`, `--preset P`, `--crf N` | As for `assemble`. |
+
+### `decktalk status`
+
+Prints the project, the timeline, what is built for each section, and the final path.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | The command succeeded. |
+| 1 | An error, printed to stderr as `error: …`, or a failed check as described above. |
+| 130 | The command was interrupted. |

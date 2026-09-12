@@ -1,7 +1,8 @@
 # Contributing
 
-Issues and pull requests are welcome. If you build something with DeckTalk, a link in an
-issue is welcome too.
+Issues and pull requests are welcome. This is a one-person project, so expect a reply
+within about a week, and open an issue before a large change so the design is agreed
+first. If you build something with DeckTalk, a link in an issue is welcome too.
 
 ## Setup
 
@@ -15,13 +16,19 @@ uv run decktalk setup            # headless Chromium and ffmpeg, once
 ```console
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run ty check src
-uv run pytest -q                 # unit tests
-uv run pytest -q -m browser      # the page runtime, in a real Chromium
-bash tests/smoke.sh              # scaffold a project and build it offline
-uv run scripts/build_assets.py --check   # README graphics are generated; regenerate, do not hand-edit
+uv run pytest -q                                # unit tests
+uv run pytest -q -m browser                     # the page runtime, in a real Chromium
+bash tests/smoke.sh                             # scaffold a project and build it offline
+uv run scripts/build_assets.py --check          # graphics are generated; regenerate, do not hand-edit
+uv run scripts/build_config_reference.py --check # so is docs/reference/configuration.mdx
 ```
 
-CI runs the same on Linux, macOS and Windows.
+No check needs an ElevenLabs key or network access after `decktalk setup`. Do not add a
+check that calls the API.
+
+CI runs the same checks. Pull requests run on Linux. Pushes to `main` and tags also run
+the browser tests and the smoke build on macOS and Windows, and upload the smoke video
+from each platform as an artifact.
 
 ## Layout
 
@@ -30,16 +37,41 @@ src/decktalk/
   config.py      tuning dataclasses; defaults -> decktalk.toml tables -> DECKTALK_* env
   project.py     the decktalk.toml document, validated at load
   artifacts.py   typed build artifacts (manifest, timeline, beats, sidecar)
-  stages/        narrate, beats, record, measure, assemble, verify, shots, soundscape, build
+  stages/        narrate, beats, record, measure (with check), assemble, verify, shots, soundscape, build
   media/         ffmpeg and Chromium (internal)
-  providers/     ElevenLabs (internal)
+  providers/     the speech protocol and the ElevenLabs provider (internal)
   runtime/       decktalk-runtime.js, the page contract
   template/      what `decktalk init` writes
+tests/
+  test_units.py      config layering, project validation, script parsing, cue matching
+  test_runtime.py    drives decktalk-runtime.js in a real Chromium (-m browser)
+  smoke.sh           an offline build of the scaffold, verified cue by cue
+scripts/
+  build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon
+  build_config_reference.py   generates docs/reference/configuration.mdx from config.py
+docs/                          the Mintlify site at docs.decktalk.app
+site/                          the landing page at decktalk.app
 ```
 
 Stage functions take a `Project`, log progress to the `decktalk` logger, return a typed
 result, and raise `DeckTalkError` subclasses. The CLI is a thin layer that prints tables
 and maps errors to exit codes.
+
+Two seams are meant for extension. The page contract lives in `runtime/decktalk-runtime.js`
+and is documented at [docs.decktalk.app/concepts/page-contract](https://docs.decktalk.app/concepts/page-contract).
+The voice lives behind `providers/speech.py`, a two-method protocol. There is no plugin
+loading yet, so a new provider is a pull request.
+
+## What I want next
+
+- A local text-to-speech provider paired with a forced aligner, so a project can build with no API.
+- A second slide template with a lighter visual style.
+- A real demo video in the README, built from the scaffold with a cloned voice.
+
+## Prose
+
+Documentation and comments use complete sentences with subjects. Avoid fragments,
+semicolons, and version-specific wording that goes stale.
 
 ## Commits and releases
 

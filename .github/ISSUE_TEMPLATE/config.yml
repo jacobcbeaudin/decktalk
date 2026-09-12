@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://docs.decktalk.app
+    about: The project file, the page contract, the CLI, and the Python API.

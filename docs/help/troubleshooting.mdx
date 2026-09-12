@@ -1,0 +1,93 @@
+---
+title: Troubleshooting
+description: What each warning and failure means, and what to do about it.
+---
+
+Run `decktalk build --silent` first when something goes wrong. It removes the voice from
+the picture, costs nothing, and shows whether the problem is in the cues, the pages, or
+the assembly.
+
+<AccordionGroup>
+  <Accordion title="phrase not found">
+    The `beats` stage could not find a cue's `on` phrase among the spoken words of its
+    section, and `build` stopped. Compare the phrase with the words in
+    `build/audio/NN-slug.words.json`. The usual causes are a number written as digits,
+    a symbol, or a phrase that spans a stage direction. Write the phrase as the voice
+    says it. The `--allow-unresolved` flag builds without the cue.
+  </Accordion>
+
+  <Accordion title="ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set">
+    Copy `.env.example` to `.env` beside `decktalk.toml` and replace both placeholders.
+    A value still wrapped in angle brackets counts as unset. Exported variables work
+    too. A silent build needs neither.
+  </Accordion>
+
+  <Accordion title="ProviderError: 401 or 402 from ElevenLabs">
+    A 401 means the key is wrong or was revoked. A 402 or a quota message means the plan
+    has no characters left. The free tier's audio carries a watermark and a
+    non-commercial license, and some voices need a paid plan. `decktalk narrate --dry-run`
+    shows how many characters a build would send.
+  </Accordion>
+
+  <Accordion title="NO COVER in measure or check">
+    The recording has no magenta run at its start, so `measure` guessed the trim from the
+    first painted frame. The page probably removed the cover itself, or a page written by
+    hand started its clock at load instead of waiting for `DeckTalk.startClock()`. Make
+    sure the page includes the packaged runtime, and run `decktalk runtime` after an
+    upgrade. Raise `min_lead_seconds` in `[record]` if the machine is very slow.
+  </Accordion>
+
+  <Accordion title="BLACK? or TRUNCATED in check">
+    A black recording usually means the page threw before it rendered, and the recorder
+    logs page errors as warnings. Open the page with `?scene=N&hud=1` in a browser. A
+    truncated recording is shorter than the section needs, which happens when Chromium
+    was killed or the machine stalled. Re-record that section with `--only N`.
+  </Accordion>
+
+  <Accordion title="BLACK section start in verify">
+    The final mp4 opens a section on a dark frame. Check that the first cued step of the
+    scene renders something at t=0, and that `extra_seconds` is not zero. Raise
+    `after_dip_seconds` in `[verify]` if the dip to black is deliberately long.
+  </Accordion>
+
+  <Accordion title="NO CHANGE for a cue in verify">
+    The picture did not change enough across the cue, or changed no more than it was
+    already changing. A very small or very slow reveal can fail this check while looking
+    right. Take a frame with `decktalk shots --section N --at S` just after the cue to
+    see what happened. If the reveal is deliberately subtle, lower `min_changed_percent`
+    in `[verify]`, or lengthen `probe_delays` for a slow animation.
+  </Accordion>
+
+  <Accordion title="A section is early or late by a fixed amount">
+    Open the section's `build/rec/NN-scene.json` and look at `lead_method`. Anything but
+    `cover (…)` means the alignment was guessed. Re-record with `decktalk record --only N`
+    followed by `decktalk measure --only N`.
+  </Accordion>
+
+  <Accordion title="The clip plays as a titled slate">
+    The file named by `clip` does not exist, so a slate plays for `slate_seconds`. Drop
+    the file in place, or delete the section from both `decktalk.toml` and `script.md`.
+    The `--strict` flag makes this an error instead.
+  </Accordion>
+
+  <Accordion title="The index page is empty, or window.__decktalk is missing">
+    The page does not include `decktalk-runtime.js`, or the script tag comes after the
+    scene definitions. Include the runtime first, then define scenes.
+  </Accordion>
+
+  <Accordion title="Windows">
+    DeckTalk runs its own test suite on Windows in CI. Paths in `decktalk.toml` use
+    forward slashes on every platform. The `setup` command puts Chromium under
+    `%LOCALAPPDATA%\ms-playwright`. If a corporate proxy blocks that download, set
+    `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
+  </Accordion>
+
+  <Accordion title="Slow builds">
+    Encoding dominates. Set `DECKTALK_VIDEO_PRESET=veryfast` for drafts, or put
+    `preset = "veryfast"` under `[video]` in the project. The final render can go back to
+    `medium`. A full silent build of the scaffold takes under a minute on a laptop.
+  </Accordion>
+</AccordionGroup>
+
+If none of this fits, open an issue with the output of `decktalk doctor` and the
+`[[section]]` tables involved. The bug report template asks for exactly that.

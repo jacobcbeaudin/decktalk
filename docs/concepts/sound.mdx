@@ -1,0 +1,74 @@
+---
+title: Sound
+description: The underscore, the ambience, the effects, and the loudness of the final mix.
+---
+
+The film always carries the narration and the audio of any clip section. Everything else
+is optional and stays off until `[mix]` in `decktalk.toml` names a file. You can bring
+your own files, or generate them with `decktalk soundscape`.
+
+## The parts of the mix
+
+| Part | Source | Behaviour |
+|---|---|---|
+| Narration | `build/audio/narration.mp3` | Always present. Silent under clip sections. |
+| Clip audio | each clip file | Replaces the narration for the clip's span. |
+| Underscore | `mix.underscore` | Loops for the length of the film, fades in and out, and ducks by `underscore_duck_db` whenever speech is present. The duck ramps over `duck_ramp_seconds`. |
+| Ambience | `mix.ambience` | Plays under sections that set `ambience = true`, with a ramp at each edge. |
+| Effects | `[[mix.sfx]]` | One-shot files placed at a cue in a section, plus an offset. A cue that did not resolve skips its effect with a warning. |
+
+After the parts are summed, DeckTalk measures the loudness of the mix, applies EBU R128
+normalization in a second pass to the targets in `[mix.loudnorm]`, and applies a limiter.
+The report prints the loudness before and after. The `--no-loudnorm` flag skips the
+normalization, and `--nomix` produces narration only.
+
+## Markers
+
+A markers file swells or mutes the underscore at spoken phrases. It uses the same
+matching keys as a cue.
+
+```json media/markers.json
+{ "boost_db": 3, "boost_seconds": 2,
+  "markers": [
+    { "name": "open", "section": 1, "on": "$start" },
+    { "name": "zero", "section": 2, "on": "worth nothing", "mute_seconds": 0.6 }
+  ] }
+```
+
+A marker swells the bed by `boost_db` for `boost_seconds`. With `mute_seconds`, it
+silences the bed for that long first. The ramps are tuning fields in `[audio]`.
+
+## Generating sound
+
+The `soundscape` command turns the prompts in `[soundscape]` into files with ElevenLabs.
+It writes ambience and music to the paths named in `[mix]`, and each effect to
+`build/sfx/<name>.mp3`.
+
+```toml decktalk.toml
+[soundscape.music]
+prompt = "calm, minimal instrumental underscore for a lesson: soft piano and warm pads, slow, no drums"
+seconds = 120
+
+[soundscape.ambience]
+text = "quiet lecture hall room tone, distant HVAC, no voices, steady"
+
+[soundscape.sfx.tick]
+text = "soft interface click, single, short, no reverb"
+```
+
+```console
+decktalk soundscape --dry-run       # prints every request without sending it
+decktalk soundscape                 # generates what is missing
+decktalk soundscape --only music    # one item; --force regenerates it
+```
+
+Music longer than `max_music_chunk_seconds` is requested in chunks and crossfaded. The
+generated files are cached by their prompt, so a second run sends nothing unless a prompt
+changed. These calls spend ElevenLabs credits, and the dry run shows exactly what would
+be sent.
+
+## Bringing your own
+
+Point `mix.underscore`, `mix.ambience`, and each `[[mix.sfx]]` at any audio file that
+ffmpeg can read. The `soundscape` command only writes files that do not exist yet, so a
+file of your own at the same path is never overwritten.

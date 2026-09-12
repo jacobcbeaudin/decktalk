@@ -5,7 +5,8 @@ description: How a slide talks to the recorder.
 
 A DeckTalk page is an HTML file that the recorder can drive from the narration. The
 contract consists of a few URL parameters and one global. The file `decktalk-runtime.js`
-implements it, and a page can also implement it by hand.
+implements it, and a page can also implement it by hand. Slides are plain HTML that you
+style yourself, and the runtime adds no styling beyond the stage.
 
 ## URL parameters
 
@@ -81,7 +82,14 @@ prefix.
 
 ## Recording alignment
 
-The recorder opens the page, waits for `load`, awaits `__sceneReady`, waits `t0` seconds,
-and then injects a full-frame magenta div for 120 ms. The `measure` command finds the last
-magenta frame in the webm and writes `lead_in_seconds` to the sidecar. The assembler trims
-that lead-in, so video t=0 equals narration t=0 to within a frame.
+The recorder covers the page in magenta from its first paint. It opens the page with
+`t0=signal`, waits for `load`, awaits `__sceneReady`, waits the settle time and at least
+`min_lead_seconds` after the recorder was created, and then removes the cover and calls
+`DeckTalk.startClock()` in the same tick. The `measure` command finds the first clean
+frame after the magenta run and writes it to the sidecar as `lead_in_seconds`. The
+assembler trims the recording there, so video t=0 equals narration t=0 to within a frame
+on every platform. [How it works](/concepts/how-it-works#why-the-cuts-are-exact) has the
+picture.
+
+A page that implements the contract by hand must honor `t0=signal` by starting its clock
+in `DeckTalk.startClock()` or an equivalent global, or it will start early.

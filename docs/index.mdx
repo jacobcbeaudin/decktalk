@@ -3,14 +3,54 @@ title: Overview
 description: Narrated presentations, cut to the word.
 ---
 
-DeckTalk turns three inputs into one video. You write a markdown script. A cloned voice
-reads it and returns a timestamp for every word. Your HTML slides name the phrase that
-each reveal should land on. DeckTalk records the slides, cuts them to the narration, mixes
-an optional soundscape, and publishes an mp4.
+<Frame>
+  <img className="block dark:hidden" src="/images/hero-light.svg" alt="A playhead moves along a spoken sentence, one tick per word. The slide reacts on exactly the right words." />
+  <img className="hidden dark:block" src="/images/hero-dark.svg" alt="A playhead moves along a spoken sentence, one tick per word. The slide reacts on exactly the right words." />
+</Frame>
+
+DeckTalk turns a markdown script and plain HTML slides into one narrated mp4. An
+ElevenLabs voice reads the script and returns a timestamp for every word. Each visual
+names the phrase it should land on. DeckTalk records the slides in headless Chromium,
+cuts the recording to the narration, mixes an optional soundscape, and publishes the
+film. When you change a sentence, only that section renders again.
 
 <CardGroup cols={2}>
-  <Card title="Quickstart" icon="play" href="/quickstart">Install DeckTalk, scaffold a project, and build a video.</Card>
-  <Card title="The project file" icon="file" href="/concepts/project-file">Every key in decktalk.toml and cues.json.</Card>
-  <Card title="The page contract" icon="code" href="/concepts/page-contract">How a slide talks to the recorder.</Card>
+  <Card title="Quickstart" icon="play" href="/quickstart">Install DeckTalk, build the scaffold, and add your voice. Ten minutes.</Card>
+  <Card title="Your first deck" icon="pen-line" href="/guides/first-deck">Write a section, cue it, and build a slide for it. The four files and how they refer to each other.</Card>
+  <Card title="Reference card" icon="bolt" href="/reference/card">Every file, command, variable, and exit code on one page. Written for agents and for people in a hurry.</Card>
   <Card title="Python API" icon="python" href="/reference/python-api">Drive the pipeline from your own code.</Card>
 </CardGroup>
+
+## Five words
+
+The documentation uses five words with fixed meanings.
+
+| Word | Meaning |
+|---|---|
+| **Section** | One `## N. Title` block of `script.md` together with its `[[section]]` table in `decktalk.toml`. A section is the unit of narration, recording, and cutting. |
+| **Scene** | What a page plays for one section. The page declares it with `DeckTalk.scene(N, …)`, and the recorder selects it with `?scene=N`. |
+| **Step** | One slide state inside a scene. The query `?step=ID` freezes it for review. |
+| **Cue** | A named moment. In `cues.json` it is a spoken phrase to find. In the page it is an id that reveals elements or runs a handler. |
+| **Beat** | A cue resolved to seconds after the section's narration begins. DeckTalk stores beats in `build/audio/beats.json` and hands them to the page as `?beats=`. |
+
+The same number `N` names a section in the script, its `[[section]]` table, its key in
+`cues.json`, and by default its scene in the page. Step ids and cue ids are strings that
+the page and `cues.json` agree on, and the scaffold prefixes them with the scene number.
+
+## What DeckTalk is not
+
+DeckTalk is not a video editor and never makes a screen recording of you. It is not an
+avatar generator. It does not time visuals by frame in code, as Remotion and Motion
+Canvas do. It is for the case where the timing should come from the words and the slides
+are yours.
+
+## How the documentation is organized
+
+- **Get started** installs the tool and walks through authoring one section.
+- **Concepts** explains each input and the pipeline that turns them into a film.
+- **Reference** lists every command, key, field, artifact, and Python name.
+- **Help** covers the errors you can hit and the questions people ask before trying it.
+
+<Note>Every page is also served as plain text for language models at
+[docs.decktalk.app/llms.txt](https://docs.decktalk.app/llms.txt) and
+[llms-full.txt](https://docs.decktalk.app/llms-full.txt).</Note>

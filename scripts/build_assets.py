@@ -2,9 +2,10 @@
 # requires-python = ">=3.12"
 # dependencies = ["playwright>=1.50"]
 # ///
-"""Generate the README graphics from one source: hero, how-it-works (wide and stacked), mark, favicon.
+"""Generate every graphic from one source: hero, how-it-works (wide and stacked), alignment,
+mark, wordmark, favicon. The README reads assets/, the docs site reads docs/images/ and docs/logo/.
 
-    uv run scripts/build_assets.py            # writes assets/*.svg and docs/favicon.svg
+    uv run scripts/build_assets.py            # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, docs/favicon.svg
     uv run scripts/build_assets.py --check    # exit 1 if the committed files would change
 
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
@@ -352,6 +353,115 @@ def mark(pal: dict[str, str], size: int = 24, background: bool = False) -> str:
 """
 
 
+# ---- alignment ---------------------------------------------------------------------------------
+
+MAGENTA = "#ff00ff"
+FRAME_W, FRAME_H, FRAME_GAP = 88, 50, 8
+COVER_FRAMES = 4  # frames that are still magenta before the clock starts
+
+
+def alignment(pal: dict[str, str], xs: list[float]) -> str:
+    """Why the cuts are exact: the recording opens on a magenta cover, the first clean frame is
+    narration t=0, and each cue is a spoken word measured from that same origin."""
+    w, h = 1200, 250
+    left = 72
+    n_frames = 11
+    strip_y = 58
+    t0_x = left + COVER_FRAMES * (FRAME_W + FRAME_GAP)
+    words_y = 168
+    tick_y = 178
+    curve_x = t0_x + xs[1] + 1  # the tick under "curve"
+    number_x = t0_x + xs[5] + 1  # the tick under "number"
+    css = [font_face()]
+    css.append(f".bg{{fill:{pal['bg']}}}")
+    css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
+    css.append(f".w{{font:600 26px {SANS};letter-spacing:-.01em;fill:{pal['ink']}}}")
+    css.append(f".cue{{fill:{pal['blue']}}}.dim{{fill:{pal['dim']}}}")
+    css.append(f".cap{{font:400 14px {SANS};fill:{pal['mute']}}}")
+    css.append(f".frame{{fill:{pal['block']};stroke:{pal['hair']};stroke-width:1}}")
+    css.append(f".cover{{fill:{MAGENTA};opacity:.9}}")
+    css.append(f".tick{{stroke:{pal['tick']};stroke-width:2.5;stroke-linecap:round}}.tick.on{{stroke:{pal['blue']}}}")
+    css.append(f".t0{{stroke:{pal['blue']};stroke-width:2}}")
+    css.append(f".lead{{stroke:{pal['blue']};stroke-width:1.5;stroke-dasharray:3 4}}")
+    css.append(f".axis{{stroke:{pal['hair']};stroke-width:1.5}}")
+    css.append(f".num{{font:700 16px {SANS};letter-spacing:-.03em;fill:{pal['blue']}}}")
+    css.append(f".brace{{stroke:{pal['mute']};stroke-width:1.5;fill:none}}")
+
+    frames = []
+    for i in range(n_frames):
+        x = left + i * (FRAME_W + FRAME_GAP)
+        if i < COVER_FRAMES:
+            frames.append(f'<rect class="cover" x="{x}" y="{strip_y}" width="{FRAME_W}" height="{FRAME_H}" rx="6"/>')
+            continue
+        # a miniature of the hero slide: a frame shows what had happened by its midpoint. The curve
+        # draws over three frames after the word "curve", and the number appears after "number".
+        mid = x + FRAME_W / 2
+        progress = min(1.0, max(0.0, (mid - curve_x) / (3 * (FRAME_W + FRAME_GAP))))
+        art = [f'<rect class="frame" x="{x}" y="{strip_y}" width="{FRAME_W}" height="{FRAME_H}" rx="6"/>']
+        art.append(f'<line class="axis" x1="{x + 10}" y1="{strip_y + 40}" x2="{x + 52}" y2="{strip_y + 40}"/>')
+        art.append(f'<line class="axis" x1="{x + 10}" y1="{strip_y + 12}" x2="{x + 10}" y2="{strip_y + 40}"/>')
+        if progress > 0:
+            art.append(
+                f'<path pathLength="1" stroke-dasharray="1" stroke-dashoffset="{1 - progress:.2f}" '
+                f'd="M{x + 10},{strip_y + 38} C{x + 22},{strip_y + 37} {x + 34},{strip_y + 28} {x + 44},{strip_y + 18} '
+                f'S{x + 50},{strip_y + 12} {x + 52},{strip_y + 11}" fill="none" stroke="{pal["blue"]}" '
+                'stroke-width="2.5" stroke-linecap="round"/>'
+            )
+        if mid > number_x:
+            art.append(f'<text class="num" x="{x + 58}" y="{strip_y + 32}">3×</text>')
+        frames.append("".join(art))
+    cover_mid = left + (COVER_FRAMES * (FRAME_W + FRAME_GAP) - FRAME_GAP) / 2
+    words_svg = "".join(
+        f'<tspan class="w {"cue" if i in CUE_WORDS else ""}" x="{t0_x + x:.1f}">{w}</tspan>'
+        for i, (w, x) in enumerate(zip(SENTENCE, xs, strict=True))
+    )
+    ticks_svg = "".join(
+        f'<line class="tick {"on" if i in CUE_WORDS else ""}" x1="{t0_x + x + 1:.1f}" y1="{tick_y}" x2="{t0_x + x + 1:.1f}" y2="{tick_y + 14}"/>'
+        for i, x in enumerate(xs)
+    )
+    leads = "".join(
+        f'<line class="lead" x1="{cx:.1f}" y1="{strip_y + FRAME_H + 4}" x2="{cx:.1f}" y2="{tick_y - 4}"/>'
+        for cx in (curve_x, number_x)
+    )
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
+  <title id="t">Why the cuts are exact</title>
+  <desc id="d">A strip of recorded frames opens magenta while the page is covered. The first clean frame is narration t=0. The spoken words start at the same point, and the frames in which the curve draws and the number appears line up with the words "curve" and "number".</desc>
+  <defs><style>{chr(10).join(css)}</style></defs>
+  <rect class="bg" width="{w}" height="{h}"/>
+  <text class="lab" x="{left}" y="40">RECORDING</text>
+  {"".join(frames)}
+  <path class="brace" d="M{left},{strip_y + FRAME_H + 8} v5 H{left + COVER_FRAMES * (FRAME_W + FRAME_GAP) - FRAME_GAP} v-5"/>
+  <text class="cap" x="{cover_mid:.1f}" y="{strip_y + FRAME_H + 30}" text-anchor="middle">covered until the clock starts</text>
+  <line class="t0" x1="{t0_x - FRAME_GAP / 2}" y1="{strip_y - 12}" x2="{t0_x - FRAME_GAP / 2}" y2="{tick_y + 18}"/>
+  <text class="lab" x="{t0_x + 2}" y="{strip_y - 16}" fill="{pal["blue"]}" style="fill:{pal["blue"]}">T = 0</text>
+  {leads}
+  <text class="lab" x="{t0_x + 2}" y="{words_y - 30}">NARRATION</text>
+  <text y="{words_y}">{words_svg}</text>
+  {ticks_svg}
+  <text class="cap" x="{left}" y="{h - 18}">The first clean frame is t=0, found in the frames rather than on a timer. Every cue is a word, measured from the same origin.</text>
+</svg>
+"""
+
+
+# ---- wordmark ---------------------------------------------------------------------------------
+
+
+def wordmark(pal: dict[str, str]) -> str:
+    """The mark and the name, for the docs navbar."""
+    css = font_face() + f".n{{font:600 22px {SANS};letter-spacing:-.02em;fill:{pal['ink']}}}"
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="132" height="32" viewBox="0 0 132 32" role="img" aria-label="DeckTalk">
+  <defs><style>{css}</style></defs>
+  <g transform="translate(0 4)" stroke-width="2.5" stroke-linecap="round">
+    <line x1="4" y1="9" x2="4" y2="20" stroke="{pal["bar"]}"/>
+    <line x1="12" y1="9" x2="12" y2="20" stroke="{pal["blue"]}"/>
+    <line x1="20" y1="9" x2="20" y2="20" stroke="{pal["bar"]}"/>
+    <circle cx="12" cy="4.5" r="2.5" fill="{pal["blue"]}" stroke="none"/>
+  </g>
+  <text class="n" x="34" y="24">DeckTalk</text>
+</svg>
+"""
+
+
 # ---- entry ------------------------------------------------------------------------------------
 
 
@@ -364,12 +474,17 @@ def build() -> dict[Path, str]:
         gap = space * (1.6 if SENTENCE[i].endswith((",", ".")) else 1.0)
         x += w + gap
     out: dict[Path, str] = {}
+    docs = ROOT / "docs"
     for name, pal in (("light", LIGHT), ("dark", DARK)):
         out[ASSETS / f"hero-{name}.svg"] = hero(pal, xs, widths)
         out[ASSETS / f"how-it-works-{name}.svg"] = how_it_works(pal, stacked=False)
         out[ASSETS / f"how-it-works-{name}-stacked.svg"] = how_it_works(pal, stacked=True)
+        out[ASSETS / f"alignment-{name}.svg"] = alignment(pal, [x * 26 / 32 for x in xs])
         out[ASSETS / f"mark-{name}.svg"] = mark(pal)
-    out[ROOT / "docs" / "favicon.svg"] = mark(LIGHT, size=32, background=True)
+        out[docs / "logo" / f"{name}.svg"] = wordmark(pal)
+        for key in ("hero", "how-it-works", "alignment"):
+            out[docs / "images" / f"{key}-{name}.svg"] = out[ASSETS / f"{key}-{name}.svg"]
+    out[docs / "favicon.svg"] = mark(LIGHT, size=32, background=True)
     return out
 
 
