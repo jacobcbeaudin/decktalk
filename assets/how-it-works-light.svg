@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="200" viewBox="0 0 1200 200" role="img" aria-labelledby="t">
+  <title id="t">How DeckTalk works: a script becomes narration with word timestamps; cues map visuals to words; a browser records the slides; ffmpeg cuts everything to the narration.</title>
+  <defs>
+    <style>
+      .bg { fill:#ffffff }
+      .box { fill:#f6f8fa; stroke:#e1e5eb; stroke-width:1.5 }
+      .h { font:700 19px "Inter",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; fill:#0b0f14 }
+      .s { font:400 14px "Inter",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; fill:#5b6573 }
+      .k { font:500 13px ui-monospace,Menlo,Consolas,monospace; fill:#1f9d55 }
+      .arrow { stroke:#c3cad4; stroke-width:2; fill:none }
+      .tip { fill:#c3cad4 }
+    </style>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="tip" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="200"/>
+
+  <g transform="translate(22 40)">
+    <rect class="box" width="270" height="120" rx="14"/>
+    <text class="k" x="22" y="34">script.md</text>
+    <text class="h" x="22" y="66">You write</text>
+    <text class="s" x="22" y="92">Markdown, one section per scene.</text>
+  </g>
+  <path class="arrow" d="M294,100 L322,100" marker-end="url(#m)"/>
+  <g transform="translate(324 40)">
+    <rect class="box" width="270" height="120" rx="14"/>
+    <text class="k" x="22" y="34">narrate</text>
+    <text class="h" x="22" y="66">Your voice reads it</text>
+    <text class="s" x="22" y="92">ElevenLabs, a timestamp per word.</text>
+  </g>
+  <path class="arrow" d="M596,100 L624,100" marker-end="url(#m)"/>
+  <g transform="translate(626 40)">
+    <rect class="box" width="270" height="120" rx="14"/>
+    <text class="k" x="22" y="34">record</text>
+    <text class="h" x="22" y="66">Slides follow the words</text>
+    <text class="s" x="22" y="92">Plain HTML, cued, in Chromium.</text>
+  </g>
+  <path class="arrow" d="M898,100 L926,100" marker-end="url(#m)"/>
+  <g transform="translate(928 40)">
+    <rect class="box" width="270" height="120" rx="14"/>
+    <text class="k" x="22" y="34">assemble</text>
+    <text class="h" x="22" y="66">One frame-exact mp4</text>
+    <text class="s" x="22" y="92">ffmpeg cuts, mixes, verifies.</text>
+  </g>
+</svg>

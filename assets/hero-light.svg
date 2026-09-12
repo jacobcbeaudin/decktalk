@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="t d">
+  <title id="t">DeckTalk</title>
+  <desc id="d">A playhead moves across a spoken sentence. When it reaches "curve" a curve draws on the slide; when it reaches "number" a number appears. Visuals land on words.</desc>
+  <defs>
+    <style>
+      :root { --bg:#ffffff; --fg:#0b0f14; --dim:#c3cad4; --mute:#5b6573; --card:#f6f8fa; --edge:#e1e5eb; --accent:#1f9d55; }
+      .bg { fill:#ffffff }
+      .word { font:600 30px "Inter",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; fill:#c3cad4 }
+      .label { font:500 15px "Inter",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; fill:#5b6573; letter-spacing:.12em }
+      .card { fill:#f6f8fa; stroke:#e1e5eb; stroke-width:1.5 }
+      .axis { stroke:#e1e5eb; stroke-width:2 }
+      .num { font:800 54px "Inter",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; fill:#1f9d55 }
+
+      /* 8 s loop. Playhead crosses the sentence from 6% to 78%, then everything resets. */
+      .head { animation: head 8s cubic-bezier(.4,0,.6,1) infinite }
+      @keyframes head { 0%,6% { transform:translateX(0) } 78%,100% { transform:translateX(560px) } }
+
+      .w { animation-duration:8s; animation-iteration-count:infinite; animation-timing-function:linear }
+      @keyframes w1 { 0%,10% { fill:#c3cad4 } 11%,90% { fill:#0b0f14 } 91%,100% { fill:#c3cad4 } }
+      @keyframes w2 { 0%,22% { fill:#c3cad4 } 23%,90% { fill:#1f9d55 } 91%,100% { fill:#c3cad4 } }
+      @keyframes w3 { 0%,36% { fill:#c3cad4 } 37%,90% { fill:#0b0f14 } 91%,100% { fill:#c3cad4 } }
+      @keyframes w4 { 0%,46% { fill:#c3cad4 } 47%,90% { fill:#0b0f14 } 91%,100% { fill:#c3cad4 } }
+      @keyframes w5 { 0%,56% { fill:#c3cad4 } 57%,90% { fill:#1f9d55 } 91%,100% { fill:#c3cad4 } }
+      @keyframes w6 { 0%,70% { fill:#c3cad4 } 71%,90% { fill:#0b0f14 } 91%,100% { fill:#c3cad4 } }
+      .w1{animation-name:w1}.w2{animation-name:w2}.w3{animation-name:w3}.w4{animation-name:w4}.w5{animation-name:w5}.w6{animation-name:w6}
+
+      /* the slide reacts: the curve draws on "curve", the number pops on "number" */
+      .curve { stroke-dasharray:1; stroke-dashoffset:1; animation: draw 8s linear infinite }
+      @keyframes draw { 0%,22% { stroke-dashoffset:1 } 40%,90% { stroke-dashoffset:0 } 91%,100% { stroke-dashoffset:1 } }
+      .pop { opacity:0; transform-origin:1000px 176px; animation: pop 8s cubic-bezier(.2,.9,.2,1) infinite }
+      @keyframes pop { 0%,56% { opacity:0; transform:scale(.6) } 60%,90% { opacity:1; transform:scale(1) } 91%,100% { opacity:0; transform:scale(.6) } }
+      .tick { animation: tick 8s linear infinite }
+      @keyframes tick { 0%,22% { opacity:0 } 23%,25% { opacity:1 } 26%,56% { opacity:0 } 57%,59% { opacity:1 } 60%,100% { opacity:0 } }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="300"/>
+
+  <!-- left: what is said -->
+  <text class="label" x="80" y="78">NARRATION</text>
+  <g transform="translate(80 150)">
+    <line x1="0" y1="-52" x2="600" y2="-52" stroke="#e1e5eb" stroke-width="2"/>
+    <g class="head">
+      <rect x="-1" y="-64" width="2" height="24" fill="#1f9d55"/>
+      <circle class="tick" cx="0" cy="-52" r="6" fill="#1f9d55"/>
+    </g>
+    <text y="0">
+      <tspan class="word w w1" x="0">The</tspan>
+      <tspan class="word w w2" dx="11">curve</tspan>
+      <tspan class="word w w3" dx="11">rises,</tspan>
+      <tspan class="word w w4" dx="16">then</tspan>
+      <tspan class="word w w5" dx="11">the number</tspan>
+      <tspan class="word w w6" dx="11">lands.</tspan>
+    </text>
+    <text class="label" x="0" y="44" style="letter-spacing:0;fill:#c3cad4">a timestamp for every word</text>
+  </g>
+
+  <!-- right: what is on screen -->
+  <text class="label" x="780" y="78">SLIDE</text>
+  <g transform="translate(780 92)">
+    <rect class="card" width="340" height="160" rx="14"/>
+    <line class="axis" x1="30" y1="124" x2="200" y2="124"/>
+    <line class="axis" x1="30" y1="36" x2="30" y2="124"/>
+    <path class="curve" pathLength="1" d="M30,118 C70,116 110,96 150,62 S190,34 200,30" fill="none" stroke="#1f9d55" stroke-width="4" stroke-linecap="round"/>
+    <text class="num pop" x="228" y="104">3×</text>
+  </g>
+</svg>
