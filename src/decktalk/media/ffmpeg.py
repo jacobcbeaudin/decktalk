@@ -225,13 +225,20 @@ def luma_at(path: Path, t: float, *, crop: str | None = None) -> tuple[float, fl
 
 
 def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, width: int, height: int) -> float:
-    """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2."""
+    """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2.
+
+    Both inputs are seeked before decoding, so the cost is two keyframe seeks rather than a
+    decode from the start of the file.
+    """
     fc = (
-        f"[0:v]trim=start={t1:.3f}:duration=0.05,setpts=PTS-STARTPTS,scale={width}:{height}[a];"
-        f"[1:v]trim=start={t2:.3f}:duration=0.05,setpts=PTS-STARTPTS,scale={width}:{height}[b];"
+        f"[0:v]trim=duration=0.05,setpts=PTS-STARTPTS,scale={width}:{height}[a];"
+        f"[1:v]trim=duration=0.05,setpts=PTS-STARTPTS,scale={width}:{height}[b];"
         f"[a][b]blend=all_mode=difference,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,signalstats,metadata=print"
     )
-    err = stderr("-i", str(path), "-i", str(path), "-filter_complex", fc, "-frames:v", "1", "-f", "null", "-")
+    err = stderr(
+        "-ss", f"{t1:.3f}", "-i", str(path), "-ss", f"{t2:.3f}", "-i", str(path),
+        "-filter_complex", fc, "-frames:v", "1", "-f", "null", "-",
+    )  # fmt: skip
     m = re.search(r"YAVG=([0-9.]+)", err)
     return (float(m.group(1)) / 255 * 100) if m else 0.0
 
