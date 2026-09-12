@@ -73,4 +73,7 @@ jobs:
           path: |
             tests/out/smoke/build/out/smoke.mp4
             tests/out/smoke/build/shots/
+            tests/out/smoke/build/rec/*.json
+            tests/out/smoke/build/audio/beats.json
+            tests/out/smoke/build/audio/timeline.json
           if-no-files-found: ignore

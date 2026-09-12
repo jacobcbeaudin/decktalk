@@ -210,6 +210,7 @@ class Sidecar:
     lead_method: str | None = None
     warnings: list[str] = field(default_factory=list)
     frame_gaps: list[tuple[float, int]] = field(default_factory=list)  # (seconds, ms) where the page stalled
+    sync_log: list[dict[str, Any]] = field(default_factory=list)  # what each data-sync element matched
 
     @property
     def worst_stall_ms(self) -> int:

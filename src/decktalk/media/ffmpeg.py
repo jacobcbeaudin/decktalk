@@ -311,6 +311,18 @@ def luma_at(path: Path, t: float, *, crop: str | None = None) -> tuple[float, fl
     return (float(yavg.group(1)) if yavg else 0.0, float(ymax.group(1)) if ymax else 0.0)
 
 
+def frame_seek(t: float) -> tuple[list[str], str]:
+    """A coarse input seek and the exact output seek that follows it, for one frame at `t`.
+
+    Seeking before the input is fast but some builds land on a keyframe rather than the
+    frame asked for, and seeking after the input is exact but decodes from wherever the
+    input starts. Jumping to a little before `t` on the input and then seeking the small
+    remainder on the output is both quick and exact on every build.
+    """
+    coarse = max(0.0, t - 3.0)
+    return ["-ss", f"{coarse:.3f}"], f"{t - coarse:.3f}"
+
+
 def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, width: int, height: int) -> float:
     """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2.
 
@@ -322,7 +334,8 @@ def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, widt
     with tempfile.TemporaryDirectory() as tmp:
         a, b = Path(tmp) / "a.png", Path(tmp) / "b.png"
         for t, target in ((t1, a), (t2, b)):
-            run("-ss", f"{t:.3f}", "-i", str(path), "-frames:v", "1", "-vf", f"scale={width}:{height}", str(target))
+            pre, rest = frame_seek(t)
+            run(*pre, "-i", str(path), "-ss", rest, "-frames:v", "1", "-vf", f"scale={width}:{height}", str(target))
         err = stderr(
             "-i", str(a), "-i", str(b), "-filter_complex",
             f"[0:v][1:v]blend=all_mode=difference,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,signalstats,metadata=print",
@@ -346,9 +359,11 @@ def changed_series(
     span = max(end - start, 0.0)
     if span <= 0:
         return []
+    pre_s, rest_s = frame_seek(start)
     with tempfile.TemporaryDirectory() as tmp:
         ref = Path(tmp) / "ref.png"
-        run("-ss", f"{ref_t:.3f}", "-i", str(path), "-frames:v", "1", "-vf", f"scale={width}:{height}", str(ref))
+        pre, rest = frame_seek(ref_t)
+        run(*pre, "-i", str(path), "-ss", rest, "-frames:v", "1", "-vf", f"scale={width}:{height}", str(ref))
         fc = (
             f"[1:v]scale={width}:{height},setpts=PTS-STARTPTS[b];"
             f"[0:v][b]blend=all_mode=difference:shortest=1,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,"
@@ -356,7 +371,7 @@ def changed_series(
         )
         err = stderr(
             "-loop", "1", "-framerate", str(fps), "-t", f"{span + 0.2:.3f}", "-i", str(ref),
-            "-ss", f"{start:.3f}", "-t", f"{span:.3f}", "-i", str(path),
+            *pre_s, "-i", str(path), "-ss", rest_s, "-t", f"{span:.3f}",
             "-filter_complex", fc, "-f", "null", "-",
         )  # fmt: skip
     first = math.ceil(start * fps - 1e-6) / fps

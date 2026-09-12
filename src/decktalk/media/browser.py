@@ -144,6 +144,15 @@ def record_page(
     page.wait_for_timeout(seconds * 1000)
     warnings = page_warnings(page, out.stem)
     gaps = page.evaluate("() => (window.__decktalk && window.__decktalk.frameGaps) || []")
+    sync_log = page.evaluate("() => (window.__decktalk && window.__decktalk.syncLog) || []")
+    for entry in sync_log if isinstance(sync_log, list) else []:
+        log.debug(
+            "[sync] %s  cue %.3f  run %.3f  first word on %s",
+            entry.get("text"),
+            entry.get("cueAt", 0),
+            entry.get("runAt", 0),
+            entry.get("firstOn"),
+        )
     frame_gaps = [(float(g["at"]), int(g["ms"])) for g in gaps if isinstance(g, dict)]
     if frame_gaps:
         worst = max(ms for _, ms in frame_gaps)
@@ -167,6 +176,7 @@ def record_page(
         lead_seconds=round(started - created, 3),
         warnings=warnings,
         frame_gaps=frame_gaps,
+        sync_log=[dict(e) for e in sync_log if isinstance(e, dict)],
     )
     sidecar.save(out.with_suffix(".json"))
     return sidecar
