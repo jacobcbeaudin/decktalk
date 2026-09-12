@@ -49,6 +49,12 @@ _REGISTRY: dict[str, ProviderFactory] = {}
 
 
 def register(name: str, factory: ProviderFactory) -> None:
+    """Make a provider selectable as `[voice] provider = "<name>"`.
+
+    The factory receives the loaded Project, so it can read the project's env and
+    voice settings, and returns a SpeechProvider. Registering a name again replaces
+    the earlier factory.
+    """
     _REGISTRY[name] = factory
 
 

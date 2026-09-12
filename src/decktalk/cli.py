@@ -16,7 +16,8 @@
     decktalk status                   timeline and what is built
     decktalk runtime                  copy the packaged decktalk-runtime.js into the project
 
-Every project command takes --project/-p DIR (default: the current directory).
+Every project command takes --project/-p DIR (default: DECKTALK_PROJECT, else the current
+directory). The -v and -q flags go before or after the command name.
 Tuning flags such as --preset override decktalk.toml and DECKTALK_* env for one run.
 """
 
@@ -257,34 +258,45 @@ def build_parser() -> argparse.ArgumentParser:
         prog="decktalk", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument("--version", action="version", version=f"decktalk {__version__}")
-    p.add_argument("--project", "-p", default=None, help="project directory (default: .)")
-    p.add_argument("-v", "--verbose", action="store_true", help="debug logging (ffmpeg command lines)")
-    p.add_argument("-q", "--quiet", action="store_true", help="warnings only")
+    project_help = "project directory (default: DECKTALK_PROJECT, else the current directory)"
+    verbose_help = "debug logging, including every ffmpeg command line"
+    quiet_help = "warnings only"
+    p.add_argument("--project", "-p", default=None, help=project_help)
+    p.add_argument("-v", "--verbose", action="store_true", help=verbose_help)
+    p.add_argument("-q", "--quiet", action="store_true", help=quiet_help)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    def proj(sp: argparse.ArgumentParser) -> argparse.ArgumentParser:
-        sp.add_argument("--project", "-p", default=argparse.SUPPRESS, help="project directory (default: .)")
+    def common(sp: argparse.ArgumentParser) -> argparse.ArgumentParser:
+        """Accept -v and -q after the command name too, as -p is below."""
+        sp.add_argument("-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help=verbose_help)
+        sp.add_argument("-q", "--quiet", action="store_true", default=argparse.SUPPRESS, help=quiet_help)
         return sp
+
+    def proj(sp: argparse.ArgumentParser) -> argparse.ArgumentParser:
+        sp.add_argument("--project", "-p", default=argparse.SUPPRESS, help=project_help)
+        return common(sp)
 
     def encoding(sp: argparse.ArgumentParser) -> None:
         sp.add_argument("--preset", help="x264 preset for this run (veryfast for drafts)")
         sp.add_argument("--crf", type=int, help="x264 quality for this run")
 
-    s = sub.add_parser("init", help="scaffold a project directory")
-    s.add_argument("dir")
+    s = common(sub.add_parser("init", help="scaffold a project directory"))
+    s.add_argument("dir", help="the directory to create, with a working example deck")
     s.add_argument("--name", help="project name (default: directory name)")
     s.add_argument("--force", action="store_true", help="write into a non-empty directory")
     s.set_defaults(fn=cmd_init)
 
-    sub.add_parser("setup", help="fetch Chromium and ffmpeg").set_defaults(fn=cmd_setup)
-    sub.add_parser("doctor", help="report installed tools").set_defaults(fn=cmd_doctor)
+    common(sub.add_parser("setup", help="fetch Chromium and ffmpeg")).set_defaults(fn=cmd_setup)
+    common(sub.add_parser("doctor", help="report installed tools")).set_defaults(fn=cmd_doctor)
     proj(sub.add_parser("runtime", help="copy the packaged runtime into the project")).set_defaults(fn=cmd_runtime)
 
     s = proj(sub.add_parser("narrate", help="synthesize narration with word timestamps"))
-    s.add_argument("--only", type=int, action="append", help="section number(s)")
+    s.add_argument("--only", type=int, action="append", help="only these section numbers (repeat the flag for several)")
     s.add_argument("--force", action="store_true", help="ignore the text-hash cache")
-    s.add_argument("--allow-placeholders", action="store_true")
-    s.add_argument("--dry-run", action="store_true", help="parse and print; no API calls")
+    s.add_argument(
+        "--allow-placeholders", action="store_true", help="synthesize a section that still has a [CAPITAL] placeholder"
+    )
+    s.add_argument("--dry-run", action="store_true", help="parse and print without any API call")
     s.add_argument("--silent", action="store_true", help="silent placeholders, no API key")
     s.add_argument("--model", help="ElevenLabs model for this run")
     s.set_defaults(fn=cmd_narrate)
@@ -292,31 +304,33 @@ def build_parser() -> argparse.ArgumentParser:
     proj(sub.add_parser("beats", help="resolve cue phrases to timestamps")).set_defaults(fn=cmd_beats)
 
     s = proj(sub.add_parser("soundscape", help="generate ambience, sfx and underscore"))
-    s.add_argument("--only", action="append", help="ambience | music | <sfx name>")
-    s.add_argument("--force", action="store_true")
-    s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--only", action="append", help="one item: ambience, music, or an effect name (repeat for several)")
+    s.add_argument("--force", action="store_true", help="regenerate even if the file exists")
+    s.add_argument("--dry-run", action="store_true", help="print every request without sending it")
     s.set_defaults(fn=cmd_soundscape)
 
     s = proj(sub.add_parser("record", help="record the pages with headless Chromium"))
-    s.add_argument("--only", type=int, action="append")
+    s.add_argument("--only", type=int, action="append", help="only these section numbers (repeat the flag for several)")
     s.add_argument("--seconds", type=float, help="override every duration (smoke tests)")
     s.add_argument("--settle", type=float, help="seconds after load before the clock starts")
     s.add_argument("--no-beats", action="store_true", help="autoplay timing instead of ?beats=")
     s.set_defaults(fn=cmd_record)
 
     s = proj(sub.add_parser("measure", help="find narration t=0 in each recording"))
-    s.add_argument("--only", type=int, action="append")
+    s.add_argument("--only", type=int, action="append", help="only these section numbers (repeat the flag for several)")
     s.set_defaults(fn=cmd_measure)
 
     s = proj(sub.add_parser("check", help="recording sanity: duration and luma"))
-    s.add_argument("--only", type=int, action="append")
+    s.add_argument("--only", type=int, action="append", help="only these section numbers (repeat the flag for several)")
     s.add_argument("--strict", action="store_true", help="exit 1 on a suspect recording")
     s.set_defaults(fn=cmd_check)
 
     s = proj(sub.add_parser("assemble", help="cut, mix and normalize the final mp4"))
-    s.add_argument("--nomix", action="store_true", help="narration only: no beds, no sfx")
-    s.add_argument("--no-loudnorm", action="store_true")
-    s.add_argument("--strict", action="store_true", help="fail on a missing clip or recording")
+    s.add_argument("--nomix", action="store_true", help="narration only: no beds, no effects")
+    s.add_argument("--no-loudnorm", action="store_true", help="skip loudness normalization")
+    s.add_argument(
+        "--strict", action="store_true", help="fail on a missing clip or recording instead of substituting a slate"
+    )
     encoding(s)
     s.set_defaults(fn=cmd_assemble)
 
@@ -336,10 +350,14 @@ def build_parser() -> argparse.ArgumentParser:
     s = proj(sub.add_parser("build", help="run the whole pipeline"))
     s.add_argument("--silent", action="store_true", help="placeholder narration, no API key")
     s.add_argument("--force", action="store_true", help="re-synthesize every section")
-    s.add_argument("--only", type=int, action="append", help="re-record only these sections")
-    s.add_argument("--nomix", action="store_true")
-    s.add_argument("--no-loudnorm", action="store_true")
-    s.add_argument("--strict", action="store_true")
+    s.add_argument(
+        "--only", type=int, action="append", help="re-record only these sections (repeat the flag for several)"
+    )
+    s.add_argument("--nomix", action="store_true", help="narration only: no beds, no effects")
+    s.add_argument("--no-loudnorm", action="store_true", help="skip loudness normalization")
+    s.add_argument(
+        "--strict", action="store_true", help="fail on a missing clip or recording instead of substituting a slate"
+    )
     s.add_argument("--allow-unresolved", action="store_true", help="build even if some cue phrases were not found")
     encoding(s)
     s.set_defaults(fn=cmd_build)
@@ -361,7 +379,8 @@ def main(argv: list[str] | None = None) -> int:
     if reconfigure is not None:
         reconfigure(line_buffering=True)  # keep stdout and stderr in order
     args = build_parser().parse_args(argv)
-    configure_logging(args.verbose, args.quiet)
+    verbose = getattr(args, "verbose", False)
+    configure_logging(verbose, getattr(args, "quiet", False))
     try:
         return int(args.fn(args) or 0)
     except DeckTalkError as exc:
@@ -369,6 +388,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except KeyboardInterrupt:
         return 130
+    except Exception as exc:
+        if verbose:
+            raise
+        print(f"error: {type(exc).__name__}: {exc} (add -v for the traceback)", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
