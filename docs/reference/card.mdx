@@ -1,0 +1,93 @@
+---
+title: Reference card
+description: Every file, command, variable, and exit code on one page.
+---
+
+This page is the whole contract in the fewest words. It is written for language models
+and for people who already know what they are looking for. Every item links to the page
+that explains it.
+
+## Inputs
+
+All four live in the project directory. [Your first deck](/guides/first-deck) writes them.
+
+| File | Shape |
+|---|---|
+| `decktalk.toml` | `[project]` with `name`; `[voice]`; one `[[section]]` per script section with `number`, `title`, and either `page` + `scene` or `clip`; optional `[transition]`, `[mix]`, `[soundscape]`, and tuning tables. [Project file](/concepts/project-file). |
+| `script.md` | `## N. Title` starts section `N`. `[bracketed]` text is a direction and is not spoken. `[CAPITALS]` is a placeholder and fails `narrate`. `<break time="1s"/>` pauses. |
+| `cues.json` | `{"sections": {"N": {"min_seconds"?: s, "cues": [{"step": id, "on": phrase \| "$start" \| "$end", "offset"?: s, "occurrence"?: n, "case_sensitive"?: bool}]}}}`. First occurrence, case and punctuation ignored. [Cues](/concepts/cues). |
+| `deck/index.html` + `deck/decktalk-runtime.js` | `DeckTalk.scene(N, {name, camera?, steps: [{id, hold?, cues?, render, enter?, on?}]})`. Reveals use `data-cue="id"`, `data-at="s"`, `data-fx`, `data-dur`, `data-count`, `data-type`, `data-tex`. [Page contract](/concepts/page-contract). |
+| `.env` | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`. Exported variables work too. Not needed with `--silent`. |
+
+The number `N` is the same in the script heading, the section table, the cues key, and
+the scene. A cue belongs to the step with the same id, or the step whose `cues` names it,
+or the step whose id is its longest prefix.
+
+## Commands
+
+```console
+decktalk setup                              # once per machine: Chromium and ffmpeg
+decktalk init DIR [--name NAME]             # scaffold
+decktalk build --silent                     # free dry run of every stage, no key
+decktalk build                              # the film, at build/out/<name>.mp4
+decktalk build --only 3 --preset veryfast   # re-record one section, fast encode
+decktalk beats                              # where each cue phrase resolved; exit 1 if any is missing
+decktalk verify 3:3.1eq                     # prove a cue changed the picture in the final mp4
+decktalk shots [--section N --at S]         # PNG per step, or a frame from a playing section
+decktalk status                             # timeline and what is built
+decktalk narrate --dry-run                  # what would be sent to the voice, without sending it
+decktalk soundscape --dry-run               # same, for ambience, effects, and music
+decktalk runtime                            # refresh deck/decktalk-runtime.js after an upgrade
+```
+
+Every project command takes `-p DIR` or `--project DIR` and defaults to the current
+directory. Global flags `-v` and `-q` go before the command. [CLI](/reference/cli) lists
+every flag.
+
+## Stages and artifacts
+
+`build` = `narrate` → `beats` → `record` → `measure` → `check` → `assemble` → `verify`.
+
+| Artifact | Written by | Holds |
+|---|---|---|
+| `build/audio/NN-slug.mp3`, `.words.json` | narrate | one section's audio and `[{word, start, end}]` |
+| `build/audio/manifest.json` | narrate | one entry per section with its text hash and durations |
+| `build/audio/narration.mp3`, `timeline.json` | narrate | the continuous track and each section's absolute span and words |
+| `build/audio/beats.json` | beats | `{"NN": "cue@seconds,…"}` relative to the section start |
+| `build/rec/NN-scene.webm`, `.json` | record, measure | the recording and where narration t=0 sits in it |
+| `build/out/NN-section.mp4` | assemble | each section cut to its span |
+| `build/out/<name>.mp4` | assemble | the film, plus a timestamped copy |
+| `build/shots/*.png` | shots | review screenshots |
+
+[Build artifacts](/reference/artifacts) gives every field.
+
+## Settings
+
+Defaults → tables of the same name in `decktalk.toml` → `DECKTALK_<SECTION>_<FIELD>`
+environment variables → the flags `--preset`, `--crf`, `--settle`, `--model`. Sections
+are `video`, `narration`, `record`, `align`, `audio`, `verify`, `elevenlabs`.
+[Configuration](/reference/configuration) lists every field.
+
+## Exit codes and errors
+
+| Code | When |
+|---|---|
+| 0 | Success. |
+| 1 | Any `DeckTalkError`, printed to stderr as `error: …`. Also `beats` with an unmatched phrase, `build` unless assembly and verification both pass, `verify` with a failed check, `check --strict` with a suspect recording, and `doctor` with a missing tool. |
+| 130 | Interrupted. |
+
+`ConfigError` means an input is bad or inconsistent. `MissingInputError` means an
+earlier stage has not run. `ProviderError` means ElevenLabs refused or failed.
+`ToolError` means ffmpeg or Chromium failed. Progress goes to stderr through the
+`decktalk` logger. Keys are never printed.
+
+## Python
+
+```python
+import decktalk
+project = decktalk.Project.load("my-lesson")
+result = decktalk.build(project, silent=True)
+print(result.assembly.final, result.verification.ok)
+```
+
+[Python API](/reference/python-api) lists every public name.

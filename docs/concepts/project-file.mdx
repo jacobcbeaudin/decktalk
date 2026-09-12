@@ -1,19 +1,37 @@
 ---
 title: The project file
-description: Every key in decktalk.toml, and the shape of cues.json.
+description: Every table and key in decktalk.toml.
 ---
 
 Each project has one `decktalk.toml`. Every path in it is relative to the project
 directory. An unknown top-level table fails the load, so a typo cannot silently do
-nothing.
+nothing. The file has two kinds of content. The document tables on this page describe
+the presentation. The [tuning tables](/reference/configuration) change how DeckTalk
+renders and are rarely needed.
 
-The docs use five words with fixed meanings.
+```toml decktalk.toml
+[project]
+name = "my-lesson"
 
-- A **section** is one `## N.` block of `script.md` together with its `[[section]]` table. It is the unit of narration, recording, and cutting.
-- A **scene** is what a page plays for one section. The page declares it with `DeckTalk.scene(id, …)`, and the recorder selects it with `?scene=`.
-- A **step** is one slide state inside a scene. The query `?step=ID` freezes it.
-- A **cue** is a named moment. In `cues.json` it is a spoken phrase to find. In the page it is an id that reveals elements or runs handlers.
-- A **beat** is a cue resolved to seconds after the section's narration begins. DeckTalk stores beats in `beats.json` and passes them to the page as `?beats=`.
+[voice]
+stability = 0.55
+
+[[section]]
+number = 1
+title = "Open"
+page = "deck/index.html"
+
+[[section]]
+number = 2
+title = "On camera"
+clip = "media/interview.mp4"
+
+[transition]
+dips = [[1, 2]]
+
+[mix]
+underscore = "build/music/underscore.mp3"
+```
 
 ## `[project]`
 
@@ -26,18 +44,21 @@ The docs use five words with fixed meanings.
 
 ## `[voice]`
 
-These are the ElevenLabs voice settings for this presentation. The `model` key overrides
-the tool default, which is normally `eleven_multilingual_v2`.
+These are the voice settings for this presentation. The `model` key overrides the tool
+default, which is `eleven_multilingual_v2` unless `[narration]` says otherwise.
 
-| Key | Default |
-|---|---|
-| `provider` | `elevenlabs`. It is the only provider today. The Python API page explains how to add one. |
-| `model` | the tool default |
-| `stability` | 0.55 |
-| `similarity_boost` | 0.75 |
-| `style` | 0.0 |
-| `speaker_boost` | true |
-| `speed` | 1.0 |
+| Key | Default | Meaning |
+|---|---|---|
+| `provider` | `elevenlabs` | The speech provider. ElevenLabs is the only one today. |
+| `model` | the tool default | The ElevenLabs model id. |
+| `stability` | 0.55 | Lower values vary more between takes. |
+| `similarity_boost` | 0.75 | How closely the voice follows the clone. |
+| `style` | 0.0 | Style exaggeration. Zero is the most stable. |
+| `speaker_boost` | true | ElevenLabs' speaker boost. |
+| `speed` | 1.0 | Speaking rate. |
+
+The voice id and the API key are secrets, so they live in `.env` as
+`ELEVENLABS_VOICE_ID` and `ELEVENLABS_API_KEY`, or in the environment.
 
 ## `[[section]]`
 
@@ -54,9 +75,13 @@ a page or a clip.
 | `extra_seconds` | page | 0.3 | How long the recording runs past the narration. The margin keeps the cut off an undrawn frame. |
 | `hold_seconds` | page | 0 | How long the last frame holds. Only the last page section may hold, because the narration is continuous and an earlier hold would push every later visual off its words. |
 | `ambience` | page | false | Whether the ambience bed plays under this section. |
-| `params` | page | none | Extra query parameters for the page, written as a table such as `[section.params] theme = "dark"`. |
+| `params` | page | none | Extra query parameters for the page, written as a table such as `[section.params]` with `theme = "dark"`. |
 | `clip` | clip | required | Your video file, with its own audio. |
 | `slate_seconds` | clip | 5 | How long the titled slate plays when the clip file is missing. |
+
+A clip that is not 1920 by 1080 is scaled and padded to fit. A missing clip is not an
+error unless you pass `--strict`. A titled slate plays for `slate_seconds` in its place,
+so a project builds before every asset exists.
 
 ## `[transition]`
 
@@ -68,37 +93,29 @@ a page or a clip.
 
 ## `[mix]`
 
+The mix is optional. Without this table the film carries narration and clip audio only.
+[Sound](/concepts/sound) explains how the parts fit together.
+
 | Key | Default | Meaning |
 |---|---|---|
 | `underscore` | none | The music bed. DeckTalk loops it and ducks it under speech. |
 | `underscore_db` | -24 | The bed level. |
 | `underscore_duck_db` | -6 | The additional attenuation under speech. |
 | `underscore_fade_in`, `underscore_fade_out` | 2, 3 | The fade lengths in seconds. |
-| `markers` | none | A JSON file that swells or mutes the bed at spoken phrases. The format follows below. |
+| `markers` | none | A JSON file that swells or mutes the bed at spoken phrases. |
 | `ambience` | none | The ambience bed. It plays under sections that set `ambience = true`. |
 | `ambience_db` | -20 | The ambience level. |
 | `slate` | rendered | A PNG to use instead of the rendered titled slate. |
-| `[[mix.sfx]]` | none | One-shot effects. Each has `file`, `section`, `cue`, `db` (default -16), and `offset` (default 0). DeckTalk places the effect where the cue resolved in that section and skips it, with a warning, when the cue is unresolved. |
-| `[mix.loudnorm]` | I -16, TP -1.5, LRA 11 | The EBU R128 targets for the final mix. |
-
-The markers file looks like this:
-
-```json
-{ "boost_db": 3, "boost_seconds": 2,
-  "markers": [ { "name": "open", "section": 1, "on": "$start" },
-               { "name": "zero", "section": 2, "on": "worth nothing", "mute_seconds": 0.6 } ] }
-```
-
-The `on` key takes a phrase, `$start`, or `$end`, exactly like a cue, and `occurrence`,
-`case_sensitive`, and `offset` refine it. A marker swells the bed by `boost_db` for
-`boost_seconds`. With `mute_seconds`, it silences the bed for that long first.
+| `[[mix.sfx]]` | none | One-shot effects. Each has `file`, `section`, `cue`, `db` (default -16), and `offset` (default 0). |
+| `[mix.loudnorm]` | `I = -16`, `TP = -1.5`, `LRA = 11` | The EBU R128 targets for the final mix. |
 
 ## `[soundscape]`
 
-These tables hold the prompts for `decktalk soundscape`. Ambience and music write to the
-`ambience` and `underscore` paths named in `[mix]`. When `[mix]` names none, they write to
-`build/sfx/ambience.mp3` and `build/music/underscore.mp3`. Each sound effect writes to
-`build/sfx/<name>.mp3` unless its `out` key says otherwise.
+These tables hold the prompts for `decktalk soundscape`, which generates sound with
+ElevenLabs. Ambience and music write to the `ambience` and `underscore` paths named in
+`[mix]`. When `[mix]` names none, they write to `build/sfx/ambience.mp3` and
+`build/music/underscore.mp3`. Each sound effect writes to `build/sfx/<name>.mp3` unless
+its `out` key says otherwise.
 
 | Table | Keys |
 |---|---|
@@ -108,30 +125,21 @@ These tables hold the prompts for `decktalk soundscape`. Ambience and music writ
 
 ## Tuning tables
 
-You can override any settings section per project with a table of the same name. You can
-also override it per run with a `DECKTALK_<SECTION>_<FIELD>` environment variable. The fields and their defaults
-are the dataclasses in `decktalk/config.py`.
+Any settings section can be overridden per project with a table of the same name, such
+as `[video]` or `[record]`, or per shell with a `DECKTALK_<SECTION>_<FIELD>` variable.
+[Configuration](/reference/configuration) lists every field with its default.
 
-| Table | What it tunes |
-|---|---|
-| `[video]` | width, height, fps, preset, crf, audio bitrate, sample rate, channels, slate color |
-| `[narration]` | model, output format, pacing estimate, break and tail lengths, context characters, timeout |
-| `[record]` | settle seconds, marker length, color scheme, screenshot settle |
-| `[align]` | magenta detection, painted and black thresholds, truncation slack |
-| `[audio]` | duck and ambience ramps, marker ramps, limiter |
-| `[verify]` | probe timing, difference level, minimum changed share, probe size |
-| `[elevenlabs]` | API base, sound and music models, chunking, default durations, timeout |
+## `script.md`
+
+The script is markdown with one rule. Each `## N. Title` heading starts section `N`, and
+the text under it is what the voice says for that section.
+
+- Text in square brackets, such as `[Deck scene 3.]`, is a stage direction. It is not spoken, and a short pause is left where it sat.
+- A bracket in capitals, such as `[NAME]`, is a placeholder. The `narrate` stage refuses to synthesize a section that still has one unless you pass `--allow-placeholders`.
+- A tag such as `<break time="1.0s"/>` inserts a pause of that length.
+- Other markdown, such as emphasis, is stripped before synthesis.
 
 ## `cues.json`
 
-```json
-{ "sections": { "3": { "min_seconds": 25,
-  "cues": [ { "step": "3.1", "on": "$start" },
-            { "step": "3.1draw", "on": "curve draws" },
-            { "step": "3.1eq", "on": "equation", "offset": 0.2, "occurrence": 1 } ] } } }
-```
-
-The `step` key, or its synonym `cue`, is a cue id that the page understands. The `on` key
-is a spoken phrase from that section, or `$start`, or `$end`. Matching takes the first
-occurrence, ignores case, and ignores punctuation. The `min_seconds` key warns you when
-the narration is shorter than the visuals need.
+The cue file names the spoken phrase that each visual lands on. [Cues](/concepts/cues)
+describes its shape and the matching rules.

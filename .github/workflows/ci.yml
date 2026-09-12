@@ -20,6 +20,7 @@ jobs:
       - run: uv run ruff format --check src tests
       - run: uv run ty check src
       - run: uv run pytest -q
+      - run: uv run scripts/build_config_reference.py --check
 
   build:
     name: build (${{ matrix.os }})

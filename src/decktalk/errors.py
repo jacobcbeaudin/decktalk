@@ -16,7 +16,7 @@ class MissingInputError(DeckTalkError):
 
 
 class ProviderError(DeckTalkError):
-    """An external API (ElevenLabs, Gemini, fal.ai) refused or failed a request."""
+    """An external API such as ElevenLabs refused or failed a request."""
 
 
 class ToolError(DeckTalkError):

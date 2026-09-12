@@ -18,7 +18,7 @@ print(result.assembly.final, result.verification.ok)
 |---|---|
 | `Project.load(dir)` | Parses and validates `decktalk.toml`. It raises `ConfigError` with the table and the field named. |
 | `Settings` and `load_settings()` | Hold the tuning tree, which is built from the defaults, then the TOML tables, then the `DECKTALK_*` environment. |
-| `PageSection` and `ClipSection` | Represent the two kinds of section. |
+| `PageSection` and `ClipSection` | Represent the two kinds of section. `project.sections` holds them in number order. |
 | `Manifest`, `Timeline`, `Beats`, `Sidecar`, and `Word` | Represent the build artifacts, and each one has `load` and `save`. |
 | `narrate(project, ...)` | Returns a `NarrateResult` with the manifest, the timeline, and the sections that reached the API. |
 | `resolve_beats(project)` | Returns a `BeatsResult` with the resolved cues and any unresolved notes. |
@@ -27,7 +27,7 @@ print(result.assembly.final, result.verification.ok)
 | `verify(project, checks)` | Returns a `VerifyResult`, whose `ok` is true when every start and cue passed. |
 | `shoot(project, ...)` | Returns the screenshot paths. |
 | `soundscape(project, ...)` | Returns the generated or planned items. |
-| `build(project, ..., report=fn)` | Runs everything in order and calls `report(stage, result)` after each stage. |
+| `build(project, ..., report=fn)` | Runs everything in order and calls `report(stage, result)` after each stage. Returns a `BuildResult` whose `ok` mirrors the CLI's exit code. |
 
 ## Errors and logging
 
@@ -39,17 +39,20 @@ to the `decktalk` logger at the INFO level, so attach a handler to see it.
 
 ## Stability
 
-The Python names may move until version 1.0. The file formats, which are `decktalk.toml`,
-`cues.json`, and the build artifacts, are stable already, and so is the page contract.
-Modules under `decktalk.media` and `decktalk.providers`, and any name that starts with an
+The file formats are stable already. That covers `decktalk.toml`, `cues.json`, the build
+artifacts, and the page contract. The Python names may move until version 1.0. Modules
+under `decktalk.media` and `decktalk.providers`, and any name that starts with an
 underscore, are internal.
 
 ## Adding a speech provider
 
 DeckTalk needs one thing from a voice: audio plus a start and end time for every word.
-To add a provider, implement `decktalk.providers.speech.SpeechProvider`. It has two methods.
+The boundary is `decktalk.providers.speech.SpeechProvider`, a protocol with two methods.
 The `speak(request)` method returns the mp3 bytes and a list of `Word` objects. The
-`cache_key(request)` method returns everything that changes the audio apart from the text.
-Register the class with `register("name", factory)` and select it with
-`[voice] provider = "name"` in the project file. ElevenLabs is the built-in provider. A
-local text-to-speech engine paired with a forced aligner is the obvious next candidate.
+`cache_key(request)` method returns everything that changes the audio apart from the
+text. ElevenLabs is the built-in provider and the only one today.
+
+There is no plugin loading yet. A new provider is a pull request that adds a module under
+`src/decktalk/providers/` and registers it with `register("name", factory)`, after which
+`[voice]` with `provider = "name"` selects it. A local text-to-speech engine paired with
+a forced aligner is the obvious next candidate, and an issue that proposes one is welcome.

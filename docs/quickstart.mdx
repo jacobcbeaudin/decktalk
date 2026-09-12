@@ -3,62 +3,84 @@ title: Quickstart
 description: From an empty directory to a finished mp4.
 ---
 
-## Install
+<Steps>
+  <Step title="Install">
+    Everything DeckTalk needs arrives through Python packages. Playwright's package carries
+    its own browser driver, and `static-ffmpeg` carries ffmpeg and ffprobe for your
+    platform. You need Python 3.12 or later. You do not need Node.
 
-Everything DeckTalk needs arrives through Python packages. Playwright's package carries
-its own browser driver, and `static-ffmpeg` carries ffmpeg and ffprobe for your platform.
-You need Python 3.12 or later. You do not need Node.
+    ```console
+    uv tool install decktalk        # or: pipx install decktalk
+    decktalk setup                  # fetches headless Chromium (about 100 MB) and ffmpeg, once per machine
+    decktalk doctor                 # confirms that both work
+    ```
 
-```console
-uv tool install decktalk        # or: pipx install decktalk
-decktalk setup                  # fetches headless Chromium (about 100 MB) and ffmpeg, once per machine
-decktalk doctor                 # confirms that both work
-```
+    <Accordion title="What is uv?">
+      `uv` is a Python package manager from Astral. The command `uv tool install` puts a
+      command-line tool in its own environment and on your PATH. If you do not have it,
+      `pipx install decktalk` does the same job, and so does `pip install decktalk` inside
+      a virtual environment.
+    </Accordion>
+  </Step>
 
-## Scaffold and build
+  <Step title="Scaffold and build">
+    ```console
+    decktalk init my-lesson && cd my-lesson
+    decktalk build --silent         # a full render with placeholder narration and no key
+    open build/out/my-lesson.mp4
+    ```
 
-```console
-decktalk init my-lesson && cd my-lesson
-decktalk build --silent         # a full render with placeholder narration and no key
-open build/out/my-lesson.mp4
-```
+    The `--silent` flag runs every stage with a silent placeholder track and estimated word
+    times. It needs no API key and costs nothing. Use it to prove that a project builds
+    before you spend credits.
 
-The scaffold has four sections. Section 0 is a clip section. It expects your own video,
-with its own audio, at `media/open.mp4`. That file does not exist yet, so a titled slate
-plays in its place. Sections 1 to 3 are page sections. They are three scenes in
-`deck/index.html`, and DeckTalk records them and cuts them to the narration. Run the
-scaffold as it is first. Then either drop a video at `media/open.mp4` or delete section 0
-from both `decktalk.toml` and `script.md`.
+    The scaffold has four sections. Section 0 is a clip section. It expects your own video,
+    with its own audio, at `media/open.mp4`. That file does not exist yet, so a titled slate
+    plays in its place. Sections 1 to 3 are page sections. They are three scenes in
+    `deck/index.html`, and DeckTalk records them and cuts them to the narration. Run the
+    scaffold as it is first. Then either drop a video at `media/open.mp4` or delete section
+    0 from both `decktalk.toml` and `script.md`.
+  </Step>
 
-## Add your voice
+  <Step title="Add your voice">
+    Copy `.env.example` to `.env` and replace the two placeholders.
 
-Copy `.env.example` to `.env`. Set `ELEVENLABS_API_KEY`, which you create under Profile
-and API keys on the ElevenLabs site. Set `ELEVENLABS_VOICE_ID`, which appears on the
-voice's card under Voices and My Voices. A cloned voice works well. Both values stay in
-`.env`, which git ignores and DeckTalk never prints. Then build the project again:
+    ```dotenv .env
+    ELEVENLABS_API_KEY=sk_...        # Profile, then API keys, on elevenlabs.io
+    ELEVENLABS_VOICE_ID=...          # the id on a voice's card under Voices
+    ```
 
-```console
-decktalk build
-```
+    Both values can also come from the environment. A value left as `<placeholder>` counts
+    as unset. DeckTalk never prints the key and never writes it under `build/`. Then build
+    the project again.
 
-DeckTalk caches the narration of each section by its text. A later edit re-synthesizes
-only the sections whose words changed.
+    ```console
+    decktalk build
+    ```
 
-## When a phrase is not found
+    <Note>You need an ElevenLabs plan with API access. The free tier has the API, but its
+    audio carries a watermark and a non-commercial license, so the Starter plan is the
+    practical floor. The [FAQ](/help/faq) has the arithmetic.</Note>
+  </Step>
 
-The `beats` stage prints `phrase not found` for any cue it cannot match, and `build`
-stops there. It stops because a step whose only cues are unresolved would never appear.
-Fix the phrase so that it matches the words in `script.md` exactly. Matching
-ignores case and punctuation, and `"occurrence": 2` selects a later repeat of the same
-words. Then run the build again. The `--allow-unresolved` flag builds anyway.
+  <Step title="Change a sentence">
+    Edit any sentence in `script.md` and run `decktalk build` again. DeckTalk hashes each
+    section by its text, so only the section you touched is re-synthesized and re-recorded.
+    The rest comes from the cache.
+  </Step>
 
-## Review a page
+  <Step title="Review">
+    Open `deck/index.html` in any browser with no query string. The page shows an index of
+    every scene and step. Add `?scene=2` to play a scene, `?step=2.1` to freeze one step
+    with everything revealed, or `&hud=1` to overlay the clock.
 
-Open `deck/index.html` in any browser with no query string. The page shows an index of
-every scene and step. Add `?scene=2` to play a scene, or `?step=2.1` to freeze one step
-with everything revealed, or `&hud=1` to overlay the clock. The `shots` command writes the
-same frozen steps to `build/shots/` as PNG files. The command `decktalk shots --section 3
---at 4.5` captures a frame from a section while it plays with its real cues.
+    ```console
+    decktalk shots                          # one PNG per step, under build/shots/
+    decktalk shots --section 3 --at 4.5     # a frame from section 3 while it plays with its real cues
+    decktalk verify 3:3.1eq                 # proves that the cue changed the picture in the final mp4
+    ```
+  </Step>
+</Steps>
 
 ## What is in a project
 
@@ -73,3 +95,8 @@ same frozen steps to `build/shots/` as PNG files. The command `decktalk shots --
 
 <Tip>Write numbers and symbols in the script the way you want them spoken. A cue matches
 the spoken words "two x", while the slide shows the symbols.</Tip>
+
+## Next
+
+[Your first deck](/guides/first-deck) writes one section from scratch and shows how the
+four files refer to each other.

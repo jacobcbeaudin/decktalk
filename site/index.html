@@ -93,7 +93,7 @@
   section { padding: 96px 0 0; }
   h2 { font-size: clamp(30px, 4vw, 44px); letter-spacing: -.03em; line-height: 1.05; margin: 8px 0 18px; font-weight: 700; }
   .sub { color: var(--mute); max-width: 60ch; font-size: 18px; margin: 0 0 40px; }
-  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; }
+  .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; }
   .step .n { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; color: var(--mute); margin-bottom: 14px; }
   .step h3 { font-size: 19px; letter-spacing: -.01em; margin: 0 0 8px; font-weight: 600; }
   .step p { margin: 0; color: var(--mute); font-size: 15px; }
@@ -183,33 +183,37 @@
 
   <section id="how">
     <span class="lab">How it works</span>
-    <h2>The script is the timeline.</h2>
-    <p class="sub">Narration comes back with a time for every word, so a slide reveal is tied to a phrase rather than to a second. There is nothing to scrub, and nothing to re-record.</p>
+    <h2>The script is the edit.</h2>
+    <p class="sub">Narration comes back with a time for every word, so a reveal follows a phrase rather than a second. Change a sentence and only that section renders again. Follow one cue through the four files.</p>
     <div class="steps">
       <div class="step"><div class="n">01 WRITE</div>
-        <pre><span class="c">## 3. A curve and an equation</span>
-Now a curve draws as I talk. And
-here is <span class="k">an equation</span>: the derivative
-of x squared is two x.</pre>
+        <pre><span class="c">script.md</span>
+## 3. The curve
+Now a curve draws as I talk.
+And here is an <span class="k">equation</span>:
+the derivative of x squared.</pre>
         <h3>A script in markdown</h3><p>One heading per scene. Bracketed directions are not spoken.</p></div>
       <div class="step"><div class="n">02 NARRATE</div>
-        <pre>03-a-curve.mp3
-{ "word": "curve",    "start": 0.82 }
-{ "word": "draws",    "start": 1.10 }
-{ "word": <span class="k">"equation"</span>, "start": 5.80 }</pre>
+        <pre><span class="c">build/audio/03.words.json</span>
+{ "word": "curve",
+  "start": 0.82 }
+{ "word": <span class="k">"equation"</span>,
+  "start": <span class="k">5.80</span> }</pre>
         <h3>Your voice reads it</h3><p>ElevenLabs returns the audio and a timestamp for every word.</p></div>
       <div class="step"><div class="n">03 CUE</div>
-        <pre>{ "step": "3.1draw",
+        <pre><span class="c">cues.json</span>
+{ "step": "3.1draw",
   "on": "curve draws" }
 { "step": <span class="k">"3.1eq"</span>,
   "on": <span class="k">"equation"</span> }</pre>
-        <h3>Name the phrase</h3><p>A cue is a spoken phrase. DeckTalk resolves it to a second.</p></div>
+        <h3>Name the phrase</h3><p>A cue is a spoken phrase. DeckTalk resolves it to the second the word starts.</p></div>
       <div class="step"><div class="n">04 RECORD &amp; CUT</div>
-        <pre>&lt;path <span class="k">data-cue="3.1draw"</span>
+        <pre><span class="c">deck/index.html</span>
+&lt;path data-cue="3.1draw"
       data-fx="draw"/&gt;
 &lt;div  <span class="k">data-cue="3.1eq"</span>
       data-tex="…"/&gt;</pre>
-        <h3>Slides reveal on the words</h3><p>Plain HTML, recorded in Chromium, cut by ffmpeg to the frame.</p></div>
+        <h3>Slides reveal on cue</h3><p>Plain HTML, recorded in Chromium, cut by ffmpeg to the frame at 5.80 s.</p></div>
     </div>
   </section>
 
