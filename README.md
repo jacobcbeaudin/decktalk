@@ -12,7 +12,7 @@ You write a markdown script and plain HTML slides. An ElevenLabs voice reads the
 <a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/v/decktalk?color=2c1fea&label=pypi" alt="PyPI"></a>
 <a href="https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml"><img src="https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
 <a href="https://docs.decktalk.app"><img src="https://img.shields.io/badge/docs-docs.decktalk.app-2c1fea" alt="docs"></a>
-<a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-black" alt="MIT"></a>
+<a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-black" alt="Apache-2.0"></a>
 </p>
 
 <p align="center">It is built for lesson videos, product walkthroughs, and recorded talks. It suits anything you would otherwise re-record every time the script changes.</p>
@@ -31,9 +31,9 @@ working deck with three HTML scenes and one slot for a clip of your own. Real na
 needs an ElevenLabs key and a voice id in `.env`. Any voice works. A clone of your own
 voice is the point.
 
-DeckTalk is at version 0.1 and needs Python 3.12 or later. I develop it on macOS, and the
-test suite runs on Linux, macOS, and Windows in CI. The `setup` command downloads headless
-Chromium and ffmpeg once per machine.
+DeckTalk needs Python 3.12 or later. I develop it on macOS, and the test suite runs on
+Linux, macOS, and Windows in CI. The `setup` command downloads headless Chromium and ffmpeg
+once per machine.
 
 ## Why
 
@@ -101,4 +101,4 @@ The rest lives at **[docs.decktalk.app](https://docs.decktalk.app)**: the projec
 page contract, the CLI, configuration, and the Python API. If you want to work on DeckTalk
 itself, start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
-<p align="center">MIT. Made by <a href="https://github.com/jacobcbeaudin">Jacob Beaudin</a>.</p>
+<p align="center">Apache-2.0. Made by <a href="https://github.com/jacobcbeaudin">Jacob Beaudin</a>.</p>
