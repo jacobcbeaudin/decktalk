@@ -15,6 +15,8 @@ import subprocess
 import sys
 import urllib.request
 import zipfile
+from collections.abc import Iterator
+from dataclasses import asdict, dataclass
 from importlib import resources
 from pathlib import Path
 
@@ -190,40 +192,57 @@ def setup() -> None:
         log.warning("   KaTeX download failed (%s). Projects will load it from a CDN instead.", exc)
 
 
-def doctor() -> list[tuple[str, bool, str]]:
-    """(component, ok, detail) for python, chromium, ffmpeg, ffprobe, config and katex.
+@dataclass(frozen=True)
+class DoctorRow:
+    """One component that `decktalk doctor` reports. It unpacks like the (name, ok, detail) tuple it replaced."""
+
+    name: str
+    ok: bool
+    detail: str
+
+    def __iter__(self) -> Iterator[str | bool]:
+        return iter((self.name, self.ok, self.detail))
+
+    def to_dict(self) -> dict[str, str | bool]:
+        return asdict(self)
+
+
+def doctor() -> list[DoctorRow]:
+    """One DoctorRow for each of python, chromium, ffmpeg, ffprobe, config and katex.
 
     Nothing is fetched or written. In particular the ffmpeg row looks for binaries that are
     already on disk, because asking static-ffmpeg for them would download them.
     """
-    rows: list[tuple[str, bool, str]] = [("python", True, f"{sys.version.split()[0]} ({sys.executable})")]
+    rows = [DoctorRow("python", True, f"{sys.version.split()[0]} ({sys.executable})")]
     try:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as pw:
             try:
                 b = pw.chromium.launch()
-                rows.append(("chromium", True, b.version))
+                rows.append(DoctorRow("chromium", True, b.version))
                 b.close()
             except Exception as exc:
-                rows.append(("chromium", False, f"{str(exc).splitlines()[0]}  -> run `decktalk setup`"))
+                rows.append(DoctorRow("chromium", False, f"{str(exc).splitlines()[0]}  -> run `decktalk setup`"))
     except ImportError:
-        rows.append(("chromium", False, "playwright package missing"))
+        rows.append(DoctorRow("chromium", False, "playwright package missing"))
     from .media.ffmpeg import installed_paths
 
     found = installed_paths()
     if found:
-        rows.append(("ffmpeg", True, found[0]))
-        rows.append(("ffprobe", True, found[1]))
+        rows.append(DoctorRow("ffmpeg", True, found[0]))
+        rows.append(DoctorRow("ffprobe", True, found[1]))
     else:
-        rows.append(("ffmpeg", False, "not fetched yet and none on PATH  -> run `decktalk setup`"))
+        rows.append(DoctorRow("ffmpeg", False, "not fetched yet and none on PATH  -> run `decktalk setup`"))
     from .config import user_config_path
 
     cfg_path = user_config_path()
-    rows.append(("config", True, str(cfg_path) if cfg_path.exists() else f"none (optional, at {cfg_path})"))
+    rows.append(DoctorRow("config", True, str(cfg_path) if cfg_path.exists() else f"none (optional, at {cfg_path})"))
     cached = katex_cached()
     if cached:
-        rows.append(("katex", True, str(cached)))
+        rows.append(DoctorRow("katex", True, str(cached)))
     else:
-        rows.append(("katex", False, f"not cached at {katex_cache_dir()}  -> run `decktalk setup` (CDN until then)"))
+        rows.append(
+            DoctorRow("katex", False, f"not cached at {katex_cache_dir()}  -> run `decktalk setup` (CDN until then)")
+        )
     return rows

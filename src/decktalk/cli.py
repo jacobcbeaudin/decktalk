@@ -10,7 +10,7 @@
     decktalk measure                  find narration t=0 in each recording
     decktalk check                    recording sanity (black / truncated)
     decktalk assemble                 ffmpeg -> build/out/<name>.mp4
-    decktalk verify [SEC:CUE ...]     section starts (+ cue landings) on the final mp4
+    decktalk verify [SEC:CUE ...]     section starts, cuts, and every cue landing on the final mp4
     decktalk shots                    per-step screenshots, or frames from a playing section
     decktalk build [--silent]         narrate -> beats -> record -> measure -> check -> assemble -> verify
     decktalk status                   timeline and what is built
@@ -19,21 +19,31 @@
 Every project command takes --project/-p DIR (default: DECKTALK_PROJECT, else the current
 directory). The -v and -q flags go before or after the command name.
 Tuning flags such as --preset override decktalk.toml and DECKTALK_* env for one run.
+status, beats, check, verify and doctor take --json, --strict and --no-fail. They exit 1
+on a certain finding, and on an uncertain one (a verdict ending in ?) only with --strict.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
 from . import __version__, _report
 from .errors import DeckTalkError
-from .project import ClipSection, Project
+from .project import Project
+from .verdicts import BLACK, OK, QUIET, SPEECH_AT_CUT, Findings, count
 
 log = logging.getLogger("decktalk")
+
+STRICT_HELP = "Also exit 1 on an uncertain verdict, the ones marked with a question mark."
+NO_FAIL_HELP = "Exit 0 even when a check fails, for scripts that read the table or the JSON themselves."
+JSON_HELP = "Print the result as one JSON object on stdout instead of the tables. Progress still goes to stderr."
+ALLOW_UNKNOWN_HELP = "Continue when a cue id in cues.json appears nowhere in the page that plays it."
 
 
 def _project(args: argparse.Namespace) -> Project:
@@ -50,6 +60,49 @@ def _project(args: argparse.Namespace) -> Project:
 
 def _only(values: list[int] | None) -> list[int] | None:
     return values or None
+
+
+# ---- exit policy and output ------------------------------------------------------------
+
+
+def _exit_for(findings: Findings, strict: bool, no_fail: bool) -> int:
+    """The exit code of a read-only command, from what it found.
+
+    A certain finding exits 1. An uncertain finding exits 1 only with `strict`. With
+    `no_fail` the command exits 0 whatever it found. An error is not a finding, so it
+    still exits 1 through main.
+    """
+    if no_fail:
+        return 0
+    if findings.certain or (strict and findings.uncertain):
+        return 1
+    return 0
+
+
+def _finish(args: argparse.Namespace, findings: Findings, payload: dict[str, Any], table: Callable[[], str]) -> int:
+    """Print the table, or the JSON envelope with the payload under the command's name, and return the exit code."""
+    if args.json:
+        doc = {
+            "command": args.cmd,
+            "version": __version__,
+            "ok": _exit_for(findings, args.strict, no_fail=False) == 0,
+            "findings": findings.to_dict(),
+            args.cmd: payload,
+        }
+        print(json.dumps(doc, indent=2))
+    else:
+        print(table())
+    return _exit_for(findings, args.strict, args.no_fail)
+
+
+def _verify_findings(result: Any) -> Findings:
+    """Every start, cut and cue verdict in a VerifyResult, tallied."""
+    verdicts: Iterable[str] = [
+        *(OK if s.ok else BLACK for s in result.starts),
+        *(QUIET if c.ok else SPEECH_AT_CUT for c in result.cuts),
+        *(c.verdict for c in result.cues),
+    ]
+    return count(verdicts)
 
 
 # ---- commands ------------------------------------------------------------------------
@@ -82,9 +135,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     from .scaffold import doctor
 
     rows = doctor()
-    for name, ok, detail in rows:
-        print(f"{name:<9} {'ok     ' if ok else 'MISSING'} {detail}")
-    return 0 if all(ok for _n, ok, _d in rows) else 1
+    findings = Findings(certain=sum(not r.ok for r in rows))
+    return _finish(
+        args,
+        findings,
+        {"components": [r.to_dict() for r in rows]},
+        lambda: "\n".join(f"{r.name:<9} {'ok     ' if r.ok else 'MISSING'} {r.detail}" for r in rows),
+    )
 
 
 def cmd_runtime(args: argparse.Namespace) -> int:
@@ -131,9 +188,15 @@ def cmd_narrate(args: argparse.Namespace) -> int:
 def cmd_beats(args: argparse.Namespace) -> int:
     from .stages.beats import resolve_beats
 
-    result = resolve_beats(_project(args))
-    print(_report.beats_table(result))
-    return 1 if result.unresolved else 0
+    project = _project(args)
+    result = resolve_beats(project, allow_unknown=args.allow_unknown)
+    unknown = 0 if args.allow_unknown else result.unknown
+    # A section whose speech ends before its min_seconds is probably too short for its visuals.
+    short = sum(
+        1 for s in result.sections if not s.skipped and s.min_seconds is not None and s.speech_end < s.min_seconds
+    )
+    findings = Findings(certain=result.unresolved + unknown, uncertain=short)
+    return _finish(args, findings, result.to_dict(project.root), lambda: _report.beats_table(result))
 
 
 def cmd_soundscape(args: argparse.Namespace) -> int:
@@ -160,9 +223,11 @@ def cmd_measure(args: argparse.Namespace) -> int:
 def cmd_check(args: argparse.Namespace) -> int:
     from .stages.measure import check
 
-    rows = check(_project(args), only=_only(args.only))
-    print(_report.checks_table(rows))
-    return 1 if args.strict and any(not r.ok for r in rows) else 0
+    project = _project(args)
+    rows = check(project, only=_only(args.only))
+    findings = count(r.verdict for r in rows)
+    payload = {"recordings": [r.to_dict(project.root) for r in rows]}
+    return _finish(args, findings, payload, lambda: _report.checks_table(rows))
 
 
 def cmd_assemble(args: argparse.Namespace) -> int:
@@ -176,12 +241,21 @@ def cmd_assemble(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     from .stages.verify import verify
 
-    result = verify(_project(args), checks=args.checks or None)
-    print(_report.verify_table(result))
-    return 0 if result.ok else 1
+    project = _project(args)
+    checks = [*args.checks, *(args.cue or [])]
+    result = verify(project, checks=checks or None, only=_only(args.only))
+    return _finish(args, _verify_findings(result), result.to_dict(project.root), lambda: _report.verify_table(result))
 
 
 def cmd_shots(args: argparse.Namespace) -> int:
+    if args.cue:
+        # A cue freezes one step at the moment that cue fires, so it needs exactly one step.
+        if not args.step or len(args.step) != 1 or args.section is not None:
+            args.parser.error("--cue needs exactly one --step, and it does not combine with --section")
+        from .stages.shots import shoot_steps
+
+        shoot_steps(_project(args), args.page or None, args.step, cues=args.cue)
+        return 0
     from .stages.shots import shoot
 
     shoot(_project(args), pages=args.page or None, steps=args.step or None, section=args.section, at=args.at or None)
@@ -189,31 +263,12 @@ def cmd_shots(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    project = _project(args)
-    print(f"project  {project.root}  (name: {project.name})")
-    print(f"script   {project.script.relative_to(project.root)}  {'ok' if project.script.exists() else 'MISSING'}")
-    print(f"cues     {project.cues.relative_to(project.root)}  {'ok' if project.cues.exists() else 'none'}")
-    for sec in project.sections:
-        what = f"clip {sec.clip}" if isinstance(sec, ClipSection) else f"{sec.page}?scene={sec.scene}"
-        rec = project.recording(sec).exists()
-        cut = project.section_video(sec).exists()
-        print(f"  {sec.key}  {what:<40} {'rec ' if rec else '    '}{'cut' if cut else ''}")
-    tl = project.timeline()
-    print(_report.timeline_table(tl) if tl else "timeline none (run `decktalk narrate`)")
-    beats = project.beats()
-    print(
-        f"beats    {len(beats.sections)} section(s) with resolved cues"
-        if beats.sections
-        else "beats    none (run `decktalk beats`)"
-    )
-    if project.final.exists():
-        from .media.ffmpeg import probe_duration
+    from .status import status
 
-        print(f"final    {project.final.relative_to(project.root)}  {_report.mmss(probe_duration(project.final))}")
-    else:
-        print("final    not built")
-    print(_report.outputs_lines(project))
-    return 0
+    project = _project(args)
+    report = status(project)
+    # status reads what exists and judges nothing, so it has no findings of its own.
+    return _finish(args, Findings(), report.to_dict(project.root), lambda: _report.status_table(report))
 
 
 def cmd_build(args: argparse.Namespace) -> int:
@@ -244,6 +299,7 @@ def cmd_build(args: argparse.Namespace) -> int:
         loudnorm=not args.no_loudnorm,
         strict=args.strict,
         allow_unresolved=args.allow_unresolved,
+        allow_unknown=args.allow_unknown,
         report=report,
     )
     if result.assembly:
@@ -262,6 +318,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_help = "project directory (default: DECKTALK_PROJECT, else the current directory)"
     verbose_help = "debug logging, including every ffmpeg command line"
     quiet_help = "warnings only"
+    only_help = "only these section numbers (repeat the flag for several)"
     p.add_argument("--project", "-p", default=None, help=project_help)
     p.add_argument("-v", "--verbose", action="store_true", help=verbose_help)
     p.add_argument("-q", "--quiet", action="store_true", help=quiet_help)
@@ -277,6 +334,13 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--project", "-p", default=argparse.SUPPRESS, help=project_help)
         return common(sp)
 
+    def policy(sp: argparse.ArgumentParser) -> argparse.ArgumentParser:
+        """The output and exit flags shared by the five read-only commands."""
+        sp.add_argument("--json", action="store_true", help=JSON_HELP)
+        sp.add_argument("--strict", action="store_true", help=STRICT_HELP)
+        sp.add_argument("--no-fail", action="store_true", help=NO_FAIL_HELP)
+        return sp
+
     def encoding(sp: argparse.ArgumentParser) -> None:
         sp.add_argument("--preset", help="x264 preset for this run (veryfast for drafts)")
         sp.add_argument("--crf", type=int, help="x264 quality for this run")
@@ -288,11 +352,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_init)
 
     common(sub.add_parser("setup", help="fetch Chromium and ffmpeg")).set_defaults(fn=cmd_setup)
-    common(sub.add_parser("doctor", help="report installed tools")).set_defaults(fn=cmd_doctor)
+    policy(common(sub.add_parser("doctor", help="report installed tools"))).set_defaults(fn=cmd_doctor)
     proj(sub.add_parser("runtime", help="copy the packaged runtime into the project")).set_defaults(fn=cmd_runtime)
 
     s = proj(sub.add_parser("narrate", help="synthesize narration with word timestamps"))
-    s.add_argument("--only", type=int, action="append", help="only these section numbers (repeat the flag for several)")
+    s.add_argument("--only", type=int, action="append", help=only_help)
     s.add_argument("--force", action="store_true", help="ignore the text-hash cache")
     s.add_argument(
         "--allow-placeholders", action="store_true", help="synthesize a section that still has a [CAPITAL] placeholder"
@@ -302,7 +366,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--model", help="ElevenLabs model for this run")
     s.set_defaults(fn=cmd_narrate)
 
-    proj(sub.add_parser("beats", help="resolve cue phrases to timestamps")).set_defaults(fn=cmd_beats)
+    s = policy(proj(sub.add_parser("beats", help="resolve cue phrases to timestamps")))
+    s.add_argument("--allow-unknown", action="store_true", help=ALLOW_UNKNOWN_HELP)
+    s.set_defaults(fn=cmd_beats)
 
     s = proj(sub.add_parser("soundscape", help="generate ambience, sfx and underscore"))
     s.add_argument("--only", action="append", help="one item: ambience, music, or an effect name (repeat for several)")
@@ -311,19 +377,18 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_soundscape)
 
     s = proj(sub.add_parser("record", help="record the pages with headless Chromium"))
-    s.add_argument("--only", type=int, action="append", help="only these section numbers (repeat the flag for several)")
+    s.add_argument("--only", type=int, action="append", help=only_help)
     s.add_argument("--seconds", type=float, help="override every duration (smoke tests)")
     s.add_argument("--settle", type=float, help="seconds after load before the clock starts")
     s.add_argument("--no-beats", action="store_true", help="autoplay timing instead of ?beats=")
     s.set_defaults(fn=cmd_record)
 
     s = proj(sub.add_parser("measure", help="find narration t=0 in each recording"))
-    s.add_argument("--only", type=int, action="append", help="only these section numbers (repeat the flag for several)")
+    s.add_argument("--only", type=int, action="append", help=only_help)
     s.set_defaults(fn=cmd_measure)
 
-    s = proj(sub.add_parser("check", help="recording sanity: duration and luma"))
-    s.add_argument("--only", type=int, action="append", help="only these section numbers (repeat the flag for several)")
-    s.add_argument("--strict", action="store_true", help="exit 1 on a suspect recording")
+    s = policy(proj(sub.add_parser("check", help="recording sanity: duration and luma")))
+    s.add_argument("--only", type=int, action="append", help=only_help)
     s.set_defaults(fn=cmd_check)
 
     s = proj(sub.add_parser("assemble", help="cut, mix and normalize the final mp4"))
@@ -335,18 +400,23 @@ def build_parser() -> argparse.ArgumentParser:
     encoding(s)
     s.set_defaults(fn=cmd_assemble)
 
-    s = proj(sub.add_parser("verify", help="check section starts and cue landings on the final mp4"))
-    s.add_argument("checks", nargs="*", help="SECTION:CUE ...")
+    s = policy(proj(sub.add_parser("verify", help="check section starts, cuts and cue landings on the final mp4")))
+    s.add_argument("checks", nargs="*", metavar="SECTION:CUE", help="cues to check (default: every cue in beats.json)")
+    s.add_argument(
+        "--cue", action="append", metavar="SECTION:CUE", help="one cue to check, added to any positional ones (repeat)"
+    )
+    s.add_argument("--only", type=int, action="append", help=only_help)
     s.set_defaults(fn=cmd_verify)
 
     s = proj(sub.add_parser("shots", help="screenshots per step, or frames from a playing section"))
     s.add_argument("--page", action="append", help="page file (default: every page in decktalk.toml)")
     s.add_argument("--step", action="append", help="only these step ids")
+    s.add_argument("--cue", action="append", metavar="ID", help="freeze the one --step at this cue id (repeat)")
     s.add_argument("--section", type=int, help="play this section with its resolved cues")
     s.add_argument("--at", type=float, action="append", help="seconds after narration t=0 (with --section)")
-    s.set_defaults(fn=cmd_shots)
+    s.set_defaults(fn=cmd_shots, parser=s)
 
-    proj(sub.add_parser("status", help="what is built")).set_defaults(fn=cmd_status)
+    policy(proj(sub.add_parser("status", help="what is built"))).set_defaults(fn=cmd_status)
 
     s = proj(sub.add_parser("build", help="run the whole pipeline"))
     s.add_argument("--silent", action="store_true", help="placeholder narration, no API key")
@@ -360,6 +430,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--strict", action="store_true", help="fail on a missing clip or recording instead of substituting a slate"
     )
     s.add_argument("--allow-unresolved", action="store_true", help="build even if some cue phrases were not found")
+    s.add_argument("--allow-unknown", action="store_true", help=ALLOW_UNKNOWN_HELP)
     encoding(s)
     s.set_defaults(fn=cmd_build)
     return p

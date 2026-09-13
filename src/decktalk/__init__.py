@@ -9,9 +9,9 @@ still move, and a rename is a breaking change once the project leaves the 0.x se
     errors: DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
     artifacts: Manifest, Timeline, Beats, Word, Sidecar
     stages: narrate, resolve_beats, record, measure, check, assemble, verify, shoot,
-            soundscape, build
+            soundscape, build, status
     results: NarrateResult, BeatsResult, Recording, LeadMeasurement, RecordingCheck,
-             AssembleResult, VerifyResult, SoundscapeItem, BuildResult
+             AssembleResult, VerifyResult, SoundscapeItem, BuildResult, StatusReport
     speech: SpeechProvider, SpeechRequest, register
 
 Everything under decktalk.media, everything under decktalk.providers other than the
@@ -48,6 +48,7 @@ from .stages import (
     soundscape,
     verify,
 )
+from .status import StatusReport, status
 
 try:
     __version__ = version("decktalk")
@@ -79,6 +80,7 @@ __all__ = [
     "SoundscapeItem",
     "SpeechProvider",
     "SpeechRequest",
+    "StatusReport",
     "Timeline",
     "ToolError",
     "Transition",
@@ -97,5 +99,6 @@ __all__ = [
     "resolve_beats",
     "shoot",
     "soundscape",
+    "status",
     "verify",
 ]

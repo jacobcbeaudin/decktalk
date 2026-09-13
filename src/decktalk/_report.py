@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from .artifacts import Timeline
-from .project import Project
-from .stages.assemble import output_paths
 from .stages.beats import BeatsResult
 from .stages.measure import LeadMeasurement, RecordingCheck
 from .stages.narrate import NarrateResult, Segment
 from .stages.soundscape import SoundscapeItem
 from .stages.verify import VerifyResult
+from .status import StatusReport, relpath
+from .verdicts import BLACK, OK, QUIET, SKIPPED, SPEECH_AT_CUT
 
 
 def mmss(seconds: float | None) -> str:
@@ -91,46 +91,63 @@ def verify_table(result: VerifyResult) -> str:
     lines = [f"{'sec':>3} {'start':>8} {'probe':>8} {'YAVG':>6} {'YMAX':>6}  result"]
     for s in result.starts:
         lines.append(
-            f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {'ok' if s.ok else 'BLACK'}"
+            f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {OK if s.ok else BLACK}"
         )
     lines.append(f"total {result.total_seconds:.2f}s; {result.black_starts} black section start(s)")
     if result.cuts:
         lines.append("")
         lines.append(f"{'sec':>3} {'cut at':>8} {'before cut':>11}  result")
         for c in result.cuts:
-            lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {'quiet' if c.ok else 'SPEECH AT CUT'}")
+            lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {QUIET if c.ok else SPEECH_AT_CUT}")
     if result.cues:
         lines.append("")
         av = any(c.av_ms is not None for c in result.cues)
         head = f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7} {'offset':>8}"
         lines.append(head + (f" {'a/v':>7}" if av else "") + "  result")
         for c in result.cues:
-            if c.cue_seconds is None:
-                lines.append(f"{c.check:<18} {'-':>6} {'-':>8} {'-':>7} {'-':>7} {'-':>8}  {c.note or 'MISSING'}")
+            if c.changed_percent is None or c.verdict == SKIPPED:
+                # A row that was never measured shows its verdict, its reason code, and its note.
+                cue = f"{c.cue_seconds:>6.2f}" if c.cue_seconds is not None else f"{'-':>6}"
+                label = " ".join(part for part in (c.verdict, c.reason, c.note) if part)
+                lines.append(
+                    f"{c.check:<18} {cue} {'-':>8} {'-':>7} {'-':>7} {'-':>8}"
+                    + (f" {'-':>7}" if av else "")
+                    + f"  {label}"
+                )
                 continue
             offset = f"{c.offset_ms:+d}ms" if c.offset_ms is not None else "-"
-            if c.ok:
-                verdict = "changed"
-            elif c.offset_ms is not None:
-                verdict = "OFF CUE"
-            else:
-                verdict = "NO CHANGE"
             lines.append(
                 f"{c.check:<18} {c.cue_seconds:>6.2f} {c.final_seconds or 0:>8.2f} {c.changed_percent or 0:>7.2f} "
                 f"{c.control_percent or 0:>7.2f} {offset:>8}"
                 + (f" {(f'{c.av_ms:+d}ms' if c.av_ms is not None else '-'):>7}" if av else "")
-                + f"  {verdict}"
+                + f"  {c.verdict}"
             )
     return "\n".join(lines)
 
 
-def outputs_lines(project: Project) -> str:
-    """One line per file assemble writes beside the final mp4, for `decktalk status`."""
-    lines = []
-    for label, key in (("captions", "srt"), ("captions", "vtt"), ("chapters", "chapters")):
-        path = output_paths(project)[key]
-        state = "ok" if path.exists() else "not built"
-        lines.append(f"{label:<8} {path.relative_to(project.root)}  {state}")
+def status_table(report: StatusReport) -> str:
+    """The text of `decktalk status`, read from the same report its --json output prints."""
+    root = report.root
+    lines = [
+        f"project  {root}  (name: {report.name})",
+        f"script   {relpath(report.script, root)}  {'ok' if report.script_exists else 'MISSING'}",
+        f"cues     {relpath(report.cues, root)}  {'ok' if report.cues_exists else 'none'}",
+    ]
+    for sec in report.sections:
+        what = f"clip {sec.source}" if sec.kind == "clip" else sec.source
+        lines.append(f"  {sec.key}  {what:<40} {'rec ' if sec.recorded else '    '}{'cut' if sec.cut else ''}")
+    lines.append(timeline_table(report.timeline) if report.timeline else "timeline none (run `decktalk narrate`)")
+    lines.append(
+        f"beats    {len(report.beats_sections)} section(s) with resolved cues"
+        if report.beats_sections
+        else "beats    none (run `decktalk beats`)"
+    )
+    if report.final_exists:
+        lines.append(f"final    {relpath(report.final, root)}  {mmss(report.final_duration)}")
+    else:
+        lines.append("final    not built")
+    for out in report.outputs:
+        lines.append(f"{out.label:<8} {relpath(out.path, root)}  {'ok' if out.exists else 'not built'}")
     return "\n".join(lines)
 
 
