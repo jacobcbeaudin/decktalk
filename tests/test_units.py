@@ -603,7 +603,11 @@ def test_onset_offset_finds_the_jump_and_falls_back_to_the_floor():
     early = [(9.2, 0.0), (9.24, 0.0), (9.28, 0.3), (9.32, 0.3), (9.36, 0.3)]
     assert onset_offset_ms(early, before=9.2, cue_at=9.3, onset=0.02) == -20
     assert onset_offset_ms([(9.2, 0.0), (9.24, 0.0)], before=9.2, cue_at=9.3, onset=0.01) is None
-    assert Settings().verify.max_offset_frames == 2 and Settings().verify.onset_percent == 0.002
+    # When the reference time falls between frames, the series starts on the frame after it,
+    # which is the reference itself, and a reveal on the very next frame is still the onset.
+    off_grid = [(9.24, 0.0), (9.28, 0.23), (9.32, 0.26), (9.36, 0.26)]
+    assert onset_offset_ms(off_grid, before=9.21, cue_at=9.31, onset=0.002) == -30
+    assert Settings().verify.max_offset_frames == 2 and Settings().verify.onset_percent == 0.01
 
 
 def test_video_defaults_match_the_recorder():

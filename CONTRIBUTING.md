@@ -24,7 +24,7 @@ Run every command from the repository root.
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run ty check src
 uv run pytest -q                                # unit tests
-uv run pytest -q -m browser                     # the page runtime, in a real Chromium
+uv run pytest -q -m "browser or media"          # the runtime in Chromium, frame analysis in ffmpeg
 bash tests/smoke.sh                             # scaffold a project and build it offline
 uv run scripts/build_assets.py --check          # graphics are generated, so regenerate them
 uv run scripts/build_config_reference.py --check # so is docs/reference/configuration.mdx
@@ -55,6 +55,7 @@ src/decktalk/
 tests/
   test_units.py      config layering, project validation, script parsing, cue matching
   test_runtime.py    drives decktalk-runtime.js in a real Chromium (-m browser)
+  test_media.py      checks frame analysis against real ffmpeg on a synthetic video (-m media)
   smoke.sh           an offline build of the scaffold, verified cue by cue
 scripts/
   build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon

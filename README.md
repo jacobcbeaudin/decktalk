@@ -135,10 +135,10 @@ silent placeholder voice and checked with
 
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
-1:1.1curve           1.18     1.18    0.19    0.00    -60ms   -62ms  changed
-1:1.1number          3.09     3.09    1.18    0.14    -50ms   -53ms  changed
-3:3.1eq             41.71    88.71    0.39    0.00    -30ms   -32ms  changed
-4:4.1s3              6.20   125.36    0.34    0.00    -40ms   -34ms  changed
+1:1.1curve           1.18     1.18    0.21    0.00    -60ms   -62ms  changed
+1:1.1number          3.09     3.09    1.20    0.15    -50ms   -53ms  changed
+3:3.1eq             41.71    88.71    0.41    0.00    -30ms   -32ms  changed
+4:4.1s3              6.20   125.36    0.37    0.00    -40ms   -34ms  changed
 ```
 
 [How it works](https://docs.decktalk.app/concepts/how-it-works) has the whole chain,

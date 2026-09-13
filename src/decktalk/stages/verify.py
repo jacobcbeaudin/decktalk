@@ -4,18 +4,18 @@ starts   every section opens on a real frame: past the dip-to-black, YMAX above
          visible_ymax means content is on screen.
 cuts     the audio in the last cut_window_seconds before every cut is quieter than
          cut_max_db, so no cut lands on speech.
-cues     for each SECTION:CUE, the picture changes across the cue. With no list, every
-         cue in beats.json is checked, in section order and then cue time, except the
-         cues that cues.json marks "verify": false. The reference frame sits lead_seconds
-         before the cue, but never inside the section's fade-in and always at least one
-         frame before the cue. For each delay in probe_delays, the share of pixels that
-         change by more than diff_level between the reference and the probe is compared
-         with a control. The control is the smaller share of two spans that each last as
-         long as the probe's span and end at the reference, one after the other, and each
-         span compares only its first and its last frame. The control captures anything
-         else in motion, such as a camera push. A cue lands when the best probe changes
-         at least min_changed_percent of the pixels and exceeds its control by
-         min_margin_percent. Everything stays inside the section.
+cues     for each SECTION:CUE, the picture changes across the cue. With no list, every cue
+         in beats.json is checked, in section order and then cue time, except the cues
+         that cues.json marks "verify": false. The reference frame is the first frame at
+         or after lead_seconds before the cue, but never inside the section's fade-in and
+         always at least one frame before the cue. For each delay in probe_delays, the
+         share of pixels that change by more than diff_level between the reference and the
+         probe is compared with a control. The control is the smaller share of two spans
+         that each last as long as the probe's span and end at the reference, one after
+         the other, and each span compares only its first and its last frame. The control
+         captures anything else in motion, such as a camera push. A cue lands when the
+         best probe changes at least min_changed_percent of the pixels and exceeds its
+         control by min_margin_percent. Everything stays inside the section.
 offset   once a cue lands, every frame from the reference to the passing probe is
          compared with the reference at onset_diff_level, which gives each frame's changed
          share. A reveal is abrupt, so the first frame whose share rises by at least
@@ -223,7 +223,8 @@ def reference_time(
 ) -> float | None:
     """Where the reference frame for a cue sits in the final file, or None when no frame fits.
 
-    The reference wants to sit lead_seconds before the cue. It may not sit inside the
+    The reference wants to sit lead_seconds before the cue, and the frame it names is the
+    first frame at or after that time. It may not sit inside the
     section's fade-in, where the picture is still coming up from black, and it must sit at
     least one frame before the cue. A cue at the very start of a section, or inside its
     fade-in, leaves no such frame.
@@ -461,9 +462,10 @@ def onset_offset_ms(
     A reveal is a step: between two consecutive frames the changed share jumps by at least
     `onset`. Motion that is always there, such as a camera push or a curve still drawing,
     is a slope that grows a little every frame and never jumps. The first jump after the
-    reference frame is the onset, and it may sit before the cue. When nothing jumps, the
-    first frame whose share exceeds the pre-cue floor is used instead, which catches a
-    reveal that grows slowly, such as text typing in.
+    reference frame is the onset, and it may sit before the cue. The series starts on the
+    reference itself, so the first frame after it is judged against a share of zero. When
+    nothing jumps, the first frame whose share exceeds the pre-cue floor is used instead,
+    which catches a reveal that grows slowly, such as text typing in.
     """
     prev: float | None = None
     for t, pct in series:

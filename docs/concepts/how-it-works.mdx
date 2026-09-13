@@ -97,9 +97,9 @@ sec   cut at  before cut  result
  05   148.45   -120.0 dB  quiet
 
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.1p1             39.37    86.37    0.53    0.00    -10ms    -9ms  changed
-3:3.1eq             41.71    88.71    0.39    0.00    -30ms   -32ms  changed
-5:5.1cap             2.80   141.00    0.55    0.00    -40ms   -44ms  changed
+3:3.1p1             39.37    86.37    0.56    0.00    -10ms    -9ms  changed
+3:3.1eq             41.71    88.71    0.41    0.00    -30ms   -32ms  changed
+5:5.1cap             2.80   141.00    0.66    0.00    -40ms   -44ms  changed
 ```
 
 | Column | Meaning |
@@ -116,9 +116,9 @@ A cue that changed the picture but has no onset still reads `changed`, with a bl
 `offset` column. Every field named here is a tuning key under `[verify]` in
 [Configuration](/reference/configuration#verify).
 
-<Frame caption="How verify measured the cue 3.1eq of the scaffold's silent build. The reference frame sits 0.1 s before the cue, each probe is compared with it, and the control spans before the reference measure motion that has nothing to do with the cue. The probe 1.5 s after the cue changed the most, so its 0.39 percent is the reported chg %. The inset shows the frames around the cue, where the onset is the frame 30 ms before the cue time.">
-  <img className="block dark:hidden" src="/images/verify-strip-light.svg" alt="A time axis runs from 3.3 seconds before the cue 3.1eq to 1.6 seconds after it. An accent line marks the cue time, the word's start plus the cue's offset. The reference frame sits 0.1 seconds before the cue, and probes sit 0.7 and 1.5 seconds after it. For the 1.5-second probe, two control spans of 1.6 seconds run from 3.3 to 1.7 seconds and from 1.7 to 0.1 seconds before the cue. They changed 0.53 and 0.00 percent, and the smaller share, 0.00 percent, is the ctl percent. The 0.7-second probe changed 0.26 percent of the picture and the 1.5-second probe changed 0.39 percent, so the 1.5-second probe is the one reported. An inset shows seven 40-millisecond frames around the cue with a bar for each frame's changed share. The onset frame, 30 milliseconds before the cue, is outlined, and a band of 80 milliseconds on either side of the cue marks the offset limit." />
-  <img className="hidden dark:block" src="/images/verify-strip-dark.svg" alt="A time axis runs from 3.3 seconds before the cue 3.1eq to 1.6 seconds after it. An accent line marks the cue time, the word's start plus the cue's offset. The reference frame sits 0.1 seconds before the cue, and probes sit 0.7 and 1.5 seconds after it. For the 1.5-second probe, two control spans of 1.6 seconds run from 3.3 to 1.7 seconds and from 1.7 to 0.1 seconds before the cue. They changed 0.53 and 0.00 percent, and the smaller share, 0.00 percent, is the ctl percent. The 0.7-second probe changed 0.26 percent of the picture and the 1.5-second probe changed 0.39 percent, so the 1.5-second probe is the one reported. An inset shows seven 40-millisecond frames around the cue with a bar for each frame's changed share. The onset frame, 30 milliseconds before the cue, is outlined, and a band of 80 milliseconds on either side of the cue marks the offset limit." />
+<Frame caption="How verify measured the cue 3.1eq of the scaffold's silent build. The reference is the first frame at or after 0.1 s before the cue, each probe is compared with it, and the control spans before the reference measure motion that has nothing to do with the cue. The probe 1.5 s after the cue changed the most, so its 0.41 percent is the reported chg %. The inset shows the frames around the cue, where the onset is the frame 30 ms before the cue time.">
+  <img className="block dark:hidden" src="/images/verify-strip-light.svg" alt="A time axis runs from 3.3 seconds before the cue 3.1eq to 1.6 seconds after it. An accent line marks the cue time, the word's start plus the cue's offset. The reference is the first frame at or after 0.1 seconds before the cue, which is the frame 70 milliseconds before it, and probes sit 0.7 and 1.5 seconds after the cue. For the 1.5-second probe, two control spans of 1.6 seconds run from 3.3 to 1.7 seconds and from 1.7 to 0.1 seconds before the cue. They changed 0.56 and 0.00 percent, and the smaller share, 0.00 percent, is the ctl percent. The 0.7-second probe changed 0.26 percent of the picture and the 1.5-second probe changed 0.41 percent, so the 1.5-second probe is the one reported. An inset shows seven 40-millisecond frames around the cue with a bar for each frame's changed share. The onset frame, 30 milliseconds before the cue, is outlined, and a band of 80 milliseconds on either side of the cue marks the offset limit." />
+  <img className="hidden dark:block" src="/images/verify-strip-dark.svg" alt="A time axis runs from 3.3 seconds before the cue 3.1eq to 1.6 seconds after it. An accent line marks the cue time, the word's start plus the cue's offset. The reference is the first frame at or after 0.1 seconds before the cue, which is the frame 70 milliseconds before it, and probes sit 0.7 and 1.5 seconds after the cue. For the 1.5-second probe, two control spans of 1.6 seconds run from 3.3 to 1.7 seconds and from 1.7 to 0.1 seconds before the cue. They changed 0.56 and 0.00 percent, and the smaller share, 0.00 percent, is the ctl percent. The 0.7-second probe changed 0.26 percent of the picture and the 1.5-second probe changed 0.41 percent, so the 1.5-second probe is the one reported. An inset shows seven 40-millisecond frames around the cue with a bar for each frame's changed share. The onset frame, 30 milliseconds before the cue, is outlined, and a band of 80 milliseconds on either side of the cue marks the offset limit." />
 </Frame>
 
 ### Definitions
@@ -166,8 +166,9 @@ default. The a/v limit is three frames, because the click carries encoding jitte
 Once a cue lands, `verify` compares every frame from the reference frame to the reported
 probe with the reference frame, and it counts a pixel as changed when its luma differs by
 more than `onset_diff_level`, 12 by default. The onset is the first frame after the
-reference whose changed share rises by at least `onset_percent` percentage points, 0.002
-by default, over the frame before it. A reveal is abrupt, so it shows as a rise like that,
+reference whose changed share rises by at least `onset_percent` percentage points, 0.01
+by default, over the frame before it. At the probe size of 480 by 270, 0.01 percent is
+about a dozen pixels, so a small element moving elsewhere on the slide does not count. A reveal is abrupt, so it shows as a rise like that,
 while a camera push or a curve still drawing grows a little every frame.
 
 If no frame rises that sharply, the onset is the first frame after the reference whose
@@ -193,7 +194,8 @@ spans are dropped.
 
 ### The reference frame and skipped cues
 
-The reference frame sits `lead_seconds` before the cue. It never sits inside the section's
+The reference frame is the first frame at or after the point `lead_seconds` before the
+cue. It never sits inside the section's
 fade-in, where the picture is still coming up from black, and it always sits at least one
 frame before the cue. A page section gets no fade-in in the cut when `page_fades_in` under
 `[transition]` is true, which is the default, so its reference may sit on the section's

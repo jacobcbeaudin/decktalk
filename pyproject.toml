@@ -75,5 +75,8 @@ python-version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["browser: needs headless Chromium (run `decktalk setup` first)"]
-addopts = "-m 'not browser'"
+markers = [
+    "browser: needs headless Chromium (run `decktalk setup` first)",
+    "media: runs the ffmpeg that `decktalk setup` fetches",
+]
+addopts = "-m 'not browser and not media'"

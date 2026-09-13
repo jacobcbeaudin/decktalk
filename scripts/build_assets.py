@@ -527,9 +527,10 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
 # defaults, and the offset limit is max_offset_frames (2) at 25 fps.
 VS_FROM, VS_TO = -3.3, 1.6  # seconds from the cue that the time axis spans
 VS_LEAD = 0.1
-VS_PROBES = ((0.7, 0.26), (1.5, 0.39))  # delay after the cue in seconds, and the changed share in percent
-VS_CONTROLS = (0.0, 0.53)  # the two control shares for the reported 1.5 s probe, nearest the reference first
-VS_FRAMES = ((-110, 0.0), (-70, 0.1235), (-30, 0.2994), (10, 0.3843), (50, 0.3850), (90, 0.3858), (130, 0.3866))
+VS_PROBES = ((0.7, 0.26), (1.5, 0.41))  # delay after the cue in seconds, and the changed share in percent
+VS_CONTROLS = (0.0, 0.56)  # the two control shares for the reported 1.5 s probe, nearest the reference first
+# The reference is the first frame at or after the lead, so on this cue it is the frame at -70 ms.
+VS_FRAMES = ((-70, 0.0), (-30, 0.2292), (10, 0.2616), (50, 0.2631), (90, 0.2855), (130, 0.2870), (170, 0.2870))
 VS_ONSET_MS = -30
 VS_LIMIT_MS = 80
 MINUS = "&#8722;"
@@ -631,7 +632,7 @@ def verify_strip(pal: dict[str, str], background: bool) -> str:
 
     # The inset: seven 40 ms frames around the cue, each with its changed share against the reference.
     ix0, ix1 = 830, 1140
-    ms_from, ms_to = -135, 155
+    ms_from, ms_to = -95, 195
 
     def mx(ms: float) -> float:
         return ix0 + (ms - ms_from) / (ms_to - ms_from) * (ix1 - ix0)
@@ -663,14 +664,14 @@ def verify_strip(pal: dict[str, str], background: bool) -> str:
         parts.append(
             f'<text class="tl{" acc" if on else ""}" x="{cx:.1f}" y="{axis_y + 22}" text-anchor="middle">{_signed(ms, 0, "")}</text>'
         )
-    # The cue falls inside the +10 ms frame's span, so it is marked above the cells rather than drawn through them.
+    # The cue falls inside the -30 ms frame's span, so it is marked above the cells rather than drawn through them.
     parts.append(f'<line class="cue" x1="{mx(0):.1f}" y1="50" x2="{mx(0):.1f}" y2="{top - 4}"/>')
     parts.append(f'<text class="tl acc" x="{mx(0) + 6:.1f}" y="64">cue</text>')
 
     probe_share = VS_PROBES[best][1]
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
   <title id="t">How verify measures one cue</title>
-  <desc id="d">A time axis runs from 3.3 seconds before cue 3.1eq to 1.6 seconds after it. The reference frame sits 0.1 seconds before the cue, and probes sit 0.7 and 1.5 seconds after it. The 1.5 second probe is the one reported. Its two 1.6 second control spans end at the reference one after the other, and the smaller of their shares, 0.00 percent, is the control. An inset shows seven 40 millisecond frames around the cue with the share of pixels each one changed, and the frame 30 milliseconds before the cue is outlined as the onset, inside the 80 millisecond limit.</desc>
+  <desc id="d">A time axis runs from 3.3 seconds before cue 3.1eq to 1.6 seconds after it. The reference is the first frame at or after 0.1 seconds before the cue, which is the frame 70 milliseconds before it, and probes sit 0.7 and 1.5 seconds after the cue. The 1.5 second probe is the one reported. Its two 1.6 second control spans end at the reference one after the other, and the smaller of their shares, 0.00 percent, is the control. An inset shows seven 40 millisecond frames around the cue with the share of pixels each one changed, and the frame 30 milliseconds before the cue is outlined as the onset, inside the 80 millisecond limit.</desc>
   <defs><style>{chr(10).join(css)}</style></defs>
   {bg_rect(pal, w, h, background)}
   <text class="lab" x="{x0}" y="36">CUE 3:3.1EQ, SILENT BUILD</text>
