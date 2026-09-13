@@ -294,7 +294,7 @@ prefix.
 |---|---|
 | `unknown cue id X (no step id or cues list matches it)` | A cue in `beats` that no step owns and no handler is registered for. |
 | `no step owns any listed cue, so nothing will mount` | Every cue in `beats` is unknown, so the section would record an empty stage. |
-| `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page wants KaTeX and `window.katex` never appeared. |
+| `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page wants KaTeX and `window.katex` never appeared. The runtime checks when the page loads and again five seconds after a step mounts a `[data-tex]` element without KaTeX, which covers cue mode, where steps mount after the clock starts. `check` reports it as `KATEX?`. A page copied from the template without `decktalk init` has no KaTeX tags, because `init` fills them in. |
 | `data-sync text not found in the spoken words: "…"` | The element's text matches no run of the `words` list, usually because the slide and the script differ by a word. The element appeared whole. |
 | `data-tex could not be parsed: "…" (write \\ for every backslash inside a template literal)` | A `data-tex` value that KaTeX rendered in red. A single backslash inside a template literal is the usual cause. |
 | `cue "X" matches no element, handler, or step` | A cue in `beats` that a step owns by prefix but that no `data-cue` element, `on` handler, or step id matches, so it fires and nothing happens. |
