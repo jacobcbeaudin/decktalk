@@ -77,25 +77,36 @@ __KATEX__
   .snippet .c { color: var(--mute); }
 
   /* Scene 3 */
-  .fig3 { position: absolute; left: 120px; top: 370px; width: 960px; height: 570px; }
+  /* The figure dims as one composited layer, so the dim restyles nothing inside it. */
+  .fig3 { position: absolute; left: 120px; top: 370px; width: 960px; height: 570px; contain: layout size style; transition: opacity .3s ease; will-change: opacity; }
+  .fig3.dim { opacity: .35; transition-duration: .6s; }
   /* Three layers: the axes under the canvas, so the bowl hides what stands behind it, then the
-     canvas, then the labels and the drop line over it, so they read through the surface. */
+     canvas, then the labels, arrows, and step dots over it, so they read through the surface. */
   .fig3 canvas { position: absolute; left: 0; top: 0; width: 960px; height: 570px; z-index: 1; }
   .fig3 svg { position: absolute; left: 0; top: 0; width: 960px; height: 570px; overflow: visible; }
   .fig3 .under { z-index: 0; }
   .fig3:not(.placed) .under, .fig3:not(.placed) .over { visibility: hidden; }
   .fig3 .over { position: absolute; inset: 0; z-index: 2; }
-  .fig3 .ax { fill: none; stroke: var(--dim); stroke-width: 2.5; stroke-linecap: round; transition: stroke .25s ease, stroke-width .25s ease; }
+  .fig3 .ax { fill: none; stroke: var(--dim); stroke-width: 2.5; stroke-linecap: round; }
   .fig3 .ax.focus { stroke: var(--accent); stroke-width: 4; }
+  /* Labels sit at the origin and move by transform alone, so following the ball costs no layout. */
   .fig3 .lab { position: absolute; left: 0; top: 0; font: 500 28px/1 var(--mono); color: var(--mute); white-space: nowrap; }
   .fig3 .lab sub { font-size: .68em; vertical-align: -.28em; line-height: 0; }
-  .fig3 .lab.mid { transform: translate(-50%, -50%); }
-  .fig3 .lab.right { transform: translate(16px, -50%); }
-  .fig3 .tag { color: var(--accent); transform: translate(14px, 2px); }
+  .fig3 .tag, .fig3 .lossl, .fig3 .tdot { will-change: transform; }
+  .fig3 .tag { color: var(--accent); }
+  .fig3 .tdot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
   .fig3 .lossl { font-size: 24px; transition: opacity .4s ease; }
-  .fig3 .lossl.gone { opacity: 0 !important; }
-  .fig3 .dot { fill: var(--accent); }
-  .fig3 .drop { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 9 7; }
+  .fig3 .drop { fill: none; stroke: var(--accent); stroke-width: 3; stroke-dasharray: 9 7; }
+  .fig3 .grad, .fig3 .gl { transition: opacity .3s ease; }
+  .fig3 .grad.up { fill: var(--mute); }
+  .fig3 .grad.down { fill: var(--accent); }
+  .fig3 .gl { font-size: 30px; }
+  .fig3 .gl.down { color: var(--accent); }
+  .fig3 .grad.back, .fig3 .gl.back { opacity: .4 !important; }
+  .fig3 .lossl.gone, .fig3 .grad.gone, .fig3 .gl.gone { opacity: 0 !important; }
+  .fig3 .fseg { fill: none; stroke: var(--ink); stroke-opacity: .45; stroke-width: 2; }
+  .fig3 .sdot { fill: var(--ink); }
+  .fig3 .fseg:not(.on), .fig3 .sdot:not(.on) { visibility: hidden; }
   .eq { position: absolute; left: 1160px; top: 420px; display: flex; align-items: baseline; gap: 18px; font-size: 58px; color: var(--ink); white-space: nowrap; }
   .eq .katex-display { margin: 0; display: inline-block; }
   .eq .katex-display > .katex { text-align: left; }
@@ -132,6 +143,7 @@ __KATEX__
   @keyframes s5-underline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   .ghostchip { transition: opacity .6s ease; }
   .ghostchip.gone { opacity: 0 !important; }
+  .ghostchip.out { opacity: 0 !important; transition: none; }
 </style>
 </head>
 <body>
@@ -250,9 +262,11 @@ scales its length.</pre>
 ]});
 
 // ---- Scene 3: gradient descent on a three-dimensional loss surface ----------------------
-// The surface, the contours, the ball, its trail, the two arrows, the overshoot ghost, and the
-// minimum ring are three.js objects. Cue handlers drive every animation from DeckTalk's clock.
-// s3figure builds the renderer and every object without touching the page, and returns
+// The surface, the contours, the balls, their trails, and the minimum ring are three.js objects.
+// The axes, the labels, the gradient arrows, the θ dot, the drop line, and the step dots are
+// DOM and SVG, placed by projecting 3D points, because the first draw of a new WebGL object is
+// slow in the recorder's software renderer. Cue handlers drive every animation from DeckTalk's
+// clock. s3figure builds the renderer and every object without touching the page, and returns
 // { warm, attach }, or null without three.js or WebGL. attach(slide) puts the canvas in the
 // slide's figure and returns the cue handlers, which the step's enter stores on its slide as
 // slide.s3. A frozen figure returns no handlers.
@@ -264,8 +278,8 @@ function s3figure(frozen) {
     renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
   } catch (e) { console.warn("decktalk: no WebGL, so the scene 3 figure is empty"); return null; }
   const W = 960, H = 570, R = 0.22, ACCENT = 0x2c1fea, INK = 0x0a0a0a;
-  // three.js takes colours as numbers, so these repeat the --hair and --dim tokens above.
-  const SURFACE = 0xe4e4e7, DIM = 0xa3a3ad;
+  // three.js takes colours as numbers, so this repeats the --hair token above.
+  const SURFACE = 0xe4e4e7;
   renderer.setPixelRatio(1);
   renderer.setSize(W, H);
   renderer.setClearColor(0xffffff, 0);
@@ -288,15 +302,13 @@ function s3figure(frozen) {
   const normalAt = (x, z) => { const [gx, gz] = grad(x, z); return new T.Vector3(-gx, 1, -gz).normalize(); };
   const MIN = [-0.3860, 0.0];
   const clamp01 = (k) => Math.min(1, Math.max(0, k));
-  const easeInOut = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
   const easeOut = (k) => 1 - Math.pow(1 - k, 3);
 
-  // Every material carries a base opacity, a fade (0..1) and the scene-wide dim factor. A
-  // material at zero opacity is hidden outright, so it never writes depth over the surface.
+  // Every material carries a base opacity and a fade (0..1). A material at zero opacity is
+  // hidden outright, so it never writes depth over the surface.
   const mats = [];
   const track = (m, base) => { m.transparent = true; m.userData.base = base; m.userData.fade = 1; m.opacity = base; mats.push(m); return m; };
-  let dimK = 1;
-  const apply = () => mats.forEach((m) => { m.opacity = m.userData.base * m.userData.fade * dimK; m.visible = m.opacity > 0.002; });
+  const apply = () => mats.forEach((m) => { m.opacity = m.userData.base * m.userData.fade; m.visible = m.opacity > 0.002; });
 
   // The surface, shaded pale, with iso-loss contours lifted just above it.
   const N = 60;
@@ -349,153 +361,165 @@ function s3figure(frozen) {
   contourLines.renderOrder = 1;
   scene.add(contourLines);
 
-  // Iterates of gradient descent, and the overshoot ghost's.
+  // The iterates of gradient descent from one starting point at three learning rates. At 0.9 the
+  // ball reaches the bottom in about twelve steps without overshooting. At 4.5 it overshoots,
+  // zigzags across the bowl, and settles in about twenty. At 6 each bounce lands higher, and the
+  // fifth step leaves the figure.
   const iterate = (x, z, lr, n) => { const p = [[x, z]]; for (let i = 0; i < n; i++) { const [gx, gz] = grad(x, z); x -= lr * gx; z -= lr * gz; p.push([x, z]); } return p; };
   const P = iterate(-2.4, 1.9, 0.9, 12);
-  const GH = iterate(-2.4, 1.9, 4.5, 4);
-  const lifted = (x, z, lift) => new T.Vector3(x, h(x, z) + lift, z);
-  const chord = (a, b, lift, n) => { const pts = []; for (let i = 0; i <= n; i++) { const s = i / n; pts.push(lifted(a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, lift)); } return pts; };
+  const GH = iterate(-2.4, 1.9, 4.5, 20);
+  const GX = iterate(-2.4, 1.9, 6, 5);
 
-  // A trail is a line that grows as its ball moves, hugging the surface.
-  function makeTrail(material, capacity, dashed) {
+  // A trail is built once through every iterate of its path, hugging the surface, and grows by its
+  // draw range alone, so a moving ball uploads nothing to the GPU. A dashed trail carries its line
+  // distances from the start.
+  const SEG = 20;
+  function makeTrail(iters, material, dashed) {
+    const count = (iters.length - 1) * SEG + 1;
+    const xyz = new Float32Array(count * 3), dist = new Float32Array(count);
+    for (let k = 0; k < count; k++) {
+      const i = Math.min(Math.floor(k / SEG), iters.length - 2), s = (k - i * SEG) / SEG;
+      const a = iters[i], b = iters[i + 1];
+      const x = a[0] + (b[0] - a[0]) * s, z = a[1] + (b[1] - a[1]) * s;
+      xyz[k * 3] = x; xyz[k * 3 + 1] = h(x, z) + 0.02; xyz[k * 3 + 2] = z;
+      if (k) dist[k] = dist[k - 1] + Math.hypot(x - xyz[k * 3 - 3], xyz[k * 3 + 1] - xyz[k * 3 - 2], z - xyz[k * 3 - 1]);
+    }
     const g = new T.BufferGeometry();
-    g.setAttribute("position", new T.BufferAttribute(new Float32Array(capacity * 3), 3));
+    g.setAttribute("position", new T.BufferAttribute(xyz, 3));
+    if (dashed) g.setAttribute("lineDistance", new T.BufferAttribute(dist, 1));
     g.setDrawRange(0, 0);
     const line = new T.Line(g, material);
     line.frustumCulled = false;
     scene.add(line);
-    const done = [];
-    const tr = { line, done, active: null };
-    tr.write = (extra) => {
-      const all = done.concat(extra);
-      const arr = g.attributes.position.array;
-      all.forEach((p, i) => { arr[i * 3] = p.x; arr[i * 3 + 1] = p.y; arr[i * 3 + 2] = p.z; });
-      g.setDrawRange(0, all.length);
-      g.attributes.position.needsUpdate = true;
-      if (dashed) line.computeLineDistances();
-      tr.active = extra;
-    };
-    tr.commit = (pts) => { done.push(...pts); tr.active = null; tr.write([]); };
-    return tr;
+    return { count, show: (n) => g.setDrawRange(0, n) };
   }
-  const trail = makeTrail(track(new T.LineBasicMaterial({ color: INK }), 0.7), 400, false);
-  const ghostTrail = makeTrail(track(new T.LineDashedMaterial({ color: INK, dashSize: 0.12, gapSize: 0.08 }), 0.4), 200, true);
-  ghostTrail.line.computeLineDistances();
+  const trailMat = track(new T.LineBasicMaterial({ color: INK }), 0.7);
+  const trail = makeTrail(P, trailMat, false);
+  const overTrailMat = track(new T.LineDashedMaterial({ color: INK, dashSize: 0.12, gapSize: 0.08 }), 0.8);
+  const overTrail = makeTrail(GH, overTrailMat, true);
+  const outTrailMat = track(new T.LineDashedMaterial({ color: INK, dashSize: 0.12, gapSize: 0.08 }), 0.8);
+  const outTrail = makeTrail(GX, outTrailMat, true);
 
-  // The ball, with a soft accent halo on the surface under it that marks the current point.
+  // The ball, with a soft accent halo on the surface under it that marks the current point. The
+  // halo stays on the surface while the ball hops, so each hop shows its height.
   const ballMat = track(new T.MeshLambertMaterial({ color: ACCENT }), 1);
-  const ball = new T.Mesh(new T.SphereGeometry(R, 32, 24), ballMat);
+  const ballGeo = new T.SphereGeometry(R, 32, 24);
+  const ball = new T.Mesh(ballGeo, ballMat);
   ball.scale.setScalar(0.001);
   scene.add(ball);
   const haloMat = track(new T.MeshBasicMaterial({ color: ACCENT, depthWrite: false }), 0.4);
   const halo = new T.Mesh(new T.CircleGeometry(0.36, 48), haloMat);
   halo.scale.setScalar(0.001);
   scene.add(halo);
-  const placeBall = (x, z, scale) => {
-    ball.position.copy(lifted(x, z, R));
+  const placeBall = (x, z, lift) => {
+    ball.position.set(x, h(x, z) + R + (lift || 0), z);
     const n = normalAt(x, z);
-    halo.position.copy(lifted(x, z, 0)).addScaledVector(n, 0.03);
+    halo.position.set(x, h(x, z), z).addScaledVector(n, 0.03);
     halo.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), n);
-    if (scale !== undefined) { ball.scale.setScalar(scale); halo.scale.setScalar(scale); }
   };
+  const sizeBall = (s) => { ball.scale.setScalar(s); halo.scale.setScalar(s); };
   placeBall(P[0][0], P[0][1]);
-  const ghostMat = track(new T.MeshLambertMaterial({ color: ACCENT }), 0.35);
-  ghostMat.userData.fade = 0;
-  const ghost = new T.Mesh(new T.SphereGeometry(R, 32, 24), ghostMat);
-  ghost.position.copy(lifted(GH[0][0], GH[0][1], R));
-  scene.add(ghost);
+  // The two ghosts share the ball's sphere, each with its own faint material. The ghost that flies
+  // out is the less faint of the two, so its flight reads over the settled one.
+  const ghost = (iters, base) => {
+    const m = track(new T.MeshLambertMaterial({ color: ACCENT }), base);
+    const mesh = new T.Mesh(ballGeo, m);
+    mesh.position.set(iters[0][0], h(iters[0][0], iters[0][1]) + R, iters[0][1]);
+    mesh.scale.setScalar(0.001);
+    scene.add(mesh);
+    return { mesh, m };
+  };
+  const overGhost = ghost(GH, 0.35), outGhost = ghost(GX, 0.6);
 
-  // The two arrows at the first point: grey uphill along the gradient, accent the other way.
-  function arrow(color, dir, origin) {
-    const m = track(new T.MeshBasicMaterial({ color }), 1);
-    m.userData.fade = 0;
-    const g = new T.Group();
-    const shaft = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.7, 12), m);
-    shaft.position.y = 0.35;
-    const head = new T.Mesh(new T.ConeGeometry(0.08, 0.22, 16), m);
-    head.position.y = 0.81;
-    g.add(shaft, head);
-    g.position.copy(origin);
-    g.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir.clone().normalize());
-    scene.add(g);
-    m.userData.group = g;
-    return m;
-  }
-  const [g0x, g0z] = grad(P[0][0], P[0][1]);
-  const upDir = new T.Vector3(g0x, g0x * g0x + g0z * g0z, g0z).normalize();
-  const arrowOrigin = lifted(P[0][0], P[0][1], R + 0.02);
-  const upMat = arrow(DIM, upDir, arrowOrigin);
-  const downMat = arrow(ACCENT, upDir.clone().negate(), arrowOrigin);
-
-  // The minimum ring, popped in with the final settle.
+  // The minimum ring, popped in when the ball arrives.
   const ringMat = track(new T.MeshBasicMaterial({ color: ACCENT }), 0.7);
   const ring = new T.Mesh(new T.TorusGeometry(0.42, 0.03, 12, 64), ringMat);
-  ring.position.copy(lifted(MIN[0], MIN[1], 0.03));
+  ring.position.set(MIN[0], h(MIN[0], MIN[1]) + 0.03, MIN[1]);
   ring.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), normalAt(MIN[0], MIN[1]));
   ring.scale.setScalar(0.001);
   scene.add(ring);
 
-  // The input plane is DOM, drawn from 3D points projected on every render, so it adds no WebGL
-  // draw. The floor sits just below the lowest point of the surface. Its two axes run from the
-  // far corner, behind the bowl, out past the left and right corners, and the loss axis rises
-  // from that corner. The floor dot, the θ tag, and the drop line follow the ball.
+  // The input plane is DOM and SVG, drawn from 3D points projected with the fixed camera. The
+  // floor sits just below the lowest point of the surface. Its two axes run from the far corner,
+  // behind the bowl, out past the left and right corners, and the loss axis rises from that corner.
+  // Everything that never moves is placed once at attach. Only the θ dot, its tag, the drop line,
+  // and the loss label follow the ball, and they are written only when the ball or the drop moved.
   const FLOOR = -0.12, AX = 3.3, TOP = 3.5;
-  let host = null; // the slide's .fig3, set by attach
   camera.updateMatrixWorld();
   const pv = new T.Vector3();
   const toScreen = (x, y, z) => { pv.set(x, y, z).project(camera); return [(pv.x + 1) / 2 * W, (1 - pv.y) / 2 * H]; };
-  // A value is written only when it changes, so a still frame costs the page no style work.
-  const q = (sel) => host.querySelector(sel);
-  const written = new Map();
-  const put = (el, key, value, style) => {
-    const prev = written.get(el) || {};
-    if (prev[key] === value) return;
-    prev[key] = value; written.set(el, prev);
-    if (style) el.style[key] = value; else el.setAttribute(key, value);
+  const floor = (p) => toScreen(p[0], FLOOR, p[1]);
+  const f1 = (v) => v.toFixed(1);
+  const pathD = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${f1(p[0])} ${f1(p[1])}`).join("") + (pts.length > 2 ? "Z" : "");
+  const moveTo = (el, p, offset) => { el.style.transform = `translate(${f1(p[0])}px, ${f1(p[1])}px) ${offset}`; };
+  const NS = "http://www.w3.org/2000/svg";
+  // An arrow lying on the floor at θ along a unit direction in the weight plane, as one outline
+  // projected from the floor, so perspective narrows it the way it narrows the floor.
+  const floorArrow = (o, u, len) => {
+    const v = [-u[1], u[0]], at = (a, b) => floor([o[0] + u[0] * a + v[0] * b, o[1] + u[1] * a + v[1] * b]);
+    const S = 0.22, HEAD = 0.55, SW = 0.13, HW = 0.34;
+    return pathD([at(S, SW), at(len - HEAD, SW), at(len - HEAD, HW), at(len, 0), at(len - HEAD, -HW), at(len - HEAD, -SW), at(S, -SW)]);
   };
-  const segment = (el, a, b) => put(el, "d", `M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`);
-  const at = (el, p) => { put(el, "left", `${p[0].toFixed(1)}px`, true); put(el, "top", `${p[1].toFixed(1)}px`, true); };
-  let dropK = frozen ? 1 : 0;
-  const place = () => {
+  const ARROW = 1.4;
+  const [g0x, g0z] = grad(P[0][0], P[0][1]), g0 = Math.hypot(g0x, g0z), UP = [g0x / g0, g0z / g0], DOWN = [-UP[0], -UP[1]];
+  let host = null, el = null, dropK = frozen ? 1 : 0, losslOn = true, last = "";
+  const placeStatic = () => {
     const corner = toScreen(-3, FLOOR, -3);
-    segment(q(".ax.t1"), corner, toScreen(-3, FLOOR, AX));
-    segment(q(".ax.t2"), corner, toScreen(AX, FLOOR, -3));
-    segment(q(".ax.l"), corner, toScreen(-3, TOP, -3));
-    at(q(".lab.t1"), toScreen(-3, FLOOR, AX + 0.45));
-    at(q(".lab.t2"), toScreen(AX + 0.45, FLOOR, -3));
-    at(q(".lab.l"), toScreen(-3, TOP, -3));
-    const bx = ball.position.x, bz = ball.position.z;
+    el.t1.setAttribute("d", pathD([corner, toScreen(-3, FLOOR, AX)]));
+    el.t2.setAttribute("d", pathD([corner, toScreen(AX, FLOOR, -3)]));
+    el.l.setAttribute("d", pathD([corner, toScreen(-3, TOP, -3)]));
+    moveTo(el.labT1, toScreen(-3, FLOOR, AX + 0.45), "translate(-50%, -50%)");
+    moveTo(el.labT2, toScreen(AX + 0.45, FLOOR, -3), "translate(-50%, -50%)");
+    moveTo(el.labL, toScreen(-3, TOP, -3), "translate(16px, -50%)");
+    el.up.setAttribute("d", floorArrow(P[0], UP, ARROW));
+    el.down.setAttribute("d", floorArrow(P[0], DOWN, ARROW));
+    moveTo(el.glUp, floor([P[0][0] + UP[0] * (ARROW + 0.5), P[0][1] + UP[1] * (ARROW + 0.5)]), "translate(-50%, -50%)");
+    moveTo(el.glDown, floor([P[0][0] + DOWN[0] * (ARROW + 0.55), P[0][1] + DOWN[1] * (ARROW + 0.55)]), "translate(-50%, -50%)");
+    // One dot for every iterate and one floor segment between each pair, made hidden now and
+    // shown as the ball lands, so a landing only toggles a class.
+    const frag = document.createDocumentFragment();
+    el.dots = P.map((p) => { const c = document.createElementNS(NS, "circle"); const q = floor(p); c.setAttribute("class", "sdot"); c.setAttribute("r", "5"); c.setAttribute("cx", f1(q[0])); c.setAttribute("cy", f1(q[1])); return c; });
+    el.segs = P.slice(1).map((p, i) => { const s = document.createElementNS(NS, "path"); s.setAttribute("class", "fseg"); s.setAttribute("d", pathD([floor(P[i]), floor(p)])); return s; });
+    el.segs.forEach((s) => frag.appendChild(s));
+    el.dots.forEach((c) => frag.appendChild(c));
+    el.steps.appendChild(frag);
+    host.classList.add("placed");
+  };
+  const landed = (i) => { el.dots[i].classList.add("on"); if (i > 0) el.segs[i - 1].classList.add("on"); };
+  const placeTheta = () => {
+    const bx = ball.position.x, bz = ball.position.z, key = `${f1(bx * 100)} ${f1(bz * 100)} ${dropK.toFixed(3)}`;
+    if (key === last) return;
+    last = key;
     const f = toScreen(bx, FLOOR, bz), s = toScreen(bx, h(bx, bz), bz);
     const top = [f[0] + (s[0] - f[0]) * dropK, f[1] + (s[1] - f[1]) * dropK];
-    const dot = q(".dot"), drop = q(".drop");
-    put(dot, "cx", f[0].toFixed(1)); put(dot, "cy", f[1].toFixed(1));
-    put(drop, "x1", f[0].toFixed(1)); put(drop, "y1", f[1].toFixed(1));
-    put(drop, "x2", top[0].toFixed(1)); put(drop, "y2", top[1].toFixed(1));
-    at(q(".tag"), f);
-    at(q(".lossl"), [(f[0] + s[0]) / 2, (f[1] + s[1]) / 2]);
-    put(q(".under"), "opacity", dimK.toFixed(3), true);
-    put(q(".over"), "opacity", dimK.toFixed(3), true);
-    if (!host.classList.contains("placed")) host.classList.add("placed");
+    moveTo(el.dot, f, "");
+    moveTo(el.tag, f, "translate(-50%, 14px)");
+    el.drop.setAttribute("d", pathD([f, top]));
+    if (losslOn) moveTo(el.lossl, [(f[0] + s[0]) / 2, (f[1] + s[1]) / 2], "translate(16px, -50%)");
   };
 
-  // Animation: every active animation ticks from DeckTalk's clock; the scene renders while any
-  // is active and once after each state change otherwise.
+  // Animation: every active animation ticks from DeckTalk's clock. An animation says what it
+  // changes, so the WebGL scene renders only while a 3D object moves or fades, the overlay is
+  // placed only while the ball or the drop line moves, and a wait draws nothing. The loop stops
+  // when no animation is left.
   const clock = () => window.__decktalk.now();
   const anims = new Set();
   let raf = 0, inStep = false;
-  const render = () => { apply(); renderer.render(scene, camera); if (host) place(); };
+  const render = () => { apply(); renderer.render(scene, camera); if (el) placeTheta(); };
   const loop = () => {
     if (raf || inStep) return;
     raf = requestAnimationFrame(() => {
       raf = 0; inStep = true;
       const t = clock();
+      let gl = false, overlay = false;
       for (const a of [...anims]) {
         const k = clamp01((t - a.t0) / a.dur);
         a.tick(k);
+        if (a.draws === "gl") gl = true; else if (a.draws === "overlay") overlay = true;
         if (k >= 1) { anims.delete(a); if (a.done) a.done(); }
       }
       inStep = false;
-      render();
+      if (gl) render(); else if (overlay && el) placeTheta();
       if (anims.size) loop();
     });
   };
@@ -503,65 +527,93 @@ function s3figure(frozen) {
   // of the task, however many animations the cue started.
   let pending = false;
   const renderSoon = () => { if (pending) return; pending = true; queueMicrotask(() => { pending = false; render(); }); };
-  const add = (dur, tick, done, owner) => { const a = { t0: clock(), dur, tick, done, owner }; if (!isFinite(a.t0)) a.t0 = 0; anims.add(a); tick(0); renderSoon(); loop(); return a; };
-  const fadeTo = (m, target, dur, done) => { const from = m.userData.fade; add(dur, (k) => { m.userData.fade = from + (target - from) * easeOut(k); }, done); };
-  const dimTo = (target, dur) => { const from = dimK; add(dur, (k) => { dimK = from + (target - from) * easeOut(k); }); };
-  // Move a ball from where it is to b over dur seconds along the chord lifted to the surface,
-  // growing its trail. The move eases out, so the ball leaves on the cued word and settles after
-  // it, and the first recorded frame after the cue already shows the departure. A move that
-  // arrives while another is under way takes over from there.
-  const move = (mesh, tr, b, dur, done, place) => {
-    anims.forEach((x) => { if (x.owner === mesh) anims.delete(x); });
-    if (tr.active && tr.active.length) tr.commit(tr.active);
-    const a = [mesh.position.x, mesh.position.z];
-    const pts = chord(a, b, R, 20), tpts = chord(a, b, 0.02, 20);
-    add(dur, (k) => {
-      const s = easeOut(k), f = s * 20, i = Math.floor(f), u = f - i;
-      const p = i >= 20 ? pts[20] : pts[i].clone().lerp(pts[i + 1], u);
-      if (place) place(p.x, p.z); else mesh.position.copy(p);
-      const tp = i >= 20 ? tpts[20] : tpts[i].clone().lerp(tpts[i + 1], u);
-      tr.write(tpts.slice(0, Math.min(i + 1, 21)).concat(i >= 20 ? [] : [tp]));
-    }, () => { tr.commit(tpts); if (done) done(); }, mesh);
+  const add = (dur, tick, done, draws = "gl") => {
+    const a = { t0: clock(), dur, tick, done, draws };
+    if (!isFinite(a.t0)) a.t0 = 0;
+    anims.add(a); tick(0);
+    if (draws === "gl") renderSoon(); else if (draws === "overlay" && el) placeTheta();
+    loop();
+    return a;
   };
-  const walk = (mesh, tr, path, from, to, dur, done, place) => {
-    if (from >= to) { if (done) done(); return; }
-    move(mesh, tr, path[from + 1], dur, () => walk(mesh, tr, path, from + 1, to, dur, done, place), place);
+  const wait = (dur, done) => add(dur, () => {}, done, "none");
+  const fadeTo = (m, target, dur) => { const from = m.userData.fade; add(dur, (k) => { m.userData.fade = from + (target - from) * easeOut(k); }); };
+
+  // A walker is a ball on its path of iterates. A hop takes it from one iterate to the next over
+  // dur seconds. It travels the chord with an ease-out, so it leaves on the cued word, and it rises
+  // and falls on an arc whose height grows with the step, so each step reads as one hop that lands.
+  // A walk hops to a later iterate, resting between hops. A walk that starts while another is
+  // under way lands the hop in flight and takes over from there.
+  const walker = (iters, tr, place, lift, land) => ({ iters, tr, place, lift, land, at: 0, hop: null, token: 0 });
+  const hop = (w, dur, done) => {
+    const i = w.at, a = w.iters[i], b = w.iters[i + 1];
+    const height = w.lift * (0.12 + Math.hypot(b[0] - a[0], b[1] - a[1]));
+    w.hop = add(dur, (k) => {
+      const s = easeOut(k);
+      w.place(a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, height * 4 * k * (1 - k));
+      w.tr.show(Math.min(w.tr.count, i * SEG + Math.floor(s * SEG) + 1));
+    }, () => { w.hop = null; w.at = i + 1; if (w.land) w.land(i + 1); if (done) done(); });
   };
+  const walk = (w, to, dur, rest, done) => {
+    const token = ++w.token;
+    if (w.hop) { const a = w.hop; anims.delete(a); a.tick(1); a.done(); }
+    const next = () => {
+      if (token !== w.token) return;
+      if (w.at >= to) { if (done) done(); return; }
+      hop(w, dur, () => (rest ? wait(rest, next) : next()));
+    };
+    next();
+  };
+  const ghostAt = (g) => (x, z, lift) => g.mesh.position.set(x, h(x, z) + R + lift, z);
+  const blue = walker(P, trail, placeBall, 0.3, (i) => el && landed(i));
+  const over = walker(GH, overTrail, ghostAt(overGhost), 0.1);
+  const out = walker(GX, outTrail, ghostAt(outGhost), 0.08);
   const pop = (mesh, dur) => add(dur, (k) => { const s = k < 0.45 ? 1.08 * easeOut(k / 0.45) : 1.08 - 0.08 * ((k - 0.45) / 0.55); mesh.scale.setScalar(Math.max(0.001, s)); });
-  const ballTo = (x, z) => placeBall(x, z);
 
   // Warm up: SwiftShader, the software WebGL of headless Chromium, does slow first-time work
   // the first time it draws each object in each drawing state, and on CI one first draw can
   // take 200 ms. So one frame draws every object at its real material settings, with the
-  // surface, contours, arrows, ghost, and ring faded in, the ball, halo, and ring at full size,
-  // and both trails many points long, while the canvas is off the page. A one-pixel read waits
-  // for the frame to finish. Then every object goes back to its opening state and draws again.
+  // surface, contours, ghosts, and ring faded in, the ball, halo, ghosts, and ring at full size,
+  // and every trail drawn whole, while the canvas is off the page. A one-pixel read waits for the
+  // frame to finish. Then every object goes back to its opening state and draws again.
+  const sized = [ball, halo, ring, overGhost.mesh, outGhost.mesh];
+  const trails = [trail, overTrail, outTrail];
   const warm = () => {
     const fades = mats.map((m) => m.userData.fade);
-    const sized = [ball, halo, ring];
     mats.forEach((m) => { m.userData.fade = 1; });
     sized.forEach((o) => o.scale.setScalar(1));
-    trail.write(chord(P[0], P[1], 0.02, 20));
-    ghostTrail.write(chord(GH[0], GH[1], 0.02, 20));
+    trails.forEach((tr) => tr.show(tr.count));
     const gl = renderer.getContext(), px = new Uint8Array(4);
     render();
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
     mats.forEach((m, i) => { m.userData.fade = fades[i]; });
     sized.forEach((o) => o.scale.setScalar(0.001));
-    [trail, ghostTrail].forEach((tr) => { tr.done.length = 0; tr.write([]); tr.active = null; });
+    trails.forEach((tr) => tr.show(0));
     render();
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
     renderer.domElement.dataset.warm = "1";
   };
   const attach = (slide) => {
     host = slide.querySelector(".fig3");
+    const q = (sel) => host.querySelector(sel);
+    el = {
+      t1: q(".ax.t1"), t2: q(".ax.t2"), l: q(".ax.l"), labT1: q(".lab.t1"), labT2: q(".lab.t2"), labL: q(".lab.l"),
+      up: q(".grad.up"), down: q(".grad.down"), glUp: q(".gl.up"), glDown: q(".gl.down"),
+      steps: q(".steps"), dot: q(".tdot"), tag: q(".tag"), drop: q(".drop"), lossl: q(".lossl"),
+    };
     host.appendChild(renderer.domElement);
+    placeStatic();
     if (frozen) {
-      // The end state at once: surface and contours up, the trail through every iterate, the
-      // ball at the minimum, the ring in place, the ghost and the arrows gone.
+      // The end state at once: surface and contours up, the ball at the bottom with every step
+      // dot and its trail, the ring in place, and both ghost paths faint.
       surfMat.userData.fade = 1; contourMat.userData.fade = 1;
-      for (let i = 0; i < 12; i++) trail.commit(chord(P[i], P[i + 1], 0.02, 20));
-      placeBall(P[12][0], P[12][1], 1);
+      trails.forEach((tr) => tr.show(tr.count));
+      [overTrailMat, outTrailMat].forEach((m) => { m.userData.fade = 0.35; });
+      overGhost.m.userData.fade = 0.3;
+      overGhost.mesh.scale.setScalar(1);
+      ghostAt(overGhost)(GH[20][0], GH[20][1], 0);
+      placeBall(P[12][0], P[12][1]);
+      sizeBall(1);
+      P.forEach((p, i) => landed(i));
       ring.scale.setScalar(1);
       render();
       return {};
@@ -571,18 +623,18 @@ function s3figure(frozen) {
   };
   const handlers = {
     "3.1bowl": () => { surfMat.userData.fade = contourMat.userData.fade = 0.4; fadeTo(surfMat, 1, 0.4); fadeTo(contourMat, 1, 0.4); },
-    "3.1p0": () => add(0.3, (k) => placeBall(P[0][0], P[0][1], Math.max(0.001, easeOut(k)))),
-    "3.1height": () => add(0.45, (k) => { dropK = 0.25 + 0.75 * easeOut(k); }),
-    "3.1up": () => { fadeTo(upMat, 1, 0.3); fadeTo(downMat, 1, 0.3); },
-    "3.1neg": () => add(0.5, (k) => downMat.userData.group.scale.setScalar(1 + 0.3 * Math.sin(Math.PI * k))),
-    "3.1p1": () => { fadeTo(upMat, 0, 0.3); fadeTo(downMat, 0, 0.3); move(ball, trail, P[1], 0.9, null, ballTo); },
-    "3.1p2": () => move(ball, trail, P[2], 0.9, null, ballTo),
-    "3.1p3": () => walk(ball, trail, P, 2, 4, 0.5, null, ballTo),
-    "3.1think": () => dimTo(0.35, 0.6),
-    "3.1over": () => { ghostMat.userData.fade = 1; dimTo(1, 0.3); walk(ghost, ghostTrail, GH, 0, 4, 0.7); },
+    "3.1p0": () => add(0.3, (k) => sizeBall(Math.max(0.001, easeOut(k)))),
+    "3.1height": () => add(0.45, (k) => { dropK = 0.25 + 0.75 * easeOut(k); }, null, "overlay"),
+    "3.1up": () => { losslOn = false; },
+    "3.1p1": () => { landed(0); walk(blue, 1, 0.45, 0); },
+    "3.1p2": () => walk(blue, 2, 0.45, 0),
+    "3.1p3": () => walk(blue, 4, 0.34, 0.14),
+    "3.1over": () => { overGhost.m.userData.fade = 1; overGhost.mesh.scale.setScalar(1); walk(over, 20, 0.19, 0); },
+    "3.1diverge": () => { outGhost.m.userData.fade = 1; outGhost.mesh.scale.setScalar(1); fadeTo(overGhost.m, 0.5, 0.4); walk(out, 5, 0.46, 0.08); },
     "3.1min": () => {
-      fadeTo(ghostMat, 0, 0.6); fadeTo(ghostTrail.line.material, 0, 0.6);
-      walk(ball, trail, P, 4, 12, 0.4, () => pop(ring, 0.5), ballTo);
+      [overGhost.m, outGhost.m].forEach((m) => fadeTo(m, 0.3, 0.6));
+      [overTrailMat, outTrailMat].forEach((m) => fadeTo(m, 0.35, 0.6));
+      walk(blue, 12, 0.3, 0.08, () => pop(ring, 0.5));
     },
   };
   return { warm, attach };
@@ -609,8 +661,8 @@ document.addEventListener("DOMContentLoaded", () => {
 const focusAxis = (slide, name) => slide.querySelectorAll(".fig3 .ax").forEach((el) => el.classList.toggle("focus", el.classList.contains(name)));
 
 DeckTalk.scene(3, { name: "Gradient descent", steps: [
-  { id: "3.1", hold: 46,
-    cues: { "3.1axes": 2, "3.1th1": 3.5, "3.1th2": 4.5, "3.1lossax": 5.5, "3.1bowl": 7, "3.1p0": 9, "3.1height": 10.5, "3.1up": 12.5, "3.1neg": 14.5, "3.1p1": 16.5, "3.1eq": 18.5, "3.1scale": 20, "3.1p2": 21.5, "3.1p3": 23.5, "3.1eqA": 26, "3.1eqA2": 27, "3.1eqB": 28.5, "3.1eqC": 30, "3.1think": 31, "3.1over": 37, "3.1min": 40 },
+  { id: "3.1", hold: 60,
+    cues: { "3.1axes": 2, "3.1th1": 3.5, "3.1th2": 4.5, "3.1lossax": 5.5, "3.1bowl": 7, "3.1p0": 9, "3.1height": 10.5, "3.1up": 12.5, "3.1neg": 14.5, "3.1p1": 16.5, "3.1eq": 18.5, "3.1scale": 20, "3.1p2": 21.5, "3.1p3": 23.5, "3.1eqA": 26, "3.1eqA2": 27, "3.1eqB": 28.5, "3.1eqC": 30, "3.1think": 31, "3.1over": 37, "3.1diverge": 42, "3.1min": 48 },
     enter: (slide, ctx) => {
       const fig = s3prebuilt !== undefined && !ctx.frozen ? s3prebuilt : s3figure(ctx.frozen);
       s3prebuilt = undefined;
@@ -623,14 +675,15 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
       "3.1bowl": (slide) => { focusAxis(slide, null); slide.s3?.["3.1bowl"]?.(); },
       "3.1p0": (slide) => slide.s3?.["3.1p0"]?.(),
       "3.1height": (slide) => { focusAxis(slide, "l"); slide.s3?.["3.1height"]?.(); },
-      "3.1up": (slide) => { focusAxis(slide, null); slide.s3?.["3.1up"]?.(); },
-      "3.1neg": (slide) => slide.s3?.["3.1neg"]?.(),
-      "3.1p1": (slide) => { slide.querySelector(".lossl").classList.add("gone"); slide.s3?.["3.1p1"]?.(); },
+      "3.1up": (slide) => { focusAxis(slide, null); slide.querySelector(".fig3 .lossl").classList.add("gone"); slide.s3?.["3.1up"]?.(); },
+      "3.1neg": (slide) => slide.querySelectorAll(".fig3 .grad.up, .fig3 .gl.up").forEach((e) => e.classList.add("back")),
+      "3.1p1": (slide) => { slide.querySelectorAll(".fig3 .grad, .fig3 .gl").forEach((e) => e.classList.add("gone")); slide.s3?.["3.1p1"]?.(); },
       "3.1p2": (slide) => slide.s3?.["3.1p2"]?.(),
       "3.1p3": (slide) => slide.s3?.["3.1p3"]?.(),
-      "3.1think": (slide) => slide.s3?.["3.1think"]?.(),
-      "3.1over": (slide) => slide.s3?.["3.1over"]?.(),
-      "3.1min": (slide) => { slide.s3?.["3.1min"]?.(); slide.querySelector(".ghostchip").classList.add("gone"); },
+      "3.1think": (slide) => slide.querySelector(".fig3").classList.add("dim"),
+      "3.1over": (slide) => { slide.querySelector(".fig3").classList.remove("dim"); slide.s3?.["3.1over"]?.(); },
+      "3.1diverge": (slide) => { slide.querySelector(".ghostchip.c45").classList.add("out"); slide.s3?.["3.1diverge"]?.(); },
+      "3.1min": (slide) => { slide.s3?.["3.1min"]?.(); slide.querySelectorAll(".ghostchip").forEach((e) => e.classList.add("gone")); },
       "3.1eqA": (slide) => slide.querySelector(".eq .a").classList.add("on"),
       "3.1eqA2": (slide) => slide.querySelector(".eq .a2").classList.add("on"),
       "3.1eqB": (slide) => slide.querySelector(".eq .b").classList.add("on"),
@@ -639,7 +692,7 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
     render: () => `
     <div class="slide">
       <p class="eyebrow">Scene 03</p>
-      <h1 class="title">Gradient descent walks a model's error downhill, one step at a time.</h1>
+      <h1 class="title">Gradient descent lowers a model's loss<br>one step at a time.</h1>
       <div class="fig3">
         <svg class="under" viewBox="0 0 960 570" aria-hidden="true">
           <path class="ax t1" pathLength="1" data-cue="3.1axes" data-fx="draw" data-dur="0.6"/>
@@ -648,18 +701,24 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
         </svg>
         <div class="over">
           <svg viewBox="0 0 960 570" aria-hidden="true">
-            <g data-cue="3.1height" data-fx="fade"><line class="drop"/></g>
-            <circle class="dot" r="7" data-cue="3.1p0" data-fx="fade"/>
+            <g class="steps"></g>
+            <path class="grad up" data-cue="3.1up" data-fx="fade"/>
+            <path class="grad down" data-cue="3.1neg" data-fx="fade"/>
+            <g data-cue="3.1height" data-fx="fade"><path class="drop"/></g>
           </svg>
-          <div class="lab mid t1" data-cue="3.1th1" data-fx="fade">θ<sub>1</sub></div>
-          <div class="lab mid t2" data-cue="3.1th2" data-fx="fade">θ<sub>2</sub></div>
-          <div class="lab right l" data-cue="3.1lossax" data-fx="fade">L(θ)</div>
+          <div class="tdot" data-cue="3.1p0" data-fx="fade"></div>
+          <div class="lab t1" data-cue="3.1th1" data-fx="fade">θ<sub>1</sub></div>
+          <div class="lab t2" data-cue="3.1th2" data-fx="fade">θ<sub>2</sub></div>
+          <div class="lab l" data-cue="3.1lossax" data-fx="fade">L(θ)</div>
           <div class="lab tag" data-cue="3.1p0" data-fx="fade">θ</div>
-          <div class="lab right lossl" data-cue="3.1height" data-fx="fade">loss</div>
+          <div class="lab lossl" data-cue="3.1height" data-fx="fade">loss</div>
+          <div class="lab gl up" data-cue="3.1up" data-fx="fade" data-tex="\\nabla L">∇L</div>
+          <div class="lab gl down" data-cue="3.1neg" data-fx="fade" data-tex="-\\nabla L">−∇L</div>
         </div>
       </div>
       <span class="chip abs" data-cue="3.1eq" data-tex="\\eta = 0.9" style="left:1160px;top:340px">η = 0.9</span>
-      <span class="chip abs ghostchip" data-cue="3.1over" data-fx="fade" data-tex="\\eta = 4.5" style="left:1336px;top:340px">η = 4.5</span>
+      <span class="chip abs ghostchip c45" data-cue="3.1over" data-fx="fade" data-tex="\\eta = 4.5" style="left:1336px;top:340px">η = 4.5</span>
+      <span class="chip abs ghostchip c6" data-cue="3.1diverge" data-fx="fade" data-tex="\\eta = 6" style="left:1336px;top:340px">η = 6</span>
       <div class="eq" data-cue="3.1eq" data-fx="fade">
         <span class="a" data-display data-tex="\\theta_{t+1}">θ(t+1)</span>
         <span class="a2" data-display data-tex="= \\theta_t">= θ(t)</span>
