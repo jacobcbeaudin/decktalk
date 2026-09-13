@@ -15,7 +15,7 @@ build/
   audio/   NN-slug.mp3, NN-slug.words.json, manifest.json, narration.mp3, timeline.json, beats.json, beats.anchors.json
   rec/     NN-scene.webm, NN-scene.json
   out/     NN-section.mp4, <name>.mp4, <name>-YYYYMMDD-HHMM.mp4, <name>.srt, <name>.vtt, <name>.chapters.txt, slates/
-  shots/   step-<id>.png, section-NN-at-<S>s.png
+  shots/   step-<id>.png, step-<id>-cue-<cue>.png, section-NN-at-<S>s.png
   sfx/     ambience.mp3, <name>.mp3, and a .manifest.json beside each
   music/   underscore.mp3, its parts, and its manifest
 ```
@@ -56,6 +56,7 @@ One entry per narrated section. The `hash` is what the cache compares.
 | `segments.NN.hash` | The provider, voice, settings, and text hash, or `silent`. |
 | `segments.NN.words`, `.est_seconds`, `.duration_seconds` | The word count, the pacing estimate, and the real length. |
 | `segments.NN.target_seconds`, `.speech_end_seconds`, `.tail_padded_seconds` | The time budget from the heading, where speech ends, and how much silence was added. |
+| `segments.NN.spoken` | The words the voice was given, without break tags, with the script's punctuation and case. Captions take their spelling from it, so they match the audio even after the script changes. A manifest without it falls back to the script. |
 
 ## `build/audio/timeline.json`
 
@@ -176,6 +177,6 @@ title=Open
 
 ## `build/shots/`
 
-`step-<id>.png` for each step, in a subdirectory named after the page when the project
-has several pages, and `section-NN-at-<S>s.png` for each frame taken from a playing
-section.
+`step-<id>.png` for each step and `step-<id>-cue-<cue>.png` for a step frozen at one of
+its cues, both in a subdirectory named after the page when the project has several pages,
+and `section-NN-at-<S>s.png` for each frame taken from a playing section.

@@ -82,11 +82,16 @@ with both keys fails.
 | `hold_seconds` | page | 0 | How long the last frame holds after the narration, by cloning it. Only the last page section may hold, because the narration is continuous and an earlier hold would push every later visual off its words. |
 | `ambience` | page | false | Whether the ambience bed plays under this section. |
 | `params` | page | none | Extra query parameters for the page, written as a table such as `[section.params]` with `theme = "dark"`. A `beats` key here replaces the resolved cues. |
-| `clip` | clip | required | Your video file, with its own audio. It is scaled and padded to the frame size. [Add a clip section](/guides/clip-section) says where a clip may sit. |
+| `clip` | clip | required | Your video file, with its own audio. It is scaled and padded to the frame size. A clip sits before the first page section or after the last one. [Add a clip section](/guides/clip-section#where-a-clip-may-sit) explains why. |
 | `slate_seconds` | clip | 5 | How long the titled slate plays when the clip file is missing. |
 
 A missing clip is not an error unless you pass `--strict`. A titled slate plays for
 `slate_seconds` in its place, so a project builds before every asset exists.
+
+A clip between two page sections is an error at load, because the narration is one
+continuous track placed at the first page section and a clip in the middle would play
+over the words of the section after it. The message names the clip, the page sections on
+either side, and the two places the clip may move to.
 
 ## `[transition]`
 

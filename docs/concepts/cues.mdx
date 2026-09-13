@@ -1,6 +1,6 @@
 ---
 title: Cues
-description: How a DeckTalk cue phrase in cues.json becomes the second at which a visual appears, the matching rules, the tokenizer, unresolved cues, and how to choose the phrase.
+description: How a DeckTalk cue phrase in cues.json becomes the second at which a visual appears, the matching rules, the tokenizer, unresolved cues, unknown cue ids, and how to choose the phrase.
 icon: "crosshairs"
 ---
 
@@ -48,14 +48,18 @@ Every section key in `cues.json` must exist in `decktalk.toml`, and a section ma
 no cues at all. A page section with no cues plays its autoplay timing from the page. A
 clip section has no narration, so its cues are reported as skipped.
 
-The `beats` stage never checks cue ids against the page. It resolves phrases to seconds,
-and the page decides what each id means when it plays. An id that no step owns is
-recorded by the page in `window.__decktalk.warnings`, which the recorder reads after the
-recording and logs. An id that a step owns by prefix but that no `data-cue` element,
-`on` handler, or step id matches is recorded too, as
-`cue "4.1answer" matches no element, handler, or step`, so a typo in `cues.json` is
-named rather than silently fired. [The page contract](/concepts/page-contract#cue-ownership) explains
-which step owns a cue.
+The `beats` stage checks that every cue id appears in its page, as
+[Unknown cue ids](#unknown-cue-ids) describes, and the page decides what each id means
+when it plays. An id that no step owns is recorded by the page in
+`window.__decktalk.warnings`, which the recorder reads after the recording and logs. An
+id that a step owns by prefix but that no `data-cue` element, `on` handler, or step id
+matches is recorded too, as `cue "4.1answer" matches no element, handler, or step`, so a
+typo in `cues.json` is named rather than silently fired. The page reports the reverse as
+well. An element whose `data-cue` is not among the section's cues warns
+`data-cue "4.1change" is not in ?beats=, so it reveals at its data-at time after the mount`,
+and a step that owns none of them warns
+`step "3.2" owns no cue in ?beats=, so it never appears`.
+[The page contract](/concepts/page-contract#cue-ownership) explains which step owns a cue.
 
 ## Unresolved cues
 
@@ -70,9 +74,30 @@ sec  speech   need  cues
 The `build` command stops at that point, because a step whose only cues are unresolved
 never appears on screen. Fix the phrase, or pass `--allow-unresolved` to build without
 that cue. The page then ignores the missing cue, and an element waiting for it appears at
-its `data-at` time after its step mounts. A cue that resolves past the end of the audio
+its `data-at` time after its step mounts, with a warning that the id is not in `?beats=`. A cue that resolves past the end of the audio
 is kept with a note. A silent build estimates word times from the word count, so cues
 resolve, but their times are placeholders and the table says so.
+
+## Unknown cue ids
+
+A phrase can resolve while its cue id is wrong. `beats` therefore reads each section's
+page and looks for every cue id as a quoted literal in single quotes, double quotes, or
+backticks, such as `data-cue="4.1answer"`, a key of a step's `cues` object, or a key of an
+`on` handler. An id that appears nowhere in the page is noted and counted, and `beats`
+exits 1. The cue still resolves and `beats.json` is written.
+
+```text
+sec  speech   need  cues
+ 04    24.6      -  4.1change@0.0,4.1answer@2.51,4.1build@5.02
+                    ! 4.1answer: not in deck/index.html
+```
+
+The `build` command stops after the beats table, because the page would never reveal the
+cue. Add `data-cue="4.1answer"` to the step, fix the id in `cues.json`, or pass
+`--allow-unknown` for a page that builds its ids at run time. Clip sections have no page
+and are not checked, and neither is a page file that does not exist, which the recorder
+reports. The runtime keeps its own warning for an id that the page mentions but no step
+owns, which lands in the recorder's sidecar.
 
 ## Choosing the phrase
 

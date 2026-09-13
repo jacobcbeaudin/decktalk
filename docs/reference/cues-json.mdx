@@ -1,6 +1,6 @@
 ---
 title: cues.json
-description: The shape and every key of the DeckTalk cue file, with cue, on, offset, occurrence, case_sensitive, min_seconds, the step synonym, and ignored top-level keys.
+description: The shape and every key of the DeckTalk cue file, with cue, on, offset, occurrence, case_sensitive, verify, min_seconds, the step synonym, and ignored top-level keys.
 icon: "brackets-curly"
 ---
 
@@ -31,10 +31,10 @@ the scaffold's shape.
 }
 ```
 
-<Note>A cue on `$start` with no offset fires at 0.0, which is fine for the page but not
-for `decktalk verify`. The check takes its reference frame `after_dip_seconds` after the
-section start, during the first slide's entrance, so a `$start` cue at 0.0 reports
-`OFF CUE` or `NO CHANGE` rather than a landing. Verify cues that sit on words.</Note>
+<Note>A cue on `$start` with no offset fires at 0.0, which is fine for the page. It leaves
+no frame before it for `decktalk verify` to compare against, so the check reports it as
+`skipped` with `REFERENCE_CLAMPED` rather than measuring it. Verify cues that sit on
+words.</Note>
 
 ## Shape
 
@@ -43,15 +43,20 @@ The file is one object with a `sections` key. Every other top-level key, such as
 must name a `[[section]]` in `decktalk.toml`. Each section is an object with an optional
 `min_seconds` and a `cues` list.
 
+Every cue id must appear in the section's page as a quoted literal, such as
+`data-cue="3.1eq"` or a key of a step's `cues` object. `beats` reports an id it cannot
+find, and `build` stops on it unless `--allow-unknown` is given.
+
 ## Keys of a cue
 
 | Key | Required | Meaning |
 |---|---|---|
 | `cue` | yes | A cue id the page understands. `step` is accepted as a synonym, and `step` wins when both are present. The id may not contain `@` or a comma. |
 | `on` | yes | A word or short phrase from that section's narration, or `$start`, or `$end`. |
-| `offset` | no | Seconds added to the match. It may be negative. `$start` plus a negative offset is written as is, and the page fires it at t=0. |
+| `offset` | no | Seconds added to the match. It may be negative. `$start` plus a negative offset is written as is, and the page fires it at t=0. A `$start` cue whose time does not clear the section's fade-in by at least one frame has no frame before it, so `verify` reports it as `skipped` with `REFERENCE_CLAMPED`. |
 | `occurrence` | no | Which repeat of the phrase to use. The default is 1, the first. |
 | `case_sensitive` | no | Match case as written. The default is false. |
+| `verify` | no | `false` leaves the cue out of a plain `decktalk verify`, for a reveal too small or too slow for a frame difference to measure. The row reads `skipped` with `OPTED_OUT`. Naming the cue as `SECTION:CUE` measures it anyway. The default is `true`. |
 
 ## Keys of a section
 

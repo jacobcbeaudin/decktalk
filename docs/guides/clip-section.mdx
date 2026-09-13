@@ -76,11 +76,17 @@ camera before the first slide.
 ## Where a clip may sit
 
 The narration is one continuous track that begins with the first page section, and each
-page section is cut to its own span in that track. A clip therefore belongs before the
-first page section or after the last one. A clip placed between two page sections plays
-while the narration of the following section is already running, so that section's words
-and picture no longer agree. Open on a clip, close on a clip, or cut a clip's audio into
-the narration by hand, but do not put one in the middle.
+page section is cut to its own span in that track. A clip therefore sits before the first
+page section or after the last one, and `decktalk.toml` refuses to load when a clip sits
+between two page sections. A clip there would play while the narration of the following
+section is already running, so that section's words and picture would no longer agree.
+
+```text
+error: decktalk.toml: [[section]] number=2 is a clip between page sections 1 and 3. The narration is one continuous track placed at the first page section, so a clip in the middle would play over the words of section 3. Move the clip before section 1 or after section 3, or make it a page section.
+```
+
+Open on a clip, close on a clip, or both. A clip of your own in the middle of a lesson
+becomes a page section that plays the video, or a separate video.
 
 ## The clip's sound
 

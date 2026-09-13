@@ -199,7 +199,7 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
     Every row is within the two-frame limit, and a negative number means the picture
     moved a fraction of a frame before the word, which is what the eye wants. A reveal
     further from its word than that limit is reported as `OFF CUE` by
-    `decktalk verify SECTION:CUE`, which exits 1. `build` checks only section starts and
+    `decktalk verify`, which exits 1. `build` checks only section starts and
     cuts.
     [How it works](/concepts/how-it-works#what-verify-measures) explains the columns and
     the limit that turns `changed` into `OFF CUE`.

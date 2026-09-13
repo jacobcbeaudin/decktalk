@@ -13,14 +13,15 @@ can be built and verified on every push. This is how DeckTalk's own repository d
 decktalk setup                            # Chromium, ffmpeg, and KaTeX, into per-user caches
 decktalk doctor                           # exits 1 when a tool is missing
 DECKTALK_VIDEO_PRESET=veryfast decktalk build --silent
-decktalk verify 3:3.1eq 3:3.1p1 5:5.1cap   # exits 1 when a cue did not land
+decktalk verify                           # exits 1 when a cue did not land
 decktalk shots                            # one PNG per step, worth uploading as an artifact
 ```
 
 On Linux, `setup` passes `--with-deps` to Playwright so that Chromium's system libraries
-are installed too. The verify command with a list of `SECTION:CUE` checks is the test:
-`build` verifies section starts and cuts, and the cue checks measure each reveal in the
-finished mp4. A silent build's placeholder track carries a click at every word start, so
+are installed too. The verify command is the test, and with no arguments it checks every
+cue in `beats.json` except the cues that `cues.json` marks `"verify": false`. `build`
+verifies section starts and cuts, and the cue checks measure each reveal in the finished
+mp4. A silent build's placeholder track carries a click at every word start, so
 the cue table also reports an `a/v` column, the picture's first change measured against
 the click nearest the cue, and the job fails when the finished file's audio and picture
 disagree by more than `max_av_frames`, three frames by default. That makes a silent build a test of the whole
@@ -49,11 +50,16 @@ jobs:
       - run: decktalk build --silent
         env:
           DECKTALK_VIDEO_PRESET: veryfast
-      - run: decktalk verify 3:3.1eq 3:3.1p1 5:5.1cap
+      - run: decktalk verify --json > verify.json
       - uses: actions/upload-artifact@v7
         with:
           name: video
           path: build/out/*.mp4
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verify
+          path: verify.json
 ```
 
 Chromium lives in Playwright's cache, which is `~/.cache/ms-playwright` on Linux,
@@ -65,11 +71,35 @@ KaTeX lives in DeckTalk's own cache, which follows the same platform rule under 
 To build a voiced video in CI, put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in the
 job's secrets and export them. DeckTalk never prints either.
 
-## Two flags that do not mix
+## Asserting in CI
 
-The `--strict` flag makes a missing clip, a missing recording, or a loudness miss an
-error. A silent build's mix is clicks and silence, so its loudness report is meaningless
-and `--strict` would fail on it. Use `--strict` on voiced builds only.
+`status`, `beats`, `check`, `verify`, and `doctor` share one exit rule, so a job can use
+their exit codes as its assertions. A certain finding, such as `OFF CUE`, `TRUNCATED`,
+or an unknown cue id, exits 1. An uncertain finding, whose verdict ends in a question
+mark, such as `BLACK?` on a page that is dark on purpose, exits 0 unless `--strict` is
+given. A cue marked `"verify": false` in `cues.json` is reported as `skipped` and never
+fails.
+
+```console
+decktalk check --strict      # fail on BLACK? and KATEX? too
+decktalk verify              # fail on any certain finding
+```
+
+To keep the job running and decide later, add `--no-fail` and read the JSON. The object
+on stdout carries `ok` and the finding counts, and progress stays on stderr.
+
+```console
+decktalk verify --json --no-fail > verify.json
+jq -e '.ok' verify.json
+jq '.verify.cues[] | select(.verdict != "changed")' verify.json
+```
+
+`jq -e` exits 1 when `ok` is `false`, so the first `jq` line is the assertion and the
+second lists the cues to look at. [Machine-readable output](/reference/cli#machine-readable-output)
+lists every key.
+
+A silent build skips the loudness pass, so `--silent` and `--strict` combine on `build`
+without a false failure.
 
 ## The project directory
 

@@ -45,15 +45,30 @@ print(result.assembly.final, result.verification.ok)
 | Function | Returns |
 |---|---|
 | `narrate(project, *, only, force, allow_placeholders, silent, model)` | `NarrateResult` with `manifest`, `timeline`, `segments`, `synthesized`, and `cached`. |
-| `resolve_beats(project)` | `BeatsResult` with `beats`, `sections`, `unresolved`, `estimated`, and `problems`. |
+| `resolve_beats(project, *, allow_unknown)` | `BeatsResult` with `beats`, `sections`, `unresolved`, `unknown`, `estimated`, `problems`, and `to_dict(root)`. `beats.json` is written either way. Unknown cue ids then raise `UnknownCueError` from `decktalk.stages.beats`, a `ConfigError` whose `result` is the full result, unless `allow_unknown` is true. |
 | `record(project, *, only, seconds, use_beats)` | A list of `Recording`, each with `section`, `path`, `sidecar`, and `seconds`. |
 | `measure(project, only)` | A list of `LeadMeasurement`, each with `key`, `lead_in_seconds`, `wallclock_seconds`, and `method`. |
-| `check(project, only)` | A list of `RecordingCheck`, each with the luma fields, `verdict`, and `ok`. |
+| `check(project, only)` | A list of `RecordingCheck`, each with the luma fields, `verdict`, `ok`, `file`, and `to_dict(root)`. |
 | `assemble(project, *, nomix, loudnorm, strict)` | `AssembleResult` with `final`, `stamped`, `duration`, `sections`, `warnings`, `loudness`, `captions_srt`, `captions_vtt`, and `chapters`. |
-| `verify(project, checks)` | `VerifyResult` with `total_seconds`, `starts`, `cuts`, `cues`, and `black_starts`. Its `ok` is true only when every start, cut, and cue check passed. |
-| `shoot(project, *, pages, steps, section, at)` | The screenshot paths. |
+| `verify(project, checks, only)` | `VerifyResult` with `final`, `total_seconds`, `silent`, `starts`, `cuts`, `cues`, `black_starts`, and `to_dict(root)`. `checks=None` measures every cue in `beats.json` except the cues that `cues.json` opts out, an empty list measures none, and a list of `SECTION:CUE` strings measures those cues whether they opt out or not. `only` keeps the cue checks of those section numbers. Each `CueCheck` has a `verdict` and a `reason`. `VerifyResult.ok` is true when every start, cut, and measured cue passed, and skipped rows never count against it. |
+| `shoot(project, *, pages, steps, section, at, cues)` | The screenshot paths. `cues` with a single step freezes the step at each cue, and `cues` with any other number of steps raises `ConfigError`. |
 | `soundscape(project, *, only, force, dry_run)` | A list of `SoundscapeItem`, each with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds`. |
-| `build(project, *, silent, force, only, nomix, loudnorm, strict, allow_unresolved, report)` | `BuildResult` with one field per stage and `ok`, which mirrors the CLI's exit code. `report(stage, result)` is called after each stage. |
+| `build(project, *, silent, force, only, nomix, loudnorm, strict, allow_unresolved, allow_unknown, report)` | `BuildResult` with one field per stage and `ok`, which mirrors the CLI's exit code. Its verification checks section starts and cuts and measures no cue. `report(stage, result)` is called after each stage. |
+| `status(project)` | `StatusReport` with the project's paths, `sections`, `timeline`, `beats_exists`, `beats_sections`, `final`, `final_exists`, `final_duration`, and `outputs`. It reads what exists and runs nothing. |
+
+`BeatsResult`, `RecordingCheck`, `VerifyResult`, and `StatusReport` each have
+`to_dict(root)`, which returns the JSON-ready data that the CLI prints under `--json`.
+Numbers stay numbers, verdicts are the names the tables print, and paths are relative to
+`root` with forward slashes. Pass `project.root`.
+
+```python
+import json
+import decktalk
+
+project = decktalk.Project.load("my-lesson")
+result = decktalk.verify(project)
+print(json.dumps(result.to_dict(project.root), indent=2))
+```
 
 ## Errors and logging
 
@@ -99,7 +114,7 @@ names above, and every name that starts with an underscore is internal.
 `DeckTalkError`, `LeadMeasurement`, `Manifest`, `MissingInputError`, `Mix`,
 `NarrateResult`, `PageSection`, `Project`, `ProviderError`, `Recording`,
 `RecordingCheck`, `Section`, `Settings`, `Sidecar`, `Soundscape`, `SoundscapeItem`,
-`SpeechProvider`, `SpeechRequest`, `Timeline`, `ToolError`, `Transition`,
-`VerifyResult`, `Voice`, `Word`, `__version__`, `assemble`, `build`, `check`,
-`load_settings`, `measure`, `narrate`, `record`, `register`, `resolve_beats`, `shoot`,
-`soundscape`, `verify`.
+`SpeechProvider`, `SpeechRequest`, `StatusReport`, `Timeline`, `ToolError`,
+`Transition`, `VerifyResult`, `Voice`, `Word`, `__version__`, `assemble`, `build`,
+`check`, `load_settings`, `measure`, `narrate`, `record`, `register`, `resolve_beats`,
+`shoot`, `soundscape`, `status`, `verify`.

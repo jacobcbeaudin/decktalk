@@ -20,15 +20,19 @@ A page plays in one of four modes, and `window.__decktalk.mode` says which.
 | `index` | no query | A list of every scene and step with play and freeze links. |
 | `autoplay` | `?scene=N` | The steps mount in order, each holding for `hold` seconds divided by `speed`. Reveals fire at `data-at`, and a step's `cues` object fires handler cues at those seconds after the mount. This is the browser preview. |
 | `cues` | `?scene=N&beats=id@s,…` | The resolved cues drive the page. Each step mounts at its earliest cue, the first cued step at t=0, and the last cued step holds until the recorder stops. A step with no cue never shows. This is the recording. |
-| `frozen` | `?step=ID` | One step with every reveal in its end state and its handler cues fired. `decktalk shots` uses it. |
+| `frozen` | `?step=ID` or `?step=ID&cue=CUE` | One step with every reveal in its end state and its cues fired. With `cue`, only the step's cues up to and including that one fire, and an element that waits for a later cue stays hidden. `decktalk shots` uses it. |
 
 In `cues` mode an element whose `data-cue` is in the list stays hidden until that cue
 fires. Every other reveal fires `data-at` seconds after the mount, which covers an element
 with `data-at` alone and an element whose cue is not in the list. When a cue fires, the
 matching `data-cue` elements reveal first, then the step's `on[id]` handler runs, then
-every `DeckTalk.on(id, fn)` handler. An element with `data-sync` goes one step further and
-appears one word at a time from the spoken words the recorder passes as `?words=`, so a
-line of text keeps pace with the voice.
+every `DeckTalk.on(id, fn)` handler. Each handler receives the slide element of the
+mounted step and a context object `{ id, at, frozen, step }`, so it finds its elements
+with `slide.querySelector` and needs no global.
+[The runtime reference](/reference/runtime#handler-context) describes the fields. An
+element with `data-sync` goes one step further and appears one word at a time from the
+spoken words the recorder passes as `?words=`, so a line of text keeps pace with the
+voice. The runtime gives it no container animation unless it sets `data-fx`.
 [The runtime reference](/reference/runtime#data-attributes-inside-a-step) has its rules.
 
 ## The handshake
@@ -43,7 +47,7 @@ the `t0` seconds given, which is what a browser preview does.
 
 After the recording, the recorder reads `window.__decktalk.warnings` and logs every
 string, and the `check` stage adds a `KATEX?` verdict when one of them says that KaTeX
-never loaded. [How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains the
+never loaded or that a `data-tex` value could not be parsed. [How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains the
 magenta cover that makes the first clean frame narration t=0.
 
 <Warning>A page written by hand must start its clock only when `DeckTalk.startClock()`
@@ -61,8 +65,19 @@ runtime resolves the owner in this order.
 
 A cue that no step owns is pushed onto `window.__decktalk.warnings` as an unknown cue id,
 unless a `DeckTalk.on` handler is registered for it. When no listed cue has an owner,
-nothing mounts and the page warns about that too. The scaffold names every cue in its
-step's `cues` object, which also gives the browser preview its autoplay timing.
+nothing mounts and the page warns about that too. A step of the scene that owns no listed
+cue never appears, and the page warns
+`step "3.2" owns no cue in ?beats=, so it never appears`. An element whose `data-cue` is
+not listed reveals at its `data-at` time after the mount, and the page warns about that as
+well. The scaffold names every cue in its step's `cues` object, which also gives the
+browser preview its autoplay timing.
+
+Before anything is recorded, `decktalk beats` checks the other direction. Every cue id in
+`cues.json` must appear in the page as a quoted literal, whether as `data-cue="ID"`, a
+key of a step's `cues` object, or a key of an `on` handler. An id that the page never
+mentions stops `build`, because no step could ever reveal it. A page that assembles its
+ids from pieces at run time passes `--allow-unknown`, and the runtime warnings above are
+then the only check.
 
 ## Designing the stage
 
