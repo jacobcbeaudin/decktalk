@@ -77,9 +77,25 @@ __KATEX__
   .snippet .c { color: var(--mute); }
 
   /* Scene 3 */
-  .fig3 { position: absolute; left: 120px; top: 330px; width: 960px; height: 570px; }
-  .fig3 canvas { position: absolute; left: 0; top: 0; width: 960px; height: 570px; }
-  .fig3 .axlabel { position: absolute; left: 8px; top: 0; font: 500 32px/46px var(--mono); color: var(--mute); }
+  .fig3 { position: absolute; left: 120px; top: 370px; width: 960px; height: 570px; }
+  /* Three layers: the axes under the canvas, so the bowl hides what stands behind it, then the
+     canvas, then the labels and the drop line over it, so they read through the surface. */
+  .fig3 canvas { position: absolute; left: 0; top: 0; width: 960px; height: 570px; z-index: 1; }
+  .fig3 svg { position: absolute; left: 0; top: 0; width: 960px; height: 570px; overflow: visible; }
+  .fig3 .under { z-index: 0; }
+  .fig3:not(.placed) .under, .fig3:not(.placed) .over { visibility: hidden; }
+  .fig3 .over { position: absolute; inset: 0; z-index: 2; }
+  .fig3 .ax { fill: none; stroke: var(--dim); stroke-width: 2.5; stroke-linecap: round; transition: stroke .25s ease, stroke-width .25s ease; }
+  .fig3 .ax.focus { stroke: var(--accent); stroke-width: 4; }
+  .fig3 .lab { position: absolute; left: 0; top: 0; font: 500 28px/1 var(--mono); color: var(--mute); white-space: nowrap; }
+  .fig3 .lab sub { font-size: .68em; vertical-align: -.28em; line-height: 0; }
+  .fig3 .lab.mid { transform: translate(-50%, -50%); }
+  .fig3 .lab.right { transform: translate(16px, -50%); }
+  .fig3 .tag { color: var(--accent); transform: translate(14px, 2px); }
+  .fig3 .lossl { font-size: 24px; transition: opacity .4s ease; }
+  .fig3 .lossl.gone { opacity: 0 !important; }
+  .fig3 .dot { fill: var(--accent); }
+  .fig3 .drop { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 9 7; }
   .eq { position: absolute; left: 1160px; top: 420px; display: flex; align-items: baseline; gap: 18px; font-size: 58px; color: var(--ink); white-space: nowrap; }
   .eq .katex-display { margin: 0; display: inline-block; }
   .eq .katex-display > .katex { text-align: left; }
@@ -102,10 +118,18 @@ __KATEX__
   .script4 .c { color: var(--mute); }
 
   /* Scene 5 */
-  .s5-made { position: absolute; left: 120px; top: 640px; display: flex; align-items: baseline; gap: 40px; }
   .chip { font: 500 32px/46px var(--mono); color: var(--ink); background: var(--block); border-radius: 8px; padding: 0 18px; }
   .chip .katex { font-size: 36px; }
-  .chip.cta { color: var(--accent); }
+  .s5-hero, .s5-mark, .s5-line, .s5-url { position: absolute; left: 120px; margin: 0; }
+  .s5-hero { top: 190px; }
+  .s5-mark { top: 430px; }
+  .s5-line { top: 512px; color: var(--mute); }
+  /* The address draws its underline from left to right once it has faded in. */
+  .s5-url { top: 650px; width: max-content; font: 600 112px/1.05 var(--tight); letter-spacing: -.03em; color: var(--accent); }
+  .s5-url::after { content: ""; position: absolute; left: 0; right: 0; bottom: -14px; height: 4px; background: var(--accent); transform: scaleX(0); transform-origin: left center; }
+  .s5-url.dt-on::after { animation: s5-underline .5s cubic-bezier(.2, .7, .2, 1) .3s both; }
+  .dt-frozen .s5-url.dt-on::after { animation: none; transform: none; }
+  @keyframes s5-underline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   .ghostchip { transition: opacity .6s ease; }
   .ghostchip.gone { opacity: 0 !important; }
 </style>
@@ -319,7 +343,11 @@ function s3setup(slide, frozen) {
   })();
   const contourMat = track(new T.LineBasicMaterial({ color: INK }), 0.22);
   contourMat.userData.fade = 0;
-  scene.add(new T.LineSegments(contours, contourMat));
+  // The contours draw after the surface. Drawn first, a contour pixel stays see-through, and the
+  // axes under the canvas show through the bowl as a row of dashes.
+  const contourLines = new T.LineSegments(contours, contourMat);
+  contourLines.renderOrder = 1;
+  scene.add(contourLines);
 
   // Iterates of gradient descent, and the overshoot ghost's.
   const iterate = (x, z, lr, n) => { const p = [[x, z]]; for (let i = 0; i < n; i++) { const [gx, gz] = grad(x, z); x -= lr * gx; z -= lr * gz; p.push([x, z]); } return p; };
@@ -407,12 +435,55 @@ function s3setup(slide, frozen) {
   ring.scale.setScalar(0.001);
   scene.add(ring);
 
+  // The input plane is DOM, drawn from 3D points projected on every render, so it adds no WebGL
+  // draw. The floor sits just below the lowest point of the surface. Its two axes run from the
+  // far corner, behind the bowl, out past the left and right corners, and the loss axis rises
+  // from that corner. The floor dot, the θ tag, and the drop line follow the ball.
+  const FLOOR = -0.12, AX = 3.3, TOP = 3.5;
+  camera.updateMatrixWorld();
+  const pv = new T.Vector3();
+  const toScreen = (x, y, z) => { pv.set(x, y, z).project(camera); return [(pv.x + 1) / 2 * W, (1 - pv.y) / 2 * H]; };
+  // A value is written only when it changes, so a still frame costs the page no style work.
+  const q = (sel) => host.querySelector(sel);
+  const written = new Map();
+  const put = (el, key, value, style) => {
+    const prev = written.get(el) || {};
+    if (prev[key] === value) return;
+    prev[key] = value; written.set(el, prev);
+    if (style) el.style[key] = value; else el.setAttribute(key, value);
+  };
+  const segment = (el, a, b) => put(el, "d", `M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`);
+  const at = (el, p) => { put(el, "left", `${p[0].toFixed(1)}px`, true); put(el, "top", `${p[1].toFixed(1)}px`, true); };
+  let dropK = frozen ? 1 : 0;
+  const place = () => {
+    const corner = toScreen(-3, FLOOR, -3);
+    segment(q(".ax.t1"), corner, toScreen(-3, FLOOR, AX));
+    segment(q(".ax.t2"), corner, toScreen(AX, FLOOR, -3));
+    segment(q(".ax.l"), corner, toScreen(-3, TOP, -3));
+    at(q(".lab.t1"), toScreen(-3, FLOOR, AX + 0.45));
+    at(q(".lab.t2"), toScreen(AX + 0.45, FLOOR, -3));
+    at(q(".lab.l"), toScreen(-3, TOP, -3));
+    const bx = ball.position.x, bz = ball.position.z;
+    const f = toScreen(bx, FLOOR, bz), s = toScreen(bx, h(bx, bz), bz);
+    const top = [f[0] + (s[0] - f[0]) * dropK, f[1] + (s[1] - f[1]) * dropK];
+    const dot = q(".dot"), drop = q(".drop");
+    put(dot, "cx", f[0].toFixed(1)); put(dot, "cy", f[1].toFixed(1));
+    put(drop, "x1", f[0].toFixed(1)); put(drop, "y1", f[1].toFixed(1));
+    put(drop, "x2", top[0].toFixed(1)); put(drop, "y2", top[1].toFixed(1));
+    at(q(".tag"), f);
+    at(q(".lossl"), [(f[0] + s[0]) / 2, (f[1] + s[1]) / 2]);
+    put(q(".under"), "opacity", dimK.toFixed(3), true);
+    put(q(".over"), "opacity", dimK.toFixed(3), true);
+    if (!host.classList.contains("placed")) host.classList.add("placed");
+  };
+  place();
+
   // Animation: every active animation ticks from DeckTalk's clock; the scene renders while any
   // is active and once after each state change otherwise.
   const clock = () => window.__decktalk.now();
   const anims = new Set();
   let raf = 0, inStep = false;
-  const render = () => { apply(); renderer.render(scene, camera); };
+  const render = () => { apply(); renderer.render(scene, camera); place(); };
   const loop = () => {
     if (raf || inStep) return;
     raf = requestAnimationFrame(() => {
@@ -491,6 +562,7 @@ function s3setup(slide, frozen) {
   return {
     "3.1bowl": () => { surfMat.userData.fade = contourMat.userData.fade = 0.4; fadeTo(surfMat, 1, 0.4); fadeTo(contourMat, 1, 0.4); },
     "3.1p0": () => add(0.3, (k) => placeBall(P[0][0], P[0][1], Math.max(0.001, easeOut(k)))),
+    "3.1height": () => add(0.45, (k) => { dropK = 0.25 + 0.75 * easeOut(k); }),
     "3.1up": () => { fadeTo(upMat, 1, 0.3); fadeTo(downMat, 1, 0.3); },
     "3.1neg": () => add(0.5, (k) => downMat.userData.group.scale.setScalar(1 + 0.3 * Math.sin(Math.PI * k))),
     "3.1p1": () => { fadeTo(upMat, 0, 0.3); fadeTo(downMat, 0, 0.3); move(ball, trail, P[1], 0.9, null, ballTo); },
@@ -505,16 +577,23 @@ function s3setup(slide, frozen) {
   };
 }
 
+// The axis being named takes the accent, and hands it on when the next one is named.
+const focusAxis = (slide, name) => slide.querySelectorAll(".fig3 .ax").forEach((el) => el.classList.toggle("focus", el.classList.contains(name)));
+
 DeckTalk.scene(3, { name: "Gradient descent", steps: [
-  { id: "3.1", hold: 40,
-    cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1up": 5, "3.1neg": 7, "3.1p1": 9, "3.1eq": 11, "3.1p2": 13, "3.1p3": 15, "3.1eqA": 18, "3.1eqA2": 19, "3.1eqB": 20.5, "3.1eqC": 22, "3.1think": 23, "3.1over": 29, "3.1min": 32 },
+  { id: "3.1", hold: 46,
+    cues: { "3.1axes": 2, "3.1th1": 3.5, "3.1th2": 4.5, "3.1lossax": 5.5, "3.1bowl": 7, "3.1p0": 9, "3.1height": 10.5, "3.1up": 12.5, "3.1neg": 14.5, "3.1p1": 16.5, "3.1eq": 18.5, "3.1scale": 20, "3.1p2": 21.5, "3.1p3": 23.5, "3.1eqA": 26, "3.1eqA2": 27, "3.1eqB": 28.5, "3.1eqC": 30, "3.1think": 31, "3.1over": 37, "3.1min": 40 },
     enter: (slide, ctx) => { slide.s3 = s3setup(slide, ctx.frozen); },
     on: {
-      "3.1bowl": (slide) => slide.s3?.["3.1bowl"]?.(),
+      "3.1th1": (slide) => focusAxis(slide, "t1"),
+      "3.1th2": (slide) => focusAxis(slide, "t2"),
+      "3.1lossax": (slide) => focusAxis(slide, "l"),
+      "3.1bowl": (slide) => { focusAxis(slide, null); slide.s3?.["3.1bowl"]?.(); },
       "3.1p0": (slide) => slide.s3?.["3.1p0"]?.(),
-      "3.1up": (slide) => slide.s3?.["3.1up"]?.(),
+      "3.1height": (slide) => { focusAxis(slide, "l"); slide.s3?.["3.1height"]?.(); },
+      "3.1up": (slide) => { focusAxis(slide, null); slide.s3?.["3.1up"]?.(); },
       "3.1neg": (slide) => slide.s3?.["3.1neg"]?.(),
-      "3.1p1": (slide) => slide.s3?.["3.1p1"]?.(),
+      "3.1p1": (slide) => { slide.querySelector(".lossl").classList.add("gone"); slide.s3?.["3.1p1"]?.(); },
       "3.1p2": (slide) => slide.s3?.["3.1p2"]?.(),
       "3.1p3": (slide) => slide.s3?.["3.1p3"]?.(),
       "3.1think": (slide) => slide.s3?.["3.1think"]?.(),
@@ -528,8 +607,25 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
     render: () => `
     <div class="slide">
       <p class="eyebrow">Scene 03</p>
-      <h1 class="title">Gradient descent follows minus the gradient downhill, one step at a time.</h1>
-      <div class="fig3"><div class="axlabel">L(θ)</div></div>
+      <h1 class="title">Gradient descent walks a model's error downhill, one step at a time.</h1>
+      <div class="fig3">
+        <svg class="under" viewBox="0 0 960 570" aria-hidden="true">
+          <path class="ax t1" pathLength="1" data-cue="3.1axes" data-fx="draw" data-dur="0.6"/>
+          <path class="ax t2" pathLength="1" data-cue="3.1axes" data-fx="draw" data-dur="0.6"/>
+          <path class="ax l" pathLength="1" data-cue="3.1axes" data-fx="draw" data-dur="0.6"/>
+        </svg>
+        <div class="over">
+          <svg viewBox="0 0 960 570" aria-hidden="true">
+            <g data-cue="3.1height" data-fx="fade"><line class="drop"/></g>
+            <circle class="dot" r="7" data-cue="3.1p0" data-fx="fade"/>
+          </svg>
+          <div class="lab mid t1" data-cue="3.1th1" data-fx="fade">θ<sub>1</sub></div>
+          <div class="lab mid t2" data-cue="3.1th2" data-fx="fade">θ<sub>2</sub></div>
+          <div class="lab right l" data-cue="3.1lossax" data-fx="fade">L(θ)</div>
+          <div class="lab tag" data-cue="3.1p0" data-fx="fade">θ</div>
+          <div class="lab right lossl" data-cue="3.1height" data-fx="fade">loss</div>
+        </div>
+      </div>
       <span class="chip abs" data-cue="3.1eq" data-tex="\\eta = 0.9" style="left:1160px;top:340px">η = 0.9</span>
       <span class="chip abs ghostchip" data-cue="3.1over" data-fx="fade" data-tex="\\eta = 4.5" style="left:1336px;top:340px">η = 4.5</span>
       <div class="eq" data-cue="3.1eq" data-fx="fade">
@@ -538,7 +634,7 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
         <span class="b" data-display data-tex="-\\,\\eta">− η</span>
         <span class="c" data-display data-tex="\\nabla L(\\theta_t)">∇L(θ(t))</span>
       </div>
-      <p class="caption abs" data-cue="3.1eq" style="left:1160px;top:540px;margin:0">η is the step size.</p>
+      <p class="caption abs" data-cue="3.1scale" style="left:1160px;top:540px;margin:0">η scales each step.</p>
       <p class="body abs" data-cue="3.1think" style="left:1160px;top:640px;width:640px;margin:0">Pause and think:<br>what if η is too large?</p>
       ${footer(3)}
     </div>` },
@@ -560,7 +656,7 @@ DeckTalk.scene(4, { name: "The edit", steps: [
         <div class="filelabel">script.md</div>
         <div class="c">## 3. Gradient descent — 0:40 to 1:00</div>
         <div> </div>
-        <div>Start with a loss surface.</div>
+        <div>and the loss above them is a surface.</div>
         <div class="old">For this lesson it is a bowl.</div>
         <span class="new" data-cue="4.1valley" data-type="40" data-fx="none">Think of it as a valley.</span>
         <div>[beat] Pick a point, theta.</div>
@@ -581,16 +677,12 @@ DeckTalk.scene(4, { name: "The edit", steps: [
 
 // ---- Scene 5: close -------------------------------------------------------------------
 DeckTalk.scene(5, { name: "Close", steps: [
-  { id: "5.1", hold: 14, cues: { "5.1cap": 2.5, "5.1made": 6, "5.1docs": 9 }, render: () => `
+  { id: "5.1", hold: 14, cues: { "5.1made": 2.5, "5.1cap": 4, "5.1url": 7 }, render: () => `
     <div class="slide">
-      <p class="eyebrow">Scene 05</p>
-      <p class="hero abs" style="left:120px;top:240px;margin:0">The script is the edit.</p>
-      <p class="body abs" data-cue="5.1cap" data-sync style="left:120px;top:410px;margin:0;color:var(--mute)">Edit the words. The video follows.</p>
-      <div class="s5-made">
-        <span class="wordmark" data-cue="5.1made">DeckTalk</span>
-        <span class="chip cta" data-cue="5.1made">uv tool install decktalk</span>
-      </div>
-      <p class="mono abs" data-cue="5.1docs" style="left:120px;top:740px;margin:0">docs.decktalk.app</p>
+      <p class="hero s5-hero">The script is the edit.</p>
+      <p class="wordmark s5-mark" data-cue="5.1made">DeckTalk</p>
+      <p class="body s5-line" data-cue="5.1cap" data-sync>Narrated presentations, cut to the word.</p>
+      <p class="s5-url" data-cue="5.1url" data-fx="fade">decktalk.app</p>
       ${footer(5)}
     </div>` },
 ]});

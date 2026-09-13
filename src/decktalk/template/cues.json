@@ -26,12 +26,18 @@
     "3": {
       "min_seconds": 40,
       "cues": [
-        { "cue": "3.1bowl", "on": "loss surface" },
+        { "cue": "3.1axes", "on": "many variables" },
+        { "cue": "3.1th1", "on": "theta one" },
+        { "cue": "3.1th2", "on": "theta two" },
+        { "cue": "3.1lossax", "on": "the loss above" },
+        { "cue": "3.1bowl", "on": "surface" },
         { "cue": "3.1p0", "on": "Pick a point" },
+        { "cue": "3.1height", "on": "height there", "verify": false },
         { "cue": "3.1up", "on": "gradient points", "verify": false },
         { "cue": "3.1neg", "on": "minus the gradient", "verify": false },
         { "cue": "3.1p1", "on": "Take a step" },
         { "cue": "3.1eq", "on": "learning rate" },
+        { "cue": "3.1scale", "on": "scales its length" },
         { "cue": "3.1p2", "on": "Again" },
         { "cue": "3.1p3", "on": "and again" },
         { "cue": "3.1eqA", "on": "The next theta", "verify": false },
@@ -59,9 +65,9 @@
     },
     "5": {
       "cues": [
-        { "cue": "5.1cap", "on": "Edit the words" },
-        { "cue": "5.1made", "on": "Made with" },
-        { "cue": "5.1docs", "on": "docs" }
+        { "cue": "5.1made", "on": "DeckTalk" },
+        { "cue": "5.1cap", "on": "Narrated presentations" },
+        { "cue": "5.1url", "on": "decktalk dot app" }
       ]
     }
   }
