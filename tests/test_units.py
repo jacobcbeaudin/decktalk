@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -103,11 +104,27 @@ def test_project_loads_sections_in_order(tmp_path):
             "[[section]]\nnumber = 1\npage = 'a.html'\n[[mix.sfx]]\nfile = 'x.mp3'\nsection = 1\n",
             "missing required key 'cue'",
         ),
+        (
+            "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\nclip = 'c.mp4'\n"
+            "[[section]]\nnumber = 3\npage = 'a.html'\n",
+            "number=2 is a clip between page sections 1 and 3. The narration is one continuous track placed at "
+            "the first page section, so a clip in the middle would play over the words of section 3. Move the "
+            "clip before section 1 or after section 3, or make it a page section.",
+        ),
     ],
 )
 def test_project_validation_messages(tmp_path, toml, message):
-    with pytest.raises(ConfigError, match=message):
+    with pytest.raises(ConfigError, match=re.escape(message) if message.endswith(".") else message):
         Project.load(write_project(tmp_path, toml), environ={})
+
+
+def test_project_allows_clips_at_both_edges(tmp_path):
+    toml = (
+        "[[section]]\nnumber = 0\nclip = 'open.mp4'\n[[section]]\nnumber = 1\npage = 'a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'a.html'\n[[section]]\nnumber = 9\nclip = 'close.mp4'\n"
+    )
+    p = Project.load(write_project(tmp_path, toml), environ={})
+    assert p.clip_numbers == {0, 9} and [s.number for s in p.page_sections] == [1, 2]
 
 
 def test_project_missing_file_message(tmp_path):
@@ -423,24 +440,19 @@ def test_fetch_katex_unpacks_only_what_the_deck_needs(tmp_path, monkeypatch):
 
 
 def test_template_ids_agree_across_page_cues_and_script(tmp_path, monkeypatch):
-    """Every cue id in cues.json has an owning step in the page, and every phrase is in its section."""
-    import re
-
+    """Every cue id in cues.json is named in the page, and every phrase is in its section."""
     from decktalk.scaffold import init
-    from decktalk.stages.beats import load_cues
+    from decktalk.stages.beats import load_cues, unknown_cue_ids
 
     monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
     root = init(tmp_path / "proj", name="proj")
     project = Project.load(root, environ={})
-    html = (root / "deck" / "index.html").read_text()
-    step_ids = re.findall(r'id: "([0-9.]+)"', html)
-    listed = set(re.findall(r'"([0-9.]+[a-z0-9]*)": [0-9.]+', html))
+    specs = load_cues(project)
+    assert unknown_cue_ids(project, specs) == []
     segments = {s.index: s for s in parse_script((root / "script.md").read_text())}
-    for section in load_cues(project):
+    for section in specs:
         words = [Word(w, i, i + 1) for i, w in enumerate(segments[section.number].spoken.split())]
         for cue in section.cues:
-            owner = cue.step in step_ids or cue.step in listed or any(cue.step.startswith(s) for s in step_ids)
-            assert owner, f"cue {cue.step} has no owning step"
             if not cue.on.startswith("$"):
                 assert find_phrase(words, cue.on) is not None, (
                     f"cue {cue.step}: {cue.on!r} is not in section {section.number}"
@@ -719,3 +731,287 @@ def test_sidecar_verdicts_flag_page_errors_and_bad_tex(tmp_path):
     side.save(tmp_path / "s.json")
     again = Sidecar.load(tmp_path / "s.json")
     assert again is not None and again.page_errors == side.page_errors
+
+
+# ---- Tier 1 pipeline: clip placement, silent loudness, verify defaults, unknown cue ids ------------
+
+PAGES_TOML = """
+[project]
+name = "t"
+
+[[section]]
+number = 1
+page = "deck/index.html"
+
+[[section]]
+number = 2
+page = "deck/index.html"
+
+[[section]]
+number = 3
+page = "deck/index.html"
+"""
+
+
+def test_assemble_skips_loudnorm_on_an_estimated_timeline(tmp_path, monkeypatch, caplog):
+    import importlib
+
+    # decktalk.stages exports a function named assemble, so the module is imported by its full name.
+    asm = importlib.import_module("decktalk.stages.assemble")
+
+    root = write_project(tmp_path, PAGES_TOML)
+    (root / "script.md").write_text("## 1. A\n\nHi.\n\n## 2. B\n\nYes.\n\n## 3. C\n\nNo.\n")
+    p = Project.load(root, environ={})
+    tl = Timeline(
+        narration="narration.mp3",
+        total_seconds=2.0,
+        sections={"01": TimelineSection("A", 0, 2.0, 2.0, 1.0, [Word("Hi", 0.7, 1.0)])},
+        estimated=True,
+    )
+    tl.save(p.timeline_path)
+    p.out_dir.mkdir(parents=True)
+    rows = [asm.RenderedSection(p.sections[0], p.out_dir / "01-section.mp4", 2.0, "page")]
+
+    def write_last(*args):
+        Path(args[-1]).write_bytes(b"x")
+
+    def no_loudness(*args):
+        raise AssertionError("a silent build must not be normalized")
+
+    monkeypatch.setattr(asm, "render_sections", lambda project, timeline, strict: rows)
+    monkeypatch.setattr(asm, "concat", lambda files, out: out.write_bytes(b"x"))
+    monkeypatch.setattr(asm, "mux_chapters", lambda src, chapters, dst: dst.write_bytes(b"x"))
+    monkeypatch.setattr(asm, "normalize_loudness", no_loudness)
+    monkeypatch.setattr(asm.ffmpeg, "run", write_last)
+    monkeypatch.setattr(asm.ffmpeg, "probe_duration", lambda path: 2.0)
+    with caplog.at_level("INFO", logger="decktalk.stages.assemble"):
+        result = asm.assemble(p, nomix=True)
+    assert result.loudness is None and result.warnings == []
+    assert any(
+        r.getMessage() == "[loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, "
+        "and the clicks stay at -24 dBFS for the a/v check"
+        for r in caplog.records
+    )
+
+
+def test_reference_time_skips_the_fade_and_keeps_the_lead():
+    from decktalk.config import VerifyConfig
+    from decktalk.stages.verify import reference_time
+
+    cfg = VerifyConfig()  # lead_seconds 0.1
+    assert reference_time(10.0, 2.0, False, 0.16, cfg, 25) == 11.9  # the lead, well inside the section
+    assert reference_time(10.0, 0.05, False, 0.16, cfg, 25) == 10.0  # the section's first frame, a frame early
+    assert reference_time(10.0, 0.2, True, 0.16, cfg, 25) == 10.16  # the first frame after the fade-in
+    assert reference_time(10.0, 0.15, True, 0.16, cfg, 25) is None  # the cue sits inside the fade-in
+    assert reference_time(10.0, 0.0, False, 0.16, cfg, 25) is None  # a $start cue has no frame before it
+
+
+def _verify_project(tmp_path, monkeypatch, beats: dict[str, str], cues: dict | None = None, change: float = 0.0):
+    """A project with sections 01 and 02 assembled and every ffmpeg measurement replaced."""
+    from decktalk.media import ffmpeg as ffmpeg_module
+
+    root = write_project(tmp_path, PAGES_TOML)
+    p = Project.load(root, environ={})
+    p.out_dir.mkdir(parents=True)
+    for key in ("01", "02"):
+        (p.out_dir / f"{key}-section.mp4").write_bytes(b"x")
+    p.final.write_bytes(b"x")
+    p.audio_dir.mkdir(parents=True)
+    p.beats_path.write_text(json.dumps(beats))
+    if cues is not None:
+        (root / "cues.json").write_text(json.dumps({"sections": cues}))
+    monkeypatch.setattr(ffmpeg_module, "probe_duration", lambda path: 5.0)
+    monkeypatch.setattr(ffmpeg_module, "luma_at", lambda path, t, crop=None: (100.0, 200.0))
+    monkeypatch.setattr(ffmpeg_module, "changed_pixels_percent", lambda path, t1, t2, **kw: change)
+    monkeypatch.setattr(ffmpeg_module, "changed_series", lambda *a, **kw: [])
+    return p
+
+
+def test_verify_default_checks_come_from_beats_json(tmp_path, monkeypatch):
+    from decktalk.stages.verify import verify
+
+    p = _verify_project(tmp_path, monkeypatch, {"02": "c@2.0", "01": "b@3.0,a@1.0"})
+    result = verify(p)
+    assert [c.check for c in result.cues] == ["1:a", "1:b", "2:c"]  # section order, then cue time
+    assert all(c.verdict == "NO CHANGE" for c in result.cues) and not result.ok
+    assert [c.check for c in verify(p, only=[2]).cues] == ["2:c"]
+    assert verify(p, checks=[]).cues == [] and verify(p, checks=[]).ok
+    assert [c.check for c in verify(p, checks=["1:b", "2:c"], only=[1]).cues] == ["1:b"]
+    missing = verify(p, checks=["1:nope"]).cues[0]
+    assert missing.verdict == "UNRESOLVED" and not missing.ok and missing.cue_seconds is None
+
+
+def test_verify_skips_clamped_start_cue(tmp_path, monkeypatch):
+    from decktalk.stages.verify import verify
+
+    p = _verify_project(tmp_path, monkeypatch, {"01": "start@0.0", "03": "later@1.0"}, change=5.0)
+    result = verify(p)
+    start, later = result.cues
+    assert (start.verdict, start.reason) == ("skipped", "REFERENCE_CLAMPED")
+    assert start.cue_seconds is None and start.note.startswith("skipped REFERENCE_CLAMPED")
+    assert (later.verdict, later.reason) == ("skipped", "SECTION_NOT_ASSEMBLED")
+    assert result.ok  # Skipped rows never fail.
+
+
+def test_verify_opted_out_cue_is_skipped(tmp_path, monkeypatch):
+    from decktalk.stages.beats import load_cues
+    from decktalk.stages.verify import verify
+
+    cues = {"1": {"cues": [{"cue": "a", "on": "hello", "verify": False}, {"cue": "b", "on": "there"}]}}
+    p = _verify_project(tmp_path, monkeypatch, {"01": "a@1.0,b@2.0"}, cues=cues)
+    assert [c.verify for c in load_cues(p)[0].cues] == [False, True]
+    a, b = verify(p).cues
+    assert (a.verdict, a.reason) == ("skipped", "OPTED_OUT") and b.verdict == "NO CHANGE"
+    (named,) = verify(p, checks=["1:a"]).cues  # A cue named on purpose is measured anyway.
+    assert named.verdict == "NO CHANGE" and named.reason is None
+    bad = {"sections": {"1": {"cues": [{"cue": "a", "on": "x", "verify": 0}]}}}
+    (p.root / "cues.json").write_text(json.dumps(bad))
+    with pytest.raises(ConfigError, match="'verify' must be true or false"):
+        load_cues(p)
+
+
+def test_verify_to_dict_is_json_serialisable_and_relative(tmp_path, monkeypatch):
+    from decktalk.stages.verify import CueCheck, verify
+
+    p = _verify_project(tmp_path, monkeypatch, {"01": "start@0.0,a@1.23456"})
+    d = json.loads(json.dumps(verify(p).to_dict(p.root)))
+    assert d["final"] == "build/out/t.mp4" and d["total_seconds"] == 10.0 and d["silent"] is False
+    first = {"key": "01", "start": 0.0, "probe_at": 0.2, "yavg": 100.0, "ymax": 200.0, "verdict": "ok"}
+    assert d["starts"][0] == first and d["cuts"] == []
+    start, a = d["cues"]
+    assert start["section"] == 1 and start["cue"] == "start" and start["reason"] == "REFERENCE_CLAMPED"
+    assert a["cue_seconds"] == 1.235 and a["verdict"] == "NO CHANGE" and a["reason"] is None
+    row = CueCheck("3:3.1eq", 15.6612, 72.38123, 0.29444, 0.0, True, "", -20, -5).to_dict()
+    assert row == {
+        "section": 3,
+        "cue": "3.1eq",
+        "cue_seconds": 15.661,
+        "final_seconds": 72.381,
+        "changed_percent": 0.29,
+        "control_percent": 0.0,
+        "offset_ms": -20,
+        "av_ms": -5,
+        "verdict": "changed",
+        "reason": None,
+    }
+
+
+def test_check_to_dict_splits_verdicts(tmp_path):
+    from decktalk.stages.measure import RecordingCheck, split_verdicts
+
+    file = tmp_path / "build" / "rec" / "01-scene.webm"
+    row = RecordingCheck("01", 10.04, 10.3, 50.0, 60.0, 70.0, 80.0, "NO COVER STALLED 140ms", ["boom"], file=file)
+    d = json.loads(json.dumps(row.to_dict(tmp_path)))
+    assert d["file"] == "build/rec/01-scene.webm" and d["duration"] == 10.04 and d["max50"] == 80.0
+    assert d["verdicts"] == ["NO COVER", "STALLED"] and d["stall_ms"] == 140 and d["page_errors"] == ["boom"]
+    assert split_verdicts("ok") == ([], None)
+    codes = ["BLACK?", "TRUNCATED", "PAGE ERROR", "KATEX?"]
+    assert split_verdicts(" ".join(codes)) == (codes, None)
+
+
+def test_page_mentions_finds_quoted_ids_and_data_cue():
+    from decktalk.stages.beats import page_mentions
+
+    html = """<div data-cue="4.1answer"></div>
+    <script>DeckTalk.scene({ cues: { "4.1x": 1 }, on: { '4.1y': () => {} }, tpl: `4.1z` });</script>"""
+    for cue in ("4.1answer", "4.1x", "4.1y", "4.1z"):
+        assert page_mentions(html, cue), cue
+    assert not page_mentions(html, "4.1")  # A prefix of a quoted id is not a mention.
+    assert not page_mentions(html, "4.1ans")
+    assert not page_mentions("<p>\"4.1x'</p>", "4.1x")  # The quotes must match.
+
+
+def _beats_project(tmp_path, html: str, cues: dict) -> Project:
+    """Sections 0 (a clip) and 1 (a page), with narration words for section 1."""
+    from decktalk.artifacts import write_words
+
+    toml = "[[section]]\nnumber = 0\nclip = 'open.mp4'\n[[section]]\nnumber = 1\npage = 'deck/index.html'\n"
+    root = write_project(tmp_path, toml)
+    (root / "deck").mkdir()
+    (root / "deck" / "index.html").write_text(html)
+    (root / "cues.json").write_text(json.dumps({"sections": cues}))
+    p = Project.load(root, environ={})
+    m = Manifest(script="script.md", model="m", output_format="mp3")
+    m.segments["01"] = ManifestSegment(1, "A", "01-a.mp3", "01-a.words.json", "h", 2, 1.0, 3.0)
+    m.save(p.manifest_path)
+    write_words(p.audio_dir / "01-a.words.json", [Word("hello", 0.5, 0.9), Word("there", 1.0, 1.4)])
+    return p
+
+
+def test_beats_reports_a_cue_id_missing_from_the_page(tmp_path):
+    from decktalk.stages.beats import UnknownCueError, load_cues, resolve_beats, unknown_cue_ids
+
+    cues = {
+        "0": {"cues": [{"cue": "0.clip", "on": "$start"}]},
+        "1": {"cues": [{"cue": "1.1a", "on": "hello"}, {"cue": "4.1answer", "on": "there"}]},
+    }
+    p = _beats_project(tmp_path, '<b data-cue="1.1a"></b>', cues)
+    assert unknown_cue_ids(p, load_cues(p)) == [("01", "4.1answer", "deck/index.html")]
+    with pytest.raises(UnknownCueError) as caught:
+        resolve_beats(p)
+    assert str(caught.value).startswith(
+        "1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal "
+        'them. Add data-cue="4.1answer" to the step in deck/index.html, fix the id in cues.json, or pass '
+        "--allow-unknown:\n  section 01: 4.1answer: not in deck/index.html"
+    )
+    assert isinstance(caught.value, ConfigError) and caught.value.result.unknown == 1
+    assert json.loads(p.beats_path.read_text()) == {"01": "1.1a@0.5,4.1answer@1.0"}  # written before the stop
+    result = resolve_beats(p, allow_unknown=True)
+    assert result.unknown == 1 and result.unresolved == 0
+    assert result.sections[1].notes == ["4.1answer: not in deck/index.html"]
+
+
+def test_beats_to_dict_counts_unresolved(tmp_path):
+    from decktalk.stages.beats import resolve_beats
+
+    cues = {"1": {"min_seconds": 9, "cues": [{"cue": "1.1a", "on": "hello"}, {"cue": "1.1b", "on": "missing phrase"}]}}
+    p = _beats_project(tmp_path, "<b data-cue='1.1a'></b><b data-cue='1.1b'></b>", cues)
+    d = json.loads(json.dumps(resolve_beats(p).to_dict(p.root)))
+    assert d["estimated"] is False and d["beats_file"] == "build/audio/beats.json"
+    assert d["unresolved"] == 1 and d["unknown"] == 0
+    (section,) = d["sections"]
+    assert section["key"] == "01" and section["speech_end"] == 1.4 and section["min_seconds"] == 9.0
+    assert section["skipped"] is None and section["cues"] == {"1.1a": 0.5}
+    assert section["notes"] == [
+        {"cue": "1.1b", "verdict": "UNRESOLVED", "detail": "phrase not found: 'missing phrase'"},
+        {"cue": None, "verdict": None, "detail": "speech 1.4s is 7.6s shorter than the visuals need"},
+    ]
+    assert sum(n["verdict"] == "UNRESOLVED" for s in d["sections"] for n in s["notes"]) == d["unresolved"]
+
+
+def test_build_captions_uses_manifest_spoken_text(tmp_path):
+    from decktalk.stages.assemble import build_captions, caption_texts
+
+    root = write_project(tmp_path, PAGES_TOML)
+    p = Project.load(root, environ={})
+    words = [Word("hello", 0.5, 0.9), Word("there", 1.0, 1.4)]
+    tl = Timeline(narration="n.mp3", total_seconds=2.0, sections={"01": TimelineSection("A", 0, 2.0, 2.0, 1.4, words)})
+    m = Manifest(script="script.md", model="m", output_format="mp3")
+    m.segments["01"] = ManifestSegment(1, "A", "01-a.mp3", "01-a.words.json", "h", 2, 1.0, 2.0, spoken="Hello, there.")
+    m.save(p.manifest_path)
+    # No script.md exists, so the text can only come from the manifest.
+    assert caption_texts(p, tl) == {"01": "Hello, there."}
+    assert [c.text for c in build_captions(tl, 0.0, caption_texts(p, tl))] == ["Hello, there."]
+    # A manifest written before the field existed falls back to the script.
+    raw = json.loads(p.manifest_path.read_text())
+    del raw["segments"]["01"]["spoken"]
+    p.manifest_path.write_text(json.dumps(raw))
+    (root / "script.md").write_text("## 1. A\n\nHello there!\n\n## 2. B\n\nTwo.\n\n## 3. C\n\nThree.\n")
+    assert caption_texts(p, tl)["01"] == "Hello there!"
+
+
+def test_scene_params_adds_beats_unless_the_section_sets_them(tmp_path):
+    from decktalk.project import PageSection
+    from decktalk.stages.record import scene_params
+    from decktalk.stages.shots import shoot_steps
+
+    beats = Beats({"01": {"a": 1.5, "b": 2.0}})
+    own = PageSection(1, "deck/index.html", "1", params={"theme": "dark"})
+    assert scene_params(own, beats) == {"theme": "dark", "beats": "a@1.5,b@2.0"}
+    assert scene_params(own, None) == {"theme": "dark"}
+    fixed = PageSection(1, "deck/index.html", "1", params={"beats": "x@1"})
+    assert scene_params(fixed, beats) == {"beats": "x@1"}
+    assert scene_params(PageSection(2, "deck/index.html", "2"), beats) == {}
+    p = Project.load(write_project(tmp_path, PAGES_TOML), environ={})
+    with pytest.raises(ConfigError, match="exactly one step"):
+        shoot_steps(p, steps=["1.1", "2.1"], cues=["1.1a"])

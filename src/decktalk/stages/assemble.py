@@ -594,6 +594,23 @@ def build_captions(timeline: Timeline, t0: float, texts: dict[str, str] | None =
     return cues
 
 
+def caption_texts(project: Project, timeline: Timeline) -> dict[str, str]:
+    """The spoken text per section key, which lends the captions their punctuation and case.
+
+    The manifest records the text each section was narrated from, so the captions match
+    the audio even when the script has been edited since. A manifest written before that
+    field existed has empty entries, and those sections fall back to the script as it is now.
+    """
+    manifest = project.manifest()
+    texts = {k: seg.spoken for k, seg in (manifest.segments.items() if manifest else ()) if seg.spoken}
+    if any(key not in texts for key in timeline.keys):
+        from .narrate import script_segments
+
+        for seg in script_segments(project)[0]:
+            texts.setdefault(seg.key, seg.spoken)
+    return texts
+
+
 def build_chapters(rows: list[RenderedSection]) -> list[Chapter]:
     starts = section_starts(rows)
     return [
@@ -661,7 +678,14 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
         picture.unlink(missing_ok=True)
 
     loudness = None
-    if loudnorm:
+    if loudnorm and timeline.estimated:
+        # A silent build carries clicks and silence, and normalizing them would move the clicks
+        # the a/v check listens for, so the pass is skipped and the result has no loudness.
+        log.info(
+            "[loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, "
+            "and the clicks stay at -24 dBFS for the a/v check"
+        )
+    elif loudnorm:
         raw = out_dir / ".premix-loudness.mp4"
         work.rename(raw)
         try:
@@ -682,10 +706,7 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
             raise ToolError("loudness: " + ", ".join(problems))
 
     starts = section_starts(rows)
-    from .narrate import script_segments
-
-    texts = {seg.key: seg.spoken for seg in script_segments(project)[0]}
-    cues = build_captions(timeline, narration_offset(rows, timeline, starts), texts)
+    cues = build_captions(timeline, narration_offset(rows, timeline, starts), caption_texts(project, timeline))
     write_srt(paths["srt"], cues)
     write_vtt(paths["vtt"], cues)
     write_chapters(paths["chapters"], build_chapters(rows))

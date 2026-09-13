@@ -10,7 +10,7 @@ from typing import Any
 from ..errors import ConfigError
 from ..project import Project
 from .assemble import AssembleResult, assemble
-from .beats import BeatsResult, resolve_beats
+from .beats import BeatsResult, UnknownCueError, resolve_beats
 from .measure import LeadMeasurement, RecordingCheck, check, measure
 from .narrate import NarrateResult, narrate
 from .record import Recording, record
@@ -46,9 +46,15 @@ def build(
     loudnorm: bool = True,
     strict: bool = False,
     allow_unresolved: bool = False,
+    allow_unknown: bool = False,
     report: Reporter | None = None,
 ) -> BuildResult:
-    """Run every stage. `report(stage, result)` is called after each one, for the CLI's tables."""
+    """Run every stage. `report(stage, result)` is called after each one, for the CLI's tables.
+
+    The build stops after beats when a cue phrase is unresolved, unless allow_unresolved is
+    set, and when a cue id appears nowhere in its page, unless allow_unknown is set. The
+    verify stage checks section starts and cuts, and `decktalk verify` measures the cues.
+    """
 
     def emit(stage: str, result: Any) -> None:
         if report:
@@ -59,7 +65,13 @@ def build(
     out.narration = narrate(project, silent=silent, force=force)
     emit("narrate", out.narration)
     log.info("===== beats =====")
-    out.beats = resolve_beats(project)
+    # The flag passes straight through, and the beats table still prints before the build stops.
+    try:
+        out.beats = resolve_beats(project, allow_unknown=allow_unknown)
+    except UnknownCueError as exc:
+        out.beats = exc.result
+        emit("beats", out.beats)
+        raise
     emit("beats", out.beats)
     if out.beats.unresolved and not allow_unresolved:
         raise ConfigError(
@@ -89,6 +101,6 @@ def build(
     out.assembly = assemble(project, nomix=nomix, loudnorm=loudnorm, strict=strict)
     emit("assemble", out.assembly)
     log.info("===== verify =====")
-    out.verification = verify(project)
+    out.verification = verify(project, checks=[])
     emit("verify", out.verification)
     return out
