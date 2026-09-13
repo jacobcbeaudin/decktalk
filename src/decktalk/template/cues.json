@@ -45,8 +45,8 @@
     },
     "4": {
       "cues": [
-        { "cue": "4.1change", "on": "Change one sentence" },
-        { "cue": "4.1valley", "on": "Say the bowl" },
+        { "cue": "4.1change", "on": "$start" },
+        { "cue": "4.1valley", "on": "becomes" },
         { "cue": "4.1build", "on": "Build again" },
         { "cue": "4.1s1", "on": "Section one" },
         { "cue": "4.1s2", "on": "Two, cached" },
