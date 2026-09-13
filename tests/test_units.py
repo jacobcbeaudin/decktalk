@@ -961,6 +961,18 @@ def test_beats_reports_a_cue_id_missing_from_the_page(tmp_path):
     assert result.sections[1].notes == ["4.1answer: not in deck/index.html"]
 
 
+def test_cli_beats_reports_unknown_cue_ids_as_a_finding(tmp_path, capsys):
+    cues = {"1": {"cues": [{"cue": "1.1a", "on": "hello"}, {"cue": "4.1answer", "on": "there"}]}}
+    p = _beats_project(tmp_path, '<b data-cue="1.1a"></b>', cues)
+    # Without --allow-unknown the command still prints its JSON and exits 1, instead of stopping on the error.
+    assert main(["-p", str(p.root), "beats", "--json"]) == 1
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["ok"] is False and doc["findings"]["certain"] == 1
+    assert doc["beats"]["unknown"] == 1
+    assert main(["-p", str(p.root), "beats", "--json", "--allow-unknown"]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+
+
 def test_beats_to_dict_counts_unresolved(tmp_path):
     from decktalk.stages.beats import resolve_beats
 
