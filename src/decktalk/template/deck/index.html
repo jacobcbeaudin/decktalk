@@ -123,8 +123,10 @@ __KATEX__
 // HTML must use the same ids, and cues.json names those same ids. A backslash inside the
 // backticks must be written twice, so a data-tex value reads data-tex="\\frac{1}{2}".
 // The `enter:` and `on:` blocks are JavaScript that runs when the step mounts and when a
-// cue fires. A scene that needs neither can delete both blocks whole. Copy a whole step
-// object to add a step.
+// cue fires. Each function receives the step's slide element and a context object
+// { id, at, frozen, step }, so a handler finds its elements with slide.querySelector and
+// needs no global. A scene that needs neither block can delete both whole. Copy a whole
+// step object to add a step.
 
 // The footer of every slide: the four-tick mark and DECKTALK at left, the scene tracker at right.
 const SCENES_TOTAL = 5;
@@ -168,7 +170,7 @@ DeckTalk.scene(1, { name: "Open", steps: [
       <div class="panel" style="left:120px;top:240px;width:800px;height:400px">
         <div class="filelabel abs" style="left:24px;top:40px">script.md</div>
         <div class="s1-line">
-          <span class="mono" data-at="0" data-sync data-fx="none">The curve rises, then the number lands.</span><span class="cursor"></span>
+          <span class="mono" data-at="0" data-sync>The curve rises, then the number lands.</span><span class="cursor"></span>
         </div>
         <div class="s1-ticks">${s1ticks}</div>
       </div>
@@ -189,11 +191,9 @@ DeckTalk.scene(1, { name: "Open", steps: [
 ]});
 
 // ---- Scene 2: four files, one number --------------------------------------------------
-let s2slide = null;
 DeckTalk.scene(2, { name: "Four files", steps: [
   { id: "2.1", hold: 28, cues: { "2.1script": 2.5, "2.1words": 5, "2.1cue": 8, "2.1slide": 11, "2.1one": 14 },
-    enter: (el) => { s2slide = el; },
-    on: { "2.1one": () => s2slide && s2slide.classList.add("lit") },
+    on: { "2.1one": (slide) => slide.classList.add("lit") },
     render: () => `
     <div class="slide">
       <p class="eyebrow">Scene 02</p>
@@ -228,17 +228,16 @@ scales its length.</pre>
 // ---- Scene 3: gradient descent on a three-dimensional loss surface ----------------------
 // The surface, the contours, the ball, its trail, the two arrows, the overshoot ghost, and the
 // minimum ring are three.js objects. Cue handlers drive every animation from DeckTalk's clock.
-const S3 = { frozen: false, on: {} };
+// s3setup returns the figure's cue handlers, which the step's enter stores on its slide as
+// slide.s3. A frozen figure, or one without three.js or WebGL, returns no handlers.
 function s3setup(slide, frozen) {
   const host = slide.querySelector(".fig3");
   const T = window.THREE;
-  S3.frozen = frozen;
-  S3.on = {};
-  if (!T) { console.warn("decktalk: three.js missing, so the scene 3 figure is empty"); return; }
+  if (!T) { console.warn("decktalk: three.js missing, so the scene 3 figure is empty"); return {}; }
   let renderer;
   try {
     renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
-  } catch (e) { console.warn("decktalk: no WebGL, so the scene 3 figure is empty"); return; }
+  } catch (e) { console.warn("decktalk: no WebGL, so the scene 3 figure is empty"); return {}; }
   const W = 960, H = 570, R = 0.22, ACCENT = 0x2c1fea, INK = 0x0a0a0a;
   // three.js takes colours as numbers, so these repeat the --hair and --dim tokens above.
   const SURFACE = 0xe4e4e7, DIM = 0xa3a3ad;
@@ -468,7 +467,7 @@ function s3setup(slide, frozen) {
     placeBall(P[12][0], P[12][1], 1);
     ring.scale.setScalar(1);
     render();
-    return;
+    return {};
   }
   // Warm up: draw one material of each program per frame at near-zero opacity, so SwiftShader
   // links every program and uploads every buffer during the lead, not on the frame a cue first
@@ -488,7 +487,7 @@ function s3setup(slide, frozen) {
     requestAnimationFrame(warmStep);
   };
   warmStep();
-  S3.on = {
+  return {
     "3.1bowl": () => { surfMat.userData.fade = contourMat.userData.fade = 0.4; fadeTo(surfMat, 1, 0.4); fadeTo(contourMat, 1, 0.4); },
     "3.1p0": () => add(0.3, (k) => placeBall(P[0][0], P[0][1], Math.max(0.001, easeOut(k)))),
     "3.1up": () => { fadeTo(upMat, 1, 0.3); fadeTo(downMat, 1, 0.3); },
@@ -508,22 +507,22 @@ function s3setup(slide, frozen) {
 DeckTalk.scene(3, { name: "Gradient descent", steps: [
   { id: "3.1", hold: 40,
     cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1up": 5, "3.1neg": 7, "3.1p1": 9, "3.1eq": 11, "3.1p2": 13, "3.1p3": 15, "3.1eqA": 18, "3.1eqA2": 19, "3.1eqB": 20.5, "3.1eqC": 22, "3.1think": 23, "3.1over": 29, "3.1min": 32 },
-    enter: (el, { frozen }) => { S3.slide = el; s3setup(el, frozen); },
+    enter: (slide, ctx) => { slide.s3 = s3setup(slide, ctx.frozen); },
     on: {
-      "3.1bowl": () => S3.on["3.1bowl"] && S3.on["3.1bowl"](),
-      "3.1p0": () => S3.on["3.1p0"] && S3.on["3.1p0"](),
-      "3.1up": () => S3.on["3.1up"] && S3.on["3.1up"](),
-      "3.1neg": () => S3.on["3.1neg"] && S3.on["3.1neg"](),
-      "3.1p1": () => S3.on["3.1p1"] && S3.on["3.1p1"](),
-      "3.1p2": () => S3.on["3.1p2"] && S3.on["3.1p2"](),
-      "3.1p3": () => S3.on["3.1p3"] && S3.on["3.1p3"](),
-      "3.1think": () => S3.on["3.1think"] && S3.on["3.1think"](),
-      "3.1over": () => S3.on["3.1over"] && S3.on["3.1over"](),
-      "3.1min": () => { if (S3.on["3.1min"]) S3.on["3.1min"](); if (S3.slide) S3.slide.querySelector(".ghostchip").classList.add("gone"); },
-      "3.1eqA": () => S3.slide && S3.slide.querySelector(".eq .a").classList.add("on"),
-      "3.1eqA2": () => S3.slide && S3.slide.querySelector(".eq .a2").classList.add("on"),
-      "3.1eqB": () => S3.slide && S3.slide.querySelector(".eq .b").classList.add("on"),
-      "3.1eqC": () => S3.slide && S3.slide.querySelector(".eq .c").classList.add("on"),
+      "3.1bowl": (slide) => slide.s3?.["3.1bowl"]?.(),
+      "3.1p0": (slide) => slide.s3?.["3.1p0"]?.(),
+      "3.1up": (slide) => slide.s3?.["3.1up"]?.(),
+      "3.1neg": (slide) => slide.s3?.["3.1neg"]?.(),
+      "3.1p1": (slide) => slide.s3?.["3.1p1"]?.(),
+      "3.1p2": (slide) => slide.s3?.["3.1p2"]?.(),
+      "3.1p3": (slide) => slide.s3?.["3.1p3"]?.(),
+      "3.1think": (slide) => slide.s3?.["3.1think"]?.(),
+      "3.1over": (slide) => slide.s3?.["3.1over"]?.(),
+      "3.1min": (slide) => { slide.s3?.["3.1min"]?.(); slide.querySelector(".ghostchip").classList.add("gone"); },
+      "3.1eqA": (slide) => slide.querySelector(".eq .a").classList.add("on"),
+      "3.1eqA2": (slide) => slide.querySelector(".eq .a2").classList.add("on"),
+      "3.1eqB": (slide) => slide.querySelector(".eq .b").classList.add("on"),
+      "3.1eqC": (slide) => slide.querySelector(".eq .c").classList.add("on"),
     },
     render: () => `
     <div class="slide">
@@ -545,14 +544,12 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
 ]});
 
 // ---- Scene 4: the edit ----------------------------------------------------------------
-let s4slide = null;
 DeckTalk.scene(4, { name: "The edit", steps: [
   { id: "4.1", hold: 28,
     cues: { "4.1change": 0.3, "4.1valley": 2.5, "4.1build": 5, "4.1s1": 7, "4.1s2": 9, "4.1s3": 11, "4.1s45": 14, "4.1out": 16.5, "4.1verify": 19, "4.1edit": 22 },
-    enter: (el) => { s4slide = el; },
     on: {
-      "4.1valley": () => s4slide && s4slide.querySelector(".old").classList.add("struck"),
-      "4.1edit": () => s4slide && s4slide.querySelector(".s4").classList.add("lit"),
+      "4.1valley": (slide) => slide.querySelector(".old").classList.add("struck"),
+      "4.1edit": (slide) => slide.querySelector(".s4").classList.add("lit"),
     },
     render: () => `
     <div class="slide s4">
@@ -587,7 +584,7 @@ DeckTalk.scene(5, { name: "Close", steps: [
     <div class="slide">
       <p class="eyebrow">Scene 05</p>
       <p class="hero abs" style="left:120px;top:240px;margin:0">The script is the edit.</p>
-      <p class="body abs" data-cue="5.1cap" data-sync data-fx="none" style="left:120px;top:410px;margin:0;color:var(--mute)">Edit the words. The video follows.</p>
+      <p class="body abs" data-cue="5.1cap" data-sync style="left:120px;top:410px;margin:0;color:var(--mute)">Edit the words. The video follows.</p>
       <div class="s5-made">
         <span class="wordmark" data-cue="5.1made">DeckTalk</span>
         <span class="chip cta" data-cue="5.1made">uv tool install decktalk</span>
