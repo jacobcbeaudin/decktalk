@@ -12,8 +12,8 @@ decktalk [-v | -q] [-p DIR] <command> [flags]
 Every project command takes `--project DIR`, or `-p DIR`. The default is the
 `DECKTALK_PROJECT` variable, then the current directory. Each command reads `.env` from
 the project and never prints a key. Progress goes to stderr, and the tables go to stdout.
-`-v` shows debug logging, including every ffmpeg command line, and `-q` shows warnings
-only. Both go before or after the command name. `--version` prints the version. A flag
+`-v` or `--verbose` shows debug logging, including every ffmpeg command line, and `-q` or
+`--quiet` shows warnings only. Both go before or after the command name. `--version` prints the version. A flag
 that repeats, such as `--only`, takes one value each time and does not take commas.
 
 ## Setting up a machine and a project
@@ -27,14 +27,16 @@ When the KaTeX download fails, projects load it from a CDN instead, with a warni
 
 ### `decktalk doctor`
 
-Reports the Python, Chromium, ffmpeg, ffprobe, and KaTeX found, and exits 1 when one is
-missing. It changes nothing.
+Reports the Python, Chromium, ffmpeg, ffprobe, per-machine config file, and KaTeX found,
+and exits 1 when a tool is missing. The config row is `ok` whether or not the file
+exists. It changes nothing.
 
 ```text
 python    ok      3.13 (.venv/bin/python3)
 chromium  ok      <version>
 ffmpeg    ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffmpeg
 ffprobe   ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffprobe
+config    ok      none (optional, at ~/Library/Application Support/decktalk/decktalk.toml)
 katex     ok      ~/Library/Caches/decktalk/katex/<version>
 ```
 
@@ -140,6 +142,7 @@ sec  webm_s   want_s   Y10    Y50    Y90    MAX50   verdict
 | `TRUNCATED` | The recording is shorter than requested by more than `truncated_slack_seconds`. |
 | `KATEX?` | The page reported that KaTeX never loaded, so its equations stayed plain text. |
 | `STALLED` | The page went longer than `stall_ms` between two frames while recording, so a reveal may have been captured late. The recorder already retried up to `retries` times. |
+| `PAGE ERROR` | The page threw a script error or exposed no `window.__decktalk.catalog`, so the section recorded a blank stage. `check` fails on it, and so does `build`. |
 
 Several verdicts may appear together, separated by spaces.
 
@@ -173,23 +176,23 @@ measured against the placeholder click at the cued word. It exits 1 when any che
 
 ```text
 sec   cut at  before cut  result
- 01    10.50   -128.4 dB  quiet
- 02    32.78   -123.3 dB  quiet
- 03    79.70   -125.4 dB  quiet
- 04   126.88   -128.4 dB  quiet
- 05   146.98   -120.0 dB  quiet
+ 01    22.45   -129.7 dB  quiet
+ 02    56.69   -128.4 dB  quiet
+ 03   107.27   -128.5 dB  quiet
+ 04   133.69   -125.4 dB  quiet
+ 05   145.43   -120.0 dB  quiet
 
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.1eq             21.63    54.43    0.27    0.00    -70ms   -74ms  changed
-3:3.1p1             18.18    50.98    0.15    0.00   -100ms  -113ms  OFF CUE
-5:5.1a               2.55   129.43    0.41    0.00    -30ms   -62ms  changed
+3:3.1eq             15.66    72.38    0.29    0.00    -20ms    -5ms  changed
+3:3.1p1             13.05    69.77    0.24    0.00    -10ms    +5ms  changed
+5:5.1cap             2.46   136.14    0.30    0.00    -60ms   -85ms  changed
 ```
 
 | Result | Meaning |
 |---|---|
 | `ok` and `BLACK` | A section start on a real frame, or on a dark one. |
 | `quiet` and `SPEECH AT CUT` | The narration in the last `cut_window_seconds` before the cut is below `cut_max_db`, or it is not. Clip sections are not listed. |
-| `changed` | The cue changed the picture within `max_offset_frames` of its time, and of the click after a silent build. |
+| `changed` | The cue changed the picture within `max_offset_frames` of its time, and within `max_av_frames` of the click after a silent build. |
 | `OFF CUE` | The picture changed, but the first change sits further from the cue, or from the click, than that. The note says by how much. |
 | `NO CHANGE` | The picture did not change enough, or no more than it was already changing. |
 | `MISSING` | The cue is unresolved or the section is not assembled. |
@@ -242,12 +245,12 @@ cues     cues.json  ok
   04  deck/index.html?scene=4                  rec cut
   05  deck/index.html?scene=5                  rec cut
   #  section                  start     end  length
-  1  Open                      0:00    0:11    10.5
-  2  Three lines               0:11    0:33    22.3
-  3  Gradient descent          0:33    1:20    46.9
-  4  Before and after          1:20    2:07    47.2
-  5  Close                     2:07    2:27    20.1
-     narration total 2:27  (estimated: silent placeholders)
+  1  Open                      0:00    0:22    22.4
+  2  Four files                0:22    0:57    34.2
+  3  Gradient descent          0:57    1:47    50.5
+  4  The edit                  1:47    2:14    26.4
+  5  Close                     2:14    2:25    11.8
+     narration total 2:25  (estimated: silent placeholders)
 beats    5 section(s) with resolved cues
 final    build/out/my-lesson.mp4  2:29
 captions build/out/my-lesson.srt  ok
@@ -261,6 +264,8 @@ chapters build/out/my-lesson.chapters.txt  ok
 |---|---|
 | `DECKTALK_PROJECT` | The default project directory. |
 | `DECKTALK_CACHE_DIR` | Where the KaTeX cache lives. The default is the platform's cache directory under `decktalk`. Chromium's cache belongs to Playwright. |
+| `DECKTALK_CONFIG` | The per-machine settings file. The default is `~/Library/Application Support/decktalk/decktalk.toml` on macOS, `%APPDATA%\decktalk\decktalk.toml` on Windows, and `~/.config/decktalk/decktalk.toml` on Linux. Only tuning tables belong in it. |
+| `DECKTALK_FFMPEG`, `DECKTALK_FFPROBE` | Paths to your own binaries, set together. They override the `static-ffmpeg` build and any ffmpeg on PATH. |
 | `DECKTALK_<SECTION>_<FIELD>` | Any tuning field, for example `DECKTALK_VIDEO_PRESET=veryfast`. [Configuration](/reference/configuration) lists them. |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | The speech provider's secrets, also read from `.env`. |
 

@@ -5,7 +5,7 @@ icon: "rotate"
 ---
 
 `decktalk build` is safe to run after every edit, because each stage reuses what has not
-changed. This page says what is reused, and how to limit a build to one section when
+changed. This guide says what is reused, and how to limit a build to one section when
 you want to save time or credits.
 
 ## What an edit costs
@@ -14,7 +14,7 @@ you want to save time or credits.
 |---|---|
 | A sentence in one section of `script.md` | That section is synthesized and recorded again. The other sections' narration is cached, and their recordings are still valid, because cue times are relative to each section's own start. |
 | A phrase in `cues.json` | Nothing is synthesized. The section whose cues changed is recorded again. |
-| A slide in `deck/index.html` | Nothing is synthesized. Every section that uses the page should be recorded again. |
+| A slide in `deck/index.html` | Nothing is synthesized. Every section that uses the page is recorded again on a plain `build`, and `--only` must name each of them on a limited build. |
 | `[voice]` settings, or the model | Every section is synthesized again, because the cache key includes the voice id, the model, the output format, and the voice settings. |
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | Only `assemble`. |
 | `extra_seconds` | The section is recorded again, because the recording's length changed. |
@@ -77,4 +77,4 @@ final mp4 until it finishes, and a timestamped copy of every finished video sits
 ## Next
 
 [How it works](/concepts/how-it-works#caching-and-cost) explains why a section's
-recording stays valid when its neighbours change.
+recording stays valid when its neighbors change.

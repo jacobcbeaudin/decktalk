@@ -5,9 +5,11 @@ icon: "pen-line"
 ---
 
 A DeckTalk project is four files that refer to each other by number and by id. This
-page writes one section, the gradient descent scene from the scaffold, and shows every
-reference as it is made. Start from `decktalk init my-lesson` so that the runtime, the
-stylesheet, and KaTeX are in place. This is the finished section in all four files.
+guide writes one section, a simplified gradient descent scene drawn with SVG rather than
+the scaffold's three.js surface, and shows every reference as it is made. Start from
+`decktalk init my-lesson` so that the runtime and KaTeX are in place. The scene carries
+the few CSS rules it needs, because the scaffold's stylesheet defines only its own
+classes. This is the finished section in all four files.
 
 <CodeGroup>
 
@@ -57,6 +59,19 @@ scene = 3
 ```
 
 ```html deck/index.html
+<style>
+  .row { position: absolute; left: 120px; top: 200px; right: 120px; display: flex; gap: 64px; align-items: flex-start; }
+  .row .text { flex: 1; }
+  .h2 { margin: 0 0 16px; font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
+  .math { margin: 40px 0; font-size: 58px; color: var(--ink); }
+  .ax { stroke: var(--hair); stroke-width: 2; }
+  .curve { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; }
+  .zig { fill: none; stroke: var(--dim); stroke-width: 4; stroke-dasharray: 12 10; }
+  .step circle { fill: var(--accent); }
+  .step line { stroke: var(--ink); stroke-width: 4; }
+  .step .ring { fill: none; stroke: var(--accent); stroke-width: 3; }
+</style>
+<script>
 DeckTalk.scene(3, { name: "Gradient descent", steps: [
   { id: "3.1", hold: 26, cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1eq": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1min": 21 }, render: () => `
     <div class="slide">
@@ -74,7 +89,7 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
           <g class="step" data-cue="3.1p3" data-fx="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
           <g class="step min" data-cue="3.1min" data-fx="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
         </svg>
-        <div class="col">
+        <div class="text">
           <h2 class="h2">Gradient descent</h2>
           <p class="caption">Follow the slope downhill, one step at a time.</p>
           <div class="math" data-cue="3.1eq" data-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
@@ -83,6 +98,7 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
       </div>
     </div>` },
 ]});
+</script>
 ```
 
 </CodeGroup>
@@ -116,7 +132,13 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
     shorter than the thirty seconds the animation needs. [Cues](/concepts/cues) has the
     matching rules and the advice on choosing a phrase.
 
-    Run `decktalk beats` at any time to see where each phrase resolved. A phrase that is
+    <Warning>The `3.1` cue on `$start` mounts the step at 0.0, and that is all it is for.
+    Do not pass it to `decktalk verify`. The check takes its reference frame
+    `after_dip_seconds` after the section start, during the first slide's entrance, so a
+    `$start` cue at 0.0 reports `OFF CUE` or `NO CHANGE` rather than a landing.</Warning>
+
+    Run `decktalk narrate --silent` once, then `decktalk beats` at any time to see where
+    each phrase resolved. A phrase that is
     not among the section's words is reported as `phrase not found`, and `build` stops
     there until you fix it or pass `--allow-unresolved`.
 
@@ -157,7 +179,7 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
     ```console
     decktalk build --silent          # placeholder voice, no key
     decktalk build                   # your voice
-    decktalk verify 3:3.1eq 3:3.1p1 5:5.1a
+    decktalk verify 3:3.1eq 3:3.1p1 5:5.1cap
     ```
 
     The verify table shows, for each cue, the second at which it fired in the final mp4,
@@ -171,13 +193,14 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
     check                 cue       at   chg %   ctl %   offset     a/v  result
     3:3.1eq             21.63    57.43    0.27    0.00    -30ms   -35ms  changed
     3:3.1p1             18.18    53.98    0.15    0.00    -60ms   -74ms  changed
-    5:5.1a               2.55   132.43    0.41    0.00    -30ms   -63ms  changed
+    5:5.1cap             2.55   132.43    0.41    0.00    -30ms   -63ms  changed
     ```
 
     Every row is within the two-frame limit, and a negative number means the picture
     moved a fraction of a frame before the word, which is what the eye wants. A reveal
-    further from its word than that limit is reported as `OFF CUE`, and the build's exit
-    code says so.
+    further from its word than that limit is reported as `OFF CUE` by
+    `decktalk verify SECTION:CUE`, which exits 1. `build` checks only section starts and
+    cuts.
     [How it works](/concepts/how-it-works#what-verify-measures) explains the columns and
     the limit that turns `changed` into `OFF CUE`.
   </Step>
@@ -193,9 +216,9 @@ ignored. This table says which value matters where.
 |---|---|---|
 | `hold` on a step | The seconds the step stays before the next one mounts. | Ignored. A step mounts at its earliest cue and the last cued step holds until the recorder stops. |
 | The `cues` object on a step | The seconds after the mount at which each handler cue fires. | Ownership only. The times come from `build/audio/beats.json`. |
-| `data-at` on an element | The seconds after the mount at which the element reveals. | Used only when the element's cue is not in `?beats=`, or when it has no `data-cue`. |
-| `data-cue` on an element | The element reveals at its `data-at` time, which defaults to zero. | The element reveals when the cue fires. |
-| `data-sync` on an element | The element reveals whole. | The element reveals one word at a time from the `?words=` list the recorder passes. |
+| `data-at` on an element | The seconds after the mount at which the element appears. | Used only when the element's cue is not in `?beats=`, or when it has no `data-cue`. |
+| `data-cue` on an element | The element appears at its `data-at` time, which defaults to zero. | The element appears when the cue fires. |
+| `data-sync` on an element | The element appears whole. | The element appears one word at a time from the `?words=` list the recorder passes. |
 
 ## The naming chain
 
@@ -204,7 +227,7 @@ ignored. This table says which value matters where.
 | `script.md` | `## 3.` | the section number |
 | `decktalk.toml` | `number = 3`, `scene = 3` | the same section, and the scene the page plays for it |
 | `cues.json` | `"3"`, `"cue": "3.1eq"` | the section, and a cue id the page understands |
-| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1eq"` | the scene, its step, and the element that reveals on the cue |
+| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1eq"` | the scene, its step, and the element that appears on the cue |
 
 ## Next
 

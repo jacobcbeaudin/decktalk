@@ -1,3 +1,7 @@
 Inter Tight, by Rasmus Andersson, Copyright 2020 The Inter Project Authors.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
 InterTight.woff2 is the variable font (weight axis 100-900) subset to the glyphs the README graphics use, fetched from Google Fonts and cut with pyftsubset; scripts/build_assets.py embeds it.
+
+JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors.
+Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
+JetBrainsMono.woff2 is the variable font (weight axis 100-800) cut from src/decktalk/template/deck/fonts/JetBrainsMono-latin.woff2 to U+0020-005A (space, punctuation, digits, and capitals, which is all the labels use) with pyftsubset; scripts/build_assets.py embeds it.

@@ -19,7 +19,7 @@ of the same name.
 | `beats` | Finds each cue phrase in its section's words and turns it into seconds after the section starts. | `build/audio/beats.json` |
 | `record` | Opens each page section in headless Chromium with `?scene=N&beats=…&t0=signal`, covers the page in magenta, starts the narration clock, and records for the section's span plus `extra_seconds`. | `build/rec/NN-scene.webm` and its sidecar `NN-scene.json`, the file that records what the recorder did |
 | `measure` | Finds the first clean frame after the magenta cover in each recording. That frame is narration t=0. | `lead_in_seconds` in each sidecar |
-| `check` | Flags a recording that is black, shorter than requested, has no cover, or whose equations never typeset. | nothing |
+| `check` | Flags a recording that is black, shorter than requested, has no cover, whose equations never typeset, or that stalled between frames. | nothing |
 | `assemble` | Trims each recording at t=0, cuts it to its section's span, scales clips, renders slates, concatenates, mixes the soundscape, normalizes loudness, writes captions and chapters, and publishes the video atomically. | `build/out/NN-section.mp4`, `<name>.mp4`, `<name>.srt`, `<name>.vtt`, `<name>.chapters.txt` |
 | `verify` | Confirms that every section opens on a real frame, that the narration is quiet in the last 150 ms before every cut, and, when asked, that each named cue changed the picture on time. After a silent build it also measures the picture against the placeholder click at the cued word. | nothing |
 
@@ -70,24 +70,24 @@ each named cue in the finished mp4.
 
 ```text
 sec    start    probe   YAVG   YMAX  result
- 01     0.00     0.20     29    226  ok
- 02    10.48    10.68     29    225  ok
- 03    32.80    33.00     29    229  ok
- 04    79.68    79.88     28    158  ok
- 05   126.88   127.08     28    159  ok
-total 149.00s; 0 black section start(s)
+ 01     0.00     0.20    232    245  ok
+ 02    22.44    22.64    232    252  ok
+ 03    56.72    56.92    233    248  ok
+ 04   107.24   107.44    228    255  ok
+ 05   133.68   133.88    231    249  ok
+total 149.44s; 0 black section start(s)
 
 sec   cut at  before cut  result
- 01    10.50   -128.4 dB  quiet
- 02    32.78   -123.3 dB  quiet
- 03    79.70   -125.4 dB  quiet
- 04   126.88   -128.4 dB  quiet
- 05   146.98   -120.0 dB  quiet
+ 01    22.45   -129.7 dB  quiet
+ 02    56.69   -128.4 dB  quiet
+ 03   107.27   -128.5 dB  quiet
+ 04   133.69   -125.4 dB  quiet
+ 05   145.43   -120.0 dB  quiet
 
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.1eq             21.63    54.43    0.27    0.00    -70ms   -74ms  changed
-3:3.1p1             18.18    50.98    0.15    0.00   -100ms  -113ms  OFF CUE
-5:5.1a               2.55   129.43    0.41    0.00    -30ms   -62ms  changed
+3:3.1eq             15.66    72.38    0.29    0.00    -20ms    -5ms  changed
+3:3.1p1             13.05    69.77    0.24    0.00    -10ms    +5ms  changed
+5:5.1cap             2.46   136.14    0.30    0.00    -60ms   -85ms  changed
 ```
 
 | Column | Meaning |
@@ -102,8 +102,10 @@ check                 cue       at   chg %   ctl %   offset     a/v  result
 
 The onset threshold is far below `min_changed_percent` on purpose. A fade or a stroke that
 draws itself begins on its cue but takes many frames to change a tenth of the picture. The
-default limit is two frames, which is 80 milliseconds, and every field is a tuning key
-under `[verify]` in [Configuration](/reference/configuration#verify).
+default `offset` limit is two frames, which is 80 milliseconds. The default `a/v` limit is
+three frames, which is 120 milliseconds, because the click carries encoding jitter too.
+Every field is a tuning key under `[verify]` in
+[Configuration](/reference/configuration#verify).
 
 The `offset` column compares the picture with the cue time, which is arithmetic on the
 timeline. The `a/v` column compares the picture with the audio that is actually in the
@@ -136,7 +138,7 @@ The `narrate` stage keys each section by a hash of the provider, the voice id, t
 the output format, the voice settings, and the exact text sent. A build after an edit
 synthesizes only the sections whose words changed, and `--only` limits the recording to
 the sections named. Everything else comes from `build/`. Because cue times are relative
-to each section's own start, a section's recording stays valid when its neighbours change
+to each section's own start, a section's recording stays valid when its neighbors change
 length. [Rebuild one section](/guides/rebuild-one-section) says what each edit costs.
 
 ## The silent build

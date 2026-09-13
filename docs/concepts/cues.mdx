@@ -18,10 +18,10 @@ the recorder hands those seconds to the page as `?beats=`.
 
 ```text
 sec  speech   need  cues
- 03    46.2   30.0  3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1eq@21.63,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43
+ 03    50.1   40.0  3.1bowl@1.57,3.1p0@6.26,3.1up@8.87,3.1neg@11.48,3.1p1@13.05,3.1eq@15.66,3.1p2@18.79,3.1p3@19.31,3.1eqA@26.09,3.1eqA2@27.66,3.1eqB@29.23,3.1eqC@30.27,3.1think@32.36,3.1over@37.58,3.1min@42.99
 ```
 
-[cues.json](/reference/cues-json) lists every key. This page is about how a phrase is
+[cues.json](/reference/cues-json) lists every key. This guide is about how a phrase is
 found and how to choose one.
 
 ## Matching rules
@@ -29,7 +29,7 @@ found and how to choose one.
 1. The phrase and the section's words are both split on whitespace only. Each token then loses every character that is not a letter, a digit, or an apostrophe, and is lowercased unless `case_sensitive` is true. A hyphenated word such as "x-squared" is therefore one token, and it matches only a phrase written the same way.
 2. The section's words are scanned in order for a run that matches the phrase token for token. The `occurrence` key picks which run, and the default is the first.
 3. The cue time is the start of the first word of that run, plus `offset`, rounded to hundredths of a second.
-4. `$start` is zero plus the offset, never negative. `$end` is the end of the last spoken word in the section, plus the offset.
+4. `$start` is zero plus the offset. A negative result is written as is and the page fires it at t=0. `$end` is the end of the last spoken word in the section, plus the offset.
 
 The words come from the voice, so a phrase must be written as it is spoken. The script
 says "two x" and the slide shows `2x`, and the cue says "two x". A number written as
@@ -51,7 +51,10 @@ clip section has no narration, so its cues are reported as skipped.
 The `beats` stage never checks cue ids against the page. It resolves phrases to seconds,
 and the page decides what each id means when it plays. An id that no step owns is
 recorded by the page in `window.__decktalk.warnings`, which the recorder reads after the
-recording and logs. [The page contract](/concepts/page-contract#cue-ownership) explains
+recording and logs. An id that a step owns by prefix but that no `data-cue` element,
+`on` handler, or step id matches is recorded too, as
+`cue "4.1answer" matches no element, handler, or step`, so a typo in `cues.json` is
+named rather than silently fired. [The page contract](/concepts/page-contract#cue-ownership) explains
 which step owns a cue.
 
 ## Unresolved cues
@@ -60,13 +63,13 @@ The `beats` stage prints `phrase not found` for a cue it cannot match and exits 
 
 ```text
 sec  speech   need  cues
- 03    46.2   30.0  3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43
+ 03    50.1   40.0  3.1bowl@1.57,3.1p0@6.26,3.1up@8.87,3.1neg@11.48,3.1p1@13.05,3.1p2@18.79,3.1p3@19.31,3.1eqA@26.09,3.1eqA2@27.66,3.1eqB@29.23,3.1eqC@30.27,3.1think@32.36,3.1over@37.58,3.1min@42.99
                     ! 3.1eq: phrase not found: 'learning rate η'
 ```
 
 The `build` command stops at that point, because a step whose only cues are unresolved
 never appears on screen. Fix the phrase, or pass `--allow-unresolved` to build without
-that cue. The page then ignores the missing cue, and an element waiting for it reveals at
+that cue. The page then ignores the missing cue, and an element waiting for it appears at
 its `data-at` time after its step mounts. A cue that resolves past the end of the audio
 is kept with a note. A silent build estimates word times from the word count, so cues
 resolve, but their times are placeholders and the table says so.

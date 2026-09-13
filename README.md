@@ -8,10 +8,14 @@
 <p align="center"><b>Narrated presentations, cut to the word.</b><br>
 DeckTalk turns a markdown script and plain HTML slides into one narrated video in which every reveal lands on the word that introduces it. Change a sentence and only that section renders again. The script is the edit.</p>
 
+<!-- demo: GIF goes here after review -->
+
+<p align="center">DeckTalk is for anyone who explains things with slides and a script: lecturers, course authors, developer advocates, and agents that write both. Screen recorders pin timing to a take. DeckTalk pins it to the words, so the tenth edit costs one section.</p>
+
 <p align="center">
-<a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/v/decktalk?label=pypi&color=2c1fea" alt="PyPI"></a>
-<a href="https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml"><img src="https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
-<a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-black" alt="Apache-2.0"></a>
+<a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/v/decktalk?style=flat-square&label=pypi&color=2c1fea" alt="PyPI"></a>
+<a href="https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jacobcbeaudin/decktalk/ci.yml?style=flat-square&label=ci" alt="ci"></a>
+<a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-black?style=flat-square&labelColor=0a0a0a&color=2c1fea" alt="Apache-2.0"></a>
 </p>
 
 <p align="center">
@@ -31,12 +35,13 @@ $ cp .env.example .env                         # add ELEVENLABS_API_KEY and a vo
 $ decktalk build                               # your voice, one mp4
 ```
 
-The silent build needs no account and takes under a minute on a laptop. The last command
-writes `build/out/my-lesson.mp4`, with captions and chapter markers beside it. The
-scaffold is a short lesson: a title, three labeled lines, a derivation that reveals line
-by line, and a prompt before-and-after. `uv` is a Python package manager, and `pipx
-install decktalk` works the same way. The `.env` file holds your ElevenLabs key and voice
-id beside the project, and DeckTalk never prints either.
+The silent build needs no account and takes a few minutes on a laptop, because the
+recording runs in real time. The last command writes `build/out/my-lesson.mp4`, with
+captions and chapter markers beside it. The scaffold is the two-minute demo: a sentence
+that lights up word by word, the four files, gradient descent on a loss surface, one
+edited sentence rebuilding one section, and a close. `uv` is a Python package manager,
+and `pipx install decktalk` works the same way. The `.env` file holds your ElevenLabs key
+and voice id beside the project, and DeckTalk never prints either.
 
 ## The script is the edit
 
@@ -97,48 +102,51 @@ A browser does not start recording at a known instant, so DeckTalk never trusts 
 The page is covered in magenta until the narration clock starts, and the first clean
 frame in the recording is t=0 by construction, on Linux, macOS, and Windows alike. The
 `verify` command then measures, in the finished video, how long after its word each
-reveal began. This is the scaffold, built with a silent placeholder voice:
+reveal began. This is the scaffold, built with a silent placeholder voice and checked with
+`decktalk verify 1:1.1curve 1:1.1number 3:3.1eq 4:4.1s3`:
 
 ```text
-check                 cue       at   chg %   ctl %   offset  result
-2:2.1a               2.30    15.46    0.60    0.00    +20ms  changed
-3:3.1a               9.74    44.82    0.42    0.00    +20ms  changed
-3:3.1c              31.27    66.35    0.33    0.00    +10ms  changed
-4:4.2reply          36.92   109.48    3.08    0.00    +40ms  changed
+check                 cue       at   chg %   ctl %   offset     a/v  result
+1:1.1curve           1.14     1.14    0.35    0.00    -20ms   -32ms  changed
+1:1.1number          2.92     2.92    1.29    0.28    -40ms   -47ms  changed
+3:3.1eq             15.66    72.38    0.29    0.00    -20ms    -5ms  changed
+4:4.1s3              8.67   115.91    0.32    0.00    -30ms   -45ms  changed
 ```
 
 [How it works](https://docs.decktalk.app/concepts/how-it-works) has the whole chain,
 from the word timestamps to the frame.
 
-## Highlights
-
-- **A free dry run.** `decktalk build --silent` runs every stage, including cue matching, recording, and verification, with placeholder narration and no API key.
-- **Cached narration.** DeckTalk hashes each section by its text and re-synthesizes only the sections that changed.
-- **Captions and chapters.** Every build writes SRT and VTT captions from the word timestamps and muxes a chapter per section into the mp4.
-- **A soundscape.** An underscore that ducks under speech, ambience beds, sound effects on cues, and streaming loudness at -16 LUFS. Every part is optional, and you can bring your own files or generate them from a prompt.
-- **Verified output.** DeckTalk catches a black, truncated, or unaligned recording before assembly, stops the build when it cannot find a cue phrase, and reports how late each reveal landed.
-
-## Cost, lock-in, voice
-
-- **Cost.** You need an ElevenLabs plan with API access. The free tier's audio carries a watermark and a non-commercial license, so the Starter plan is the practical floor. A ten-minute narration is roughly 9,000 characters, which fits inside that plan's monthly allowance, and an edit costs only the sentences you changed.
-- **Lock-in.** ElevenLabs is the only speech provider today because it returns word timestamps. The provider is one module behind a two-method protocol, and `--silent` needs no provider at all.
-- **Voice.** Any ElevenLabs voice id works, including a clone of your own. Stability, similarity, style, and speed are settings in `decktalk.toml`.
+## What you get, and what it costs
 
 | Tool | Timing comes from | Slides are | Cost of editing one sentence |
 |---|---|---|---|
 | **DeckTalk** | the spoken words, one timestamp each | your HTML | one section re-synthesized and re-recorded |
-| Remotion, Motion Canvas, Manim | frame numbers or seconds in code | code | you re-time by hand |
-| Descript | a recording you made | your screen | you re-record the clip |
-| Synthesia, HeyGen | the avatar's speech | their templates | you regenerate the video |
+| Remotion, Motion Canvas | frame numbers or seconds in code, by default | code | you re-time by hand and re-render |
+| Manim | seconds in code, or bookmarks in the narration with manim-voiceover | code | with manim-voiceover, bookmarks in the text re-sync, and you still re-render the scene in Python |
+| Descript | a recording you made | your screen | Overdub regenerates the words, and the screen recording does not move with them |
+| Synthesia, HeyGen | the avatar's speech | their avatar and scenes | you regenerate the video |
 
-The [FAQ](https://docs.decktalk.app/help/faq) has the full comparison.
+The [FAQ](https://docs.decktalk.app/help/faq) has the full comparison. Beyond the cut,
+every build adds the parts a recording tool leaves to you:
+
+- **A free dry run.** `decktalk build --silent` runs every stage, including cue matching, recording, and verification, with placeholder narration and no API key.
+- **Cached narration.** DeckTalk hashes each section by its text and re-synthesizes only the sections that changed.
+- **Captions and chapters.** Every build writes SRT and VTT captions from the word timestamps and muxes a chapter per section into the mp4.
+- **A soundscape.** The mix adds an underscore that ducks under speech, ambience beds, sound effects on cues, and streaming loudness at -16 LUFS. Every part is optional, and you can bring your own files or generate them from a prompt.
+- **Verified output.** DeckTalk catches a black, truncated, or unaligned recording before assembly, stops the build when it cannot find a cue phrase, and reports how late each reveal landed.
+
+What it costs, and what it ties you to:
+
+- **Cost.** You need an ElevenLabs plan with API access. The free tier's audio carries a watermark and a non-commercial license, so the Starter plan is the practical floor. A ten-minute narration is roughly 9,000 characters, which fits inside that plan's monthly allowance, and an edit costs only the sentences you changed.
+- **Lock-in.** ElevenLabs is the built-in speech provider because it returns word timestamps. The provider is one module behind a two-method protocol, and `--silent` needs no provider at all.
+- **Voice.** Any ElevenLabs voice id works, including a clone of your own. Stability, similarity, style, and speed are settings in `decktalk.toml`.
 
 ## Requirements
 
 DeckTalk needs Python 3.12 or later and runs on Linux, macOS, and Windows. The `setup`
 command downloads headless Chromium, ffmpeg, and KaTeX once per machine, so there is
-nothing to install by hand. It is one person's project at an early version, with a full
-offline build running on all three platforms in CI.
+nothing to install by hand. It is one person's project, with a full offline build on
+Linux, macOS, and Windows for every release.
 
 ## Docs
 
@@ -146,6 +154,6 @@ Everything else lives at **[docs.decktalk.app](https://docs.decktalk.app)**: the
 quickstart, your first deck, writing for the ear, slide recipes, the project file, the
 page contract, the CLI, every setting, and the Python API. Agents can start from the
 [one-page reference](https://docs.decktalk.app/reference/card). To work on DeckTalk
-itself, start with [CONTRIBUTING.md](CONTRIBUTING.md).
+itself, start with [CONTRIBUTING.md](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md).
 
 <p align="center">Apache-2.0. Made by <a href="https://github.com/jacobcbeaudin">Jacob Beaudin</a>.</p>

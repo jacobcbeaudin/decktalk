@@ -13,7 +13,7 @@ can be built and verified on every push. This is how DeckTalk's own repository d
 decktalk setup                            # Chromium, ffmpeg, and KaTeX, into per-user caches
 decktalk doctor                           # exits 1 when a tool is missing
 DECKTALK_VIDEO_PRESET=veryfast decktalk build --silent
-decktalk verify 3:3.1eq 3:3.1p1 5:5.1a     # exits 1 when a cue did not land
+decktalk verify 3:3.1eq 3:3.1p1 5:5.1cap   # exits 1 when a cue did not land
 decktalk shots                            # one PNG per step, worth uploading as an artifact
 ```
 
@@ -23,7 +23,7 @@ are installed too. The verify command with a list of `SECTION:CUE` checks is the
 finished mp4. A silent build's placeholder track carries a click at every word start, so
 the cue table also reports an `a/v` column, the picture's first change measured against
 the click nearest the cue, and the job fails when the finished file's audio and picture
-disagree by more than `max_offset_frames`. That makes a silent build a test of the whole
+disagree by more than `max_av_frames`, three frames by default. That makes a silent build a test of the whole
 chain, not only of the cues.
 [How it works](/concepts/how-it-works#what-verify-measures) explains the columns.
 
@@ -49,7 +49,7 @@ jobs:
       - run: decktalk build --silent
         env:
           DECKTALK_VIDEO_PRESET: veryfast
-      - run: decktalk verify 3:3.1eq 3:3.1p1 5:5.1a
+      - run: decktalk verify 3:3.1eq 3:3.1p1 5:5.1cap
       - uses: actions/upload-artifact@v7
         with:
           name: video
@@ -94,8 +94,8 @@ either run `init` again into a fresh directory or copy the cached `katex` direct
 <script src="./katex/katex.min.js"></script>
 ```
 
-A corporate proxy that blocks Playwright's download can be pointed elsewhere with
-`PLAYWRIGHT_DOWNLOAD_HOST`, as Playwright documents.
+When a proxy blocks Playwright's download, set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror,
+as Playwright documents.
 
 ## Next
 

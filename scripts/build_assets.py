@@ -11,10 +11,10 @@ mark, wordmark, favicon. The README reads assets/, the docs site reads docs/imag
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
 they cannot drift. The copies in assets/ have a transparent background so they sit on whatever
 ground GitHub and PyPI paint; the copies in docs/images/ carry their own background rect. Inter
-Tight subsets (OFL, assets/fonts/) are embedded as base64 in the diagrams so GitHub and PyPI
-render the intended face; word positions in the hero are measured in Chromium with that exact
-font, so the tick under each word is under the word. The wordmark instead carries the letters as
-outline paths traced with fontTools, so each logo is a few kilobytes.
+Tight and JetBrains Mono subsets (OFL, assets/fonts/) are embedded as base64 in the diagrams so
+GitHub and PyPI render the intended faces; word positions in the hero are measured in Chromium
+with that exact font, so the tick under each word is under the word. The wordmark instead carries
+the letters as outline paths traced with fontTools, so each logo is a few kilobytes.
 
 Motion rules (from the design review): base styles are the END state, keyframes carry the start
 values, so `prefers-reduced-motion: reduce` shows the finished frame. Loops dissolve back to the
@@ -64,24 +64,34 @@ DARK = {
 }
 
 SANS = "'DT Sans', 'Inter Tight', 'Inter', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
-MONO = "ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+MONO = "'DT Mono', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
 SENTENCE = ["The", "curve", "rises,", "then", "the", "number", "lands."]
 CUE_WORDS = {1, 5, 6}  # curve, number, lands.
-HERO_W, HERO_H = 1200, 300
+MEASURE_PX = 32  # the size the words are measured at; every diagram scales the positions from it
+HERO_W, HERO_H, HERO_PAD = 1000, 248, 48
+HERO_PX = 30  # the sentence's size in the hero, so it clears the card at this width
 HEAD_START, HEAD_END = 5, 64  # % of the loop the playhead travels
-CARD_W, CARD_H, CARD_R = 424, 198, 14  # the hero's slide card
+CARD_W, CARD_H, CARD_R = 324, 152, 12  # the hero's slide card
 SLIDE_W, SLIDE_H = 348, 164  # the slide artwork's own coordinate space
+FACES = (
+    # family, file, weight range: variable fonts subset to the glyphs the diagrams use
+    ("DT Sans", "InterTight.woff2", "100 900"),
+    ("DT Mono", "JetBrainsMono.woff2", "100 800"),
+)
 
 
 def font_face() -> str:
-    path = FONTS / "InterTight.woff2"  # variable font, wght 100-900, subset to the glyphs used
-    if not path.exists():
-        sys.exit(f"missing {path}; see assets/fonts/LICENSE.txt for how it was made")
-    b64 = base64.b64encode(path.read_bytes()).decode()
-    return (
-        "@font-face{font-family:'DT Sans';font-weight:100 900;font-style:normal;"
-        f"src:url(data:font/woff2;base64,{b64}) format('woff2')}}"
-    )
+    rules = []
+    for family, name, weights in FACES:
+        path = FONTS / name
+        if not path.exists():
+            sys.exit(f"missing {path}; see assets/fonts/LICENSE.txt for how it was made")
+        b64 = base64.b64encode(path.read_bytes()).decode()
+        rules.append(
+            f"@font-face{{font-family:'{family}';font-weight:{weights};font-style:normal;"
+            f"src:url(data:font/woff2;base64,{b64}) format('woff2')}}"
+        )
+    return "".join(rules)
 
 
 def reduced_motion() -> str:
@@ -161,7 +171,9 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
     trans = word_pct[6]  # the slide changes on the last word, like every other reveal
     css = [font_face()]
     css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
-    css.append(f".w{{font:600 32px {SANS};letter-spacing:-.01em;fill:{pal['ink']};animation:{total}s linear infinite}}")
+    css.append(
+        f".w{{font:600 {HERO_PX}px {SANS};letter-spacing:-.01em;fill:{pal['ink']};animation:{total}s linear infinite}}"
+    )
     css.append(f".cap{{font:400 14px {SANS};fill:{pal['mute']}}}")
     css.append(f".block{{fill:{pal['block']}}}")
     css.append(f".axis{{stroke:{pal['hair']};stroke-width:2}}")
@@ -220,20 +232,20 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
     )
     # The card spans the label row to the caption baseline; the narration column is laid out to
     # the same extent, with the words and ticks centred between the label and the caption.
-    card_x, card_y = HERO_W - 72 - CARD_W, 76
+    card_x, card_y = HERO_W - HERO_PAD - CARD_W, HERO_PAD
     caption_y = card_y + CARD_H
-    words_y = 158
+    words_y = 110
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{HERO_W}" height="{HERO_H}" viewBox="0 0 {HERO_W} {HERO_H}" role="img" aria-labelledby="t d">
   <title id="t">DeckTalk</title>
   <desc id="d">A playhead moves along a spoken sentence, one tick per word. When it reaches "curve" a curve draws on the slide; when it reaches "number" a figure appears; on the last word the slide changes.</desc>
   <defs><style>{chr(10).join(css)}</style><clipPath id="card"><rect width="{CARD_W}" height="{CARD_H}" rx="{CARD_R}"/></clipPath></defs>
   {bg_rect(pal, HERO_W, HERO_H, background)}
   <g class="loop">
-  <text class="lab" x="72" y="{card_y}">NARRATION</text>
-  <g transform="translate(72 {words_y})">
+  <text class="lab" x="{HERO_PAD}" y="{card_y}">NARRATION</text>
+  <g transform="translate({HERO_PAD} {words_y})">
     <text y="0">{words_svg}</text>
     <g transform="translate(0 30)">{ticks_svg}{dots_svg}<g class="head"><rect x="0" y="-14" width="2" height="38" fill="{pal["ink"]}"/></g></g>
-    <text class="cap" x="0" y="{caption_y - words_y}">A timestamp for every word. A cue for every reveal.</text>
+    <text class="cap" x="0" y="{caption_y - words_y}">Every word has a timestamp, and every reveal has a cue.</text>
   </g>
   <g transform="translate({card_x} {card_y})">
     <rect class="block" width="{CARD_W}" height="{CARD_H}" rx="{CARD_R}"/>
@@ -259,7 +271,7 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
 # ---- how it works ----------------------------------------------------------------------------
 
 STAGES = [
-    ("01 WRITE", "A script in markdown", "One heading per scene."),
+    ("01 WRITE", "A script in markdown", "One heading starts one section."),
     ("02 NARRATE", "Your voice reads it", "ElevenLabs returns a time for every word."),
     ("03 RECORD", "Slides reveal on the words", "Plain HTML, recorded in Chromium."),
     ("04 ASSEMBLE", "Cut to the frame", "ffmpeg cuts, mixes, verifies."),
@@ -512,7 +524,7 @@ def wordmark(pal: dict[str, str], name: tuple[str, float]) -> str:
     text_x = 34
     w = round(text_x + width)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="32" viewBox="0 0 {w} 32" role="img" aria-label="DeckTalk">
-  <g transform="translate(0 4)">{mark_glyph(pal, dot_cy=5)}</g>
+  <g transform="translate(0 5)">{mark_glyph(pal)}</g>
   <path transform="translate({text_x} 24)" fill="{pal["ink"]}" d="{d}"/>
 </svg>
 """
@@ -534,7 +546,7 @@ def og(pal: dict[str, str], xs: list[float], widths: list[float]) -> str:
     css.append(f".tag{{font:400 26px {SANS};fill:{pal['mute']}}}")
     css.append(f".block{{fill:{pal['block']}}}.axis{{stroke:{pal['hair']};stroke-width:2}}")
     css.append(f".num{{font:700 64px {SANS};letter-spacing:-.03em;fill:{pal['accent']}}}")
-    scale = 44 / 32
+    scale = 44 / MEASURE_PX
     words = "".join(
         f'<tspan class="w {"cue" if i in CUE_WORDS else ""}" x="{x * scale:.1f}">{t}</tspan>'
         for i, (t, x) in enumerate(zip(SENTENCE, xs, strict=True))
@@ -591,7 +603,7 @@ def _clean(svg: str) -> str:
 
 
 def build() -> dict[Path, str]:
-    widths, space = measure_words(SENTENCE, f"600 32px {SANS}", "-.01em")
+    widths, space = measure_words(SENTENCE, f"600 {MEASURE_PX}px {SANS}", "-.01em")
     xs: list[float] = []
     x = 0.0
     for i, w in enumerate(widths):
@@ -603,9 +615,9 @@ def build() -> dict[Path, str]:
     docs = ROOT / "docs"
     for variant, pal in (("light", LIGHT), ("dark", DARK)):
         for background, folder in ((False, ASSETS), (True, docs / "images")):
-            out[folder / f"hero-{variant}.svg"] = hero(pal, xs, background)
+            out[folder / f"hero-{variant}.svg"] = hero(pal, [x * HERO_PX / MEASURE_PX for x in xs], background)
             out[folder / f"how-it-works-{variant}.svg"] = how_it_works(pal, stacked=False, background=background)
-            out[folder / f"alignment-{variant}.svg"] = alignment(pal, [x * 26 / 32 for x in xs], background)
+            out[folder / f"alignment-{variant}.svg"] = alignment(pal, [x * 26 / MEASURE_PX for x in xs], background)
         out[ASSETS / f"how-it-works-{variant}-stacked.svg"] = how_it_works(pal, stacked=True, background=False)
         out[ASSETS / f"mark-{variant}.svg"] = mark(pal)
         out[docs / "logo" / f"{variant}.svg"] = wordmark(pal, name)
