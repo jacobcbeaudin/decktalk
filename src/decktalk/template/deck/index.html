@@ -252,23 +252,23 @@ scales its length.</pre>
 // ---- Scene 3: gradient descent on a three-dimensional loss surface ----------------------
 // The surface, the contours, the ball, its trail, the two arrows, the overshoot ghost, and the
 // minimum ring are three.js objects. Cue handlers drive every animation from DeckTalk's clock.
-// s3setup returns the figure's cue handlers, which the step's enter stores on its slide as
-// slide.s3. A frozen figure, or one without three.js or WebGL, returns no handlers.
-function s3setup(slide, frozen) {
-  const host = slide.querySelector(".fig3");
+// s3figure builds the renderer and every object without touching the page, and returns
+// { warm, attach }, or null without three.js or WebGL. attach(slide) puts the canvas in the
+// slide's figure and returns the cue handlers, which the step's enter stores on its slide as
+// slide.s3. A frozen figure returns no handlers.
+function s3figure(frozen) {
   const T = window.THREE;
-  if (!T) { console.warn("decktalk: three.js missing, so the scene 3 figure is empty"); return {}; }
+  if (!T) { console.warn("decktalk: three.js missing, so the scene 3 figure is empty"); return null; }
   let renderer;
   try {
     renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
-  } catch (e) { console.warn("decktalk: no WebGL, so the scene 3 figure is empty"); return {}; }
+  } catch (e) { console.warn("decktalk: no WebGL, so the scene 3 figure is empty"); return null; }
   const W = 960, H = 570, R = 0.22, ACCENT = 0x2c1fea, INK = 0x0a0a0a;
   // three.js takes colours as numbers, so these repeat the --hair and --dim tokens above.
   const SURFACE = 0xe4e4e7, DIM = 0xa3a3ad;
   renderer.setPixelRatio(1);
   renderer.setSize(W, H);
   renderer.setClearColor(0xffffff, 0);
-  host.appendChild(renderer.domElement);
   const scene = new T.Scene();
   const camera = new T.PerspectiveCamera(32, W / H, 0.1, 100);
   camera.position.set(5.77, 6.47, 6.77);
@@ -440,6 +440,7 @@ function s3setup(slide, frozen) {
   // far corner, behind the bowl, out past the left and right corners, and the loss axis rises
   // from that corner. The floor dot, the θ tag, and the drop line follow the ball.
   const FLOOR = -0.12, AX = 3.3, TOP = 3.5;
+  let host = null; // the slide's .fig3, set by attach
   camera.updateMatrixWorld();
   const pv = new T.Vector3();
   const toScreen = (x, y, z) => { pv.set(x, y, z).project(camera); return [(pv.x + 1) / 2 * W, (1 - pv.y) / 2 * H]; };
@@ -476,14 +477,13 @@ function s3setup(slide, frozen) {
     put(q(".over"), "opacity", dimK.toFixed(3), true);
     if (!host.classList.contains("placed")) host.classList.add("placed");
   };
-  place();
 
   // Animation: every active animation ticks from DeckTalk's clock; the scene renders while any
   // is active and once after each state change otherwise.
   const clock = () => window.__decktalk.now();
   const anims = new Set();
   let raf = 0, inStep = false;
-  const render = () => { apply(); renderer.render(scene, camera); place(); };
+  const render = () => { apply(); renderer.render(scene, camera); if (host) place(); };
   const loop = () => {
     if (raf || inStep) return;
     raf = requestAnimationFrame(() => {
@@ -530,36 +530,46 @@ function s3setup(slide, frozen) {
   const pop = (mesh, dur) => add(dur, (k) => { const s = k < 0.45 ? 1.08 * easeOut(k / 0.45) : 1.08 - 0.08 * ((k - 0.45) / 0.55); mesh.scale.setScalar(Math.max(0.001, s)); });
   const ballTo = (x, z) => placeBall(x, z);
 
-  if (frozen) {
-    // The end state at once: surface and contours up, the trail through every iterate, the
-    // ball at the minimum, the ring in place, the ghost and the arrows gone.
-    surfMat.userData.fade = 1; contourMat.userData.fade = 1;
-    for (let i = 0; i < 12; i++) trail.commit(chord(P[i], P[i + 1], 0.02, 20));
-    placeBall(P[12][0], P[12][1], 1);
-    ring.scale.setScalar(1);
+  // Warm up: SwiftShader, the software WebGL of headless Chromium, does slow first-time work
+  // the first time it draws each object in each drawing state, and on CI one first draw can
+  // take 200 ms. So one frame draws every object at its real material settings, with the
+  // surface, contours, arrows, ghost, and ring faded in, the ball, halo, and ring at full size,
+  // and both trails many points long, while the canvas is off the page. A one-pixel read waits
+  // for the frame to finish. Then every object goes back to its opening state and draws again.
+  const warm = () => {
+    const fades = mats.map((m) => m.userData.fade);
+    const sized = [ball, halo, ring];
+    mats.forEach((m) => { m.userData.fade = 1; });
+    sized.forEach((o) => o.scale.setScalar(1));
+    trail.write(chord(P[0], P[1], 0.02, 20));
+    ghostTrail.write(chord(GH[0], GH[1], 0.02, 20));
+    const gl = renderer.getContext(), px = new Uint8Array(4);
     render();
-    return {};
-  }
-  // Warm up: draw every mesh's material once per frame at near-zero opacity, so SwiftShader
-  // links every program and uploads every mesh's buffers while the title holds still, not on
-  // the frame a cue first shows it. Sharing a program is not enough: the ghost ball, the two
-  // arrows, and the ring each stalled the frame their cue first drew them until they were warmed.
-  const warm = [ballMat, surfMat, contourMat, haloMat, ghostTrail.line.material, ghostMat, upMat, downMat, ringMat];
-  let wi = 0;
-  const warmStep = () => {
-    if (wi >= warm.length) { render(); return; }
-    const m = warm[wi++];
-    mats.forEach((x) => { x.visible = x === m; });
-    const dw = m.depthWrite, op = m.opacity;
-    m.opacity = 0.01; m.depthWrite = false;
-    ghostTrail.line.geometry.setDrawRange(0, 2);
-    renderer.render(scene, camera);
-    ghostTrail.line.geometry.setDrawRange(0, 0);
-    m.depthWrite = dw; m.opacity = op;
-    requestAnimationFrame(warmStep);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    mats.forEach((m, i) => { m.userData.fade = fades[i]; });
+    sized.forEach((o) => o.scale.setScalar(0.001));
+    [trail, ghostTrail].forEach((tr) => { tr.done.length = 0; tr.write([]); tr.active = null; });
+    render();
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    renderer.domElement.dataset.warm = "1";
   };
-  warmStep();
-  return {
+  const attach = (slide) => {
+    host = slide.querySelector(".fig3");
+    host.appendChild(renderer.domElement);
+    if (frozen) {
+      // The end state at once: surface and contours up, the trail through every iterate, the
+      // ball at the minimum, the ring in place, the ghost and the arrows gone.
+      surfMat.userData.fade = 1; contourMat.userData.fade = 1;
+      for (let i = 0; i < 12; i++) trail.commit(chord(P[i], P[i + 1], 0.02, 20));
+      placeBall(P[12][0], P[12][1], 1);
+      ring.scale.setScalar(1);
+      render();
+      return {};
+    }
+    render();
+    return handlers;
+  };
+  const handlers = {
     "3.1bowl": () => { surfMat.userData.fade = contourMat.userData.fade = 0.4; fadeTo(surfMat, 1, 0.4); fadeTo(contourMat, 1, 0.4); },
     "3.1p0": () => add(0.3, (k) => placeBall(P[0][0], P[0][1], Math.max(0.001, easeOut(k)))),
     "3.1height": () => add(0.45, (k) => { dropK = 0.25 + 0.75 * easeOut(k); }),
@@ -575,7 +585,25 @@ function s3setup(slide, frozen) {
       walk(ball, trail, P, 4, 12, 0.4, () => pop(ring, 0.5), ballTo);
     },
   };
+  return { warm, attach };
 }
+
+// A page that will play scene 3 builds and warms its figure while it loads, before narration
+// t=0, and __sceneReady, which the recorder awaits before it starts the clock, waits for the
+// warm-up too. This listener runs after the runtime's, so the runtime's promise already exists.
+// A frozen step builds its figure when the step enters.
+let s3prebuilt;
+document.addEventListener("DOMContentLoaded", () => {
+  const p = DeckTalk.params;
+  const plays3 = !p.has("step") && (p.has("scene") ? p.get("scene") === "3" : (p.get("beats") || "").startsWith("3."));
+  if (!plays3) return;
+  const warmed = new Promise((resolve) => {
+    s3prebuilt = s3figure(false);
+    if (s3prebuilt) s3prebuilt.warm();
+    resolve();
+  });
+  window.__sceneReady = Promise.all([window.__sceneReady, warmed]).then(([ready]) => ready);
+});
 
 // The axis being named takes the accent, and hands it on when the next one is named.
 const focusAxis = (slide, name) => slide.querySelectorAll(".fig3 .ax").forEach((el) => el.classList.toggle("focus", el.classList.contains(name)));
@@ -583,7 +611,11 @@ const focusAxis = (slide, name) => slide.querySelectorAll(".fig3 .ax").forEach((
 DeckTalk.scene(3, { name: "Gradient descent", steps: [
   { id: "3.1", hold: 46,
     cues: { "3.1axes": 2, "3.1th1": 3.5, "3.1th2": 4.5, "3.1lossax": 5.5, "3.1bowl": 7, "3.1p0": 9, "3.1height": 10.5, "3.1up": 12.5, "3.1neg": 14.5, "3.1p1": 16.5, "3.1eq": 18.5, "3.1scale": 20, "3.1p2": 21.5, "3.1p3": 23.5, "3.1eqA": 26, "3.1eqA2": 27, "3.1eqB": 28.5, "3.1eqC": 30, "3.1think": 31, "3.1over": 37, "3.1min": 40 },
-    enter: (slide, ctx) => { slide.s3 = s3setup(slide, ctx.frozen); },
+    enter: (slide, ctx) => {
+      const fig = s3prebuilt !== undefined && !ctx.frozen ? s3prebuilt : s3figure(ctx.frozen);
+      s3prebuilt = undefined;
+      slide.s3 = fig ? fig.attach(slide) : {};
+    },
     on: {
       "3.1th1": (slide) => focusAxis(slide, "t1"),
       "3.1th2": (slide) => focusAxis(slide, "t2"),
