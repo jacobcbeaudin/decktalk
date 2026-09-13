@@ -64,6 +64,7 @@ class ManifestSegment:
     target_seconds: float | None = None
     speech_end_seconds: float | None = None
     tail_padded_seconds: float = 0.0
+    spoken: str = ""  # The words the voice says, with the script's punctuation, which captions borrow.
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Self:
