@@ -53,5 +53,5 @@ Three is voiced again. [beat] For this lesson it is a valley. [beat] Four and fi
 
 [Deck scene 5. The end card.]
 
-The script is the edit. [beat] DeckTalk. Open source, narrated presentations, cut to the word.
+Update your video the way you update a doc. [beat] DeckTalk. Open source, narrated presentations, cut to the word.
 [beat] Make your own at decktalk dot app.
