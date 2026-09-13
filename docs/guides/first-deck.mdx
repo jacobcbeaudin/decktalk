@@ -8,11 +8,16 @@ You write three files for a DeckTalk section, the script, the cues, and the page
 the voice returns a fourth, the words file. One cue id ties them together, and the project
 file maps the section to its page. This guide writes one section, a simplified gradient
 descent scene drawn with SVG rather than the scaffold's three.js surface, and shows every
-reference as it is made. Start from
-`decktalk init my-lesson` so that the runtime and KaTeX are in place. The scene carries
-the few CSS rules it needs, because the scaffold's stylesheet defines only its own
-classes. This is the finished section in the script, the project file, the cues, and the
-page.
+reference as it is made. Start from `decktalk init my-lesson` so that the runtime and
+KaTeX are in place, and replace the scaffold's section 3 in all four files with the code
+below. In `script.md`, replace everything from `## 3. Gradient descent` up to `## 4.`. In
+`cues.json`, replace the `"3"` entry. The section 3 table in `decktalk.toml` already
+matches. In `deck/index.html`, delete the scaffold's `DeckTalk.scene(3, …)` call and paste
+the `<style>` and `<script>` blocks below just before `</body>`. Deleting the call matters,
+because a second `DeckTalk.scene(3, …)` silently replaces the first and leaves the
+scaffold's cues with no owner. The scene carries the few CSS rules it needs, because the
+scaffold's stylesheet defines only its own classes. This is the finished section in the
+script, the project file, the cues, and the page.
 
 <CodeGroup>
 
@@ -149,7 +154,7 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
 
     ```text
     sec  speech   need  cues
-     03    46.2   30.0  3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1eq@21.63,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43
+     03    49.3   30.0  3.1@0.0,3.1bowl@7.39,3.1p0@11.83,3.1p1@18.73,3.1eq@22.18,3.1p2@26.13,3.1p3@27.11,3.1think@33.03,3.1over@39.44,3.1min@47.53
     ```
   </Step>
 
@@ -183,11 +188,14 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
   <Step title="Build and verify">
     ```console
     decktalk build --silent          # placeholder voice, no key
-    decktalk build                   # your voice
     decktalk verify 3:3.1eq 3:3.1p1
+    decktalk build                   # your voice
     ```
 
-    The verify table shows, for each cue, the second at which it fired in the final mp4,
+    Verify after the silent build, because only a silent build's placeholder track has the
+    clicks that the `a/v` column measures. The voiced build then replaces the placeholder
+    narration with your voice, and `decktalk verify` can measure its cues again. The verify
+    table shows, for each cue, the second at which it fired in the final mp4,
     the share of pixels that changed across it, the same measure over a quiet control
     span just before it, and how far from the cue time the first changed frame sits. After a
     silent build it also shows [`a/v`](/concepts/how-it-works#what-verify-measures), which
@@ -196,8 +204,8 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
 
     ```text
     check                 cue       at   chg %   ctl %   offset     a/v  result
-    3:3.1eq             21.63    57.43    0.27    0.00    -30ms   -35ms  changed
-    3:3.1p1             18.18    53.98    0.15    0.00    -60ms   -74ms  changed
+    3:3.1eq             22.18    69.18    0.44    0.00    -20ms   -29ms  changed
+    3:3.1p1             18.73    65.73    0.16    0.00    -10ms   -18ms  changed
     ```
 
     Every row is within the two-frame limit. A negative offset means that the picture

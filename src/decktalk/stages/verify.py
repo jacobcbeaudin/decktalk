@@ -10,18 +10,27 @@ cues     for each SECTION:CUE, the picture changes across the cue. With no list,
          before the cue, but never inside the section's fade-in and always at least one
          frame before the cue. For each delay in probe_delays, the share of pixels that
          change by more than diff_level between the reference and the probe is compared
-         with the same measure over an equal span that ends at the reference, which
-         captures anything else in motion, such as a camera push. A cue lands when the
-         best probe changes at least min_changed_percent of the pixels and exceeds its
-         control by min_margin_percent. Everything stays inside the section.
-offset   once a cue lands, the frames between the reference and the passing probe are
-         compared with the reference one by one. The first frame that changes at least
-         onset_percent of the pixels, and more than any frame before the cue did, is where
-         the visual began to appear, and its distance from the cue is reported in
-         milliseconds. The onset threshold is far below min_changed_percent on purpose: a
-         fade or a stroke that draws itself starts on its cue but takes many frames to
-         change a tenth of the picture. A cue fails when the distance exceeds
-         max_offset_frames.
+         with a control. The control is the smaller share of two spans that each last as
+         long as the probe's span and end at the reference, one after the other, and each
+         span compares only its first and its last frame. The control captures anything
+         else in motion, such as a camera push. A cue lands when the best probe changes
+         at least min_changed_percent of the pixels and exceeds its control by
+         min_margin_percent. Everything stays inside the section.
+offset   once a cue lands, every frame from the reference to the passing probe is
+         compared with the reference at onset_diff_level, which gives each frame's changed
+         share. A reveal is abrupt, so the first frame whose share rises by at least
+         onset_percent over the frame before it marks where the visual began to appear,
+         even when that frame sits before the cue. Motion that is always there, such as a
+         camera push or a curve still drawing, grows a little every frame and does not
+         jump. When no frame jumps, the first frame whose share exceeds both onset_percent
+         and every share more than max_offset_frames and a half frames before the cue is
+         used instead, which catches a reveal that grows slowly, such as text typing in.
+         The frame's distance from the cue is reported in milliseconds, and a cue fails
+         when the distance exceeds max_offset_frames.
+a/v      after a silent build, the loudest sample within click_search_seconds of the
+         cued word's start is taken as the click. The a/v value is the offset minus the
+         click's distance from the cued word's start, and a cue also fails when that
+         value exceeds max_av_frames.
 
 Cue verdicts are changed, OFF CUE, NO CHANGE, UNRESOLVED, and skipped. A skipped row is
 never a failure, and its reason says why nothing was measured:
@@ -134,7 +143,7 @@ class CueCheck:
     ok: bool
     note: str = ""
     offset_ms: int | None = None  # Where the first changed frame sits relative to the cue.
-    av_ms: int | None = None  # Picture onset minus the placeholder click, in a silent build.
+    av_ms: int | None = None  # The offset minus the click's distance from the cued word's start, in a silent build.
     verdict: str = ""  # changed, OFF CUE, NO CHANGE, UNRESOLVED, or skipped. Derived from ok when left empty.
     reason: str | None = None  # Why a row was skipped, or NO_CLICK on a measured row with no a/v value.
 
@@ -391,7 +400,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
                 av_limit_ms = cfg.max_av_frames * 1000 / fps
                 if abs(av_ms) > av_limit_ms + 0.5:
                     on_time = False
-                    note = f"picture {av_ms:+d} ms from the click, limit {av_limit_ms:.0f} ms"
+                    note = f"a/v {av_ms:+d} ms, limit {av_limit_ms:.0f} ms"
         result.cues.append(
             CueCheck(
                 check,

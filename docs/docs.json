@@ -117,9 +117,7 @@
   "seo": {
     "metatags": {
       "og:site_name": "DeckTalk",
-      "og:image": "https://docs.decktalk.app/images/og.png",
-      "twitter:card": "summary_large_image",
-      "og:description": "DeckTalk turns a markdown script, plain HTML slides, and an ElevenLabs voice into one narrated video in which every reveal lands on the word that introduces it."
+      "twitter:card": "summary_large_image"
     }
   },
   "redirects": [

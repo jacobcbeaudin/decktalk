@@ -44,7 +44,7 @@ COVER_JS = """() => {
   };
   if (document.documentElement) add(); else document.addEventListener("DOMContentLoaded", add, { once: true });
 }"""
-# Remove the cover and start the page clock in the same tick.
+# Remove the cover, then start the page clock on the next animation frame.
 START_JS = """() => new Promise((resolve) => {
   const d = document.getElementById("__t0cover");
   if (d) d.remove();

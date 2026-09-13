@@ -2,6 +2,7 @@
 title: Narrated slide videos cut to the spoken word
 sidebarTitle: Overview
 description: DeckTalk turns a markdown script, HTML slides, and an ElevenLabs voice into a narrated video with captions and chapters, where every reveal lands on the spoken word.
+"og:image": "https://docs.decktalk.app/images/og.png"
 icon: "house"
 mode: "custom"
 ---
@@ -11,7 +12,7 @@ mode: "custom"
   <div className="text-center">
     <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-5xl">Narrated presentations, cut to the word.</h1>
     <p className="mx-auto mt-5 max-w-3xl text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
-      DeckTalk turns a markdown script and plain HTML slides into one narrated video. Your voice reads the script and returns a time for every word, each slide names the phrase it lands on, and the cut follows the words. Change a sentence, and only that section is voiced again.
+      DeckTalk turns a markdown script and plain HTML slides into one narrated video. Your voice reads the script and returns a time for every word, cues.json names the phrase each reveal lands on, and the cut follows the words. Change a sentence, and only that section is voiced again.
     </p>
   </div>
 
@@ -61,7 +62,7 @@ mode: "custom"
         ```
       </Card>
       <Card title="2. The cue names the phrase" icon="crosshairs">
-        A cue pairs a cue id with the phrase it lands on. The cue resolves to the first word of the phrase, so the update rule appears on "learning".
+        A cue pairs a cue id with the phrase it lands on. The cue resolves to the first word of the phrase, so the chip η = 2 appears on "learning".
 
         ```json cues.json
         { "cue": "3.1eq", "on": "learning rate" }
@@ -79,13 +80,10 @@ mode: "custom"
         ```
       </Card>
       <Card title="4. The slide waits for the cue" icon="presentation-screen">
-        An element with `data-cue` stays hidden until its cue fires. KaTeX typesets the `data-tex` value, and the plain text is the fallback.
+        An element with `data-cue` stays hidden until its cue fires. KaTeX typesets the `data-tex` value, and the plain text is the fallback. Inside the backticks of a `render` template, every backslash is doubled.
 
         ```html deck/index.html
-        <div class="math" data-cue="3.1eq" data-display
-             data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">
-          θ(t+1) = θ(t) − η ∇L(θ(t))
-        </div>
+        <span class="chip" data-cue="3.1eq" data-tex="\\eta = 2">η = 2</span>
         ```
       </Card>
     </Columns>

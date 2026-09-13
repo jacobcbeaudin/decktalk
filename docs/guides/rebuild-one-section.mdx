@@ -16,7 +16,12 @@ section again and spends credits on all of them.
 
 ## What an edit costs
 
-| You changed | What runs again | What a plain `build` does | What `--only N` spares |
+<Frame caption="An edit to one sentence of section 3. Narration voices only section 3 again, a plain build records all five sections again, a build with --only 3 records only section 3 and keeps the other recordings, and assemble cuts every section.">
+  <img className="block dark:hidden" src="/images/rebuild-lanes-light.svg" alt="Five section columns cross three lanes above a full-width assemble bar. In the narrate lane, which is cached, only section 3 is accented and labelled voiced. In the lane for a plain build's recording, all five sections are accented. In the lane for a recording with --only 3, only section 3 is accented and the other four are labelled kept." />
+  <img className="hidden dark:block" src="/images/rebuild-lanes-dark.svg" alt="Five section columns cross three lanes above a full-width assemble bar. In the narrate lane, which is cached, only section 3 is accented and labelled voiced. In the lane for a plain build's recording, all five sections are accented. In the lane for a recording with --only 3, only section 3 is accented and the other four are labelled kept." />
+</Frame>
+
+| You changed | What must run again | What a plain `build` does | What `--only N` spares |
 |---|---|---|---|
 | A sentence in section N of `script.md` | Section N is voiced again and recorded again. | The build voices section N again, takes every other section's narration from the cache, and records every section again. | The flag spares the recording of every other section. Those recordings stay valid, because cue times are relative to each section's own start. |
 | The title in a section's heading | That section is voiced again, because its audio file name comes from its number and title, and it is recorded again. | The build voices that section again and records every section again. | The flag spares the recording of every other section. |
@@ -54,8 +59,8 @@ text or page changed. A section left out keeps its old recording even if its wor
 
 ## Run the stages by hand
 
-Each stage is also a command, and the sequence below is what `build --only 3` does for
-the recording.
+Each stage is also a command. The first six commands below are what `build --only 3` runs,
+and the last one also measures the edited cue, which the build's verify stage does not do.
 
 ```console
 decktalk narrate                         # cached sections are skipped
@@ -88,8 +93,8 @@ The manifest records whether its entries are silent placeholders, and `narrate` 
 previous manifest only when it is of the same kind. A silent build writes a placeholder track
 for every section over the mp3 file of the same name and replaces the manifest, so the voiced
 entries are gone. The next voiced build starts from an empty cache, voices every section
-again, and spends credits on all of them. A voiced build after a silent one also starts from
-an empty cache, which costs nothing extra, because placeholders are never reused.
+again, and spends credits on all of them. In a project that has never been voiced, a silent
+build loses nothing, because the first voiced build voices every section anyway.
 
 Once a project has been voiced, rehearse silently in a separate copy of it, or leave the
 silent builds to CI. Neither kind of build replaces the final mp4 until it finishes, and a

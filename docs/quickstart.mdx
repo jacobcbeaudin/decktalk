@@ -19,6 +19,8 @@ icon: "play"
 
         `uv` is a Python package manager from Astral. The command `uv tool install` puts a
         command-line tool in its own environment and on your PATH.
+        [Install uv](https://docs.astral.sh/uv/getting-started/installation/) first if you
+        do not have it.
       </Tab>
       <Tab title="pipx">
         ```console
@@ -64,7 +66,9 @@ icon: "play"
     estimated word start, and estimated word times. It needs no account and costs
     nothing, so use it to prove that a project builds before you spend credits. A first
     silent build takes a few minutes, because recording runs in real time. Each stage
-    prints a table, and the build ends with the path of the video.
+    prints a table, and the build ends with the path of the video. The first silent build
+    also warns that the underscore is missing. The scaffold's music comes from
+    `decktalk soundscape`, which spends credits, and the video is complete without it.
 
     ```text
     sec    start    probe   YAVG   YMAX  result
@@ -106,10 +110,10 @@ icon: "play"
     The scaffold is a short lesson in five sections. A cold open performs its own
     sentence, as a line of the script lights up word by word while the voice reads it. The
     second section shows three files and a voice tied by one id. A gradient descent lesson
-    steps a ball down a three.js loss surface, builds the update rule in KaTeX, and shows
+    moves a ball down a three.js loss surface, builds the update rule in KaTeX, and shows
     a learning rate that zigzags, one that flies out, one that crawls, and one that settles
-    at the minimum. In the fourth section one word is edited, and the rebuild's log shows
-    that only that section is voiced again. An end card closes on decktalk.app. All five are
+    at the minimum. In the fourth section one word of section 3 is edited, and the rebuild's
+    log shows that only section 3 is voiced again. An end card closes on decktalk.app. All five are
     page sections, which DeckTalk records from `deck/index.html` and cuts to the narration.
     A commented-out section 0 shows how to open with a clip of your own, and
     [Add a clip section](/guides/clip-section) walks through it.
@@ -132,7 +136,7 @@ icon: "play"
     decktalk build
     ```
 
-    <Note>You need an ElevenLabs plan with API access.
+    <Note>You need an ElevenLabs API key.
     [Requirements and costs](/requirements) lists which commands spend credits, and the
     [FAQ](/help/faq#what-does-it-cost) gives the arithmetic.</Note>
   </Step>

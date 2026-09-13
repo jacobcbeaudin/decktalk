@@ -17,10 +17,10 @@ A page plays in one of four modes, and `window.__decktalk.mode` says which.
 
 | Mode | Opened as | What happens |
 |---|---|---|
-| `index` | no query | A list of every scene and step with play and freeze links. |
+| `index` | no query | The page lists every scene and step with play and freeze links. |
 | `autoplay` | `?scene=N` | The steps mount in order, each holding for `hold` seconds divided by `speed`. Reveals fire at `data-at`, and a step's `cues` object fires handler cues at those seconds after the mount. This is the browser preview. |
 | `cues` | `?scene=N&beats=id@s,…` | The resolved cues drive the page. Each step mounts at its earliest cue, the first cued step at t=0, and the last cued step holds until the recorder stops. A step with no cue never shows. This is the recording. |
-| `frozen` | `?step=ID` or `?step=ID&cue=CUE` | One step with every reveal in its end state and its cues fired. With `cue`, only the step's cues up to and including that one fire, and an element that waits for a later cue stays hidden. `decktalk shots` uses it. |
+| `frozen` | `?step=ID` or `?step=ID&cue=CUE` | The page shows one step with every reveal in its end state and its cues fired. With `cue`, only the step's cues up to and including that one fire, and an element that waits for a later cue stays hidden. `decktalk shots` uses it. |
 
 In `cues` mode an element whose `data-cue` is in the list stays hidden until that cue
 fires. Every other reveal fires `data-at` seconds after the mount, which covers an element
@@ -39,16 +39,37 @@ voice. The runtime gives it no container animation unless it sets `data-fx`.
 
 The recorder opens the page as `file:///…/deck/index.html?scene=N&beats=…&words=…&t0=signal`
 plus any `params` from the section. `t0=signal` tells the page not to start its clock at
-load. The recorder then waits for `load`, for `document.fonts.ready`, for
-`window.__sceneReady` when the page has one, for the settle time, and for a minimum lead
-after the recorder was created. Then it calls `DeckTalk.startClock()`, and every cue is
-scheduled from that instant. Without `t0=signal`, the page starts its clock at `load` plus
-the `t0` seconds given, which is what a browser preview does.
+load. The recorder then waits for `load`, for `document.fonts.ready`, and for
+`window.__sceneReady` when the page has one. Then it waits once, for `settle_seconds`, or
+longer when fewer than `min_lead_seconds` have passed since the recorder was created, which is
+`max(settle_seconds, min_lead_seconds - elapsed)`. Then it removes the magenta cover and
+calls `DeckTalk.startClock()` in the next animation frame, and every cue is scheduled from
+that instant. Without `t0=signal`, the page starts its clock at `load` plus the `t0`
+seconds given, which is what a browser preview does.
 
 After the recording, the recorder reads `window.__decktalk.warnings` and logs every
 string, and the `check` stage adds a `KATEX?` verdict when one of them says that KaTeX
-never loaded or that a `data-tex` value could not be parsed. [How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains the
+never loaded or that a `data-tex` value could not be parsed. The recorder also reads the
+page's uncaught errors, `window.__decktalk.frameGaps`, and `window.__decktalk.syncLog`, and
+it writes all of them to the sidecar. [How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains the
 magenta cover that makes the first clean frame narration t=0.
+
+```mermaid
+sequenceDiagram
+    participant R as Recorder
+    participant P as Page
+    R->>P: add the magenta cover through an init script
+    R->>P: open index.html?scene=N&beats=…&words=…&t0=signal
+    Note over P: the runtime starts its mode and sets __sceneReady, and no cued step mounts yet
+    P-->>R: load
+    R->>P: await document.fonts.ready
+    R->>P: await window.__sceneReady
+    Note over R: wait max(settle_seconds, min_lead_seconds - elapsed)
+    R->>P: remove the cover, then call DeckTalk.startClock() in the next animation frame
+    Note over P: t=0, and the page schedules every cue from here
+    Note over R: record the section span plus extra_seconds
+    R->>P: read warnings, page errors, frameGaps, and syncLog
+```
 
 <Warning>A page written by hand must start its clock only when `DeckTalk.startClock()`
 is called. A page that starts at load fires every cue early by the settle time and the
@@ -88,11 +109,11 @@ well on a laptop screen and a phone alike.
 
 | Element | Size |
 |---|---|
-| Safe margin | 96 px from every edge, and 160 px for titles. The scaffold sets 120 px side margins. |
-| Body text | 36 px or larger. |
-| Captions | 30 px, in the muted color. |
-| Headlines | 64 px to 120 px. The scaffold's hero is 120 px and its titles 64 px. |
-| Eyebrows and labels | 22 px, in the monospace face and the muted color. |
+| Safe margin | The safe margin is 96 px from every edge, and 160 px for titles. The scaffold sets 120 px side margins. |
+| Body text | Body text is 36 px or larger. |
+| Captions | Captions are 30 px, in the muted color. |
+| Headlines | Headlines run from 64 px to 120 px. The scaffold's hero is 120 px and its titles are 64 px. |
+| Eyebrows and labels | Eyebrows and labels are 22 px, in the monospace face and the muted color. |
 
 Put one idea on each slide. A slide that reveals more than three or four elements reads as an
 animation, and a step with one headline and one supporting line gives each reveal a clearer
@@ -105,13 +126,13 @@ suits a kind of element, and each one has a case it makes worse.
 
 | Effect | For | Against |
 |---|---|---|
-| `rise` (default) | Lines of text, labels, and cards. It moves up 10 px as it fades in over 0.3 s, which reads as a line arriving. | Code, tables, and anything aligned to a grid, where the motion looks like a layout shift. |
-| `fade` | Code lines, chat bubbles, images, and anything that must not move. It fades in over 0.3 s. | A single small element on a large slide, where a fade alone can be missed. |
-| `draw` | An SVG path with `pathLength="1"`. The stroke draws itself over `data-dur`. | Anything that is not a stroke. A filled shape does not draw. |
-| `drop` | A tile or a stamp that should land. It falls 24 px over 0.35 s. | Body text, where the fall is too heavy. |
-| `pop` | The answer, the number, the one thing the section builds to. It overshoots to 108% and settles over 0.5 s. | More than one element per slide. Two pops compete. |
-| `dim` | An element that should recede when a cue fires. It starts visible and fades to 16% over 1.2 s. | An element that has not been on screen long enough to be noticed. |
-| `none` | An element that should appear on the frame of its cue with no animation, such as a cursor or a highlight. | Text, where a hard cut looks like a glitch. |
+| `rise` (default) | It suits lines of text, labels, and cards. It moves up 10 px as it fades in over 0.3 s, which reads as a line arriving. | It does not suit code, tables, or anything aligned to a grid, where the motion looks like a layout shift. |
+| `fade` | It suits code lines, chat bubbles, images, and anything that must not move. It fades in over 0.3 s. | It does not suit a single small element on a large slide, where a fade alone can be missed. |
+| `draw` | It suits an SVG path with `pathLength="1"`. The stroke draws itself over `data-dur`. | It does not suit anything that is not a stroke. A filled shape does not draw. |
+| `drop` | It suits a tile or a stamp that should land. It falls 24 px over 0.35 s. | It does not suit body text, where the fall is too heavy. |
+| `pop` | It suits the answer, the number, or the one thing the section builds to. It overshoots to 108% and settles over 0.5 s. | It does not suit more than one element per slide, because two pops compete. |
+| `dim` | It suits an element that should recede when a cue fires. It starts visible and fades to 16% over 1.2 s. | It does not suit an element that has not been on screen long enough to be noticed. |
+| `none` | It suits an element that should appear on the frame of its cue with no animation, such as a cursor or a highlight. | It does not suit text, where a hard cut looks like a glitch. |
 
 The animations are short on purpose, so that a reveal is visible on its word rather than
 still arriving on the next one, and `data-dur` overrides any of them.

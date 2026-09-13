@@ -12,11 +12,11 @@ bring your own files, or generate them with `decktalk soundscape`.
 
 | Part | Source | Behavior |
 |---|---|---|
-| Narration | `build/audio/narration.mp3` | Always present. It begins at the start of the first page section and runs continuously. |
-| Clip audio | each clip file | Plays for the clip's span, trimmed to its picture and faded over twenty milliseconds at both ends. |
-| Underscore | `mix.underscore` | Loops for the length of the video, fades in and out, and ducks by `underscore_duck_db` under every spoken span. |
-| Ambience | `mix.ambience` | Plays under sections that set `ambience = true`, with a ramp at each edge and a short pad on either side. |
-| Effects | `[[mix.sfx]]` | One-shot files placed where a cue resolved, plus an offset. A cue that did not resolve, or a file that is missing, skips its effect with a warning. |
+| Narration | `build/audio/narration.mp3` | The narration is always present. It begins at the start of the first page section and runs continuously. |
+| Clip audio | each clip file | Clip audio plays for the clip's span, trimmed to its picture and faded over twenty milliseconds at both ends. |
+| Underscore | `mix.underscore` | The underscore loops for the length of the video, fades in and out, and ducks by `underscore_duck_db` under every spoken span. |
+| Ambience | `mix.ambience` | Ambience plays under sections that set `ambience = true`, with a ramp at each edge and a short pad on either side. |
+| Effects | `[[mix.sfx]]` | Effects are one-shot files placed where a cue resolved, plus an offset. A cue that did not resolve, or a file that is missing, skips its effect with a warning. |
 
 Ducking is per spoken section span. Each page section's span runs from its start in the
 narration to the end of its last word, and each clip's span is its whole length, so the
@@ -44,8 +44,8 @@ the open.
 
 | Key | Where | Meaning |
 |---|---|---|
-| `boost_db` | top level | How far each marker swells the bed. The default is 3 dB. |
-| `boost_seconds` | top level | How long the swell lasts. The default is 2 seconds. |
+| `boost_db` | top level | The key sets how far each marker swells the bed. The default is 3 dB. |
+| `boost_seconds` | top level | The key sets how long the swell lasts. The default is 2 seconds. |
 | `name` | marker | The name labels the marker in the report. |
 | `section` | marker | The value is the number of the section that holds the phrase. |
 | `on` | marker | The value is a spoken phrase, `$start`, or `$end`, matched as a cue is. The default is `$start`. |

@@ -32,11 +32,11 @@ print(result.assembly.final, result.verification.ok)
 
 | Name | What it is |
 |---|---|
-| `Word` | `word`, `start`, `end`. |
-| `Manifest` | The narration cache, with `load(path)` and `save(path)`. |
-| `Timeline` | Section and word times absolute in `narration.mp3`, with `load`, `save`, `span(key)`, and `keys`. |
-| `Beats` | Resolved cues per section, with `load`, `save`, `query(key)` for the `?beats=` string, and `get(key, cue)`. |
-| `Sidecar` | What the recorder did for one section, with `load`, `save`, `trim_seconds`, and `warnings`. |
+| `Word` | The class holds `word`, `start`, and `end`. |
+| `Manifest` | The class is the narration cache, with `load(path)` and `save(path)`. |
+| `Timeline` | The class holds section and word times absolute in `narration.mp3`, with `load`, `save`, `span(key)`, and `keys`. |
+| `Beats` | The class holds the resolved cues per section, with `load`, `save`, `query(key)` for the `?beats=` string, and `get(key, cue)`. |
+| `Sidecar` | The class records what the recorder did for one section, with `load`, `save`, `trim_seconds`, and `warnings`. |
 
 [Build artifacts](/reference/artifacts) gives every field of every file.
 

@@ -1,7 +1,7 @@
 """decktalk command line.
 
     decktalk init DIR                 scaffold a project (decktalk.toml, script, cues, deck with the runtime)
-    decktalk setup                    fetch headless Chromium and ffmpeg (once per machine)
+    decktalk setup                    fetch headless Chromium, ffmpeg, and KaTeX (once per machine)
     decktalk doctor                   report what is installed
     decktalk narrate [--silent]       script.md -> build/audio (ElevenLabs, word timestamps, timeline)
     decktalk beats                    cues.json -> build/audio/beats.json
@@ -356,7 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true", help="write into a non-empty directory")
     s.set_defaults(fn=cmd_init)
 
-    common(sub.add_parser("setup", help="fetch Chromium and ffmpeg")).set_defaults(fn=cmd_setup)
+    common(sub.add_parser("setup", help="fetch Chromium, ffmpeg, and KaTeX")).set_defaults(fn=cmd_setup)
     policy(common(sub.add_parser("doctor", help="report installed tools"))).set_defaults(fn=cmd_doctor)
     proj(sub.add_parser("runtime", help="copy the packaged runtime into the project")).set_defaults(fn=cmd_runtime)
 
