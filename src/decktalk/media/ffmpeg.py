@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -44,6 +45,32 @@ def ffmpeg_paths() -> tuple[str, str]:
             "ffmpeg/ffprobe not found: static-ffmpeg could not provide them "
             f"({exc}) and none is on PATH. Run `decktalk setup` with network access, or install ffmpeg."
         ) from exc
+
+
+def installed_paths() -> tuple[str, str] | None:
+    """The (ffmpeg, ffprobe) pair that ffmpeg_paths() would return without downloading anything.
+
+    None means only a fetch could provide them. `decktalk doctor` reports on that instead of
+    triggering it, because static-ffmpeg fetches its binaries the first time they are asked for.
+    """
+    env_ff, env_fp = os.environ.get("DECKTALK_FFMPEG"), os.environ.get("DECKTALK_FFPROBE")
+    if env_ff and env_fp:
+        return env_ff, env_fp
+    try:
+        from static_ffmpeg import run as static_run
+
+        exe_dir = Path(static_run.get_platform_dir())
+    except Exception:  # pragma: no cover - platform dependent
+        exe_dir = None
+    if exe_dir is not None and (exe_dir / "installed.crumb").is_file():
+        suffix = ".exe" if sys.platform == "win32" else ""
+        ff, fp = exe_dir / f"ffmpeg{suffix}", exe_dir / f"ffprobe{suffix}"
+        if ff.is_file() and fp.is_file():
+            return str(ff), str(fp)
+    on_path = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if on_path[0] and on_path[1]:
+        return on_path[0], on_path[1]
+    return None
 
 
 def ffmpeg() -> str:

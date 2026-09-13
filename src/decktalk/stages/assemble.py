@@ -118,6 +118,16 @@ def fade_flags(project: Project) -> dict[str, tuple[bool, bool]]:
     return flags
 
 
+def cut_summary(project: Project) -> str:
+    """What happens at the section cuts, for the assemble log: straight cuts, or dips at some or all of them."""
+    dips = sum(1 for _fade_in, fade_out in fade_flags(project).values() if fade_out)
+    if dips == 0:
+        return "straight cuts"
+    if project.transition.dips is None:
+        return "dips at every cut"
+    return f"dips at {dips} cut{'s' if dips != 1 else ''}"
+
+
 def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:
     out = ""
     if fade_in:
@@ -630,7 +640,7 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
     rows = render_sections(project, timeline, strict=strict)
 
     picture = out_dir / ".picture.mp4"
-    log.info("[cat ] %d sections, straight cuts", len(rows))
+    log.info("[cat ] %d sections, %s", len(rows), cut_summary(project))
     concat([r.path for r in rows], picture)
 
     work = out_dir / f".{project.name}.tmp.mp4"

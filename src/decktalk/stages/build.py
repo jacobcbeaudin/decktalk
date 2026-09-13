@@ -76,6 +76,15 @@ def build(
     log.info("===== check =====")
     out.checks = check(project, only=only)
     emit("check", out.checks)
+    broken = [r for r in out.checks if r.page_errors]
+    if broken:
+        # A page that threw recorded whatever was left on the stage, usually nothing, so the
+        # build stops here rather than delivering a blank section as if it were fine.
+        raise ConfigError(
+            f"{len(broken)} section(s) hit a page error while recording. "
+            "Fix the page and run `decktalk build` again:\n  "
+            + "\n  ".join(f"section {r.key}: {e}" for r in broken for e in r.page_errors)
+        )
     log.info("===== assemble =====")
     out.assembly = assemble(project, nomix=nomix, loudnorm=loudnorm, strict=strict)
     emit("assemble", out.assembly)

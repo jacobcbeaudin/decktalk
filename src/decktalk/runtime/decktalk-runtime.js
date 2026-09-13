@@ -47,8 +47,9 @@
  * and sets window.__sceneReady unless the page set its own. That promise resolves once fonts
  * are loaded and, when the page uses [data-tex] or loads KaTeX, once window.katex exists
  * (polled for up to 5 s). Anything the runtime cannot honor (an unknown cue id, a cue no
- * step owns, KaTeX never arriving) is pushed onto __decktalk.warnings, which the recorder
- * reads back and logs.
+ * step owns, a cue that reveals no element and runs no handler, KaTeX never arriving or
+ * refusing a data-tex value) is pushed onto __decktalk.warnings, which the recorder reads
+ * back and logs.
  */
 (function () {
   "use strict";
@@ -300,6 +301,8 @@
     if (!window.katex) return;
     root.querySelectorAll("[data-tex]:not([data-typeset])").forEach((el) => {
       try { window.katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: el.hasAttribute("data-display") }); el.dataset.typeset = "1"; } catch (_) { /* keep plain text */ }
+      // With throwOnError off a bad value renders in red instead of throwing, so it is reported here.
+      if (el.querySelector(".katex-error")) warn(`data-tex could not be parsed: "${el.dataset.tex}" (write \\\\ for every backslash inside a template literal)`);
     });
   }
   // Resolves once window.katex exists, when the page needs it, or after 5 s with a warning.
@@ -360,10 +363,15 @@
   }
   function fireCue(id) {
     state.fired.push(id);
-    pan.querySelectorAll(`.dt-slide:not(.dt-leave) [data-cue="${CSS_escape(id)}"]`).forEach(reveal);
+    const hits = pan.querySelectorAll(`.dt-slide:not(.dt-leave) [data-cue="${CSS_escape(id)}"]`);
+    hits.forEach(reveal);
     const st = state.step;
-    if (st && typeof st.on[id] === "function") { try { st.on[id](); } catch (e) { console.error(e); } }
+    const handled = !!(st && typeof st.on[id] === "function");
+    if (handled) { try { st.on[id](); } catch (e) { console.error(e); } }
     (HANDLERS.get(id) || []).forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+    // A cue that reveals nothing and runs nothing is almost always a typo between cues.json,
+    // the step's cues object and a data-cue attribute, so it is reported rather than ignored.
+    if (!hits.length && !handled && !HANDLERS.has(id) && !findStep(id)) warn(`cue "${id}" matches no element, handler, or step`);
   }
   const CSS_escape = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&"));
   function startCamera(sc, seconds) {

@@ -5,14 +5,16 @@ assembler trims that much off the head of the video. Without a marker the fallba
 the first painted frame plus the settle; failing that a fixed guess.
 
 check: duration against what was requested, and luma at 10/50/90 %, so a black or
-truncated recording is caught before assembly. The sidecar's runtime warnings add a
-KATEX? verdict when the page's equations were never typeset.
+truncated recording is caught before assembly. The sidecar adds a KATEX? verdict when the
+page's equations were never typeset, a STALLED verdict when frames froze, and a PAGE ERROR
+verdict when the page threw or never exposed the runtime catalog. Only the last one is
+certain, so it is the one that fails a plain `decktalk build`.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..artifacts import Sidecar
@@ -104,11 +106,30 @@ class RecordingCheck:
     y50: float
     y90: float
     max50: float
-    verdict: str  # "ok", or any of "NO COVER", "BLACK?", "TRUNCATED", "KATEX?" joined by spaces
+    verdict: (
+        str  # "ok", or any of "NO COVER", "BLACK?", "TRUNCATED", "KATEX?", "STALLED", "PAGE ERROR" joined by spaces
+    )
+    page_errors: list[str] = field(default_factory=list)  # from the sidecar, one line each
 
     @property
     def ok(self) -> bool:
         return self.verdict == "ok"
+
+
+def sidecar_verdicts(side: Sidecar | None, cfg: AlignConfig) -> list[str]:
+    """The verdicts that come from what the recorder saw rather than from the frames."""
+    if side is None:
+        return []
+    out: list[str] = []
+    if side.lead_method and side.lead_method.startswith("NO COVER"):
+        out.append("NO COVER")
+    if side.page_errors:
+        out.append("PAGE ERROR")
+    if any("katex" in w.lower() or "data-tex" in w.lower() for w in side.warnings):
+        out.append("KATEX?")
+    if side.worst_stall_ms > cfg.stall_ms:
+        out.append(f"STALLED {side.worst_stall_ms}ms")
+    return out
 
 
 def check(project: Project, only: list[int] | None = None) -> list[RecordingCheck]:
@@ -121,18 +142,16 @@ def check(project: Project, only: list[int] | None = None) -> list[RecordingChec
         y10, y50, y90 = (ffmpeg.luma_at(f, dur * k)[0] for k in (0.10, 0.50, 0.90))
         max50 = ffmpeg.luma_at(f, dur * 0.5)[1]
         verdicts = []
-        if side and side.lead_method and side.lead_method.startswith("NO COVER"):
-            verdicts.append("NO COVER")
         if max50 < cfg.black_ymax:
             verdicts.append("BLACK?")
         if wanted and dur < wanted - cfg.truncated_slack_seconds:
             verdicts.append("TRUNCATED")
-        if side and any("katex" in w.lower() for w in side.warnings):
-            verdicts.append("KATEX?")
-        if side and side.worst_stall_ms > cfg.stall_ms:
-            verdicts.append(f"STALLED {side.worst_stall_ms}ms")
-        row = RecordingCheck(f.name[:2], dur, wanted, y10, y50, y90, max50, " ".join(verdicts) or "ok")
+        verdicts += sidecar_verdicts(side, cfg)
+        errors = list(side.page_errors) if side else []
+        row = RecordingCheck(f.name[:2], dur, wanted, y10, y50, y90, max50, " ".join(verdicts) or "ok", errors)
         if not row.ok:
             log.warning("[chk ] %s  %s", row.key, row.verdict)
+        for e in errors:
+            log.warning("[chk ] %s  page error: %s", row.key, e)
         out.append(row)
     return out

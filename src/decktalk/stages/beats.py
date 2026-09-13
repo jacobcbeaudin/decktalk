@@ -165,7 +165,9 @@ class BeatsResult:
 def resolve_beats(project: Project) -> BeatsResult:
     manifest = project.manifest()
     if manifest is None:
-        raise MissingInputError(f"{project.manifest_path} not found; run `decktalk narrate` first")
+        raise MissingInputError(
+            f"{project.manifest_path} not found. Run `decktalk narrate` (or `decktalk narrate --silent`) first."
+        )
     specs = load_cues(project)
     if not specs:
         log.info("no cues file at %s; pages will run their built-in timing", project.cues)
