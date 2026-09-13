@@ -28,7 +28,7 @@ screen.
 ## Give every reveal a noun to land on
 
 A cue resolves to the first word of its phrase, so the phrase should begin with the word
-that names the visual. "Start with a loss surface" cues on `loss surface` and lands on
+that names the visual. "Picture that function as a loss surface" cues on `loss surface` and lands on
 "loss", which is a noun the listener can attach to the bowl that draws. A phrase such as
 "and then" lands on nothing in particular. The scaffold's cues are all nouns or verbs with
 a concrete referent: `loss surface`, `Pick a point`, `learning rate`, `Change one sentence`,
@@ -121,15 +121,15 @@ word count at `words_per_minute`, which defaults to 140.
 ---------------------------------------------------------------------
  1  open                      48   0:21    --      0:22  -
  2  four-files                74   0:32    --      0:34  -
- 3  gradient-descent          96   0:41    0:20    0:51  -
- 4  the-edit                  51   0:22    --      0:26  -
+ 3  gradient-descent         118   0:51    0:20    1:00  -
+ 4  the-edit                  42   0:18    --      0:21  -
  5  close                     23   0:10    --      0:12  -
 ---------------------------------------------------------------------
-    total                    292   2:05            2:26
+    total                    305   2:11            2:30
 ```
 
 The `target` column is the budget's length. Section 3 has a budget of twenty seconds,
-from 0:40 to 1:00, and the silent rehearsal runs to fifty-one. That gap is the signal to
+from 0:40 to 1:00, and the silent rehearsal runs to a full minute. That gap is the signal to
 cut a sentence. Widen the budget only after the voice has spoken and the `actual` column
 is real. The
 `min_seconds` key on a section in `cues.json` works the other way around and warns when

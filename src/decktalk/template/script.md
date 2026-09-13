@@ -32,8 +32,10 @@ Now a lesson where every picture waits for its word.
 
 [Deck scene 3. A loss surface fades up, a ball steps down it, and the update rule builds.]
 
-Start with a loss surface. For this lesson it is a bowl. [beat] Pick a point, theta.
-[beat] The gradient points uphill, so follow minus the gradient. [beat] Take a step, and
+Gradient descent is an optimization method. It finds a local minimum of a function of
+many variables by stepping downhill. [beat] Picture that function as a loss surface. For
+this lesson it is a bowl.
+[beat] Pick a point, theta. [beat] The gradient points uphill, so follow minus the gradient. [beat] Take a step, and
 the learning rate, eta, scales its length. [beat] Again, [beat] and again. The steps shrink
 because the slope does. [beat] That is the rule. The next theta [beat] is this theta, minus
 eta [beat] times the gradient here.
@@ -49,8 +51,7 @@ bottom, for this surface. [beat] Now change one sentence of that lesson.
 
 [Deck scene 4. One phrase is struck and retyped, and the build table fills in row by row.]
 
-Change one sentence. [beat] Say the bowl is a valley. [beat] Build again. [beat] Section
-one is cached. [beat] Two, cached. [beat] Three is synthesized, forty one seconds of new
+The bowl becomes a valley. [beat] Build again. [beat] Section one is cached. [beat] Two, cached. [beat] Three is synthesized, forty one seconds of new
 narration. [beat] Four and five, cached. [beat] The video is rebuilt, and verify measures
 the reveal on the word learning rate: ten milliseconds.
 
