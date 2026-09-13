@@ -114,3 +114,45 @@ def test_onset_is_the_first_revealed_frame_at_every_grid_phase(card, before):
     assert first_change_offset(card, before, 5.7, reveal, cfg, FPS) == 0
     # A cue between two frames reports the distance to the frame that shows the reveal.
     assert first_change_offset(card, before, 5.7, reveal + 0.02, cfg, FPS) == -20
+
+
+def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
+    """Pages 1 and 3 around a clip at 2, where section 3's words resume after the clip's own sound."""
+    from decktalk.artifacts import Timeline, TimelineSection
+    from decktalk.project import Project
+    from decktalk.stages.assemble import RenderedSection, mix_input_args, plan_mix
+    from decktalk.stages.verify import click_offset_ms
+
+    (tmp_path / "decktalk.toml").write_text(
+        "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\nclip = 'broll.m4a'\n"
+        "[[section]]\nnumber = 3\npage = 'a.html'\n"
+    )
+    p = Project.load(tmp_path, environ={})
+    p.audio_dir.mkdir(parents=True)
+    # The track holds section 1 from 0 to 2 s and section 3 from 2 to 4 s, with a click half a second into each.
+    ffmpeg.write_clicks(p.audio_dir / "narration.mp3", 4.0, [0.5, 2.5], sample_rate=48000, bitrate="128k")
+    clip = tmp_path / "broll.m4a"
+    ffmpeg.run("-f", "lavfi", "-i", "sine=f=660:r=48000:d=2", "-c:a", "aac", str(clip))
+    tl = Timeline(
+        narration="narration.mp3",
+        total_seconds=4.0,
+        sections={"01": TimelineSection("A", 0.0, 2.0, 2.0, 0.6), "03": TimelineSection("C", 2.0, 4.0, 2.0, 2.6)},
+    )
+    rows = [
+        RenderedSection(p.sections[0], tmp_path / "01.mp4", 2.0, "page"),
+        RenderedSection(p.sections[1], tmp_path / "02.mp4", 1.5, "clip", audio=clip),
+        RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.0, "page"),
+    ]
+    plan = plan_mix(p, rows, tl, nomix=True)
+    out = tmp_path / "mix.wav"
+    ffmpeg.run(
+        "-f", "lavfi", "-t", f"{plan.total}", "-i", "color=c=black:s=64x36:r=25", *mix_input_args(plan),
+        "-filter_complex", plan.filter, "-map", "[a]", str(out),
+    )  # fmt: skip
+    assert abs(ffmpeg.probe_duration(out) - 5.5) < 0.05
+    first = click_offset_ms(out, 0.5, 0.25, floor=0.0, ceiling=2.0)
+    resumed = click_offset_ms(out, 4.0, 0.25, floor=3.5, ceiling=5.5)
+    assert first is not None and abs(first) <= 8
+    assert resumed is not None and abs(resumed) <= 8, "section 3's word does not sit half a second after the clip"
+    assert ffmpeg.rms_db(out, 2.1, 1.3) > -30, "the clip's own sound is missing from the pause"
+    assert ffmpeg.rms_db(out, 3.55, 0.4) < -50, "something sounds between the clip and section 3's first word"

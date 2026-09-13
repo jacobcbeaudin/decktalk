@@ -28,9 +28,9 @@ offset   once a cue lands, every frame from the reference to the passing probe i
          The frame's distance from the cue is reported in milliseconds, and a cue fails
          when the distance exceeds max_offset_frames.
 a/v      after a silent build, the loudest sample within click_search_seconds of the
-         cued word's start is taken as the click. The a/v value is the offset minus the
-         click's distance from the cued word's start, and a cue also fails when that
-         value exceeds max_av_frames.
+         cued word's start, and inside the cue's section, is taken as the click. The a/v
+         value is the offset minus the click's distance from the cued word's start, and a
+         cue also fails when that value exceeds max_av_frames.
 
 Cue verdicts are changed, OFF CUE, NO CHANGE, UNRESOLVED, and skipped. A skipped row is
 never a failure, and its reason says why nothing was measured:
@@ -391,7 +391,9 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
             # A silent build carries a click at every word start, so the finished file's audio
             # can be measured against its picture: the click nearest the cue is the word.
             word_t = anchors.get(key, {}).get(cue, cue_t)
-            click_ms = click_offset_ms(final, sec_start + word_t, cfg.click_search_seconds)
+            click_ms = click_offset_ms(
+                final, sec_start + word_t, cfg.click_search_seconds, floor=sec_start, ceiling=sec_end
+            )
             if click_ms is None:
                 reason = NO_CLICK
             else:
@@ -441,11 +443,21 @@ def first_change_offset(
     return onset_offset_ms(series, before, cue_at, cfg.onset_percent, tolerance=(cfg.max_offset_frames + 0.5) / fps)
 
 
-def click_offset_ms(final: Path, expected: float, search: float) -> int | None:
-    """Milliseconds from `expected` to the loudest sample within ±search seconds, or None when nothing is there."""
+def click_offset_ms(
+    final: Path, expected: float, search: float, *, floor: float = 0.0, ceiling: float | None = None
+) -> int | None:
+    """Milliseconds from `expected` to the loudest sample within ±search seconds, or None when nothing is there.
+
+    The window never reaches before `floor` or past `ceiling`, so the sound of a neighboring
+    section, such as the audio of a clip right before or after the cue's section, is never
+    taken for the click.
+    """
     rate = 48000
-    start = max(0.0, expected - search)
-    samples = ffmpeg.pcm_span(final, start, 2 * search, sample_rate=rate)
+    start = max(floor, expected - search)
+    stop = expected + search if ceiling is None else min(ceiling, expected + search)
+    if stop <= start:
+        return None
+    samples = ffmpeg.pcm_span(final, start, stop - start, sample_rate=rate)
     if not samples:
         return None
     peak = max(range(len(samples)), key=lambda i: abs(samples[i]))

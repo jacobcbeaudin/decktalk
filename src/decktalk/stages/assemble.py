@@ -9,7 +9,9 @@
 2. The sections are concatenated with no gaps (concat demuxer, stream copy).
 3. The whole soundtrack is one mix over a silent anchor of the picture's length: the
    narration from the first page section, each clip's own audio delayed to its section
-   start with a 20 ms fade at both ends, and the optional beds. An underscore is ducked
+   start with a 20 ms fade at both ends, and the optional beds. A clip between page
+   sections pauses the narration, so the track is split into runs of consecutive page
+   sections and each run starts where its first section starts. An underscore is ducked
    under speech and shaped by markers.json, an ambience bed sits under sections flagged
    ambience, and one-shot sfx land on resolved cues.
 4. EBU R128 loudness: pass one measures integrated loudness and true peak, pass two
@@ -27,6 +29,7 @@ import json
 import logging
 import shutil
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -381,6 +384,68 @@ def narration_offset(rows: list[RenderedSection], timeline: Timeline, starts: di
     return starts[first] if first else 0.0
 
 
+@dataclass(frozen=True)
+class NarrationRun:
+    """Consecutive page sections with no clip between them, which play one unbroken stretch of the narration.
+
+    `at` is where the run begins in the final file. `start` and `end` bound its stretch of
+    narration.mp3, and the last run has no end, so it plays to the end of the track.
+    """
+
+    keys: tuple[str, ...]
+    at: float
+    start: float
+    end: float | None
+
+    @property
+    def offset(self) -> float:
+        """What to add to a time in narration.mp3 to place it in the final file."""
+        return self.at - self.start
+
+
+def narration_runs(rows: list[RenderedSection], timeline: Timeline, starts: dict[str, float]) -> list[NarrationRun]:
+    """The narration split at every clip that sits between page sections.
+
+    The track holds the spoken sections with no gaps, so a clip between two page sections
+    pauses it, and the next page section resumes it on its own first frame. A project with
+    no clip between page sections has one run.
+    """
+    groups: list[list[str]] = []
+    open_run = False
+    for row in rows:
+        key = row.section.key
+        if row.section.is_clip:
+            open_run = False
+        elif key in timeline.sections:
+            if not open_run:
+                groups.append([])
+                open_run = True
+            groups[-1].append(key)
+    return [
+        NarrationRun(
+            keys=tuple(keys),
+            at=starts[keys[0]],
+            start=timeline.sections[keys[0]].start,
+            end=None if i == len(groups) - 1 else timeline.sections[keys[-1]].end,
+        )
+        for i, keys in enumerate(groups)
+    ]
+
+
+def narration_offsets(rows: list[RenderedSection], timeline: Timeline, starts: dict[str, float]) -> dict[str, float]:
+    """What to add to a time in narration.mp3 to place it in the final file, per spoken section key.
+
+    With one run every section shares the offset of the first page section. A section in
+    the timeline that has no rendered row takes the offset of the first run.
+    """
+    runs = narration_runs(rows, timeline, starts)
+    if len(runs) <= 1:
+        t0 = narration_offset(rows, timeline, starts)
+        return {key: t0 for key in timeline.sections}
+    offsets = {key: run.offset for run in runs for key in run.keys}
+    return {key: offsets.get(key, runs[0].offset) for key in timeline.sections}
+
+
 def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, *, nomix: bool) -> MixPlan:
     mix = project.mix
     audio: AudioConfig = project.settings.audio
@@ -407,12 +472,26 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
 
     # narration under the picture from the first page section
     narration = project.audio_dir / timeline.narration
-    t0 = narration_offset(rows, timeline, starts)
-    idx = add_input("once", str(narration))
-    chain.append(f"[{idx}:a]{fmt},adelay={int(round(t0 * 1000))}:all=1[narr]")
-    labels.append("[narr]")
+    runs = narration_runs(rows, timeline, starts)
+    if len(runs) <= 1:
+        t0 = narration_offset(rows, timeline, starts)
+        idx = add_input("once", str(narration))
+        chain.append(f"[{idx}:a]{fmt},adelay={int(round(t0 * 1000))}:all=1[narr]")
+        labels.append("[narr]")
+    else:
+        # A clip between page sections pauses the narration. Each run of page sections plays
+        # its own stretch of the track, starting where its first section starts.
+        for n, run in enumerate(runs):
+            idx = add_input("once", str(narration))
+            trim = f"atrim=start={run.start:.3f}" + ("" if run.end is None else f":end={run.end:.3f}")
+            chain.append(
+                f"[{idx}:a]{fmt},{trim},asetpts=PTS-STARTPTS,adelay={int(round(run.at * 1000))}:all=1[narr{n}]"
+            )
+            labels.append(f"[narr{n}]")
+    offsets = narration_offsets(rows, timeline, starts)
     speech: list[tuple[float, float]] = [
-        (t0 + s.start, t0 + (s.speech_end if s.speech_end is not None else s.end)) for s in timeline.sections.values()
+        (offsets[key] + s.start, offsets[key] + (s.speech_end if s.speech_end is not None else s.end))
+        for key, s in timeline.sections.items()
     ]
     speech += [(starts[r.section.key], starts[r.section.key] + r.duration) for r in rows if r.section.is_clip]
 
@@ -579,15 +658,20 @@ def output_paths(project: Project) -> dict[str, Path]:
     }
 
 
-def build_captions(timeline: Timeline, t0: float, texts: dict[str, str] | None = None) -> list[CaptionCue]:
-    """Cues for every spoken section, shifted by where narration starts in the final file.
+def build_captions(
+    timeline: Timeline, t0: float | Mapping[str, float], texts: dict[str, str] | None = None
+) -> list[CaptionCue]:
+    """Cues for every spoken section, shifted to where its narration sits in the final file.
 
-    `texts` maps a section key to its spoken script text, which lends the captions their
-    punctuation and case.
+    `t0` is where narration t=0 sits in the final file. It may instead map each section key
+    to its own offset, as `narration_offsets` gives when a clip between page sections
+    pauses the narration. `texts` maps a section key to its spoken script text, which lends
+    the captions their punctuation and case.
     """
     cues: list[CaptionCue] = []
     for key in timeline.keys:
-        words = [Word(w.word, round(t0 + w.start, 3), round(t0 + w.end, 3)) for w in timeline.sections[key].words]
+        shift = t0.get(key, 0.0) if isinstance(t0, Mapping) else t0
+        words = [Word(w.word, round(shift + w.start, 3), round(shift + w.end, 3)) for w in timeline.sections[key].words]
         if texts and key in texts:
             words = display_words(words, texts[key])
         cues += caption_cues(words)
@@ -706,7 +790,7 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
             raise ToolError("loudness: " + ", ".join(problems))
 
     starts = section_starts(rows)
-    cues = build_captions(timeline, narration_offset(rows, timeline, starts), caption_texts(project, timeline))
+    cues = build_captions(timeline, narration_offsets(rows, timeline, starts), caption_texts(project, timeline))
     write_srt(paths["srt"], cues)
     write_vtt(paths["vtt"], cues)
     write_chapters(paths["chapters"], build_chapters(rows))

@@ -80,19 +80,18 @@ with both keys fails.
 | `page` | page | required | The key names the HTML file, for example `deck/index.html`. |
 | `scene` | page | the section number | The key sets the value the page receives as `?scene=`. It may be a number or a string. |
 | `extra_seconds` | page | 0.3 | The key sets how long the recording runs past the narration. The margin keeps the cut off a frame that was never drawn. |
-| `hold_seconds` | page | 0 | The key sets how long the last frame holds after the narration, by cloning it. Only the last page section may hold, because the narration is continuous and an earlier hold would push every later visual off its words. |
+| `hold_seconds` | page | 0 | The key sets how long the last frame holds after the narration, by cloning it. Only the last page section may hold, because an earlier hold would push every later visual off its words. |
 | `ambience` | page | false | The key sets whether the ambience bed plays under this section. |
 | `params` | page | none | The table holds extra query parameters for the page, written as `[section.params]` with keys such as `theme = "dark"`. A `beats` key here replaces the resolved cues. |
-| `clip` | clip | required | The key names your video file, which keeps its own audio. It is scaled and padded to the frame size. A clip sits before the first page section or after the last one. [Add a clip section](/guides/clip-section#where-a-clip-may-sit) explains why. |
+| `clip` | clip | required | The key names your video file, which keeps its own audio. It is scaled and padded to the frame size. A clip may sit before, between, or after the page sections, and the narration pauses for a clip between page sections. [Add a clip section](/guides/clip-section#where-a-clip-may-sit) explains how. |
 | `slate_seconds` | clip | 5 | The key sets how long the titled slate plays when the clip file is missing. |
 
 A missing clip is not an error unless you pass `--strict`. A titled slate plays for
 `slate_seconds` in its place, so a project builds before every asset exists.
 
-A clip between two page sections is an error at load, because the narration is one
-continuous track placed at the first page section and a clip in the middle would play
-over the words of the section after it. The message names the clip, the page sections on
-either side, and the two places the clip may move to.
+A clip between two page sections plays as B-roll. The narration pauses when the clip
+starts and resumes on the first frame of the next page section, so the words of every page
+section stay on their picture.
 
 ## `[transition]`
 

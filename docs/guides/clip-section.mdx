@@ -1,6 +1,6 @@
 ---
 title: Add a clip section
-description: Open a DeckTalk video with a clip of your own, with its own audio, using the commented section 0 in the scaffold, a slate when the file is missing, and a dip to black at the cut.
+description: Play a clip of your own with its own audio in a DeckTalk video, as an opening, as B-roll between page sections, or as a close, with a slate when the file is missing and a dip to black at the cut.
 icon: "film"
 ---
 
@@ -75,24 +75,51 @@ camera before the first slide.
 
 ## Where a clip may sit
 
-The narration is one continuous track that begins with the first page section, and each
-page section is cut to its own span in that track. A clip therefore sits before the first
-page section or after the last one, and `decktalk.toml` refuses to load when a clip sits
-between two page sections. A clip there would play while the narration of the following
-section is already running, so that section's words and picture would no longer agree.
+A clip may sit anywhere in the sequence. It can open the video before the first page
+section, close it after the last one, or play between two page sections as B-roll. The
+narration pauses for a clip between page sections and resumes on the first frame of the
+page section after it, so every reveal still lands on its word.
 
-```text
-error: decktalk.toml: [[section]] number=2 is a clip between page sections 1 and 3. The narration is one continuous track placed at the first page section, so a clip in the middle would play over the words of section 3. Move the clip before section 1 or after section 3, or make it a page section.
+```toml decktalk.toml
+[[section]]
+number = 2
+title = "Three files and a voice"
+page = "deck/index.html"
+scene = 2
+
+[[section]]
+number = 3
+title = "B-roll"
+clip = "media/broll.mp4"
+
+[[section]]
+number = 4
+title = "Gradient descent"
+page = "deck/index.html"
+scene = 3
 ```
 
-Open on a clip, close on a clip, or both. A clip of your own in the middle of a lesson
-becomes a page section that plays the video, or a separate video.
+The script needs a `## 3. B-roll` heading between sections 2 and 4, and `cues.json` keys
+its cues by the new section numbers. A section's `scene` names the scene in the page, so
+renumbering the sections leaves the pages as they are.
+
+The narration track, `build/audio/narration.mp3`, still holds the spoken sections back to
+back, and `timeline.json` gives their times in that track. The assembler splits the track
+at each clip between page sections and starts each part where its first page section
+starts in the video. The captions follow the same split, so no caption sits over the clip,
+and the clip gets a chapter of its own. Replacing the clip file, or letting a slate stand
+in for it, needs only `decktalk assemble`, because the narration never depends on the
+clip's length.
+
+`hold_seconds` is still allowed only on the last page section, and the load refuses it on
+a page section before a clip.
 
 ## The clip's sound
 
 The clip's own audio is mixed in at the section start, trimmed to its picture, and faded
-over twenty milliseconds at both ends so that a cut never clicks. The underscore ducks
-under a clip as it ducks under speech. [Sound](/concepts/sound) describes the mix.
+over twenty milliseconds at both ends so that a cut never clicks. The narration is silent
+while a clip plays, and the underscore ducks under a clip as it ducks under speech.
+[Sound](/concepts/sound) describes the mix.
 
 ## Next
 
