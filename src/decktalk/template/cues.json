@@ -35,6 +35,7 @@
         { "cue": "3.1p2", "on": "Again" },
         { "cue": "3.1p3", "on": "and again" },
         { "cue": "3.1eqA", "on": "The next theta" },
+        { "cue": "3.1eqA2", "on": "is this theta" },
         { "cue": "3.1eqB", "on": "minus eta" },
         { "cue": "3.1eqC", "on": "times the gradient" },
         { "cue": "3.1think", "on": "Pause and think" },
@@ -58,7 +59,7 @@
     },
     "5": {
       "cues": [
-        { "cue": "5.1cap", "on": "Change a sentence" },
+        { "cue": "5.1cap", "on": "Edit the words" },
         { "cue": "5.1made", "on": "Made with" },
         { "cue": "5.1docs", "on": "docs" }
       ]
