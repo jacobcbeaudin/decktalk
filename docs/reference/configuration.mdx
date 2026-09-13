@@ -109,12 +109,12 @@ These keys tune the checks on the assembled mp4. Environment variables start wit
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `after_dip_seconds` | `float` | `0.2` |  |
-| `lead_seconds` | `float` | `0.1` | the reference frame sits this long before the cue |
+| `lead_seconds` | `float` | `0.1` | The reference frame is the first frame at or after this long before the cue. |
 | `probe_delays` | `tuple[float, ...]` | `(0.7, 1.5)` | seconds after the cue; the later one catches slow reveals |
 | `diff_level` | `int` | `40` | luma steps a pixel must change to count |
 | `min_changed_percent` | `float` | `0.1` | share of the frame the best probe must change |
 | `min_margin_percent` | `float` | `0.1` | and by how much it must beat the control span |
-| `onset_percent` | `float` | `0.002` | A few pixels mark where a reveal begins, once they clear the pre-cue floor. |
+| `onset_percent` | `float` | `0.01` | About a dozen changed pixels mark where a reveal begins, past motion noise. |
 | `onset_diff_level` | `int` | `12` | Luma steps for the onset scan only, so a fade or a low-contrast panel registers early. |
 | `click_search_seconds` | `float` | `0.25` | The click search covers this many seconds each side of the cued word's start. |
 | `max_offset_frames` | `int` | `2` | Frames the first changed frame may sit from the cue before the check fails. |

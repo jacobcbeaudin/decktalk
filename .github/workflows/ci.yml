@@ -64,7 +64,7 @@ jobs:
           key: browsers-${{ runner.os }}-${{ hashFiles('uv.lock') }}
       - run: uv run decktalk setup
       - run: uv run decktalk doctor
-      - run: uv run pytest -q -m browser
+      - run: uv run pytest -q -m "browser or media"
       # Headless Chromium draws WebGL in software, and the hosted macOS and Windows runners do it
       # more slowly than a laptop, so a reveal on the demo's 3D scene can land two or three frames
       # late there. Those runners still build and verify the whole demo with a wider window. Linux

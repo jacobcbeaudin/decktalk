@@ -349,22 +349,37 @@ def frame_seek(t: float) -> tuple[list[str], str]:
     return ["-ss", f"{coarse:.3f}"], f"{t - coarse:.3f}"
 
 
+def write_luma_frame(path: Path, t: float, target: Path, *, width: int, height: int) -> None:
+    """Write the luma plane of the first frame at or after `t`, scaled to width x height, as a grayscale PNG.
+
+    The comparisons below read luma only. An RGB image would carry the decoder's chroma
+    upsampling and clipping, and comparing it with a frame that never left YUV reports
+    changed pixels on colored edges that did not change.
+    """
+    pre, rest = frame_seek(t)
+    run(*pre, "-i", str(path), "-ss", rest, "-frames:v", "1", "-vf", f"scale={width}:{height},format=gray", str(target))
+
+
+def _changed_mask(level: int) -> str:
+    """Filters that turn a luma difference into a mask of changed pixels and print its average."""
+    return f"lut=c0='if(gt(val,{level}),255,0)',signalstats,metadata=print"
+
+
 def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, width: int, height: int) -> float:
     """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2.
 
-    Each frame is extracted once as an image and the two images are compared, which every
-    ffmpeg build handles the same way and costs two keyframe seeks.
+    Each frame is extracted once as a grayscale image and the two images are compared, which
+    every ffmpeg build handles the same way and costs two keyframe seeks.
     """
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
         a, b = Path(tmp) / "a.png", Path(tmp) / "b.png"
         for t, target in ((t1, a), (t2, b)):
-            pre, rest = frame_seek(t)
-            run(*pre, "-i", str(path), "-ss", rest, "-frames:v", "1", "-vf", f"scale={width}:{height}", str(target))
+            write_luma_frame(path, t, target, width=width, height=height)
         err = stderr(
             "-i", str(a), "-i", str(b), "-filter_complex",
-            f"[0:v][1:v]blend=all_mode=difference,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,signalstats,metadata=print",
+            f"[0:v]format=gray[a];[1:v]format=gray[b];[a][b]blend=all_mode=difference,{_changed_mask(level)}",
             "-frames:v", "1", "-f", "null", "-",
         )  # fmt: skip
     m = re.search(r"YAVG=([0-9.]+)", err)
@@ -376,9 +391,11 @@ def changed_series(
 ) -> list[tuple[float, float]]:
     """Changed share against the frame at ref_t for every frame from start to end, as (time, percent) pairs.
 
-    The reference frame is extracted once as an image and looped for the span, which every
-    ffmpeg build handles the same way, and one run then compares each frame of the span
-    with it. Times are the frames' own positions on the 1/fps grid.
+    The reference frame is the first frame at or after ref_t. It is extracted once as a
+    grayscale image and looped for the span, which every ffmpeg build handles the same way,
+    and one run then compares the luma of each frame of the span with it. Times are the
+    frames' own positions on the 1/fps grid. When start is ref_t, the first pair is the
+    reference compared with itself, and its share is zero.
     """
     import tempfile
 
@@ -388,12 +405,11 @@ def changed_series(
     pre_s, rest_s = frame_seek(start)
     with tempfile.TemporaryDirectory() as tmp:
         ref = Path(tmp) / "ref.png"
-        pre, rest = frame_seek(ref_t)
-        run(*pre, "-i", str(path), "-ss", rest, "-frames:v", "1", "-vf", f"scale={width}:{height}", str(ref))
+        write_luma_frame(path, ref_t, ref, width=width, height=height)
         fc = (
-            f"[1:v]trim=start={rest_s}:duration={span:.3f},setpts=PTS-STARTPTS,scale={width}:{height}[b];"
-            f"[0:v][b]blend=all_mode=difference:shortest=1,lutyuv=y='if(gt(val,{level}),255,0)':u=128:v=128,"
-            "signalstats,metadata=print"
+            f"[0:v]format=gray[r];"
+            f"[1:v]trim=start={rest_s}:duration={span:.3f},setpts=PTS-STARTPTS,scale={width}:{height},format=gray[b];"
+            f"[r][b]blend=all_mode=difference:shortest=1,{_changed_mask(level)}"
         )
         err = stderr(
             "-loop", "1", "-framerate", str(fps), "-t", f"{span + 0.2:.3f}", "-i", str(ref),
