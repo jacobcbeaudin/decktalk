@@ -55,7 +55,7 @@ sentence of that lesson.
 
 [Deck scene 4. One phrase is struck and retyped, and the build table fills in row by row.]
 
-The bowl becomes a valley. [beat] Build again. [beat] Section one is cached. [beat] Two, cached. [beat] Three is synthesized, forty one seconds of new
+The bowl becomes a valley. [beat] Build again. [beat] Section one is cached. [beat] Two, cached. [beat] Three is synthesized, sixty seven seconds of new
 narration. [beat] Four and five, cached. [beat] The video is rebuilt, and verify measures
 the reveal on the word learning rate: ten milliseconds.
 
@@ -63,5 +63,5 @@ the reveal on the word learning rate: ten milliseconds.
 
 [Deck scene 5. The end card.]
 
-The script is the edit. [beat] DeckTalk. Narrated presentations, cut to the word. [beat] Make
+The script is the edit. [beat] DeckTalk. [beat] Narrated presentations, cut to the word. [beat] Make
 your own at decktalk dot app.
