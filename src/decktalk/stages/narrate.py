@@ -362,6 +362,7 @@ def narrate(
                 duration_seconds=duration,
                 target_seconds=seg.target_seconds,
                 speech_end_seconds=words[-1].end if words else None,
+                spoken=seg.spoken,
             )
             synthesized.append(seg.key)
             continue
@@ -383,6 +384,9 @@ def narrate(
             and words_path.exists()
         ):
             log.info("[skip] %s  unchanged (%.2fs)", seg.filename, entry.duration_seconds)
+            # A manifest written before the spoken text was recorded gains it here, since the
+            # text is part of the hash and so cannot have changed.
+            entry.spoken = seg.spoken
             cached.append(seg.key)
             continue
         pos = order.index(seg.index)
@@ -428,6 +432,7 @@ def narrate(
             target_seconds=seg.target_seconds,
             speech_end_seconds=speech_end,
             tail_padded_seconds=added,
+            spoken=seg.spoken,
         )
         manifest.save(project.manifest_path)  # checkpoint after every paid call
         synthesized.append(seg.key)

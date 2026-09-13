@@ -10,8 +10,12 @@ cues.json:
     on      a word or short phrase from that section's narration: first occurrence,
             case-insensitive, punctuation ignored. "$start" = 0, "$end" = end of speech.
     occurrence / case_sensitive / offset (seconds) refine the match.
+    verify  false leaves the cue out of a plain `decktalk verify`, for a reveal too small
+            or too slow for a frame difference to measure. The default is true.
 
-Unresolved cues are reported and left out; the recording still runs.
+Unresolved cues are reported and left out, and the recording still runs. A cue id that
+appears nowhere in its page as a quoted literal is reported as unknown, because no step
+would ever reveal it, and resolve_beats raises UnknownCueError unless allow_unknown is set.
 """
 
 from __future__ import annotations
@@ -21,10 +25,11 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ..artifacts import Beats, Word, read_words
 from ..errors import ConfigError, MissingInputError
-from ..project import Project
+from ..project import PageSection, Project
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +41,7 @@ class Cue:
     occurrence: int = 1
     case_sensitive: bool = False
     offset: float = 0.0
+    verify: bool = True  # False leaves the cue out of a plain `decktalk verify`.
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,9 @@ def load_cues(project: Project) -> list[SectionCues]:
                 raise ConfigError(f"{where}: needs a non-empty 'step' (the cue id)")
             if not isinstance(on, str) or not on:
                 raise ConfigError(f"{where}: needs a non-empty 'on' (a spoken phrase, $start or $end)")
+            check = raw.get("verify", True)
+            if not isinstance(check, bool):
+                raise ConfigError(f"{where}: 'verify' must be true or false")
             cues.append(
                 Cue(
                     step=step,
@@ -85,11 +94,39 @@ def load_cues(project: Project) -> list[SectionCues]:
                     occurrence=int(raw.get("occurrence", 1)),
                     case_sensitive=bool(raw.get("case_sensitive", False)),
                     offset=float(raw.get("offset", 0.0)),
+                    verify=check,
                 )
             )
         need = spec.get("min_seconds")
         out.append(SectionCues(number=number, cues=tuple(cues), min_seconds=None if need is None else float(need)))
     return sorted(out, key=lambda s: s.number)
+
+
+def page_mentions(html: str, cue_id: str) -> bool:
+    """Whether the page names the cue id as a quoted literal, as in data-cue="ID", a cues key, or a handler key."""
+    return re.search(r"([\"'`])" + re.escape(cue_id) + r"\1", html) is not None
+
+
+def unknown_cue_ids(project: Project, specs: list[SectionCues]) -> list[tuple[str, str, str]]:
+    """(section key, cue id, page) for every cue id that its page never mentions.
+
+    Clip sections have no page, and a page file that does not exist is reported by the
+    recorder instead, so both are skipped.
+    """
+    pages: dict[str, str] = {}
+    out: list[tuple[str, str, str]] = []
+    for spec in specs:
+        section = project.section(spec.number)
+        if not isinstance(section, PageSection):
+            continue
+        if section.page not in pages:
+            path = project.path(section.page)
+            if not path.exists():
+                continue
+            pages[section.page] = path.read_text(encoding="utf-8")
+        html = pages[section.page]
+        out += [(section.key, cue.step, section.page) for cue in spec.cues if not page_mentions(html, cue.step)]
+    return out
 
 
 def norm(token: str, case_sensitive: bool = False) -> str:
@@ -140,6 +177,19 @@ def read_anchors(path: Path) -> dict[str, dict[str, float]]:
     return _json.loads(path.read_text()) if path.exists() else {}
 
 
+@dataclass(frozen=True)
+class BeatNote:
+    """One structured note. The verdict is UNRESOLVED or UNKNOWN, or None for a warning without a verdict code."""
+
+    cue: str | None
+    verdict: str | None
+    detail: str
+
+    @property
+    def text(self) -> str:
+        return f"{self.cue}: {self.detail}" if self.cue else self.detail
+
+
 @dataclass
 class SectionBeats:
     key: str
@@ -148,6 +198,23 @@ class SectionBeats:
     resolved: dict[str, float]
     notes: list[str] = field(default_factory=list)
     skipped: str | None = None  # why nothing was resolved (no narration)
+    findings: list[BeatNote] = field(default_factory=list)  # The notes, structured, in the same order.
+
+    def note(self, cue: str | None, verdict: str | None, detail: str) -> None:
+        """Record a note both as the table's text line and as a structured finding."""
+        finding = BeatNote(cue, verdict, detail)
+        self.findings.append(finding)
+        self.notes.append(finding.text)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "key": self.key,
+            "speech_end": round(self.speech_end, 3),
+            "min_seconds": self.min_seconds,
+            "skipped": self.skipped,
+            "cues": dict(self.resolved),
+            "notes": [{"cue": n.cue, "verdict": n.verdict, "detail": n.detail} for n in self.findings],
+        }
 
 
 @dataclass
@@ -156,13 +223,60 @@ class BeatsResult:
     sections: list[SectionBeats]
     unresolved: int
     estimated: bool
+    unknown: int = 0  # Cue ids that appear nowhere in the page that plays them.
+    beats_file: Path | None = None
 
     @property
     def problems(self) -> list[str]:
         return [f"section {s.key}: {n}" for s in self.sections for n in s.notes]
 
+    @property
+    def unknown_problems(self) -> list[str]:
+        return [f"section {s.key}: {n.text}" for s in self.sections for n in s.findings if n.verdict == "UNKNOWN"]
 
-def resolve_beats(project: Project) -> BeatsResult:
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        """The result as JSON-ready data, with the beats file relative to the project root."""
+        beats_file = None
+        if self.beats_file is not None:
+            beats_file = (
+                self.beats_file.relative_to(root).as_posix()
+                if self.beats_file.is_relative_to(root)
+                else self.beats_file.as_posix()
+            )
+        return {
+            "estimated": self.estimated,
+            "beats_file": beats_file,
+            "unresolved": self.unresolved,
+            "unknown": self.unknown,
+            "sections": [s.to_dict() for s in self.sections],
+        }
+
+
+def unknown_message(result: BeatsResult) -> str:
+    """Why the build stops on unknown cue ids, with the first one as the example fix."""
+    first = next(n for s in result.sections for n in s.findings if n.verdict == "UNKNOWN")
+    page = first.detail.removeprefix("not in ")
+    return (
+        f"{result.unknown} cue id(s) in cues.json appear nowhere in the page that plays them, so the page would "
+        f'never reveal them. Add data-cue="{first.cue}" to the step in {page}, fix the id in cues.json, or pass '
+        "--allow-unknown:\n  " + "\n  ".join(result.unknown_problems)
+    )
+
+
+class UnknownCueError(ConfigError):
+    """Cue ids that no page mentions. The result is attached, so a caller can still print its table."""
+
+    def __init__(self, result: BeatsResult) -> None:
+        super().__init__(unknown_message(result))
+        self.result = result
+
+
+def resolve_beats(project: Project, *, allow_unknown: bool = False) -> BeatsResult:
+    """Resolve every cue phrase, write beats.json, and report the cue ids that their page never mentions.
+
+    beats.json is written either way. Unknown cue ids then raise UnknownCueError, which
+    carries the result, unless allow_unknown is set.
+    """
     manifest = project.manifest()
     if manifest is None:
         raise MissingInputError(
@@ -175,6 +289,7 @@ def resolve_beats(project: Project) -> BeatsResult:
     anchors: dict[str, dict[str, float]] = {}
     rows: list[SectionBeats] = []
     unresolved = 0
+    unknown_ids = unknown_cue_ids(project, specs)
     for spec in specs:
         key = f"{spec.number:02d}"
         entry = manifest.segments.get(key)
@@ -188,36 +303,59 @@ def resolve_beats(project: Project) -> BeatsResult:
                     skipped="no narration (clip section, or not rendered)",
                 )
             )
+            for k, cue_id, page in unknown_ids:
+                if k == key:
+                    rows[-1].note(cue_id, "UNKNOWN", f"not in {page}")
             continue
         words = read_words(project.audio_dir / entry.words_file)
         speech_end = words[-1].end if words else entry.duration_seconds
         row = SectionBeats(key=key, speech_end=speech_end, min_seconds=spec.min_seconds, resolved={})
         for cue in spec.cues:
             if not words and cue.on != "$start":
-                row.notes.append(
-                    f"{cue.step}: no words ({'estimated manifest' if manifest.estimated else 'missing words file'})"
+                row.note(
+                    cue.step,
+                    "UNRESOLVED",
+                    f"no words ({'estimated manifest' if manifest.estimated else 'missing words file'})",
                 )
                 unresolved += 1
                 continue
             t = resolve_cue(cue, words)
             if t is None:
-                row.notes.append(f"{cue.step}: phrase not found: {cue.on!r}")
+                row.note(cue.step, "UNRESOLVED", f"phrase not found: {cue.on!r}")
                 unresolved += 1
                 continue
             if t > entry.duration_seconds:
-                row.notes.append(f"{cue.step}: {t}s is past the end of the audio ({entry.duration_seconds}s)")
+                row.note(cue.step, None, f"{t}s is past the end of the audio ({entry.duration_seconds}s)")
             row.resolved[cue.step] = t
             anchor = anchor_time(cue, words)
             if anchor is not None:
                 anchors.setdefault(key, {})[cue.step] = round(anchor, 2)
         if spec.min_seconds is not None and speech_end < spec.min_seconds:
-            row.notes.append(
-                f"speech {speech_end:.1f}s is {spec.min_seconds - speech_end:.1f}s shorter than the visuals need"
-            )
+            short = spec.min_seconds - speech_end
+            row.note(None, None, f"speech {speech_end:.1f}s is {short:.1f}s shorter than the visuals need")
+        for k, cue_id, page in unknown_ids:
+            if k == key:
+                row.note(cue_id, "UNKNOWN", f"not in {page}")
         if row.resolved:
             beats.sections[key] = row.resolved
         rows.append(row)
     beats.save(project.beats_path)
     write_anchors(project.beats_path.with_name("beats.anchors.json"), anchors)
-    log.info("wrote %s (%d sections with cues; %d unresolved)", project.beats_path, len(beats.sections), unresolved)
-    return BeatsResult(beats=beats, sections=rows, unresolved=unresolved, estimated=manifest.estimated)
+    log.info(
+        "wrote %s (%d sections with cues; %d unresolved, %d unknown)",
+        project.beats_path,
+        len(beats.sections),
+        unresolved,
+        len(unknown_ids),
+    )
+    result = BeatsResult(
+        beats=beats,
+        sections=rows,
+        unresolved=unresolved,
+        estimated=manifest.estimated,
+        unknown=len(unknown_ids),
+        beats_file=project.beats_path,
+    )
+    if result.unknown and not allow_unknown:
+        raise UnknownCueError(result)
+    return result

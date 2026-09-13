@@ -5,17 +5,26 @@ assembler trims that much off the head of the video. Without a marker the fallba
 the first painted frame plus the settle; failing that a fixed guess.
 
 check: duration against what was requested, and luma at 10/50/90 %, so a black or
-truncated recording is caught before assembly. The sidecar adds a KATEX? verdict when the
-page's equations were never typeset, a STALLED verdict when frames froze, and a PAGE ERROR
-verdict when the page threw or never exposed the runtime catalog. Only the last one is
-certain, so it is the one that fails a plain `decktalk build`.
+truncated recording is caught before assembly, plus what the recorder saw in the sidecar.
+
+    certain     PAGE ERROR  the page threw, or never exposed the runtime catalog
+                STALLED     page frames froze for longer than stall_ms
+                TRUNCATED   the recording is shorter than requested
+                NO COVER    no magenta cover was found, so the alignment is a guess
+    uncertain   BLACK?      the middle frame is dark, which a dark slide can be on purpose
+                KATEX?      the page's equations may never have been typeset
+
+A plain `decktalk build` stops only on PAGE ERROR, because a page that threw recorded
+nothing worth assembling.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ..artifacts import Sidecar
 from ..config import AlignConfig
@@ -110,10 +119,47 @@ class RecordingCheck:
         str  # "ok", or any of "NO COVER", "BLACK?", "TRUNCATED", "KATEX?", "STALLED", "PAGE ERROR" joined by spaces
     )
     page_errors: list[str] = field(default_factory=list)  # from the sidecar, one line each
+    file: Path | None = None  # The recording that was checked.
 
     @property
     def ok(self) -> bool:
         return self.verdict == "ok"
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        """The row as JSON-ready data, with the verdict codes as a list and the stall length as its own number."""
+        codes, stall_ms = split_verdicts(self.verdict)
+        file = None
+        if self.file is not None:
+            file = self.file.relative_to(root).as_posix() if self.file.is_relative_to(root) else self.file.as_posix()
+        return {
+            "key": self.key,
+            "file": file,
+            "duration": round(self.duration, 3),
+            "wanted": round(self.wanted, 3),
+            "y10": round(self.y10, 2),
+            "y50": round(self.y50, 2),
+            "y90": round(self.y90, 2),
+            "max50": round(self.max50, 2),
+            "verdicts": codes,
+            "stall_ms": stall_ms,
+            "page_errors": list(self.page_errors),
+        }
+
+
+_VERDICT_RE = re.compile(r"PAGE ERROR|NO COVER|TRUNCATED|STALLED(?: (?P<ms>\d+)ms)?|BLACK\?|KATEX\?")
+
+
+def split_verdicts(verdict: str) -> tuple[list[str], int | None]:
+    """The joined verdict as codes with the stall split out: "NO COVER STALLED 140ms" gives two codes and 140."""
+    codes: list[str] = []
+    stall_ms: int | None = None
+    for m in _VERDICT_RE.finditer(verdict):
+        code = m.group(0)
+        if code.startswith("STALLED"):
+            code = "STALLED"
+            stall_ms = int(m.group("ms")) if m.group("ms") else None
+        codes.append(code)
+    return codes, stall_ms
 
 
 def sidecar_verdicts(side: Sidecar | None, cfg: AlignConfig) -> list[str]:
@@ -148,7 +194,7 @@ def check(project: Project, only: list[int] | None = None) -> list[RecordingChec
             verdicts.append("TRUNCATED")
         verdicts += sidecar_verdicts(side, cfg)
         errors = list(side.page_errors) if side else []
-        row = RecordingCheck(f.name[:2], dur, wanted, y10, y50, y90, max50, " ".join(verdicts) or "ok", errors)
+        row = RecordingCheck(f.name[:2], dur, wanted, y10, y50, y90, max50, " ".join(verdicts) or "ok", errors, file=f)
         if not row.ok:
             log.warning("[chk ] %s  %s", row.key, row.verdict)
         for e in errors:

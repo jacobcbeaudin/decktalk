@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
 
-from ..artifacts import Sidecar
+from ..artifacts import Beats, Sidecar
 from ..errors import ConfigError, MissingInputError
 from ..media.browser import chromium, record_page
 from ..project import PageSection, Project
@@ -23,7 +23,18 @@ from ..project import PageSection, Project
 log = logging.getLogger(__name__)
 
 
-def scene_url(project: Project, section: PageSection, params: dict[str, str], settle: float) -> str:
+def scene_params(section: PageSection, beats: Beats | None) -> dict[str, str]:
+    """The section's own query parameters, plus its resolved cues as `beats` unless the section sets that key itself."""
+    params = dict(section.params)
+    if beats is not None and "beats" not in params:
+        query = beats.query(section.key)
+        if query:
+            params["beats"] = query
+    return params
+
+
+def scene_url(project: Project, section: PageSection, params: dict[str, str]) -> str:
+    """The file URL the recorder and the frame screenshots open for a page section."""
     page = project.path(section.page)
     if not page.exists():
         raise ConfigError(f"section {section.number}: page not found: {page}")
@@ -80,14 +91,8 @@ def record(
         if not length:
             log.warning("section %s: no narration span yet; skipped", section.key)
             continue
-        params = dict(section.params)
-        if beats is not None and "beats" not in params:
-            query = beats.query(section.key)
-            if query:
-                params["beats"] = query
-        jobs.append(
-            (section, scene_url(project, section, params, cfg.settle_seconds), length, project.recording(section))
-        )
+        url = scene_url(project, section, scene_params(section, beats))
+        jobs.append((section, url, length, project.recording(section)))
     if not jobs:
         raise ConfigError("nothing to record: no page sections matched")
 

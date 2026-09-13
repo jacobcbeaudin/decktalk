@@ -460,7 +460,30 @@ class Project:
             settings=load_settings(root, toml=doc, environ=environ),
         )
         project._check_holds()
+        project._check_clip_placement()
         return project
+
+    def _check_clip_placement(self) -> None:
+        """Clips may sit only before the first page section or after the last one.
+
+        The narration is one continuous track placed at the first page section, so a clip
+        between two page sections would play over the words of the page section after it.
+        """
+        pages = [s.number for s in self.page_sections]
+        if not pages:
+            return
+        first, last = pages[0], pages[-1]
+        for clip in self.clip_sections:
+            if not first < clip.number < last:
+                continue
+            before = max(n for n in pages if n < clip.number)
+            after = min(n for n in pages if n > clip.number)
+            raise ConfigError(
+                f"{PROJECT_FILE}: [[section]] number={clip.number} is a clip between page sections {before} and "
+                f"{after}. The narration is one continuous track placed at the first page section, so a clip in "
+                f"the middle would play over the words of section {after}. Move the clip before section {first} "
+                f"or after section {last}, or make it a page section."
+            )
 
     def _check_holds(self) -> None:
         pages = [s for s in self.sections if isinstance(s, PageSection)]
