@@ -11,57 +11,47 @@ comment block in `decktalk.toml` and add a `## 0. On camera` heading above secti
 
 ## 1. Open
 
-[Deck scene 1. A line of script lights up word by word while the curve draws and the number lands.]
+[Deck scene 1. A line of script lights up word by word while the curve draws and the number lands. Then each word's start time rises under it.]
 
 The curve rises, then the number lands. [beat] You just watched DeckTalk. [beat] That
-sentence is a line of markdown. My cloned voice read it, and every reveal landed on its
-word, because the audio came back with a timestamp for every word. [beat] Here is how one
-file does that.
+sentence is a line of markdown. [beat] My cloned voice read it, and every reveal landed on its
+word. [beat] Here is the project behind it.
 
-## 2. Four files
+## 2. Three files and a voice
 
-[Deck scene 2. Four panels rise in turn, then the shared phrase lights in every one.]
+[Deck scene 2. Four dim panels light in turn, and then the shared id lights in every one.]
 
-A project is four files that refer to each other by one number. [beat] The script says
-what the voice says. [beat] The voice comes back with a time for every word. [beat] A cue
-names the phrase a visual waits for. [beat] And a slide names the cue. [beat] One number
-ties them together, so the picture can only ever land on the word. [beat] That is the tool.
-Now a lesson where every picture waits for its word.
+You write three files, and the voice returns a fourth. [beat] The script says what the voice
+says. [beat] The voice comes back with a time for every word. [beat] A cue names the phrase a
+visual waits for. [beat] And the slide names the cue. [beat] One id ties them together, so the
+picture can only land on its word. [beat] Now watch it teach.
 
-## 3. Gradient descent — 0:40 to 1:00
+## 3. Gradient descent
 
-[Deck scene 3. The weight axes and the loss axis draw in, and a loss surface fades up above them. Two arrows on the floor show the gradient and its negative in the plane of the weights. A ball hops down the bowl in shrinking steps that leave dots on the floor, and the update rule builds. A ghost at a large eta zigzags across the bowl and settles, a ghost at a larger eta bounces out of the figure, and the ball settles at the minimum.]
+[Deck scene 3. A loss surface stands over the plane of two weights from the first frame. A preview ball hops to the bottom and leaves a faint path. Arrows on the floor show the gradient and its negative. The ball steps down in shrinking steps, the figure moves aside for the update rule, three more learning rates show what goes wrong, and the ball settles at the minimum.]
 
-Training a model means tuning its weights to shrink its error, the loss. [beat] Gradient
-descent heads for a local minimum of that loss, a function of many variables, one per
-weight, by stepping downhill again and again. [beat] Keep two weights, theta one and theta
-two, [beat] and the loss above them is a surface. For this lesson it is a bowl. [beat] Pick
-a point, theta. [beat] The height there is the loss. [beat] The gradient points uphill, in
-the plane of the weights, so follow minus the gradient. [beat] Take a step, and the learning
-rate, eta, scales its length. [beat] Again, [beat] and again. The steps shrink because the
-slope does. [beat] That is the rule. The next theta [beat] is this theta, minus eta [beat]
-times the gradient here.
-
-[beat] Pause and think: what if eta is too large?
-
-[pause 4]
-
-You overshoot, and zigzag across the bowl, but you still settle. [beat] Push eta further,
-and each bounce climbs higher, until you fly out. [beat] Too small, and you crawl. [beat]
-The best eta is the largest one that stays stable, on this bowl. [beat] Now change one
-sentence of that lesson.
+Training a model means tuning its weights to shrink its error, the loss. [beat] The loss is a
+function of many variables, one per weight. [beat] Keep two, theta one and theta two, and the
+loss above them is a surface. For this lesson it is a bowl. [beat] Gradient descent heads for
+a local minimum by stepping downhill, again and again. [beat] Pick a point, theta, and its
+height is the loss. [beat] The gradient points uphill, in the plane of the weights, so follow
+minus the gradient. [beat] Take a step, and the learning rate, eta, scales its length. [beat]
+The steps shrink because the slope does. [beat] That is the rule. The next theta [beat] is this
+theta, minus eta [beat] times the gradient here. [beat] Too large, and you zigzag. [beat]
+Larger still, and you fly out. [beat] Too small, and you crawl. [beat] The best eta is big
+enough not to crawl, and small enough not to bounce. [beat] Now change one sentence.
 
 ## 4. The edit
 
-[Deck scene 4. One phrase is struck and retyped, and the build table fills in row by row.]
+[Deck scene 4. One word is struck and retyped, and the log of the rebuild and the verify row fill in line by line.]
 
-The bowl becomes a valley. [beat] Build again. [beat] Section one is cached. [beat] Two, cached. [beat] Three is synthesized, sixty seven seconds of new
-narration. [beat] Four and five, cached. [beat] The video is rebuilt, and verify measures
-the reveal on the word learning rate: ten milliseconds.
+The bowl becomes a valley. [beat] Build again. [beat] Sections one and two, unchanged. [beat]
+Three is voiced again. [beat] For this lesson it is a valley. [beat] Four and five, unchanged.
+[beat] Then decktalk verify measures every reveal against its word.
 
 ## 5. Close
 
 [Deck scene 5. The end card.]
 
-The script is the edit. [beat] DeckTalk. [beat] Narrated presentations, cut to the word. [beat] Make
-your own at decktalk dot app.
+The script is the edit. [beat] DeckTalk. Open source, narrated presentations, cut to the word.
+[beat] Make your own at decktalk dot app.

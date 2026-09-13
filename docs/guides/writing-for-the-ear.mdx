@@ -28,11 +28,11 @@ screen.
 ## Give every reveal a noun to land on
 
 A cue resolves to the first word of its phrase, so the phrase should begin with the word
-that names the visual. "Keep two weights, theta one and theta two" cues on `theta one` and
-lands on "theta", which is a noun the listener can attach to the axis label that fades in.
+that names the visual. "Pick a point, theta, and its height is the loss" cues on
+`Pick a point` and lands on "Pick", a verb whose referent, the ball, appears as it is said.
 A phrase such as "and then" lands on nothing in particular. The scaffold's cues are nouns
-or verbs with a concrete referent: `many variables`, `Pick a point`, `learning rate`,
-`Build again`, `Narrated presentations`.
+or verbs with a concrete referent: `weights`, `Pick a point`, `learning rate`,
+`Build again`, `Open source`.
 
 ## One reveal per idea
 
@@ -48,17 +48,16 @@ this, and they reach the voice differently. `[beat]` is a beat: the voice reads 
 dash at the end of the sentence before it and pauses there as it would at any dash, and
 nothing else is sent. `[pause N]` sends a `<break time="Ns" />` tag and is the only
 direction that does, because frequent break tags make the voice add fillers and breaths.
-Use beats freely and timed pauses sparingly. The scaffold pauses for four seconds before
-the answer so that the audience can think.
+Use beats freely and timed pauses sparingly. The scaffold's lesson puts a beat before each
+learning rate, so each ghost ball sets off as its own event.
 
 ```md script.md
-[beat] Pause and think: what if eta is too large?
-
-[pause 4]
-
-You overshoot, and zigzag across the bowl, but you still settle. [beat] Push eta further,
-and each bounce climbs higher, until you fly out.
+Too large, and you zigzag. [beat] Larger still, and you fly out. [beat] Too small, and you
+crawl.
 ```
+
+A timed pause earns its place before a question the audience should answer, such as
+`[pause 4]` after "what happens if eta is too large?", so the silence leaves room to think.
 
 Anything else in square brackets is a stage direction. It is not spoken and it is a beat
 where it sat, so a direction such as `[Deck scene 3. A loss surface fades up.]` is both a note
@@ -110,7 +109,8 @@ early in a silent rehearsal usually arrives too early with the real voice as wel
 
 A heading may carry a time budget after a dash, and the narrate table compares it with
 the estimate and, once the voice has spoken, with the real length. The estimate is the
-word count at `words_per_minute`, which defaults to 140.
+word count at `words_per_minute`, which defaults to 140. The scaffold's headings carry no
+budget. Add one to section 3 to see the column.
 
 ```md script.md
 ## 3. Gradient descent — 0:40 to 1:00
@@ -119,17 +119,17 @@ word count at `words_per_minute`, which defaults to 140.
 ```text
  #  section                words    est  target  actual  placeholders
 ---------------------------------------------------------------------
- 1  open                      48   0:21    --      0:22  -
- 2  four-files                74   0:32    --      0:34  -
- 3  gradient-descent         179   1:17    0:20    1:28  -
- 4  the-edit                  42   0:18    --      0:21  -
- 5  close                     19   0:08    --      0:09  -
+ 1  open                      36   0:15    --      0:18  -
+ 2  three-files-and-a-voic    60   0:26    --      0:29  -
+ 3  gradient-descent         153   1:06    0:20    1:12  -
+ 4  the-edit                  36   0:15    --      0:19  -
+ 5  close                     21   0:09    --      0:10  -
 ---------------------------------------------------------------------
-    total                    362   2:35            2:56
+    total                    306   2:11            2:29
 ```
 
-The `target` column is the budget's length. Section 3 has a budget of twenty seconds,
-from 0:40 to 1:00, and the silent rehearsal runs to 1:28. That gap is the signal to
+The `target` column is the budget's length. Section 3 now has a budget of twenty seconds,
+from 0:40 to 1:00, and the silent rehearsal runs to 1:12. That gap is the signal to
 cut a sentence. Widen the budget only after the voice has spoken and the `actual` column
 is real. The
 `min_seconds` key on a section in `cues.json` works the other way around and warns when
