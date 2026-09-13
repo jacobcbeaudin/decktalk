@@ -108,7 +108,11 @@ def verify_table(result: VerifyResult) -> str:
             if c.changed_percent is None or c.verdict == SKIPPED:
                 # A row that was never measured shows its verdict, its reason code, and its note.
                 cue = f"{c.cue_seconds:>6.2f}" if c.cue_seconds is not None else f"{'-':>6}"
-                label = " ".join(part for part in (c.verdict, c.reason, c.note) if part)
+                # A skipped row's note already starts with its verdict and reason, so print it alone.
+                if c.note and c.note.startswith(c.verdict):
+                    label = c.note
+                else:
+                    label = " ".join(part for part in (c.verdict, c.reason, c.note) if part)
                 lines.append(
                     f"{c.check:<18} {cue} {'-':>8} {'-':>7} {'-':>7} {'-':>8}"
                     + (f" {'-':>7}" if av else "")
