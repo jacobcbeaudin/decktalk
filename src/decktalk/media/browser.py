@@ -186,9 +186,12 @@ def record_page(
             entry.get("firstOn"),
         )
     frame_gaps = [(float(g["at"]), int(g["ms"])) for g in gaps if isinstance(g, dict)]
-    if frame_gaps:
-        worst = max(ms for _, ms in frame_gaps)
-        log.warning("[page] %s  %d frame stall(s), worst %d ms", out.stem, len(frame_gaps), worst)
+    after_start = [(at, ms) for at, ms in frame_gaps if at > 0]
+    if after_start:
+        worst = max(ms for _, ms in after_start)
+        log.warning("[page] %s  %d frame stall(s) after narration t=0, worst %d ms", out.stem, len(after_start), worst)
+    if len(after_start) < len(frame_gaps):
+        log.debug("[page] %s  %d frame stall(s) under the cover", out.stem, len(frame_gaps) - len(after_start))
     video = page.video
     context.close()
     src = Path(video.path()) if video else None

@@ -1027,3 +1027,16 @@ def test_scene_params_adds_beats_unless_the_section_sets_them(tmp_path):
     p = Project.load(write_project(tmp_path, PAGES_TOML), environ={})
     with pytest.raises(ConfigError, match="exactly one step"):
         shoot_steps(p, steps=["1.1", "2.1"], cues=["1.1a"])
+
+
+def test_worst_stall_counts_only_what_a_viewer_sees():
+    from decktalk.artifacts import Sidecar
+
+    side = Sidecar.__new__(Sidecar)
+    side.frame_gaps = [(float("-inf"), 900), (0.05, 216), (0.4, 120), (12.8, 132)]
+    # The first gap ended under the cover, the second began there and shows for 50 ms.
+    assert side.worst_stall_ms == 132
+    side.frame_gaps = [(float("-inf"), 900), (0.05, 216)]
+    assert side.worst_stall_ms == 50
+    side.frame_gaps = []
+    assert side.worst_stall_ms == 0
