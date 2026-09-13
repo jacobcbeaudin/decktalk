@@ -53,12 +53,13 @@ which spends ElevenLabs credits, and the video is complete without it.
 
 The silent build needs no account and takes a few minutes on a laptop, because the
 recording runs in real time. The last command writes `build/out/my-lesson.mp4` with a
-chapter per section, and SRT and VTT captions beside it. The demo has five sections. A
-cold open performs its own sentence. The second section shows three files and a voice tied
-by one id. A gradient descent lesson on a loss surface shows a learning rate that zigzags,
-one that flies out, one that crawls, and one that settles at the minimum. The fourth
-section changes one word in the third, and only the third section is voiced again. A close
-ends on decktalk.app. `uv` is a Python package manager, and `pipx install decktalk` works
+chapter per section, and SRT and VTT captions beside it. The demo has six sections. The
+open counts a ball down a bowl and shows the real start time of each count word. The
+second section shows a script, a slide, and the word that joins them. A lesson on how AI
+learns walks from a box of knobs to gradient descent and the chips that do the math. A
+clip section follows, and a titled slate stands in for its video until the file exists.
+The fifth section adds four words to the lesson, and only the lesson is voiced again. A
+close ends on decktalk.app. `uv` is a Python package manager, and `pipx install decktalk` works
 the same way. The `.env` file holds your ElevenLabs key and voice id beside the project,
 and DeckTalk never prints either.
 
@@ -85,28 +86,28 @@ section.
 </picture>
 
 A project is three files you write, the script, the cues, and the page, and one the voice
-returns, the words file with a time for every word. One cue id per reveal, such as `3.1eq`,
+returns, the words file with a time for every word. One cue id per reveal, such as `1.1bowl`,
 ties them together. The script has a heading per section, and the words under it are what
 the voice says. A bracketed direction such as `[beat]` is a short pause and is not spoken:
 
 ```md
-## 3. Gradient descent
+## 1. Open
 
-[beat] Take a step, and the learning rate, eta, scales its length. [beat]
+A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat]
 ```
 
 A cue names the phrase in that section that a visual lands on:
 
 ```json
-{ "sections": { "3": { "cues": [
-  { "cue": "3.1eq", "on": "learning rate" } ] } } }
+{ "sections": { "1": { "cues": [
+  { "cue": "1.1bowl", "on": "bowl" } ] } } }
 ```
 
 A slide is plain HTML that names the cue it waits for. One file, `decktalk-runtime.js`,
-tells the page which step to show and when, and KaTeX typesets the math:
+tells the page which step to show and when:
 
 ```html
-<span class="chip" data-cue="3.1eq" data-tex="\eta = 2">η = 2</span>
+<path class="curve" data-cue="1.1bowl" data-fx="none" d="…"/>
 ```
 
 The project file ties the section to the page, or to a clip of your own with its own

@@ -259,7 +259,7 @@ even when `cues.json` marks it `"verify": false`.
 
 | Flag | Meaning |
 |---|---|
-| `SECTION:CUE …` | The arguments name the only cues to check, such as `3:3.1eq`. |
+| `SECTION:CUE …` | The arguments name the only cues to check, such as `1:1.1bowl`. |
 | `--cue SECTION:CUE` | The flag adds one more cue to check, after any positional cues. Repeat it for several. |
 | `--only N` | The command measures only the cues of these section numbers, and it always checks every section start and cut. Repeat the flag for several. |
 | `--json`, `--strict`, `--no-fail` | These flags work as [Machine-readable output](#machine-readable-output) describes. |
@@ -315,14 +315,14 @@ section while it plays with its real cues.
 | `--at S` | The frame is captured this many seconds after narration t=0. Repeat the flag for several. The default is 0.5. |
 
 Step screenshots land at `build/shots/step-<id>.png`, and a step frozen at a cue lands at
-`build/shots/step-<id>-cue-<cue>.png`, such as `step-3.1-cue-3.1eq.png`. Both go in a
+`build/shots/step-<id>-cue-<cue>.png`, such as `step-4.1-cue-4.1lower.png`. Both go in a
 subdirectory per page when there are several pages. Frames land at
 `build/shots/section-NN-at-<S>s.png`.
 
 A step frozen at a cue opens the page as `?step=ID&cue=CUE`, which
 [the runtime reference](/reference/runtime#url-parameters) describes. Handlers still
-receive `ctx.frozen` as true, so a figure that draws its end state when frozen, such as
-the scaffold's scene 3 surface, shows that end state at every cue. When the id is not one
+receive `ctx.frozen` as true, so a figure that draws its end state when frozen shows that
+end state at every cue. When the id is not one
 of the step's cues, the page warns and the whole step is captured.
 
 ## Everything at once

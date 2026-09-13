@@ -5,8 +5,6 @@
 <title>__NAME__</title>
 <!-- KaTeX typesets every [data-tex] element. Without it the element keeps its plain text. -->
 __KATEX__
-<!-- three.js draws the loss surface of scene 3. Vendored, so the recorder needs no network. -->
-<script src="./vendor/three.min.js"></script>
 <style>
   /* Bundled OFL fonts (deck/fonts/), so a recorder with no network never falls back to Helvetica. */
   @font-face { font-family: "Inter Tight"; font-style: normal; font-weight: 100 900; font-display: block; src: url("./fonts/InterTight-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
@@ -30,27 +28,15 @@ __KATEX__
   /* A scene cuts in on its first frame rather than fading up, so the cut and the poster frame are never blank. */
   #dt-pan > .dt-slide.dt-first { animation: none; }
   .slide * { box-sizing: border-box; }
-
-  /* Type scale at 1920 by 1080. */
-  .eyebrow { position: absolute; left: 120px; top: 98px; margin: 0; font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
-  .title { position: absolute; left: 120px; top: 156px; margin: 0; max-width: 1200px; font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
-  .hero { font: 600 120px/1.05 var(--tight); letter-spacing: -.03em; color: var(--ink); }
-  .wordmark { font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
-  .body { font: 450 36px/1.4 var(--sans); color: var(--ink); }
-  .caption { font: 500 30px/1.4 var(--sans); color: var(--mute); }
-  .mono { font: 500 32px/46px var(--mono); color: var(--ink); }
-  .filelabel { font: 500 22px/28px var(--mono); color: var(--mute); }
-  .panel { position: absolute; background: var(--block); border-radius: 12px; }
+  .stage-svg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: visible; }
   .abs { position: absolute; }
 
-  /* Synced text: a word the voice has not reached yet is dim, and turns to the line's colour as it lands. */
-  .slide .dt-w { opacity: 1; color: var(--dim); transition: color .12s ease; }
-  .slide .dt-w.dt-on { opacity: 1; color: inherit; }
-  .snippet, .snippet .c, .term div { transition: color .25s ease; }
-  .lit .snippet, .lit .snippet .c { color: var(--dim); }
-  .lit .k { color: var(--accent); }
+  /* Type scale at 1920 by 1080. */
+  .eyebrow { position: absolute; left: 120px; top: 56px; margin: 0; font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+  .wordmark { margin: 0; font: 600 104px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); white-space: nowrap; }
+  .filelabel { font: 500 22px/28px var(--mono); color: var(--mute); }
 
-  /* Footer: the mark at left, the scene tracker at right. It never carries a cue. */
+  /* Footer: the mark at left, the section tracker at right. It never carries a cue. */
   .footer { position: absolute; left: 120px; right: 120px; top: 984px; height: 30px; display: flex; align-items: center; justify-content: space-between; }
   .footer .brand, .footer .track { display: flex; align-items: center; gap: 14px; font: 500 22px/28px var(--mono); letter-spacing: .14em; color: var(--mute); }
   .footer .mark line { stroke: var(--hair); stroke-width: 2.25; stroke-linecap: round; }
@@ -60,149 +46,79 @@ __KATEX__
   .footer .ticks .cur { fill: var(--ink); }
 
   /* Scene 1 */
-  /* The first frame is the poster frame, so the script line starts in full ink, and each word flashes the accent as it is spoken. */
-  .s1-panel { transition: box-shadow .3s ease; }
-  .s1-panel.md { box-shadow: 0 0 0 4px var(--accent); }
-  .s1-panel.md .filelabel { color: var(--accent); }
-  .s1-line { position: absolute; left: 24px; top: 180px; display: flex; align-items: center; white-space: nowrap; }
-  .slide .s1-line .dt-w { color: var(--ink); }
-  .slide .s1-line .dt-w.dt-on { animation: s1-say .7s ease both; }
-  @keyframes s1-say { from { color: var(--accent); } to { color: var(--ink); } }
-  .cursor { display: inline-block; width: 2px; height: 30px; margin-left: 6px; background: var(--ink); animation: blink 1s steps(2, start) infinite; }
-  @keyframes blink { to { visibility: hidden; } }
-  .s1-ticks { position: absolute; left: 24px; top: 240px; width: 760px; height: 16px; }
-  .s1-ticks i { position: absolute; top: 0; width: 2px; height: 16px; background: var(--hair); transform-origin: 50% 0; }
-  .s1-ticks i.on { background: var(--accent); }
-  .s1-ticks.pulse i.on.dt-on { animation: s1-pulse .45s ease-in-out 2 both; }
-  @keyframes s1-pulse { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(2.2); } }
-  /* Each word's start time sits under its word. The outer box centres it, and the inner one rises. */
-  .s1-times { position: absolute; left: 24px; top: 272px; width: 760px; height: 30px; }
-  .s1-times b { position: absolute; top: 0; transform: translateX(-50%); font: 500 20px/30px var(--mono); color: var(--mute); }
-  .s1-times b i { display: block; font-style: normal; }
-  .s1-times.dt-on b i { animation: dt-rise .35s cubic-bezier(.2, .7, .2, 1) both; }
-  .dt-frozen .s1-times b i { animation: none; }
-  .s1-fig .ax { stroke: var(--hair); stroke-width: 2; }
-  .s1-fig .curve { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; }
-  .s1-big { position: absolute; left: 500px; top: 0; width: 264px; height: 400px; display: flex; align-items: center; justify-content: center; font: 600 160px/1 var(--tight); letter-spacing: -.03em; color: var(--accent); }
-  .s1-mark { position: absolute; left: 120px; top: 700px; display: flex; flex-direction: column; gap: 6px; }
-  .s1-mark .wordmark { font-size: 96px; line-height: 1.05; letter-spacing: -.03em; }
+  .s1 .curve { fill: none; stroke: var(--ink); stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; }
+  .s1 .box { fill: var(--ground); stroke: var(--ink); stroke-width: 4; }
+  .s1 .box.full { fill: var(--accent); stroke: var(--accent); }
+  .s1 .lbl { font: 500 36px var(--sans); text-anchor: middle; fill: var(--ink); }
+  .s1 .box.full + .lbl { fill: #ffffff; }
+  .s1 .time { font: 500 30px var(--mono); text-anchor: middle; fill: var(--ink); }
+  /* The balls are listed last position first, so a ball that has arrived hides every earlier one after it. */
+  .s1 .ball.dt-on ~ .ball { visibility: hidden; }
+  .s1-mark { position: absolute; left: 0; right: 0; top: 155px; text-align: center; }
 
   /* Scene 2 */
-  /* Every panel is on screen, dim, from the first frame, and each one lights on its phrase. */
-  .col { position: absolute; width: 828px; }
-  .s2 .col.dt-reveal { opacity: .22; transition: opacity .35s ease; }
-  .s2 .col.dt-reveal.dt-on { opacity: 1; }
-  .col .filelabel { margin: 0 0 8px; }
-  .snippet { margin: 0; height: 196px; background: var(--block); border-radius: 12px; padding: 20px 22px; font: 500 36px/52px var(--mono); white-space: pre; color: var(--ink); }
-  .snippet .c { color: var(--mute); }
-
-  /* Scene 3 */
-  /* The figure starts centred, and on the update rule it slides left and shrinks as one composited layer. */
-  .fig3 { position: absolute; left: 480px; top: 370px; width: 960px; height: 570px; contain: layout size style; transform-origin: 0 50%; transition: transform .8s cubic-bezier(.3, .7, .2, 1); will-change: transform; }
-  .fig3.side { transform: translateX(-360px) scale(.85); }
-  /* Three layers: the axes under the canvas, so the bowl hides what stands behind it, then the
-     canvas, then the labels, arrows, and step dots over it, so they read through the surface. */
-  .fig3 canvas { position: absolute; left: 0; top: 0; width: 960px; height: 570px; z-index: 1; }
-  .fig3 svg { position: absolute; left: 0; top: 0; width: 960px; height: 570px; overflow: visible; }
-  .fig3 .under { z-index: 0; }
-  .fig3:not(.placed) .under, .fig3:not(.placed) .over { visibility: hidden; }
-  .fig3 .over { position: absolute; inset: 0; z-index: 2; }
-  .fig3 .ax { fill: none; stroke: var(--dim); stroke-width: 2.5; stroke-linecap: round; transition: stroke .25s ease; }
-  .fig3 .ax.focus { stroke: var(--accent); stroke-width: 4; }
-  /* Labels sit at the origin and move by transform alone, so following the ball costs no layout. */
-  .fig3 .lab { position: absolute; left: 0; top: 0; font: 500 28px/1 var(--mono); color: var(--mute); white-space: nowrap; transition: color .25s ease; }
-  /* The named axis labels are pills, and a pill fills with the accent while its axis is being named. */
-  .fig3 .lab.t1, .fig3 .lab.t2, .fig3 .lab.l { padding: 8px 12px; border-radius: 10px; transition: color .25s ease, background-color .25s ease; }
-  .fig3 .lab.focus { color: #ffffff; background: var(--accent); }
-  .fig3 .lab sub { font-size: .68em; vertical-align: -.28em; line-height: 0; }
-  .fig3 .tag, .fig3 .lossl, .fig3 .tdot { will-change: transform; }
-  .fig3 .tag { color: #ffffff; background: var(--accent); padding: 6px 10px; border-radius: 10px; }
-  .fig3 .tag i { display: inline-block; font-style: normal; }
-  .fig3 .tag.pulse i { animation: s3-pulse .5s ease-in-out 2; }
-  @keyframes s3-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.6); } }
-  .fig3 .tdot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
-  .fig3 .lossl { font-size: 24px; transition: opacity .4s ease; }
-  .fig3 .drop { fill: none; stroke: var(--accent); stroke-width: 3; stroke-dasharray: 9 7; }
-  .fig3 .grad, .fig3 .gl { transition: opacity .3s ease; }
-  .fig3 .grad.up { fill: var(--mute); }
-  .fig3 .grad.down { fill: var(--accent); }
-  .fig3 .gl { font-size: 30px; }
-  .fig3 .gl.down { color: var(--accent); }
-  .fig3 .grad.back, .fig3 .gl.back { opacity: .4 !important; }
-  .fig3 .lossl.gone, .fig3 .grad.gone, .fig3 .gl.gone { opacity: 0 !important; }
-  .slide .fig3 .again { animation: s3-again .4s ease both; }
-  @keyframes s3-again { from { opacity: 0; } to { opacity: 1; } }
-  /* Step dots and floor segments: hidden, then a faint ghost path after the preview, then solid as the ball lands. */
-  .fig3 .fseg { fill: none; stroke: var(--ink); stroke-opacity: .45; stroke-width: 2.5; transition: opacity .5s ease; }
-  .fig3 .sdot { fill: var(--ink); transition: opacity .5s ease; }
-  .fig3 .fseg:not(.on):not(.ghost), .fig3 .sdot:not(.on):not(.ghost) { visibility: hidden; }
-  .fig3 .ghost:not(.on) { opacity: .25; }
-  .fig3 .fseg.flash { stroke: var(--accent); stroke-opacity: 1; stroke-width: 6; }
-  .fig3 .cdot { fill: var(--accent); opacity: 0; }
-  .fig3 .cpath { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
-  .fig3.crawling .cpath { animation: s3-crawlpath 1.7s linear both; }
-  .fig3.crawling.settled .cpath { animation: none; stroke-dashoffset: 0; opacity: .3; }
-  @keyframes s3-crawlpath { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
-  .fig3.crawling .cdot { animation: s3-crawl .25s ease both; animation-delay: calc(var(--i) * .28s); }
-  .fig3.crawling.settled .cdot { animation: none; opacity: .3; }
-  @keyframes s3-crawl { from { opacity: 0; } to { opacity: 1; } }
-  /* The right column waits beside the centred figure, and moves in with the equation on the rule. */
-  .s3col { position: absolute; left: 1000px; top: 400px; width: 820px; height: 420px; transform: translateX(500px); transition: transform .8s cubic-bezier(.3, .7, .2, 1); will-change: transform; }
-  .s3col.in { transform: none; }
-  .s3col .chips { position: absolute; left: 0; top: 0; height: 46px; }
-  .s3col .ghostchip { position: absolute; left: 156px; top: 0; white-space: nowrap; }
-  .s3col .scalecap { position: absolute; left: 0; top: 70px; margin: 0; white-space: nowrap; }
-  .eq { position: absolute; left: 0; top: 170px; display: flex; align-items: baseline; gap: 20px; font-size: 78px; color: var(--ink); white-space: nowrap; }
-  .slide .eq.dt-reveal.dt-on { animation-delay: .45s; animation-duration: .5s; }
-  .eq .katex-display { margin: 0; display: inline-block; }
-  .eq .katex-display > .katex { text-align: left; }
-  .eq > span { color: var(--dim); transition: color .25s ease; }
-  .eq > span.on { color: var(--ink); }
-  .eq > span.b.on .mathnormal { color: var(--accent); }
+  /* The wordmark starts where scene 1 left it and moves to the top on its word. */
+  .s2-mark { position: absolute; left: 0; right: 0; top: 155px; text-align: center; transform-origin: 50% 50%; }
+  .s2-mark.up { animation: s2-up .35s cubic-bezier(.2, .7, .2, 1) both; }
+  @keyframes s2-up { from { transform: none; } to { transform: translateY(-92px) scale(.6923); } }
+  .dt-frozen .s2-mark.up { animation: none; transform: translateY(-92px) scale(.6923); }
+  .s2 .code { font: 500 28px var(--mono); fill: var(--ink); white-space: pre; }
+  .s2 .code.m, .s2 .code .m { fill: var(--mute); }
+  .s2 .code .new { fill: #ffffff; font-weight: 700; }
+  .s2 .t { font: 500 24px var(--mono); fill: var(--ink); }
+  .s2 .t.shift { fill: var(--accent); font-weight: 700; }
+  .s2 .slidetitle { font: 600 34px var(--tight); fill: var(--ink); }
+  .s2 .join { fill: none; stroke: var(--accent); stroke-width: 4; }
+  /* After the retype, the line with "example" replaces the line with "lesson". */
+  .s2:has(.v-example.dt-on) .v-lesson { visibility: hidden; }
 
   /* Scene 4 */
-  .script4 { position: absolute; left: 120px; top: 330px; width: 1680px; height: 204px; padding: 26px 32px; font: 500 26px/38px var(--mono); }
-  .script4 .filelabel { margin-bottom: 10px; }
-  .script4 div { white-space: pre; }
-  .script4 .c { color: var(--mute); }
-  .s4 .old { transition: color .2s ease; }
-  .s4 .old.struck { color: var(--mute); text-decoration: line-through; text-decoration-thickness: 3px; }
-  .s4 .vwrap { position: relative; display: inline-block; }
-  /* The typed word is selected, as in an editor, until the voice reaches the sentence. */
-  .s4 .new { display: inline-block; color: #ffffff; background: var(--accent); border-radius: 4px; }
-  /* On the rebuilt sentence the line lights word by word with the voice. It is in ink before then. */
-  .s4 .hear.dt-reveal { opacity: 1; }
-  .s4 .heardv { position: absolute; left: 0; top: 0; }
-  .s4.heard .new { visibility: hidden; }
-  .slide.s4 .l4 .dt-w.dt-on { color: var(--accent); }
-  .term { position: absolute; left: 120px; top: 556px; width: 1680px; height: 394px; padding: 26px 32px; font: 500 26px/38px var(--mono); }
-  .term div { white-space: pre; }
-  .term .tts { color: var(--accent); }
-  .term .c { color: var(--mute); }
-  .s4.lit .term div { color: var(--dim); }
-  .s4.lit .term div.final { color: var(--ink); }
-  .term .off { transition: color .25s ease .4s, background-color .25s ease .4s; border-radius: 4px; }
-  .s4.lit .term .off { color: #ffffff; background: var(--accent); }
+  .s4-script { position: absolute; left: 120px; top: 150px; width: 960px; height: 350px; background: var(--block); border-radius: 16px; font: 500 28px/40px var(--mono); white-space: pre; }
+  .s4-script .file { position: absolute; left: 32px; top: 28px; font: 500 24px/32px var(--mono); color: var(--mute); }
+  .s4-row { position: absolute; left: 32px; top: 110px; display: flex; }
+  .s4-row .sign { display: inline-block; width: 2ch; color: var(--mute); }
+  .s4-row .sign.plus { color: var(--accent); font-weight: 700; }
+  .s4-row i { font-style: normal; color: var(--mute); }
+  .s4-row .text { position: relative; }
+  .s4-row .strike { position: absolute; left: -4px; right: -4px; top: 19px; height: 3px; background: var(--ink); }
+  .s4-row em { font-style: normal; font-weight: 700; color: var(--accent); text-decoration: underline; text-decoration-thickness: 4px; text-underline-offset: 8px; }
+  .s4-new { top: 190px; }
+  .s4-ctx { top: 190px; color: var(--mute); }
+  /* The diff snaps in on its word: the old line is struck and muted, and the context line moves down under the new one. */
+  .s4:has(.s4-new.dt-on) .s4-old .text { color: var(--mute); }
+  .s4:has(.s4-new.dt-on) .s4-ctx { top: 270px; }
+  .s4-card { position: absolute; left: 1110px; top: 150px; width: 690px; height: 350px; background: var(--ground); border: 2px solid var(--mute); border-radius: 16px; }
+  .s4-cap { position: absolute; left: 1110px; top: 438px; width: 690px; margin: 0; text-align: center; font: 600 27px/36px var(--sans); color: var(--mute); }
+  /* The caption shows unlit once the diff is in, then lights word by word with the voice. */
+  .slide .s4-cap.dt-reveal { opacity: 1; }
+  .slide .s4-cap.dt-on { color: var(--ink); }
+  /* The runtime hides a word until it is spoken, and this caption shows it unlit instead. */
+  .slide .s4-cap .dt-w { opacity: 1; color: var(--mute); transition: none; }
+  .slide .s4-cap .dt-w.dt-on { color: var(--ink); }
+  .slide .s4-cap .dt-w.dt-on:has(+ .dt-w:not(.dt-on)) { color: var(--accent); text-decoration: underline; text-decoration-thickness: 4px; text-underline-offset: 7px; }
+  .s4-build { position: absolute; left: 120px; right: 120px; top: 530px; }
+  .s4-build .boxes { position: absolute; left: 0; top: 36px; display: flex; gap: 14px; }
+  .s4-build .sec { height: 92px; padding: 14px 20px 0; border: 3px solid var(--ink); border-radius: 14px; background: var(--ground); }
+  .s4-build .sec b { display: block; font: 600 28px/34px var(--sans); color: var(--ink); white-space: nowrap; }
+  .s4-build .sec span { display: block; font: 500 22px/30px var(--sans); color: var(--mute); }
+  .s4-build .sec.new { background: var(--accent); border-color: var(--accent); }
+  .s4-build .sec.new b, .s4-build .sec.new span { color: #ffffff; }
+  .s4-build .took { position: absolute; right: 0; top: 36px; text-align: right; }
+  .s4-build .took b { display: block; margin-top: 4px; font: 600 40px/48px var(--mono); color: var(--ink); }
+  .s4-verify { position: absolute; left: 120px; right: 120px; top: 690px; }
+  .s4-verify table { position: absolute; left: 0; top: 34px; border-collapse: collapse; font: 500 30px/46px var(--mono); }
+  .s4-verify th { padding: 0 72px 0 0; text-align: left; font: 500 22px/34px var(--mono); color: var(--mute); }
+  .s4-verify td { padding: 0 72px 0 0; white-space: nowrap; color: var(--ink); }
+  .s4-verify td.moved { color: var(--accent); font-weight: 700; }
+  .s4-verify .within { position: absolute; right: 0; top: 46px; width: 400px; height: 150px; padding-top: 22px; border: 3px solid var(--ink); border-radius: 14px; text-align: center; font: 500 30px/40px var(--sans); }
+  .s4-verify .within b { display: block; margin-top: 6px; font: 600 48px/56px var(--mono); }
 
   /* Scene 5 */
-  .chip { font: 500 32px/46px var(--mono); color: var(--ink); background: var(--block); border-radius: 8px; padding: 0 18px; }
-  .chip .katex { font-size: 36px; }
-  .chip { transition: background-color .25s ease, color .25s ease; }
-  .chip.now { background: var(--accent); color: #ffffff; }
-  .s5-hero, .s5-mark, .s5-line, .s5-oss, .s5-url { position: absolute; left: 120px; margin: 0; }
-  .s5-hero { top: 140px; font-size: 96px; }
-  .s5-mark { top: 430px; }
-  .s5-line { top: 512px; color: var(--mute); }
-  .s5-oss { top: 584px; }
-  /* The address draws its underline from left to right once it has faded in. */
-  .s5-url { top: 680px; width: max-content; font: 600 112px/1.05 var(--tight); letter-spacing: -.03em; color: var(--accent); }
-  .s5-url::after { content: ""; position: absolute; left: 0; right: 0; bottom: -14px; height: 4px; background: var(--accent); transform: scaleX(0); transform-origin: left center; }
-  .s5-url.dt-on::after { animation: s5-underline .5s cubic-bezier(.2, .7, .2, 1) .3s both; }
-  .dt-frozen .s5-url.dt-on::after { animation: none; transform: none; }
-  @keyframes s5-underline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-  .ghostchip { transition: opacity .6s ease; }
-  .ghostchip.gone { opacity: 0 !important; }
-  .ghostchip.out { opacity: 0 !important; transition: none; }
+  .s5 p:not(.eyebrow) { position: absolute; left: 0; right: 0; margin: 0; text-align: center; white-space: nowrap; }
+  .s5-tag { top: 238px; font: 600 64px/1.1 var(--tight); letter-spacing: -.015em; color: var(--ink); }
+  .s5-mark { top: 386px; font: 600 132px/1.1 var(--tight); letter-spacing: -.025em; color: var(--ink); }
+  .s5-lic { top: 580px; font: 500 34px/44px var(--mono); color: var(--mute); }
+  .s5-url { top: 700px; font: 600 124px/1.1 var(--tight); letter-spacing: -.02em; color: var(--accent); }
 </style>
 </head>
 <body>
@@ -211,22 +127,25 @@ __KATEX__
 // Scene numbers are the "## N." sections of script.md. Each step id is N.S and each cue id
 // is the step id plus a short word. cues.json maps every cue id to the spoken phrase it
 // lands on. Open this file with no query for an index of scenes and steps, and add
-// ?step=ID to freeze one step with everything revealed.
+// ?step=ID to freeze one step with everything revealed. Scene 3 lives in lesson.html, and
+// decktalk.toml says which page each section records.
 //
 // Each step is a { id, hold, cues, render } object. The HTML between the backticks of
 // `render` is safe to edit freely. The `cues:` object and the data-cue attributes in that
 // HTML must use the same ids, and cues.json names those same ids. A backslash inside the
 // backticks must be written twice, so a data-tex value reads data-tex="\\frac{1}{2}".
-// The `enter:` and `on:` blocks are JavaScript that runs when the step mounts and when a
-// cue fires. Each function receives the step's slide element and a context object
-// { id, at, frozen, step }, so a handler finds its elements with slide.querySelector and
-// needs no global. A scene that needs neither block can delete both whole. Copy a whole
-// step object to add a step.
+// The `on:` block is JavaScript that runs when a cue fires. Each function receives the
+// step's slide element and a context object { id, at, frozen, step }, so a handler finds its
+// elements with slide.querySelector and needs no global. Copy a whole step object to add a step.
+//
+// Every reveal here uses data-fx="none", so each picture snaps in on the frame of its word.
 
-// The footer of every slide: the four-tick mark and DECKTALK at left, the scene tracker at right.
-const SCENES_TOTAL = 5;
+// The footer of every slide: the four-tick mark and DECKTALK at left, the section tracker at right.
+// It counts the sections of decktalk.toml, so it counts the clip in section 4 too, and each
+// scene passes its section number.
+const SECTIONS_TOTAL = 6;
 function footer(n) {
-  const ticks = Array.from({ length: SCENES_TOTAL }, (_, i) => {
+  const ticks = Array.from({ length: SECTIONS_TOTAL }, (_, i) => {
     const x = 1 + i * 12;
     return i + 1 === n
       ? `<rect class="cur" x="${x}" y="8" width="3" height="22"/><circle class="cur" cx="${x + 1.5}" cy="3" r="2"/>`
@@ -242,701 +161,320 @@ function footer(n) {
         <span>DECKTALK</span>
       </div>
       <div class="track">
-        <svg class="ticks" viewBox="0 0 54 30" width="54" height="30" aria-hidden="true">${ticks}</svg>
-        <span>0${n} / 0${SCENES_TOTAL}</span>
+        <svg class="ticks" viewBox="0 0 66 30" width="66" height="30" aria-hidden="true">${ticks}</svg>
+        <span>0${n} / 0${SECTIONS_TOTAL}</span>
       </div>
     </div>`;
 }
 
-// ---- Scene 1: cold open ---------------------------------------------------------------
-// Ticks sit under each word of the script line. JetBrains Mono advances 0.6 em, so at 32 px a
-// character is 19.2 px and a word's centre is (start + length / 2) characters in.
-const S1_WORDS = [[0, 3], [4, 5], [10, 6], [17, 4], [22, 3], [26, 6], [33, 6]];
-// A recording writes each word's real start time from the words the recorder passes. A preview
-// has no words, so it shows these times from a silent build of this scaffold.
-const S1_PREVIEW_TIMES = [0.7, 1.18, 1.66, 2.13, 2.61, 3.09, 3.57];
-const s1x = ([start, len]) => Math.round((start + len / 2) * 19.2);
-const s1ticks = S1_WORDS.map((w, i) => {
-  const x = s1x(w) - 1;
-  const cue = i === 1 ? "1.1curve" : i === 5 ? "1.1number" : null;
-  return `<i style="left:${x}px"></i>` + (cue ? `<i class="on" style="left:${x}px" data-cue="${cue}" data-fx="fade"></i>` : "");
-}).join("");
-const s1times = S1_WORDS.map((w, i) => `<b style="left:${s1x(w)}px"><i style="animation-delay:${i * 70}ms">${S1_PREVIEW_TIMES[i].toFixed(2)}</i></b>`).join("");
-// The first seven spoken words of the section with their start times, or null in a preview.
-function s1spoken() {
+// SVG fills take colors as strings, so these repeat the tokens above.
+const INK = "#0a0a0a", ACCENT = "#2c1fea", MUTE = "#71717a", DIM = "#a3a3ad", HAIR = "#e4e4e7";
+const f1 = (v) => (+v).toFixed(1);
+const rng = (seed) => { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
+const wordKey = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// ---- The bowl still ---------------------------------------------------------------------
+// Scenes 2 and 4 show a still of the lesson's bowl: the error 0.5 a^2 + 1.5 b^2 over a floor
+// of two knob settings, drawn in perspective as depth-sorted SVG bands from pale at the rim to
+// a soft accent at the bottom. bowlStill(x, y, w, h, path) fits it in a box and returns
+// { svg, box }, where box is the drawn [x, y, w, h]. With path, it also draws the ball after
+// six steps of gradient descent at step size 0.25, with a dot where each earlier step landed.
+const bowlStill = (() => {
+  const E = 4.5, HK = 0.36, YAW = -0.32, PITCH = 0.95, DP = 16, SC = 130, CX = 960, CY = 570, FA = 3.3, FB = 2.0;
+  const clamp01 = (k) => Math.min(1, Math.max(0, k));
+  const err = (a, b) => 0.5 * a * a + 1.5 * b * b;
+  const rimPt = (th) => [Math.sqrt(2 * E) * Math.cos(th), Math.sqrt((2 * E) / 3) * Math.sin(th)];
+  const pj = (a, b, e) => {
+    const y = e * HK, x1 = Math.cos(YAW) * a + Math.sin(YAW) * b, z1 = -Math.sin(YAW) * a + Math.cos(YAW) * b;
+    const up = y * Math.cos(PITCH) - z1 * Math.sin(PITCH), depth = y * Math.sin(PITCH) + z1 * Math.cos(PITCH), k = DP / (DP - depth);
+    return [CX + x1 * SC * k, CY - up * SC * k, depth];
+  };
+  // The color ramp runs in OKLab, so each band is evenly lighter than the one below it.
+  const s2l = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const l2s = (c) => Math.round(clamp01(c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255);
+  const toOk = ([r, g, b]) => {
+    r = s2l(r); g = s2l(g); b = s2l(b);
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+  };
+  const fromOk = ([L, A, B]) => {
+    const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3, m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3, s = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
+    return [l2s(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s), l2s(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s), l2s(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)];
+  };
+  const OK_LOW = toOk([139, 131, 243]), OK_RIM = toOk([246, 246, 249]);
+  const mixOk = (p, q, t) => fromOk(p.map((v, i) => v + (q[i] - v) * t));
+  const ramp = (e) => `rgb(${mixOk(OK_LOW, OK_RIM, Math.min(8, Math.floor((Math.max(0, e) / E) * 9)) / 8)})`;
+  const isoSegs = (c, levels) => {
+    const segs = [];
+    for (const L of levels) {
+      const pts = [];
+      for (let k = 0; k < 4; k++) { const p = c[k], q = c[(k + 1) % 4]; if ((p[2] - L) * (q[2] - L) < 0) { const t = (L - p[2]) / (q[2] - p[2]); pts.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, L]); } }
+      if (pts.length === 2) segs.push(pts); else if (pts.length === 4) segs.push([pts[0], pts[1]], [pts[2], pts[3]]);
+    }
+    return segs;
+  };
+  // Quads of the bowl in polar rings, painted back to front, with iso-error contours on each.
+  const surface = () => {
+    const R = 14, TT = 40, items = [];
+    const pt = (i, j) => { const r = i / R, [a, b] = rimPt((j / TT) * Math.PI * 2); return [a * r, b * r, E * r * r]; };
+    for (let i = 0; i < R; i++) for (let j = 0; j < TT; j++) items.push({ corners: [pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j + 1)], e: E * ((i + 0.5) / R) ** 2 });
+    const ops = items.map(({ corners, e }) => {
+      const p = corners.map(([a, b, h]) => pj(a, b, h));
+      return { depth: (p[0][2] + p[1][2] + p[2][2] + p[3][2]) / 4, d: "M" + p.map((q) => f1(q[0]) + " " + f1(q[1])).join("L") + "Z", fill: ramp(e), segs: isoSegs(corners, [1, 2, 3, 4]).map((s) => s.map(([a, b, h]) => pj(a, b, h))) };
+    });
+    ops.sort((x, y) => x.depth - y.depth);
+    const out = [];
+    let cur = null;
+    const push = (kind, style, d) => { if (cur && cur.kind === kind && cur.style === style) cur.d += d; else { cur = { kind, style, d }; out.push(cur); } };
+    for (const o of ops) { push("f", o.fill, o.d); for (const s of o.segs) push("c", "", `M${f1(s[0][0])} ${f1(s[0][1])}L${f1(s[1][0])} ${f1(s[1][1])}`); }
+    return out.map((o) => o.kind === "f" ? `<path d="${o.d}" fill="${o.style}" stroke="${o.style}" stroke-width="1.2"/>` : `<path d="${o.d}" fill="none" stroke="rgba(10,10,10,.15)" stroke-width="2"/>`).join("");
+  };
+  const line = (p, q, stroke, w) => `<line x1="${f1(p[0])}" y1="${f1(p[1])}" x2="${f1(q[0])}" y2="${f1(q[1])}" stroke="${stroke}" stroke-width="${w}"/>`;
+  const corners = [[-FA, -FB], [FA, -FB], [FA, FB], [-FA, FB]].map(([a, b]) => pj(a, b, 0));
+  const floor = () => {
+    let s = `<path d="M${corners.map((q) => f1(q[0]) + " " + f1(q[1])).join("L")}Z" fill="#fafafa"/>`;
+    for (let g = -3; g <= 3; g++) s += line(pj(g, -FB, 0), pj(g, FB, 0), "#d4d4d8", 2);
+    for (let g = -1; g <= 1; g++) s += line(pj(-FA, g, 0), pj(FA, g, 0), "#d4d4d8", 2);
+    return s;
+  };
+  const edges = () => {
+    const [b0, b1, a1, c0] = corners;
+    return line(b1, b0, "#d4d4d8", 2) + `<path d="M${f1(b0[0])} ${f1(b0[1])}L${f1(c0[0])} ${f1(c0[1])}L${f1(a1[0])} ${f1(a1[1])}L${f1(b1[0])} ${f1(b1[1])}" fill="none" stroke="${MUTE}" stroke-width="3" stroke-linejoin="round"/>`;
+  };
+  const rim = "M" + Array.from({ length: 97 }, (_, j) => { const [a, b] = rimPt((j / 96) * 2 * Math.PI); const q = pj(a, b, E); return f1(q[0]) + " " + f1(q[1]); }).join("L");
+  const bb = (() => {
+    const xs = corners.map((q) => q[0]), ys = corners.map((q) => q[1]);
+    for (let j = 0; j < 64; j++) { const [a, b] = rimPt((j / 64) * 2 * Math.PI); const q = pj(a, b, E); xs.push(q[0]); ys.push(q[1]); }
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  })();
+  const steps = (() => { let a = -2.2, b = -1.05; const o = [[a, b]]; for (let i = 0; i < 6; i++) { a -= 0.25 * a; b -= 0.25 * 3 * b; o.push([a, b]); } return o.map(([p, q]) => pj(p, q, err(p, q))); })();
+  let painted = null;
+  return (x, y, w, h, path) => {
+    painted = painted || floor() + surface() + edges() + `<path d="${rim}" fill="none" stroke="${MUTE}" stroke-width="3"/>`;
+    const sc = Math.min(w / (bb[2] - bb[0]), h / (bb[3] - bb[1]));
+    const bw = (bb[2] - bb[0]) * sc, bh = (bb[3] - bb[1]) * sc, bx = x + (w - bw) / 2, by = y + (h - bh) / 2;
+    let marks = "";
+    if (path) {
+      marks = steps.slice(0, 6).map((q) => `<circle cx="${f1(q[0])}" cy="${f1(q[1])}" r="10" fill="${INK}"/>`).join("");
+      const q = steps[6];
+      marks += `<circle cx="${f1(q[0])}" cy="${f1(q[1])}" r="30" fill="#ffffff"/><circle cx="${f1(q[0])}" cy="${f1(q[1])}" r="24" fill="${ACCENT}"/>`;
+    }
+    const tr = `translate(${f1(bx - bb[0] * sc)} ${f1(by - bb[1] * sc)}) scale(${sc.toFixed(4)})`;
+    return { svg: `<g transform="${tr}">${painted}${marks}</g>`, box: [bx, by, bw, bh] };
+  };
+})();
+
+// ---- Scene 1: count down the bowl ------------------------------------------------------
+// Real values: the start of each count word ("one", "two", "three") in seconds after the
+// section starts. A recording reads them from the words the recorder passes, so the video
+// always shows its own voice's times. A preview or a shot has no words and shows these, which
+// a fill step sets from build/audio/timeline.json after a build. Until then they hold the
+// storyboard's estimates.
+const S1_COUNT_TIMES = [5.37, 6.30, 6.62];
+
+// The bowl is y = 720 - 320 u^2 across x = 960 + 400 u. The ball starts at u = -0.96, and each
+// count is a step of gradient descent on u^2 at step size 0.25, so each step is half the last.
+const S1_STEPS = [-0.96, -0.48, -0.24, -0.12];
+const S1_CUES = ["1.1ball", "1.1one", "1.1two", "1.1three"];
+const s1x = (u) => 960 + 400 * u, s1y = (u) => 720 - 320 * u * u;
+// A point r px off the curve along its normal, so a ball of radius r sits on the line.
+const s1on = (u, r) => { const m = -1.6 * u, n = Math.hypot(m, 1); return [s1x(u) + (m / n) * (r + 7), s1y(u) - (1 / n) * (r + 7)]; };
+function s1countTimes() {
   const raw = DeckTalk.params.get("words");
-  if (!raw) return null;
-  const words = raw.split(",").map((item) => parseFloat(item.slice(item.lastIndexOf("@") + 1))).filter((t) => !isNaN(t));
-  return words.length >= S1_WORDS.length ? words.slice(0, S1_WORDS.length) : null;
+  if (!raw) return S1_COUNT_TIMES;
+  const words = raw.split(",").map((item) => { const at = item.lastIndexOf("@"); return [wordKey(item.slice(0, at)), parseFloat(item.slice(at + 1))]; });
+  const out = [];
+  let from = 0;
+  for (const target of ["one", "two", "three"]) {
+    const i = words.findIndex(([w, t], k) => k >= from && w === target && !isNaN(t));
+    if (i < 0) return S1_COUNT_TIMES;
+    out.push(words[i][1]);
+    from = i + 1;
+  }
+  return out;
+}
+function s1svg() {
+  let curve = "";
+  for (let i = 0; i <= 84; i++) { const u = -1.05 + (2.1 * i) / 84; curve += (i ? "L" : "M") + f1(s1x(u)) + " " + f1(s1y(u)); }
+  // Each dot marks where the ball stood, and appears as the ball leaves it.
+  const dots = S1_STEPS.slice(0, 3).map((u, i) => { const [x, y] = s1on(u, 11); return `<circle data-cue="${S1_CUES[i + 1]}" data-fx="none" cx="${f1(x)}" cy="${f1(y)}" r="11" fill="${INK}"/>`; }).join("");
+  const balls = S1_STEPS.map((u, i) => { const [x, y] = s1on(u, 28); return `<g class="ball" data-cue="${S1_CUES[i]}" data-fx="none"><circle cx="${f1(x)}" cy="${f1(y)}" r="34" fill="#ffffff"/><circle cx="${f1(x)}" cy="${f1(y)}" r="28" fill="${ACCENT}"/></g>`; }).reverse().join("");
+  const words = ["one", "two", "three"], times = s1countTimes();
+  const box = (i, full) => `<rect class="box${full ? " full" : ""}" x="${620 + 240 * i}" y="790" width="200" height="80" rx="14"/><text class="lbl" x="${720 + 240 * i}" y="843">${words[i]}</text>`;
+  return `
+    <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true">
+      <path class="curve" data-cue="1.1bowl" data-fx="none" d="${curve}"/>
+      ${dots}
+      ${balls}
+      <g data-cue="1.1count" data-fx="none">${words.map((_, i) => box(i, false)).join("")}</g>
+      <g data-cue="1.1one" data-fx="none">${box(0, true)}</g>
+      <g data-cue="1.1two" data-fx="none">${box(1, true)}</g>
+      <g data-cue="1.1three" data-fx="none">${box(2, true)}</g>
+      <g data-cue="1.1word" data-fx="none">${times.map((t, i) => `<text class="time" x="${720 + 240 * i}" y="926">${t.toFixed(2)} s</text>`).join("")}</g>
+    </svg>`;
 }
 
 DeckTalk.scene(1, { name: "Open", steps: [
-  { id: "1.1", hold: 22, cues: { "1.1curve": 0.4, "1.1number": 2.2, "1.1mark": 3.4, "1.1md": 5, "1.1times": 7.5, "1.1cap": 10.5 },
-    on: {
-      "1.1md": (slide) => slide.querySelector(".s1-panel").classList.add("md"),
-      "1.1times": (slide) => {
-        slide.querySelector(".s1-panel").classList.remove("md");
-        slide.querySelector(".s1-ticks").classList.add("pulse");
-        const times = s1spoken();
-        if (times) slide.querySelectorAll(".s1-times b i").forEach((el, i) => { el.textContent = times[i].toFixed(2); });
-      },
-    },
+  { id: "1.1", hold: 14,
+    cues: { "1.1bowl": 0.3, "1.1ball": 1.6, "1.1count": 4.4, "1.1one": 5.4, "1.1two": 6.3, "1.1three": 6.6, "1.1word": 12.4 },
     render: () => `
-    <div class="slide">
-      <p class="eyebrow">Scene 01</p>
-      <div class="panel s1-panel" style="left:120px;top:240px;width:800px;height:400px">
-        <div class="filelabel abs" style="left:24px;top:40px">script.md</div>
-        <div class="s1-line">
-          <span class="mono" data-at="0" data-sync>The curve rises, then the number lands.</span><span class="cursor"></span>
-        </div>
-        <div class="s1-ticks">${s1ticks}</div>
-        <div class="s1-times" data-cue="1.1times" data-fx="none">${s1times}</div>
-      </div>
-      <div class="panel s1-fig" style="left:1016px;top:240px;width:784px;height:400px">
-        <svg class="abs" style="left:40px;top:40px" viewBox="0 0 440 320" width="440" height="320">
-          <line class="ax" x1="20" y1="290" x2="420" y2="290"/>
-          <line class="ax" x1="20" y1="20" x2="20" y2="290"/>
-          <path class="curve" pathLength="1" data-cue="1.1curve" data-fx="draw" data-dur="1.2" d="M20,270 C150,268 250,240 420,40"/>
-        </svg>
-        <div class="s1-big" data-cue="1.1number" data-fx="pop">3×</div>
-      </div>
-      <div class="s1-mark">
-        <span class="wordmark" data-cue="1.1mark">DeckTalk</span>
-        <span class="body" data-cue="1.1cap" style="color:var(--mute)">Three files and a voice.</span>
-      </div>
+    <div class="slide s1">
+      <p class="eyebrow">01 Open</p>
+      ${s1svg()}
+      <p class="wordmark s1-mark" data-cue="1.1word" data-fx="none">DeckTalk</p>
       ${footer(1)}
     </div>` },
 ]});
 
-// ---- Scene 2: three files and a voice, tied by one id ---------------------------------
-// The words panel quotes the build that made the video: the section's words file and the start
-// of "learning", "rate", and "eta" in it. These values come from a silent build of this
-// scaffold, and the voiced build replaces them with its own.
-const S2_WORDS_FILE = "03-gradient-descent.words.json";
-const S2_WORDS = [["learning", 33.25], ["rate", 33.63], ["eta", 34.05]];
-const s2word = ([word, start]) => `{"word": ${(JSON.stringify(word) + ",").padEnd(11)} "start": ${start.toFixed(2)}}`;
+// ---- Scene 2: how it works --------------------------------------------------------------
+// Real values: the start of each word of "For this lesson it is a bowl." in section 3's words
+// file (build/audio/03-how-ai-learns.words.json), in seconds after section 3 starts, and the
+// same words after "lesson" is retyped as "example", from a trial build with that change. A
+// fill step sets both. Until then they hold the storyboard's estimates.
+const S2_LINE_TIMES = [42.91, 43.32, 43.74, 44.15, 44.56, 44.97, 45.39];
+const S2_RETYPED_TIMES = [42.91, 43.32, 43.74, 44.34, 44.75, 45.16, 45.58];
 
-DeckTalk.scene(2, { name: "Three files and a voice", steps: [
-  { id: "2.1", hold: 28, cues: { "2.1script": 3.5, "2.1words": 6, "2.1cue": 8.5, "2.1slide": 11, "2.1one": 13 },
-    on: { "2.1one": (slide) => slide.classList.add("lit") },
-    render: () => `
-    <div class="slide s2">
-      <p class="eyebrow">Scene 02</p>
-      <h1 class="title">Three files you write, one the voice returns, tied by one id.</h1>
-      <div class="col" data-cue="2.1script" data-fx="none" style="left:120px;top:340px">
-        <div class="filelabel">script.md</div>
-        <pre class="snippet">Take a step, and the
-<span class="k">learning rate</span>, eta,
-scales its length.</pre>
-      </div>
-      <div class="col" data-cue="2.1words" data-fx="none" style="left:972px;top:340px">
-        <div class="filelabel">${S2_WORDS_FILE}</div>
-        <pre class="snippet"><span class="k">${s2word(S2_WORDS[0])}
-${s2word(S2_WORDS[1])}</span>
-${s2word(S2_WORDS[2])}</pre>
-      </div>
-      <div class="col" data-cue="2.1cue" data-fx="none" style="left:120px;top:604px">
-        <div class="filelabel">cues.json</div>
-        <pre class="snippet">{ "cue": <span class="k">"3.1eq"</span>,
-  "on": <span class="k">"learning rate"</span> }</pre>
-      </div>
-      <div class="col" data-cue="2.1slide" data-fx="none" style="left:972px;top:604px">
-        <div class="filelabel">index.html</div>
-        <pre class="snippet">&lt;span class="chip"
-      <span class="k">data-cue="3.1eq"</span>
-      data-tex="\\eta = 2"&gt;</pre>
-      </div>
-      ${footer(2)}
-    </div>` },
-]});
-
-// ---- Scene 3: gradient descent on a three-dimensional loss surface ----------------------
-// The surface, the contours, the balls, their trails, and the minimum ring are three.js objects.
-// The axes, the labels, the gradient arrows, the θ dot, the drop line, and the step dots are
-// DOM and SVG, placed by projecting 3D points, because the first draw of a new WebGL object is
-// slow in the recorder's software renderer. Cue handlers drive every animation from DeckTalk's
-// clock. s3figure builds the renderer and every object without touching the page, and returns
-// { warm, attach }, or null without three.js or WebGL. attach(slide) puts the canvas in the
-// slide's figure and returns the cue handlers, which the step's enter stores on its slide as
-// slide.s3. A frozen figure returns no handlers.
-function s3figure(frozen) {
-  const T = window.THREE;
-  if (!T) { console.warn("decktalk: three.js missing, so the scene 3 figure is empty"); return null; }
-  let renderer;
-  try {
-    renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
-  } catch (e) { console.warn("decktalk: no WebGL, so the scene 3 figure is empty"); return null; }
-  const W = 960, H = 570, R = 0.22, ACCENT = 0x2c1fea, INK = 0x0a0a0a;
-  // three.js takes colours as numbers, so this repeats the --hair token above.
-  const SURFACE = 0xe4e4e7;
-  renderer.setPixelRatio(1);
-  renderer.setSize(W, H);
-  renderer.setClearColor(0xffffff, 0);
-  const scene = new T.Scene();
-  const camera = new T.PerspectiveCamera(32, W / H, 0.1, 100);
-  camera.position.set(5.77, 6.47, 6.77);
-  camera.lookAt(0, 1.2, 0);
-  // r160 lights are physical, so the legacy intensities carry a factor of pi. Low ambient and a
-  // stronger key light keep the top of the bowl pale and shade the walls, so the form reads.
-  scene.add(new T.AmbientLight(0xffffff, 0.25 * Math.PI));
-  const sun = new T.DirectionalLight(0xffffff, 0.75 * Math.PI);
-  sun.position.set(3, 6, 2);
-  scene.add(sun);
-  const fill = new T.DirectionalLight(0xffffff, 0.35 * Math.PI);
-  fill.position.set(-3, 4, -2);
-  scene.add(fill);
-
-  const h = (x, z) => 0.18 * (x * x + 0.6 * z * z) + 0.15 * Math.sin(x) * Math.cos(z);
-  const grad = (x, z) => [0.36 * x + 0.15 * Math.cos(x) * Math.cos(z), 0.216 * z - 0.15 * Math.sin(x) * Math.sin(z)];
-  const normalAt = (x, z) => { const [gx, gz] = grad(x, z); return new T.Vector3(-gx, 1, -gz).normalize(); };
-  const MIN = [-0.3860, 0.0];
-  const clamp01 = (k) => Math.min(1, Math.max(0, k));
-  const easeOut = (k) => 1 - Math.pow(1 - k, 3);
-
-  // Every material carries a base opacity and a fade (0..1). A material at zero opacity is
-  // hidden outright, so it never writes depth over the surface.
-  const mats = [];
-  const track = (m, base) => { m.transparent = true; m.userData.base = base; m.userData.fade = 1; m.opacity = base; mats.push(m); return m; };
-  const apply = () => mats.forEach((m) => { m.opacity = m.userData.base * m.userData.fade; m.visible = m.opacity > 0.002; });
-
-  // The surface, shaded pale, with iso-loss contours lifted just above it. Both are drawn from the
-  // first frame, so the scene opens on the whole figure.
-  const N = 60;
-  const geo = new T.PlaneGeometry(6, 6, N, N);
-  geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, h(pos.getX(i), pos.getZ(i)));
-  geo.computeVertexNormals();
-  const surfMat = track(new T.MeshLambertMaterial({ color: SURFACE, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }), 1);
-  scene.add(new T.Mesh(geo, surfMat));
-
-  // Contours by marching squares over the height grid, twelve levels from the minimum to the rim.
-  const contours = (() => {
-    const G = 90, step = 6 / G, LIFT = 0.01, out = [];
-    const grid = [];
-    for (let i = 0; i <= G; i++) { grid.push([]); for (let j = 0; j <= G; j++) grid[i].push(h(-3 + i * step, -3 + j * step)); }
-    const lo = h(MIN[0], MIN[1]), hi = 2.4, levels = 12;
-    for (let L = 1; L <= levels; L++) {
-      const c = lo + (hi - lo) * L / (levels + 0.5);
-      for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
-        const x0 = -3 + i * step, z0 = -3 + j * step, x1 = x0 + step, z1 = z0 + step;
-        const a = grid[i][j], b = grid[i + 1][j], d = grid[i + 1][j + 1], e = grid[i][j + 1]; // corners: (x0,z0) (x1,z0) (x1,z1) (x0,z1)
-        const idx = (a > c ? 1 : 0) | (b > c ? 2 : 0) | (d > c ? 4 : 0) | (e > c ? 8 : 0);
-        if (idx === 0 || idx === 15) continue;
-        const lerp = (p, q, vp, vq) => p + (q - p) * (c - vp) / (vq - vp);
-        const top = [lerp(x0, x1, a, b), z0], right = [x1, lerp(z0, z1, b, d)], bottom = [lerp(x0, x1, e, d), z1], left = [x0, lerp(z0, z1, a, e)];
-        const seg = (p, q) => out.push(p[0], c + LIFT, p[1], q[0], c + LIFT, q[1]);
-        switch (idx) {
-          case 1: case 14: seg(left, top); break;
-          case 2: case 13: seg(top, right); break;
-          case 3: case 12: seg(left, right); break;
-          case 4: case 11: seg(right, bottom); break;
-          case 5: seg(left, top); seg(right, bottom); break;
-          case 6: case 9: seg(top, bottom); break;
-          case 7: case 8: seg(left, bottom); break;
-          case 10: seg(top, right); seg(left, bottom); break;
-        }
-      }
-    }
-    const g = new T.BufferGeometry();
-    g.setAttribute("position", new T.Float32BufferAttribute(out, 3));
-    return g;
-  })();
-  const contourMat = track(new T.LineBasicMaterial({ color: INK }), 0.22);
-  // The contours draw after the surface. Drawn first, a contour pixel stays see-through, and the
-  // axes under the canvas show through the bowl as a row of dashes.
-  const contourLines = new T.LineSegments(contours, contourMat);
-  contourLines.renderOrder = 1;
-  scene.add(contourLines);
-
-  // The iterates of gradient descent from one starting point at four learning rates. At 2 the ball
-  // reaches the bottom in five steps that shrink with the slope. At 4.5 it overshoots, zigzags
-  // across the bowl, and settles in about twenty. At 6 each bounce lands higher, and the fifth step
-  // leaves the figure. At 0.3 it crawls, and its first six steps are floor dots only.
-  const iterate = (x, z, lr, n) => { const p = [[x, z]]; for (let i = 0; i < n; i++) { const [gx, gz] = grad(x, z); x -= lr * gx; z -= lr * gz; p.push([x, z]); } return p; };
-  const P = iterate(-2.4, 1.9, 2, 5);
-  const GH = iterate(-2.4, 1.9, 4.5, 20);
-  const GX = iterate(-2.4, 1.9, 6, 5);
-  const CRAWL = iterate(-2.4, 1.9, 0.3, 6);
-  const LAST = P.length - 1, PREVIEW_HOPS = 4, RULE_AT = 3;
-
-  // A trail is built once through every iterate of its path, hugging the surface, and grows by its
-  // draw range alone, so a moving ball uploads nothing to the GPU. A dashed trail carries its line
-  // distances from the start.
-  const SEG = 20;
-  function makeTrail(iters, material, dashed) {
-    const count = (iters.length - 1) * SEG + 1;
-    const xyz = new Float32Array(count * 3), dist = new Float32Array(count);
-    for (let k = 0; k < count; k++) {
-      const i = Math.min(Math.floor(k / SEG), iters.length - 2), s = (k - i * SEG) / SEG;
-      const a = iters[i], b = iters[i + 1];
-      const x = a[0] + (b[0] - a[0]) * s, z = a[1] + (b[1] - a[1]) * s;
-      xyz[k * 3] = x; xyz[k * 3 + 1] = h(x, z) + 0.02; xyz[k * 3 + 2] = z;
-      if (k) dist[k] = dist[k - 1] + Math.hypot(x - xyz[k * 3 - 3], xyz[k * 3 + 1] - xyz[k * 3 - 2], z - xyz[k * 3 - 1]);
-    }
-    const g = new T.BufferGeometry();
-    g.setAttribute("position", new T.BufferAttribute(xyz, 3));
-    if (dashed) g.setAttribute("lineDistance", new T.BufferAttribute(dist, 1));
-    g.setDrawRange(0, 0);
-    const line = new T.Line(g, material);
-    line.frustumCulled = false;
-    scene.add(line);
-    return { count, show: (n) => g.setDrawRange(0, n) };
-  }
-  const trailMat = track(new T.LineBasicMaterial({ color: INK }), 0.7);
-  const trail = makeTrail(P, trailMat, false);
-  const overTrailMat = track(new T.LineDashedMaterial({ color: INK, dashSize: 0.12, gapSize: 0.08 }), 0.8);
-  const overTrail = makeTrail(GH, overTrailMat, true);
-  const outTrailMat = track(new T.LineDashedMaterial({ color: INK, dashSize: 0.12, gapSize: 0.08 }), 0.8);
-  const outTrail = makeTrail(GX, outTrailMat, true);
-
-  // The ball, with a soft accent halo on the surface under it that marks the current point. The
-  // halo stays on the surface while the ball hops, so each hop shows its height.
-  const ballMat = track(new T.MeshLambertMaterial({ color: ACCENT }), 1);
-  const ballGeo = new T.SphereGeometry(R, 32, 24);
-  const ball = new T.Mesh(ballGeo, ballMat);
-  ball.scale.setScalar(0.001);
-  scene.add(ball);
-  const haloMat = track(new T.MeshBasicMaterial({ color: ACCENT, depthWrite: false }), 0.4);
-  const halo = new T.Mesh(new T.CircleGeometry(0.36, 48), haloMat);
-  halo.scale.setScalar(0.001);
-  scene.add(halo);
-  const placeBall = (x, z, lift) => {
-    ball.position.set(x, h(x, z) + R + (lift || 0), z);
-    const n = normalAt(x, z);
-    halo.position.set(x, h(x, z), z).addScaledVector(n, 0.03);
-    halo.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), n);
-  };
-  const sizeBall = (s) => { ball.scale.setScalar(s); halo.scale.setScalar(s); };
-  placeBall(P[0][0], P[0][1]);
-  // The two ghosts share the ball's sphere, each with its own faint material. The ghost that flies
-  // out is the less faint of the two, so its flight reads over the settled one.
-  const ghost = (iters, base) => {
-    const m = track(new T.MeshLambertMaterial({ color: ACCENT }), base);
-    const mesh = new T.Mesh(ballGeo, m);
-    mesh.position.set(iters[0][0], h(iters[0][0], iters[0][1]) + R, iters[0][1]);
-    mesh.scale.setScalar(0.001);
-    scene.add(mesh);
-    return { mesh, m };
-  };
-  const overGhost = ghost(GH, 0.35), outGhost = ghost(GX, 0.6);
-
-  // The minimum ring, popped in when the ball arrives.
-  const ringMat = track(new T.MeshBasicMaterial({ color: ACCENT }), 0.7);
-  const ring = new T.Mesh(new T.TorusGeometry(0.42, 0.03, 12, 64), ringMat);
-  ring.position.set(MIN[0], h(MIN[0], MIN[1]) + 0.03, MIN[1]);
-  ring.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), normalAt(MIN[0], MIN[1]));
-  ring.scale.setScalar(0.001);
-  scene.add(ring);
-
-  // The input plane is DOM and SVG, drawn from 3D points projected with the fixed camera. The
-  // floor sits just below the lowest point of the surface. Its two axes run from the far corner,
-  // behind the bowl, out past the left and right corners, and the loss axis rises from that corner.
-  // Everything that never moves is placed once at attach. Only the θ dot, its tag, the drop line,
-  // and the loss label follow the ball, and they are written only when the ball or the drop moved.
-  const FLOOR = -0.12, AX = 3.3, TOP = 3.5;
-  camera.updateMatrixWorld();
-  const pv = new T.Vector3();
-  const toScreen = (x, y, z) => { pv.set(x, y, z).project(camera); return [(pv.x + 1) / 2 * W, (1 - pv.y) / 2 * H]; };
-  const floor = (p) => toScreen(p[0], FLOOR, p[1]);
-  const f1 = (v) => v.toFixed(1);
-  const pathD = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${f1(p[0])} ${f1(p[1])}`).join("") + (pts.length > 2 ? "Z" : "");
-  const moveTo = (el, p, offset) => { el.style.transform = `translate(${f1(p[0])}px, ${f1(p[1])}px) ${offset}`; };
-  const NS = "http://www.w3.org/2000/svg";
-  // An arrow lying on the floor at θ along a unit direction in the weight plane, as one outline
-  // projected from the floor, so perspective narrows it the way it narrows the floor.
-  const floorArrow = (o, u, len) => {
-    const v = [-u[1], u[0]], at = (a, b) => floor([o[0] + u[0] * a + v[0] * b, o[1] + u[1] * a + v[1] * b]);
-    const S = 0.22, HEAD = 0.55, SW = 0.13, HW = 0.34;
-    return pathD([at(S, SW), at(len - HEAD, SW), at(len - HEAD, HW), at(len, 0), at(len - HEAD, -HW), at(len - HEAD, -SW), at(S, -SW)]);
-  };
-  const ARROW = 1.4;
-  const unit = (p) => { const [gx, gz] = grad(p[0], p[1]), g = Math.hypot(gx, gz) || 1; return [gx / g, gz / g]; };
-  const UP = unit(P[0]), DOWN = [-UP[0], -UP[1]];
-  let host = null, el = null, dropK = frozen ? 1 : 0, losslOn = true, last = "";
-  const placeStatic = () => {
-    const corner = toScreen(-3, FLOOR, -3);
-    el.t1.setAttribute("d", pathD([corner, toScreen(-3, FLOOR, AX)]));
-    el.t2.setAttribute("d", pathD([corner, toScreen(AX, FLOOR, -3)]));
-    el.l.setAttribute("d", pathD([corner, toScreen(-3, TOP, -3)]));
-    moveTo(el.labT1, toScreen(-3, FLOOR, AX + 0.45), "translate(-50%, -50%)");
-    moveTo(el.labT2, toScreen(AX + 0.45, FLOOR, -3), "translate(-50%, -50%)");
-    moveTo(el.labL, toScreen(-3, TOP, -3), "translate(16px, -50%)");
-    el.up.setAttribute("d", floorArrow(P[0], UP, ARROW));
-    el.down.setAttribute("d", floorArrow(P[0], DOWN, ARROW));
-    moveTo(el.glUp, floor([P[0][0] + UP[0] * (ARROW + 0.5), P[0][1] + UP[1] * (ARROW + 0.5)]), "translate(-50%, -50%)");
-    moveTo(el.glDown, floor([P[0][0] + DOWN[0] * (ARROW + 0.55), P[0][1] + DOWN[1] * (ARROW + 0.55)]), "translate(-50%, -50%)");
-    // One dot for every iterate and one floor segment between each pair, made hidden now and
-    // shown as the ball lands, so a landing only toggles a class. The crawl dots are made the same
-    // way, and a class on the figure fades them in one after another.
-    const frag = document.createDocumentFragment();
-    const dot = (p, cls, r) => { const c = document.createElementNS(NS, "circle"); const q = floor(p); c.setAttribute("class", cls); c.setAttribute("r", r); c.setAttribute("cx", f1(q[0])); c.setAttribute("cy", f1(q[1])); return c; };
-    el.dots = P.map((p) => dot(p, "sdot", "6"));
-    el.segs = P.slice(1).map((p, i) => { const s = document.createElementNS(NS, "path"); s.setAttribute("class", "fseg"); s.setAttribute("d", pathD([floor(P[i]), floor(p)])); return s; });
-    el.crawl = CRAWL.slice(1).map((p, i) => { const c = dot(p, "cdot", "8"); c.style.setProperty("--i", i); return c; });
-    const crawlPath = document.createElementNS(NS, "path");
-    crawlPath.setAttribute("class", "cpath");
-    crawlPath.setAttribute("pathLength", "1");
-    crawlPath.setAttribute("d", CRAWL.map((p, i) => `${i ? "L" : "M"}${f1(floor(p)[0])} ${f1(floor(p)[1])}`).join(""));
-    frag.appendChild(crawlPath);
-    el.segs.forEach((s) => frag.appendChild(s));
-    el.dots.forEach((c) => frag.appendChild(c));
-    el.crawl.forEach((c) => frag.appendChild(c));
-    el.steps.appendChild(frag);
-    host.classList.add("placed");
-  };
-  const landed = (i) => { el.dots[i].classList.add("on"); if (i > 0) el.segs[i - 1].classList.add("on"); };
-  const placeTheta = () => {
-    const bx = ball.position.x, bz = ball.position.z, key = `${f1(bx * 100)} ${f1(bz * 100)} ${dropK.toFixed(3)}`;
-    if (key === last) return;
-    last = key;
-    const f = toScreen(bx, FLOOR, bz), s = toScreen(bx, h(bx, bz), bz);
-    const top = [f[0] + (s[0] - f[0]) * dropK, f[1] + (s[1] - f[1]) * dropK];
-    moveTo(el.dot, f, "");
-    moveTo(el.tag, f, "translate(-50%, 16px)");
-    el.drop.setAttribute("d", pathD([f, top]));
-    if (losslOn) moveTo(el.lossl, [(f[0] + s[0]) / 2, (f[1] + s[1]) / 2], "translate(16px, -50%)");
-  };
-
-  // Animation: every active animation ticks from DeckTalk's clock. An animation says what it
-  // changes, so the WebGL scene renders only while a 3D object moves or fades, the overlay is
-  // placed only while the ball or the drop line moves, and a wait draws nothing. The loop stops
-  // when no animation is left.
-  const clock = () => window.__decktalk.now();
-  const anims = new Set();
-  let raf = 0, inStep = false;
-  const render = () => { apply(); renderer.render(scene, camera); if (el) placeTheta(); };
-  const loop = () => {
-    if (raf || inStep) return;
-    raf = requestAnimationFrame(() => {
-      raf = 0; inStep = true;
-      const t = clock();
-      let gl = false, overlay = false;
-      for (const a of [...anims]) {
-        const k = clamp01((t - a.t0) / a.dur);
-        a.tick(k);
-        if (a.draws === "gl") gl = true; else if (a.draws === "overlay") overlay = true;
-        if (k >= 1) { anims.delete(a); if (a.done) a.done(); }
-      }
-      inStep = false;
-      if (gl) render(); else if (overlay && el) placeTheta();
-      if (anims.size) loop();
-    });
-  };
-  // A cue takes effect on its own frame: the first tick runs now and one render follows at the end
-  // of the task, however many animations the cue started.
-  let pending = false;
-  const renderSoon = () => { if (pending) return; pending = true; queueMicrotask(() => { pending = false; render(); }); };
-  const add = (dur, tick, done, draws = "gl") => {
-    const a = { t0: clock(), dur, tick, done, draws };
-    if (!isFinite(a.t0)) a.t0 = 0;
-    anims.add(a); tick(0);
-    if (draws === "gl") renderSoon(); else if (draws === "overlay" && el) placeTheta();
-    loop();
-    return a;
-  };
-  const wait = (dur, done) => add(dur, () => {}, done, "none");
-  const fadeTo = (m, target, dur) => { const from = m.userData.fade; return add(dur, (k) => { m.userData.fade = from + (target - from) * easeOut(k); }); };
-
-  // A walker is a ball on its path of iterates. A hop takes it from one iterate to the next over
-  // dur seconds. It travels the chord with an ease-out, so it leaves on the cued word, and it rises
-  // and falls on an arc whose height grows with the step, so each step reads as one hop that lands.
-  // A walk hops to a later iterate, resting between hops. A walk that starts while another is
-  // under way lands the hop in flight and takes over from there.
-  const walker = (iters, tr, place, lift, land) => ({ iters, tr, place, lift, land, at: 0, hop: null, token: 0 });
-  const hop = (w, dur, done) => {
-    const i = w.at, a = w.iters[i], b = w.iters[i + 1];
-    const height = w.lift * (0.12 + Math.hypot(b[0] - a[0], b[1] - a[1]));
-    w.hop = add(dur, (k) => {
-      const s = easeOut(k);
-      w.place(a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, height * 4 * k * (1 - k));
-      w.tr.show(Math.min(w.tr.count, i * SEG + Math.floor(s * SEG) + 1));
-    }, () => { w.hop = null; w.at = i + 1; if (w.land) w.land(i + 1); if (done) done(); });
-  };
-  const walk = (w, to, dur, rest, done) => {
-    const token = ++w.token;
-    if (w.hop) { const a = w.hop; anims.delete(a); a.tick(1); a.done(); }
-    const next = () => {
-      if (token !== w.token) return;
-      if (w.at >= to) { if (done) done(); return; }
-      hop(w, dur, () => (rest ? wait(rest, next) : next()));
-    };
-    next();
-  };
-  const ghostAt = (g) => (x, z, lift) => g.mesh.position.set(x, h(x, z) + R + lift, z);
-  const blue = walker(P, trail, placeBall, 0.3, (i) => el && landed(i));
-  const over = walker(GH, overTrail, ghostAt(overGhost), 0.1);
-  const out = walker(GX, outTrail, ghostAt(outGhost), 0.08);
-  const pop = (mesh, dur) => add(dur, (k) => { const s = k < 0.45 ? 1.08 * easeOut(k / 0.45) : 1.08 - 0.08 * ((k - 0.45) / 0.55); mesh.scale.setScalar(Math.max(0.001, s)); });
-
-  // The preview: the ball hops quickly to the bottom and leaves its floor dots, then shrinks away
-  // while its trail fades, and the dots stay behind as a faint ghost path. Pick a point ends a
-  // preview that is still under way at once, so the lesson's first step always starts from θ.
-  const previewAnims = new Set();
-  let previewToken = 0;
-  const toGhostPath = () => [...el.dots, ...el.segs].forEach((e) => { if (e.classList.contains("on")) { e.classList.remove("on"); e.classList.add("ghost"); } });
-  const resetBlue = () => { trail.show(0); trailMat.userData.fade = 1; blue.at = 0; placeBall(P[0][0], P[0][1]); sizeBall(0.001); };
-  const endPreview = () => {
-    previewToken++;
-    blue.token++;
-    if (blue.hop) { anims.delete(blue.hop); blue.hop = null; }
-    previewAnims.forEach((a) => anims.delete(a));
-    previewAnims.clear();
-    if (el) toGhostPath();
-    resetBlue();
-    renderSoon();
-  };
-
-  // Warm up: SwiftShader, the software WebGL of headless Chromium, does slow first-time work
-  // the first time it draws each object in each drawing state, and on CI one first draw can
-  // take 200 ms. So one frame draws every object at its real material settings, with the
-  // surface, contours, ghosts, and ring faded in, the ball, halo, ghosts, and ring at full size,
-  // and every trail drawn whole, while the canvas is off the page. A one-pixel read waits for the
-  // frame to finish. Then every object goes back to its opening state and draws again.
-  const sized = [ball, halo, ring, overGhost.mesh, outGhost.mesh];
-  const trails = [trail, overTrail, outTrail];
-  const warm = () => {
-    const fades = mats.map((m) => m.userData.fade);
-    mats.forEach((m) => { m.userData.fade = 1; });
-    sized.forEach((o) => o.scale.setScalar(1));
-    trails.forEach((tr) => tr.show(tr.count));
-    const gl = renderer.getContext(), px = new Uint8Array(4);
-    render();
-    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    mats.forEach((m, i) => { m.userData.fade = fades[i]; });
-    sized.forEach((o) => o.scale.setScalar(0.001));
-    trails.forEach((tr) => tr.show(0));
-    render();
-    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    renderer.domElement.dataset.warm = "1";
-  };
-  const attach = (slide) => {
-    host = slide.querySelector(".fig3");
-    const q = (sel) => host.querySelector(sel);
-    el = {
-      t1: q(".ax.t1"), t2: q(".ax.t2"), l: q(".ax.l"), labT1: q(".lab.t1"), labT2: q(".lab.t2"), labL: q(".lab.l"),
-      up: q(".grad.up"), down: q(".grad.down"), glUp: q(".gl.up"), glDown: q(".gl.down"),
-      steps: q(".steps"), dot: q(".tdot"), tag: q(".tag"), drop: q(".drop"), lossl: q(".lossl"),
-    };
-    host.appendChild(renderer.domElement);
-    placeStatic();
-    if (frozen) {
-      // The end state at once: the ball at the bottom with every step dot and its trail, the ring
-      // in place, and the ghost that zigzags faint with its path.
-      trails.forEach((tr) => tr.show(tr.count));
-      [overTrailMat, outTrailMat].forEach((m) => { m.userData.fade = 0.3; });
-      overGhost.m.userData.fade = 0.25;
-      overGhost.mesh.scale.setScalar(1);
-      ghostAt(overGhost)(GH[20][0], GH[20][1], 0);
-      placeBall(P[LAST][0], P[LAST][1]);
-      sizeBall(1);
-      P.forEach((p, i) => landed(i));
-      ring.scale.setScalar(1);
-      render();
-      return {};
-    }
-    render();
-    return handlers;
-  };
-  const handlers = {
-    "3.1preview": () => {
-      const token = ++previewToken;
-      placeBall(P[0][0], P[0][1]);
-      landed(0);
-      previewAnims.add(add(0.2, (k) => sizeBall(Math.max(0.001, easeOut(k)))));
-      walk(blue, PREVIEW_HOPS, 0.28, 0.05, () => previewAnims.add(wait(0.4, () => {
-        if (token !== previewToken) return;
-        toGhostPath();
-        previewAnims.add(add(0.45, (k) => { sizeBall(Math.max(0.001, 1 - easeOut(k))); trailMat.userData.fade = 1 - easeOut(k); }, () => { if (token === previewToken) resetBlue(); }));
-      })));
-    },
-    "3.1p0": () => { endPreview(); add(0.3, (k) => sizeBall(Math.max(0.001, easeOut(k)))); },
-    "3.1height": () => add(0.45, (k) => { dropK = 0.25 + 0.75 * easeOut(k); }, null, "overlay"),
-    "3.1up": () => { losslOn = false; },
-    "3.1p1": () => { landed(0); walk(blue, 1, 0.45, 0); },
-    "3.1shrink": () => walk(blue, RULE_AT, 0.4, 0.12),
-    // The equation points back at the figure: the step it names flashes, and minus the gradient is
-    // drawn again at the ball, where the next step would start.
-    "3.1eqB": () => el.segs[Math.max(1, blue.at) - 1].classList.add("flash"),
-    "3.1eqC": () => {
-      const p = P[blue.at], d = unit(p).map((v) => -v), len = 1.1;
-      el.down.setAttribute("d", floorArrow(p, d, len));
-      moveTo(el.glDown, floor([p[0] + d[0] * (len + 0.5), p[1] + d[1] * (len + 0.5)]), "translate(-50%, -50%)");
-      [el.down, el.glDown].forEach((e) => { e.classList.remove("gone", "back"); e.classList.add("again"); });
-    },
-    "3.1over": () => {
-      [el.down, el.glDown].forEach((e) => e.classList.add("gone"));
-      el.segs.forEach((s) => s.classList.remove("flash"));
-      overGhost.m.userData.fade = 1; overGhost.mesh.scale.setScalar(1); walk(over, 20, 0.13, 0);
-    },
-    "3.1diverge": () => { outGhost.m.userData.fade = 1; outGhost.mesh.scale.setScalar(1); fadeTo(overGhost.m, 0.5, 0.4); walk(out, 5, 0.42, 0.06); },
-    "3.1min": () => {
-      [overGhost.m, outGhost.m].forEach((m) => fadeTo(m, 0.25, 0.6));
-      [overTrailMat, outTrailMat].forEach((m) => fadeTo(m, 0.3, 0.6));
-      walk(blue, LAST, 0.3, 0.08, () => pop(ring, 0.5));
-    },
-  };
-  return { warm, attach };
-}
-
-// A page that will play scene 3 builds and warms its figure while it loads, before narration
-// t=0, and __sceneReady, which the recorder awaits before it starts the clock, waits for the
-// warm-up too. This listener runs after the runtime's, so the runtime's promise already exists.
-// A frozen step builds its figure when the step enters.
-let s3prebuilt;
-document.addEventListener("DOMContentLoaded", () => {
-  const p = DeckTalk.params;
-  const plays3 = !p.has("step") && (p.has("scene") ? p.get("scene") === "3" : (p.get("beats") || "").startsWith("3."));
-  if (!plays3) return;
-  const warmed = new Promise((resolve) => {
-    s3prebuilt = s3figure(false);
-    if (s3prebuilt) s3prebuilt.warm();
-    resolve();
-  });
-  window.__sceneReady = Promise.all([window.__sceneReady, warmed]).then(([ready]) => ready);
-});
-
-// The axes and labels being named take the accent, and hand it on when the next ones are named.
-const focusAxes = (slide, names) => slide.querySelectorAll(".fig3 .ax, .fig3 .lab.t1, .fig3 .lab.t2, .fig3 .lab.l")
-  .forEach((el) => el.classList.toggle("focus", names.some((n) => el.classList.contains(n))));
-
-DeckTalk.scene(3, { name: "Gradient descent", steps: [
-  { id: "3.1", hold: 60,
-    cues: { "3.1weights": 1.5, "3.1loss": 3.5, "3.1preview": 16, "3.1p0": 19, "3.1height": 20.5, "3.1up": 22.5, "3.1neg": 25, "3.1p1": 26.5, "3.1eq": 28, "3.1scale": 29.5, "3.1shrink": 31, "3.1rule": 33.5, "3.1eqA": 35, "3.1eqA2": 36, "3.1eqB": 37, "3.1eqC": 38, "3.1over": 40, "3.1diverge": 42.5, "3.1crawl": 45, "3.1min": 47.5 },
-    enter: (slide, ctx) => {
-      const fig = s3prebuilt !== undefined && !ctx.frozen ? s3prebuilt : s3figure(ctx.frozen);
-      s3prebuilt = undefined;
-      slide.s3 = fig ? fig.attach(slide) : {};
-    },
-    on: {
-      "3.1weights": (slide) => focusAxes(slide, ["t1", "t2"]),
-      "3.1loss": (slide) => focusAxes(slide, ["l"]),
-      "3.1preview": (slide) => { focusAxes(slide, []); slide.s3?.["3.1preview"]?.(); },
-      "3.1p0": (slide) => slide.s3?.["3.1p0"]?.(),
-      "3.1height": (slide) => { focusAxes(slide, ["l"]); slide.s3?.["3.1height"]?.(); },
-      "3.1up": (slide) => { focusAxes(slide, []); slide.querySelector(".fig3 .lossl").classList.add("gone"); slide.s3?.["3.1up"]?.(); },
-      "3.1neg": (slide) => slide.querySelectorAll(".fig3 .grad.up, .fig3 .gl.up").forEach((e) => e.classList.add("back")),
-      "3.1p1": (slide) => { slide.querySelectorAll(".fig3 .grad, .fig3 .gl").forEach((e) => e.classList.add("gone")); slide.s3?.["3.1p1"]?.(); },
-      "3.1shrink": (slide) => slide.s3?.["3.1shrink"]?.(),
-      "3.1rule": (slide) => { slide.querySelector(".fig3").classList.add("side"); slide.querySelector(".s3col").classList.add("in"); },
-      "3.1eqA": (slide) => slide.querySelector(".eq .a").classList.add("on"),
-      "3.1eqA2": (slide) => { slide.querySelector(".eq .a2").classList.add("on"); slide.querySelector(".fig3 .tag").classList.add("pulse"); },
-      "3.1eqB": (slide) => { slide.querySelector(".eq .b").classList.add("on"); slide.s3?.["3.1eqB"]?.(); },
-      "3.1eqC": (slide) => { slide.querySelector(".eq .c").classList.add("on"); slide.s3?.["3.1eqC"]?.(); },
-      "3.1over": (slide) => { slide.querySelector(".chip.c2").classList.remove("now"); slide.s3?.["3.1over"]?.(); },
-      "3.1diverge": (slide) => { slide.querySelector(".ghostchip.c45").classList.add("out"); slide.s3?.["3.1diverge"]?.(); },
-      "3.1crawl": (slide) => { slide.querySelector(".ghostchip.c6").classList.add("out"); slide.querySelector(".fig3").classList.add("crawling"); },
-      "3.1min": (slide) => {
-        slide.s3?.["3.1min"]?.();
-        slide.querySelector(".fig3").classList.add("settled");
-        slide.querySelectorAll(".ghostchip").forEach((e) => e.classList.add("gone"));
-        slide.querySelector(".chip.c2").classList.add("now");
-      },
-    },
-    render: () => `
-    <div class="slide">
-      <p class="eyebrow">Scene 03</p>
-      <h1 class="title">Gradient descent lowers a model's loss<br>one step at a time.</h1>
-      <div class="fig3">
-        <svg class="under" viewBox="0 0 960 570" aria-hidden="true">
-          <path class="ax t1"/>
-          <path class="ax t2"/>
-          <path class="ax l"/>
-        </svg>
-        <div class="over">
-          <svg viewBox="0 0 960 570" aria-hidden="true">
-            <g class="steps"></g>
-            <path class="grad up" data-cue="3.1up" data-fx="fade"/>
-            <path class="grad down" data-cue="3.1neg" data-fx="fade"/>
-            <g data-cue="3.1height" data-fx="fade"><path class="drop"/></g>
-          </svg>
-          <div class="tdot" data-cue="3.1p0" data-fx="fade"></div>
-          <div class="lab t1">θ<sub>1</sub></div>
-          <div class="lab t2">θ<sub>2</sub></div>
-          <div class="lab l">L(θ)</div>
-          <div class="lab tag" data-cue="3.1p0" data-fx="fade"><i>θ</i></div>
-          <div class="lab lossl" data-cue="3.1height" data-fx="fade">loss</div>
-          <div class="lab gl up" data-cue="3.1up" data-fx="fade" data-tex="\\nabla L">∇L</div>
-          <div class="lab gl down" data-cue="3.1neg" data-fx="fade" data-tex="-\\nabla L">−∇L</div>
-        </div>
-      </div>
-      <div class="s3col">
-        <div class="chips">
-          <span class="chip c2 now" data-cue="3.1eq" data-tex="\\eta = 2">η = 2</span>
-          <span class="chip now ghostchip c45" data-cue="3.1over" data-fx="fade" data-tex="\\eta = 4.5">η = 4.5</span>
-          <span class="chip now ghostchip c6" data-cue="3.1diverge" data-fx="fade" data-tex="\\eta = 6">η = 6</span>
-          <span class="chip now ghostchip c03" data-cue="3.1crawl" data-fx="fade" data-tex="\\eta = 0.3">η = 0.3</span>
-        </div>
-        <p class="caption scalecap" data-cue="3.1scale">η scales each step.</p>
-        <div class="eq" data-cue="3.1rule" data-fx="fade">
-          <span class="a" data-display data-tex="\\theta_{t+1}">θ(t+1)</span>
-          <span class="a2" data-display data-tex="= \\theta_t">= θ(t)</span>
-          <span class="b" data-display data-tex="-\\,\\eta">− η</span>
-          <span class="c" data-display data-tex="\\nabla L(\\theta_t)">∇L(θ(t))</span>
-        </div>
-      </div>
-      ${footer(3)}
-    </div>` },
-]});
-
-// ---- Scene 4: the edit ----------------------------------------------------------------
-// The terminal quotes the rebuild that made the video: its narrate log lines and the verify row of
-// the learning rate cue. These values come from a silent build of this scaffold, and the voiced
-// build replaces them with its own. The first changed offset in the row is highlighted.
-const S4_LOG = [
-  "[skip] 01-open.mp3  unchanged (15.99s)",
-  "[skip] 02-three-files-and-a-voice.mp3  unchanged (20.35s)",
-  "[tts ] 03-gradient-descent.mp3  153 words, est 65.6s ...",
-  "[skip] 04-the-edit.mp3  unchanged (16.69s)",
-  "[skip] 05-close.mp3  unchanged (10.53s)",
+// The script card quotes section 3 of script.md line for line. JetBrains Mono advances 0.6 em,
+// so at 28 px each character is 16.8 px wide and a word's x is its character index times that.
+const S2_CW = 16.8, S2_X = 152, S2_FOCUS_Y = 556;
+const S2_LINES = [
+  [306, "## 3. How AI learns", true],
+  [356, "…", true],
+  [406, "[pause 1] Picture two knobs. [beat]"],
+  [456, "The floor is every way to set them. [beat]"],
+  [506, "The height is how wrong. [beat]"],
 ];
-const S4_VERIFY_HEAD = "check                 cue       at   chg %   ctl %   offset  result";
-const S4_VERIFY_ROW = "3:3.1eq             33.25    69.49    0.26    0.00    +30ms  changed";
-const s4row = () => S4_VERIFY_ROW.replace(/[+-]\d+ms/, (m) => `<span class="off">${m}</span>`);
+// Directions in brackets are muted, as they are in an editor that knows the script format.
+const s2code = (y, str, muted) => `<text class="code${muted ? " m" : ""}" x="${S2_X}" y="${y}">${str.split(/(\[[^\]]+\])/).filter(Boolean).map((part) => part.startsWith("[") ? `<tspan class="m">${part}</tspan>` : part).join("")}</text>`;
+function s2line(word, times, shifted) {
+  const text = `For this ${word} it is a bowl.`;
+  const words = [];
+  for (let i = 0, ci = 0; i < text.split(" ").length; i++) { const w = text.split(" ")[i]; words.push({ w, ci }); ci += w.length + 1; }
+  const x = (ci) => f1(S2_X + ci * S2_CW);
+  let svg = shifted
+    ? `<rect x="${f1(S2_X + 9 * S2_CW - 5)}" y="${S2_FOCUS_Y - 31}" width="${f1(word.length * S2_CW + 10)}" height="42" rx="6" fill="${ACCENT}"/>` +
+      `<text class="code" x="${S2_X}" y="${S2_FOCUS_Y}">For this <tspan class="new">${word}</tspan> it is a bowl.</text>` +
+      `<rect x="${f1(S2_X + (9 + word.length) * S2_CW + 6)}" y="${S2_FOCUS_Y - 30}" width="3" height="40" fill="${INK}"/>`
+    : `<text class="code" x="${S2_X}" y="${S2_FOCUS_Y}">${text}</text>`;
+  // A soft waveform under the line, loud within a word and quiet between words. The bars and
+  // the times are drawn bold enough that decktalk verify, which compares downscaled frames, sees
+  // them arrive.
+  const r = rng(21);
+  let wave = "";
+  for (let px = S2_X; px < S2_X + text.length * S2_CW; px += 7) {
+    const ci = (px - S2_X) / S2_CW, inWord = words.some((w) => ci >= w.ci && ci < w.ci + w.w.replace(/\W/g, "").length);
+    const h = inWord ? 12 + r() * 28 : 3 + r() * 3;
+    wave += `<rect x="${f1(px)}" y="${f1(602 - h / 2)}" width="4.5" height="${f1(h)}" rx="2.2" fill="${MUTE}"/>`;
+  }
+  const stamps = words.map((w, k) => `<text class="t${shifted && k >= 3 ? " shift" : ""}" x="${x(w.ci)}" y="${652 + (k % 2) * 30}">${times[k].toFixed(2)}</text>`).join("");
+  svg += `<g data-cue="2.1aloud" data-fx="none">${wave}${stamps}</g>`;
+  // The retyped word is selected, as in an editor, and the times after it shift. The cue word
+  // gets an outline, joined by a line to the outline around the drawing.
+  const bowl = words[words.length - 1], wx = S2_X + bowl.ci * S2_CW - 8, ww = 4 * S2_CW + 16;
+  const [bx, by, , bh] = s2bowl.box, rx = bx - 12, ry = by - 12, x1 = wx + ww, y1 = S2_FOCUS_Y - 9, y2 = ry + bh / 2 + 12;
+  const join = `<rect x="${f1(wx)}" y="${S2_FOCUS_Y - 32}" width="${f1(ww)}" height="46" rx="8" fill="none" stroke="${ACCENT}" stroke-width="4"/>` +
+    `<path class="join" d="M${f1(x1)} ${y1}C${f1(x1 + 160)} ${y1} ${f1(rx - 160)} ${f1(y2)} ${f1(rx)} ${f1(y2)}"/>` +
+    `<circle cx="${f1(x1)}" cy="${y1}" r="6" fill="${ACCENT}"/><circle cx="${f1(rx)}" cy="${f1(y2)}" r="6" fill="${ACCENT}"/>`;
+  svg += shifted ? join : `<g data-cue="2.1word" data-fx="none">${join}</g>`;
+  return svg;
+}
+const s2bowl = bowlStill(1070, 346, 660, 370, false);
+
+DeckTalk.scene(2, { name: "How it works", steps: [
+  { id: "2.1", hold: 16,
+    cues: { "2.1mark": 0.6, "2.1script": 2.4, "2.1aloud": 4.6, "2.1word": 7.3, "2.1follows": 11.3 },
+    on: { "2.1mark": (slide) => slide.querySelector(".s2-mark").classList.add("up") },
+    render: () => {
+      const [bx, by, bw, bh] = s2bowl.box;
+      return `
+    <div class="slide s2">
+      <p class="eyebrow">02 How it works</p>
+      <p class="wordmark s2-mark">DeckTalk</p>
+      <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true">
+        <g data-cue="2.1script" data-fx="none">
+          <text class="filelabel" x="120" y="230" fill="${MUTE}">script.md</text>
+          <text class="filelabel" x="1000" y="230" fill="${MUTE}">deck/lesson.html</text>
+          <rect x="120" y="250" width="820" height="520" rx="16" fill="#f4f4f5"/>
+          ${S2_LINES.map(([y, str, muted]) => s2code(y, str, muted)).join("")}
+          <rect x="1000" y="250" width="800" height="520" rx="16" fill="#ffffff" stroke="${MUTE}" stroke-width="2"/>
+          <text class="slidetitle" x="1036" y="306">How does AI learn?</text>
+          ${s2bowl.svg}
+          <g class="v-lesson">${s2line("lesson", S2_LINE_TIMES, false)}</g>
+          <g class="v-example" data-cue="2.1follows" data-fx="none">${s2line("example", S2_RETYPED_TIMES, true)}</g>
+          <rect data-cue="2.1word" data-fx="none" x="${f1(bx - 12)}" y="${f1(by - 12)}" width="${f1(bw + 24)}" height="${f1(bh + 24)}" rx="14" fill="none" stroke="${ACCENT}" stroke-width="4"/>
+        </g>
+      </svg>
+      ${footer(2)}
+    </div>`;
+    } },
+]});
+
+// ---- Scene 4: the edit ------------------------------------------------------------------
+// Real values from a trial rebuild in a copy of this project with ", so lower is better" added
+// to section 3. A fill step sets them: the build's wall time in seconds, the sections whose
+// narration was voiced again, each cue's time in seconds after section 3 starts before and
+// after the edit, and the largest verify offset of any cue after the rebuild. Until then they
+// hold the storyboard's estimates.
+const S4_BUILD_SECONDS = 41.8;
+const S4_NEW_AUDIO = ["3"];
+const S4_CUE_TIMES = [
+  ["3.3height", 40.49, 40.52],
+  ["3.3bowl", 45.39, 46.59],
+  ["3.4ball", 48.00, 49.20],
+];
+const S4_MAX_OFFSET_MS = 80;
+
+// The rebuild strip names every section of decktalk.toml, with a short name for the lesson.
+// Section 4 is the B-roll clip, which has no narration.
+const S4_SECTIONS = [["1", "Open"], ["2", "How it works"], ["3", "Lesson"], ["4", "Thousands of chips"], ["5", "The edit"], ["6", "Close"]];
+const S4_CLIPS = ["4"];
+const s4bowl = bowlStill(1150, 166, 610, 250, true);
+const s4moved = (before, after) => { const d = after - before; return `${d < 0 ? "−" : "+"}${Math.abs(d).toFixed(2)} s`; };
 
 DeckTalk.scene(4, { name: "The edit", steps: [
-  { id: "4.1", hold: 20,
-    cues: { "4.1valley": 0.8, "4.1build": 2.5, "4.1s12": 4, "4.1s3": 6, "4.1hear": 8, "4.1s45": 10.5, "4.1verify": 12.5 },
-    on: {
-      "4.1valley": (slide) => slide.querySelector(".old").classList.add("struck"),
-      "4.1hear": (slide) => slide.querySelector(".s4").classList.add("heard"),
-      "4.1verify": (slide) => slide.querySelector(".s4").classList.add("lit"),
-    },
+  { id: "4.1", hold: 22,
+    cues: { "4.1words": 8.2, "4.1again": 10.6, "4.1lower": 15.4, "4.1moved": 18.2 },
     render: () => `
     <div class="slide s4">
-      <p class="eyebrow">Scene 04</p>
-      <h1 class="title">Change a sentence, and only that section is voiced again.</h1>
-      <div class="panel script4">
-        <div class="filelabel">script.md</div>
-        <div class="c">## 3. Gradient descent</div>
-        <div>Keep two, theta one and theta two, and the loss above them is a surface.</div>
-        <div class="l4"><span class="hear" data-cue="4.1hear" data-sync>For this lesson it is a</span> <span class="old">bowl.</span> <span class="vwrap"><span class="new" data-cue="4.1valley" data-type="70" data-fx="none">valley.</span><span class="heardv" data-cue="4.1hear" data-sync>valley.</span></span></div>
+      <p class="eyebrow">05 The edit</p>
+      <div class="s4-script">
+        <div class="file">script.md · ## 3. How AI learns</div>
+        <div class="s4-row s4-old"><span class="sign" data-cue="4.1words" data-fx="none">-</span><span class="text">The height is how wrong. <i>[beat]</i><b class="strike" data-cue="4.1words" data-fx="none"></b></span></div>
+        <div class="s4-row s4-new" data-cue="4.1words" data-fx="none"><span class="sign plus">+</span><span>The height is how wrong<em>, so lower is better.</em> <i>[beat]</i></span></div>
+        <div class="s4-row s4-ctx"><span class="sign"></span><span>For this lesson it is a bowl.</span></div>
       </div>
-      <div class="panel term">
-        <div data-cue="4.1build" data-fx="fade">$ decktalk build</div>
-        <div data-cue="4.1s12" data-fx="fade">${S4_LOG[0]}</div>
-        <div data-cue="4.1s12" data-fx="fade">${S4_LOG[1]}</div>
-        <div class="tts" data-cue="4.1s3" data-fx="fade">${S4_LOG[2]}</div>
-        <div data-cue="4.1s45" data-fx="fade">${S4_LOG[3]}</div>
-        <div data-cue="4.1s45" data-fx="fade">${S4_LOG[4]}</div>
-        <div data-cue="4.1verify" data-fx="fade">$ decktalk verify</div>
-        <div class="c" data-cue="4.1verify" data-fx="fade">${S4_VERIFY_HEAD}</div>
-        <div class="final" data-cue="4.1verify" data-fx="fade">${s4row()}</div>
+      <div class="s4-card"></div>
+      <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true">${s4bowl.svg}</svg>
+      <div data-cue="4.1words" data-fx="none">
+        <p class="s4-cap" data-cue="4.1lower" data-sync>The height is how wrong, so lower is better.</p>
       </div>
-      ${footer(4)}
+      <div class="s4-build" data-cue="4.1again" data-fx="none">
+        <div class="filelabel">decktalk build</div>
+        <div class="boxes">${S4_SECTIONS.map(([n, title]) => { const fresh = S4_NEW_AUDIO.includes(n), note = fresh ? "new audio" : S4_CLIPS.includes(n) ? "clip" : "same audio"; return `<div class="sec${fresh ? " new" : ""}"><b>${n} ${title}</b><span>${note}</span></div>`; }).join("")}</div>
+        <div class="took"><div class="filelabel">build time</div><b>${S4_BUILD_SECONDS.toFixed(1)} s</b></div>
+      </div>
+      <div class="s4-verify" data-cue="4.1moved" data-fx="none">
+        <div class="filelabel">decktalk verify</div>
+        <table>
+          <tr><th>cue</th><th>before</th><th>after</th><th>moved</th></tr>
+          ${S4_CUE_TIMES.map(([cue, before, after]) => `<tr><td>${cue}</td><td>${before.toFixed(2)}</td><td>${after.toFixed(2)}</td><td class="${Math.abs(after - before) >= 0.1 ? "moved" : ""}">${s4moved(before, after)}</td></tr>`).join("")}
+        </table>
+        <div class="within">every cue within<b>±${S4_MAX_OFFSET_MS} ms</b></div>
+      </div>
+      ${footer(5)}
     </div>` },
 ]});
 
-// ---- Scene 5: close -------------------------------------------------------------------
+// ---- Scene 5: close ---------------------------------------------------------------------
 DeckTalk.scene(5, { name: "Close", steps: [
-  { id: "5.1", hold: 14, cues: { "5.1made": 2, "5.1cap": 2.6, "5.1url": 6 }, render: () => `
-    <div class="slide">
-      <p class="hero s5-hero">Update your video the way<br>you update a doc.</p>
-      <p class="wordmark s5-mark" data-cue="5.1made">DeckTalk</p>
-      <p class="body s5-line" data-cue="5.1cap" data-sync>Open source, narrated presentations, cut to the word.</p>
-      <p class="filelabel s5-oss" data-cue="5.1cap" data-fx="fade">Apache-2.0 · github.com/jacobcbeaudin/decktalk</p>
-      <p class="s5-url" data-cue="5.1url" data-fx="fade">decktalk.app</p>
-      ${footer(5)}
+  { id: "5.1", hold: 14, cues: { "5.1made": 4.5, "5.1cap": 5, "5.1url": 10.7 }, render: () => `
+    <div class="slide s5">
+      <p class="eyebrow">06 Close</p>
+      <p class="s5-tag">Update your video the way you update a doc.</p>
+      <p class="s5-mark" data-cue="5.1made" data-fx="none">DeckTalk</p>
+      <p class="s5-lic" data-cue="5.1cap" data-fx="none">Apache-2.0 · github.com/jacobcbeaudin/decktalk</p>
+      <p class="s5-url" data-cue="5.1url" data-fx="none">decktalk.app</p>
+      ${footer(6)}
     </div>` },
 ]});
 </script>

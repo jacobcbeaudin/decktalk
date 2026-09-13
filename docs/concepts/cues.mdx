@@ -11,27 +11,27 @@ the recorder hands those seconds to the page as `?beats=`. The `beats` stage,
 `beats.json`, and `?beats=` carry resolved cues. The name does not refer to a `[beat]`
 direction.
 
-The scaffold's section 3 follows one cue, `3.1eq`, from the script to the slide.
+The scaffold's section 1 follows one cue, `1.1bowl`, from the script to the slide.
 
 ```md script.md
-## 3. Gradient descent
+## 1. Open
 
-The gradient points uphill, in the plane of the weights, so follow minus the gradient.
-[beat] Take a step, and the learning rate, eta, scales its length.
+A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat] Two, three. [beat]
 ```
 
 ```json cues.json
-{ "sections": { "3": { "cues": [
-  { "cue": "3.1eq", "on": "learning rate" },
-  { "cue": "3.1min", "on": "The best eta", "offset": 0.2 }
+{ "sections": { "1": { "cues": [
+  { "cue": "1.1bowl", "on": "bowl" },
+  { "cue": "1.1ball", "on": "ball" },
+  { "cue": "1.1count", "on": "count" }
 ] } } }
 ```
 
 ```html deck/index.html
-<span class="chip" data-cue="3.1eq" data-tex="\\eta = 2">η = 2</span>
+<path class="curve" data-cue="1.1bowl" data-fx="none" d="…"/>
 ```
 
-The cue `3.1eq` resolves to the start of the word "learning", and the chip appears on that
+The cue `1.1bowl` resolves to the start of the word "bowl", and the bowl appears on that
 word. The `beats` table shows where every cue of the section resolved.
 
 ```text
@@ -49,8 +49,9 @@ phrase is found, and [Choosing the phrase](#choosing-the-phrase) gives the rules
 3. The cue time is the start of the first word of that run, plus `offset`, rounded to hundredths of a second.
 4. `$start` is zero plus the offset. A negative result is written as is, and the page fires it at t=0. `$end` is the end of the last spoken word in the section, plus the offset.
 
-The words come from the voice, so a phrase must be written as it is spoken. The script
-says "eta" and the slide shows η, so a cue on that word says "eta". A number written as
+The words come from the voice, so a phrase must be written as it is spoken. The
+scaffold's script says "decktalk dot app" and its slide shows decktalk.app, so the cue on
+that phrase says "decktalk dot app". A number written as
 digits comes back in the form the voice chose to say, so digits in a cue phrase are
 fragile. Directions never reach the word list. A `[beat]` becomes a dash that the voice
 reads as a pause, and a `[pause N]` becomes a break tag. Neither is a word, so a phrase
@@ -120,10 +121,10 @@ owns, which lands in the recorder's sidecar.
 
 ## Choosing the phrase
 
-These are the rules of thumb behind the scaffold's cues, and
+These are the rules of thumb for choosing a phrase, and
 [Writing for the ear](/guides/writing-for-the-ear) explains each one.
 
-- Begin the phrase with the word that names the visual, because the cue lands on the first word of the phrase. A noun such as `learning rate` or a verb with a referent such as `Pick a point` works, and a connective such as "and then" does not.
+- Begin the phrase with the word that names the visual, because the cue lands on the first word of the phrase. A noun such as `box of knobs` or a verb with a referent such as `steps downhill` works, and a connective such as "and then" does not.
 - Use two or three words when one word repeats in the section, or set `occurrence`.
 - Trail the word with a small positive `offset`, one or two tenths of a second, so that the word finishes before the visual moves. Lead the word with a negative offset only when the audience must read along.
 - Put a `[beat]` or a `[pause N]` before a reveal that should read as an event.

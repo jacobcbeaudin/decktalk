@@ -197,7 +197,8 @@ spans are dropped.
 ### The reference frame and skipped cues
 
 The reference frame is the first frame at or after the point `lead_seconds` before the
-cue. It never sits inside the section's
+cue, or earlier when a reveal that lands `max_offset_frames` early could otherwise already show
+in it. It never sits inside the section's
 fade-in, where the picture is still coming up from black, and it always sits at least one
 frame before the cue. A page section gets no fade-in in the cut when `page_fades_in` under
 `[transition]` is true, which is the default, so its reference may sit on the section's

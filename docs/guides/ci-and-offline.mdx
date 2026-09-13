@@ -88,10 +88,10 @@ job's secrets and export them. DeckTalk never prints either.
 section again and spends credits on all of them. A job that keeps `build/` between voiced
 builds should never run a silent build in the same directory.</Warning>
 
-Headless Chromium draws WebGL in software, because a hosted runner has no GPU it can use. A
-page with a 3D figure therefore renders more slowly on a hosted runner than on a laptop, and the
-macOS and Windows runners are slower than Linux. A reveal on such a page can land two or three
-frames late there, which `verify` reports as `OFF CUE`, and a long first draw can be reported as
+A hosted runner has no GPU that Chromium can use, so headless Chromium draws every frame in
+software. A page therefore renders more slowly on a hosted runner than on a laptop, a page with a
+WebGL or canvas figure more slowly still, and the macOS and Windows runners are slower than Linux.
+A reveal can land two or three frames late there, which `verify` reports as `OFF CUE`, and a long first draw can be reported as
 `STALLED`. When that happens on a slower runner, widen the window for that runner with the
 settings' environment variables and keep the default on the machine you record on. DeckTalk's own
 CI keeps Linux at the default and widens macOS and Windows like this.

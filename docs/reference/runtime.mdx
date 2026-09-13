@@ -47,7 +47,7 @@ slides.</Warning>
 </ResponseField>
 
 <ResponseField name="cue" type="string">
-  With `step`, the page freezes at this cue rather than at the end of the step. The step's cues fire in autoplay order up to and including this one, an element whose `data-cue` is a later cue of the step stays hidden, and every other reveal shows. Only the cues that fire run their handlers, and `enter` still receives `ctx.frozen` as true. A figure that `enter` draws in its end state when frozen therefore shows that end state at every cue. The scaffold's scene 3 surface is one, so `?step=3.1&cue=3.1eq` stops the equation at `3.1eq` while the surface shows the ball at the minimum. An id that is not one of the step's cues adds the warning `cue "X" is not one of step 3.1's cues`, and the whole step freezes. `decktalk shots --step 3.1 --cue 3.1eq` opens `?step=3.1&cue=3.1eq`.
+  With `step`, the page freezes at this cue rather than at the end of the step. The step's cues fire in autoplay order up to and including this one, an element whose `data-cue` is a later cue of the step stays hidden, and every other reveal shows. Only the cues that fire run their handlers, and `enter` still receives `ctx.frozen` as true. A figure that `enter` draws in its end state when frozen therefore shows that end state at every cue. In the scaffold, `?step=4.1&cue=4.1lower` shows the script diff and the rebuild strip and hides the verify rows, which wait for the later cue `4.1moved`. An id that is not one of the step's cues adds the warning `cue "X" is not one of step 4.1's cues`, and the whole step freezes. `decktalk shots --step 4.1 --cue 4.1lower` opens `?step=4.1&cue=4.1lower`.
 </ResponseField>
 
 <ResponseField name="speed" type="number" default="1">
@@ -117,8 +117,8 @@ takes no arguments keeps working.
 | `step` | The field holds the id of the mounted step. |
 
 ```js deck/index.html
-{ id: "4.1", hold: 20, cues: { "4.1valley": 0.8 },
-  on: { "4.1valley": (slide) => slide.querySelector(".old").classList.add("struck") },
+{ id: "4.1", hold: 20, cues: { "4.1strike": 0.8 },
+  on: { "4.1strike": (slide) => slide.querySelector(".old").classList.add("struck") },
   render: () => `…` }
 ```
 
@@ -258,8 +258,8 @@ shows the pattern.
 
 A page can also add work to the runtime's wait instead of replacing it. The runtime sets
 its promise in its own `DOMContentLoaded` listener, so a listener registered after the
-runtime's script tag finds the promise already set and can extend it. The scaffold's scene 3
-does this to draw its WebGL figure once before narration starts. Headless Chromium draws
+runtime's script tag finds the promise already set and can extend it. A page with a WebGL
+figure can do this to draw the figure once before narration starts. Headless Chromium draws
 WebGL in software, and the first draw of each object is slow, so doing it here keeps that
 cost under the cover instead of on a cue.
 

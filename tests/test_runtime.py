@@ -6,6 +6,7 @@ uv run pytest -m browser
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -40,15 +41,26 @@ def page(deck):
         browser.close()
 
 
-def template_cues(deck: Path, section: str) -> list[str]:
-    """The cue ids the scaffold's cues.json lists for one section, in order."""
+def template_cues(deck: Path, scene: str) -> list[str]:
+    """The cue ids the scaffold's cues.json lists for one scene, in order.
+
+    A cue id starts with its scene number, and a page keeps its scene numbers when a clip section
+    shifts the section numbers around them, so the cues are found by id rather than by section key.
+    """
     data = json.loads((deck.parent.parent / "cues.json").read_text())
-    return [c["cue"] for c in data["sections"][section]["cues"]]
+    return [c["cue"] for s in data["sections"].values() for c in s["cues"] if c["cue"].split(".")[0] == scene]
 
 
-def full_beats(deck: Path, section: str, start: float = 0.1, gap: float = 0.05) -> str:
-    """A ?beats= value with every cue of the section, spaced `gap` seconds apart."""
-    return ",".join(f"{cue}@{start + i * gap:.2f}" for i, cue in enumerate(template_cues(deck, section)))
+def template_pages(deck: Path) -> list[tuple[Path, str]]:
+    """(page, scene) for every page section of the scaffold's decktalk.toml, in order."""
+    root = deck.parent.parent
+    doc = tomllib.loads((root / "decktalk.toml").read_text())
+    return [((root / s["page"]).resolve(), str(s["scene"])) for s in doc["section"] if "page" in s]
+
+
+def full_beats(deck: Path, scene: str, start: float = 0.1, gap: float = 0.05) -> str:
+    """A ?beats= value with every cue of the scene, spaced `gap` seconds apart."""
+    return ",".join(f"{cue}@{start + i * gap:.2f}" for i, cue in enumerate(template_cues(deck, scene)))
 
 
 def custom_page(tmp_path: Path, name: str, script: str) -> str:
@@ -81,12 +93,16 @@ DeckTalk.on('1.2a', () => window.__got.push({ kind: 'global-zero' }));
 def test_index_mode_exposes_catalog(page, deck):
     page.goto(deck.as_uri())
     catalog = page.evaluate("() => window.__decktalk.catalog")
-    assert [c["scene"] for c in catalog] == ["1", "2", "3", "4", "5"]
-    assert [c["steps"] for c in catalog] == [["1.1"], ["2.1"], ["3.1"], ["4.1"], ["5.1"]]
-    assert [c["name"] for c in catalog] == ["Open", "Three files and a voice", "Gradient descent", "The edit", "Close"]
+    # Scene 3 lives in lesson.html, so index.html holds the other four.
+    assert [c["scene"] for c in catalog] == ["1", "2", "4", "5"]
+    assert [c["steps"] for c in catalog] == [["1.1"], ["2.1"], ["4.1"], ["5.1"]]
+    assert [c["name"] for c in catalog] == ["Open", "How it works", "The edit", "Close"]
     assert page.evaluate("() => window.__decktalk.mode") == "index"
     assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
+
+
+S2_CUES = ["2.1mark", "2.1script", "2.1aloud", "2.1word", "2.1follows"]
 
 
 def test_freeze_mode_reveals_everything(page, deck):
@@ -98,14 +114,14 @@ def test_freeze_mode_reveals_everything(page, deck):
         "() => [...document.querySelectorAll('.dt-reveal')].filter(e => !e.classList.contains('dt-on')).length"
     )
     assert hidden == 0
-    # The listed cues fired too: 2.1one lights the shared phrase and dims the rest of every panel.
-    assert page.evaluate("() => window.__decktalk.fired") == ["2.1script", "2.1words", "2.1cue", "2.1slide", "2.1one"]
-    assert page.evaluate("() => document.querySelector('.dt-slide').classList.contains('lit')")
-    assert page.evaluate("() => document.querySelectorAll('.k').length") == 5
+    # The listed cues fired too: 2.1mark moved the wordmark up, and 2.1follows swapped in the retyped line.
+    assert page.evaluate("() => window.__decktalk.fired") == S2_CUES
+    assert page.evaluate("() => !!document.querySelector('.dt-slide .s2-mark.up')")
+    assert page.evaluate("() => !!document.querySelector('.dt-slide .v-example.dt-on')")
 
 
 def test_cue_mode_fires_in_order_and_first_step_mounts_at_zero(page, deck):
-    beats = "2.1script@0.3,2.1words@0.9,2.1cue@1.2,2.1slide@1.4,2.1one@1.6"
+    beats = "2.1mark@0.3,2.1script@0.9,2.1aloud@1.2,2.1word@1.4,2.1follows@1.6"
     page.goto(f"{deck.as_uri()}?scene=2&t0=0&beats={beats}")
     page.wait_for_timeout(120)
     # Step 2.1 mounted at t=0 even though its first cue is at 0.3 s, and its listed reveals wait.
@@ -113,12 +129,13 @@ def test_cue_mode_fires_in_order_and_first_step_mounts_at_zero(page, deck):
     hidden = "() => document.querySelector('[data-cue=\"2.1script\"]').classList.contains('dt-on')"
     assert page.evaluate(hidden) is False
     page.wait_for_function("() => window.__decktalk.fired.length >= 1")
-    assert page.evaluate("() => window.__decktalk.fired") == ["2.1script"]
-    assert page.evaluate("() => document.querySelector('[data-cue=\"2.1script\"]').classList.contains('dt-on')") is True
+    assert page.evaluate("() => window.__decktalk.fired") == ["2.1mark"]
+    assert page.evaluate("() => !!document.querySelector('.s2-mark.up')") is True
+    assert page.evaluate(hidden) is False
     page.wait_for_function("() => window.__decktalk.fired.length >= 5")
-    assert page.evaluate("() => window.__decktalk.fired") == ["2.1script", "2.1words", "2.1cue", "2.1slide", "2.1one"]
-    # The step's `on` handler ran for 2.1one, and the single step means the scene is done at mount.
-    assert page.evaluate("() => document.querySelector('.dt-slide').classList.contains('lit')")
+    assert page.evaluate("() => window.__decktalk.fired") == S2_CUES
+    assert page.evaluate(hidden) is True
+    # The single step means the scene is done at mount.
     assert page.evaluate("() => document.body.dataset.done") == "1"
     assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
@@ -142,11 +159,11 @@ def test_warnings_report_an_unknown_cue_id(page, deck):
 
 
 def test_autoplay_uses_holds(page, deck):
-    page.goto(f"{deck.as_uri()}?scene=2&speed=20")  # the 28 s hold becomes 1.4 s, and the listed cues fire inside it
+    page.goto(f"{deck.as_uri()}?scene=2&speed=20")  # the 16 s hold becomes 0.8 s, and the listed cues fire inside it
     page.wait_for_function("() => document.body.dataset.done === '1'", timeout=5000)
     assert page.evaluate("() => window.__decktalk.mode") == "autoplay"
     assert page.evaluate("() => window.__decktalk.step") == "2.1"
-    page.wait_for_function("() => window.__decktalk.fired.includes('2.1one')", timeout=5000)
+    page.wait_for_function("() => window.__decktalk.fired.includes('2.1follows')", timeout=5000)
 
 
 def test_signal_mode_waits_for_start_clock(page, deck):
@@ -155,60 +172,58 @@ def test_signal_mode_waits_for_start_clock(page, deck):
     page.wait_for_timeout(400)
     assert page.evaluate("() => window.__decktalk.fired") == []
     page.evaluate("() => DeckTalk.startClock()")
-    page.wait_for_function("() => window.__decktalk.fired.includes('2.1script')", timeout=2000)
+    page.wait_for_function("() => window.__decktalk.fired.includes('2.1mark')", timeout=2000)
 
 
-def test_katex_typesets_the_equation(page, deck):
-    """The vendored KaTeX renders every [data-tex] line of scene 3, and __sceneReady waits for it."""
+def test_katex_typesets_data_tex_with_the_vendored_copy(page, deck, tmp_path):
+    """init vendors KaTeX beside the pages, and __sceneReady waits until every [data-tex] element is typeset."""
     if katex_cached() is None:
         pytest.skip("KaTeX is not cached (run `decktalk setup`)")
-    assert (deck.parent / "katex" / "katex.min.js").exists()
-    page.goto(f"{deck.as_uri()}?step=3.1")
-    page.evaluate("() => window.__sceneReady")
-    # The four learning rate chips, the four spans of the update rule, and the two gradient labels.
-    assert page.evaluate("() => document.querySelectorAll('[data-tex][data-typeset] .katex').length") == 10
-    assert page.evaluate("() => window.__decktalk.warnings") == []
-    assert not page.errors
-
-
-def test_scene_3_draws_its_surface_in_webgl(page, deck):
-    """The frozen step 3.1 mounts a 960 by 570 three.js canvas in the figure region, with no page error."""
-    page.goto(f"{deck.as_uri()}?step=3.1")
-    page.evaluate("() => window.__sceneReady")
-    size = page.evaluate("() => { const c = document.querySelector('.fig3 canvas'); return c && [c.width, c.height]; }")
-    if size is None:
-        pytest.skip("no WebGL context in this Chromium")
-    assert size == [960, 570]
-    assert page.evaluate("() => document.querySelector('.fig3 canvas').dataset.warm") is None
-    assert not page.errors
-
-
-def test_scene_3_warms_its_figure_before_the_clock_starts(page, deck):
-    """In cue mode the figure is drawn off the page while it loads, and the step mounts that canvas."""
-    page.goto(f"{deck.as_uri()}?scene=3&t0=signal&beats={full_beats(deck, '3')}")
-    page.evaluate("() => window.__sceneReady")
-    assert page.evaluate("() => document.querySelector('.fig3')") is None
-    page.evaluate("() => DeckTalk.startClock()")
-    page.wait_for_function("() => window.__decktalk.fired.includes('3.1min')", timeout=5000)
-    canvases = page.evaluate(
-        "() => [...document.querySelectorAll('.fig3 canvas')].map((c) => [c.width, c.height, c.dataset.warm])"
+    assert "./katex/katex.min.js" in deck.read_text()
+    katex = deck.parent / "katex"
+    html = tmp_path / "tex.html"
+    html.write_text(
+        '<!doctype html><html><head><meta charset="utf-8">'
+        f'<link rel="stylesheet" href="{(katex / "katex.min.css").resolve().as_uri()}">'
+        f'<script src="{(katex / "katex.min.js").resolve().as_uri()}"></script>'
+        f'<script src="{runtime_path().resolve().as_uri()}"></script></head><body>'
+        "<script>DeckTalk.scene(1, { steps: [ { id: '1.1', render: () => "
+        '`<p data-tex="\\\\eta = 2">eta = 2</p><p data-display data-tex="\\\\frac{1}{2}">1/2</p>` } ] });</script>'
+        "</body></html>"
     )
-    if not canvases:
-        pytest.skip("no WebGL context in this Chromium")
-    assert canvases == [[960, 570, "1"]]
+    page.goto(f"{html.resolve().as_uri()}?step=1.1")
+    page.evaluate("() => window.__sceneReady")
+    assert page.evaluate("() => document.querySelectorAll('[data-tex][data-typeset] .katex').length") == 2
     assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
 
 
-def test_synced_words_stay_dim_until_spoken(page, deck):
-    """A data-sync line shows every word dim at mount and turns each one on at its spoken second."""
-    words = "The@0,curve@0.2,rises@0.4,then@5,the@5.2,number@5.4,lands@5.6"
-    beats = "1.1curve@0.2,1.1number@5.4,1.1mark@6,1.1md@6.5,1.1times@7,1.1cap@7.5"
-    page.goto(f"{deck.as_uri()}?scene=1&t0=0&beats={beats}&words={words}")
-    page.wait_for_function("() => document.querySelectorAll('.dt-w.dt-on').length >= 3", timeout=3000)
-    assert page.evaluate("() => document.querySelectorAll('.dt-w').length") == 7
-    assert page.evaluate("() => document.querySelectorAll('.dt-w.dt-on').length") == 3
-    assert page.evaluate("() => getComputedStyle(document.querySelector('.dt-w:not(.dt-on)')).opacity") == "1"
+def test_scene_1_shows_the_spoken_start_of_each_count_word(page, deck):
+    """With ?words=, scene 1 writes the voice's own start times of one, two, and three under the boxes."""
+    words = "A@0.1,bowl@0.3,count@3.9,One@5.12,Two@6.08,three@6.41,its@11.5,word@11.7"
+    page.goto(f"{deck.as_uri()}?scene=1&t0=0&beats={full_beats(deck, '1')}&words={words}")
+    page.wait_for_function("() => window.__decktalk.fired.includes('1.1word')")
+    times = page.evaluate("() => [...document.querySelectorAll('.s1 .time')].map((e) => e.textContent)")
+    assert times == ["5.12 s", "6.08 s", "6.41 s"]
+    page.goto(f"{deck.as_uri()}?step=1.1")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    frozen = page.evaluate("() => [...document.querySelectorAll('.s1 .time')].map((e) => e.textContent)")
+    assert len(frozen) == 3 and all(t.endswith(" s") for t in frozen), frozen
+    assert page.evaluate("() => window.__decktalk.warnings") == []
+    assert not page.errors
+
+
+def test_synced_caption_lights_each_word_as_it_is_spoken(page, deck):
+    """Scene 4's data-sync caption shows every word unlit at its cue and lights each one at its spoken second."""
+    words = "The@0.1,height@0.15,is@0.2,how@0.25,wrong@0.3,so@0.35,lower@6,is@6.2,better@6.4"
+    page.goto(f"{deck.as_uri()}?scene=4&t0=0&beats={full_beats(deck, '4')}&words={words}")
+    page.wait_for_function("() => document.querySelectorAll('.s4-cap .dt-w.dt-on').length >= 6", timeout=3000)
+    assert page.evaluate("() => document.querySelectorAll('.s4-cap .dt-w').length") == 9
+    assert page.evaluate("() => document.querySelectorAll('.s4-cap .dt-w.dt-on').length") == 6
+    style = "(sel) => { const s = getComputedStyle(document.querySelector(sel)); return [s.opacity, s.color]; }"
+    assert page.evaluate(style, ".s4-cap .dt-w:not(.dt-on)") == ["1", "rgb(113, 113, 122)"]
+    # The word being spoken is the last lit one, and it carries the accent.
+    assert page.evaluate(style, ".s4-cap .dt-w.dt-on:has(+ .dt-w:not(.dt-on))") == ["1", "rgb(44, 31, 234)"]
     assert page.evaluate("() => window.__decktalk.warnings") == []
 
 
@@ -253,18 +268,20 @@ def test_a_cue_that_hits_nothing_is_a_warning(page, deck):
 
 def test_every_template_step_freezes_without_warnings(page, deck):
     """Every cue the template lists reveals an element or runs a handler, so no step warns when frozen."""
-    page.goto(deck.as_uri())
-    catalog = page.evaluate("() => window.__decktalk.catalog")
-    for entry in catalog:
-        for step in entry["steps"]:
-            page.goto(f"{deck.as_uri()}?step={step}")
-            page.evaluate("() => window.__sceneReady")
-            assert page.evaluate("() => window.__decktalk.warnings") == [], step
+    for url in dict.fromkeys(p.as_uri() for p, _ in template_pages(deck)):
+        page.goto(url)
+        catalog = page.evaluate("() => window.__decktalk.catalog")
+        assert catalog, url
+        for entry in catalog:
+            for step in entry["steps"]:
+                page.goto(f"{url}?step={step}")
+                page.evaluate("() => window.__sceneReady")
+                assert page.evaluate("() => window.__decktalk.warnings") == [], step
     assert not page.errors
 
 
 def test_every_template_scene_plays_its_full_cue_list_without_warnings(page, deck):
-    """Each scene in cue mode with every cue its cues.json section lists warns nothing and logs no error."""
+    """Each page section in cue mode with every cue of its scene warns nothing and logs no error."""
     logged: list[str] = []
 
     def on_console(msg):
@@ -273,14 +290,14 @@ def test_every_template_scene_plays_its_full_cue_list_without_warnings(page, dec
 
     page.on("console", on_console)
     try:
-        data = json.loads((deck.parent.parent / "cues.json").read_text())
-        for section in data["sections"]:
-            cues = template_cues(deck, section)
-            page.goto(f"{deck.as_uri()}?scene={section}&t0=0&beats={full_beats(deck, section)}")
+        for path, scene in template_pages(deck):
+            cues = template_cues(deck, scene)
+            assert cues, scene
+            page.goto(f"{path.as_uri()}?scene={scene}&t0=0&beats={full_beats(deck, scene)}")
             page.evaluate("() => window.__sceneReady")
             page.wait_for_function(f"() => window.__decktalk.fired.length >= {len(cues)}", timeout=10000)
-            assert page.evaluate("() => window.__decktalk.fired") == cues, section
-            assert page.evaluate("() => window.__decktalk.warnings") == [], section
+            assert page.evaluate("() => window.__decktalk.fired") == cues, scene
+            assert page.evaluate("() => window.__decktalk.warnings") == [], scene
     finally:
         page.remove_listener("console", on_console)
     assert logged == []
@@ -357,21 +374,27 @@ def test_enter_receives_the_same_ctx(page, tmp_path):
     assert all(g["ctx"]["frozen"] is True and g["ctx"]["step"] == "1.1" for g in frozen), frozen
 
 
-def test_scene_4_strikes_the_old_line_when_frozen(page, deck):
-    """The template's scene 4 handlers find their elements through the slide they receive."""
+def test_scene_4_shows_the_diff_the_rebuild_and_verify_when_frozen(page, deck):
+    """Frozen scene 4 strikes the old line, lists six sections with one voiced again, and shows the verify rows."""
     page.goto(f"{deck.as_uri()}?step=4.1")
     page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => !!document.querySelector('.dt-slide .old.struck')")
-    assert page.evaluate("() => !!document.querySelector('.dt-slide .s4.lit')")
+    assert page.evaluate("() => !!document.querySelector('.dt-slide .s4-old .strike.dt-on')")
+    assert page.evaluate("() => getComputedStyle(document.querySelector('.s4-ctx')).top") == "270px"
+    names = page.evaluate("() => [...document.querySelectorAll('.s4-build .sec b')].map((e) => e.textContent)")
+    assert names == ["1 Open", "2 How it works", "3 Lesson", "4 Thousands of chips", "5 The edit", "6 Close"]
+    assert page.evaluate("() => [...document.querySelectorAll('.s4-build .sec.new b')].map((e) => e.textContent)") == [
+        "3 Lesson"
+    ]
+    assert page.evaluate("() => document.querySelectorAll('.s4-verify td:first-child').length") == 3
     assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
 
 
 def test_data_sync_has_no_container_animation(page, deck):
     """A data-sync element without data-fx gets data-fx="none", so the container never fades or rises."""
-    page.goto(f"{deck.as_uri()}?scene=5&t0=0&beats={full_beats(deck, '5')}")
-    page.wait_for_function("() => window.__decktalk.fired.includes('5.1cap')")
-    cap = "document.querySelector('[data-cue=\"5.1cap\"]')"
+    page.goto(f"{deck.as_uri()}?scene=4&t0=0&beats={full_beats(deck, '4')}")
+    page.wait_for_function("() => window.__decktalk.fired.includes('4.1lower')")
+    cap = "document.querySelector('[data-cue=\"4.1lower\"]')"
     assert page.evaluate(f"() => {cap}.getAttribute('data-fx')") == "none"
     assert page.evaluate(f"() => {cap}.classList.contains('dt-on')")
     assert page.evaluate(f"() => getComputedStyle({cap}).animationName") == "none"
@@ -406,13 +429,13 @@ def test_warns_when_a_step_owns_no_listed_cue(page, tmp_path):
 
 def test_warns_when_a_data_cue_is_not_listed(page, deck):
     """In cue mode an element waiting for a cue that ?beats= leaves out reveals on its timer, with a warning."""
-    beats = ",".join(part for part in full_beats(deck, "4").split(",") if not part.startswith("4.1build@"))
+    beats = ",".join(part for part in full_beats(deck, "4").split(",") if not part.startswith("4.1again@"))
     page.goto(f"{deck.as_uri()}?scene=4&t0=0&beats={beats}")
     page.wait_for_function("() => window.__decktalk.fired.length >= 1")
     assert page.evaluate("() => window.__decktalk.warnings") == [
-        'data-cue "4.1build" is not in ?beats=, so it reveals at its data-at time after the mount'
+        'data-cue "4.1again" is not in ?beats=, so it reveals at its data-at time after the mount'
     ]
-    assert page.evaluate("() => document.querySelector('[data-cue=\"4.1build\"]').classList.contains('dt-on')")
+    assert page.evaluate("() => document.querySelector('[data-cue=\"4.1again\"]').classList.contains('dt-on')")
 
 
 def test_warns_when_a_reveal_mode_has_no_trigger(page, tmp_path):
@@ -452,24 +475,23 @@ def test_warns_when_an_autoplay_cue_falls_past_the_hold(page, tmp_path):
 
 
 def test_freeze_at_one_cue_stops_there(page, deck):
-    """?step=4.1&cue=4.1valley fires the step's cues up to 4.1valley and leaves later reveals hidden."""
-    page.goto(f"{deck.as_uri()}?step=4.1&cue=4.1valley")
+    """?step=4.1&cue=4.1words fires the step's cues up to 4.1words and leaves later reveals hidden."""
+    page.goto(f"{deck.as_uri()}?step=4.1&cue=4.1words")
     page.wait_for_function("() => document.body.dataset.done === '1'")
     assert page.evaluate("() => window.__decktalk.mode") == "frozen"
-    assert page.evaluate("() => window.__decktalk.fired") == ["4.1valley"]
+    assert page.evaluate("() => window.__decktalk.fired") == ["4.1words"]
     on = "(sel) => document.querySelector(sel).classList.contains('dt-on')"
-    assert page.evaluate(on, ".new") is True
-    assert page.evaluate(on, "[data-cue='4.1build']") is False
-    assert page.evaluate(on, ".final") is False
-    assert page.evaluate("() => !!document.querySelector('.old.struck')")
-    assert page.evaluate("() => !document.querySelector('.s4.lit')")
+    assert page.evaluate(on, ".s4-new") is True
+    assert page.evaluate(on, ".s4-old .strike") is True
+    assert page.evaluate(on, "[data-cue='4.1again']") is False
+    assert page.evaluate(on, "[data-cue='4.1moved']") is False
     assert page.evaluate("() => window.__decktalk.warnings") == []
     # An id that is not one of the step's cues warns and freezes the whole step.
     page.goto(f"{deck.as_uri()}?step=4.1&cue=nope")
     page.wait_for_function("() => document.body.dataset.done === '1'")
     assert page.evaluate("() => window.__decktalk.warnings") == ['cue "nope" is not one of step 4.1\'s cues']
     assert page.evaluate("() => window.__decktalk.fired") == template_cues(deck, "4")
-    assert page.evaluate("() => !!document.querySelector('.s4.lit')")
+    assert page.evaluate("() => document.querySelector('.s4-verify').classList.contains('dt-on')")
     assert not page.errors
 
 

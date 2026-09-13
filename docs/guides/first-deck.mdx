@@ -7,16 +7,18 @@ icon: "pen-line"
 You write three files for a DeckTalk section, the script, the cues, and the page, and
 the voice returns a fourth, the words file. One cue id ties them together, and the project
 file maps the section to its page. This guide writes one section, a simplified gradient
-descent scene drawn with SVG rather than the scaffold's three.js surface, and shows every
-reference as it is made. Start from `decktalk init my-lesson` so that the runtime and
-KaTeX are in place, and replace the scaffold's section 3 in all four files with the code
-below. In `script.md`, replace everything from `## 3. Gradient descent` up to `## 4.`. In
-`cues.json`, replace the `"3"` entry. The section 3 table in `decktalk.toml` already
-matches. In `deck/index.html`, delete the scaffold's `DeckTalk.scene(3, …)` call and paste
-the `<style>` and `<script>` blocks below just before `</body>`. Deleting the call matters,
-because a second `DeckTalk.scene(3, …)` silently replaces the first and leaves the
-scaffold's cues with no owner. The scene carries the few CSS rules it needs, because the
-scaffold's stylesheet defines only its own classes. This is the finished section in the
+descent scene drawn with SVG and typeset with KaTeX, and shows every reference as it is
+made. Start from `decktalk init my-lesson` so that the runtime and KaTeX are in place, and
+replace the scaffold's section 3 with the code below. In `script.md`, replace everything
+from `## 3. How AI learns` up to `## 4. Thousands of chips`. In `cues.json`, replace the
+`"3"` entry. In `decktalk.toml`, replace the section 3 table with the one below, which
+points the section at `deck/index.html` instead of `deck/lesson.html`. In
+`deck/index.html`, paste the `<style>` and `<script>` blocks below just before `</body>`.
+The scaffold's `index.html` holds scenes 1, 2, 4, and 5 and has no scene 3, so the new
+`DeckTalk.scene(3, …)` call is the only one in the page. A page must register each scene
+number once, because a second `DeckTalk.scene(3, …)` silently replaces the first. The
+scene carries the few CSS rules it needs, because the scaffold's stylesheet defines only
+its own classes. This is the finished section in the
 script, the project file, the cues, and the page.
 
 <CodeGroup>

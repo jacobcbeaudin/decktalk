@@ -38,7 +38,7 @@ mode: "wide"
   <div className="mt-20">
     <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Follow one cue from the phrase to the frame</h2>
     <p className="mt-2 max-w-3xl text-zinc-600 dark:text-zinc-400">
-      You write three files, the script, the cues, and the page, and the voice returns a fourth, the words file with a time for every word. One cue id ties them together, and the project file maps each section to its page. These four snippets are simplified from the scaffold, and they follow the cue <code>3.1eq</code> from the spoken phrase to the frame.
+      You write three files, the script, the cues, and the page, and the voice returns a fourth, the words file with a time for every word. One cue id ties them together, and the project file maps each section to its page. These four snippets are simplified from the scaffold, and they follow the cue <code>1.1bowl</code> from the spoken phrase to the frame.
     </p>
 
     <Columns cols={2}>
@@ -46,43 +46,42 @@ mode: "wide"
         The words under a `## N.` heading are what the voice says. A time budget on the heading is optional, and a `[beat]` is a short pause that the voice reads as a dash.
 
         ```md script.md
-        ## 3. Gradient descent
+        ## 1. Open
 
-        The gradient points uphill, in the plane
-        of the weights, so follow minus the
-        gradient. [beat] Take a step, and the
-        learning rate, eta, scales its length.
+        A bowl. [beat] A ball. [beat] Watch it
+        step down on my count. [beat] One. [beat]
+        Two, three.
         ```
       </Card>
       <Card title="2. The cue names the phrase" icon="crosshairs">
-        A cue pairs a cue id with the phrase it lands on. The cue resolves to the first word of the phrase, so the chip η = 2 appears on "learning".
+        A cue pairs a cue id with the phrase it lands on. The cue resolves to the first word of the phrase, so the bowl appears on "bowl".
 
         ```json cues.json
-        { "cue": "3.1eq", "on": "learning rate" }
+        { "cue": "1.1bowl", "on": "bowl" }
         ```
       </Card>
       <Card title="3. The project file maps the section" icon="file-code">
-        Section 3 of the script is scene 3 of the page. DeckTalk records that scene and cuts it to the section's narration.
+        Section 1 of the script is scene 1 of the page. DeckTalk records that scene and cuts it to the section's narration.
 
         ```toml decktalk.toml
         [[section]]
-        number = 3
-        title = "Gradient descent"
+        number = 1
+        title = "Open"
         page = "deck/index.html"
-        scene = 3
+        scene = 1
         ```
       </Card>
       <Card title="4. The slide waits for the cue" icon="presentation-screen">
-        An element with `data-cue` stays hidden until its cue fires. KaTeX typesets the `data-tex` value, and the plain text is the fallback. Inside the backticks of a `render` template, every backslash is doubled.
+        An element with `data-cue` stays hidden until its cue fires. With `data-fx="none"` it snaps in on the frame of its word rather than fading up.
 
         ```html deck/index.html
-        <span class="chip" data-cue="3.1eq" data-tex="\\eta = 2">η = 2</span>
+        <path class="curve" data-cue="1.1bowl" data-fx="none" d="…"/>
         ```
       </Card>
     </Columns>
 
     <p className="mt-6 max-w-3xl text-zinc-600 dark:text-zinc-400">
-      After the build, <code>decktalk verify 3:3.1eq</code> measures the finished video and reports how far from the cue time the picture first changed. After a silent build, the <a href="/concepts/how-it-works#what-verify-measures"><code>a/v</code></a> column also compares the picture with the placeholder click at the cued word.
+      After the build, <code>decktalk verify</code> measures the finished video and reports, for each cue, how far from the cue time the picture first changed. After a silent build, the <a href="/concepts/how-it-works#what-verify-measures"><code>a/v</code></a> column also compares the picture with the placeholder click at the cued word.
     </p>
 
     ```text

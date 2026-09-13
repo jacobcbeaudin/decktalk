@@ -41,25 +41,33 @@ extra_seconds = 0.3     # recorded past the narration, so the cut never lands on
 
 [[section]]
 number = 2
-title = "Three files and a voice"
+title = "How it works"
 page = "deck/index.html"
 scene = 2
 
 [[section]]
 number = 3
-title = "Gradient descent"
-page = "deck/index.html"
+title = "How AI learns"
+page = "deck/lesson.html"   # any page in deck/ can hold scenes, and each section names its page
 scene = 3
 
+# A clip section between two page sections. The narration stops for it and resumes after it.
+# Until the video exists at media/broll-chips.mp4, a titled slate plays for slate_seconds.
 [[section]]
 number = 4
-title = "The edit"
-page = "deck/index.html"
-scene = 4
-ambience = false        # true plays the ambience bed under this section
+title = "Thousands of chips"
+clip = "media/broll-chips.mp4"
+slate_seconds = 4
 
 [[section]]
 number = 5
+title = "The edit"
+page = "deck/index.html"
+scene = 4               # a scene keeps its number in the page when the section numbers around it change
+ambience = false        # true plays the ambience bed under this section
+
+[[section]]
+number = 6
 title = "Close"
 page = "deck/index.html"
 scene = 5
@@ -82,8 +90,8 @@ ambience = "build/sfx/ambience.mp3"
 ambience_db = -20
 # [[mix.sfx]]
 # file = "build/sfx/tick.mp3"
-# section = 2
-# cue = "2.1d"
+# section = 1
+# cue = "1.1one"
 # db = -16
 
 [mix.loudnorm]

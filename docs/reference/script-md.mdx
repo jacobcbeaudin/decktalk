@@ -9,18 +9,14 @@ and the text under it is what the voice says for that section. The remaining rul
 how the text is cleaned before it is sent.
 
 ```md script.md
-## 3. Gradient descent
+## 3. How AI learns
 
-[Deck scene 3. A loss surface stands over the plane of two weights, and a ball steps down it.]
+[Lesson page scene 3. A box of knobs learns from examples, a ball steps down a bowl, and the lesson ends on chips that do the math.]
 
-Keep two, theta one and theta two, and the loss above them is a surface. For this lesson
-it is a bowl. [beat] Pick a point, theta, and its height is the loss.
-
-[beat] Pause and think: what happens if the learning rate is too large?
-
-[pause 3]
-
-Too large, and you zigzag.
+How does AI learn? [beat] From examples, not rules people write. [beat]
+An AI model is like a box of knobs. [beat] It guesses, [beat] and a meter shows how wrong. [beat]
+Learning turns the knobs until the meter drops, [beat] example after example.
+[pause 1] But which way should each knob turn? [beat]
 ```
 
 ## Headings
@@ -82,6 +78,6 @@ has the time-budget workflow.
 ## Numbers and symbols
 
 Write numbers and symbols the way you want them said, because the cue phrases in
-`cues.json` match spoken words. The scaffold writes "eta" in the script and shows η on
-the slide, and it writes "theta one" for θ₁. A cue on "eta" is reliable, and a cue on "η"
-matches nothing.
+`cues.json` match spoken words. The scaffold writes "decktalk dot app" in the script and
+shows decktalk.app on the slide. A cue on "decktalk dot app" is reliable, and a cue on
+"decktalk.app" matches nothing, because matching drops the dot and leaves one token.
