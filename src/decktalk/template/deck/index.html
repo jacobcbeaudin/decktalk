@@ -190,7 +190,7 @@ __KATEX__
   .chip { transition: background-color .25s ease, color .25s ease; }
   .chip.now { background: var(--accent); color: #ffffff; }
   .s5-hero, .s5-mark, .s5-line, .s5-oss, .s5-url { position: absolute; left: 120px; margin: 0; }
-  .s5-hero { top: 190px; }
+  .s5-hero { top: 140px; font-size: 96px; }
   .s5-mark { top: 430px; }
   .s5-line { top: 512px; color: var(--mute); }
   .s5-oss { top: 584px; }
@@ -931,7 +931,7 @@ DeckTalk.scene(4, { name: "The edit", steps: [
 DeckTalk.scene(5, { name: "Close", steps: [
   { id: "5.1", hold: 14, cues: { "5.1made": 2, "5.1cap": 2.6, "5.1url": 6 }, render: () => `
     <div class="slide">
-      <p class="hero s5-hero">The script is the edit.</p>
+      <p class="hero s5-hero">Update your video the way<br>you update a doc.</p>
       <p class="wordmark s5-mark" data-cue="5.1made">DeckTalk</p>
       <p class="body s5-line" data-cue="5.1cap" data-sync>Open source, narrated presentations, cut to the word.</p>
       <p class="filelabel s5-oss" data-cue="5.1cap" data-fx="fade">Apache-2.0 · github.com/jacobcbeaudin/decktalk</p>

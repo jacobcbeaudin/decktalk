@@ -59,7 +59,10 @@ ends on decktalk.app. `uv` is a Python package manager, and `pipx install deckta
 way. The `.env` file holds your ElevenLabs key and voice id beside the project, and
 DeckTalk never prints either.
 
-## The script is the edit
+## Update your video the way you update a doc
+
+DeckTalk builds the video from text you keep, so a changed sentence changes the video, and
+nothing is recorded again by hand.
 
 A narrated deck is three things that drift apart: what you say, what is on screen, and
 when each thing appears. Recording tools pin the timing to a timeline, so every edit to
