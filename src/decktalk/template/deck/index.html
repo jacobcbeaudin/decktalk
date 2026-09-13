@@ -469,10 +469,11 @@ function s3setup(slide, frozen) {
     render();
     return {};
   }
-  // Warm up: draw one material of each program per frame at near-zero opacity, so SwiftShader
-  // links every program and uploads every buffer during the lead, not on the frame a cue first
-  // shows it, and no single frame stalls while it does.
-  const warm = [ballMat, surfMat, contourMat, haloMat, ghostTrail.line.material];
+  // Warm up: draw every mesh's material once per frame at near-zero opacity, so SwiftShader
+  // links every program and uploads every mesh's buffers while the title holds still, not on
+  // the frame a cue first shows it. Sharing a program is not enough: the ghost ball, the two
+  // arrows, and the ring each stalled the frame their cue first drew them until they were warmed.
+  const warm = [ballMat, surfMat, contourMat, haloMat, ghostTrail.line.material, ghostMat, upMat, downMat, ringMat];
   let wi = 0;
   const warmStep = () => {
     if (wi >= warm.length) { render(); return; }
