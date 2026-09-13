@@ -186,10 +186,15 @@ def cmd_narrate(args: argparse.Namespace) -> int:
 
 
 def cmd_beats(args: argparse.Namespace) -> int:
-    from .stages.beats import resolve_beats
+    from .stages.beats import UnknownCueError, resolve_beats
 
     project = _project(args)
-    result = resolve_beats(project, allow_unknown=args.allow_unknown)
+    try:
+        result = resolve_beats(project, allow_unknown=args.allow_unknown)
+    except UnknownCueError as err:
+        # beats.json is already written, so report the result like any other finding
+        # instead of stopping before the table or the JSON is printed.
+        result = err.result
     unknown = 0 if args.allow_unknown else result.unknown
     # A section whose speech ends before its min_seconds is probably too short for its visuals.
     short = sum(
