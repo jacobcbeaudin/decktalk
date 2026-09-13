@@ -1,0 +1,82 @@
+---
+title: Requirements and costs
+description: The Python version DeckTalk needs, what decktalk setup downloads and where it puts each download, the ffmpeg license, the accounts a build needs, and which commands spend ElevenLabs credits.
+icon: "list-check"
+---
+
+## Python
+
+DeckTalk needs Python 3.12 or later. Its two Python dependencies are Playwright and
+static-ffmpeg, and you do not need Node. The [quickstart](/quickstart) installs it with uv,
+pipx, or pip.
+
+## What setup downloads
+
+`decktalk setup` makes three downloads, once per machine, and `decktalk doctor` reports on
+each of them afterwards.
+
+| Download | Where it goes |
+|---|---|
+| Chromium | The command runs `playwright install chromium`, which puts the browser in Playwright's cache. The cache is `~/.cache/ms-playwright` on Linux, `~/Library/Caches/ms-playwright` on macOS, and `%LOCALAPPDATA%\ms-playwright` on Windows. |
+| ffmpeg and ffprobe | The static-ffmpeg package downloads a static build for your platform into its own directory, inside the Python environment that DeckTalk is installed in. |
+| KaTeX | The command downloads the KaTeX release from GitHub into DeckTalk's per-user cache, under `katex/<version>`. The cache is `~/.cache/decktalk` on Linux, or `$XDG_CACHE_HOME/decktalk` when that variable is set, `~/Library/Caches/decktalk` on macOS, and `%LOCALAPPDATA%\decktalk` on Windows. The `DECKTALK_CACHE_DIR` variable moves it. |
+
+On Linux, `setup` passes `--with-deps` to Playwright, which also installs Chromium's system
+libraries. Playwright asks for sudo to install them.
+
+`decktalk init` copies the cached KaTeX into the project's `deck/katex/`, so equations render
+with no network. When the KaTeX download fails, `setup` warns and continues, and a project
+created before KaTeX is cached loads it from a CDN instead. When `setup` has not run,
+static-ffmpeg downloads ffmpeg the first time DeckTalk asks for it. An ffmpeg on your PATH is
+used only when static-ffmpeg cannot provide one, and `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE`
+override both.
+
+## The ffmpeg license
+
+DeckTalk is licensed under Apache-2.0. The ffmpeg builds that static-ffmpeg downloads are
+configured with `--enable-gpl` and include libx264, so they are GPL builds, under
+GPL-2.0-or-later. DeckTalk runs ffmpeg as a separate process and does not link against it.
+To use a build of your own, set `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE` to its two
+executables.
+[THIRD_PARTY_NOTICES.md](https://github.com/jacobcbeaudin/decktalk/blob/main/THIRD_PARTY_NOTICES.md)
+lists every third-party component and its license.
+
+## Accounts
+
+A silent build needs no account and no API key. A voiced build needs an ElevenLabs plan with
+API access, an API key in `ELEVENLABS_API_KEY`, and a voice id in `ELEVENLABS_VOICE_ID`.
+`decktalk soundscape` needs the API key and no voice id. The quickstart's
+[Add your voice](/quickstart) step shows where both values go, and the
+[FAQ](/help/faq#what-does-it-cost) compares the plans.
+
+## What spends credits
+
+Only two stages call ElevenLabs. The `narrate` stage calls the text to speech endpoint, and
+`decktalk soundscape` calls the sound effects and music endpoints.
+
+| Command or change | When it spends credits |
+|---|---|
+| `decktalk build` without `--silent` | The build voices every section whose text, title, or voice changed since the last voiced build, and every section when the cache is empty. |
+| `decktalk narrate` without `--silent` | The command voices the same sections that a build would. The `--only` flag limits it to the sections named. |
+| `--force` on `build` or `narrate` | The run voices every section again, whether or not it changed. |
+| A changed voice id, model, output format, or `[voice]` setting | The next voiced build voices every section again, because the cache key includes all of them. |
+| `decktalk soundscape` | The command generates every ambience, effect, and music part whose request changed or whose file is missing, and `--force` generates every item again. |
+
+Each voiced section costs the characters of its whole text, so an edit costs the characters
+of every section whose text changed, not only those of the changed sentences.
+`decktalk narrate --dry-run` prints the text that a run would send, section by section, and
+`decktalk soundscape --dry-run` prints every request. Neither makes an API call. A silent
+build spends nothing, and so do `setup`, `init`, `doctor`, `beats`, `record`, `measure`,
+`check`, `assemble`, `verify`, `shots`, `status`, and `runtime`.
+
+<Warning>A silent build after a voiced one empties the narration cache. It writes its
+placeholder tracks over the voiced mp3 files, so the next voiced build voices every section
+again and spends credits on all of them.
+[Rebuild one section](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build) explains
+the cache.</Warning>
+
+## Time
+
+Recording runs in real time, one section after another, so a first silent build of the
+scaffold takes a few minutes. [Rebuild one section](/guides/rebuild-one-section) shows how
+`--only` records only the sections that changed.

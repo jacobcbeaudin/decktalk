@@ -199,6 +199,18 @@ def parse_beats_string(value: str) -> dict[str, float]:
     return out
 
 
+def gap_time(value: Any) -> float | None:
+    """A frame gap's time in seconds, or None when the gap ended before the narration clock started.
+
+    The page reports such a gap at negative infinity, and older sidecars hold that value as the
+    non-standard JSON token -Infinity, so any value that is not a finite number becomes None.
+    """
+    if value is None:
+        return None
+    at = float(value)
+    return at if math.isfinite(at) else None
+
+
 @dataclass
 class Sidecar:
     """What the recorder did for one section, and where narration t=0 sits in the webm."""
@@ -212,7 +224,8 @@ class Sidecar:
     lead_method: str | None = None
     warnings: list[str] = field(default_factory=list)
     page_errors: list[str] = field(default_factory=list)  # uncaught exceptions, or no runtime catalog at all
-    frame_gaps: list[tuple[float, int]] = field(default_factory=list)  # (seconds, ms) where the page stalled
+    # (seconds, ms) where the page stalled. The time is None for a gap that ended before narration t=0.
+    frame_gaps: list[tuple[float | None, int]] = field(default_factory=list)
     sync_log: list[dict[str, Any]] = field(default_factory=list)  # what each data-sync element matched
 
     @property
@@ -221,9 +234,10 @@ class Sidecar:
 
         Frames before t=0 sit under the cover and are trimmed from the cut, so a scene may warm
         up there. A gap is recorded when it ends, so a gap that began before t=0 counts only its
-        milliseconds after t=0, and a gap that ended before t=0 counts nothing.
+        milliseconds after t=0, and a gap that ended before t=0 counts nothing. Such a gap has no
+        time on the narration clock, so its time is None.
         """
-        visible = (min(ms, at * 1000) if math.isfinite(at) else 0 for at, ms in self.frame_gaps)
+        visible = (0 if at is None else min(ms, at * 1000) for at, ms in self.frame_gaps)
         return int(max((v for v in visible if v > 0), default=0))
 
     @classmethod
@@ -231,10 +245,15 @@ class Sidecar:
         if not path.exists():
             return None
         d = _read_json(path)
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        side = cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        side.frame_gaps = [(gap_time(at), int(ms)) for at, ms in side.frame_gaps]
+        return side
 
     def save(self, path: Path) -> None:
-        _write_json(path, asdict(self))
+        """Write standard JSON, with null for a gap time that is not a finite number."""
+        d = asdict(self)
+        d["frame_gaps"] = [[gap_time(at), ms] for at, ms in self.frame_gaps]
+        _write_json(path, d)
 
     @property
     def trim_seconds(self) -> float:

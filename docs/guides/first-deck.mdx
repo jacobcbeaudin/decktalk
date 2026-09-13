@@ -4,22 +4,25 @@ description: Write one DeckTalk section from scratch in script.md, decktalk.toml
 icon: "pen-line"
 ---
 
-A DeckTalk project is four files that refer to each other by number and by id. This
-guide writes one section, a simplified gradient descent scene drawn with SVG rather than
-the scaffold's three.js surface, and shows every reference as it is made. Start from
+You write three files for a DeckTalk section, the script, the cues, and the page, and
+the voice returns a fourth, the words file. One cue id ties them together, and the project
+file maps the section to its page. This guide writes one section, a simplified gradient
+descent scene drawn with SVG rather than the scaffold's three.js surface, and shows every
+reference as it is made. Start from
 `decktalk init my-lesson` so that the runtime and KaTeX are in place. The scene carries
 the few CSS rules it needs, because the scaffold's stylesheet defines only its own
-classes. This is the finished section in all four files.
+classes. This is the finished section in the script, the project file, the cues, and the
+page.
 
 <CodeGroup>
 
 ```md script.md
-## 3. Gradient descent — 0:40 to 1:20
+## 3. Gradient descent
 
 [Deck scene 3. A loss bowl draws, a point steps down it, and the update rule appears.]
 
 Now a short lesson. Here is gradient descent, at a high level. [beat] Start with a loss
-surface. Think of it as a bowl. [beat] Pick a point anywhere on it. [beat] The gradient
+surface. For this lesson it is a bowl. [beat] Pick a point anywhere on it. [beat] The gradient
 says which way is uphill, so take a step the other way. [beat] The learning rate sets
 the size of that step. [beat] Step again. [beat] And again, and each step is smaller as
 the slope flattens out.
@@ -28,8 +31,8 @@ the slope flattens out.
 
 [pause 3]
 
-You overshoot, and bounce from side to side. [beat] Small enough, and you settle at the
-bottom.
+You overshoot, and bounce from side to side. [beat] Too small, and you crawl. [beat] Just
+right, and you settle at the bottom.
 ```
 
 ```toml decktalk.toml
@@ -105,8 +108,9 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
 
 <Steps>
   <Step title="Write the section in script.md">
-    Each `## N. Title` heading starts a section. The optional `— 0:40 to 1:20` on the
-    heading is a time budget, which the narrate table compares with the real length. Text
+    Each `## N. Title` heading starts a section. A heading may also carry a time budget,
+    such as `— 0:40 to 1:20`, which the narrate table compares with the real length, and
+    [Writing for the ear](/guides/writing-for-the-ear#give-a-section-a-time-budget) shows one. Text
     in square brackets is a stage direction, and it is not spoken. A plain direction and
     `[beat]` are beats, which the voice reads as a dash and a short pause, and `[pause 3]`
     is three seconds of silence requested from the voice. Write numbers and symbols as you
@@ -126,16 +130,17 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
     occurrence and ignores case and punctuation. The values `$start` and `$end` are the
     edges of the section's speech, `offset` shifts the moment in seconds, and `occurrence`
     picks a later repeat of the same words. Here the bowl draws on `loss surface`, each
-    step of the point lands on the verb that takes it, the update rule appears on
+    move of the point lands on the verb that makes it, the update rule appears on
     `learning rate`, the overshoot path draws on `overshoot`, and the settled point trails
     `settle` by a fifth of a second. The `min_seconds` key warns when the speech is
     shorter than the thirty seconds the animation needs. [Cues](/concepts/cues) has the
     matching rules and the advice on choosing a phrase.
 
     <Warning>The `3.1` cue on `$start` mounts the step at 0.0, and that is all it is for.
-    Do not pass it to `decktalk verify`. The check takes its reference frame
-    `after_dip_seconds` after the section start, during the first slide's entrance, so a
-    `$start` cue at 0.0 reports `OFF CUE` or `NO CHANGE` rather than a landing.</Warning>
+    The verify check needs a reference frame at least one frame before the cue and after the
+    section's fade-in, and a cue at 0.0 leaves no such frame. `decktalk verify` therefore
+    reports a `$start` cue at 0.0 as `skipped` with the reason `REFERENCE_CLAMPED` rather
+    than measuring a landing.</Warning>
 
     Run `decktalk narrate --silent` once, then `decktalk beats` at any time to see where
     each phrase resolved. A phrase that is
@@ -154,7 +159,7 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
     object names it and because `3.1` is the longest prefix of each id. The elements
     marked `data-cue` stay hidden until their cue fires. The bowl is an SVG path with
     `pathLength="1"` and `data-fx="draw"`, so its stroke draws itself over 1.6 seconds.
-    Each step of the point pops on its cue, and the steps shrink as the slope flattens.
+    Each move of the point pops on its cue, and the moves shrink as the slope flattens.
     The update rule is a `data-tex` element that KaTeX typesets, with the plain text as
     its fallback. The overshoot path draws on `overshoot`, and the settled point pops
     last. [The page contract](/concepts/page-contract) explains ownership, and
@@ -179,26 +184,26 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
     ```console
     decktalk build --silent          # placeholder voice, no key
     decktalk build                   # your voice
-    decktalk verify 3:3.1eq 3:3.1p1 5:5.1cap
+    decktalk verify 3:3.1eq 3:3.1p1
     ```
 
     The verify table shows, for each cue, the second at which it fired in the final mp4,
     the share of pixels that changed across it, the same measure over a quiet control
-    span just before it, and how far from the cue the first changed frame sits. After a
-    silent build it also shows `a/v`, the picture's first change measured against the
-    placeholder click at the cued word, which proves that the finished file's audio and
-    picture agree.
+    span just before it, and how far from the cue time the first changed frame sits. After a
+    silent build it also shows [`a/v`](/concepts/how-it-works#what-verify-measures), which
+    compares the picture with the placeholder click at the cued word and so shows whether
+    the finished file's audio and picture agree.
 
     ```text
     check                 cue       at   chg %   ctl %   offset     a/v  result
     3:3.1eq             21.63    57.43    0.27    0.00    -30ms   -35ms  changed
     3:3.1p1             18.18    53.98    0.15    0.00    -60ms   -74ms  changed
-    5:5.1cap             2.55   132.43    0.41    0.00    -30ms   -63ms  changed
     ```
 
-    Every row is within the two-frame limit, and a negative number means the picture
-    moved a fraction of a frame before the word, which is what the eye wants. A reveal
-    further from its word than that limit is reported as `OFF CUE` by
+    Every row is within the two-frame limit. A negative offset means that the picture
+    began that many milliseconds before the cue time, which is the word's start plus the
+    cue's `offset`, and one frame is 40 ms at 25 fps. A reveal
+    further from its cue time than that limit is reported as `OFF CUE` by
     `decktalk verify`, which exits 1. `build` checks only section starts and
     cuts.
     [How it works](/concepts/how-it-works#what-verify-measures) explains the columns and
@@ -231,6 +236,8 @@ ignored. This table says which value matters where.
 
 ## Next
 
-Add a second section by repeating the steps with a new number.
-[Slide recipes](/guides/slide-recipes) has six slides to copy, and
+Add a second section by repeating this guide with another number.
+[How it works](/concepts/how-it-works) explains the stages that turn these files into a
+video, and [Cues](/concepts/cues) has the matching rules and the advice on choosing a
+phrase. [Slide recipes](/guides/slide-recipes) has six slides to copy, and
 [Add a clip section](/guides/clip-section) opens the video with footage of your own.

@@ -1,13 +1,13 @@
 ---
-title: One-page reference
-sidebarTitle: One-page reference
-description: The whole DeckTalk contract on one page for agents and people in a hurry, with every file, command, flag, environment variable, rule, artifact, and exit code.
+title: Reference card for agents
+sidebarTitle: Reference card for agents
+description: The whole DeckTalk contract in one place for agents and people in a hurry, with every file, command, flag, environment variable, rule, artifact, and exit code.
 icon: "bolt"
 mode: "wide"
 ---
 
-This reference is the whole contract in the fewest words. Every item links to the guide
-or reference that explains it.
+The reference card states the whole contract in the fewest words, and every item links to
+the guide or reference that explains it.
 
 ## Inputs
 
@@ -17,9 +17,9 @@ All four live in the project directory. [Your first deck](/guides/first-deck) wr
 |---|---|
 | `decktalk.toml` | `[project]` with `name`, an optional `[voice]`, one `[[section]]` per script section with `number`, `title`, and either `page` + `scene` or `clip`, then optional `[transition]`, `[mix]`, `[soundscape]`, and tuning tables. `hold_seconds` is allowed only on the last page section and clones its last frame. A clip sits before the first page section or after the last. [decktalk.toml](/reference/decktalk-toml). |
 | `script.md` | `## N. Title` starts section `N`, and `## N. Title — 0:40 to 1:10` adds a time budget. `[bracketed]` text is a stage direction, not spoken. A plain direction and `[beat]` are beats: the voice reads a dash there and no break tag is sent. `[pause N]` sends a `<break time="Ns" />` tag and is the only direction that does. `[CAPITALS]` is a placeholder and fails `narrate`. `<break time="1s" />` passes through as written. Silence before the first section (`lead_break_seconds`) and after every section's last word (`min_tail_seconds`, 0.7 s) is added by ffmpeg. A `---` line or a heading without a number ends the section. Markdown formatting is stripped. Length is about 140 words per minute plus 0.7 s per beat. [script.md](/reference/script-md). |
-| `cues.json` | `{"sections": {"N": {"min_seconds"?: s, "cues": [{"cue": id, "on": phrase \| "$start" \| "$end", "offset"?: s, "occurrence"?: n, "case_sensitive"?: bool, "verify"?: bool}]}}}`. Other top-level keys such as `_comment` are ignored. Tokens split on whitespace only, so a hyphenated word is one token, then lose everything but letters, digits, and apostrophes, and case is ignored. The cue lands on the first word of the first occurrence. A cue id may not contain `@` or a comma. [cues.json](/reference/cues-json), [Cues](/concepts/cues). |
+| `cues.json` | `{"sections": {"N": {"min_seconds"?: s, "cues": [{"cue": id, "on": phrase \| "$start" \| "$end", "offset"?: s, "occurrence"?: n, "case_sensitive"?: bool, "verify"?: bool}]}}}`. Other top-level keys such as `_comment` are ignored. Tokens split on whitespace only, so a hyphenated word is one token, then lose every character outside A to Z, a to z, 0 to 9, and the straight apostrophe, and case is ignored. The cue lands on the first word of the first occurrence. A cue id may not contain `@` or a comma. [cues.json](/reference/cues-json), [Cues](/concepts/cues). |
 | `deck/index.html` + `deck/decktalk-runtime.js` | `DeckTalk.scene(N, {name, camera?, steps: [{id, hold?, cues?, render, enter?, on?}]})`. `enter`, every `on[id]`, and `DeckTalk.on(id, fn)` are called as `(slide, {id, at, frozen, step})`. Reveals use `data-cue="id"`, `data-at="s"`, `data-fx`, `data-dur`, `data-count`, `data-type`, `data-sync` (one word at a time as the voice says it, text word for word as spoken, and no container animation unless `data-fx` is set), `data-tex` with `data-display`. `data-sync`, `data-count`, and `data-type` need `data-cue` or `data-at` on the same element. Inside the render backticks every backslash is doubled. The stage is 1920 by 1080. `decktalk runtime` writes `deck/decktalk-runtime.js` into a bare project. [Runtime](/reference/runtime), [Page contract](/concepts/page-contract). |
-| `.env` | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`. Exported variables work too. Not needed with `--silent`. |
+| `.env` | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`. Exported variables work too. A silent build needs neither. |
 
 The number `N` is the same in the script heading, the section table, the cues key, and
 the scene. A cue belongs to the step with the same id, or the step whose `cues` names it,
@@ -58,12 +58,13 @@ DeckTalk.scene(1, { name: "Open", steps: [
 ## Commands
 
 ```console
+uv tool install decktalk                    # Python 3.12 or later, or pipx install decktalk
 decktalk setup                              # once per machine: Chromium, ffmpeg, KaTeX
 decktalk doctor                             # each tool and its path, exit 1 if one is missing
 decktalk init DIR [--name NAME] [--force]   # scaffold, with KaTeX vendored into deck/katex/
 decktalk build --silent                     # every stage with placeholder narration (a click per word), no key
 decktalk build                              # the video, at build/out/<name>.mp4
-decktalk build --only 3 --only 4 --preset veryfast   # re-record two sections, fast encode
+decktalk build --only 3 --only 4 --preset veryfast   # record two sections again, fast encode
 decktalk beats                              # where each cue phrase resolved, exit 1 if one is missing or unknown to the page
 decktalk verify                             # measure every cue's offset in the final mp4
 decktalk verify 3:3.1eq --cue 5:5.1cap      # measure only these cues
@@ -85,9 +86,10 @@ and cuts. `verify` also measures every cue landing and its offset, except a cue 
 only the cues named, even a marked one. Every cut must be quieter than -40 dBFS in its
 last 150 ms, reported as `quiet` or `SPEECH AT CUT`, and clip sections are exempt. In a
 silent build the placeholder track carries a click at every word start. The cue table
-then gains an `a/v` column, which is the picture's first change minus the click nearest
-the cue. The `offset` column must sit within `max_offset_frames` of the cue, and the
-`a/v` column within `max_av_frames` of the click. `status`, `beats`, `check`, `verify`,
+then gains an `a/v` column, which is the `offset` minus the click's distance from the cued
+word's start, as [How it works](/concepts/how-it-works#definitions) defines it. The
+`offset` column must sit within `max_offset_frames` of the cue time, and the `a/v` column
+within `max_av_frames`. `status`, `beats`, `check`, `verify`,
 and `doctor` take `--json` for one JSON object on stdout, `--strict` to fail on a verdict
 ending in a question mark, and `--no-fail` to always exit 0.
 [CLI](/reference/cli) lists every flag.
@@ -100,8 +102,10 @@ A `$start` cue with no offset leaves no frame before it, so `verify` reports it 
 A cue named on the command line that is not in `beats.json` is `UNRESOLVED`, which fails.
 The `a/v` column shows `-` when no click lies within `click_search_seconds` of the cued
 word, and the JSON row then carries the reason `NO_CLICK`. A silent build skips the
-loudness pass, so it prints no loudness warning. `build` measures no cue, so its exit 0
-says that the starts and cuts passed and nothing about whether a cue landed.
+loudness pass, so it prints no loudness warning. `build` measures no cue and does not
+stop on `TRUNCATED`, `STALLED`, or `NO COVER`, so its exit 0 says nothing about whether a
+cue landed or a recording was cut short. A script that gates on the video runs
+`decktalk build --silent && decktalk check && decktalk verify`.
 
 The keyless order is `decktalk runtime` for a bare project, then `decktalk build --silent`,
 then `decktalk verify`, then `decktalk shots`. `decktalk narrate --silent` followed by
@@ -134,7 +138,7 @@ Defaults come first, then the per-machine file
 (`~/Library/Application Support/decktalk/decktalk.toml` on macOS,
 `%APPDATA%\decktalk\decktalk.toml` on Windows, `~/.config/decktalk/decktalk.toml` on
 Linux, or the path in `DECKTALK_CONFIG`), then tables of the same name in
-`decktalk.toml`, then `DECKTALK_<SECTION>_<FIELD>` variables, then the flags `--preset`,
+`decktalk.toml`, then `DECKTALK_<TABLE>_<FIELD>` variables, then the flags `--preset`,
 `--crf`, `--settle`, and `--model`. The tables are `video`, `narration`, `record`,
 `align`, `audio`, `verify`, and `elevenlabs`. `DECKTALK_CACHE_DIR` moves the KaTeX
 cache. `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE`, set together, are paths to your own
@@ -145,10 +149,10 @@ binaries, and they override the `static-ffmpeg` build and any ffmpeg on PATH.
 
 | Code | When |
 |---|---|
-| 0 | Success. |
-| 1 | Any `DeckTalkError`, printed to stderr as `error: …`, even with `--no-fail`. Also a certain finding from `beats`, `check`, `verify`, or `doctor`, such as an unmatched phrase, an unknown cue id, `TRUNCATED`, `PAGE ERROR`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`, or a missing tool, and an uncertain one such as `BLACK?` or `KATEX?` under `--strict`. `--no-fail` makes those four commands exit 0. `build` exits 1 unless assembly and verification both pass. |
-| 2 | A usage error, such as an unknown flag or a missing command. |
-| 130 | Interrupted. |
+| 0 | The command succeeded. |
+| 1 | The command raised a `DeckTalkError`, printed to stderr as `error: …`, which exits 1 even with `--no-fail`. A certain finding from `beats`, `check`, `verify`, or `doctor` also exits 1, such as an unmatched phrase, an unknown cue id, `TRUNCATED`, `PAGE ERROR`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`, or a missing tool, and so does an uncertain one such as `BLACK?` or `KATEX?` under `--strict`. `--no-fail` makes those four commands exit 0 on findings. `build` exits 1 on an error, on `PAGE ERROR`, on an unresolved or unknown cue unless the matching flag is given, and on `BLACK` or `SPEECH AT CUT`. |
+| 2 | The command line has a usage error, such as an unknown flag or a missing command. |
+| 130 | The command was interrupted. |
 
 `ConfigError` means an input is bad or inconsistent. `MissingInputError` means an
 earlier stage has not run. `ProviderError` means the speech provider refused or failed.

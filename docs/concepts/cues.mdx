@@ -7,7 +7,18 @@ icon: "crosshairs"
 A cue is a named moment. In `cues.json` it is a spoken phrase to find in a section's
 narration. In the page it is an id that reveals elements or runs a handler. The `beats`
 stage joins the two by turning each phrase into seconds after the section starts, and
-the recorder hands those seconds to the page as `?beats=`.
+the recorder hands those seconds to the page as `?beats=`. The `beats` stage,
+`beats.json`, and `?beats=` carry resolved cues. The name does not refer to a `[beat]`
+direction.
+
+The scaffold's section 3 follows one cue, `3.1eq`, from the script to the slide.
+
+```md script.md
+## 3. Gradient descent
+
+The gradient points uphill, in the plane of the weights, so follow minus the gradient.
+[beat] Take a step, and the learning rate, eta, scales its length.
+```
 
 ```json cues.json
 { "sections": { "3": { "cues": [
@@ -16,27 +27,34 @@ the recorder hands those seconds to the page as `?beats=`.
 ] } } }
 ```
 
+```html deck/index.html
+<span class="chip" data-cue="3.1eq" data-tex="\\eta = 2">η = 2</span>
+```
+
+The cue `3.1eq` resolves to the start of the word "learning", and the chip appears on that
+word. The `beats` table shows where every cue of the section resolved.
+
 ```text
 sec  speech   need  cues
  03    71.7   40.0  3.1weights@2.81,3.1loss@5.16,3.1preview@25.31,3.1p0@27.65,3.1height@29.99,3.1up@32.8,3.1neg@37.96,3.1p1@39.37,3.1eq@41.71,3.1scale@43.11,3.1shrink@44.52,3.1rule@47.8,3.1eqA@49.67,3.1eqA2@51.08,3.1eqB@52.49,3.1eqC@53.42,3.1over@55.3,3.1diverge@57.64,3.1crawl@60.45,3.1min@63.0
 ```
 
-[cues.json](/reference/cues-json) lists every key. This guide is about how a phrase is
-found and how to choose one.
+[cues.json](/reference/cues-json) lists every key. The matching rules below say how a
+phrase is found, and [Choosing the phrase](#choosing-the-phrase) gives the rules of thumb.
 
 ## Matching rules
 
-1. The phrase and the section's words are both split on whitespace only. Each token then loses every character that is not a letter, a digit, or an apostrophe, and is lowercased unless `case_sensitive` is true. A hyphenated word such as "x-squared" is therefore one token, and it matches only a phrase written the same way.
+1. The phrase and the section's words are both split on whitespace only. Each token then loses every character outside A to Z, a to z, 0 to 9, and the straight apostrophe, and it is lowercased unless `case_sensitive` is true. Accented letters, Greek letters, and curly apostrophes are therefore removed. A phrase token that loses every character is dropped, so the phrase `learning rate η` matches as `learning rate`. A hyphenated word such as "zig-zag" becomes the single token "zigzag", so the phrase "zig zag" does not match it.
 2. The section's words are scanned in order for a run that matches the phrase token for token. The `occurrence` key picks which run, and the default is the first.
 3. The cue time is the start of the first word of that run, plus `offset`, rounded to hundredths of a second.
-4. `$start` is zero plus the offset. A negative result is written as is and the page fires it at t=0. `$end` is the end of the last spoken word in the section, plus the offset.
+4. `$start` is zero plus the offset. A negative result is written as is, and the page fires it at t=0. `$end` is the end of the last spoken word in the section, plus the offset.
 
 The words come from the voice, so a phrase must be written as it is spoken. The script
-says "two x" and the slide shows `2x`, and the cue says "two x". A number written as
+says "eta" and the slide shows η, so a cue on that word says "eta". A number written as
 digits comes back in the form the voice chose to say, so digits in a cue phrase are
 fragile. Directions never reach the word list. A `[beat]` becomes a dash that the voice
-reads as a pause and a `[pause N]` becomes a break tag, and neither is a word, so a
-phrase that spans a direction still matches.
+reads as a pause, and a `[pause N]` becomes a break tag. Neither is a word, so a phrase
+that spans a direction still matches.
 [script.md](/reference/script-md#directions-and-placeholders) has the direction rules.
 
 A cue id may not contain `@` or a comma, because the resolved cues travel to the page as
@@ -68,15 +86,16 @@ The `beats` stage prints `phrase not found` for a cue it cannot match and exits 
 ```text
 sec  speech   need  cues
  03    71.7   40.0  3.1weights@2.81,3.1loss@5.16,3.1preview@25.31,3.1p0@27.65,3.1height@29.99,3.1up@32.8,3.1neg@37.96,3.1p1@39.37,3.1scale@43.11,3.1shrink@44.52,3.1rule@47.8,3.1eqA@49.67,3.1eqA2@51.08,3.1eqB@52.49,3.1eqC@53.42,3.1over@55.3,3.1diverge@57.64,3.1crawl@60.45,3.1min@63.0
-                    ! 3.1eq: phrase not found: 'learning rate η'
+                    ! 3.1eq: phrase not found: 'learning rates'
 ```
 
 The `build` command stops at that point, because a step whose only cues are unresolved
 never appears on screen. Fix the phrase, or pass `--allow-unresolved` to build without
 that cue. The page then ignores the missing cue, and an element waiting for it appears at
-its `data-at` time after its step mounts, with a warning that the id is not in `?beats=`. A cue that resolves past the end of the audio
-is kept with a note. A silent build estimates word times from the word count, so cues
-resolve, but their times are placeholders and the table says so.
+its `data-at` time after its step mounts, with a warning that the id is not in `?beats=`.
+A cue that resolves past the end of the audio is kept with a note. A silent build
+estimates word times from the word count, so cues resolve, but their times are
+placeholders and the table says so.
 
 ## Unknown cue ids
 
@@ -84,7 +103,7 @@ A phrase can resolve while its cue id is wrong. `beats` therefore reads each sec
 page and looks for every cue id as a quoted literal in single quotes, double quotes, or
 backticks, such as `data-cue="4.1answer"`, a key of a step's `cues` object, or a key of an
 `on` handler. An id that appears nowhere in the page is noted and counted, and `beats`
-exits 1. The cue still resolves and `beats.json` is written.
+exits 1. The cue still resolves, and `beats.json` is written.
 
 ```text
 sec  speech   need  cues
@@ -104,7 +123,7 @@ owns, which lands in the recorder's sidecar.
 These are the rules of thumb behind the scaffold's cues, and
 [Writing for the ear](/guides/writing-for-the-ear) explains each one.
 
-- Begin the phrase with the word that names the visual, because the cue lands on the first word of the phrase. A noun such as `loss surface` or a verb with a referent such as `Pick a point` works, and a connective such as "and then" does not.
+- Begin the phrase with the word that names the visual, because the cue lands on the first word of the phrase. A noun such as `learning rate` or a verb with a referent such as `Pick a point` works, and a connective such as "and then" does not.
 - Use two or three words when one word repeats in the section, or set `occurrence`.
 - Trail the word with a small positive `offset`, one or two tenths of a second, so that the word finishes before the visual moves. Lead the word with a negative offset only when the audience must read along.
 - Put a `[beat]` or a `[pause N]` before a reveal that should read as an event.

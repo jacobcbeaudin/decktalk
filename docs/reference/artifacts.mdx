@@ -5,8 +5,8 @@ icon: "folder-tree"
 mode: "wide"
 ---
 
-These files are part of the public contract. The page runtime reads `beats.json`, and
-your own tools may read any of them. Every JSON file is written atomically, so a reader
+These files are part of the public contract, and your own tools may read any of them.
+The recorder passes each section's entry in `beats.json` to the page as `?beats=`. Every JSON file is written atomically, so a reader
 never sees a partial file. Field names in the JSON match the dataclasses in
 `decktalk.artifacts`.
 
@@ -126,6 +126,7 @@ t=0 sits in the webm.
   "lead_in_seconds": 1.44,
   "lead_method": "cover (36 magenta frames)",
   "warnings": [],
+  "page_errors": [],
   "frame_gaps": [],
   "sync_log": [{ "text": "The curve rises, then th", "cueAt": 0.0, "runAt": 0.0, "n": 7, "firstOn": 0.0 }]
 }
@@ -136,12 +137,13 @@ t=0 sits in the webm.
 | `url` | The page URL the recorder opened, including `scene`, `beats`, `words`, and `t0=signal`. |
 | `requested_seconds` | How long the recording was asked to run. |
 | `settle_seconds` | How long the recorder waited after load before starting the clock. |
-| `load_seconds`, `lead_seconds` | Wall-clock estimates from the recorder. |
+| `load_seconds`, `lead_seconds` | The recorder's wall-clock estimates of how long the page took to load and how long it waited before the clock started. |
 | `lead_in_seconds` | The first clean frame after the magenta cover, written by `measure`. The assembler trims here. |
-| `frame_gaps` | `[seconds, ms]` pairs, one for every gap between two page frames longer than 100 ms, copied from `window.__decktalk.frameGaps`. `check` reports `STALLED` past `stall_ms`. |
+| `frame_gaps` | The list holds `[seconds, ms]` pairs, one for every gap longer than 100 ms between two page frames, copied from `window.__decktalk.frameGaps`. The seconds give where the gap ended after narration t=0, and a gap that ended before the clock started has `null` seconds. `check` reports `STALLED` when the part of a gap after t=0 is longer than `stall_ms`. |
 | `sync_log` | One `{ text, cueAt, runAt, n, firstOn }` object per `data-sync` element that matched, copied from `window.__decktalk.syncLog`. |
 | `lead_method` | How `measure` found it. A value beginning `NO COVER` is a guess. |
 | `warnings` | `window.__decktalk.warnings` read from the page after the recording, such as an unknown cue id or a KaTeX that never loaded. |
+| `page_errors` | The list holds one line for every uncaught exception the page threw while it was recorded, plus one entry when the page has no `window.__decktalk.catalog` or an empty one. `check` reports `PAGE ERROR` for a sidecar with any entry, and `build` stops. |
 
 ## `build/out/`
 

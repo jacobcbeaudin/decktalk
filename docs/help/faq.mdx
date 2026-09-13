@@ -9,10 +9,17 @@ icon: "circle-question"
 You need an ElevenLabs plan with API access. The free tier has the API, but its audio
 carries a watermark and a non-commercial license, so the Starter plan is the practical
 floor. A ten-minute narration is roughly 9,000 characters, which fits inside that plan's
-monthly allowance several times over. Because DeckTalk caches sections by text, an edit
-costs the sentences you changed rather than the whole script, and `decktalk narrate --dry-run`
-prints exactly what a build would send before it sends it. Everything else is free.
-Chromium and ffmpeg run on your machine, and `--silent` builds spend nothing.
+monthly allowance several times over.
+
+DeckTalk caches each section by its whole text, so an edit costs the characters of every
+section whose text changed, not only the sentences you changed. `--force` and a change to
+any `[voice]` setting synthesize every section again. `decktalk narrate --dry-run` prints
+exactly what a build would send before it sends it. `decktalk soundscape` calls the
+ElevenLabs sound and music endpoints, so it spends credits too.
+
+Chromium and ffmpeg run on your machine, and a `--silent` build spends nothing. A silent
+build does empty the narration cache, so the next voiced build synthesizes every section
+again. [Requirements and costs](/requirements) lists every command that spends credits.
 
 ## Is there lock-in to ElevenLabs?
 
@@ -32,14 +39,15 @@ cuts.
 
 ## Why not record the screen?
 
-You would record it again after every edit, and you would re-time every reveal by hand.
-Here an edit rebuilds one section, and the reveals follow the words wherever they move.
+You would record it again after every edit, and you would time every reveal again by
+hand. With DeckTalk, change a sentence, and only that section is voiced again. The reveals
+follow the words wherever they move.
 
 ## How is this different from the other tools?
 
 | Tool | Timing comes from | Slides are | Cost of editing one sentence |
 |---|---|---|---|
-| **DeckTalk** | the spoken words, one timestamp each | your HTML | one section re-synthesized and re-recorded |
+| **DeckTalk** | the spoken words, one timestamp each | your HTML | one section voiced again, and `build --only N` records just that section |
 | Remotion, Motion Canvas | frame numbers or seconds in code, by default | code | you re-time by hand and re-render |
 | Manim | seconds in code, or bookmarks in the narration with manim-voiceover | code | with manim-voiceover, bookmarks in the text re-sync, and you still re-render the scene in Python |
 | reveal.js plus a TTS script | a fixed delay per slide, or a hand-made timeline | your HTML | you re-time every slide after the change |
@@ -59,7 +67,8 @@ slides are yours.
 
 No. The soundscape stays off until `[mix]` names a file, and you can bring your own
 files. The `soundscape` command exists for when you want ElevenLabs to make the bed and
-the effects from a prompt. [Sound](/concepts/sound) explains both.
+the effects from a prompt, and it spends credits when it does. [Sound](/concepts/sound)
+explains both.
 
 ## What comes out besides the video?
 
@@ -77,8 +86,10 @@ is optional, and `init` vendors it into the project.
 
 ## Does it run on Windows?
 
-Yes. The test suite and a full offline build run on Linux, macOS, and Windows in CI for
-every push to `main`.
+Yes. DeckTalk is maintained by one person. Every push to `main` runs the unit tests and a
+full offline build on Linux. The same build runs on macOS and Windows from the Actions tab
+and on release tags that a person pushes. Release tags that release-please creates do not
+start that workflow.
 
 ## Where does the name come from?
 

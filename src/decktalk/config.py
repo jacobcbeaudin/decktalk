@@ -5,7 +5,7 @@ Four layers, lowest to highest precedence:
   1. the defaults below
   2. the same tables in the user's own decktalk.toml, one per machine (see user_config_path)
   3. tables of the same names in the project's decktalk.toml ([video], [narration], ...)
-  4. DECKTALK_<SECTION>_<FIELD> environment variables, e.g. DECKTALK_VIDEO_PRESET=veryfast
+  4. DECKTALK_<TABLE>_<FIELD> environment variables, e.g. DECKTALK_VIDEO_PRESET=veryfast
 
 Content that changes per presentation (sections, voice, mix levels, soundscape prompts)
 is the project document, not tuning; see project.py. Secrets live only in .env.

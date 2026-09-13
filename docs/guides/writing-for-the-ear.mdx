@@ -1,12 +1,12 @@
 ---
 title: Writing for the ear
-description: How to write a DeckTalk narration script that cues well, with stage directions, beats, pauses, offsets, time budgets, and a silent rehearsal.
+description: How to write a DeckTalk narration script that gives every reveal a word to land on, with stage directions, beats, pauses, offsets, time budgets, and a silent rehearsal.
 icon: "ear-listen"
 ---
 
 DeckTalk cuts the video to the words, so the script decides the timing. A script that
-reads well on paper can still cue badly, because a reveal needs a word to land on and
-a listener needs a moment to look. These are the habits that make the difference. They
+reads well on paper can still leave a reveal with no word to land on, or leave a listener
+no moment to look. These are the habits that make the difference. They
 come from building the scaffold and from watching where reveals feel late or early.
 
 ## Write the script first
@@ -25,10 +25,10 @@ appears long after them has already been imagined. The cue phrase is therefore t
 phrase that names the thing, and the rest of the sentence explains it while it is on
 screen.
 
-## Give every reveal a noun to land on
+## Give every reveal a word to land on
 
 A cue resolves to the first word of its phrase, so the phrase should begin with the word
-that names the visual. "Pick a point, theta, and its height is the loss" cues on
+that names the visual. The cue for "Pick a point, theta, and its height is the loss" names
 `Pick a point` and lands on "Pick", a verb whose referent, the ball, appears as it is said.
 A phrase such as "and then" lands on nothing in particular. The scaffold's cues are nouns
 or verbs with a concrete referent: `weights`, `Pick a point`, `learning rate`,
@@ -70,7 +70,7 @@ needs a pause at either end. [script.md](/reference/script-md) lists every direc
 The `offset` key in `cues.json` shifts a cue in seconds. A small positive offset, one or
 two tenths of a second, lets the word finish before the visual moves, which feels like
 the narrator pointing at something. The scaffold trails `The best eta` by 0.2 seconds, so
-the ball sets off on its last steps to the bottom of the bowl just after the sentence starts.
+the ball sets off on its last moves to the bottom of the bowl just after the sentence starts.
 
 ```json cues.json
 { "cue": "3.1min", "on": "The best eta", "offset": 0.2 }
@@ -128,7 +128,7 @@ budget. Add one to section 3 to see the column.
     total                    306   2:11            2:29
 ```
 
-The `target` column is the budget's length. Section 3 now has a budget of twenty seconds,
+The `target` column is the budget's length. Section 3 has a budget of twenty seconds,
 from 0:40 to 1:00, and the silent rehearsal runs to 1:12. That gap is the signal to
 cut a sentence. Widen the budget only after the voice has spoken and the `actual` column
 is real. The

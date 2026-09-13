@@ -9,7 +9,7 @@ contract consists of a few URL parameters, one Promise, and one global.
 `decktalk-runtime.js` implements it, and [a page can implement it by hand](/guides/page-by-hand).
 Slides are plain HTML that you style yourself, and the runtime adds no styling beyond
 the stage. [The runtime reference](/reference/runtime) lists every parameter, field, and
-attribute with its default. This guide explains how the pieces fit.
+attribute with its default.
 
 ## Modes
 
@@ -69,8 +69,9 @@ nothing mounts and the page warns about that too. A step of the scene that owns 
 cue never appears, and the page warns
 `step "3.2" owns no cue in ?beats=, so it never appears`. An element whose `data-cue` is
 not listed reveals at its `data-at` time after the mount, and the page warns about that as
-well. The scaffold names every cue in its step's `cues` object, which also gives the
-browser preview its autoplay timing.
+well. The scaffold names every cue in its step's `cues` object. In autoplay that object
+times the handlers, while a `data-cue` element still reveals at its `data-at` time, which
+defaults to the mount, so the browser preview shows such an element before its cue fires.
 
 Before anything is recorded, `decktalk beats` checks the other direction. Every cue id in
 `cues.json` must appear in the page as a quoted literal, whether as `data-cue="ID"`, a
@@ -94,8 +95,8 @@ well on a laptop screen and a phone alike.
 | Eyebrows and labels | 22 px, in the monospace face and the muted color. |
 
 Put one idea on each slide. A slide that reveals more than three or four elements reads as an
-animation, and a step with one headline and one supporting line is easier to cue than a
-dense one. Steps are cheap, so split a busy slide into two.
+animation, and a step with one headline and one supporting line gives each reveal a clearer
+word to land on than a dense one does. Steps are cheap, so split a busy slide into two.
 
 ## Reveal effects
 
@@ -104,7 +105,7 @@ suits a kind of element, and each one has a case it makes worse.
 
 | Effect | For | Against |
 |---|---|---|
-| `rise` (default) | Lines of text, labels, and cards. It moves up 10 px as it fades in over 0.3 s, which reads as a new line arriving. | Code, tables, and anything aligned to a grid, where the motion looks like a layout shift. |
+| `rise` (default) | Lines of text, labels, and cards. It moves up 10 px as it fades in over 0.3 s, which reads as a line arriving. | Code, tables, and anything aligned to a grid, where the motion looks like a layout shift. |
 | `fade` | Code lines, chat bubbles, images, and anything that must not move. It fades in over 0.3 s. | A single small element on a large slide, where a fade alone can be missed. |
 | `draw` | An SVG path with `pathLength="1"`. The stroke draws itself over `data-dur`. | Anything that is not a stroke. A filled shape does not draw. |
 | `drop` | A tile or a stamp that should land. It falls 24 px over 0.35 s. | Body text, where the fall is too heavy. |
@@ -112,8 +113,8 @@ suits a kind of element, and each one has a case it makes worse.
 | `dim` | An element that should recede when a cue fires. It starts visible and fades to 16% over 1.2 s. | An element that has not been on screen long enough to be noticed. |
 | `none` | An element that should appear on the frame of its cue with no animation, such as a cursor or a highlight. | Text, where a hard cut looks like a glitch. |
 
-The animations are short on purpose, so that a reveal is visible on the word that cued it
-rather than still arriving on the next one, and `data-dur` overrides any of them.
+The animations are short on purpose, so that a reveal is visible on its word rather than
+still arriving on the next one, and `data-dur` overrides any of them.
 
 An element with `data-tex` is typeset by KaTeX when it appears, and the plain text inside
 it is the fallback. A TeX string KaTeX cannot parse renders in red, and the runtime adds a
@@ -121,8 +122,9 @@ warning that names it. Inside a `render` template literal every backslash must b
 
 A scene may also set `camera: "push"`, a slow push from 100% to 103% over the scene.
 Use it on at most one scene, usually the open, because a push under every scene reads as
-the whole video breathing. The `verify` stage's control span accounts for the push, so it
-does not disturb the cue checks.
+the whole video breathing. The [control span](/concepts/how-it-works#the-control-span)
+that `decktalk verify` measures accounts for the push, so the push does not disturb the
+cue checks.
 
 ## Build artifacts a page or a tool of your own may read
 

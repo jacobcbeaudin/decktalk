@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import Sidecar
+from ..artifacts import Sidecar, gap_time
 from ..errors import ToolError
 
 log = logging.getLogger(__name__)
@@ -185,8 +185,8 @@ def record_page(
             entry.get("runAt", 0),
             entry.get("firstOn"),
         )
-    frame_gaps = [(float(g["at"]), int(g["ms"])) for g in gaps if isinstance(g, dict)]
-    after_start = [(at, ms) for at, ms in frame_gaps if at > 0]
+    frame_gaps = [(gap_time(g.get("at")), int(g["ms"])) for g in gaps if isinstance(g, dict)]
+    after_start = [(at, ms) for at, ms in frame_gaps if at is not None and at > 0]
     if after_start:
         worst = max(ms for _, ms in after_start)
         log.warning("[page] %s  %d frame stall(s) after narration t=0, worst %d ms", out.stem, len(after_start), worst)

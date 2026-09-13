@@ -4,9 +4,10 @@ description: What each DeckTalk warning, verdict, and failure means, from phrase
 icon: "life-ring"
 ---
 
-Run `decktalk build --silent` first when something goes wrong. It removes the voice from
-the picture, costs nothing, and shows whether the problem is in the cues, the pages, or
-the assembly.
+Run `decktalk build --silent` first when something goes wrong. It rules out the voice,
+spends no credits, and shows whether the problem is in the cues, the pages, or the
+assembly. A silent build empties the narration cache, so the next voiced build
+synthesizes every section again, as [Requirements and costs](/requirements) explains.
 
 <AccordionGroup>
   <Accordion title="phrase not found">
@@ -15,13 +16,14 @@ the assembly.
 
     ```text
      03    71.7   40.0  3.1weights@2.81,3.1loss@5.16,3.1preview@25.31,3.1p0@27.65,3.1height@29.99,3.1up@32.8,3.1neg@37.96,3.1p1@39.37,3.1scale@43.11,3.1shrink@44.52,3.1rule@47.8,3.1eqA@49.67,3.1eqA2@51.08,3.1eqB@52.49,3.1eqC@53.42,3.1over@55.3,3.1diverge@57.64,3.1crawl@60.45,3.1min@63.0
-                        ! 3.1eq: phrase not found: 'learning rate η'
+                        ! 3.1eq: phrase not found: 'learning rates'
     ```
 
     Compare the phrase with the words in `build/audio/NN-slug.words.json`. The usual
-    causes are a number written as digits, a symbol, a hyphen that joins two words into
-    one token, or a phrase that spans a stage direction. Write the phrase as the voice
-    says it. The `--allow-unresolved` flag builds without the cue.
+    causes are a number written as digits, a word form that differs from the script, such
+    as "rates" for "rate", a hyphen that joins two words into one token, and a curly
+    apostrophe, which matching removes. Write the phrase as the voice says it.
+    [Cues](/concepts/cues#matching-rules) has the matching rules. The `--allow-unresolved` flag builds without the cue.
   </Accordion>
 
   <Accordion title="ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set">
@@ -49,7 +51,9 @@ the assembly.
     A black recording usually means the page threw before it rendered, and the recorder
     logs page errors as warnings. Open the page with `?scene=N&hud=1` in a browser. A
     truncated recording is shorter than the section needs, which happens when Chromium
-    was killed or the machine stalled. Re-record that section with `--only N`.
+    was killed or the machine stalled. Record that section again with
+    `decktalk build --only N`. `build` does not stop on `TRUNCATED`, so run `decktalk check`
+    after it when a script depends on the result.
   </Accordion>
 
   <Accordion title="KATEX? in check, or equations that stay plain text">
@@ -63,9 +67,9 @@ the assembly.
     template literal usually causes.
   </Accordion>
   <Accordion title="PAGE ERROR in check, or a section that records as a white or blank slate">
-    The page threw a script error before it could register its scenes, or it never
-    exposed `window.__decktalk.catalog`, so the recorder captured an empty stage and
-    `check` failed the section, which fails `build`. The recorder logs the page's error
+    The page threw an uncaught script error while it was recorded, or it never exposed a
+    `window.__decktalk.catalog` with at least one scene. `check` reports `PAGE ERROR` for the
+    section, and `build` stops after the check table. The recorder logs the page's error
     text as a warning. The usual causes are a syntax error inside a `render` template,
     often a single backslash before `f`, `t`, `u`, or `x` in a `data-tex` value, and a
     runtime `<script>` that comes after the scene definitions. Open the page in a browser
@@ -125,15 +129,16 @@ the assembly.
   </Accordion>
 
   <Accordion title="a/v offset: picture N ms from the click">
-    In a silent build the placeholder track carries a click at every word start, and the
-    `a/v` column of the verify table is the picture's first change minus the click
-    nearest the cue. The click and the cue come from the same word time, so a value
-    beyond `max_av_frames` means the audio and the picture of the finished file
-    drifted apart somewhere between the recording and the mix. Check that the section's
-    sidecar reports a `cover` lead method, re-record the section with `--only N`, and
-    confirm that the `offset` column is small on its own. A `-` in the column means no
-    click sits within `click_search_seconds` of the cue, which is usual for a cue on
-    `$start` or `$end` rather than on a word. The JSON row then carries the reason
+    In a silent build the placeholder track carries a click at every word start. The
+    `a/v` column of the verify table is the `offset` minus the click's distance from the
+    cued word's start, as [How it works](/concepts/how-it-works#definitions) defines it.
+    The click and the cue come from the same word time, so a value beyond the a/v limit
+    means the audio and the picture of the finished file drifted apart somewhere between
+    the recording and the mix. Check that the section's sidecar reports a `cover` lead
+    method, record the section again with `--only N`, and confirm that the `offset` column
+    is small on its own. A `-` in the column means no click was found within
+    `click_search_seconds` of the cued word's start, which is usual for a cue on `$start`
+    or `$end` rather than on a word. The JSON row then carries the reason
     `NO_CLICK`, and the cue is still judged on its `offset`.
   </Accordion>
 
@@ -158,8 +163,8 @@ the assembly.
 
   <Accordion title="A section is early or late by a fixed amount">
     Open the section's sidecar `build/rec/NN-scene.json` and look at `lead_method`.
-    Anything but `cover (…)` means the alignment was guessed. Re-record with
-    `decktalk record --only N` followed by `decktalk measure --only N`, then assemble.
+    Anything but `cover (…)` means the alignment was guessed. Record the section again
+    with `decktalk record --only N` followed by `decktalk measure --only N`, then assemble.
   </Accordion>
 
   <Accordion title="N cue id(s) in cues.json appear nowhere in the page that plays them">
@@ -215,16 +220,20 @@ the assembly.
   </Accordion>
 
   <Accordion title="Windows">
-    DeckTalk runs its own test suite and a full offline build on Windows in CI. Paths in
+    Every push to `main` runs DeckTalk's unit tests and a full offline build on Linux. The
+    same build runs on Windows and macOS from the Actions tab and on release tags that a
+    person pushes. Paths in
     `decktalk.toml` use forward slashes on every platform. The `setup` command puts
     Chromium under `%LOCALAPPDATA%\ms-playwright`. If a corporate proxy blocks that
     download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
   </Accordion>
 
   <Accordion title="Slow builds">
-    Encoding dominates. Set `DECKTALK_VIDEO_PRESET=veryfast` for drafts, or put
+    Recording runs in real time, so a first silent build of the scaffold takes a few
+    minutes. `decktalk build --only N` records only the sections named. Encoding adds to
+    the time, so set `DECKTALK_VIDEO_PRESET=veryfast` for drafts, or put
     `preset = "veryfast"` under `[video]` in the project. The final render can go back to
-    `medium`. A full silent build of the scaffold takes under two minutes on a laptop.
+    `medium`.
   </Accordion>
 </AccordionGroup>
 
