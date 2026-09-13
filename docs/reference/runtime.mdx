@@ -117,7 +117,7 @@ takes no arguments keeps working.
 | `step` | The id of the mounted step. |
 
 ```js deck/index.html
-{ id: "4.1", hold: 28, cues: { "4.1valley": 2.5 },
+{ id: "4.1", hold: 20, cues: { "4.1valley": 0.8 },
   on: { "4.1valley": (slide) => slide.querySelector(".old").classList.add("struck") },
   render: () => `…` }
 ```
@@ -299,7 +299,7 @@ prefix.
 | `data-tex could not be parsed: "…" (write \\ for every backslash inside a template literal)` | A `data-tex` value that KaTeX rendered in red. A single backslash inside a template literal is the usual cause. |
 | `cue "X" matches no element, handler, or step` | A cue in `beats` that a step owns by prefix but that no `data-cue` element, `on` handler, or step id matches, so it fires and nothing happens. |
 | `step "3.2" owns no cue in ?beats=, so it never appears` | A step of the playing scene owns none of the cues in `beats`. Cue mode mounts only the steps that own a listed cue. |
-| `data-cue "4.1change" is not in ?beats=, so it reveals at its data-at time after the mount` | In cue mode an element waits for a cue that `beats` does not list, usually a cue missing from `cues.json` or left out by `--allow-unresolved`. |
+| `data-cue "4.1build" is not in ?beats=, so it reveals at its data-at time after the mount` | In cue mode an element waits for a cue that `beats` does not list, usually a cue missing from `cues.json` or left out by `--allow-unresolved`. |
 | `data-sync on an element without data-cue or data-at never reveals, so add data-at="0"` | An element has `data-sync`, `data-count`, or `data-type` but no trigger. The warning names the attribute. |
 | `step "3.1" fires "3.1min" at 32 s but holds 30 s, so it fires on the next step` | In autoplay a time in the step's `cues` object is at or past its `hold`, so the cue fires after the next step mounts and finds none of its elements. The last step of a scene never warns, because it holds until the end. |
 | `cue "X" is not one of step 3.1's cues` | The `cue` parameter names an id that the frozen step does not list in `cues`. The whole step freezes. |
