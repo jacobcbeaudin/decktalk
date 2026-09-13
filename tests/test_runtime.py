@@ -524,3 +524,52 @@ def test_record_page_stores_page_errors_in_the_sidecar(page, tmp_path):
         assert "PAGE ERROR" in sidecar_verdicts(s, AlignConfig())
         reloaded = type(s).load(tmp_path / name)
         assert reloaded is not None and reloaded.page_errors == s.page_errors
+
+
+@pytest.mark.media
+def test_recorder_keeps_frames_flowing_so_reveals_on_a_still_page_land_on_schedule(page, tmp_path):
+    """Reveals on a page that never moves record on their scheduled frame, not one or two frames early.
+
+    Playwright stamps a frame by when it was swapped, and an idle compositor swaps earlier in the
+    frame than a busy one. The recorder's keep-alive keeps the compositor equally busy before and
+    after narration t=0, so the offsets are measured against the same stamping as the trim point.
+    When the motion stopped with the cover, every reveal here read -40 ms. The keep-alive is also
+    invisible to verify: nothing changes at its onset diff level before the first reveal.
+    """
+    from decktalk.config import AlignConfig, VerifyConfig
+    from decktalk.media import ffmpeg
+    from decktalk.media.browser import record_page
+    from decktalk.stages.measure import measure_lead
+
+    at = [0.8, 1.6, 2.4]
+    letters = "abc"
+    body = "".join(
+        f'<p data-cue="1.1{c}" data-fx="none" style="position:absolute;left:{100 + i * 400}px;top:250px;'
+        f'margin:0;font:700 200px sans-serif">{c}</p>'
+        for i, c in enumerate(letters)
+    )
+    cues = ",".join(f"'1.1{c}'" for c in letters)
+    script = f"DeckTalk.scene(1, {{ steps: [ {{ id: '1.1', cues: [{cues}], render: () => `{body}` }} ] }});"
+    url = custom_page(tmp_path, "still.html", script)
+    beats = ",".join(f"1.1{c}@{t}" for c, t in zip(letters, at, strict=True))
+    out = tmp_path / "01-scene.webm"
+    kw = dict(settle_seconds=0.5, min_lead_seconds=0.5, width=1280, height=720, color_scheme="light")
+    side = record_page(page.context.browser, f"{url}?scene=1&t0=signal&beats={beats}", 3.0, out, **kw)
+    assert not side.page_errors and not side.warnings, (side.page_errors, side.warnings)
+    trim, method = measure_lead(out, side.settle_seconds, AlignConfig())
+    assert method.startswith("cover"), method
+    series = ffmpeg.changed_series(out, trim, trim, trim + 3.0, fps=25, level=40, width=480, height=270)
+    offsets: list[int] = []
+    prev = 0.0
+    for t, pct in series:
+        if len(offsets) < len(at) and pct - prev > 0.1:
+            offsets.append(round((t - trim - at[len(offsets)]) * 1000))
+        prev = pct
+    assert len(offsets) == len(at), series
+    # On the 25 fps grid a reveal lands on its own frame (0) or, when its timer fires late, the next (+40).
+    assert all(0 <= ms <= 40 for ms in offsets), offsets
+    cfg = VerifyConfig()
+    still = ffmpeg.changed_series(
+        out, trim, trim, trim + at[0] - 0.1, fps=25, level=cfg.onset_diff_level, width=1280, height=720
+    )
+    assert still and max(pct for _, pct in still) == 0.0, still

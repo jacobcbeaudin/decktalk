@@ -44,7 +44,12 @@ load. The recorder then waits for `load`, for `document.fonts.ready`, and for
 longer when fewer than `min_lead_seconds` have passed since the recorder was created, which is
 `max(settle_seconds, min_lead_seconds - elapsed)`. Then it removes the magenta cover and
 calls `DeckTalk.startClock()` in the next animation frame, and every cue is scheduled from
-that instant. Without `t0=signal`, the page starts its clock at `load` plus the `t0`
+that instant. From the first paint until the recording stops, the recorder also keeps a
+2 px, 3 % opacity square turning in the bottom-right corner. It keeps the compositor producing
+frames at the same pace before and after t=0, so a page that goes still records each reveal on
+its scheduled frame rather than a frame or two early, and it is too faint for `verify` or
+`check` to see. A page needs no motion of its own for timing, and `decktalk shots` never shows
+the square. Without `t0=signal`, the page starts its clock at `load` plus the `t0`
 seconds given, which is what a browser preview does.
 
 After the recording, the recorder reads `window.__decktalk.warnings` and logs every
