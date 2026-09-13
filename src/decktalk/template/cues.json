@@ -54,7 +54,7 @@
         { "cue": "4.1s45", "on": "Four and five" },
         { "cue": "4.1out", "on": "rebuilt" },
         { "cue": "4.1verify", "on": "measures" },
-        { "cue": "4.1edit", "on": "The script is the edit" }
+        { "cue": "4.1edit", "on": "ten milliseconds" }
       ]
     },
     "5": {

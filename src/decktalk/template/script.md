@@ -52,7 +52,7 @@ bottom, for this surface. [beat] Now change one sentence of that lesson.
 Change one sentence. [beat] Say the bowl is a valley. [beat] Build again. [beat] Section
 one is cached. [beat] Two, cached. [beat] Three is synthesized, forty one seconds of new
 narration. [beat] Four and five, cached. [beat] The video is rebuilt, and verify measures
-the reveal on the word learning rate: ten milliseconds. [beat] The script is the edit.
+the reveal on the word learning rate: ten milliseconds.
 
 ## 5. Close
 
