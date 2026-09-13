@@ -23,24 +23,35 @@ READY_JS = "() => (window.__sceneReady instanceof Promise ? window.__sceneReady 
 FONTS_JS = "() => document.fonts.ready"
 # The page is covered in magenta from its first paint until the narration clock starts, so the
 # first clean frame in the recording is t=0 no matter when the recorder began capturing.
+#
+# The init script also adds a keep-alive: a 2 px square in the bottom-right corner that turns
+# for the whole recording. Chromium's screencast only emits a frame when the compositor paints
+# one, and a static cover paints once, so without motion the cover might never be recorded.
+# The keep-alive outlives the cover on purpose. Playwright stamps each frame by when it was
+# swapped, rounded down to its 25 fps grid, and a busy compositor swaps later in the frame than
+# an idle one. If the motion stopped with the cover, the cover-off frame (t=0) would be stamped
+# busy and every later reveal on a still page stamped idle, one or two frames earlier, so
+# reveals would record 30 to 90 ms ahead of their words. It is mid-gray at 3 % opacity, so it
+# moves a pixel's luma by 4 steps at most: under verify's diff levels (12 and 40), and far too
+# small to move the frame averages that cover detection and the black checks read. Shots never
+# run this script, so it never shows in a screenshot.
 COVER_JS = """() => {
   const add = () => {
     if (document.getElementById("__t0cover")) return;
+    const parent = document.body || document.documentElement;
     const d = document.createElement("div");
     d.id = "__t0cover";
     d.style.cssText = "position:fixed;inset:0;background:#ff00ff;z-index:2147483647;pointer-events:none";
-    // Chromium's screencast only emits a frame when the compositor paints one, and a static
-    // cover paints once. If that single paint lands before capture has attached, the cover is
-    // never recorded. A small element that never stops moving keeps frames flowing, so the
-    // first captured frame is magenta no matter when capture began.
+    parent.appendChild(d);
+    const k = document.createElement("div");
+    k.id = "__dtkeepalive";
+    k.setAttribute("aria-hidden", "true");
+    k.style.cssText = "position:fixed;right:1px;bottom:1px;width:2px;height:2px;background:#808080;opacity:.03;"
+      + "z-index:2147483647;pointer-events:none;animation:__dtkeepalive .5s linear infinite";
     const s = document.createElement("style");
-    s.textContent = "@keyframes __t0spin{to{transform:rotate(360deg)}}";
-    d.appendChild(s);
-    const m = document.createElement("div");
-    m.style.cssText = "position:absolute;left:8px;top:8px;width:6px;height:6px;background:#ff10ff;"
-      + "animation:__t0spin .5s linear infinite";
-    d.appendChild(m);
-    (document.body || document.documentElement).appendChild(d);
+    s.textContent = "@keyframes __dtkeepalive{to{transform:rotate(360deg)}}";
+    k.appendChild(s);
+    parent.appendChild(k);
   };
   if (document.documentElement) add(); else document.addEventListener("DOMContentLoaded", add, { once: true });
 }"""

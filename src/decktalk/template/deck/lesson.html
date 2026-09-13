@@ -404,12 +404,12 @@ function buildWorld() {
   // The three other walks as finished trails, and a depth mark from the rim height down to each floor.
   const trails = WALKS.map((w) => {
     const q = w.map(([a, b]) => wide(a, b, Lz(a, b))), e = q[q.length - 1];
-    return `<polyline points="${q.map((p) => fx(p[0]) + "," + fx(p[1])).join(" ")}" fill="none" stroke="${MUTE}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>` +
-      q.slice(0, -1).map((p) => dotG(p[0], p[1], 7, MUTE)).join("") + `<circle cx="${fx(e[0])}" cy="${fx(e[1])}" r="13" fill="#fff" stroke="${INK}" stroke-width="5"/>`;
+    return `<polyline points="${q.map((p) => fx(p[0]) + "," + fx(p[1])).join(" ")}" fill="none" stroke="${MUTE}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>` +
+      q.slice(0, -1).map((p) => dotG(p[0], p[1], 11, MUTE)).join("") + `<circle cx="${fx(e[0])}" cy="${fx(e[1])}" r="18" fill="#fff" stroke="${INK}" stroke-width="8"/>`;
   }).join("");
   const levels = [MAIN[6], ...WALKS.map((w) => w[w.length - 1])].map(([a, b]) => {
-    const bot = wide(a, b, Lz(a, b)), top = wide(a, b, E), x = bot[0] + 34;
-    return line([x, top[1]], [x, bot[1]], INK, 4) + line([x - 14, top[1]], [x + 14, top[1]], INK, 5) + line([x - 20, bot[1]], [x + 20, bot[1]], INK, 7);
+    const bot = wide(a, b, Lz(a, b)), top = wide(a, b, E), x = bot[0] + 40;
+    return line([x, top[1]], [x, bot[1]], INK, 9) + line([x - 20, top[1]], [x + 20, top[1]], INK, 10) + line([x - 28, bot[1]], [x + 28, bot[1]], INK, 14);
   }).join("");
   const q6 = W(MAIN[6]), q7 = W(MAIN[7]);
   const hopMark = dotG(q6[0], q6[1], 6) + `<path d="M${fx(q6[0] - 30)} ${fx(q6[1] - 26)}Q${fx(q6[0] - 2)} ${fx(q6[1] - 78)} ${fx(q7[0] + 22)} ${fx(q7[1] - 30)}" fill="none" stroke="${ACC}" stroke-width="8" stroke-linecap="round"/>` +
@@ -677,16 +677,18 @@ const CUE = {
   "3.5short": (an) => { S.thumb.setAttribute("cx", S.SX.short); show(S.short); S.long.style.opacity = 0.35; },
   // 3.6 Many valleys
   "3.6zoom": (an) => {
-    // Everything but the surface, its rim, the dots, and the ball leaves on the word. Then a pure 3x pull-back
-    // about the ball: the sharp bowl layer shrinks away while the landscape, drawn at its final scale, takes over.
+    // Everything but the surface, its rim, the dots, and the ball leaves on the word, and a pure 3x pull-back about
+    // the ball starts with it: the sharp bowl layer shrinks away while the landscape, drawn at its final scale, takes
+    // over. The pull-back runs 2 s and the bowl is gone by 90 %, so the picture is still well before "each about as
+    // low" arrives about 3 s after the word, and that reveal is measured against a quiet frame.
     hide(S.caption, S.sliderg, S.long, S.short, S.htick, S.axis, S.axlab, S.km1, S.km2, S.floor, S.flines, S.drop, S.gd, S.haze, S.ring);
     const [cx, cy] = CEND;
-    run(an, 0.25, 2.2, (k) => {
+    run(an, 0, 2.0, (k) => {
       const ez = easeInOut(k), s = Math.pow(ZOOM, 1 - ez), f = s / ZOOM;
       S.L.style.transform = `translate(${fx(cx * (1 - s))}px, ${fx(cy * (1 - s))}px) scale(${s.toFixed(4)})`;
       S.L.style.opacity = Math.max(0.01, clamp01((k - 0.05) / 0.45)).toFixed(3);
       S.B.style.transform = `translate(${fx(cx * (1 - f))}px, ${fx(cy * (1 - f))}px) scale(${f.toFixed(4)})`;
-      S.B.style.opacity = (1 - clamp01((k - 0.7) / 0.3)).toFixed(3);
+      S.B.style.opacity = (1 - clamp01((k - 0.6) / 0.3)).toFixed(3);
       placeBall(cx, cy, lerp(1, BALL_WIDE, ez));
       if (k >= 1) { S.L.style.transform = "none"; S.L.style.opacity = 1; hide(S.B); }
     });
