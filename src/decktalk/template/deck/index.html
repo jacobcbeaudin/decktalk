@@ -18,7 +18,7 @@ __KATEX__
 
   /* Tokens. The accent belongs only to the thing being revealed right now. */
   :root {
-    --ground: #ffffff; --ink: #0a0a0a; --mute: #595959; --dim: #8a8a94; --hair: #e4e4e7; --block: #f4f4f5; --accent: #2c1fea;
+    --ground: #ffffff; --ink: #0a0a0a; --mute: #71717a; --dim: #a3a3ad; --hair: #e4e4e7; --block: #f4f4f5; --accent: #2c1fea;
     --sans: "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
     --tight: "Inter Tight", "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
     --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -51,9 +51,9 @@ __KATEX__
   /* Footer: the mark at left, the scene tracker at right. It never carries a cue. */
   .footer { position: absolute; left: 120px; right: 120px; top: 984px; height: 30px; display: flex; align-items: center; justify-content: space-between; }
   .footer .brand, .footer .track { display: flex; align-items: center; gap: 14px; font: 500 22px/28px var(--mono); letter-spacing: .14em; color: var(--mute); }
-  .footer .mark line { stroke: var(--ink); stroke-width: 2; }
-  .footer .mark .tall { stroke: var(--ink); }
-  .footer .mark circle { fill: var(--ink); }
+  .footer .mark line { stroke: var(--hair); stroke-width: 2.25; stroke-linecap: round; }
+  .footer .mark .tall { stroke: var(--accent); }
+  .footer .mark circle { fill: var(--accent); }
   .footer .ticks rect { fill: var(--hair); }
   .footer .ticks .cur { fill: var(--ink); }
 
@@ -83,7 +83,7 @@ __KATEX__
   .eq { position: absolute; left: 1160px; top: 420px; display: flex; align-items: baseline; gap: 18px; font-size: 58px; color: var(--ink); white-space: nowrap; }
   .eq .katex-display { margin: 0; display: inline-block; }
   .eq .katex-display > .katex { text-align: left; }
-  .eq > span { color: #c4c4ca; transition: color .25s ease; }
+  .eq > span { color: var(--dim); transition: color .25s ease; }
   .eq > span.on { color: var(--ink); }
   .eq > span.b.on .mathnormal { color: var(--accent); }
 
@@ -118,8 +118,13 @@ __KATEX__
 // lands on. Open this file with no query for an index of scenes and steps, and add
 // ?step=ID to freeze one step with everything revealed.
 //
-// Edit only between the backticks. Copy a whole { id: ..., render: ... } block to add a
-// step. Inside the backticks, write every backslash twice.
+// Each step is a { id, hold, cues, render } object. The HTML between the backticks of
+// `render` is safe to edit freely. The `cues:` object and the data-cue attributes in that
+// HTML must use the same ids, and cues.json names those same ids. A backslash inside the
+// backticks must be written twice, so a data-tex value reads data-tex="\\frac{1}{2}".
+// The `enter:` and `on:` blocks are JavaScript that runs when the step mounts and when a
+// cue fires. A scene that needs neither can delete both blocks whole. Copy a whole step
+// object to add a step.
 
 // The footer of every slide: the four-tick mark and DECKTALK at left, the scene tracker at right.
 const SCENES_TOTAL = 5;
@@ -134,8 +139,8 @@ function footer(n) {
     <div class="footer">
       <div class="brand">
         <svg class="mark" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-          <line x1="4" y1="10" x2="4" y2="22"/><line class="tall" x1="9.5" y1="6" x2="9.5" y2="22"/><circle cx="9.5" cy="2.5" r="1.5"/>
-          <line x1="15" y1="10" x2="15" y2="22"/><line x1="20.5" y1="10" x2="20.5" y2="22"/>
+          <line x1="4" y1="12" x2="4" y2="20"/><line class="tall" x1="9.5" y1="8" x2="9.5" y2="20"/><circle cx="9.5" cy="3.75" r="2.25"/>
+          <line x1="15" y1="12" x2="15" y2="20"/><line x1="20.5" y1="12" x2="20.5" y2="20"/>
         </svg>
         <span>DECKTALK</span>
       </div>
@@ -235,6 +240,8 @@ function s3setup(slide, frozen) {
     renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
   } catch (e) { console.warn("decktalk: no WebGL, so the scene 3 figure is empty"); return; }
   const W = 960, H = 570, R = 0.22, ACCENT = 0x2c1fea, INK = 0x0a0a0a;
+  // three.js takes colours as numbers, so these repeat the --hair and --dim tokens above.
+  const SURFACE = 0xe4e4e7, DIM = 0xa3a3ad;
   renderer.setPixelRatio(1);
   renderer.setSize(W, H);
   renderer.setClearColor(0xffffff, 0);
@@ -275,7 +282,7 @@ function s3setup(slide, frozen) {
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) pos.setY(i, h(pos.getX(i), pos.getZ(i)));
   geo.computeVertexNormals();
-  const surfMat = track(new T.MeshLambertMaterial({ color: 0xdedee2, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }), 1);
+  const surfMat = track(new T.MeshLambertMaterial({ color: SURFACE, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }), 1);
   surfMat.userData.fade = 0;
   scene.add(new T.Mesh(geo, surfMat));
 
@@ -390,7 +397,7 @@ function s3setup(slide, frozen) {
   const [g0x, g0z] = grad(P[0][0], P[0][1]);
   const upDir = new T.Vector3(g0x, g0x * g0x + g0z * g0z, g0z).normalize();
   const arrowOrigin = lifted(P[0][0], P[0][1], R + 0.02);
-  const upMat = arrow(0xa3a3ad, upDir, arrowOrigin);
+  const upMat = arrow(DIM, upDir, arrowOrigin);
   const downMat = arrow(ACCENT, upDir.clone().negate(), arrowOrigin);
 
   // The minimum ring, popped in with the final settle.
@@ -430,14 +437,16 @@ function s3setup(slide, frozen) {
   const fadeTo = (m, target, dur, done) => { const from = m.userData.fade; add(dur, (k) => { m.userData.fade = from + (target - from) * easeOut(k); }, done); };
   const dimTo = (target, dur) => { const from = dimK; add(dur, (k) => { dimK = from + (target - from) * easeOut(k); }); };
   // Move a ball from where it is to b over dur seconds along the chord lifted to the surface,
-  // growing its trail. A move that arrives while another is under way takes over from there.
+  // growing its trail. The move eases out, so the ball leaves on the cued word and settles after
+  // it, and the first recorded frame after the cue already shows the departure. A move that
+  // arrives while another is under way takes over from there.
   const move = (mesh, tr, b, dur, done, place) => {
     anims.forEach((x) => { if (x.owner === mesh) anims.delete(x); });
     if (tr.active && tr.active.length) tr.commit(tr.active);
     const a = [mesh.position.x, mesh.position.z];
     const pts = chord(a, b, R, 20), tpts = chord(a, b, 0.02, 20);
     add(dur, (k) => {
-      const s = easeInOut(k), f = s * 20, i = Math.floor(f), u = f - i;
+      const s = easeOut(k), f = s * 20, i = Math.floor(f), u = f - i;
       const p = i >= 20 ? pts[20] : pts[i].clone().lerp(pts[i + 1], u);
       if (place) place(p.x, p.z); else mesh.position.copy(p);
       const tp = i >= 20 ? tpts[20] : tpts[i].clone().lerp(tpts[i + 1], u);

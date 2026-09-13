@@ -29,7 +29,7 @@ ENV_PREFIX = "decktalk"
 
 @dataclass
 class VideoConfig:
-    """Frame size and encoding of every recording and of the final mp4."""
+    """These keys set the frame size and the encoding of every recording and of the final mp4."""
 
     width: int = 1920
     height: int = 1080
@@ -44,7 +44,7 @@ class VideoConfig:
 
 @dataclass
 class NarrationConfig:
-    """How the script is turned into audio."""
+    """These keys govern how the script is turned into audio."""
 
     model: str = "eleven_multilingual_v2"
     output_format: str = "mp3_44100_128"
@@ -61,7 +61,7 @@ class NarrationConfig:
 
 @dataclass
 class RecordConfig:
-    """Headless Chromium recording."""
+    """These keys tune the headless Chromium recording."""
 
     settle_seconds: float = 0.5  # after load, before narration t=0
     min_lead_seconds: float = 1.5  # t=0 never comes sooner than this after the recorder starts
@@ -72,7 +72,7 @@ class RecordConfig:
 
 @dataclass
 class AlignConfig:
-    """Finding narration t=0 in a recording, and the recording sanity check."""
+    """These keys tune how narration t=0 is found in a recording, and the recording sanity check."""
 
     scan_seconds: float = 4.0
     fallback_first_paint_seconds: float = 1.1
@@ -88,7 +88,7 @@ class AlignConfig:
 
 @dataclass
 class AudioConfig:
-    """Mix mechanics. Levels are per project (decktalk.toml [mix])."""
+    """These keys set the mix mechanics. Levels live in `[mix]` in `decktalk.toml`."""
 
     duck_ramp_seconds: float = 0.5
     ambience_ramp_seconds: float = 1.0
@@ -99,7 +99,7 @@ class AudioConfig:
 
 @dataclass
 class VerifyConfig:
-    """Checks on the assembled mp4."""
+    """These keys tune the checks on the assembled mp4."""
 
     after_dip_seconds: float = 0.2
     lead_seconds: float = 0.1  # the reference frame sits this long before the cue
@@ -121,6 +121,8 @@ class VerifyConfig:
 
 @dataclass
 class ElevenLabsConfig:
+    """These keys point at the ElevenLabs API and size its soundscape requests."""
+
     api_base: str = "https://api.elevenlabs.io/v1"
     sound_model: str = "eleven_text_to_sound_v2"
     music_model: str = "music_v2"
@@ -136,7 +138,7 @@ class ElevenLabsConfig:
 
 @dataclass
 class Settings:
-    """Every tunable, with defaults. Loaded by load_settings()."""
+    """Every tunable with its default. load_settings() builds it."""
 
     video: VideoConfig = field(default_factory=VideoConfig)
     narration: NarrationConfig = field(default_factory=NarrationConfig)

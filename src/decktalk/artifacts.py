@@ -209,6 +209,7 @@ class Sidecar:
     lead_in_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
     lead_method: str | None = None
     warnings: list[str] = field(default_factory=list)
+    page_errors: list[str] = field(default_factory=list)  # uncaught exceptions, or no runtime catalog at all
     frame_gaps: list[tuple[float, int]] = field(default_factory=list)  # (seconds, ms) where the page stalled
     sync_log: list[dict[str, Any]] = field(default_factory=list)  # what each data-sync element matched
 

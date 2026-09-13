@@ -90,8 +90,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 def cmd_runtime(args: argparse.Namespace) -> int:
     from .scaffold import update_runtime
 
-    for path in update_runtime(_project(args).root):
-        print(f"updated {path}")
+    for path, existed in update_runtime(_project(args).root):
+        print(f"{'updated' if existed else 'wrote'} {path}")
     return 0
 
 

@@ -150,13 +150,20 @@ def init(target: Path, *, name: str | None = None, force: bool = False) -> Path:
     return target
 
 
-def update_runtime(project_root: Path) -> list[Path]:
-    """Copy the packaged runtime over every decktalk-runtime.js in the project."""
+def update_runtime(project_root: Path) -> list[tuple[Path, bool]]:
+    """Copy the packaged runtime over every decktalk-runtime.js in the project.
+
+    Returns (path, existed) per file written, so the caller can say whether each one was
+    created or replaced. A project with no copy at all gets one at deck/decktalk-runtime.js.
+    """
     found = list(project_root.rglob(RUNTIME_FILE)) or [project_root / "deck" / RUNTIME_FILE]
+    out: list[tuple[Path, bool]] = []
     for dst in found:
+        existed = dst.exists()
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(runtime_path(), dst)
-    return found
+        out.append((dst, existed))
+    return out
 
 
 def setup() -> None:
@@ -184,7 +191,11 @@ def setup() -> None:
 
 
 def doctor() -> list[tuple[str, bool, str]]:
-    """(component, ok, detail) for python, chromium, ffmpeg, ffprobe and katex. Changes nothing."""
+    """(component, ok, detail) for python, chromium, ffmpeg, ffprobe, config and katex.
+
+    Nothing is fetched or written. In particular the ffmpeg row looks for binaries that are
+    already on disk, because asking static-ffmpeg for them would download them.
+    """
     rows: list[tuple[str, bool, str]] = [("python", True, f"{sys.version.split()[0]} ({sys.executable})")]
     try:
         from playwright.sync_api import sync_playwright
@@ -198,14 +209,14 @@ def doctor() -> list[tuple[str, bool, str]]:
                 rows.append(("chromium", False, f"{str(exc).splitlines()[0]}  -> run `decktalk setup`"))
     except ImportError:
         rows.append(("chromium", False, "playwright package missing"))
-    try:
-        from .media.ffmpeg import ffmpeg_paths
+    from .media.ffmpeg import installed_paths
 
-        ff, fp = ffmpeg_paths()
-        rows.append(("ffmpeg", True, ff))
-        rows.append(("ffprobe", True, fp))
-    except ToolError as exc:
-        rows.append(("ffmpeg", False, str(exc)))
+    found = installed_paths()
+    if found:
+        rows.append(("ffmpeg", True, found[0]))
+        rows.append(("ffprobe", True, found[1]))
+    else:
+        rows.append(("ffmpeg", False, "not fetched yet and none on PATH  -> run `decktalk setup`"))
     from .config import user_config_path
 
     cfg_path = user_config_path()

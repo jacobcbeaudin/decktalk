@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import logging
+import re
 import shutil
 import tempfile
 import time
@@ -56,6 +57,9 @@ START_JS = """() => new Promise((resolve) => {
 })"""
 # What the runtime could not honor: unknown cue ids, cues no step owns, KaTeX that never loaded.
 WARNINGS_JS = "() => (window.__decktalk && window.__decktalk.warnings) || []"
+# Whether the runtime is present and the page registered at least one scene.
+HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
+NO_CATALOG = "no window.__decktalk.catalog (is decktalk-runtime.js included, and does the page register a scene?)"
 
 SLATE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{{margin:0;width:{w}px;height:{h}px;background:{bg};color:#f4f6f8;
@@ -92,6 +96,32 @@ def await_ready(page: Any) -> None:
             page.evaluate(js)
         except Exception:
             pass
+
+
+def page_error_text(err: Any) -> str:
+    """One line for an uncaught page exception: the message, and the file and line when Chromium gives them."""
+    message = str(getattr(err, "message", None) or err).strip().splitlines()[0] if str(err).strip() else "error"
+    name = getattr(err, "name", None)
+    if name and not message.startswith(f"{name}:"):
+        message = f"{name}: {message}"
+    stack = str(getattr(err, "stack", "") or "")
+    m = re.search(r"((?:file|https?)://\S+?):(\d+)(?::\d+)?\)?\s*$", stack, re.MULTILINE)
+    if m:
+        message += f" ({m.group(1).split('?', 1)[0].rsplit('/', 1)[-1]}:{m.group(2)})"
+    return message
+
+
+def page_errors(page: Any, caught: list[str], label: str) -> list[str]:
+    """The page's uncaught exceptions, plus one entry when the runtime catalog is missing. Each is logged."""
+    errors = list(caught)
+    try:
+        if not page.evaluate(HAS_CATALOG_JS):
+            errors.append(NO_CATALOG)
+    except Exception:
+        errors.append(NO_CATALOG)
+    for e in errors:
+        log.warning("[page] %s  page error: %s", label, e)
+    return errors
 
 
 def page_warnings(page: Any, label: str) -> list[str]:
@@ -131,7 +161,8 @@ def record_page(
     created = time.monotonic()
     context.add_init_script(COVER_JS + "\n;(" + COVER_JS + ")();")
     page = context.new_page()
-    page.on("pageerror", lambda e: log.warning("page error: %s", e))
+    caught: list[str] = []
+    page.on("pageerror", lambda e: caught.append(page_error_text(e)))
     page.goto(url, wait_until="load")
     loaded = time.monotonic()
     await_ready(page)
@@ -143,6 +174,7 @@ def record_page(
     started = time.monotonic()
     page.wait_for_timeout(seconds * 1000)
     warnings = page_warnings(page, out.stem)
+    errors = page_errors(page, caught, out.stem)
     gaps = page.evaluate("() => (window.__decktalk && window.__decktalk.frameGaps) || []")
     sync_log = page.evaluate("() => (window.__decktalk && window.__decktalk.syncLog) || []")
     for entry in sync_log if isinstance(sync_log, list) else []:
@@ -175,6 +207,7 @@ def record_page(
         load_seconds=round(loaded - created, 3),
         lead_seconds=round(started - created, 3),
         warnings=warnings,
+        page_errors=errors,
         frame_gaps=frame_gaps,
         sync_log=[dict(e) for e in sync_log if isinstance(e, dict)],
     )

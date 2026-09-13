@@ -166,3 +166,78 @@ def test_scene_ready_warns_when_katex_never_loads(page, tmp_path):
     warnings = page.evaluate("() => window.__decktalk.warnings")
     assert any("KaTeX" in w for w in warnings), warnings
     assert page.evaluate("() => document.querySelector('[data-tex]').textContent") == "x^2"
+
+
+def test_a_cue_that_hits_nothing_is_a_warning(page, deck):
+    """A cue id owned by a step by prefix but with no data-cue, handler, or step of its own is reported."""
+    page.goto(f"{deck.as_uri()}?scene=4&t0=0&beats=4.1valley@0.1,4.1answer@0.2")
+    page.wait_for_function("() => window.__decktalk.fired.length >= 2")
+    warnings = page.evaluate("() => window.__decktalk.warnings")
+    assert 'cue "4.1answer" matches no element, handler, or step' in warnings, warnings
+    assert not any("4.1valley" in w for w in warnings), warnings
+
+
+def test_every_template_step_freezes_without_warnings(page, deck):
+    """Every cue the template lists reveals an element or runs a handler, so no step warns when frozen."""
+    page.goto(deck.as_uri())
+    catalog = page.evaluate("() => window.__decktalk.catalog")
+    for entry in catalog:
+        for step in entry["steps"]:
+            page.goto(f"{deck.as_uri()}?step={step}")
+            page.evaluate("() => window.__sceneReady")
+            assert page.evaluate("() => window.__decktalk.warnings") == [], step
+    assert not page.errors
+
+
+def test_katex_parse_error_is_a_warning(page, deck, tmp_path):
+    """A data-tex value KaTeX cannot parse renders in red and is reported, since throwOnError is off."""
+    if katex_cached() is None:
+        pytest.skip("KaTeX is not cached (run `decktalk setup`)")
+    katex = (deck.parent / "katex" / "katex.min.js").resolve().as_uri()
+    html = tmp_path / "badtex.html"
+    html.write_text(
+        '<!doctype html><html><head><meta charset="utf-8">'
+        f'<script src="{katex}"></script><script src="{runtime_path().resolve().as_uri()}"></script></head><body>'
+        "<script>DeckTalk.scene(1, { steps: [ { id: '1.1', "
+        'render: () => `<p data-tex="\\\\frac{1}">x</p>` } ] });</script>'
+        "</body></html>"
+    )
+    page.goto(f"{html.resolve().as_uri()}?step=1.1")
+    page.evaluate("() => window.__sceneReady")
+    warnings = page.evaluate("() => window.__decktalk.warnings")
+    assert (
+        'data-tex could not be parsed: "\\frac{1}" (write \\\\ for every backslash inside a template literal)'
+        in warnings
+    ), warnings
+    assert page.evaluate("() => !!document.querySelector('.katex-error')")
+
+
+def test_record_page_stores_page_errors_in_the_sidecar(page, tmp_path):
+    """A page that throws, and a page without the runtime, both leave page_errors that check turns into PAGE ERROR."""
+    from decktalk.config import AlignConfig
+    from decktalk.media.browser import NO_CATALOG, record_page
+    from decktalk.stages.measure import sidecar_verdicts
+
+    runtime = runtime_path().resolve().as_uri()
+    broken = tmp_path / "broken.html"
+    broken.write_text(
+        '<!doctype html><html><head><meta charset="utf-8"></head><body>\n'
+        f'<script src="{runtime}"></script>\n'
+        "<script>DeckTalk.scene(1, { steps: [ { id: '1.1', render: () => `<p>hi</p>` } ] });</script>\n"
+        "<script>\nnotDefinedAnywhere();\n</script>\n"
+        "</body></html>"
+    )
+    bare = tmp_path / "bare.html"
+    bare.write_text("<!doctype html><html><body><p>no runtime here</p></body></html>")
+    kw = dict(settle_seconds=0.1, min_lead_seconds=0.1, width=640, height=360, color_scheme="light")
+    browser = page.context.browser  # the module's Playwright already owns this thread's sync loop
+    side = record_page(browser, f"{broken.as_uri()}?step=1.1", 0.5, tmp_path / "01-section.webm", **kw)
+    side2 = record_page(browser, bare.as_uri(), 0.5, tmp_path / "02-section.webm", **kw)
+    assert len(side.page_errors) == 1, side.page_errors
+    assert side.page_errors[0].startswith("ReferenceError: notDefinedAnywhere is not defined"), side.page_errors
+    assert "(broken.html:5)" in side.page_errors[0], side.page_errors
+    assert side2.page_errors == [NO_CATALOG]
+    for s, name in ((side, "01-section.json"), (side2, "02-section.json")):
+        assert "PAGE ERROR" in sidecar_verdicts(s, AlignConfig())
+        reloaded = type(s).load(tmp_path / name)
+        assert reloaded is not None and reloaded.page_errors == s.page_errors

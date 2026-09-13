@@ -21,7 +21,7 @@ from decktalk.artifacts import (
 )
 from decktalk.cli import build_parser, main
 from decktalk.config import Settings
-from decktalk.stages.assemble import fade_flags, timeline_targets
+from decktalk.stages.assemble import cut_summary, fade_flags, timeline_targets
 from decktalk.stages.beats import Cue, find_phrase, resolve_cue
 from decktalk.stages.narrate import estimated_words, parse_script, strip_markdown
 
@@ -257,6 +257,11 @@ def test_fade_flags_follow_dips_and_page_fade_in(tmp_path):
     assert flags["02"] == (False, False)
     p2 = Project.load(write_project(tmp_path, MINIMAL_TOML), environ={})  # no dips key: every cut dips
     assert fade_flags(p2)["01"] == (False, True)
+    # The assemble log names what the cuts do rather than always saying "straight cuts".
+    assert cut_summary(p) == "dips at 1 cut"
+    assert cut_summary(p2) == "dips at every cut"
+    p3 = Project.load(write_project(tmp_path, MINIMAL_TOML + "\n[transition]\ndips = []\n"), environ={})
+    assert cut_summary(p3) == "straight cuts"
 
 
 # ---- package and cli -----------------------------------------------------------------------
@@ -627,3 +632,90 @@ def test_user_settings_sit_between_defaults_and_the_project(tmp_path, monkeypatc
     user_file.write_text("[project]\nname = 'x'\n")
     with pytest.raises(ConfigError):
         read_user_toml(user_file)
+
+
+# ---- doctor and runtime ------------------------------------------------------------------------
+
+
+def test_doctor_reports_missing_ffmpeg_without_fetching(tmp_path, monkeypatch):
+    import sys
+
+    from static_ffmpeg import run as static_run
+
+    from decktalk import scaffold
+    from decktalk.media import ffmpeg as ffmpeg_module
+
+    def fetch(*args, **kwargs):
+        raise AssertionError("doctor must not download ffmpeg")
+
+    monkeypatch.setattr(static_run, "get_or_fetch_platform_executables_else_raise", fetch)
+    monkeypatch.setattr(static_run, "get_platform_dir", lambda: str(tmp_path / "bin" / "nowhere"))
+    monkeypatch.setattr(ffmpeg_module.shutil, "which", lambda name: None)
+    monkeypatch.delenv("DECKTALK_FFMPEG", raising=False)
+    monkeypatch.delenv("DECKTALK_FFPROBE", raising=False)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", None)  # keeps the test free of Chromium
+    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
+    rows = {name: (ok, detail) for name, ok, detail in scaffold.doctor()}
+    assert rows["ffmpeg"] == (False, "not fetched yet and none on PATH  -> run `decktalk setup`")
+    assert "ffprobe" not in rows
+    # Binaries already on disk are reported without asking static-ffmpeg for them either.
+    exe_dir = tmp_path / "bin" / "nowhere"
+    exe_dir.mkdir(parents=True)
+    for name in ("ffmpeg", "ffprobe", "installed.crumb"):
+        (exe_dir / name).write_text("")
+    rows = {name: (ok, detail) for name, ok, detail in scaffold.doctor()}
+    assert rows["ffmpeg"] == (True, str(exe_dir / "ffmpeg"))
+    assert rows["ffprobe"] == (True, str(exe_dir / "ffprobe"))
+
+
+def test_runtime_says_wrote_on_first_copy_and_updated_after(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
+    from decktalk.scaffold import RUNTIME_FILE, init
+
+    root = init(tmp_path / "p", name="p")
+    (root / "deck" / RUNTIME_FILE).unlink()
+    assert main(["runtime", "-p", str(root)]) == 0
+    assert capsys.readouterr().out == f"wrote {root / 'deck' / RUNTIME_FILE}\n"
+    assert main(["runtime", "-p", str(root)]) == 0
+    assert capsys.readouterr().out == f"updated {root / 'deck' / RUNTIME_FILE}\n"
+
+
+# ---- page errors -------------------------------------------------------------------------------
+
+
+def test_page_error_text_keeps_the_message_and_the_file_and_line():
+    from decktalk.media.browser import page_error_text
+
+    class Err:
+        name = "SyntaxError"
+        message = "Identifier 'SCENES_TOTAL' has already been declared"
+        stack = (
+            "SyntaxError: Identifier 'SCENES_TOTAL' has already been declared\n    at file:///p/deck/index.html:120:7"
+        )
+
+    assert page_error_text(Err()) == "SyntaxError: Identifier 'SCENES_TOTAL' has already been declared (index.html:120)"
+
+    class Bare:
+        message = "boom"
+        stack = ""
+
+    assert page_error_text(Bare()) == "boom"
+
+
+def test_sidecar_verdicts_flag_page_errors_and_bad_tex(tmp_path):
+    from decktalk.artifacts import Sidecar
+    from decktalk.config import AlignConfig
+    from decktalk.stages.measure import sidecar_verdicts
+
+    side = Sidecar(url="x", requested_seconds=1, settle_seconds=0, load_seconds=0, lead_seconds=0)
+    assert sidecar_verdicts(side, AlignConfig()) == []
+    assert sidecar_verdicts(None, AlignConfig()) == []
+    side.page_errors = ["ReferenceError: nope is not defined (index.html:5)"]
+    side.warnings = [
+        'data-tex could not be parsed: "\\frac{1}" (write \\\\ for every backslash inside a template literal)'
+    ]
+    side.frame_gaps = [(1.0, 400)]
+    assert sidecar_verdicts(side, AlignConfig()) == ["PAGE ERROR", "KATEX?", "STALLED 400ms"]
+    side.save(tmp_path / "s.json")
+    again = Sidecar.load(tmp_path / "s.json")
+    assert again is not None and again.page_errors == side.page_errors
