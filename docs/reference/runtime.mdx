@@ -231,7 +231,7 @@ Read-only state for the recorder, the screenshot tool, and your own tools.
 </ResponseField>
 
 <ResponseField name="frameGaps" type="array">
-  One `{ at, ms }` object for every gap over 100 ms between two animation frames, where `at` is seconds since narration t=0. The recorder copies it to the sidecar as `frame_gaps`, and `check` reports `STALLED` past `stall_ms`.
+  One `{ at, ms }` object for every gap over 100 ms between two animation frames. `at` is the time the gap ended, in seconds since narration t=0, and it is negative infinity for a gap that ended before the recorder started the clock. The recorder copies the list to the sidecar as `frame_gaps`. `check` reports `STALLED`, and `record` records the section again, only when the part of a gap after t=0 is longer than `stall_ms`. Frames before t=0 sit under the cover and are trimmed from the cut, so a page may do slow first-time work there, such as warming a WebGL scene, without a stall verdict.
 </ResponseField>
 
 <ResponseField name="syncLog" type="array">

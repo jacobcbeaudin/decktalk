@@ -13,6 +13,7 @@ scripts read them. Field names match the JSON keys.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Self
@@ -216,7 +217,14 @@ class Sidecar:
 
     @property
     def worst_stall_ms(self) -> int:
-        return max((ms for _, ms in self.frame_gaps), default=0)  # window.__decktalk.warnings read after the recording
+        """The longest stall a viewer can see, counting only the part of each gap after narration t=0.
+
+        Frames before t=0 sit under the cover and are trimmed from the cut, so a scene may warm
+        up there. A gap is recorded when it ends, so a gap that began before t=0 counts only its
+        milliseconds after t=0, and a gap that ended before t=0 counts nothing.
+        """
+        visible = (min(ms, at * 1000) if math.isfinite(at) else 0 for at, ms in self.frame_gaps)
+        return int(max((v for v in visible if v > 0), default=0))
 
     @classmethod
     def load(cls, path: Path) -> Self | None:
