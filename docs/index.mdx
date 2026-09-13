@@ -1,22 +1,19 @@
 ---
-title: Narrated slide videos cut to the spoken word
+title: Narrated presentations, cut to the word
 sidebarTitle: Overview
 description: DeckTalk turns a markdown script, HTML slides, and an ElevenLabs voice into a narrated video with captions and chapters, where every reveal lands on the spoken word.
 "og:image": "https://docs.decktalk.app/images/og.png"
 icon: "house"
-mode: "custom"
+mode: "wide"
 ---
 
-<div className="mx-auto max-w-6xl px-6 pb-24 pt-10">
+<div className="pb-24">
 
-  <div className="text-center">
-    <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-5xl">Narrated presentations, cut to the word.</h1>
-    <p className="mx-auto mt-5 max-w-3xl text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
-      DeckTalk turns a markdown script and plain HTML slides into one narrated video. Your voice reads the script and returns a time for every word, cues.json names the phrase each reveal lands on, and the cut follows the words. Change a sentence, and only that section is voiced again.
-    </p>
-  </div>
+  <p className="mt-0 max-w-3xl text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
+    Your voice reads the script and returns a time for every word, cues.json names the phrase each reveal lands on, and the cut follows the words. Change a sentence, and only that section is voiced again.
+  </p>
 
-  <div className="mt-12 rounded-2xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
+  <div className="mt-10 rounded-2xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
     {/*
       The demo video slot. The video replaces the hero images below once the founder approves
       the demo, and its poster frame comes from that build. Uncomment the figure and remove the
@@ -36,10 +33,6 @@ mode: "custom"
   <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
     <a href="/quickstart" className="rounded-lg bg-[#2c1fea] px-5 py-2.5 text-sm font-medium text-white no-underline hover:bg-[#2417c4] dark:bg-[#7c8cff] dark:text-zinc-950 dark:hover:bg-[#98a5ff]">Quickstart</a>
     <a href="/reference/card" className="rounded-lg border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 no-underline hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900">Reference card for agents</a>
-  </div>
-
-  <div className="mx-auto mt-8 max-w-3xl rounded-xl border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-    Every part of these docs is also served as plain text for language models at <a href="https://docs.decktalk.app/llms.txt">docs.decktalk.app/llms.txt</a> and <a href="https://docs.decktalk.app/llms-full.txt">llms-full.txt</a>.
   </div>
 
   <div className="mt-20">
@@ -94,7 +87,7 @@ mode: "custom"
 
     ```text
     check                 cue       at   chg %   ctl %   offset     a/v  result
-    3:3.1eq             41.71    88.71    0.39    0.00    -30ms   -32ms  changed
+    3:3.1eq             41.71    88.71    0.41    0.00    -30ms   -32ms  changed
     ```
   </div>
 

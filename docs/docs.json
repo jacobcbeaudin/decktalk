@@ -11,7 +11,7 @@
   "logo": {
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg",
-    "href": "https://decktalk.app"
+    "href": "/"
   },
   "favicon": "/favicon.svg",
   "fonts": {
@@ -92,6 +92,11 @@
   },
   "navbar": {
     "links": [
+      {
+        "label": "Website",
+        "href": "https://decktalk.app",
+        "icon": "globe"
+      },
       {
         "label": "PyPI",
         "href": "https://pypi.org/project/decktalk/",
