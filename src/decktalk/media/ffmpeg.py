@@ -199,7 +199,6 @@ def write_clicks(
     they make a silent draft reviewable for pacing.
     """
     import array
-    import math
     import wave
 
     n = int(round(duration * sample_rate))

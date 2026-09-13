@@ -166,15 +166,11 @@ def anchor_time(cue: Cue, words: list[Word]) -> float | None:
 
 def write_anchors(path: Path, anchors: dict[str, dict[str, float]]) -> None:
     """Where each cue's word starts, without the cue's offset. verify uses it to find the word's click."""
-    import json as _json
-
-    path.write_text(_json.dumps(anchors, indent=1) + "\n")
+    path.write_text(json.dumps(anchors, indent=1) + "\n")
 
 
 def read_anchors(path: Path) -> dict[str, dict[str, float]]:
-    import json as _json
-
-    return _json.loads(path.read_text()) if path.exists() else {}
+    return json.loads(path.read_text()) if path.exists() else {}
 
 
 @dataclass(frozen=True)
