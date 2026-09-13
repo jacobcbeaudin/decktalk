@@ -57,13 +57,14 @@ environment.
 | `provider` | `elevenlabs` | The speech provider, by the name it registered. ElevenLabs is the built-in provider. |
 | `model` | `[narration]` `model`, which defaults to `eleven_multilingual_v2` | The ElevenLabs model id. The `--model` flag overrides it for one run. |
 | `stability` | 0.55 | Lower values vary more between takes. |
-| `similarity_boost` | 0.75 | How closely the voice follows the clone. |
-| `style` | 0.0 | Style exaggeration. Zero is the most stable. |
-| `speaker_boost` | true | ElevenLabs' speaker boost. |
-| `speed` | 1.0 | Speaking rate. |
+| `similarity_boost` | 0.75 | The value sets how closely the voice follows the clone. |
+| `style` | 0.0 | The value sets style exaggeration, and zero is the most stable. |
+| `speaker_boost` | true | The value turns ElevenLabs' speaker boost on or off. |
+| `speed` | 1.0 | The value sets the speaking rate. |
 
 A change to any of these changes the cache key of every section, so the next build
-synthesizes everything again.
+synthesizes every section again and spends credits on all of them.
+[Requirements and costs](/requirements) lists every change that does.
 
 ## `[[section]]`
 
@@ -128,7 +129,7 @@ through one.
 | `file` | required | The audio file. |
 | `section` | required | The section number whose cue places it. It must exist. |
 | `cue` | required | A cue id that `beats` resolved for that section. |
-| `db` | -16 | The level. |
+| `db` | -16 | The value sets the effect's level. |
 | `offset` | 0 | Seconds added to the cue time. |
 
 ### `[mix.loudnorm]`
@@ -138,7 +139,7 @@ describes. The keys are accepted in upper or lower case.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `I` | -16 | Integrated loudness in LUFS. |
+| `I` | -16 | The value sets the integrated loudness in LUFS. |
 | `TP` | -1.5 | The true-peak ceiling in dBTP. |
 | `LRA` | 11 | The loudness range in LU, passed to the measurement. |
 
@@ -154,7 +155,7 @@ ElevenLabs. Ambience and music write to the `ambience` and `underscore` paths na
 
 | Key | Default | Meaning |
 |---|---|---|
-| `text` | required | The prompt. |
+| `text` | required | The text is the prompt. |
 | `duration_seconds` | `[elevenlabs]` `ambience_seconds`, 25 | The length to request. The bed loops. |
 | `prompt_influence` | `[elevenlabs]` `ambience_prompt_influence`, 0.3 | How closely the sound follows the prompt. |
 | `model_id` | `[elevenlabs]` `sound_model` | The sound model. |
@@ -164,7 +165,7 @@ ElevenLabs. Ambience and music write to the `ambience` and `underscore` paths na
 
 | Key | Default | Meaning |
 |---|---|---|
-| `text` | required | The prompt. |
+| `text` | required | The text is the prompt. |
 | `duration_seconds` | `[elevenlabs]` `sfx_seconds`, 0.5 | The length to request. |
 | `prompt_influence` | `[elevenlabs]` `sfx_prompt_influence`, 0.5 | How closely the sound follows the prompt. |
 | `model_id` | `[elevenlabs]` `sound_model` | The sound model. |
@@ -174,14 +175,14 @@ ElevenLabs. Ambience and music write to the `ambience` and `underscore` paths na
 
 | Key | Default | Meaning |
 |---|---|---|
-| `prompt` | required | The prompt. |
-| `seconds` | 360 | The length to request. Longer than `max_music_chunk_seconds` is requested in chunks and crossfaded. |
-| `force_instrumental` | true | No vocals. |
+| `prompt` | required | The value is the prompt. |
+| `seconds` | 360 | The value sets the length to request. A length longer than `max_music_chunk_seconds` is requested in chunks and crossfaded. |
+| `force_instrumental` | true | The music has no vocals when the value is true. |
 | `model_id` | `[elevenlabs]` `music_model` | The music model. |
 | `out` | the `[mix]` path | Where to write the file. |
 
 ## Tuning tables
 
 Any settings table can be overridden per project with a table of the same name, such
-as `[video]` or `[record]`, or per shell with a `DECKTALK_<SECTION>_<FIELD>` variable.
+as `[video]` or `[record]`, or per shell with a `DECKTALK_<TABLE>_<FIELD>` variable.
 [Configuration](/reference/configuration) lists every field with its default.

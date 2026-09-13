@@ -38,7 +38,7 @@ before it.
 1. The defaults in this reference.
 2. The same tables in a per-machine file, which is `~/Library/Application Support/decktalk/decktalk.toml` on macOS, `%APPDATA%\\decktalk\\decktalk.toml` on Windows, and `~/.config/decktalk/decktalk.toml` elsewhere. `DECKTALK_CONFIG` points at a different file. Only settings tables belong there, and `decktalk doctor` shows whether one is in use.
 3. A table of the same name in the project's `decktalk.toml`. For example, `[video]` with `preset = "veryfast"` changes the x264 preset for that project.
-4. An environment variable named `DECKTALK_<SECTION>_<FIELD>`. For example, `DECKTALK_VIDEO_PRESET=veryfast` changes it for one shell. A list field such as `probe_delays` takes comma-separated values.
+4. An environment variable named `DECKTALK_<TABLE>_<FIELD>`. For example, `DECKTALK_VIDEO_PRESET=veryfast` changes it for one shell. A list field such as `probe_delays` takes comma-separated values.
 
 A few command-line flags override all three for a single run: `--preset`, `--crf`,
 `--settle`, and `--model`.

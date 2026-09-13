@@ -5,32 +5,32 @@ icon: "file-lines"
 ---
 
 The script is markdown with a few rules. Each `## N. Title` heading starts section `N`,
-and the text under it is what the voice says for that section. Everything else on this
-page is how the text is cleaned before it is sent.
+and the text under it is what the voice says for that section. The remaining rules say
+how the text is cleaned before it is sent.
 
 ```md script.md
-## 3. Gradient descent — 0:40 to 1:20
+## 3. Gradient descent
 
-[Deck scene 3. A loss bowl draws, a point steps down it, and the update rule appears.]
+[Deck scene 3. A loss surface stands over the plane of two weights, and a ball steps down it.]
 
-Now a short lesson. Here is gradient descent, at a high level. [beat] Start with a loss
-surface. Think of it as a bowl. [beat] Pick a point anywhere on it.
+Keep two, theta one and theta two, and the loss above them is a surface. For this lesson
+it is a bowl. [beat] Pick a point, theta, and its height is the loss.
 
 [beat] Pause and think: what happens if the learning rate is too large?
 
 [pause 3]
 
-You overshoot, and bounce from side to side.
+Too large, and you zigzag.
 ```
 
 ## Headings
 
 | Line | Effect |
 |---|---|
-| `## N. Title` | Starts section `N`. The number must have a `[[section]]` table in `decktalk.toml`, and every table needs a heading. The title names the audio file, `NN-slug.mp3`, and appears in the tables. |
-| `## N. Title — 0:40 to 1:10` | The same, with a time budget. The dash may be an em dash, an en dash, or a hyphen, and the times are `M:SS`. The budget's length is the `target` column of the narrate table. |
-| `## Title` without a number, or `# Title` | Ends the current section. Text after it is not spoken until the next numbered heading. |
-| `---` on its own line | Ends the current section in the same way. |
+| `## N. Title` | The heading starts section `N`. The number must have a `[[section]]` table in `decktalk.toml`, and every table needs a heading. The title names the audio file, `NN-slug.mp3`, and appears in the tables. |
+| `## N. Title — 0:40 to 1:10` | The heading does the same and adds a time budget. The dash may be an em dash, an en dash, or a hyphen, and the times are `M:SS`. The budget's length is the `target` column of the narrate table. |
+| `## Title` without a number, or `# Title` | The heading ends the current section. Text after it is not spoken until the next numbered heading. |
+| `---` on its own line | The line ends the current section in the same way. |
 
 Text before the first numbered heading is never spoken, which is why the scaffold keeps
 its notes above a `---` line. A section whose number maps to a clip in `decktalk.toml`
@@ -40,17 +40,17 @@ is skipped by `narrate`, so its body can hold a stage direction that says what p
 
 | Text | Spoken | Effect |
 |---|---|---|
-| `[Deck scene 3. A loss bowl draws.]` | no | A stage direction, which is a beat. The voice reads it as a dash at the end of the paragraph before it and pauses there the way it would at any dash, and no break tag is sent. |
-| `[beat]` | no | The same beat on its own. |
-| `[pause 3]` or `[pause 2.5]` | no | A `<break time="3s" />` tag at the end of the paragraph before it. This is the only direction that sends a break tag, because frequent break tags make the voice add fillers and breaths. |
-| `[NUMBER]`, `[CLIENT_NAME]` | refused | A placeholder in capitals, digits, and underscores. `narrate` refuses a section that still has one unless `--allow-placeholders` is passed, and `--dry-run` lists them. |
-| `<break time="1.0s" />` | no | A pause of that length, passed to the voice as written. |
+| `[Deck scene 3. A ball steps down the bowl.]` | no | A stage direction is a beat. The voice reads it as a dash at the end of the paragraph before it and pauses there the way it would at any dash, and no break tag is sent. |
+| `[beat]` | no | The direction is the same beat on its own. |
+| `[pause 3]` or `[pause 2.5]` | no | The direction sends a `<break time="3s" />` tag at the end of the paragraph before it. It is the only direction that sends a break tag, because frequent break tags make the voice add fillers and breaths. |
+| `[NUMBER]`, `[CLIENT_NAME]` | refused | A placeholder is written in capitals, digits, and underscores. `narrate` refuses a section that still has one unless `--allow-placeholders` is passed, and `--dry-run` lists them. |
+| `<break time="1.0s" />` | no | The tag is a pause of that length, passed to the voice as written. |
 
 A direction that stands before any prose in its section has nothing to pause after and
 is dropped. Two directions in a row keep the longest pause rather than adding them, and a
 beat beside a timed pause yields the timed pause. Silence before the first spoken section
 and after every section's last word is added to the audio by ffmpeg rather than requested
-from the voice: `lead_break_seconds` opens the first section, and every section is padded
+from the voice. `lead_break_seconds` opens the first section, and every section is padded
 so that speech ends at least `min_tail_seconds`, 0.7 by default, before the file does.
 `direction_break_seconds` is only the length a beat is assumed to take when a silent build
 estimates timings. All three are `[narration]` keys in
@@ -82,5 +82,6 @@ has the time-budget workflow.
 ## Numbers and symbols
 
 Write numbers and symbols the way you want them said, because the cue phrases in
-`cues.json` match spoken words. "two x" is a reliable cue and "2x" is not. The slide
-shows the symbols.
+`cues.json` match spoken words. The scaffold writes "eta" in the script and shows η on
+the slide, and it writes "theta one" for θ₁. A cue on "eta" is reliable, and a cue on "η"
+matches nothing.

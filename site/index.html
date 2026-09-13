@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DeckTalk: narrated slide videos from a markdown script, cut to the word</title>
-<meta name="description" content="DeckTalk turns a markdown script, plain HTML slides, and an ElevenLabs voice into one narrated mp4. Every reveal lands on the word that introduces it, and editing a sentence rebuilds only that section. Open source, Python, Apache-2.0.">
+<meta name="description" content="DeckTalk turns a markdown script, plain HTML slides, and an ElevenLabs voice into one narrated mp4. Every reveal lands on the word that introduces it, and when you change a sentence, only that section is voiced again. Open source, Python, Apache-2.0.">
 <link rel="canonical" href="https://decktalk.app/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DeckTalk">
 <meta property="og:title" content="DeckTalk: narrated slide videos from a markdown script">
-<meta property="og:description" content="A markdown script and HTML slides in. One mp4 out, with every reveal cut to the spoken word. Edit a sentence and only that section rebuilds.">
+<meta property="og:description" content="A markdown script and HTML slides in. One mp4 out, with every reveal cut to the spoken word. Change a sentence, and only that section is voiced again.">
 <meta property="og:url" content="https://decktalk.app">
 <meta property="og:image" content="https://decktalk.app/og.png">
 <meta property="og:image:width" content="1200">
@@ -169,7 +169,7 @@
   <header class="hero">
     <span class="lab">Open source · Apache-2.0</span>
     <h1>Narrated presentations, cut to the word.</h1>
-    <p class="lede">You write a markdown script and plain HTML slides. Your cloned voice reads the script. DeckTalk produces one mp4 in which every reveal lands on the word that introduces it. Change a sentence and only that section renders again.</p>
+    <p class="lede">You write a markdown script and plain HTML slides. Your cloned voice reads the script. DeckTalk produces one mp4 in which every reveal lands on the word that introduces it. Change a sentence, and only that section is voiced again.</p>
     <div class="ctas">
       <div class="install"><span class="p">$</span><span id="cmd">uv tool install decktalk</span><button id="copy" type="button">Copy</button></div>
       <a class="btn primary" href="https://docs.decktalk.app/quickstart">Read the quickstart</a>
@@ -207,7 +207,7 @@
   <section id="how">
     <span class="lab">How it works</span>
     <h2>The script is the edit.</h2>
-    <p class="sub">Narration comes back with a time for every word, so a reveal follows a phrase rather than a second. Change a sentence and only that section renders again. Follow one cue through the four files.</p>
+    <p class="sub">Narration comes back with a time for every word, so a reveal follows a phrase rather than a second. Change a sentence, and only that section is voiced again. Follow one cue through the four files.</p>
     <div class="steps">
       <div class="step"><div class="n">01 WRITE</div>
         <pre><span class="c">script.md</span>
@@ -254,7 +254,7 @@ just watched DeckTalk.</pre>
 
   <section id="start">
     <div class="cmds">
-      <div><h2>Two minutes to a first video.</h2><p>The scaffold is the two-minute demo. Build it silently first, and add your ElevenLabs voice when you are ready.</p></div>
+      <div><h2>From install to a first video.</h2><p>The scaffold is the demo. A silent build takes a few minutes, because recording runs in real time. Build it silently first, and add your ElevenLabs voice when you are ready.</p></div>
       <pre>$ uv tool install decktalk &amp;&amp; decktalk setup
 $ decktalk init my-lesson &amp;&amp; cd my-lesson
 $ decktalk build --silent   <span class="c"># no key needed</span>

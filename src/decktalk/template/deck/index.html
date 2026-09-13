@@ -313,7 +313,7 @@ DeckTalk.scene(1, { name: "Open", steps: [
 // of "learning", "rate", and "eta" in it. These values come from a silent build of this
 // scaffold, and the voiced build replaces them with its own.
 const S2_WORDS_FILE = "03-gradient-descent.words.json";
-const S2_WORDS = [["learning", 41.71], ["rate", 42.18], ["eta", 42.65]];
+const S2_WORDS = [["learning", 33.25], ["rate", 33.63], ["eta", 34.05]];
 const s2word = ([word, start]) => `{"word": ${(JSON.stringify(word) + ",").padEnd(11)} "start": ${start.toFixed(2)}}`;
 
 DeckTalk.scene(2, { name: "Three files and a voice", steps: [
@@ -884,14 +884,14 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
 // the learning rate cue. These values come from a silent build of this scaffold, and the voiced
 // build replaces them with its own. The first changed offset in the row is highlighted.
 const S4_LOG = [
-  "[skip] 01-open.mp3  unchanged (18.38s)",
-  "[skip] 02-three-files-and-a-voice.mp3  unchanged (28.68s)",
+  "[skip] 01-open.mp3  unchanged (15.99s)",
+  "[skip] 02-three-files-and-a-voice.mp3  unchanged (20.35s)",
   "[tts ] 03-gradient-descent.mp3  153 words, est 65.6s ...",
-  "[skip] 04-the-edit.mp3  unchanged (19.08s)",
-  "[skip] 05-close.mp3  unchanged (10.30s)",
+  "[skip] 04-the-edit.mp3  unchanged (16.69s)",
+  "[skip] 05-close.mp3  unchanged (10.53s)",
 ];
-const S4_VERIFY_HEAD = "check                 cue       at   chg %   ctl %   offset     a/v  result";
-const S4_VERIFY_ROW = "3:3.1eq             41.71    88.71    0.39    0.00    +10ms    +8ms  changed";
+const S4_VERIFY_HEAD = "check                 cue       at   chg %   ctl %   offset  result";
+const S4_VERIFY_ROW = "3:3.1eq             33.25    69.49    0.26    0.00    +30ms  changed";
 const s4row = () => S4_VERIFY_ROW.replace(/[+-]\d+ms/, (m) => `<span class="off">${m}</span>`);
 
 DeckTalk.scene(4, { name: "The edit", steps: [

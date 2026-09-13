@@ -10,23 +10,33 @@ can be built and verified on every push. This is how DeckTalk's own repository d
 ## The commands
 
 ```console
-decktalk setup                            # Chromium, ffmpeg, and KaTeX, into per-user caches
+decktalk setup                            # Chromium, ffmpeg, and KaTeX, once per machine
 decktalk doctor                           # exits 1 when a tool is missing
 DECKTALK_VIDEO_PRESET=veryfast decktalk build --silent
+decktalk check                            # exits 1 on a certain recording verdict
 decktalk verify                           # exits 1 when a cue did not land
 decktalk shots                            # one PNG per step, worth uploading as an artifact
 ```
 
 On Linux, `setup` passes `--with-deps` to Playwright so that Chromium's system libraries
-are installed too. The verify command is the test, and with no arguments it checks every
-cue in `beats.json` except the cues that `cues.json` marks `"verify": false`. `build`
-verifies section starts and cuts, and the cue checks measure each reveal in the finished
-mp4. A silent build's placeholder track carries a click at every word start, so
-the cue table also reports an `a/v` column, the picture's first change measured against
-the click nearest the cue, and the job fails when the finished file's audio and picture
-disagree by more than `max_av_frames`, three frames by default. That makes a silent build a test of the whole
-chain, not only of the cues.
-[How it works](/concepts/how-it-works#what-verify-measures) explains the columns.
+are installed too, and Playwright asks for sudo to install them. The verify command is the
+test, and with no arguments it checks every cue in `beats.json` except the cues that
+`cues.json` marks `"verify": false`. `build` verifies only section starts and cuts, and the
+cue checks measure each reveal in the finished mp4. A silent build's placeholder track
+carries a click at every word start, so the cue table also reports an
+[`a/v`](/concepts/how-it-works#what-verify-measures) column, which compares the picture with
+the click at the cued word. The job fails when the finished file's audio and picture
+disagree by more than `max_av_frames`, three frames by default. That makes a silent build a
+test of the whole chain, not only of the cues.
+
+`build` exits 1 when a page throws, when a cue phrase is unresolved or a cue id is unknown,
+or when a section start or a cut fails. The `TRUNCATED`, `STALLED`, and `NO COVER` verdicts
+in its check table do not change its exit code, and its verify stage does not measure the
+cues. A script that gates on the video should therefore run all three commands.
+
+```console
+decktalk build --silent && decktalk check && decktalk verify
+```
 
 ## A GitHub Actions job
 
@@ -38,7 +48,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
       - run: uv tool install decktalk
-      - name: Cache Chromium and ffmpeg
+      - name: Cache Chromium and KaTeX
         uses: actions/cache@v4
         with:
           path: |
@@ -50,6 +60,7 @@ jobs:
       - run: decktalk build --silent
         env:
           DECKTALK_VIDEO_PRESET: veryfast
+      - run: decktalk check
       - run: decktalk verify --json > verify.json
       - uses: actions/upload-artifact@v7
         with:
@@ -65,11 +76,17 @@ jobs:
 Chromium lives in Playwright's cache, which is `~/.cache/ms-playwright` on Linux,
 `~/Library/Caches/ms-playwright` on macOS, and `%LOCALAPPDATA%\ms-playwright` on Windows.
 KaTeX lives in DeckTalk's own cache, which follows the same platform rule under a
-`decktalk` directory, and `DECKTALK_CACHE_DIR` moves it. ffmpeg arrives with the
-`static-ffmpeg` package, so it is cached with the Python environment.
+`decktalk` directory, and `DECKTALK_CACHE_DIR` moves it. The `static-ffmpeg` package
+downloads ffmpeg into its own directory, so ffmpeg lives in the Python environment rather
+than in either cache.
 
 To build a voiced video in CI, put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in the
 job's secrets and export them. DeckTalk never prints either.
+
+<Warning>A silent build writes its placeholder tracks over the voiced mp3 files in
+`build/audio/` and empties the narration cache, so the next voiced build voices every
+section again and spends credits on all of them. A job that keeps `build/` between voiced
+builds should never run a silent build in the same directory.</Warning>
 
 Headless Chromium draws WebGL in software, because a hosted runner has no GPU it can use. A
 page with a 3D figure therefore renders more slowly on a hosted runner than on a laptop, and the
@@ -129,7 +146,7 @@ DECKTALK_PROJECT=lessons/derivatives decktalk build --silent
 
 ## Offline
 
-After `decktalk setup`, nothing needs the network. `decktalk init` copies the cached
+After `decktalk setup`, a silent build needs no network. `decktalk init` copies the cached
 KaTeX into `deck/katex/`, and the scaffold's page loads it from there. A project created
 before `setup` ran loads KaTeX from a CDN instead, which fails offline and leaves every
 equation as plain text with a `KATEX?` verdict in the check table. Run `setup`, then

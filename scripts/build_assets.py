@@ -10,9 +10,9 @@ mark, wordmark, favicon. The README reads assets/, the docs site reads docs/imag
 
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
 they cannot drift. The copies in assets/ have a transparent background so they sit on whatever
-ground GitHub and PyPI paint; the copies in docs/images/ carry their own background rect. Inter
+ground GitHub and PyPI paint. The copies in docs/images/ carry their own background rect. Inter
 Tight and JetBrains Mono subsets (OFL, assets/fonts/) are embedded as base64 in the diagrams so
-GitHub and PyPI render the intended faces; word positions in the hero are measured in Chromium
+GitHub and PyPI render the intended faces. Word positions in the hero are measured in Chromium
 with that exact font, so the tick under each word is under the word. The wordmark instead carries
 the letters as outline paths traced with fontTools, so each logo is a few kilobytes.
 
@@ -67,7 +67,8 @@ SANS = "'DT Sans', 'Inter Tight', 'Inter', -apple-system, 'Segoe UI', Helvetica,
 MONO = "'DT Mono', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
 SENTENCE = ["The", "curve", "rises,", "then", "the", "number", "lands."]
 CUE_WORDS = {1, 5, 6}  # curve, number, lands.
-MEASURE_PX = 32  # the size the words are measured at; every diagram scales the positions from it
+CAP_HEIGHT = 0.73  # Inter Tight's cap height as a fraction of the font size.
+MEASURE_PX = 32  # The size the words are measured at. Every diagram scales the positions from it.
 HERO_W, HERO_H, HERO_PAD = 1000, 248, 48
 HERO_PX = 30  # the sentence's size in the hero, so it clears the card at this width
 HEAD_START, HEAD_END = 5, 64  # % of the loop the playhead travels
@@ -85,7 +86,7 @@ def font_face() -> str:
     for family, name, weights in FACES:
         path = FONTS / name
         if not path.exists():
-            sys.exit(f"missing {path}; see assets/fonts/LICENSE.txt for how it was made")
+            sys.exit(f"{path} is missing. See assets/fonts/LICENSE.txt for how it was made.")
         b64 = base64.b64encode(path.read_bytes()).decode()
         rules.append(
             f"@font-face{{font-family:'{family}';font-weight:{weights};font-style:normal;"
@@ -230,14 +231,14 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
         f'<circle class="dot d{n}" cx="{xs[i] + 1:.1f}" cy="-6" r="4"/>'
         for n, i in enumerate(sorted(CUE_WORDS), start=1)
     )
-    # The card spans the label row to the caption baseline; the narration column is laid out to
+    # The card spans the label row to the caption baseline. The narration column is laid out to
     # the same extent, with the words and ticks centred between the label and the caption.
     card_x, card_y = HERO_W - HERO_PAD - CARD_W, HERO_PAD
     caption_y = card_y + CARD_H
     words_y = 110
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{HERO_W}" height="{HERO_H}" viewBox="0 0 {HERO_W} {HERO_H}" role="img" aria-labelledby="t d">
   <title id="t">DeckTalk</title>
-  <desc id="d">A playhead moves along a spoken sentence, one tick per word. When it reaches "curve" a curve draws on the slide; when it reaches "number" a figure appears; on the last word the slide changes.</desc>
+  <desc id="d">A playhead moves along a spoken sentence, one tick per word. When it reaches "curve", a curve draws on the slide. When it reaches "number", a figure appears. On the last word, the slide changes.</desc>
   <defs><style>{chr(10).join(css)}</style><clipPath id="card"><rect width="{CARD_W}" height="{CARD_H}" rx="{CARD_R}"/></clipPath></defs>
   {bg_rect(pal, HERO_W, HERO_H, background)}
   <g class="loop">
@@ -285,7 +286,7 @@ def hiw_css(pal: dict[str, str], total: float = 10.0) -> str:
     css.append(f".h{{font:600 20px {SANS};letter-spacing:-.01em;fill:{pal['ink']}}}")
     css.append(f".s{{font:400 14px {SANS};fill:{pal['mute']}}}")
     css.append(f".block{{fill:{pal['block']}}}.bar{{fill:{pal['bar']}}}.accent{{fill:{pal['accent']}}}")
-    # Each stage's label lights as its stage begins and stays lit; nothing else marks the stage.
+    # Each stage's label lights as its stage begins and stays lit. Nothing else marks the stage.
     for i, at in enumerate((0, 26, 52, 78)):
         css.append(
             f"@keyframes n{i}{{0%,{max(at - 1, 0)}%{{fill:{pal['mute']}}}{at}%,95%{{fill:{pal['accent']}}}99%,100%{{fill:{pal['mute']}}}}}.n{i}{{animation:n{i} {total}s linear infinite}}"
@@ -329,11 +330,12 @@ def hiw_css(pal: dict[str, str], total: float = 10.0) -> str:
         "@keyframes mp{0%,64%{opacity:0;transform:scale(.7)}67%,95%{opacity:1;transform:scale(1)}99%,100%{opacity:0;transform:scale(.7)}}"
     )
     css.append(f".mnum{{font:700 26px {SANS};letter-spacing:-.03em;fill:{pal['accent']}}}")
-    # 04: frames slide in, then merge into one bar that carries the output's name to the loop's end.
+    # 04: frames wait faintly, brighten in turn, then merge into one bar that carries the output's name to the
+    # loop's end. They rest at a low opacity rather than zero, so the panel never stands empty.
     css.append(f".fr{{transform-box:fill-box;animation:{total}s cubic-bezier(.2,0,0,1) infinite}}")
     for i, (a, b, dx) in enumerate(((78, 81, 0), (81, 84, -58), (84, 87, -116), (87, 90, -174)), start=1):
         css.append(
-            f"@keyframes f{i}{{0%,{a}%{{opacity:0;transform:translateX(-10px)}}{b}%,90%{{opacity:1;transform:translateX(0)}}92%,95%{{opacity:1;transform:translateX({dx}px)}}99%,100%{{opacity:0;transform:translateX(-10px)}}}}.f{i}{{animation-name:f{i}}}"
+            f"@keyframes f{i}{{0%,{a}%{{opacity:.25;transform:translateX(0)}}{b}%,90%{{opacity:1;transform:translateX(0)}}92%,95%{{opacity:1;transform:translateX({dx}px)}}99%,100%{{opacity:.25;transform:translateX(0)}}}}.f{i}{{animation-name:f{i}}}"
         )
     css.append(f".out{{animation:out {total}s linear infinite}}")
     css.append("@keyframes out{0%,90%{opacity:0}92%,100%{opacity:1}}")
@@ -378,7 +380,7 @@ def stage_svg(i: int, pal: dict[str, str], x: int, y: int) -> str:
 
 def how_it_works(pal: dict[str, str], stacked: bool, background: bool) -> str:
     css = hiw_css(pal)
-    title = "How DeckTalk works: you write a script; your voice reads it and every word gets a timestamp; slides reveal on the words in a browser; ffmpeg cuts one mp4."
+    title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides reveal on the words in a browser. ffmpeg cuts one mp4."
     if not stacked:
         w, h = 1200, 240
         stages = "\n".join(stage_svg(i, pal, 60 + 280 * i, -40) for i in range(4))
@@ -421,7 +423,7 @@ def mark(pal: dict[str, str], size: int = 24, background: bool = False) -> str:
 
 FRAME_W, FRAME_H, FRAME_GAP = 88, 50, 8
 COVER_FRAMES = 3  # frames that are still covered before the clock starts
-STRIP_CUES = {1, 5}  # the strip shows the curve and the number; the slide change is the hero's
+STRIP_CUES = {1, 5}  # The strip shows the curve and the number. The slide change belongs to the hero.
 
 
 def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
@@ -490,9 +492,11 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
         f'<line class="tick {"on" if i in STRIP_CUES else ""}" x1="{t0_x + x + 1:.1f}" y1="{tick_y}" x2="{t0_x + x + 1:.1f}" y2="{tick_y + 14}"/>'
         for i, x in enumerate(xs)
     )
-    # Each lead runs from the cue's tick up to the bottom centre of the frame that shows its reveal.
+    # Each lead runs from just above the cue word's capitals up to the bottom centre of the frame that
+    # shows its reveal, so it never crosses the letters. The word's accent tick sits directly below.
+    lead_y = words_y - 26 * CAP_HEIGHT - 6
     leads = "".join(
-        f'<line class="lead" x1="{cx:.1f}" y1="{tick_y - 4}" x2="{left + frame_at(cx) * pitch + FRAME_W / 2:.1f}" y2="{strip_y + FRAME_H + 3}"/>'
+        f'<line class="lead" x1="{cx:.1f}" y1="{lead_y:.1f}" x2="{left + frame_at(cx) * pitch + FRAME_W / 2:.1f}" y2="{strip_y + FRAME_H + 3}"/>'
         for cx in (curve_x, number_x)
     )
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">

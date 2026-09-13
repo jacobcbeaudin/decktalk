@@ -1033,10 +1033,81 @@ def test_worst_stall_counts_only_what_a_viewer_sees():
     from decktalk.artifacts import Sidecar
 
     side = Sidecar.__new__(Sidecar)
-    side.frame_gaps = [(float("-inf"), 900), (0.05, 216), (0.4, 120), (12.8, 132)]
-    # The first gap ended under the cover, the second began there and shows for 50 ms.
+    side.frame_gaps = [(None, 900), (0.05, 216), (0.4, 120), (12.8, 132)]
+    # The first gap ended under the cover. The second began there and shows for 50 ms.
     assert side.worst_stall_ms == 132
-    side.frame_gaps = [(float("-inf"), 900), (0.05, 216)]
+    side.frame_gaps = [(None, 900), (0.05, 216)]
     assert side.worst_stall_ms == 50
     side.frame_gaps = []
     assert side.worst_stall_ms == 0
+
+
+def test_sidecar_writes_null_for_a_gap_before_the_clock(tmp_path):
+    p = tmp_path / "s.json"
+    side = Sidecar(url="u", requested_seconds=1, settle_seconds=0, load_seconds=0, lead_seconds=0)
+    side.frame_gaps = [(float("-inf"), 900), (None, 400), (0.05, 216)]
+    side.save(p)
+    text = p.read_text()
+    assert "Infinity" not in text and "NaN" not in text
+    # Standard JSON parsers such as JSON.parse and jq reject the -Infinity token.
+    data = json.loads(text, parse_constant=lambda token: pytest.fail(f"non-standard JSON token {token}"))
+    assert data["frame_gaps"] == [[None, 900], [None, 400], [0.05, 216]]
+    again = Sidecar.load(p)
+    assert again is not None and again.frame_gaps == [(None, 900), (None, 400), (0.05, 216)]
+    assert again.worst_stall_ms == 50
+
+
+def test_sidecar_reads_an_older_file_that_holds_negative_infinity(tmp_path):
+    p = tmp_path / "s.json"
+    p.write_text(
+        '{"url": "u", "requested_seconds": 1, "settle_seconds": 0, "load_seconds": 0, "lead_seconds": 0,'
+        ' "frame_gaps": [[-Infinity, 900], [0.4, 120]]}'
+    )
+    side = Sidecar.load(p)
+    assert side is not None and side.frame_gaps == [(None, 900), (0.4, 120)]
+    assert side.worst_stall_ms == 120
+    side.save(p)
+    assert "Infinity" not in p.read_text()
+
+
+def test_worst_stall_treats_a_null_time_as_a_gap_under_the_cover():
+    side = Sidecar(url="u", requested_seconds=1, settle_seconds=0, load_seconds=0, lead_seconds=0)
+    side.frame_gaps = [(None, 900)]
+    assert side.worst_stall_ms == 0
+    side.frame_gaps = [(None, 900), (0.05, 216), (12.8, 132)]
+    assert side.worst_stall_ms == 132
+
+
+def test_provider_errors_never_show_the_voice_id(monkeypatch):
+    import io
+    import urllib.error
+    import urllib.request
+
+    from decktalk.errors import ProviderError
+    from decktalk.providers import _http
+
+    voice_id = "Xb7hH8MSUJpSbSDYk0k2"
+    api_key = "sk_test_key_that_must_not_print"
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps?output_format=mp3_44100_128"
+    message = f"A voice with voice_id {voice_id} was not found."
+    body = json.dumps({"detail": {"status": "voice_not_found", "message": message}})
+
+    def refuse(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", None, io.BytesIO(body.encode()))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    with pytest.raises(ProviderError) as info:
+        _http.post_json(url, {"text": "hi"}, {"xi-api-key": api_key}, timeout=1)
+    message = str(info.value)
+    assert voice_id not in message and api_key not in message
+    assert "https://api.elevenlabs.io/v1/text-to-speech/<voice id>/with-timestamps" in message
+    assert "HTTP 404" in message and "voice_not_found" in message
+
+    def unreachable(req, timeout):
+        raise urllib.error.URLError("timed out")
+
+    monkeypatch.setattr(urllib.request, "urlopen", unreachable)
+    with pytest.raises(ProviderError) as info:
+        _http.get_json(f"https://api.elevenlabs.io/v1/voices/{voice_id}", {"xi-api-key": api_key}, timeout=1)
+    assert voice_id not in str(info.value) and api_key not in str(info.value)
+    assert "voices/<voice id>" in str(info.value)

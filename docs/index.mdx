@@ -1,5 +1,5 @@
 ---
-title: DeckTalk
+title: Narrated slide videos cut to the spoken word
 sidebarTitle: Overview
 description: DeckTalk turns a markdown script, HTML slides, and an ElevenLabs voice into a narrated video with captions and chapters, where every reveal lands on the spoken word.
 icon: "house"
@@ -8,26 +8,43 @@ mode: "custom"
 
 <div className="mx-auto max-w-6xl px-6 pb-24 pt-10">
 
-  <div className="rounded-2xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
+  <div className="text-center">
+    <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-5xl">Narrated presentations, cut to the word.</h1>
+    <p className="mx-auto mt-5 max-w-3xl text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
+      DeckTalk turns a markdown script and plain HTML slides into one narrated video. Your voice reads the script and returns a time for every word, each slide names the phrase it lands on, and the cut follows the words. Change a sentence, and only that section is voiced again.
+    </p>
+  </div>
+
+  <div className="mt-12 rounded-2xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
+    {/*
+      The demo video slot. The video replaces the hero images below once the founder approves
+      the demo, and its poster frame comes from that build. Uncomment the figure and remove the
+      two images at that point.
+
+      <figure className="m-0">
+        <video className="block w-full rounded-xl" controls playsInline preload="none" poster="/images/demo-poster.png" src="VIDEO_URL"></video>
+        <figcaption className="px-4 pb-3 pt-3 text-center text-sm text-zinc-600 dark:text-zinc-400">
+          DeckTalk built this video from the project that <code>decktalk init</code> writes, in a cloned voice. Turn the sound on, because every reveal lands on the word that introduces it.
+        </figcaption>
+      </figure>
+    */}
     <img className="block w-full dark:hidden" src="/images/hero-light.svg" alt="A playhead moves along a spoken sentence, one tick per word. The slide reacts on exactly the right words." />
     <img className="hidden w-full dark:block" src="/images/hero-dark.svg" alt="A playhead moves along a spoken sentence, one tick per word. The slide reacts on exactly the right words." />
   </div>
 
-  <div className="mt-12 text-center">
-    <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-5xl">Narrated presentations, cut to the word.</h1>
-    <p className="mx-auto mt-5 max-w-3xl text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
-      DeckTalk turns a markdown script and plain HTML slides into one narrated video. Your voice reads the script and returns a time for every word, each slide names the phrase it lands on, and the cut follows the words. Change a sentence and only that section renders again.
-    </p>
-    <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-      <a href="/quickstart" className="rounded-lg bg-[#2c1fea] px-5 py-2.5 text-sm font-medium text-white no-underline hover:bg-[#2417c4] dark:bg-[#7c8cff] dark:text-zinc-950 dark:hover:bg-[#98a5ff]">Quickstart</a>
-      <a href="/reference/card" className="rounded-lg border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 no-underline hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900">One-page reference</a>
-    </div>
+  <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+    <a href="/quickstart" className="rounded-lg bg-[#2c1fea] px-5 py-2.5 text-sm font-medium text-white no-underline hover:bg-[#2417c4] dark:bg-[#7c8cff] dark:text-zinc-950 dark:hover:bg-[#98a5ff]">Quickstart</a>
+    <a href="/reference/card" className="rounded-lg border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 no-underline hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900">Reference card for agents</a>
+  </div>
+
+  <div className="mx-auto mt-8 max-w-3xl rounded-xl border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+    Every part of these docs is also served as plain text for language models at <a href="https://docs.decktalk.app/llms.txt">docs.decktalk.app/llms.txt</a> and <a href="https://docs.decktalk.app/llms-full.txt">llms-full.txt</a>.
   </div>
 
   <div className="mt-20">
-    <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Follow one cue through the four files</h2>
+    <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Follow one cue from the phrase to the frame</h2>
     <p className="mt-2 max-w-3xl text-zinc-600 dark:text-zinc-400">
-      A project is four files that refer to each other by one number and one id. These four snippets are simplified from the scaffold, and they follow the cue <code>3.1eq</code> from the spoken phrase to the frame.
+      You write three files, the script, the cues, and the page, and the voice returns a fourth, the words file with a time for every word. One cue id ties them together, and the project file maps each section to its page. These four snippets are simplified from the scaffold, and they follow the cue <code>3.1eq</code> from the spoken phrase to the frame.
     </p>
 
     <Columns cols={2}>
@@ -74,7 +91,7 @@ mode: "custom"
     </Columns>
 
     <p className="mt-6 max-w-3xl text-zinc-600 dark:text-zinc-400">
-      After the build, <code>decktalk verify 3:3.1eq</code> measures the finished video and reports how far from the cue the picture first changed. After a silent build the <code>a/v</code> column also measures the picture against the placeholder click at the cued word.
+      After the build, <code>decktalk verify 3:3.1eq</code> measures the finished video and reports how far from the cue time the picture first changed. After a silent build, the <a href="/concepts/how-it-works#what-verify-measures"><code>a/v</code></a> column also compares the picture with the placeholder click at the cued word.
     </p>
 
     ```text
@@ -88,16 +105,12 @@ mode: "custom"
 
     <CardGroup cols={3}>
       <Card title="Quickstart" icon="play" href="/quickstart">The quickstart installs DeckTalk, builds the scaffold without an API key, and then adds your voice.</Card>
-      <Card title="Your first deck" icon="pen-line" href="/guides/first-deck">This guide writes one section in all four files and watches it land.</Card>
-      <Card title="Writing for the ear" icon="ear-listen" href="/guides/writing-for-the-ear">A script that cues well names a thing and then shows it. This guide teaches that craft.</Card>
-      <Card title="How it works" icon="diagram-project" href="/concepts/how-it-works">This guide walks through the stages, the frame-exact alignment, and what verify measures.</Card>
-      <Card title="The page contract" icon="window" href="/concepts/page-contract">This guide explains how a slide talks to the recorder and how to design the stage.</Card>
-      <Card title="One-page reference" icon="bolt" href="/reference/card">The reference puts every file, command, rule, and exit code on one page, written for agents.</Card>
+      <Card title="Your first deck" icon="pen-line" href="/guides/first-deck">This guide writes one section in the script, the cues, the project file, and the page, and watches it land.</Card>
+      <Card title="Writing for the ear" icon="ear-listen" href="/guides/writing-for-the-ear">A script gives every reveal a word to land on when it names a thing and then shows it. This guide teaches that craft.</Card>
+      <Card title="How it works" icon="diagram-project" href="/concepts/how-it-works">How it works walks through the stages, the frame-exact alignment, and what verify measures.</Card>
+      <Card title="The page contract" icon="window" href="/concepts/page-contract">The page contract explains how a slide talks to the recorder and how to design the stage.</Card>
+      <Card title="Reference card for agents" icon="bolt" href="/reference/card">The reference puts every file, command, rule, and exit code in one place, written for agents.</Card>
     </CardGroup>
-  </div>
-
-  <div className="mt-16 rounded-xl border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-    Every part of these docs is also served as plain text for language models at <a href="https://docs.decktalk.app/llms.txt">docs.decktalk.app/llms.txt</a> and <a href="https://docs.decktalk.app/llms-full.txt">llms-full.txt</a>.
   </div>
 
 </div>

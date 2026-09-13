@@ -6,11 +6,14 @@ first. If you build something with DeckTalk, a link in an issue is welcome too.
 
 ## Setup
 
+You need [uv](https://docs.astral.sh/uv/), which installs the Python version and every
+dependency. The smoke build in `tests/smoke.sh` needs bash, which on Windows means Git Bash.
 Run every command from the repository root.
 
 ```console
 uv sync --group dev
-uv run decktalk setup            # headless Chromium and ffmpeg, once
+uv run decktalk setup            # headless Chromium, ffmpeg, and KaTeX, once
+uvx pre-commit install           # the lint hooks and the commit message check
 ```
 
 ## Checks
@@ -23,7 +26,7 @@ uv run ty check src
 uv run pytest -q                                # unit tests
 uv run pytest -q -m browser                     # the page runtime, in a real Chromium
 bash tests/smoke.sh                             # scaffold a project and build it offline
-uv run scripts/build_assets.py --check          # graphics are generated; regenerate, do not hand-edit
+uv run scripts/build_assets.py --check          # graphics are generated, so regenerate them
 uv run scripts/build_config_reference.py --check # so is docs/reference/configuration.mdx
 ```
 
@@ -31,9 +34,10 @@ No check needs an ElevenLabs key or network access after `decktalk setup`. Do no
 check that calls the API.
 
 CI runs the same checks, with the unit checks on Python 3.12 to 3.14. Linux is the canary:
-every push and pull request runs the browser tests and the smoke build there. A tag runs
-them on macOS and Windows as well, and the Actions tab can run any platform on demand
-through "Run workflow". Each run uploads its smoke video as an artifact.
+every push to `main` and every pull request runs the browser tests and the smoke build
+there. The macOS and Windows builds run from the Actions tab through "Run workflow" and on
+a tag that a person pushes. A release tag that release-please creates does not start the
+CI workflow. Each run uploads its smoke video as an artifact.
 
 ## Layout
 
@@ -53,6 +57,7 @@ tests/
   smoke.sh           an offline build of the scaffold, verified cue by cue
 scripts/
   build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon
+  build_changelog.py          generates docs/changelog.mdx from CHANGELOG.md
   build_config_reference.py   generates docs/reference/configuration.mdx from config.py
 docs/                          the Mintlify site at docs.decktalk.app
 site/                          the landing page at decktalk.app
@@ -82,12 +87,14 @@ semicolons, and version-specific wording that goes stale.
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org). A `fix:`
 commit bumps the patch version. A `feat:` commit bumps the minor version. A `feat!:` commit or
-a `BREAKING CHANGE:` footer bumps the major version. `pre-commit install` adds a hook that
-checks the message. The `pr-title` workflow checks pull request titles, because a squash merge
-turns the title into the commit.
+a `BREAKING CHANGE:` footer bumps the major version, except that while the version is below
+1.0 it bumps the minor version, because `bump-minor-pre-major` is set. The commit message
+hook from `uvx pre-commit install` checks the message. The `pr-title` workflow checks pull
+request titles, because a squash merge turns the title into the commit.
 
 release-please keeps a release pull request open against `main`. It bumps the version in
 `pyproject.toml` and `uv.lock`, writes `CHANGELOG.md`, and picks the bump from the commits
 landed since the last release. Merging that PR creates the tag and the GitHub release. The
-release workflow then builds, smoke-tests the wheel, and publishes to PyPI through trusted
-publishing. To force a version, put `Release-As: 1.0.0` in a commit body.
+release workflow then runs the unit checks on Linux, builds the wheel, smoke-tests it, and
+publishes to PyPI through trusted publishing. To force a version, put `Release-As: 1.0.0` in
+a commit body.

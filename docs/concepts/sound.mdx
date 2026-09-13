@@ -46,12 +46,12 @@ the open.
 |---|---|---|
 | `boost_db` | top level | How far each marker swells the bed. The default is 3 dB. |
 | `boost_seconds` | top level | How long the swell lasts. The default is 2 seconds. |
-| `name` | marker | A label for the report. |
-| `section` | marker | The section number the phrase is in. |
-| `on` | marker | A spoken phrase, `$start`, or `$end`, matched as a cue is. The default is `$start`. |
-| `occurrence`, `case_sensitive`, `offset` | marker | Refine the match as they do for a cue. |
-| `mute_seconds` | marker | Silence the bed for this long first, and swell after. |
-| `_comment` | top level | Ignored. |
+| `name` | marker | The name labels the marker in the report. |
+| `section` | marker | The value is the number of the section that holds the phrase. |
+| `on` | marker | The value is a spoken phrase, `$start`, or `$end`, matched as a cue is. The default is `$start`. |
+| `occurrence`, `case_sensitive`, `offset` | marker | These keys refine the match as they do for a cue. |
+| `mute_seconds` | marker | The bed goes silent for this long first, and then it swells. |
+| `_comment` | top level | DeckTalk ignores the key. |
 
 A marker whose phrase cannot be found is skipped with a warning. The mute and boost ramps
 are `marker_mute_ramp_seconds` and `marker_boost_ramp_seconds` under `[audio]`.
@@ -90,7 +90,8 @@ decktalk soundscape --only music    # one item; --force regenerates it
 Music longer than `max_music_chunk_seconds` is requested in chunks and joined with a
 crossfade. Every output has a manifest with its request hash, so a second run sends
 nothing unless a prompt changed. These calls spend ElevenLabs credits, and the dry run
-shows exactly what would be sent. [decktalk.toml](/reference/decktalk-toml#soundscape)
+shows exactly what would be sent. [Requirements and costs](/requirements) lists every
+command that spends credits. [decktalk.toml](/reference/decktalk-toml#soundscape)
 lists every key of the three tables.
 
 ## Bringing your own

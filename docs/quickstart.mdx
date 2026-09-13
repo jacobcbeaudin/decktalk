@@ -7,8 +7,9 @@ icon: "play"
 <Steps>
   <Step title="Install">
     DeckTalk needs Python 3.12 or later. Everything else arrives through Python packages
-    and one download. Playwright's package carries its own browser driver, and
-    `static-ffmpeg` carries ffmpeg and ffprobe for your platform. You do not need Node.
+    and the downloads that `decktalk setup` makes. Playwright's package carries its own
+    browser driver, and `static-ffmpeg` fetches ffmpeg and ffprobe for your platform. You do
+    not need Node.
 
     <Tabs>
       <Tab title="uv">
@@ -35,7 +36,7 @@ icon: "play"
     Then fetch the tools DeckTalk drives, once per machine, and confirm that they work.
 
     ```console
-    decktalk setup     # headless Chromium, ffmpeg, and KaTeX, into a per-user cache
+    decktalk setup     # headless Chromium, ffmpeg, and KaTeX, once per machine
     decktalk doctor    # reports each tool and exits 1 when one is missing
     ```
 
@@ -49,7 +50,8 @@ icon: "play"
     ```
 
     Run `setup` before `init`, because `init` copies the cached KaTeX into the project so
-    that equations render with no network.
+    that equations render with no network. [Requirements and costs](/requirements) says
+    where each download goes and why Linux asks for sudo.
   </Step>
 
   <Step title="Scaffold and build">
@@ -60,24 +62,25 @@ icon: "play"
 
     The `--silent` flag runs every stage with a placeholder track, a soft click at every
     estimated word start, and estimated word times. It needs no account and costs
-    nothing, so use it to prove that a project builds before you spend credits. Each
-    stage prints a table, and the build ends with the path of the video.
+    nothing, so use it to prove that a project builds before you spend credits. A first
+    silent build takes a few minutes, because recording runs in real time. Each stage
+    prints a table, and the build ends with the path of the video.
 
     ```text
     sec    start    probe   YAVG   YMAX  result
      01     0.00     0.20    232    245  ok
-     02    22.44    22.64    232    252  ok
-     03    56.72    56.92    233    248  ok
-     04   107.24   107.44    228    255  ok
-     05   133.68   133.88    231    249  ok
-    total 149.44s; 0 black section start(s)
+     02    18.36    18.56    230    247  ok
+     03    47.00    47.20    229    255  ok
+     04   119.16   119.36    227    249  ok
+     05   138.20   138.40    231    249  ok
+    total 150.96s; 0 black section start(s)
 
     sec   cut at  before cut  result
-     01    22.45   -129.7 dB  quiet
-     02    56.69   -128.4 dB  quiet
-     03   107.27   -128.5 dB  quiet
-     04   133.69   -125.4 dB  quiet
-     05   145.43   -120.0 dB  quiet
+     01    18.35   -130.2 dB  quiet
+     02    47.01   -125.4 dB  quiet
+     03   119.15   -130.2 dB  quiet
+     04   138.21   -125.4 dB  quiet
+     05   148.45   -120.0 dB  quiet
 
     built ~/my-lesson/build/out/my-lesson.mp4
     ```
@@ -100,15 +103,16 @@ icon: "play"
       </Tab>
     </Tabs>
 
-    The scaffold is a short lesson in five sections: a cold open in which a line of the
-    script lights up word by word as the voice reads it, a scene that shows the three files
-    you write and the words file the voice returns, tied by one id, a gradient descent
-    lesson in which a ball steps down a three.js loss surface while the update rule builds
-    in KaTeX, a scene in which one word is retyped and the rebuild's log fills in, and an
-    end card. All five are page sections, which DeckTalk records from
-    `deck/index.html` and cuts to the narration. A commented-out section 0 shows how to
-    open with a clip of your own, and [Add a clip section](/guides/clip-section) walks
-    through it.
+    The scaffold is a short lesson in five sections. A cold open performs its own
+    sentence, as a line of the script lights up word by word while the voice reads it. The
+    second section shows three files and a voice tied by one id. A gradient descent lesson
+    steps a ball down a three.js loss surface, builds the update rule in KaTeX, and shows
+    a learning rate that zigzags, one that flies out, one that crawls, and one that settles
+    at the minimum. In the fourth section one word is edited, and the rebuild's log shows
+    that only that section is voiced again. An end card closes on decktalk.app. All five are
+    page sections, which DeckTalk records from `deck/index.html` and cuts to the narration.
+    A commented-out section 0 shows how to open with a clip of your own, and
+    [Add a clip section](/guides/clip-section) walks through it.
   </Step>
 
   <Step title="Add your voice">
@@ -121,21 +125,16 @@ icon: "play"
 
     Both values can also come from the environment. A value left as `<placeholder>`
     counts as unset. DeckTalk never prints the key and never writes it under `build/`.
-    Then build the project again.
+    Then build the project again. This build voices every section, because a silent
+    build's placeholders are never reused.
 
     ```console
     decktalk build
     ```
 
-    <Note>You need an ElevenLabs plan with API access. The [FAQ](/help/faq#what-does-it-cost)
-    names the plan and gives the arithmetic.</Note>
-  </Step>
-
-  <Step title="Change a sentence">
-    Edit any sentence in `script.md` and run `decktalk build` again. DeckTalk hashes each
-    section by its text, so only the section you touched is synthesized and recorded
-    again. The rest comes from the cache.
-    [Rebuild one section](/guides/rebuild-one-section) explains what is reused.
+    <Note>You need an ElevenLabs plan with API access.
+    [Requirements and costs](/requirements) lists which commands spend credits, and the
+    [FAQ](/help/faq#what-does-it-cost) gives the arithmetic.</Note>
   </Step>
 
   <Step title="Review">
@@ -149,6 +148,33 @@ icon: "play"
     decktalk verify 3:3.1eq                 # measures when the cue changed the picture in the mp4
     decktalk status                         # the timeline and what is built
     ```
+  </Step>
+
+  <Step title="Change a sentence">
+    Make the edit that the scaffold's fourth section shows. In section 3 of `script.md`,
+    change "For this lesson it is a bowl." to "For this lesson it is a valley." Then build
+    again and read the narrate log.
+
+    ```console
+    decktalk build
+    ```
+
+    The log prints a `[skip]` line for sections 1, 2, 4, and 5, whose narration comes from
+    the cache, and a `[tts ]` line for section 3. Change a sentence, and only that section is
+    voiced again. A plain build records every section again in real time, and
+    `decktalk build --only N` records only that section. The edit costs the characters of
+    all of section 3, because the cache key is the section's whole text.
+
+    When you know that only section 3 changed, the fast path records only that section. It
+    still takes the other sections' narration from the cache, and it assembles and verifies
+    the whole video.
+
+    ```console
+    decktalk build --only 3
+    ```
+
+    [Rebuild one section](/guides/rebuild-one-section) says what each kind of edit runs
+    again.
   </Step>
 </Steps>
 
@@ -169,6 +195,7 @@ the spoken words "learning rate", while the slide shows η.</Tip>
 
 ## Next
 
-[Your first deck](/guides/first-deck) writes one section from scratch and shows how the
-four files refer to each other. [Writing for the ear](/guides/writing-for-the-ear) is the
-craft of a script that cues well.
+[Your first deck](/guides/first-deck) writes one section from scratch and shows how one
+cue id ties the script, the cues, and the page to the words the voice returns.
+[Writing for the ear](/guides/writing-for-the-ear) teaches how a script gives every reveal a
+word to land on.
