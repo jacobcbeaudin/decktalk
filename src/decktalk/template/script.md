@@ -30,12 +30,13 @@ Now a lesson where every picture waits for its word.
 
 ## 3. Gradient descent — 0:40 to 1:00
 
-[Deck scene 3. A loss surface fades up, a ball steps down it, and the update rule builds.]
+[Deck scene 3. The weight axes and the loss axis draw in, a loss surface fades up above them, a ball steps down it, and the update rule builds.]
 
-Gradient descent is an optimization method. It finds a local minimum of a function of
-many variables by stepping downhill. [beat] Picture that function as a loss surface. For
-this lesson it is a bowl.
-[beat] Pick a point, theta. [beat] The gradient points uphill, so follow minus the gradient. [beat] Take a step, and
+Training a model means tuning its weights to shrink its error, the loss. [beat] Gradient
+descent finds a local minimum of that loss, a function of many variables, one per weight.
+[beat] Keep two weights, theta one and theta two, [beat] and the loss above them is a
+surface. For this lesson it is a bowl. [beat] Pick a point, theta. [beat] The height there
+is the loss. [beat] The gradient points uphill, so follow minus the gradient. [beat] Take a step, and
 the learning rate, eta, scales its length. [beat] Again, [beat] and again. The steps shrink
 because the slope does. [beat] That is the rule. The next theta [beat] is this theta, minus
 eta [beat] times the gradient here.
@@ -59,5 +60,5 @@ the reveal on the word learning rate: ten milliseconds.
 
 [Deck scene 5. The end card.]
 
-The script is the edit. [beat] Edit the words. The video follows. [beat] Made with DeckTalk.
-[beat] The docs are at docs dot decktalk dot app.
+The script is the edit. [beat] DeckTalk. Narrated presentations, cut to the word. [beat] Make
+your own at decktalk dot app.

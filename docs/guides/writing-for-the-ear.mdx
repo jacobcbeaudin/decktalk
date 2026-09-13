@@ -28,11 +28,11 @@ screen.
 ## Give every reveal a noun to land on
 
 A cue resolves to the first word of its phrase, so the phrase should begin with the word
-that names the visual. "Picture that function as a loss surface" cues on `loss surface` and lands on
-"loss", which is a noun the listener can attach to the bowl that draws. A phrase such as
-"and then" lands on nothing in particular. The scaffold's cues are all nouns or verbs with
-a concrete referent: `loss surface`, `Pick a point`, `learning rate`, `Change one sentence`,
-`Edit the words`.
+that names the visual. "Keep two weights, theta one and theta two" cues on `theta one` and
+lands on "theta", which is a noun the listener can attach to the axis label that fades in.
+A phrase such as "and then" lands on nothing in particular. The scaffold's cues are nouns
+or verbs with a concrete referent: `many variables`, `Pick a point`, `learning rate`,
+`Build again`, `Narrated presentations`.
 
 ## One reveal per idea
 
@@ -121,15 +121,15 @@ word count at `words_per_minute`, which defaults to 140.
 ---------------------------------------------------------------------
  1  open                      48   0:21    --      0:22  -
  2  four-files                74   0:32    --      0:34  -
- 3  gradient-descent         118   0:51    0:20    1:00  -
+ 3  gradient-descent         143   1:01    0:20    1:12  -
  4  the-edit                  42   0:18    --      0:21  -
- 5  close                     23   0:10    --      0:12  -
+ 5  close                     19   0:08    --      0:09  -
 ---------------------------------------------------------------------
-    total                    305   2:11            2:30
+    total                    326   2:20            2:40
 ```
 
 The `target` column is the budget's length. Section 3 has a budget of twenty seconds,
-from 0:40 to 1:00, and the silent rehearsal runs to a full minute. That gap is the signal to
+from 0:40 to 1:00, and the silent rehearsal runs to 1:12. That gap is the signal to
 cut a sentence. Widen the budget only after the voice has spoken and the `actual` column
 is real. The
 `min_seconds` key on a section in `cues.json` works the other way around and warns when

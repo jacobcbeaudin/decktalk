@@ -64,7 +64,7 @@ title = "Close"
 page = "deck/index.html"
 scene = 5
 extra_seconds = 2
-hold_seconds = 4        # allowed only on the last page section
+hold_seconds = 2        # allowed only on the last page section
 
 [transition]
 dips = []               # boundaries that dip to black, as [from, to] pairs. Omit the key to dip at every cut.
