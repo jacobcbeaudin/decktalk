@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: Every DeckTalk command and flag, from setup, doctor, and init through narrate, beats, record, measure, check, assemble, verify, shots, build, and status, with the check verdicts and exit codes.
+description: Every DeckTalk command and flag, from setup, doctor, and init through narrate, beats, record, measure, check, assemble, verify, shots, build, and status, with the JSON output, the check verdicts, and exit codes.
 icon: "terminal"
 mode: "wide"
 ---
@@ -13,8 +13,60 @@ Every project command takes `--project DIR`, or `-p DIR`. The default is the
 `DECKTALK_PROJECT` variable, then the current directory. Each command reads `.env` from
 the project and never prints a key. Progress goes to stderr, and the tables go to stdout.
 `-v` or `--verbose` shows debug logging, including every ffmpeg command line, and `-q` or
-`--quiet` shows warnings only. Both go before or after the command name. `--version` prints the version. A flag
-that repeats, such as `--only`, takes one value each time and does not take commas.
+`--quiet` shows warnings only. Both go before or after the command name. `--version`
+prints the version. A flag that repeats, such as `--only`, takes one value each time and
+does not take commas. `status`, `beats`, `check`, `verify`, and `doctor` also take
+`--json`, `--strict`, and `--no-fail`, which
+[Machine-readable output](#machine-readable-output) describes.
+
+## Machine-readable output
+
+`status`, `beats`, `check`, `verify`, and `doctor` share three flags.
+
+| Flag | Meaning |
+|---|---|
+| `--json` | Print the result as one JSON object on stdout instead of the tables. Progress still goes to stderr. |
+| `--strict` | Also exit 1 on an uncertain verdict, the ones marked with a question mark. |
+| `--no-fail` | Exit 0 even when a check fails, for scripts that read the table or the JSON themselves. |
+
+Every object opens with the same four keys, and a fifth key named after the command holds
+the result.
+
+```json
+{
+  "command": "verify",
+  "version": "<version>",
+  "ok": true,
+  "findings": { "certain": 0, "uncertain": 0 },
+  "verify": { "...": "the result, described below" }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `command` | The command that ran, such as `verify`. |
+| `version` | The DeckTalk version that ran it. |
+| `ok` | `true` when the command would exit 0 without `--no-fail`. `--strict` counts, so an uncertain finding makes it `false` under `--strict`. |
+| `findings.certain` | How many certain findings the command made. Any one of them exits 1. |
+| `findings.uncertain` | How many uncertain findings it made. They exit 1 only with `--strict`. |
+
+| Command | The key named after it holds |
+|---|---|
+| `doctor` | `components`, a list of `{name, ok, detail}`, one per row of the table. |
+| `status` | `project` with `root`, `name`, `script`, `script_exists`, `cues`, and `cues_exists`. `sections`, a list of `{key, kind, source, recorded, cut}`, where `kind` is `page` or `clip`. `timeline` with `exists`, `estimated`, `total_seconds`, and `sections`, a list of `{key, title, start, end, duration}`. `beats` with `exists` and `sections`, a list of `{key, cues}`. `final` with `path`, `exists`, and `duration`. `outputs` with `srt`, `vtt`, and `chapters`, each `{path, exists}`. |
+| `beats` | `estimated`, `beats_file`, `unresolved`, `unknown`, and `sections`, a list of `{key, speech_end, min_seconds, skipped, cues, notes}`. Each note is `{cue, verdict, detail}`, where `verdict` is `UNRESOLVED`, `UNKNOWN`, or `null` for a note without a verdict. |
+| `check` | `recordings`, a list of `{key, file, duration, wanted, y10, y50, y90, max50, verdicts, stall_ms, page_errors}`. `verdicts` lists the verdict names of the row, and `stall_ms` holds the length of a `STALLED` gap. |
+| `verify` | `final`, `total_seconds`, `silent`, and three lists. `starts` holds `{key, start, probe_at, yavg, ymax, verdict}`, `cuts` holds `{key, cut_at, rms_db, verdict}`, and `cues` holds `{section, cue, cue_seconds, final_seconds, changed_percent, control_percent, offset_ms, av_ms, verdict, reason}`. |
+
+Numbers are JSON numbers, a value that does not exist yet is `null`, and every verdict is
+a verdict name that the table prints. Paths are relative to the project root and use
+forward slashes on every platform. The exceptions are `project.root` in `status`, which is
+absolute, and a path outside the project, which stays absolute. `doctor` runs outside any
+project, so its details keep full paths. Only the object goes to stdout, so
+`decktalk verify --json > verify.json` captures nothing else.
+
+`status` reads what exists and judges nothing, so its findings are always zero and it
+exits 0 unless the project cannot be loaded.
 
 ## Setting up a machine and a project
 
@@ -28,8 +80,8 @@ When the KaTeX download fails, projects load it from a CDN instead, with a warni
 ### `decktalk doctor`
 
 Reports the Python, Chromium, ffmpeg, ffprobe, per-machine config file, and KaTeX found,
-and exits 1 when a tool is missing. The config row is `ok` whether or not the file
-exists. It changes nothing.
+and exits 1 when a tool is missing. Each `MISSING` row is a certain finding. The config
+row is `ok` whether or not the file exists. It changes nothing.
 
 ```text
 python    ok      3.13 (.venv/bin/python3)
@@ -42,6 +94,10 @@ katex     ok      ~/Library/Caches/decktalk/katex/<version>
 
 A `katex` row marked `MISSING` means the cache is empty, so `init` would write a page
 that loads KaTeX from a CDN. Run `setup` first.
+
+| Flag | Meaning |
+|---|---|
+| `--json`, `--strict`, `--no-fail` | As in [Machine-readable output](#machine-readable-output). |
 
 ### `decktalk init DIR`
 
@@ -78,8 +134,17 @@ prints the section table and the timeline.
 ### `decktalk beats`
 
 Resolves every cue phrase to a second and prints a table of sections, their speech end,
-their `min_seconds`, and their resolved cues. It reports each phrase it cannot find and
-exits 1 if there is one.
+their `min_seconds`, and their resolved cues. It also reads the page of each page section
+and notes every cue id that the page never mentions as a quoted literal, as
+`4.1answer: not in deck/index.html`. It writes `beats.json` either way. A phrase it
+cannot find and a cue id that its page never mentions are certain findings, so `beats`
+exits 1 on either. A section whose speech ends before its `min_seconds` is an uncertain
+finding, so it exits 1 only with `--strict`.
+
+| Flag | Meaning |
+|---|---|
+| `--allow-unknown` | Still note a cue id that appears nowhere in the page that plays it, but do not count it as a finding, for a page that builds its ids at run time. |
+| `--json`, `--strict`, `--no-fail` | As in [Machine-readable output](#machine-readable-output). |
 
 ### `decktalk soundscape`
 
@@ -134,22 +199,24 @@ sec  webm_s   want_s   Y10    Y50    Y90    MAX50   verdict
 01   12.9     10.5     106    30     30     238     ok
 ```
 
-| Verdict | Meaning |
-|---|---|
-| `ok` | Nothing suspect. |
-| `NO COVER` | `measure` found no magenta run, so the alignment is a guess. |
-| `BLACK?` | The brightest pixel at the midpoint is below `black_ymax`, so the page probably drew nothing. |
-| `TRUNCATED` | The recording is shorter than requested by more than `truncated_slack_seconds`. |
-| `KATEX?` | The page reported that KaTeX never loaded, so its equations stayed plain text. |
-| `STALLED` | The page went longer than `stall_ms` between two frames while recording, so a reveal may have been captured late. The recorder already retried up to `retries` times. |
-| `PAGE ERROR` | The page threw a script error or exposed no `window.__decktalk.catalog`, so the section recorded a blank stage. `check` fails on it, and so does `build`. |
+| Verdict | Certain | Meaning |
+|---|---|---|
+| `ok` | | Nothing suspect. |
+| `NO COVER` | yes | `measure` found no magenta run, so the alignment is a guess. |
+| `BLACK?` | no | The brightest pixel at the midpoint is below `black_ymax`, so the page probably drew nothing. |
+| `TRUNCATED` | yes | The recording is shorter than requested by more than `truncated_slack_seconds`. |
+| `KATEX?` | no | The page warned that KaTeX never loaded or that a `data-tex` value could not be parsed, so an equation may be plain text or red. |
+| `STALLED` | yes | The page went longer than `stall_ms` between two frames while recording, so a reveal may have been captured late. The recorder already retried up to `retries` times. |
+| `PAGE ERROR` | yes | The page threw a script error or exposed no `window.__decktalk.catalog`, so the section recorded a blank stage. `build` stops on it. |
 
-Several verdicts may appear together, separated by spaces.
+Several verdicts may appear together, separated by spaces. `check` exits 1 when any
+recording has a certain verdict. A verdict that ends in a question mark is uncertain, so it
+exits 1 only with `--strict`.
 
 | Flag | Meaning |
 |---|---|
 | `--only N` | Only these section numbers. Repeat the flag for several. |
-| `--strict` | Exit 1 on a suspect recording. |
+| `--json`, `--strict`, `--no-fail` | As in [Machine-readable output](#machine-readable-output). |
 
 ## Assembling and checking the video
 
@@ -162,17 +229,28 @@ video. It prints the final path and length.
 |---|---|
 | `--nomix` | Narration and clip audio only. No beds, no effects. |
 | `--no-loudnorm` | Skip loudness normalization. |
-| `--strict` | Fail on a missing clip or recording instead of substituting a slate or black, and fail on a loudness miss. |
+| `--strict` | Fail on a missing clip or recording instead of substituting a slate or black, and fail on a loudness miss. A silent build skips the loudness pass, so it has no loudness to fail on. |
 | `--preset P` | The x264 preset for this run. `veryfast` for drafts. |
 | `--crf N` | The x264 quality for this run. |
 
 ### `decktalk verify [SECTION:CUE ...]`
 
-Confirms that every section opens on a real frame and that the narration is quiet in
-the last 150 ms before every cut. With arguments, it also confirms that the picture
-changed at each named cue, and measures how far from the cue the first changed frame
-sits. After a silent build the cue table gains an `a/v` column, the picture's first change
-measured against the placeholder click at the cued word. It exits 1 when any check fails.
+Confirms that every section opens on a real frame, that the narration is quiet in the
+last 150 ms before every cut, and that the picture changed at every cue in
+`build/audio/beats.json`, in section order and then cue time. For a cue that changed the
+picture it also measures how far from the cue the first changed frame sits. After a
+silent build the cue table gains an `a/v` column, the picture's first change measured
+against the placeholder click at the cued word. A cue that `cues.json` marks
+`"verify": false` is reported as `skipped` and never fails. Name cues as arguments or
+with `--cue` to check only those, in the order given. A cue named this way is measured
+even when `cues.json` marks it `"verify": false`.
+
+| Flag | Meaning |
+|---|---|
+| `SECTION:CUE …` | Check only these cues, such as `3:3.1eq`. |
+| `--cue SECTION:CUE` | One more cue to check. Repeat for several. It adds to any positional cues. |
+| `--only N` | Only the cue checks of these section numbers. Section starts and cuts are always checked. Repeat the flag for several. |
+| `--json`, `--strict`, `--no-fail` | As in [Machine-readable output](#machine-readable-output). |
 
 ```text
 sec   cut at  before cut  result
@@ -183,43 +261,69 @@ sec   cut at  before cut  result
  05   145.43   -120.0 dB  quiet
 
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.1eq             15.66    72.38    0.29    0.00    -20ms    -5ms  changed
-3:3.1p1             13.05    69.77    0.24    0.00    -10ms    +5ms  changed
-5:5.1cap             2.46   136.14    0.30    0.00    -60ms   -85ms  changed
+3:3.1p1             23.74    83.46    0.24    0.00    -20ms    -3ms  changed
+3:3.1eq             26.26    85.98    0.42    0.00    -20ms    -8ms  changed
+3:3.1eqA                -        -       -       -        -       -  skipped OPTED_OUT: cues.json sets "verify": false
+4:4.1change             -        -       -       -        -       -  skipped REFERENCE_CLAMPED: the cue at 0.00s leaves no frame before it past the fade-in
+5:5.1cap             2.46   143.66    0.26    0.00    -60ms   -60ms  changed
 ```
 
-| Result | Meaning |
-|---|---|
-| `ok` and `BLACK` | A section start on a real frame, or on a dark one. |
-| `quiet` and `SPEECH AT CUT` | The narration in the last `cut_window_seconds` before the cut is below `cut_max_db`, or it is not. Clip sections are not listed. |
-| `changed` | The cue changed the picture within `max_offset_frames` of its time, and within `max_av_frames` of the click after a silent build. |
-| `OFF CUE` | The picture changed, but the first change sits further from the cue, or from the click, than that. The note says by how much. |
-| `NO CHANGE` | The picture did not change enough, or no more than it was already changing. |
-| `MISSING` | The cue is unresolved or the section is not assembled. |
+The table above is shortened. A plain `decktalk verify` on the scaffold lists every
+resolved cue.
+
+| Result | Certain | Meaning |
+|---|---|---|
+| `ok` | | The section starts on a real frame. |
+| `BLACK` | yes | The section starts on a dark frame. |
+| `quiet` | | The narration in the last `cut_window_seconds` before the cut is below `cut_max_db`. Clip sections are not listed. |
+| `SPEECH AT CUT` | yes | The narration is still sounding there, so the cut is early. |
+| `changed` | | The cue changed the picture within `max_offset_frames` of its time, and within `max_av_frames` of the click after a silent build. |
+| `OFF CUE` | yes | The picture changed, but the first change sits further from the cue, or from the click, than that. The note says by how much. |
+| `NO CHANGE` | yes | The picture did not change enough, or no more than it was already changing. |
+| `UNRESOLVED` | yes | A cue named as an argument or with `--cue` is not in `beats.json`. |
+| `skipped` | | Nothing was measured, and the reason follows the verdict. `OPTED_OUT` means `cues.json` sets `"verify": false` on the cue. `REFERENCE_CLAMPED` means no reference frame fits after the section's fade-in and before the cue, which is usual for a `$start` cue. `SECTION_NOT_ASSEMBLED` means the section has no `NN-section.mp4`. `TOO_CLOSE_TO_END` means every probe would fall past the end of the section. |
+
+`verify` exits 1 on any certain result. A measured cue whose `a/v` column shows `-` after
+a silent build carries the reason `NO_CLICK` in the JSON, which means that no click was
+found within `click_search_seconds` of the cued word. That cue is still judged on its
+`offset`, so `NO_CLICK` is not a failure.
 
 [How it works](/concepts/how-it-works#what-verify-measures) explains the columns.
 
 ### `decktalk shots`
 
-Writes one PNG per step, or frames from a section while it plays with its real cues.
+Writes one PNG per step, one PNG of a step frozen at one of its cues, or frames from a
+section while it plays with its real cues.
 
 | Flag | Meaning |
 |---|---|
 | `--page F` | A page file. Repeat for several. The default is every page in `decktalk.toml`. |
 | `--step ID` | Only these step ids. Repeat for several. |
+| `--cue ID` | Freeze the step at the moment this cue fires. The step's cues fire in autoplay order up to and including this one, and an element that waits for a later cue of the step stays hidden. It needs exactly one `--step` and does not combine with `--section`. Repeat for one PNG per cue. |
 | `--section N` | Play this section with its resolved cues. |
 | `--at S` | Seconds after narration t=0 at which to capture. Repeat for several. The default is 0.5. |
 
-Step screenshots land at `build/shots/step-<id>.png`, in a subdirectory per page when
-there are several pages. Frames land at `build/shots/section-NN-at-<S>s.png`.
+Step screenshots land at `build/shots/step-<id>.png`, and a step frozen at a cue lands at
+`build/shots/step-<id>-cue-<cue>.png`, such as `step-3.1-cue-3.1eq.png`. Both go in a
+subdirectory per page when there are several pages. Frames land at
+`build/shots/section-NN-at-<S>s.png`.
+
+A step frozen at a cue opens the page as `?step=ID&cue=CUE`, which
+[the runtime reference](/reference/runtime#url-parameters) describes. Handlers still
+receive `ctx.frozen` as true, so a figure that draws its end state when frozen, such as
+the scaffold's scene 3 surface, shows that end state at every cue. When the id is not one
+of the step's cues, the page warns and the whole step is captured.
 
 ## Everything at once
 
 ### `decktalk build`
 
 Runs narrate, beats, record, measure, check, assemble, and verify in order and prints
-each stage's table. It stops with exit 1 when a cue phrase is not found, unless
-`--allow-unresolved` is given, and exits 1 when assembly or verification fails.
+each stage's table. It stops with exit 1 after the beats table when a cue phrase is not
+found, unless `--allow-unresolved` is given, and when a cue id appears nowhere in the page
+that plays it, unless `--allow-unknown` is given. It exits 1 when assembly or
+verification fails. The verify stage checks section starts and cuts and measures no cue,
+so run `decktalk verify` afterwards to measure every cue.
 
 | Flag | Meaning |
 |---|---|
@@ -227,6 +331,7 @@ each stage's table. It stops with exit 1 when a cue phrase is not found, unless
 | `--force` | Re-synthesize every section. |
 | `--only N` | Re-record only these sections. Repeat the flag for several. |
 | `--allow-unresolved` | Build even if some cue phrases were not found. |
+| `--allow-unknown` | Build even if some cue ids in `cues.json` appear nowhere in their page, for a page that builds its ids at run time. |
 | `--nomix`, `--no-loudnorm`, `--strict`, `--preset P`, `--crf N` | As for `assemble`. |
 
 ### `decktalk status`
@@ -258,6 +363,10 @@ captions build/out/my-lesson.vtt  ok
 chapters build/out/my-lesson.chapters.txt  ok
 ```
 
+| Flag | Meaning |
+|---|---|
+| `--json` | As in [Machine-readable output](#machine-readable-output). `status` makes no findings, so `--strict` and `--no-fail` change nothing. |
+
 ## Environment variables
 
 | Variable | Meaning |
@@ -273,10 +382,21 @@ chapters build/out/my-lesson.chapters.txt  ok
 
 | Code | Meaning |
 |---|---|
-| 0 | The command succeeded. |
-| 1 | An error, printed to stderr as `error: …`, or a failed check as described above. |
-| 2 | A usage error, such as an unknown flag or a missing command, with the usage printed. |
+| 0 | The command succeeded, or it found only uncertain verdicts, or `--no-fail` was given. |
+| 1 | An error, printed to stderr as `error: …`, or a certain finding from `beats`, `check`, `verify`, or `doctor`, or an uncertain one under `--strict`. `build` exits 1 unless assembly and verification both pass. |
+| 2 | A usage error, such as an unknown flag, a missing command, or `shots --cue` without exactly one `--step`, with the usage printed. |
 | 130 | The command was interrupted. |
 
-An unexpected exception prints `error: <type>: <message> (add -v for the traceback)` and
-exits 1, and `-v` re-raises it instead.
+| Finding | Kind | Reported by |
+|---|---|---|
+| `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER` | certain | `check` |
+| `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED` | certain | `verify` |
+| An unmatched phrase, an unknown cue id | certain | `beats` |
+| A missing tool, shown as `MISSING` | certain | `doctor` |
+| `BLACK?`, `KATEX?` | uncertain | `check` |
+| Speech shorter than `min_seconds` | uncertain | `beats` |
+
+`--no-fail` turns every finding into exit 0, and `ok` in the JSON still says whether the
+command passed. An error is not a finding, so a `DeckTalkError` exits 1 even with
+`--no-fail`. An unexpected exception prints `error: <type>: <message> (add -v for the
+traceback)` and exits 1, and `-v` re-raises it instead.

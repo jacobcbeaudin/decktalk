@@ -58,7 +58,9 @@ the assembly.
     a CDN, which fails offline. Run `setup`, then either run `init` again or copy the
     cached `katex` directory into `deck/` and point the two tags at `./katex/`.
     [Build in CI and offline](/guides/ci-and-offline#offline) has the tags. `decktalk doctor`
-    shows whether the cache is present.
+    shows whether the cache is present. The same verdict appears when the page warned
+    that a `data-tex` value could not be parsed, which a single backslash inside a
+    template literal usually causes.
   </Accordion>
   <Accordion title="PAGE ERROR in check, or a section that records as a white or blank slate">
     The page threw a script error before it could register its scenes, or it never
@@ -102,6 +104,17 @@ the assembly.
     and raise `max_offset_frames` only when the delay is intended.
   </Accordion>
 
+  <Accordion title="skipped for a cue in verify">
+    A skipped row measured nothing and never fails the check. The reason follows the
+    verdict. `REFERENCE_CLAMPED` means that no reference frame fits after the section's
+    fade-in and before the cue, which is usual for a `$start` cue. `SECTION_NOT_ASSEMBLED`
+    means the section has no `NN-section.mp4`, so run `decktalk assemble`.
+    `TOO_CLOSE_TO_END` means every probe in `probe_delays` would fall past the end of the
+    section, so move the cue earlier or shorten `probe_delays` under `[verify]`.
+    `OPTED_OUT` means `cues.json` sets `"verify": false` on the cue, and naming the cue on
+    the command line measures it anyway.
+  </Accordion>
+
   <Accordion title="SPEECH AT CUT in the before cut table">
     The audio in the last 150 ms before a section's cut is louder than -40 dBFS, so the
     voice was still sounding when the picture cut. Raise `min_tail_seconds` under
@@ -120,7 +133,8 @@ the assembly.
     sidecar reports a `cover` lead method, re-record the section with `--only N`, and
     confirm that the `offset` column is small on its own. A `-` in the column means no
     click sits within `click_search_seconds` of the cue, which is usual for a cue on
-    `$start` or `$end` rather than on a word.
+    `$start` or `$end` rather than on a word. The JSON row then carries the reason
+    `NO_CLICK`, and the cue is still judged on its `offset`.
   </Accordion>
 
   <Accordion title="data-sync text not found in the spoken words">
@@ -148,12 +162,24 @@ the assembly.
     `decktalk record --only N` followed by `decktalk measure --only N`, then assemble.
   </Accordion>
 
+  <Accordion title="N cue id(s) in cues.json appear nowhere in the page that plays them">
+    `beats` reads the page of every section with cues and looks for each cue id as a
+    quoted literal, such as `data-cue="4.1answer"`, a key of a step's `cues` object, or a
+    key of an `on` handler. An id it cannot find is a typo in `cues.json` or a step that
+    was never given the cue, so the page would never reveal it. The beats table notes
+    `4.1answer: not in deck/index.html`, `beats` exits 1, and `build` stops after the
+    beats table. Add `data-cue="4.1answer"` to the step, fix the id in `cues.json`, or pass
+    `--allow-unknown` when the page builds its ids at run time and never spells them out.
+    [Cues](/concepts/cues#unknown-cue-ids) has the rule.
+  </Accordion>
+
   <Accordion title="unknown cue id in the recorder's log">
-    The page recorded a cue in `?beats=` that no step owns. `beats` resolves phrases
-    without checking ids against the page, so a typo in `cues.json` shows up here. The
-    warning is also written to the sidecar. Check the id against the step ids and their
-    `cues` lists, and remember that a cue belongs to the step whose id is its longest
-    prefix. [The page contract](/concepts/page-contract#cue-ownership) has the rules.
+    The page received a cue in `?beats=` that no step owns. The check in `beats` catches
+    an id that the page never mentions, so this warning means the page mentions the id
+    but no step claims it. The warning is also written to the sidecar. Check the id
+    against the step ids and their `cues` lists, and remember that a cue belongs to the
+    step whose id is its longest prefix.
+    [The page contract](/concepts/page-contract#cue-ownership) has the rules.
   </Accordion>
 
   <Accordion title="The clip plays as a titled slate">
@@ -168,15 +194,24 @@ the assembly.
     the video.
   </Accordion>
 
+  <Accordion title="is a clip between page sections">
+    The narration is one continuous track placed at the first page section, so a clip
+    between two page sections would play over the words of the section after it. Move the
+    clip before the first page section or after the last one, or make it a page section.
+    [Add a clip section](/guides/clip-section#where-a-clip-may-sit) explains the rule.
+  </Accordion>
+
   <Accordion title="The index page is empty, or window.__decktalk is missing">
     The page does not include `decktalk-runtime.js`, or the script tag comes after the
     scene definitions. Include the runtime first, then define scenes.
   </Accordion>
 
-  <Accordion title="Loudness warnings on a silent build">
-    A silent build's mix is clicks and silence, so the loudness pass has nothing to measure and
-    reports a miss. The warning is expected and harmless. Do not combine `--silent`
-    with `--strict`, which turns the miss into an error.
+  <Accordion title="[loud] skipped on a silent build">
+    A silent build's narration is clicks and silence, so there is no speech to normalize.
+    `assemble` skips the loudness pass and logs
+    `[loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, and the clicks stay at -24 dBFS for the a/v check`.
+    The clicks keep their level so that `verify` can find them, and `--strict` has no
+    loudness to fail on. A voiced build runs the pass as usual.
   </Accordion>
 
   <Accordion title="Windows">

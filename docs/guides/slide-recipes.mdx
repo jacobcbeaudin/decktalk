@@ -24,7 +24,8 @@ reaches it, so a line on the slide keeps pace with the narration. The scaffold u
 the script line of its cold open and for the one line under the end card. The text
 must be word for word what the voice says, because the runtime matches it against the
 section's spoken words, ignoring case and punctuation, and prefers the run nearest the
-cue. Give it `data-fx="none"`, since a fade on the container fights the per-word reveal.
+cue. It needs no `data-fx`. The runtime gives a synced element no container animation,
+because a fade on the container would fight the per-word reveal.
 
 ```md script.md
 ## 1. Open
@@ -65,20 +66,20 @@ DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
     <div class="slide">
       <div class="stack">
         <h1 class="hero" data-cue="1.1a">My lesson</h1>
-        <p class="line" data-cue="1.1b" data-sync data-fx="none">This is a narrated lesson, cut to the word.</p>
+        <p class="line" data-cue="1.1b" data-sync>This is a narrated lesson, cut to the word.</p>
         <div class="lower" data-cue="1.1c" data-type="40" data-fx="fade">decktalk · scene 1</div>
       </div>
     </div>` },
 ]});
 
 DeckTalk.scene(5, { name: "Close", steps: [
-  { id: "5.1", hold: 10, render: () => `
+  { id: "5.1", hold: 10, cues: { "5.1a": 2, "5.1b": 4.5, "5.1c": 7 }, render: () => `
     <div class="slide">
       <p class="eyebrow">The whole idea</p>
       <div class="stack">
-        <p class="line" data-cue="5.1a" data-sync data-fx="none">Write the script.</p>
-        <p class="line" data-cue="5.1b" data-sync data-fx="none">Narrate it in your own voice.</p>
-        <p class="line" data-cue="5.1c" data-sync data-fx="none">Every reveal lands on its word.</p>
+        <p class="line" data-cue="5.1a" data-sync>Write the script.</p>
+        <p class="line" data-cue="5.1b" data-sync>Narrate it in your own voice.</p>
+        <p class="line" data-cue="5.1c" data-sync>Every reveal lands on its word.</p>
       </div>
     </div>` },
 ]});
@@ -88,7 +89,9 @@ DeckTalk.scene(5, { name: "Close", steps: [
 The cue mounts the line, and the words arrive from there. A line whose text differs from
 the script by one word appears whole, and the recorder logs
 `data-sync text not found in the spoken words`. In a browser, `?scene=5` shows each
-line whole, because the preview has no word times.
+line whole, because the preview has no word times. To check the line at one cue without
+playing the section, open `?step=5.1&cue=5.1b`. Step 5.1 names its cues in `cues`, so the
+page fires them up to `5.1b` and leaves `5.1c` hidden.
 [The runtime reference](/reference/runtime#data-attributes-inside-a-step) has the rules.
 
 ## A derivation that appears line by line
