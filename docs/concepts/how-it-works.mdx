@@ -30,7 +30,9 @@ project and can be run on its own by the command of the same name, and every sta
 | `verify` | This stage confirms that every section opens on a real frame, that the narration is quiet just before every cut, and that each cue in `beats.json` changed the picture on time. After a silent build it also measures the picture against the placeholder click at the cued word. Inside `build` it checks section starts and cuts only. | nothing |
 
 A clip section skips `narrate`, `record`, and `measure`, and its own audio plays for its
-span. [Build artifacts](/reference/artifacts) gives the shape of every file.
+span. A clip may also sit between page sections. The narration then pauses for the clip,
+and `assemble` starts each stretch of the narration track where its first page section
+starts in the video, so captions, cues, and the a/v check all resume after the clip. [Build artifacts](/reference/artifacts) gives the shape of every file.
 
 ## Why the cuts are exact
 

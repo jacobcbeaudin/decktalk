@@ -105,11 +105,9 @@ def test_project_loads_sections_in_order(tmp_path):
             "missing required key 'cue'",
         ),
         (
-            "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\nclip = 'c.mp4'\n"
+            "[[section]]\nnumber = 1\npage = 'a.html'\nhold_seconds = 2\n[[section]]\nnumber = 2\nclip = 'c.mp4'\n"
             "[[section]]\nnumber = 3\npage = 'a.html'\n",
-            "number=2 is a clip between page sections 1 and 3. The narration is one continuous track placed at "
-            "the first page section, so a clip in the middle would play over the words of section 3. Move the "
-            "clip before section 1 or after section 3, or make it a page section.",
+            r"hold_seconds is allowed only on the last page section \(3\)",
         ),
     ],
 )
@@ -125,6 +123,17 @@ def test_project_allows_clips_at_both_edges(tmp_path):
     )
     p = Project.load(write_project(tmp_path, toml), environ={})
     assert p.clip_numbers == {0, 9} and [s.number for s in p.page_sections] == [1, 2]
+
+
+def test_project_allows_clips_between_page_sections(tmp_path):
+    toml = (
+        "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\nclip = 'broll.mp4'\n"
+        "[[section]]\nnumber = 3\nclip = 'more.mp4'\n[[section]]\nnumber = 4\npage = 'a.html'\n"
+        "hold_seconds = 1\n"
+    )
+    p = Project.load(write_project(tmp_path, toml), environ={})
+    assert [s.number for s in p.sections] == [1, 2, 3, 4]
+    assert p.clip_numbers == {2, 3} and [s.number for s in p.page_sections] == [1, 4]
 
 
 def test_project_missing_file_message(tmp_path):
@@ -575,6 +584,131 @@ def test_plan_mix_delays_clip_audio_and_drops_the_limiter(tmp_path):
     ]
     paths = output_paths(p)
     assert paths["srt"].name == "t.srt" and paths["vtt"].name == "t.vtt" and paths["chapters"].name == "t.chapters.txt"
+
+
+MID_CLIP_TOML = """
+[project]
+name = "t"
+
+[[section]]
+number = 1
+page = "deck/index.html"
+
+[[section]]
+number = 2
+clip = "media/broll.mp4"
+
+[[section]]
+number = 3
+page = "deck/index.html"
+
+[[section]]
+number = 4
+page = "deck/index.html"
+"""
+
+
+def _mid_clip_plan(tmp_path):
+    """Pages 1, 3 and 4 around a 3-second clip at 2, with the rows and timeline assemble would build."""
+    from decktalk.stages.assemble import RenderedSection
+
+    p = Project.load(write_project(tmp_path, MID_CLIP_TOML), environ={})
+    tl = Timeline(
+        narration="narration.mp3",
+        total_seconds=6.0,
+        sections={
+            "01": TimelineSection("A", 0.0, 2.0, 2.0, 1.6, _spoken("alpha beta", 0.7)),
+            "03": TimelineSection("C", 2.0, 4.5, 2.5, 4.1, _spoken("gamma delta", 2.1)),
+            "04": TimelineSection("D", 4.5, 6.0, 1.5, 5.8, _spoken("epsilon", 4.6)),
+        },
+    )
+    rows = [
+        RenderedSection(p.sections[0], tmp_path / "01.mp4", 2.0, "page"),
+        RenderedSection(p.sections[1], tmp_path / "02.mp4", 3.0, "clip", audio=tmp_path / "broll.mp4"),
+        RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.52, "page"),
+        RenderedSection(p.sections[3], tmp_path / "04.mp4", 1.48, "page"),
+    ]
+    return p, tl, rows
+
+
+def test_narration_runs_pause_for_a_clip_between_page_sections(tmp_path):
+    from decktalk.stages.assemble import NarrationRun, narration_offsets, narration_runs, section_starts
+
+    p, tl, rows = _mid_clip_plan(tmp_path)
+    starts = section_starts(rows)
+    assert starts == {"01": 0.0, "02": 2.0, "03": 5.0, "04": 7.52}
+    assert narration_runs(rows, tl, starts) == [
+        NarrationRun(keys=("01",), at=0.0, start=0.0, end=2.0),
+        NarrationRun(keys=("03", "04"), at=5.0, start=2.0, end=None),
+    ]
+    # Every section after the clip hears its words one clip later than the track holds them.
+    assert narration_offsets(rows, tl, starts) == {"01": 0.0, "03": 3.0, "04": 3.0}
+    # Without a clip between page sections there is one run, and every section shares its offset.
+    edge = [rows[1], rows[0], rows[2], rows[3]]
+    edge_starts = section_starts(edge)
+    assert len(narration_runs(edge, tl, edge_starts)) == 1
+    assert narration_offsets(edge, tl, edge_starts) == {"01": 3.0, "03": 3.0, "04": 3.0}
+
+
+def test_plan_mix_places_each_narration_run_at_its_section_start(tmp_path):
+    from decktalk.stages.assemble import plan_mix
+
+    p, tl, rows = _mid_clip_plan(tmp_path)
+    plan = plan_mix(p, rows, tl, nomix=True)
+    assert plan.total == 9.0
+    narration = str(p.audio_dir / "narration.mp3")
+    assert [path for mode, path in plan.inputs] == [
+        "anullsrc=r=48000:cl=stereo",
+        narration,
+        narration,
+        str(rows[1].audio),
+    ]
+    assert "atrim=start=0.000:end=2.000,asetpts=PTS-STARTPTS,adelay=0:all=1[narr0]" in plan.filter
+    assert "atrim=start=2.000,asetpts=PTS-STARTPTS,adelay=5000:all=1[narr1]" in plan.filter
+    assert "adelay=2000:all=1[clip02]" in plan.filter
+    assert plan.filter.endswith("[anchor][narr0][narr1][clip02]amix=inputs=4:duration=first:normalize=0[a]")
+    # The underscore ducks under each section where it plays, and under the clip.
+    music = tmp_path / "music.mp3"
+    music.write_bytes(b"x")
+    p.mix = type(p.mix)(underscore=str(music))
+    ducked = plan_mix(p, rows, tl, nomix=False).filter
+    for a, b in [(0.0, 1.6), (5.0, 7.1), (7.5, 8.8), (2.0, 5.0)]:
+        assert f"(t-{a:.3f})" in ducked and f"({b:.3f}-t)" in ducked, (a, b)
+
+
+def test_captions_and_chapters_skip_over_a_clip_between_page_sections(tmp_path):
+    from decktalk.stages.assemble import build_captions, build_chapters, narration_offsets, section_starts
+
+    p, tl, rows = _mid_clip_plan(tmp_path)
+    cues = build_captions(tl, narration_offsets(rows, tl, section_starts(rows)))
+    assert [(c.text, c.start) for c in cues] == [("alpha beta", 0.7), ("gamma delta", 5.1), ("epsilon", 7.6)]
+    assert all(c.end <= 2.0 or c.start >= 5.0 for c in cues)  # nothing is captioned over the clip
+    assert cues[0].end <= 2.0
+    chapters = build_chapters(rows)
+    assert [(c.start, c.end, c.title) for c in chapters] == [
+        (0.0, 2.0, "Section 1"),
+        (2.0, 5.0, "Section 2"),
+        (5.0, 7.52, "Section 3"),
+        (7.52, 9.0, "Section 4"),
+    ]
+
+
+def test_click_search_stays_inside_the_section(monkeypatch):
+    from decktalk.media import ffmpeg as ffmpeg_module
+    from decktalk.stages.verify import click_offset_ms
+
+    calls: list[tuple[float, float]] = []
+
+    def fake_span(path, start, seconds, *, sample_rate=48000):
+        calls.append((round(start, 3), round(seconds, 3)))
+        return [0] * 100 + [2000] + [0] * 100
+
+    monkeypatch.setattr(ffmpeg_module, "pcm_span", fake_span)
+    assert click_offset_ms(Path("f.mp4"), 10.0, 0.25) is not None
+    assert click_offset_ms(Path("f.mp4"), 5.1, 0.25, floor=5.0, ceiling=9.0) is not None
+    assert click_offset_ms(Path("f.mp4"), 8.9, 0.25, floor=5.0, ceiling=9.0) is not None
+    assert click_offset_ms(Path("f.mp4"), 9.5, 0.25, floor=5.0, ceiling=9.0) is None
+    assert calls == [(9.75, 0.5), (5.0, 0.35), (8.65, 0.35)]
 
 
 def test_loudness_problems_report_peaks_and_missed_targets(tmp_path):

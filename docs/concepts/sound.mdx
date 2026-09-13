@@ -12,7 +12,7 @@ bring your own files, or generate them with `decktalk soundscape`.
 
 | Part | Source | Behavior |
 |---|---|---|
-| Narration | `build/audio/narration.mp3` | The narration is always present. It begins at the start of the first page section and runs continuously. |
+| Narration | `build/audio/narration.mp3` | The narration is always present. It begins at the start of the first page section and pauses for every clip between page sections, resuming at the next page section. |
 | Clip audio | each clip file | Clip audio plays for the clip's span, trimmed to its picture and faded over twenty milliseconds at both ends. |
 | Underscore | `mix.underscore` | The underscore loops for the length of the video, fades in and out, and ducks by `underscore_duck_db` under every spoken span. |
 | Ambience | `mix.ambience` | Ambience plays under sections that set `ambience = true`, with a ramp at each edge and a short pad on either side. |
