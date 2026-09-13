@@ -179,6 +179,24 @@ def test_scene_3_draws_its_surface_in_webgl(page, deck):
     if size is None:
         pytest.skip("no WebGL context in this Chromium")
     assert size == [960, 570]
+    assert page.evaluate("() => document.querySelector('.fig3 canvas').dataset.warm") is None
+    assert not page.errors
+
+
+def test_scene_3_warms_its_figure_before_the_clock_starts(page, deck):
+    """In cue mode the figure is drawn off the page while it loads, and the step mounts that canvas."""
+    page.goto(f"{deck.as_uri()}?scene=3&t0=signal&beats={full_beats(deck, '3')}")
+    page.evaluate("() => window.__sceneReady")
+    assert page.evaluate("() => document.querySelector('.fig3')") is None
+    page.evaluate("() => DeckTalk.startClock()")
+    page.wait_for_function("() => window.__decktalk.fired.includes('3.1min')", timeout=5000)
+    canvases = page.evaluate(
+        "() => [...document.querySelectorAll('.fig3 canvas')].map((c) => [c.width, c.height, c.dataset.warm])"
+    )
+    if not canvases:
+        pytest.skip("no WebGL context in this Chromium")
+    assert canvases == [[960, 570, "1"]]
+    assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
 
 
