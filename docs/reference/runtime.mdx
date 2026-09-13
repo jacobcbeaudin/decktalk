@@ -253,6 +253,20 @@ A page that sets its own promise, for an image or for data, replaces all of that
 [Slide recipes](/guides/slide-recipes#a-screenshot-slide-that-waits-for-the-image)
 shows the pattern.
 
+A page can also add work to the runtime's wait instead of replacing it. The runtime sets
+its promise in its own `DOMContentLoaded` listener, so a listener registered after the
+runtime's script tag finds the promise already set and can extend it. The scaffold's scene 3
+does this to draw its WebGL figure once before narration starts. Headless Chromium draws
+WebGL in software, and the first draw of each object is slow, so doing it here keeps that
+cost under the cover instead of on a cue.
+
+```js deck/index.html
+document.addEventListener("DOMContentLoaded", () => {
+  const warmed = warmFigure(); // a Promise that resolves once the figure has drawn
+  window.__sceneReady = Promise.all([window.__sceneReady, warmed]).then(([ready]) => ready);
+});
+```
+
 ## CSS hooks
 
 The runtime creates `#dt-stage` unless the page already has an element with that id, so a
