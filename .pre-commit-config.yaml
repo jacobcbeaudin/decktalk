@@ -1,4 +1,4 @@
-# Install once per clone: `pre-commit install` (installs both the pre-commit and commit-msg hooks).
+# Install once per clone: `uvx pre-commit install` (installs both the pre-commit and commit-msg hooks).
 default_install_hook_types: [pre-commit, commit-msg]
 
 repos:

@@ -2,8 +2,9 @@
 # requires-python = ">=3.12"
 # dependencies = ["playwright>=1.50", "fonttools[woff]>=4.50"]
 # ///
-"""Generate every graphic from one source: hero, how-it-works (wide and stacked), alignment,
-mark, wordmark, favicon. The README reads assets/, the docs site reads docs/images/ and docs/logo/.
+"""Generate every graphic from one source. The graphics are the hero, how-it-works (wide and
+stacked), alignment, the verify strip, the rebuild lanes, the mark, the wordmark, and the favicon.
+The README reads assets/, and the docs site reads docs/images/ and docs/logo/.
 
     uv run scripts/build_assets.py            # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, docs/favicon.svg
     uv run scripts/build_assets.py --check    # exit 1 if the committed files would change
@@ -365,10 +366,10 @@ def stage_svg(i: int, pal: dict[str, str], x: int, y: int) -> str:
       <text class="mnum mp" x="160" y="50">3×</text></g>"""
     else:
         art = """<g transform="translate(0 100)">
-      <rect class="block fr f1" x="0" y="0" width="50" height="36" rx="8"/>
-      <rect class="block fr f2" x="58" y="0" width="50" height="36" rx="8"/>
-      <rect class="block fr f3" x="116" y="0" width="50" height="36" rx="8"/>
-      <rect class="block fr f4" x="174" y="0" width="50" height="36" rx="8"/>
+      <rect class="bar fr f1" x="0" y="0" width="50" height="36" rx="8"/>
+      <rect class="bar fr f2" x="58" y="0" width="50" height="36" rx="8"/>
+      <rect class="bar fr f3" x="116" y="0" width="50" height="36" rx="8"/>
+      <rect class="bar fr f4" x="174" y="0" width="50" height="36" rx="8"/>
       <g class="out"><rect class="accent" x="0" y="0" width="224" height="36" rx="8"/><text class="lab on-accent" x="14" y="22">OUT.MP4</text></g></g>"""
     return f"""  <g transform="translate({x} {y})">
     <text class="lab n{i}" x="0" y="80">{lab}</text>
@@ -519,6 +520,223 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
 """
 
 
+# ---- verify strip -----------------------------------------------------------------------------
+
+# Cue 3:3.1eq of the silent v10 build, read from `decktalk verify 3:3.1eq --json` and from the
+# per-frame series that the onset scan reads. The lead and the probe delays are the VerifyConfig
+# defaults, and the offset limit is max_offset_frames (2) at 25 fps.
+VS_FROM, VS_TO = -3.3, 1.6  # seconds from the cue that the time axis spans
+VS_LEAD = 0.1
+VS_PROBES = ((0.7, 0.26), (1.5, 0.39))  # delay after the cue in seconds, and the changed share in percent
+VS_CONTROLS = (0.0, 0.53)  # the two control shares for the reported 1.5 s probe, nearest the reference first
+VS_FRAMES = ((-110, 0.0), (-70, 0.1235), (-30, 0.2994), (10, 0.3843), (50, 0.3850), (90, 0.3858), (130, 0.3866))
+VS_ONSET_MS = -30
+VS_LIMIT_MS = 80
+MINUS = "&#8722;"
+
+
+def _signed(value: float, digits: int, unit: str) -> str:
+    """A number with a true minus sign or a plus sign, so negative times read cleanly in the figure."""
+    sign = MINUS if value < 0 else ("+" if value > 0 else "")
+    return f"{sign}{abs(value):.{digits}f}{unit}"
+
+
+def verify_strip(pal: dict[str, str], background: bool) -> str:
+    """How `decktalk verify` measures one cue: the reference, the probes, the control spans, and the onset."""
+    w, h = 1200, 300
+    x0, x1 = 60, 770
+
+    def tx(t: float) -> float:
+        return x0 + (t - VS_FROM) / (VS_TO - VS_FROM) * (x1 - x0)
+
+    css = [font_face()]
+    css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
+    css.append(f".tl{{font:500 12px {MONO};fill:{pal['mute']}}}.tl.acc{{fill:{pal['accent']}}}")
+    css.append(f".val{{font:500 11px {MONO};fill:{pal['ink']}}}.val.on{{fill:{pal['on_accent']}}}")
+    css.append(f".note{{font:600 13px {SANS};fill:{pal['ink']}}}.note.acc{{fill:{pal['accent']}}}")
+    css.append(f".cap{{font:400 14px {SANS};fill:{pal['mute']}}}")
+    css.append(f".block{{fill:{pal['block']}}}.bar{{fill:{pal['bar']}}}.accent{{fill:{pal['accent']}}}")
+    css.append(f".span{{fill:{pal['block']};stroke:{pal['bar']};stroke-width:1}}")
+    css.append(f".end{{fill:{pal['ink']}}}.end.on{{fill:{pal['on_accent']}}}")
+    css.append(f".axis{{stroke:{pal['bar']};stroke-width:1.5}}.tk{{stroke:{pal['mute']};stroke-width:1.5}}")
+    css.append(f".cue{{stroke:{pal['accent']};stroke-width:2}}")
+    css.append(f".ref{{stroke:{pal['ink']};stroke-width:1.5;stroke-dasharray:3 3}}")
+    css.append(f".guide{{stroke:{pal['hair']};stroke-width:1}}")
+    css.append(f".cell{{fill:{pal['bg']};stroke:{pal['bar']};stroke-width:1}}")
+    css.append(f".cell.on{{stroke:{pal['accent']};stroke-width:2.5}}")
+    css.append(f".edge{{stroke:{pal['mute']};stroke-width:1;stroke-dasharray:3 3}}")
+
+    cue_x, ref_x = tx(0.0), tx(-VS_LEAD)
+    axis_y = 196
+    parts: list[str] = []
+    # Faint guides drop from each measured time to the axis.
+    for t in (VS_FROM, -1.7, VS_PROBES[0][0], VS_PROBES[1][0]):
+        parts.append(f'<line class="guide" x1="{tx(t):.1f}" y1="92" x2="{tx(t):.1f}" y2="{axis_y}"/>')
+    parts.append(f'<line class="ref" x1="{ref_x:.1f}" y1="84" x2="{ref_x:.1f}" y2="{axis_y + 6}"/>')
+
+    # The control spans for the reported probe. Each is as long as the probe's span and ends where the next begins.
+    best = max(range(len(VS_PROBES)), key=lambda i: VS_PROBES[i][1])
+    delay, _ = VS_PROBES[best]
+    span = delay + VS_LEAD
+    ctl_y = 88
+    spans = []
+    for n, share in enumerate(VS_CONTROLS):
+        b = -VS_LEAD - n * span
+        a = b - span
+        spans.append((a, b, share))
+    quiet_a, quiet_b, _ = min(spans, key=lambda item: item[2])
+    parts.append(
+        f'<text class="note" x="{(tx(quiet_a) + tx(quiet_b)) / 2:.1f}" y="{ctl_y - 10}" text-anchor="middle">ctl % is the smaller</text>'
+    )
+    for a, b, share in spans:
+        xa, xb = tx(a) + 1, tx(b) - 1
+        parts.append(f'<rect class="span" x="{xa:.1f}" y="{ctl_y}" width="{xb - xa:.1f}" height="20" rx="4"/>')
+        parts.append(
+            f'<text class="val" x="{(xa + xb) / 2:.1f}" y="{ctl_y + 14}" text-anchor="middle">{share:.2f}%</text>'
+        )
+        for ex in (xa + 6, xb - 6):
+            parts.append(f'<circle class="end" cx="{ex:.1f}" cy="{ctl_y + 10}" r="2.5"/>')
+
+    # The probes, each measured from the reference. The accent marks the probe that the row reports.
+    for i, (delay, share) in enumerate(VS_PROBES):
+        y = 124 + i * 30
+        xb = tx(delay)
+        on = i == best
+        parts.append(
+            f'<rect class="{"accent" if on else "bar"}" x="{ref_x:.1f}" y="{y}" width="{xb - ref_x:.1f}" height="20" rx="4"/>'
+        )
+        label = f"{share:.2f}%, the best probe" if on else f"{share:.2f}%"
+        parts.append(
+            f'<text class="val{" on" if on else ""}" x="{xb - 12:.1f}" y="{y + 14}" text-anchor="end">{label}</text>'
+        )
+        for ex in (ref_x + 6, xb - 6):
+            parts.append(f'<circle class="end{" on" if on else ""}" cx="{ex:.1f}" cy="{y + 10}" r="2.5"/>')
+
+    parts.append(f'<line class="axis" x1="{x0}" y1="{axis_y}" x2="{x1}" y2="{axis_y}"/>')
+    parts.append(f'<line class="cue" x1="{cue_x:.1f}" y1="50" x2="{cue_x:.1f}" y2="{axis_y + 6}"/>')
+    parts.append(f'<text class="note acc" x="{cue_x + 8:.1f}" y="62">word start + offset</text>')
+    marks = [
+        (VS_FROM, _signed(VS_FROM, 1, " s"), "start", ""),
+        (-1.7, _signed(-1.7, 1, " s"), "middle", ""),
+        (-VS_LEAD, f"reference {_signed(-VS_LEAD, 1, ' s')}", "end", ""),
+        (0.0, "cue", "start", " acc"),
+        (VS_PROBES[0][0], f"probe {_signed(VS_PROBES[0][0], 1, ' s')}", "middle", ""),
+        (VS_PROBES[1][0], f"probe {_signed(VS_PROBES[1][0], 1, ' s')}", "middle", ""),
+    ]
+    for t, text, anchor, cls in marks:
+        x = tx(t)
+        parts.append(f'<line class="tk" x1="{x:.1f}" y1="{axis_y - 5}" x2="{x:.1f}" y2="{axis_y + 5}"/>')
+        lx = x - 6 if anchor == "end" else (x + 6 if t == 0.0 else x)
+        parts.append(f'<text class="tl{cls}" x="{lx:.1f}" y="{axis_y + 22}" text-anchor="{anchor}">{text}</text>')
+
+    # The inset: seven 40 ms frames around the cue, each with its changed share against the reference.
+    ix0, ix1 = 830, 1140
+    ms_from, ms_to = -135, 155
+
+    def mx(ms: float) -> float:
+        return ix0 + (ms - ms_from) / (ms_to - ms_from) * (ix1 - ix0)
+
+    band_a, band_b = mx(-VS_LIMIT_MS), mx(VS_LIMIT_MS)
+    parts.append(f'<rect class="block" x="{band_a:.1f}" y="48" width="{band_b - band_a:.1f}" height="154"/>')
+    for bx in (band_a, band_b):
+        parts.append(f'<line class="edge" x1="{bx:.1f}" y1="48" x2="{bx:.1f}" y2="202"/>')
+    parts.append(f'<text class="tl" x="{band_a + 8:.1f}" y="64">&#177;{VS_LIMIT_MS} ms</text>')
+    cell_w = (mx(40) - mx(0)) - 8
+    top, base = 76, 190
+    peak = 0.4
+    for ms, share in VS_FRAMES:
+        cx = mx(ms)
+        on = ms == VS_ONSET_MS
+        parts.append(
+            f'<rect class="cell{" on" if on else ""}" x="{cx - cell_w / 2:.1f}" y="{top}" width="{cell_w:.1f}" height="{base - top + 6}" rx="4"/>'
+        )
+        if share > 0:
+            bh = share / peak * (base - top - 24)
+            parts.append(
+                f'<rect class="{"accent" if on else "bar"}" x="{cx - 8:.1f}" y="{base - bh:.1f}" width="16" height="{bh:.1f}" rx="2"/>'
+            )
+            parts.append(
+                f'<text class="val" x="{cx:.1f}" y="{base - bh - 5:.1f}" text-anchor="middle" style="font-size:10px">{share:.2f}</text>'
+            )
+        else:
+            parts.append(f'<text class="tl" x="{cx:.1f}" y="{base - 4}" text-anchor="middle">ref</text>')
+        parts.append(
+            f'<text class="tl{" acc" if on else ""}" x="{cx:.1f}" y="{axis_y + 22}" text-anchor="middle">{_signed(ms, 0, "")}</text>'
+        )
+    # The cue falls inside the +10 ms frame's span, so it is marked above the cells rather than drawn through them.
+    parts.append(f'<line class="cue" x1="{mx(0):.1f}" y1="50" x2="{mx(0):.1f}" y2="{top - 4}"/>')
+    parts.append(f'<text class="tl acc" x="{mx(0) + 6:.1f}" y="64">cue</text>')
+
+    probe_share = VS_PROBES[best][1]
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
+  <title id="t">How verify measures one cue</title>
+  <desc id="d">A time axis runs from 3.3 seconds before cue 3.1eq to 1.6 seconds after it. The reference frame sits 0.1 seconds before the cue, and probes sit 0.7 and 1.5 seconds after it. The 1.5 second probe is the one reported. Its two 1.6 second control spans end at the reference one after the other, and the smaller of their shares, 0.00 percent, is the control. An inset shows seven 40 millisecond frames around the cue with the share of pixels each one changed, and the frame 30 milliseconds before the cue is outlined as the onset, inside the 80 millisecond limit.</desc>
+  <defs><style>{chr(10).join(css)}</style></defs>
+  {bg_rect(pal, w, h, background)}
+  <text class="lab" x="{x0}" y="36">CUE 3:3.1EQ, SILENT BUILD</text>
+  <text class="lab" x="{ix0}" y="36">FRAMES AROUND THE CUE, MS</text>
+  {"".join(parts)}
+  <text class="cap" x="{x0}" y="{h - 42}">The best probe changed {probe_share:.2f}% of the picture, and its smaller control changed {min(VS_CONTROLS):.2f}%.</text>
+  <text class="cap" x="{x0}" y="{h - 20}">A control span is as long as its probe's span, and only its first and last frames are compared.</text>
+  <text class="cap" x="{ix0}" y="{h - 42}">The outlined frame is the onset, at {abs(VS_ONSET_MS)} ms</text>
+  <text class="cap" x="{ix0}" y="{h - 20}">before the cue and inside the limit.</text>
+</svg>
+"""
+
+
+# ---- rebuild lanes ----------------------------------------------------------------------------
+
+LANES = (
+    ("narrate (cached)", {3}, "voiced", "cached"),
+    ("record, plain build", {1, 2, 3, 4, 5}, "recorded", ""),
+    ("record, --only 3", {3}, "recorded", "kept"),
+)
+
+
+def rebuild_lanes(pal: dict[str, str], background: bool) -> str:
+    """What runs again after section 3 is edited, in narration and in the two kinds of build."""
+    w, h = 1200, 320
+    left, col0, col_w, gap = 60, 330, 162, 12
+    cell_w = col_w - gap
+    css = [font_face()]
+    css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
+    css.append(f".ln{{font:500 14px {MONO};fill:{pal['ink']}}}")
+    css.append(f".ct{{font:500 13px {MONO};fill:{pal['mute']}}}.ct.on{{fill:{pal['on_accent']}}}")
+    css.append(f".cell{{fill:{pal['block']};stroke:{pal['hair']};stroke-width:1}}.accent{{fill:{pal['accent']}}}")
+    rows = [f'<text class="lab" x="{left}" y="44">LANE</text>']
+    for n in range(5):
+        cx = col0 + n * col_w + cell_w / 2
+        rows.append(f'<text class="lab" x="{cx:.1f}" y="44" text-anchor="middle">SECTION {n + 1}</text>')
+    for i, (name, lit, on_text, off_text) in enumerate(LANES):
+        y = 64 + i * 58
+        rows.append(f'<text class="ln" x="{left}" y="{y + 26}">{name}</text>')
+        for n in range(5):
+            x = col0 + n * col_w
+            on = (n + 1) in lit
+            rows.append(
+                f'<rect class="{"accent" if on else "cell"}" x="{x}" y="{y}" width="{cell_w}" height="40" rx="8"/>'
+            )
+            text = on_text if on else off_text
+            if text:
+                rows.append(
+                    f'<text class="ct{" on" if on else ""}" x="{x + cell_w / 2:.1f}" y="{y + 25}" text-anchor="middle">{text}</text>'
+                )
+    y = 64 + 3 * 58 + 10
+    rows.append(f'<text class="ln" x="{left}" y="{y + 26}">assemble</text>')
+    rows.append(f'<rect class="accent" x="{col0}" y="{y}" width="{4 * col_w + cell_w}" height="40" rx="8"/>')
+    rows.append(
+        f'<text class="ct on" x="{col0 + 16}" y="{y + 25}">Every section is cut and joined into one mp4.</text>'
+    )
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
+  <title id="t">What runs again after an edit to section 3</title>
+  <desc id="d">Five section columns and three lanes. In the narrate lane only section 3 is voiced, and the other sections come from the cache. A plain build records all five sections. A build with --only 3 records only section 3 and keeps the other recordings. Both builds assemble every section into one mp4.</desc>
+  <defs><style>{chr(10).join(css)}</style></defs>
+  {bg_rect(pal, w, h, background)}
+  {"".join(rows)}
+</svg>
+"""
+
+
 # ---- wordmark ---------------------------------------------------------------------------------
 
 
@@ -623,6 +841,9 @@ def build() -> dict[Path, str]:
             out[folder / f"how-it-works-{variant}.svg"] = how_it_works(pal, stacked=False, background=background)
             out[folder / f"alignment-{variant}.svg"] = alignment(pal, [x * 26 / MEASURE_PX for x in xs], background)
         out[ASSETS / f"how-it-works-{variant}-stacked.svg"] = how_it_works(pal, stacked=True, background=False)
+        out[docs / "images" / f"how-it-works-{variant}-stacked.svg"] = how_it_works(pal, stacked=True, background=True)
+        out[docs / "images" / f"verify-strip-{variant}.svg"] = verify_strip(pal, background=True)
+        out[docs / "images" / f"rebuild-lanes-{variant}.svg"] = rebuild_lanes(pal, background=True)
         out[ASSETS / f"mark-{variant}.svg"] = mark(pal)
         out[docs / "logo" / f"{variant}.svg"] = wordmark(pal, name)
     out[docs / "favicon.svg"] = mark(LIGHT, size=32, background=True)

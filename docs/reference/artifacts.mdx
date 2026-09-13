@@ -27,14 +27,14 @@ A list of words with times within that section's mp3.
 ```json
 [
  {
-  "word": "Welcome",
+  "word": "The",
   "start": 0.7,
-  "end": 1.113
+  "end": 1.158
  },
  {
-  "word": "This",
-  "start": 1.133,
-  "end": 1.547
+  "word": "curve",
+  "start": 1.178,
+  "end": 1.636
  }
 ]
 ```
@@ -48,14 +48,14 @@ One entry per narrated section. The `hash` is what the cache compares.
 
 | Field | Meaning |
 |---|---|
-| `script`, `model`, `output_format` | What produced the audio. A silent build records `silent-placeholder` as the model. |
-| `estimated`, `estimate_basis` | True after a silent build, with the pacing used, such as `150 wpm + declared pauses`. |
-| `total_seconds` | The sum of the segments. |
-| `segments.NN.index`, `.title` | The section. |
-| `segments.NN.file`, `.words_file` | The mp3 and the words file. |
-| `segments.NN.hash` | The provider, voice, settings, and text hash, or `silent`. |
-| `segments.NN.words`, `.est_seconds`, `.duration_seconds` | The word count, the pacing estimate, and the real length. |
-| `segments.NN.target_seconds`, `.speech_end_seconds`, `.tail_padded_seconds` | The time budget from the heading, where speech ends, and how much silence was added. |
+| `script`, `model`, `output_format` | The fields record what produced the audio. A silent build records `silent-placeholder` as the model. |
+| `estimated`, `estimate_basis` | `estimated` is true after a silent build, and `estimate_basis` holds the pacing used, such as `150 wpm + declared pauses`. |
+| `total_seconds` | The field holds the sum of the segments. |
+| `segments.NN.index`, `.title` | The fields hold the section's number and title. |
+| `segments.NN.file`, `.words_file` | The fields name the mp3 and the words file. |
+| `segments.NN.hash` | The field holds the hash of the provider, the voice id, the model, the output format, the voice settings, and the text sent, or `silent` after a silent build. |
+| `segments.NN.words`, `.est_seconds`, `.duration_seconds` | The fields hold the word count, the pacing estimate, and the real length. |
+| `segments.NN.target_seconds`, `.speech_end_seconds`, `.tail_padded_seconds` | The fields hold the time budget from the heading, where speech ends, and how much silence was added. |
 | `segments.NN.spoken` | The words the voice was given, without break tags, with the script's punctuation and case. Captions take their spelling from it, so they match the audio even after the script changes. A manifest without it falls back to the script. |
 
 ## `build/audio/timeline.json`
@@ -66,19 +66,19 @@ word ends, and the section runs on to `end` in silence.
 ```json
 {
  "narration": "narration.mp3",
- "total_seconds": 111.9,
+ "total_seconds": 148.45,
  "sections": {
   "01": {
    "title": "Open",
    "start": 0.0,
-   "end": 10.15,
-   "duration": 10.15,
-   "speech_end": 9.78,
+   "end": 18.35,
+   "duration": 18.35,
+   "speech_end": 17.88,
    "words": [
     {
-     "word": "Welcome",
+     "word": "The",
      "start": 0.7,
-     "end": 1.113
+     "end": 1.158
     }
    ]
   }
@@ -119,52 +119,51 @@ t=0 sits in the webm.
 ```json
 {
   "url": "file:///home/me/my-lesson/deck/index.html?scene=1&beats=1.1curve%401.18%2C1.1number%403.09&words=The%400.70%2Ccurve%401.18&t0=signal",
-  "requested_seconds": 18.7,
-  "settle_seconds": 1.467,
-  "load_seconds": 0.038,
-  "lead_seconds": 1.504,
+  "requested_seconds": 18.65,
+  "settle_seconds": 1.46,
+  "load_seconds": 0.045,
+  "lead_seconds": 1.505,
   "lead_in_seconds": 1.44,
   "lead_method": "cover (36 magenta frames)",
   "warnings": [],
   "page_errors": [],
   "frame_gaps": [],
-  "sync_log": [{ "text": "The curve rises, then th", "cueAt": 0.0, "runAt": 0.0, "n": 7, "firstOn": 0.0 }]
+  "sync_log": [{ "text": "The curve rises, then th", "cueAt": 0.009, "runAt": 0.7, "n": 7, "firstOn": 0.683 }]
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `url` | The page URL the recorder opened, including `scene`, `beats`, `words`, and `t0=signal`. |
-| `requested_seconds` | How long the recording was asked to run. |
-| `settle_seconds` | How long the recorder waited after load before starting the clock. |
-| `load_seconds`, `lead_seconds` | The recorder's wall-clock estimates of how long the page took to load and how long it waited before the clock started. |
-| `lead_in_seconds` | The first clean frame after the magenta cover, written by `measure`. The assembler trims here. |
+| `url` | The field holds the page URL the recorder opened, including `scene`, `beats`, `words`, and `t0=signal`. |
+| `requested_seconds` | The field holds how long the recording was asked to run, which is the section span plus `extra_seconds`. |
+| `settle_seconds` | The field holds how long the recorder waited after load before it started the clock. |
+| `load_seconds`, `lead_seconds` | The fields hold the recorder's wall-clock estimates of how long the page took to load and how long the recorder waited before the clock started. |
+| `lead_in_seconds` | The field holds the time of the first clean frame after the magenta cover, written by `measure`. The assembler trims here. |
 | `frame_gaps` | The list holds `[seconds, ms]` pairs, one for every gap longer than 100 ms between two page frames, copied from `window.__decktalk.frameGaps`. The seconds give where the gap ended after narration t=0, and a gap that ended before the clock started has `null` seconds. `check` reports `STALLED` when the part of a gap after t=0 is longer than `stall_ms`. |
-| `sync_log` | One `{ text, cueAt, runAt, n, firstOn }` object per `data-sync` element that matched, copied from `window.__decktalk.syncLog`. |
-| `lead_method` | How `measure` found it. A value beginning `NO COVER` is a guess. |
-| `warnings` | `window.__decktalk.warnings` read from the page after the recording, such as an unknown cue id or a KaTeX that never loaded. |
+| `sync_log` | The list holds one `{ text, cueAt, runAt, n, firstOn }` object per `data-sync` element that matched, copied from `window.__decktalk.syncLog`. |
+| `lead_method` | The field says how `measure` found the lead-in. A value beginning `NO COVER` is a guess. |
+| `warnings` | The list holds `window.__decktalk.warnings`, read from the page after the recording, such as an unknown cue id or a KaTeX that never loaded. |
 | `page_errors` | The list holds one line for every uncaught exception the page threw while it was recorded, plus one entry when the page has no `window.__decktalk.catalog` or an empty one. `check` reports `PAGE ERROR` for a sidecar with any entry, and `build` stops. |
 
 ## `build/out/`
 
 | File | Meaning |
 |---|---|
-| `NN-section.mp4` | Each section cut to its span, at the project's frame size, video only. |
-| `<name>.mp4` | The video, with a chapter per section muxed in. |
-| `<name>-YYYYMMDD-HHMM.mp4` | A timestamped copy of the same video. |
-| `<name>.srt`, `<name>.vtt` | Captions from the word timestamps, absolute in the mp4, with the script's punctuation and case. A caption holds at most two lines of 42 characters, ends at a sentence, a pause longer than 1.5 seconds, or seven seconds, and never spans a section. |
-| `<name>.chapters.txt` | An ffmetadata file with one `[CHAPTER]` per section, titled from `decktalk.toml`, which is what the mp4 carries. |
-| `slates/NN-slate.png` | Rendered slates for clip sections whose file is missing. |
+| `NN-section.mp4` | The file holds one section cut to its span, at the project's frame size, with video only. |
+| `<name>.mp4` | The file is the video, with a chapter per section muxed in. |
+| `<name>-YYYYMMDD-HHMM.mp4` | The file is a timestamped copy of the same video. |
+| `<name>.srt`, `<name>.vtt` | The files hold captions from the word timestamps, absolute in the mp4, with the script's punctuation and case. A caption holds at most two lines of 42 characters, ends at a sentence, a pause longer than 1.5 seconds, or seven seconds, and never spans a section. |
+| `<name>.chapters.txt` | The file is an ffmetadata file with one `[CHAPTER]` per section, titled from `decktalk.toml`, which is what the mp4 carries. |
+| `slates/NN-slate.png` | The files are rendered slates for clip sections whose file is missing. |
 
 ```text build/out/my-lesson.srt
 1
-00:00:00,700 --> 00:00:06,767
-Welcome. This is a narrated lesson,
-cut to the word. Every visual you see
+00:00:00,700 --> 00:00:04,044
+The curve rises, then the number lands.
 
 2
-00:00:06,767 --> 00:00:09,980
-lands on the word that introduces it.
+00:00:04,044 --> 00:00:05,956
+You just watched DeckTalk.
 ```
 
 ```text build/out/my-lesson.chapters.txt
@@ -173,7 +172,7 @@ lands on the word that introduces it.
 [CHAPTER]
 TIMEBASE=1/1000
 START=0
-END=10160
+END=18360
 title=Open
 ```
 

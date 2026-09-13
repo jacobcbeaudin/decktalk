@@ -5,13 +5,19 @@ icon: "diagram-project"
 ---
 
 <Frame caption="A script goes in. The voice reads it with a time for every word, the slides reveal on those words in Chromium, and ffmpeg cuts one mp4.">
-  <img className="block dark:hidden" src="/images/how-it-works-light.svg" alt="A script goes in, the voice reads it with a time for every word, the slides reveal on those words in Chromium, and ffmpeg cuts one mp4." />
-  <img className="hidden dark:block" src="/images/how-it-works-dark.svg" alt="A script goes in, the voice reads it with a time for every word, the slides reveal on those words in Chromium, and ffmpeg cuts one mp4." />
+  <picture className="block dark:hidden">
+    <source media="(max-width: 640px)" srcSet="/images/how-it-works-light-stacked.svg" />
+    <img src="/images/how-it-works-light.svg" alt="A script goes in, the voice reads it with a time for every word, the slides reveal on those words in Chromium, and ffmpeg cuts one mp4." />
+  </picture>
+  <picture className="hidden dark:block">
+    <source media="(max-width: 640px)" srcSet="/images/how-it-works-dark-stacked.svg" />
+    <img src="/images/how-it-works-dark.svg" alt="A script goes in, the voice reads it with a time for every word, the slides reveal on those words in Chromium, and ffmpeg cuts one mp4." />
+  </picture>
 </Frame>
 
 `decktalk build` runs seven stages in order. Each stage is a function that takes the
-project, writes a typed artifact under `build/`, and can be run on its own by the command
-of the same name.
+project and can be run on its own by the command of the same name, and every stage except
+`check` and `verify` writes a typed artifact under `build/`.
 
 | Stage | What it does | Writes |
 |---|---|---|
@@ -38,9 +44,11 @@ later than Chromium on Linux. A timer therefore cannot say where the narration b
 inside a recording. DeckTalk does not use one.
 
 The recorder covers the page in magenta from its first paint. It waits for the page's
-`load` event, for `document.fonts.ready`, for `window.__sceneReady`, for the settle
-time, and for a minimum lead after the recorder was created. Then it removes the cover
-and starts the page's clock in the same tick. The cover carries a small element that
+`load` event, for `document.fonts.ready`, and for `window.__sceneReady`. Then it waits
+once, for `settle_seconds`, or longer when fewer than `min_lead_seconds` have passed since
+the recorder was created, which is `max(settle_seconds, min_lead_seconds - elapsed)`.
+Then it removes the cover and starts the page's clock in the next animation frame, which
+is the first frame painted without the cover. The cover carries a small element that
 never stops moving, because Chromium's screencast emits a frame only when the compositor
 paints one, so frames keep flowing while the page is covered and the first captured frame
 is magenta no matter when capture attached. The `measure` stage scans the recording for
@@ -89,8 +97,8 @@ sec   cut at  before cut  result
  05   148.45   -120.0 dB  quiet
 
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.1eq             41.71    88.71    0.39    0.00    -30ms   -32ms  changed
 3:3.1p1             39.37    86.37    0.53    0.00    -10ms    -9ms  changed
+3:3.1eq             41.71    88.71    0.39    0.00    -30ms   -32ms  changed
 5:5.1cap             2.80   141.00    0.55    0.00    -40ms   -44ms  changed
 ```
 
@@ -108,6 +116,11 @@ A cue that changed the picture but has no onset still reads `changed`, with a bl
 `offset` column. Every field named here is a tuning key under `[verify]` in
 [Configuration](/reference/configuration#verify).
 
+<Frame caption="How verify measured the cue 3.1eq of the scaffold's silent build. The reference frame sits 0.1 s before the cue, each probe is compared with it, and the control spans before the reference measure motion that has nothing to do with the cue. The probe 1.5 s after the cue changed the most, so its 0.39 percent is the reported chg %. The inset shows the frames around the cue, where the onset is the frame 30 ms before the cue time.">
+  <img className="block dark:hidden" src="/images/verify-strip-light.svg" alt="A time axis runs from 3.3 seconds before the cue 3.1eq to 1.6 seconds after it. An accent line marks the cue time, the word's start plus the cue's offset. The reference frame sits 0.1 seconds before the cue, and probes sit 0.7 and 1.5 seconds after it. For the 1.5-second probe, two control spans of 1.6 seconds run from 3.3 to 1.7 seconds and from 1.7 to 0.1 seconds before the cue. They changed 0.53 and 0.00 percent, and the smaller share, 0.00 percent, is the ctl percent. The 0.7-second probe changed 0.26 percent of the picture and the 1.5-second probe changed 0.39 percent, so the 1.5-second probe is the one reported. An inset shows seven 40-millisecond frames around the cue with a bar for each frame's changed share. The onset frame, 30 milliseconds before the cue, is outlined, and a band of 80 milliseconds on either side of the cue marks the offset limit." />
+  <img className="hidden dark:block" src="/images/verify-strip-dark.svg" alt="A time axis runs from 3.3 seconds before the cue 3.1eq to 1.6 seconds after it. An accent line marks the cue time, the word's start plus the cue's offset. The reference frame sits 0.1 seconds before the cue, and probes sit 0.7 and 1.5 seconds after it. For the 1.5-second probe, two control spans of 1.6 seconds run from 3.3 to 1.7 seconds and from 1.7 to 0.1 seconds before the cue. They changed 0.53 and 0.00 percent, and the smaller share, 0.00 percent, is the ctl percent. The 0.7-second probe changed 0.26 percent of the picture and the 1.5-second probe changed 0.39 percent, so the 1.5-second probe is the one reported. An inset shows seven 40-millisecond frames around the cue with a bar for each frame's changed share. The onset frame, 30 milliseconds before the cue, is outlined, and a band of 80 milliseconds on either side of the cue marks the offset limit." />
+</Frame>
+
 ### Definitions
 
 Every percentage is a share of the pixels in a frame scaled to `probe_width` by
@@ -120,9 +133,9 @@ scale. The default `min_changed_percent` of 0.1 is therefore a thousandth of the
 | Spoken span | The section's speech runs from its `start` to its `speech_end`, the end of its last word. A `$end` cue resolves to that end, and `min_seconds` is compared with the length of this span. | seconds |
 | Cue time | The cue time is the start of the cued word plus the cue's `offset` key, rounded to hundredths, in seconds after the section start. | seconds |
 | `offset` | The `offset` column is the onset's time minus the cue time. | milliseconds |
-| `a/v` | The `a/v` column is the `offset` minus the click's distance from the cued word's start. The click is the loudest sample within `click_search_seconds` of that start. | milliseconds |
+| `a/v` | The `a/v` column is the `offset` minus the click's distance from the cued word's start. The click is the loudest sample within `click_search_seconds` on either side of that start. | milliseconds |
 | `chg %` | The changed share is the percentage of pixels whose luma differs by more than `diff_level` between the reference frame and the probe frame. | percent |
-| `ctl %` | The control share is the smaller of the changed shares across two back-to-back control spans. | percent |
+| `ctl %` | The control share is the smaller of the changed shares of two back-to-back control spans, each measured between the first and the last frame of the span. | percent |
 | Offset limit | The offset limit is `max_offset_frames × 1000 / fps`, which is 80 ms at the defaults. | milliseconds |
 | a/v limit | The a/v limit is `max_av_frames × 1000 / fps`, which is 120 ms at the defaults. | milliseconds |
 | Cut RMS | The cut RMS is the RMS level of the narration track alone over the last `cut_window_seconds` of the section span. | dBFS |
@@ -134,11 +147,16 @@ start, so the click near the cued word's start is that word as it sits in the fi
 file. The `offset` is measured from the cue time, which already includes the cue's
 `offset` key, and the click's distance is measured from the word's start, so the cue's
 `offset` key does not count against `a/v`. The value is zero when the picture begins the
-cue's `offset` after the click. When the two agree, the whole chain, the recording, the
-trim at t=0, the cut to the section span, the concatenation, and the mix, has kept audio
-and picture together, and a drift anywhere in it shows up as a number here rather than as
-a reveal that feels late. No click is found when the loudest sample is quieter than about
--38 dBFS, and the JSON row then carries the reason `NO_CLICK`.
+cue's `offset` after the click. When the two agree, every link in the chain has kept audio
+and picture together: the recording, the trim at t=0, the cut to the section span, the
+concatenation, and the mix. A drift anywhere in the chain shows up as a number here rather
+than as a reveal that feels late. No click is found when the loudest sample is quieter than
+about -38 dBFS, and the JSON row then carries the reason `NO_CLICK`.
+
+The finished file also carries the soundscape. A sound effect or another soundscape part
+that is louder than the click inside the window is taken as the click, so a cue with a
+`[[mix.sfx]]` effect can report a false `a/v` value. A silent build with `--nomix` leaves
+the beds and effects out of the mix, so its `a/v` values measure the clicks alone.
 
 Both limits apply to early and late values alike. The offset limit is two frames by
 default. The a/v limit is three frames, because the click carries encoding jitter too.
@@ -149,7 +167,7 @@ Once a cue lands, `verify` compares every frame from the reference frame to the 
 probe with the reference frame, and it counts a pixel as changed when its luma differs by
 more than `onset_diff_level`, 12 by default. The onset is the first frame after the
 reference whose changed share rises by at least `onset_percent` percentage points, 0.002
-by default, over the frame before it. A reveal is a step, so it shows as a rise like that,
+by default, over the frame before it. A reveal is abrupt, so it shows as a rise like that,
 while a camera push or a curve still drawing grows a little every frame.
 
 If no frame rises that sharply, the onset is the first frame after the reference whose
@@ -166,7 +184,8 @@ pixels, which is 0.1 percent by default.
 
 The control span measures motion that has nothing to do with the cue. For each probe,
 `verify` takes two back-to-back spans that end at the reference frame, each as long as the
-probe's distance from the reference, and it measures the changed share across each span.
+probe's distance from the reference, and it measures the changed share between the first
+and the last frame of each span.
 The control is the smaller of the two, so motion that is always present shows in both,
 while an earlier reveal still settling shows in only one. A span that would start before
 the section's first frame or inside its fade-in is dropped, and the control is 0 when both

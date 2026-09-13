@@ -24,9 +24,9 @@ test, and with no arguments it checks every cue in `beats.json` except the cues 
 `cues.json` marks `"verify": false`. `build` verifies only section starts and cuts, and the
 cue checks measure each reveal in the finished mp4. A silent build's placeholder track
 carries a click at every word start, so the cue table also reports an
-[`a/v`](/concepts/how-it-works#what-verify-measures) column, which compares the picture with
-the click at the cued word. The job fails when the finished file's audio and picture
-disagree by more than `max_av_frames`, three frames by default. That makes a silent build a
+[`a/v`](/concepts/how-it-works#definitions) column, which compares the picture with
+the click at the cued word. The job fails when an `a/v` value is further from zero than
+`max_av_frames`, which is three frames by default. That makes a silent build a
 test of the whole chain, not only of the cues.
 
 `build` exits 1 when a page throws, when a cue phrase is unresolved or a cue id is unknown,

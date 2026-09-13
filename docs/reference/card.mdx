@@ -90,8 +90,9 @@ then gains an `a/v` column, which is the `offset` minus the click's distance fro
 word's start, as [How it works](/concepts/how-it-works#definitions) defines it. The
 `offset` column must sit within `max_offset_frames` of the cue time, and the `a/v` column
 within `max_av_frames`. `status`, `beats`, `check`, `verify`,
-and `doctor` take `--json` for one JSON object on stdout, `--strict` to fail on a verdict
-ending in a question mark, and `--no-fail` to always exit 0.
+and `doctor` take `--json` for one JSON object on stdout, `--strict` to also fail on an
+uncertain finding, which is a verdict ending in a question mark or, in `beats`, a section
+whose speech ends before its `min_seconds`, and `--no-fail` to always exit 0.
 [CLI](/reference/cli) lists every flag.
 
 ### Reading a verify table
@@ -101,7 +102,7 @@ A `$start` cue with no offset leaves no frame before it, so `verify` reports it 
 `"verify": false` is `skipped` with `OPTED_OUT` unless it is named on the command line.
 A cue named on the command line that is not in `beats.json` is `UNRESOLVED`, which fails.
 The `a/v` column shows `-` when no click lies within `click_search_seconds` of the cued
-word, and the JSON row then carries the reason `NO_CLICK`. A silent build skips the
+word's start, and the JSON row then carries the reason `NO_CLICK`. A silent build skips the
 loudness pass, so it prints no loudness warning. `build` measures no cue and does not
 stop on `TRUNCATED`, `STALLED`, or `NO COVER`, so its exit 0 says nothing about whether a
 cue landed or a recording was cut short. A script that gates on the video runs
@@ -123,7 +124,7 @@ that order.
 | `build/audio/narration.mp3`, `timeline.json` | narrate | the continuous track and each section's absolute span and words |
 | `build/audio/beats.json` | beats | `{"NN": "cue@seconds,…"}` relative to the section start |
 | `build/audio/beats.anchors.json` | beats | `{"NN": {"cue": seconds}}`, each cue's word start without its `offset`, which `verify` uses to find the click at the cued word in a silent build |
-| `build/rec/NN-scene.webm`, `.json` | record, measure | the recording and its sidecar, with where narration t=0 sits, the page's warnings, its frame stalls, and what each `data-sync` element matched |
+| `build/rec/NN-scene.webm`, `.json` | record, measure | the recording and its sidecar, with where narration t=0 sits, the page's warnings and page errors, its frame stalls, and what each `data-sync` element matched |
 | `build/out/NN-section.mp4` | assemble | each section cut to its span, video only |
 | `build/out/<name>.mp4` | assemble | the video with chapters muxed in, plus a timestamped copy |
 | `build/out/<name>.srt`, `.vtt` | assemble | captions from the word timestamps |

@@ -22,7 +22,9 @@ each of them afterwards.
 | KaTeX | The command downloads the KaTeX release from GitHub into DeckTalk's per-user cache, under `katex/<version>`. The cache is `~/.cache/decktalk` on Linux, or `$XDG_CACHE_HOME/decktalk` when that variable is set, `~/Library/Caches/decktalk` on macOS, and `%LOCALAPPDATA%\decktalk` on Windows. The `DECKTALK_CACHE_DIR` variable moves it. |
 
 On Linux, `setup` passes `--with-deps` to Playwright, which also installs Chromium's system
-libraries. Playwright asks for sudo to install them.
+libraries with apt-get. Playwright runs apt-get through sudo, or through `su root -c` when
+sudo is missing, and it uses neither when `setup` runs as root. On a distribution without apt-get this step fails, and
+`setup` stops before it downloads ffmpeg and KaTeX.
 
 `decktalk init` copies the cached KaTeX into the project's `deck/katex/`, so equations render
 with no network. When the KaTeX download fails, `setup` warns and continues, and a project
@@ -33,9 +35,12 @@ override both.
 
 ## The ffmpeg license
 
-DeckTalk is licensed under Apache-2.0. The ffmpeg builds that static-ffmpeg downloads are
-configured with `--enable-gpl` and include libx264, so they are GPL builds, under
-GPL-2.0-or-later. DeckTalk runs ffmpeg as a separate process and does not link against it.
+DeckTalk is licensed under Apache-2.0. ffmpeg's own source is licensed under
+LGPL-2.1-or-later, and the builds that static-ffmpeg downloads are GPL builds that include
+libx264. The Linux, Windows, and Intel macOS builds are configured with `--enable-gpl`,
+`--enable-version3`, and `--enable-libx264`, so they are licensed under GPL-3.0-or-later. The
+Apple silicon macOS build is configured with `--enable-gpl` and `--enable-libx264`, so it is
+licensed under GPL-2.0-or-later. DeckTalk runs ffmpeg as a separate process and does not link against it.
 To use a build of your own, set `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE` to its two
 executables.
 [THIRD_PARTY_NOTICES.md](https://github.com/jacobcbeaudin/decktalk/blob/main/THIRD_PARTY_NOTICES.md)
@@ -43,15 +48,16 @@ lists every third-party component and its license.
 
 ## Accounts
 
-A silent build needs no account and no API key. A voiced build needs an ElevenLabs plan with
-API access, an API key in `ELEVENLABS_API_KEY`, and a voice id in `ELEVENLABS_VOICE_ID`.
+A silent build needs no account and no API key. A voiced build needs an ElevenLabs API key in
+`ELEVENLABS_API_KEY` and a voice id in `ELEVENLABS_VOICE_ID`. Every ElevenLabs plan, including
+the free plan, can call the API.
 `decktalk soundscape` needs the API key and no voice id. The quickstart's
 [Add your voice](/quickstart) step shows where both values go, and the
 [FAQ](/help/faq#what-does-it-cost) compares the plans.
 
 ## What spends credits
 
-Only two stages call ElevenLabs. The `narrate` stage calls the text to speech endpoint, and
+Only two parts of DeckTalk call ElevenLabs. The `narrate` stage calls the text to speech endpoint, and
 `decktalk soundscape` calls the sound effects and music endpoints.
 
 | Command or change | When it spends credits |
@@ -80,3 +86,8 @@ the cache.</Warning>
 Recording runs in real time, one section after another, so a first silent build of the
 scaffold takes a few minutes. [Rebuild one section](/guides/rebuild-one-section) shows how
 `--only` records only the sections that changed.
+
+## Next
+
+[Your first deck](/guides/first-deck) writes one section from scratch in the script, the cues,
+the project file, and the page, and builds it.

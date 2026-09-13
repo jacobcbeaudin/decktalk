@@ -73,10 +73,10 @@
   <g transform="translate(900 -40)">
     <text class="lab n3" x="0" y="80">04 ASSEMBLE</text>
     <g transform="translate(0 100)">
-      <rect class="block fr f1" x="0" y="0" width="50" height="36" rx="8"/>
-      <rect class="block fr f2" x="58" y="0" width="50" height="36" rx="8"/>
-      <rect class="block fr f3" x="116" y="0" width="50" height="36" rx="8"/>
-      <rect class="block fr f4" x="174" y="0" width="50" height="36" rx="8"/>
+      <rect class="bar fr f1" x="0" y="0" width="50" height="36" rx="8"/>
+      <rect class="bar fr f2" x="58" y="0" width="50" height="36" rx="8"/>
+      <rect class="bar fr f3" x="116" y="0" width="50" height="36" rx="8"/>
+      <rect class="bar fr f4" x="174" y="0" width="50" height="36" rx="8"/>
       <g class="out"><rect class="accent" x="0" y="0" width="224" height="36" rx="8"/><text class="lab on-accent" x="14" y="22">OUT.MP4</text></g></g>
     <text class="h" x="0" y="212">Cut to the frame</text>
     <text class="s" x="0" y="236">ffmpeg cuts, mixes, verifies.</text>

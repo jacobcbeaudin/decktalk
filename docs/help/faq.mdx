@@ -6,10 +6,11 @@ icon: "circle-question"
 
 ## What does it cost?
 
-You need an ElevenLabs plan with API access. The free tier has the API, but its audio
-carries a watermark and a non-commercial license, so the Starter plan is the practical
-floor. A ten-minute narration is roughly 9,000 characters, which fits inside that plan's
-monthly allowance several times over.
+You need an ElevenLabs API key. Every ElevenLabs plan, including the free plan, has API
+access. The free plan has no commercial license, requires "elevenlabs.io" or "11.ai" in
+the title of published content, and cannot use Voice Library voices through the API, so
+the Starter plan is the practical floor for a video you publish. A ten-minute narration is
+roughly 9,000 characters.
 
 DeckTalk caches each section by its whole text, so an edit costs the characters of every
 section whose text changed, not only the sentences you changed. `--force` and a change to
@@ -56,8 +57,8 @@ follow the words wherever they move.
 
 Remotion, Motion Canvas, and Manim are for animation, where the frame is the unit and
 the narration is fitted afterwards. Manim with manim-voiceover comes closest, because a
-bookmark in the narration text can wait for a word, but the scene is still Python that
-renders again after every change. reveal.js with a text-to-speech track gets you
+bookmark in the narration text can wait for a word, but the scene is still Python, and
+every change means another render. reveal.js with a text-to-speech track gets you
 slides and a voice, but nothing ties a reveal to a word, so every edit means re-timing.
 Descript edits a recording you already made. Synthesia and HeyGen put an avatar on
 screen. DeckTalk is for the case where the timing should come from the words and the
@@ -86,7 +87,7 @@ is optional, and `init` vendors it into the project.
 
 ## Does it run on Windows?
 
-Yes. DeckTalk is maintained by one person. Every push to `main` runs the unit tests and a
+Yes. DeckTalk is maintained by one person. Every push to `main` and every pull request runs the unit tests and a
 full offline build on Linux. The same build runs on macOS and Windows from the Actions tab
 and on release tags that a person pushes. Release tags that release-please creates do not
 start that workflow.

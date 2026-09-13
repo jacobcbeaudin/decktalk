@@ -128,13 +128,16 @@ synthesizes every section again, as [Requirements and costs](/requirements) expl
     `[verify]`.
   </Accordion>
 
-  <Accordion title="a/v offset: picture N ms from the click">
+  <Accordion title="a/v N ms past its limit">
     In a silent build the placeholder track carries a click at every word start. The
     `a/v` column of the verify table is the `offset` minus the click's distance from the
     cued word's start, as [How it works](/concepts/how-it-works#definitions) defines it.
-    The click and the cue come from the same word time, so a value beyond the a/v limit
-    means the audio and the picture of the finished file drifted apart somewhere between
-    the recording and the mix. Check that the section's sidecar reports a `cover` lead
+    A value beyond the a/v limit reads `OFF CUE`, with a note such as
+    `a/v +160 ms, limit 120 ms`. The click and the cue come from the same word time, so
+    such a value means the audio and the picture of the finished file drifted apart
+    somewhere between the recording and the mix. A sound effect louder than the click near
+    the cued word is the exception, because verify takes it as the click, so build with
+    `--silent --nomix` to rule the soundscape out. Check that the section's sidecar reports a `cover` lead
     method, record the section again with `--only N`, and confirm that the `offset` column
     is small on its own. A `-` in the column means no click was found within
     `click_search_seconds` of the cued word's start, which is usual for a cue on `$start`
@@ -220,7 +223,7 @@ synthesizes every section again, as [Requirements and costs](/requirements) expl
   </Accordion>
 
   <Accordion title="Windows">
-    Every push to `main` runs DeckTalk's unit tests and a full offline build on Linux. The
+    Every push to `main` and every pull request runs DeckTalk's unit tests and a full offline build on Linux. The
     same build runs on Windows and macOS from the Actions tab and on release tags that a
     person pushes. Paths in
     `decktalk.toml` use forward slashes on every platform. The `setup` command puts

@@ -33,7 +33,8 @@ uv run scripts/build_config_reference.py --check # so is docs/reference/configur
 No check needs an ElevenLabs key or network access after `decktalk setup`. Do not add a
 check that calls the API.
 
-CI runs the same checks, with the unit checks on Python 3.12 to 3.14. Linux is the canary:
+CI runs the same checks except `scripts/build_assets.py --check`, with the unit checks on
+Python 3.12 to 3.14. Linux is the canary:
 every push to `main` and every pull request runs the browser tests and the smoke build
 there. The macOS and Windows builds run from the Actions tab through "Run workflow" and on
 a tag that a person pushes. A release tag that release-please creates does not start the
@@ -74,9 +75,9 @@ loading, so a new provider is a pull request.
 
 ## Roadmap
 
-- A local text-to-speech provider paired with a forced aligner, so a project can build with no API.
-- A second slide template with a lighter visual style.
-- A real demo video in the README, built from the scaffold with a cloned voice.
+- A local text-to-speech provider paired with a forced aligner will let a project build with no API.
+- A second slide template will offer a lighter visual style.
+- The README will show a real demo video, built from the scaffold with a cloned voice.
 
 ## Prose
 
@@ -95,6 +96,6 @@ request titles, because a squash merge turns the title into the commit.
 release-please keeps a release pull request open against `main`. It bumps the version in
 `pyproject.toml` and `uv.lock`, writes `CHANGELOG.md`, and picks the bump from the commits
 landed since the last release. Merging that PR creates the tag and the GitHub release. The
-release workflow then runs the unit checks on Linux, builds the wheel, smoke-tests it, and
-publishes to PyPI through trusted publishing. To force a version, put `Release-As: 1.0.0` in
-a commit body.
+release workflow then runs the unit checks on Linux, builds the wheel, checks that the
+installed wheel runs `decktalk init`, and publishes to PyPI through trusted publishing. To
+force a version, put `Release-As: 1.0.0` in a commit body.
