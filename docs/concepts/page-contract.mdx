@@ -9,7 +9,7 @@ contract consists of a few URL parameters, one Promise, and one global.
 `decktalk-runtime.js` implements it, and [a page can implement it by hand](/guides/page-by-hand).
 Slides are plain HTML that you style yourself, and the runtime adds no styling beyond
 the stage. [The runtime reference](/reference/runtime) lists every parameter, field, and
-attribute with its default. This page explains how the pieces fit.
+attribute with its default. This guide explains how the pieces fit.
 
 ## Modes
 
@@ -27,7 +27,7 @@ fires. Every other reveal fires `data-at` seconds after the mount, which covers 
 with `data-at` alone and an element whose cue is not in the list. When a cue fires, the
 matching `data-cue` elements reveal first, then the step's `on[id]` handler runs, then
 every `DeckTalk.on(id, fn)` handler. An element with `data-sync` goes one step further and
-reveals one word at a time from the spoken words the recorder passes as `?words=`, so a
+appears one word at a time from the spoken words the recorder passes as `?words=`, so a
 line of text keeps pace with the voice.
 [The runtime reference](/reference/runtime#data-attributes-inside-a-step) has its rules.
 
@@ -72,19 +72,19 @@ well on a laptop screen and a phone alike.
 
 | Element | Size |
 |---|---|
-| Safe margin | 96 px from every edge, and 160 px for titles. The scaffold pads slides by 100 px top and bottom and 160 px at the sides. |
-| Body text | 40 px or larger. |
-| Captions and eyebrows | 28 px to 30 px, in the muted color. |
-| Headlines | 88 px to 120 px. The scaffold's hero is 96 px. |
-| Labels and column headings | 56 px. |
+| Safe margin | 96 px from every edge, and 160 px for titles. The scaffold sets 120 px side margins. |
+| Body text | 36 px or larger. |
+| Captions | 30 px, in the muted color. |
+| Headlines | 64 px to 120 px. The scaffold's hero is 120 px and its titles 64 px. |
+| Eyebrows and labels | 22 px, in the monospace face and the muted color. |
 
-One idea per slide. A slide that reveals more than three or four elements reads as an
+Put one idea on each slide. A slide that reveals more than three or four elements reads as an
 animation, and a step with one headline and one supporting line is easier to cue than a
 dense one. Steps are cheap, so split a busy slide into two.
 
 ## Reveal effects
 
-The `data-fx` attribute picks the animation an element plays when it reveals. Each one
+The `data-fx` attribute picks the animation an element plays when it appears. Each one
 suits a kind of element, and each one has a case it makes worse.
 
 | Effect | For | Against |
@@ -100,13 +100,17 @@ suits a kind of element, and each one has a case it makes worse.
 The animations are short on purpose, so that a reveal is visible on the word that cued it
 rather than still arriving on the next one, and `data-dur` overrides any of them.
 
+An element with `data-tex` is typeset by KaTeX when it appears, and the plain text inside
+it is the fallback. A TeX string KaTeX cannot parse renders in red, and the runtime adds a
+warning that names it. Inside a `render` template literal every backslash must be doubled, because `\f`, `\t`, `\u`, and `\x` are JavaScript escapes: `\frac` becomes a form feed, `\theta` a tab, and `\underbrace` or `\xrightarrow` a syntax error that blanks the page.
+
 A scene may also set `camera: "push"`, a slow push from 100% to 103% over the scene.
 Use it on at most one scene, usually the open, because a push under every scene reads as
 the whole video breathing. The `verify` stage's control span accounts for the push, so it
 does not disturb the cue checks.
 
-## Build artifacts a page or a script may read
+## Build artifacts a page or a tool of your own may read
 
-The page receives its cues as `?beats=` from `build/audio/beats.json`, and a script of
+The page receives its cues as `?beats=` from `build/audio/beats.json`, and a tool of
 your own may read `build/audio/timeline.json` for every word with its absolute time.
 [Build artifacts](/reference/artifacts) has every shape.

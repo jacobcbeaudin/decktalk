@@ -6,13 +6,13 @@ mode: "wide"
 ---
 
 These files are part of the public contract. The page runtime reads `beats.json`, and
-your own scripts may read any of them. Every JSON file is written atomically, so a reader
+your own tools may read any of them. Every JSON file is written atomically, so a reader
 never sees a partial file. Field names in the JSON match the dataclasses in
 `decktalk.artifacts`.
 
 ```text
 build/
-  audio/   NN-slug.mp3, NN-slug.words.json, manifest.json, narration.mp3, timeline.json, beats.json
+  audio/   NN-slug.mp3, NN-slug.words.json, manifest.json, narration.mp3, timeline.json, beats.json, beats.anchors.json
   rec/     NN-scene.webm, NN-scene.json
   out/     NN-section.mp4, <name>.mp4, <name>-YYYYMMDD-HHMM.mp4, <name>.srt, <name>.vtt, <name>.chapters.txt, slates/
   shots/   step-<id>.png, section-NN-at-<S>s.png
@@ -93,8 +93,20 @@ are relative to the section's start, and a section with no resolved cue is left 
 
 ```json
 {
-  "01": "1.1a@0.0,1.1b@2.43,1.1c@6.77",
-  "02": "2.1a@2.3,2.1b@5.51,2.1c@9.19,2.1d@12.41,2.2@13.79,2.2edit@17.92"
+  "01": "1.1curve@1.14,1.1number@2.92,1.1mark@4.11,1.1cap@20.23",
+  "05": "5.1cap@2.46,5.1made@5.4,5.1docs@7.37"
+}
+```
+
+## `build/audio/beats.anchors.json`
+
+Each cue's word start without its `offset`, per section. `verify` uses it after a silent
+build to find the click at the cued word, so a cue that trails its word by an offset is
+still measured against the word's own click.
+
+```json
+{
+  "01": { "1.1curve": 1.14, "1.1number": 2.92, "1.1mark": 3.81, "1.1cap": 20.23 }
 }
 ```
 
@@ -105,25 +117,28 @@ t=0 sits in the webm.
 
 ```json
 {
-  "url": "file:///home/me/my-lesson/deck/index.html?scene=1&beats=1.1a%400.0%2C1.1b%402.43%2C1.1c%406.77&t0=signal",
-  "requested_seconds": 10.450000000000001,
+  "url": "file:///home/me/my-lesson/deck/index.html?scene=1&beats=1.1curve%401.14%2C1.1number%402.92&words=The%400.00%2Ccurve%401.14&t0=signal",
+  "requested_seconds": 22.8,
   "settle_seconds": 1.467,
   "load_seconds": 0.038,
   "lead_seconds": 1.504,
   "lead_in_seconds": 1.44,
   "lead_method": "cover (36 magenta frames)",
-  "warnings": []
+  "warnings": [],
+  "frame_gaps": [],
+  "sync_log": [{ "text": "The curve rises, then th", "cueAt": 0.0, "runAt": 0.0, "n": 7, "firstOn": 0.0 }]
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `url` | The page URL the recorder opened, including `scene`, `beats`, and `t0=signal`. |
+| `url` | The page URL the recorder opened, including `scene`, `beats`, `words`, and `t0=signal`. |
 | `requested_seconds` | How long the recording was asked to run. |
 | `settle_seconds` | How long the recorder waited after load before starting the clock. |
 | `load_seconds`, `lead_seconds` | Wall-clock estimates from the recorder. |
 | `lead_in_seconds` | The first clean frame after the magenta cover, written by `measure`. The assembler trims here. |
-| `frame_gaps` | Seconds and milliseconds of every gap between two page frames longer than 100 ms, which `check` reports as `STALLED` past `stall_ms`. |
+| `frame_gaps` | `[seconds, ms]` pairs, one for every gap between two page frames longer than 100 ms, copied from `window.__decktalk.frameGaps`. `check` reports `STALLED` past `stall_ms`. |
+| `sync_log` | One `{ text, cueAt, runAt, n, firstOn }` object per `data-sync` element that matched, copied from `window.__decktalk.syncLog`. |
 | `lead_method` | How `measure` found it. A value beginning `NO COVER` is a guess. |
 | `warnings` | `window.__decktalk.warnings` read from the page after the recording, such as an unknown cue id or a KaTeX that never loaded. |
 

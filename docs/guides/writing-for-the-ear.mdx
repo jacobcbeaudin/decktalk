@@ -31,8 +31,8 @@ A cue resolves to the first word of its phrase, so the phrase should begin with 
 that names the visual. "Start with a loss surface" cues on `loss surface` and lands on
 "loss", which is a noun the listener can attach to the bowl that draws. A phrase such as
 "and then" lands on nothing in particular. The scaffold's cues are all nouns or verbs with
-a concrete referent: `loss surface`, `Pick a point`, `learning rate`, `Is this query`,
-`Write the script`.
+a concrete referent: `loss surface`, `Pick a point`, `learning rate`, `Change one sentence`,
+`Edit the words`.
 
 ## One reveal per idea
 
@@ -48,20 +48,20 @@ this, and they reach the voice differently. `[beat]` is a beat: the voice reads 
 dash at the end of the sentence before it and pauses there as it would at any dash, and
 nothing else is sent. `[pause N]` sends a `<break time="Ns" />` tag and is the only
 direction that does, because frequent break tags make the voice add fillers and breaths.
-Use beats freely and timed pauses sparingly. The scaffold pauses for three seconds before
+Use beats freely and timed pauses sparingly. The scaffold pauses for four seconds before
 the answer so that the audience can think.
 
 ```md script.md
-[beat] Pause and think: what happens if the learning rate is too large?
+[beat] Pause and think: what if eta is too large?
 
-[pause 3]
+[pause 4]
 
-You overshoot, and bounce from side to side. [beat] Small enough, and you settle at the
-bottom.
+You overshoot and bounce across the bowl. [beat] Small enough, and you settle at the
+bottom, for this surface.
 ```
 
 Anything else in square brackets is a stage direction. It is not spoken and it is a beat
-where it sat, so a direction such as `[Deck scene 3. A loss bowl draws.]` is both a note
+where it sat, so a direction such as `[Deck scene 3. A loss surface fades up.]` is both a note
 to yourself and a pause. The silence before the first section and after every section's
 last word is added by ffmpeg rather than requested from the voice, so a script never
 needs a pause at either end. [script.md](/reference/script-md) lists every direction.
@@ -71,7 +71,7 @@ needs a pause at either end. [script.md](/reference/script-md) lists every direc
 The `offset` key in `cues.json` shifts a cue in seconds. A small positive offset, one or
 two tenths of a second, lets the word finish before the visual moves, which feels like
 the narrator pointing at something. The scaffold trails `settle` by 0.2 seconds, so the
-point reaches the bottom of the bowl as the word ends.
+ball reaches the bottom of the bowl as the word ends.
 
 ```json cues.json
 { "cue": "3.1min", "on": "settle", "offset": 0.2 }
@@ -113,24 +113,25 @@ the estimate and, once the voice has spoken, with the real length. The estimate 
 word count at `words_per_minute`, which defaults to 140.
 
 ```md script.md
-## 3. Gradient descent — 0:40 to 1:20
+## 3. Gradient descent — 0:40 to 1:00
 ```
 
 ```text
  #  section                words    est  target  actual  placeholders
 ---------------------------------------------------------------------
- 1  open                      21   0:09    --      0:11  -
- 2  three-lines               47   0:20    --      0:22  -
- 3  gradient-descent          94   0:40    0:40    0:47  -
- 4  before-and-after         104   0:45    --      0:47  -
- 5  close                     38   0:16    --      0:20  -
+ 1  open                      48   0:21    --      0:22  -
+ 2  four-files                74   0:32    --      0:34  -
+ 3  gradient-descent          96   0:41    0:20    0:51  -
+ 4  the-edit                  51   0:22    --      0:26  -
+ 5  close                     23   0:10    --      0:12  -
 ---------------------------------------------------------------------
-    total                    304   2:10            2:27
+    total                    292   2:05            2:26
 ```
 
-The `target` column is the budget's length. Section 3 was budgeted at forty seconds and
-the silent rehearsal ran to forty-seven, which is the signal to cut a sentence or to widen
-the budget once the voice has spoken and the `actual` column is real. The
+The `target` column is the budget's length. Section 3 has a budget of twenty seconds,
+from 0:40 to 1:00, and the silent rehearsal runs to fifty-one. That gap is the signal to
+cut a sentence. Widen the budget only after the voice has spoken and the `actual` column
+is real. The
 `min_seconds` key on a section in `cues.json` works the other way around and warns when
 the speech is shorter than the visuals need.
 

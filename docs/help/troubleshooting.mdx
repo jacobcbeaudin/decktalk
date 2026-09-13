@@ -14,7 +14,7 @@ the assembly.
     section, and `build` stopped.
 
     ```text
-     03    46.2   30.0  3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43
+     03    50.1   40.0  3.1bowl@1.57,3.1p0@6.26,3.1up@8.87,3.1neg@11.48,3.1p1@13.05,3.1p2@18.79,3.1p3@19.31,3.1eqA@26.09,3.1eqA2@27.66,3.1eqB@29.23,3.1eqC@30.27,3.1think@32.36,3.1over@37.58,3.1min@42.99
                         ! 3.1eq: phrase not found: 'learning rate η'
     ```
 
@@ -60,6 +60,16 @@ the assembly.
     [Build in CI and offline](/guides/ci-and-offline#offline) has the tags. `decktalk doctor`
     shows whether the cache is present.
   </Accordion>
+  <Accordion title="PAGE ERROR in check, or a section that records as a white or blank slate">
+    The page threw a script error before it could register its scenes, or it never
+    exposed `window.__decktalk.catalog`, so the recorder captured an empty stage and
+    `check` failed the section, which fails `build`. The recorder logs the page's error
+    text as a warning. The usual causes are a syntax error inside a `render` template,
+    often a single backslash before `f`, `t`, `u`, or `x` in a `data-tex` value, and a
+    runtime `<script>` that comes after the scene definitions. Open the page in a browser
+    with `?scene=N&hud=1` and read the console.
+  </Accordion>
+
   <Accordion title="STALLED in check, or a reveal that appears a few frames late">
     The page reported a gap of more than `stall_ms` between two animation frames while it
     was being recorded, which means the machine was too busy to paint, and a reveal that
@@ -105,7 +115,7 @@ the assembly.
     In a silent build the placeholder track carries a click at every word start, and the
     `a/v` column of the verify table is the picture's first change minus the click
     nearest the cue. The click and the cue come from the same word time, so a value
-    beyond `max_offset_frames` means the audio and the picture of the finished file
+    beyond `max_av_frames` means the audio and the picture of the finished file
     drifted apart somewhere between the recording and the mix. Check that the section's
     sidecar reports a `cover` lead method, re-record the section with `--only N`, and
     confirm that the `offset` column is small on its own. A `-` in the column means no
@@ -115,7 +125,7 @@ the assembly.
 
   <Accordion title="data-sync text not found in the spoken words">
     An element with `data-sync` has text that matches no run of the section's spoken
-    words, so it revealed whole and the recorder logged the warning. Compare the
+    words, so it appeared whole and the recorder logged the warning. Compare the
     element's text with the sentence in `script.md`. They must agree word for word,
     though case and punctuation are ignored, and a number written as digits on the slide
     and as words in the script is the usual cause.
@@ -129,7 +139,7 @@ the assembly.
     [Slide recipes](/guides/slide-recipes#a-chat-before-and-after) does with
     `data-fx="fade"` on the bubble and `data-type` on its text. Then the background lands
     on the cue and the text follows. The same holds for a `data-sync` element, which
-    reveals one word at a time.
+    appears one word at a time.
   </Accordion>
 
   <Accordion title="A section is early or late by a fixed amount">

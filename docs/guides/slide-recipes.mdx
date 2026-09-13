@@ -5,8 +5,9 @@ icon: "layer-group"
 ---
 
 Each recipe below is a complete section: the lines for `script.md`, the entry for
-`cues.json`, and the scene for `deck/index.html`. They use the stylesheet that
-`decktalk init` writes, so paste them into the scaffold and build. They are recipes rather
+`cues.json`, and the scene for `deck/index.html`. Each recipe carries the CSS it needs in a
+`<style>` block, because the scaffold's stylesheet defines only its own classes. Paste the
+style and the scene together. They are recipes rather
 than copies of the scaffold, whose own scenes are walked through in
 [Your first deck](/guides/first-deck). The scene and step ids are placeholders, and any
 section number works as long as the same number appears in the script heading, the
@@ -18,9 +19,9 @@ is swallowed by the template literal.</Warning>
 
 ## A subtitle that follows the voice
 
-An element with `data-sync` reveals one word at a time, each at the second the voice
+An element with `data-sync` appears one word at a time, each at the second the voice
 reaches it, so a line on the slide keeps pace with the narration. The scaffold uses it for
-the subtitle of its title scene and for the three lines of its closing recap. The text
+the script line of its cold open and for the one line under the end card. The text
 must be word for word what the voice says, because the runtime matches it against the
 section's spoken words, ignoring case and punctuation, and prefers the run nearest the
 cue. Give it `data-fx="none"`, since a fade on the container fights the per-word reveal.
@@ -52,12 +53,21 @@ That is the whole idea. [beat] Write the script. [beat] Narrate it in your own v
 ```
 
 ```html deck/index.html
+<style>
+  .stack { position: absolute; left: 120px; top: 360px; display: flex; flex-direction: column; gap: 32px; }
+  .stack > * { margin: 0; }
+  .line { font: 450 36px/1.4 var(--sans); color: var(--ink); }
+  .lower { font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+</style>
+<script>
 DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
   { id: "1.1", hold: 8, render: () => `
     <div class="slide">
-      <h1 class="hero" data-cue="1.1a">My lesson</h1>
-      <p class="line" data-cue="1.1b" data-sync data-fx="none">This is a narrated lesson, cut to the word.</p>
-      <div class="lower" data-cue="1.1c" data-type="40" data-fx="fade">decktalk · scene 1</div>
+      <div class="stack">
+        <h1 class="hero" data-cue="1.1a">My lesson</h1>
+        <p class="line" data-cue="1.1b" data-sync data-fx="none">This is a narrated lesson, cut to the word.</p>
+        <div class="lower" data-cue="1.1c" data-type="40" data-fx="fade">decktalk · scene 1</div>
+      </div>
     </div>` },
 ]});
 
@@ -65,20 +75,23 @@ DeckTalk.scene(5, { name: "Close", steps: [
   { id: "5.1", hold: 10, render: () => `
     <div class="slide">
       <p class="eyebrow">The whole idea</p>
-      <p class="line" data-cue="5.1a" data-sync data-fx="none">Write the script.</p>
-      <p class="line" data-cue="5.1b" data-sync data-fx="none">Narrate it in your own voice.</p>
-      <p class="line" data-cue="5.1c" data-sync data-fx="none">Every reveal lands on its word.</p>
+      <div class="stack">
+        <p class="line" data-cue="5.1a" data-sync data-fx="none">Write the script.</p>
+        <p class="line" data-cue="5.1b" data-sync data-fx="none">Narrate it in your own voice.</p>
+        <p class="line" data-cue="5.1c" data-sync data-fx="none">Every reveal lands on its word.</p>
+      </div>
     </div>` },
 ]});
+</script>
 ```
 
 The cue mounts the line, and the words arrive from there. A line whose text differs from
-the script by one word reveals whole, and the recorder logs
-`data-sync text not found in the spoken words`. In a browser, `?scene=5` reveals each
+the script by one word appears whole, and the recorder logs
+`data-sync text not found in the spoken words`. In a browser, `?scene=5` shows each
 line whole, because the preview has no word times.
 [The runtime reference](/reference/runtime#data-attributes-inside-a-step) has the rules.
 
-## A derivation that reveals line by line
+## A derivation that appears line by line
 
 This derivation is a recipe rather than a scaffold scene. Each line is its own element
 with its own cue, and `data-display` typesets it as display math. The answer uses `pop`
@@ -100,17 +113,27 @@ Expand the square, and the x squared terms cancel. [beat] Only two x is left.
 ```
 
 ```html deck/index.html
+<style>
+  .stack { position: absolute; left: 120px; top: 300px; display: flex; flex-direction: column; gap: 56px; }
+  .math { margin: 0; font-size: 58px; color: var(--ink); }
+  .math .katex-display { margin: 0; text-align: left; }
+  .answer { color: var(--accent); }
+</style>
+<script>
 DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
   { id: "3.1", hold: 14, cues: { "3.1a": 1, "3.1b": 5, "3.1c": 9 }, render: () => `
     <div class="slide">
-      <p class="math" data-cue="3.1a" data-display
-         data-tex="\\frac{d}{dx}\\,x^2 = \\lim_{h \\to 0} \\frac{(x+h)^2 - x^2}{h}">d/dx x^2 = lim (x+h)^2 - x^2 / h</p>
-      <p class="math" data-cue="3.1b" data-display
-         data-tex="= \\lim_{h \\to 0} \\frac{2xh + h^2}{h} = \\lim_{h \\to 0} (2x + h)">= lim (2xh + h^2) / h = lim (2x + h)</p>
-      <p class="math answer" data-cue="3.1c" data-fx="pop" data-display
-         data-tex="\\frac{d}{dx}\\,x^2 = 2x">d/dx x^2 = 2x</p>
+      <div class="stack">
+        <p class="math" data-cue="3.1a" data-display
+           data-tex="\\frac{d}{dx}\\,x^2 = \\lim_{h \\to 0} \\frac{(x+h)^2 - x^2}{h}">d/dx x^2 = lim (x+h)^2 - x^2 / h</p>
+        <p class="math" data-cue="3.1b" data-display
+           data-tex="= \\lim_{h \\to 0} \\frac{2xh + h^2}{h} = \\lim_{h \\to 0} (2x + h)">= lim (2xh + h^2) / h = lim (2x + h)</p>
+        <p class="math answer" data-cue="3.1c" data-fx="pop" data-display
+           data-tex="\\frac{d}{dx}\\,x^2 = 2x">d/dx x^2 = 2x</p>
+      </div>
     </div>` },
 ]});
+</script>
 ```
 
 The plain text inside each element is what shows when KaTeX is absent, so write it as a
@@ -120,9 +143,7 @@ readable fallback.
 
 The question types in with `data-type`, and the reply fades in one line at a time. The
 bubble and its first line share a cue, so the bubble's background appears at once while
-the text arrives. The second step is the "after", and its cue `4.2` mounts it. The
-scaffold's own before-and-after scene syncs each prompt to the voice with `data-sync`
-instead, which suits a prompt the narrator reads aloud.
+the text arrives. The second step is the "after", and its cue `4.2` mounts it.
 
 ```md script.md
 ## 4. Before and after
@@ -148,6 +169,14 @@ sentences. [beat] Same model, better prompt.
 ```
 
 ```html deck/index.html
+<style>
+  .chat { position: absolute; left: 120px; top: 300px; width: 1680px; display: flex; flex-direction: column; gap: 32px; }
+  .bubble { max-width: 1100px; padding: 28px 40px; border-radius: 24px; font: 450 36px/1.4 var(--sans); }
+  .bubble p { margin: 0 0 12px; }
+  .ask { align-self: flex-end; background: var(--accent); color: var(--ground); }
+  .reply { align-self: flex-start; background: var(--block); color: var(--ink); }
+</style>
+<script>
 DeckTalk.scene(4, { name: "Before and after", steps: [
   { id: "4.1", hold: 12, cues: { "4.1ask": 1, "4.1r1": 5, "4.1r2": 7 }, render: () => `
     <div class="slide">
@@ -171,9 +200,10 @@ DeckTalk.scene(4, { name: "Before and after", steps: [
       </div>
     </div>` },
 ]});
+</script>
 ```
 
-## A code block that reveals one line per phrase
+## A code block that appears one line per phrase
 
 Each line is a block element with its own cue. A container with `white-space: pre` and a
 monospace font keeps the indentation, and `fade` avoids the vertical motion of `rise`,
@@ -196,8 +226,8 @@ silently, with no key. [beat] Then build it with your voice.
 
 ```html deck/index.html
 <style>
-  .code { font: 40px/1.5 ui-monospace, Menlo, monospace; white-space: pre; background: var(--surface); border-radius: 24px; padding: 40px 56px; }
-  .code .cmt { color: var(--muted); }
+  .code { position: absolute; left: 120px; top: 360px; font: 500 40px/1.5 var(--mono); white-space: pre; color: var(--ink); background: var(--block); border-radius: 24px; padding: 40px 56px; }
+  .code .cmt { color: var(--mute); }
 </style>
 <script>
 DeckTalk.scene(5, { name: "Three commands", steps: [
@@ -214,8 +244,8 @@ would otherwise render the template's own indentation.
 
 ## A two-column comparison
 
-Two columns, each with a heading and a caption, revealed left then right. The flex `cols`
-class from the scaffold lays them out, and each column gets one cue.
+Two columns reveal left then right, and each has a heading and a caption. The `<style>`
+block lays them out with flex, and each column gets one cue.
 
 ```md script.md
 ## 6. Two ways to time a reveal
@@ -234,20 +264,24 @@ sentence wherever it goes.
 
 ```html deck/index.html
 <style>
-  .col { flex: 1; background: var(--surface); border-radius: 24px; padding: 48px; min-height: 520px; }
-  .col h2 { font-size: 56px; margin: 0 0 24px; }
+  .cols { position: absolute; left: 120px; right: 120px; top: 300px; display: flex; gap: 48px; }
+  .pane { flex: 1; background: var(--block); border-radius: 24px; padding: 48px; min-height: 520px; }
+  .pane h2 { margin: 0 0 24px; font: 600 56px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
+  .pane .line { margin: 0 0 16px; font: 450 36px/1.4 var(--sans); color: var(--ink); }
+  .pane .caption { margin: 0; }
+  .accent { color: var(--accent); }
 </style>
 <script>
 DeckTalk.scene(6, { name: "Two ways to time a reveal", steps: [
   { id: "6.1", hold: 12, cues: { "6.1left": 1, "6.1right": 6 }, render: () => `
     <div class="slide">
       <div class="cols">
-        <div class="col" data-cue="6.1left">
+        <div class="pane" data-cue="6.1left">
           <h2>A timeline</h2>
           <p class="line">Every reveal is a number of seconds.</p>
           <p class="caption">Every edit moves them by hand.</p>
         </div>
-        <div class="col" data-cue="6.1right">
+        <div class="pane" data-cue="6.1right">
           <h2 class="accent">The words</h2>
           <p class="line">Every reveal is a phrase.</p>
           <p class="caption">It follows the sentence wherever it goes.</p>
@@ -260,8 +294,9 @@ DeckTalk.scene(6, { name: "Two ways to time a reveal", steps: [
 
 ## A screenshot slide that waits for the image
 
-The recorder starts the narration clock only after `window.__sceneReady` resolves, so a
-page with a large image should set that promise to the image's decode. Set it in a
+This recipe requires a few lines of JavaScript before the runtime starts. The recorder
+starts the narration clock only after `window.__sceneReady` resolves, so a page with a
+large image should set that promise to the image's decode. Set it in a
 script that runs before the runtime starts, because the runtime sets its own promise
 only when the page has not. The image is decoded into the browser's cache, so the `img`
 element inside the step appears at once when its cue fires.
@@ -282,7 +317,8 @@ cut, and the captions and chapters sit beside the video.
 
 ```html deck/index.html
 <style>
-  .shot { width: 1600px; border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
+  .shot { position: absolute; left: 260px; top: 140px; width: 1400px; border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.25); }
+  .note { position: absolute; left: 260px; top: 960px; margin: 0; }
 </style>
 <script src="decktalk-runtime.js"></script>
 <script>
@@ -294,7 +330,7 @@ DeckTalk.scene(7, { name: "The status report", steps: [
   { id: "7.1", hold: 10, cues: { "7.1shot": 0.5, "7.1note": 5 }, render: () => `
     <div class="slide">
       <img class="shot" src="../media/status.png" alt="" data-cue="7.1shot" data-fx="fade">
-      <p class="caption" data-cue="7.1note">Captions and chapters sit beside the video.</p>
+      <p class="caption note" data-cue="7.1note">Captions and chapters sit beside the video.</p>
     </div>` },
 ]});
 </script>
@@ -302,7 +338,7 @@ DeckTalk.scene(7, { name: "The status report", steps: [
 
 A page that sets its own `__sceneReady` and also uses `data-tex` should wait for
 `window.katex` itself, because the runtime's KaTeX wait is part of the promise it would
-otherwise have set. [The runtime reference](/reference/runtime#window-__sceneready) has
+otherwise have set. [The runtime reference](/reference/runtime#window__sceneready) has
 the details.
 
 ## Next

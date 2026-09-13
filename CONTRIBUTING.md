@@ -6,12 +6,16 @@ first. If you build something with DeckTalk, a link in an issue is welcome too.
 
 ## Setup
 
+Run every command from the repository root.
+
 ```console
 uv sync --group dev
 uv run decktalk setup            # headless Chromium and ffmpeg, once
 ```
 
 ## Checks
+
+Run every command from the repository root.
 
 ```console
 uv run ruff check src tests && uv run ruff format --check src tests
@@ -33,7 +37,7 @@ through "Run workflow". Each run uploads its smoke video as an artifact.
 
 ## Layout
 
-```
+```text
 src/decktalk/
   config.py      tuning dataclasses; defaults -> decktalk.toml tables -> DECKTALK_* env
   project.py     the decktalk.toml document, validated at load
@@ -61,7 +65,7 @@ and maps errors to exit codes.
 Two seams are meant for extension. The page contract lives in `runtime/decktalk-runtime.js`
 and is documented at [docs.decktalk.app/concepts/page-contract](https://docs.decktalk.app/concepts/page-contract).
 The voice lives behind `providers/speech.py`, a two-method protocol. There is no plugin
-loading yet, so a new provider is a pull request.
+loading, so a new provider is a pull request.
 
 ## Roadmap
 
@@ -76,10 +80,11 @@ semicolons, and version-specific wording that goes stale.
 
 ## Commits and releases
 
-Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `fix:`
-bumps the patch version, `feat:` the minor, `feat!:` or a `BREAKING CHANGE:` footer the major
-(minor while 0.x). `pre-commit install` adds a hook that checks the message. The `pr-title`
-workflow checks pull request titles, because a squash merge turns the title into the commit.
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org). A `fix:`
+commit bumps the patch version. A `feat:` commit bumps the minor version. A `feat!:` commit or
+a `BREAKING CHANGE:` footer bumps the major version. `pre-commit install` adds a hook that
+checks the message. The `pr-title` workflow checks pull request titles, because a squash merge
+turns the title into the commit.
 
 release-please keeps a release pull request open against `main`. It bumps the version in
 `pyproject.toml` and `uv.lock`, writes `CHANGELOG.md`, and picks the bump from the commits

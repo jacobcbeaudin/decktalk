@@ -8,7 +8,7 @@ mode: "wide"
 Each project has one `decktalk.toml`. Every path in it is relative to the project
 directory. An unknown top-level table fails the load, so a typo cannot silently do
 nothing, and a value of the wrong type fails with the table and key named. The file has
-two kinds of content. The document tables on this page describe the presentation. The
+two kinds of content. The document tables in this reference describe the presentation. The
 [tuning tables](/reference/configuration) change how DeckTalk renders and are rarely
 needed.
 
@@ -54,7 +54,7 @@ environment.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `provider` | `elevenlabs` | The speech provider, by the name it registered. ElevenLabs is the only one today. |
+| `provider` | `elevenlabs` | The speech provider, by the name it registered. ElevenLabs is the built-in provider. |
 | `model` | `[narration]` `model`, which defaults to `eleven_multilingual_v2` | The ElevenLabs model id. The `--model` flag overrides it for one run. |
 | `stability` | 0.55 | Lower values vary more between takes. |
 | `similarity_boost` | 0.75 | How closely the voice follows the clone. |
@@ -177,6 +177,6 @@ ElevenLabs. Ambience and music write to the `ambience` and `underscore` paths na
 
 ## Tuning tables
 
-Any settings section can be overridden per project with a table of the same name, such
+Any settings table can be overridden per project with a table of the same name, such
 as `[video]` or `[record]`, or per shell with a `DECKTALK_<SECTION>_<FIELD>` variable.
 [Configuration](/reference/configuration) lists every field with its default.

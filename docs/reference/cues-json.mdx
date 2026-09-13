@@ -5,8 +5,8 @@ icon: "brackets-curly"
 ---
 
 The cue file names the spoken phrase that each visual lands on. It is optional, and a
-project without one plays every page with its built-in timing. This is the scaffold's
-file, shortened.
+project without one plays every page with its built-in timing. This is an example in
+the scaffold's shape.
 
 ```json cues.json
 {
@@ -31,6 +31,11 @@ file, shortened.
 }
 ```
 
+<Note>A cue on `$start` with no offset fires at 0.0, which is fine for the page but not
+for `decktalk verify`. The check takes its reference frame `after_dip_seconds` after the
+section start, during the first slide's entrance, so a `$start` cue at 0.0 reports
+`OFF CUE` or `NO CHANGE` rather than a landing. Verify cues that sit on words.</Note>
+
 ## Shape
 
 The file is one object with a `sections` key. Every other top-level key, such as
@@ -42,9 +47,9 @@ must name a `[[section]]` in `decktalk.toml`. Each section is an object with an 
 
 | Key | Required | Meaning |
 |---|---|---|
-| `cue` | yes | A cue id the page understands. `step` is accepted as a synonym, and `cue` wins when both are present. The id may not contain `@` or a comma. |
+| `cue` | yes | A cue id the page understands. `step` is accepted as a synonym, and `step` wins when both are present. The id may not contain `@` or a comma. |
 | `on` | yes | A word or short phrase from that section's narration, or `$start`, or `$end`. |
-| `offset` | no | Seconds added to the match. It may be negative, except that `$start` never goes below zero. |
+| `offset` | no | Seconds added to the match. It may be negative. `$start` plus a negative offset is written as is, and the page fires it at t=0. |
 | `occurrence` | no | Which repeat of the phrase to use. The default is 1, the first. |
 | `case_sensitive` | no | Match case as written. The default is false. |
 
@@ -58,12 +63,14 @@ must name a `[[section]]` in `decktalk.toml`. Each section is an object with an 
 ## What beats writes
 
 `decktalk beats` resolves every cue and writes `build/audio/beats.json`, one string per
-section in the form the page receives as `?beats=`.
+section in the form the page receives as `?beats=`. It also writes
+`build/audio/beats.anchors.json`, each cue's word start without its `offset`, which
+`verify` uses to find the click at the cued word in a silent build.
 
 ```json build/audio/beats.json
 {
-  "01": "1.1a@0.0,1.1b@1.13,1.1c@6.77",
-  "03": "3.1@0.0,3.1bowl@7.37,3.1p0@11.3,3.1p1@18.18,3.1eq@21.63,3.1p2@25.56,3.1p3@26.54,3.1think@32.44,3.1over@38.83,3.1min@44.43"
+  "01": "1.1curve@1.14,1.1number@2.92,1.1mark@4.11,1.1cap@20.23",
+  "03": "3.1bowl@1.57,3.1p0@6.26,3.1up@8.87,3.1neg@11.48,3.1p1@13.05,3.1eq@15.66,3.1p2@18.79,3.1p3@19.31,3.1eqA@26.09,3.1eqA2@27.66,3.1eqB@29.23,3.1eqC@30.27,3.1think@32.36,3.1over@37.58,3.1min@42.99"
 }
 ```
 

@@ -27,7 +27,7 @@ mode: "custom"
   <div className="mt-20">
     <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Follow one cue through the four files</h2>
     <p className="mt-2 max-w-3xl text-zinc-600 dark:text-zinc-400">
-      A project is four files that refer to each other by one number and one id. These four snippets come from the scaffold that <code>decktalk init</code> writes, and they follow the cue <code>3.1eq</code> from the spoken phrase to the frame.
+      A project is four files that refer to each other by one number and one id. These four snippets are simplified from the scaffold, and they follow the cue <code>3.1eq</code> from the spoken phrase to the frame.
     </p>
 
     <Columns cols={2}>
@@ -35,11 +35,11 @@ mode: "custom"
         The words under a `## N.` heading are what the voice says. A time budget on the heading is optional, and a `[beat]` is a short pause that the voice reads as a dash.
 
         ```md script.md
-        ## 3. Gradient descent — 0:40 to 1:20
+        ## 3. Gradient descent — 0:40 to 1:00
 
-        The gradient says which way is uphill, so
-        take a step the other way. [beat] The
-        learning rate sets the size of that step.
+        The gradient points uphill, so follow
+        minus the gradient. [beat] Take a step,
+        and the learning rate, eta, scales its length.
         ```
       </Card>
       <Card title="2. The cue names the phrase" icon="crosshairs">
@@ -78,7 +78,7 @@ mode: "custom"
 
     ```text
     check                 cue       at   chg %   ctl %   offset     a/v  result
-    3:3.1eq             21.63    54.43    0.27    0.00    -70ms   -74ms  changed
+    3:3.1eq             15.66    72.38    0.29    0.00    -20ms    -5ms  changed
     ```
   </div>
 
@@ -86,17 +86,17 @@ mode: "custom"
     <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Where to go</h2>
 
     <CardGroup cols={3}>
-      <Card title="Quickstart" icon="play" href="/quickstart">Install DeckTalk, build the scaffold without an API key, then add your voice.</Card>
-      <Card title="Your first deck" icon="pen-line" href="/guides/first-deck">Write one section in all four files and watch it land.</Card>
-      <Card title="Writing for the ear" icon="ear-listen" href="/guides/writing-for-the-ear">Say it, then show it. The craft of a script that cues well.</Card>
-      <Card title="How it works" icon="diagram-project" href="/concepts/how-it-works">The stages, the frame-exact alignment, and what verify measures.</Card>
-      <Card title="The page contract" icon="window" href="/concepts/page-contract">How a slide talks to the recorder, and how to design the stage.</Card>
-      <Card title="One-page reference" icon="bolt" href="/reference/card">Every file, command, rule, and exit code on one page, written for agents.</Card>
+      <Card title="Quickstart" icon="play" href="/quickstart">The quickstart installs DeckTalk, builds the scaffold without an API key, and then adds your voice.</Card>
+      <Card title="Your first deck" icon="pen-line" href="/guides/first-deck">This guide writes one section in all four files and watches it land.</Card>
+      <Card title="Writing for the ear" icon="ear-listen" href="/guides/writing-for-the-ear">A script that cues well names a thing and then shows it. This guide teaches that craft.</Card>
+      <Card title="How it works" icon="diagram-project" href="/concepts/how-it-works">This guide walks through the stages, the frame-exact alignment, and what verify measures.</Card>
+      <Card title="The page contract" icon="window" href="/concepts/page-contract">This guide explains how a slide talks to the recorder and how to design the stage.</Card>
+      <Card title="One-page reference" icon="bolt" href="/reference/card">The reference puts every file, command, rule, and exit code on one page, written for agents.</Card>
     </CardGroup>
   </div>
 
   <div className="mt-16 rounded-xl border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-    Every page is also served as plain text for language models at <a href="https://docs.decktalk.app/llms.txt">docs.decktalk.app/llms.txt</a> and <a href="https://docs.decktalk.app/llms-full.txt">llms-full.txt</a>.
+    Every part of these docs is also served as plain text for language models at <a href="https://docs.decktalk.app/llms.txt">docs.decktalk.app/llms.txt</a> and <a href="https://docs.decktalk.app/llms-full.txt">llms-full.txt</a>.
   </div>
 
 </div>

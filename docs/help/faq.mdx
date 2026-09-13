@@ -16,7 +16,7 @@ Chromium and ffmpeg run on your machine, and `--silent` builds spend nothing.
 
 ## Is there lock-in to ElevenLabs?
 
-ElevenLabs is the only speech provider today because it returns a timestamp for every
+ElevenLabs is the built-in speech provider because it returns a timestamp for every
 word. The provider is one module behind a two-method protocol, and anything that returns
 word times can take its place. A local text-to-speech engine with a forced aligner is the
 obvious candidate. The `--silent` flag needs no provider at all, so the project format
@@ -40,14 +40,16 @@ Here an edit rebuilds one section, and the reveals follow the words wherever the
 | Tool | Timing comes from | Slides are | Cost of editing one sentence |
 |---|---|---|---|
 | **DeckTalk** | the spoken words, one timestamp each | your HTML | one section re-synthesized and re-recorded |
-| Remotion, Motion Canvas | frame numbers or seconds in code | React or TypeScript code | you re-time by hand |
-| Manim | seconds in a Python animation | Python scenes | you re-time by hand and re-render |
+| Remotion, Motion Canvas | frame numbers or seconds in code, by default | code | you re-time by hand and re-render |
+| Manim | seconds in code, or bookmarks in the narration with manim-voiceover | code | with manim-voiceover, bookmarks in the text re-sync, and you still re-render the scene in Python |
 | reveal.js plus a TTS script | a fixed delay per slide, or a hand-made timeline | your HTML | you re-time every slide after the change |
-| Descript | a recording you made | your screen | you re-record the clip |
-| Synthesia, HeyGen | the avatar's speech | their templates | you regenerate the video |
+| Descript | a recording you made | your screen | Overdub regenerates the words, and the screen recording does not move with them |
+| Synthesia, HeyGen | the avatar's speech | their avatar and scenes | you regenerate the video |
 
 Remotion, Motion Canvas, and Manim are for animation, where the frame is the unit and
-the narration is fitted afterwards. reveal.js with a text-to-speech track gets you
+the narration is fitted afterwards. Manim with manim-voiceover comes closest, because a
+bookmark in the narration text can wait for a word, but the scene is still Python that
+renders again after every change. reveal.js with a text-to-speech track gets you
 slides and a voice, but nothing ties a reveal to a word, so every edit means re-timing.
 Descript edits a recording you already made. Synthesia and HeyGen put an avatar on
 screen. DeckTalk is for the case where the timing should come from the words and the

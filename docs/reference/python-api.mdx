@@ -26,7 +26,7 @@ print(result.assembly.final, result.verification.ok)
 | `Project` | The loaded document: `root`, `name`, `script`, `cues`, `build`, `sections`, `voice`, `transition`, `mix`, `soundscape`, `settings`, plus the paths `audio_dir`, `rec_dir`, `out_dir`, `shots_dir`, `manifest_path`, `timeline_path`, `beats_path`, `final`, `env_file`, and the loaders `manifest()`, `timeline()`, `beats()`. |
 | `Section`, `PageSection`, `ClipSection` | The two kinds of section and their union. `project.sections` holds them in number order, and `page_sections`, `clip_sections`, `clip_numbers`, and `page_files` filter them. |
 | `Voice`, `Transition`, `Mix`, `Soundscape` | The document tables, as frozen dataclasses with the same keys as [decktalk.toml](/reference/decktalk-toml). |
-| `Settings`, `load_settings(root, *, toml, environ)` | The tuning tree, built from the defaults, then the TOML tables, then the `DECKTALK_*` environment. [Configuration](/reference/configuration) lists every field. |
+| `Settings`, `load_settings(root, *, toml, environ, user)` | The tuning tree, built from the defaults, the per-machine file, the project's TOML tables, then the `DECKTALK_*` environment. [Configuration](/reference/configuration) lists every field. |
 
 ## Artifacts
 
@@ -50,7 +50,7 @@ print(result.assembly.final, result.verification.ok)
 | `measure(project, only)` | A list of `LeadMeasurement`, each with `key`, `lead_in_seconds`, `wallclock_seconds`, and `method`. |
 | `check(project, only)` | A list of `RecordingCheck`, each with the luma fields, `verdict`, and `ok`. |
 | `assemble(project, *, nomix, loudnorm, strict)` | `AssembleResult` with `final`, `stamped`, `duration`, `sections`, `warnings`, `loudness`, `captions_srt`, `captions_vtt`, and `chapters`. |
-| `verify(project, checks)` | `VerifyResult` with `total_seconds`, `starts`, `cues`, `ok`, and `black_starts`. |
+| `verify(project, checks)` | `VerifyResult` with `total_seconds`, `starts`, `cuts`, `cues`, and `black_starts`. Its `ok` is true only when every start, cut, and cue check passed. |
 | `shoot(project, *, pages, steps, section, at)` | The screenshot paths. |
 | `soundscape(project, *, only, force, dry_run)` | A list of `SoundscapeItem`, each with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds`. |
 | `build(project, *, silent, force, only, nomix, loudnorm, strict, allow_unresolved, report)` | `BuildResult` with one field per stage and `ok`, which mirrors the CLI's exit code. `report(stage, result)` is called after each stage. |
@@ -75,21 +75,21 @@ The boundary is `SpeechProvider`, a protocol with a `name`, a `speak(request)` m
 that returns the audio bytes and a list of `Word`, and a `cache_key(request)` method
 that returns everything that changes the audio apart from the text. A `SpeechRequest`
 carries the `text` with break tags, the `model`, the `voice_settings`, the
-`output_format`, and the neighbouring `previous_text` and `next_text` for prosody.
+`output_format`, and the neighboring `previous_text` and `next_text` for prosody.
 
 `register(name, factory)` is public. The factory receives the loaded `Project` and
 returns a provider, and `[voice]` with `provider = "name"` then selects it. ElevenLabs is
-the built-in provider and the only one today. There is no plugin loading, so a new
+the built-in provider. There is no plugin loading, so a new
 provider is a pull request that adds a module under `src/decktalk/providers/` and
 registers it. A local text-to-speech engine paired with a forced aligner is the obvious
 candidate, and an issue that proposes one is welcome.
 
 ## Stability
 
-The file formats are stable already. That covers `decktalk.toml`, `cues.json`, the build
-artifacts, and the page contract, and a change to any of them bumps the minor version
-with a migration note in the [changelog](/changelog). The Python names may still move,
-and a rename is a breaking change once the project leaves the 0.x series. Everything
+The file formats are the stable surface. That covers `decktalk.toml`, `cues.json`, the
+build artifacts, and the page contract, and a change to any of them comes with a
+migration note in the [changelog](/changelog). The Python names are less settled than the
+file formats, and the changelog records every rename. Everything
 under `decktalk.media`, everything under `decktalk.providers` other than the three speech
 names above, and every name that starts with an underscore is internal.
 

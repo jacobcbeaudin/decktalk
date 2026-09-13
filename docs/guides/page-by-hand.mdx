@@ -4,8 +4,9 @@ description: Implement the DeckTalk page contract without decktalk-runtime.js, s
 icon: "code"
 ---
 
-The runtime is one file with no dependencies, and most pages should include it. A page
-built with a framework of its own can implement the contract instead. This page lists
+This guide requires writing JavaScript. The runtime is one file with no dependencies, and
+most pages should include it. A page
+built with a framework of its own can implement the contract instead. This guide lists
 what the recorder and the screenshot tool need, and shows a small page that honors all
 of it.
 
@@ -19,6 +20,7 @@ before their words. Wait for the call.</Warning>
 | The recorder | Your page |
 |---|---|
 | Opens `page.html?scene=N&beats=id@s,…&t0=signal` plus any `params` from the section. | Reads `scene` and `beats`, and schedules cue `id` at `s` seconds after the clock starts. |
+| Adds `&words=word@s,…`, the section's spoken words with their seconds after narration t=0, whenever the timeline has words. | May read it to show text one word at a time, or ignore it. |
 | Awaits `document.fonts.ready` and then `window.__sceneReady` when it is a Promise. | Sets `window.__sceneReady` to a Promise that resolves when the page is ready to be recorded. |
 | Calls `window.DeckTalk.startClock()` once, when narration t=0 falls. | Starts the clock in that call and nowhere else. |
 | Reads `window.__decktalk.warnings` after the recording and logs each string. | Pushes a string for anything the page could not honor, such as an unknown cue id. |
@@ -37,7 +39,7 @@ opens the page as the recorder does and reads `window.__decktalk.fired` for the 
 
 ## A minimal page
 
-This page honors the whole contract in about forty lines. It has one scene with one
+The page below honors the whole contract in about forty lines. It has one scene with one
 step, and each cue reveals the element with the matching `data-cue`.
 
 ```html deck/plain.html

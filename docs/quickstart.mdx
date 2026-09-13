@@ -44,6 +44,7 @@ icon: "play"
     chromium  ok      <version>
     ffmpeg    ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffmpeg
     ffprobe   ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffprobe
+    config    ok      none (optional, at ~/Library/Application Support/decktalk/decktalk.toml)
     katex     ok      ~/Library/Caches/decktalk/katex/<version>
     ```
 
@@ -64,21 +65,21 @@ icon: "play"
 
     ```text
     sec    start    probe   YAVG   YMAX  result
-     01     0.00     0.20     29    226  ok
-     02    10.48    10.68     29    225  ok
-     03    32.80    33.00     29    229  ok
-     04    79.68    79.88     28    158  ok
-     05   126.88   127.08     28    159  ok
-    total 149.00s; 0 black section start(s)
+     01     0.00     0.20    232    245  ok
+     02    22.44    22.64    232    252  ok
+     03    56.72    56.92    233    248  ok
+     04   107.24   107.44    228    255  ok
+     05   133.68   133.88    231    249  ok
+    total 149.44s; 0 black section start(s)
 
     sec   cut at  before cut  result
-     01    10.50   -128.4 dB  quiet
-     02    32.78   -123.3 dB  quiet
-     03    79.70   -125.4 dB  quiet
-     04   126.88   -128.4 dB  quiet
-     05   146.98   -120.0 dB  quiet
+     01    22.45   -129.7 dB  quiet
+     02    56.69   -128.4 dB  quiet
+     03   107.27   -128.5 dB  quiet
+     04   133.69   -125.4 dB  quiet
+     05   145.43   -120.0 dB  quiet
 
-    built build/out/my-lesson.mp4
+    built ~/my-lesson/build/out/my-lesson.mp4
     ```
 
     <Tabs>
@@ -99,10 +100,12 @@ icon: "play"
       </Tab>
     </Tabs>
 
-    The scaffold is a short lesson in five sections: a title whose subtitle follows the
-    voice word by word, three labeled lines, a gradient descent lesson in which a loss bowl
-    draws and a point steps down it, a query-review prompt before and after, and a closing
-    recap with an end card. All five are page sections, which DeckTalk records from
+    The scaffold is a short lesson in five sections: a cold open in which a line of the
+    script lights up word by word as the voice reads it, a scene that shows the four files
+    that refer to each other by one number, a gradient descent lesson in which a three.js
+    loss surface fades up and a ball steps down it while the update rule builds in KaTeX,
+    a scene in which one sentence is retyped and the build table fills in, and an end
+    card. All five are page sections, which DeckTalk records from
     `deck/index.html` and cuts to the narration. A commented-out section 0 shows how to
     open with a clip of your own, and [Add a clip section](/guides/clip-section) walks
     through it.
@@ -156,7 +159,7 @@ icon: "play"
 | `decktalk.toml` | The plan. One `[[section]]` per script section, the voice, the transitions, the mix, the soundscape prompts, and any tuning. [Reference](/reference/decktalk-toml). |
 | `script.md` | The narration. Each `## N. Title` heading starts a section, and text in square brackets is a stage direction that is not spoken. [Reference](/reference/script-md). |
 | `cues.json` | The phrase that each visual lands on. [Reference](/reference/cues-json). |
-| `deck/` | Your pages, with `decktalk-runtime.js` and a vendored copy of KaTeX beside them. [Runtime reference](/reference/runtime). |
+| `deck/` | Your pages, with `decktalk-runtime.js`, a vendored copy of KaTeX, and `vendor/three.min.js` for the scaffold's loss surface beside them. `deck/fonts/` holds Inter, Inter Tight, and JetBrains Mono as OFL woff2 files, declared with `font-display: block`, so a recorder with no network draws them rather than a fallback face. [Runtime reference](/reference/runtime). |
 | `media/` | Your own clips and the underscore markers. |
 | `.env` | The ElevenLabs key and voice id. Git ignores it. |
 | `build/` | Everything DeckTalk generates, including the video, captions, and chapters. Git ignores it. [Artifacts](/reference/artifacts). |

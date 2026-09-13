@@ -140,7 +140,7 @@ Registers a scene and returns `DeckTalk`, so calls chain. Scenes start on
 </ResponseField>
 
 <ResponseField name="data-at" type="number" default="0">
-  Seconds after the step mounts at which the element reveals. An element with `data-at` and no `data-cue` reveals on that timer in every mode.
+  Seconds after the step mounts at which the element appears. An element with `data-at` and no `data-cue` appears on that timer in every mode.
 </ResponseField>
 
 <ResponseField name="data-fx" type="rise | fade | draw | drop | pop | dim | none" default="rise">
@@ -160,11 +160,11 @@ Registers a scene and returns `DeckTalk`, so calls chain. Scenes start on
 </ResponseField>
 
 <ResponseField name="data-sync" type="flag">
-  Reveal the element one word at a time, each at the second the voice reaches it. The runtime matches the element's text against a run of the words in the `words` parameter, ignoring case and punctuation, and prefers the run nearest the cue, so a phrase the section says twice lands on the right occurrence. The text must be word for word what the voice says. When no run matches, the element reveals whole and a warning is recorded in `window.__decktalk.warnings`. Pair it with `data-fx="none"`, because a fade on the container fights the per-word reveal. In a browser preview, which has no `words`, the element reveals whole.
+  Reveal the element one word at a time, each at the second the voice reaches it. The runtime matches the element's text against a run of the words in the `words` parameter, ignoring case and punctuation, and prefers the run nearest the cue, so a phrase the section says twice lands on the right occurrence. The text must be word for word what the voice says. When no run matches, the element appears whole and a warning is recorded in `window.__decktalk.warnings`. Pair it with `data-fx="none"`, because a fade on the container fights the per-word reveal. In a browser preview, which has no `words`, the element appears whole.
 </ResponseField>
 
 <ResponseField name="data-tex" type="string">
-  Typeset this TeX with KaTeX into the element when `window.katex` exists, replacing the text content, which stays as the fallback otherwise. Add `data-display` for display math. Rendering errors keep the plain text.
+  Typeset this TeX with KaTeX into the element when `window.katex` exists, replacing the text content, which stays as the fallback otherwise. Add `data-display` for display math. A TeX string KaTeX cannot parse renders in red, and the runtime adds a warning that names it, which the recorder prints. Inside a `render` template literal every backslash must be doubled, because `\f`, `\t`, `\u`, and `\x` are JavaScript escapes: `\frac` becomes a form feed, `\theta` a tab, and `\underbrace` or `\xrightarrow` a syntax error that blanks the page.
 </ResponseField>
 
 <ResponseField name="data-display" type="flag">
@@ -173,7 +173,7 @@ Registers a scene and returns `DeckTalk`, so calls chain. Scenes start on
 
 ## `window.__decktalk`
 
-Read-only state for the recorder, the screenshot tool, and your own scripts.
+Read-only state for the recorder, the screenshot tool, and your own tools.
 
 <ResponseField name="mode" type="index | autoplay | cues | frozen">
   The current mode.
@@ -207,6 +207,14 @@ Read-only state for the recorder, the screenshot tool, and your own scripts.
   Seconds since narration t=0, or negative infinity before the clock starts.
 </ResponseField>
 
+<ResponseField name="frameGaps" type="array">
+  One `{ at, ms }` object for every gap over 100 ms between two animation frames, where `at` is seconds since narration t=0. The recorder copies it to the sidecar as `frame_gaps`, and `check` reports `STALLED` past `stall_ms`.
+</ResponseField>
+
+<ResponseField name="syncLog" type="array">
+  One `{ text, cueAt, runAt, n, firstOn }` object per `data-sync` element that matched: the first characters of its text, the second at which it was revealed, the second of the first matched word, the number of words, and the second at which the first word lit. The recorder copies it to the sidecar as `sync_log`.
+</ResponseField>
+
 The runtime also sets `document.body.dataset.done = "1"` once the last step has mounted.
 
 ## `window.__sceneReady`
@@ -234,7 +242,7 @@ the `dt-` prefix and nothing else.
 | `--dt-xfade` | The crossfade length between slides. The default is 0.35 s, and the first slide slides in over 0.3 s instead. |
 | `--dt-scene-dur` | The length of the camera push. The runtime sets it per scene. |
 | `.dt-slide`, `.dt-enter`, `.dt-first`, `.dt-leave` | A slide, one arriving, the first one, and one leaving. A leaving slide is removed after 400 ms. |
-| `.dt-reveal`, `.dt-on` | An element with `data-cue` or `data-at`, and one that has revealed. |
+| `.dt-reveal`, `.dt-on` | An element with `data-cue` or `data-at`, and one that has appeared. |
 | `.dt-w` | One word of a `data-sync` element, which gains `.dt-on` as the voice reaches it. |
 | `.dt-push` | Set on `#dt-cam` while the camera pushes. |
 | `.dt-frozen` | Set on `<html>` in freeze mode, where every animation has zero duration. |
@@ -250,7 +258,9 @@ prefix.
 | `unknown cue id X (no step id or cues list matches it)` | A cue in `beats` that no step owns and no handler is registered for. |
 | `no step owns any listed cue, so nothing will mount` | Every cue in `beats` is unknown, so the section would record an empty stage. |
 | `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page wants KaTeX and `window.katex` never appeared. |
-| `data-sync text not found in the spoken words: "…"` | The element's text matches no run of the `words` list, usually because the slide and the script differ by a word. The element revealed whole. |
+| `data-sync text not found in the spoken words: "…"` | The element's text matches no run of the `words` list, usually because the slide and the script differ by a word. The element appeared whole. |
+| `KaTeX could not parse "…"` | A `data-tex` value that KaTeX rendered in red. A single backslash inside a template literal is the usual cause. |
+| `cue "X" matches no element, handler, or step` | A cue in `beats` that a step owns by prefix but that no `data-cue` element, `on` handler, or step id matches, so it fires and nothing happens. |
 
 A `render` or `enter` function that throws is logged with `console.error`, and the
 recorder logs page errors as warnings.

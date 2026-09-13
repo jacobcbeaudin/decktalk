@@ -35,7 +35,7 @@ Tuning is everything about *how* DeckTalk renders that does not change from one
 presentation to the next. It comes from four layers, and each layer overrides the one
 before it.
 
-1. The defaults on this page.
+1. The defaults in this reference.
 2. The same tables in a per-machine file, which is `~/Library/Application Support/decktalk/decktalk.toml` on macOS, `%APPDATA%\\decktalk\\decktalk.toml` on Windows, and `~/.config/decktalk/decktalk.toml` elsewhere. `DECKTALK_CONFIG` points at a different file. Only settings tables belong there, and `decktalk doctor` shows whether one is in use.
 3. A table of the same name in the project's `decktalk.toml`. For example, `[video]` with `preset = "veryfast"` changes the x264 preset for that project.
 4. An environment variable named `DECKTALK_<SECTION>_<FIELD>`. For example, `DECKTALK_VIDEO_PRESET=veryfast` changes it for one shell. A list field such as `probe_delays` takes comma-separated values.
@@ -47,7 +47,7 @@ Content that changes per presentation is the project document, not tuning. Secti
 voice, mix levels, and soundscape prompts live in the same file under their own tables,
 and [the project file](/reference/decktalk-toml) describes them. Secrets live only in `.env`.
 
-<Tip>You rarely need this page. The scaffold builds with every default. Reach for `[video]`
+<Tip>You rarely need this reference. The scaffold builds with every default. Reach for `[video]`
 when drafts feel slow, and for `[verify]` when a deliberately subtle reveal fails the cue
 check.</Tip>
 """
