@@ -309,12 +309,23 @@
     const id = setInterval(() => { el.textContent = full.slice(0, ++i); if (i >= full.length) clearInterval(id); }, ms);
   }
   function typeset(root) {
-    if (!window.katex) return;
+    if (!window.katex) { if (root.querySelector("[data-tex]")) watchKatex(); return; }
     root.querySelectorAll("[data-tex]:not([data-typeset])").forEach((el) => {
       try { window.katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: el.hasAttribute("data-display") }); el.dataset.typeset = "1"; } catch (_) { /* keep plain text */ }
       // With throwOnError off a bad value renders in red instead of throwing, so it is reported here.
       if (el.querySelector(".katex-error")) warn(`data-tex could not be parsed: "${el.dataset.tex}" (write \\\\ for every backslash inside a template literal)`);
     });
+  }
+  // In cue mode the first step mounts after the clock starts, so katexReady finds no [data-tex]
+  // element and resolves without waiting. A step that mounts [data-tex] without KaTeX therefore
+  // starts one check, five seconds later, which warns if the equations are still plain text.
+  let katexWatched = false;
+  function watchKatex() {
+    if (katexWatched) return;
+    katexWatched = true;
+    setTimeout(() => {
+      if (!window.katex && document.querySelector("[data-tex]:not([data-typeset])")) warn("KaTeX did not load within 5 s, so [data-tex] elements stay plain text");
+    }, 5000);
   }
   // Resolves once window.katex exists, when the page needs it, or after 5 s with a warning.
   // A page needs KaTeX when it has a [data-tex] element in the document or a KaTeX script tag.

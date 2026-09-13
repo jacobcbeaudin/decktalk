@@ -228,6 +228,21 @@ def test_scene_ready_warns_when_katex_never_loads(page, tmp_path):
     assert page.evaluate("() => document.querySelector('[data-tex]').textContent") == "x^2"
 
 
+def test_cue_mode_warns_when_a_step_mounts_equations_without_katex(page, tmp_path):
+    """In cue mode a step mounts after the ready check ran, so a later check warns that KaTeX is missing."""
+    html = tmp_path / "notex-cues.html"
+    html.write_text(
+        '<!doctype html><html><head><meta charset="utf-8"></head><body>'
+        f'<script src="{runtime_path().resolve().as_uri()}"></script>'
+        "<script>DeckTalk.scene(1, { steps: [ { id: '1.1', render: () => "
+        '`<p data-cue="1.1a" data-tex="x^2">x^2</p>` } ] });</script>'
+        "</body></html>"
+    )
+    page.goto(f"{html.resolve().as_uri()}?scene=1&t0=0&beats=1.1a@0.2")
+    page.wait_for_function("() => window.__decktalk.warnings.some((w) => w.includes('KaTeX'))", timeout=9000)
+    assert page.evaluate("() => document.querySelector('[data-tex]').textContent") == "x^2"
+
+
 def test_a_cue_that_hits_nothing_is_a_warning(page, deck):
     """A cue id owned by a step by prefix but with no data-cue, handler, or step of its own is reported."""
     page.goto(f"{deck.as_uri()}?scene=4&t0=0&beats={full_beats(deck, '4')},4.1answer@0.7")
