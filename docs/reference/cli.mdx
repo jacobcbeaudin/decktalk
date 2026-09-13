@@ -256,16 +256,16 @@ even when `cues.json` marks it `"verify": false`.
 sec   cut at  before cut  result
  01    22.45   -129.7 dB  quiet
  02    56.69   -128.4 dB  quiet
- 03   107.27   -128.5 dB  quiet
- 04   133.69   -125.4 dB  quiet
- 05   145.43   -120.0 dB  quiet
+ 03   144.67   -126.0 dB  quiet
+ 04   166.09   -125.4 dB  quiet
+ 05   175.53   -120.0 dB  quiet
 
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.1p1             23.74    83.46    0.24    0.00    -20ms    -3ms  changed
-3:3.1eq             26.26    85.98    0.42    0.00    -20ms    -8ms  changed
+3:3.1p1             41.55    98.27    0.42    0.00    +50ms   +66ms  changed
+3:3.1eq             43.99   100.71    0.36    0.00    +50ms   +62ms  changed
 3:3.1eqA                -        -       -       -        -       -  skipped OPTED_OUT: cues.json sets "verify": false
 4:4.1change             -        -       -       -        -       -  skipped REFERENCE_CLAMPED: the cue at 0.00s leaves no frame before it past the fade-in
-5:5.1cap             2.46   143.66    0.26    0.00    -60ms   -60ms  changed
+5:5.1cap             2.84   168.92    0.31    0.00    -40ms   -66ms  changed
 ```
 
 The table above is shortened. A plain `decktalk verify` on the scaffold lists every
@@ -352,12 +352,12 @@ cues     cues.json  ok
   #  section                  start     end  length
   1  Open                      0:00    0:22    22.4
   2  Four files                0:22    0:57    34.2
-  3  Gradient descent          0:57    2:09    72.2
-  4  The edit                  2:09    2:30    21.4
-  5  Close                     2:30    2:40     9.4
-     narration total 2:40  (estimated: silent placeholders)
+  3  Gradient descent          0:57    2:25    88.0
+  4  The edit                  2:25    2:46    21.4
+  5  Close                     2:46    2:56     9.4
+     narration total 2:56  (estimated: silent placeholders)
 beats    5 section(s) with resolved cues
-final    build/out/my-lesson.mp4  2:42
+final    build/out/my-lesson.mp4  2:58
 captions build/out/my-lesson.srt  ok
 captions build/out/my-lesson.vtt  ok
 chapters build/out/my-lesson.chapters.txt  ok

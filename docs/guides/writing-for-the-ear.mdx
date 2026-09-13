@@ -56,8 +56,8 @@ the answer so that the audience can think.
 
 [pause 4]
 
-You overshoot and bounce across the bowl. [beat] Small enough, and you settle at the
-bottom, for this surface.
+You overshoot, and zigzag across the bowl, but you still settle. [beat] Push eta further,
+and each bounce climbs higher, until you fly out.
 ```
 
 Anything else in square brackets is a stage direction. It is not spoken and it is a beat
@@ -70,11 +70,11 @@ needs a pause at either end. [script.md](/reference/script-md) lists every direc
 
 The `offset` key in `cues.json` shifts a cue in seconds. A small positive offset, one or
 two tenths of a second, lets the word finish before the visual moves, which feels like
-the narrator pointing at something. The scaffold trails `settle` by 0.2 seconds, so the
-ball reaches the bottom of the bowl as the word ends.
+the narrator pointing at something. The scaffold trails `The best eta` by 0.2 seconds, so
+the ball sets off on its last steps to the bottom of the bowl just after the sentence starts.
 
 ```json cues.json
-{ "cue": "3.1min", "on": "settle", "offset": 0.2 }
+{ "cue": "3.1min", "on": "The best eta", "offset": 0.2 }
 ```
 
 Lead the word with a negative offset only when the audience must read along with the
@@ -121,15 +121,15 @@ word count at `words_per_minute`, which defaults to 140.
 ---------------------------------------------------------------------
  1  open                      48   0:21    --      0:22  -
  2  four-files                74   0:32    --      0:34  -
- 3  gradient-descent         143   1:01    0:20    1:12  -
+ 3  gradient-descent         179   1:17    0:20    1:28  -
  4  the-edit                  42   0:18    --      0:21  -
  5  close                     19   0:08    --      0:09  -
 ---------------------------------------------------------------------
-    total                    326   2:20            2:40
+    total                    362   2:35            2:56
 ```
 
 The `target` column is the budget's length. Section 3 has a budget of twenty seconds,
-from 0:40 to 1:00, and the silent rehearsal runs to 1:12. That gap is the signal to
+from 0:40 to 1:00, and the silent rehearsal runs to 1:28. That gap is the signal to
 cut a sentence. Widen the budget only after the voice has spoken and the `actual` column
 is real. The
 `min_seconds` key on a section in `cues.json` works the other way around and warns when

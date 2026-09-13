@@ -30,23 +30,26 @@ Now a lesson where every picture waits for its word.
 
 ## 3. Gradient descent — 0:40 to 1:00
 
-[Deck scene 3. The weight axes and the loss axis draw in, a loss surface fades up above them, a ball steps down it, and the update rule builds.]
+[Deck scene 3. The weight axes and the loss axis draw in, and a loss surface fades up above them. Two arrows on the floor show the gradient and its negative in the plane of the weights. A ball hops down the bowl in shrinking steps that leave dots on the floor, and the update rule builds. A ghost at a large eta zigzags across the bowl and settles, a ghost at a larger eta bounces out of the figure, and the ball settles at the minimum.]
 
 Training a model means tuning its weights to shrink its error, the loss. [beat] Gradient
-descent finds a local minimum of that loss, a function of many variables, one per weight.
-[beat] Keep two weights, theta one and theta two, [beat] and the loss above them is a
-surface. For this lesson it is a bowl. [beat] Pick a point, theta. [beat] The height there
-is the loss. [beat] The gradient points uphill, so follow minus the gradient. [beat] Take a step, and
-the learning rate, eta, scales its length. [beat] Again, [beat] and again. The steps shrink
-because the slope does. [beat] That is the rule. The next theta [beat] is this theta, minus
-eta [beat] times the gradient here.
+descent heads for a local minimum of that loss, a function of many variables, one per
+weight, by stepping downhill again and again. [beat] Keep two weights, theta one and theta
+two, [beat] and the loss above them is a surface. For this lesson it is a bowl. [beat] Pick
+a point, theta. [beat] The height there is the loss. [beat] The gradient points uphill, in
+the plane of the weights, so follow minus the gradient. [beat] Take a step, and the learning
+rate, eta, scales its length. [beat] Again, [beat] and again. The steps shrink because the
+slope does. [beat] That is the rule. The next theta [beat] is this theta, minus eta [beat]
+times the gradient here.
 
 [beat] Pause and think: what if eta is too large?
 
 [pause 4]
 
-You overshoot and bounce across the bowl. [beat] Small enough, and you settle at the
-bottom, for this surface. [beat] Now change one sentence of that lesson.
+You overshoot, and zigzag across the bowl, but you still settle. [beat] Push eta further,
+and each bounce climbs higher, until you fly out. [beat] Too small, and you crawl. [beat]
+The best eta is the largest one that stays stable, on this bowl. [beat] Now change one
+sentence of that lesson.
 
 ## 4. The edit
 

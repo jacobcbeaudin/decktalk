@@ -165,8 +165,8 @@ def test_katex_typesets_the_equation(page, deck):
     assert (deck.parent / "katex" / "katex.min.js").exists()
     page.goto(f"{deck.as_uri()}?step=3.1")
     page.evaluate("() => window.__sceneReady")
-    # The two learning rate chips and the four spans of the update rule.
-    assert page.evaluate("() => document.querySelectorAll('[data-tex][data-typeset] .katex').length") == 6
+    # The three learning rate chips, the four spans of the update rule, and the two gradient labels.
+    assert page.evaluate("() => document.querySelectorAll('[data-tex][data-typeset] .katex').length") == 9
     assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
 
