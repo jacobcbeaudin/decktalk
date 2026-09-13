@@ -11,7 +11,7 @@
  *           <div class="tile" data-cue="3.1b" data-count>1 in 10</div>` },
  *       { id: "3.2", hold: 6, render: () => `…` },
  *     ]});
- *     DeckTalk.on("3.2b", () => document.querySelector(".bars").classList.add("grow"));
+ *     DeckTalk.on("3.2b", (slide) => slide.querySelector(".bars").classList.add("grow"));
  *   </script>
  *
  * URL contract (what the recorder and the screenshot tool send)
@@ -23,6 +23,8 @@
  *   &t0=S                    seconds after page load at which narration t=0 falls;
  *                            t0=signal waits for DeckTalk.startClock() (what the recorder sends)
  *   ?step=ID                 freeze step ID with everything revealed (screenshots, review)
+ *   &cue=ID                  with ?step=, freeze at cue ID instead: the step's cues fire in
+ *                            autoplay order up to and including ID, and later cues stay hidden
  *   &speed=X                 autoplay time scale (cue mode ignores it)
  *   &hud=1                   overlay scene · step · clock
  *   (no params)              index page listing every scene and step
@@ -37,19 +39,27 @@
  *   data-type="ms"           type the text at ms per character on reveal
  *   data-sync                reveal the element word by word as each word is spoken. The text
  *                            must match a run of the section's spoken words, which the recorder
- *                            passes as &words=word@s,word@s,… (punctuation and case are ignored)
+ *                            passes as &words=word@s,word@s,… (punctuation and case are ignored).
+ *                            The element gets data-fx="none" unless it sets its own data-fx.
  *   data-tex="…"             typeset with KaTeX if window.katex is present
  *
  * Cue ownership: a cue belongs to the step with the same id, or whose `cues` list names
  * it, or whose id is the longest prefix of the cue id ("4.2b1" -> step "4.2", "9a" -> "9").
  *
+ * Handlers: a step's `enter(slide, ctx)`, its `on[id](slide, ctx)`, and every
+ * `DeckTalk.on(id, (slide, ctx) => …)` receive the mounted slide element and a context
+ * object { id, at, frozen, step }. `id` is the cue id (the step id for `enter`), `at` is the
+ * second after narration t=0, `frozen` is true in freeze mode, and `step` is the id of the
+ * mounted step. A handler that takes no arguments keeps working.
+ *
  * The page exposes window.__decktalk { mode, scene, step, cues, fired, catalog, warnings, now() }
  * and sets window.__sceneReady unless the page set its own. That promise resolves once fonts
  * are loaded and, when the page uses [data-tex] or loads KaTeX, once window.katex exists
  * (polled for up to 5 s). Anything the runtime cannot honor (an unknown cue id, a cue no
- * step owns, a cue that reveals no element and runs no handler, KaTeX never arriving or
- * refusing a data-tex value) is pushed onto __decktalk.warnings, which the recorder reads
- * back and logs.
+ * step owns, a cue that reveals no element and runs no handler, a step that owns no listed
+ * cue, a data-cue that is not listed, a reveal mode with no trigger, an autoplay cue past its
+ * step's hold, KaTeX never arriving or refusing a data-tex value) is pushed onto
+ * __decktalk.warnings, which the recorder reads back and logs. A warning never throws.
  */
 (function () {
   "use strict";
@@ -101,6 +111,7 @@
     mode: "index",
     scene: null,
     step: null,
+    slide: null, // the slide element mounted last, which every handler receives
     cues: [],
     fired: [],
     catalog: [],
@@ -335,7 +346,9 @@
 
   // ---- mounting -------------------------------------------------------------------
   let mounted = 0;
-  function mountStep(sc, st, listedCues) {
+  // listedCues is the set of cue ids in ?beats=, given in cue mode only. held is the set of cue
+  // ids whose elements a freeze at one cue leaves hidden, given in freeze mode only.
+  function mountStep(sc, st, listedCues, held) {
     const old = pan.querySelector(".dt-slide:not(.dt-leave)");
     const slide = document.createElement("div");
     slide.className = `dt-slide dt-enter${mounted === 0 ? " dt-first" : ""}`;
@@ -345,30 +358,41 @@
     typeset(slide);
     const mountT = now();
     state.step = st;
+    state.slide = slide;
     state.lastMountAt = mountT;
+    // A reveal mode runs when its element reveals, so an element with no cue and no timer never runs it.
+    slide.querySelectorAll("[data-sync],[data-count],[data-type]").forEach((el) => {
+      if (el.hasAttribute("data-cue") || el.hasAttribute("data-at")) return;
+      ["data-sync", "data-count", "data-type"].filter((a) => el.hasAttribute(a))
+        .forEach((a) => warn(`${a} on an element without data-cue or data-at never reveals, so add data-at="0"`));
+    });
     slide.querySelectorAll("[data-cue],[data-at]").forEach((el) => {
       el.classList.add("dt-reveal");
+      // A fade on the container would fight the per-word reveal, so data-sync implies no animation.
+      if (el.hasAttribute("data-sync") && !el.hasAttribute("data-fx")) el.dataset.fx = "none";
       if (el.hasAttribute("data-count") || el.hasAttribute("data-type") || el.hasAttribute("data-sync")) el.dataset.ccFull = el.textContent;
       if (el.dataset.dur) el.style.animationDuration = `${parseFloat(el.dataset.dur) / (state.mode === "autoplay" ? SPEED : 1)}s`;
-      if (frozen) { reveal(el); return; }
       const cueId = el.dataset.cue;
+      if (frozen) { if (!(cueId && held && held.has(cueId))) reveal(el); return; }
       if (cueId && listedCues && listedCues.has(cueId)) return; // its cue event reveals it
+      if (cueId && listedCues) warn(`data-cue "${cueId}" is not in ?beats=, so it reveals at its data-at time after the mount`);
       const at = (parseFloat(el.dataset.at) || 0) / (state.mode === "autoplay" ? SPEED : 1);
       if (at <= 0) reveal(el); else schedule(mountT + at, "reveal", cueId || "", () => reveal(el));
     });
     if (old) { old.classList.remove("dt-enter"); old.classList.add("dt-leave"); setTimeout(() => old.remove(), 400); }
     pan.appendChild(slide);
-    if (st.enter) { try { st.enter(slide, { frozen }); } catch (e) { console.error(e); } }
+    if (st.enter) { try { st.enter(slide, { id: st.id, at: +mountT.toFixed(3), frozen, step: st.id }); } catch (e) { console.error(e); } }
     return slide;
   }
   function fireCue(id) {
     state.fired.push(id);
     const hits = pan.querySelectorAll(`.dt-slide:not(.dt-leave) [data-cue="${CSS_escape(id)}"]`);
     hits.forEach(reveal);
-    const st = state.step;
+    const st = state.step, slide = state.slide;
+    const ctx = { id, at: +now().toFixed(3), frozen, step: st ? st.id : null };
     const handled = !!(st && typeof st.on[id] === "function");
-    if (handled) { try { st.on[id](); } catch (e) { console.error(e); } }
-    (HANDLERS.get(id) || []).forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+    if (handled) { try { st.on[id](slide, ctx); } catch (e) { console.error(e); } }
+    (HANDLERS.get(id) || []).forEach((fn) => { try { fn(slide, ctx); } catch (e) { console.error(e); } });
     // A cue that reveals nothing and runs nothing is almost always a typo between cues.json,
     // the step's cues object and a data-cue attribute, so it is reported rather than ignored.
     if (!hits.length && !handled && !HANDLERS.has(id) && !findStep(id)) warn(`cue "${id}" matches no element, handler, or step`);
@@ -401,6 +425,7 @@
     }
     const steps = [...mountAt.entries()].sort((a, b) => a[1] - b[1]);
     if (!steps.length) { warn("no step owns any listed cue, so nothing will mount"); return; }
+    sc.steps.forEach((st) => { if (!mountAt.has(st)) warn(`step "${st.id}" owns no cue in ?beats=, so it never appears`); });
     // The first cued step mounts at narration t=0 so the section never opens on an empty
     // stage; its listed reveals still wait for their own cues.
     steps[0][1] = Math.min(steps[0][1], 0);
@@ -418,6 +443,13 @@
     startCamera(sc, total);
     sc.steps.forEach((st, i) => {
       const at = t;
+      // A cue at or past the hold fires after the next step has mounted, where none of its
+      // elements or handlers exist. The last step holds until the end, so its cues always land.
+      if (i < sc.steps.length - 1) {
+        st.cues.forEach((delay, id) => {
+          if (delay !== null && delay >= st.hold) warn(`step "${st.id}" fires "${id}" at ${delay} s but holds ${st.hold} s, so it fires on the next step`);
+        });
+      }
       schedule(at, "mount", st.id, () => {
         mountStep(sc, st, null);
         st.cues.forEach((delay, id) => { if (delay !== null) schedule(at + delay / SPEED, "cue", id, () => fireCue(id)); });
@@ -426,14 +458,26 @@
       t += st.hold / SPEED;
     });
   }
-  function freeze(stepId) {
+  // Freeze a step with its cues fired in autoplay order: every cue, or with cueId only the cues
+  // up to and including it. An element that waits for a later cue stays hidden.
+  function freeze(stepId, cueId) {
     const found = findStep(stepId);
     if (!found) return renderIndex(`unknown step ${esc(stepId)}`);
     state.mode = "frozen";
     state.scene = found.scene;
     document.documentElement.classList.add("dt-frozen");
-    mountStep(found.scene, found.step, null);
-    found.step.cues.forEach((_d, id) => fireCue(id));
+    const order = [...found.step.cues.entries()]
+      .map(([id, delay], i) => ({ id, delay: delay ?? Infinity, i }))
+      .sort((a, b) => (a.delay - b.delay) || (a.i - b.i))
+      .map((c) => c.id);
+    let fire = order;
+    if (cueId) {
+      const k = order.indexOf(cueId);
+      if (k < 0) warn(`cue "${cueId}" is not one of step ${found.step.id}'s cues`);
+      else fire = order.slice(0, k + 1);
+    }
+    mountStep(found.scene, found.step, null, new Set(order.slice(fire.length)));
+    fire.forEach((id) => fireCue(id));
     document.body.dataset.done = "1";
   }
   function renderIndex(note) {
@@ -462,7 +506,7 @@
     const wordsRaw = params.get("words");
     state.words = wordsRaw ? parseWords(wordsRaw) : null;
     if (frozen) {
-      freeze(params.get("step"));
+      freeze(params.get("step"), params.get("cue"));
     } else if (params.has("scene") || cues.length) {
       let sc = params.has("scene") ? SCENES.get(String(params.get("scene"))) : null;
       if (!sc && cues.length) sc = ownerOf(cues[0].id, null)?.scene || null;
