@@ -32,7 +32,7 @@ uv run decktalk -p "$T" shots --section 3 --at 8 --at 20 --at 38
 uv run decktalk -p "$T" verify \
   1:1.1curve 1:1.1number 1:1.1mark 1:1.1cap \
   2:2.1script 2:2.1words 2:2.1cue 2:2.1slide 2:2.1one \
-  3:3.1bowl 3:3.1p0 3:3.1p1 3:3.1eq 3:3.1p2 3:3.1p3 3:3.1eqA 3:3.1eqB 3:3.1eqC 3:3.1think 3:3.1over 3:3.1min \
+  3:3.1bowl 3:3.1p0 3:3.1p1 3:3.1eq 3:3.1p2 3:3.1p3 3:3.1eqB 3:3.1eqC 3:3.1think 3:3.1over 3:3.1min \
   4:4.1valley 4:4.1build 4:4.1s1 4:4.1s2 4:4.1s3 4:4.1s45 4:4.1out 4:4.1verify 4:4.1edit \
   5:5.1cap 5:5.1made 5:5.1docs
 uv run decktalk -p "$T" status

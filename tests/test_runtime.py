@@ -62,7 +62,7 @@ def test_freeze_mode_reveals_everything(page, deck):
     # The listed cues fired too: 2.1one lights the shared phrase and dims the rest of every panel.
     assert page.evaluate("() => window.__decktalk.fired") == ["2.1script", "2.1words", "2.1cue", "2.1slide", "2.1one"]
     assert page.evaluate("() => document.querySelector('.dt-slide').classList.contains('lit')")
-    assert page.evaluate("() => document.querySelectorAll('.k').length") == 4
+    assert page.evaluate("() => document.querySelectorAll('.k').length") == 5
 
 
 def test_cue_mode_fires_in_order_and_first_step_mounts_at_zero(page, deck):
@@ -124,8 +124,8 @@ def test_katex_typesets_the_equation(page, deck):
     assert (deck.parent / "katex" / "katex.min.js").exists()
     page.goto(f"{deck.as_uri()}?step=3.1")
     page.evaluate("() => window.__sceneReady")
-    # The learning rate chip and the three spans of the update rule.
-    assert page.evaluate("() => document.querySelectorAll('[data-tex][data-typeset] .katex').length") == 4
+    # The two learning rate chips and the four spans of the update rule.
+    assert page.evaluate("() => document.querySelectorAll('[data-tex][data-typeset] .katex').length") == 6
     assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
 

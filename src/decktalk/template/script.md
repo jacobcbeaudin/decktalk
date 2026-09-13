@@ -34,7 +34,7 @@ Now a lesson where every picture waits for its word.
 
 Start with a loss surface. For this lesson it is a bowl. [beat] Pick a point, theta.
 [beat] The gradient points uphill, so follow minus the gradient. [beat] Take a step, and
-the learning rate, eta, sets its length. [beat] Again, [beat] and again. The steps shrink
+the learning rate, eta, scales its length. [beat] Again, [beat] and again. The steps shrink
 because the slope does. [beat] That is the rule. The next theta [beat] is this theta, minus
 eta [beat] times the gradient here.
 
@@ -43,7 +43,7 @@ eta [beat] times the gradient here.
 [pause 4]
 
 You overshoot and bounce across the bowl. [beat] Small enough, and you settle at the
-bottom, for this bowl. [beat] Now change one sentence of that lesson.
+bottom, for this surface. [beat] Now change one sentence of that lesson.
 
 ## 4. The edit
 
@@ -58,5 +58,5 @@ the reveal on the word learning rate: ten milliseconds. [beat] The script is the
 
 [Deck scene 5. The end card.]
 
-The script is the edit. [beat] Change a sentence, and only that section renders again.
-[beat] Made with DeckTalk. [beat] The docs are at docs dot decktalk dot app.
+The script is the edit. [beat] Edit the words. The video follows. [beat] Made with DeckTalk.
+[beat] The docs are at docs dot decktalk dot app.
