@@ -81,6 +81,8 @@
   #haze canvas { width: 3200px; height: 3200px; display: block; }
   #ring { position: absolute; left: -200px; top: -200px; width: 400px; height: 400px; box-sizing: border-box; border-radius: 50%; border: 3px dashed var(--ink); will-change: transform; }
   #ball { position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 6px #fff; will-change: transform; }
+  /* The step-size runs: a hollow ink ring, so it never reads as the main (solid accent) ball. */
+  .ghost { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; box-sizing: border-box; border-radius: 50%; border: 7px solid var(--ink); box-shadow: 0 0 0 3px #fff, inset 0 0 0 3px #fff; will-change: transform, opacity; }
   .slider-lab { position: absolute; left: 1530px; top: 300px; font: 500 32px/1 var(--sans); color: var(--mute); }
 
   /* Scenes 3.7 and 3.8 */
@@ -117,6 +119,7 @@
 // The two example classes. Swap the pair by editing these labels and the drawings in ANIMALS below.
 const LABEL_A = "seal", LABEL_B = "otter";
 const WRONG_GUESS = LABEL_B;                  // what the model answers for the first input
+const METER_LABEL = "how wrong";              // the meter's label, which later names the height axis
 // The four example tiles, in reading order: [drawing id, label].
 const EXAMPLES = [["otterFloat", LABEL_B], ["sealRock", LABEL_A], ["sealSwim", LABEL_A], ["otterStand", LABEL_B]];
 const FIRST_INPUT = ["sealRock", LABEL_A];    // the input on "box of knobs"
@@ -191,6 +194,7 @@ function arrow(x1, y1, x2, y2, o = {}) {
   const bx = x2 - c * head, by = y2 - s * head, px = -s * head * 0.6, py = c * head * 0.6;
   return `<g${o.cls ? ` class="${o.cls}"` : ""}><line x1="${fx(x1)}" y1="${fx(y1)}" x2="${fx(bx + c * 2)}" y2="${fx(by + s * 2)}" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round"/><path d="M${fx(x2)} ${fx(y2)}L${fx(bx + px)} ${fx(by + py)}L${fx(bx - px)} ${fx(by - py)}Z" fill="${stroke}"/></g>`;
 }
+const polyPts = (pts) => pts.map((p) => fx(p[0]) + "," + fx(p[1])).join(" ");
 const line = (p, q, stroke, w, extra = "") => `<line x1="${fx(p[0])}" y1="${fx(p[1])}" x2="${fx(q[0])}" y2="${fx(q[1])}" stroke="${stroke}" stroke-width="${w}" ${extra}/>`;
 const dotG = (x, y, r = 9, c = INK, extra = "") => `<circle cx="${fx(x)}" cy="${fx(y)}" r="${r}" fill="${c}" ${extra}/>`;
 const squareG = (x, y, s = 20, c = INK) => `<rect x="${fx(x - s / 2)}" y="${fx(y - s / 2)}" width="${s}" height="${s}" fill="${c}" stroke="#fff" stroke-width="2.5"/>`;
@@ -371,7 +375,7 @@ function buildIntro() {
         <div class="ans off"><span class="pill">${WRONG_GUESS}</span><span class="mk"></span></div>
       </div>
       <div class="meterg off">
-        <span class="pill acc ctr" style="left:1697px;top:236px">how wrong</span>
+        <span class="pill acc ctr" style="left:1697px;top:236px">${METER_LABEL}</span>
         <div class="meter"><div class="fill" style="transform:scaleY(0)"></div><div class="tick t1 off"></div><div class="tick t2 off"></div></div>
       </div>
       <div class="counter off"><span>tries</span><b>1</b></div>
@@ -415,10 +419,11 @@ function buildWorld() {
   const hopMark = dotG(q6[0], q6[1], 6) + `<path d="M${fx(q6[0] - 30)} ${fx(q6[1] - 26)}Q${fx(q6[0] - 2)} ${fx(q6[1] - 78)} ${fx(q7[0] + 22)} ${fx(q7[1] - 30)}" fill="none" stroke="${ACC}" stroke-width="8" stroke-linecap="round"/>` +
     arrow(q7[0] + 12, q7[1] - 44, q7[0] + 24, q7[1] - 28, { stroke: ACC, w: 8, head: 22 });
 
-  // Paths for "too long" (squares) and "too short" (triangles), from the same start.
+  // Paths for "too long" (squares) and "too short" (triangles), from the same start. Each is drawn by its
+  // own walk (walk() below): the line grows behind the ball and one marker shows per landing.
   const lq = LONG.map(onS), sq = SHORT.map(onS);
-  const longSvg = `<polyline points="${lq.map((p) => fx(p[0]) + "," + fx(p[1])).join(" ")}" fill="none" stroke="${MUTE}" stroke-width="4" stroke-dasharray="9 7"/>` + lq.slice(1).map((p) => squareG(p[0], p[1], 22)).join("");
-  const shortSvg = `<polyline points="${sq.map((p) => fx(p[0]) + "," + fx(p[1])).join(" ")}" fill="none" stroke="${INK}" stroke-width="4"/>` + sq.slice(1).map((p) => triG(p[0], p[1], 26)).join("");
+  const longSvg = `<polyline class="pline" points="${polyPts(lq)}" fill="none" stroke="${MUTE}" stroke-width="4" stroke-dasharray="9 7"/>` + lq.slice(1).map((p) => `<g class="pm off">${squareG(p[0], p[1], 22)}</g>`).join("");
+  const shortSvg = `<polyline class="pline" points="${polyPts(sq)}" fill="none" stroke="${INK}" stroke-width="4"/>` + sq.slice(1).map((p) => `<g class="pm off">${triG(p[0], p[1], 26)}</g>`).join("");
   // The first hop's arrow, along the true slope from p0 to p1.
   const a0 = onS(MAIN[0]), a1p = onS(MAIN[1]), aL = Math.hypot(a1p[0] - a0[0], a1p[1] - a0[1]);
   const hopArrow = arrow(a0[0] + ((a1p[0] - a0[0]) * 18) / aL, a0[1] + ((a1p[1] - a0[1]) * 18) / aL, a1p[0] - ((a1p[0] - a0[0]) * 34) / aL, a1p[1] - ((a1p[1] - a0[1]) * 34) / aL, { stroke: ACC, w: 9, head: 26 });
@@ -453,12 +458,13 @@ function buildWorld() {
         </svg>
         ${kmark("km1 off", p1[0] - 108, p1[1] + 14, 40, "knob 1", false)}
         ${kmark("km2 off", p2[0] + 20, p2[1] - 60, -35, "knob 2", false)}
-        <span class="pill acc ctr axlab off" style="left:${fx(ax1[0])}px;top:${fx(ax1[1] - 76)}px">how wrong</span>
+        <span class="pill acc ctr axlab off" style="left:${fx(ax1[0])}px;top:${fx(ax1[1] - 76)}px">${METER_LABEL}</span>
         <div id="ring" class="off"></div>
       </div>
       <svg class="full landover">
         <g class="trails off">${trails}</g><g class="levels off">${levels}</g><g class="hopmark off">${hopMark}</g>
       </svg>
+      <div class="ghost ghostL off"></div><div class="ghost ghostS off"></div>
       <div id="ball" class="off"></div>
     </div>`);
 }
@@ -578,6 +584,12 @@ Object.assign(S, {
   gd: $(".gd"), sliderg: $(".sliderg"), thumb: $(".thumb"), chat: $(".chat"), cc: $$(".cc"), tensor: $(".tensor"), chips: $(".chips"), blocks: $(".blocks"),
   caption: $(".caption"),
 });
+// The two step-size walks: their computed landing points, the line and markers they draw, and their ball.
+const RUNS = {
+  long: { pts: LONG.map(onS), g: S.long, ball: $(".ghostL") },
+  short: { pts: SHORT.map(onS), g: S.short, ball: $(".ghostS") },
+};
+for (const r of Object.values(RUNS)) { r.line = r.g.querySelector(".pline"); r.marks = [...r.g.querySelectorAll(".pm")]; }
 
 // ---- Figure state helpers --------------------------------------------------------------------------------------------
 const setMeter = (level) => { S.fill.style.transform = `scaleY(${level.toFixed(4)})`; };
@@ -673,15 +685,21 @@ const CUE = {
   "3.4name": (an) => { hide(S.haze, S.ring); show(S.gd); },
   // 3.5 Step size
   "3.5setting": (an) => { hide(S.flines, S.drop, S.gd); show(S.sliderg); S.thumb.setAttribute("cx", S.SX.mid); },
-  "3.5long": (an) => { S.thumb.setAttribute("cx", S.SX.long); show(S.long); },
-  "3.5short": (an) => { S.thumb.setAttribute("cx", S.SX.short); show(S.short); S.long.style.opacity = 0.35; },
+  // A hollow ball runs each case beside the main path: fast hops for too long, a slow crawl for too short.
+  "3.5long": (an) => { S.thumb.setAttribute("cx", S.SX.long); walk(an, RUNS.long, 0.04, LONG_HOP, LONG_REST, true); },
+  "3.5short": (an) => {
+    S.thumb.setAttribute("cx", S.SX.short); S.long.style.opacity = 0.35;
+    const gl = RUNS.long.ball;
+    run(an, 0, 0.3, (k) => { gl.style.opacity = (1 - k).toFixed(3); if (k >= 1) hide(gl); });
+    walk(an, RUNS.short, 0.04, SHORT_HOP, SHORT_REST, false);
+  },
   // 3.6 Many valleys
   "3.6zoom": (an) => {
     // Everything but the surface, its rim, the dots, and the ball leaves on the word, and a pure 3x pull-back about
     // the ball starts with it: the sharp bowl layer shrinks away while the landscape, drawn at its final scale, takes
     // over. The pull-back runs 2 s and the bowl is gone by 90 %, so the picture is still well before "each about as
     // low" arrives about 3 s after the word, and that reveal is measured against a quiet frame.
-    hide(S.caption, S.sliderg, S.long, S.short, S.htick, S.axis, S.axlab, S.km1, S.km2, S.floor, S.flines, S.drop, S.gd, S.haze, S.ring);
+    hide(S.caption, S.sliderg, S.long, S.short, RUNS.long.ball, RUNS.short.ball, S.htick, S.axis, S.axlab, S.km1, S.km2, S.floor, S.flines, S.drop, S.gd, S.haze, S.ring);
     const [cx, cy] = CEND;
     run(an, 0, 2.0, (k) => {
       const ez = easeInOut(k), s = Math.pow(ZOOM, 1 - ez), f = s / ZOOM;
@@ -722,6 +740,27 @@ function hops(an, from, to, delay) {
     run(an, d, HOP, (k) => placeBall(lerp(a[0], b[0], easeOut(k)), lerp(a[1], b[1], easeOut(k)) - h * 4 * k * (1 - k)));
     at(an, d + HOP, () => { show(S.md[i - 1]); setProbe(MAIN[i]); });
     run(an, d + HOP, REST * 0.9, (k) => { const e = easeInOut(k); placeHaze(lerp(a[0], b[0], e), lerp(a[1], b[1], e)); });
+  }
+}
+
+// A step-size walk: its hollow ball moves between the computed landing points, the line grows under it, and
+// each landing shows that path's marker. The long path's 16 hops take 0.15 s each and the short path's 6
+// crawls 0.42 s each, so both finish about 2.5 s after the cue, well before the next cue and its control span.
+// With animate false the walk is complete at once: every marker, the whole line, the ball on the last point.
+const LONG_HOP = 0.12, LONG_REST = 0.03, SHORT_HOP = 0.32, SHORT_REST = 0.1;
+const placeAt = (el, x, y) => { el.style.transform = `translate(${fx(x)}px, ${fx(y)}px)`; };
+function walk(an, r, delay, hop, rest, arc) {
+  const q = r.pts;
+  hide(r.marks); r.line.setAttribute("points", polyPts(q.slice(0, 1)));
+  r.ball.style.opacity = 1; placeAt(r.ball, q[0][0], q[0][1]); show(r.g, r.ball);
+  for (let i = 1; i < q.length; i++) {
+    const d = delay + (i - 1) * (hop + rest), a = q[i - 1], b = q[i], h = arc ? 8 + 0.12 * Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
+    run(an, d, hop, (k) => {
+      const e = arc ? easeOut(k) : easeInOut(k), x = lerp(a[0], b[0], e), y = lerp(a[1], b[1], e);
+      placeAt(r.ball, x, y - h * 4 * k * (1 - k));
+      r.line.setAttribute("points", polyPts([...q.slice(0, i), [x, y]]));
+    });
+    at(an, d + hop, () => show(r.marks[i - 1]));
   }
 }
 
