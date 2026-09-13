@@ -47,7 +47,7 @@ is how a recording is spared.
 
 ```console
 decktalk build --only 3                  # narration from the cache, section 3 recorded, then assemble and verify
-decktalk build --only 3 --only 4         # two sections, because the flag repeats and does not take commas
+decktalk build --only 3 --only 5         # two sections, because the flag repeats and does not take commas
 decktalk build --only 3 --preset veryfast
 ```
 
@@ -69,7 +69,7 @@ decktalk record --only 3
 decktalk measure --only 3
 decktalk check --only 3
 decktalk assemble
-decktalk verify 3:3.1eq
+decktalk verify 3:3.3height
 ```
 
 After a page edit with no script change, `record --only N`, `measure --only N`, and

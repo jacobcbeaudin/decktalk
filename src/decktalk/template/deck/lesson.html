@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How AI learns</title>
+<style>
+  /* Bundled OFL fonts (deck/fonts/), so a recorder with no network never falls back to Helvetica. */
+  @font-face { font-family: "Inter Tight"; font-style: normal; font-weight: 100 900; font-display: block; src: url("./fonts/InterTight-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: block; src: url("./fonts/Inter-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: block; src: url("./fonts/JetBrainsMono-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+  /* Tokens. The accent belongs only to labels and to the thing being revealed right now. */
+  :root {
+    --ground: #ffffff; --ink: #0a0a0a; --mute: #71717a; --dim: #a3a3ad; --hair: #e4e4e7; --block: #f4f4f5; --accent: #2c1fea;
+    --sans: "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --tight: "Inter Tight", "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+  body { width: 100vw; height: 100vh; overflow: hidden; }
+  #dt-stage { background: var(--ground); }
+
+  /* The lesson figure lives in the stage, under the runtime's slide layer, and is built before
+     narration t=0. The slides themselves are empty, so nothing heavy is created or painted on a cue. */
+  #rig, #rig .layer { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  #rig .layer { transform-origin: 0 0; }
+  #rig .gpu { will-change: transform, opacity; }
+  #rig svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  #rig .full { width: 1920px; height: 1080px; }
+  #rig .off { visibility: hidden !important; }
+  #rig .abs { position: absolute; }
+
+  /* Chrome */
+  .eyebrow { position: absolute; left: 120px; top: 44px; margin: 0; font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+  .title { position: absolute; left: 120px; top: 92px; margin: 0; font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); white-space: nowrap; }
+  .caption { position: absolute; left: 120px; top: 184px; margin: 0; font: 500 44px/1.2 var(--sans); color: var(--ink); white-space: nowrap; }
+  .footer { position: absolute; left: 120px; right: 120px; top: 984px; height: 30px; display: flex; align-items: center; justify-content: space-between; }
+  .footer .brand, .footer .track { display: flex; align-items: center; gap: 14px; font: 500 22px/28px var(--mono); letter-spacing: .14em; color: var(--mute); }
+  .footer .mark line { stroke: var(--hair); stroke-width: 2.25; stroke-linecap: round; }
+  .footer .mark .tall { stroke: var(--accent); }
+  .footer .mark circle { fill: var(--accent); }
+  .footer .ticks rect { fill: var(--hair); }
+  .footer .ticks .cur { fill: var(--ink); }
+
+  /* Pills: text labels are HTML, so no text is measured in script. */
+  .pill { position: absolute; display: inline-block; white-space: nowrap; padding: 0 16px; border-radius: 10px; font: 500 30px/48px var(--sans); color: #fff; background: var(--ink); }
+  .pill.acc { background: var(--accent); }
+  .pill.mono { font-family: var(--mono); font-weight: 600; }
+  .pill.big { font: 600 60px/100px var(--tight); padding: 0 30px; border-radius: 16px; }
+  .ctr { transform: translateX(-50%); }
+
+  /* Scene 3.1: rules, example tiles, the knob box and the meter */
+  .rules { position: absolute; left: 120px; top: 250px; width: 560px; height: 300px; border-radius: 16px; background: var(--block); padding: 30px 32px; box-sizing: border-box; font: 500 30px/56px var(--mono); color: var(--ink); }
+  .rules .h { font-size: 24px; line-height: 36px; color: var(--mute); }
+  .tile { position: absolute; box-sizing: border-box; border: 5px solid var(--ink); border-radius: 18px; background: #fff; }
+  #rig .tile svg.art { left: 14px; top: 8px; }
+  .tile .lab { position: absolute; left: 14px; bottom: 12px; display: flex; align-items: center; gap: 22px; }
+  .tile .lab .pill { position: static; }
+  .tile .lab .ok-mark { display: none; }
+  .tile.truth .lab .pill { box-shadow: 0 0 0 5px #fff, 0 0 0 10px var(--accent); }
+  .tile.truth .lab .ok-mark { display: block; }
+  .art path, .art ellipse, .art circle { fill: #fff; stroke: var(--ink); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+  .art .ln { fill: none; }
+  .art .thin { fill: none; stroke-width: 4.5; }
+  .art .dot { fill: var(--ink); stroke: none; }
+  .boxlab { position: absolute; left: 560px; top: 280px; font: 600 38px/1 var(--tight); color: var(--ink); }
+  .ans { position: absolute; left: 1340px; top: 505px; display: flex; align-items: center; gap: 20px; }
+  .ans .pill { position: static; font-size: 36px; line-height: 66px; padding: 0 20px; border-radius: 12px; }
+  .meter { position: absolute; left: 1660px; top: 300px; width: 74px; height: 340px; box-sizing: border-box; border: 5px solid var(--ink); border-radius: 12px; background: #fff; }
+  .meter .fill { position: absolute; left: 5px; right: 5px; bottom: 5px; height: 320px; border-radius: 6px; background: var(--accent); transform-origin: 50% 100%; }
+  .meter .tick { position: absolute; left: -22px; width: 108px; height: 5px; margin-bottom: -2px; background: var(--mute); }
+  .counter { position: absolute; left: 580px; top: 762px; width: 760px; display: flex; align-items: center; justify-content: center; gap: 16px; font: 500 36px/1 var(--sans); color: var(--mute); }
+  .counter b { font: 500 42px/64px var(--mono); color: var(--ink); background: var(--block); border: 4px solid var(--ink); border-radius: 12px; padding: 0 18px; }
+  .counter.dim { opacity: .35; }
+
+  /* Scenes 3.3 to 3.6: the floor, the bowl, the haze, and the landscape */
+  .kmark { position: absolute; display: flex; align-items: center; gap: 10px; }
+  .kmark .pill { position: static; }
+  .kmark svg { position: static !important; }
+  #haze { position: absolute; left: -1600px; top: -1600px; width: 3200px; height: 3200px; opacity: .01; will-change: transform, opacity; }
+  #haze canvas { width: 3200px; height: 3200px; display: block; }
+  #ring { position: absolute; left: -200px; top: -200px; width: 400px; height: 400px; box-sizing: border-box; border-radius: 50%; border: 3px dashed var(--ink); will-change: transform; }
+  #ball { position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 6px #fff; will-change: transform; }
+  .slider-lab { position: absolute; left: 1530px; top: 300px; font: 500 32px/1 var(--sans); color: var(--mute); }
+
+  /* Scenes 3.7 and 3.8 */
+  .chat { position: absolute; left: 1060px; top: 220px; width: 740px; height: 370px; box-sizing: border-box; border: 5px solid var(--ink); border-radius: 26px; background: #fff; }
+  .chat .q { position: absolute; right: 26px; top: 26px; padding: 0 24px; border-radius: 20px; background: var(--accent); color: #fff; font: 500 30px/64px var(--sans); white-space: nowrap; }
+  .chat .a { position: absolute; left: 26px; top: 116px; width: 520px; height: 140px; border-radius: 20px; background: var(--block); }
+  .chat .a i { position: absolute; left: 28px; height: 18px; border-radius: 9px; background: var(--dim); }
+  .chat .in { position: absolute; left: 26px; right: 26px; bottom: 24px; height: 56px; box-sizing: border-box; border: 3px solid var(--hair); border-radius: 28px; padding-left: 28px; font: 400 26px/50px var(--sans); color: var(--mute); }
+
+  /* Freeze mode shows every end state at once. */
+  .dt-frozen #rig *, .dt-frozen #rig { transition: none !important; animation: none !important; }
+</style>
+</head>
+<body>
+<div id="dt-stage"><div id="rig"></div></div>
+<script src="decktalk-runtime.js"></script>
+<script>
+"use strict";
+// Scene 3 of the demo: "How AI learns". One scene, eight steps (3.1 to 3.8), one cue per stressed word.
+//
+// How this page differs from deck/index.html: the whole lesson is one figure that carries its state
+// from the first cue to the last (the meter becomes the height axis, the bowl zooms out into the
+// landscape, the landscape shrinks beside the chips). So the figure is built once, here, into
+// #dt-stage under the runtime's slide layer, before narration t=0. Each step's slide is empty, and
+// every cue only toggles or moves what already exists, so no cue creates DOM or paints a large
+// layer for the first time. CUE[id](animate) holds each cue's change. With animate false (freeze
+// mode) it shows the end state at once, and a frozen step first replays every earlier cue.
+//
+// Every picture is computed from a formula at load: the bowl is error = 0.5·knob1² + 1.5·knob2²,
+// the paths are real gradient descent (knob ← knob − step size × slope), and the zoom-out landscape
+// and its three walks use the same rule. Nothing is placed by hand.
+
+// ---- Constants a fill script or an editor may change -------------------------------------------
+// The two example classes. Swap the pair by editing these labels and the drawings in ANIMALS below.
+const LABEL_A = "seal", LABEL_B = "otter";
+const WRONG_GUESS = LABEL_B;                  // what the model answers for the first input
+// The four example tiles, in reading order: [drawing id, label].
+const EXAMPLES = [["otterFloat", LABEL_B], ["sealRock", LABEL_A], ["sealSwim", LABEL_A], ["otterStand", LABEL_B]];
+const FIRST_INPUT = ["sealRock", LABEL_A];    // the input on "box of knobs"
+const NEXT_INPUT = ["otterStand", LABEL_B];   // the different animal on "example after example"
+const STEP_MAIN = 0.25, STEP_LONG = 0.65, STEP_SHORT = 0.03; // step sizes: main path, too long, too short
+const START = [-2.2, -1.05];                  // where the ball starts, on the wall facing the camera
+const SECTION_NUMBER = 3, SECTIONS_TOTAL = 6; // the footer's "03 / 06" tracker, which counts the clip section too and matches index.html
+
+// ---- Palette -------------------------------------------------------------------------------------
+const INK = "#0a0a0a", ACC = "#2c1fea", MUTE = "#71717a", DIM = "#a3a3ad", HAIR = "#e4e4e7",
+  BLOCK = "#f4f4f5", FLOORC = "#fafafa", GREY = "#b4b4bb";
+const fx = (v) => (+v).toFixed(1);
+const clamp01 = (k) => Math.min(1, Math.max(0, k));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = (k) => 1 - Math.pow(1 - k, 3);
+const easeInOut = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+function rng(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+
+// ---- Drawings: the example animals ------------------------------------------------------------------
+// Black line art in one rounded stroke, white inside, ink only for eyes, noses, and spots. Each is a
+// symbol in a 240 by 180 box, so a tile of any size can show it. Otters always show small round ears,
+// paws, and a furry tail. Seals never have ears or paws; they have flippers and a spotted coat.
+const WAVE = (x, y) => `<path class="ln" d="M${x} ${y}q7 -7 14 0t14 0t14 0"/>`;
+const ANIMALS = {
+  // Otter 1: floating on its back in the water, holding a shell on its chest with both paws.
+  otterFloat: WAVE(14, 30) + WAVE(26, 50) + WAVE(168, 158) + WAVE(142, 172) +
+    `<path d="M72 112C52 116 28 122 12 118C5 114 9 105 18 104C36 103 52 100 74 96Z"/>` +
+    `<path class="thin" d="M30 106l-3 8M44 104l-3 8M58 102l-3 8"/>` +
+    `<path d="M80 102C74 88 80 78 89 80C97 82 97 94 93 104"/>` +
+    `<ellipse cx="128" cy="112" rx="64" ry="30" transform="rotate(-8 128 112)"/>` +
+    `<path class="thin" d="M100 126q16 7 34 2"/>` +
+    `<circle cx="168" cy="62" r="7"/><circle cx="216" cy="62" r="7"/><ellipse cx="192" cy="80" rx="32" ry="25"/>` +
+    `<circle class="dot" cx="180" cy="76" r="4.5"/><circle class="dot" cx="204" cy="76" r="4.5"/>` +
+    `<ellipse class="dot" cx="192" cy="86" rx="6" ry="4.5"/><path class="thin" d="M186 94q6 5 12 0M162 84l-14 -3M162 91l-14 3M222 84l14 -3M222 91l14 3"/>` +
+    `<path d="M118 86C116 58 164 58 162 86Q140 96 118 86Z"/><path class="thin" d="M140 90l-12 -22M140 90l0 -26M140 90l12 -22"/>` +
+    `<ellipse cx="118" cy="88" rx="10" ry="8"/><ellipse cx="162" cy="88" rx="10" ry="8"/>`,
+  // Otter 2: standing upright on a rock, paws together, round ears, a thick furry tail.
+  otterStand:
+    `<path d="M50 170C52 150 74 140 106 138C140 136 172 140 186 152C193 159 194 166 194 170"/><path class="ln" d="M30 172H214"/>` +
+    `<path d="M136 150C168 156 198 150 214 126C220 116 213 108 205 113C193 132 166 140 134 138Z"/>` +
+    `<path class="thin" d="M176 142l4 8M194 132l6 6M206 120l7 3"/>` +
+    `<path d="M120 58C98 58 91 82 91 106C91 132 100 150 120 150C140 150 149 132 149 106C149 82 142 58 120 58Z"/>` +
+    `<ellipse cx="106" cy="149" rx="14" ry="6"/><ellipse cx="134" cy="149" rx="14" ry="6"/>` +
+    `<path class="thin" d="M109 124q11 8 22 0"/>` +
+    `<circle cx="95" cy="30" r="7"/><circle cx="145" cy="30" r="7"/><ellipse cx="120" cy="46" rx="31" ry="24"/>` +
+    `<circle class="dot" cx="108" cy="42" r="4.5"/><circle class="dot" cx="132" cy="42" r="4.5"/>` +
+    `<ellipse class="dot" cx="120" cy="52" rx="6" ry="4.5"/><path class="thin" d="M114 60q6 5 12 0M89 50l-14 -3M89 57l-14 3M151 50l14 -3M151 57l14 3"/>` +
+    `<ellipse cx="111" cy="90" rx="10" ry="8"/><ellipse cx="129" cy="90" rx="10" ry="8"/>`,
+  // Seal 1: lying on a rock, head raised, front flipper out, spotted coat, no ears.
+  sealRock:
+    `<path d="M20 172C22 150 44 136 80 134C130 130 180 132 206 144C223 152 226 164 226 172"/><path class="ln" d="M10 174H236"/>` +
+    `<path d="M46 120C32 114 20 106 10 108C8 116 16 125 32 128Z"/><path d="M46 125C34 131 22 141 18 149C26 153 36 145 48 131Z"/>` +
+    `<path d="M40 124C60 104 104 102 140 104C160 105 170 96 176 78C182 60 196 50 210 54C226 58 232 74 226 88C220 104 204 118 184 126C150 138 80 140 40 124Z"/>` +
+    `<path d="M166 124C168 142 182 152 198 154C206 153 205 146 197 142C189 136 185 128 185 121Z"/>` +
+    `<circle class="dot" cx="208" cy="70" r="4.5"/><ellipse class="dot" cx="227" cy="79" rx="4" ry="3.5"/>` +
+    `<path class="thin" d="M224 90q-6 4 -12 1M218 84l16 7M216 88l12 9"/>` +
+    [[74, 120, 4.5], [96, 112, 3.5], [110, 126, 3], [128, 114, 4.5], [148, 124, 3.5], [162, 106, 4], [58, 126, 3]].map(([x, y, r]) => `<circle class="dot" cx="${x}" cy="${y}" r="${r}"/>`).join(""),
+  // Seal 2: swimming sideways, smooth teardrop body, rear flippers spread, spotted coat.
+  sealSwim: WAVE(20, 36) + WAVE(176, 30) + WAVE(158, 162) + WAVE(34, 156) +
+    `<path d="M58 92C44 84 28 70 14 64C8 76 14 90 30 96Z"/><path d="M58 96C44 104 28 118 14 124C8 112 14 100 30 94Z"/>` +
+    `<path d="M50 94C80 66 140 60 180 66C210 70 224 84 224 96C224 110 208 122 178 124C138 128 80 122 50 94Z"/>` +
+    `<path d="M148 118C140 134 126 144 108 148C104 142 112 134 122 128C130 122 134 116 136 112Z"/>` +
+    `<circle class="dot" cx="200" cy="86" r="4.5"/><ellipse class="dot" cx="222" cy="94" rx="4" ry="3.5"/>` +
+    `<path class="thin" d="M218 104q-6 3 -12 0M214 98l18 -4M214 102l18 4"/>` +
+    [[92, 90, 4], [114, 80, 3.5], [124, 100, 4.5], [146, 86, 3], [162, 104, 4], [178, 82, 3], [80, 102, 3]].map(([x, y, r]) => `<circle class="dot" cx="${x}" cy="${y}" r="${r}"/>`).join(""),
+};
+
+// ---- Small SVG helpers ---------------------------------------------------------------------------------
+function arrow(x1, y1, x2, y2, o = {}) {
+  const { stroke = INK, w = 6 } = o, head = o.head ?? w * 2.8;
+  const a = Math.atan2(y2 - y1, x2 - x1), c = Math.cos(a), s = Math.sin(a);
+  const bx = x2 - c * head, by = y2 - s * head, px = -s * head * 0.6, py = c * head * 0.6;
+  return `<g${o.cls ? ` class="${o.cls}"` : ""}><line x1="${fx(x1)}" y1="${fx(y1)}" x2="${fx(bx + c * 2)}" y2="${fx(by + s * 2)}" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round"/><path d="M${fx(x2)} ${fx(y2)}L${fx(bx + px)} ${fx(by + py)}L${fx(bx - px)} ${fx(by - py)}Z" fill="${stroke}"/></g>`;
+}
+const line = (p, q, stroke, w, extra = "") => `<line x1="${fx(p[0])}" y1="${fx(p[1])}" x2="${fx(q[0])}" y2="${fx(q[1])}" stroke="${stroke}" stroke-width="${w}" ${extra}/>`;
+const dotG = (x, y, r = 9, c = INK, extra = "") => `<circle cx="${fx(x)}" cy="${fx(y)}" r="${r}" fill="${c}" ${extra}/>`;
+const squareG = (x, y, s = 20, c = INK) => `<rect x="${fx(x - s / 2)}" y="${fx(y - s / 2)}" width="${s}" height="${s}" fill="${c}" stroke="#fff" stroke-width="2.5"/>`;
+const triG = (x, y, s = 22, c = INK) => `<path d="M${fx(x)} ${fx(y - s * 0.62)}L${fx(x + s * 0.58)} ${fx(y + s * 0.42)}L${fx(x - s * 0.58)} ${fx(y + s * 0.42)}Z" fill="${c}" stroke="#fff" stroke-width="2"/>`;
+const checkG = (x, y, c = ACC, k = 1) => `<path d="M${fx(x - 13 * k)} ${fx(y)}L${fx(x - 4 * k)} ${fx(y + 10 * k)}L${fx(x + 14 * k)} ${fx(y - 12 * k)}" fill="none" stroke="${c}" stroke-width="${7 * k}" stroke-linecap="round" stroke-linejoin="round"/>`;
+const crossG = (x, y, c = INK, k = 1) => `<path d="M${fx(x - 11 * k)} ${fx(y - 11 * k)}L${fx(x + 11 * k)} ${fx(y + 11 * k)}M${fx(x + 11 * k)} ${fx(y - 11 * k)}L${fx(x - 11 * k)} ${fx(y + 11 * k)}" stroke="${c}" stroke-width="${7 * k}" stroke-linecap="round"/>`;
+const markSvg = (inner, w = 40, h = 40) => `<svg class="ok-mark" width="${w}" height="${h}" viewBox="${-w / 2} ${-h / 2} ${w} ${h}" style="position:static;overflow:visible">${inner}</svg>`;
+// A knob: a ring, and a pointer that turns about its centre (the pointer is its own element).
+function knob(cx, cy, r, deg, o = {}) {
+  const { stroke = INK, w = 6, fill = "#fff" } = o;
+  return `<g${o.cls ? ` class="${o.cls}"` : ""}><circle cx="${fx(cx)}" cy="${fx(cy)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${w}"/>` +
+    `<line class="ptr" x1="${fx(cx)}" y1="${fx(cy)}" x2="${fx(cx)}" y2="${fx(cy - (r - w * 0.4))}" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round" transform="rotate(${fx(deg)} ${fx(cx)} ${fx(cy)})"/>` +
+    `<circle cx="${fx(cx)}" cy="${fx(cy)}" r="${fx(w * 0.75)}" fill="${stroke}"/></g>`;
+}
+const setRot = (ptr, deg) => { const x = ptr.getAttribute("x1"), y = ptr.getAttribute("y1"); ptr.setAttribute("transform", `rotate(${fx(deg)} ${x} ${y})`); };
+
+// ---- The bowl and its camera (the storyboard's projection) ------------------------------------------------
+const E = 4.5, HK = 0.36, YAW = -0.32, PITCH = 0.95, DP = 16, SC = 130, CX = 960, CY = 570, FA = 3.3, FB = 2.0;
+const err = (a, b) => 0.5 * a * a + 1.5 * b * b;
+// Gradient descent on the bowl: the slope is (knob1, 3·knob2), and each step moves by step size × slope.
+const descend = (eta, n, [a, b] = START) => { const o = [[a, b]]; for (let i = 0; i < n; i++) { a -= eta * a; b -= eta * 3 * b; o.push([a, b]); } return o; };
+const MAIN = descend(STEP_MAIN, 7);   // p0..p6 are the six hops of 3.4; p7 is the one hop of 3.8
+const LONG = descend(STEP_LONG, 16);  // too long: it overshoots the valley floor on every step
+const SHORT = descend(STEP_SHORT, 6); // too short: the same six hops as the main path, barely moving
+const rimPt = (th) => [Math.sqrt(2 * E) * Math.cos(th), Math.sqrt((2 * E) / 3) * Math.sin(th)];
+function pj(a, b, e) {
+  const y = e * HK, cy = Math.cos(YAW), sy = Math.sin(YAW);
+  const x1 = cy * a + sy * b, z1 = -sy * a + cy * b;
+  const cp = Math.cos(PITCH), sp = Math.sin(PITCH);
+  const up = y * cp - z1 * sp, depth = y * sp + z1 * cp, k = DP / (DP - depth);
+  return [CX + x1 * SC * k, CY - up * SC * k, depth];
+}
+const onS = ([a, b]) => pj(a, b, err(a, b));
+
+// Height colour: an OKLab ramp from #8b83f3 at the bottom to #f6f6f9 at the rim, lighter only ever higher.
+const s2l = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+const l2s = (c) => Math.round(clamp01(c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255);
+const toOk = ([r, g, b]) => { r = s2l(r); g = s2l(g); b = s2l(b); const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b); return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s]; };
+const fromOk = ([L, A, B]) => { const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3, m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3, s = (L - 0.0894841775 * A - 1.291485548 * B) ** 3; return [l2s(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s), l2s(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s), l2s(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)]; };
+const OK_LOW = toOk([139, 131, 243]), OK_RIM = toOk([246, 246, 249]), OK_TOP = toOk([253, 253, 254]);
+const mixOk = (p, q, t) => fromOk(p.map((v, i) => v + (q[i] - v) * t));
+const rampBands = (e) => e <= E ? `rgb(${mixOk(OK_LOW, OK_RIM, Math.min(8, Math.floor((Math.max(0, e) / E) * 9)) / 8)})` : `rgb(${mixOk(OK_RIM, OK_TOP, Math.min(3, Math.ceil((e - E) / 1.2)) / 3)})`;
+const rampSmooth = (e) => e <= E ? `rgb(${mixOk(OK_LOW, OK_RIM, Math.round((Math.max(0, e) / E) * 40) / 40)})` : `rgb(${mixOk(OK_RIM, OK_TOP, Math.round(clamp01((e - E) / 3.5) * 12) / 12)})`;
+
+// Contour segments of one quad at each level (marching squares).
+function isoSegs(c, levels) {
+  const segs = [];
+  for (const L of levels) {
+    const pts = [];
+    for (let k = 0; k < 4; k++) { const p = c[k], q = c[(k + 1) % 4]; if ((p[2] - L) * (q[2] - L) < 0) { const t = (L - p[2]) / (q[2] - p[2]); pts.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, L]); } }
+    if (pts.length === 2) segs.push(pts); else if (pts.length === 4) segs.push([pts[0], pts[1]], [pts[2], pts[3]]);
+  }
+  return segs;
+}
+// Painter-sorted quads, each followed by its contours. Runs of one style share a single path element.
+function paintStream(items, project, levels, strokeW, ramp) {
+  const ops = items.map(({ corners, e }) => {
+    const p = corners.map(([a, b, h]) => project(a, b, h));
+    return { depth: (p[0][2] + p[1][2] + p[2][2] + p[3][2]) / 4, d: "M" + p.map((q) => fx(q[0]) + " " + fx(q[1])).join("L") + "Z", fill: ramp(e), segs: isoSegs(corners, levels).map((s) => s.map(([a, b, h]) => project(a, b, h))) };
+  });
+  ops.sort((x, y) => x.depth - y.depth);
+  const out = []; let cur = null;
+  const push = (kind, style, d) => { if (cur && cur.kind === kind && cur.style === style) cur.d += d; else { cur = { kind, style, d }; out.push(cur); } };
+  for (const o of ops) { push("f", o.fill, o.d); for (const s of o.segs) push("c", "", `M${fx(s[0][0])} ${fx(s[0][1])}L${fx(s[1][0])} ${fx(s[1][1])}`); }
+  return out.map((o) => o.kind === "f" ? `<path d="${o.d}" fill="${o.style}" stroke="${o.style}" stroke-width="${strokeW}"/>` : `<path d="${o.d}" fill="none" stroke="rgba(10,10,10,.15)" stroke-width="2"/>`).join("");
+}
+function polarBowlItems() {
+  const R = 14, TT = 40, items = [];
+  const pt = (i, j) => { const r = i / R, th = (j / TT) * Math.PI * 2; const [a, b] = rimPt(th); return [a * r, b * r, E * r * r]; };
+  for (let i = 0; i < R; i++) for (let j = 0; j < TT; j++) items.push({ corners: [pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j + 1)], e: E * ((i + 0.5) / R) ** 2 });
+  return items;
+}
+const rimPath = (project, e = E) => "M" + Array.from({ length: 97 }, (_, j) => { const [a, b] = rimPt((j / 96) * 2 * Math.PI); const q = project(a, b, e); return fx(q[0]) + " " + fx(q[1]); }).join("L");
+const FLOOR_CORNERS = [[-FA, -FB], [FA, -FB], [FA, FB], [-FA, FB]].map(([a, b]) => pj(a, b, 0));
+
+// ---- The zoom-out landscape: the bowl is one valley among several ----------------------------------------
+// Inside the rim the landscape equals the bowl exactly, so the main path stays on it after the zoom.
+const LAND = {
+  A1: -12.5, A2: 11, B1: -7.2, B2: 2.9, RES: 0.2,
+  DIPS: [[7.5, -4.4, -5.0, 1.7, 1.4], [-8.8, 1.2, -4.2, 1.7, 1.4], [7.2, 1.5, -4.4, 1.6, 1.1], [4.3, -1.3, 3.0, 1.3, 1.2], [-4.8, -1.8, 3.0, 1.6, 1.3], [11, -1.5, 3.0, 1.5, 1.6], [-2.2, -5.4, 2.6, 1.8, 1.2], [-4.4, 2.3, 2.2, 1.3, 0.9], [-11.8, -3.6, 2.6, 1.6, 1.6], [1, 3.2, 1.6, 2, 0.8]],
+  STARTS: [[10.12, -1.71], [-6.05, -1.46], [4.57, -1.19]],
+};
+const smoothstep = (e0, e1, x) => { const t = clamp01((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
+const terrain = (a, b) => { let v = E + 0.35 * Math.sin(0.45 * a + 0.3) * Math.cos(0.5 * b); for (const [ca, cb, h, sa, sb] of LAND.DIPS) v += h * Math.exp(-((a - ca) ** 2 / (2 * sa * sa) + (b - cb) ** 2 / (2 * sb * sb))); return v; };
+const Lz = (a, b) => { const bb = err(a, b), w = 1 - smoothstep(1, 1.6, Math.sqrt(bb / E)); return w * bb + (1 - w) * terrain(a, b); };
+const gradL = (a, b, h = 1e-5) => [(Lz(a + h, b) - Lz(a - h, b)) / (2 * h), (Lz(a, b + h) - Lz(a, b - h)) / (2 * h)];
+// A walk takes the main path's step size and stops once a step is shorter than 0.03.
+const walkL = (a, b, maxN = 40) => { const pts = [[a, b]]; for (let i = 0; i < maxN; i++) { const [ga, gb] = gradL(a, b); const na = a - STEP_MAIN * ga, nb = b - STEP_MAIN * gb, st = Math.hypot(na - a, nb - b); a = na; b = nb; pts.push([a, b]); if (st < 0.03) break; } return pts; };
+const ZOOM = 3;
+const CEND = onS(MAIN[6]);            // the zoom's fixed point: where the ball rests after six hops
+const wide = (a, b, e) => { const q = pj(a, b, e); return [CEND[0] + (q[0] - CEND[0]) / ZOOM, CEND[1] + (q[1] - CEND[1]) / ZOOM, q[2]]; };
+const W = (p) => wide(p[0], p[1], err(p[0], p[1]));
+const WALKS = LAND.STARTS.map(([a, b]) => walkL(a, b));
+
+// ---- The frame clock: timed changes after a cue ---------------------------------------------------------------
+// run(animate, delay, dur, fn) calls fn(k) with k from 0 to 1 over dur seconds, starting delay seconds
+// after the cue. With animate false, or when the next cue arrives first, fn(1) runs at once, in order.
+const jobs = []; let seq = 0, ticking = false;
+function run(animate, delay, dur, fn) {
+  if (!animate) { fn(1); return; }
+  jobs.push({ start: performance.now() + delay * 1000, dur: dur * 1000, fn, n: seq++ });
+  jobs.sort((x, y) => x.start - y.start || x.n - y.n);
+  if (!ticking) { ticking = true; requestAnimationFrame(frame); }
+}
+const at = (animate, delay, fn) => run(animate, delay, 0, () => fn());
+function frame(now) {
+  for (const j of [...jobs]) {
+    if (now < j.start) continue;
+    const k = j.dur ? clamp01((now - j.start) / j.dur) : 1;
+    j.fn(k);
+    if (k >= 1) jobs.splice(jobs.indexOf(j), 1);
+  }
+  if (jobs.length) requestAnimationFrame(frame); else ticking = false;
+}
+function finishJobs() { while (jobs.length) { const j = jobs.shift(); j.fn(1); } }
+
+// ---- Build the figure ---------------------------------------------------------------------------------------------
+const rig = document.getElementById("rig");
+const $ = (sel) => rig.querySelector(sel);
+const $$ = (sel) => [...rig.querySelectorAll(sel)];
+const hide = (...els) => els.flat().forEach((e) => e && e.classList.add("off"));
+const show = (...els) => els.flat().forEach((e) => e && e.classList.remove("off"));
+const S = {}; // element references, filled once below
+
+// The knob box: 24 knobs, their pointer angles before and after each turn, and one slope per knob.
+const KN = []; for (let j = 0; j < 4; j++) for (let i = 0; i < 6; i++) KN.push([640 + i * 96, 405 + j * 90]);
+const KA = (() => { const r = rng(11); const base = KN.map(() => Math.round(-120 + r() * 240)); const d1 = KN.map(() => Math.round((r() < 0.5 ? -1 : 1) * (14 + r() * 16))); const d2 = KN.map(() => Math.round((r() < 0.5 ? -1 : 1) * (12 + r() * 14))); return [base, base.map((v, i) => v + d1[i]), base.map((v, i) => v + d1[i] + d2[i])]; })();
+// Slopes differ per knob, so the arrows of "every knob at once" have different lengths, some tiny.
+const KDIR = (() => { const r = rng(5); return KN.map(() => ({ dir: r() < 0.5 ? -1 : 1, len: 8 + Math.pow(r(), 1.4) * 46 })); })();
+const BIG = 8; // the knob that enlarges on "which way"
+const FLY = [13, 16]; // the two knobs that become the floor's knob 1 and knob 2
+
+function tileHTML(cls, x, y, w, h, animal, label) {
+  const artH = h - 76, artW = w - 28;
+  return `<div class="tile ${cls}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px">` +
+    `<svg class="art" width="${artW}" height="${artH}" viewBox="0 0 240 180"><use href="#an-${animal}"/></svg>` +
+    `<div class="lab"><span class="pill">${label}</span>${markSvg(checkG(0, 0, ACC, 1))}</div></div>`;
+}
+
+function footer(n, total = 6) {
+  const ticks = Array.from({ length: total }, (_, i) => {
+    const x = 1 + i * 12;
+    return i + 1 === n ? `<rect class="cur" x="${x}" y="8" width="3" height="22"/><circle class="cur" cx="${x + 1.5}" cy="3" r="2"/>` : `<rect x="${x}" y="14" width="3" height="16"/>`;
+  }).join("");
+  return `<div class="footer"><div class="brand"><svg class="mark" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" style="position:static">` +
+    `<line x1="4" y1="12" x2="4" y2="20"/><line class="tall" x1="9.5" y1="8" x2="9.5" y2="20"/><circle cx="9.5" cy="3.75" r="2.25"/>` +
+    `<line x1="15" y1="12" x2="15" y2="20"/><line x1="20.5" y1="12" x2="20.5" y2="20"/></svg><span>DECKTALK</span></div>` +
+    `<div class="track"><svg class="ticks" viewBox="0 0 ${12 * total - 6} 30" width="${12 * total - 6}" height="30" aria-hidden="true" style="position:static">${ticks}</svg><span>0${n} / 0${total}</span></div></div>`;
+}
+
+function buildIntro() {
+  // Page CSS does not reach inside a <use> copy, so the line style is written as inherited attributes.
+  const art = (body) => body.replace(/class="dot"/g, `fill="${INK}" stroke="none"`).replace(/class="ln"/g, `fill="none"`).replace(/class="thin"/g, `fill="none" stroke-width="4.5"`);
+  const symbols = Object.entries(ANIMALS).map(([id, body]) => `<symbol id="an-${id}" viewBox="0 0 240 180"><g fill="#fff" stroke="${INK}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">${art(body)}</g></symbol>`).join("");
+  const tiles = EXAMPLES.map(([animal, label], i) => tileHTML("ex", 790 + (i % 2) * 420, 250 + Math.floor(i / 2) * 310, 380, 280, animal, label)).join("");
+  let box = `<rect x="560" y="340" width="640" height="400" rx="24" fill="#fff" stroke="${INK}" stroke-width="6"/>`;
+  KN.forEach(([x, y], i) => { box += knob(x, y, 30, KA[0][i], { cls: `kn k${i}` }); });
+  const arrows = KN.map(([x, y], i) => { const d = KDIR[i]; return arrow(x - (d.dir * d.len) / 2, y - 50, x + (d.dir * d.len) / 2, y - 50, { stroke: ACC, w: 5, head: Math.min(13, 4 + d.len * 0.35) }); }).join("");
+  const [bx, by] = KN[BIG];
+  const big = `<rect x="${bx - 215}" y="${by - 84}" width="430" height="168" rx="20" fill="#fff" opacity="0.96"/>` +
+    `<g class="ghosts off">${[-30, 30].map((da) => { const a = ((KA[2][BIG] + da - 90) * Math.PI) / 180; return line([bx, by], [bx + Math.cos(a) * 58, by + Math.sin(a) * 58], DIM, 8, `stroke-linecap="round"`); }).join("")}</g>` +
+    `<g class="bigknob">${knob(bx, by, 66, KA[2][BIG], { w: 8, fill: "none" })}</g>` +
+    arrow(bx - 92, by, bx - 196, by, { stroke: ACC, w: 9 }) + arrow(bx + 92, by, bx + 196, by, { stroke: ACC, w: 9 });
+  rig.insertAdjacentHTML("beforeend", `
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${symbols}</defs></svg>
+    <div id="intro" class="layer">
+      <div class="rulesg"><div class="rules"><div class="h">rules</div>if it has spots → ${LABEL_A}<br>if it has paws → ${LABEL_B}<br>if …</div></div>
+      <svg class="full strike off"><line x1="136" y1="532" x2="664" y2="268" stroke="${ACC}" stroke-width="7" stroke-linecap="round"/></svg>
+      <div class="tiles off">${tiles}</div>
+      <div class="boxg off">
+        <svg class="full"><g class="inarrow">${arrow(420, 540, 545, 540, { w: 6 })}</g>${box}
+          <g class="allarrows off">${arrows}</g>
+          <g class="bigg off">${big}</g>
+          <g class="outarrow off">${arrow(1215, 540, 1320, 540, { w: 6 })}</g></svg>
+        <div class="boxlab">AI model</div>
+        ${tileHTML("in1", 100, 425, 300, 230, FIRST_INPUT[0], FIRST_INPUT[1])}
+        ${tileHTML("in2 off", 100, 425, 300, 230, NEXT_INPUT[0], NEXT_INPUT[1])}
+        <div class="ans off"><span class="pill">${WRONG_GUESS}</span><span class="mk"></span></div>
+      </div>
+      <div class="meterg off">
+        <span class="pill acc ctr" style="left:1697px;top:236px">how wrong</span>
+        <div class="meter"><div class="fill" style="transform:scaleY(0)"></div><div class="tick t1 off"></div><div class="tick t2 off"></div></div>
+      </div>
+      <div class="counter off"><span>tries</span><b>1</b></div>
+    </div>`);
+}
+
+function buildWorld() {
+  // Layer B: the bowl at lesson scale. Layer L: the landscape at the zoomed-out scale.
+  const bowlSvg = paintStream(polarBowlItems(), pj, [1, 2, 3, 4], 1.2, rampBands);
+  const FL = FLOOR_CORNERS;
+  let floorFill = `<path d="M${FL.map((q) => fx(q[0]) + " " + fx(q[1])).join("L")}Z" fill="${FLOORC}"/>`;
+  for (let g = -3; g <= 3; g++) floorFill += line(pj(g, -FB, 0), pj(g, FB, 0), "#d4d4d8", 2);
+  for (let g = -1; g <= 1; g++) floorFill += line(pj(-FA, g, 0), pj(FA, g, 0), "#d4d4d8", 2);
+  const [b1, a1, c0, b0] = [FL[1], FL[2], FL[3], FL[0]];
+  const floorEdges = line(b1, b0, "#d4d4d8", 2) + `<path d="M${fx(b0[0])} ${fx(b0[1])}L${fx(c0[0])} ${fx(c0[1])}L${fx(a1[0])} ${fx(a1[1])}L${fx(b1[0])} ${fx(b1[1])}" fill="none" stroke="${MUTE}" stroke-width="4" stroke-linejoin="round"/>`;
+  const ax0 = pj(-FA, FB, 0), ax1 = pj(-FA, FB, E * 1.05);
+  const p1 = pj(0, FB, 0), p2 = pj(FA, 0, 0);
+  const f0 = pj(START[0], START[1], 0), t0 = onS(START);
+
+  // Landscape, its outline, the bowl's rim drawn dashed, and the main path's dots at the wide scale.
+  const { A1, A2, B1, B2, RES } = LAND, na = Math.round((A2 - A1) / RES), nb = Math.round((B2 - B1) / RES), grid = [], items = [];
+  for (let i = 0; i <= na; i++) { grid.push([]); for (let j = 0; j <= nb; j++) { const a = A1 + i * RES, b = B1 + j * RES; grid[i].push([a, b, Lz(a, b)]); } }
+  for (let i = 0; i < na; i++) for (let j = 0; j < nb; j++) items.push({ corners: [grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]], e: Lz(A1 + (i + 0.5) * RES, B1 + (j + 0.5) * RES) });
+  const landSvg = paintStream(items, wide, [1, 2, 3, 4, 5.5, 6.5, 7.5], 1, rampSmooth);
+  const edge = []; for (let i = 0; i <= na; i++) edge.push(grid[i][0]); for (let j = 0; j <= nb; j++) edge.push(grid[na][j]); for (let i = na; i >= 0; i--) edge.push(grid[i][nb]); for (let j = nb; j >= 0; j--) edge.push(grid[0][j]);
+  const sil = edge.map(([a, b, e]) => wide(a, b, e));
+  S.landBB = [Math.min(...sil.map((p) => p[0])), Math.min(...sil.map((p) => p[1])), Math.max(...sil.map((p) => p[0])), Math.max(...sil.map((p) => p[1]))];
+  const silPath = "M" + sil.map((p) => fx(p[0]) + " " + fx(p[1])).join("L") + "Z";
+
+  // The three other walks as finished trails, and a depth mark from the rim height down to each floor.
+  const trails = WALKS.map((w) => {
+    const q = w.map(([a, b]) => wide(a, b, Lz(a, b))), e = q[q.length - 1];
+    return `<polyline points="${q.map((p) => fx(p[0]) + "," + fx(p[1])).join(" ")}" fill="none" stroke="${MUTE}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>` +
+      q.slice(0, -1).map((p) => dotG(p[0], p[1], 7, MUTE)).join("") + `<circle cx="${fx(e[0])}" cy="${fx(e[1])}" r="13" fill="#fff" stroke="${INK}" stroke-width="5"/>`;
+  }).join("");
+  const levels = [MAIN[6], ...WALKS.map((w) => w[w.length - 1])].map(([a, b]) => {
+    const bot = wide(a, b, Lz(a, b)), top = wide(a, b, E), x = bot[0] + 34;
+    return line([x, top[1]], [x, bot[1]], INK, 4) + line([x - 14, top[1]], [x + 14, top[1]], INK, 5) + line([x - 20, bot[1]], [x + 20, bot[1]], INK, 7);
+  }).join("");
+  const q6 = W(MAIN[6]), q7 = W(MAIN[7]);
+  const hopMark = dotG(q6[0], q6[1], 6) + `<path d="M${fx(q6[0] - 30)} ${fx(q6[1] - 26)}Q${fx(q6[0] - 2)} ${fx(q6[1] - 78)} ${fx(q7[0] + 22)} ${fx(q7[1] - 30)}" fill="none" stroke="${ACC}" stroke-width="8" stroke-linecap="round"/>` +
+    arrow(q7[0] + 12, q7[1] - 44, q7[0] + 24, q7[1] - 28, { stroke: ACC, w: 8, head: 22 });
+
+  // Paths for "too long" (squares) and "too short" (triangles), from the same start.
+  const lq = LONG.map(onS), sq = SHORT.map(onS);
+  const longSvg = `<polyline points="${lq.map((p) => fx(p[0]) + "," + fx(p[1])).join(" ")}" fill="none" stroke="${MUTE}" stroke-width="4" stroke-dasharray="9 7"/>` + lq.slice(1).map((p) => squareG(p[0], p[1], 22)).join("");
+  const shortSvg = `<polyline points="${sq.map((p) => fx(p[0]) + "," + fx(p[1])).join(" ")}" fill="none" stroke="${INK}" stroke-width="4"/>` + sq.slice(1).map((p) => triG(p[0], p[1], 26)).join("");
+  // The first hop's arrow, along the true slope from p0 to p1.
+  const a0 = onS(MAIN[0]), a1p = onS(MAIN[1]), aL = Math.hypot(a1p[0] - a0[0], a1p[1] - a0[1]);
+  const hopArrow = arrow(a0[0] + ((a1p[0] - a0[0]) * 18) / aL, a0[1] + ((a1p[1] - a0[1]) * 18) / aL, a1p[0] - ((a1p[0] - a0[0]) * 34) / aL, a1p[1] - ((a1p[1] - a0[1]) * 34) / aL, { stroke: ACC, w: 9, head: 26 });
+
+  const kmark = (cls, x, y, deg, label, rev) => `<div class="kmark ${cls}" style="left:${fx(x)}px;top:${fx(y)}px">` +
+    `${rev ? `<span class="pill off">${label}</span>` : ""}<svg width="64" height="64" viewBox="0 0 64 64">${knob(32, 32, 26, deg, { stroke: ACC, w: 7 })}</svg>${rev ? "" : `<span class="pill off">${label}</span>`}</div>`;
+
+  rig.insertAdjacentHTML("beforeend", `
+    <div id="world" class="layer gpu">
+      <div id="L" class="layer gpu" style="opacity:.01">
+        <svg class="full">${landSvg}<path d="${silPath}" fill="none" stroke="${MUTE}" stroke-width="3" stroke-linejoin="round"/>
+          <path d="${rimPath(wide)}" fill="none" stroke="${INK}" stroke-width="3" stroke-dasharray="10 7"/>
+          ${MAIN.slice(0, 6).map((p) => { const q = W(p); return dotG(q[0], q[1], 6); }).join("")}</svg>
+      </div>
+      <div id="B" class="layer gpu">
+        <svg class="full floor off" style="opacity:.5">${floorFill}</svg>
+        <div id="surf" class="layer gpu" style="opacity:.01;transform-origin:0 ${fx(pj(0, 0, 0)[1])}px"><svg class="full">${bowlSvg}</svg></div>
+        <div id="haze" class="off"></div>
+        <div id="rimL" class="layer off" style="transform-origin:0 ${fx(pj(0, 0, 0)[1])}px"><svg class="full"><path d="${rimPath(pj)}" fill="none" stroke="${MUTE}" stroke-width="3.5"/></svg></div>
+        <svg class="full over">
+          <g class="edges floor off" style="opacity:.5">${floorEdges}</g>
+          <g class="axis off">${arrow(ax0[0], ax0[1], ax1[0], ax1[1], { w: 6, head: 24 })}</g>
+          <line class="stick off" x1="${fx(f0[0])}" y1="${fx(f0[1])}" x2="${fx(t0[0])}" y2="${fx(t0[1])}" stroke="${ACC}" stroke-width="14" stroke-linecap="round"/>
+          <g class="flines off"><line class="fl1" stroke="${INK}" stroke-width="4" stroke-dasharray="13 9"/><line class="fl2" stroke="${INK}" stroke-width="4" stroke-dasharray="13 9"/>
+            <circle class="fe1" r="8" fill="${ACC}"/><circle class="fe2" r="8" fill="${ACC}"/><circle class="fdot" r="10" fill="${INK}"/></g>
+          <line class="drop off" stroke="${INK}" stroke-width="5" stroke-dasharray="8 8"/>
+          <rect class="htick off" width="68" height="13" rx="4" fill="${ACC}"/>
+          <g class="long off">${longSvg}</g>
+          <g class="short off">${shortSvg}</g>
+          <g class="mdots">${MAIN.slice(0, 6).map((p, i) => { const q = onS(p); return dotG(q[0], q[1], 9, INK, `class="md md${i} off"`); }).join("")}</g>
+          <g class="harrow off">${hopArrow}</g>
+        </svg>
+        ${kmark("km1 off", p1[0] - 108, p1[1] + 14, 40, "knob 1", false)}
+        ${kmark("km2 off", p2[0] + 20, p2[1] - 60, -35, "knob 2", false)}
+        <span class="pill acc ctr axlab off" style="left:${fx(ax1[0])}px;top:${fx(ax1[1] - 76)}px">how wrong</span>
+        <div id="ring" class="off"></div>
+      </div>
+      <svg class="full landover">
+        <g class="trails off">${trails}</g><g class="levels off">${levels}</g><g class="hopmark off">${hopMark}</g>
+      </svg>
+      <div id="ball" class="off"></div>
+    </div>`);
+}
+
+function buildLater() {
+  // 3.5 slider, 3.4 label, 3.7 chat and sums, 3.8 tensor, chips, and the two chip blocks.
+  const SX = { short: 1552, mid: 1656, long: 1760 };
+  S.SX = SX;
+  const slider = `<line x1="1536" y1="400" x2="1776" y2="400" stroke="${INK}" stroke-width="8" stroke-linecap="round"/>` +
+    triG(SX.short, 452, 24) + dotG(SX.mid, 452, 10) + squareG(SX.long, 452, 22) +
+    `<circle class="thumb" cx="${SX.mid}" cy="400" r="24" fill="${ACC}" stroke="#fff" stroke-width="6"/>`;
+
+  // Tiny grey cells with irregular spacing, in eight columns that fill from left to right.
+  const r = rng(99), cols = 8, cellG = Array.from({ length: cols }, () => []);
+  for (let y = 652; y < 860; y += 15) for (let x = 120; x < 1794; x += 15) {
+    if (r() > 0.8) continue;
+    const sz = 6 + r() * 6, jx = (r() - 0.5) * 7, jy = (r() - 0.5) * 7;
+    cellG[Math.min(cols - 1, Math.floor(((x - 120) / 1680) * cols))].push(`<rect x="${fx(x + jx)}" y="${fx(y + jy)}" width="${fx(sz)}" height="${fx(sz)}" rx="1.5" fill="${GREY}"/>`);
+  }
+  const cells = cellG.map((g, i) => `<g class="cc cc${i} off">${g.join("")}</g>`).join("");
+
+  const numGrid = (x, y, c, rows, cw, ch, o = {}) => {
+    const rr = rng((o.seed ?? 1) * 7919 + 13), size = o.size ?? Math.round(ch * 0.42), sw = o.sw ?? 3;
+    let s = `<rect x="${fx(x)}" y="${fx(y)}" width="${fx(c * cw)}" height="${fx(rows * ch)}" rx="4" fill="#fff" stroke="${INK}" stroke-width="${sw}"/>`;
+    for (let i = 1; i < c; i++) s += line([x + i * cw, y], [x + i * cw, y + rows * ch], "#d4d4d8", Math.max(1.5, sw * 0.6));
+    for (let j = 1; j < rows; j++) s += line([x, y + j * ch], [x + c * cw, y + j * ch], "#d4d4d8", Math.max(1.5, sw * 0.6));
+    for (let j = 0; j < rows; j++) for (let i = 0; i < c; i++) {
+      const v = rr() * 4 - 2, txt = (v < 0 ? "−" : "") + Math.abs(v).toFixed(size > 20 ? 2 : 1);
+      s += `<text x="${fx(x + (i + 0.5) * cw)}" y="${fx(y + (j + 0.5) * ch + size * 0.36)}" font-family="JetBrains Mono, monospace" font-size="${size}" text-anchor="middle" fill="${INK}">${txt}</text>`;
+    }
+    return s;
+  };
+  const stackGrid = (x, y, c, rows, cw, ch, layers, o = {}) => {
+    const off = o.off ?? Math.max(10, cw * 0.28);
+    let s = "";
+    for (let L = layers - 1; L >= 1; L--) s += `<rect x="${fx(x + L * off)}" y="${fx(y - L * off)}" width="${fx(c * cw)}" height="${fx(rows * ch)}" rx="4" fill="#fff" stroke="${INK}" stroke-width="${o.sw ?? 3}"/>`;
+    return s + numGrid(x, y, c, rows, cw, ch, o);
+  };
+  const chip = (x, y, Sz, o = {}) => {
+    const { cells: n = 6, pins = 5 } = o, sw = o.sw ?? Math.max(3, Sz * 0.016), pl = Sz * 0.075;
+    let s = "";
+    for (let i = 0; i < pins; i++) {
+      const t = Sz * (0.18 + (0.64 * i) / (pins - 1));
+      s += line([x + t, y - pl], [x + t, y], INK, sw) + line([x + t, y + Sz], [x + t, y + Sz + pl], INK, sw) + line([x - pl, y + t], [x, y + t], INK, sw) + line([x + Sz, y + t], [x + Sz + pl, y + t], INK, sw);
+    }
+    s += `<rect x="${fx(x)}" y="${fx(y)}" width="${fx(Sz)}" height="${fx(Sz)}" rx="${fx(Sz * 0.07)}" fill="#fff" stroke="${INK}" stroke-width="${fx(sw)}"/>`;
+    const inset = Sz * 0.13, g = Sz - 2 * inset, gap = g * 0.06, c = (g - (n - 1) * gap) / n;
+    let off = "", on = "";
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const cell = (fill) => `<rect x="${fx(x + inset + i * (c + gap))}" y="${fx(y + inset + j * (c + gap))}" width="${fx(c)}" height="${fx(c)}" rx="${fx(c * 0.12)}" fill="${fill}"/>`;
+      off += cell(HAIR); on += cell(ACC);
+    }
+    return s + (o.lit ? on : `<g class="cellsoff">${off}</g><g class="cellson off">${on}</g>`);
+  };
+
+  const tensor = stackGrid(960, 350, 6, 4, 92, 64, 3, { seed: 3, size: 24, off: 26 });
+  let chips = "";
+  for (const [cx, label, seed] of [[1060, "GPU", 4], [1560, "TPU", 5]]) {
+    const Sz = 290, x = cx - Sz / 2, y = 480;
+    chips += stackGrid(x - 6, 290, 4, 3, 38, 30, 3, { seed, size: 13, off: 10, sw: 2.5 }) + stackGrid(x + 190, 290, 3, 3, 30, 30, 4, { seed: seed + 9, size: 11, off: 8, sw: 2.5 });
+    chips += arrow(cx, 396, cx, 454, { w: 6 }) + chip(x, y, Sz, { cells: 8 });
+  }
+  let blocks = "";
+  for (const x0 of [840, 1400]) for (let j = 0; j < 5; j++) for (let i = 0; i < 4; i++) blocks += chip(x0 + i * 94, 318 + j * 104, 70, { cells: 4, pins: 3, sw: 3, lit: true });
+
+  rig.insertAdjacentHTML("beforeend", `
+    <div id="ui" class="layer">
+      <span class="pill acc big gd off" style="right:120px;left:auto;top:128px">gradient descent</span>
+      <div class="sliderg off"><div class="slider-lab">step size</div><svg class="full">${slider}</svg></div>
+      <div class="chat off"><span class="q">Write a short poem about rain</span><div class="a"><i style="top:30px;width:430px"></i><i style="top:62px;width:460px"></i><i style="top:94px;width:300px"></i></div><div class="in">Ask anything</div></div>
+      <svg class="full cells">${cells}</svg>
+      <div class="tensor off"><svg class="full">${tensor}</svg><span class="pill acc ctr" style="left:1236px;top:640px;font-size:36px;line-height:58px;font-weight:600">tensor</span></div>
+      <div class="chips off"><svg class="full">${chips}</svg>
+        <span class="pill mono ctr" style="left:1060px;top:814px">GPU</span><span class="pill mono ctr" style="left:1560px;top:814px">TPU</span></div>
+      <div class="blocks off"><svg class="full">${blocks}</svg>
+        <span class="pill mono ctr" style="left:1011px;top:236px">GPU</span><span class="pill mono ctr" style="left:1571px;top:236px">TPU</span></div>
+    </div>
+    <div id="chrome" class="layer">
+      <p class="eyebrow">03 &nbsp;How AI learns</p>
+      <h1 class="title">How does AI learn?</h1>
+      <p class="caption off">For this lesson it is a bowl.</p>
+      ${footer(SECTION_NUMBER, SECTIONS_TOTAL)}
+    </div>`);
+}
+
+// The haze: one canvas baked before t=0, grey-white with soft texture and a clear hole in the middle.
+// It moves only by transform, to the ball's spot on the ground after each landing, so nothing repaints.
+function buildHaze() {
+  const N = 1600, c = document.createElement("canvas"); c.width = c.height = N;
+  const g = c.getContext("2d"), r = rng(11);
+  g.fillStyle = "rgba(244,245,247,.88)"; g.fillRect(0, 0, N, N);
+  for (let i = 0; i < 700; i++) {
+    const x = r() * N, y = r() * N, rad = 25 + r() * 110, light = r() < 0.45, a = 0.14 + r() * 0.26;
+    const col = light ? "255,255,255" : "184,187,196", gr = g.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, `rgba(${col},${a})`); gr.addColorStop(1, `rgba(${col},0)`);
+    g.fillStyle = gr; g.fillRect(x - rad, y - rad, 2 * rad, 2 * rad);
+  }
+  g.globalCompositeOperation = "destination-out";
+  const h = g.createRadialGradient(N / 2, N / 2, 0, N / 2, N / 2, 165);
+  h.addColorStop(0, "rgba(0,0,0,1)"); h.addColorStop(95 / 165, "rgba(0,0,0,1)"); h.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = h; g.fillRect(0, 0, N, N);
+  $("#haze").appendChild(c);
+}
+
+buildIntro();
+buildWorld();
+buildLater();
+buildHaze();
+Object.assign(S, {
+  intro: $("#intro"), rulesg: $(".rulesg"), strike: $(".strike"), tiles: $(".tiles"), boxg: $(".boxg"),
+  in1: $(".in1"), in2: $(".in2"), ans: $(".ans"), outarrow: $(".outarrow"), meterg: $(".meterg"), fill: $(".meter .fill"),
+  t1: $(".meter .t1"), t2: $(".meter .t2"), counter: $(".counter"), bigg: $(".bigg"), ghosts: $(".ghosts"), allarrows: $(".allarrows"),
+  world: $("#world"), L: $("#L"), B: $("#B"), surf: $("#surf"), rimL: $("#rimL"), haze: $("#haze"), ring: $("#ring"), ball: $("#ball"),
+  floor: $$(".floor"), axis: $(".axis"), axlab: $(".axlab"), stick: $(".stick"), flines: $(".flines"), drop: $(".drop"), htick: $(".htick"),
+  km1: $(".km1"), km2: $(".km2"), long: $(".long"), short: $(".short"), md: $$(".md"), harrow: $(".harrow"),
+  trails: $(".trails"), levels: $(".levels"), hopmark: $(".hopmark"),
+  gd: $(".gd"), sliderg: $(".sliderg"), thumb: $(".thumb"), chat: $(".chat"), cc: $$(".cc"), tensor: $(".tensor"), chips: $(".chips"), blocks: $(".blocks"),
+  caption: $(".caption"),
+});
+
+// ---- Figure state helpers --------------------------------------------------------------------------------------------
+const setMeter = (level) => { S.fill.style.transform = `scaleY(${level.toFixed(4)})`; };
+const setTick = (el, level) => { el.style.bottom = `${5 + 320 * level}px`; show(el); };
+const setKnobs = (angles) => $$(".kn .ptr").forEach((p, i) => setRot(p, angles[i]));
+const turnKnobs = (animate, delay, from, to) => run(animate, delay, 0.35, (k) => { const e = easeOut(k); setKnobs(from.map((v, i) => lerp(v, to[i], e))); });
+const setAnswer = (text, right) => {
+  S.ans.querySelector(".pill").textContent = text;
+  S.ans.querySelector(".mk").innerHTML = markSvg(right ? checkG(0, 0, ACC, 1.1) : crossG(0, 0, INK, 1.1), 44, 44);
+};
+const placeBall = (x, y, s = 1) => { S.ball.style.transform = `translate(${fx(x)}px, ${fx(y)}px) scale(${s.toFixed(3)})`; };
+const placeHaze = (x, y) => { S.haze.style.transform = `translate(${fx(x)}px, ${fx(y)}px)`; S.ring.style.transform = `translate(${fx(x)}px, ${fx(y)}px)`; };
+const setAttrs = (el, o) => Object.entries(o).forEach(([k, v]) => el.setAttribute(k, typeof v === "number" ? fx(v) : v));
+// The dashed lines from the ball's floor spot to both knob axes, the drop line, the height tick, and the axis knobs.
+function setProbe(p, knobs = true) {
+  const [a, b] = p, f = pj(a, b, 0), e1 = pj(a, FB, 0), e2 = pj(FA, b, 0), t = onS(p), h = pj(-FA, FB, err(a, b));
+  setAttrs($(".fl1"), { x1: f[0], y1: f[1], x2: e1[0], y2: e1[1] });
+  setAttrs($(".fl2"), { x1: f[0], y1: f[1], x2: e2[0], y2: e2[1] });
+  setAttrs($(".fe1"), { cx: e1[0], cy: e1[1] }); setAttrs($(".fe2"), { cx: e2[0], cy: e2[1] }); setAttrs($(".fdot"), { cx: f[0], cy: f[1] });
+  setAttrs(S.drop, { x1: t[0], y1: t[1] + 24, x2: f[0], y2: f[1] });
+  setAttrs(S.htick, { x: h[0] - 34, y: h[1] - 6.5 });
+  // The two floor knobs point to the setting under the ball once the ball is on the bowl.
+  if (knobs) { setRot(S.km1.querySelector(".ptr"), 40 + a * 45); setRot(S.km2.querySelector(".ptr"), -35 + b * 60); }
+}
+const fitBox = (bb, x, y, w, h) => { const sc = Math.min(w / (bb[2] - bb[0]), h / (bb[3] - bb[1])); return { sc, tx: x + (w - (bb[2] - bb[0]) * sc) / 2 - bb[0] * sc, ty: y + (h - (bb[3] - bb[1]) * sc) / 2 - bb[1] * sc }; };
+const MINI = fitBox(S.landBB, 110, 250, 720, 360);
+const BALL_WIDE = 14 / 26;
+
+// Initial state: the title and the rules card. Knob pointers, the probe, and the ball rest at the start.
+setKnobs(KA[0]);
+setProbe(START, false);
+placeBall(onS(START)[0], onS(START)[1]);
+placeHaze(...onS(START));
+
+// ---- One function per cue ---------------------------------------------------------------------------------------------
+// Each shows its change on the cue's own frame (a snap), then any motion finishes well before the next word.
+const CUE = {
+  // 3.1 What machine learning is
+  "3.1examples": (an) => { show(S.strike, S.tiles); S.rulesg.style.opacity = 0.25; },
+  "3.1box": (an) => { hide(S.strike, S.tiles, S.rulesg); show(S.boxg); },
+  "3.1guess": (an) => { setAnswer(WRONG_GUESS, false); show(S.outarrow, S.ans); S.in1.classList.add("truth"); },
+  "3.1wrong": (an) => { show(S.meterg); run(an, 0, 0.3, (k) => setMeter(0.85 * easeOut(k))); },
+  "3.1turn": (an) => { setTick(S.t1, 0.85); turnKnobs(an, 0, KA[0], KA[1]); run(an, 0, 0.35, (k) => setMeter(lerp(0.85, 0.55, easeOut(k)))); },
+  "3.1again": (an) => {
+    // A new example arrives with its own reading on the meter, then the knobs turn and the meter falls.
+    hide(S.in1, S.ans, S.outarrow, S.t1); show(S.in2); setMeter(0.65);
+    run(an, 0, 0.3, (k) => { S.in2.style.transform = `translateX(${fx(-60 * (1 - easeOut(k)))}px)`; });
+    turnKnobs(an, 0.45, KA[1], KA[2]);
+    run(an, 0.45, 0.35, (k) => setMeter(lerp(0.65, 0.35, easeOut(k))));
+    at(an, 0.45, () => setTick(S.t2, 0.65));
+    at(an, 0.8, () => { setAnswer(NEXT_INPUT[1], true); show(S.outarrow, S.ans); });
+  },
+  // 3.2 Why gradient descent
+  "3.2way": (an) => { show(S.bigg); hide($(`.kn.k${BIG}`)); },
+  "3.2one": (an) => {
+    show(S.ghosts, S.counter);
+    const b = S.counter.querySelector("b"), ptr = S.bigg.querySelector(".bigknob .ptr"), base = KA[2][BIG];
+    b.textContent = "1";
+    run(an, 0, 1.05, (k) => setRot(ptr, base + 30 * Math.sin(k * Math.PI * 3)));
+    // One try per wiggle, then the count runs on to the size of a big model.
+    ["2", "3", "24", "900", "48,000", "2,600,000", "1,000,000,000+"].forEach((n, i) => at(an, 0.35 * (i + 1), () => { b.textContent = n; }));
+  },
+  "3.2all": (an) => { hide(S.bigg, S.ghosts); show($(`.kn.k${BIG}`), S.allarrows); S.counter.classList.add("dim"); },
+  // 3.3 The surface
+  "3.3two": (an) => {
+    hide(S.boxg, S.counter, S.allarrows); show(S.floor, S.km1, S.km2);
+    // The two knobs fly from the box to the ends of the floor, then their names appear.
+    [S.km1, S.km2].forEach((km, n) => {
+      const [kx, ky] = KN[FLY[n]];
+      const left = parseFloat(km.style.left), top = parseFloat(km.style.top), gx = left + 32, gy = top + 32;
+      const svg = km.querySelector("svg");
+      run(an, 0, 0.55, (k) => { const e = easeInOut(k); svg.style.transform = `translate(${fx((kx - gx) * (1 - e))}px, ${fx((ky - gy) * (1 - e))}px) scale(${(1.15 - 0.15 * e).toFixed(3)})`; });
+    });
+    at(an, 0.55, () => show(S.km1.querySelector(".pill"), S.km2.querySelector(".pill")));
+  },
+  "3.3floor": (an) => { S.floor.forEach((f) => (f.style.opacity = 1)); setProbe(START, false); show(S.flines); },
+  "3.3height": (an) => {
+    // The meter lands on the dot as a bar and stretches up to that setting's height; the bowl rises.
+    hide(S.meterg); show(S.axis, S.axlab, S.stick, S.rimL);
+    const f0 = pj(START[0], START[1], 0), t0 = onS(START);
+    run(an, 0, 0.5, (k) => { const e = easeOut(k); S.stick.setAttribute("x2", fx(lerp(f0[0], t0[0], e))); S.stick.setAttribute("y2", fx(lerp(f0[1], t0[1], e))); });
+    run(an, 0, 0.9, (k) => {
+      const s = lerp(0.04, 1, easeInOut(k));
+      S.surf.style.opacity = 1; S.surf.style.transform = `scaleY(${s.toFixed(4)})`; S.rimL.style.transform = `scaleY(${s.toFixed(4)})`;
+    });
+  },
+  "3.3bowl": (an) => show(S.caption),
+  // 3.4 Steps downhill
+  "3.4ball": (an) => { hide(S.stick); show(S.ball, S.drop, S.htick); placeBall(onS(START)[0], onS(START)[1]); setProbe(START); },
+  "3.4see": (an) => { placeHaze(...onS(START)); S.haze.style.opacity = 1; show(S.haze, S.ring); },
+  "3.4steps": (an) => { show(S.harrow); hops(an, 1, 1, 0.03); },
+  "3.4again": (an) => { hide(S.harrow); hops(an, 2, 6, 0.02); },
+  "3.4name": (an) => { hide(S.haze, S.ring); show(S.gd); },
+  // 3.5 Step size
+  "3.5setting": (an) => { hide(S.flines, S.drop, S.gd); show(S.sliderg); S.thumb.setAttribute("cx", S.SX.mid); },
+  "3.5long": (an) => { S.thumb.setAttribute("cx", S.SX.long); show(S.long); },
+  "3.5short": (an) => { S.thumb.setAttribute("cx", S.SX.short); show(S.short); S.long.style.opacity = 0.35; },
+  // 3.6 Many valleys
+  "3.6zoom": (an) => {
+    // Everything but the surface, its rim, the dots, and the ball leaves on the word. Then a pure 3x pull-back
+    // about the ball: the sharp bowl layer shrinks away while the landscape, drawn at its final scale, takes over.
+    hide(S.caption, S.sliderg, S.long, S.short, S.htick, S.axis, S.axlab, S.km1, S.km2, S.floor, S.flines, S.drop, S.gd, S.haze, S.ring);
+    const [cx, cy] = CEND;
+    run(an, 0.25, 2.2, (k) => {
+      const ez = easeInOut(k), s = Math.pow(ZOOM, 1 - ez), f = s / ZOOM;
+      S.L.style.transform = `translate(${fx(cx * (1 - s))}px, ${fx(cy * (1 - s))}px) scale(${s.toFixed(4)})`;
+      S.L.style.opacity = Math.max(0.01, clamp01((k - 0.05) / 0.45)).toFixed(3);
+      S.B.style.transform = `translate(${fx(cx * (1 - f))}px, ${fx(cy * (1 - f))}px) scale(${f.toFixed(4)})`;
+      S.B.style.opacity = (1 - clamp01((k - 0.7) / 0.3)).toFixed(3);
+      placeBall(cx, cy, lerp(1, BALL_WIDE, ez));
+      if (k >= 1) { S.L.style.transform = "none"; S.L.style.opacity = 1; hide(S.B); }
+    });
+  },
+  "3.6low": (an) => show(S.trails, S.levels),
+  // 3.7 Today's AI
+  "3.7ai": (an) => {
+    hide(S.trails, S.levels); show(S.chat);
+    run(an, 0, 0.6, (k) => { const e = easeInOut(k); S.world.style.transform = `translate(${fx(MINI.tx * e)}px, ${fx(MINI.ty * e)}px) scale(${lerp(1, MINI.sc, e).toFixed(4)})`; });
+  },
+  "3.7sums": (an) => S.cc.forEach((g, i) => at(an, 0.07 * i, () => show(g))),
+  // 3.8 Tensors and chips
+  "3.8tensor": (an) => { hide(S.chat, S.cc); show(S.tensor); },
+  "3.8gpu": (an) => {
+    // The chips take the grids, every cell lights on one frame, then the one ball makes one hop.
+    hide(S.tensor); show(S.chips);
+    at(an, 0.35, () => { hide($$(".chips .cellsoff")); show($$(".chips .cellson")); });
+    at(an, 0.6, () => show(S.hopmark));
+    const a = W(MAIN[6]), b = W(MAIN[7]);
+    run(an, 0.6, 0.35, (k) => placeBall(lerp(a[0], b[0], k), lerp(a[1], b[1], k) - 40 * 4 * k * (1 - k), BALL_WIDE));
+  },
+  "3.8chips": (an) => { hide(S.chips); show(S.blocks); },
+};
+
+// The main path's hops: each hop leaves a dot, then the probe lines, the tick, and the haze move to the
+// landing spot in a short rest. The ball arcs a little, and the haze glides along the ground with no arc.
+const HOP = 0.3, REST = 0.22;
+function hops(an, from, to, delay) {
+  for (let i = from; i <= to; i++) {
+    const d = delay + (i - from) * (HOP + REST), a = onS(MAIN[i - 1]), b = onS(MAIN[i]), h = 10 + 0.18 * Math.hypot(b[0] - a[0], b[1] - a[1]);
+    run(an, d, HOP, (k) => placeBall(lerp(a[0], b[0], easeOut(k)), lerp(a[1], b[1], easeOut(k)) - h * 4 * k * (1 - k)));
+    at(an, d + HOP, () => { show(S.md[i - 1]); setProbe(MAIN[i]); });
+    run(an, d + HOP, REST * 0.9, (k) => { const e = easeInOut(k); placeHaze(lerp(a[0], b[0], e), lerp(a[1], b[1], e)); });
+  }
+}
+
+// ---- The scene --------------------------------------------------------------------------------------------------------
+const STEPS = [
+  { id: "3.1", hold: 20, cues: { "3.1examples": 2.6, "3.1box": 7.4, "3.1guess": 9.6, "3.1wrong": 12.2, "3.1turn": 14.0, "3.1again": 17.3 } },
+  { id: "3.2", hold: 16.6, cues: { "3.2way": 0.5, "3.2one": 5.2, "3.2all": 13.8 } },
+  { id: "3.3", hold: 12.4, cues: { "3.3two": 0.5, "3.3floor": 2.3, "3.3height": 5.5, "3.3bowl": 9.6 } },
+  { id: "3.4", hold: 19.5, cues: { "3.4ball": 0.5, "3.4see": 4.8, "3.4steps": 10.4, "3.4again": 11.9, "3.4name": 17.4 } },
+  { id: "3.5", hold: 10.7, cues: { "3.5setting": 0.5, "3.5long": 3.3, "3.5short": 7.0 } },
+  { id: "3.6", hold: 7.6, cues: { "3.6zoom": 0.5, "3.6low": 4.1 } },
+  { id: "3.7", hold: 11.5, cues: { "3.7ai": 0.5, "3.7sums": 5.2 } },
+  { id: "3.8", hold: 12, cues: { "3.8tensor": 0.5, "3.8gpu": 2.3, "3.8chips": 8.2 } },
+];
+const fire = (id, animate) => { finishJobs(); CUE[id](animate); };
+DeckTalk.scene(3, { name: "How AI learns", steps: STEPS.map((st, n) => ({
+  id: st.id, hold: st.hold, cues: st.cues,
+  // A frozen step starts from every earlier cue's end state, because the figure carries over.
+  enter: (slide, ctx) => { slide.rig = rig; if (ctx.frozen) STEPS.slice(0, n).forEach((prev) => Object.keys(prev.cues).forEach((id) => fire(id, false))); },
+  on: Object.fromEntries(Object.keys(st.cues).map((id) => [id, (slide, ctx) => fire(id, !ctx.frozen)])),
+})) });
+
+// Narration t=0 waits until the fonts are in and the figure has been painted once, with the landscape and
+// the bowl at near-zero opacity so their rasters already exist when they first show.
+document.addEventListener("DOMContentLoaded", () => {
+  const faces = ['600 64px "Inter Tight"', '600 60px "Inter Tight"', '500 30px Inter', '500 44px Inter', '500 30px "JetBrains Mono"', '400 24px "JetBrains Mono"'];
+  const painted = Promise.all(faces.map((f) => document.fonts.load(f))).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))));
+  window.__sceneReady = Promise.all([window.__sceneReady, painted]).then(([ready]) => ready);
+});
+</script>
+</body>
+</html>

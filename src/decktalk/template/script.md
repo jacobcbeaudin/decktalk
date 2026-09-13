@@ -11,45 +11,58 @@ comment block in `decktalk.toml` and add a `## 0. On camera` heading above secti
 
 ## 1. Open
 
-[Deck scene 1. A line of script lights up word by word while the curve draws and the number lands. Then each word's start time rises under it.]
+[Deck scene 1. A bowl and a ball appear on their words. The ball steps down on each count word, and each count word's start time appears under its box.]
 
-The curve rises, then the number lands. [beat] You just watched DeckTalk. [beat] That
-sentence is a line of markdown. [beat] My cloned voice read it, and every reveal landed on its
-word. [beat] Here is the project behind it.
+A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat] Two, three. [beat]
+I wrote the words and drew the pictures, [beat] and each picture waits for its word.
 
-## 2. Three files and a voice
+## 2. How it works
 
-[Deck scene 2. Four dim panels light in turn, and then the shared id lights in every one.]
+[Deck scene 2. The wordmark moves to the top. A script card and a slide card appear, a waveform runs under one line, and the cue word joins its drawing.]
 
-You write three files, and the voice returns a fourth. [beat] The script says what the voice
-says. [beat] The voice comes back with a time for every word. [beat] A cue names the phrase a
-visual waits for. [beat] And the slide names the cue. [beat] One id ties them together, so the
-picture can only land on its word. [beat] Now watch it teach.
+This is DeckTalk. [beat] You write a script and simple slides. [beat] It reads your script aloud, [beat]
+and you pick the word each picture waits for. [beat] Change the script, and the video follows. [beat]
+Here is a lesson I made with it.
 
-## 3. Gradient descent
+## 3. How AI learns
 
-[Deck scene 3. A loss surface stands over the plane of two weights from the first frame. A preview ball hops to the bottom and leaves a faint path. Arrows on the floor show the gradient and its negative. The ball steps down in shrinking steps, the figure moves aside for the update rule, three more learning rates show what goes wrong, and the ball settles at the minimum.]
+[Lesson page scene 3. A box of knobs learns from examples, a ball steps down a bowl, and the lesson ends on chips that do the math.]
 
-Training a model means tuning its weights to shrink its error, the loss. [beat] The loss is a
-function of many variables, one per weight. [beat] Keep two, theta one and theta two, and the
-loss above them is a surface. For this lesson it is a bowl. [beat] Gradient descent heads for
-a local minimum by stepping downhill, again and again. [beat] Pick a point, theta, and its
-height is the loss. [beat] The gradient points uphill, in the plane of the weights, so follow
-minus the gradient. [beat] Take a step, and the learning rate, eta, scales its length. [beat]
-The steps shrink because the slope does. [beat] That is the rule. The next theta [beat] is this
-theta, minus eta [beat] times the gradient here. [beat] Too large, and you zigzag. [beat]
-Larger still, and you fly out. [beat] Too small, and you crawl. [beat] The best eta is big
-enough not to crawl, and small enough not to bounce. [beat] Now change one sentence.
+How does AI learn? [beat] From examples, not rules people write. [beat]
+An AI model is like a box of knobs. [beat] It guesses, [beat] and a meter shows how wrong. [beat]
+Learning turns the knobs until the meter drops, [beat] example after example.
+[pause 1] But which way should each knob turn? [beat]
+In a big model, testing knobs one at a time would take billions of tries for every step. [beat]
+Instead, one round of math gives a direction for every knob at once.
+[pause 1] Picture two knobs. [beat]
+The floor is every way to set them. [beat]
+The height is how wrong. [beat]
+For this lesson it is a bowl.
+[pause 2] The ball is where the knobs are set right now. [beat]
+It can't see the whole bowl, only the slope where it stands. [beat]
+So it steps downhill, [beat] again and again, and the steps shrink as the ground flattens. [beat]
+That is gradient descent.
+[pause 1] One setting makes every step longer or shorter. [beat]
+Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
+[pause 1] Zoom out, and the ground can have many valleys, [beat] each about as low.
+[pause 2] Today's AI is trained with a version of this. [beat] One step takes billions of billions of small sums.
+[pause 1] Inside, the knobs are grids of numbers, called tensors. [beat] Chips like GPUs do math on a whole grid at once. [beat]
+Big models split the work across thousands of chips.
 
-## 4. The edit
+## 4. Thousands of chips
 
-[Deck scene 4. One word is struck and retyped, and the log of the rebuild and the verify row fill in line by line.]
+[Clip at media/broll-chips.mp4, about four seconds of chip racks with no voice. The narration pauses here.]
 
-The bowl becomes a valley. [beat] Build again. [beat] Sections one and two, unchanged. [beat]
-Three is voiced again. [beat] For this lesson it is a valley. [beat] Four and five, unchanged.
-[beat] Then decktalk verify measures every reveal against its word.
+## 5. The edit
 
-## 5. Close
+[Deck scene 4. The script gains four words, the rebuild voices only section 3 again, and verify shows the later cues moved with their words.]
+
+Now change one sentence, [beat] the kind of edit that used to mean recording again. [beat]
+Say a viewer asks why downhill is good. [beat] So I add four words, [beat] and make the video again. [beat]
+Nothing re-recorded or re-edited by hand. [beat] The height is how wrong, so lower is better. [beat]
+Every later picture moved to stay on its word.
+
+## 6. Close
 
 [Deck scene 5. The end card.]
 

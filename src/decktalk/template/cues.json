@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "Which spoken phrase each visual lands on. `cue` is a cue id from deck/index.html (a step id plus a short word).",
+    "Which spoken phrase each visual lands on. `cue` is a cue id from the section's page (a step id plus a short word).",
     "`on` is a word or short phrase from that section of script.md, matched at its first occurrence, ignoring",
     "case and punctuation. `$start` is the section start and `$end` is the end of speech. `offset` shifts the",
     "cue in seconds, and `occurrence` picks a later match. `decktalk beats` reports any phrase it cannot find."
@@ -8,60 +8,65 @@
   "sections": {
     "1": {
       "cues": [
-        { "cue": "1.1curve", "on": "curve" },
-        { "cue": "1.1number", "on": "number" },
-        { "cue": "1.1mark", "on": "You just watched", "offset": 0.3 },
-        { "cue": "1.1md", "on": "line of markdown" },
-        { "cue": "1.1times", "on": "every reveal" },
-        { "cue": "1.1cap", "on": "the project" }
+        { "cue": "1.1bowl", "on": "bowl" },
+        { "cue": "1.1ball", "on": "ball" },
+        { "cue": "1.1count", "on": "count" },
+        { "cue": "1.1one", "on": "One" },
+        { "cue": "1.1two", "on": "Two" },
+        { "cue": "1.1three", "on": "three" },
+        { "cue": "1.1word", "on": "its word" }
       ]
     },
     "2": {
       "cues": [
-        { "cue": "2.1script", "on": "The script says" },
-        { "cue": "2.1words", "on": "The voice comes back" },
-        { "cue": "2.1cue", "on": "A cue names" },
-        { "cue": "2.1slide", "on": "And the slide names" },
-        { "cue": "2.1one", "on": "One id" }
+        { "cue": "2.1mark", "on": "DeckTalk" },
+        { "cue": "2.1script", "on": "a script" },
+        { "cue": "2.1aloud", "on": "reads your script aloud" },
+        { "cue": "2.1word", "on": "the word" },
+        { "cue": "2.1follows", "on": "video follows" }
       ]
     },
     "3": {
-      "min_seconds": 40,
       "cues": [
-        { "cue": "3.1weights", "on": "weights" },
-        { "cue": "3.1loss", "on": "the loss" },
-        { "cue": "3.1preview", "on": "stepping downhill" },
-        { "cue": "3.1p0", "on": "Pick a point" },
-        { "cue": "3.1height", "on": "its height" },
-        { "cue": "3.1up", "on": "gradient points" },
-        { "cue": "3.1neg", "on": "minus the gradient" },
-        { "cue": "3.1p1", "on": "Take a step" },
-        { "cue": "3.1eq", "on": "learning rate" },
-        { "cue": "3.1scale", "on": "scales its length" },
-        { "cue": "3.1shrink", "on": "The steps shrink" },
-        { "cue": "3.1rule", "on": "That is the rule" },
-        { "cue": "3.1eqA", "on": "The next theta" },
-        { "cue": "3.1eqA2", "on": "is this theta" },
-        { "cue": "3.1eqB", "on": "minus eta" },
-        { "cue": "3.1eqC", "on": "times the gradient" },
-        { "cue": "3.1over", "on": "Too large" },
-        { "cue": "3.1diverge", "on": "Larger still" },
-        { "cue": "3.1crawl", "on": "Too small", "verify": false },
-        { "cue": "3.1min", "on": "The best eta", "offset": 0.2 }
-      ]
-    },
-    "4": {
-      "cues": [
-        { "cue": "4.1valley", "on": "becomes" },
-        { "cue": "4.1build", "on": "Build again" },
-        { "cue": "4.1s12", "on": "Sections one and two" },
-        { "cue": "4.1s3", "on": "Three is voiced" },
-        { "cue": "4.1hear", "on": "For this lesson" },
-        { "cue": "4.1s45", "on": "Four and five" },
-        { "cue": "4.1verify", "on": "decktalk verify" }
+        { "cue": "3.1examples", "on": "examples" },
+        { "cue": "3.1box", "on": "box of knobs" },
+        { "cue": "3.1guess", "on": "guesses" },
+        { "cue": "3.1wrong", "on": "how wrong" },
+        { "cue": "3.1turn", "on": "turns the knobs" },
+        { "cue": "3.1again", "on": "example after example" },
+        { "cue": "3.2way", "on": "which way" },
+        { "cue": "3.2one", "on": "one at a time" },
+        { "cue": "3.2all", "on": "every knob at once" },
+        { "cue": "3.3two", "on": "two knobs" },
+        { "cue": "3.3floor", "on": "floor" },
+        { "cue": "3.3height", "on": "height" },
+        { "cue": "3.3bowl", "on": "a bowl" },
+        { "cue": "3.4ball", "on": "The ball" },
+        { "cue": "3.4see", "on": "can't see" },
+        { "cue": "3.4steps", "on": "steps downhill" },
+        { "cue": "3.4again", "on": "again and again" },
+        { "cue": "3.4name", "on": "gradient descent" },
+        { "cue": "3.5setting", "on": "setting" },
+        { "cue": "3.5long", "on": "Too long" },
+        { "cue": "3.5short", "on": "Too short" },
+        { "cue": "3.6zoom", "on": "Zoom out" },
+        { "cue": "3.6low", "on": "each about as low" },
+        { "cue": "3.7ai", "on": "Today's AI" },
+        { "cue": "3.7sums", "on": "billions of billions" },
+        { "cue": "3.8tensor", "on": "tensors" },
+        { "cue": "3.8gpu", "on": "GPUs" },
+        { "cue": "3.8chips", "on": "thousands of chips" }
       ]
     },
     "5": {
+      "cues": [
+        { "cue": "4.1words", "on": "four words" },
+        { "cue": "4.1again", "on": "the video again" },
+        { "cue": "4.1lower", "on": "so lower is better" },
+        { "cue": "4.1moved", "on": "moved" }
+      ]
+    },
+    "6": {
       "cues": [
         { "cue": "5.1made", "on": "DeckTalk" },
         { "cue": "5.1cap", "on": "Open source" },

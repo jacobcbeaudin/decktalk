@@ -107,15 +107,18 @@ icon: "play"
       </Tab>
     </Tabs>
 
-    The scaffold is a short lesson in five sections. A cold open performs its own
-    sentence, as a line of the script lights up word by word while the voice reads it. The
-    second section shows three files and a voice tied by one id. A gradient descent lesson
-    moves a ball down a three.js loss surface, builds the update rule in KaTeX, and shows
-    a learning rate that zigzags, one that flies out, one that crawls, and one that settles
-    at the minimum. In the fourth section one word of section 3 is edited, and the rebuild's
-    log shows that only section 3 is voiced again. An end card closes on decktalk.app. All five are
-    page sections, which DeckTalk records from `deck/index.html` and cuts to the narration.
-    A commented-out section 0 shows how to open with a clip of your own, and
+    The scaffold is a short lesson in six sections. The open steps a ball down a bowl on
+    the count "One. Two, three." and shows the real start time of each count word under
+    its box. The second section shows a script card beside a slide card, a waveform with
+    word times, and the cue word "bowl" joined to its drawing. Section 3 is a lesson on how
+    AI learns, drawn in SVG, that goes from a box of knobs and a meter to a ball stepping
+    down a bowl, the step size, many valleys, and the tensors and chips that do the math.
+    Section 4 is a clip section, and a titled slate plays for four seconds until a video
+    exists at `media/broll-chips.mp4`. In the fifth section the script gains four words,
+    the rebuild voices only section 3 again, and a caption lights word by word. An end card
+    closes on decktalk.app. Sections 1, 2, 5, and 6 play scenes 1, 2, 4, and 5 of `deck/index.html`,
+    and section 3 plays scene 3 of `deck/lesson.html`, because each section names its page
+    and its scene. A commented-out section 0 shows how to open with a clip of your own, and
     [Add a clip section](/guides/clip-section) walks through it.
   </Step>
 
@@ -149,22 +152,23 @@ icon: "play"
     ```console
     decktalk shots                          # one PNG per step, under build/shots/
     decktalk shots --section 3 --at 22      # a frame from section 3 as it plays with its real cues
-    decktalk verify 3:3.1eq                 # measures when the cue changed the picture in the mp4
+    decktalk verify 1:1.1bowl               # measures when the cue changed the picture in the mp4
     decktalk status                         # the timeline and what is built
     ```
   </Step>
 
   <Step title="Change a sentence">
-    Make the edit that the scaffold's fourth section shows. In section 3 of `script.md`,
-    change "For this lesson it is a bowl." to "For this lesson it is a valley." Then build
-    again and read the narrate log.
+    Make the edit that the scaffold's fifth section shows. In section 3 of `script.md`,
+    change "The height is how wrong." to "The height is how wrong, so lower is better."
+    Then build again and read the narrate log.
 
     ```console
     decktalk build
     ```
 
-    The log prints a `[skip]` line for sections 1, 2, 4, and 5, whose narration comes from
-    the cache, and a `[tts ]` line for section 3. Change a sentence, and only that section is
+    The log notes that clip section 4 has no narration, prints a `[skip]` line for
+    sections 1, 2, 5, and 6, whose narration comes from the cache, and prints a `[tts ]`
+    line for section 3. Change a sentence, and only that section is
     voiced again. A plain build records every section again in real time, and
     `decktalk build --only N` records only that section. The edit costs the characters of
     all of section 3, because the cache key is the section's whole text.
@@ -189,13 +193,13 @@ icon: "play"
 | `decktalk.toml` | The plan. One `[[section]]` per script section, the voice, the transitions, the mix, the soundscape prompts, and any tuning. [Reference](/reference/decktalk-toml). |
 | `script.md` | The narration. Each `## N. Title` heading starts a section, and text in square brackets is a stage direction that is not spoken. [Reference](/reference/script-md). |
 | `cues.json` | The phrase that each visual lands on. [Reference](/reference/cues-json). |
-| `deck/` | Your pages, with `decktalk-runtime.js`, a vendored copy of KaTeX, and `vendor/three.min.js` for the scaffold's loss surface beside them. `deck/fonts/` holds Inter, Inter Tight, and JetBrains Mono as OFL woff2 files, declared with `font-display: block`, so a recorder with no network draws them rather than a fallback face. [Runtime reference](/reference/runtime). |
+| `deck/` | Your pages, `index.html` and `lesson.html` in the scaffold, with `decktalk-runtime.js` and a vendored copy of KaTeX beside them. KaTeX typesets any `data-tex` element in a page you write. `deck/fonts/` holds Inter, Inter Tight, and JetBrains Mono as OFL woff2 files, declared with `font-display: block`, so a recorder with no network draws them rather than a fallback face. [Runtime reference](/reference/runtime). |
 | `media/` | Your own clips and the underscore markers. |
 | `.env` | The ElevenLabs key and voice id. Git ignores it. |
 | `build/` | Everything DeckTalk generates, including the video, captions, and chapters. Git ignores it. [Artifacts](/reference/artifacts). |
 
-<Tip>Write numbers and symbols in the script the way you want them spoken. A cue matches
-the spoken words "learning rate", while the slide shows η.</Tip>
+<Tip>Write numbers and symbols in the script the way you want them spoken. The scaffold's
+cue matches the spoken words "decktalk dot app", while the slide shows decktalk.app.</Tip>
 
 ## Next
 

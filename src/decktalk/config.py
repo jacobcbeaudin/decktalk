@@ -102,7 +102,7 @@ class VerifyConfig:
     """These keys tune the checks on the assembled mp4."""
 
     after_dip_seconds: float = 0.2
-    lead_seconds: float = 0.1  # The reference frame is the first frame at or after this long before the cue.
+    lead_seconds: float = 0.1  # The shortest lead of the reference frame; it moves earlier to clear early reveals.
     probe_delays: tuple[float, ...] = (0.7, 1.5)  # seconds after the cue; the later one catches slow reveals
     diff_level: int = 40  # luma steps a pixel must change to count
     min_changed_percent: float = 0.1  # share of the frame the best probe must change

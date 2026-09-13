@@ -28,11 +28,11 @@ screen.
 ## Give every reveal a word to land on
 
 A cue resolves to the first word of its phrase, so the phrase should begin with the word
-that names the visual. The cue for "Pick a point, theta, and its height is the loss" names
-`Pick a point` and lands on "Pick", a verb whose referent, the ball, appears as it is said.
-A phrase such as "and then" lands on nothing in particular. The scaffold's cues are nouns
-or verbs with a concrete referent: `weights`, `Pick a point`, `learning rate`,
-`Build again`, `Open source`.
+that names the visual. The cue for "So it steps downhill" names `steps downhill` and
+lands on "steps", a verb whose referent, the ball's first hop, appears as it is said. A
+phrase such as "and then" lands on nothing in particular. The scaffold's cues are nouns or
+verbs with a concrete referent: `box of knobs`, `guesses`, `steps downhill`, `tensors`,
+`Open source`.
 
 ## One reveal per idea
 
@@ -49,18 +49,19 @@ dash at the end of the sentence before it and pauses there as it would at any da
 nothing else is sent. `[pause N]` sends a `<break time="Ns" />` tag and is the only
 direction that does, because frequent break tags make the voice add fillers and breaths.
 Use beats freely and timed pauses sparingly. The scaffold's lesson puts a beat before each
-learning rate, so each ghost ball sets off as its own event.
+step size, so each path sets off as its own event.
 
 ```md script.md
-Too large, and you zigzag. [beat] Larger still, and you fly out. [beat] Too small, and you
-crawl.
+One setting makes every step longer or shorter. [beat]
+Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
 ```
 
-A timed pause earns its place before a question the audience should answer, such as
-`[pause 4]` after "what happens if eta is too large?", so the silence leaves room to think.
+A timed pause earns its place where the audience should stop and think, such as a
+`[pause 4]` after a question like "which way should each knob turn?", so the silence
+leaves room to answer it.
 
 Anything else in square brackets is a stage direction. It is not spoken and it is a beat
-where it sat, so a direction such as `[Deck scene 3. A loss surface fades up.]` is both a note
+where it sat, so a direction such as `[Deck scene 3. A box of knobs appears.]` is both a note
 to yourself and a pause. The silence before the first section and after every section's
 last word is added by ffmpeg rather than requested from the voice, so a script never
 needs a pause at either end. [script.md](/reference/script-md) lists every direction.
@@ -69,11 +70,12 @@ needs a pause at either end. [script.md](/reference/script-md) lists every direc
 
 The `offset` key in `cues.json` shifts a cue in seconds. A small positive offset, one or
 two tenths of a second, lets the word finish before the visual moves, which feels like
-the narrator pointing at something. The scaffold trails `The best eta` by 0.2 seconds, so
-the ball sets off on its last moves to the bottom of the bowl just after the sentence starts.
+the narrator pointing at something. The scaffold's cues carry no offset, because every
+reveal in it snaps in on the frame of its word. To let the word "steps" finish before the
+ball's first hop, trail the cue by a fifth of a second.
 
 ```json cues.json
-{ "cue": "3.1min", "on": "The best eta", "offset": 0.2 }
+{ "cue": "3.4steps", "on": "steps downhill", "offset": 0.2 }
 ```
 
 Lead the word with a negative offset only when the audience must read along with the

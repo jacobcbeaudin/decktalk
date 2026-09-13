@@ -116,7 +116,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("  decktalk.toml  the plan: sections -> pages or clips, voice, mix, soundscape")
     print("  script.md      the narration (## N. sections)")
     print("  cues.json      which spoken phrase each visual lands on")
-    print("  deck/          index.html + decktalk-runtime.js (open index.html for the scene index)")
+    print("  deck/          index.html, lesson.html, decktalk-runtime.js (open a page for its scene index)")
     print("  media/         your clips, b-roll, markers.json")
     print("next: cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID), then `decktalk build`")
     print("      or `decktalk build --silent` to render with placeholder narration and no API key")

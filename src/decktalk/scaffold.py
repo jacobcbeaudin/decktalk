@@ -28,13 +28,14 @@ TEMPLATE_FILES = [
     ("decktalk.toml", "decktalk.toml"),
     ("script.md", "script.md"),
     ("cues.json", "cues.json"),
-    ("deck/index.html", "deck/index.html"),
     ("media/markers.json", "media/markers.json"),
     ("gitignore", ".gitignore"),
     ("env.example", ".env.example"),
 ]
-# Directories copied whole and byte for byte: the bundled fonts and the vendored three.js.
-TEMPLATE_DIRS = ["deck/fonts", "deck/vendor"]
+# The deck directory is copied whole, so every page and every asset beside it arrives. Each HTML
+# page gets the project name and the KaTeX tags filled in, and every other file, such as the
+# bundled fonts, is copied byte for byte.
+TEMPLATE_DECK = "deck"
 RUNTIME_FILE = "decktalk-runtime.js"
 
 # KaTeX typesets the [data-tex] elements. `decktalk setup` caches one release and `decktalk init`
@@ -136,18 +137,29 @@ def init(target: Path, *, name: str | None = None, force: bool = False) -> Path:
     vendored = vendor_katex(target / "deck")
     if not vendored:
         log.warning(
-            "KaTeX is not cached, so deck/index.html loads it from a CDN. Run `decktalk setup` once, then "
+            "KaTeX is not cached, so the pages in deck/ load it from a CDN. Run `decktalk setup` once, then "
             "`decktalk init` again, to render equations offline."
         )
     katex_tags = KATEX_LOCAL_TAGS if vendored else KATEX_CDN_TAGS
+
+    def fill(text: str) -> str:
+        text = text.replace("__NAME__", name).replace("__TITLE__", title_from(name))
+        return text.replace("__KATEX__", katex_tags)
+
     for src_rel, dst_rel in TEMPLATE_FILES:
-        src = package_file(f"template/{src_rel}")
         dst = target / dst_rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        text = src.read_text().replace("__NAME__", name).replace("__TITLE__", title_from(name))
-        dst.write_text(text.replace("__KATEX__", katex_tags))
-    for rel in TEMPLATE_DIRS:
-        shutil.copytree(package_file(f"template/{rel}"), target / rel, dirs_exist_ok=True)
+        dst.write_text(fill(package_file(f"template/{src_rel}").read_text()))
+    deck_src = package_file(f"template/{TEMPLATE_DECK}")
+    for src in sorted(deck_src.rglob("*")):
+        if not src.is_file() or src.name.startswith(".") or "__pycache__" in src.parts:
+            continue
+        dst = target / TEMPLATE_DECK / src.relative_to(deck_src)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.suffix == ".html":
+            dst.write_text(fill(src.read_text()))
+        else:
+            shutil.copyfile(src, dst)
     shutil.copyfile(runtime_path(), target / "deck" / RUNTIME_FILE)
     return target
 

@@ -448,6 +448,26 @@ def test_fetch_katex_unpacks_only_what_the_deck_needs(tmp_path, monkeypatch):
     assert scaffold.katex_cached() == dest
 
 
+def test_init_copies_every_file_of_the_template_deck(tmp_path, monkeypatch):
+    """Every page and asset under the template's deck/ arrives, with placeholders filled only in HTML."""
+    from decktalk.scaffold import init, package_file
+
+    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
+    root = init(tmp_path / "proj", name="proj")
+    src = package_file("template/deck")
+    wanted = {f.relative_to(src) for f in src.rglob("*") if f.is_file() and not f.name.startswith(".")}
+    assert Path("index.html") in wanted
+    got = {f.relative_to(root / "deck") for f in (root / "deck").rglob("*") if f.is_file()}
+    assert wanted <= got and got - wanted == {Path("decktalk-runtime.js")}
+    for rel in wanted:
+        if rel.suffix == ".html":
+            html = (root / "deck" / rel).read_text()
+            assert "__NAME__" not in html and "__KATEX__" not in html, rel
+        else:
+            assert (root / "deck" / rel).read_bytes() == (src / rel).read_bytes(), rel
+    assert not (root / "deck" / "vendor").exists()
+
+
 def test_template_ids_agree_across_page_cues_and_script(tmp_path, monkeypatch):
     """Every cue id in cues.json is named in the page, and every phrase is in its section."""
     from decktalk.scaffold import init
@@ -937,7 +957,8 @@ def test_reference_time_skips_the_fade_and_keeps_the_lead():
     from decktalk.stages.verify import reference_time
 
     cfg = VerifyConfig()  # lead_seconds 0.1
-    assert reference_time(10.0, 2.0, False, 0.16, cfg, 25) == 11.9  # the lead, well inside the section
+    # The lead clears a reveal that lands max_offset_frames (2) early: (2 + 1.5) / 25 = 0.14 s.
+    assert reference_time(10.0, 2.0, False, 0.16, cfg, 25) == 11.86
     assert reference_time(10.0, 0.05, False, 0.16, cfg, 25) == 10.0  # the section's first frame, a frame early
     assert reference_time(10.0, 0.2, True, 0.16, cfg, 25) == 10.16  # the first frame after the fade-in
     assert reference_time(10.0, 0.15, True, 0.16, cfg, 25) is None  # the cue sits inside the fade-in
@@ -1249,3 +1270,22 @@ def test_provider_errors_never_show_the_voice_id(monkeypatch):
         _http.get_json(f"https://api.elevenlabs.io/v1/voices/{voice_id}", {"xi-api-key": api_key}, timeout=1)
     assert voice_id not in str(info.value) and api_key not in str(info.value)
     assert "voices/<voice id>" in str(info.value)
+
+
+def test_reference_sits_before_an_early_reveal_the_offset_limit_allows():
+    import dataclasses
+
+    from decktalk.stages.verify import reference_time
+
+    cfg = Settings().verify
+    fps = 25
+    # A reveal may land max_offset_frames early, so the reference must sit before that window.
+    earliest_allowed = 10.0 - cfg.max_offset_frames / fps
+    ref = reference_time(0.0, 10.0, False, 0.0, cfg, fps)
+    assert ref is not None and ref <= earliest_allowed - 1.0 / fps
+    # A wider limit pushes the reference further back.
+    wide = dataclasses.replace(cfg, max_offset_frames=4)
+    ref_wide = reference_time(0.0, 10.0, False, 0.0, wide, fps)
+    assert ref_wide is not None and ref_wide <= 10.0 - 4 / fps - 1.0 / fps
+    # A cue close to the section start still clamps to one frame before the cue.
+    assert reference_time(0.0, 0.08, False, 0.0, cfg, fps) is not None

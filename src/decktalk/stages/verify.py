@@ -223,7 +223,8 @@ def reference_time(
 ) -> float | None:
     """Where the reference frame for a cue sits in the final file, or None when no frame fits.
 
-    The reference wants to sit lead_seconds before the cue, and the frame it names is the
+    The reference wants to sit lead_seconds before the cue, or earlier when a reveal that lands
+    max_offset_frames early could otherwise already show in it, and the frame it names is the
     first frame at or after that time. It may not sit inside the
     section's fade-in, where the picture is still coming up from black, and it must sit at
     least one frame before the cue. A cue at the very start of a section, or inside its
@@ -231,7 +232,11 @@ def reference_time(
     """
     floor = sec_start + (dip if fade_in else 0.0)
     latest = sec_start + cue_t - 1.0 / fps
-    ref = max(floor, sec_start + cue_t - cfg.lead_seconds)
+    # A reveal may land up to max_offset_frames early and still pass, so the reference must sit
+    # before that whole window. Otherwise the early reveal is already in the reference frame,
+    # and the scan measures the change only when the reveal settles, frames too late.
+    lead = max(cfg.lead_seconds, (cfg.max_offset_frames + 1.5) / fps)
+    ref = max(floor, sec_start + cue_t - lead)
     if ref > latest + 1e-6:
         return None
     return round(ref, 4)

@@ -66,13 +66,13 @@ decktalk doctor                             # each tool and its path, exit 1 if 
 decktalk init DIR [--name NAME] [--force]   # scaffold, with KaTeX vendored into deck/katex/
 decktalk build --silent                     # every stage with placeholder narration (a click per word), no key
 decktalk build                              # the video, at build/out/<name>.mp4
-decktalk build --only 3 --only 4 --preset veryfast   # record two sections again, fast encode
+decktalk build --only 3 --only 5 --preset veryfast   # record two sections again, fast encode
 decktalk beats                              # where each cue phrase resolved, exit 1 if one is missing or unknown to the page
 decktalk verify                             # measure every cue's offset in the final mp4
-decktalk verify 3:3.1eq --cue 5:5.1cap      # measure only these cues
+decktalk verify 1:1.1bowl --cue 6:5.1cap    # measure only these cues
 decktalk verify --json                      # the same result as one JSON object on stdout
 decktalk shots [--step ID]                  # one PNG per step
-decktalk shots --step 3.1 --cue 3.1eq       # one step frozen at the moment one cue fires
+decktalk shots --step 4.1 --cue 4.1lower    # one step frozen at the moment one cue fires
 decktalk shots --section N --at S           # a frame from a playing section
 decktalk status [--json]                    # timeline, what is built, captions and chapters
 decktalk narrate --dry-run                  # what would be sent to the voice, without sending it

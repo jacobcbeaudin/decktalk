@@ -6,8 +6,9 @@ icon: "film"
 
 A clip section is a video file of your own that plays in the sequence with its own
 audio. DeckTalk does not narrate it, and it scales and pads the picture to the frame
-size. The scaffold ships with a commented-out clip section so that a video can open on
-camera before the first slide.
+size. The scaffold ships with two. Section 4 is a clip between two page sections, and a
+commented-out section 0 opens the video on camera before the first slide. The steps below
+turn on section 0.
 
 <Steps>
   <Step title="Uncomment section 0 in decktalk.toml">
@@ -80,28 +81,35 @@ section, close it after the last one, or play between two page sections as B-rol
 narration pauses for a clip between page sections and resumes on the first frame of the
 page section after it, so every reveal still lands on its word.
 
+The scaffold's section 4 is B-roll of this kind. Until a video exists at
+`media/broll-chips.mp4`, a titled slate plays in its place for `slate_seconds`.
+
 ```toml decktalk.toml
 [[section]]
-number = 2
-title = "Three files and a voice"
-page = "deck/index.html"
-scene = 2
-
-[[section]]
 number = 3
-title = "B-roll"
-clip = "media/broll.mp4"
+title = "How AI learns"
+page = "deck/lesson.html"
+scene = 3
 
 [[section]]
 number = 4
-title = "Gradient descent"
+title = "Thousands of chips"
+clip = "media/broll-chips.mp4"
+slate_seconds = 4
+
+[[section]]
+number = 5
+title = "The edit"
 page = "deck/index.html"
-scene = 3
+scene = 4
 ```
 
-The script needs a `## 3. B-roll` heading between sections 2 and 4, and `cues.json` keys
-its cues by the new section numbers. A section's `scene` names the scene in the page, so
-renumbering the sections leaves the pages as they are.
+The script has a `## 4. Thousands of chips` heading between sections 3 and 5, whose body
+is a stage direction, and `cues.json` keys the cues of the page sections after the clip by
+their section numbers, `"5"` and `"6"`. A section's `scene` names the scene in the page, so
+section 5 still plays scene 4 and keeps the cue ids `4.1words` to `4.1moved`. Renumbering
+the sections leaves the pages as they are. The scaffold sets no dip around the clip, so
+both of its cuts are straight.
 
 The narration track, `build/audio/narration.mp3`, still holds the spoken sections back to
 back, and `timeline.json` gives their times in that track. The assembler splits the track

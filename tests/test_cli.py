@@ -132,7 +132,9 @@ def test_status_json_on_scaffold(tmp_path, monkeypatch, capsys):
     st = doc["status"]
     assert st["project"]["name"] == "lesson"
     assert st["project"]["script"] == "script.md" and st["project"]["script_exists"] is True
-    assert st["sections"] and all(s["kind"] == "page" and not s["recorded"] and not s["cut"] for s in st["sections"])
+    assert st["sections"] and not any(s["recorded"] or s["cut"] for s in st["sections"])
+    # Section 4 is the B-roll clip, and every other section is a page.
+    assert [s["kind"] for s in st["sections"]] == ["page", "page", "page", "clip", "page", "page"]
     assert st["sections"][0]["key"] == "01" and st["sections"][0]["source"].startswith("deck/index.html?scene=")
     assert st["timeline"] == {"exists": False, "estimated": False, "total_seconds": None, "sections": []}
     assert st["beats"] == {"exists": False, "sections": []}

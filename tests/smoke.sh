@@ -3,6 +3,7 @@
 # way the comments in decktalk.toml describe, render placeholder narration, record the template
 # deck, assemble with a synthetic clip and underscore, and verify every cue. A second clip of
 # B-roll sits between page sections 2 and 3, so the narration pauses for it and resumes after it.
+# The scaffold's own clip section, the B-roll slot after the lesson, has no file, so its slate plays.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 T=tests/out/smoke
