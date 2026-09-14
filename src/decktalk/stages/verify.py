@@ -18,8 +18,11 @@ cues     for each SECTION:CUE, the picture changes across the cue. With no list,
          control by min_margin_percent. Everything stays inside the section.
 offset   once a cue lands, every frame from the reference to the passing probe is
          compared with the reference at onset_diff_level, which gives each frame's changed
-         share. A reveal is abrupt, so the first frame whose share rises by at least
-         onset_percent over the frame before it marks where the visual began to appear,
+         share. A frame can be the onset only when a copy scaled to block_width by
+         block_height also changed there, so the encoder's ringing just before a change,
+         which averages out over a block, is never taken for the reveal. A reveal is
+         abrupt, so the first frame whose share rises by at least onset_percent over the
+         frame before it marks where the visual began to appear,
          even when that frame sits before the cue. Motion that is always there, such as a
          camera push or a curve still drawing, grows a little every frame and does not
          jump. When no frame jumps, the first frame whose share exceeds both onset_percent
@@ -434,18 +437,25 @@ def first_change_offset(
 
     The frames up to the cue set a noise floor, so a camera push or an earlier reveal still
     settling does not count as the onset.
+
+    x264 codes a still picture with a little ringing in the one or two frames before a change:
+    a few pixels, up to about 15 levels apart at probe_width, which at onset_diff_level read as
+    a reveal 40 to 100 ms early while the recording showed it on time. A second series at
+    block_width by block_height, where each pixel averages an 8 by 8 block of a 1080p frame,
+    cancels that zero-mean ringing, so a frame counts only when a block changed there too.
     """
-    series = ffmpeg.changed_series(
-        final,
-        before,
-        before,
-        after,
-        fps=fps,
-        level=cfg.onset_diff_level,
-        width=cfg.probe_width,
-        height=cfg.probe_height,
+    series, blocks = (
+        ffmpeg.changed_series(final, before, before, after, fps=fps, level=cfg.onset_diff_level, width=w, height=h)
+        for w, h in ((cfg.probe_width, cfg.probe_height), (cfg.block_width, cfg.block_height))
     )
-    return onset_offset_ms(series, before, cue_at, cfg.onset_percent, tolerance=(cfg.max_offset_frames + 0.5) / fps)
+    return onset_offset_ms(
+        series,
+        before,
+        cue_at,
+        cfg.onset_percent,
+        tolerance=(cfg.max_offset_frames + 0.5) / fps,
+        blocks=dict(blocks),
+    )
 
 
 def click_offset_ms(
@@ -472,7 +482,12 @@ def click_offset_ms(
 
 
 def onset_offset_ms(
-    series: list[tuple[float, float]], before: float, cue_at: float, onset: float, tolerance: float = 0.0
+    series: list[tuple[float, float]],
+    before: float,
+    cue_at: float,
+    onset: float,
+    tolerance: float = 0.0,
+    blocks: dict[float, float] | None = None,
 ) -> int | None:
     """Where the reveal begins, in milliseconds from the cue, from the changed share per frame.
 
@@ -483,15 +498,22 @@ def onset_offset_ms(
     reference itself, so the first frame after it is judged against a share of zero. When
     nothing jumps, the first frame whose share exceeds the pre-cue floor is used instead,
     which catches a reveal that grows slowly, such as text typing in.
+
+    `blocks`, when given, is the changed share of the same frames scaled down to whole blocks,
+    by time. A frame whose blocks did not change is encoder ringing, and it is never the onset.
     """
+
+    def changed(t: float) -> bool:
+        return blocks is None or blocks.get(t, 0.0) > 0.0
+
     prev: float | None = None
     for t, pct in series:
-        if prev is not None and t > before and pct - prev >= onset:
+        if prev is not None and t > before and pct - prev >= onset and changed(t):
             return int(round((t - cue_at) * 1000))
         prev = pct
     floor = max((pct for t, pct in series if t <= cue_at - tolerance), default=0.0)
     threshold = max(onset, floor)
     for t, pct in series:
-        if t > before and pct > threshold:
+        if t > before and pct > threshold and changed(t):
             return int(round((t - cue_at) * 1000))
     return None

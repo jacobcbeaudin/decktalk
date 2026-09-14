@@ -855,6 +855,12 @@ def test_onset_offset_finds_the_jump_and_falls_back_to_the_floor():
     # which is the reference itself, and a reveal on the very next frame is still the onset.
     off_grid = [(9.24, 0.0), (9.28, 0.23), (9.32, 0.26), (9.36, 0.26)]
     assert onset_offset_ms(off_grid, before=9.21, cue_at=9.31, onset=0.002) == -30
+    # Encoder ringing, as measured on the scaffold's 3:3.1again: two frames before the reveal change
+    # a few pixels, but no block changes, so the onset is the reveal itself, not 100 ms early.
+    ringing = [(9.16, 0.0), (9.2, 0.1065), (9.24, 0.0455), (9.28, 1.6088), (9.32, 2.2168)]
+    blocks = {9.16: 0.0, 9.2: 0.0, 9.24: 0.0, 9.28: 1.926, 9.32: 2.793}
+    assert onset_offset_ms(ringing, before=9.16, cue_at=9.3, onset=0.01) == -100
+    assert onset_offset_ms(ringing, before=9.16, cue_at=9.3, onset=0.01, blocks=blocks) == -20
     assert Settings().verify.max_offset_frames == 2 and Settings().verify.onset_percent == 0.01
 
 

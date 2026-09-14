@@ -133,6 +133,11 @@ class VerifyConfig:
     cut_max_db: float = -40.0  # Loudest RMS level of the cut window, in dBFS, that passes the cut check.
     probe_width: int = 480  # Width in pixels that frames are scaled to before a comparison.
     probe_height: int = 270  # Height in pixels that frames are scaled to before a comparison.
+    block_width: int = 240  # Width in pixels of the block-averaged copy of each frame that confirms an onset.
+    # Each pixel then averages an 8 by 8 block of a 1080p frame, the size of an H.264 transform block. The
+    # encoder can shift a few pixels of a still picture by up to about 15 levels in the frames just before a
+    # change. The average cancels that ringing, so a frame is the onset only when a block also changed.
+    block_height: int = 135  # Height in pixels of the block-averaged copy of each frame that confirms an onset.
 
 
 @dataclass
