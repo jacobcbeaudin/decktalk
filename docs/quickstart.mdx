@@ -152,21 +152,19 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
   </Step>
 
   <Step title="Build the video without an account" stepNumber={7}>
-    A silent build uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took 216.6 seconds. Leave it running, and read [What the example video shows](#what-the-example-video-shows).
+    A silent build uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took 224.4 seconds. Leave it running, and read [What the example video shows](#what-the-example-video-shows).
 
     ```console
     decktalk build --silent
     ```
 
-    {/* sample: decktalk build --silent, scaffold, uv tool install on macOS (three lines kept from the assemble log and the last line) */}
+    {/* sample: decktalk build --silent, fresh scaffold on macOS (the last line of the assemble log and the last line) */}
     ```text
-    section 04: media/broll-chips.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
-    underscore missing (~/my-lesson/build/music/underscore.mp3); no music (`decktalk soundscape`)
-    done: ~/my-lesson/build/out/my-lesson.mp4  (197.96s)  copy: my-lesson-20260913-1634.mp4
+    done: ~/my-lesson/build/out/my-lesson.mp4  (204.84s)  copy: my-lesson-20260913-1952.mp4
     built ~/my-lesson/build/out/my-lesson.mp4
     ```
 
-    Check that the last line starts with `built`. Both warnings are expected. Section 4 plays a slate until you add its clip, and the scaffold's underscore comes from `decktalk soundscape`.
+    Check that the last line starts with `built`.
   </Step>
 
   <Step title="Play the video" stepNumber={8}>
@@ -188,7 +186,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
       </Tab>
     </Tabs>
 
-    The video is 197.96 seconds long, in six sections, with a soft click on each word. [What the example video shows](#what-the-example-video-shows) describes each section.
+    The video is 204.84 seconds long, in five sections, with a soft click on each word. [What the example video shows](#what-the-example-video-shows) describes each section.
   </Step>
 </Steps>
 
@@ -249,7 +247,7 @@ If you have no ElevenLabs account, stop here. The silent video is a complete bui
     decktalk build --only 3
     ```
 
-    {/* SAMPLE NEEDED (R5, voiced build): the narrate log after the edit, with [skip] for sections 1, 2, 5, and 6 and [tts ] for section 3 */}
+    {/* SAMPLE NEEDED (R5, voiced build): the narrate log after the edit, with [skip] for sections 1, 2, 4, and 5 and [tts ] for section 3 */}
 
     DeckTalk voices and records only section 3 again. The other sections take their narration from the cache. [Rebuild one section](/guides/rebuild-one-section) says what each kind of edit runs again.
 
@@ -269,16 +267,15 @@ If you have no ElevenLabs account, stop here. The silent video is a complete bui
 
 ## What the example video shows
 
-The scaffold is a short lesson in six sections. Each section names its page and its scene.
+The scaffold is a short lesson in five sections. Each section names its page and its scene.
 
 | Section | Plays | What it shows |
 |---|---|---|
 | 1. Open | `deck/index.html`, scene 1 | A bowl and a ball appear on their words. The ball steps down on each count word, and each count word's start time appears. |
-| 2. How it works | `deck/index.html`, scene 2 | A script card and a slide card appear. A waveform runs under one line, and the cue word joins its drawing. |
+| 2. How it works | `deck/index.html`, scene 2 | A script card and a slide card appear. A waveform runs under one line, and the slide card grows into the lesson. |
 | 3. How AI learns | `deck/lesson.html`, scene 3 | A box of knobs guesses, and a meter shows its [error](/help/faq#what-does-the-lesson-mean-by-error). A ball steps down a bowl, and the lesson ends on chips that do the math. |
-| 4. Thousands of chips | clip `media/broll-chips.mp4` | A titled slate plays for 4 seconds until the clip file exists. |
-| 5. The edit | `deck/index.html`, scene 4 | The script gains four words, and DeckTalk voices only section 3 again. `verify` shows that the later cues moved with their words. |
-| 6. Close | `deck/index.html`, scene 5 | The end card. |
+| 4. The edit | `deck/index.html`, scene 4 | The script gains four words, and DeckTalk voices only section 3 again. `verify` shows that the later cues moved with their words. |
+| 5. Close | `deck/index.html`, scene 5 | The end card. |
 
 The scaffold's `decktalk.toml` also has a section 0 in comments, which opens the video on a clip of your own. [Add a clip section](/guides/clip-section) shows how to use it.
 

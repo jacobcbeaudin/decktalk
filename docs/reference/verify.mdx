@@ -6,12 +6,12 @@ description: Look up how decktalk verify measures section starts, cuts, and cues
 `decktalk verify` checks the final mp4 in three ways: section starts, cuts, and cues. This page defines each
 measurement, limit, and result, in the order that `verify` computes them.
 
-{/* sample: decktalk verify 1:1.1bowl 3:3.4name 5:4.1words, silent build of the scaffold (R2), cue table only */}
+{/* sample: decktalk verify 1:1.1bowl 3:3.4name 4:4.1words, silent build of the scaffold, cue table only */}
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
 1:1.1bowl            1.25     1.25    1.05    0.00    -10ms    -9ms  changed
-3:3.4name           72.06   108.54    2.77    0.00    +20ms    -8ms  changed
-5:4.1words          12.19   168.03    1.27    0.00    +10ms    +8ms  changed
+3:3.4name           71.98   110.58    2.77    0.00    +20ms   +11ms  changed
+4:4.1words          14.31   172.99    1.47    0.00    +10ms   -11ms  changed
 ```
 
 Every field named on this page is a key under `[verify]` in [Configuration](/reference/configuration#verify),
@@ -29,7 +29,7 @@ checks all three.
 - `--only N` keeps only the cues of section `N`, named cues included. A named cue outside `--only` gets no row.
 - Section starts and cuts are always checked, whatever `--only` names.
 
-A named cue has the form `SECTION:CUE`, such as `5:4.1words`. `SECTION` is the section number, not the scene
+A named cue has the form `SECTION:CUE`, such as `4:4.1words`. `SECTION` is the section number, not the scene
 number. A name that does not start with a section number is an error (`malformed check`), and the command
 exits 1.
 
@@ -37,16 +37,15 @@ exits 1.
 
 The start check confirms that each section opens on a visible frame.
 
-{/* sample: decktalk verify, silent build of the scaffold (R2), start table */}
+{/* sample: decktalk verify, silent build of the scaffold, start table */}
 ```text
 sec    start    probe   YAVG   YMAX  result
  01     0.00     0.20    235    243  ok
- 02    16.96    17.16    233    244  ok
- 03    36.48    36.68    233    245  ok
- 04   151.84   152.04     33    234  ok
- 05   155.84   156.04    232    243  ok
- 06   183.60   183.80    233    244  ok
-total 197.96s; 0 black section start(s)
+ 02    17.80    18.00    227    245  ok
+ 03    38.60    38.80    234    245  ok
+ 04   158.68   158.88    235    243  ok
+ 05   189.60   189.80    227    245  ok
+total 204.84s; 0 black section start(s)
 ```
 
 A section's start is the total length of every earlier `build/out/NN-section.mp4`. The check reads one frame
@@ -61,20 +60,20 @@ BLACK  when  YMAX of the probe frame <= visible_ymax        # 60
   reads `BLACK`.
 - The probe sits 0.2 s after the start, whatever the dip length. The default `[transition] dip_seconds` of
   0.15 s rounds to 4 frames, 0.16 s. If you set a longer dip, raise `after_dip_seconds` too.
-- Clip sections have a row too. Section `04` above is the slate that plays for a missing clip.
+- A clip section has a row too. [Add a clip section](/guides/clip-section) shows one.
 
 ## Cuts
 
 The cut check confirms that the narration is quiet just before each cut.
 
-{/* sample: decktalk verify, silent build of the scaffold (R2), cut table */}
+{/* sample: decktalk verify, silent build of the scaffold, cut table */}
 ```text
 sec   cut at  before cut  result
- 01    16.95   -128.5 dB  quiet
- 02    36.51   -125.4 dB  quiet
- 03   151.83   -126.0 dB  quiet
- 05   183.59   -125.4 dB  quiet
- 06   195.45   -120.0 dB  quiet
+ 01    17.80   -123.3 dB  quiet
+ 02    38.60   -125.4 dB  quiet
+ 03   158.70   -128.4 dB  quiet
+ 04   189.58   -128.3 dB  quiet
+ 05   202.30   -120.0 dB  quiet
 ```
 
 `cut at` is where the section's narration ends in the final mp4. The check measures the narration track in the
@@ -89,8 +88,8 @@ SPEECH AT CUT  when  RMS of narration.mp3 over the window > cut_max_db  # -40 dB
 - The check reads `narration.mp3` alone. An underscore or a sound effect at a cut does not count.
 - A level of exactly -40 dBFS passes.
 - A clip section has no row, because it has no narration.
-- The last page section's `hold_seconds` comes after its `cut at`. In the sample, section `06` holds its last
-  slide from 195.45 s to the end of the video.
+- The last page section's `hold_seconds` comes after its `cut at`. In the sample, section `05` holds its last
+  slide from 202.30 s to the end of the video.
 
 ## Cues
 
@@ -98,10 +97,10 @@ The cue check confirms that the picture changes on each cue, at the cue time.
 
 <Tabs>
   <Tab title="Silent build">
-    {/* sample: decktalk verify 5:4.1words, silent build of the scaffold (R2), cue table only */}
+    {/* sample: decktalk verify 4:4.1words, silent build of the scaffold, cue table only */}
     ```text
     check                 cue       at   chg %   ctl %   offset     a/v  result
-    5:4.1words          12.19   168.03    1.27    0.00    +10ms    +8ms  changed
+    4:4.1words          14.31   172.99    1.47    0.00    +10ms   -11ms  changed
     ```
   </Tab>
   <Tab title="Voiced build">
@@ -140,7 +139,7 @@ at        = section start in the final mp4 + cue time
 - `build/audio/beats.anchors.json` keeps each word start without the offset key, also rounded to hundredths.
 - A `$start` cue with a negative offset key keeps its negative cue time.
 
-Example: section 5 starts at 155.84 s, and `5:4.1words` has a cue time of 12.19 s. Its `at` is 168.03 s.
+Example: section 4 starts at 158.68 s, and `4:4.1words` has a cue time of 14.31 s. Its `at` is 172.99 s.
 
 ### Changed share
 
@@ -158,7 +157,7 @@ changed share(a, b, level) = 100 * (pixels where |luma of a - luma of b| > level
   block share at `block_width` by `block_height` (240 by 135). [Onset and offset](#onset-and-offset) says why.
 - A pixel counts only when its difference is strictly greater than the level.
 
-Example: the `chg %` of 1.27 for `5:4.1words` is about 1,650 of 129,600 pixels.
+Example: the `chg %` of 1.47 for `4:4.1words` is about 1,900 of 129,600 pixels.
 
 ### Reference frame
 
@@ -185,8 +184,8 @@ skipped REFERENCE_CLAMPED  when  max(floor, at - lead) > at - 1 / fps
 - The reference time is at least one frame before the cue. The reference frame can be closer when the cue time
   is off the frame grid.
 
-Example: for `5:4.1words`, the reference time is 168.03 - 0.14 = 167.89 s. The reference frame is the next frame on
-the 40 ms grid, at 167.92 s. That frame is 110 ms before the cue, as the onset figure shows.
+Example: for `4:4.1words`, the reference time is 172.99 - 0.14 = 172.85 s. The reference frame is the next frame on
+the 40 ms grid, at 172.88 s. That frame is 110 ms before the cue, as the onset figure shows.
 
 ### Probes
 
@@ -207,8 +206,8 @@ dropped   when  probe(d) > section end - 0.05
 The control share measures motion that has nothing to do with the cue. Each probe gets its own control share.
 
 <Frame caption="Probes run forward from the reference, and two back-to-back control spans run back from it.">
-  <img className="block dark:hidden" src="/images/verify-probes-light.svg" alt="A time axis around cue 5:4.1words. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, and each changed 1.27%. The 0.7 s probe is marked reported. Its two back-to-back control spans of 0.84 s run back from the reference, and each changed 0.00%." />
-  <img className="hidden dark:block" src="/images/verify-probes-dark.svg" alt="A time axis around cue 5:4.1words. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, and each changed 1.27%. The 0.7 s probe is marked reported. Its two back-to-back control spans of 0.84 s run back from the reference, and each changed 0.00%." />
+  <img className="block dark:hidden" src="/images/verify-probes-light.svg" alt="A time axis around cue 4:4.1words. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, and each changed 1.47%. The 1.5 s probe is marked reported. Its two back-to-back control spans of 1.64 s run back from the reference, and each changed 0.00%." />
+  <img className="hidden dark:block" src="/images/verify-probes-dark.svg" alt="A time axis around cue 4:4.1words. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, and each changed 1.47%. The 1.5 s probe is marked reported. Its two back-to-back control spans of 1.64 s run back from the reference, and each changed 0.00%." />
 </Frame>
 
 ```text
@@ -236,9 +235,9 @@ passes when     changed share >= min_changed_percent  and  margin >= min_margin_
 - The `chg %` and `ctl %` columns show the reported probe, which is not always the probe that changed most.
 - `min_changed_percent` applies to the raw changed share. A camera push raises that share too.
 
-Example: `5:4.1words` has a changed share of 1.27 and a control share of 0.00. Its margin is 1.27, so it
+Example: `4:4.1words` has a changed share of 1.47 and a control share of 0.00. Its margin is 1.47, so it
 passes.
-Both probes of `5:4.1words` have the same margin, so `verify` reports the earlier probe, at 0.7 s.
+Both of its margins round to 1.47. The margin at 1.5 s is larger by 0.0008, so `verify` reports the probe at 1.5 s.
 
 ### Onset and offset
 
@@ -254,12 +253,12 @@ After a cue passes the change test, `verify` finds its onset, the first frame of
 4. If no frame is above the threshold, the row has no onset.
 
 <Frame caption="The outlined frame is the onset, 10 ms after the cue and inside the 80 ms offset limit.">
-  <img className="block dark:hidden" src="/images/verify-onset-light.svg" alt="Seven frames 40 ms apart around cue 5:4.1words. The first is the reference frame, 110 ms before the cue. The frames at 70 and 30 ms before the cue changed 0.00%. The frame 10 ms after the cue changed 1.81% and is outlined as the onset. A shaded band spans 80 ms on each side of the cue." />
-  <img className="hidden dark:block" src="/images/verify-onset-dark.svg" alt="Seven frames 40 ms apart around cue 5:4.1words. The first is the reference frame, 110 ms before the cue. The frames at 70 and 30 ms before the cue changed 0.00%. The frame 10 ms after the cue changed 1.81% and is outlined as the onset. A shaded band spans 80 ms on each side of the cue." />
+  <img className="block dark:hidden" src="/images/verify-onset-light.svg" alt="Seven frames 40 ms apart around cue 4:4.1words. The first is the reference frame, 110 ms before the cue. The frames at 70 and 30 ms before the cue changed 0.00%. The frame 10 ms after the cue changed 2.33% and is outlined as the onset. A shaded band spans 80 ms on each side of the cue." />
+  <img className="hidden dark:block" src="/images/verify-onset-dark.svg" alt="Seven frames 40 ms apart around cue 4:4.1words. The first is the reference frame, 110 ms before the cue. The frames at 70 and 30 ms before the cue changed 0.00%. The frame 10 ms after the cue changed 2.33% and is outlined as the onset. A shaded band spans 80 ms on each side of the cue." />
 </Frame>
 
-The figure's shares use `onset_diff_level` (12), so the onset frame reads 1.81%. The `chg %` column reads 1.27%,
-because the change test uses `diff_level` (40), at the probe 0.7 s after the cue.
+The figure's shares use `onset_diff_level` (12), so the onset frame reads 2.33%. The `chg %` column reads 1.47%,
+because the change test uses `diff_level` (40), at the probe 1.5 s after the cue.
 
 ```text
 series[0]      = 0                                                   # the reference frame itself
@@ -289,7 +288,7 @@ offset column  = round(1000 * (onset time - at))                    # whole ms, 
 - A cue with no onset reads `changed`. Its offset column shows `-`, its `a/v` is blank, and neither limit
   applies. No `NO_CLICK` reason is set.
 
-Example: `5:4.1words` has an offset column of +10 ms, so its onset frame is at 168.04 s.
+Example: `4:4.1words` has an offset column of +10 ms, so its onset frame is at 173.00 s.
 
 ### The a/v value
 
@@ -322,7 +321,7 @@ a/v             = offset column - click distance
   word's length.
 - A voiced build has no `a/v`. Its JSON `silent` is `false`, and every `av_ms` is `null`.
 
-Example: `5:4.1words` has an offset column of +10 ms and an `a/v` of +8 ms, so its click distance is +2 ms.
+Example: `4:4.1words` has an offset column of +10 ms and an `a/v` of -11 ms, so its click distance is +21 ms.
 
 ### Limits
 
@@ -377,7 +376,7 @@ A skipped row measured nothing. The table prints `skipped`, the reason, and a sh
 
 | Reason | Cause | Fix |
 |---|---|---|
-| `OPTED_OUT` | `cues.json` marks the cue `"verify": false`, and the run named no cue. | Name the cue, such as `decktalk verify 5:4.1words`, to measure it anyway. |
+| `OPTED_OUT` | `cues.json` marks the cue `"verify": false`, and the run named no cue. | Name the cue, such as `decktalk verify 4:4.1words`, to measure it anyway. |
 | `SECTION_NOT_ASSEMBLED` | The section has no `build/out/NN-section.mp4`. | Run `decktalk assemble`. |
 | `REFERENCE_CLAMPED` | No reference frame fits between the floor and one frame before the cue. Usual for a `$start` cue. | Check the reveal by eye with `decktalk shots --step ID --cue CUE`. |
 | `TOO_CLOSE_TO_END` | Every probe falls later than 0.05 s before the section end. | Check the reveal by eye with `decktalk shots --step ID --cue CUE`. |
@@ -391,18 +390,18 @@ Mark such a cue `"verify": false`, and check it by eye with `decktalk shots --st
 
 `decktalk verify --json` prints one JSON object on stdout. The measurements are under the `verify` key.
 
-{/* sample: decktalk verify 5:4.1words --json, silent build of the scaffold (R2), the cues array only */}
+{/* sample: decktalk verify 4:4.1words --json, silent build of the scaffold, the cues array only */}
 ```json
     "cues": [
       {
-        "section": 5,
+        "section": 4,
         "cue": "4.1words",
-        "cue_seconds": 12.19,
-        "final_seconds": 168.03,
-        "changed_percent": 1.27,
+        "cue_seconds": 14.31,
+        "final_seconds": 172.99,
+        "changed_percent": 1.47,
         "control_percent": 0.0,
         "offset_ms": 10,
-        "av_ms": 8,
+        "av_ms": -11,
         "verdict": "changed",
         "reason": null
       }

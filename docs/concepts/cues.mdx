@@ -26,7 +26,7 @@ A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat]
 ```
 
 ```html deck/index.html
-<path class="curve" data-cue="1.1bowl" data-fx="none" d="${curve}"/>
+<path class="curve" data-cue="1.1bowl" data-fx="none" d="${s1curve()}"/>
 ```
 </CodeGroup>
 
@@ -105,10 +105,10 @@ because the recorder reports that. The cue still resolves, and `beats` still wri
 These lines come from a copy of the scaffold with `data-cue="5.1cap"` and the `"5.1cap"` key
 removed from `deck/index.html`. `beats` exits 1.
 
-{/* sample: decktalk beats, silent build of the scaffold with cue id 5.1cap removed from the page, trimmed to section 6 */}
+{/* sample: decktalk beats, silent build of the scaffold with cue id 5.1cap removed from the page, trimmed to section 5 */}
 ```text
 sec  speech   need  cues
- 06    11.4      -  5.1made@4.1,5.1cap@4.56,5.1url@10.03
+ 05    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
                     ! 5.1cap: not in deck/index.html
 5 sections with cues; 0 unresolved  (estimated words: times are placeholders)
 ```
@@ -121,10 +121,10 @@ run time, pass `--allow-unknown`. The page warnings are then the only check.
 If the `beats` stage cannot match a phrase, it notes `phrase not found` and exits 1. These lines come
 from a copy of the scaffold whose cue `3.4name` has the typo "gradient decent".
 
-{/* sample: decktalk beats, silent build of a fresh scaffold with a typo in the 3.4name phrase, trimmed to section 3 (F-r2-10) */}
+{/* sample: decktalk beats, silent build of a fresh scaffold with a typo in the 3.4name phrase, trimmed to section 3 */}
 ```text
 sec  speech   need  cues
- 03   114.9      -  3.1examples@2.52,3.1box@8.06,3.1guess@10.08,3.1wrong@12.6,3.1turn@16.63,3.1again@20.16,3.2way@22.17,3.2one@28.22,3.2billions@31.25,3.2instead@34.27,3.2all@38.8,3.3two@41.32,3.3floor@42.84,3.3height@46.87,3.3bowl@51.4,3.4ball@52.41,3.4see@57.95,3.4steps@64.5,3.4again@65.51,3.5setting@73.58,3.5long@77.1,3.5short@81.14,3.6zoom@84.66,3.6low@89.2,3.7ai@91.21,3.7sums@97.26,3.8tensor@104.32,3.8gpu@105.83,3.8chips@113.39
+ 03   118.8      -  3.1examples@2.52,3.1rules@3.52,3.1box@8.05,3.1guess@10.07,3.1wrong@12.59,3.1turn@16.61,3.1again@20.14,3.2way@22.15,3.2one@28.19,3.2billions@31.21,3.2instead@34.23,3.2all@38.76,3.3two@41.28,3.3floor@42.79,3.3height@46.81,3.3bowl@51.35,3.4ball@52.35,3.4see@57.89,3.4steps@64.43,3.4again@65.44,3.5setting@77.52,3.5long@81.05,3.5short@85.07,3.6zoom@88.6,3.6low@93.13,3.7ai@95.14,3.7sums@101.18,3.8tensor@108.23,3.8gpu@109.74,3.8chips@117.29,3.8out@118.53
                     ! 3.4name: phrase not found: 'gradient decent'
 5 sections with cues; 1 unresolved  (estimated words: times are placeholders)
 ```

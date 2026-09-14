@@ -10,7 +10,8 @@ The README reads assets/, and the docs site reads docs/images/ and docs/logo/.
 
     uv run scripts/build_assets.py            # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, docs/favicon.svg
     uv run scripts/build_assets.py --check    # exit 1 if the committed files would change
-    uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson   # re-measure figure data
+    uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson --clip-project path/to/clip-lesson
+                                              # re-measure figure data
 
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
 they cannot drift. The copies in assets/ have a transparent background so they sit on whatever
@@ -860,7 +861,7 @@ def narration_split(pal: dict[str, str], background: bool) -> str:
     )
     css.append(f".cp{{fill:{pal['bar']}}}.ch{{stroke:{pal['ink']};stroke-width:2}}")
     narr_y, vid_y, cap_y, chap_y, bh = 64, 164, 236, 268, 40
-    parts: list[str] = ['<text class="lab" x="60" y="30">SCAFFOLD, SILENT BUILD, TO SCALE</text>']
+    parts: list[str] = ['<text class="lab" x="60" y="30">SCAFFOLD WITH A CLIP SECTION, SILENT BUILD, TO SCALE</text>']
     for label, y in (
         ("narration.mp3", narr_y + 25),
         ("video", vid_y + 25),
@@ -1086,7 +1087,7 @@ def cue_offset(pal: dict[str, str], background: bool) -> str:
 
 # ---- rebuild lanes ----------------------------------------------------------------------------
 
-EDITED_SECTION = 3  # the scaffold's own edit: section 5 of the lesson changes a sentence of section 3
+EDITED_SECTION = 3  # the scaffold's own edit: section 4 of the lesson changes a sentence of section 3
 LANES = (
     # lane, the page sections that run in it, the text on those, the text on the other page sections
     ("narrate", {EDITED_SECTION}, "voiced", "cached"),
@@ -1256,20 +1257,26 @@ def render_png(svg: str, target: Path, width: int, height: int) -> None:
 # ---- capture ----------------------------------------------------------------------------------
 
 FIG_DATA = ROOT / "scripts" / "figure-data"
-VERIFY_CUE = "5:4.1words"  # the cue the verify figures and the verify samples in the docs share
+VERIFY_CUE = "4:4.1words"  # the cue the verify figures and the verify samples in the docs share
 CUE_OFFSET_WORDS = ("3", "it", "steps", "downhill")  # section, then the words around 3.4steps ("So it steps downhill")
+# The clip figures come from the clip project: the scaffold with the clip section that
+# docs/guides/clip-section.mdx adds as section 4, so the edit and the close become sections 5 and 6.
 DUCK_SECTIONS = ("03", "04", "05")  # the underscore lane: the end of section 3, the clip, the start of section 5
 DUCK_WINDOW = (-3.0, 4.0)  # seconds before the clip starts and after it ends
 
 
-def capture(project_dir: Path) -> None:
+def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     """Measure every number the figures print from a built scaffold, with DeckTalk's own code.
 
     Run it on a scaffold after `decktalk build --silent`, with an interpreter that imports decktalk:
 
-        uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson
+        uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson --clip-project path/to/clip-lesson
 
-    It reads the build and never writes into the project. It writes scripts/figure-data/*.json,
+    The scaffold has no clip section, so the narration split and the duck lane come from the clip
+    project, a second scaffold with the clip section that docs/guides/clip-section.mdx adds, built
+    the same way. Without --clip-project those two data files stay as they are.
+
+    It reads the builds and never writes into a project. It writes scripts/figure-data/*.json,
     and the draw functions read only those files, so a scaffold change is a new capture, not a
     hand edit. The verify measurement must equal what `decktalk verify` reports, or it stops.
     """
@@ -1385,6 +1392,47 @@ def capture(project_dir: Path) -> None:
         },
     )
 
+    # cue offset: one real word and its neighbours from the words file of section 3
+    sec_key = f"{int(CUE_OFFSET_WORDS[0]):02d}"
+    ts = timeline.sections[sec_key]
+    words = [w for w in ts.words]
+    names = [w.word.lower() for w in words]
+    target = list(CUE_OFFSET_WORDS[1:])
+    at = next(i for i in range(len(names) - 2) if names[i : i + 3] == target)
+    write(
+        "cue-offset.json",
+        {
+            "source": {**source, "file": f"build/audio/{sec_key}-*.words.json via timeline.json"},
+            "section": int(sec_key),
+            "words": [
+                {"word": w.word, "start": round(w.start - ts.start, 3), "end": round(w.end - ts.start, 3)}
+                for w in words[at : at + 3]
+            ],
+        },
+    )
+
+    # how it works: the word time printed in the narrate panel is the real start of "bowl"
+    s1 = timeline.sections["01"]
+    bowl = next(w for w in s1.words if w.word.lower() == "bowl")
+    write("how-it-works.json", {"source": source, "word": "bowl", "start": round(bowl.start - s1.start, 2)})
+
+    if clip_dir is None:
+        print("kept narration-split.json and duck-lane.json: pass --clip-project to measure them")
+        return
+    project = Project.load(clip_dir)
+    timeline = project.timeline()
+    if timeline is None or not project.final.exists():
+        sys.exit(f"{clip_dir}: no timeline or final mp4. Run `decktalk build --silent` there first.")
+    starts, total = vmod.section_starts(project)
+    sections = sorted([*project.page_sections, *project.clip_sections], key=lambda s: s.number)
+    if not any(s.is_clip for s in sections):
+        sys.exit(f"{clip_dir}: no clip section. Add the one from docs/guides/clip-section.mdx.")
+    source = {
+        **source,
+        "build": "decktalk build --silent on the scaffold with the clip section from docs/guides/clip-section.mdx",
+        "estimated_words": timeline.estimated,
+    }
+
     # narration split: the narration track, the video, the captions, and the chapters
     shim = [SimpleNamespace(section=s) for s in sections]
     offsets = amod.narration_offsets(shim, timeline, starts)
@@ -1459,30 +1507,6 @@ def capture(project_dir: Path) -> None:
         },
     )
 
-    # cue offset: one real word and its neighbours from the words file of section 3
-    sec_key = f"{int(CUE_OFFSET_WORDS[0]):02d}"
-    ts = timeline.sections[sec_key]
-    words = [w for w in ts.words]
-    names = [w.word.lower() for w in words]
-    target = list(CUE_OFFSET_WORDS[1:])
-    at = next(i for i in range(len(names) - 2) if names[i : i + 3] == target)
-    write(
-        "cue-offset.json",
-        {
-            "source": {**source, "file": f"build/audio/{sec_key}-*.words.json via timeline.json"},
-            "section": int(sec_key),
-            "words": [
-                {"word": w.word, "start": round(w.start - ts.start, 3), "end": round(w.end - ts.start, 3)}
-                for w in words[at : at + 3]
-            ],
-        },
-    )
-
-    # how it works: the word time printed in the narrate panel is the real start of "bowl"
-    s1 = timeline.sections["01"]
-    bowl = next(w for w in s1.words if w.word.lower() == "bowl")
-    write("how-it-works.json", {"source": source, "word": "bowl", "start": round(bowl.start - s1.start, 2)})
-
 
 # ---- entry ------------------------------------------------------------------------------------
 
@@ -1543,9 +1567,17 @@ def main() -> int:
     ap.add_argument(
         "--capture", type=Path, metavar="PROJECT", help="measure scripts/figure-data/*.json from a built scaffold"
     )
+    ap.add_argument(
+        "--clip-project",
+        type=Path,
+        metavar="PROJECT",
+        help="with --capture, measure the narration split and the duck lane from this built scaffold with a clip section",
+    )
     args = ap.parse_args()
+    if args.clip_project and not args.capture:
+        ap.error("--clip-project needs --capture")
     if args.capture:
-        capture(args.capture.resolve())
+        capture(args.capture.resolve(), args.clip_project.resolve() if args.clip_project else None)
         return 0
     files = build()
     changed = [p for p, s in files.items() if not p.exists() or p.read_text() != s]
