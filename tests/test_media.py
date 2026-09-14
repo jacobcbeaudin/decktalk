@@ -107,6 +107,36 @@ def test_onset_ignores_a_few_pixels_of_motion_before_the_reveal(moving_card, bef
     assert first_change_offset(moving_card, before, 5.7, FULL_FRAME / FPS, cfg, FPS) == 0
 
 
+@pytest.fixture(scope="module")
+def ringing_card(tmp_path_factory) -> Path:
+    """A 1080p card whose accent panel appears at 5.00 s, after two frames of encoder-like ringing.
+
+    On the two frames before the panel, a checkerboard of 4 px cells 30 levels either side of the
+    gray card covers the panel's area, the way x264 leaves a little ringing on a still picture just
+    before a change. It survives the scale to 480 by 270 but averages to nothing over an 8 by 8
+    block, so it is not a reveal.
+    """
+    out = tmp_path_factory.mktemp("media") / "ringing.mp4"
+    ring = f"between(N,{REVEAL_FRAME - 2},{REVEAL_FRAME - 1})*between(X,1200,1599)*between(Y,400,639)"
+    graph = (
+        f"color=c=gray:s=1920x1080:r={FPS}:d=6,format=gray,"
+        f"geq=lum='if({ring},158-60*mod(floor(X/4)+floor(Y/4)\\,2),128)',"
+        f"drawbox=x=1200:y=400:w=400:h=240:color=0x2c1fea:t=fill:enable='gte(n,{REVEAL_FRAME})',format=yuv420p"
+    )
+    ffmpeg.run("-f", "lavfi", "-i", graph, "-c:v", "libx264", "-qp", "0", "-g", "250", str(out))  # fmt: skip
+    return out
+
+
+def test_onset_ignores_encoder_ringing_before_the_reveal(ringing_card):
+    cfg = Settings().verify
+    before = 4.84
+    # At the comparison size the ringing is a real change of far more than onset_percent ...
+    series = ffmpeg.changed_series(ringing_card, before, before, 5.2, fps=FPS, level=12, width=W, height=H)
+    assert max(p for t, p in series if t < REVEAL_FRAME / FPS) > 10 * cfg.onset_percent
+    # ... but no 8 by 8 block changes, so the onset scan still finds the panel on its own frame.
+    assert first_change_offset(ringing_card, before, 5.7, REVEAL_FRAME / FPS, cfg, FPS) == 0
+
+
 @pytest.mark.parametrize("before", [4.88, 4.89, 4.90, 4.92, 4.93, 4.959])
 def test_onset_is_the_first_revealed_frame_at_every_grid_phase(card, before):
     cfg = Settings().verify

@@ -154,7 +154,8 @@ changed share(a, b, level) = 100 * (pixels where |luma of a - luma of b| > level
 - Every share is on a 0 to 100 scale. At 480 by 270, a share of 0.1 is about 130 pixels.
 - The share compares luma only. A reveal that changes only color at the same brightness reads `NO CHANGE`.
   Mark such a cue `"verify": false` in `cues.json`.
-- Probes and control shares use `diff_level` (40). The onset scan uses `onset_diff_level` (12).
+- Probes and control shares use `diff_level` (40). The onset scan uses `onset_diff_level` (12). It also reads a
+  block share at `block_width` by `block_height` (240 by 135). [Onset and offset](#onset-and-offset) says why.
 - A pixel counts only when its difference is strictly greater than the level.
 
 Example: the `chg %` of 1.27 for `5:4.1words` is about 1,650 of 129,600 pixels.
@@ -244,11 +245,12 @@ Both probes of `5:4.1words` have the same margin, so `verify` reports the earlie
 After a cue passes the change test, `verify` finds its onset, the first frame of the reveal.
 
 1. `verify` measures the changed share of each frame from the reference frame up to the reported probe. It
-   compares each frame with the reference frame, at `onset_diff_level`.
+   compares each frame with the reference frame, at `onset_diff_level`. It also measures a block share of each
+   frame, the same comparison with both frames scaled to `block_width` by `block_height` (240 by 135).
 2. The onset is the first frame after the reference whose share rises by at least `onset_percent` over the
-   frame before it.
+   frame before it, and whose block share is above 0.
 3. If no frame rises that much, the onset is the first frame after the reference whose share is above a
-   threshold.
+   threshold, and whose block share is above 0.
 4. If no frame is above the threshold, the row has no onset.
 
 <Frame caption="The outlined frame is the onset, 10 ms after the cue and inside the 80 ms offset limit.">
@@ -262,13 +264,20 @@ because the change test uses `diff_level` (40), at the probe 0.7 s after the cue
 ```text
 series[0]      = 0                                                   # the reference frame itself
 series[i]      = changed share(reference frame, frame i, onset_diff_level)
-onset          = first i >= 1 with series[i] - series[i-1] >= onset_percent        # 0.01
+blocks[i]      = the same share, with both frames scaled to block_width by block_height
+onset          = first i >= 1 with series[i] - series[i-1] >= onset_percent and blocks[i] > 0   # 0.01
 threshold      = max(onset_percent, largest series[i] at or before at - (max_offset_frames + 0.5) / fps)
-fallback onset = first i >= 1 with series[i] > threshold
+fallback onset = first i >= 1 with series[i] > threshold and blocks[i] > 0
 offset column  = round(1000 * (onset time - at))                    # whole ms, negative means early
 ```
 
 - A rise is in percentage points of share. At 480 by 270, 0.01 points is about 13 pixels.
+- At 240 by 135, each pixel averages an 8 by 8 block of a 1080p frame, the size of an H.264 transform block.
+  The x264 encoder leaves a little ringing on a still picture in the one or two frames before a change: a few
+  pixels, up to about 15 luma levels apart at 480 by 270. Alone, that ringing read as a reveal 40 to 100 ms
+  before it happened, while the recording showed the reveal on time. Ringing is as much lighter as darker, so
+  it cancels over a block and leaves the block share at 0. A reveal changes whole blocks, so its first frame
+  has a block share above 0.
 - A reveal changes the picture in a step. Steady motion, such as a camera push or a line that was already drawing
   before the reference, grows a little every frame. That motion does not count as an onset, but it can change
   frames before the onset.
