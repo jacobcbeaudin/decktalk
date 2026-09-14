@@ -27,16 +27,24 @@ Find your edit in the first column. `N` is the number of the section you changed
 | A sentence in section N of `script.md` | `decktalk build --only N` |
 | The title in the heading of section N | `decktalk build --only N` |
 | A cue of section N in `cues.json` | `decktalk build --only N` |
-| A slide in a page | `decktalk build` with one `--only N` for each section that plays the changed scene, such as `decktalk build --only 1 --only 5` |
+| A slide in a page | `decktalk build` with one `--only N` for each section that plays the changed scene, such as `decktalk build --only 1 --only 9` |
 | `extra_seconds` on section N | `decktalk build --only N` |
 | The voice id, the model, the output format, or a `[voice]` setting | `decktalk build` |
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | `decktalk assemble`, then `decktalk verify` |
 
 After a silent build, add `--silent` to each `decktalk build` command.
 
-<Frame caption="After an edit to section 3, only section 3 is voiced again, and --only 3 records only section 3.">
-  <img className="block dark:hidden" src="/images/rebuild-lanes-light.svg" alt="Five section columns cross three lanes above an assemble bar. In the narrate lane, section 3 reads voiced and the others read cached. A plain build records every section. With --only 3, section 3 reads recorded and the others read kept. The assemble bar spans all five sections." />
-  <img className="hidden dark:block" src="/images/rebuild-lanes-dark.svg" alt="Five section columns cross three lanes above an assemble bar. In the narrate lane, section 3 reads voiced and the others read cached. A plain build records every section. With --only 3, section 3 reads recorded and the others read kept. The assemble bar spans all five sections." />
+A page can show the words of the section before it, which it reads from
+[`prevwords`](/reference/runtime#url-parameters). The scaffold's scene 2 opens on the Open's last frame with
+the Open's count times. So after an edit to section 1, record section 2 as well.
+
+```console
+decktalk build --only 1 --only 2
+```
+
+<Frame caption="After an edit to section 1, only section 1 is voiced again, and --only 1 records only section 1.">
+  <img className="block dark:hidden" src="/images/rebuild-lanes-light.svg" alt="Nine section columns cross three lanes above an assemble bar. Sections 5 and 7 are clips in every lane. In the narrate lane, section 1 reads voiced and the other page sections read cached. A plain build records every page section. With --only 1, section 1 reads recorded and the other page sections read kept. The assemble bar spans all nine sections." />
+  <img className="hidden dark:block" src="/images/rebuild-lanes-dark.svg" alt="Nine section columns cross three lanes above an assemble bar. Sections 5 and 7 are clips in every lane. In the narrate lane, section 1 reads voiced and the other page sections read cached. A plain build records every page section. With --only 1, section 1 reads recorded and the other page sections read kept. The assemble bar spans all nine sections." />
 </Frame>
 
 ## What each edit runs again
@@ -54,7 +62,8 @@ The next table gives the reason for each row of the first table.
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | none | none | Only `assemble` reads them. |
 
 A recording stays valid when a neighbor section changes length. Cue times count from the start of their
-own section, so a longer section 2 does not move a cue in section 3.
+own section, so a longer section 2 does not move a cue in section 3. A page that reads `prevwords` is the
+exception. It shows the words of the section before it, so record it again after that section changes.
 
 ## The narration cache
 
@@ -89,7 +98,7 @@ Pass `--only` with a section number. Repeat the flag for more sections, because 
 
 ```console
 decktalk build --only 3
-decktalk build --only 3 --only 5
+decktalk build --only 3 --only 6
 ```
 
 The flag limits `record`, `measure`, and `check` to the sections you name. The other stages still work on

@@ -145,14 +145,14 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
     </Tabs>
 
     <Frame caption="The scene index lists each scene of the page with its steps and cue ids.">
-      <img src="/images/quickstart-index.png" alt="The page my-lesson in index mode. It lists scenes 1, 2, 4, and 5, each with a play link. Under each scene, one step shows its hold seconds and cue ids." />
+      <img src="/images/quickstart-index.png" alt="The page my-lesson in index mode. It lists scenes 1, 2, 4, 6, 7, and 5, each with a play link. Under each scene, one step shows its hold seconds and cue ids." />
     </Frame>
 
     Check that the page shows an index of its scenes and steps.
   </Step>
 
   <Step title="Build the video without an account" stepNumber={7}>
-    A silent build uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took 236.6 seconds. Leave it running, and read [What the example video shows](#what-the-example-video-shows).
+    A silent build uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took about 276 seconds. Leave it running, and read [What the example video shows](#what-the-example-video-shows).
 
     ```console
     decktalk build --silent
@@ -160,7 +160,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
 
     {/* sample: decktalk build --silent, fresh scaffold on macOS (the last line of the assemble log and the last line) */}
     ```text
-    done: ~/my-lesson/build/out/my-lesson.mp4  (216.72s)  copy: my-lesson-20260913-2141.mp4
+    done: ~/my-lesson/build/out/my-lesson.mp4  (257.72s)  copy: my-lesson-20260914-0003.mp4
     built ~/my-lesson/build/out/my-lesson.mp4
     ```
 
@@ -186,7 +186,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
       </Tab>
     </Tabs>
 
-    The video is 216.72 seconds long, in five sections, with a soft click on each word. [What the example video shows](#what-the-example-video-shows) describes each section.
+    The video is 257.72 seconds long, in nine sections, with a soft click on each word. Sections 5 and 7 play titled slates, because the scaffold ships no clip files. [What the example video shows](#what-the-example-video-shows) describes each section.
   </Step>
 </Steps>
 
@@ -233,33 +233,42 @@ If you have no ElevenLabs account, stop here. The silent video is a complete bui
     This build voices every section, because it never reuses the click track. Check that the last line starts with `built`.
   </Step>
 
-  <Step title="Change one sentence" stepNumber={12}>
-    In section 3 of `script.md`, add four words to one sentence.
+  <Step title="Add one count" stepNumber={12}>
+    In section 1 of `script.md`, add a fourth count to the Open.
 
     ```diff script.md
-    -The height is the error. [beat]
-    +The height is the error, so lower is better. [beat]
+    -A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat] Two, three. [beat]
+    +A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat] Two, three, four. [beat]
     ```
+
+    In section 1 of `cues.json`, add a cue for the new word after the cue for "three".
+
+    ```diff cues.json
+             { "cue": "1.1three", "on": "three" },
+    +        { "cue": "1.1four", "on": "four" },
+    ```
+
+    Scene 1 draws one box and one step for each count word it hears, so the page needs no change.
   </Step>
 
-  <Step title="Build only section 3" stepNumber={13}>
+  <Step title="Build sections 1 and 2" stepNumber={13}>
     ```console
-    decktalk build --only 3
+    decktalk build --only 1 --only 2
     ```
 
-    {/* SAMPLE NEEDED (R5, voiced build): the narrate log after the edit, with [skip] for sections 1, 2, 4, and 5 and [tts ] for section 3 */}
+    {/* SAMPLE NEEDED (R5, voiced build): the narrate log after the edit, with [tts ] for section 1 and [skip] for sections 2, 3, 4, 6, 8, and 9 */}
 
-    DeckTalk voices and records only section 3 again. The other sections take their narration from the cache. [Rebuild one section](/guides/rebuild-one-section) says what each kind of edit runs again.
+    DeckTalk voices only section 1 again. It records sections 1 and 2 again, because scene 2 opens on the Open's last frame and shows its count times. The other sections take their narration from the cache. [Rebuild one section](/guides/rebuild-one-section) says what each kind of edit runs again.
 
     <Tip>If you are not sure which sections changed, run `decktalk build`. It voices only the sections whose text changed.</Tip>
   </Step>
 
   <Step title="Check that a reveal starts on its word" stepNumber={14}>
     ```console
-    decktalk verify 1:1.1bowl
+    decktalk verify 1:1.1four
     ```
 
-    {/* SAMPLE NEEDED (R5, voiced build): the cue row for 1:1.1bowl */}
+    {/* SAMPLE NEEDED (R5, voiced build): the cue row for 1:1.1four */}
 
     Check that the result is `changed`. The offset column is the time from the cue time to the onset of the reveal, in milliseconds. [Verify](/reference/verify#cues) defines every column.
   </Step>
@@ -267,15 +276,21 @@ If you have no ElevenLabs account, stop here. The silent video is a complete bui
 
 ## What the example video shows
 
-The scaffold is a short lesson in five sections. Each section names its page and its scene.
+The scaffold is a short lesson in nine sections. Sections 4 to 8 share the title "The edit", so the video has five chapters. Each page section names its page and its scene, and each clip section names its video file.
 
 | Section | Plays | What it shows |
 |---|---|---|
 | 1. Open | `deck/index.html`, scene 1 | A bowl and a ball appear on their words. The ball steps down on each count word, and each count word's start time appears. |
 | 2. How it works | `deck/index.html`, scene 2 | A script card and a slide card appear. A waveform runs under one line, and the slide card grows into the lesson. |
-| 3. How AI learns | `deck/lesson.html`, scene 3 | A box of knobs guesses, and a meter shows its [error](/help/faq#what-does-the-lesson-mean-by-error). A ball steps down a bowl, and the lesson ends on chips that do the math. |
-| 4. The edit | `deck/index.html`, scene 4 | The script gains four words, and DeckTalk voices only section 3 again. `verify` shows that the later cues moved with their words. |
-| 5. Close | `deck/index.html`, scene 5 | The end card. |
+| 3. How AI learns | `deck/lesson.html`, scene 3 | A box of knobs guesses, and a meter shows its [error](/help/faq#what-does-the-lesson-mean-by-error). A nudge to the knobs lowers the error. A ball steps down a bowl, and the lesson ends on chips that do the math. |
+| 4. The edit | `deck/index.html`, scene 4 | The lesson shrinks into a video player. Five chips name the video's parts, and the script opens under them. |
+| 5. The edit | the clip `media/edit-before.mov` | The Open before the edit, inside the player. A titled slate plays until the file exists. |
+| 6. The edit | `deck/index.html`, scene 6 | The script gains one word, "four", and a new box waits for it. The build voices only part one again. |
+| 7. The edit | the clip `media/edit-after.mov` | The Open after the edit, with a fourth count. A titled slate plays until the file exists. |
+| 8. The edit | `deck/index.html`, scene 7 | Before and after stand side by side with their count times and a check. Then the player grows back into the video. |
+| 9. Close | `deck/index.html`, scene 5 | The end card. |
+
+Both clip sections set `optional = true`, so `decktalk build --strict` plays their slates and still passes. [Add a clip section](/guides/clip-section) shows how to fill them.
 
 The scaffold's `decktalk.toml` also has a section 0 in comments, which opens the video on a clip of your own. [Add a clip section](/guides/clip-section) shows how to use it.
 

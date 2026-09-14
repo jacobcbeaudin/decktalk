@@ -879,7 +879,9 @@ def narration_split(pal: dict[str, str], background: bool) -> str:
             f'<text class="num{" on" if moved else ""}" x="{(xa + xb) / 2:.1f}" y="{y + 25}" text-anchor="middle">{n}</text>'
         )
 
-    split_at = None
+    # The narration splits wherever a page section starts later in the video than the one before it, which is
+    # after each clip between page sections. Each run of sections with one offset gets a lead at both ends.
+    runs: list[list[dict]] = []
     for s in secs:
         if s["clip"]:
             xa, xb = tx(s["video_start"]) + 1, tx(s["video_end"]) - 1
@@ -889,18 +891,22 @@ def narration_split(pal: dict[str, str], background: bool) -> str:
             )
             continue
         moved = s["offset"] > 0
-        if moved and split_at is None:
-            split_at = s["narration_start"]
+        if runs and abs(runs[-1][0]["offset"] - s["offset"]) < 1e-6:
+            runs[-1].append(s)
+        else:
+            runs.append([s])
         block(s["narration_start"], s["narration_end"], narr_y, s["number"], moved)
         block(s["video_start"], s["video_end"], vid_y, s["number"], moved)
     moved = [s for s in secs if not s["clip"] and s["offset"] > 0]
-    if moved:
-        first, last = moved[0], moved[-1]
+    for run in runs:
+        if run[0]["offset"] <= 0:
+            continue
+        first, last = run[0], run[-1]
         for na, va in ((first["narration_start"], first["video_start"]), (last["narration_end"], last["video_end"])):
             parts.append(
                 f'<line class="lead" x1="{tx(na):.1f}" y1="{narr_y + bh + 2}" x2="{tx(va):.1f}" y2="{vid_y - 2}"/>'
             )
-        sx = tx(split_at)
+        sx = tx(first["narration_start"])
         parts.append(f'<line class="cue" x1="{sx:.1f}" y1="{narr_y - 12}" x2="{sx:.1f}" y2="{narr_y + bh + 6}"/>')
         parts.append(f'<text class="note acc" x="{sx:.1f}" y="{narr_y - 18}" text-anchor="middle">split</text>')
     for a, b in d["captions"]:
@@ -910,7 +916,8 @@ def narration_split(pal: dict[str, str], background: bool) -> str:
     for n, t in enumerate(d["chapters"]):
         x = tx(t)
         parts.append(f'<line class="ch" x1="{x:.1f}" y1="{chap_y}" x2="{x:.1f}" y2="{chap_y + 16}"/>')
-        num = secs[n]["number"] if n < len(secs) else n + 1
+        # A chapter starts with a section, and consecutive sections with the same title share one chapter.
+        num = next((s["number"] for s in secs if abs(s["video_start"] - t) < 0.01), n + 1)
         parts.append(f'<text class="tl ink" x="{x + 4:.1f}" y="{chap_y + 13}">{num}</text>')
     axis_y = chap_y + 36
     parts.append(f'<line class="axis" x1="{x0}" y1="{axis_y}" x2="{x1}" y2="{axis_y}"/>')
@@ -922,15 +929,19 @@ def narration_split(pal: dict[str, str], background: bool) -> str:
             f'<text class="tl" x="{x:.1f}" y="{axis_y + 20}" text-anchor="middle">{t // 60}:{t % 60:02d}</text>'
         )
         t += 30
-    clip = next((s for s in secs if s["clip"]), None)
+    clips = [s for s in secs if s["clip"]]
+    listed = lambda nums: ", ".join(nums[:-1]) + (" and " if len(nums) > 1 else "") + nums[-1]  # noqa: E731
     desc = (
         (
-            f"The narration track holds sections {', '.join(str(s['number']) for s in secs if not s['clip'])} back to back. "
-            f"The video plays section {clip['number']}, a clip of {clip['video_end'] - clip['video_start']:.0f} seconds, after section {clip['number'] - 1}. "
-            f"The narration splits there, and sections {' and '.join(str(s['number']) for s in moved)} start later in the video. "
-            "Captions sit under page sections only, and every section starts a chapter."
+            f"The narration track holds sections {listed([str(s['number']) for s in secs if not s['clip']])} back to back. "
+            + " ".join(
+                f"The video plays section {c['number']}, a clip of {c['video_end'] - c['video_start']:.2f} seconds, after section {c['number'] - 1}."
+                for c in clips
+            )
+            + f" The narration splits before each page section that follows a clip, and sections {listed([str(s['number']) for s in moved])} start later in the video. "
+            "Captions sit under page sections only. Each chapter starts with a section, and consecutive sections with the same title share one."
         )
-        if clip and moved
+        if clips and moved
         else "The narration track and the video, section by section."
     )
     return _svg(w, h, "The narration pauses for a clip", desc, css, pal, background, "".join(parts))
@@ -1087,7 +1098,7 @@ def cue_offset(pal: dict[str, str], background: bool) -> str:
 
 # ---- rebuild lanes ----------------------------------------------------------------------------
 
-EDITED_SECTION = 3  # the scaffold's own edit: section 4 of the lesson changes a sentence of section 3
+EDITED_SECTION = 1  # the scaffold's own edit: section 6 adds a fourth count to the Open, section 1
 LANES = (
     # lane, the page sections that run in it, the text on those, the text on the other page sections
     ("narrate", {EDITED_SECTION}, "voiced", "cached"),
@@ -1113,7 +1124,7 @@ def hatch(pal: dict[str, str], pid: str = "hatch") -> str:
 
 
 def rebuild_lanes(pal: dict[str, str], background: bool) -> str:
-    """What runs again after section 3 is edited, in narration and in the two kinds of build."""
+    """What runs again after section 1 is edited, in narration and in the two kinds of build."""
     sections = scaffold_sections()
     w, h = 1200, 332
     left, col0, gap = 60, 244, 10
@@ -1164,9 +1175,15 @@ def rebuild_lanes(pal: dict[str, str], background: bool) -> str:
     pages = [n for n, _t, clip in sections if not clip]
     clips = [n for n, _t, clip in sections if clip]
     others = ", ".join(str(n) for n in pages if n != EDITED_SECTION)
+    names = [str(n) for n in clips]
+    clip_text = (
+        f"Section {names[0]} is a clip"
+        if len(names) == 1
+        else f"Sections {', '.join(names[:-1])} and {names[-1]} are clips"
+    )
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
   <title id="t">What runs again after an edit to section {EDITED_SECTION}</title>
-  <desc id="d">{len(sections)} section columns and three lanes. Section {", ".join(map(str, clips))} is a clip in every lane. In the narrate lane, section {EDITED_SECTION} is voiced, and sections {others} are cached. A plain build records every page section. A build with --only {EDITED_SECTION} records section {EDITED_SECTION} and keeps the other recordings. The assemble bar spans every section.</desc>
+  <desc id="d">{len(sections)} section columns and three lanes. {clip_text} in every lane. In the narrate lane, section {EDITED_SECTION} is voiced, and sections {others} are cached. A plain build records every page section. A build with --only {EDITED_SECTION} records section {EDITED_SECTION} and keeps the other recordings. The assemble bar spans every section.</desc>
   <defs><style>{chr(10).join(css)}</style>{hatch(pal)}</defs>
   {bg_rect(pal, w, h, background)}
   {"".join(rows)}
@@ -1257,11 +1274,12 @@ def render_png(svg: str, target: Path, width: int, height: int) -> None:
 # ---- capture ----------------------------------------------------------------------------------
 
 FIG_DATA = ROOT / "scripts" / "figure-data"
-VERIFY_CUE = "4:4.1words"  # the cue the verify figures and the verify samples in the docs share
+# The cue the verify figures and the verify samples in the docs share. Section 8 plays scene 7.
+VERIFY_CUE = "8:7.1checked"
 CUE_OFFSET_WORDS = ("3", "it", "steps", "downhill")  # section, then the words around 3.4steps ("So it steps downhill")
-# The clip figures come from the clip project: the scaffold with the clip section that
-# docs/guides/clip-section.mdx adds as section 4, so the edit and the close become sections 5 and 6.
-DUCK_SECTIONS = ("03", "04", "05")  # the underscore lane: the end of section 3, the clip, the start of section 5
+# The clip figures come from the clip project: the scaffold with the test clip that docs/guides/clip-section.mdx
+# puts in its clip section 5, the BEFORE clip of the edit. Section 7 stays a slate.
+DUCK_SECTIONS = ("04", "05", "06")  # the underscore lane: the end of section 4, the clip, the start of section 6
 DUCK_WINDOW = (-3.0, 4.0)  # seconds before the clip starts and after it ends
 
 
@@ -1272,9 +1290,9 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
 
         uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson --clip-project path/to/clip-lesson
 
-    The scaffold has no clip section, so the narration split and the duck lane come from the clip
-    project, a second scaffold with the clip section that docs/guides/clip-section.mdx adds, built
-    the same way. Without --clip-project those two data files stay as they are.
+    The scaffold's clip sections play slates, with no sound, so the narration split and the duck lane come
+    from the clip project, a second scaffold with the test clip that docs/guides/clip-section.mdx puts in
+    section 5, built the same way. Without --clip-project those two data files stay as they are.
 
     It reads the builds and never writes into a project. It writes scripts/figure-data/*.json,
     and the draw functions read only those files, so a scaffold change is a new capture, not a
@@ -1426,10 +1444,10 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     starts, total = vmod.section_starts(project)
     sections = sorted([*project.page_sections, *project.clip_sections], key=lambda s: s.number)
     if not any(s.is_clip for s in sections):
-        sys.exit(f"{clip_dir}: no clip section. Add the one from docs/guides/clip-section.mdx.")
+        sys.exit(f"{clip_dir}: no clip section. Put in the test clip from docs/guides/clip-section.mdx.")
     source = {
         **source,
-        "build": "decktalk build --silent on the scaffold with the clip section from docs/guides/clip-section.mdx",
+        "build": "decktalk build --silent on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
         "estimated_words": timeline.estimated,
     }
 

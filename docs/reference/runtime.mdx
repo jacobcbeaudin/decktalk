@@ -11,17 +11,23 @@ how the parts work together.
 Include the runtime before the scene definitions. After you upgrade DeckTalk, run
 `decktalk runtime` to refresh the project's copy.
 
-{/* copied from template/deck/index.html, scene 4, with most of the markup and the handlers cut */}
+{/* copied from template/deck/index.html, scene 4, with most of the markup and three of its handlers cut */}
 ```html deck/index.html
 <script src="decktalk-runtime.js"></script>
 <script>
 DeckTalk.scene(4, { name: "The edit", steps: [
-  { id: "4.1", hold: 25,
-    cues: { "4.1lesson": 0.5, "4.1sentence": 2.2, "4.1why": 7.6, "4.1words": 10.2, "4.1again": 11.7, "4.1lower": 18.1, "4.1moved": 21.0 },
+  { id: "4.1", hold: 12.4,
+    cues: { "4.1out": 1.78, "4.1video": 4.88, "4.1parts": 6.66, "4.1script": 8.6, "4.1start": 10.16 },
+    on: {
+      // "one video": the progress line fills to the end of the lesson.
+      "4.1video": (slide) => edAdd(slide, ".ed-prog .fill", "watched"),
+      // "five parts": five chips, the three watched parts filled.
+      "4.1parts": (slide) => edDel(slide, ".ed-chips", "off"),
+    },
     render: () => `
-    <div class="slide s4">
-      <p class="s4-cap" data-cue="4.1lower" data-sync>The height is the error, so lower is better.</p>
-      <div class="s4-verify" data-cue="4.1moved" data-fx="none">…</div>
+    <div class="slide ed">
+      <img class="ed-inside" src="${ED_IMG.lesson}" alt="">
+      <div class="ed-chips off">${edChips(["watched", "watched", "watched"])}</div>
     </div>` },
 ]});
 </script>
@@ -74,8 +80,9 @@ typewriter shows its full text, and a `data-sync` element shows whole.
 Note: With `cue`, only the cues that fire run their handlers. `enter` still gets `ctx.frozen` as
 true, so a figure that `enter` draws in its end state shows that state at every cue. A `cue` that is
 not one of the step's cues adds a warning, and the whole step freezes. In the scaffold,
-`?step=4.1&cue=4.1lower` shows the script diff and the rebuild strip. It hides the verify rows,
-which wait for `4.1moved`. `decktalk shots --step 4.1 --cue 4.1lower` opens that URL.
+`?step=2.1&cue=2.1aloud` shows the script card and the waveform with its word times. It hides the
+outlines that join the cue word to its drawing, which wait for `2.1word`, and the arrow to the slide
+card, which waits for `2.1follows`. `decktalk shots --step 2.1 --cue 2.1aloud` opens that URL.
 
 ## `DeckTalk.scene(id, definition)`
 
@@ -138,8 +145,9 @@ fields. A handler that takes no arguments still works.
 ```js deck/index.html
 { id: "2.1", hold: 21,
   cues: { "2.1mark": 1.1, "2.1script": 3.4, "2.1aloud": 5.9, "2.1word": 8.5, "2.1follows": 12.3, "2.1lesson": 14.5 },
-  on: handoffs(["2.1mark", "2.1lesson"], {
+  on: handoffs(["2.1mark", "2.1follows", "2.1lesson"], {
     "2.1mark": (slide) => slide.querySelector(".s2-mark").classList.add("up"),
+    "2.1follows": (slide) => slide.querySelector(".follow").classList.add("draw"),
     "2.1lesson": (slide) => settle(slide.querySelector(".s2-push"), 0.55),
   }),
   render: () => { … } }

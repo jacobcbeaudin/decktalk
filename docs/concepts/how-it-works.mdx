@@ -84,7 +84,7 @@ A silent build replaces the voice with a click track, so it needs no account and
 ```text
 [sil ] 01-open.mp3  29 words -> 17.83s (estimated words)
 [sil ] 02-how-it-works.mp3  40 words -> 20.83s (estimated words)
-[sil ] 03-how-ai-learns.mp3  264 words -> 132.02s (estimated words)
+[sil ] 03-how-ai-learns.mp3  285 words -> 142.54s (estimated words)
 ```
 
 - The click track has a soft click at the start of every estimated word, at -24 dBFS.
@@ -105,9 +105,9 @@ A silent build after a voiced build empties the narration cache.
 A clip section plays a video with its own audio. `narrate`, `record`, and `measure` skip it, and the narration
 pauses for a clip between two page sections.
 
-<Frame caption="The narration pauses for the clip and resumes with section 5.">
-  <img className="block dark:hidden" src="/images/narration-split-light.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 5, and 6 back to back, with a split after section 3. The video lane plays the 4 s clip of section 4 after section 3, and dashed leads move sections 5 and 6 later by its length. Captions sit under page sections only. Chapters mark every section start." />
-  <img className="hidden dark:block" src="/images/narration-split-dark.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 5, and 6 back to back, with a split after section 3. The video lane plays the 4 s clip of section 4 after section 3, and dashed leads move sections 5 and 6 later by its length. Captions sit under page sections only. Chapters mark every section start." />
+<Frame caption="The narration pauses for each clip and resumes with the next page section.">
+  <img className="block dark:hidden" src="/images/narration-split-light.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 4, 6, 8, and 9 back to back, with a split before sections 6 and 8. The video lane plays the 4 s clip of section 5 after section 4 and the 5.04 s slate of section 7 after section 6, and dashed leads move sections 6, 8, and 9 later. Captions sit under page sections only. Chapters mark the start of each title, and the five sections titled The edit share one." />
+  <img className="hidden dark:block" src="/images/narration-split-dark.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 4, 6, 8, and 9 back to back, with a split before sections 6 and 8. The video lane plays the 4 s clip of section 5 after section 4 and the 5.04 s slate of section 7 after section 6, and dashed leads move sections 6, 8, and 9 later. Captions sit under page sections only. Chapters mark the start of each title, and the five sections titled The edit share one." />
 </Frame>
 
 [Add a clip section](/guides/clip-section) shows how to place a clip and how the narration splits.

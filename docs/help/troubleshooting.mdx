@@ -311,10 +311,10 @@ The error reads `unfilled placeholders ['<NAME>'] in the script; fill them or pa
 
 ### `no spoken sections match` in narrate
 
-{/* sample: decktalk narrate --silent --only 6 on a fresh scaffold */}
+{/* sample: decktalk narrate --silent --only 5 on a fresh scaffold */}
 
 ```text
-error: no spoken sections match [6]; spoken sections are [1, 2, 3, 4, 5]
+error: no spoken sections match [5]; spoken sections are [1, 2, 3, 4, 6, 8, 9]
 ```
 
 **Cause.** `--only` names a clip section or a number with no script heading.
@@ -352,9 +352,11 @@ timeline then covers only the sections that have audio.
 
 ```text
                     ! 3.4name: phrase not found: 'gradient decent'
- 04    29.6      -  4.1lesson@0.99,4.1sentence@2.96,4.1why@10.85,4.1words@14.31,4.1again@16.28,4.1lower@23.19,4.1moved@26.64
- 05    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
-5 sections with cues; 1 unresolved  (estimated words: times are placeholders)
+ 04    14.3      -  4.1out@2.65,4.1video@7.42,4.1parts@9.0,4.1script@11.12,4.1start@12.71
+ 06    20.9      -  6.1step@2.61,6.1four@5.22,6.1box@7.32,6.1build@10.97,6.1aloud@14.11,6.1kept@16.2,6.1new@19.86
+ 08    12.9      -  7.1box@2.39,7.1moved@5.26,7.1checked@10.03,7.1back@11.47
+ 09    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
+7 sections with cues; 1 unresolved  (estimated words: times are placeholders)
 error: 1 cue(s) could not be matched to the narration; a step whose cues are unresolved never appears. Fix the phrases in cues.json (see the notes above) or pass allow_unresolved=True / --allow-unresolved:
   section 03: 3.4name: phrase not found: 'gradient decent'
 ```
@@ -383,9 +385,9 @@ unresolved never mounts.
 
 ```text
                     ! 5.1cap: not in deck/index.html
-5 sections with cues; 0 unresolved  (estimated words: times are placeholders)
+7 sections with cues; 0 unresolved  (estimated words: times are placeholders)
 error: 1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal them. Add data-cue="5.1cap" to the step in deck/index.html, fix the id in cues.json, or pass --allow-unknown:
-  section 05: 5.1cap: not in deck/index.html
+  section 09: 5.1cap: not in deck/index.html
 ```
 
 **Cause.** `beats` looks for each cue id in its page in quotes or backticks, and did not find this
@@ -609,10 +611,10 @@ the same amount.
 
 ### `missing; slate for` in assemble
 
-{/* sample: decktalk assemble in clip-lesson from Add a clip section, with optional = true and no media/chips.mp4 */}
+{/* sample: decktalk assemble --strict in clip-lesson from Add a clip section, a fresh scaffold with no clip files */}
 
 ```text
-section 04: media/chips.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
+section 05: media/edit-before.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
 ```
 
 **Cause.** The file that `clip` names does not exist, so a titled slate plays for `slate_seconds`.
@@ -630,10 +632,10 @@ The section in the sample sets `optional = true`, so its warning ends with
 
 ### `clip missing` or `recording missing` in assemble
 
-{/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true, with no media/chips.mp4, error line */}
+{/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true from section 5, with no media/edit-before.mov, error line */}
 
 ```text
-error: section 4: clip missing: ~/clip-lesson/media/chips.mp4. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
+error: section 5: clip missing: ~/clip-lesson/media/edit-before.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
 ```
 
 **Cause.** `--strict` turns a missing recording into an error. It does the same for a missing clip,
@@ -837,7 +839,7 @@ The error reads `malformed check '<text>'; want SECTION:CUE, e.g. 3:3.1draw`.
 **Cause.** A cue argument does not start with a section number and a colon.
 
 **Fix.**
-1. Write each cue as `SECTION:CUE`, such as `4:4.1words`.
+1. Write each cue as `SECTION:CUE`, such as `8:7.1checked`.
 
 **More.** [`decktalk verify`](/reference/cli#decktalk-verify)
 
@@ -886,10 +888,10 @@ element appears whole. Usually the slide writes a number as digits and the scrip
 
 ### `matches no element, handler, or step` in a page
 
-{/* sample: decktalk record --only 5 on a scaffold copy with data-cue="5.1cap" removed from deck/index.html */}
+{/* sample: decktalk record --only 9 on a scaffold copy with data-cue="5.1cap" removed from deck/index.html */}
 
 ```text
-[page] 05-scene  cue "5.1cap" matches no element, handler, or step
+[page] 09-scene  cue "5.1cap" matches no element, handler, or step
 ```
 
 **Cause.** The cue fired, but no element has that `data-cue`, no handler is registered for it, and no
@@ -949,7 +951,7 @@ time.
 2. For drafts, set `DECKTALK_VIDEO_PRESET=veryfast`, or `preset = "veryfast"` under `[video]`.
 3. For the final video, go back to the default preset.
 
-A silent build of the scaffold took 236.6 s for its 216.72 s video. The machine was a MacBook Pro
+A silent build of the scaffold took 276 s for its 257.72 s video. The machine was a MacBook Pro
 with an Apple M5 Pro and 64 GB of memory.
 
 **More.** [Rebuild one section](/guides/rebuild-one-section)

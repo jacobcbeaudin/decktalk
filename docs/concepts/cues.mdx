@@ -43,7 +43,7 @@ the times are estimates.
 ```text
 sec  speech   need  cues
  01    16.5      -  1.1bowl@1.25,1.1ball@2.33,1.1count@6.15,1.1one@6.69,1.1two@7.24,1.1three@7.78,1.1word@15.41
-5 sections with cues; 0 unresolved  (estimated words: times are placeholders)
+7 sections with cues; 0 unresolved  (estimated words: times are placeholders)
 ```
 
 ## Matching rules
@@ -98,19 +98,19 @@ In each message, `<id>` and `<step>` stand for real ids. The page lists its warn
 [Cue ownership](/concepts/page-contract#cue-ownership) has the ownership rules.
 
 The `beats` stage looks for each cue id in the page as a quoted literal, in single quotes, double
-quotes, or backticks. So `data-cue="4.1lower"`, a key of a step's `cues` object, and a key of an `on`
+quotes, or backticks. So `data-cue="1.1bowl"`, a key of a step's `cues` object, and a key of an `on`
 object all count. The stage skips clip sections, and it skips a page file that does not exist,
 because the recorder reports that. The cue still resolves, and `beats` still writes `beats.json`.
 
 These lines come from a copy of the scaffold with `data-cue="5.1cap"` and the `"5.1cap"` key
 removed from `deck/index.html`. `beats` exits 1.
 
-{/* sample: decktalk beats, silent build of the scaffold with cue id 5.1cap removed from the page, trimmed to section 5 */}
+{/* sample: decktalk beats, silent build of the scaffold with cue id 5.1cap removed from the page, trimmed to section 9 */}
 ```text
 sec  speech   need  cues
- 05    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
+ 09    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
                     ! 5.1cap: not in deck/index.html
-5 sections with cues; 0 unresolved  (estimated words: times are placeholders)
+7 sections with cues; 0 unresolved  (estimated words: times are placeholders)
 ```
 
 To fix an unknown id, add it to the page, or fix the id in `cues.json`. If a page builds its ids at
@@ -124,9 +124,9 @@ from a copy of the scaffold whose cue `3.4name` has the typo "gradient decent".
 {/* sample: decktalk beats, silent build of a fresh scaffold with a typo in the 3.4name phrase, trimmed to section 3 */}
 ```text
 sec  speech   need  cues
- 03   130.7      -  3.1examples@2.48,3.1rules@3.47,3.1ml@7.43,3.1box@11.39,3.1guess@13.37,3.1wrong@15.84,3.1turn@19.8,3.1again@23.27,3.2way@25.25,3.2one@31.19,3.2billions@34.16,3.2instead@37.13,3.2all@41.59,3.3two@44.06,3.3floor@45.55,3.3height@49.51,3.3bowl@53.96,3.4ball@54.95,3.4see@60.4,3.4steps@66.83,3.4again@67.83,3.5setting@79.71,3.5long@83.17,3.5short@87.13,3.6zoom@90.6,3.6low@96.54,3.6lowest@99.51,3.7ai@100.0,3.7inside@104.46,3.7num@107.43,3.7tensor@108.42,3.8gpu@109.91,3.8row@112.38,3.8once@113.87,3.8calc@118.82,3.8llm@123.77,3.8split@127.23,3.8out@130.43
+ 03   141.2      -  3.1examples@2.48,3.1rules@3.47,3.1ml@7.43,3.1box@11.39,3.1guess@13.38,3.1wrong@15.85,3.1turn@19.82,3.1right@23.29,3.1lower@25.76,3.1next@27.75,3.1fix@29.73,3.1again@31.71,3.2way@35.67,3.2one@41.62,3.2billions@44.59,3.2instead@47.56,3.2all@52.02,3.3two@54.5,3.3floor@55.98,3.3height@59.95,3.3bowl@64.41,3.4ball@65.4,3.4see@70.85,3.4steps@77.29,3.4again@78.28,3.5setting@90.17,3.5long@93.64,3.5short@97.6,3.6zoom@101.07,3.6low@107.02,3.6lowest@109.99,3.7ai@110.48,3.7inside@114.94,3.7num@117.91,3.7tensor@118.91,3.8gpu@120.39,3.8row@122.87,3.8once@124.36,3.8calc@129.31,3.8llm@134.26,3.8split@137.73
                     ! 3.4name: phrase not found: 'gradient decent'
-5 sections with cues; 1 unresolved  (estimated words: times are placeholders)
+7 sections with cues; 1 unresolved  (estimated words: times are placeholders)
 ```
 
 `decktalk build` stops after the `beats` stage, because a step whose only cues are unresolved never

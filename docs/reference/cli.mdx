@@ -244,19 +244,25 @@ These are the last lines of a silent build of the scaffold.
 ```text
 ===== verify =====
 sec    start    probe   YAVG   YMAX  result
- 01     0.00     0.20    235    243  ok
+ 01     0.00     0.20    235    241  ok
  02    17.80    18.00    227    245  ok
  03    38.60    38.80    234    245  ok
- 04   170.60   170.80    235    243  ok
- 05   201.52   201.72    227    245  ok
-total 216.72s; 0 black section start(s)
+ 04   181.12   181.32    223    244  ok
+ 05   196.72   196.92     32    232  ok
+ 06   201.08   201.28    229    244  ok
+ 07   223.24   223.44     32    232  ok
+ 08   228.28   228.48    228    244  ok
+ 09   242.52   242.72    235    243  ok
+total 257.72s; 0 black section start(s)
 
 sec   cut at  before cut  result
  01    17.80   -123.3 dB  quiet
  02    38.60   -125.4 dB  quiet
- 03   170.60   -125.4 dB  quiet
- 04   201.50   -125.4 dB  quiet
- 05   214.22   -120.0 dB  quiet
+ 03   181.10   -125.4 dB  quiet
+ 04   196.72   -125.4 dB  quiet
+ 06   223.28   -125.4 dB  quiet
+ 08   242.48   -128.4 dB  quiet
+ 09   255.22   -120.0 dB  quiet
 
 built ~/my-lesson/build/out/my-lesson.mp4
 ```
@@ -291,7 +297,7 @@ decktalk narrate [-h] [--project PROJECT] [-v] [-q] [--only ONLY]
 - `narrate` never voices a clip section.
 - `narrate` caches each section by provider, voice id, model, output format, voice settings, and text.
 - `--only` rebuilds `narration.mp3` and `timeline.json` from every voiced section, not only the named ones.
-- `--only` with no spoken section fails, for example `no spoken sections match [6]; spoken sections are [1, 2, 3, 4, 5]`.
+- `--only` with no spoken section fails, for example `no spoken sections match [5]; spoken sections are [1, 2, 3, 4, 6, 8, 9]`.
 - A placeholder fails a voiced run with `unfilled placeholders [...] in the script`.
 
 The first table gives each section's word count, estimate (`est`), time budget (`target`), and audio
@@ -310,18 +316,22 @@ length (`actual`). The second table is the timeline in `narration.mp3`.
 ---------------------------------------------------------------------
  1  open                      29   0:12    --      0:18  -
  2  how-it-works              40   0:17    --      0:21  -
- 3  how-ai-learns            264   1:53    --      2:12  -
- 4  the-edit                  60   0:26    --      0:31  -
- 5  close                     25   0:11    --      0:13  -
+ 3  how-ai-learns            285   2:02    --      2:23  -
+ 4  the-edit                  27   0:12    --      0:16  -
+ 6  the-edit                  40   0:17    --      0:22  -
+ 8  the-edit                  27   0:12    --      0:14  -
+ 9  close                     25   0:11    --      0:13  -
 ---------------------------------------------------------------------
-    total                    418   2:59            3:34
+    total                    473   3:23            4:06
   #  section                  start     end  length
   1  Open                      0:00    0:18    17.8
   2  How it works              0:18    0:39    20.8
-  3  How AI learns             0:39    2:51   132.0
-  4  The edit                  2:51    3:22    30.9
-  5  Close                     3:22    3:34    12.7
-     narration total 3:34  (estimated: silent placeholders)
+  3  How AI learns             0:39    3:01   142.5
+  4  The edit                  3:01    3:17    15.6
+  6  The edit                  3:17    3:39    22.2
+  8  The edit                  3:39    3:53    14.2
+  9  Close                     3:53    4:06    12.7
+     narration total 4:06  (estimated: silent placeholders)
 ```
 
 ### `decktalk beats`
@@ -364,11 +374,13 @@ Note: a clip section with cues prints `--` and `(no narration (clip section, or 
 sec  speech   need  cues
  01    16.5      -  1.1bowl@1.25,1.1ball@2.33,1.1count@6.15,1.1one@6.69,1.1two@7.24,1.1three@7.78,1.1word@15.41
  02    19.5      -  2.1mark@1.46,2.1script@2.92,2.1aloud@5.85,2.1word@9.26,2.1follows@14.62,2.1lesson@17.06
- 03   130.7      -  3.1examples@2.48,3.1rules@3.47,3.1ml@7.43,3.1box@11.39,3.1guess@13.37,3.1wrong@15.84,3.1turn@19.8,3.1again@23.27,3.2way@25.25,3.2one@31.19,3.2billions@34.16,3.2instead@37.13,3.2all@41.59,3.3two@44.06,3.3floor@45.55,3.3height@49.51,3.3bowl@53.96,3.4ball@54.95,3.4see@60.4,3.4steps@66.83,3.4again@67.83,3.5setting@79.71,3.5long@83.17,3.5short@87.13,3.6zoom@90.6,3.6low@96.54,3.6lowest@99.51,3.7ai@100.0,3.7inside@104.46,3.7num@107.43,3.7tensor@108.42,3.8gpu@109.91,3.8row@112.38,3.8once@113.87,3.8calc@118.82,3.8llm@123.77,3.8split@127.23,3.8out@130.43
+ 03   141.2      -  3.1examples@2.48,3.1rules@3.47,3.1ml@7.43,3.1box@11.39,3.1guess@13.38,3.1wrong@15.85,3.1turn@19.82,3.1right@23.29,3.1lower@25.76,3.1next@27.75,3.1fix@29.73,3.1again@31.71,3.2way@35.67,3.2one@41.62,3.2billions@44.59,3.2instead@47.56,3.2all@52.02,3.3two@54.5,3.3floor@55.98,3.3height@59.95,3.3bowl@64.41,3.4ball@65.4,3.4see@70.85,3.4steps@77.29,3.4again@78.28,3.5setting@90.17,3.5long@93.64,3.5short@97.6,3.6zoom@101.07,3.6low@107.02,3.6lowest@109.99,3.7ai@110.48,3.7inside@114.94,3.7num@117.91,3.7tensor@118.91,3.8gpu@120.39,3.8row@122.87,3.8once@124.36,3.8calc@129.31,3.8llm@134.26,3.8split@137.73
                     ! 3.4name: phrase not found: 'gradient decent'
- 04    29.6      -  4.1lesson@0.99,4.1sentence@2.96,4.1why@10.85,4.1words@14.31,4.1again@16.28,4.1lower@23.19,4.1moved@26.64
- 05    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
-5 sections with cues; 1 unresolved  (estimated words: times are placeholders)
+ 04    14.3      -  4.1out@2.65,4.1video@7.42,4.1parts@9.0,4.1script@11.12,4.1start@12.71
+ 06    20.9      -  6.1step@2.61,6.1four@5.22,6.1box@7.32,6.1build@10.97,6.1aloud@14.11,6.1kept@16.2,6.1new@19.86
+ 08    12.9      -  7.1box@2.39,7.1moved@5.26,7.1checked@10.03,7.1back@11.47
+ 09    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
+7 sections with cues; 1 unresolved  (estimated words: times are placeholders)
 ```
 
 ### `decktalk record`
@@ -407,12 +419,16 @@ decktalk record [-h] [--project PROJECT] [-v] [-q] [--only ONLY]
        build/rec/01-scene.webm  (lead 1.51s)
 [rec ] section 02 (deck/index.html?scene=2)  21.1s ...
        build/rec/02-scene.webm  (lead 1.50s)
-[rec ] section 03 (deck/lesson.html?scene=3)  132.3s ...
+[rec ] section 03 (deck/lesson.html?scene=3)  142.8s ...
        build/rec/03-scene.webm  (lead 1.51s)
-[rec ] section 04 (deck/index.html?scene=4)  31.2s ...
+[rec ] section 04 (deck/index.html?scene=4)  15.9s ...
        build/rec/04-scene.webm  (lead 1.51s)
-[rec ] section 05 (deck/index.html?scene=5)  14.7s ...
-       build/rec/05-scene.webm  (lead 1.51s)
+[rec ] section 06 (deck/index.html?scene=6)  22.5s ...
+       build/rec/06-scene.webm  (lead 1.51s)
+[rec ] section 08 (deck/index.html?scene=7)  14.5s ...
+       build/rec/08-scene.webm  (lead 1.50s)
+[rec ] section 09 (deck/index.html?scene=5)  14.7s ...
+       build/rec/09-scene.webm  (lead 1.50s)
 ```
 
 ### `decktalk measure`
@@ -449,11 +465,13 @@ frame. Narration t=0 is one frame after it. The table columns are `trim` (t=0 in
 
 ```text
 sec    trim    wall  method
- 01   1.440   1.511  cover (36 magenta frames)
+ 01   1.360   1.509  cover (34 magenta frames)
  02   1.440   1.503  cover (36 magenta frames)
- 03   1.360   1.510  cover (34 magenta frames)
+ 03   1.440   1.508  cover (34 magenta frames)
  04   1.440   1.507  cover (36 magenta frames)
- 05   1.440   1.507  cover (36 magenta frames)
+ 06   1.440   1.508  cover (36 magenta frames)
+ 08   1.440   1.502  cover (36 magenta frames)
+ 09   1.440   1.501  cover (36 magenta frames)
 ```
 
 ### `decktalk check`
@@ -504,11 +522,13 @@ puts the stall length in `stall_ms`.
 
 ```text
 sec  webm_s   want_s   Y10    Y50    Y90    MAX50   verdict
-01   20.5     18.1     235    229    227    245     ok
+01   20.4     18.1     235    230    227    255     ok
 02   23.5     21.1     227    228    234    243     ok
-03   134.6    132.3    228    212    222    242     ok
-04   33.6     31.2     229    231    227    241     ok
-05   17.1     14.7     227    230    227    245     ok
+03   145.2    142.8    228    212    223    240     ok
+04   18.3     15.9     223    229    231    248     ok
+06   24.9     22.5     229    231    230    243     ok
+08   16.9     14.5     228    228    235    244     ok
+09   17.1     14.7     235    230    227    245     ok
 ```
 
 ### `decktalk assemble`
@@ -547,18 +567,24 @@ markers file, the underscore, the ambience bed, and the sound effects. **Writes*
 {/* sample: decktalk assemble after a silent build of a fresh scaffold */}
 
 ```text
-[cut ] 01  01-scene.webm (lead 1.44s trimmed) -> 01-section.mp4  (17.800s)
+[cut ] 01  01-scene.webm (lead 1.36s trimmed) -> 01-section.mp4  (17.800s)
 [cut ] 02  02-scene.webm (lead 1.44s trimmed) -> 02-section.mp4  (20.800s)
-[cut ] 03  03-scene.webm (lead 1.36s trimmed) -> 03-section.mp4  (132.000s)
-[cut ] 04  04-scene.webm (lead 1.44s trimmed) -> 04-section.mp4  (30.920s)
-[cut ] 05  05-scene.webm (lead 1.44s trimmed) -> 05-section.mp4  (15.200s)
-[cat ] 5 sections, straight cuts
-[mix ] 2 audio input(s) -> my-lesson.mp4
+[cut ] 03  03-scene.webm (lead 1.44s trimmed) -> 03-section.mp4  (142.520s)
+[cut ] 04  04-scene.webm (lead 1.44s trimmed) -> 04-section.mp4  (15.600s)
+section 05: media/edit-before.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
+[cut ] 05  slate -> 05-section.mp4  (4.360s)
+[cut ] 06  06-scene.webm (lead 1.44s trimmed) -> 06-section.mp4  (22.160s)
+section 07: media/edit-after.mov missing; slate for 5.04s (drop your clip at that path; the section is optional, so --strict allows the slate)
+[cut ] 07  slate -> 07-section.mp4  (5.040s)
+[cut ] 08  08-scene.webm (lead 1.44s trimmed) -> 08-section.mp4  (14.240s)
+[cut ] 09  09-scene.webm (lead 1.44s trimmed) -> 09-section.mp4  (15.200s)
+[cat ] 9 sections, straight cuts
+[mix ] 4 audio input(s) -> my-lesson.mp4
 [loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, and the clicks stay at -24 dBFS for the a/v check
-[caps] 42 cue(s) -> my-lesson.srt, my-lesson.vtt
+[caps] 48 cue(s) -> my-lesson.srt, my-lesson.vtt
 [chap] 5 chapter(s) -> my-lesson.chapters.txt
-done: ~/my-lesson/build/out/my-lesson.mp4  (216.72s)  copy: my-lesson-20260913-2148.mp4
-~/my-lesson/build/out/my-lesson.mp4  (216.72s)
+done: ~/my-lesson/build/out/my-lesson.mp4  (257.72s)  copy: my-lesson-20260914-0003.mp4
+~/my-lesson/build/out/my-lesson.mp4  (257.72s)
 ```
 
 ### `decktalk verify`
@@ -573,7 +599,7 @@ decktalk verify [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
 
 | Option | Default | Meaning |
 |---|---|---|
-| `SECTION:CUE ...` | every cue in `beats.json` | Checks only these cues, such as `4:4.1words`. |
+| `SECTION:CUE ...` | every cue in `beats.json` | Checks only these cues, such as `8:7.1checked`. |
 | `--cue SECTION:CUE` | none | Adds one cue after the positional cues. Repeatable. |
 | `--only ONLY` | every section | Keeps only the cues of these sections. Starts and cuts are always checked. Repeatable. |
 | `--json`, `--strict`, `--no-fail` | off | See [Output and exit flags](#output-and-exit-flags). |
@@ -628,26 +654,32 @@ and has the JSON reason `NO_CLICK`. `NO_CLICK` is not a failure.
 | 0 | Every start, cut, and measured cue passed. |
 | 1 | A certain result, a malformed `SECTION:CUE`, or no assembled video. |
 
-{/* sample: decktalk verify 4:4.1words after decktalk build --silent on a fresh scaffold */}
+{/* sample: decktalk verify 8:7.1checked after decktalk build --silent on a fresh scaffold */}
 
 ```text
 sec    start    probe   YAVG   YMAX  result
- 01     0.00     0.20    235    243  ok
+ 01     0.00     0.20    235    241  ok
  02    17.80    18.00    227    245  ok
  03    38.60    38.80    234    245  ok
- 04   170.60   170.80    235    243  ok
- 05   201.52   201.72    227    245  ok
-total 216.72s; 0 black section start(s)
+ 04   181.12   181.32    223    244  ok
+ 05   196.72   196.92     32    232  ok
+ 06   201.08   201.28    229    244  ok
+ 07   223.24   223.44     32    232  ok
+ 08   228.28   228.48    228    244  ok
+ 09   242.52   242.72    235    243  ok
+total 257.72s; 0 black section start(s)
 
 sec   cut at  before cut  result
  01    17.80   -123.3 dB  quiet
  02    38.60   -125.4 dB  quiet
- 03   170.60   -125.4 dB  quiet
- 04   201.50   -125.4 dB  quiet
- 05   214.22   -120.0 dB  quiet
+ 03   181.10   -125.4 dB  quiet
+ 04   196.72   -125.4 dB  quiet
+ 06   223.28   -125.4 dB  quiet
+ 08   242.48   -128.4 dB  quiet
+ 09   255.22   -120.0 dB  quiet
 
 check                 cue       at   chg %   ctl %   offset     a/v  result
-4:4.1words          14.31   184.91    1.47    0.00    +10ms    +9ms  changed
+8:7.1checked        10.03   238.31    6.56    0.00    +10ms    +3ms  changed
 ```
 
 ## `decktalk soundscape`
@@ -693,8 +725,8 @@ decktalk shots [-h] [--project PROJECT] [-v] [-q] [--page PAGE]
 |---|---|---|---|
 | Every step | `decktalk shots` | `?step=ID` for each step | `build/shots/<page>/step-<id>.png` |
 | Some steps | `decktalk shots --step 3.1` | `?step=3.1` | `build/shots/<page>/step-3.1.png` |
-| A step at a cue | `decktalk shots --step 4.1 --cue 4.1lower` | `?step=4.1&cue=4.1lower` | `build/shots/<page>/step-4.1-cue-4.1lower.png` |
-| Section frames | `decktalk shots --section 5 --at 12.5` | the recorder's URL, with cue times | `build/shots/section-05-at-12.5s.png` |
+| A step at a cue | `decktalk shots --step 6.1 --cue 6.1box` | `?step=6.1&cue=6.1box` | `build/shots/<page>/step-6.1-cue-6.1box.png` |
+| Section frames | `decktalk shots --section 9 --at 12.5` | the recorder's URL, with cue times | `build/shots/section-09-at-12.5s.png` |
 
 Note: the `<page>/` folder, such as `index/` or `lesson/`, appears only when `shots` covers two or
 more pages. `--page` with one file writes no folder. Section frames never use one.
@@ -725,6 +757,8 @@ more pages. `--page` with one file writes no folder. Section frames never use on
 wrote build/shots/index/step-1.1.png
 wrote build/shots/index/step-2.1.png
 wrote build/shots/index/step-4.1.png
+wrote build/shots/index/step-6.1.png
+wrote build/shots/index/step-7.1.png
 wrote build/shots/index/step-5.1.png
 wrote build/shots/lesson/step-3.1.png
 wrote build/shots/lesson/step-3.2.png
@@ -778,16 +812,22 @@ cues     cues.json  ok
   02  deck/index.html?scene=2                  rec cut
   03  deck/lesson.html?scene=3                 rec cut
   04  deck/index.html?scene=4                  rec cut
-  05  deck/index.html?scene=5                  rec cut
+  05  clip media/edit-before.mov                   cut
+  06  deck/index.html?scene=6                  rec cut
+  07  clip media/edit-after.mov                    cut
+  08  deck/index.html?scene=7                  rec cut
+  09  deck/index.html?scene=5                  rec cut
   #  section                  start     end  length
   1  Open                      0:00    0:18    17.8
   2  How it works              0:18    0:39    20.8
-  3  How AI learns             0:39    2:51   132.0
-  4  The edit                  2:51    3:22    30.9
-  5  Close                     3:22    3:34    12.7
-     narration total 3:34  (estimated: silent placeholders)
-beats    5 section(s) with resolved cues
-final    build/out/my-lesson.mp4  3:37
+  3  How AI learns             0:39    3:01   142.5
+  4  The edit                  3:01    3:17    15.6
+  6  The edit                  3:17    3:39    22.2
+  8  The edit                  3:39    3:53    14.2
+  9  Close                     3:53    4:06    12.7
+     narration total 4:06  (estimated: silent placeholders)
+beats    7 section(s) with resolved cues
+final    build/out/my-lesson.mp4  4:18
 captions build/out/my-lesson.srt  ok
 captions build/out/my-lesson.vtt  ok
 chapters build/out/my-lesson.chapters.txt  ok

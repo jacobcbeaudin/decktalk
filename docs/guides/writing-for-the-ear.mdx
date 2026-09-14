@@ -120,15 +120,17 @@ This table comes from `decktalk narrate --dry-run` on the scaffold with that hea
 ---------------------------------------------------------------------
  1  open                      29   0:12    --      --    -
  2  how-it-works              40   0:17    --      --    -
- 3  how-ai-learns            264   1:53    1:00    --    -
- 4  the-edit                  60   0:26    --      --    -
- 5  close                     25   0:11    --      --    -
+ 3  how-ai-learns            285   2:02    1:00    --    -
+ 4  the-edit                  27   0:12    --      --    -
+ 6  the-edit                  40   0:17    --      --    -
+ 8  the-edit                  27   0:12    --      --    -
+ 9  close                     25   0:11    --      --    -
 ---------------------------------------------------------------------
-    total                    418   2:59            --
+    total                    473   3:23            --
 ```
 
 - `target` is the length of the budget, one minute for section 3.
-- `est` paces the words at `words_per_minute` (140). Section 3 estimates 1:53, so it runs past its budget.
+- `est` paces the words at `words_per_minute` (140). Section 3 estimates 2:02, so it runs past its budget.
 - `actual` fills in after a voiced build.
 
 If `est` is longer than `target`, delete a sentence. Widen the budget only after a voiced build fills the `actual` column.
