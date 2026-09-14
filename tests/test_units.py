@@ -1581,3 +1581,35 @@ def test_consecutive_sections_with_the_same_title_share_one_chapter(tmp_path):
         (2.0, 7.52, "The edit"),
         (7.52, 9.0, "Close"),
     ]
+
+
+def test_a_renumbered_take_is_found_by_its_hash_and_moves_without_clobbering(tmp_path):
+    from decktalk.stages.narrate import Segment, is_cached, reusable_entry, reuse_takes
+
+    audio = tmp_path
+    for name, body in [("01-open.mp3", "open"), ("01-open.words.json", "[]"), ("05-x.mp3", "five"),
+                       ("05-x.words.json", "[5]"), ("06-x.mp3", "six"), ("06-x.words.json", "[6]")]:  # fmt: skip
+        (audio / name).write_text(body, encoding="utf-8")
+
+    def entry(index: int, digest: str) -> ManifestSegment:
+        key = f"{index:02d}"
+        slug = "open" if index == 1 else "x"
+        return ManifestSegment(index, "X", f"{key}-{slug}.mp3", f"{key}-{slug}.words.json", digest, 1, 1.0, 1.0)
+
+    previous = Manifest("s", "m", "mp3")
+    previous.segments = {"01": entry(1, "h1"), "05": entry(5, "h5"), "06": entry(6, "h6")}
+    to_four = Segment(4, "X", "x", "five text")
+    to_five = Segment(5, "X", "x", "six text")
+    assert not is_cached(previous.segments["05"], to_five, "h6", audio)
+    assert reusable_entry(previous, to_four, "h5", audio) == ("05", previous.segments["05"])
+    assert reusable_entry(previous, to_five, "h6", audio) == ("06", previous.segments["06"])
+    assert reusable_entry(previous, to_four, "nope", audio) is None
+    # The first spoken section carries the lead-in silence, so its take never moves in or out.
+    assert reusable_entry(previous, Segment(2, "X", "x", "t", lead_break=True), "h5", audio) is None
+    assert reusable_entry(previous, to_four, "h1", audio) is None
+    # 05 moves to 04 while 06 moves onto 05's old name, and each file keeps its own take.
+    reuse_takes([(previous.segments["05"], to_four), (previous.segments["06"], to_five)], audio)
+    assert (audio / "04-x.mp3").read_text(encoding="utf-8") == "five"
+    assert (audio / "05-x.mp3").read_text(encoding="utf-8") == "six"
+    assert (audio / "05-x.words.json").read_text(encoding="utf-8") == "[6]"
+    assert not list(audio.glob(".reuse-*"))

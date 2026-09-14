@@ -9,6 +9,8 @@ project maps to a clip are skipped.
 Each section is synthesized with word timestamps, cached by a hash of model, voice,
 settings and text, padded so speech ends at least min_tail_seconds before the file
 ends, then every section is concatenated with no gaps into build/audio/narration.mp3.
+A renumbered section keeps its take: when its key misses, an entry of the previous
+manifest with the same hash lends its files, copied to the new name.
 build/audio/timeline.json records each section's absolute start and end and every
 word at absolute time; the recorder and the assembler cut the visuals to it.
 
@@ -23,7 +25,8 @@ import hashlib
 import json
 import logging
 import re
-from dataclasses import dataclass
+import shutil
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -251,6 +254,54 @@ def text_hash(segment: Segment, cfg: NarrationConfig, provider_key: str, setting
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
+def is_cached(entry: ManifestSegment | None, seg: Segment, digest: str, audio_dir: Path) -> bool:
+    """True when the entry holds this section's take under its current file names."""
+    return (
+        entry is not None
+        and entry.hash == digest
+        and entry.file == seg.filename
+        and (audio_dir / seg.filename).exists()
+        and (audio_dir / seg.words_filename).exists()
+    )
+
+
+def reusable_entry(
+    previous: Manifest | None, seg: Segment, digest: str, audio_dir: Path
+) -> tuple[str, ManifestSegment] | None:
+    """(key, entry) of a previous take of the same text under another section number, or None.
+
+    A section that was renumbered keeps its hash, because the hash has no section number in
+    it. Only the first spoken section carries the lead-in silence, so a take never moves into
+    or out of that place.
+    """
+    if previous is None or seg.lead_break or not previous.segments:
+        return None
+    first = min(previous.segments)
+    for key, entry in previous.segments.items():
+        if (
+            key != first
+            and key != seg.key
+            and entry.hash == digest
+            and (audio_dir / entry.file).exists()
+            and (audio_dir / entry.words_file).exists()
+        ):
+            return key, entry
+    return None
+
+
+def reuse_takes(moves: list[tuple[ManifestSegment, Segment]], audio_dir: Path) -> None:
+    """Copy each take to its new file names. Every source is copied aside first, so a move never
+    overwrites a file that another move still reads."""
+    staged: list[tuple[Path, Path]] = []
+    for i, (entry, seg) in enumerate(moves):
+        for j, (src, dst) in enumerate(((entry.file, seg.filename), (entry.words_file, seg.words_filename))):
+            tmp = audio_dir / f".reuse-{i}-{j}.tmp"
+            shutil.copyfile(audio_dir / src, tmp)
+            staged.append((tmp, audio_dir / dst))
+    for tmp, dst in staged:
+        tmp.replace(dst)
+
+
 def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -> Timeline:
     cfg = project.settings.narration
     keys = [s.key for s in order if s.key in manifest.segments]
@@ -332,6 +383,26 @@ def narrate(
         if unfilled and not allow_placeholders:
             raise ConfigError(f"unfilled placeholders {unfilled} in the script; fill them or pass allow_placeholders")
         provider = get_provider(project)
+        # A renumbered section keeps its take. Its files are copied to the new names before any
+        # section is voiced, so a new take never replaces a file that a move still needs.
+        moves: list[tuple[ManifestSegment, Segment]] = []
+        for seg in targets:
+            request = SpeechRequest(
+                text=seg.tts_text(cfg), model=model, voice_settings=voice_settings, output_format=cfg.output_format
+            )
+            digest = text_hash(seg, cfg, provider.cache_key(request), voice_settings)
+            if force or is_cached(manifest.segments.get(seg.key), seg, digest, project.audio_dir):
+                continue
+            found = reusable_entry(previous, seg, digest, project.audio_dir)
+            if found is not None:
+                key, entry = found
+                moves.append((entry, seg))
+                log.info("[move] %s  from %s, the same text under section %s", seg.filename, entry.file, int(key))
+        reuse_takes(moves, project.audio_dir)
+        for entry, seg in moves:
+            manifest.segments[seg.key] = replace(
+                entry, index=seg.index, title=seg.title, file=seg.filename, words_file=seg.words_filename
+            )
 
     by_index = {s.index: s for s in all_segments}
     order = [s.index for s in all_segments]
@@ -377,14 +448,7 @@ def narrate(
         )
         digest = text_hash(seg, cfg, provider.cache_key(request), voice_settings)
         entry = manifest.segments.get(seg.key)
-        if (
-            not force
-            and entry is not None
-            and entry.hash == digest
-            and entry.file == seg.filename
-            and out_path.exists()
-            and words_path.exists()
-        ):
+        if not force and entry is not None and is_cached(entry, seg, digest, project.audio_dir):
             # min_tail_seconds is not part of the hash, so a cached take made under a shorter
             # tail is padded here. ensure_tail measures the silence first, so a take that
             # already has enough is left untouched.

@@ -75,6 +75,10 @@ The `narrate` stage skips a section when all four of these are true:
 The hash leaves out the text of the neighbor
 sections, so an edit never voices a neighbor again.
 
+The hash also leaves out the section number. If you renumber a section and its text is unchanged, `narrate` copies
+its take from the old file names to the new ones and prints a `[move]` line. The first spoken section is the
+exception, because only its take starts with the lead-in silence. A take never moves into or out of that place.
+
 A section that is voiced again costs the characters of its whole text, not only the changed sentence.
 [Requirements](/requirements#what-spends-credits) lists every command that spends credits. The `record`
 stage has no cache, so `--only` is the way to keep a recording.
