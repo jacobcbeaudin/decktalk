@@ -43,6 +43,7 @@ Full rules: [script.md](/reference/script-md).
 - Each `[[section]]` has a `number` and an optional `title`.
 - A page section adds `page` and an optional `scene`. `scene` defaults to `number`.
 - A clip section adds `clip`, and the optional `slate_seconds` and `optional`.
+- Consecutive sections with the same `title` share one chapter.
 - A clip section with `optional = true` plays its slate under `--strict` too.
 - A clip section can sit before, between, or after page sections.
 - Only the last page section can set `hold_seconds`.
@@ -226,7 +227,7 @@ order.
 | `build/out/NN-section.mp4` | `assemble` | One section cut to its span, video only. |
 | `build/out/<name>.mp4` | `assemble` | The video with chapters, plus a copy with a timestamp in its name. |
 | `build/out/<name>.srt`, `<name>.vtt` | `assemble` | Captions from the word times. |
-| `build/out/<name>.chapters.txt` | `assemble` | One chapter per section. |
+| `build/out/<name>.chapters.txt` | `assemble` | One chapter per section, or per run of sections with the same title. |
 | `build/shots/**/*.png` | `shots` | Review screenshots, in one folder per page when there are several pages. |
 
 After a clip between page sections, final-video times are later than narration times by the clip

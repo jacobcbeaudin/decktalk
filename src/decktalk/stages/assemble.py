@@ -18,7 +18,8 @@
    applies the gain that reaches the target and a true-peak limiter at the ceiling,
    oversampled at 192 kHz. The result is measured again and reported.
 5. Captions (srt and vtt) come from the word timestamps, and chapter markers from the
-   section titles are muxed into the mp4.
+   section titles are muxed into the mp4. Consecutive sections with the same title share
+   one chapter.
 6. Atomic publish: work file, then one rename to build/out/<name>.mp4, plus a
    timestamped copy.
 """
@@ -706,15 +707,17 @@ def caption_texts(project: Project, timeline: Timeline) -> dict[str, str]:
 
 
 def build_chapters(rows: list[RenderedSection]) -> list[Chapter]:
+    """One chapter per section, where consecutive sections with the same title share one chapter."""
     starts = section_starts(rows)
-    return [
-        Chapter(
-            start=starts[r.section.key],
-            end=starts[r.section.key] + r.duration,
-            title=r.section.title or f"Section {r.section.number}",
-        )
-        for r in rows
-    ]
+    chapters: list[Chapter] = []
+    for r in rows:
+        start = starts[r.section.key]
+        title = r.section.title or f"Section {r.section.number}"
+        if chapters and chapters[-1].title == title:
+            chapters[-1] = Chapter(start=chapters[-1].start, end=start + r.duration, title=title)
+        else:
+            chapters.append(Chapter(start=start, end=start + r.duration, title=title))
+    return chapters
 
 
 def mux_chapters(src: Path, chapters: Path, dst: Path) -> None:
@@ -801,14 +804,15 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
 
     starts = section_starts(rows)
     cues = build_captions(timeline, narration_offsets(rows, timeline, starts), caption_texts(project, timeline))
+    chapters = build_chapters(rows)
     write_srt(paths["srt"], cues)
     write_vtt(paths["vtt"], cues)
-    write_chapters(paths["chapters"], build_chapters(rows))
+    write_chapters(paths["chapters"], chapters)
     log.info("[caps] %d cue(s) -> %s, %s", len(cues), paths["srt"].name, paths["vtt"].name)
     chaptered = out_dir / f".{project.name}.chapters.mp4"
     mux_chapters(work, paths["chapters"], chaptered)
     chaptered.replace(work)
-    log.info("[chap] %d chapter(s) -> %s", len(rows), paths["chapters"].name)
+    log.info("[chap] %d chapter(s) -> %s", len(chapters), paths["chapters"].name)
 
     if not work.exists() or work.stat().st_size == 0:
         raise ToolError("render produced no output")
