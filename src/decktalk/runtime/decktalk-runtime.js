@@ -94,9 +94,9 @@
   .dt-reveal.dt-on[data-fx=none]{animation:none}
   .dt-frozen .dt-reveal.dt-on,.dt-frozen .dt-slide,.dt-frozen #dt-cam{animation-duration:0s!important;animation-delay:0s!important}
   #dt-hud{position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}
-  #dt-index{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:#eee}
+  #dt-index{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}
   #dt-index h1{font-size:28px}#dt-index h2{font-size:20px;margin-top:28px}
-  #dt-index a{color:#7ee787;text-decoration:none;margin-right:16px}#dt-index code{color:#9aa4b2}
+  #dt-index a{color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}#dt-index code{color:inherit;opacity:.7}
   #dt-index .dt-steps{display:flex;flex-wrap:wrap;gap:8px 4px}
   `;
 
