@@ -19,8 +19,8 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"SoftwareApplication","name":"DeckTalk","applicationCategory":"MultimediaApplication","operatingSystem":"Linux, macOS, Windows","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://www.apache.org/licenses/LICENSE-2.0","codeRepository":"https://github.com/jacobcbeaudin/decktalk","url":"https://decktalk.app","description":"DeckTalk turns a markdown script, plain HTML slides, and your voice into one narrated mp4 in which every reveal lands on the word that introduces it."}
 </script>
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e0e0f" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff">
+<meta name="color-scheme" content="light">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23ffffff'/%3E%3Cg stroke-width='2.25' stroke-linecap='round'%3E%3Cline x1='4' y1='12' x2='4' y2='20' stroke='%23d4d4d8'/%3E%3Cline x1='9.5' y1='8' x2='9.5' y2='20' stroke='%232c1fea'/%3E%3Cline x1='15' y1='12' x2='15' y2='20' stroke='%23d4d4d8'/%3E%3Cline x1='20.5' y1='12' x2='20.5' y2='20' stroke='%23d4d4d8'/%3E%3C/g%3E%3Ccircle cx='9.5' cy='3.75' r='2.25' fill='%232c1fea'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,10 +35,7 @@
     --tight: "Inter Tight", "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
     --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #0e0e0f; --ink: #f4f4f5; --dim: #52525b; --mute: #8b8b94; --mute-2: #8b8b94; --block: #19191c; --hair: #27272a;
-            --bar: #3f3f46; --tick: #6b6b73; --blue: #7c8cff; --on-blue: #0e0e0f; --code: #141417; --mark-bar: #4f4f57; }
-  }
+  :root { color-scheme: light; }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 17px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
@@ -73,52 +70,10 @@
   .btn:hover { border-color: var(--ink); }
   .btn.primary:hover { filter: brightness(1.08); }
 
-  /* The hero animation: section 1 of the demo counts down the bowl, the script is edited, and the
-     re-voiced count lands on its new word times. Every reveal snaps, as data-fx="none" does in the deck. */
-  .demo { margin: 56px 0 0; border: 1px solid var(--hair); border-radius: 20px; padding: 36px 36px 30px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; background: var(--bg); }
-  .demo .lab { margin-bottom: 18px; display: block; }
-  .sentence { font-size: clamp(28px, 3.3vw, 42px); font-weight: 600; letter-spacing: -.02em; line-height: 1.18; margin: 0; min-height: 2.36em; }
-  .sentence .w { color: var(--dim); }
-  .sentence .w.on { color: var(--ink); }
-  .sentence .w.now { color: var(--blue); }
-  .sentence mark { background: var(--blue); color: var(--on-blue); border-radius: 5px; padding: 0 .04em; }
-  .sentence .caret { display: inline-block; width: 3px; height: .92em; margin-left: 2px; vertical-align: -.1em; background: var(--blue); }
-  .sentence .caret.off { visibility: hidden; }
-  .strip { position: relative; height: 58px; margin: 26px 0 6px; }
-  .strip .axis { position: absolute; left: 0; right: 0; top: 18px; height: 2px; background: var(--hair); }
-  .tk { position: absolute; top: 0; width: 0; }
-  .tk.shift { transition: left .6s cubic-bezier(.3,0,.1,1); }
-  .tk i { position: absolute; left: -1.5px; top: 0; width: 3px; height: 20px; border-radius: 2px; background: var(--tick); }
-  .tk.on i { background: var(--ink); }
-  .tk.now i { background: var(--blue); }
-  .tk b { position: absolute; left: 0; top: 28px; transform: translateX(-50%); font: 500 13px/1 var(--mono); color: var(--ink); white-space: nowrap; visibility: hidden; }
-  .tk.lbl b { visibility: visible; }
-  .tk.now b { color: var(--blue); }
-  .tk.ghost i { top: 12px; height: 8px; }
-  .tk[hidden] { display: none; }
-  .strip-cap { font-size: 13px; color: var(--mute); margin: 0 0 22px; }
-  .hint { font-size: 14px; color: var(--mute); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; min-height: 32px; }
-  .hint button { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--hair); background: transparent; color: var(--ink); cursor: pointer; }
-  .hint button:hover { border-color: var(--ink); }
-  .chip { font: 500 12px/1 var(--mono); letter-spacing: .02em; padding: 8px 10px; border-radius: 8px; background: var(--blue); color: var(--on-blue); visibility: hidden; }
-  .chip.on { visibility: visible; }
-  .slide { background: var(--block); border-radius: 14px; aspect-ratio: 910 / 555; position: relative; overflow: hidden; }
-  .slide svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .slide .curve { fill: none; stroke: var(--ink); stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; }
-  .slide .dotmark { fill: var(--ink); }
-  .slide .halo { fill: var(--block); }
-  .slide .ball-in { fill: var(--blue); }
-  .slide .box { fill: var(--bg); stroke: var(--ink); stroke-width: 4; }
-  .slide .box.full { fill: var(--blue); stroke: var(--blue); }
-  .slide .lbl { font: 500 36px var(--sans); text-anchor: middle; fill: var(--ink); }
-  .slide .box.full + .lbl { fill: var(--on-blue); }
-  .slide .boxes { transform: translateX(105px); }
-  .slide .boxes.four { transform: none; }
-  .slide .boxes.shift { transition: transform .45s cubic-bezier(.3,0,.1,1); }
-  .slide [hidden] { display: none; }
 
   /* the demo video */
-  .watch { padding-top: 64px; }
+  .watch { margin-top: 56px; }
+  .watch .lab { display: block; margin-bottom: 14px; }
   .player { margin: 0; }
   .player video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 20px; background: var(--block); border: 1px solid var(--hair); }
   .player figcaption { display: flex; justify-content: space-between; gap: 8px 24px; flex-wrap: wrap; margin-top: 14px; font-size: 15px; color: var(--mute); }
@@ -151,7 +106,6 @@
   footer .links a { font-size: 14px; }
 
   @media (max-width: 880px) {
-    .demo { grid-template-columns: 1fr; padding: 26px 22px 22px; gap: 28px; }
     .steps, .feats { grid-template-columns: 1fr 1fr; }
     .cmds { grid-template-columns: 1fr; padding: 30px 26px; }
   }
@@ -159,7 +113,7 @@
     .links { gap: 18px; } nav .links a:not(.cta) { display: none; }
     .steps, .feats { grid-template-columns: 1fr; }
     section { padding-top: 72px; }
-    .watch { padding-top: 56px; }
+    .watch { margin-top: 40px; }
     .install { width: 100%; justify-content: space-between; font-size: 13px; padding: 10px 10px 10px 14px; gap: 8px; }
     .install .p { display: none; }
     .cmds pre { font-size: 12.5px; }
@@ -195,35 +149,20 @@
       <a class="btn primary" href="https://docs.decktalk.app/quickstart">Read the quickstart</a>
     </div>
 
-    <div class="demo" id="demo">
-      <p class="sr">Animation of section 1 of the demo. The script line reads "A bowl. A ball. One, two, three." A bowl and a ball appear on their words, and the ball steps down the bowl on each count word, each step half the last. The count words start at 4.49, 5.26 and 5.77 seconds. Then "three." is retyped as "three, four.", section 1 is voiced again, the times move to 4.25, 4.86, 5.33 and 5.80 seconds, and the ball takes a fourth, smallest step on "four".</p>
-      <div aria-hidden="true">
-        <span class="lab">script.md · section 1</span>
-        <p class="sentence" id="sentence"></p>
-        <div class="strip" id="strip"><div class="axis"></div></div>
-        <p class="strip-cap">Start of each count word, in seconds, from the voice's word timestamps</p>
-        <div class="hint"><button id="play" type="button" aria-hidden="false">Pause</button><span class="chip" id="chip">script edited · section 1 re-voiced</span></div>
-      </div>
-      <div aria-hidden="true">
-        <span class="lab">Slide · 01 Open</span>
-        <div class="slide"><svg id="stage" viewBox="505 335 910 555"></svg></div>
-      </div>
+    <div class="watch" id="watch">
+      <span class="lab">Watch the demo · 2:37 · sound on</span>
+      <figure class="player">
+        <!-- The video source lives only here: the poster, the one <source>, and the captions track below.
+             To serve it from Cloudflare Stream or YouTube, replace this <video> element with that player. -->
+        <video id="demo-video" controls preload="none" playsinline width="1920" height="1080" poster="media/decktalk-demo-poster.jpg">
+          <source src="media/decktalk-demo.mp4" type="video/mp4">
+          <track kind="captions" src="media/decktalk-demo.vtt" srclang="en" label="English">
+        </video>
+        <figcaption><span><b>Made with DeckTalk.</b> A markdown script and HTML slides, narrated and cut to the word.</span><span>Captions available in the player.</span></figcaption>
+      </figure>
     </div>
   </header>
 
-  <section class="watch" id="watch">
-    <span class="lab">Watch the demo · 2:41 · sound on</span>
-    <h2>A lesson on how AI learns, built from one script.</h2>
-    <figure class="player">
-      <!-- The video source lives only here: the poster, the one <source>, and the captions track below.
-           To serve it from Cloudflare Stream or YouTube, replace this <video> element with that player. -->
-      <video id="demo-video" controls preload="none" playsinline width="1920" height="1080" poster="media/decktalk-demo-poster.jpg">
-        <source src="media/decktalk-demo.mp4" type="video/mp4">
-        <track kind="captions" src="media/decktalk-demo.vtt" srclang="en" label="English">
-      </video>
-      <figcaption><span><b>Made with DeckTalk.</b> A markdown script, HTML slides, and one short clip, narrated and cut to the word.</span><span>Captions available in the player.</span></figcaption>
-    </figure>
-  </section>
 
   <section id="how">
     <span class="lab">How it works</span>
@@ -294,135 +233,6 @@ $ decktalk build            <span class="c nb"># your voice</span></pre>
 
 <script>
 (() => {
-  // ---- Real word times (seconds after section 1 starts). Never edit these by hand. ----------------
-  // Before the edit: build/audio/01-open.words.json of the voiced demo project,
-  // the demo voice, where section 1 reads "... One. [beat] Two, three. [beat]".
-  const TIMES_BEFORE = { a: 0.700, bowl: 1.048, a2: 1.838, ball: 1.989, one: 4.485, two: 5.263, three: 5.774 };
-  // After the edit: build/audio/01-open.words.json of a copy of that project,
-  // one with section 1 changed to "One. [beat] Two, three, four. [beat]" and only
-  // section 1 voiced again. The whole section is a new take, so every count word moves.
-  const TIMES_AFTER = { one: 4.253, two: 4.856, three: 5.332, four: 5.797 };
-
-  // ---- The loop, in seconds of loop time --------------------------------------------------------
-  // The line shows "A bowl. A ball. One, two, three." and leaves out "Watch it step down on my count.",
-  // so the loop drops that stretch of speech: each group of words keeps its real spacing, shifted as a
-  // block. The times written on screen are always the real ones above.
-  const OPEN_SHIFT = 0.4, COUNT_SHIFT = TIMES_BEFORE.one - (TIMES_BEFORE.ball - OPEN_SHIFT + 1.0);
-  const EDIT_CARET = 4.7, EDIT_SELECT = 5.0, EDIT_TYPE = 5.3, TYPE_STEP = 0.07, CHIP_AT = 5.95, REBUILD = 6.6;
-  const AFTER_SHIFT = TIMES_AFTER.one - 7.6, LOOP = 11.6, FINAL = 11.2;
-  const COUNT = ["one", "two", "three", "four"];
-  const at1 = (k) => TIMES_BEFORE[k] - COUNT_SHIFT, at2 = (k) => TIMES_AFTER[k] - AFTER_SHIFT;
-  const OPEN = [["A", TIMES_BEFORE.a], ["bowl.", TIMES_BEFORE.bowl], ["A", TIMES_BEFORE.a2], ["ball.", TIMES_BEFORE.ball]].map(([w, t]) => [w, t - OPEN_SHIFT]);
-  // Round half up on the millisecond value, so 4.485 reads 4.49 as it does in beats.json and the video.
-  const sec = (t) => (Math.round(Math.round(t * 1000) / 10) / 100).toFixed(2);
-
-  // ---- The script line --------------------------------------------------------------------------
-  const sentence = document.getElementById("sentence");
-  const words = [];
-  const addWord = (text, gap) => { const s = document.createElement("span"); s.className = "w"; s.textContent = text; sentence.appendChild(s); words.push(s); if (gap) sentence.appendChild(document.createTextNode(" ")); return s; };
-  OPEN.forEach(([w]) => addWord(w, true));
-  addWord("One,", true); addWord("two,", true); addWord("three", false);
-  const tail = document.createElement("span"); sentence.appendChild(tail);
-  let tailHtml = null;
-  const setTail = (html) => { if (html !== tailHtml) { tail.innerHTML = html; tailHtml = html; } };
-
-  // ---- The tick strip: the start of each count word on a time axis ------------------------------
-  const strip = document.getElementById("strip");
-  const AX0 = 4.0, AX1 = 6.1, pct = (t) => ((t - AX0) / (AX1 - AX0) * 100).toFixed(2) + "%";
-  const mk = (cls) => { const d = document.createElement("div"); d.className = "tk " + cls; d.innerHTML = "<i></i><b></b>"; strip.appendChild(d); return d; };
-  const ghosts = COUNT.slice(0, 3).map((k) => { const g = mk("ghost"); g.style.left = pct(TIMES_BEFORE[k]); return g; });
-  const ticks = COUNT.map(() => mk(""));
-
-  // ---- The slide: scene 1 of the deck, the bowl y = 720 - 320 u^2 across x = 960 + 400 u -----------
-  // Each count is a step of gradient descent on u^2 at step size 0.25, so each step is half the last.
-  const STEPS = [-0.96, -0.48, -0.24, -0.12, -0.06];
-  const f1 = (v) => (+v).toFixed(1);
-  const sx = (u) => 960 + 400 * u, sy = (u) => 720 - 320 * u * u;
-  const on = (u, r) => { const m = -1.6 * u, n = Math.hypot(m, 1); return [sx(u) + (m / n) * (r + 7), sy(u) - (1 / n) * (r + 7)]; };
-  let curve = "";
-  for (let i = 0; i <= 84; i++) { const u = -1.05 + (2.1 * i) / 84; curve += (i ? "L" : "M") + f1(sx(u)) + " " + f1(sy(u)); }
-  const stage = document.getElementById("stage");
-  stage.innerHTML =
-    `<path class="curve" id="s-curve" d="${curve}"/>` +
-    STEPS.slice(0, 4).map((u, i) => { const [x, y] = on(u, 11); return `<circle class="dotmark" data-dot="${i}" cx="${f1(x)}" cy="${f1(y)}" r="11"/>`; }).join("") +
-    STEPS.map((u, i) => { const [x, y] = on(u, 28); return `<g data-ball="${i}"><circle class="halo" cx="${f1(x)}" cy="${f1(y)}" r="34"/><circle class="ball-in" cx="${f1(x)}" cy="${f1(y)}" r="28"/></g>`; }).join("") +
-    `<g class="boxes" id="s-boxes">` + COUNT.map((w, i) => `<g data-box="${i}"><rect class="box" x="${555 + 210 * i}" y="790" width="180" height="80" rx="14"/><text class="lbl" x="${645 + 210 * i}" y="843">${w}</text></g>`).join("") + `</g>`;
-  const sCurve = stage.querySelector("#s-curve"), sBoxes = stage.querySelector("#s-boxes");
-  const dots = [...stage.querySelectorAll("[data-dot]")], balls = [...stage.querySelectorAll("[data-ball]")], boxes = [...stage.querySelectorAll("[data-box]")];
-  const chip = document.getElementById("chip");
-
-  // SVG elements have no .hidden property, so toggle the attribute itself.
-  const vis = (el, show) => { if (el.hasAttribute("hidden") === show) el.toggleAttribute("hidden", !show); };
-  const cls = (el, name, v) => { if (el.classList.contains(name) !== v) el.classList.toggle(name, v); };
-
-  function render(T) {
-    const take2 = T >= REBUILD;
-    const countAt = COUNT.map((k, i) => take2 ? at2(k) : (i < 3 ? at1(k) : Infinity));
-    // The accent marks only the latest reveal.
-    const events = [[OPEN[1][1], "bowl"], [OPEN[3][1], "ball"], ...COUNT.map((k, i) => [countAt[i], k])].filter(([t]) => t <= T && !(take2 && t < REBUILD));
-    const now = events.length ? events.reduce((a, b) => (b[0] >= a[0] ? b : a))[1] : null;
-
-    OPEN.forEach(([, t], i) => { cls(words[i], "on", T >= t); cls(words[i], "now", (i === 1 && now === "bowl") || (i === 3 && now === "ball")); });
-    COUNT.slice(0, 3).forEach((k, i) => { const w = words[4 + i]; cls(w, "on", T >= countAt[i]); cls(w, "now", now === k); });
-
-    // "three." is retyped as "three, four." with a caret and a selection, as in an editor.
-    const blink = Math.floor(T * 2.5) % 2 === 0 ? "caret" : "caret off";
-    if (T < EDIT_CARET) setTail(".");
-    else if (T < EDIT_SELECT) setTail(`.<span class="${blink}"></span>`);
-    else if (T < EDIT_TYPE) setTail(`<mark>.</mark>`);
-    else if (!take2) {
-      const typed = ", four.", n = Math.min(typed.length, Math.floor((T - EDIT_TYPE) / TYPE_STEP) + 1);
-      setTail(`${typed.slice(0, n)}<span class="${n < typed.length ? "caret" : blink}"></span>`);
-    } else {
-      const fourOn = T >= countAt[3];
-      setTail(`, <span class="w${fourOn ? " on" : ""}${now === "four" ? " now" : ""}">four.</span>`);
-    }
-    cls(chip, "on", T >= CHIP_AT);
-
-    // Ticks sit at the real start times and slide to the new take's times on the rebuild.
-    ticks.forEach((tk, i) => {
-      const k = COUNT[i], show = i < 3 || take2;
-      vis(tk, show);
-      if (!show) return;
-      cls(tk, "shift", take2);
-      const t = take2 ? TIMES_AFTER[k] : TIMES_BEFORE[k], left = pct(t);
-      if (tk.style.left !== left) tk.style.left = left;
-      const b = tk.lastChild, txt = sec(t);
-      if (b.textContent !== txt) b.textContent = txt;
-      cls(tk, "on", T >= countAt[i]);
-      cls(tk, "now", now === k);
-      cls(tk, "lbl", take2 ? (i < 3 || T >= countAt[3]) : T >= countAt[i]);
-    });
-    ghosts.forEach((g) => vis(g, take2));
-
-    // The slide: the bowl on "bowl", the ball on "ball", then one step per count word.
-    vis(sCurve, T >= OPEN[1][1]);
-    let step = T >= OPEN[3][1] ? 0 : -1;
-    countAt.forEach((t) => { if (T >= t) step++; });
-    balls.forEach((b, i) => vis(b, i === step));
-    dots.forEach((d, i) => vis(d, i < step));
-    cls(sBoxes, "shift", take2); cls(sBoxes, "four", take2);
-    boxes.forEach((bx, i) => {
-      vis(bx, T >= OPEN[3][1] && (i < 3 || take2));
-      cls(bx.firstChild, "full", T >= countAt[i]);
-    });
-  }
-
-  // ---- Playback: loops while on screen, pauses off screen, and the button always wins ------------
-  const play = document.getElementById("play");
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)");
-  let raf = null, base = 0, startedAt = 0, userPaused = reduce.matches, inView = false;
-  const tick = (now) => { render(((now - startedAt) / 1000 + base) % LOOP); raf = requestAnimationFrame(tick); };
-  function start() { if (raf) return; startedAt = performance.now(); raf = requestAnimationFrame(tick); play.textContent = "Pause"; }
-  function stop() { if (!raf) return; cancelAnimationFrame(raf); raf = null; base = ((performance.now() - startedAt) / 1000 + base) % LOOP; play.textContent = "Play"; }
-  play.addEventListener("click", () => { if (raf) { userPaused = true; stop(); } else { userPaused = false; if (reduce.matches && base === FINAL) base = 0; start(); } });
-  // A still frame first: the edited state, which is also all a reduced-motion viewer sees.
-  base = FINAL; render(FINAL); play.textContent = "Play";
-  if ("IntersectionObserver" in window) {
-    new IntersectionObserver((es) => { inView = es[0].isIntersecting; if (inView && !userPaused) { if (base === FINAL) base = 0; start(); } else if (!inView) stop(); }, { threshold: .35 }).observe(document.getElementById("demo"));
-  }
-  window.dtHero = { at: (t) => { userPaused = true; stop(); base = t; render(t); } };
-
   document.getElementById("copy").addEventListener("click", async (e) => {
     try { await navigator.clipboard.writeText(document.getElementById("cmd").textContent); e.target.textContent = "Copied"; setTimeout(() => e.target.textContent = "Copy", 1400); } catch (_) {}
   });
