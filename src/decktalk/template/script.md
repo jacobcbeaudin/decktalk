@@ -22,7 +22,7 @@ I wrote the words and drew the pictures, [beat] and each picture waits for its w
 
 You just watched DeckTalk. [beat] You write a script and simple slides. [beat] It reads your script aloud, [beat]
 and you pick the word each picture waits for. [beat] Change the script, and the video follows. [beat]
-Here is a lesson I made with it. [beat] Then I'll change one sentence.
+Here is a lesson I made with it.
 
 ## 3. How AI learns
 
@@ -45,7 +45,7 @@ That is gradient descent. [beat] It's what the ball did on my count.
 [pause 1] One setting makes every step longer or shorter. [beat]
 Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
 [pause 1] Zoom out, and the ground can have many valleys, [beat] each about as low.
-[pause 2] Today's AI is trained with a version of this. [beat] One step takes billions of billions of small sums.
+[pause 2] Today's AI is trained with a version of this. [beat] One step takes billions of billions of small calculations.
 [pause 1] Inside, the knobs are grids of numbers, called tensors. [beat] Chips like GPUs do math on a whole grid at once. [beat]
 Big models split the work across thousands of chips.
 
