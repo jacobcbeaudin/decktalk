@@ -247,16 +247,16 @@ sec    start    probe   YAVG   YMAX  result
  01     0.00     0.20    235    243  ok
  02    17.80    18.00    227    245  ok
  03    38.60    38.80    234    245  ok
- 04   158.68   158.88    235    243  ok
- 05   189.60   189.80    227    245  ok
-total 204.84s; 0 black section start(s)
+ 04   170.60   170.80    235    243  ok
+ 05   201.52   201.72    227    245  ok
+total 216.72s; 0 black section start(s)
 
 sec   cut at  before cut  result
  01    17.80   -123.3 dB  quiet
  02    38.60   -125.4 dB  quiet
- 03   158.70   -128.4 dB  quiet
- 04   189.58   -128.3 dB  quiet
- 05   202.30   -120.0 dB  quiet
+ 03   170.60   -125.4 dB  quiet
+ 04   201.50   -125.4 dB  quiet
+ 05   214.22   -120.0 dB  quiet
 
 built ~/my-lesson/build/out/my-lesson.mp4
 ```
@@ -310,18 +310,18 @@ length (`actual`). The second table is the timeline in `narration.mp3`.
 ---------------------------------------------------------------------
  1  open                      29   0:12    --      0:18  -
  2  how-it-works              40   0:17    --      0:21  -
- 3  how-ai-learns            236   1:41    --      2:00  -
+ 3  how-ai-learns            264   1:53    --      2:12  -
  4  the-edit                  60   0:26    --      0:31  -
  5  close                     25   0:11    --      0:13  -
 ---------------------------------------------------------------------
-    total                    390   2:47            3:22
+    total                    418   2:59            3:34
   #  section                  start     end  length
   1  Open                      0:00    0:18    17.8
   2  How it works              0:18    0:39    20.8
-  3  How AI learns             0:39    2:39   120.1
-  4  The edit                  2:39    3:10    30.9
-  5  Close                     3:10    3:22    12.7
-     narration total 3:22  (estimated: silent placeholders)
+  3  How AI learns             0:39    2:51   132.0
+  4  The edit                  2:51    3:22    30.9
+  5  Close                     3:22    3:34    12.7
+     narration total 3:34  (estimated: silent placeholders)
 ```
 
 ### `decktalk beats`
@@ -364,7 +364,7 @@ Note: a clip section with cues prints `--` and `(no narration (clip section, or 
 sec  speech   need  cues
  01    16.5      -  1.1bowl@1.25,1.1ball@2.33,1.1count@6.15,1.1one@6.69,1.1two@7.24,1.1three@7.78,1.1word@15.41
  02    19.5      -  2.1mark@1.46,2.1script@2.92,2.1aloud@5.85,2.1word@9.26,2.1follows@14.62,2.1lesson@17.06
- 03   118.8      -  3.1examples@2.52,3.1rules@3.52,3.1box@8.05,3.1guess@10.07,3.1wrong@12.59,3.1turn@16.61,3.1again@20.14,3.2way@22.15,3.2one@28.19,3.2billions@31.21,3.2instead@34.23,3.2all@38.76,3.3two@41.28,3.3floor@42.79,3.3height@46.81,3.3bowl@51.35,3.4ball@52.35,3.4see@57.89,3.4steps@64.43,3.4again@65.44,3.5setting@77.52,3.5long@81.05,3.5short@85.07,3.6zoom@88.6,3.6low@93.13,3.7ai@95.14,3.7sums@101.18,3.8tensor@108.23,3.8gpu@109.74,3.8chips@117.29,3.8out@118.53
+ 03   130.7      -  3.1examples@2.48,3.1rules@3.47,3.1ml@7.43,3.1box@11.39,3.1guess@13.37,3.1wrong@15.84,3.1turn@19.8,3.1again@23.27,3.2way@25.25,3.2one@31.19,3.2billions@34.16,3.2instead@37.13,3.2all@41.59,3.3two@44.06,3.3floor@45.55,3.3height@49.51,3.3bowl@53.96,3.4ball@54.95,3.4see@60.4,3.4steps@66.83,3.4again@67.83,3.5setting@79.71,3.5long@83.17,3.5short@87.13,3.6zoom@90.6,3.6low@96.54,3.6lowest@99.51,3.7ai@100.0,3.7inside@104.46,3.7num@107.43,3.7tensor@108.42,3.8gpu@109.91,3.8row@112.38,3.8once@113.87,3.8calc@118.82,3.8llm@123.77,3.8split@127.23,3.8out@130.43
                     ! 3.4name: phrase not found: 'gradient decent'
  04    29.6      -  4.1lesson@0.99,4.1sentence@2.96,4.1why@10.85,4.1words@14.31,4.1again@16.28,4.1lower@23.19,4.1moved@26.64
  05    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
@@ -407,10 +407,10 @@ decktalk record [-h] [--project PROJECT] [-v] [-q] [--only ONLY]
        build/rec/01-scene.webm  (lead 1.51s)
 [rec ] section 02 (deck/index.html?scene=2)  21.1s ...
        build/rec/02-scene.webm  (lead 1.50s)
-[rec ] section 03 (deck/lesson.html?scene=3)  120.4s ...
-       build/rec/03-scene.webm  (lead 1.50s)
+[rec ] section 03 (deck/lesson.html?scene=3)  132.3s ...
+       build/rec/03-scene.webm  (lead 1.51s)
 [rec ] section 04 (deck/index.html?scene=4)  31.2s ...
-       build/rec/04-scene.webm  (lead 1.50s)
+       build/rec/04-scene.webm  (lead 1.51s)
 [rec ] section 05 (deck/index.html?scene=5)  14.7s ...
        build/rec/05-scene.webm  (lead 1.51s)
 ```
@@ -449,11 +449,11 @@ frame. Narration t=0 is one frame after it. The table columns are `trim` (t=0 in
 
 ```text
 sec    trim    wall  method
- 01   1.440   1.507  cover (36 magenta frames)
- 02   1.440   1.502  cover (36 magenta frames)
- 03   1.440   1.501  cover (34 magenta frames)
- 04   1.440   1.503  cover (36 magenta frames)
- 05   1.440   1.506  cover (36 magenta frames)
+ 01   1.440   1.511  cover (36 magenta frames)
+ 02   1.440   1.503  cover (36 magenta frames)
+ 03   1.360   1.510  cover (34 magenta frames)
+ 04   1.440   1.507  cover (36 magenta frames)
+ 05   1.440   1.507  cover (36 magenta frames)
 ```
 
 ### `decktalk check`
@@ -506,9 +506,9 @@ puts the stall length in `stall_ms`.
 sec  webm_s   want_s   Y10    Y50    Y90    MAX50   verdict
 01   20.5     18.1     235    229    227    245     ok
 02   23.5     21.1     227    228    234    243     ok
-03   122.8    120.4    227    212    230    255     ok
+03   134.6    132.3    228    212    222    242     ok
 04   33.6     31.2     229    231    227    241     ok
-05   17.2     14.7     227    230    227    245     ok
+05   17.1     14.7     227    230    227    245     ok
 ```
 
 ### `decktalk assemble`
@@ -549,16 +549,16 @@ markers file, the underscore, the ambience bed, and the sound effects. **Writes*
 ```text
 [cut ] 01  01-scene.webm (lead 1.44s trimmed) -> 01-section.mp4  (17.800s)
 [cut ] 02  02-scene.webm (lead 1.44s trimmed) -> 02-section.mp4  (20.800s)
-[cut ] 03  03-scene.webm (lead 1.44s trimmed) -> 03-section.mp4  (120.080s)
+[cut ] 03  03-scene.webm (lead 1.36s trimmed) -> 03-section.mp4  (132.000s)
 [cut ] 04  04-scene.webm (lead 1.44s trimmed) -> 04-section.mp4  (30.920s)
-[cut ] 05  05-scene.webm (lead 1.44s trimmed) -> 05-section.mp4  (15.240s)
+[cut ] 05  05-scene.webm (lead 1.44s trimmed) -> 05-section.mp4  (15.200s)
 [cat ] 5 sections, straight cuts
 [mix ] 2 audio input(s) -> my-lesson.mp4
 [loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, and the clicks stay at -24 dBFS for the a/v check
-[caps] 38 cue(s) -> my-lesson.srt, my-lesson.vtt
+[caps] 42 cue(s) -> my-lesson.srt, my-lesson.vtt
 [chap] 5 chapter(s) -> my-lesson.chapters.txt
-done: ~/my-lesson/build/out/my-lesson.mp4  (204.84s)  copy: my-lesson-20260913-2006.mp4
-~/my-lesson/build/out/my-lesson.mp4  (204.84s)
+done: ~/my-lesson/build/out/my-lesson.mp4  (216.72s)  copy: my-lesson-20260913-2148.mp4
+~/my-lesson/build/out/my-lesson.mp4  (216.72s)
 ```
 
 ### `decktalk verify`
@@ -635,19 +635,19 @@ sec    start    probe   YAVG   YMAX  result
  01     0.00     0.20    235    243  ok
  02    17.80    18.00    227    245  ok
  03    38.60    38.80    234    245  ok
- 04   158.68   158.88    235    243  ok
- 05   189.60   189.80    227    245  ok
-total 204.84s; 0 black section start(s)
+ 04   170.60   170.80    235    243  ok
+ 05   201.52   201.72    227    245  ok
+total 216.72s; 0 black section start(s)
 
 sec   cut at  before cut  result
  01    17.80   -123.3 dB  quiet
  02    38.60   -125.4 dB  quiet
- 03   158.70   -128.4 dB  quiet
- 04   189.58   -128.3 dB  quiet
- 05   202.30   -120.0 dB  quiet
+ 03   170.60   -125.4 dB  quiet
+ 04   201.50   -125.4 dB  quiet
+ 05   214.22   -120.0 dB  quiet
 
 check                 cue       at   chg %   ctl %   offset     a/v  result
-4:4.1words          14.31   172.99    1.47    0.00    +10ms   -11ms  changed
+4:4.1words          14.31   184.91    1.47    0.00    +10ms    +9ms  changed
 ```
 
 ## `decktalk soundscape`
@@ -782,12 +782,12 @@ cues     cues.json  ok
   #  section                  start     end  length
   1  Open                      0:00    0:18    17.8
   2  How it works              0:18    0:39    20.8
-  3  How AI learns             0:39    2:39   120.1
-  4  The edit                  2:39    3:10    30.9
-  5  Close                     3:10    3:22    12.7
-     narration total 3:22  (estimated: silent placeholders)
+  3  How AI learns             0:39    2:51   132.0
+  4  The edit                  2:51    3:22    30.9
+  5  Close                     3:22    3:34    12.7
+     narration total 3:34  (estimated: silent placeholders)
 beats    5 section(s) with resolved cues
-final    build/out/my-lesson.mp4  3:25
+final    build/out/my-lesson.mp4  3:37
 captions build/out/my-lesson.srt  ok
 captions build/out/my-lesson.vtt  ok
 chapters build/out/my-lesson.chapters.txt  ok

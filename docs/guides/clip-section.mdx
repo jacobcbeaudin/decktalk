@@ -80,7 +80,7 @@ These steps add a clip section 4 to a new scaffold named `clip-lesson`. The edit
 
     {/* sample: decktalk build --silent in clip-lesson after the steps above, with no media/chips.mp4 (assemble lines) */}
     ```text
-    [cut ] 03  03-scene.webm (lead 1.44s trimmed) -> 03-section.mp4  (120.080s)
+    [cut ] 03  03-scene.webm (lead 1.36s trimmed) -> 03-section.mp4  (132.000s)
     section 04: media/chips.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
     [cut ] 04  slate -> 04-section.mp4  (4.000s)
     [cut ] 05  05-scene.webm (lead 1.44s trimmed) -> 05-section.mp4  (30.920s)
@@ -110,7 +110,7 @@ These steps add a clip section 4 to a new scaffold named `clip-lesson`. The edit
 
     {/* sample: decktalk assemble in clip-lesson after the test clip above is in place (cut lines of sections 3 to 5) */}
     ```text
-    [cut ] 03  03-scene.webm (lead 1.44s trimmed) -> 03-section.mp4  (120.080s)
+    [cut ] 03  03-scene.webm (lead 1.36s trimmed) -> 03-section.mp4  (132.000s)
     [cut ] 04  chips.mp4 (own audio) -> 04-section.mp4  (4.000s)
     [cut ] 05  05-scene.webm (lead 1.44s trimmed) -> 05-section.mp4  (30.920s)
     ```
@@ -155,7 +155,7 @@ narration at each clip between page sections.
 - No caption covers a clip section.
 - A clip section gets its own chapter.
 
-Example: in the silent build of `clip-lesson`, section 5 starts at 158.70 s in `timeline.json` and at 162.68 s
+Example: in the silent build of `clip-lesson`, section 5 starts at 170.60 s in `timeline.json` and at 174.60 s
 in the final mp4. The 4 s clip of section 4 sits between them. [Build artifacts](/reference/artifacts#time-bases)
 explains the two time bases.
 

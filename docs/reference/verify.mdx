@@ -10,8 +10,8 @@ measurement, limit, and result, in the order that `verify` computes them.
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
 1:1.1bowl            1.25     1.25    1.05    0.00    -10ms    -9ms  changed
-3:3.4name           71.98   110.58    2.77    0.00    +20ms   +11ms  changed
-4:4.1words          14.31   172.99    1.47    0.00    +10ms   -11ms  changed
+3:3.4name           74.26   112.86    2.75    0.00    +20ms   +15ms  changed
+4:4.1words          14.31   184.91    1.47    0.00    +10ms    +9ms  changed
 ```
 
 Every field named on this page is a key under `[verify]` in [Configuration](/reference/configuration#verify),
@@ -43,9 +43,9 @@ sec    start    probe   YAVG   YMAX  result
  01     0.00     0.20    235    243  ok
  02    17.80    18.00    227    245  ok
  03    38.60    38.80    234    245  ok
- 04   158.68   158.88    235    243  ok
- 05   189.60   189.80    227    245  ok
-total 204.84s; 0 black section start(s)
+ 04   170.60   170.80    235    243  ok
+ 05   201.52   201.72    227    245  ok
+total 216.72s; 0 black section start(s)
 ```
 
 A section's start is the total length of every earlier `build/out/NN-section.mp4`. The check reads one frame
@@ -71,9 +71,9 @@ The cut check confirms that the narration is quiet just before each cut.
 sec   cut at  before cut  result
  01    17.80   -123.3 dB  quiet
  02    38.60   -125.4 dB  quiet
- 03   158.70   -128.4 dB  quiet
- 04   189.58   -128.3 dB  quiet
- 05   202.30   -120.0 dB  quiet
+ 03   170.60   -125.4 dB  quiet
+ 04   201.50   -125.4 dB  quiet
+ 05   214.22   -120.0 dB  quiet
 ```
 
 `cut at` is where the section's narration ends in the final mp4. The check measures the narration track in the
@@ -89,7 +89,7 @@ SPEECH AT CUT  when  RMS of narration.mp3 over the window > cut_max_db  # -40 dB
 - A level of exactly -40 dBFS passes.
 - A clip section has no row, because it has no narration.
 - The last page section's `hold_seconds` comes after its `cut at`. In the sample, section `05` holds its last
-  slide from 202.30 s to the end of the video.
+  slide from 214.22 s to the end of the video.
 
 ## Cues
 
@@ -100,7 +100,7 @@ The cue check confirms that the picture changes on each cue, at the cue time.
     {/* sample: decktalk verify 4:4.1words, silent build of the scaffold, cue table only */}
     ```text
     check                 cue       at   chg %   ctl %   offset     a/v  result
-    4:4.1words          14.31   172.99    1.47    0.00    +10ms   -11ms  changed
+    4:4.1words          14.31   184.91    1.47    0.00    +10ms    +9ms  changed
     ```
   </Tab>
   <Tab title="Voiced build">
@@ -139,7 +139,7 @@ at        = section start in the final mp4 + cue time
 - `build/audio/beats.anchors.json` keeps each word start without the offset key, also rounded to hundredths.
 - A `$start` cue with a negative offset key keeps its negative cue time.
 
-Example: section 4 starts at 158.68 s, and `4:4.1words` has a cue time of 14.31 s. Its `at` is 172.99 s.
+Example: section 4 starts at 170.60 s, and `4:4.1words` has a cue time of 14.31 s. Its `at` is 184.91 s.
 
 ### Changed share
 
@@ -184,8 +184,8 @@ skipped REFERENCE_CLAMPED  when  max(floor, at - lead) > at - 1 / fps
 - The reference time is at least one frame before the cue. The reference frame can be closer when the cue time
   is off the frame grid.
 
-Example: for `4:4.1words`, the reference time is 172.99 - 0.14 = 172.85 s. The reference frame is the next frame on
-the 40 ms grid, at 172.88 s. That frame is 110 ms before the cue, as the onset figure shows.
+Example: for `4:4.1words`, the reference time is 184.91 - 0.14 = 184.77 s. The reference frame is the next frame on
+the 40 ms grid, at 184.80 s. That frame is 110 ms before the cue, as the onset figure shows.
 
 ### Probes
 
@@ -206,8 +206,8 @@ dropped   when  probe(d) > section end - 0.05
 The control share measures motion that has nothing to do with the cue. Each probe gets its own control share.
 
 <Frame caption="Probes run forward from the reference, and two back-to-back control spans run back from it.">
-  <img className="block dark:hidden" src="/images/verify-probes-light.svg" alt="A time axis around cue 4:4.1words. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, and each changed 1.47%. The 1.5 s probe is marked reported. Its two back-to-back control spans of 1.64 s run back from the reference, and each changed 0.00%." />
-  <img className="hidden dark:block" src="/images/verify-probes-dark.svg" alt="A time axis around cue 4:4.1words. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, and each changed 1.47%. The 1.5 s probe is marked reported. Its two back-to-back control spans of 1.64 s run back from the reference, and each changed 0.00%." />
+  <img className="block dark:hidden" src="/images/verify-probes-light.svg" alt="A time axis around cue 4:4.1words. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, and each changed 1.47%. The 0.7 s probe is marked reported. Its two back-to-back control spans of 0.84 s run back from the reference, and each changed 0.00%." />
+  <img className="hidden dark:block" src="/images/verify-probes-dark.svg" alt="A time axis around cue 4:4.1words. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, and each changed 1.47%. The 0.7 s probe is marked reported. Its two back-to-back control spans of 0.84 s run back from the reference, and each changed 0.00%." />
 </Frame>
 
 ```text
@@ -237,7 +237,7 @@ passes when     changed share >= min_changed_percent  and  margin >= min_margin_
 
 Example: `4:4.1words` has a changed share of 1.47 and a control share of 0.00. Its margin is 1.47, so it
 passes.
-Both of its margins round to 1.47. The margin at 1.5 s is larger by 0.0008, so `verify` reports the probe at 1.5 s.
+Both of its margins are 1.4668. On a tie, `verify` reports the earlier probe, at 0.7 s.
 
 ### Onset and offset
 
@@ -258,7 +258,7 @@ After a cue passes the change test, `verify` finds its onset, the first frame of
 </Frame>
 
 The figure's shares use `onset_diff_level` (12), so the onset frame reads 2.33%. The `chg %` column reads 1.47%,
-because the change test uses `diff_level` (40), at the probe 1.5 s after the cue.
+because the change test uses `diff_level` (40), at the probe 0.7 s after the cue.
 
 ```text
 series[0]      = 0                                                   # the reference frame itself
@@ -288,7 +288,7 @@ offset column  = round(1000 * (onset time - at))                    # whole ms, 
 - A cue with no onset reads `changed`. Its offset column shows `-`, its `a/v` is blank, and neither limit
   applies. No `NO_CLICK` reason is set.
 
-Example: `4:4.1words` has an offset column of +10 ms, so its onset frame is at 173.00 s.
+Example: `4:4.1words` has an offset column of +10 ms, so its onset frame is at 184.92 s.
 
 ### The a/v value
 
@@ -397,11 +397,11 @@ Mark such a cue `"verify": false`, and check it by eye with `decktalk shots --st
         "section": 4,
         "cue": "4.1words",
         "cue_seconds": 14.31,
-        "final_seconds": 172.99,
+        "final_seconds": 184.91,
         "changed_percent": 1.47,
         "control_percent": 0.0,
         "offset_ms": 10,
-        "av_ms": -11,
+        "av_ms": 9,
         "verdict": "changed",
         "reason": null
       }

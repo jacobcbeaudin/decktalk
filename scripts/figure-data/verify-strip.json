@@ -1,14 +1,14 @@
 {
   "source": {
-    "decktalk": "0.1.0",
+    "decktalk": "0.2.0",
     "build": "decktalk build --silent on the scaffold that decktalk init writes",
     "estimated_words": true,
     "command": "decktalk verify 4:4.1words --json, and the onset series verify reads"
   },
   "check": "4:4.1words",
   "cue_seconds": 14.31,
-  "final_seconds": 172.99,
-  "section_start": 158.68,
+  "final_seconds": 184.91,
+  "section_start": 170.6,
   "lead_seconds": 0.14,
   "reference_seconds": -0.14,
   "fps": 25,
@@ -20,9 +20,9 @@
   "probes": [
     {
       "delay": 0.7,
-      "changed_percent": 1.4699,
+      "changed_percent": 1.4668,
       "control_percent": 0.0,
-      "margin": 1.4699,
+      "margin": 1.4668,
       "controls": [
         {
           "from": -0.98,
@@ -38,9 +38,9 @@
     },
     {
       "delay": 1.5,
-      "changed_percent": 1.4707,
+      "changed_percent": 1.4668,
       "control_percent": 0.0,
-      "margin": 1.4707,
+      "margin": 1.4668,
       "controls": [
         {
           "from": -1.78,
@@ -50,12 +50,12 @@
         {
           "from": -3.42,
           "to": -1.78,
-          "percent": 0.0
+          "percent": 0.0008
         }
       ]
     }
   ],
-  "reported_probe": 1,
+  "reported_probe": 0,
   "series": [
     {
       "ms": -110,
@@ -71,55 +71,55 @@
     },
     {
       "ms": 10,
-      "percent": 2.3279
+      "percent": 2.3272
     },
     {
       "ms": 50,
-      "percent": 2.3272
+      "percent": 2.3256
     },
     {
       "ms": 90,
-      "percent": 2.3256
+      "percent": 2.3248
     },
     {
       "ms": 130,
-      "percent": 2.3256
+      "percent": 2.3248
     },
     {
       "ms": 170,
-      "percent": 2.3264
+      "percent": 2.3248
     },
     {
       "ms": 210,
-      "percent": 2.3264
+      "percent": 2.3233
     },
     {
       "ms": 250,
-      "percent": 2.3272
+      "percent": 2.3233
     },
     {
       "ms": 290,
-      "percent": 2.3272
+      "percent": 2.3233
     },
     {
       "ms": 330,
-      "percent": 2.3272
+      "percent": 2.3233
     },
     {
       "ms": 370,
-      "percent": 2.3272
+      "percent": 2.3233
     },
     {
       "ms": 410,
-      "percent": 2.3272
+      "percent": 2.3241
     },
     {
       "ms": 450,
-      "percent": 2.3272
+      "percent": 2.3241
     },
     {
       "ms": 490,
-      "percent": 2.3272
+      "percent": 2.3248
     },
     {
       "ms": 530,
@@ -140,94 +140,14 @@
     {
       "ms": 690,
       "percent": 2.3264
-    },
-    {
-      "ms": 730,
-      "percent": 2.3264
-    },
-    {
-      "ms": 770,
-      "percent": 2.3264
-    },
-    {
-      "ms": 810,
-      "percent": 2.3264
-    },
-    {
-      "ms": 850,
-      "percent": 2.3264
-    },
-    {
-      "ms": 890,
-      "percent": 2.3264
-    },
-    {
-      "ms": 930,
-      "percent": 2.3264
-    },
-    {
-      "ms": 970,
-      "percent": 2.3264
-    },
-    {
-      "ms": 1010,
-      "percent": 2.3248
-    },
-    {
-      "ms": 1050,
-      "percent": 2.3248
-    },
-    {
-      "ms": 1090,
-      "percent": 2.3248
-    },
-    {
-      "ms": 1130,
-      "percent": 2.3248
-    },
-    {
-      "ms": 1170,
-      "percent": 2.3248
-    },
-    {
-      "ms": 1210,
-      "percent": 2.3248
-    },
-    {
-      "ms": 1250,
-      "percent": 2.3248
-    },
-    {
-      "ms": 1290,
-      "percent": 2.3248
-    },
-    {
-      "ms": 1330,
-      "percent": 2.3256
-    },
-    {
-      "ms": 1370,
-      "percent": 2.3256
-    },
-    {
-      "ms": 1410,
-      "percent": 2.3256
-    },
-    {
-      "ms": 1450,
-      "percent": 2.3256
-    },
-    {
-      "ms": 1490,
-      "percent": 2.3248
     }
   ],
   "row": {
     "changed_percent": 1.47,
     "control_percent": 0.0,
     "offset_ms": 10,
-    "av_ms": -11,
-    "click_ms": 21,
+    "av_ms": 9,
+    "click_ms": 1,
     "verdict": "changed"
   }
 }
