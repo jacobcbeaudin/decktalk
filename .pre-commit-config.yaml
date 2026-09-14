@@ -28,3 +28,14 @@ repos:
         exclude: ^src/decktalk/template/deck/(fonts|vendor)/
       - id: check-toml
       - id: check-yaml
+
+  # Type check with ty, as CI does. ty publishes no pre-commit hook repo, and it needs the project's
+  # installed dependencies to resolve imports, so it runs from the project environment through uv.
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty check
+        entry: uv run ty check src
+        language: system
+        types: [python]
+        pass_filenames: false
