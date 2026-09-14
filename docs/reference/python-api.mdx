@@ -1,65 +1,171 @@
 ---
 title: Python API
-description: Every public name in the DeckTalk Python package, with Project, Settings, the section and artifact types, the stage functions and their results, the errors, and the speech provider protocol.
-icon: "python"
-mode: "wide"
+description: Call the DeckTalk pipeline from Python, with each public name, its parameters, its result, and its errors.
 ---
 
-The CLI is a thin layer over these names. Stage functions take a `Project`, log progress
-to the `decktalk` logger, return a typed result, and raise `DeckTalkError` subclasses.
-They never call `sys.exit` and never print.
+The `decktalk` package runs the same pipeline as the command line. This page lists every public name, with its
+signature, its result, and the errors it raises.
 
 ```python
 import decktalk
 
-project = decktalk.Project.load("my-lesson")       # validates decktalk.toml and loads the settings
+project = decktalk.Project.load("my-lesson")       # reads and validates decktalk.toml
 project.settings.video.preset = "veryfast"
 result = decktalk.build(project, silent=True)
 print(result.assembly.final, result.verification.ok)
 ```
 
-## The project
+Each stage function takes a `Project` and returns a typed result. It logs progress to the `decktalk` logger. It
+raises a `DeckTalkError` subclass when it fails, and it never calls `sys.exit`.
 
-| Name | What it is |
+## Public names
+
+The package exports these names. Every other name is internal.
+
+| Kind | Names |
 |---|---|
-| `Project.load(dir=None, *, environ=None)` | Parses and validates `decktalk.toml`. The directory defaults to `DECKTALK_PROJECT`, then the current directory, and a path to the file itself is accepted. It raises `ConfigError` with the table and field named. `Project.from_toml(root, doc)` builds one from a parsed mapping. |
-| `Project` | The loaded document: `root`, `name`, `script`, `cues`, `build`, `sections`, `voice`, `transition`, `mix`, `soundscape`, `settings`, plus the paths `audio_dir`, `rec_dir`, `out_dir`, `shots_dir`, `manifest_path`, `timeline_path`, `beats_path`, `final`, `env_file`, and the loaders `manifest()`, `timeline()`, `beats()`. |
-| `Section`, `PageSection`, `ClipSection` | The two kinds of section and their union. `project.sections` holds them in number order, and `page_sections`, `clip_sections`, `clip_numbers`, and `page_files` filter them. |
-| `Voice`, `Transition`, `Mix`, `Soundscape` | The document tables, as frozen dataclasses with the same keys as [decktalk.toml](/reference/decktalk-toml). |
-| `Settings`, `load_settings(root, *, toml, environ, user)` | The tuning tree, built from the defaults, the per-machine file, the project's TOML tables, then the `DECKTALK_*` environment. [Configuration](/reference/configuration) lists every field. |
+| Project | `Project`, `Section`, `PageSection`, `ClipSection`, `Settings`, `load_settings` |
+| Project tables | `Voice`, `Transition`, `Mix`, `Soundscape` |
+| Artifacts | `Manifest`, `Timeline`, `Beats`, `Word`, `Sidecar` |
+| Stages | `narrate`, `resolve_beats`, `record`, `measure`, `check`, `assemble`, `verify`, `shoot`, `soundscape`, `build`, `status` |
+| Results | `NarrateResult`, `BeatsResult`, `Recording`, `LeadMeasurement`, `RecordingCheck`, `AssembleResult`, `VerifyResult`, `SoundscapeItem`, `BuildResult`, `StatusReport` |
+| Errors | `DeckTalkError`, `ConfigError`, `MissingInputError`, `ProviderError`, `ToolError` |
+| Speech | `SpeechProvider`, `SpeechRequest`, `register` |
+| Version | `__version__` |
 
-## Artifacts
+Note: Everything under `decktalk.media` is internal. So is everything under `decktalk.providers` except the three
+speech names, and every name that starts with an underscore.
 
-| Name | What it is |
+## `Project`
+
+```python
+decktalk.Project.load(where=None, *, environ=None) -> Project
+decktalk.Project.from_toml(root, doc, *, environ=None) -> Project
+```
+
+`Project.load` reads and validates `decktalk.toml`. `Project.from_toml` builds a project from a mapping you have
+already parsed.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `where` | `DECKTALK_PROJECT`, then the current directory | Project directory, or the path of its `decktalk.toml`. |
+| `root` | required | Project directory, for `from_toml`. |
+| `doc` | required | Parsed `decktalk.toml`, for `from_toml`. |
+| `environ` | `os.environ` | Mapping that supplies the `DECKTALK_*` tuning variables. |
+
+**Raises** `ConfigError` when `decktalk.toml` is missing, cannot be parsed, or fails validation. The message names
+the table and the field.
+
+| Member | Kind | Meaning |
+|---|---|---|
+| `root`, `name`, `script`, `cues`, `build` | field | Project directory, project name, and the paths from `[project]`. |
+| `sections` | field | Every `PageSection` and `ClipSection`, in number order. |
+| `voice`, `transition`, `mix`, `soundscape` | field | The project tables, as frozen dataclasses with the keys of [decktalk.toml](/reference/decktalk-toml). |
+| `settings` | field | The tuning tree, a `Settings`. [Configuration](/reference/configuration) lists every field. |
+| `audio_dir`, `rec_dir`, `out_dir`, `shots_dir` | property | The `build/` subdirectories. |
+| `manifest_path`, `timeline_path`, `beats_path`, `final`, `env_file` | property | Paths of the manifest, timeline, beats file, final mp4, and `.env`. |
+| `manifest()`, `timeline()`, `beats()` | method | Loads the artifact. `manifest()` and `timeline()` return `None` when the file does not exist. |
+| `section(number)` | method | Returns the section with that number, or `None`. |
+| `page_sections`, `clip_sections`, `clip_numbers`, `page_files` | property | The page sections, the clip sections, the clip numbers, and the page files in first-use order. |
+| `recording(section)`, `section_video(section)` | method | Returns the path of the section's webm or its `NN-section.mp4`. |
+| `path(rel)` | method | Returns `rel` as an absolute path under `root`. |
+| `env(key)` | method | Returns the value from the environment or `.env`. Returns `""` when the value is unset or starts with `<`. |
+| `require_env(*keys)` | method | Returns the values in order. Raises `ConfigError` that names every missing key. |
+
+`load_settings(root=None, *, toml=None, environ=None, user=None)` builds a `Settings` from the defaults, the
+per-machine file, the project's tables, and the environment.
+
+## `build`
+
+```python
+decktalk.build(project, *, silent=False, force=False, only=None, nomix=False, loudnorm=True,
+               strict=False, allow_unresolved=False, allow_unknown=False, report=None) -> BuildResult
+```
+
+`build` runs the seven stages in order: `narrate`, `resolve_beats`, `record`, `measure`, `check`, `assemble`, and
+`verify`.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `silent` | `False` | Uses a click track and estimated word times. Needs no API key. |
+| `force` | `False` | Voices every section again, and ignores the narration cache. |
+| `only` | `None` | Section numbers for `record`, `measure`, and `check`. The other stages still use every section. |
+| `nomix` | `False` | Leaves the soundscape out of the mix. |
+| `loudnorm` | `True` | Runs the loudness pass. |
+| `strict` | `False` | Raises on a missing clip, a missing recording, or a loudness miss. A clip section with `optional = true` still plays its slate. |
+| `allow_unresolved` | `False` | Continues when a cue phrase is not found. |
+| `allow_unknown` | `False` | Continues when a cue id appears nowhere in its page. |
+| `report` | `None` | A function that `build` calls as `report(stage, result)` after each stage. |
+
+**Returns** a `BuildResult` with one field per stage: `narration`, `beats`, `recordings`, `leads`, `checks`,
+`assembly`, and `verification`. Its `ok` is true when the video was assembled and `verification.ok` is true. The
+verification checks section starts and cuts, and no cue.
+
+**Raises**
+
+| Error | When |
 |---|---|
-| `Word` | The class holds `word`, `start`, and `end`. |
-| `Manifest` | The class is the narration cache, with `load(path)` and `save(path)`. |
-| `Timeline` | The class holds section and word times absolute in `narration.mp3`, with `load`, `save`, `span(key)`, and `keys`. |
-| `Beats` | The class holds the resolved cues per section, with `load`, `save`, `query(key)` for the `?beats=` string, and `get(key, cue)`. |
-| `Sidecar` | The class records what the recorder did for one section, with `load`, `save`, `trim_seconds`, and `warnings`. |
+| `ConfigError` | A cue phrase is not found and `allow_unresolved` is false. A page threw an error during its recording. An input file is not valid. |
+| `UnknownCueError` | A cue id appears nowhere in its page, and `allow_unknown` is false. |
+| `MissingInputError` | `strict` is true and a clip or recording is missing, or an earlier output is missing. |
+| `ToolError` | ffmpeg or Chromium failed, or `strict` is true and the loudness missed its target. |
+| `ProviderError` | The speech provider refused or failed a request. |
 
-[Build artifacts](/reference/artifacts) gives every field of every file.
+Note: `UnknownCueError` is a `ConfigError`. Import it from `decktalk.stages.beats`. Its `result` holds the full
+`BeatsResult`, and `beats.json` is already written.
 
-## Stages and results
+## `verify`
 
-| Function | Returns |
+```python
+decktalk.verify(project, checks=None, only=None) -> VerifyResult
+```
+
+`verify` checks section starts, cuts, and cues on the final mp4. [Verify](/reference/verify) defines every
+measurement.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `checks` | `None` | `None` checks every cue in `beats.json` that `cues.json` does not opt out. An empty list checks no cue. A list of `SECTION:CUE` strings checks those cues, even opted-out ones. |
+| `only` | `None` | Section numbers whose cues to keep. Section starts and cuts are always checked. |
+
+**Returns** a `VerifyResult`.
+
+| Member | Meaning |
 |---|---|
-| `narrate(project, *, only, force, allow_placeholders, silent, model)` | `NarrateResult` with `manifest`, `timeline`, `segments`, `synthesized`, and `cached`. |
-| `resolve_beats(project, *, allow_unknown)` | `BeatsResult` with `beats`, `sections`, `unresolved`, `unknown`, `estimated`, `problems`, and `to_dict(root)`. `beats.json` is written either way. Unknown cue ids then raise `UnknownCueError` from `decktalk.stages.beats`, a `ConfigError` whose `result` is the full result, unless `allow_unknown` is true. |
-| `record(project, *, only, seconds, use_beats)` | A list of `Recording`, each with `section`, `path`, `sidecar`, and `seconds`. |
-| `measure(project, only)` | A list of `LeadMeasurement`, each with `key`, `lead_in_seconds`, `wallclock_seconds`, and `method`. |
-| `check(project, only)` | A list of `RecordingCheck`, each with the luma fields, `verdict`, `ok`, `file`, and `to_dict(root)`. |
-| `assemble(project, *, nomix, loudnorm, strict)` | `AssembleResult` with `final`, `stamped`, `duration`, `sections`, `warnings`, `loudness`, `captions_srt`, `captions_vtt`, and `chapters`. |
-| `verify(project, checks, only)` | `VerifyResult` with `final`, `total_seconds`, `silent`, `starts`, `cuts`, `cues`, `black_starts`, and `to_dict(root)`. `checks=None` measures every cue in `beats.json` except the cues that `cues.json` opts out, an empty list measures none, and a list of `SECTION:CUE` strings measures those cues whether they opt out or not. `only` keeps the cue checks of those section numbers. Each `CueCheck` has a `verdict` and a `reason`. `VerifyResult.ok` is true when every start, cut, and measured cue passed, and skipped rows never count against it. |
-| `shoot(project, *, pages, steps, section, at, cues)` | The screenshot paths. `cues` with a single step freezes the step at each cue, and `cues` with any other number of steps raises `ConfigError`. |
-| `soundscape(project, *, only, force, dry_run)` | A list of `SoundscapeItem`, each with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds`. |
-| `build(project, *, silent, force, only, nomix, loudnorm, strict, allow_unresolved, allow_unknown, report)` | `BuildResult` with one field per stage and `ok`, which mirrors the CLI's exit code. Its verification checks section starts and cuts and measures no cue. `report(stage, result)` is called after each stage. |
-| `status(project)` | `StatusReport` with the project's paths, `sections`, `timeline`, `beats_exists`, `beats_sections`, `final`, `final_exists`, `final_duration`, and `outputs`. It reads what exists and runs nothing. |
+| `final`, `total_seconds`, `silent` | Path of the final mp4, its length, and whether the build was silent. |
+| `starts` | One `StartCheck` per section, with `key`, `start`, `probe_at`, `yavg`, `ymax`, `ok`, and `verdict`. |
+| `cuts` | One `CutCheck` per spoken section, with `key`, `cut_at`, `rms_db`, `ok`, and `verdict`. |
+| `cues` | One `CueCheck` per cue row, with `check`, `section`, `cue`, `cue_seconds`, `final_seconds`, `changed_percent`, `control_percent`, `offset_ms`, `av_ms`, `ok`, `verdict`, `reason`, and `skipped`. |
+| `black_starts` | Count of section starts that read `BLACK`. |
+| `ok` | True when every start, cut, and measured cue passed. A skipped row never counts against it. |
+| `to_dict(root)` | The result as JSON-ready data. |
 
-`BeatsResult`, `RecordingCheck`, `VerifyResult`, and `StatusReport` each have
-`to_dict(root)`, which returns the JSON-ready data that the CLI prints under `--json`.
-Numbers stay numbers, verdicts are the names the tables print, and paths are relative to
-`root` with forward slashes. Pass `project.root`.
+**Raises** `MissingInputError` when the section mp4s or the final mp4 are missing. **Raises** `ConfigError` when a
+check does not start with a section number.
+
+## Other stages
+
+These functions run one stage each, or read the project.
+
+| Function | Returns | Raises |
+|---|---|---|
+| `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None)` | `NarrateResult` with `manifest`, `timeline`, `segments`, `synthesized`, and `cached` | `ConfigError`, `MissingInputError`, `ProviderError` |
+| `resolve_beats(project, *, allow_unknown=False)` | `BeatsResult` with `beats`, `sections`, `unresolved`, `estimated`, `unknown`, `beats_file`, `problems`, and `to_dict(root)` | `ConfigError`, `MissingInputError`, `UnknownCueError` |
+| `record(project, *, only=None, seconds=None, use_beats=True)` | A list of `Recording`, each with `section`, `path`, `sidecar`, and `seconds` | `ConfigError`, `MissingInputError`, `ToolError` |
+| `measure(project, only=None)` | A list of `LeadMeasurement`, each with `key`, `lead_in_seconds`, `wallclock_seconds`, and `method` | `MissingInputError` |
+| `check(project, only=None)` | A list of `RecordingCheck`, each with `key`, `duration`, `wanted`, `y10`, `y50`, `y90`, `max50`, `verdict`, `page_errors`, `file`, `ok`, and `to_dict(root)` | `MissingInputError` |
+| `assemble(project, *, nomix=False, loudnorm=True, strict=False)` | `AssembleResult` with `final`, `stamped`, `duration`, `sections`, `warnings`, `loudness`, `captions_srt`, `captions_vtt`, and `chapters` | `ConfigError`, `MissingInputError`, `ToolError` |
+| `shoot(project, *, pages=None, steps=None, section=None, at=None, cues=None)` | A list of screenshot paths | `ConfigError` |
+| `soundscape(project, *, only=None, force=False, dry_run=False)` | A list of `SoundscapeItem`, each with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds` | `ConfigError`, `ProviderError` |
+| `status(project)` | `StatusReport`, which reads what exists and runs nothing | none |
+
+- `record` with `seconds` records every section for that long. With `use_beats=False`, the pages play in autoplay.
+- `shoot` with `section` takes frames from a playing section at each time in `at`, 0.5 s by default.
+- `shoot` with `cues` needs exactly one step in `steps`.
+
+`BeatsResult`, `RecordingCheck`, `VerifyResult`, and `StatusReport` each have `to_dict(root)`. It returns the data
+that the command line prints under `--json`. Numbers stay numbers, and paths are relative to `root` with forward
+slashes. Pass `project.root`.
 
 ```python
 import json
@@ -70,51 +176,54 @@ result = decktalk.verify(project)
 print(json.dumps(result.to_dict(project.root), indent=2))
 ```
 
+## Artifacts
+
+These classes read and write the files under `build/`. [Build artifacts](/reference/artifacts) gives every field.
+
+| Class | Members |
+|---|---|
+| `Word` | `word`, `start`, `end` |
+| `Manifest` | The narration cache. `load(path)` returns `None` when the file does not exist. `save(path)`. |
+| `Timeline` | Section and word times in `narration.mp3`. `load(path)`, `save(path)`, `span(key)`, and `keys`. |
+| `Beats` | Cue times per section. `load(path)`, `save(path)`, `query(key)` for the `?beats=` string, and `get(key, cue)`. |
+| `Sidecar` | What the recorder did for one section. `load(path)`, `save(path)`, `trim_seconds`, and `worst_stall_ms`. |
+
 ## Errors and logging
 
-| Error | Meaning |
-|---|---|
-| `DeckTalkError` | The base class of every error DeckTalk raises on purpose. |
-| `ConfigError` | `decktalk.toml`, `cues.json`, or `.env` is missing, malformed, or inconsistent. |
-| `MissingInputError` | A stage needs an artifact that an earlier stage has not produced. |
-| `ProviderError` | The speech provider refused or failed a request. |
-| `ToolError` | ffmpeg, ffprobe, or Chromium is unavailable or failed. |
+Every error that DeckTalk raises on purpose is a `DeckTalkError`.
 
-Progress goes to the `decktalk` logger at the INFO level, so attach a handler to see it.
-`__version__` is the installed version string.
+| Error | Raised when |
+|---|---|
+| `DeckTalkError` | Base class of every error below. |
+| `ConfigError` | `decktalk.toml`, `cues.json`, or `.env` is missing, cannot be parsed, or is not consistent. |
+| `MissingInputError` | A stage needs an output that an earlier stage has not written yet. |
+| `ProviderError` | An external API, such as ElevenLabs, refused or failed a request. |
+| `ToolError` | ffmpeg, ffprobe, or Chromium is not available or failed. |
+
+The stages log progress to the `decktalk` logger at the INFO level. Attach a handler to see it. `__version__` is
+the installed version string.
 
 ## Speech providers
 
-DeckTalk needs one thing from a voice: audio plus a start and end time for every word.
-The boundary is `SpeechProvider`, a protocol with a `name`, a `speak(request)` method
-that returns the audio bytes and a list of `Word`, and a `cache_key(request)` method
-that returns everything that changes the audio apart from the text. A `SpeechRequest`
-carries the `text` with break tags, the `model`, the `voice_settings`, the
-`output_format`, and the neighboring `previous_text` and `next_text` for prosody.
+A speech provider returns audio and a start and end time for every word. ElevenLabs is the built-in provider.
 
-`register(name, factory)` is public. The factory receives the loaded `Project` and
-returns a provider, and `[voice]` with `provider = "name"` then selects it. ElevenLabs is
-the built-in provider. There is no plugin loading, so a new
-provider is a pull request that adds a module under `src/decktalk/providers/` and
-registers it. A local text-to-speech engine paired with a forced aligner is the obvious
-candidate, and an issue that proposes one is welcome.
+| Name | Meaning |
+|---|---|
+| `SpeechProvider` | A protocol with `name`, `speak(request)`, and `cache_key(request)`. `speak` returns the audio bytes and a list of `Word`. `cache_key` returns everything except the text that changes the audio. |
+| `SpeechRequest` | A frozen dataclass with `text`, `model`, `voice_settings`, `output_format`, `previous_text`, and `next_text`. `text` holds break tags. |
+| `register(name, factory)` | Makes a provider selectable as `[voice] provider = "name"`. The factory receives the loaded `Project` and returns a provider. |
+
+Registering a name again replaces the earlier factory. DeckTalk loads no plugins. For a provider that the command
+line can use, open a pull request that adds a module under `src/decktalk/providers/` and registers it.
 
 ## Stability
 
-The file formats are the stable surface. That covers `decktalk.toml`, `cues.json`, the
-build artifacts, and the page contract, and a change to any of them comes with a
-migration note in the [changelog](/changelog). The Python names are less settled than the
-file formats, and the changelog records every rename. Everything
-under `decktalk.media`, everything under `decktalk.providers` other than the three speech
-names above, and every name that starts with an underscore is internal.
+The file formats and the page contract are the stable surface: `decktalk.toml`, `cues.json`, the build artifacts,
+and the page runtime. A change to them comes with a migration note in the [changelog](/changelog). The Python names
+can still change, and the changelog records each rename.
 
-## Every public name
+## Related
 
-`AssembleResult`, `Beats`, `BeatsResult`, `BuildResult`, `ClipSection`, `ConfigError`,
-`DeckTalkError`, `LeadMeasurement`, `Manifest`, `MissingInputError`, `Mix`,
-`NarrateResult`, `PageSection`, `Project`, `ProviderError`, `Recording`,
-`RecordingCheck`, `Section`, `Settings`, `Sidecar`, `Soundscape`, `SoundscapeItem`,
-`SpeechProvider`, `SpeechRequest`, `StatusReport`, `Timeline`, `ToolError`,
-`Transition`, `VerifyResult`, `Voice`, `Word`, `__version__`, `assemble`, `build`,
-`check`, `load_settings`, `measure`, `narrate`, `record`, `register`, `resolve_beats`,
-`shoot`, `soundscape`, `status`, `verify`.
+- **Look up the files that the stages write:** [Build artifacts](/reference/artifacts)
+- **Look up a tuning field:** [Configuration](/reference/configuration)
+- **Run the same stages from a shell:** [CLI](/reference/cli)

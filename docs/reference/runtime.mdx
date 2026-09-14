@@ -1,312 +1,352 @@
 ---
 title: Runtime
-description: The decktalk-runtime.js page API, with every URL parameter, DeckTalk.scene field, handler context, DeckTalk method, data attribute, window.__decktalk field, __sceneReady, CSS hook, and console warning.
-icon: "js"
-mode: "wide"
+description: Look up every mode, URL parameter, function, data attribute, field, and warning of decktalk-runtime.js.
 ---
 
-`decktalk-runtime.js` is one file with no dependencies that gives a page
-[the page contract](/concepts/page-contract). Include it before the scene definitions,
-and run `decktalk runtime` after an upgrade to refresh the project's copy.
+`decktalk-runtime.js` is the script that plays a DeckTalk page. It mounts the steps of a scene and
+makes elements appear on their cues. This page lists its modes, URL parameters, functions, data
+attributes, fields, CSS hooks, and warnings. [The page contract](/concepts/page-contract) explains
+how the parts work together.
 
+Include the runtime before the scene definitions. After you upgrade DeckTalk, run
+`decktalk runtime` to refresh the project's copy.
+
+{/* copied from template/deck/index.html, scene 4, with most of the markup cut */}
 ```html deck/index.html
 <script src="decktalk-runtime.js"></script>
 <script>
-DeckTalk.scene(3, { name: "How often", camera: "push", steps: [
-  { id: "3.1", hold: 8, render: () => `
-      <h1>Value still listed</h1>
-      <p data-at="1.2">by hour, through first pitch</p>
-      <div class="tile" data-cue="3.1b" data-count>1 in 10</div>` },
-  { id: "3.2", hold: 6, render: () => `…` },
+DeckTalk.scene(4, { name: "The edit", steps: [
+  { id: "4.1", hold: 22,
+    cues: { "4.1words": 8.2, "4.1again": 10.6, "4.1lower": 15.4, "4.1moved": 18.2 },
+    render: () => `
+    <div class="slide s4">
+      <p class="eyebrow">05 The edit</p>
+      <p class="s4-cap" data-cue="4.1lower" data-sync>The height is the error, so lower is better.</p>
+      <div class="s4-verify" data-cue="4.1moved" data-fx="none">…</div>
+    </div>` },
 ]});
-DeckTalk.on("3.2b", (slide) => slide.querySelector(".bars").classList.add("grow"));
 </script>
 ```
 
-<Warning>The stage is fixed at 1920 by 1080 CSS pixels and scales to fit the window.
-`[video]` `width` and `height` change only the recorder's viewport and the encoded
-frame size, so a different aspect ratio letterboxes the stage rather than reflowing the
-slides.</Warning>
+## Modes
+
+The URL picks the mode. In prose these docs write index mode, autoplay, cue mode, and freeze mode.
+
+| Mode | `mode` value | URL | Clock starts | What mounts | Used by |
+|---|---|---|---|---|---|
+| Index mode | `index` | no `scene`, `beats`, or `step`, or an unknown scene or step | not used | a list of scenes and steps | a person who picks a scene |
+| Autoplay | `autoplay` | `?scene=N` | at `load` | each step in turn, for `hold / speed` seconds | a browser preview |
+| Cue mode | `cues` | `?beats=…`, usually with `scene` | at `load`, or at `startClock()` with `t0=signal` | each step at the earliest cue it owns | `decktalk record`, `decktalk shots --section` |
+| Freeze mode | `frozen` | `?step=ID`, optionally with `&cue=CUE` | at `load`, after the step has mounted | one step, with its reveals in their end state | `decktalk shots` |
+
+Note: `step` wins over `scene` and `beats`. With `beats` and no registered `scene`, the scene that
+owns the earliest cue plays. [Cue ownership](/concepts/page-contract#cue-ownership) gives the
+ownership and mount rules of cue mode.
 
 ## URL parameters
 
-<ResponseField name="scene" type="string">
-  The page plays this scene. Scene ids are strings, and `DeckTalk.scene(3, …)` registers `"3"`. With no `beats`, the scene autoplays. A `scene` that names no registered scene shows the index with the note `unknown scene N` and adds no warning. With `beats`, the page first falls back to the scene that owns the first cue, and it shows the index only when no scene owns that cue. The catalog still exists when the index shows, so the recorder records the index without a `PAGE ERROR`.
-</ResponseField>
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `scene` | string | none | Plays this scene. `DeckTalk.scene(3, …)` registers `"3"`. |
+| `beats` | string | none | Turns on cue mode. Comma-separated `id@seconds` pairs, in seconds after narration t=0. |
+| `t0` | number or `signal` | `0` | Seconds after `load` at which narration t=0 falls. `signal` waits for `DeckTalk.startClock()`. |
+| `words` | string | none | The section's spoken words, as comma-separated `word@seconds` pairs. `data-sync` uses them. |
+| `step` | string | none | Turns on freeze mode for this step. |
+| `cue` | string | none | With `step`, fires the step's cues up to and including this one. Elements of later cues stay hidden. |
+| `speed` | number | `1` | Divides autoplay time. The minimum is 0.05. Cue mode ignores it. |
+| `hud` | `1` | off | Shows the mode, scene, step, and clock in the top left corner. Never use it in a recording. |
 
-<ResponseField name="beats" type="string">
-  The parameter turns on cue mode. It carries a comma-separated list of `id@seconds` pairs, and each cue fires that many seconds after narration t=0. The runtime sorts the pairs by time. Write every pair as `id@seconds`, because the runtime drops a pair whose seconds do not parse as a number and misreads a pair without an `@`. When `scene` is absent or names no registered scene, the scene that owns the first cue plays.
-</ResponseField>
+Note: An unknown `scene` shows the index with the note `unknown scene N`. An unknown `step` shows
+the index with the note `unknown step ID`. Neither adds a warning. The catalog still exists, so the
+recorder records the index with no `PAGE ERROR`.
 
-<ResponseField name="t0" type="number | signal" default="0">
-  The value is the seconds after the page's `load` event at which narration t=0 falls. `t0=signal` makes the page wait for `DeckTalk.startClock()` instead, which is what the recorder sends.
-</ResponseField>
+Note: The runtime sorts the `beats` pairs by time and splits each pair at its last `@`. It skips a
+pair whose seconds are not a number. Write every pair as `id@seconds`.
 
-<ResponseField name="step" type="string">
-  The parameter turns on freeze mode, which mounts this step with every reveal in its end state and its cues fired in autoplay order, where a cue listed without seconds fires after the timed ones. Animations run with zero duration, count-ups show their final value, typewriters show their full text, and synced text shows whole. Every handler receives `ctx.frozen` as true, and `ctx.at` is negative infinity because the step mounts and its cues fire before the clock starts. A `step` that names no registered step shows the index with the note `unknown step ID` and adds no warning.
-</ResponseField>
+Note: The recorder builds `words` from `build/audio/timeline.json`, in seconds after the section
+start. It removes commas and `@` from each word.
 
-<ResponseField name="cue" type="string">
-  With `step`, the page freezes at this cue rather than at the end of the step. The step's cues fire in autoplay order up to and including this one, an element whose `data-cue` is a later cue of the step stays hidden, and every other reveal shows. Only the cues that fire run their handlers, and `enter` still receives `ctx.frozen` as true. A figure that `enter` draws in its end state when frozen therefore shows that end state at every cue. In the scaffold, `?step=4.1&cue=4.1lower` shows the script diff and the rebuild strip and hides the verify rows, which wait for the later cue `4.1moved`. An id that is not one of the step's cues adds the warning `cue "X" is not one of step 4.1's cues`, and the whole step freezes. `decktalk shots --step 4.1 --cue 4.1lower` opens `?step=4.1&cue=4.1lower`.
-</ResponseField>
+Note: In freeze mode, the step's cues fire in autoplay order. A cue in a `cues` list, with no
+seconds, fires after the timed cues. Animations take no time. A count-up shows its final value, a
+typewriter shows its full text, and a `data-sync` element shows whole.
 
-<ResponseField name="speed" type="number" default="1">
-  The value scales autoplay time. Holds, `data-at` delays, `data-dur`, count-ups, and typewriters all divide by it. Cue mode ignores it. The minimum is 0.05.
-</ResponseField>
-
-<ResponseField name="hud" type="1">
-  The page overlays the mode, the scene, the step, and the clock in the top left corner. A recording should never have it on.
-</ResponseField>
-
-<ResponseField name="words" type="string">
-  The parameter carries the section's spoken words with their seconds after narration t=0, as `word@seconds` pairs separated by commas. The recorder builds it from `build/audio/timeline.json` and sends it with `beats`. Elements with `data-sync` reveal one word at a time from it, and without it they reveal whole, which is what a browser preview shows.
-</ResponseField>
-
-With no parameters the page shows the index, a list of every scene and step with play
-and freeze links.
+Note: With `cue`, only the cues that fire run their handlers. `enter` still gets `ctx.frozen` as
+true, so a figure that `enter` draws in its end state shows that state at every cue. A `cue` that is
+not one of the step's cues adds a warning, and the whole step freezes. In the scaffold,
+`?step=4.1&cue=4.1lower` shows the script diff and the rebuild strip. It hides the verify rows,
+which wait for `4.1moved`. `decktalk shots --step 4.1 --cue 4.1lower` opens that URL.
 
 ## `DeckTalk.scene(id, definition)`
 
-The function registers a scene and returns `DeckTalk`, so calls chain. Scenes start on
-`DOMContentLoaded` when at least one is registered.
+`DeckTalk.scene` registers a scene and returns `DeckTalk`, so calls chain. The scenes start on
+`DOMContentLoaded` when at least one scene is registered.
 
-<ResponseField name="name" type="string" default="Scene <id>">
-  The index page and the catalog show this name.
-</ResponseField>
+### Scene fields
 
-<ResponseField name="camera" type="&quot;push&quot; | null" default="null">
-  `push` scales the stage from 100% to 103% over the scene's length, which is the autoplay total or the last cue plus eight seconds. Frozen steps do not push.
-</ResponseField>
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | `Scene <id>` | Name in the index and the catalog. |
+| `camera` | `"push"` or `null` | `null` | `"push"` zooms the stage element from 100% to 103% over the scene. |
+| `steps` | array | `[]` | The steps, in order, as objects with the step fields below. |
 
-<ResponseField name="steps" type="array">
-  The array lists the steps in order, and each step is an object with the fields below.
+Note: A push lasts the autoplay total in autoplay, or the last cue time plus 8 s in cue mode. It
+lasts at least 4 s. Freeze mode shows no push. [Add a camera push](/guides/design-a-slide#add-a-camera-push)
+says when to use one.
 
-  <Expandable title="step fields">
-    <ResponseField name="id" type="string" default="<scene>.<n>">
-      The field is the step id, which is also a cue id. The default numbers steps from 1.
-    </ResponseField>
-    <ResponseField name="hold" type="number" default="8">
-      The field sets the autoplay seconds before the next step mounts. Cue mode ignores it. A time in `cues` at or past `hold` warns in autoplay, because that cue would fire after the next step mounts. The last step of a scene never warns, because it holds until the end.
-    </ResponseField>
-    <ResponseField name="cues" type="string[] | object" default="none">
-      The field names the cues this step owns. A list gives ownership only. An object `{ id: seconds }` also fires each id that many seconds after the mount in autoplay. In autoplay a `data-cue` element still reveals at its `data-at` time, which defaults to the mount, so the object times the handlers, and the browser preview shows such an element before its cue fires.
-    </ResponseField>
-    <ResponseField name="render" type="({ scene, step, frozen }) => string" default="() => &quot;&quot;">
-      The function returns the slide's HTML. Inside a template literal, write every backslash twice.
-    </ResponseField>
-    <ResponseField name="enter" type="(slideElement, ctx) => void" default="null">
-      The function runs after the slide is in the DOM, for imperative setup. It receives the slide element and [the handler context](#handler-context), where `id` and `step` are both the step id and `at` is the second at which the step mounted. Keep what the cue handlers need on the slide element, as in `slide.fig = setup(slide, ctx.frozen)`, rather than in a global. An exception is logged and does not stop the scene.
-    </ResponseField>
-    <ResponseField name="on" type="{ [cueId]: (slideElement, ctx) => void }" default="{}">
-      The object maps cue ids to per-step handlers, which run after the `data-cue` reveals and before global handlers. Each handler receives the slide element of the mounted step and [the handler context](#handler-context), so it finds its elements with `slide.querySelector`. A handler that takes no arguments keeps working.
-    </ResponseField>
-  </Expandable>
-</ResponseField>
+### Step fields
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `id` | string | `<scene>.<n>` | The step id, which is also a cue id. `n` counts from 1. |
+| `hold` | number | `8` | Seconds before the next step mounts, in autoplay. Cue mode ignores it. |
+| `cues` | array of strings, or object | none | Cue ids that the step owns. An object `{ id: seconds }` also fires each cue that many seconds after the mount, in autoplay. |
+| `render` | function | returns `""` | `({ scene, step, frozen }) => string`. Returns the HTML of the slide. |
+| `enter` | function | none | `(slide, ctx) => void`. Runs after the slide is in the DOM, for setup in code. |
+| `on` | object | `{}` | `{ [cueId]: (slide, ctx) => void }`. Handlers for this step's cues. |
+
+Note: In autoplay, a `data-cue` element appears at its `data-at` time, or when the `cues` object
+fires its cue, whichever comes first. `data-at` defaults to 0. So a browser preview shows the
+element as soon as its step mounts.
+
+Note: In autoplay, a time in `cues` at or past `hold` adds a warning, because that cue fires after
+the next step mounts. The last step of a scene never warns. A seconds value that is not a number
+counts as 0.
+
+Note: `render` gets the runtime's own scene and step objects. Inside its template literal, write
+every backslash twice ([`data-tex`](#data-tex)).
+
+Note: `enter` gets the [handler context](#handler-context) with `id` and `step` set to the step id,
+and `at` set to the mount time. Keep the state that cue handlers need on the slide element, as in
+`slide.fig = setup(slide, ctx.frozen)`. An exception in `enter` goes to `console.error`, and the
+scene goes on.
 
 ## Handler context
 
-A step's `enter`, its `on[id]` handlers, and every `DeckTalk.on(id, fn)` handler receive
-two arguments, the slide element of the mounted step and a context object. A handler that
-takes no arguments keeps working.
+A step's `enter`, its `on[id]` handlers, and every `DeckTalk.on(id, fn)` handler get two arguments.
+The first is the slide element of the mounted step. The second is a context object with these
+fields. A handler that takes no arguments still works.
 
-| Field | Meaning |
-|---|---|
-| `id` | The field holds the cue id. For `enter` it is the step id. |
-| `at` | The field holds the second after narration t=0, to the millisecond, at which the cue fired or the step mounted. It is negative infinity before the clock starts, and so in freeze mode. |
-| `frozen` | The field is true in freeze mode, where a handler should show its end state at once. |
-| `step` | The field holds the id of the mounted step. |
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | The cue id. For `enter`, the step id. |
+| `at` | number | The value of `now()`, rounded to the millisecond, when the cue fired or the step mounted. `-Infinity` before the clock starts, so in freeze mode. |
+| `frozen` | boolean | `true` in freeze mode. A handler then shows its end state at once. |
+| `step` | string or `null` | The id of the mounted step. |
 
+{/* copied from template/deck/index.html, scene 2 */}
 ```js deck/index.html
-{ id: "4.1", hold: 20, cues: { "4.1strike": 0.8 },
-  on: { "4.1strike": (slide) => slide.querySelector(".old").classList.add("struck") },
-  render: () => `…` }
+{ id: "2.1", hold: 16,
+  cues: { "2.1mark": 0.6, "2.1script": 2.4, "2.1aloud": 4.6, "2.1word": 7.3, "2.1follows": 11.3 },
+  on: { "2.1mark": (slide) => slide.querySelector(".s2-mark").classList.add("up") },
+  render: () => { … } }
 ```
 
 ## `DeckTalk` methods and properties
 
-<ResponseField name="on(id, fn)" type="function">
-  The method registers a global handler for cue `id`, called as `fn(slide, ctx)` with the slide element of the mounted step and [the handler context](#handler-context). Several handlers may share an id. A handler also stops an unknown cue id from being reported as a warning.
-</ResponseField>
+| Signature | Returns | Meaning |
+|---|---|---|
+| `scene(id, definition)` | `DeckTalk` | Registers a scene. |
+| `on(id, fn)` | `DeckTalk` | Registers a global handler for cue `id`, called as `fn(slide, ctx)`. Several handlers can share an id. |
+| `start()` | `undefined` | Reads the URL and starts the mode. Runs on `DOMContentLoaded` when a scene exists. A second call does nothing. |
+| `startClock()` | `undefined` | Starts the clock now. The recorder calls it one time, when the URL has `t0=signal`. Does nothing after the clock has started. |
+| `reveal(element)` | `undefined` | Makes one element appear now, with its count-up, typewriter, or word sync. Does nothing to an element that has appeared. |
+| `fireCue(id)` | `undefined` | Fires a cue now, as [When a cue fires](/concepts/page-contract#when-a-cue-fires) describes. |
+| `findStep(stepId)` | `{ scene, step }` or `null` | Finds a step id in any scene. Returns the runtime's own objects. |
+| `scenes` | `Map` | Every registered scene, by id. |
+| `params` | `URLSearchParams` | The page's query parameters, including `params` from the `[[section]]` table. |
 
-<ResponseField name="start()" type="function">
-  The method reads the URL and begins the mode. It runs on `DOMContentLoaded` when scenes exist, and calling it twice does nothing.
-</ResponseField>
+Note: A handler that `DeckTalk.on` registers also stops the `unknown cue id` warning for its id.
+Call `DeckTalk.start()` yourself only for a scene that you register after `DOMContentLoaded`.
 
-<ResponseField name="startClock()" type="function">
-  The method sets narration t=0 to the moment it is called. The recorder calls it once when the page was opened with `t0=signal`. It has no effect on a clock that has already started.
-</ResponseField>
+## Data attributes
 
-<ResponseField name="reveal(element)" type="function">
-  The method reveals one element immediately, with its count-up, typewriter, or word sync, as a cue would. An element already revealed is left alone.
-</ResponseField>
+Put these attributes on elements inside the HTML of a step.
 
-<ResponseField name="fireCue(id)" type="function">
-  The method fires a cue immediately. It reveals the matching `data-cue` elements on the current slide, runs the step's `on[id]` and then the global handlers, each with the slide and [the handler context](#handler-context), and records the id in `window.__decktalk.fired`.
-</ResponseField>
+| Attribute | Value | Default | Meaning |
+|---|---|---|---|
+| `data-cue` | cue id | none | Appears when this cue fires, in cue mode. Otherwise appears at its `data-at` time. |
+| `data-at` | seconds | `0` | Appears this many seconds after the step mounts. |
+| `data-fx` | `rise`, `fade`, `draw`, `drop`, `pop`, `dim`, or `none` | `rise` | The reveal effect. See [`data-fx`](#data-fx). |
+| `data-dur` | seconds | the effect's length | Length of the reveal effect and of a count-up. |
+| `data-count` | empty or `first` | off | Counts the last number in the text up from 0. `first` counts the first number. |
+| `data-type` | milliseconds | `40` | Types the text at this many milliseconds per character. |
+| `data-sync` | flag | off | Shows the text one word at a time, as the voice says each word. See [`data-sync`](#data-sync). |
+| `data-tex` | TeX | none | Typesets this TeX with KaTeX. See [`data-tex`](#data-tex). |
+| `data-display` | flag | off | With `data-tex`, typesets in display mode. |
 
-<ResponseField name="findStep(stepId)" type="function">
-  The method returns `{ scene, step }` for a step id across every scene, or `null`.
-</ResponseField>
+Note: In cue mode, a `data-cue` that `?beats=` does not list adds a warning. That element appears at
+its `data-at` time. In freeze mode, every element appears at once, except elements of cues after the
+`cue` parameter.
 
-<ResponseField name="scenes" type="Map">
-  The map holds every registered scene by id.
-</ResponseField>
+Note: `data-count`, `data-type`, and `data-sync` run when their element appears. Each one needs
+`data-cue` or `data-at` on the same element. Without either, the effect never runs, and the page
+warns.
 
-<ResponseField name="params" type="URLSearchParams">
-  The object holds the page's query parameters, including any `params` from the section table.
-</ResponseField>
+Note: `data-count` keeps the decimal places and thousands commas of the number, so `1,250.5`
+counts with one decimal and a comma. The rest of the text stays in place. The count eases out over
+`data-dur`, or 0.9 s. `data-type` keeps the element at the size of its finished text, so nothing
+around it moves.
 
-## Data attributes inside a step
+### `data-fx`
 
-<ResponseField name="data-cue" type="string">
-  The element reveals on this cue in cue mode. In autoplay, or when the cue is not in `beats`, it reveals `data-at` seconds after the step mounts. In cue mode an id that is not in `beats` also adds a warning.
-</ResponseField>
+| Effect | Length | Animation |
+|---|---|---|
+| `rise` | 0.3 s | Fades in and moves up 10 px. |
+| `fade` | 0.3 s | Fades in. |
+| `draw` | 0.3 s, linear | Draws the stroke of an SVG path with `pathLength="1"`. |
+| `drop` | 0.35 s | Fades in and moves down 24 px. |
+| `pop` | 0.5 s | Fades in and scales from 60% past 108% to 100%. |
+| `dim` | 1.2 s | Starts visible and fades to 16% opacity. |
+| `none` | none | Appears on the frame of its cue. |
 
-<ResponseField name="data-at" type="number" default="0">
-  The element appears this many seconds after the step mounts. An element with `data-at` and no `data-cue` appears on that timer in autoplay and in cue mode, and at once in freeze mode.
-</ResponseField>
+[Choose a reveal effect](/guides/design-a-slide#choose-a-reveal-effect) says where each effect works
+well.
 
-<ResponseField name="data-fx" type="rise | fade | draw | drop | pop | dim | none" default="rise">
-  The attribute picks the reveal animation. [The page contract](/concepts/page-contract#reveal-effects) says what each one is for. `draw` needs an SVG path with `pathLength="1"`. The animations are short so that a reveal is visible on its word. `rise` and `fade` take 0.3 s, `drop` takes 0.35 s, `pop` takes 0.5 s, and `dim` takes 1.2 s, and `data-dur` overrides any of them.
-</ResponseField>
+### `data-sync`
 
-<ResponseField name="data-dur" type="number">
-  The attribute sets the animation length in seconds, which overrides the effect's default. It also sets the count-up length, which otherwise takes 0.9 seconds.
-</ResponseField>
+An element with `data-sync` shows its words one at a time, each at the moment the voice says it.
+These rules apply:
 
-<ResponseField name="data-count" type="&quot;&quot; | first">
-  The element counts the last number in its text up from zero on reveal, or the first number with `data-count="first"`. The number keeps its decimal places and its thousands commas, so `1,250.5` counts with one decimal and a comma, and the rest of the text stays in place. The count eases out. The element needs `data-cue` or `data-at` as well, because the effect runs when the element reveals, and without either the page warns.
-</ResponseField>
+1. The element also needs `data-cue` or `data-at`. Without either, the words never sync, and the page warns.
+2. The text must match the spoken words, word for word. Matching ignores case and every character except a to z and 0 to 9.
+3. Apostrophes do not count in this match. The `beats` stage keeps apostrophes when it matches a cue phrase.
+4. If the text occurs more than once, the runtime uses the first match that starts at most 1.5 s before the element appears. If every match starts earlier, it uses the last match.
+5. If nothing matches, the element appears whole, and the page warns.
+6. Each word appears 20 ms before its start time, with a 0.12 s fade.
+7. The element gets `data-fx="none"` unless it sets its own `data-fx`. A reveal effect on the whole element would hide the timing of the words.
+8. Without a `words` parameter, as in a browser preview, the element appears whole. It also appears whole in freeze mode.
 
-<ResponseField name="data-type" type="number" default="40">
-  The element types its text at this many milliseconds per character on reveal. The element keeps the size of its finished text while it types, so nothing around it shifts. The element needs `data-cue` or `data-at` as well, because the effect runs when the element reveals, and without either the page warns.
-</ResponseField>
+### `data-tex`
 
-<ResponseField name="data-sync" type="flag">
-  The element reveals one word at a time, each at the second the voice reaches it. The runtime matches the element's text against runs of the words in the `words` parameter, ignoring case and every character other than letters and digits. It uses the first matching run that starts no more than 1.5 seconds before the element reveals, or the last matching run when every run starts earlier, so a phrase the section says twice lands on the right occurrence. The text must be word for word what the voice says. When no run matches, the element appears whole and a warning is recorded in `window.__decktalk.warnings`. The element gets `data-fx="none"` unless it sets its own `data-fx`, because a fade on the container fights the per-word reveal. It needs `data-cue` or `data-at` as well, and without either it never reveals and the page warns. In a browser preview, which has no `words`, the element appears whole.
-</ResponseField>
+The runtime typesets the value of `data-tex` with KaTeX when `window.katex` exists. The typeset math
+replaces the element's text. Without KaTeX, the text stays, so write it as a readable fallback.
+KaTeX shows a TeX string that it cannot parse in red, and the page warns.
 
-<ResponseField name="data-tex" type="string">
-  The runtime typesets this TeX with KaTeX into the element when `window.katex` exists, replacing the text content, which stays as the fallback otherwise. Add `data-display` for display math. A TeX string KaTeX cannot parse renders in red, and the runtime adds a warning that names it, which the recorder prints. Inside a `render` template literal every backslash must be doubled, because `\f`, `\t`, `\u`, and `\x` are JavaScript escapes. `\frac` becomes a form feed, `\theta` becomes a tab, and `\underbrace` or `\xrightarrow` becomes a syntax error that blanks the page.
-</ResponseField>
+Inside a `render` template literal, write every backslash twice. JavaScript reads `\f`, `\t`, `\u`,
+and `\x` as escapes. For example, `\frac` becomes a form feed, and `\theta` becomes a tab.
+`\underbrace` and `\xrightarrow` become syntax errors, and a syntax error blanks the page.
 
-<ResponseField name="data-display" type="flag">
-  With `data-tex`, the runtime typesets the value in display mode.
-</ResponseField>
+```js deck/index.html
+render: () => `<p data-tex="\\frac{d}{dx}\\,x^2 = 2x" data-display>d/dx x^2 = 2x</p>`
+```
+
+If a step mounts a `data-tex` element and KaTeX is missing, the runtime checks again 5 s later. If
+the element is still plain text, the page warns.
 
 ## `window.__decktalk`
 
-The object holds read-only state for the recorder, the screenshot tool, and your own tools.
+`window.__decktalk` holds read-only state for the recorder, `decktalk shots`, and your own tools.
 
-<ResponseField name="mode" type="index | autoplay | cues | frozen">
-  The field holds the current mode.
-</ResponseField>
+| Field | Type | Meaning |
+|---|---|---|
+| `mode` | string | `index`, `autoplay`, `cues`, or `frozen`. |
+| `scene` | string or `null` | The id of the playing scene. |
+| `step` | string or `null` | The id of the mounted step. |
+| `cues` | array | The parsed `beats` pairs, as `{ id, t }` objects in time order. |
+| `fired` | array of strings | Cue ids fired so far, in order. `decktalk shots --section` logs it with each frame. |
+| `catalog` | array | One `{ scene, name, steps }` object per scene. `steps` lists the step ids. |
+| `warnings` | array of strings | Everything the runtime could not do, each listed one time. |
+| `now()` | function | Seconds since the clock started, or `-Infinity` before it starts. |
+| `frameGaps` | array | One `{ at, ms }` object for each gap over 100 ms between two animation frames. Cue mode only. |
+| `syncLog` | array | One `{ text, cueAt, runAt, n, firstOn }` object for each `data-sync` element that matched. |
 
-<ResponseField name="scene" type="string | null">
-  The field holds the playing scene's id.
-</ResponseField>
+Note: After a recording, the recorder reads `catalog`, `warnings`, `frameGaps`, and `syncLog`. A
+missing or empty `catalog` is a page error. `decktalk shots` reads `catalog` to find every step.
 
-<ResponseField name="step" type="string | null">
-  The field holds the mounted step's id.
-</ResponseField>
+Note: With a numeric `t0`, the clock starts at `load`, so narration t=0 is where `now()` equals
+`t0`. With `t0=signal`, `now()` counts from narration t=0.
 
-<ResponseField name="cues" type="array">
-  The field holds the parsed `beats` list as `{ id, t }` objects in time order.
-</ResponseField>
+Note: In `frameGaps`, `at` is the value of `now()` when the gap ended. A gap under the cover has
+`at` equal to `-Infinity`, and the sidecar field `frame_gaps` writes it as `null`. Only the part of
+a gap after t=0 counts toward `STALLED` ([decktalk check](/reference/cli#decktalk-check)). So a page
+can do slow first work before t=0, such as drawing a canvas figure or a large SVG.
 
-<ResponseField name="fired" type="string[]">
-  The field lists the cue ids fired so far, in order. `decktalk shots --section` logs it with each frame.
-</ResponseField>
+Note: In `syncLog`, `text` is the first 24 characters of the text. `cueAt` is the time the element
+appeared, and `runAt` is the start of its first matched word. `n` is the number of words, and
+`firstOn` is the time the first word appeared. The sidecar field is `sync_log`.
 
-<ResponseField name="catalog" type="array">
-  The field holds one `{ scene, name, steps }` object per scene, where `steps` lists the step ids. `decktalk shots` reads it to find every step, and the recorder records a page error when it is missing or empty.
-</ResponseField>
-
-<ResponseField name="warnings" type="string[]">
-  The field lists everything the runtime could not honor, each recorded once and echoed to the console. The recorder reads it after the recording and logs each line, and `check` adds a `KATEX?` verdict when one mentions KaTeX or `data-tex`.
-</ResponseField>
-
-<ResponseField name="now()" type="function">
-  The function returns the seconds since narration t=0, or negative infinity before the clock starts.
-</ResponseField>
-
-<ResponseField name="frameGaps" type="array">
-  The field holds one `{ at, ms }` object for every gap over 100 ms between two animation frames, and the runtime watches frames in cue mode only. `at` is the time the gap ended, in seconds since narration t=0, and it is negative infinity for a gap that ended before the recorder started the clock. The recorder copies the list to the sidecar as `frame_gaps`, where that time is written as `null`. `check` reports `STALLED`, and `record` records the section again, only when the part of a gap after t=0 is longer than `stall_ms`. Frames before t=0 sit under the cover and are trimmed from the cut, so a page may do slow first-time work there, such as warming a WebGL scene, without a stall verdict.
-</ResponseField>
-
-<ResponseField name="syncLog" type="array">
-  The field holds one `{ text, cueAt, runAt, n, firstOn }` object per `data-sync` element that matched. The fields give the first characters of its text, the second at which it was revealed, the second of the first matched word, the number of words, and the second at which the first word lit. The recorder copies it to the sidecar as `sync_log`.
-</ResponseField>
-
-The runtime also sets `document.body.dataset.done = "1"` once the last step has mounted.
+The runtime also sets `document.body.dataset.done` to `"1"` when the last step has mounted.
 
 ## `window.__sceneReady`
 
-`window.__sceneReady` is a Promise that the recorder awaits before it starts the narration
-clock. Unless the page has set its own, the runtime sets it once the mode starts, to
-`document.fonts.ready` followed by a wait for KaTeX. In freeze mode the step has mounted by
-then. In cue mode, which the recorder uses, and in autoplay, no step has mounted, because
-steps mount on the clock. The KaTeX wait applies when the document has a `[data-tex]`
-element or a script tag whose `src` contains `katex`, and it polls for `window.katex`
-every 100 ms for up to five seconds, then typesets what is on the stage. When the library
-never arrives, the page warns and the elements stay plain text. The recorder waits for the
-promise with no time limit, and it ignores a rejection and starts the clock anyway.
+`window.__sceneReady` is a Promise. The recorder awaits it before it starts the clock. If the page
+has not set it, the runtime sets it when the mode starts. The default Promise waits for two things,
+in order:
 
-A page that sets its own promise, for an image or for data, replaces all of that.
-[Slide recipes](/guides/slide-recipes#a-screenshot-slide-that-waits-for-the-image)
-shows the pattern.
+1. `document.fonts.ready`.
+2. KaTeX, when the document has a `[data-tex]` element or a `<script>` whose `src` contains `katex`. The runtime checks for `window.katex` every 100 ms, for up to 5 s. Then it typesets the mounted slide. If KaTeX never loads, the page warns, and the elements keep their text.
 
-A page can also add work to the runtime's wait instead of replacing it. The runtime sets
-its promise in its own `DOMContentLoaded` listener, so a listener registered after the
-runtime's script tag finds the promise already set and can extend it. A page with a WebGL
-figure can do this to draw the figure once before narration starts. Headless Chromium draws
-WebGL in software, and the first draw of each object is slow, so doing it here keeps that
-cost under the cover instead of on a cue.
+In freeze mode, the step has mounted before the wait starts. In cue mode and autoplay, no step has
+mounted yet, because steps mount on the clock. The recorder waits with no time limit. It ignores a
+rejected Promise and starts the clock anyway.
 
-```js deck/index.html
+To add work to the default wait, extend the Promise in a `DOMContentLoaded` listener. Register the
+listener after the runtime's `<script>` tag. The runtime sets its Promise in its own listener, which
+runs first. The scaffold's `deck/lesson.html` waits this way for its fonts and three animation
+frames, so its figure has painted before t=0.
+
+{/* copied from template/deck/lesson.html */}
+```js deck/lesson.html
 document.addEventListener("DOMContentLoaded", () => {
-  const warmed = warmFigure(); // a Promise that resolves once the figure has drawn
-  window.__sceneReady = Promise.all([window.__sceneReady, warmed]).then(([ready]) => ready);
+  const faces = ['600 64px "Inter Tight"', '600 60px "Inter Tight"', '500 30px Inter', '500 44px Inter', '500 30px "JetBrains Mono"', '400 24px "JetBrains Mono"'];
+  const painted = Promise.all(faces.map((f) => document.fonts.load(f))).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))));
+  window.__sceneReady = Promise.all([window.__sceneReady, painted]).then(([ready]) => ready);
 });
 ```
 
+To replace the default wait, set `window.__sceneReady` in a script that runs before
+`DOMContentLoaded`. A replacement removes the KaTeX wait. If the page uses `data-tex`, wait for
+`window.katex` yourself. [Wait for a screenshot to load](/guides/slide-recipes#wait-for-a-screenshot-to-load)
+shows how to extend the wait for an image.
+
 ## CSS hooks
 
-The runtime creates `#dt-stage` unless the page already has an element with that id, so a
-page may supply its own stage and style it. Inside it are `#dt-cam` and `#dt-pan`, and
-each mounted slide is a `.dt-slide` child of the pan layer. The runtime's own rules use
-the `dt-` prefix and nothing else.
+The runtime adds a `<style id="dt-style">` element. Its rules use only names that start with `dt-`.
 
 | Hook | Meaning |
 |---|---|
-| `--dt-xfade` | The property sets the crossfade length between slides. The default is 0.35 s, and the first slide enters over 0.3 s instead. |
-| `--dt-scene-dur` | The property sets the length of the camera push, and the runtime sets it per scene. |
-| `.dt-slide`, `.dt-enter`, `.dt-first`, `.dt-leave` | The classes mark a slide, one arriving, the first one, and one leaving. A leaving slide is removed after 400 ms. |
-| `.dt-reveal`, `.dt-on` | The classes mark an element with `data-cue` or `data-at`, and one that has appeared. |
-| `.dt-w` | The class marks one word of a `data-sync` element, which gains `.dt-on` as the voice reaches it. |
-| `.dt-push` | The runtime sets the class on `#dt-cam` while the camera pushes. |
-| `.dt-frozen` | The runtime sets the class on `<html>` in freeze mode, where every animation has zero duration. |
-| `#dt-hud`, `#dt-index`, `.dt-steps` | The hooks mark the overlay and the index page. |
+| `#dt-stage` | The stage element. 1920 by 1080 CSS pixels, scaled to fit the window and centered. The runtime creates it if the page has none. |
+| `#dt-cam`, `#dt-pan` | Layers that the runtime adds inside the stage element. Each slide is a `.dt-slide` child of `#dt-pan`. |
+| `--dt-xfade` | Crossfade length between slides. The default is 0.35 s. |
+| `--dt-scene-dur` | Length of the camera push. The runtime sets it for each scene. |
+| `.dt-slide`, `.dt-enter`, `.dt-first`, `.dt-leave` | A slide, a slide that enters, the first slide, and a slide that leaves. The runtime removes a leaving slide after 400 ms. |
+| `.dt-reveal`, `.dt-on` | An element with `data-cue` or `data-at`, and an element that has appeared. |
+| `.dt-w` | One word of a `data-sync` element. It gains `.dt-on` when the voice says the word. |
+| `.dt-push` | Set on `#dt-cam` during the camera push. |
+| `.dt-frozen` | Set on `<html>` in freeze mode. Every animation takes no time. |
+| `#dt-hud`, `#dt-index`, `.dt-steps` | The overlay and the index. |
 
-## Console warnings
+Note: A page can supply its own `#dt-stage`, as the scaffold's `deck/lesson.html` does. The runtime
+adds `#dt-cam` after the page's content, so the slides draw on top of it.
 
-Each is recorded once in `window.__decktalk.warnings` and printed with a `decktalk:`
-prefix.
+Note: The first slide moves in 24 px from the right as it fades in over 0.3 s. The scaffold turns
+this off with `#dt-pan > .dt-slide.dt-first { animation: none; }`, so a section opens on a full frame.
 
-| Warning | Cause |
-|---|---|
-| `unknown cue id X (no step id or cues list matches it)` | No step owns a cue in `beats`, and no handler is registered for it. |
-| `no step owns any listed cue, so nothing will mount` | Every cue in `beats` is unknown, so the section would record an empty stage. |
-| `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page wants KaTeX and `window.katex` never appeared. The runtime checks when the page loads and again five seconds after a step mounts a `[data-tex]` element without KaTeX, which covers cue mode, where steps mount after the clock starts. `check` reports it as `KATEX?`. A page copied from the template without `decktalk init` has no KaTeX tags, because `init` fills them in. |
-| `data-sync text not found in the spoken words: "…"` | The element's text matches no run of the `words` list, usually because the slide and the script differ by a word. The element appeared whole. |
-| `data-tex could not be parsed: "…" (write \\ for every backslash inside a template literal)` | KaTeX rendered a `data-tex` value in red. A single backslash inside a template literal is the usual cause. |
-| `cue "X" matches no element, handler, or step` | A step owns a cue in `beats` by prefix, but no `data-cue` element, `on` handler, or step id matches it, so it fires and nothing happens. |
-| `step "3.2" owns no cue in ?beats=, so it never appears` | A step of the playing scene owns none of the cues in `beats`. Cue mode mounts only the steps that own a listed cue. |
-| `data-cue "4.1build" is not in ?beats=, so it reveals at its data-at time after the mount` | In cue mode an element waits for a cue that `beats` does not list, usually a cue missing from `cues.json` or left out by `--allow-unresolved`. |
-| `data-sync on an element without data-cue or data-at never reveals, so add data-at="0"` | An element has `data-sync`, `data-count`, or `data-type` but no trigger. The warning names the attribute. |
-| `step "3.1" fires "3.1min" at 32 s but holds 30 s, so it fires on the next step` | In autoplay a time in the step's `cues` object is at or past its `hold`, so the cue fires after the next step mounts and finds none of its elements. The last step of a scene never warns, because it holds until the end. |
-| `cue "X" is not one of step 3.1's cues` | The `cue` parameter names an id that the frozen step does not list in `cues`. The whole step freezes. |
+## Warnings
 
-An `enter` function or a cue handler that throws is logged with `console.error`, and the
-scene goes on. A `render` function that throws is an uncaught page error, which the
-recorder logs as a warning and `check` reports as `PAGE ERROR`.
+The runtime lists each warning one time in `window.__decktalk.warnings`. The console prints it with
+the prefix `decktalk: `. In the messages below, `<id>`, `<step>`, and `<n>` stand for real values.
+
+| Message | Cause | Fix |
+|---|---|---|
+| `unknown cue id <id> (no step id or cues list matches it)` | No step of the playing scene owns a cue in `beats`, and no `DeckTalk.on` handler exists for it. | Fix the id in `cues.json`, or name the id in a step's `cues`. |
+| `no step owns any listed cue, so nothing will mount` | No cue in `beats` has an owner. The recording shows an empty stage element. | Check that the section's `scene` names the scene whose steps own the cues. |
+| `step "<step>" owns no cue in ?beats=, so it never appears` | A step of the playing scene owns none of the cues in `beats`. | Add a cue for the step to `cues.json`, or remove the step. |
+| `cue "<id>" matches no element, handler, or step` | A cue fired, but no `data-cue` element on the mounted slide, handler, or step id matches it. | Make the id the same in `cues.json`, the step's `cues`, and `data-cue`. |
+| `data-cue "<id>" is not in ?beats=, so it reveals at its data-at time after the mount` | In cue mode, an element waits for a cue that `beats` does not list. The cue is missing from `cues.json`, or `--allow-unresolved` left it out. | Add the cue to `cues.json`, or fix its phrase. |
+| `data-sync on an element without data-cue or data-at never reveals, so add data-at="0"` | An element has `data-sync`, `data-count`, or `data-type` but no trigger. The message names the attribute. | Add `data-cue`, or add `data-at="0"`. |
+| `data-sync text not found in the spoken words: "…"` | The element's text matches no run of the `words` list. The slide and the script usually differ by a word. The element appeared whole. | Make the text match the script, word for word. |
+| `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page needs KaTeX, and `window.katex` never appeared. `check` reports `KATEX?`. | Make sure the page loads KaTeX. `decktalk init` adds the KaTeX tags to the scaffold's `deck/index.html`. |
+| `data-tex could not be parsed: "…" (write \\ for every backslash inside a template literal)` | KaTeX showed a `data-tex` value in red. | Write every backslash twice inside the template literal. |
+| `step "<step>" fires "<id>" at <n> s but holds <n> s, so it fires on the next step` | In autoplay, a time in the step's `cues` object is at or past its `hold`. | Raise `hold`, or lower the cue's seconds. |
+| `cue "<id>" is not one of step <step>'s cues` | The `cue` parameter names an id that the frozen step's `cues` does not list. The whole step freezes. | Add the id to the step's `cues`, or fix the `cue` parameter. |
+
+An `enter` function or a handler that throws goes to `console.error`, and the scene goes on. A
+`render` function that throws is an uncaught page error. The recorder logs it, and `check` reports
+`PAGE ERROR`.
+
+## Related
+
+- **Learn how a page plays:** [The page contract](/concepts/page-contract)
+- **Size a slide and choose reveal effects:** [Design a slide](/guides/design-a-slide)
+- **Write a page without the runtime:** [Write a page by hand](/guides/page-by-hand)

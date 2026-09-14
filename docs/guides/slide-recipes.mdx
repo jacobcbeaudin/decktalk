@@ -1,55 +1,57 @@
 ---
 title: Slide recipes
-description: Six copyable DeckTalk slides with script lines, cues, and HTML, including a subtitle that follows the voice, a KaTeX derivation, a chat before-and-after, a code block, a two-column comparison, and a screenshot slide.
-icon: "layer-group"
+description: Copy six common slides into a project, each with its script lines, section table, cues, and scene.
 ---
 
-Each recipe below is a complete section: the lines for `script.md`, the entry for
-`cues.json`, and the scene for `deck/index.html`. Each recipe carries the CSS it needs in a
-`<style>` block, because the scaffold's stylesheet defines only its own classes. Paste the
-style and the scene together. They are recipes rather
-than copies of the scaffold, whose own scenes are walked through in
-[Your first deck](/guides/first-deck). The scene and step ids are placeholders, and any
-section number works as long as the same number appears in the script heading, the
-`[[section]]` table, and the `cues.json` key.
+This page has six slides that you can copy into a project. Use a recipe when you need a common
+slide, such as a derivation or a code block.
 
-<Warning>Inside the backticks of a `render` template, write every backslash twice. The
-`data-tex` value `\\frac{d}{dx}` reaches KaTeX as `\frac{d}{dx}`, and a single backslash
-is swallowed by the template literal.</Warning>
+- [Sync a subtitle to the voice](#sync-a-subtitle-to-the-voice)
+- [Show a derivation line by line](#show-a-derivation-line-by-line)
+- [Show a chat before and after](#show-a-chat-before-and-after)
+- [Show code one line per phrase](#show-code-one-line-per-phrase)
+- [Compare two columns](#compare-two-columns)
+- [Wait for a screenshot to load](#wait-for-a-screenshot-to-load)
 
-## A subtitle that follows the voice
+## Before you start
 
-An element with `data-sync` appears one word at a time, each at the second the voice
-reaches it, so a line on the slide keeps pace with the narration. The scaffold uses it for
-the caption in its edit section, which lights up as the voice reads the edited line. The text
-must be word for word what the voice says, because the runtime matches it against the
-section's spoken words, ignoring case and punctuation, and prefers the run nearest the
-cue. It needs no `data-fx`. The runtime gives a synced element no container animation,
-because a fade on the container would fight the per-word reveal.
+Each recipe is one section, shown as four files: `script.md`, `decktalk.toml`, `cues.json`, and
+`deck/index.html`. The recipes use section numbers 7 to 12, which the scaffold does not use. Each
+`<style>` block defines the classes that its recipe needs. The recipes also use the scaffold's
+`.slide` and `.eyebrow` classes and its color and font variables.
 
+To add a recipe to a project, follow these steps:
+
+1. Paste the `script.md` lines after the last section of the script.
+2. Paste the `[[section]]` table after the last `[[section]]` in `decktalk.toml`.
+3. Paste the `cues.json` entry inside the `sections` object.
+4. Paste the `<style>` and `<script>` blocks into `deck/index.html`, after the `decktalk-runtime.js` tag.
+5. If the section number is already in use, change it in all four files.
+
+## Sync a subtitle to the voice
+
+An element with `data-sync` shows its words one at a time, as the voice says them. The scaffold's
+edit section uses it for its caption.
+
+<CodeGroup>
 ```md script.md
-## 1. Open
+## 7. The idea
 
-Welcome. This is a narrated lesson, cut to the word. [beat] Every visual you see lands on
-the word that introduces it.
+Write the script. [beat] Build the video. [beat] Every picture waits for its word.
+```
 
-## 5. Close
-
-That is the whole idea. [beat] Write the script. [beat] Narrate it in your own voice.
-[beat] And every reveal lands on its word.
+```toml decktalk.toml
+[[section]]
+number = 7
+page = "deck/index.html"
+scene = 7
 ```
 
 ```json cues.json
-"1": { "cues": [
-  { "cue": "1.1a", "on": "$start" },
-  { "cue": "1.1b", "on": "This is" },
-  { "cue": "1.1c", "on": "lands on the word" }
-] },
-"5": { "cues": [
-  { "cue": "5.1", "on": "$start" },
-  { "cue": "5.1a", "on": "Write the script" },
-  { "cue": "5.1b", "on": "Narrate it" },
-  { "cue": "5.1c", "on": "every reveal" }
+"7": { "cues": [
+  { "cue": "7.1a", "on": "Write the script" },
+  { "cue": "7.1b", "on": "Build the video" },
+  { "cue": "7.1c", "on": "Every picture" }
 ] }
 ```
 
@@ -57,117 +59,122 @@ That is the whole idea. [beat] Write the script. [beat] Narrate it in your own v
 <style>
   .stack { position: absolute; left: 120px; top: 360px; display: flex; flex-direction: column; gap: 32px; }
   .stack > * { margin: 0; }
-  .line { font: 450 36px/1.4 var(--sans); color: var(--ink); }
-  .lower { font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+  .line { font: 450 48px/1.4 var(--sans); color: var(--ink); }
 </style>
 <script>
-DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
-  { id: "1.1", hold: 8, render: () => `
+DeckTalk.scene(7, { name: "The idea", steps: [
+  { id: "7.1", hold: 10, cues: { "7.1a": 1, "7.1b": 3.5, "7.1c": 6 }, render: () => `
     <div class="slide">
+      <p class="eyebrow">The idea</p>
       <div class="stack">
-        <h1 class="hero" data-cue="1.1a">My lesson</h1>
-        <p class="line" data-cue="1.1b" data-sync>This is a narrated lesson, cut to the word.</p>
-        <div class="lower" data-cue="1.1c" data-type="40" data-fx="fade">decktalk · scene 1</div>
-      </div>
-    </div>` },
-]});
-
-DeckTalk.scene(5, { name: "Close", steps: [
-  { id: "5.1", hold: 10, cues: { "5.1a": 2, "5.1b": 4.5, "5.1c": 7 }, render: () => `
-    <div class="slide">
-      <p class="eyebrow">The whole idea</p>
-      <div class="stack">
-        <p class="line" data-cue="5.1a" data-sync>Write the script.</p>
-        <p class="line" data-cue="5.1b" data-sync>Narrate it in your own voice.</p>
-        <p class="line" data-cue="5.1c" data-sync>Every reveal lands on its word.</p>
+        <p class="line" data-cue="7.1a" data-sync>Write the script.</p>
+        <p class="line" data-cue="7.1b" data-sync>Build the video.</p>
+        <p class="line" data-cue="7.1c" data-sync>Every picture waits for its word.</p>
       </div>
     </div>` },
 ]});
 </script>
 ```
+</CodeGroup>
 
-The cue mounts the line, and the words arrive from there. A line whose text differs from
-the script by one word appears whole, and the recorder logs
-`data-sync text not found in the spoken words`. In a browser, `?scene=5` shows each
-line whole, because the preview has no word times. To check the line at one cue without
-playing the section, open `?step=5.1&cue=5.1b`. Step 5.1 names its cues in `cues`, so the
-page fires them up to `5.1b` and leaves `5.1c` hidden.
-[The runtime reference](/reference/runtime#data-attributes-inside-a-step) has the rules.
+The cue makes each line appear, and its words appear one at a time from there. The text must match
+the script word for word. If a line differs by one word, it appears whole, and the page warns
+`data-sync text not found in the spoken words`. To check the slide at one cue, open
+`?step=7.1&cue=7.1b`, which hides the line for `7.1c`.
 
-## A derivation that appears line by line
+## Show a derivation line by line
 
-This derivation is a recipe rather than a scaffold scene. Each line is its own element
-with its own cue, and `data-display` typesets it as display math. The answer uses `pop`
-so that it lands harder than the steps.
+Each line of the derivation is its own element with its own cue. `data-display` typesets it as
+display math, and the answer uses `pop` so it stands out. The scaffold's `deck/index.html` loads
+KaTeX.
 
+<Warning>Inside the backticks of `render`, write every backslash twice. A single backslash breaks
+the TeX or blanks the page ([`data-tex`](/reference/runtime#data-tex)).</Warning>
+
+<CodeGroup>
 ```md script.md
-## 3. The derivative of x squared
+## 8. The derivative of x squared
 
 Start with the definition of the derivative, the limit of a difference quotient. [beat]
 Expand the square, and the x squared terms cancel. [beat] Only two x is left.
 ```
 
+```toml decktalk.toml
+[[section]]
+number = 8
+page = "deck/index.html"
+scene = 8
+```
+
 ```json cues.json
-"3": { "cues": [
-  { "cue": "3.1a", "on": "definition" },
-  { "cue": "3.1b", "on": "Expand" },
-  { "cue": "3.1c", "on": "Only two x", "offset": 0.2 }
+"8": { "cues": [
+  { "cue": "8.1a", "on": "definition" },
+  { "cue": "8.1b", "on": "Expand" },
+  { "cue": "8.1c", "on": "Only two x", "offset": 0.2 }
 ] }
 ```
 
 ```html deck/index.html
 <style>
-  .stack { position: absolute; left: 120px; top: 300px; display: flex; flex-direction: column; gap: 56px; }
+  .derivation { position: absolute; left: 120px; top: 300px; display: flex; flex-direction: column; gap: 56px; }
   .math { margin: 0; font-size: 58px; color: var(--ink); }
   .math .katex-display { margin: 0; text-align: left; }
   .answer { color: var(--accent); }
 </style>
 <script>
-DeckTalk.scene(3, { name: "The derivative of x squared", steps: [
-  { id: "3.1", hold: 14, cues: { "3.1a": 1, "3.1b": 5, "3.1c": 9 }, render: () => `
+DeckTalk.scene(8, { name: "The derivative of x squared", steps: [
+  { id: "8.1", hold: 14, cues: { "8.1a": 1, "8.1b": 5, "8.1c": 9 }, render: () => `
     <div class="slide">
-      <div class="stack">
-        <p class="math" data-cue="3.1a" data-display
+      <div class="derivation">
+        <p class="math" data-cue="8.1a" data-display
            data-tex="\\frac{d}{dx}\\,x^2 = \\lim_{h \\to 0} \\frac{(x+h)^2 - x^2}{h}">d/dx x^2 = lim (x+h)^2 - x^2 / h</p>
-        <p class="math" data-cue="3.1b" data-display
+        <p class="math" data-cue="8.1b" data-display
            data-tex="= \\lim_{h \\to 0} \\frac{2xh + h^2}{h} = \\lim_{h \\to 0} (2x + h)">= lim (2xh + h^2) / h = lim (2x + h)</p>
-        <p class="math answer" data-cue="3.1c" data-fx="pop" data-display
+        <p class="math answer" data-cue="8.1c" data-fx="pop" data-display
            data-tex="\\frac{d}{dx}\\,x^2 = 2x">d/dx x^2 = 2x</p>
       </div>
     </div>` },
 ]});
 </script>
 ```
+</CodeGroup>
 
-The plain text inside each element is what shows when KaTeX is absent, so write it as a
-readable fallback.
+The plain text inside each element shows when KaTeX is absent, so write it as a readable fallback.
 
-## A chat before and after
+## Show a chat before and after
 
-The question types in with `data-type`, and the reply fades in one line at a time. The
-bubble and its first line share a cue, so the bubble's background appears at once while
-the text arrives. The second step is the "after", and its cue `4.2` mounts it.
+The question types in with `data-type`, and the reply fades in one line at a time. The bubble and
+its first line share a cue, so the bubble's background appears when its text starts. The second
+step is the "after", and its cue `9.2` mounts it.
 
+<CodeGroup>
 ```md script.md
-## 4. Before and after
+## 9. Before and after
 
 Watch a vague prompt first. [beat] Write about photosynthesis. [beat] The reply is true,
 and it is flat. [beat] One line says what it is. [beat] Another line says where it happens.
 
-[Step 4.2.]
+[Step 9.2.]
 
 Now ask for what you actually want. [beat] Explain it to a ninth grader, in three
 sentences. [beat] Same model, better prompt.
 ```
 
+```toml decktalk.toml
+[[section]]
+number = 9
+page = "deck/index.html"
+scene = 9
+```
+
 ```json cues.json
-"4": { "cues": [
-  { "cue": "4.1ask", "on": "Write about" },
-  { "cue": "4.1r1", "on": "One line" },
-  { "cue": "4.1r2", "on": "another line" },
-  { "cue": "4.2", "on": "Now ask" },
-  { "cue": "4.2ask", "on": "Explain it" },
-  { "cue": "4.2reply", "on": "Same model" }
+"9": { "cues": [
+  { "cue": "9.1ask", "on": "Write about" },
+  { "cue": "9.1r1", "on": "One line" },
+  { "cue": "9.1r2", "on": "another line" },
+  { "cue": "9.2", "on": "Now ask" },
+  { "cue": "9.2ask", "on": "Explain it" },
+  { "cue": "9.2reply", "on": "Same model" }
 ] }
 ```
 
@@ -180,24 +187,24 @@ sentences. [beat] Same model, better prompt.
   .reply { align-self: flex-start; background: var(--block); color: var(--ink); }
 </style>
 <script>
-DeckTalk.scene(4, { name: "Before and after", steps: [
-  { id: "4.1", hold: 12, cues: { "4.1ask": 1, "4.1r1": 5, "4.1r2": 7 }, render: () => `
+DeckTalk.scene(9, { name: "Before and after", steps: [
+  { id: "9.1", hold: 12, cues: { "9.1ask": 1, "9.1r1": 5, "9.1r2": 7 }, render: () => `
     <div class="slide">
       <p class="eyebrow">Before</p>
       <div class="chat">
-        <div class="bubble ask" data-cue="4.1ask" data-type="40" data-fx="fade">Write about photosynthesis.</div>
-        <div class="bubble reply" data-cue="4.1r1" data-fx="fade">
-          <p data-cue="4.1r1" data-fx="fade">Photosynthesis is the process by which plants convert light into energy.</p>
-          <p data-cue="4.1r2" data-fx="fade">It takes place in the chloroplasts.</p>
+        <div class="bubble ask" data-cue="9.1ask" data-type="40" data-fx="fade">Write about photosynthesis.</div>
+        <div class="bubble reply" data-cue="9.1r1" data-fx="fade">
+          <p data-cue="9.1r1" data-fx="fade">Photosynthesis is the process by which plants convert light into energy.</p>
+          <p data-cue="9.1r2" data-fx="fade">It takes place in the chloroplasts.</p>
         </div>
       </div>
     </div>` },
-  { id: "4.2", hold: 12, cues: { "4.2ask": 1, "4.2reply": 6 }, render: () => `
+  { id: "9.2", hold: 12, cues: { "9.2ask": 1, "9.2reply": 6 }, render: () => `
     <div class="slide">
       <p class="eyebrow">After</p>
       <div class="chat">
-        <div class="bubble ask" data-cue="4.2ask" data-type="30" data-fx="fade">Explain photosynthesis to a ninth grader in three sentences.</div>
-        <div class="bubble reply" data-cue="4.2reply" data-fx="pop">
+        <div class="bubble ask" data-cue="9.2ask" data-type="30" data-fx="fade">Explain photosynthesis to a ninth grader in three sentences.</div>
+        <div class="bubble reply" data-cue="9.2reply" data-fx="pop">
           <p>Plants catch sunlight and use it to turn water and air into sugar.</p>
         </div>
       </div>
@@ -205,25 +212,34 @@ DeckTalk.scene(4, { name: "Before and after", steps: [
 ]});
 </script>
 ```
+</CodeGroup>
 
-## A code block that appears one line per phrase
+## Show code one line per phrase
 
-Each line is a block element with its own cue. A container with `white-space: pre` and a
-monospace font keeps the indentation, and `fade` avoids the vertical motion of `rise`,
-which looks wrong on code.
+Each line of code is a block element with its own cue. The container keeps the indentation with
+`white-space: pre` and a monospace font. The lines use `fade`, because the motion of `rise` looks
+wrong on code.
 
+<CodeGroup>
 ```md script.md
-## 5. Three commands
+## 10. Three commands
 
 Three commands run the whole thing. [beat] Initialize a project. [beat] Build it
 silently, with no key. [beat] Then build it with your voice.
 ```
 
+```toml decktalk.toml
+[[section]]
+number = 10
+page = "deck/index.html"
+scene = 10
+```
+
 ```json cues.json
-"5": { "cues": [
-  { "cue": "5.1a", "on": "Initialize" },
-  { "cue": "5.1b", "on": "silently" },
-  { "cue": "5.1c", "on": "your voice" }
+"10": { "cues": [
+  { "cue": "10.1a", "on": "Initialize" },
+  { "cue": "10.1b", "on": "silently" },
+  { "cue": "10.1c", "on": "your voice" }
 ] }
 ```
 
@@ -233,35 +249,44 @@ silently, with no key. [beat] Then build it with your voice.
   .code .cmt { color: var(--mute); }
 </style>
 <script>
-DeckTalk.scene(5, { name: "Three commands", steps: [
-  { id: "5.1", hold: 10, cues: { "5.1a": 1, "5.1b": 4, "5.1c": 7 }, render: () => `
+DeckTalk.scene(10, { name: "Three commands", steps: [
+  { id: "10.1", hold: 10, cues: { "10.1a": 1, "10.1b": 4, "10.1c": 7 }, render: () => `
     <div class="slide">
-      <div class="code"><div data-cue="5.1a" data-fx="fade">decktalk init my-lesson</div><div data-cue="5.1b" data-fx="fade">decktalk build --silent   <span class="cmt"># no key</span></div><div data-cue="5.1c" data-fx="fade">decktalk build</div></div>
+      <div class="code"><div data-cue="10.1a" data-fx="fade">decktalk init my-lesson</div><div data-cue="10.1b" data-fx="fade">decktalk build --silent   <span class="cmt"># no key</span></div><div data-cue="10.1c" data-fx="fade">decktalk build</div></div>
     </div>` },
 ]});
 </script>
 ```
+</CodeGroup>
 
-Keep the lines on one physical line inside the `render` template, because `white-space: pre`
-would otherwise render the template's own indentation.
+Keep the lines on one physical line inside the `render` template. With `white-space: pre`, the
+page would otherwise show the template's own indentation.
 
-## A two-column comparison
+## Compare two columns
 
-Two columns reveal left then right, and each has a heading and a caption. The `<style>`
-block lays them out with flex, and each column gets one cue.
+Two columns appear left and then right, and each column has one cue. The `<style>` block lays them
+out with flex.
 
+<CodeGroup>
 ```md script.md
-## 6. Two ways to time a reveal
+## 11. Two ways to time a reveal
 
-On the left, a timeline. Every reveal is a number of seconds, and every edit moves them
-by hand. [beat] On the right, the words. Every reveal is a phrase, and it follows the
-sentence wherever it goes.
+On the left, a timeline editor. Every reveal is a number of seconds, and every edit moves them
+by hand. [beat] On the right, the words. Every reveal is a phrase, and it moves with the
+sentence.
+```
+
+```toml decktalk.toml
+[[section]]
+number = 11
+page = "deck/index.html"
+scene = 11
 ```
 
 ```json cues.json
-"6": { "cues": [
-  { "cue": "6.1left", "on": "a timeline" },
-  { "cue": "6.1right", "on": "the words" }
+"11": { "cues": [
+  { "cue": "11.1left", "on": "timeline editor" },
+  { "cue": "11.1right", "on": "the words" }
 ] }
 ```
 
@@ -271,81 +296,90 @@ sentence wherever it goes.
   .pane { flex: 1; background: var(--block); border-radius: 24px; padding: 48px; min-height: 520px; }
   .pane h2 { margin: 0 0 24px; font: 600 56px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
   .pane .line { margin: 0 0 16px; font: 450 36px/1.4 var(--sans); color: var(--ink); }
-  .pane .caption { margin: 0; }
-  .accent { color: var(--accent); }
+  .pane .caption { margin: 0; font: 450 30px/1.4 var(--sans); color: var(--mute); }
+  .pane .accent { color: var(--accent); }
 </style>
 <script>
-DeckTalk.scene(6, { name: "Two ways to time a reveal", steps: [
-  { id: "6.1", hold: 12, cues: { "6.1left": 1, "6.1right": 6 }, render: () => `
+DeckTalk.scene(11, { name: "Two ways to time a reveal", steps: [
+  { id: "11.1", hold: 12, cues: { "11.1left": 1, "11.1right": 6 }, render: () => `
     <div class="slide">
       <div class="cols">
-        <div class="pane" data-cue="6.1left">
-          <h2>A timeline</h2>
+        <div class="pane" data-cue="11.1left">
+          <h2>A timeline editor</h2>
           <p class="line">Every reveal is a number of seconds.</p>
           <p class="caption">Every edit moves them by hand.</p>
         </div>
-        <div class="pane" data-cue="6.1right">
+        <div class="pane" data-cue="11.1right">
           <h2 class="accent">The words</h2>
           <p class="line">Every reveal is a phrase.</p>
-          <p class="caption">It follows the sentence wherever it goes.</p>
+          <p class="caption">It moves with the sentence.</p>
         </div>
       </div>
     </div>` },
 ]});
 </script>
 ```
+</CodeGroup>
 
-## A screenshot slide that waits for the image
+## Wait for a screenshot to load
 
-This recipe requires a few lines of JavaScript before the runtime starts. The recorder
-starts the narration clock only after `window.__sceneReady` resolves, so a page with a
-large image should set that promise to the image's decode. Set it in a
-script that runs before the runtime starts, because the runtime sets its own promise
-only when the page has not. The image is decoded into the browser's cache, so the `img`
-element inside the step appears at once when its cue fires.
+The recorder starts the clock only after `window.__sceneReady` resolves. This recipe adds the
+decode of a large image to that wait, so the image is ready before narration t=0. The recipe
+extends the runtime's own wait, so the KaTeX wait still applies.
 
+<CodeGroup>
 ```md script.md
-## 7. The status report
+## 12. The status report
 
 Here is the status report after a build. [beat] Every section shows a recording and a
 cut, and the captions and chapters sit beside the video.
 ```
 
+```toml decktalk.toml
+[[section]]
+number = 12
+page = "deck/index.html"
+scene = 12
+```
+
 ```json cues.json
-"7": { "cues": [
-  { "cue": "7.1shot", "on": "status report" },
-  { "cue": "7.1note", "on": "captions" }
+"12": { "cues": [
+  { "cue": "12.1shot", "on": "status report" },
+  { "cue": "12.1note", "on": "captions" }
 ] }
 ```
 
 ```html deck/index.html
 <style>
   .shot { position: absolute; left: 260px; top: 140px; width: 1400px; border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.25); }
-  .note { position: absolute; left: 260px; top: 960px; margin: 0; }
+  .note { position: absolute; left: 260px; top: 960px; margin: 0; font: 450 30px/1.4 var(--sans); color: var(--mute); }
 </style>
-<script src="decktalk-runtime.js"></script>
 <script>
-const shot = new Image();
-shot.src = "../media/status.png";
-window.__sceneReady = document.fonts.ready.then(() => shot.decode()).catch(() => {});
-
-DeckTalk.scene(7, { name: "The status report", steps: [
-  { id: "7.1", hold: 10, cues: { "7.1shot": 0.5, "7.1note": 5 }, render: () => `
+DeckTalk.scene(12, { name: "The status report", steps: [
+  { id: "12.1", hold: 10, cues: { "12.1shot": 0.5, "12.1note": 5 }, render: () => `
     <div class="slide">
-      <img class="shot" src="../media/status.png" alt="" data-cue="7.1shot" data-fx="fade">
-      <p class="caption note" data-cue="7.1note">Captions and chapters sit beside the video.</p>
+      <img class="shot" src="../media/status.png" alt="" data-cue="12.1shot" data-fx="fade">
+      <p class="note" data-cue="12.1note">Captions and chapters sit beside the video.</p>
     </div>` },
 ]});
+
+// Narration t=0 also waits until the screenshot has decoded.
+document.addEventListener("DOMContentLoaded", () => {
+  const shot = new Image();
+  shot.src = "../media/status.png";
+  const decoded = shot.decode().catch(() => {});
+  window.__sceneReady = Promise.all([window.__sceneReady, decoded]).then(([ready]) => ready);
+});
 </script>
 ```
+</CodeGroup>
 
-A page that sets its own `__sceneReady` and also uses `data-tex` should wait for
-`window.katex` itself, because the runtime's KaTeX wait is part of the promise it would
-otherwise have set. [The runtime reference](/reference/runtime#window__sceneready) has
-the details.
+The listener runs after the runtime's own `DOMContentLoaded` listener, so `window.__sceneReady`
+already holds the runtime's Promise. [`window.__sceneReady`](/reference/runtime#window-__sceneready)
+explains the default wait.
 
 ## Next
 
-[The page contract](/concepts/page-contract#designing-the-stage) has the sizes and
-margins that keep text readable at 1920 by 1080, and a table of which reveal effect
-suits which element.
+- **Size a slide and choose reveal effects:** [Design a slide](/guides/design-a-slide)
+- **Look up every attribute:** [Runtime](/reference/runtime#data-attributes)
+- **Write phrases that time well:** [Writing for the ear](/guides/writing-for-the-ear)

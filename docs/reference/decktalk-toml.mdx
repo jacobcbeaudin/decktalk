@@ -1,16 +1,25 @@
 ---
 title: decktalk.toml
-description: Every table and key of the DeckTalk project file, with the project, voice, section, transition, mix, sfx, loudnorm, and soundscape tables and their defaults.
-icon: "file-code"
-mode: "wide"
+description: Look up every table and key in the DeckTalk project file, with its type and default.
 ---
 
-Each project has one `decktalk.toml`. Every path in it is relative to the project
-directory. An unknown top-level table fails the load, so a typo cannot silently do
-nothing, and a value of the wrong type fails with the table and key named. The file has
-two kinds of content. The document tables in this reference describe the presentation. The
-[tuning tables](/reference/configuration) change how DeckTalk renders and are rarely
-needed.
+`decktalk.toml` is the project file. It maps each section to a page or a clip, and it sets the voice,
+the transitions, and the sound. Use this page to look up a table or a key and its default.
+
+The file sits in the project root. Every path in it is relative to that directory.
+
+## Minimal file
+
+The smallest file that loads has one page section.
+
+```toml decktalk.toml
+[[section]]
+number = 1
+page = "deck/index.html"
+```
+
+`decktalk init` writes a six-section file with comments. This fuller example adds a clip section, a
+dip to black, and an underscore.
 
 ```toml decktalk.toml
 [project]
@@ -37,151 +46,273 @@ dips = [[0, 1]]
 underscore = "build/music/underscore.mp3"
 ```
 
+## Load rules
+
+Every project command loads `decktalk.toml` first. The load fails in each of these cases.
+
+- A top-level table is unknown.
+- The file has no `[[section]]` table.
+- A required key is missing.
+- A value has the wrong type. For example, `seconds = 120.5` under `[soundscape.music]` fails.
+- Two sections share a `number`.
+- A section has both `page` and `clip`, or neither.
+- `hold_seconds` is set on a section other than the last page section.
+- A `dips` pair or a `[[mix.sfx]]` table names a section that does not exist.
+
+The error names the table and the key.
+
+{/* sample: Project.from_toml on a file with seconds = 120.5 under [soundscape.music] */}
+
+```text
+decktalk.toml: [soundscape.music]: 'seconds' must be int, got float
+```
+
+An unknown key inside a table does not fail the load. DeckTalk prints a warning, ignores the key, and
+continues. The same rule covers the tuning tables and the per-machine file.
+
+{/* sample: decktalk status in a scaffold with stability misspelled under [voice] */}
+
+```text
+decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?)
+```
+
+A page section key on a clip section, or a clip section key on a page section, gets its own warning.
+The warning names the section kind that the key belongs to.
+
+## Which value wins
+
+- `--model` wins over `[voice] model`, which wins over `[narration] model`.
+- A tuning table in `decktalk.toml` wins over the per-machine file. A `DECKTALK_<TABLE>_<FIELD>` variable and a command option win over both.
+- The project tables on this page have no environment variables.
+
+[Configuration](/reference/configuration) lists the five layers for tuning tables.
+
 ## `[project]`
 
-| Key | Default | Meaning |
-|---|---|---|
-| `name` | the directory name | The key sets the output name. The video lands at `build/out/<name>.mp4`, with `<name>.srt`, `<name>.vtt`, and `<name>.chapters.txt` beside it. |
-| `script` | `script.md` | The key names the narration file. |
-| `cues` | `cues.json` | The key names the cue file. The file is optional, and without it pages run their built-in timing. |
-| `build` | `build` | The key names the directory for generated files. |
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | the directory name | Output name. The video is `build/out/<name>.mp4`. |
+| `script` | path | `script.md` | Script file. |
+| `cues` | path | `cues.json` | Cue file. Optional. Without it, pages use their own timing. |
+| `build` | path | `build` | Directory for generated files. |
 
 ## `[voice]`
 
-The voice settings for this presentation. The voice id and the API key are secrets, so
-they live in `.env` as `ELEVENLABS_VOICE_ID` and `ELEVENLABS_API_KEY`, or in the
-environment.
+`[voice]` sets how the voice sounds. The API key and the voice id are secrets, so they live in `.env`
+as `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`, or in the environment.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `provider` | `elevenlabs` | The key names the speech provider by the name it registered. ElevenLabs is the built-in provider. |
-| `model` | `[narration]` `model`, which defaults to `eleven_multilingual_v2` | The key sets the ElevenLabs model id. The `--model` flag overrides it for one run. |
-| `stability` | 0.55 | Lower values vary more between takes. |
-| `similarity_boost` | 0.75 | The value sets how closely the voice follows the clone. |
-| `style` | 0.0 | The value sets style exaggeration, and zero is the most stable. |
-| `speaker_boost` | true | The value turns ElevenLabs' speaker boost on or off. |
-| `speed` | 1.0 | The value sets the speaking rate. |
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `provider` | string | `elevenlabs` | Registered speech provider name. |
+| `model` | string | `= [narration] model` | Speech model id, such as `eleven_multilingual_v2`. |
+| `stability` | number | 0.55 | Lower values vary more between takes. |
+| `similarity_boost` | number | 0.75 | How closely the voice follows its source voice. |
+| `style` | number | 0.0 | Style exaggeration. 0 is the most stable. |
+| `speaker_boost` | boolean | true | ElevenLabs speaker boost. |
+| `speed` | number | 1.0 | Speaking rate. |
 
-A change to any of these changes the cache key of every section, so the next build
-synthesizes every section again and spends credits on all of them.
-[Requirements and costs](/requirements) lists every change that does.
+Note: each key is part of every section's cache key. After a change, the next voiced build voices
+every section again. [What spends credits](/requirements#what-spends-credits) lists every change
+that costs credits. An unregistered `provider` fails when `narrate` runs, not at load.
 
 ## `[[section]]`
 
-Write one table per `## N.` section of the script. The order in the file does not
-matter, because DeckTalk sorts them by `number`, and a duplicate number fails the load.
-Every script section must have one. A section is either a page or a clip, and a table
-with both keys fails.
+Write one `[[section]]` table for each `## N.` section of the script. DeckTalk sorts sections by
+`number`, so the order in the file does not matter. Each section is a page section or a clip section.
 
-| Key | Applies to | Default | Meaning |
+### Keys for every section
+
+| Key | Type | Default | Meaning |
 |---|---|---|---|
-| `number` | both | required | The key holds the number that matches `## N.` in the script. |
-| `title` | both | empty | The key sets the title shown on slates, in the status report, and as the chapter title. |
-| `page` | page | required | The key names the HTML file, for example `deck/index.html`. |
-| `scene` | page | the section number | The key sets the value the page receives as `?scene=`. It may be a number or a string. |
-| `extra_seconds` | page | 0.3 | The key sets how long the recording runs past the narration. The margin keeps the cut off a frame that was never drawn. |
-| `hold_seconds` | page | 0 | The key sets how long the last frame holds after the narration, by cloning it. Only the last page section may hold, because an earlier hold would push every later visual off its words. |
-| `ambience` | page | false | The key sets whether the ambience bed plays under this section. |
-| `params` | page | none | The table holds extra query parameters for the page, written as `[section.params]` with keys such as `theme = "dark"`. A `beats` key here replaces the resolved cues. |
-| `clip` | clip | required | The key names your video file, which keeps its own audio. It is scaled and padded to the frame size. A clip may sit before, between, or after the page sections, and the narration pauses for a clip between page sections. [Add a clip section](/guides/clip-section#where-a-clip-may-sit) explains how. |
-| `slate_seconds` | clip | 5 | The key sets how long the titled slate plays when the clip file is missing. |
+| `number` | integer | required | Matches `## N.` in the script. |
+| `title` | string | empty | Chapter title and slate title. An empty title becomes `Section N`. |
 
-A missing clip is not an error unless you pass `--strict`. A titled slate plays for
-`slate_seconds` in its place, so a project builds before every asset exists.
+### Page section keys
 
-A clip between two page sections plays as B-roll. The narration pauses when the clip
-starts and resumes on the first frame of the next page section, so the words of every page
-section stay on their picture.
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `page` | path | required | HTML file, such as `deck/index.html`. |
+| `scene` | integer or string | `= number` | Value the page receives as `?scene=`. |
+| `extra_seconds` | number | 0.3 | Seconds the recording runs past the section span. |
+| `hold_seconds` | number | 0 | Seconds the last frame holds after the narration. Last page section only. |
+| `ambience` | boolean | false | Plays the ambience bed under this section. |
+| `params` | table | none | Extra query parameters for the page, written as `[section.params]`. |
+
+Note: `params` values become strings. A `beats` key replaces the cue times, a `scene` key replaces
+`scene`, and a `words` key replaces the spoken words. `t0` is always `signal`, whatever `params` says.
+
+`hold_seconds` exists only on the last page section. The narration is continuous, so a hold on an
+earlier section would move every later picture off its words.
+
+### Clip section keys
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `clip` | path | required | Your video file. It keeps its own audio. |
+| `slate_seconds` | number | 5 | Seconds the titled slate plays when the file is missing. |
+| `optional` | boolean | false | Plays the slate for a missing clip, even under `--strict`. |
+
+A clip section follows three rules.
+
+1. A clip section can sit before, between, or after page sections.
+2. The narration pauses for a clip between page sections, and resumes with the next page section.
+3. If the file is missing, a titled slate plays for `slate_seconds`. With `--strict`, `assemble` and `build` fail instead, unless the section sets `optional = true`.
+
+The scaffold's section 4 sets `optional = true`. Delete that line after you add the clip.
+
+DeckTalk scales and pads the clip to the frame size. Captions cover page sections only, and chapters
+include the clip. [Add a clip section](/guides/clip-section) shows the whole task.
 
 ## `[transition]`
 
-| Key | Default | Meaning |
-|---|---|---|
-| `dips` | every cut | The key lists the boundaries that dip to black, written as `[[from, to], …]` section numbers. Leave the key out to dip at every cut, or set `[]` for no dips. A pair that names a section that does not exist fails the load. |
-| `dip_seconds` | 0.15 | The key sets the fade length, quantized to whole frames. It applies to video only, and audio never dips. |
-| `page_fades_in` | true | Pages fade themselves up, so DeckTalk adds no fade-in on their side of a dip. |
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `dips` | array of [integer, integer] | every cut | Boundaries that dip to black, as `[[from, to], …]`. |
+| `dip_seconds` | number | 0.15 | Fade length, rounded to whole frames. Video only. |
+| `page_fades_in` | boolean | true | Pages fade themselves in, so the cut adds no fade-in to a page section. |
+
+Note: leave out `dips` to dip at every cut. Set `dips = []` for no dips. Audio never dips.
 
 ## `[mix]`
 
-The mix is optional. Without this table the video carries narration and clip audio
-only. [Sound](/concepts/sound) explains how the parts fit together.
+`[mix]` is optional. Without it, the video carries narration and clip audio only.
+[Sound](/concepts/sound) explains how the parts fit together.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `underscore` | none | The key names the music bed. DeckTalk loops it and ducks it under speech. |
-| `underscore_db` | -24 | The key sets the bed level. |
-| `underscore_duck_db` | -6 | The key sets the additional attenuation under speech. |
-| `underscore_fade_in` | 2 | The key sets the fade-in length in seconds. |
-| `underscore_fade_out` | 3 | The key sets the fade-out length in seconds. |
-| `markers` | none | The key names a JSON file that swells or mutes the bed at spoken phrases. |
-| `ambience` | none | The key names the ambience bed. It plays under sections that set `ambience = true`. |
-| `ambience_db` | -20 | The key sets the ambience level. |
-| `slate` | rendered | The key names a PNG to use instead of the rendered titled slate. |
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `underscore` | path | none | Music under the whole video. Loops, and ducks under speech and clips. |
+| `underscore_db` | number | -24 | Underscore level in dB. |
+| `underscore_duck_db` | number | -6 | Extra level change in dB under each spoken span and clip. |
+| `underscore_fade_in` | number | 2 | Fade-in seconds. |
+| `underscore_fade_out` | number | 3 | Fade-out seconds. |
+| `markers` | path | none | A markers file. See [`markers.json`](#markers-json). |
+| `ambience` | path | none | Ambience bed for sections that set `ambience = true`. |
+| `ambience_db` | number | -20 | Ambience level in dB. |
+| `slate` | path | a rendered slate | PNG for every missing clip, instead of the rendered titled slate. |
+
+Note: a missing underscore or ambience file does not fail the build. `assemble` logs a warning, such
+as `underscore missing (<path>); no music`, and plays the video without it.
 
 ### `[[mix.sfx]]`
 
-One table per one-shot effect. [Put a sound effect on a cue](/guides/sfx-on-a-cue) walks
-through one.
+Write one `[[mix.sfx]]` table for each sound effect.
+[Put a sound effect on a cue](/guides/sfx-on-a-cue) shows the task.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `file` | required | The key names the audio file. |
-| `section` | required | The key holds the number of the section whose cue places the effect. The section must exist. |
-| `cue` | required | The key names a cue id that `beats` resolved for that section. |
-| `db` | -16 | The value sets the effect's level. |
-| `offset` | 0 | The key holds seconds added to the cue time. |
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `file` | path | required | Audio file. |
+| `section` | integer | required | Section whose cue places the sound effect. Must exist. |
+| `cue` | string | required | Cue id that `beats` resolved in that section. |
+| `db` | number | -16 | Level in dB. |
+| `offset` | number | 0 | Seconds added to the cue time. |
+
+Note: this `offset` belongs to the sound effect, not to the cue. A missing file or an unresolved cue
+does not fail the build. `assemble` logs `skipped` for that sound effect.
 
 ### `[mix.loudnorm]`
 
-The targets for the loudness pass, which [How it works](/concepts/how-it-works#loudness)
-describes. The keys are accepted in upper or lower case.
+`[mix.loudnorm]` sets the targets of the loudness pass. [Loudness](/concepts/sound#loudness) explains
+the pass.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `I` | -16 | The value sets the integrated loudness in LUFS. |
-| `TP` | -1.5 | The value sets the true-peak ceiling in dBTP. |
-| `LRA` | 11 | The value sets the loudness range in LU, which is passed to the measurement. |
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `I` | number | -16 | Integrated loudness target in LUFS. |
+| `TP` | number | -1.5 | True-peak ceiling in dBTP. |
+| `LRA` | number | 11 | Loudness range in LU, passed to the measurement. |
+
+Note: the keys work in upper or lower case. A silent build skips the loudness pass.
+
+### `markers.json`
+
+A markers file swells or mutes the underscore at spoken phrases. `[mix] markers` names it, and the
+scaffold's file is `media/markers.json`.
+
+{/* input: src/decktalk/template/media/markers.json */}
+
+```json media/markers.json
+{
+  "_comment": "Underscore structure. Each marker swells the bed by boost_db for boost_seconds at a spoken phrase (or $start/$end of a section); mute_seconds silences it for one beat first.",
+  "boost_db": 3,
+  "boost_seconds": 2,
+  "markers": [
+    { "name": "open", "section": 1, "on": "$start" }
+  ]
+}
+```
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `boost_db` | number | 3 | dB the underscore rises at each marker. |
+| `boost_seconds` | number | 2 | Seconds each swell lasts. |
+| `markers` | array of objects | none | The markers. |
+
+| Marker key | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | none | Name in warnings. |
+| `section` | integer | required | Section number. |
+| `on` | string | `$start` | Spoken phrase, `$start`, or `$end`. |
+| `offset` | number | 0 | Seconds added to the marker time. |
+| `occurrence` | integer | 1 | Which match of the phrase. |
+| `case_sensitive` | boolean | false | Matches case when true. |
+| `mute_seconds` | number | 0 | Seconds the underscore is silent before the swell. |
+
+- Markers apply only when the underscore file exists. `--nomix` turns them off.
+- `$start` works on any section. A phrase or `$end` needs a spoken section.
+- A phrase matches by the same rules as a cue phrase.
+- If the file is missing, `assemble` logs `markers file missing (<path>); underscore without structure`.
+- If a marker does not resolve, `assemble` logs `marker '<name>' unresolved; skipped`.
+- A file that is not valid JSON fails `assemble` with a `ConfigError`.
 
 ## `[soundscape]`
 
-These tables hold the prompts for `decktalk soundscape`, which generates sound with
-ElevenLabs. Ambience and music write to the `ambience` and `underscore` paths named in
-`[mix]`. When `[mix]` names none, they write to `build/sfx/ambience.mp3` and
-`build/music/underscore.mp3`. Each effect writes to `build/sfx/<name>.mp3` unless its
-`out` key says otherwise.
+`[soundscape]` holds the prompts for `decktalk soundscape`, which generates sound with ElevenLabs.
+Each item writes to a default path unless its `out` key names another.
+
+- `[soundscape.ambience]` writes to `[mix] ambience`, else to `build/sfx/ambience.mp3`.
+- `[soundscape.music]` writes to `[mix] underscore`, else to `build/music/underscore.mp3`.
+- `[soundscape.sfx.<name>]` writes to `build/sfx/<name>.mp3`.
 
 ### `[soundscape.ambience]`
 
-| Key | Default | Meaning |
-|---|---|---|
-| `text` | required | The text is the prompt. |
-| `duration_seconds` | `[elevenlabs]` `ambience_seconds`, 25 | The key sets the length to request. The bed loops. |
-| `prompt_influence` | `[elevenlabs]` `ambience_prompt_influence`, 0.3 | The key sets how closely the sound follows the prompt. |
-| `model_id` | `[elevenlabs]` `sound_model` | The key names the sound model. |
-| `out` | the `[mix]` path | The key sets where the file is written. |
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `text` | string | required | Prompt. |
+| `duration_seconds` | number | `= [elevenlabs] ambience_seconds` (25) | Length to request. The bed loops. |
+| `prompt_influence` | number | `= [elevenlabs] ambience_prompt_influence` (0.3) | How closely the sound follows the prompt. |
+| `model_id` | string | `= [elevenlabs] sound_model` | Sound model id. |
+| `out` | path | `= [mix] ambience` | Output file. |
 
 ### `[soundscape.sfx.<name>]`
 
-| Key | Default | Meaning |
-|---|---|---|
-| `text` | required | The text is the prompt. |
-| `duration_seconds` | `[elevenlabs]` `sfx_seconds`, 0.5 | The key sets the length to request. |
-| `prompt_influence` | `[elevenlabs]` `sfx_prompt_influence`, 0.5 | The key sets how closely the sound follows the prompt. |
-| `model_id` | `[elevenlabs]` `sound_model` | The key names the sound model. |
-| `out` | `build/sfx/<name>.mp3` | The key sets where the file is written. |
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `text` | string | required | Prompt. |
+| `duration_seconds` | number | `= [elevenlabs] sfx_seconds` (0.5) | Length to request. |
+| `prompt_influence` | number | `= [elevenlabs] sfx_prompt_influence` (0.5) | How closely the sound follows the prompt. |
+| `model_id` | string | `= [elevenlabs] sound_model` | Sound model id. |
+| `out` | path | `build/sfx/<name>.mp3` | Output file. |
 
 ### `[soundscape.music]`
 
-| Key | Default | Meaning |
-|---|---|---|
-| `prompt` | required | The value is the prompt. |
-| `seconds` | 360 | The value sets the length to request. A length longer than `max_music_chunk_seconds` is requested in chunks and crossfaded. |
-| `force_instrumental` | true | The music has no vocals when the value is true. |
-| `model_id` | `[elevenlabs]` `music_model` | The key names the music model. |
-| `out` | the `[mix]` path | The key sets where the file is written. |
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `prompt` | string | required | Prompt. |
+| `seconds` | integer | 360 | Length to request. A decimal such as `120.5` fails the load. |
+| `force_instrumental` | boolean | true | No vocals when true. |
+| `model_id` | string | `= [elevenlabs] music_model` | Music model id. |
+| `out` | path | `= [mix] underscore` | Output file. |
+
+Note: a length above `[elevenlabs] max_music_chunk_seconds` (300) is requested in parts, and DeckTalk
+crossfades the parts. The scaffold sets `seconds = 120`.
 
 ## Tuning tables
 
-Any settings table can be overridden per project with a table of the same name, such
-as `[video]` or `[record]`, or per shell with a `DECKTALK_<TABLE>_<FIELD>` variable.
-[Configuration](/reference/configuration) lists every field with its default.
+`decktalk.toml` can also hold the tuning tables, such as `[video]` or `[record]`. A tuning table in
+the project overrides the per-machine file. [Configuration](/reference/configuration) lists every
+field with its default.
+
+## Related
+
+- **Write the script:** [script.md](/reference/script-md)
+- **Tie a reveal to a phrase:** [cues.json](/reference/cues-json)
+- **Tune a build:** [Configuration](/reference/configuration)

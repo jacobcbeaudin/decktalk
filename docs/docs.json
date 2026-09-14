@@ -1,12 +1,18 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "maple",
   "name": "DeckTalk",
   "description": "Narrated presentations, cut to the word.",
   "colors": {
     "primary": "#2c1fea",
     "light": "#7c8cff",
-    "dark": "#2c1fea"
+    "dark": "#5b50f5"
+  },
+  "background": {
+    "color": {
+      "light": "#ffffff",
+      "dark": "#0e0e0f"
+    }
   },
   "logo": {
     "light": "/logo/light.svg",
@@ -16,7 +22,8 @@
   "favicon": "/favicon.svg",
   "fonts": {
     "heading": {
-      "family": "Inter Tight"
+      "family": "Inter",
+      "weight": 600
     },
     "body": {
       "family": "Inter"
@@ -25,13 +32,16 @@
   "appearance": {
     "default": "system"
   },
+  "styling": {
+    "eyebrows": "section",
+    "latex": false
+  },
   "contextual": {
     "options": [
       "copy",
       "view",
-      "chatgpt",
       "claude",
-      "cursor"
+      "chatgpt"
     ]
   },
   "navigation": {
@@ -49,10 +59,11 @@
         "group": "Guides",
         "pages": [
           "guides/writing-for-the-ear",
+          "guides/design-a-slide",
           "guides/slide-recipes",
+          "guides/rebuild-one-section",
           "guides/clip-section",
           "guides/sfx-on-a-cue",
-          "guides/rebuild-one-section",
           "guides/ci-and-offline",
           "guides/page-by-hand"
         ]
@@ -70,14 +81,16 @@
         "group": "Reference",
         "pages": [
           "reference/card",
-          "reference/decktalk-toml",
+          "reference/cli",
+          "reference/verify",
           "reference/script-md",
+          "reference/decktalk-toml",
           "reference/cues-json",
           "reference/runtime",
-          "reference/cli",
           "reference/configuration",
           "reference/artifacts",
-          "reference/python-api"
+          "reference/python-api",
+          "reference/glossary"
         ]
       },
       {
@@ -93,25 +106,14 @@
   "navbar": {
     "links": [
       {
-        "label": "Website",
-        "href": "https://decktalk.app",
-        "icon": "globe"
+        "label": "decktalk.app",
+        "href": "https://decktalk.app"
       },
       {
-        "label": "PyPI",
-        "href": "https://pypi.org/project/decktalk/",
-        "icon": "python"
-      },
-      {
-        "label": "Changelog",
-        "href": "/changelog",
-        "icon": "list"
+        "label": "GitHub",
+        "href": "https://github.com/jacobcbeaudin/decktalk"
       }
-    ],
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/jacobcbeaudin/decktalk"
-    }
+    ]
   },
   "footer": {
     "socials": {
