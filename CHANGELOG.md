@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.1](https://github.com/jacobcbeaudin/decktalk/compare/v0.2.0...v0.2.1) (2026-09-14)
+
+
+### Features
+
+* **assemble:** caption the speech inside a clip section from its words file ([cf5b938](https://github.com/jacobcbeaudin/decktalk/commit/cf5b9388866a669d85c538cb3250ceb5cc1bd6c5))
+* **captions:** break captions at sentence ends ([3a7df4c](https://github.com/jacobcbeaudin/decktalk/commit/3a7df4cbc470defc7a2d6460d72dc1ddbd36df82))
+* **chapters:** merge consecutive sections with the same title into one chapter ([0191f1b](https://github.com/jacobcbeaudin/decktalk/commit/0191f1b17cdf6d4bd4dfcb753f1b59ba227d5025))
+* **narrate:** keep a renumbered section's take by copying it to the new name ([41ced3f](https://github.com/jacobcbeaudin/decktalk/commit/41ced3ff188c1e4db83f5341289eeed37bc24b93))
+* **template:** port the approved demo film's lesson into the scaffold ([0f5332a](https://github.com/jacobcbeaudin/decktalk/commit/0f5332a8d6cd31d8c1131f6bf3471e83ddaac516))
+* **template:** port the v16 demo film's edit into the scaffold ([a530783](https://github.com/jacobcbeaudin/decktalk/commit/a530783abd2f52924457929dc95711589d89da93))
+
 ## [0.2.0](https://github.com/jacobcbeaudin/decktalk/compare/v0.1.0...v0.2.0) (2026-09-14)
 
 
