@@ -8,7 +8,8 @@ cues = "cues.json"     # which spoken phrase each visual lands on
 build = "build"        # everything generated, and git-ignored
 
 [narration]
-min_tail_seconds = 0.45   # silence kept after the last word of a section, so a cut breathes rather than sits
+min_tail_seconds = 1.3    # silence kept after the last word of a section, so a cut breathes rather than sits.
+                          # 1.3 at -35 dB leaves at least 0.9 s under -45 dB in the loudness-normalized video.
 
 [voice]
 # model = "eleven_multilingual_v2"   # the tool's default, which you can override per project here
@@ -51,23 +52,15 @@ title = "How AI learns"
 page = "deck/lesson.html"   # any page in deck/ can hold scenes, and each section names its page
 scene = 3
 
-# A clip section between two page sections. The narration stops for it and resumes after it.
-# Until the video exists at media/broll-chips.mp4, a titled slate plays for slate_seconds.
 [[section]]
 number = 4
-title = "Thousands of chips"
-clip = "media/broll-chips.mp4"
-slate_seconds = 4
-
-[[section]]
-number = 5
 title = "The edit"
 page = "deck/index.html"
-scene = 4               # a scene keeps its number in the page when the section numbers around it change
+scene = 4               # the scene's number in its page, which stays put if the section numbers around it change
 ambience = false        # true plays the ambience bed under this section
 
 [[section]]
-number = 6
+number = 5
 title = "Close"
 page = "deck/index.html"
 scene = 5
@@ -80,13 +73,15 @@ dip_seconds = 0.15
 page_fades_in = true    # pages fade themselves up, so no fade-in is added on their side
 
 [mix]
-underscore = "build/music/underscore.mp3"
+# Voice only. To add a music bed, run `decktalk soundscape` with [soundscape.music] below uncommented,
+# then uncomment `underscore` here. `ambience` works the same way with [soundscape.ambience].
+# underscore = "build/music/underscore.mp3"
 underscore_db = -24
 underscore_duck_db = -6    # under speech
 underscore_fade_in = 2
 underscore_fade_out = 3
 markers = "media/markers.json"
-ambience = "build/sfx/ambience.mp3"
+# ambience = "build/sfx/ambience.mp3"
 ambience_db = -20
 # [[mix.sfx]]
 # file = "build/sfx/tick.mp3"
@@ -99,10 +94,11 @@ I = -16
 TP = -1.5
 LRA = 11
 
-[soundscape.music]
-prompt = "calm, minimal instrumental underscore for a lesson: soft piano and warm pads, slow, no drums, no melody hooks, unobtrusive under a narrator"
-seconds = 120
-force_instrumental = true
+# Commented out so no `decktalk soundscape` run spends music credits by accident.
+# [soundscape.music]
+# prompt = "calm, minimal instrumental underscore for a lesson: soft piano and warm pads, slow, no drums, no melody hooks, unobtrusive under a narrator"
+# seconds = 120
+# force_instrumental = true
 
 # [soundscape.ambience]
 # text = "quiet lecture hall room tone, distant HVAC, no voices, steady"

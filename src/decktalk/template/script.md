@@ -18,30 +18,30 @@ I wrote the words and drew the pictures, [beat] and each picture waits for its w
 
 ## 2. How it works
 
-[Deck scene 2. The wordmark moves to the top. A script card and a slide card appear, a waveform runs under one line, and the cue word joins its drawing.]
+[Deck scene 2. It opens on the Open's last frame. The count clears and the wordmark moves to the top. A script card and a slide card appear, a waveform runs under one line, the cue word joins its drawing, and the slide card pushes in to become the lesson.]
 
-This is DeckTalk. [beat] You write a script and simple slides. [beat] It reads your script aloud, [beat]
+You just watched DeckTalk. [beat] You write a script and simple slides. [beat] It reads your script aloud, [beat]
 and you pick the word each picture waits for. [beat] Change the script, and the video follows. [beat]
-Here is a lesson I made with it.
+Here is a lesson I made with it. [beat] Then I'll change one sentence.
 
 ## 3. How AI learns
 
 [Lesson page scene 3. A box of knobs learns from examples, a ball steps down a bowl, and the lesson ends on chips that do the math.]
 
 How does AI learn? [beat] From examples, not rules people write. [beat]
-An AI model is like a box of knobs. [beat] It guesses, [beat] and a meter shows how wrong. [beat]
+An AI model is like a box of knobs. [beat] It guesses, [beat] and a meter shows its error, how wrong the guess was. [beat]
 Learning turns the knobs until the meter drops, [beat] example after example.
 [pause 1] But which way should each knob turn? [beat]
 In a big model, testing knobs one at a time would take billions of tries for every step. [beat]
 Instead, one round of math gives a direction for every knob at once.
 [pause 1] Picture two knobs. [beat]
 The floor is every way to set them. [beat]
-The height is how wrong. [beat]
+The height is the error. [beat]
 For this lesson it is a bowl.
 [pause 2] The ball is where the knobs are set right now. [beat]
 It can't see the whole bowl, only the slope where it stands. [beat]
 So it steps downhill, [beat] again and again, and the steps shrink as the ground flattens. [beat]
-That is gradient descent.
+That is gradient descent. [beat] It's what the ball did on my count.
 [pause 1] One setting makes every step longer or shorter. [beat]
 Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
 [pause 1] Zoom out, and the ground can have many valleys, [beat] each about as low.
@@ -49,20 +49,16 @@ Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
 [pause 1] Inside, the knobs are grids of numbers, called tensors. [beat] Chips like GPUs do math on a whole grid at once. [beat]
 Big models split the work across thousands of chips.
 
-## 4. Thousands of chips
+## 4. The edit
 
-[Clip at media/broll-chips.mp4, about four seconds of chip racks with no voice. The narration pauses here.]
+[Deck scene 4. It opens on white. The lesson's bowl comes back and moves into its card, the script gains four words, the rebuild voices only section 3 again, and verify shows the later cues moved with their words.]
 
-## 5. The edit
-
-[Deck scene 4. The script gains four words, the rebuild voices only section 3 again, and verify shows the later cues moved with their words.]
-
-Now change one sentence, [beat] the kind of edit that used to mean recording again. [beat]
+That's the lesson. [beat] Now I'll change one sentence, [beat] the kind of edit that used to mean recording again. [beat]
 Say a viewer asks why downhill is good. [beat] So I add four words, [beat] and make the video again. [beat]
-Nothing re-recorded or re-edited by hand. [beat] The height is how wrong, so lower is better. [beat]
+Nothing re-recorded or re-edited by hand. [beat] The height is the error, so lower is better. [beat]
 Every later picture moved to stay on its word.
 
-## 6. Close
+## 5. Close
 
 [Deck scene 5. The end card.]
 

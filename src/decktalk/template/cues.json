@@ -23,7 +23,8 @@
         { "cue": "2.1script", "on": "a script" },
         { "cue": "2.1aloud", "on": "reads your script aloud" },
         { "cue": "2.1word", "on": "the word" },
-        { "cue": "2.1follows", "on": "video follows" }
+        { "cue": "2.1follows", "on": "video follows" },
+        { "cue": "2.1lesson", "on": "lesson" }
       ]
     },
     "3": {
@@ -31,11 +32,13 @@
         { "cue": "3.1examples", "on": "examples" },
         { "cue": "3.1box", "on": "box of knobs" },
         { "cue": "3.1guess", "on": "guesses" },
-        { "cue": "3.1wrong", "on": "how wrong" },
+        { "cue": "3.1wrong", "on": "its error" },
         { "cue": "3.1turn", "on": "turns the knobs" },
         { "cue": "3.1again", "on": "example after example" },
         { "cue": "3.2way", "on": "which way" },
         { "cue": "3.2one", "on": "one at a time" },
+        { "cue": "3.2billions", "on": "billions of tries" },
+        { "cue": "3.2instead", "on": "Instead" },
         { "cue": "3.2all", "on": "every knob at once" },
         { "cue": "3.3two", "on": "two knobs" },
         { "cue": "3.3floor", "on": "floor" },
@@ -55,19 +58,24 @@
         { "cue": "3.7sums", "on": "billions of billions" },
         { "cue": "3.8tensor", "on": "tensors" },
         { "cue": "3.8gpu", "on": "GPUs" },
-        { "cue": "3.8chips", "on": "thousands of chips" }
+        { "cue": "3.8chips", "on": "thousands of chips" },
+        { "cue": "3.8out", "on": "$end", "offset": -0.25 }
       ]
     },
-    "5": {
+    "4": {
       "cues": [
+        { "cue": "4.1lesson", "on": "lesson" },
+        { "cue": "4.1sentence", "on": "one sentence" },
+        { "cue": "4.1why", "on": "why downhill" },
         { "cue": "4.1words", "on": "four words" },
         { "cue": "4.1again", "on": "the video again" },
         { "cue": "4.1lower", "on": "so lower is better" },
         { "cue": "4.1moved", "on": "moved" }
       ]
     },
-    "6": {
+    "5": {
       "cues": [
+        { "cue": "5.1clear", "on": "video" },
         { "cue": "5.1made", "on": "DeckTalk" },
         { "cue": "5.1cap", "on": "Open source" },
         { "cue": "5.1url", "on": "decktalk dot app" }

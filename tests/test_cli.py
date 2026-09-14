@@ -113,11 +113,41 @@ def test_doctor_json_stdout_is_pure_json(tmp_path, monkeypatch, capsys):
     doc = json.loads(out)  # the whole of stdout parses, so nothing else was printed there
     assert doc["command"] == "doctor" and isinstance(doc["version"], str)
     names = {c["name"]: c for c in doc["doctor"]["components"]}
-    assert names["python"]["ok"] is True and names["katex"]["ok"] is False
-    assert doc["findings"]["certain"] >= 2 and doc["findings"]["uncertain"] == 0
+    assert names["python"]["ok"] is True and names["python"]["required"] is True
+    assert names["katex"]["ok"] is False and names["katex"]["required"] is False
+    assert names["katex"]["detail"].endswith("-> run `decktalk setup` (pages load KaTeX from a CDN until then)")
+    # Chromium is missing here too, which is certain. The KaTeX row alone is only uncertain.
+    assert doc["findings"]["certain"] >= 1 and doc["findings"]["uncertain"] == 1
     assert doc["ok"] is False and code == 1
     assert main(["doctor", "--json", "--no-fail"]) == 0
     assert json.loads(capsys.readouterr().out)["ok"] is False
+
+
+def test_doctor_warns_and_exits_0_when_only_katex_is_missing(monkeypatch, capsys):
+    from decktalk import scaffold
+    from decktalk.scaffold import DoctorRow
+
+    katex = "not cached at /c/katex/0.18.7  -> run `decktalk setup` (pages load KaTeX from a CDN until then)"
+    rows = [
+        DoctorRow("python", True, "3.13.1 (/venv/bin/python3)"),
+        DoctorRow("ffmpeg", True, "/bin/ffmpeg"),
+        DoctorRow("katex", False, katex, required=False),
+    ]
+    monkeypatch.setattr(scaffold, "doctor", lambda: rows)
+    assert main(["doctor"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == f"katex     warning {katex}"
+    assert main(["doctor", "--json"]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["ok"] is True and doc["findings"] == {"certain": 0, "uncertain": 1}
+    assert doc["doctor"]["components"][-1] == {"name": "katex", "ok": False, "detail": katex, "required": False}
+    # --strict turns the warning into a failure, as it does for every uncertain finding.
+    assert main(["doctor", "--strict"]) == 1
+    assert main(["doctor", "--json", "--strict"]) == 1
+    capsys.readouterr()
+    # A missing required tool still exits 1.
+    rows.insert(1, DoctorRow("chromium", False, "playwright package missing"))
+    assert main(["doctor"]) == 1
+    assert "chromium  MISSING playwright package missing" in capsys.readouterr().out.splitlines()
 
 
 def test_status_json_on_scaffold(tmp_path, monkeypatch, capsys):
@@ -133,8 +163,8 @@ def test_status_json_on_scaffold(tmp_path, monkeypatch, capsys):
     assert st["project"]["name"] == "lesson"
     assert st["project"]["script"] == "script.md" and st["project"]["script_exists"] is True
     assert st["sections"] and not any(s["recorded"] or s["cut"] for s in st["sections"])
-    # Section 4 is the B-roll clip, and every other section is a page.
-    assert [s["kind"] for s in st["sections"]] == ["page", "page", "page", "clip", "page", "page"]
+    # The scaffold has five page sections and no clip section.
+    assert [s["kind"] for s in st["sections"]] == ["page"] * 5
     assert st["sections"][0]["key"] == "01" and st["sections"][0]["source"].startswith("deck/index.html?scene=")
     assert st["timeline"] == {"exists": False, "estimated": False, "total_seconds": None, "sections": []}
     assert st["beats"] == {"exists": False, "sections": []}

@@ -157,6 +157,100 @@ def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch
         p.require_env("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
 
 
+def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
+    toml = (
+        "[project]\nname = 't'\nscirpt = 'script.md'\n"
+        "[voice]\nstabilty = 0.4\n"
+        "[[section]]\nnumber = 1\npage = 'a.html'\nscnee = 2\nslate_seconds = 3\n"
+        "[[section]]\nnumber = 2\nclip = 'b.mp4'\nzebra = 1\n"
+        "[mix.loudnorm]\nLRAA = 9\n"
+        "[soundscape.music]\nprompt = 'calm'\nsecond = 60\n"
+        "[video]\npresett = 'veryfast'\n"
+    )
+    with caplog.at_level("WARNING", logger="decktalk"):
+        p = Project.load(write_project(tmp_path, toml), environ={})
+    assert [r.getMessage() for r in caplog.records] == [
+        "decktalk.toml: [project]: ignoring unknown key 'scirpt' (did you mean 'script'?)",
+        "decktalk.toml: [[section]] number=1: ignoring unknown key 'scnee' (did you mean 'scene'?)",
+        "decktalk.toml: [[section]] number=1: ignoring 'slate_seconds', which applies only to a clip section",
+        "decktalk.toml: [[section]] number=2: ignoring unknown key 'zebra'",
+        "decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?)",
+        "decktalk.toml: [mix.loudnorm]: ignoring unknown key 'LRAA' (did you mean 'LRA'?)",
+        "decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'seconds'?)",
+        "decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?)",
+    ]
+    # A warning, not an error: the load succeeds and every misspelled key keeps its default.
+    assert p.voice.stability == 0.55 and p.settings.video.preset == "medium" and p.soundscape.music.seconds == 360
+
+
+def test_user_settings_file_warns_about_unknown_keys(tmp_path, caplog):
+    from decktalk.config import read_user_toml
+
+    path = tmp_path / "decktalk.toml"
+    path.write_text("[record]\nsettle_second = 0.8\n")
+    with caplog.at_level("WARNING", logger="decktalk"):
+        assert read_user_toml(path) == {"record": {"settle_second": 0.8}}
+    assert [r.getMessage() for r in caplog.records] == [
+        f"{path}: [record]: ignoring unknown key 'settle_second' (did you mean 'settle_seconds'?)"
+    ]
+
+
+def test_scaffold_loads_without_warnings_and_has_five_page_sections(tmp_path, monkeypatch, caplog):
+    from decktalk.scaffold import init
+
+    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
+    root = init(tmp_path / "proj", name="proj")
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="decktalk"):
+        p = Project.load(root, environ={})
+    assert [r.getMessage() for r in caplog.records] == []
+    # Five page sections numbered 1 to 5, each on the scene of the same number, and no clip section, so a
+    # fresh scaffold passes `build --strict` with nothing to drop in.
+    assert [(s.number, s.scene) for s in p.page_sections] == [(n, str(n)) for n in range(1, 6)]
+    assert p.clip_sections == []
+
+
+def test_strict_fails_on_a_missing_clip_unless_the_section_is_optional(tmp_path, monkeypatch, caplog):
+    import importlib
+
+    from decktalk.errors import MissingInputError
+
+    asm = importlib.import_module("decktalk.stages.assemble")
+    toml = (
+        "[[section]]\nnumber = 1\npage = 'a.html'\n"
+        "[[section]]\nnumber = 2\nclip = 'media/real.mp4'\n"
+        "[[section]]\nnumber = 3\nclip = 'media/slot.mp4'\nslate_seconds = 4\noptional = true\n"
+    )
+    p = Project.load(write_project(tmp_path, toml), environ={})
+    real, slot = p.clip_sections
+    assert (real.optional, slot.optional) == (False, True)
+    ran = []
+    monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: ran.append(args))
+    monkeypatch.setattr(asm, "section_slate", lambda project, sec: None)
+    enc = asm._Encoder(p.settings.video)
+    out = tmp_path / "out.mp4"
+
+    with pytest.raises(MissingInputError) as err:
+        asm._render_clip(p, enc, real, out, (False, False), 0.0, strict=True)
+    assert str(err.value) == (
+        f"section 2: clip missing: {p.root / 'media' / 'real.mp4'}. Put your clip at that path, "
+        "or set optional = true on the section to play its slate under --strict."
+    )
+    assert ran == []
+
+    with caplog.at_level("WARNING", logger="decktalk"):
+        assert asm._render_clip(p, enc, slot, out, (False, False), 0.0, strict=True) == ("slate", None)
+        assert asm._render_clip(p, enc, real, out, (False, False), 0.0, strict=False) == ("slate", None)
+    assert len(ran) == 2
+    assert [r.getMessage() for r in caplog.records] == [
+        "section 03: media/slot.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, "
+        "so --strict allows the slate)",
+        "section 02: media/real.mp4 missing; slate for 5s (drop your clip at that path)",
+    ]
+
+
 # ---- artifacts -----------------------------------------------------------------------------
 
 
