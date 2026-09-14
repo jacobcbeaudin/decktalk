@@ -196,7 +196,7 @@ def test_user_settings_file_warns_about_unknown_keys(tmp_path, caplog):
     ]
 
 
-def test_scaffold_loads_without_warnings_and_has_five_page_sections(tmp_path, monkeypatch, caplog):
+def test_scaffold_loads_without_warnings_and_has_nine_sections(tmp_path, monkeypatch, caplog):
     from decktalk.scaffold import init
 
     monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
@@ -206,10 +206,19 @@ def test_scaffold_loads_without_warnings_and_has_five_page_sections(tmp_path, mo
     with caplog.at_level("WARNING", logger="decktalk"):
         p = Project.load(root, environ={})
     assert [r.getMessage() for r in caplog.records] == []
-    # Five page sections numbered 1 to 5, each on the scene of the same number, and no clip section, so a
-    # fresh scaffold passes `build --strict` with nothing to drop in.
-    assert [(s.number, s.scene) for s in p.page_sections] == [(n, str(n)) for n in range(1, 6)]
-    assert p.clip_sections == []
+    # Seven page sections. A page keeps its scene numbers, so sections 8 and 9 play scenes 7 and 5.
+    pages = [(1, "1"), (2, "2"), (3, "3"), (4, "4"), (6, "6"), (8, "7"), (9, "5")]
+    assert [(s.number, s.scene) for s in p.page_sections] == pages
+    # Two clip sections that ship no file. Both are optional, so a fresh scaffold passes `build --strict` on
+    # their slates, and each names the words file its clip's captions will read.
+    clips = [(s.number, s.clip, s.words, s.optional) for s in p.clip_sections]
+    assert clips == [
+        (5, "media/edit-before.mov", "media/edit-before.words.json", True),
+        (7, "media/edit-after.mov", "media/edit-after.words.json", True),
+    ]
+    # Sections 4 to 8 share the title "The edit", so the video shows them as one chapter.
+    titles = ["Open", "How it works", "How AI learns", *["The edit"] * 5, "Close"]
+    assert [s.title for s in p.sections] == titles
 
 
 def test_strict_fails_on_a_missing_clip_unless_the_section_is_optional(tmp_path, monkeypatch, caplog):

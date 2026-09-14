@@ -75,9 +75,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+from decktalk import Project
 from decktalk.media.ffmpeg import ffprobe, probe_duration, rms_db
 
 out = Path(sys.argv[1]) / "build" / "out"
+titles = {s.key: s.title for s in Project.load(sys.argv[1]).sections}
 final = out / "smoke.mp4"
 
 
@@ -91,17 +93,24 @@ starts = {s["codec_type"]: float(s["start_time"]) for s in streams if s["codec_t
 assert starts == {"video": 0.0, "audio": 0.0}, f"streams do not start together: {starts}"
 sections = sorted(out.glob("[0-9][0-9]-section.mp4"))
 chapters = probe("-show_chapters")["chapters"]
-assert len(chapters) == len(sections) >= 4, (len(chapters), len(sections))
 frames = probe("-select_streams", "v", "-show_entries", "frame=pts_time")["frames"]
 pts = {round(float(f["pts_time"]), 3) for f in frames}
 t = 0.0
 spans = {}
-for chapter, section in zip(chapters, sections, strict=True):
-    assert abs(float(chapter["start_time"]) - t) < 1e-6, f"chapter {chapter['id']} at {chapter['start_time']}, want {t}"
+starts = []  # (start, title) of each chapter: consecutive sections with the same title share one
+for section in sections:
+    key = section.name[:2]
     assert round(t, 3) in pts, f"no frame starts at {t}"
-    spans[section.name[:2]] = (t, t + probe_duration(section))
-    t = spans[section.name[:2]][1]
+    if not starts or titles[key] != titles[prev]:
+        starts.append((t, titles[key]))
+    prev = key
+    spans[key] = (t, t + probe_duration(section))
+    t = spans[key][1]
 assert abs(t - probe_duration(final)) < 0.05, (t, probe_duration(final))
+assert len(chapters) == len(starts) >= 4, (len(chapters), len(starts))
+for chapter, (start, title) in zip(chapters, starts, strict=True):
+    assert abs(float(chapter["start_time"]) - start) < 1e-6, f"chapter {chapter['id']} at {chapter['start_time']}, want {start}"
+    assert chapter["tags"]["title"] == title, (chapter, title)
 for name in ("smoke.srt", "smoke.vtt", "smoke.chapters.txt"):
     assert (out / name).stat().st_size > 0, name
 # The B-roll clip in section 3 carries its own chapter and its own sound, and no caption sits over it.
