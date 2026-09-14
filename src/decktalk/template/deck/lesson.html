@@ -92,6 +92,9 @@
   .chat .a i { position: absolute; left: 28px; height: 18px; border-radius: 9px; background: var(--dim); }
   .chat .in { position: absolute; left: 26px; right: 26px; bottom: 24px; height: 56px; box-sizing: border-box; border: 3px solid var(--hair); border-radius: 28px; padding-left: 28px; font: 400 26px/50px var(--sans); color: var(--mute); }
 
+  /* 3.8out: a white sheet over the figure, under the eyebrow and footer, so the edit can open on white. */
+  #rig .whiteout { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: var(--ground); opacity: 0; }
+
   /* Freeze mode shows every end state at once. */
   .dt-frozen #rig *, .dt-frozen #rig { transition: none !important; animation: none !important; }
 </style>
@@ -119,14 +122,14 @@
 // The two example classes. Swap the pair by editing these labels and the drawings in ANIMALS below.
 const LABEL_A = "seal", LABEL_B = "otter";
 const WRONG_GUESS = LABEL_B;                  // what the model answers for the first input
-const METER_LABEL = "how wrong";              // the meter's label, which later names the height axis
+const METER_LABEL = "error";                  // the meter's label, which later names the height axis
 // The four example tiles, in reading order: [drawing id, label].
 const EXAMPLES = [["otterFloat", LABEL_B], ["sealRock", LABEL_A], ["sealSwim", LABEL_A], ["otterStand", LABEL_B]];
 const FIRST_INPUT = ["sealRock", LABEL_A];    // the input on "box of knobs"
 const NEXT_INPUT = ["otterStand", LABEL_B];   // the different animal on "example after example"
 const STEP_MAIN = 0.25, STEP_LONG = 0.65, STEP_SHORT = 0.03; // step sizes: main path, too long, too short
 const START = [-2.2, -1.05];                  // where the ball starts, on the wall facing the camera
-const SECTION_NUMBER = 3, SECTIONS_TOTAL = 6; // the footer's "03 / 06" tracker, which counts the clip section too and matches index.html
+const SECTION_NUMBER = 3, SECTIONS_TOTAL = 5; // the footer's "03 / 05" tracker, which matches index.html
 
 // ---- Palette -------------------------------------------------------------------------------------
 const INK = "#0a0a0a", ACC = "#2c1fea", MUTE = "#71717a", DIM = "#a3a3ad", HAIR = "#e4e4e7",
@@ -325,6 +328,11 @@ const KA = (() => { const r = rng(11); const base = KN.map(() => Math.round(-120
 // Slopes differ per knob, so the arrows of "every knob at once" have different lengths, some tiny.
 const KDIR = (() => { const r = rng(5); return KN.map(() => ({ dir: r() < 0.5 ? -1 : 1, len: 8 + Math.pow(r(), 1.4) * 46 })); })();
 const BIG = 8; // the knob that enlarges on "which way"
+const BIG_R = 66, KNOB_DIM = 0.2, BIG_FILL = "#fff"; // its close-up radius, how far the other knobs dim meanwhile, and its solid face
+// "one at a time": the knobs the accent ring tests in turn, starting with the chosen knob, each with
+// [start, wiggle length] in seconds after the cue and the tries counter it shows. The hops speed up and
+// end 0.8 s after the cue, so the picture is still before "billions" about 1.1 s after it.
+const TESTS = [[BIG, 0.22, 0.18, "1"], [9, 0.4, 0.12, "2"], [10, 0.52, 0.09, "3"], [11, 0.61, 0.07, "4"], [12, 0.68, 0.05, "50"], [13, 0.73, 0.05, "6,000"]];
 const FLY = [13, 16]; // the two knobs that become the floor's knob 1 and knob 2
 
 function tileHTML(cls, x, y, w, h, animal, label) {
@@ -353,11 +361,11 @@ function buildIntro() {
   let box = `<rect x="560" y="340" width="640" height="400" rx="24" fill="#fff" stroke="${INK}" stroke-width="6"/>`;
   KN.forEach(([x, y], i) => { box += knob(x, y, 30, KA[0][i], { cls: `kn k${i}` }); });
   const arrows = KN.map(([x, y], i) => { const d = KDIR[i]; return arrow(x - (d.dir * d.len) / 2, y - 50, x + (d.dir * d.len) / 2, y - 50, { stroke: ACC, w: 5, head: Math.min(13, 4 + d.len * 0.35) }); }).join("");
+  // The close-up on "which way": the chosen knob itself grows in place (setBig below), so nothing covers the
+  // grid, and the two turn arrows grow out from its rim once it has landed.
   const [bx, by] = KN[BIG];
-  const big = `<rect x="${bx - 215}" y="${by - 84}" width="430" height="168" rx="20" fill="#fff" opacity="0.96"/>` +
-    `<g class="ghosts off">${[-30, 30].map((da) => { const a = ((KA[2][BIG] + da - 90) * Math.PI) / 180; return line([bx, by], [bx + Math.cos(a) * 58, by + Math.sin(a) * 58], DIM, 8, `stroke-linecap="round"`); }).join("")}</g>` +
-    `<g class="bigknob">${knob(bx, by, 66, KA[2][BIG], { w: 8, fill: "none" })}</g>` +
-    arrow(bx - 92, by, bx - 196, by, { stroke: ACC, w: 9 }) + arrow(bx + 92, by, bx + 196, by, { stroke: ACC, w: 9 });
+  const big = `<g class="bigknob">${knob(bx, by, 30, KA[2][BIG], { w: 6, fill: BIG_FILL })}</g>` +
+    [-1, 1].map((d) => `<g class="barrow">${line([bx + d * (BIG_R + 22), by], [bx + d * (BIG_R + 134), by], "#fff", 25, `stroke-linecap="round"`)}${arrow(bx + d * (BIG_R + 26), by, bx + d * (BIG_R + 130), by, { stroke: ACC, w: 9 })}</g>`).join("");
   rig.insertAdjacentHTML("beforeend", `
     <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${symbols}</defs></svg>
     <div id="intro" class="layer">
@@ -367,6 +375,7 @@ function buildIntro() {
       <div class="boxg off">
         <svg class="full"><g class="inarrow">${arrow(420, 540, 545, 540, { w: 6 })}</g>${box}
           <g class="allarrows off">${arrows}</g>
+          <circle class="tester off" r="43" fill="none" stroke="${ACC}" stroke-width="7"/>
           <g class="bigg off">${big}</g>
           <g class="outarrow off">${arrow(1215, 540, 1320, 540, { w: 6 })}</g></svg>
         <div class="boxlab">AI model</div>
@@ -433,14 +442,14 @@ function buildWorld() {
 
   rig.insertAdjacentHTML("beforeend", `
     <div id="world" class="layer gpu">
-      <div id="L" class="layer gpu" style="opacity:.01">
+      <div id="L" class="layer gpu" style="opacity:.003">
         <svg class="full">${landSvg}<path d="${silPath}" fill="none" stroke="${MUTE}" stroke-width="3" stroke-linejoin="round"/>
           <path d="${rimPath(wide)}" fill="none" stroke="${INK}" stroke-width="3" stroke-dasharray="10 7"/>
           ${MAIN.slice(0, 6).map((p) => { const q = W(p); return dotG(q[0], q[1], 6); }).join("")}</svg>
       </div>
       <div id="B" class="layer gpu">
         <svg class="full floor off" style="opacity:.5">${floorFill}</svg>
-        <div id="surf" class="layer gpu" style="opacity:.01;transform-origin:0 ${fx(pj(0, 0, 0)[1])}px"><svg class="full">${bowlSvg}</svg></div>
+        <div id="surf" class="layer gpu" style="opacity:.003;transform-origin:0 ${fx(pj(0, 0, 0)[1])}px"><svg class="full">${bowlSvg}</svg></div>
         <div id="haze" class="off"></div>
         <div id="rimL" class="layer off" style="transform-origin:0 ${fx(pj(0, 0, 0)[1])}px"><svg class="full"><path d="${rimPath(pj)}" fill="none" stroke="${MUTE}" stroke-width="3.5"/></svg></div>
         <svg class="full over">
@@ -543,7 +552,8 @@ function buildLater() {
         <span class="pill mono ctr" style="left:1011px;top:236px">GPU</span><span class="pill mono ctr" style="left:1571px;top:236px">TPU</span></div>
     </div>
     <div id="chrome" class="layer">
-      <p class="eyebrow">03 &nbsp;How AI learns</p>
+      <div class="whiteout"></div>
+      <p class="eyebrow">03 How AI learns</p>
       <h1 class="title">How does AI learn?</h1>
       <p class="caption off">For this lesson it is a bowl.</p>
       ${footer(SECTION_NUMBER, SECTIONS_TOTAL)}
@@ -576,13 +586,13 @@ buildHaze();
 Object.assign(S, {
   intro: $("#intro"), rulesg: $(".rulesg"), strike: $(".strike"), tiles: $(".tiles"), boxg: $(".boxg"),
   in1: $(".in1"), in2: $(".in2"), ans: $(".ans"), outarrow: $(".outarrow"), meterg: $(".meterg"), fill: $(".meter .fill"),
-  t1: $(".meter .t1"), t2: $(".meter .t2"), counter: $(".counter"), bigg: $(".bigg"), ghosts: $(".ghosts"), allarrows: $(".allarrows"),
+  t1: $(".meter .t1"), t2: $(".meter .t2"), counter: $(".counter"), bigg: $(".bigg"), barrows: $$(".barrow"), tester: $(".tester"), allarrows: $(".allarrows"),
   world: $("#world"), L: $("#L"), B: $("#B"), surf: $("#surf"), rimL: $("#rimL"), haze: $("#haze"), ring: $("#ring"), ball: $("#ball"),
   floor: $$(".floor"), axis: $(".axis"), axlab: $(".axlab"), stick: $(".stick"), flines: $(".flines"), drop: $(".drop"), htick: $(".htick"),
   km1: $(".km1"), km2: $(".km2"), long: $(".long"), short: $(".short"), md: $$(".md"), harrow: $(".harrow"),
   trails: $(".trails"), levels: $(".levels"), hopmark: $(".hopmark"),
   gd: $(".gd"), sliderg: $(".sliderg"), thumb: $(".thumb"), chat: $(".chat"), cc: $$(".cc"), tensor: $(".tensor"), chips: $(".chips"), blocks: $(".blocks"),
-  caption: $(".caption"),
+  caption: $(".caption"), whiteout: $(".whiteout"), title: $("#chrome .title"),
 });
 // The two step-size walks: their computed landing points, the line and markers they draw, and their ball.
 const RUNS = {
@@ -595,6 +605,21 @@ for (const r of Object.values(RUNS)) { r.line = r.g.querySelector(".pline"); r.m
 const setMeter = (level) => { S.fill.style.transform = `scaleY(${level.toFixed(4)})`; };
 const setTick = (el, level) => { el.style.bottom = `${5 + 320 * level}px`; show(el); };
 const setKnobs = (angles) => $$(".kn .ptr").forEach((p, i) => setRot(p, angles[i]));
+// The close-up: at e = 0 the chosen knob matches its grid twin exactly, at e = 1 it is BIG_R wide, and the
+// other knobs dim by the same amount, so the zoom is one move with no cover over the grid.
+const BIGK = (() => { const g = S.bigg.querySelector(".bigknob"), [ring, dot] = g.querySelectorAll("circle"); return { ring, dot, ptr: g.querySelector(".ptr") }; })();
+function setBig(e) {
+  const [x, y] = KN[BIG], r = lerp(30, BIG_R, e), w = lerp(6, 8, e);
+  setAttrs(BIGK.ring, { r, "stroke-width": w });
+  setAttrs(BIGK.ptr, { y2: y - (r - w * 0.4), "stroke-width": w });
+  setAttrs(BIGK.dot, { r: w * 0.75 });
+  const o = lerp(1, KNOB_DIM, e).toFixed(3);
+  $$(".kn").forEach((g, i) => { if (i !== BIG) g.style.opacity = o; });
+}
+// The two turn arrows grow out of the rim: each scales up from its tail.
+const growArrows = (k) => S.barrows.forEach((g, n) => { const x0 = KN[BIG][0] + (n ? 1 : -1) * (BIG_R + 26), y0 = KN[BIG][1]; g.setAttribute("transform", `translate(${fx(x0)} ${y0}) scale(${Math.max(0.001, k).toFixed(3)}) translate(${fx(-x0)} ${-y0})`); });
+const placeTester = (i) => setAttrs(S.tester, { cx: KN[i][0], cy: KN[i][1] });
+const wiggle = (an, delay, dur, i) => { const p = $(`.kn.k${i} .ptr`); run(an, delay, dur, (k) => setRot(p, KA[2][i] + 28 * Math.sin(k * Math.PI * 2))); };
 const turnKnobs = (animate, delay, from, to) => run(animate, delay, 0.35, (k) => { const e = easeOut(k); setKnobs(from.map((v, i) => lerp(v, to[i], e))); });
 const setAnswer = (text, right) => {
   S.ans.querySelector(".pill").textContent = text;
@@ -643,16 +668,26 @@ const CUE = {
     at(an, 0.8, () => { setAnswer(NEXT_INPUT[1], true); show(S.outarrow, S.ans); });
   },
   // 3.2 Why gradient descent
-  "3.2way": (an) => { show(S.bigg); hide($(`.kn.k${BIG}`)); },
-  "3.2one": (an) => {
-    show(S.ghosts, S.counter);
-    const b = S.counter.querySelector("b"), ptr = S.bigg.querySelector(".bigknob .ptr"), base = KA[2][BIG];
-    b.textContent = "1";
-    run(an, 0, 1.05, (k) => setRot(ptr, base + 30 * Math.sin(k * Math.PI * 3)));
-    // One try per wiggle, then the count runs on to the size of a big model.
-    ["2", "3", "24", "900", "48,000", "2,600,000", "1,000,000,000+"].forEach((n, i) => at(an, 0.35 * (i + 1), () => { b.textContent = n; }));
+  // "which way": the chosen knob zooms up in place while the rest dim (it starts a quarter of the way in, so
+  // the cue frame already shows it), and the turn arrows grow out once it lands. All still by 0.75 s.
+  "3.2way": (an) => {
+    hide($(`.kn.k${BIG}`)); show(S.bigg, S.barrows); growArrows(0); setBig(0.25);
+    run(an, 0, 0.4, (k) => setBig(lerp(0.25, 1, easeOut(k))));
+    run(an, 0.45, 0.3, (k) => growArrows(easeOut(k)));
   },
-  "3.2all": (an) => { hide(S.bigg, S.ghosts); show($(`.kn.k${BIG}`), S.allarrows); S.counter.classList.add("dim"); },
+  // "one at a time": the arrows go and the ring lands on the chosen knob as it shrinks back into the grid.
+  // Then the ring tests knob after knob, one wiggle per try, faster and faster, still by 0.8 s.
+  "3.2one": (an) => {
+    const b = S.counter.querySelector("b");
+    hide(S.barrows); show(S.counter, S.tester); placeTester(BIG); b.textContent = "1"; setBig(0.7);
+    run(an, 0, 0.2, (k) => { setBig(lerp(0.7, 0, easeOut(k))); if (k >= 1) { hide(S.bigg); show($(`.kn.k${BIG}`)); } });
+    TESTS.forEach(([i, d, dur, n]) => { at(an, d, () => { placeTester(i); b.textContent = n; }); wiggle(an, d, dur, i); });
+  },
+  // "billions": the count lands on the size of a big model, and the testing stops there.
+  "3.2billions": (an) => { S.counter.querySelector("b").textContent = "1,000,000,000+"; },
+  // "Instead": the testing clears and the count steps back before the arrows arrive.
+  "3.2instead": (an) => { hide(S.tester); S.counter.classList.add("dim"); },
+  "3.2all": (an) => { show(S.allarrows); },
   // 3.3 The surface
   "3.3two": (an) => {
     hide(S.boxg, S.counter, S.allarrows); show(S.floor, S.km1, S.km2);
@@ -729,6 +764,9 @@ const CUE = {
     run(an, 0.6, 0.35, (k) => placeBall(lerp(a[0], b[0], k), lerp(a[1], b[1], k) - 40 * 4 * k * (1 - k), BALL_WIDE));
   },
   "3.8chips": (an) => { hide(S.chips); show(S.blocks); },
+  // The end of speech: the figure and the title fade to white, and the eyebrow and footer stay. The edit
+  // opens on this frame.
+  "3.8out": (an) => run(an, 0, 0.3, (k) => { S.whiteout.style.opacity = k.toFixed(3); S.title.style.opacity = (1 - k).toFixed(3); }),
 };
 
 // The main path's hops: each hop leaves a dot, then the probe lines, the tick, and the haze move to the
@@ -767,13 +805,13 @@ function walk(an, r, delay, hop, rest, arc) {
 // ---- The scene --------------------------------------------------------------------------------------------------------
 const STEPS = [
   { id: "3.1", hold: 20, cues: { "3.1examples": 2.6, "3.1box": 7.4, "3.1guess": 9.6, "3.1wrong": 12.2, "3.1turn": 14.0, "3.1again": 17.3 } },
-  { id: "3.2", hold: 16.6, cues: { "3.2way": 0.5, "3.2one": 5.2, "3.2all": 13.8 } },
+  { id: "3.2", hold: 16.6, cues: { "3.2way": 0.5, "3.2one": 5.2, "3.2billions": 6.6, "3.2instead": 9.7, "3.2all": 13.8 } },
   { id: "3.3", hold: 12.4, cues: { "3.3two": 0.5, "3.3floor": 2.3, "3.3height": 5.5, "3.3bowl": 9.6 } },
   { id: "3.4", hold: 19.5, cues: { "3.4ball": 0.5, "3.4see": 4.8, "3.4steps": 10.4, "3.4again": 11.9, "3.4name": 17.4 } },
   { id: "3.5", hold: 10.7, cues: { "3.5setting": 0.5, "3.5long": 3.3, "3.5short": 7.0 } },
   { id: "3.6", hold: 7.6, cues: { "3.6zoom": 0.5, "3.6low": 4.1 } },
   { id: "3.7", hold: 11.5, cues: { "3.7ai": 0.5, "3.7sums": 5.2 } },
-  { id: "3.8", hold: 12, cues: { "3.8tensor": 0.5, "3.8gpu": 2.3, "3.8chips": 8.2 } },
+  { id: "3.8", hold: 12, cues: { "3.8tensor": 0.5, "3.8gpu": 2.3, "3.8chips": 8.2, "3.8out": 9.4 } },
 ];
 const fire = (id, animate) => { finishJobs(); CUE[id](animate); };
 DeckTalk.scene(3, { name: "How AI learns", steps: STEPS.map((st, n) => ({
@@ -784,7 +822,8 @@ DeckTalk.scene(3, { name: "How AI learns", steps: STEPS.map((st, n) => ({
 })) });
 
 // Narration t=0 waits until the fonts are in and the figure has been painted once, with the landscape and
-// the bowl at near-zero opacity so their rasters already exist when they first show.
+// the bowl at opacity .003 so their rasters already exist when they first show. At .003 they round to
+// nothing on white, so the first frame is clean (at .01 they left grey smudges right of the rules card).
 document.addEventListener("DOMContentLoaded", () => {
   const faces = ['600 64px "Inter Tight"', '600 60px "Inter Tight"', '500 30px Inter', '500 44px Inter', '500 30px "JetBrains Mono"', '400 24px "JetBrains Mono"'];
   const painted = Promise.all(faces.map((f) => document.fonts.load(f))).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))));

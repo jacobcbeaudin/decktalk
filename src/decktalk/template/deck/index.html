@@ -32,18 +32,31 @@ __KATEX__
   .abs { position: absolute; }
 
   /* Type scale at 1920 by 1080. */
-  .eyebrow { position: absolute; left: 120px; top: 56px; margin: 0; font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+  .eyebrow { position: absolute; left: 120px; top: 44px; margin: 0; font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
   .wordmark { margin: 0; font: 600 104px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); white-space: nowrap; }
   .filelabel { font: 500 22px/28px var(--mono); color: var(--mute); }
 
-  /* Footer: the mark at left, the section tracker at right. It never carries a cue. */
+  /* Footer: the mark at left, the section tracker at right. It never carries a cue. A footer that hands
+     off between sections stacks one tracker per section in the same spot. */
   .footer { position: absolute; left: 120px; right: 120px; top: 984px; height: 30px; display: flex; align-items: center; justify-content: space-between; }
   .footer .brand, .footer .track { display: flex; align-items: center; gap: 14px; font: 500 22px/28px var(--mono); letter-spacing: .14em; color: var(--mute); }
+  .footer .tracks { position: relative; }
+  .footer .tracks .track ~ .track { position: absolute; right: 0; top: 0; }
   .footer .mark line { stroke: var(--hair); stroke-width: 2.25; stroke-linecap: round; }
   .footer .mark .tall { stroke: var(--accent); }
   .footer .mark circle { fill: var(--accent); }
   .footer .ticks rect { fill: var(--hair); }
   .footer .ticks .cur { fill: var(--ink); }
+
+  /* Hand-offs. Every section opens on the frame the section before it ended on, so the cut never
+     changes the picture and a word makes the first change. handoff() in the script fades out each
+     element marked data-out="CUE" on that cue, and fades in each element marked data-in="CUE", which
+     stays hidden until then. */
+  [data-in] { opacity: 0; }
+  @keyframes x-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes x-out { from { opacity: 1; } to { opacity: 0; } }
+  /* Freeze mode (shots) shows every hand-off and move at its end state. */
+  .dt-frozen .slide, .dt-frozen .slide * { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; transition-delay: 0s !important; }
 
   /* Scene 1 */
   .s1 .curve { fill: none; stroke: var(--ink); stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; }
@@ -57,20 +70,29 @@ __KATEX__
   .s1-mark { position: absolute; left: 0; right: 0; top: 155px; text-align: center; }
 
   /* Scene 2 */
-  /* The wordmark starts where scene 1 left it and moves to the top on its word. */
+  /* It opens on scene 1's last frame. The wordmark starts where scene 1 left it and moves to the top on its word. */
+  .s2-markfade, .s2-cardwrap { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
   .s2-mark { position: absolute; left: 0; right: 0; top: 155px; text-align: center; transform-origin: 50% 50%; }
   .s2-mark.up { animation: s2-up .35s cubic-bezier(.2, .7, .2, 1) both; }
   @keyframes s2-up { from { transform: none; } to { transform: translateY(-92px) scale(.6923); } }
   .dt-frozen .s2-mark.up { animation: none; transform: translateY(-92px) scale(.6923); }
-  .s2 .code { font: 500 28px var(--mono); fill: var(--ink); white-space: pre; }
+  .s2 .code { font: 500 25px var(--mono); fill: var(--ink); white-space: pre; }
   .s2 .code.m, .s2 .code .m { fill: var(--mute); }
   .s2 .code .new { fill: #ffffff; font-weight: 700; }
-  .s2 .t { font: 500 24px var(--mono); fill: var(--ink); }
+  .s2 .t { font: 500 22px var(--mono); fill: var(--ink); }
   .s2 .t.shift { fill: var(--accent); font-weight: 700; }
-  .s2 .slidetitle { font: 600 34px var(--tight); fill: var(--ink); }
   .s2 .join { fill: none; stroke: var(--accent); stroke-width: 4; }
-  /* After the retype, the line with "example" replaces the line with "lesson". */
-  .s2:has(.v-example.dt-on) .v-lesson { visibility: hidden; }
+  /* After the retype, the edited lines replace the lines as they were. */
+  .s2:has(.v-edited.dt-on) .v-before { visibility: hidden; }
+  /* The slide card holds the lesson page's first frame at full size, scaled into the 800 by 450 card at
+     1000, 250. On "lesson" it scales back to full size, so the section ends on the lesson's first frame. */
+  .s2-push { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; transform: translate(1000px, 250px) scale(0.41666667); }
+  .s2-frame { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 4.8px solid var(--mute); border-radius: 38.4px; }
+  /* The replica copies lesson.html's .title and .rules, and that page's text rendering. */
+  .l0 { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; text-rendering: auto; }
+  .l0 .title { position: absolute; left: 120px; top: 92px; margin: 0; font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); white-space: nowrap; }
+  .l0 .rules { position: absolute; left: 120px; top: 250px; width: 560px; height: 300px; border-radius: 16px; background: var(--block); padding: 30px 32px; box-sizing: border-box; font: 500 30px/56px var(--mono); color: var(--ink); }
+  .l0 .rules .h { font-size: 24px; line-height: 36px; color: var(--mute); }
 
   /* Scene 4 */
   .s4-script { position: absolute; left: 120px; top: 150px; width: 960px; height: 350px; background: var(--block); border-radius: 16px; font: 500 28px/40px var(--mono); white-space: pre; }
@@ -87,7 +109,13 @@ __KATEX__
   /* The diff snaps in on its word: the old line is struck and muted, and the context line moves down under the new one. */
   .s4:has(.s4-new.dt-on) .s4-old .text { color: var(--mute); }
   .s4:has(.s4-new.dt-on) .s4-ctx { top: 270px; }
+  /* "why downhill" outlines the sentence the edit changes, until the diff replaces it. */
+  .s4-why { position: absolute; left: calc(32px + 2ch - 12px); top: 102px; width: calc(24ch + 24px); height: 56px; border: 4px solid var(--accent); border-radius: 10px; }
+  .s4:has(.s4-new.dt-on) .s4-why { visibility: hidden; }
   .s4-card { position: absolute; left: 1110px; top: 150px; width: 690px; height: 350px; background: var(--ground); border: 2px solid var(--mute); border-radius: 16px; }
+  /* The bowl opens large and centred, and moves into its card on "one sentence". */
+  .s4-bowlwrap { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  .s4-bowlmove { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; transform: var(--big, none); }
   .s4-cap { position: absolute; left: 1110px; top: 438px; width: 690px; margin: 0; text-align: center; font: 600 27px/36px var(--sans); color: var(--mute); }
   /* The caption shows unlit once the diff is in, then lights word by word with the voice. */
   .slide .s4-cap.dt-reveal { opacity: 1; }
@@ -113,15 +141,28 @@ __KATEX__
   .s4-verify .within { position: absolute; right: 0; top: 46px; width: 400px; height: 150px; padding-top: 22px; border: 3px solid var(--ink); border-radius: 14px; text-align: center; font: 500 30px/40px var(--sans); }
   .s4-verify .within b { display: block; margin-top: 6px; font: 600 48px/56px var(--mono); }
 
-  /* Scene 5 */
-  .s5 p:not(.eyebrow) { position: absolute; left: 0; right: 0; margin: 0; text-align: center; white-space: nowrap; }
-  .s5-tag { top: 238px; font: 600 64px/1.1 var(--tight); letter-spacing: -.015em; color: var(--ink); }
-  .s5-mark { top: 386px; font: 600 132px/1.1 var(--tight); letter-spacing: -.025em; color: var(--ink); }
-  .s5-lic { top: 580px; font: 500 34px/44px var(--mono); color: var(--mute); }
-  .s5-url { top: 700px; font: 600 124px/1.1 var(--tight); letter-spacing: -.02em; color: var(--accent); }
+  /* Scene 5: it opens on the edit's last frame, then ends on the Open's composition with the count finished. */
+  .s5-carry { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  .s5-tag { position: absolute; left: 0; right: 0; top: 92px; margin: 0; text-align: center; white-space: nowrap; font: 600 44px/1.1 var(--tight); letter-spacing: -.01em; color: var(--ink); }
+  .s5-mark { position: absolute; left: 0; right: 0; top: 155px; text-align: center; }
+  .s5 .s5-lic { font: 500 26px var(--mono); text-anchor: middle; fill: var(--mute); }
+  .s5 .s5-url { font: 600 44px var(--tight); letter-spacing: -.01em; text-anchor: middle; fill: #ffffff; }
+
+  /* Keep-alive. The recorder's magenta cover spins until narration t=0, so the compositor is busy when the
+     cover-off frame is stamped. A page that then goes still paints each later reveal on an idle compositor,
+     which lands it a frame or two earlier than the cover-off frame suggests, so reveals read 50-90 ms early.
+     This near-white 3 px square turns for the whole recording, so every frame is stamped the same way. */
+  #dt-keepalive { position: fixed; right: 2px; bottom: 2px; width: 3px; height: 3px; background: #fefefe; pointer-events: none; animation: dt-keepalive .5s linear infinite; }
+  @keyframes dt-keepalive { to { transform: rotate(360deg); } }
+  .dt-frozen #dt-keepalive { display: none; }
+  /* The t=0 underlay: the scene's first frame, drawn before narration t=0 under the runtime's slide layer. */
+  #t0 { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  #t0 [data-cue] { visibility: hidden !important; }
 </style>
 </head>
 <body>
+<div id="dt-keepalive" aria-hidden="true"></div>
+<div id="dt-stage"><div id="t0" aria-hidden="true"></div></div>
 <script src="decktalk-runtime.js"></script>
 <script>
 // Scene numbers are the "## N." sections of script.md. Each step id is N.S and each cue id
@@ -141,16 +182,24 @@ __KATEX__
 // Every reveal here uses data-fx="none", so each picture snaps in on the frame of its word.
 
 // The footer of every slide: the four-tick mark and DECKTALK at left, the section tracker at right.
-// It counts the sections of decktalk.toml, so it counts the clip in section 4 too, and each
-// scene passes its section number.
-const SECTIONS_TOTAL = 6;
-function footer(n) {
-  const ticks = Array.from({ length: SECTIONS_TOTAL }, (_, i) => {
-    const x = 1 + i * 12;
-    return i + 1 === n
-      ? `<rect class="cur" x="${x}" y="8" width="3" height="22"/><circle class="cur" cx="${x + 1.5}" cy="3" r="2"/>`
-      : `<rect x="${x}" y="14" width="3" height="16"/>`;
-  }).join("");
+// It counts the sections of decktalk.toml, and each scene passes its section number. A section that
+// hands off passes one entry per tracker instead, [section, cue it fades in on, cue it fades out on],
+// and the trackers stack in one spot. The tracker is drawn exactly as lesson.html draws it, so a cut
+// between the two pages does not move it.
+const SECTIONS_TOTAL = 5;
+const xattrs = (cueIn, cueOut) => `${cueIn ? ` data-in="${cueIn}"` : ""}${cueOut ? ` data-out="${cueOut}"` : ""}`;
+function footer(...entries) {
+  const track = (entry) => {
+    const [n, cueIn, cueOut] = Array.isArray(entry) ? entry : [entry];
+    const ticks = Array.from({ length: SECTIONS_TOTAL }, (_, i) => {
+      const x = 1 + i * 12;
+      return i + 1 === n
+        ? `<rect class="cur" x="${x}" y="8" width="3" height="22"/><circle class="cur" cx="${x + 1.5}" cy="3" r="2"/>`
+        : `<rect x="${x}" y="14" width="3" height="16"/>`;
+    }).join("");
+    const w = 12 * SECTIONS_TOTAL - 6;
+    return `<div class="track"${xattrs(cueIn, cueOut)}><svg class="ticks" viewBox="0 0 ${w} 30" width="${w}" height="30" aria-hidden="true">${ticks}</svg><span>0${n} / 0${SECTIONS_TOTAL}</span></div>`;
+  };
   return `
     <div class="footer">
       <div class="brand">
@@ -160,12 +209,33 @@ function footer(n) {
         </svg>
         <span>DECKTALK</span>
       </div>
-      <div class="track">
-        <svg class="ticks" viewBox="0 0 66 30" width="66" height="30" aria-hidden="true">${ticks}</svg>
-        <span>0${n} / 0${SECTIONS_TOTAL}</span>
-      </div>
+      ${entries.length > 1 ? `<div class="tracks">${entries.map(track).join("")}</div>` : track(entries[0])}
     </div>`;
 }
+// Eyebrows hand off the same way: each entry is [text, cue it fades in on, cue it fades out on].
+const eyebrows = (...entries) => entries.map(([text, cueIn, cueOut]) => `<p class="eyebrow"${xattrs(cueIn, cueOut)}>${text}</p>`).join("");
+
+// A hand-off on cue id: each element marked data-out="id" fades out and each marked data-in="id" fades
+// in, over data-xdur seconds (0.3 by default) after data-xdelay seconds (none by default).
+function handoff(slide, id) {
+  const fade = (name) => (el) => { el.style.animation = `${name} ${el.dataset.xdur || 0.3}s ease ${el.dataset.xdelay || 0}s both`; };
+  slide.querySelectorAll(`[data-out~="${id}"]`).forEach(fade("x-out"));
+  slide.querySelectorAll(`[data-in~="${id}"]`).forEach(fade("x-in"));
+}
+// A step's on: object that runs the hand-off of every listed cue, then any extra move for that cue.
+const handoffs = (ids, extra = {}) => Object.fromEntries(ids.map((id) => [id, (slide, ctx) => { handoff(slide, id); if (extra[id]) extra[id](slide, ctx); }]));
+// Every scene is registered through scene(), which keeps its first step's render for the t=0 underlay
+// and removes the underlay two frames after that step mounts (see the end of this script).
+const T0_RENDER = {};
+function dropUnderlay() { requestAnimationFrame(() => requestAnimationFrame(() => { const el = document.getElementById("t0"); if (el) el.remove(); })); }
+function scene(n, def) {
+  const first = def.steps[0], enter = first.enter;
+  T0_RENDER[n] = first.render;
+  first.enter = (slide, ctx) => { if (enter) enter(slide, ctx); dropUnderlay(); };
+  DeckTalk.scene(n, def);
+}
+// A move on a cue: the element transitions from its stylesheet transform to none.
+const settle = (el, seconds) => { el.style.transition = `transform ${seconds}s cubic-bezier(.65, 0, .35, 1)`; el.style.transform = "none"; };
 
 // SVG fills take colors as strings, so these repeat the tokens above.
 const INK = "#0a0a0a", ACCENT = "#2c1fea", MUTE = "#71717a", DIM = "#a3a3ad", HAIR = "#e4e4e7";
@@ -265,12 +335,12 @@ const bowlStill = (() => {
 })();
 
 // ---- Scene 1: count down the bowl ------------------------------------------------------
-// Real values: the start of each count word ("one", "two", "three") in seconds after the
-// section starts. A recording reads them from the words the recorder passes, so the video
-// always shows its own voice's times. A preview or a shot has no words and shows these, which
-// a fill step sets from build/audio/timeline.json after a build. Until then they hold the
-// storyboard's estimates.
-const S1_COUNT_TIMES = [5.37, 6.30, 6.62];
+// Real values: the start of each count word ("one", "two", "three") in seconds after the section
+// starts, from build/audio/01-open.words.json as voiced. A recording of scene 1 reads them from the
+// words the recorder passes, so scene 1 always shows its own voice's times. Scene 2 opens on scene 1's
+// last frame, and its recording has only scene 2's words, so that copy always shows these values, and
+// they must match the voiced times or the numbers change on the cut.
+const S1_COUNT_TIMES = [4.49, 5.26, 5.77];
 
 // The bowl is y = 720 - 320 u^2 across x = 960 + 400 u. The ball starts at u = -0.96, and each
 // count is a step of gradient descent on u^2 at step size 0.25, so each step is half the last.
@@ -293,28 +363,30 @@ function s1countTimes() {
   }
   return out;
 }
-function s1svg() {
-  let curve = "";
-  for (let i = 0; i <= 84; i++) { const u = -1.05 + (2.1 * i) / 84; curve += (i ? "L" : "M") + f1(s1x(u)) + " " + f1(s1y(u)); }
+const s1curve = () => { let d = ""; for (let i = 0; i <= 84; i++) { const u = -1.05 + (2.1 * i) / 84; d += (i ? "L" : "M") + f1(s1x(u)) + " " + f1(s1y(u)); } return d; };
+const s1ball = (u) => { const [x, y] = s1on(u, 28); return `<circle cx="${f1(x)}" cy="${f1(y)}" r="34" fill="#ffffff"/><circle cx="${f1(x)}" cy="${f1(y)}" r="28" fill="${ACCENT}"/>`; };
+// With carry, the drawing is scene 1's last frame with every cue already shown, for scene 2 to open on.
+function s1svg(carry = false) {
   // Each dot marks where the ball stood, and appears as the ball leaves it.
   const dots = S1_STEPS.slice(0, 3).map((u, i) => { const [x, y] = s1on(u, 11); return `<circle data-cue="${S1_CUES[i + 1]}" data-fx="none" cx="${f1(x)}" cy="${f1(y)}" r="11" fill="${INK}"/>`; }).join("");
-  const balls = S1_STEPS.map((u, i) => { const [x, y] = s1on(u, 28); return `<g class="ball" data-cue="${S1_CUES[i]}" data-fx="none"><circle cx="${f1(x)}" cy="${f1(y)}" r="34" fill="#ffffff"/><circle cx="${f1(x)}" cy="${f1(y)}" r="28" fill="${ACCENT}"/></g>`; }).reverse().join("");
-  const words = ["one", "two", "three"], times = s1countTimes();
+  const balls = S1_STEPS.map((u, i) => `<g class="ball" data-cue="${S1_CUES[i]}" data-fx="none">${s1ball(u)}</g>`).reverse();
+  const words = ["one", "two", "three"], times = carry ? S1_COUNT_TIMES : s1countTimes();
   const box = (i, full) => `<rect class="box${full ? " full" : ""}" x="${620 + 240 * i}" y="790" width="200" height="80" rx="14"/><text class="lbl" x="${720 + 240 * i}" y="843">${words[i]}</text>`;
-  return `
+  const svg = `
     <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true">
-      <path class="curve" data-cue="1.1bowl" data-fx="none" d="${curve}"/>
+      <path class="curve" data-cue="1.1bowl" data-fx="none" d="${s1curve()}"/>
       ${dots}
-      ${balls}
+      ${carry ? balls[0] : balls.join("")}
       <g data-cue="1.1count" data-fx="none">${words.map((_, i) => box(i, false)).join("")}</g>
       <g data-cue="1.1one" data-fx="none">${box(0, true)}</g>
       <g data-cue="1.1two" data-fx="none">${box(1, true)}</g>
       <g data-cue="1.1three" data-fx="none">${box(2, true)}</g>
       <g data-cue="1.1word" data-fx="none">${times.map((t, i) => `<text class="time" x="${720 + 240 * i}" y="926">${t.toFixed(2)} s</text>`).join("")}</g>
     </svg>`;
+  return carry ? svg.replace(/ data-cue="[^"]*" data-fx="none"/g, "") : svg;
 }
 
-DeckTalk.scene(1, { name: "Open", steps: [
+scene(1, { name: "Open", steps: [
   { id: "1.1", hold: 14,
     cues: { "1.1bowl": 0.3, "1.1ball": 1.6, "1.1count": 4.4, "1.1one": 5.4, "1.1two": 6.3, "1.1three": 6.6, "1.1word": 12.4 },
     render: () => `
@@ -327,35 +399,44 @@ DeckTalk.scene(1, { name: "Open", steps: [
 ]});
 
 // ---- Scene 2: how it works --------------------------------------------------------------
-// Real values: the start of each word of "For this lesson it is a bowl." in section 3's words
-// file (build/audio/03-how-ai-learns.words.json), in seconds after section 3 starts, and the
-// same words after "lesson" is retyped as "example", from a trial build with that change. A
-// fill step sets both. Until then they hold the storyboard's estimates.
-const S2_LINE_TIMES = [42.91, 43.32, 43.74, 44.15, 44.56, 44.97, 45.39];
-const S2_RETYPED_TIMES = [42.91, 43.32, 43.74, 44.34, 44.75, 45.16, 45.58];
+// Real values, in seconds after section 3 starts: the start of each word of "For this lesson it
+// is a bowl." in section 3's words file, build/audio/03-how-ai-learns.words.json, as built
+// (S2_LINE_TIMES), and in the same file from a trial build in a copy of the project with
+// ", so lower is better" added to the line above it (S2_EDITED_TIMES). That is the edit scene 4
+// shows, so one trial build supplies both scenes. They hold the voiced demo's values, so a silent build
+// of the scaffold makes different times until a fill step sets them from that build.
+const S2_LINE_TIMES = [34.95, 35.13, 35.39, 35.92, 36.11, 36.25, 36.34];
+const S2_EDITED_TIMES = [38.45, 38.66, 38.91, 39.31, 39.44, 39.58, 39.67];
 
 // The script card quotes section 3 of script.md line for line. JetBrains Mono advances 0.6 em,
-// so at 28 px each character is 16.8 px wide and a word's x is its character index times that.
-const S2_CW = 16.8, S2_X = 152, S2_FOCUS_Y = 556;
+// so at 25 px each character is 15 px wide and a word's x is its character index times that.
+// The type is sized so the edited line, the longest, fits inside the card.
+const S2_CW = 15, S2_X = 152, S2_EDIT_Y = 506, S2_FOCUS_Y = 556;
 const S2_LINES = [
   [306, "## 3. How AI learns", true],
   [356, "…", true],
   [406, "[pause 1] Picture two knobs. [beat]"],
   [456, "The floor is every way to set them. [beat]"],
-  [506, "The height is how wrong. [beat]"],
 ];
+// The edited line is S2_EDIT_KEEP + S2_EDIT_ADD + " [beat]", and before the edit it ends ". [beat]".
+const S2_EDIT_KEEP = "The height is the error", S2_EDIT_ADD = ", so lower is better.";
+const S2_FOCUS = "For this lesson it is a bowl.";
 // Directions in brackets are muted, as they are in an editor that knows the script format.
 const s2code = (y, str, muted) => `<text class="code${muted ? " m" : ""}" x="${S2_X}" y="${y}">${str.split(/(\[[^\]]+\])/).filter(Boolean).map((part) => part.startsWith("[") ? `<tspan class="m">${part}</tspan>` : part).join("")}</text>`;
-function s2line(word, times, shifted) {
-  const text = `For this ${word} it is a bowl.`;
-  const words = [];
+// The line the edit changes, as it was, or with the added words selected as in an editor and the
+// caret after them.
+function s2edit(edited) {
+  if (!edited) return s2code(S2_EDIT_Y, `${S2_EDIT_KEEP}. [beat]`);
+  const x0 = S2_X + S2_EDIT_KEEP.length * S2_CW, x1 = x0 + S2_EDIT_ADD.length * S2_CW;
+  return `<rect x="${f1(x0 + 2)}" y="${S2_EDIT_Y - 28}" width="${f1(x1 - x0 + 2)}" height="38" rx="6" fill="${ACCENT}"/>` +
+    `<text class="code" x="${S2_X}" y="${S2_EDIT_Y}">${S2_EDIT_KEEP}<tspan class="new">${S2_EDIT_ADD}</tspan> <tspan class="m">[beat]</tspan></text>` +
+    `<rect x="${f1(x1 + 5)}" y="${S2_EDIT_Y - 27}" width="3" height="36" fill="${INK}"/>`;
+}
+function s2line(times, shifted) {
+  const text = S2_FOCUS, words = [];
   for (let i = 0, ci = 0; i < text.split(" ").length; i++) { const w = text.split(" ")[i]; words.push({ w, ci }); ci += w.length + 1; }
   const x = (ci) => f1(S2_X + ci * S2_CW);
-  let svg = shifted
-    ? `<rect x="${f1(S2_X + 9 * S2_CW - 5)}" y="${S2_FOCUS_Y - 31}" width="${f1(word.length * S2_CW + 10)}" height="42" rx="6" fill="${ACCENT}"/>` +
-      `<text class="code" x="${S2_X}" y="${S2_FOCUS_Y}">For this <tspan class="new">${word}</tspan> it is a bowl.</text>` +
-      `<rect x="${f1(S2_X + (9 + word.length) * S2_CW + 6)}" y="${S2_FOCUS_Y - 30}" width="3" height="40" fill="${INK}"/>`
-    : `<text class="code" x="${S2_X}" y="${S2_FOCUS_Y}">${text}</text>`;
+  let svg = `<text class="code" x="${S2_X}" y="${S2_FOCUS_Y}">${text}</text>`;
   // A soft waveform under the line, loud within a word and quiet between words. The bars and
   // the times are drawn bold enough that decktalk verify, which compares downscaled frames, sees
   // them arrive.
@@ -366,45 +447,58 @@ function s2line(word, times, shifted) {
     const h = inWord ? 12 + r() * 28 : 3 + r() * 3;
     wave += `<rect x="${f1(px)}" y="${f1(602 - h / 2)}" width="4.5" height="${f1(h)}" rx="2.2" fill="${MUTE}"/>`;
   }
-  const stamps = words.map((w, k) => `<text class="t${shifted && k >= 3 ? " shift" : ""}" x="${x(w.ci)}" y="${652 + (k % 2) * 30}">${times[k].toFixed(2)}</text>`).join("");
+  const stamps = words.map((w, k) => `<text class="t${shifted ? " shift" : ""}" x="${x(w.ci)}" y="${652 + (k % 2) * 30}">${times[k].toFixed(2)}</text>`).join("");
   svg += `<g data-cue="2.1aloud" data-fx="none">${wave}${stamps}</g>`;
-  // The retyped word is selected, as in an editor, and the times after it shift. The cue word
-  // gets an outline, joined by a line to the outline around the drawing.
-  const bowl = words[words.length - 1], wx = S2_X + bowl.ci * S2_CW - 8, ww = 4 * S2_CW + 16;
-  const [bx, by, , bh] = s2bowl.box, rx = bx - 12, ry = by - 12, x1 = wx + ww, y1 = S2_FOCUS_Y - 9, y2 = ry + bh / 2 + 12;
-  const join = `<rect x="${f1(wx)}" y="${S2_FOCUS_Y - 32}" width="${f1(ww)}" height="46" rx="8" fill="none" stroke="${ACCENT}" stroke-width="4"/>` +
+  // Every word of this line comes after the edit, so after it all of their times shift, the cue
+  // word's too. The cue word gets an outline, joined by a line to the outline around the drawing.
+  const bowl = words[words.length - 1], wx = S2_X + bowl.ci * S2_CW - 7, ww = 4 * S2_CW + 14;
+  const [bx, by, , bh] = s2bowl.box, rx = bx - 12, ry = by - 12, x1 = wx + ww, y1 = S2_FOCUS_Y - 8, y2 = ry + bh / 2 + 12;
+  const join = `<rect x="${f1(wx)}" y="${S2_FOCUS_Y - 29}" width="${f1(ww)}" height="42" rx="8" fill="none" stroke="${ACCENT}" stroke-width="4"/>` +
     `<path class="join" d="M${f1(x1)} ${y1}C${f1(x1 + 160)} ${y1} ${f1(rx - 160)} ${f1(y2)} ${f1(rx)} ${f1(y2)}"/>` +
     `<circle cx="${f1(x1)}" cy="${y1}" r="6" fill="${ACCENT}"/><circle cx="${f1(rx)}" cy="${f1(y2)}" r="6" fill="${ACCENT}"/>`;
   svg += shifted ? join : `<g data-cue="2.1word" data-fx="none">${join}</g>`;
   return svg;
 }
-const s2bowl = bowlStill(1070, 346, 660, 370, false);
+// The card is 16:9, 800 by 450 at 1000, 250. The lesson title sits in its top 70 px, and the bowl below it.
+const s2bowl = bowlStill(1060, 342, 680, 318, false);
+// The lesson page's first frame (lesson.html's title and rules card), drawn at full size for the card.
+const LESSON_T0 = `<div class="l0"><h1 class="title">How does AI learn?</h1>` +
+  `<div class="rules" data-in="2.1lesson" data-xdelay="0.1"><div class="h">rules</div>if it has spots → seal<br>if it has paws → otter<br>if …</div></div>`;
 
-DeckTalk.scene(2, { name: "How it works", steps: [
-  { id: "2.1", hold: 16,
-    cues: { "2.1mark": 0.6, "2.1script": 2.4, "2.1aloud": 4.6, "2.1word": 7.3, "2.1follows": 11.3 },
-    on: { "2.1mark": (slide) => slide.querySelector(".s2-mark").classList.add("up") },
+scene(2, { name: "How it works", steps: [
+  { id: "2.1", hold: 21,
+    cues: { "2.1mark": 1.1, "2.1script": 3.4, "2.1aloud": 5.9, "2.1word": 8.5, "2.1follows": 12.3, "2.1lesson": 14.5 },
+    // "DeckTalk" clears the Open's drawing, crosses the eyebrow and tracker to 02, and raises the wordmark.
+    // "lesson" clears everything but the slide card, which scales up to become the lesson's first frame.
+    on: handoffs(["2.1mark", "2.1lesson"], {
+      "2.1mark": (slide) => slide.querySelector(".s2-mark").classList.add("up"),
+      "2.1lesson": (slide) => settle(slide.querySelector(".s2-push"), 0.55),
+    }),
     render: () => {
       const [bx, by, bw, bh] = s2bowl.box;
       return `
     <div class="slide s2">
-      <p class="eyebrow">02 How it works</p>
-      <p class="wordmark s2-mark">DeckTalk</p>
-      <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true">
+      ${eyebrows(["01 Open", "", "2.1mark"], ["02 How it works", "2.1mark", "2.1lesson"], ["03 How AI learns", "2.1lesson", ""])}
+      <div class="s1" data-out="2.1mark">${s1svg(true)}</div>
+      <div class="s2-markfade" data-out="2.1lesson" data-xdur="0.2"><p class="wordmark s2-mark">DeckTalk</p></div>
+      <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true" data-out="2.1lesson" data-xdur="0.2">
         <g data-cue="2.1script" data-fx="none">
           <text class="filelabel" x="120" y="230" fill="${MUTE}">script.md</text>
           <text class="filelabel" x="1000" y="230" fill="${MUTE}">deck/lesson.html</text>
-          <rect x="120" y="250" width="820" height="520" rx="16" fill="#f4f4f5"/>
+          <rect x="120" y="250" width="820" height="450" rx="16" fill="#f4f4f5"/>
           ${S2_LINES.map(([y, str, muted]) => s2code(y, str, muted)).join("")}
-          <rect x="1000" y="250" width="800" height="520" rx="16" fill="#ffffff" stroke="${MUTE}" stroke-width="2"/>
-          <text class="slidetitle" x="1036" y="306">How does AI learn?</text>
-          ${s2bowl.svg}
-          <g class="v-lesson">${s2line("lesson", S2_LINE_TIMES, false)}</g>
-          <g class="v-example" data-cue="2.1follows" data-fx="none">${s2line("example", S2_RETYPED_TIMES, true)}</g>
-          <rect data-cue="2.1word" data-fx="none" x="${f1(bx - 12)}" y="${f1(by - 12)}" width="${f1(bw + 24)}" height="${f1(bh + 24)}" rx="14" fill="none" stroke="${ACCENT}" stroke-width="4"/>
+          <g class="v-before">${s2edit(false)}${s2line(S2_LINE_TIMES, false)}</g>
+          <g class="v-edited" data-cue="2.1follows" data-fx="none">${s2edit(true)}${s2line(S2_EDITED_TIMES, true)}</g>
         </g>
       </svg>
-      ${footer(2)}
+      <div class="s2-cardwrap" data-cue="2.1script" data-fx="none">
+        <div class="s2-push"><div class="s2-frame" data-out="2.1lesson" data-xdur="0.15" data-xdelay="0.4"></div>${LESSON_T0}</div>
+      </div>
+      <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true" data-out="2.1lesson" data-xdur="0.2">
+        <g data-cue="2.1script" data-fx="none">${s2bowl.svg}</g>
+        <rect data-cue="2.1word" data-fx="none" x="${f1(bx - 12)}" y="${f1(by - 12)}" width="${f1(bw + 24)}" height="${f1(bh + 24)}" rx="14" fill="none" stroke="${ACCENT}" stroke-width="4"/>
+      </svg>
+      ${footer([1, "", "2.1mark"], [2, "2.1mark", "2.1lesson"], [3, "2.1lesson", ""])}
     </div>`;
     } },
 ]});
@@ -413,70 +507,119 @@ DeckTalk.scene(2, { name: "How it works", steps: [
 // Real values from a trial rebuild in a copy of this project with ", so lower is better" added
 // to section 3. A fill step sets them: the build's wall time in seconds, the sections whose
 // narration was voiced again, each cue's time in seconds after section 3 starts before and
-// after the edit, and the largest verify offset of any cue after the rebuild. Until then they
-// hold the storyboard's estimates.
-const S4_BUILD_SECONDS = 41.8;
+// after the edit, and the largest verify offset of any cue after the rebuild. They hold the values
+// from a voiced trial rebuild of the demo, so a silent build of the scaffold makes different ones.
+const S4_BUILD_SECONDS = 211.1;
 const S4_NEW_AUDIO = ["3"];
 const S4_CUE_TIMES = [
-  ["3.3height", 40.49, 40.52],
-  ["3.3bowl", 45.39, 46.59],
-  ["3.4ball", 48.00, 49.20],
+  ["3.3bowl", 36.25, 39.58],
+  ["3.4ball", 38.95, 42.17],
+  ["3.4name", 52.05, 56.49],
 ];
-const S4_MAX_OFFSET_MS = 80;
+const S4_MAX_OFFSET_MS = 70;
 
 // The rebuild strip names every section of decktalk.toml, with a short name for the lesson.
-// Section 4 is the B-roll clip, which has no narration.
-const S4_SECTIONS = [["1", "Open"], ["2", "How it works"], ["3", "Lesson"], ["4", "Thousands of chips"], ["5", "The edit"], ["6", "Close"]];
-const S4_CLIPS = ["4"];
+const S4_SECTIONS = [["1", "Open"], ["2", "How it works"], ["3", "Lesson"], ["4", "The edit"], ["5", "Close"]];
+const S4_CLIPS = [];
+const S4_CAPTION = "The height is the error, so lower is better.";
 const s4bowl = bowlStill(1150, 166, 610, 250, true);
 const s4moved = (before, after) => { const d = after - before; return `${d < 0 ? "−" : "+"}${Math.abs(d).toFixed(2)} s`; };
 
-DeckTalk.scene(4, { name: "The edit", steps: [
-  { id: "4.1", hold: 22,
-    cues: { "4.1words": 8.2, "4.1again": 10.6, "4.1lower": 15.4, "4.1moved": 18.2 },
-    render: () => `
-    <div class="slide s4">
-      <p class="eyebrow">05 The edit</p>
-      <div class="s4-script">
-        <div class="file">script.md · ## 3. How AI learns</div>
-        <div class="s4-row s4-old"><span class="sign" data-cue="4.1words" data-fx="none">-</span><span class="text">The height is how wrong. <i>[beat]</i><b class="strike" data-cue="4.1words" data-fx="none"></b></span></div>
-        <div class="s4-row s4-new" data-cue="4.1words" data-fx="none"><span class="sign plus">+</span><span>The height is how wrong<em>, so lower is better.</em> <i>[beat]</i></span></div>
-        <div class="s4-row s4-ctx"><span class="sign"></span><span>For this lesson it is a bowl.</span></div>
+// The edit's figure. Scene 4 plays it cue by cue. Scene 5 opens on its last frame, so with final every
+// cue is already shown and the caption is fully lit, the way scene 4 ends.
+function s4Render(final) {
+  const cue = (id) => (final ? "" : ` data-cue="${id}" data-fx="none"`);
+  const hand = (cueIn, dur) => (final ? "" : ` data-in="${cueIn}"${dur ? ` data-xdur="${dur}"` : ""}`);
+  const [bx, by, bw, bh] = s4bowl.box, k = Math.min(1500 / bw, 600 / bh);
+  const big = `translate(${f1(960 - (bx + bw / 2) * k)}px, ${f1(560 - (by + bh / 2) * k)}px) scale(${k.toFixed(4)})`;
+  const lit = S4_CAPTION.split(/(\s+)/).map((t) => (t.trim() ? `<span class="dt-w dt-on">${t}</span>` : t)).join("");
+  return `
+      <div class="s4-intro"${hand("4.1sentence")}>
+        <div class="s4-script">
+          <div class="file">script.md · ## 3. How AI learns</div>
+          <div class="s4-why"${hand("4.1why", 0.2)}></div>
+          <div class="s4-row s4-old"><span class="sign"${cue("4.1words")}>-</span><span class="text">The height is the error. <i>[beat]</i><b class="strike"${cue("4.1words")}></b></span></div>
+          <div class="s4-row s4-new${final ? " dt-on" : ""}"${cue("4.1words")}><span class="sign plus">+</span><span>The height is the error<em>, so lower is better.</em> <i>[beat]</i></span></div>
+          <div class="s4-row s4-ctx"><span class="sign"></span><span>For this lesson it is a bowl.</span></div>
+        </div>
+        <div class="s4-card"></div>
       </div>
-      <div class="s4-card"></div>
-      <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true">${s4bowl.svg}</svg>
-      <div data-cue="4.1words" data-fx="none">
-        <p class="s4-cap" data-cue="4.1lower" data-sync>The height is how wrong, so lower is better.</p>
+      <div class="s4-bowlwrap"${hand("4.1lesson")}><div class="s4-bowlmove"${final ? "" : ` style="--big: ${big}"`}><svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true">${s4bowl.svg}</svg></div></div>
+      <div${cue("4.1words")}>
+        ${final ? `<p class="s4-cap dt-on">${lit}</p>` : `<p class="s4-cap" data-cue="4.1lower" data-sync>${S4_CAPTION}</p>`}
       </div>
-      <div class="s4-build" data-cue="4.1again" data-fx="none">
+      <div class="s4-build"${cue("4.1again")}>
         <div class="filelabel">decktalk build</div>
         <div class="boxes">${S4_SECTIONS.map(([n, title]) => { const fresh = S4_NEW_AUDIO.includes(n), note = fresh ? "new audio" : S4_CLIPS.includes(n) ? "clip" : "same audio"; return `<div class="sec${fresh ? " new" : ""}"><b>${n} ${title}</b><span>${note}</span></div>`; }).join("")}</div>
         <div class="took"><div class="filelabel">build time</div><b>${S4_BUILD_SECONDS.toFixed(1)} s</b></div>
       </div>
-      <div class="s4-verify" data-cue="4.1moved" data-fx="none">
+      <div class="s4-verify"${cue("4.1moved")}>
         <div class="filelabel">decktalk verify</div>
         <table>
           <tr><th>cue</th><th>before</th><th>after</th><th>moved</th></tr>
-          ${S4_CUE_TIMES.map(([cue, before, after]) => `<tr><td>${cue}</td><td>${before.toFixed(2)}</td><td>${after.toFixed(2)}</td><td class="${Math.abs(after - before) >= 0.1 ? "moved" : ""}">${s4moved(before, after)}</td></tr>`).join("")}
+          ${S4_CUE_TIMES.map(([id, before, after]) => `<tr><td>${id}</td><td>${before.toFixed(2)}</td><td>${after.toFixed(2)}</td><td class="${Math.abs(after - before) >= 0.1 ? "moved" : ""}">${s4moved(before, after)}</td></tr>`).join("")}
         </table>
         <div class="within">every cue within<b>±${S4_MAX_OFFSET_MS} ms</b></div>
-      </div>
-      ${footer(5)}
+      </div>`;
+}
+
+scene(4, { name: "The edit", steps: [
+  // It opens on the lesson's last frame: white, with the eyebrow and tracker at 03.
+  { id: "4.1", hold: 25,
+    cues: { "4.1lesson": 0.5, "4.1sentence": 2.2, "4.1why": 7.6, "4.1words": 10.2, "4.1again": 11.7, "4.1lower": 18.1, "4.1moved": 21.0 },
+    // "lesson" brings the lesson's bowl back, large, and crosses the eyebrow and tracker to 04. "one
+    // sentence" moves the bowl into its card as the script card arrives. "why downhill" outlines the line.
+    on: handoffs(["4.1lesson", "4.1sentence", "4.1why"], {
+      "4.1sentence": (slide) => settle(slide.querySelector(".s4-bowlmove"), 0.45),
+    }),
+    render: () => `
+    <div class="slide s4">
+      ${eyebrows(["03 How AI learns", "", "4.1lesson"], ["04 The edit", "4.1lesson", ""])}
+      ${s4Render(false)}
+      ${footer([3, "", "4.1lesson"], [4, "4.1lesson", ""])}
     </div>` },
 ]});
 
 // ---- Scene 5: close ---------------------------------------------------------------------
-DeckTalk.scene(5, { name: "Close", steps: [
-  { id: "5.1", hold: 14, cues: { "5.1made": 4.5, "5.1cap": 5, "5.1url": 10.7 }, render: () => `
+// It opens on the edit's last frame. "video" clears it and brings in the tagline and the Open's bowl with
+// the count finished: all four dots and the ball at the bottom, u = 0. The wordmark lands where the
+// Open's did, the licence sits in the Open's row of times, and the address in its row of count boxes.
+const s5bowl = () => {
+  const dots = S1_STEPS.map((u) => { const [x, y] = s1on(u, 11); return `<circle cx="${f1(x)}" cy="${f1(y)}" r="11" fill="${INK}"/>`; }).join("");
+  return `<path class="curve" d="${s1curve()}"/>${dots}${s1ball(0)}`;
+};
+
+scene(5, { name: "Close", steps: [
+  { id: "5.1", hold: 14, cues: { "5.1clear": 0.6, "5.1made": 3.0, "5.1cap": 3.8, "5.1url": 7.7 },
+    on: handoffs(["5.1clear"]),
+    render: () => `
     <div class="slide s5">
-      <p class="eyebrow">06 Close</p>
-      <p class="s5-tag">Update your video the way you update a doc.</p>
-      <p class="s5-mark" data-cue="5.1made" data-fx="none">DeckTalk</p>
-      <p class="s5-lic" data-cue="5.1cap" data-fx="none">Apache-2.0 · github.com/jacobcbeaudin/decktalk</p>
-      <p class="s5-url" data-cue="5.1url" data-fx="none">decktalk.app</p>
-      ${footer(6)}
+      ${eyebrows(["04 The edit", "", "5.1clear"], ["05 Close", "5.1clear", ""])}
+      <div class="s4 s5-carry" data-out="5.1clear" data-xdur="0.25">${s4Render(true)}</div>
+      <p class="s5-tag" data-in="5.1clear" data-xdur="0.25">Update your video the way you update a doc.</p>
+      <svg class="stage-svg s1" viewBox="0 0 1920 1080" aria-hidden="true" data-in="5.1clear" data-xdur="0.25">
+        ${s5bowl()}
+        <g data-cue="5.1cap" data-fx="none"><text class="s5-lic" x="960" y="926">Apache-2.0 · github.com/jacobcbeaudin/decktalk</text></g>
+        <g data-cue="5.1url" data-fx="none"><rect x="720" y="790" width="480" height="80" rx="14" fill="${ACCENT}"/><text class="s5-url" x="960" y="846">decktalk.app</text></g>
+      </svg>
+      <p class="wordmark s5-mark" data-cue="5.1made" data-fx="none">DeckTalk</p>
+      ${footer([4, "", "5.1clear"], [5, "5.1clear", ""])}
     </div>` },
 ]});
+// Narration t=0 waits until every face this page uses has loaded and been painted once. The fonts use
+// font-display: block, and nothing asks for them before the first step mounts, so without this a section
+// that opens on text (every hand-off does) records its first frame with the text still invisible.
+document.addEventListener("DOMContentLoaded", () => {
+  // The runtime mounts a scene's first step at narration t=0, and the recorder can capture that frame
+  // before the step paints, which leaves one blank frame on the cut. So the first step is drawn here
+  // first, with every cued element hidden, which is exactly its t=0 frame, and the mounted step covers
+  // it. Freeze mode and the index page draw no underlay.
+  const params = new URLSearchParams(location.search), n = params.get("scene"), under = document.getElementById("t0");
+  if (under && n && !params.has("step") && T0_RENDER[n]) under.innerHTML = T0_RENDER[n]({ frozen: false }); else if (under) under.remove();
+  const faces = ['600 104px "Inter Tight"', '500 22px "JetBrains Mono"', '700 25px "JetBrains Mono"', '600 40px "JetBrains Mono"', '500 36px Inter', '600 28px Inter'];
+  const painted = Promise.all(faces.map((f) => document.fonts.load(f))).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))));
+  window.__sceneReady = Promise.all([window.__sceneReady, painted]).then(([ready]) => ready);
+});
 </script>
 </body>
 </html>

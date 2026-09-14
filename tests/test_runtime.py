@@ -114,10 +114,10 @@ def test_freeze_mode_reveals_everything(page, deck):
         "() => [...document.querySelectorAll('.dt-reveal')].filter(e => !e.classList.contains('dt-on')).length"
     )
     assert hidden == 0
-    # The listed cues fired too: 2.1mark moved the wordmark up, and 2.1follows swapped in the retyped line.
-    assert page.evaluate("() => window.__decktalk.fired") == S2_CUES
+    # The listed cues fired too: 2.1mark moved the wordmark up, and 2.1follows swapped in the edited lines.
+    assert page.evaluate("() => window.__decktalk.fired") == template_cues(deck, "2")
     assert page.evaluate("() => !!document.querySelector('.dt-slide .s2-mark.up')")
-    assert page.evaluate("() => !!document.querySelector('.dt-slide .v-example.dt-on')")
+    assert page.evaluate("() => !!document.querySelector('.dt-slide .v-edited.dt-on')")
 
 
 def test_cue_mode_fires_in_order_and_first_step_mounts_at_zero(page, deck):
@@ -215,7 +215,7 @@ def test_scene_1_shows_the_spoken_start_of_each_count_word(page, deck):
 
 def test_synced_caption_lights_each_word_as_it_is_spoken(page, deck):
     """Scene 4's data-sync caption shows every word unlit at its cue and lights each one at its spoken second."""
-    words = "The@0.1,height@0.15,is@0.2,how@0.25,wrong@0.3,so@0.35,lower@6,is@6.2,better@6.4"
+    words = "The@0.1,height@0.15,is@0.2,the@0.25,error@0.3,so@0.35,lower@6,is@6.2,better@6.4"
     page.goto(f"{deck.as_uri()}?scene=4&t0=0&beats={full_beats(deck, '4')}&words={words}")
     page.wait_for_function("() => document.querySelectorAll('.s4-cap .dt-w.dt-on').length >= 6", timeout=3000)
     assert page.evaluate("() => document.querySelectorAll('.s4-cap .dt-w').length") == 9
@@ -375,13 +375,13 @@ def test_enter_receives_the_same_ctx(page, tmp_path):
 
 
 def test_scene_4_shows_the_diff_the_rebuild_and_verify_when_frozen(page, deck):
-    """Frozen scene 4 strikes the old line, lists six sections with one voiced again, and shows the verify rows."""
+    """Frozen scene 4 strikes the old line, lists five sections with one voiced again, and shows the verify rows."""
     page.goto(f"{deck.as_uri()}?step=4.1")
     page.wait_for_function("() => document.body.dataset.done === '1'")
     assert page.evaluate("() => !!document.querySelector('.dt-slide .s4-old .strike.dt-on')")
     assert page.evaluate("() => getComputedStyle(document.querySelector('.s4-ctx')).top") == "270px"
     names = page.evaluate("() => [...document.querySelectorAll('.s4-build .sec b')].map((e) => e.textContent)")
-    assert names == ["1 Open", "2 How it works", "3 Lesson", "4 Thousands of chips", "5 The edit", "6 Close"]
+    assert names == ["1 Open", "2 How it works", "3 Lesson", "4 The edit", "5 Close"]
     assert page.evaluate("() => [...document.querySelectorAll('.s4-build .sec.new b')].map((e) => e.textContent)") == [
         "3 Lesson"
     ]
@@ -479,7 +479,8 @@ def test_freeze_at_one_cue_stops_there(page, deck):
     page.goto(f"{deck.as_uri()}?step=4.1&cue=4.1words")
     page.wait_for_function("() => document.body.dataset.done === '1'")
     assert page.evaluate("() => window.__decktalk.mode") == "frozen"
-    assert page.evaluate("() => window.__decktalk.fired") == ["4.1words"]
+    cues = template_cues(deck, "4")
+    assert page.evaluate("() => window.__decktalk.fired") == cues[: cues.index("4.1words") + 1]
     on = "(sel) => document.querySelector(sel).classList.contains('dt-on')"
     assert page.evaluate(on, ".s4-new") is True
     assert page.evaluate(on, ".s4-old .strike") is True
