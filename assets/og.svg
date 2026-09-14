@@ -7,8 +7,9 @@
 .dot{fill:#2c1fea}.head{fill:#0a0a0a}
 .title{font:600 30px 'DT Sans', 'Inter Tight', 'Inter', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;letter-spacing:-.02em;fill:#0a0a0a}
 .tag{font:400 26px 'DT Sans', 'Inter Tight', 'Inter', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;fill:#71717a}
-.block{fill:#f4f4f5}.axis{stroke:#e4e4e7;stroke-width:2}
-.num{font:700 64px 'DT Sans', 'Inter Tight', 'Inter', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;letter-spacing:-.03em;fill:#2c1fea}</style></defs>
+.block{fill:#f4f4f5}
+.bowl{stroke:#0a0a0a;stroke-width:4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ball{fill:#2c1fea;stroke:#f4f4f5;stroke-width:3}.mark{fill:#0a0a0a}</style></defs>
   <rect class="bg" width="1200" height="630"/>
   <g transform="translate(80 84) scale(1.4)"><g stroke-width="2.25" stroke-linecap="round">
     <line x1="4" y1="12" x2="4" y2="20" stroke="#d4d4d8"/>
@@ -19,14 +20,13 @@
   <text class="title" x="130" y="112">DeckTalk</text>
   <text class="lab" x="80" y="230">NARRATION</text>
   <g transform="translate(80 300)">
-    <text y="0"><tspan class="w " x="0.0">The</tspan><tspan class="w cue" x="84.6">curve</tspan><tspan class="w " x="203.9">rises,</tspan><tspan class="w " x="323.5">then</tspan><tspan class="w " x="421.2">the</tspan><tspan class="w cue" x="493.9">number</tspan><tspan class="w cue" x="654.4">lands.</tspan></text>
-    <g transform="translate(0 34)"><line class="tick " x1="1.0" y1="0" x2="1.0" y2="22"/><line class="tick on" x1="85.6" y1="0" x2="85.6" y2="22"/><line class="tick " x1="204.9" y1="0" x2="204.9" y2="22"/><line class="tick " x1="324.5" y1="0" x2="324.5" y2="22"/><line class="tick " x1="422.2" y1="0" x2="422.2" y2="22"/><line class="tick on" x1="494.9" y1="0" x2="494.9" y2="22"/><line class="tick on" x1="655.4" y1="0" x2="655.4" y2="22"/><circle class="dot" cx="85.6" cy="-8" r="5"/><circle class="dot" cx="494.9" cy="-8" r="5"/><circle class="dot" cx="655.4" cy="-8" r="5"/><rect class="head" x="772.2" y="-16" width="3" height="52"/></g>
+    <text y="0"><tspan class="w " x="0.0">A</tspan><tspan class="w cue" x="38.6">bowl.</tspan><tspan class="w " x="158.3">A</tspan><tspan class="w cue" x="196.8">ball.</tspan><tspan class="w cue" x="290.3">One.</tspan><tspan class="w cue" x="395.7">Two,</tspan><tspan class="w cue" x="505.5">three.</tspan></text>
+    <g transform="translate(0 34)"><line class="tick " x1="1.0" y1="0" x2="1.0" y2="22"/><line class="tick on" x1="39.6" y1="0" x2="39.6" y2="22"/><line class="tick " x1="159.3" y1="0" x2="159.3" y2="22"/><line class="tick on" x1="197.8" y1="0" x2="197.8" y2="22"/><line class="tick on" x1="291.3" y1="0" x2="291.3" y2="22"/><line class="tick on" x1="396.7" y1="0" x2="396.7" y2="22"/><line class="tick on" x1="506.5" y1="0" x2="506.5" y2="22"/><circle class="dot" cx="39.6" cy="-8" r="5"/><circle class="dot" cx="197.8" cy="-8" r="5"/><circle class="dot" cx="291.3" cy="-8" r="5"/><circle class="dot" cx="396.7" cy="-8" r="5"/><circle class="dot" cx="506.5" cy="-8" r="5"/><rect class="head" x="620.7" y="-16" width="3" height="52"/></g>
   </g>
   <g transform="translate(80 420)">
     <rect class="block" width="300" height="130" rx="14"/>
-    <line class="axis" x1="26" y1="100" x2="160" y2="100"/><line class="axis" x1="26" y1="30" x2="26" y2="100"/>
-    <path d="M26,96 C60,94 96,76 130,46 S158,26 160,24" fill="none" stroke="#2c1fea" stroke-width="4" stroke-linecap="round"/>
-    <text class="num" x="190" y="86">3×</text>
+    <path class="bowl" d="M34.0,30.0L39.8,37.6L45.6,44.8L51.4,51.6L57.2,58.1L63.0,64.1L68.8,69.8L74.6,75.0L80.4,79.9L86.2,84.4L92.0,88.5L97.8,92.2L103.6,95.5L109.4,98.4L115.2,101.0L121.0,103.1L126.8,104.9L132.6,106.2L138.4,107.2L144.2,107.8L150.0,108.0L155.8,107.8L161.6,107.2L167.4,106.2L173.2,104.9L179.0,103.1L184.8,101.0L190.6,98.4L196.4,95.5L202.2,92.2L208.0,88.5L213.8,84.4L219.6,79.9L225.4,75.0L231.2,69.8L237.0,64.1L242.8,58.1L248.6,51.6L254.4,44.8L260.2,37.6L266.0,30.0"/>
+    <circle class="mark" cx="43.0" cy="32.7" r="5"/><circle class="mark" cx="97.3" cy="85.4" r="5"/><circle class="mark" cx="123.8" cy="98.3" r="5"/><circle class="ball" cx="138.3" cy="93.1" r="13"/>
   </g>
   <text class="tag" x="420" y="470">Narrated presentations, cut to the word.</text>
   <text class="tag" x="420" y="510">A markdown script and HTML slides in.</text>
