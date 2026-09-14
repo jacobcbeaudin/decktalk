@@ -20,6 +20,7 @@ the recorder with what your page does.
 |---|---|
 | The recorder opens `page.html?scene=N&beats=id@s,…&t0=signal`, with any `params` from the section. | The page reads `scene` and `beats`. It schedules cue `id` at `s` seconds after the clock starts. |
 | The recorder adds `&words=word@s,…` when the timeline has words for the section. | The page can use the words to show text one word at a time, or it can ignore them. |
+| The recorder adds `&prevwords=word@s,…` when the section just before has words. | A page that opens on the previous section's last frame can read them, or it can ignore them. |
 | The recorder awaits `document.fonts.ready`, then `window.__sceneReady` when it is a Promise. | The page sets `window.__sceneReady` to a Promise that resolves when the page is ready. |
 | The recorder calls `window.DeckTalk.startClock()` one time, at narration t=0. | The page starts its clock in that call and nowhere else. |
 | The recorder reads `window.__decktalk.catalog` after the recording. | The page lists at least one scene in `catalog`. A missing or empty list is a page error. |

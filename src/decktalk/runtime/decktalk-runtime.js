@@ -22,6 +22,9 @@
  *                            show; the last cued step holds forever.
  *   &t0=S                    seconds after page load at which narration t=0 falls;
  *                            t0=signal waits for DeckTalk.startClock() (what the recorder sends)
+ *   &prevwords=word@s,…      the previous section's spoken words, in seconds after that section
+ *                            starts. The runtime ignores them; a page that opens on the previous
+ *                            section's last frame reads them from DeckTalk.params
  *   ?step=ID                 freeze step ID with everything revealed (screenshots, review)
  *   &cue=ID                  with ?step=, freeze at cue ID instead: the step's cues fire in
  *                            autoplay order up to and including ID, and later cues stay hidden
