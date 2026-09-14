@@ -203,7 +203,9 @@ def script_segments(project: Project) -> tuple[list[Segment], list[Segment]]:
     if not project.script.exists():
         raise MissingInputError(f"script not found: {project.script}")
     cfg = project.settings.narration
-    all_segments = parse_script(project.script.read_text(), direction_break_seconds=cfg.direction_break_seconds)
+    all_segments = parse_script(
+        project.script.read_text(encoding="utf-8"), direction_break_seconds=cfg.direction_break_seconds
+    )
     if not all_segments:
         raise ConfigError(f"no '## N. Title' sections found in {project.script}")
     declared = {s.number for s in project.sections}

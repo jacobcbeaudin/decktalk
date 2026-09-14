@@ -80,13 +80,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
     args = ap.parse_args()
-    text = render(parse(SOURCE.read_text()))
+    text = render(parse(SOURCE.read_text(encoding="utf-8")))
     if args.check:
-        if not TARGET.exists() or TARGET.read_text() != text:
+        if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != text:
             print(f"stale: {TARGET.relative_to(ROOT)}")
             return 1
         return 0
-    TARGET.write_text(text)
+    TARGET.write_text(text, encoding="utf-8")
     print(f"wrote {TARGET.relative_to(ROOT)}")
     return 0
 

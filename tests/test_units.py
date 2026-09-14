@@ -47,7 +47,7 @@ hold_seconds = 1.5
 
 
 def write_project(tmp_path: Path, toml: str = MINIMAL_TOML) -> Path:
-    (tmp_path / "decktalk.toml").write_text(toml)
+    (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
     return tmp_path
 
 
@@ -149,7 +149,7 @@ def test_project_tuning_tables_reach_settings(tmp_path):
 def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch):
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     root = write_project(tmp_path)
-    (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nELEVENLABS_VOICE_ID='abc' # comment\n")
+    (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nELEVENLABS_VOICE_ID='abc' # comment\n", encoding="utf-8")
     p = Project.load(root, environ={})
     assert p.env("ELEVENLABS_API_KEY") == ""
     assert p.env("ELEVENLABS_VOICE_ID") == "abc"
@@ -188,7 +188,7 @@ def test_user_settings_file_warns_about_unknown_keys(tmp_path, caplog):
     from decktalk.config import read_user_toml
 
     path = tmp_path / "decktalk.toml"
-    path.write_text("[record]\nsettle_second = 0.8\n")
+    path.write_text("[record]\nsettle_second = 0.8\n", encoding="utf-8")
     with caplog.at_level("WARNING", logger="decktalk"):
         assert read_user_toml(path) == {"record": {"settle_second": 0.8}}
     assert [r.getMessage() for r in caplog.records] == [
@@ -276,7 +276,7 @@ def test_timeline_and_beats_roundtrip(tmp_path):
     assert back is not None and back.span("01") == 3.0 and back.sections["01"].words[0].word == "hi"
     b = Beats({"01": {"a": 1.5, "panel:bought": 2.0}})
     b.save(tmp_path / "b.json")
-    assert json.loads((tmp_path / "b.json").read_text()) == {"01": "a@1.5,panel:bought@2.0"}
+    assert json.loads((tmp_path / "b.json").read_text(encoding="utf-8")) == {"01": "a@1.5,panel:bought@2.0"}
     assert Beats.load(tmp_path / "b.json").get("01", "panel:bought") == 2.0
     assert parse_beats_string("a@1.5,bad,x@y") == {"a": 1.5}
 
@@ -452,7 +452,8 @@ def test_cues_load_with_cue_or_step_keys(tmp_path):
 
     root = write_project(tmp_path)
     (root / "cues.json").write_text(
-        json.dumps({"sections": {"1": {"cues": [{"cue": "1.1a", "on": "$start"}, {"step": "1.1b", "on": "hello"}]}}})
+        json.dumps({"sections": {"1": {"cues": [{"cue": "1.1a", "on": "$start"}, {"step": "1.1b", "on": "hello"}]}}}),
+        encoding="utf-8",
     )
     project = Project.load(root, environ={})
     (section,) = load_cues(project)
@@ -463,7 +464,8 @@ def test_cues_load_with_cue_or_step_keys(tmp_path):
 def test_sidecar_warnings_default_and_roundtrip(tmp_path):
     p = tmp_path / "s.json"
     p.write_text(
-        json.dumps({"url": "u", "requested_seconds": 1, "settle_seconds": 0, "load_seconds": 0, "lead_seconds": 0})
+        json.dumps({"url": "u", "requested_seconds": 1, "settle_seconds": 0, "load_seconds": 0, "lead_seconds": 0}),
+        encoding="utf-8",
     )
     old = Sidecar.load(p)
     assert old is not None and old.warnings == []
@@ -478,8 +480,8 @@ def _fake_katex_cache(cache_root: Path) -> Path:
 
     d = cache_root / "katex" / KATEX_VERSION
     (d / "fonts").mkdir(parents=True)
-    (d / "katex.min.js").write_text("window.katex = {};")
-    (d / "katex.min.css").write_text(".katex{}")
+    (d / "katex.min.js").write_text("window.katex = {};", encoding="utf-8")
+    (d / "katex.min.css").write_text(".katex{}", encoding="utf-8")
     (d / "fonts" / "KaTeX_Main-Regular.woff2").write_bytes(b"\0")
     return d
 
@@ -493,7 +495,7 @@ def test_init_vendors_cached_katex(tmp_path, monkeypatch):
     root = init(tmp_path / "proj", name="proj")
     assert (root / "deck" / "katex" / "katex.min.js").exists()
     assert (root / "deck" / "katex" / "fonts" / "KaTeX_Main-Regular.woff2").exists()
-    html = (root / "deck" / "index.html").read_text()
+    html = (root / "deck" / "index.html").read_text(encoding="utf-8")
     assert "./katex/katex.min.css" in html and "./katex/katex.min.js" in html
     assert "cdnjs" not in html and "__KATEX__" not in html
 
@@ -506,7 +508,7 @@ def test_init_falls_back_to_cdn_with_a_warning(tmp_path, monkeypatch, caplog):
     with caplog.at_level("WARNING", logger="decktalk.scaffold"):
         root = init(tmp_path / "proj", name="proj")
     assert not (root / "deck" / "katex").exists()
-    html = (root / "deck" / "index.html").read_text()
+    html = (root / "deck" / "index.html").read_text(encoding="utf-8")
     assert "cdnjs.cloudflare.com/ajax/libs/KaTeX" in html and "__KATEX__" not in html
     assert any("KaTeX is not cached" in r.getMessage() for r in caplog.records)
 
@@ -538,7 +540,7 @@ def test_fetch_katex_unpacks_only_what_the_deck_needs(tmp_path, monkeypatch):
     dest = scaffold.fetch_katex()
     assert dest == scaffold.katex_cache_dir()
     assert sorted(p.name for p in dest.iterdir()) == ["fonts", "katex.min.css", "katex.min.js"]
-    assert (dest / "fonts" / "KaTeX_Main-Regular.woff2").read_text() == "font"
+    assert (dest / "fonts" / "KaTeX_Main-Regular.woff2").read_text(encoding="utf-8") == "font"
     assert scaffold.katex_cached() == dest
 
 
@@ -555,7 +557,7 @@ def test_init_copies_every_file_of_the_template_deck(tmp_path, monkeypatch):
     assert wanted <= got and got - wanted == {Path("decktalk-runtime.js")}
     for rel in wanted:
         if rel.suffix == ".html":
-            html = (root / "deck" / rel).read_text()
+            html = (root / "deck" / rel).read_text(encoding="utf-8")
             assert "__NAME__" not in html and "__KATEX__" not in html, rel
         else:
             assert (root / "deck" / rel).read_bytes() == (src / rel).read_bytes(), rel
@@ -572,7 +574,7 @@ def test_template_ids_agree_across_page_cues_and_script(tmp_path, monkeypatch):
     project = Project.load(root, environ={})
     specs = load_cues(project)
     assert unknown_cue_ids(project, specs) == []
-    segments = {s.index: s for s in parse_script((root / "script.md").read_text())}
+    segments = {s.index: s for s in parse_script((root / "script.md").read_text(encoding="utf-8"))}
     for section in specs:
         words = [Word(w, i, i + 1) for i, w in enumerate(segments[section.number].spoken.split())]
         for cue in section.cues:
@@ -652,13 +654,13 @@ def test_caption_and_chapter_files(tmp_path):
     cues = [CaptionCue(3.7, 10.5, ("Welcome.", "This is a deck.")), CaptionCue(3661.25, 3662.0, ("Late.",))]
     write_srt(tmp_path / "c.srt", cues)
     write_vtt(tmp_path / "c.vtt", cues)
-    srt = (tmp_path / "c.srt").read_text()
-    vtt = (tmp_path / "c.vtt").read_text()
+    srt = (tmp_path / "c.srt").read_text(encoding="utf-8")
+    vtt = (tmp_path / "c.vtt").read_text(encoding="utf-8")
     assert srt.startswith("1\n00:00:03,700 --> 00:00:10,500\nWelcome.\nThis is a deck.\n\n2\n01:01:01,250 --> ")
     assert vtt.startswith("WEBVTT\n\n00:00:03.700 --> 00:00:10.500\nWelcome.\nThis is a deck.\n")
     assert ffmetadata_escape("a=b;c#d\\e") == "a\\=b\\;c\\#d\\\\e"
     write_chapters(tmp_path / "ch.txt", [Chapter(0, 3.0, "On camera"), Chapter(3.0, 12.44, "Open; part = 1")])
-    text = (tmp_path / "ch.txt").read_text()
+    text = (tmp_path / "ch.txt").read_text(encoding="utf-8")
     assert text.startswith(";FFMETADATA1\n")
     assert "[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=3000\ntitle=On camera\n" in text
     assert "START=3000\nEND=12440\ntitle=Open\\; part \\= 1\n" in text
@@ -892,14 +894,14 @@ def test_user_settings_sit_between_defaults_and_the_project(tmp_path, monkeypatc
     from decktalk.config import load_settings, read_user_toml, user_config_path
 
     user_file = tmp_path / "decktalk.toml"
-    user_file.write_text('[video]\npreset = "veryfast"\ncrf = 22\n[record]\nsettle_seconds = 0.9\n')
+    user_file.write_text('[video]\npreset = "veryfast"\ncrf = 22\n[record]\nsettle_seconds = 0.9\n', encoding="utf-8")
     monkeypatch.setenv("DECKTALK_CONFIG", str(user_file))
     assert user_config_path() == user_file
     s = load_settings(toml={"video": {"crf": 20}}, environ={"DECKTALK_RECORD_SETTLE_SECONDS": "1.2"})
     assert s.video.preset == "veryfast"  # from the user file
     assert s.video.crf == 20  # the project wins over the user file
     assert s.record.settle_seconds == 1.2  # the environment wins over both
-    user_file.write_text("[project]\nname = 'x'\n")
+    user_file.write_text("[project]\nname = 'x'\n", encoding="utf-8")
     with pytest.raises(ConfigError):
         read_user_toml(user_file)
 
@@ -932,7 +934,7 @@ def test_doctor_reports_missing_ffmpeg_without_fetching(tmp_path, monkeypatch):
     exe_dir = tmp_path / "bin" / "nowhere"
     exe_dir.mkdir(parents=True)
     for name in ("ffmpeg", "ffprobe", "installed.crumb"):
-        (exe_dir / name).write_text("")
+        (exe_dir / name).write_text("", encoding="utf-8")
     rows = {name: (ok, detail) for name, ok, detail in scaffold.doctor()}
     assert rows["ffmpeg"] == (True, str(exe_dir / "ffmpeg"))
     assert rows["ffprobe"] == (True, str(exe_dir / "ffprobe"))
@@ -1018,7 +1020,7 @@ def test_assemble_skips_loudnorm_on_an_estimated_timeline(tmp_path, monkeypatch,
     asm = importlib.import_module("decktalk.stages.assemble")
 
     root = write_project(tmp_path, PAGES_TOML)
-    (root / "script.md").write_text("## 1. A\n\nHi.\n\n## 2. B\n\nYes.\n\n## 3. C\n\nNo.\n")
+    (root / "script.md").write_text("## 1. A\n\nHi.\n\n## 2. B\n\nYes.\n\n## 3. C\n\nNo.\n", encoding="utf-8")
     p = Project.load(root, environ={})
     tl = Timeline(
         narration="narration.mp3",
@@ -1076,9 +1078,9 @@ def _verify_project(tmp_path, monkeypatch, beats: dict[str, str], cues: dict | N
         (p.out_dir / f"{key}-section.mp4").write_bytes(b"x")
     p.final.write_bytes(b"x")
     p.audio_dir.mkdir(parents=True)
-    p.beats_path.write_text(json.dumps(beats))
+    p.beats_path.write_text(json.dumps(beats), encoding="utf-8")
     if cues is not None:
-        (root / "cues.json").write_text(json.dumps({"sections": cues}))
+        (root / "cues.json").write_text(json.dumps({"sections": cues}), encoding="utf-8")
     monkeypatch.setattr(ffmpeg_module, "probe_duration", lambda path: 5.0)
     monkeypatch.setattr(ffmpeg_module, "luma_at", lambda path, t, crop=None: (100.0, 200.0))
     monkeypatch.setattr(ffmpeg_module, "changed_pixels_percent", lambda path, t1, t2, **kw: change)
@@ -1124,7 +1126,7 @@ def test_verify_opted_out_cue_is_skipped(tmp_path, monkeypatch):
     (named,) = verify(p, checks=["1:a"]).cues  # A cue named on purpose is measured anyway.
     assert named.verdict == "NO CHANGE" and named.reason is None
     bad = {"sections": {"1": {"cues": [{"cue": "a", "on": "x", "verify": 0}]}}}
-    (p.root / "cues.json").write_text(json.dumps(bad))
+    (p.root / "cues.json").write_text(json.dumps(bad), encoding="utf-8")
     with pytest.raises(ConfigError, match="'verify' must be true or false"):
         load_cues(p)
 
@@ -1187,8 +1189,8 @@ def _beats_project(tmp_path, html: str, cues: dict) -> Project:
     toml = "[[section]]\nnumber = 0\nclip = 'open.mp4'\n[[section]]\nnumber = 1\npage = 'deck/index.html'\n"
     root = write_project(tmp_path, toml)
     (root / "deck").mkdir()
-    (root / "deck" / "index.html").write_text(html)
-    (root / "cues.json").write_text(json.dumps({"sections": cues}))
+    (root / "deck" / "index.html").write_text(html, encoding="utf-8")
+    (root / "cues.json").write_text(json.dumps({"sections": cues}), encoding="utf-8")
     p = Project.load(root, environ={})
     m = Manifest(script="script.md", model="m", output_format="mp3")
     m.segments["01"] = ManifestSegment(1, "A", "01-a.mp3", "01-a.words.json", "h", 2, 1.0, 3.0)
@@ -1214,7 +1216,9 @@ def test_beats_reports_a_cue_id_missing_from_the_page(tmp_path):
         "--allow-unknown:\n  section 01: 4.1answer: not in deck/index.html"
     )
     assert isinstance(caught.value, ConfigError) and caught.value.result.unknown == 1
-    assert json.loads(p.beats_path.read_text()) == {"01": "1.1a@0.5,4.1answer@1.0"}  # written before the stop
+    assert json.loads(p.beats_path.read_text(encoding="utf-8")) == {
+        "01": "1.1a@0.5,4.1answer@1.0"
+    }  # written before the stop
     result = resolve_beats(p, allow_unknown=True)
     assert result.unknown == 1 and result.unresolved == 0
     assert result.sections[1].notes == ["4.1answer: not in deck/index.html"]
@@ -1264,10 +1268,12 @@ def test_build_captions_uses_manifest_spoken_text(tmp_path):
     assert caption_texts(p, tl) == {"01": "Hello, there."}
     assert [c.text for c in build_captions(tl, 0.0, caption_texts(p, tl))] == ["Hello, there."]
     # A manifest written before the field existed falls back to the script.
-    raw = json.loads(p.manifest_path.read_text())
+    raw = json.loads(p.manifest_path.read_text(encoding="utf-8"))
     del raw["segments"]["01"]["spoken"]
-    p.manifest_path.write_text(json.dumps(raw))
-    (root / "script.md").write_text("## 1. A\n\nHello there!\n\n## 2. B\n\nTwo.\n\n## 3. C\n\nThree.\n")
+    p.manifest_path.write_text(json.dumps(raw), encoding="utf-8")
+    (root / "script.md").write_text(
+        "## 1. A\n\nHello there!\n\n## 2. B\n\nTwo.\n\n## 3. C\n\nThree.\n", encoding="utf-8"
+    )
     assert caption_texts(p, tl)["01"] == "Hello there!"
 
 
@@ -1296,7 +1302,7 @@ def test_scene_url_passes_the_previous_sections_words(tmp_path):
 
     p = Project.load(write_project(tmp_path, PAGES_TOML), environ={})
     (p.root / "deck").mkdir(exist_ok=True)
-    (p.root / "deck" / "index.html").write_text("<!doctype html>")
+    (p.root / "deck" / "index.html").write_text("<!doctype html>", encoding="utf-8")
     tl = Timeline(
         narration="n.mp3",
         total_seconds=6.0,
@@ -1332,7 +1338,7 @@ def test_sidecar_writes_null_for_a_gap_before_the_clock(tmp_path):
     side = Sidecar(url="u", requested_seconds=1, settle_seconds=0, load_seconds=0, lead_seconds=0)
     side.frame_gaps = [(float("-inf"), 900), (None, 400), (0.05, 216)]
     side.save(p)
-    text = p.read_text()
+    text = p.read_text(encoding="utf-8")
     assert "Infinity" not in text and "NaN" not in text
     # Standard JSON parsers such as JSON.parse and jq reject the -Infinity token.
     data = json.loads(text, parse_constant=lambda token: pytest.fail(f"non-standard JSON token {token}"))
@@ -1346,13 +1352,14 @@ def test_sidecar_reads_an_older_file_that_holds_negative_infinity(tmp_path):
     p = tmp_path / "s.json"
     p.write_text(
         '{"url": "u", "requested_seconds": 1, "settle_seconds": 0, "load_seconds": 0, "lead_seconds": 0,'
-        ' "frame_gaps": [[-Infinity, 900], [0.4, 120]]}'
+        ' "frame_gaps": [[-Infinity, 900], [0.4, 120]]}',
+        encoding="utf-8",
     )
     side = Sidecar.load(p)
     assert side is not None and side.frame_gaps == [(None, 900), (0.4, 120)]
     assert side.worst_stall_ms == 120
     side.save(p)
-    assert "Infinity" not in p.read_text()
+    assert "Infinity" not in p.read_text(encoding="utf-8")
 
 
 def test_worst_stall_treats_a_null_time_as_a_gap_under_the_cover():

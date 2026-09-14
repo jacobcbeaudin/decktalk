@@ -350,7 +350,7 @@ def section_starts(rows: list[RenderedSection]) -> dict[str, float]:
 
 def concat(files: list[Path], out: Path) -> None:
     lst = out.with_suffix(".concat.txt")
-    lst.write_text("".join(f"file '{f}'\n" for f in files))
+    lst.write_text("".join(f"file '{f}'\n" for f in files), encoding="utf-8")
     try:
         ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", "-movflags", "+faststart", str(out))
     finally:
@@ -530,7 +530,7 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
             mpath = project.path(mix.markers)
             if mpath.exists():
                 try:
-                    mspec = json.loads(mpath.read_text())
+                    mspec = json.loads(mpath.read_text(encoding="utf-8"))
                 except json.JSONDecodeError as exc:
                     raise ConfigError(f"{mpath}: {exc}") from exc
                 boost = db(float(mspec.get("boost_db", 3))) - 1

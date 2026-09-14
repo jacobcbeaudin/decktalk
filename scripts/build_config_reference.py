@@ -137,8 +137,8 @@ def toml_value(node: ast.expr | None) -> str:
 
 
 def parse(source: Path) -> list[Section]:
-    tree = ast.parse(source.read_text())
-    lines = source.read_text().splitlines()
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    lines = source.read_text(encoding="utf-8").splitlines()
     classes: dict[str, ast.ClassDef] = {n.name: n for n in tree.body if isinstance(n, ast.ClassDef)}
     settings = classes["Settings"]
     out: list[Section] = []
@@ -188,11 +188,11 @@ def main() -> int:
     args = ap.parse_args()
     text = render(parse(SOURCE))
     if args.check:
-        if not TARGET.exists() or TARGET.read_text() != text:
+        if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != text:
             print(f"stale: {TARGET.relative_to(ROOT)}")
             return 1
         return 0
-    TARGET.write_text(text)
+    TARGET.write_text(text, encoding="utf-8")
     print(f"wrote {TARGET.relative_to(ROOT)}")
     return 0
 
