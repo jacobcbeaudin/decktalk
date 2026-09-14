@@ -1517,6 +1517,7 @@ page = "deck/index.html"
 number = 2
 title = "The edit"
 clip = "media/before.mov"
+words = "media/before.words.json"
 
 [[section]]
 number = 3
@@ -1542,6 +1543,33 @@ def _titled_clip_rows(tmp_path, *, clip_audio: bool = True):
         RenderedSection(p.sections[3], tmp_path / "04.mp4", 1.48, "page"),
     ]
     return p, rows
+
+
+def test_a_clip_section_reads_its_words_key(tmp_path):
+    p, _rows = _titled_clip_rows(tmp_path)
+    assert p.sections[1].is_clip and p.sections[1].words == "media/before.words.json"
+    plain = Project.load(write_project(tmp_path, MID_CLIP_TOML), environ={})
+    assert plain.sections[1].words is None
+
+
+def test_clip_captions_place_the_clip_speech_at_the_clip_start(tmp_path, caplog):
+    from decktalk.artifacts import write_words
+    from decktalk.stages.assemble import clip_captions
+
+    p, rows = _titled_clip_rows(tmp_path)
+    (tmp_path / "media").mkdir()
+    words = [Word("Watch", 0.2, 0.5), Word("it.", 0.6, 0.9), Word("One.", 1.4, 1.7), Word("Late.", 3.1, 3.4)]
+    write_words(tmp_path / "media" / "before.words.json", words)
+    cues = clip_captions(p, rows)
+    assert [(c.text, c.start) for c in cues] == [("Watch it. One.", 2.2)]  # the word after the picture ends is dropped
+    assert cues[0].end <= 5.0
+    # A slate plays no speech, so it gets no captions.
+    _p, slate_rows = _titled_clip_rows(tmp_path, clip_audio=False)
+    assert clip_captions(p, slate_rows) == []
+    # A missing words file warns and captions nothing.
+    (tmp_path / "media" / "before.words.json").unlink()
+    assert clip_captions(p, rows) == []
+    assert "words file missing" in caplog.text
 
 
 def test_consecutive_sections_with_the_same_title_share_one_chapter(tmp_path):

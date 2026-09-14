@@ -42,7 +42,8 @@ Full rules: [script.md](/reference/script-md).
 - `[voice]` holds voice settings. The voice id and key live in `.env`.
 - Each `[[section]]` has a `number` and an optional `title`.
 - A page section adds `page` and an optional `scene`. `scene` defaults to `number`.
-- A clip section adds `clip`, and the optional `slate_seconds` and `optional`.
+- A clip section adds `clip`, and the optional `slate_seconds`, `optional`, and `words`.
+- `words` names a words file of the speech inside the clip, and the captions add it.
 - Consecutive sections with the same `title` share one chapter.
 - A clip section with `optional = true` plays its slate under `--strict` too.
 - A clip section can sit before, between, or after page sections.

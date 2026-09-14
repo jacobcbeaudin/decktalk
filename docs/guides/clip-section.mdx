@@ -152,7 +152,7 @@ narration at each clip between page sections.
 </Frame>
 
 - Each part of the narration starts where its first page section starts in the video.
-- No caption covers a clip section.
+- No caption covers a clip section, unless the section sets `words`. [Caption the speech in a clip](#caption-the-speech-in-a-clip) explains it.
 - A clip section gets its own chapter, unless the section before it has the same title.
 
 Example: in the silent build of `clip-lesson`, section 5 starts at 170.60 s in `timeline.json` and at 174.60 s
@@ -180,6 +180,41 @@ The clip's own audio joins the mix at its section start.
 
 `verify` checks the start of a clip section, but a clip section has no cut row. The click search of the a/v check
 never reaches into a clip's audio.
+
+## Caption the speech in a clip
+
+The captions come from the narration's word times, so a clip's own speech has no captions by default. Set
+`words` on the clip section to caption it.
+
+1. Write a words file for the clip. It is a JSON list with one object per word, in seconds after the clip starts.
+
+   ```json media/interview.words.json
+   [
+     { "word": "Watch", "start": 0.15, "end": 0.42 },
+     { "word": "it.", "start": 0.48, "end": 0.71 }
+   ]
+   ```
+
+   Give each word its own punctuation and case. The captions break at the sentence ends it marks.
+
+2. Name the file in the clip section.
+
+   ```toml decktalk.toml
+   [[section]]
+   number = 4
+   title = "Interview"
+   clip = "media/interview.mp4"
+   words = "media/interview.words.json"
+   ```
+
+3. Run `decktalk assemble`.
+
+- A word that starts after the clip's picture ends has no caption.
+- A slate or a clip with no audio track has no captions.
+- If the words file is missing, `assemble` prints a warning and the clip has no captions.
+
+A `NN-slug.words.json` file from `build/audio` has this format. A clip cut from an earlier build can reuse its
+words, shifted to the clip's start.
 
 ## Keep one chapter across several sections
 

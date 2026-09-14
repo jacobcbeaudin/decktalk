@@ -53,7 +53,8 @@ class ClipSection:
     """A section that is your own video clip, with its own audio.
 
     A missing clip plays a titled slate for `slate_seconds`. With `strict` that is an error,
-    unless the section is `optional`, as the scaffold's B-roll slot is.
+    unless the section is `optional`, as the scaffold's B-roll slot is. `words` names a words
+    file of the speech inside the clip, in seconds after the clip starts, which the captions add.
     """
 
     number: int
@@ -61,6 +62,7 @@ class ClipSection:
     title: str = ""
     slate_seconds: float = 5.0
     optional: bool = False
+    words: str | None = None
 
     @property
     def key(self) -> str:
@@ -241,7 +243,7 @@ class _Table:
 
 
 VOICE_KEYS = frozenset({"provider", "model", "stability", "similarity_boost", "style", "speaker_boost", "speed"})
-CLIP_KEYS = frozenset({"number", "title", "clip", "slate_seconds", "optional"})
+CLIP_KEYS = frozenset({"number", "title", "clip", "slate_seconds", "optional", "words"})
 PAGE_KEYS = frozenset({"number", "title", "page", "scene", "extra_seconds", "hold_seconds", "ambience", "params"})
 SOUND_KEYS = frozenset({"text", "out", "duration_seconds", "prompt_influence", "model_id"})
 
@@ -272,6 +274,7 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
             title=title,
             slate_seconds=t.get_num("slate_seconds", 5.0),
             optional=t.get_bool("optional"),
+            words=t.get_str("words"),
         )
     if "page" not in raw:
         raise ConfigError(f"{where}: needs 'page' (an HTML file) or 'clip' (a video file)")

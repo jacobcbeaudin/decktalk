@@ -151,6 +151,7 @@ earlier section would move every later picture off its words.
 | `clip` | path | required | Your video file. It keeps its own audio. |
 | `slate_seconds` | number | 5 | Seconds the titled slate plays when the file is missing. |
 | `optional` | boolean | false | Plays the slate for a missing clip, even under `--strict`. |
+| `words` | path | none | A words file of the speech inside the clip. The captions add these words at the clip's start. |
 
 A clip section follows three rules.
 
@@ -160,8 +161,8 @@ A clip section follows three rules.
 
 Set `optional = true` while the clip is not ready. Delete that line after you add the clip.
 
-DeckTalk scales and pads the clip to the frame size. Captions cover page sections only, and chapters
-include the clip. [Add a clip section](/guides/clip-section) shows the whole task.
+DeckTalk scales and pads the clip to the frame size. A clip section has captions only when it sets `words`, and
+chapters include the clip. [Add a clip section](/guides/clip-section) shows the whole task.
 
 ## `[transition]`
 
