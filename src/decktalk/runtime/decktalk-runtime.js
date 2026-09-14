@@ -123,6 +123,7 @@
     queue: [], // [{t, kind, id, run}] sorted by t
     started: false,
     lastMountAt: 0,
+    frameAt: 0, // the rAF timestamp of the frame the queue last ran in (ms)
   };
   const frozen = params.has("step");
 
@@ -174,6 +175,13 @@
   // is recorded for the recorder to judge.
   const frameGaps = [];
   const syncLog = [];  // what each data-sync element matched, for the recorder's sidecar
+  // When each cue was due, when it ran, and when the frame that ran it and the two frames after it
+  // began, all in seconds on the narration clock. A cue that ran on time but whose next frame began
+  // late was held up by the frame that drew it; a cue that ran late was held up before its frame.
+  const cueLog = [];
+  // Animation frames longer than 50 ms after narration t=0, with when Chromium presented them.
+  const longFrames = [];
+  const clockAt = (ms) => (state.origin === null ? null : +((ms - state.origin) / 1000).toFixed(3));
   function watchFrames() {
     let last = null;
     const tick = (t) => {
@@ -182,6 +190,18 @@
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
+    if (!(window.PerformanceObserver && (PerformanceObserver.supportedEntryTypes || []).includes("long-animation-frame"))) return;
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        if (state.origin === null || e.startTime < state.origin || longFrames.length >= 5000) continue;
+        longFrames.push({ start: clockAt(e.startTime), ms: Math.round(e.duration), render: clockAt(e.renderStart), presented: e.presentationTime ? clockAt(e.presentationTime) : null });
+      }
+    }).observe({ type: "long-animation-frame" });
+  }
+  function logCue(id, due) {
+    const entry = { id, due: +due.toFixed(3), ran: +now().toFixed(3), frame: clockAt(state.frameAt), next: null, after: null };
+    cueLog.push(entry);
+    requestAnimationFrame((t1) => { entry.next = clockAt(t1); requestAnimationFrame((t2) => { entry.after = clockAt(t2); }); });
   }
   function warn(msg) {
     if (state.warnings.includes(msg)) return;
@@ -351,7 +371,8 @@
     state.queue.push({ t, kind, id, run });
     state.queue.sort((a, b) => a.t - b.t || (a.kind === "mount" ? -1 : b.kind === "mount" ? 1 : 0));
   }
-  function loop() {
+  function loop(frameAt) {
+    state.frameAt = frameAt ?? performance.now();
     const t = now();
     while (state.queue.length && state.queue[0].t <= t) state.queue.shift().run();
     if (hud) hud.textContent = `${state.mode} · scene ${state.scene?.id ?? "-"} · step ${state.step?.id ?? "-"} · t ${Math.max(0, t).toFixed(2)}s`;
@@ -447,7 +468,7 @@
     const tEnd = Math.max(...cues.map((c) => c.t));
     startCamera(sc, tEnd - T0 + 8);
     steps.forEach(([st, t]) => schedule(T0 + t, "mount", st.id, () => { mountStep(sc, st, listed); if (st === last) document.body.dataset.done = "1"; }));
-    cues.forEach((c) => schedule(T0 + c.t, "cue", c.id, () => fireCue(c.id)));
+    cues.forEach((c) => schedule(T0 + c.t, "cue", c.id, () => { logCue(c.id, T0 + c.t); fireCue(c.id); }));
   }
   function playAuto(sc) {
     state.mode = "autoplay";
@@ -544,6 +565,8 @@
   window.__decktalk = {
     get frameGaps() { return frameGaps; },
     get syncLog() { return syncLog; },
+    get cueLog() { return cueLog; },
+    get longFrames() { return longFrames; },
     get mode() { return state.mode; },
     get scene() { return state.scene?.id ?? null; },
     get step() { return state.step?.id ?? null; },

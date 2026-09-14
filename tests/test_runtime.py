@@ -136,6 +136,13 @@ def test_cue_mode_fires_in_order_and_first_step_mounts_at_zero(page, deck):
     page.wait_for_function("() => window.__decktalk.fired.length >= 5")
     assert page.evaluate("() => window.__decktalk.fired") == S2_CUES
     assert page.evaluate(hidden) is True
+    # Each cue is logged with when it was due, when it ran, and when its frame and the next two began.
+    page.wait_for_function("() => window.__decktalk.cueLog.every((e) => e.after !== null)")
+    log = page.evaluate("() => window.__decktalk.cueLog")
+    assert [e["id"] for e in log] == S2_CUES
+    for e, due in zip(log, (0.3, 0.9, 1.2, 1.4, 1.6), strict=True):
+        assert e["due"] == due and e["ran"] >= due, e
+        assert e["frame"] <= e["ran"] + 0.001 and e["frame"] < e["next"] < e["after"], e
     # The single step means the scene is done at mount.
     assert page.evaluate("() => document.body.dataset.done") == "1"
     assert page.evaluate("() => window.__decktalk.warnings") == []

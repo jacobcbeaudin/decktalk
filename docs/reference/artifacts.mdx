@@ -252,6 +252,8 @@ The sidecar lists what the recorder did for one page section, and where narratio
 | `page_errors` | array of strings | One line per uncaught exception, plus one line when the page has no runtime catalog. |
 | `frame_gaps` | array | `[seconds, ms]` pairs from `window.__decktalk.frameGaps`, one per long gap between two page frames. |
 | `sync_log` | array of tables | One `{ text, cueAt, runAt, n, firstOn }` table per `data-sync` element that matched. |
+| `cue_log` | array of tables | One `{ id, due, ran, frame, next, after }` table per cue, from `window.__decktalk.cueLog`. Times are seconds after narration t=0. |
+| `long_frames` | array of tables | One `{ start, ms, render, presented }` table per page frame over 50 ms after t=0, from `window.__decktalk.longFrames`. |
 
 Note: `check` reports `PAGE ERROR` for any entry in `page_errors`, and `decktalk build` stops. `check` reports
 `STALLED` when the part of a frame gap after t=0 is longer than `[align] stall_ms`. `record` sets `lead_in_seconds`
