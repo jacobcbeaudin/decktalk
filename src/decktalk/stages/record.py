@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
 
-from ..artifacts import Beats, Sidecar
+from ..artifacts import Beats, Sidecar, TimelineSection
 from ..errors import ConfigError, MissingInputError
 from ..media.browser import chromium, record_page
 from ..project import PageSection, Project
@@ -42,8 +42,20 @@ def scene_url(project: Project, section: PageSection, params: dict[str, str]) ->
     words = words_query(project, section)
     if words and "words" not in query:
         query["words"] = words
+    prev = prev_words_query(project, section)
+    if prev and "prevwords" not in query:
+        query["prevwords"] = prev
     query["t0"] = "signal"
     return page.resolve().as_uri() + "?" + urlencode(query)
+
+
+def _words_param(sec: TimelineSection) -> str | None:
+    """A timeline section's words as word@seconds pairs, in seconds after that section starts."""
+    if not sec.words:
+        return None
+    return ",".join(
+        f"{w.word.replace(',', '').replace('@', '')}@{max(0.0, w.start - sec.start):.2f}" for w in sec.words
+    )
 
 
 def words_query(project: Project, section: PageSection) -> str | None:
@@ -51,12 +63,21 @@ def words_query(project: Project, section: PageSection) -> str | None:
     timeline = project.timeline()
     if timeline is None or section.key not in timeline.sections:
         return None
-    sec = timeline.sections[section.key]
-    if not sec.words:
+    return _words_param(timeline.sections[section.key])
+
+
+def prev_words_query(project: Project, section: PageSection) -> str | None:
+    """The spoken words of the section just before this one in the narration, in seconds after that section starts.
+
+    A page that opens on the previous section's last frame reads them, so a value it carries
+    across the cut, such as a word's time, matches what the previous recording showed.
+    """
+    timeline = project.timeline()
+    if timeline is None or section.key not in timeline.sections:
         return None
-    return ",".join(
-        f"{w.word.replace(',', '').replace('@', '')}@{max(0.0, w.start - sec.start):.2f}" for w in sec.words
-    )
+    keys = list(timeline.sections)
+    at = keys.index(section.key)
+    return _words_param(timeline.sections[keys[at - 1]]) if at > 0 else None
 
 
 @dataclass

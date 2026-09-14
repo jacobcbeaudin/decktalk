@@ -51,6 +51,7 @@ ownership and mount rules of cue mode.
 | `beats` | string | none | Turns on cue mode. Comma-separated `id@seconds` pairs, in seconds after narration t=0. |
 | `t0` | number or `signal` | `0` | Seconds after `load` at which narration t=0 falls. `signal` waits for `DeckTalk.startClock()`. |
 | `words` | string | none | The section's spoken words, as comma-separated `word@seconds` pairs. `data-sync` uses them. |
+| `prevwords` | string | none | The spoken words of the section just before this one in the narration, in the same form, in seconds after that section starts. The runtime ignores them. A page that opens on the previous section's last frame can read them, so a value it carries across the cut matches. |
 | `step` | string | none | Turns on freeze mode for this step. |
 | `cue` | string | none | With `step`, fires the step's cues up to and including this one. Elements of later cues stay hidden. |
 | `speed` | number | `1` | Divides autoplay time. The minimum is 0.05. Cue mode ignores it. |
@@ -64,7 +65,8 @@ Note: The runtime sorts the `beats` pairs by time and splits each pair at its la
 pair whose seconds are not a number. Write every pair as `id@seconds`.
 
 Note: The recorder builds `words` from `build/audio/timeline.json`, in seconds after the section
-start. It removes commas and `@` from each word.
+start. It removes commas and `@` from each word. It builds `prevwords` the same way from the section
+before, and leaves it out for the first section or when the section before has no words.
 
 Note: In freeze mode, the step's cues fire in autoplay order. A cue in a `cues` list, with no
 seconds, fires after the timed cues. Animations take no time. A count-up shows its final value, a

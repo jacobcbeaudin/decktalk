@@ -1288,6 +1288,32 @@ def test_scene_params_adds_beats_unless_the_section_sets_them(tmp_path):
         shoot_steps(p, steps=["1.1", "2.1"], cues=["1.1a"])
 
 
+def test_scene_url_passes_the_previous_sections_words(tmp_path):
+    from urllib.parse import parse_qs, urlsplit
+
+    from decktalk.project import PageSection
+    from decktalk.stages.record import prev_words_query, scene_url, words_query
+
+    p = Project.load(write_project(tmp_path, PAGES_TOML), environ={})
+    (p.root / "deck").mkdir(exist_ok=True)
+    (p.root / "deck" / "index.html").write_text("<!doctype html>")
+    tl = Timeline(
+        narration="n.mp3",
+        total_seconds=6.0,
+        sections={
+            "01": TimelineSection("A", 0.0, 3.0, 3.0, 2.5, [Word("one,", 0.7, 1.0), Word("two", 1.5, 1.8)]),
+            "02": TimelineSection("B", 3.0, 6.0, 3.0, 5.5, [Word("three", 3.4, 3.8)]),
+        },
+    )
+    tl.save(p.timeline_path)
+    first, second = PageSection(1, "deck/index.html", "1"), PageSection(2, "deck/index.html", "2")
+    assert prev_words_query(p, first) is None
+    assert prev_words_query(p, second) == words_query(p, first) == "one@0.70,two@1.50"
+    query = parse_qs(urlsplit(scene_url(p, second, {})).query)
+    assert query["words"] == ["three@0.40"] and query["prevwords"] == ["one@0.70,two@1.50"]
+    assert "prevwords" not in parse_qs(urlsplit(scene_url(p, first, {})).query)
+
+
 def test_worst_stall_counts_only_what_a_viewer_sees():
     from decktalk.artifacts import Sidecar
 

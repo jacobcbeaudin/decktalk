@@ -240,7 +240,7 @@ The sidecar lists what the recorder did for one page section, and where narratio
 
 | Field | Type | Meaning |
 |---|---|---|
-| `url` | string | Page URL that the recorder opened, with `scene`, `beats`, `words`, `t0=signal`, and any section `params`. |
+| `url` | string | Page URL that the recorder opened, with `scene`, `beats`, `words`, `prevwords`, `t0=signal`, and any section `params`. |
 | `requested_seconds` | number | Recording length after narration t=0: the section span plus `extra_seconds`. |
 | `settle_seconds` | number | Wall-clock seconds from the page's `load` event to narration t=0. |
 | `load_seconds` | number | Wall-clock seconds from the recorder's start to the page's `load` event. |

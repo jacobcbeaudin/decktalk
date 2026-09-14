@@ -337,9 +337,10 @@ const bowlStill = (() => {
 // ---- Scene 1: count down the bowl ------------------------------------------------------
 // Real values: the start of each count word ("one", "two", "three") in seconds after the section
 // starts, from build/audio/01-open.words.json as voiced. A recording of scene 1 reads them from the
-// words the recorder passes, so scene 1 always shows its own voice's times. Scene 2 opens on scene 1's
-// last frame, and its recording has only scene 2's words, so that copy always shows these values, and
-// they must match the voiced times or the numbers change on the cut.
+// words the recorder passes (?words=). Scene 2 opens on scene 1's last frame, and its recording gets
+// the Open's words as ?prevwords=, so both copies show the same times in any build, voiced or silent,
+// and the numbers never change on the cut. These constants are the fallback for a browser preview,
+// which has no words at all.
 const S1_COUNT_TIMES = [4.49, 5.26, 5.77];
 
 // The bowl is y = 720 - 320 u^2 across x = 960 + 400 u. The ball starts at u = -0.96, and each
@@ -349,8 +350,9 @@ const S1_CUES = ["1.1ball", "1.1one", "1.1two", "1.1three"];
 const s1x = (u) => 960 + 400 * u, s1y = (u) => 720 - 320 * u * u;
 // A point r px off the curve along its normal, so a ball of radius r sits on the line.
 const s1on = (u, r) => { const m = -1.6 * u, n = Math.hypot(m, 1); return [s1x(u) + (m / n) * (r + 7), s1y(u) - (1 / n) * (r + 7)]; };
-function s1countTimes() {
-  const raw = DeckTalk.params.get("words");
+// param is "words" in scene 1's own recording and "prevwords" in scene 2's, which opens on scene 1's last frame.
+function s1countTimes(param = "words") {
+  const raw = DeckTalk.params.get(param);
   if (!raw) return S1_COUNT_TIMES;
   const words = raw.split(",").map((item) => { const at = item.lastIndexOf("@"); return [wordKey(item.slice(0, at)), parseFloat(item.slice(at + 1))]; });
   const out = [];
@@ -370,7 +372,7 @@ function s1svg(carry = false) {
   // Each dot marks where the ball stood, and appears as the ball leaves it.
   const dots = S1_STEPS.slice(0, 3).map((u, i) => { const [x, y] = s1on(u, 11); return `<circle data-cue="${S1_CUES[i + 1]}" data-fx="none" cx="${f1(x)}" cy="${f1(y)}" r="11" fill="${INK}"/>`; }).join("");
   const balls = S1_STEPS.map((u, i) => `<g class="ball" data-cue="${S1_CUES[i]}" data-fx="none">${s1ball(u)}</g>`).reverse();
-  const words = ["one", "two", "three"], times = carry ? S1_COUNT_TIMES : s1countTimes();
+  const words = ["one", "two", "three"], times = s1countTimes(carry ? "prevwords" : "words");
   const box = (i, full) => `<rect class="box${full ? " full" : ""}" x="${620 + 240 * i}" y="790" width="200" height="80" rx="14"/><text class="lbl" x="${720 + 240 * i}" y="843">${words[i]}</text>`;
   const svg = `
     <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true">

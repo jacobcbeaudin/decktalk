@@ -139,7 +139,7 @@ Write one `[[section]]` table for each `## N.` section of the script. DeckTalk s
 | `params` | table | none | Extra query parameters for the page, written as `[section.params]`. |
 
 Note: `params` values become strings. A `beats` key replaces the cue times, a `scene` key replaces
-`scene`, and a `words` key replaces the spoken words. `t0` is always `signal`, whatever `params` says.
+`scene`, a `words` key replaces the spoken words, and a `prevwords` key replaces the previous section's words. `t0` is always `signal`, whatever `params` says.
 
 `hold_seconds` exists only on the last page section. The narration is continuous, so a hold on an
 earlier section would move every later picture off its words.
