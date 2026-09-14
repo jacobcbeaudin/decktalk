@@ -15,7 +15,8 @@ from .verdicts import BLACK, OK, QUIET, SKIPPED, SPEECH_AT_CUT
 def mmss(seconds: float | None) -> str:
     if seconds is None:
         return "  --  "
-    return f"{int(seconds // 60)}:{int(round(seconds % 60)):02d}"
+    whole = int(round(seconds))  # round first, so 179.6 s reads 3:00, not 2:60
+    return f"{whole // 60}:{whole % 60:02d}"
 
 
 def segments_table(segments: list[Segment], wpm: int, result: NarrateResult | None = None) -> str:

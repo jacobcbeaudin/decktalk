@@ -24,26 +24,43 @@ file fails at load with the table and field named, not deep inside ffmpeg.
 
 from __future__ import annotations
 
+import logging
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .artifacts import Beats, Manifest, Timeline
-from .config import PROJECT_FILE, Settings, load_settings, read_project_toml
+from .config import (
+    PROJECT_FILE,
+    Settings,
+    load_settings,
+    read_project_toml,
+    settings_key_warnings,
+    unknown_key_message,
+    unknown_key_warnings,
+)
 from .errors import ConfigError
+
+log = logging.getLogger(__name__)
 
 # ---- document dataclasses ------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class ClipSection:
-    """A section that is your own video clip, with its own audio."""
+    """A section that is your own video clip, with its own audio.
+
+    A missing clip plays a titled slate for `slate_seconds`. With `strict` that is an error,
+    unless the section is `optional`, as the scaffold's B-roll slot is.
+    """
 
     number: int
     clip: str
     title: str = ""
     slate_seconds: float = 5.0
+    optional: bool = False
 
     @property
     def key(self) -> str:
@@ -217,6 +234,27 @@ class _Table:
     def unknown(self, known: set[str]) -> list[str]:
         return sorted(set(self.data) - known)
 
+    def warn_unknown(self, known: Iterable[str]) -> None:
+        """Log a warning for every key this table does not read. DeckTalk ignores such a key."""
+        for message in unknown_key_warnings(self.data, known, self.where):
+            log.warning(message)
+
+
+VOICE_KEYS = frozenset({"provider", "model", "stability", "similarity_boost", "style", "speaker_boost", "speed"})
+CLIP_KEYS = frozenset({"number", "title", "clip", "slate_seconds", "optional"})
+PAGE_KEYS = frozenset({"number", "title", "page", "scene", "extra_seconds", "hold_seconds", "ambience", "params"})
+SOUND_KEYS = frozenset({"text", "out", "duration_seconds", "prompt_influence", "model_id"})
+
+
+def _warn_section_keys(t: _Table, *, clip: bool) -> None:
+    """Warn about keys a section does not read, and name the section kind a misplaced key belongs to."""
+    own, other, kind = (CLIP_KEYS, PAGE_KEYS, "page") if clip else (PAGE_KEYS, CLIP_KEYS, "clip")
+    for key in sorted(set(t.data) - own):
+        if key in other:
+            log.warning("%s: ignoring '%s', which applies only to a %s section", t.where, key, kind)
+        else:
+            log.warning(unknown_key_message(key, own, t.where))
+
 
 def _parse_section(raw: dict[str, Any], index: int) -> Section:
     t = _Table(raw, f"{PROJECT_FILE}: [[section]] #{index}")
@@ -227,11 +265,17 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
     if "clip" in raw and "page" in raw:
         raise ConfigError(f"{where}: give either 'clip' or 'page', not both")
     if "clip" in raw:
+        _warn_section_keys(t, clip=True)
         return ClipSection(
-            number=number, clip=t.get_str("clip"), title=title, slate_seconds=t.get_num("slate_seconds", 5.0)
+            number=number,
+            clip=t.get_str("clip"),
+            title=title,
+            slate_seconds=t.get_num("slate_seconds", 5.0),
+            optional=t.get_bool("optional"),
         )
     if "page" not in raw:
         raise ConfigError(f"{where}: needs 'page' (an HTML file) or 'clip' (a video file)")
+    _warn_section_keys(t, clip=False)
     params_raw = t.get_table("params") or {}
     scene = raw.get("scene", number)
     if isinstance(scene, bool) or not isinstance(scene, (int, str)):
@@ -265,6 +309,7 @@ def _parse_voice(doc: dict[str, Any]) -> Voice:
     if raw is None:
         return Voice()
     t = _Table(raw, f"{PROJECT_FILE}: [voice]")
+    t.warn_unknown(VOICE_KEYS)
     return Voice(
         provider=t.get_str("provider", "elevenlabs"),
         model=t.get_str("model"),
@@ -281,6 +326,7 @@ def _parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
     if raw is None:
         return Transition()
     t = _Table(raw, f"{PROJECT_FILE}: [transition]")
+    t.warn_unknown({"dips", "dip_seconds", "page_fades_in"})
     dips_raw = raw.get("dips")
     dips: tuple[tuple[int, int], ...] | None = None
     if dips_raw is not None:
@@ -304,11 +350,14 @@ def _parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
     if raw is None:
         return Mix()
     t = _Table(raw, f"{PROJECT_FILE}: [mix]")
+    t.warn_unknown(Mix.__dataclass_fields__)
     ln_raw = t.get_table("loudnorm") or {}
     ln = _Table(ln_raw, f"{PROJECT_FILE}: [mix.loudnorm]")
+    ln.warn_unknown({"I", "TP", "LRA", "i", "tp", "lra"})
     sfx: list[Sfx] = []
     for i, item in enumerate(t.get_tables("sfx")):
         s = _Table(item, f"{PROJECT_FILE}: [[mix.sfx]] #{i + 1}")
+        s.warn_unknown({"file", "section", "cue", "db", "offset"})
         section = s.get_int("section", required=True)
         if section not in numbers:
             raise ConfigError(f"{s.where}: section {section} does not exist")
@@ -342,6 +391,7 @@ def _parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
 
 def _parse_sound(raw: dict[str, Any], where: str) -> SoundSpec:
     t = _Table(raw, where)
+    t.warn_unknown(SOUND_KEYS)
     return SoundSpec(
         text=t.get_str("text", required=True),
         out=t.get_str("out"),
@@ -356,6 +406,7 @@ def _parse_soundscape(doc: dict[str, Any]) -> Soundscape:
     if raw is None:
         return Soundscape()
     t = _Table(raw, f"{PROJECT_FILE}: [soundscape]")
+    t.warn_unknown({"ambience", "sfx", "music"})
     amb_raw = t.get_table("ambience")
     sfx_raw = t.get_table("sfx") or {}
     music_raw = t.get_table("music")
@@ -367,6 +418,7 @@ def _parse_soundscape(doc: dict[str, Any]) -> Soundscape:
     music = None
     if music_raw is not None:
         m = _Table(music_raw, f"{PROJECT_FILE}: [soundscape.music]")
+        m.warn_unknown({"prompt", "seconds", "force_instrumental", "out", "model_id"})
         music = MusicSpec(
             prompt=m.get_str("prompt", required=True),
             seconds=m.get_int("seconds", 360),
@@ -444,6 +496,7 @@ class Project:
         if unknown:
             raise ConfigError(f"{PROJECT_FILE}: unknown table(s) {unknown}; known: {sorted(known)}")
         proj = _Table(top.get_table("project") or {}, f"{PROJECT_FILE}: [project]")
+        proj.warn_unknown({"name", "script", "cues", "build"})
         sections = _parse_sections(doc)
         numbers = {s.number for s in sections}
         project = cls(
@@ -459,6 +512,8 @@ class Project:
             soundscape=_parse_soundscape(doc),
             settings=load_settings(root, toml=doc, environ=environ),
         )
+        for message in settings_key_warnings(doc, PROJECT_FILE):
+            log.warning(message)
         project._check_holds()
         return project
 

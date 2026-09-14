@@ -4,8 +4,9 @@ A certain verdict names something that is wrong for sure, such as a page that th
 recording that stopped early, so the read-only commands exit 1 on it. An uncertain verdict
 ends in a question mark and names something that is probably wrong, such as a dark frame
 that may be a dark slide, so those commands exit 1 on it only with `--strict`. A shortfall
-against `min_seconds` in beats and a loudness miss in assemble are uncertain too, although
-they have no verdict string of their own. The passing verdicts are not findings at all, and
+against `min_seconds` in beats, a loudness miss in assemble, and a `warning` row in doctor
+(KaTeX not cached, so pages load it from a CDN) are uncertain too, although they have no
+verdict string of their own. The passing verdicts are not findings at all, and
 neither are the warnings the runtime records in the page.
 """
 

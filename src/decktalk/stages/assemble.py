@@ -245,10 +245,20 @@ def _render_clip(
             return f"{clip.name} (own audio)", clip
         log.warning("%s has no audio track; it plays silent", clip)
         return f"{clip.name} (silent)", None
-    if strict:
-        raise MissingInputError(f"section {sec.number}: clip missing: {clip}")
+    if strict and not sec.optional:
+        raise MissingInputError(
+            f"section {sec.number}: clip missing: {clip}. Put your clip at that path, or set optional = true "
+            "on the section to play its slate under --strict."
+        )
     secs = sec.slate_seconds
-    log.warning("section %s: %s missing; slate for %gs (drop your clip at that path)", sec.key, sec.clip, secs)
+    if sec.optional:
+        log.warning(
+            "section %s: %s missing; slate for %gs (drop your clip at that path; the section is optional, "
+            "so --strict allows the slate)",
+            sec.key, sec.clip, secs,
+        )  # fmt: skip
+    else:
+        log.warning("section %s: %s missing; slate for %gs (drop your clip at that path)", sec.key, sec.clip, secs)
     configured = project.path(project.mix.slate) if project.mix.slate else None
     png = configured if configured and configured.exists() else section_slate(project, sec)
     vin = (
