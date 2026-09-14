@@ -1,6 +1,6 @@
 {
   "source": {
-    "decktalk": "0.1.0",
+    "decktalk": "0.2.0",
     "build": "decktalk build --silent on the scaffold that decktalk init writes",
     "estimated_words": true,
     "file": "build/audio/03-*.words.json via timeline.json"
@@ -9,18 +9,18 @@
   "words": [
     {
       "word": "it",
-      "start": 63.931,
-      "end": 64.414
+      "start": 66.34,
+      "end": 66.815
     },
     {
       "word": "steps",
-      "start": 64.434,
-      "end": 64.917
+      "start": 66.835,
+      "end": 67.31
     },
     {
       "word": "downhill",
-      "start": 64.937,
-      "end": 65.421
+      "start": 67.33,
+      "end": 67.805
     }
   ]
 }

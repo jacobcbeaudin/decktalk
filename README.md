@@ -130,8 +130,8 @@ A browser does not start recording at a known time, so DeckTalk does not use a t
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
 1:1.1bowl            1.25     1.25    1.05    0.00    -10ms    -9ms  changed
-3:3.4name           71.98   110.58    2.77    0.00    +20ms   +11ms  changed
-4:4.1words          14.31   172.99    1.47    0.00    +10ms   -11ms  changed
+3:3.4name           74.26   112.86    2.75    0.00    +20ms   +15ms  changed
+4:4.1words          14.31   184.91    1.47    0.00    +10ms    +9ms  changed
 ```
 
 The offset column is the time from the cue time to the onset of the reveal, in milliseconds. [Verify](https://docs.decktalk.app/reference/verify) defines every column and limit.
