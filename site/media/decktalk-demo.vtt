@@ -1,134 +1,160 @@
 WEBVTT
 
-00:00:00.700 --> 00:00:06.392
-A bowl. A ball. Watch it step down on my
-count. One. Two, three.
+00:00:00.700 --> 00:00:02.618
+A bowl. A ball.
+
+00:00:02.697 --> 00:00:06.392
+Watch it step down on my count.
+One. Two, three.
 
 00:00:06.551 --> 00:00:11.210
 I wrote the words and drew the pictures,
 and each picture waits for its word.
 
-00:00:12.214 --> 00:00:13.749
+00:00:12.214 --> 00:00:16.489
 You just watched DeckTalk.
-
-00:00:14.234 --> 00:00:16.489
 You write a script and simple slides.
 
-00:00:16.881 --> 00:00:20.608
-It reads your script aloud,
-and you pick the word each picture waits
+00:00:16.881 --> 00:00:21.156
+It reads your script aloud, and you
+pick the word each picture waits for.
 
-00:00:20.608 --> 00:00:24.187
-for. Change the script,
-and the video follows.
-
-00:00:24.614 --> 00:00:26.393
+00:00:21.525 --> 00:00:26.393
+Change the script, and the video follows.
 Here is a lesson I made with it.
 
-00:00:27.234 --> 00:00:30.708
-How does AI learn? From examples,
-not rules people write.
+00:00:27.234 --> 00:00:31.927
+How does AI learn?
+From examples, not rules people write.
 
-00:00:30.752 --> 00:00:33.181
+00:00:32.099 --> 00:00:34.899
+Learning from examples
+is called machine learning.
+
+00:00:35.198 --> 00:00:37.813
 An AI model is like a box of knobs.
 
-00:00:33.213 --> 00:00:37.279
+00:00:37.892 --> 00:00:42.643
 It guesses, and a meter shows its error,
 how wrong the guess was.
 
-00:00:37.660 --> 00:00:42.156
+00:00:43.117 --> 00:00:48.297
 Learning turns the knobs until the meter
 drops, example after example.
 
-00:00:43.105 --> 00:00:45.221
+00:00:49.142 --> 00:00:51.374
 But which way should each knob turn?
 
-00:00:45.416 --> 00:00:49.676
-In a big model, testing knobs one at a
-time would take billions of tries for
+00:00:51.894 --> 00:00:54.634
+In a big model,
+testing knobs one at a time
 
-00:00:49.676 --> 00:00:54.962
-every step. Instead, one round of math
-gives a direction for every knob at once.
+00:00:54.634 --> 00:00:57.388
+would take billions
+of tries for every step.
 
-00:00:55.864 --> 00:01:01.510
-Picture two knobs. The floor is every way
-to set them. The height is the error.
+00:00:57.815 --> 00:01:02.311
+Instead, one round of math gives
+a direction for every knob at once.
 
-00:01:02.180 --> 00:01:04.296
+00:01:03.272 --> 00:01:06.781
+Picture two knobs.
+The floor is every way to set them.
+
+00:01:07.196 --> 00:01:11.622
+The height is the error.
 For this lesson it is a bowl.
 
-00:01:06.186 --> 00:01:11.202
-The ball is where the knobs are set right
-now. It can't see the whole bowl,
+00:01:13.512 --> 00:01:16.660
+The ball is where the knobs
+are set right now.
 
-00:01:11.202 --> 00:01:13.132
+00:01:17.122 --> 00:01:21.270
+It can't see the whole bowl,
 only the slope where it stands.
 
-00:01:13.315 --> 00:01:17.483
-So it steps downhill, again and again,
-and the steps shrink as the ground
+00:01:21.708 --> 00:01:27.899
+So it steps downhill, again and again, and
+the steps shrink as the ground flattens.
 
-00:01:17.483 --> 00:01:20.632
-flattens. That is gradient descent.
-
-00:01:20.942 --> 00:01:22.930
+00:01:28.198 --> 00:01:33.135
+That is gradient descent.
 It's what the ball did on my count.
 
-00:01:23.775 --> 00:01:28.802
-One setting makes every step longer or
-shorter. Too long, and it bounces past the
+00:01:33.980 --> 00:01:37.605
+One setting makes every
+step longer or shorter.
 
-00:01:28.802 --> 00:01:32.125
-bottom. Too short, and it is very slow.
+00:01:37.985 --> 00:01:43.317
+Too long, and it bounces past the bottom.
+Too short, and it is very slow.
 
-00:01:33.644 --> 00:01:38.255
-Zoom out, and the ground can have many
-valleys, each about as low.
+00:01:44.127 --> 00:01:47.067
+Zoom out, and the ground
+can have many valleys.
 
-00:01:40.900 --> 00:01:46.275
-Today's AI is trained with a version of
-this. One step takes billions of billions
+00:01:47.610 --> 00:01:50.945
+The ball finds a low one,
+not always the lowest.
 
-00:01:46.275 --> 00:01:50.478
-of small sums. Inside,
-the knobs are grids of numbers,
+00:01:52.951 --> 00:01:56.216
+Today's AI is trained
+with a version of this.
 
-00:01:50.478 --> 00:01:55.461
-called tensors. Chips like GPUs do math on
-a whole grid at once.
+00:01:56.538 --> 00:02:00.036
+Inside, the knobs are grids of numbers,
+called tensors.
 
-00:01:56.329 --> 00:01:59.757
-Big models split the work across thousands
-of chips.
+00:02:01.078 --> 00:02:06.735
+Chips like GPUs and TPUs multiply grids,
+row times column, all at once.
 
-00:02:00.483 --> 00:02:05.011
-That's the lesson. Now I'll change one
-sentence, the kind of edit that used to
+00:02:07.312 --> 00:02:08.822
+For a big model, the chips do
 
-00:02:05.011 --> 00:02:06.407
-mean recording again.
+00:02:08.822 --> 00:02:12.598
+billions of billions of small
+calculations for every step.
 
-00:02:06.810 --> 00:02:09.704
+00:02:13.164 --> 00:02:15.974
+The large language models
+behind AI chat apps
+
+00:02:15.974 --> 00:02:18.704
+split the work across thousands of chips.
+
+00:02:19.457 --> 00:02:20.621
+That's the lesson.
+
+00:02:20.920 --> 00:02:25.381
+Now I'll change one sentence, the kind
+of edit that used to mean recording again.
+
+00:02:25.784 --> 00:02:28.678
 Say a viewer asks why downhill is good.
 
-00:02:09.968 --> 00:02:16.041
-So I add four words, and make the video
-again. Nothing re-recorded or re-edited by
+00:02:28.942 --> 00:02:32.335
+So I add four words,
+and make the video again.
 
-00:02:16.041 --> 00:02:21.486
-hand. The height is the error,
-so lower is better. Every later picture
+00:02:32.681 --> 00:02:35.668
+Nothing re-recorded or re-edited by hand.
 
-00:02:21.486 --> 00:02:23.392
+00:02:36.187 --> 00:02:39.081
+The height is the error,
+so lower is better.
+
+00:02:39.427 --> 00:02:42.366
+Every later picture
 moved to stay on its word.
 
-00:02:24.170 --> 00:02:28.744
-Update your video the way you update a
-doc. DeckTalk. Open source,
+00:02:43.144 --> 00:02:45.654
+Update your video the way
+you update a doc.
 
-00:02:28.744 --> 00:02:31.034
+00:02:46.151 --> 00:02:50.008
+DeckTalk. Open source,
 narrated presentations, cut to the word.
 
-00:02:31.194 --> 00:02:33.519
+00:02:50.168 --> 00:02:52.493
 Make your own at decktalk dot app.
