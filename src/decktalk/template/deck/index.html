@@ -405,8 +405,8 @@ scene(1, { name: "Open", steps: [
 // ", so lower is better" added to the line above it (S2_EDITED_TIMES). That is the edit scene 4
 // shows, so one trial build supplies both scenes. They hold the voiced demo's values, so a silent build
 // of the scaffold makes different times until a fill step sets them from that build.
-const S2_LINE_TIMES = [34.95, 35.13, 35.39, 35.92, 36.11, 36.25, 36.34];
-const S2_EDITED_TIMES = [38.45, 38.66, 38.91, 39.31, 39.44, 39.58, 39.67];
+const S2_LINE_TIMES = [42.18, 42.38, 42.62, 43.26, 43.45, 43.58, 43.68];
+const S2_EDITED_TIMES = [45.89, 46.10, 46.36, 46.81, 46.94, 47.09, 47.18];
 
 // The script card quotes section 3 of script.md line for line. JetBrains Mono advances 0.6 em,
 // so at 25 px each character is 15 px wide and a word's x is its character index times that.
@@ -508,14 +508,14 @@ scene(2, { name: "How it works", steps: [
 // narration was voiced again, each cue's time in seconds after section 3 starts before and
 // after the edit, and the largest verify offset of any cue after the rebuild. They hold the values
 // from a voiced trial rebuild of the demo, so a silent build of the scaffold makes different ones.
-const S4_BUILD_SECONDS = 211.1;
+const S4_BUILD_SECONDS = 225.4;
 const S4_NEW_AUDIO = ["3"];
 const S4_CUE_TIMES = [
-  ["3.3bowl", 36.25, 39.58],
-  ["3.4ball", 38.95, 42.17],
-  ["3.4name", 52.05, 56.49],
+  ["3.3bowl", 43.58, 47.09],
+  ["3.4ball", 46.28, 49.77],
+  ["3.4name", 61.60, 64.22],
 ];
-const S4_MAX_OFFSET_MS = 70;
+const S4_MAX_OFFSET_MS = 40;
 
 // The rebuild strip names every section of decktalk.toml, with a short name for the lesson.
 const S4_SECTIONS = [["1", "Open"], ["2", "How it works"], ["3", "Lesson"], ["4", "The edit"], ["5", "Close"]];

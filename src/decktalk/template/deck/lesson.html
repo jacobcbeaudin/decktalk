@@ -69,9 +69,13 @@
   .meter { position: absolute; left: 1660px; top: 300px; width: 74px; height: 340px; box-sizing: border-box; border: 5px solid var(--ink); border-radius: 12px; background: #fff; }
   .meter .fill { position: absolute; left: 5px; right: 5px; bottom: 5px; height: 320px; border-radius: 6px; background: var(--accent); transform-origin: 50% 100%; }
   .meter .tick { position: absolute; left: -22px; width: 108px; height: 5px; margin-bottom: -2px; background: var(--mute); }
-  .counter { position: absolute; left: 580px; top: 762px; width: 760px; display: flex; align-items: center; justify-content: center; gap: 16px; font: 500 36px/1 var(--sans); color: var(--mute); }
+  .counter { position: absolute; left: 580px; top: 762px; width: 760px; display: flex; align-items: center; justify-content: center; font: 500 36px/1 var(--sans); color: var(--mute); }
+  .counter .cwrap { position: relative; display: block; }
+  .counter .cin { display: flex; align-items: center; gap: 16px; }
   .counter b { font: 500 42px/64px var(--mono); color: var(--ink); background: var(--block); border: 4px solid var(--ink); border-radius: 12px; padding: 0 18px; }
-  .counter.dim { opacity: .35; }
+  /* "Instead": the count dims and is struck with the rules card's 7 px accent line. The strike sits outside the dim. */
+  .counter.dim .cin { opacity: .35; }
+  .counter .cstrike { position: absolute; left: -22px; right: -22px; top: 50%; height: 7px; margin-top: -3.5px; border-radius: 4px; background: var(--accent); transform: rotate(-5deg); }
 
   /* Scenes 3.3 to 3.6: the floor, the bowl, the haze, and the landscape */
   .kmark { position: absolute; display: flex; align-items: center; gap: 10px; }
@@ -85,12 +89,21 @@
   .ghost { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; box-sizing: border-box; border-radius: 50%; border: 7px solid var(--ink); box-shadow: 0 0 0 3px #fff, inset 0 0 0 3px #fff; will-change: transform, opacity; }
   .slider-lab { position: absolute; left: 1530px; top: 300px; font: 500 32px/1 var(--sans); color: var(--mute); }
 
-  /* Scenes 3.7 and 3.8 */
+  /* Scenes 3.7 and 3.8: the chat, then the knob grid on a chip, the count under the landscape, and the field of chips */
   .chat { position: absolute; left: 1060px; top: 220px; width: 740px; height: 370px; box-sizing: border-box; border: 5px solid var(--ink); border-radius: 26px; background: #fff; }
   .chat .q { position: absolute; right: 26px; top: 26px; padding: 0 24px; border-radius: 20px; background: var(--accent); color: #fff; font: 500 30px/64px var(--sans); white-space: nowrap; }
   .chat .a { position: absolute; left: 26px; top: 116px; width: 520px; height: 140px; border-radius: 20px; background: var(--block); }
   .chat .a i { position: absolute; left: 28px; height: 18px; border-radius: 9px; background: var(--dim); }
   .chat .in { position: absolute; left: 26px; right: 26px; bottom: 24px; height: 56px; box-sizing: border-box; border: 3px solid var(--hair); border-radius: 28px; padding-left: 28px; font: 400 26px/50px var(--sans); color: var(--mute); }
+  /* 3.8llm: a small static copy of the chat card under the chip, with the prompt bubble and the input line only. */
+  .minichat { position: absolute; left: 1040px; top: 834px; width: 600px; height: 124px; box-sizing: border-box; border: 4px solid var(--ink); border-radius: 20px; background: #fff; }
+  .minichat .q { position: absolute; right: 16px; top: 12px; padding: 0 18px; border-radius: 14px; background: var(--accent); color: #fff; font: 500 22px/42px var(--sans); white-space: nowrap; }
+  .minichat .in { position: absolute; left: 16px; right: 16px; bottom: 12px; height: 40px; box-sizing: border-box; border: 3px solid var(--hair); border-radius: 20px; padding-left: 20px; font: 400 20px/34px var(--sans); color: var(--mute); }
+
+  /* The field of chips fades out toward the right edge, so it reads as running on rather than cut mid-chip. */
+  #rig .field { -webkit-mask-image: linear-gradient(to right, #000 1440px, transparent 1900px); mask-image: linear-gradient(to right, #000 1440px, transparent 1900px); }
+  .count .lab { position: absolute; left: 120px; top: 680px; font: 500 30px/36px var(--sans); color: var(--mute); white-space: nowrap; }
+  .count b { position: absolute; left: 120px; top: 724px; font: 600 44px/56px var(--mono); color: var(--ink); white-space: nowrap; }
 
   /* 3.8out: a white sheet over the figure, under the eyebrow and footer, so the edit can open on white. */
   #rig .whiteout { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: var(--ground); opacity: 0; }
@@ -130,6 +143,14 @@ const NEXT_INPUT = ["otterStand", LABEL_B];   // the different animal on "exampl
 const STEP_MAIN = 0.25, STEP_LONG = 0.65, STEP_SHORT = 0.03; // step sizes: main path, too long, too short
 const START = [-2.2, -1.05];                  // where the ball starts, on the wall facing the camera
 const SECTION_NUMBER = 3, SECTIONS_TOTAL = 5; // the footer's "03 / 05" tracker, which matches index.html
+// Scenes 3.7 and 3.8: the knobs as a 3 by 3 grid (A) and one example's numbers (B). The chip's result C = A·B is
+// computed below, never typed. SHOWN_CELL is the cell worked out on "row times column": row 1 of A with column 1 of B.
+const KNOB_GRID = [[0.5, -1.0, 1.5], [1.0, 0.5, -0.5], [-1.5, 1.0, 0.5]];
+const EXAMPLE_GRID = [[2.0, -1.0, 1.0], [1.0, 2.0, -1.0], [1.0, 1.0, 2.0]];
+const SHOWN_CELL = [0, 0];
+const CHIP_LABEL = "GPU or TPU";
+const COUNT_LABEL = "small calculations in one step of a big model";
+const COUNT = "1,000,000,000,000,000,000+";   // about 6 × parameters × tokens per step, so 10^18 is a lower bound
 
 // ---- Palette -------------------------------------------------------------------------------------
 const INK = "#0a0a0a", ACC = "#2c1fea", MUTE = "#71717a", DIM = "#a3a3ad", HAIR = "#e4e4e7",
@@ -372,6 +393,7 @@ function buildIntro() {
       <div class="rulesg off"><div class="rules"><div class="h">rules</div>if it has spots → ${LABEL_A}<br>if it has paws → ${LABEL_B}<br>if …</div></div>
       <svg class="full strike off"><line x1="136" y1="532" x2="664" y2="268" stroke="${ACC}" stroke-width="7" stroke-linecap="round"/></svg>
       <div class="tiles off">${tiles}</div>
+      <span class="pill acc ctr mlpill off" style="left:1190px;top:870px;font-size:36px;line-height:58px;font-weight:600">machine learning</span>
       <div class="boxg off">
         <svg class="full"><g class="inarrow">${arrow(420, 540, 545, 540, { w: 6 })}</g>${box}
           <g class="allarrows off">${arrows}</g>
@@ -387,7 +409,7 @@ function buildIntro() {
         <span class="pill acc ctr" style="left:1697px;top:236px">${METER_LABEL}</span>
         <div class="meter"><div class="fill" style="transform:scaleY(0)"></div><div class="tick t1 off"></div><div class="tick t2 off"></div></div>
       </div>
-      <div class="counter off"><span>tries</span><b>1</b></div>
+      <div class="counter off"><span class="cwrap"><span class="cin"><span>tries</span><b>1</b></span><i class="cstrike off"></i></span></div>
     </div>`);
 }
 
@@ -414,16 +436,20 @@ function buildWorld() {
   S.landBB = [Math.min(...sil.map((p) => p[0])), Math.min(...sil.map((p) => p[1])), Math.max(...sil.map((p) => p[0])), Math.max(...sil.map((p) => p[1]))];
   const silPath = "M" + sil.map((p) => fx(p[0]) + " " + fx(p[1])).join("L") + "Z";
 
-  // The three other walks as finished trails, and a depth mark from the rim height down to each floor.
+  // The three other walks as finished trails, each resting in its own valley. No depth marks: the valleys differ in depth.
   const trails = WALKS.map((w) => {
     const q = w.map(([a, b]) => wide(a, b, Lz(a, b))), e = q[q.length - 1];
     return `<polyline points="${q.map((p) => fx(p[0]) + "," + fx(p[1])).join(" ")}" fill="none" stroke="${MUTE}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>` +
       q.slice(0, -1).map((p) => dotG(p[0], p[1], 11, MUTE)).join("") + `<circle cx="${fx(e[0])}" cy="${fx(e[1])}" r="18" fill="#fff" stroke="${INK}" stroke-width="8"/>`;
   }).join("");
-  const levels = [MAIN[6], ...WALKS.map((w) => w[w.length - 1])].map(([a, b]) => {
-    const bot = wide(a, b, Lz(a, b)), top = wide(a, b, E), x = bot[0] + 40;
-    return line([x, top[1]], [x, bot[1]], INK, 9) + line([x - 20, top[1]], [x + 20, top[1]], INK, 10) + line([x - 28, bot[1]], [x + 28, bot[1]], INK, 14);
-  }).join("");
+  // "not always the lowest": the floor of the deepest valley, LAND.DIPS[0], found as the lowest landscape point near its centre.
+  const [la, lb] = LAND.DIPS[0];
+  let low = [la, lb, Lz(la, lb)];
+  for (let da = -1.5; da <= 1.5; da += 0.05) for (let db = -1.5; db <= 1.5; db += 0.05) { const h = Lz(la + da, lb + db); if (h < low[2]) low = [la + da, lb + db, h]; }
+  const lowQ = wide(low[0], low[1], low[2]);
+  S.lowQ = lowQ;
+  const lowMark = `<circle cx="${fx(lowQ[0])}" cy="${fx(lowQ[1])}" r="38" fill="none" stroke="#fff" stroke-width="15"/>` +
+    `<circle cx="${fx(lowQ[0])}" cy="${fx(lowQ[1])}" r="38" fill="none" stroke="${ACC}" stroke-width="7"/>`;
   const q6 = W(MAIN[6]), q7 = W(MAIN[7]);
   const hopMark = dotG(q6[0], q6[1], 6) + `<path d="M${fx(q6[0] - 30)} ${fx(q6[1] - 26)}Q${fx(q6[0] - 2)} ${fx(q6[1] - 78)} ${fx(q7[0] + 22)} ${fx(q7[1] - 30)}" fill="none" stroke="${ACC}" stroke-width="8" stroke-linecap="round"/>` +
     arrow(q7[0] + 12, q7[1] - 44, q7[0] + 24, q7[1] - 28, { stroke: ACC, w: 8, head: 22 });
@@ -471,85 +497,98 @@ function buildWorld() {
         <div id="ring" class="off"></div>
       </div>
       <svg class="full landover">
-        <g class="trails off">${trails}</g><g class="levels off">${levels}</g><g class="hopmark off">${hopMark}</g>
+        <g class="trails off">${trails}</g><g class="hopmark off">${hopMark}</g><g class="lowmark off">${lowMark}</g>
       </svg>
+      <span class="pill acc ctr lowpill off" style="left:${fx(lowQ[0])}px;top:${fx(lowQ[1] - 108)}px">lowest</span>
       <div class="ghost ghostL off"></div><div class="ghost ghostS off"></div>
       <div id="ball" class="off"></div>
     </div>`);
 }
 
+// Scenes 3.7 and 3.8 layout: 3 by 3 grids of 96 by 68 cells in the row-and-column crossing layout, so each cell of C
+// sits where its row of A and its column of B meet. C is the true product, and every value shows exactly at one decimal.
+const CW = 96, CH = 68, GW = 3 * CW, GH = 3 * CH;
+const GA = [1040, 536], GB = [1352, 308], GC = [1352, 536];
+const PRODUCT = KNOB_GRID.map((row) => EXAMPLE_GRID[0].map((_, j) => row.reduce((sum, a, k) => sum + a * EXAMPLE_GRID[k][j], 0)));
+console.assert(PRODUCT.flat().every((v) => Math.abs(v * 10 - Math.round(v * 10)) < 1e-9), "C = A·B must show exactly at one decimal");
+const fmt1 = (v) => (v < 0 ? "−" : "") + Math.abs(v).toFixed(1);
+const WORKED = (() => {
+  const [i, j] = SHOWN_CELL, terms = KNOB_GRID[i].map((a, k) => [a, EXAMPLE_GRID[k][j]]);
+  const total = terms.reduce((sum, [a, b]) => sum + a * b, 0);
+  console.assert(Math.abs(total - PRODUCT[i][j]) < 1e-9, "the worked sum must equal its cell");
+  return terms.map(([a, b]) => `${a < 0 ? `(${fmt1(a)})` : fmt1(a)}×${b < 0 ? `(${fmt1(b)})` : fmt1(b)}`).join(" + ") + ` = ${fmt1(total)}`;
+})();
+// The chat's border as an SVG rect (the stroke is centred, so it is inset 2.5), and A's frame it closes down onto.
+const FRAME_FROM = [1062.5, 222.5, 735, 365, 24], FRAME_TO = [GA[0] + 2.5, GA[1] + 2.5, GW - 5, GH - 5, 16];
+// The chip body, and the field of chips it shrinks into: slot (0, 0) is the body at FIELD_SCALE.
+const CHIP = [1000, 268, 680, 512], FIELD_PITCH = [112, 92], FIELD_SCALE = 0.1235;
+
 function buildLater() {
-  // 3.5 slider, 3.4 label, 3.7 chat and sums, 3.8 tensor, chips, and the two chip blocks.
+  // 3.5 slider, 3.4 label, 3.7 chat, and the 3.7 and 3.8 figure: knob grid, chip, bars, worked sum, count and field.
   const SX = { short: 1552, mid: 1656, long: 1760 };
   S.SX = SX;
   const slider = `<line x1="1536" y1="400" x2="1776" y2="400" stroke="${INK}" stroke-width="8" stroke-linecap="round"/>` +
     triG(SX.short, 452, 24) + dotG(SX.mid, 452, 10) + squareG(SX.long, 452, 22) +
     `<circle class="thumb" cx="${SX.mid}" cy="400" r="24" fill="${ACC}" stroke="#fff" stroke-width="6"/>`;
 
-  // Tiny grey cells with irregular spacing, in eight columns that fill from left to right.
-  const r = rng(99), cols = 8, cellG = Array.from({ length: cols }, () => []);
-  for (let y = 652; y < 860; y += 15) for (let x = 120; x < 1794; x += 15) {
-    if (r() > 0.8) continue;
-    const sz = 6 + r() * 6, jx = (r() - 0.5) * 7, jy = (r() - 0.5) * 7;
-    cellG[Math.min(cols - 1, Math.floor(((x - 120) / 1680) * cols))].push(`<rect x="${fx(x + jx)}" y="${fx(y + jy)}" width="${fx(sz)}" height="${fx(sz)}" rx="1.5" fill="${GREY}"/>`);
-  }
-  const cells = cellG.map((g, i) => `<g class="cc cc${i} off">${g.join("")}</g>`).join("");
+  // One grid: its frame (inset, since the stroke is centred), hairline dividers, and one-decimal numbers.
+  const cellAt = ([x, y], i, j) => [x + (j + 0.5) * CW, y + (i + 0.5) * CH];
+  const gridFrame = ([x, y], fill = "#fff") => `<rect x="${fx(x + 2.5)}" y="${fx(y + 2.5)}" width="${GW - 5}" height="${GH - 5}" rx="16" fill="${fill}" stroke="${INK}" stroke-width="5"/>`;
+  const dividers = ([x, y]) => [1, 2].map((n) => line([x + n * CW, y + 5], [x + n * CW, y + GH - 5], "#d4d4d8", 2.5) + line([x + 5, y + n * CH], [x + GW - 5, y + n * CH], "#d4d4d8", 2.5)).join("");
+  const numText = ([cx, cy], v, fill = INK, weight = 500) => `<text x="${fx(cx)}" y="${fx(cy + 11.5)}" font-family="JetBrains Mono, monospace" font-size="32" font-weight="${weight}" text-anchor="middle" fill="${fill}">${fmt1(v)}</text>`;
+  const grid = (g, values, o = {}) => (o.frame === false ? "" : gridFrame(g)) + dividers(g) + (values ? values.map((row, i) => row.map((v, j) => numText(cellAt(g, i, j), v)).join("")).join("") : "");
+  const litCell = (i, j) => { const [cx, cy] = cellAt(GC, i, j); return `<rect x="${fx(cx - 45)}" y="${fx(cy - 31)}" width="90" height="62" rx="6" fill="${ACC}"/>` + numText([cx, cy], PRODUCT[i][j], "#fff", 600); };
 
-  const numGrid = (x, y, c, rows, cw, ch, o = {}) => {
-    const rr = rng((o.seed ?? 1) * 7919 + 13), size = o.size ?? Math.round(ch * 0.42), sw = o.sw ?? 3;
-    let s = `<rect x="${fx(x)}" y="${fx(y)}" width="${fx(c * cw)}" height="${fx(rows * ch)}" rx="4" fill="#fff" stroke="${INK}" stroke-width="${sw}"/>`;
-    for (let i = 1; i < c; i++) s += line([x + i * cw, y], [x + i * cw, y + rows * ch], "#d4d4d8", Math.max(1.5, sw * 0.6));
-    for (let j = 1; j < rows; j++) s += line([x, y + j * ch], [x + c * cw, y + j * ch], "#d4d4d8", Math.max(1.5, sw * 0.6));
-    for (let j = 0; j < rows; j++) for (let i = 0; i < c; i++) {
-      const v = rr() * 4 - 2, txt = (v < 0 ? "−" : "") + Math.abs(v).toFixed(size > 20 ? 2 : 1);
-      s += `<text x="${fx(x + (i + 0.5) * cw)}" y="${fx(y + (j + 0.5) * ch + size * 0.36)}" font-family="JetBrains Mono, monospace" font-size="${size}" text-anchor="middle" fill="${INK}">${txt}</text>`;
-    }
-    return s;
-  };
-  const stackGrid = (x, y, c, rows, cw, ch, layers, o = {}) => {
-    const off = o.off ?? Math.max(10, cw * 0.28);
-    let s = "";
-    for (let L = layers - 1; L >= 1; L--) s += `<rect x="${fx(x + L * off)}" y="${fx(y - L * off)}" width="${fx(c * cw)}" height="${fx(rows * ch)}" rx="4" fill="#fff" stroke="${INK}" stroke-width="${o.sw ?? 3}"/>`;
-    return s + numGrid(x, y, c, rows, cw, ch, o);
-  };
-  const chip = (x, y, Sz, o = {}) => {
-    const { cells: n = 6, pins = 5 } = o, sw = o.sw ?? Math.max(3, Sz * 0.016), pl = Sz * 0.075;
-    let s = "";
-    for (let i = 0; i < pins; i++) {
-      const t = Sz * (0.18 + (0.64 * i) / (pins - 1));
-      s += line([x + t, y - pl], [x + t, y], INK, sw) + line([x + t, y + Sz], [x + t, y + Sz + pl], INK, sw) + line([x - pl, y + t], [x, y + t], INK, sw) + line([x + Sz, y + t], [x + Sz + pl, y + t], INK, sw);
-    }
-    s += `<rect x="${fx(x)}" y="${fx(y)}" width="${fx(Sz)}" height="${fx(Sz)}" rx="${fx(Sz * 0.07)}" fill="#fff" stroke="${INK}" stroke-width="${fx(sw)}"/>`;
-    const inset = Sz * 0.13, g = Sz - 2 * inset, gap = g * 0.06, c = (g - (n - 1) * gap) / n;
-    let off = "", on = "";
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-      const cell = (fill) => `<rect x="${fx(x + inset + i * (c + gap))}" y="${fx(y + inset + j * (c + gap))}" width="${fx(c)}" height="${fx(c)}" rx="${fx(c * 0.12)}" fill="${fill}"/>`;
-      off += cell(HAIR); on += cell(ACC);
-    }
-    return s + (o.lit ? on : `<g class="cellsoff">${off}</g><g class="cellson off">${on}</g>`);
-  };
-
-  const tensor = stackGrid(960, 350, 6, 4, 92, 64, 3, { seed: 3, size: 24, off: 26 });
-  let chips = "";
-  for (const [cx, label, seed] of [[1060, "GPU", 4], [1560, "TPU", 5]]) {
-    const Sz = 290, x = cx - Sz / 2, y = 480;
-    chips += stackGrid(x - 6, 290, 4, 3, 38, 30, 3, { seed, size: 13, off: 10, sw: 2.5 }) + stackGrid(x + 190, 290, 3, 3, 30, 30, 4, { seed: seed + 9, size: 11, off: 8, sw: 2.5 });
-    chips += arrow(cx, 396, cx, 454, { w: 6 }) + chip(x, y, Sz, { cells: 8 });
+  // The chip body with 6 pins per side, from 18 % to 82 % along each side.
+  const [bx, by, bw, bh] = CHIP;
+  let body = "";
+  for (let n = 0; n < 6; n++) {
+    const tx = bx + bw * (0.18 + (0.64 * n) / 5), ty = by + bh * (0.18 + (0.64 * n) / 5);
+    body += line([tx, by - 34], [tx, by], INK, 5) + line([tx, by + bh], [tx, by + bh + 34], INK, 5) + line([bx - 34, ty], [bx, ty], INK, 5) + line([bx + bw, ty], [bx + bw + 34, ty], INK, 5);
   }
-  let blocks = "";
-  for (const x0 of [840, 1400]) for (let j = 0; j < 5; j++) for (let i = 0; i < 4; i++) blocks += chip(x0 + i * 94, 318 + j * 104, 70, { cells: 4, pins: 3, sw: 3, lit: true });
+  body += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="40" fill="#fff" stroke="${INK}" stroke-width="7"/>`;
+  const dials = KNOB_GRID.map((row, i) => row.map((v, j) => { const [cx, cy] = cellAt(GA, i, j); return knob(cx, cy, 26, v * 60, { w: 6 }); }).join("")).join("");
+  const [si, sj] = SHOWN_CELL;
+  const bars = `<rect x="${GA[0] - 6}" y="${GA[1] + si * CH - 6}" width="${GC[0] + GW - GA[0] + 12}" height="${CH + 12}" rx="14" fill="none" stroke="${ACC}" stroke-width="6"/>` +
+    `<rect x="${GB[0] + sj * CW - 6}" y="${GB[1] - 6}" width="${CW + 12}" height="${GC[1] + GH - GB[1] + 12}" rx="14" fill="none" stroke="${ACC}" stroke-width="6"/>`;
+  let rest = "";
+  PRODUCT.forEach((row, i) => row.forEach((_, j) => { if (i !== si || j !== sj) rest += litCell(i, j); }));
+  const [fxp, fyp] = FIELD_PITCH, fs = FIELD_SCALE;
+
+  // The field: 5 rows by 9 columns of small chips, each the big chip at FIELD_SCALE (grey blocks where A and B sit, a
+  // solid accent block where C sits), joined in rows. The last column runs off the frame. The ring marks slot (0, 0).
+  let field = "";
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 9; c++) {
+    const x = bx + c * fxp, y = by + r * fyp, blk = (g, fill) => `<rect x="${fx(x + (g[0] - bx) * fs)}" y="${fx(y + (g[1] - by) * fs)}" width="${fx(GW * fs)}" height="${fx(GH * fs)}" rx="2" fill="${fill}"/>`;
+    for (const t of [0.18, 0.5, 0.82]) field += line([x + 84 * t, y - 8], [x + 84 * t, y], INK, 3) + line([x + 84 * t, y + 64], [x + 84 * t, y + 72], INK, 3);
+    if (c < 8) field += line([x + 86, y + 32], [x + fxp - 2, y + 32], HAIR, 3);
+    field += `<rect x="${x}" y="${y}" width="84" height="64" rx="8" fill="#fff" stroke="${INK}" stroke-width="4"/>` + blk(GA, HAIR) + blk(GB, HAIR) + blk(GC, ACC);
+  }
+  field += `<rect class="fring off" x="${bx - 10}" y="${by - 14}" width="104" height="92" rx="14" fill="none" stroke="${ACC}" stroke-width="4"/>`;
 
   rig.insertAdjacentHTML("beforeend", `
     <div id="ui" class="layer">
       <span class="pill acc big gd off" style="right:120px;left:auto;top:128px">gradient descent</span>
       <div class="sliderg off"><div class="slider-lab">step size</div><svg class="full">${slider}</svg></div>
-      <div class="chat off"><span class="q">Write a short poem about rain</span><div class="a"><i style="top:30px;width:430px"></i><i style="top:62px;width:460px"></i><i style="top:94px;width:300px"></i></div><div class="in">Ask anything</div></div>
-      <svg class="full cells">${cells}</svg>
-      <div class="tensor off"><svg class="full">${tensor}</svg><span class="pill acc ctr" style="left:1236px;top:640px;font-size:36px;line-height:58px;font-weight:600">tensor</span></div>
-      <div class="chips off"><svg class="full">${chips}</svg>
-        <span class="pill mono ctr" style="left:1060px;top:814px">GPU</span><span class="pill mono ctr" style="left:1560px;top:814px">TPU</span></div>
-      <div class="blocks off"><svg class="full">${blocks}</svg>
-        <span class="pill mono ctr" style="left:1011px;top:236px">GPU</span><span class="pill mono ctr" style="left:1571px;top:236px">TPU</span></div>
+      <div class="chat off"><span class="q">Write a short poem about rain</span><div class="a"><i style="top:30px;width:430px"></i><i style="top:62px;width:460px"></i><i style="top:94px;width:300px"></i></div><div class="in">Type a message</div></div>
+      <div class="field layer" style="opacity:.003"><svg class="full">${field}</svg></div>
+      <div class="bigchip layer gpu" style="transform-origin:${bx}px ${by}px"><svg class="full">
+          <g class="chipbody off">${body}</g>
+          <rect class="aframe off" x="${FRAME_FROM[0]}" y="${FRAME_FROM[1]}" width="${FRAME_FROM[2]}" height="${FRAME_FROM[3]}" rx="${FRAME_FROM[4]}" fill="#fff" stroke="${INK}" stroke-width="5"/>
+          <g class="dials off">${dials}</g>
+          <g class="anum off">${grid(GA, KNOB_GRID, { frame: false })}</g>
+          <g class="bgrid off">${grid(GB, EXAMPLE_GRID)}</g>
+          <g class="cgrid off"><rect x="${GC[0]}" y="${GC[1]}" width="${GW}" height="${GH}" rx="16" fill="#fff"/>${dividers(GC)}</g>
+          <g class="c0 off">${litCell(si, sj)}</g>
+          <g class="crest off">${rest}</g>
+          <g class="cframe off">${gridFrame(GC, "none")}</g>
+          <g class="bars off">${bars}</g></svg>
+        <span class="pill mono ctr chiplab off" style="left:1184px;top:386px">${CHIP_LABEL}</span>
+      </div>
+      <span class="pill acc ctr tpill off" style="left:1184px;top:756px;font-size:36px;line-height:58px;font-weight:600">tensor</span>
+      <div class="minichat off"><span class="q">Write a short poem about rain</span><div class="in">Type a message</div></div>
+      <svg class="full wsum off"><text x="1340" y="870" font-family="JetBrains Mono, monospace" font-size="28" font-weight="500" text-anchor="middle" fill="${MUTE}">${WORKED}</text></svg>
+      <div class="count off"><span class="lab">${COUNT_LABEL}</span><b>${COUNT}</b></div>
     </div>
     <div id="chrome" class="layer">
       <div class="whiteout"></div>
@@ -584,14 +623,18 @@ buildWorld();
 buildLater();
 buildHaze();
 Object.assign(S, {
-  intro: $("#intro"), rulesg: $(".rulesg"), strike: $(".strike"), tiles: $(".tiles"), boxg: $(".boxg"),
+  intro: $("#intro"), rulesg: $(".rulesg"), strike: $(".strike"), tiles: $(".tiles"), mlpill: $(".mlpill"), boxg: $(".boxg"), cstrike: $(".cstrike"),
+  lowmark: $(".lowmark"), lowpill: $(".lowpill"), minichat: $(".minichat"),
   in1: $(".in1"), in2: $(".in2"), ans: $(".ans"), outarrow: $(".outarrow"), meterg: $(".meterg"), fill: $(".meter .fill"),
   t1: $(".meter .t1"), t2: $(".meter .t2"), counter: $(".counter"), bigg: $(".bigg"), barrows: $$(".barrow"), tester: $(".tester"), allarrows: $(".allarrows"),
   world: $("#world"), L: $("#L"), B: $("#B"), surf: $("#surf"), rimL: $("#rimL"), haze: $("#haze"), ring: $("#ring"), ball: $("#ball"),
   floor: $$(".floor"), axis: $(".axis"), axlab: $(".axlab"), stick: $(".stick"), flines: $(".flines"), drop: $(".drop"), htick: $(".htick"),
   km1: $(".km1"), km2: $(".km2"), long: $(".long"), short: $(".short"), md: $$(".md"), harrow: $(".harrow"),
-  trails: $(".trails"), levels: $(".levels"), hopmark: $(".hopmark"),
-  gd: $(".gd"), sliderg: $(".sliderg"), thumb: $(".thumb"), chat: $(".chat"), cc: $$(".cc"), tensor: $(".tensor"), chips: $(".chips"), blocks: $(".blocks"),
+  trails: $(".trails"), hopmark: $(".hopmark"),
+  gd: $(".gd"), sliderg: $(".sliderg"), thumb: $(".thumb"), chat: $(".chat"),
+  aframe: $(".aframe"), dials: $(".dials"), anum: $(".anum"), tpill: $(".tpill"), chipbody: $(".chipbody"), bgrid: $(".bgrid"), cgrid: $(".cgrid"),
+  cframe: $(".cframe"), chiplab: $(".chiplab"), bars: $(".bars"), c0: $(".c0"), crest: $(".crest"), wsum: $(".wsum"), count: $(".count"),
+  bigchip: $(".bigchip"), field: $(".field"), fring: $(".fring"),
   caption: $(".caption"), whiteout: $(".whiteout"), title: $("#chrome .title"),
 });
 // The two step-size walks: their computed landing points, the line and markers they draw, and their ball.
@@ -655,7 +698,9 @@ const CUE = {
   // 3.1 What machine learning is
   "3.1examples": (an) => { show(S.tiles); },
   "3.1rules": (an) => { show(S.rulesg, S.strike); S.rulesg.style.opacity = 0.25; },
-  "3.1box": (an) => { hide(S.strike, S.tiles, S.rulesg); show(S.boxg); },
+  // "machine learning": the term gets its accent pill under the tiles, like "gradient descent" and "tensor" later.
+  "3.1ml": (an) => show(S.mlpill),
+  "3.1box": (an) => { hide(S.strike, S.tiles, S.rulesg, S.mlpill); show(S.boxg); },
   "3.1guess": (an) => { setAnswer(WRONG_GUESS, false); show(S.outarrow, S.ans); S.in1.classList.add("truth"); },
   "3.1wrong": (an) => { show(S.meterg); run(an, 0, 0.3, (k) => setMeter(0.85 * easeOut(k))); },
   "3.1turn": (an) => { setTick(S.t1, 0.85); turnKnobs(an, 0, KA[0], KA[1]); run(an, 0, 0.35, (k) => setMeter(lerp(0.85, 0.55, easeOut(k)))); },
@@ -686,8 +731,8 @@ const CUE = {
   },
   // "billions": the count lands on the size of a big model, and the testing stops there.
   "3.2billions": (an) => { S.counter.querySelector("b").textContent = "1,000,000,000+"; },
-  // "Instead": the testing clears and the count steps back before the arrows arrive.
-  "3.2instead": (an) => { hide(S.tester); S.counter.classList.add("dim"); },
+  // "Instead": the testing clears, and the count steps back and is struck, so it reads as the rejected way.
+  "3.2instead": (an) => { hide(S.tester); S.counter.classList.add("dim"); show(S.cstrike); },
   "3.2all": (an) => { show(S.allarrows); },
   // 3.3 The surface
   "3.3two": (an) => {
@@ -747,24 +792,50 @@ const CUE = {
       if (k >= 1) { S.L.style.transform = "none"; S.L.style.opacity = 1; hide(S.B); }
     });
   },
-  "3.6low": (an) => show(S.trails, S.levels),
+  "3.6low": (an) => show(S.trails),
+  // "lowest": the deepest valley is ringed and named. The ball's valley is not it.
+  "3.6lowest": (an) => show(S.lowmark, S.lowpill),
   // 3.7 Today's AI
   "3.7ai": (an) => {
-    hide(S.trails, S.levels); show(S.chat);
+    hide(S.trails, S.lowmark, S.lowpill); show(S.chat);
     run(an, 0, 0.6, (k) => { const e = easeInOut(k); S.world.style.transform = `translate(${fx(MINI.tx * e)}px, ${fx(MINI.ty * e)}px) scale(${lerp(1, MINI.sc, e).toFixed(4)})`; });
   },
-  "3.7sums": (an) => S.cc.forEach((g, i) => at(an, 0.07 * i, () => show(g))),
-  // 3.8 Tensors and chips
-  "3.8tensor": (an) => { hide(S.chat, S.cc); show(S.tensor); },
-  "3.8gpu": (an) => {
-    // The chips take the grids, every cell lights on one frame, then the one ball makes one hop.
-    hide(S.tensor); show(S.chips);
-    at(an, 0.35, () => { hide($$(".chips .cellsoff")); show($$(".chips .cellson")); });
-    at(an, 0.6, () => show(S.hopmark));
-    const a = W(MAIN[6]), b = W(MAIN[7]);
-    run(an, 0.6, 0.35, (k) => placeBall(lerp(a[0], b[0], k), lerp(a[1], b[1], k) - 40 * 4 * k * (1 - k), BALL_WIDE));
+  // "Inside": the chat's contents go, and its frame closes down onto a small box that fills with 9 knobs.
+  "3.7inside": (an) => {
+    hide(S.chat); show(S.aframe);
+    run(an, 0, 0.4, (k) => {
+      const e = easeInOut(k), [x, y, w, h, r] = FRAME_FROM.map((v, i) => lerp(v, FRAME_TO[i], e));
+      setAttrs(S.aframe, { x, y, width: w, height: h, rx: r });
+      if (k >= 1) show(S.dials);
+    });
   },
-  "3.8chips": (an) => { hide(S.chips); show(S.blocks); },
+  // "numbers": each knob becomes its number, in the same cell. "tensors": the grid gets its name.
+  "3.7num": (an) => { hide(S.dials); show(S.anum); },
+  "3.7tensor": (an) => show(S.tpill),
+  // 3.8 The chip multiplies grids
+  // "GPUs": a chip is drawn around the grid, with an example's numbers (B) and an empty result grid (C). Nothing moves.
+  "3.8gpu": (an) => { hide(S.tpill); show(S.chipbody, S.bgrid, S.cgrid, S.cframe, S.chiplab); },
+  // "row times column": one row and one column are outlined, the cell where they cross lights, and the sum shows how.
+  "3.8row": (an) => show(S.bars, S.c0, S.wsum),
+  // "all at once": the outlines clear and the other 8 cells light together.
+  "3.8once": (an) => { hide(S.bars); show(S.crest); },
+  // "billions of billions": the count for one step appears under the landscape, then the ball makes its one hop.
+  "3.8calc": (an) => {
+    show(S.count);
+    const a = W(MAIN[6]), b = W(MAIN[7]);
+    run(an, 1.2, 0.4, (k) => placeBall(lerp(a[0], b[0], k), lerp(a[1], b[1], k) - 40 * 4 * k * (1 - k), BALL_WIDE));
+    at(an, 1.6, () => show(S.hopmark));
+  },
+  // "large language models": the worked sum goes and a small chat card snaps in under the chip, a callback to "Today's AI".
+  "3.8llm": (an) => { hide(S.wsum); show(S.minichat); },
+  // "split the work": the field of chips appears, and the big chip shrinks into its top-left slot, which is ringed.
+  "3.8split": (an) => {
+    S.field.style.opacity = 1;
+    run(an, 0, 0.5, (k) => {
+      S.bigchip.style.transform = `scale(${lerp(1, FIELD_SCALE, easeOut(k)).toFixed(4)})`;
+      if (k >= 1) { hide(S.bigchip); show(S.fring); }
+    });
+  },
   // The end of speech: the figure and the title fade to white, and the eyebrow and footer stay. The edit
   // opens on this frame.
   "3.8out": (an) => run(an, 0, 0.3, (k) => { S.whiteout.style.opacity = k.toFixed(3); S.title.style.opacity = (1 - k).toFixed(3); }),
@@ -805,14 +876,14 @@ function walk(an, r, delay, hop, rest, arc) {
 
 // ---- The scene --------------------------------------------------------------------------------------------------------
 const STEPS = [
-  { id: "3.1", hold: 20, cues: { "3.1examples": 2.6, "3.1rules": 3.4, "3.1box": 7.4, "3.1guess": 9.6, "3.1wrong": 12.2, "3.1turn": 14.0, "3.1again": 17.3 } },
-  { id: "3.2", hold: 16.6, cues: { "3.2way": 0.5, "3.2one": 5.2, "3.2billions": 6.6, "3.2instead": 9.7, "3.2all": 13.8 } },
-  { id: "3.3", hold: 12.4, cues: { "3.3two": 0.5, "3.3floor": 2.3, "3.3height": 5.5, "3.3bowl": 9.6 } },
-  { id: "3.4", hold: 19.5, cues: { "3.4ball": 0.5, "3.4see": 4.8, "3.4steps": 10.4, "3.4again": 11.9, "3.4name": 17.4 } },
-  { id: "3.5", hold: 10.7, cues: { "3.5setting": 0.5, "3.5long": 3.3, "3.5short": 7.0 } },
-  { id: "3.6", hold: 7.6, cues: { "3.6zoom": 0.5, "3.6low": 4.1 } },
-  { id: "3.7", hold: 11.5, cues: { "3.7ai": 0.5, "3.7sums": 5.2 } },
-  { id: "3.8", hold: 12, cues: { "3.8tensor": 0.5, "3.8gpu": 2.3, "3.8chips": 8.2, "3.8out": 9.4 } },
+  { id: "3.1", hold: 21.6, cues: { "3.1examples": 2.1, "3.1rules": 3.4, "3.1ml": 6.5, "3.1box": 9.2, "3.1guess": 10.9, "3.1wrong": 13.0, "3.1turn": 16.3, "3.1again": 19.4 } },
+  { id: "3.2", hold: 14.3, cues: { "3.2way": 0.5, "3.2one": 5.0, "3.2billions": 6.3, "3.2instead": 9.0, "3.2all": 11.9 } },
+  { id: "3.3", hold: 9.9, cues: { "3.3two": 0.5, "3.3floor": 1.9, "3.3height": 4.2, "3.3bowl": 7.7 } },
+  { id: "3.4", hold: 20.8, cues: { "3.4ball": 0.5, "3.4see": 4.3, "3.4steps": 9.0, "3.4again": 10.5, "3.4name": 15.8 } },
+  { id: "3.5", hold: 9.8, cues: { "3.5setting": 0.5, "3.5long": 4.2, "3.5short": 7.4 } },
+  { id: "3.6", hold: 8.8, cues: { "3.6zoom": 0.5, "3.6low": 4.8, "3.6lowest": 6.5 } },
+  { id: "3.7", hold: 8.6, cues: { "3.7ai": 0.5, "3.7inside": 4.1, "3.7num": 5.7, "3.7tensor": 6.5 } },
+  { id: "3.8", hold: 18.9, cues: { "3.8gpu": 0.5, "3.8row": 3.2, "3.8once": 4.5, "3.8calc": 7.8, "3.8llm": 12.3, "3.8split": 14.9, "3.8out": 17.2 } },
 ];
 const fire = (id, animate) => { finishJobs(); CUE[id](animate); };
 DeckTalk.scene(3, { name: "How AI learns", steps: STEPS.map((st, n) => ({
