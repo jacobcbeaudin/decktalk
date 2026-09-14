@@ -383,7 +383,16 @@ def narrate(
             and out_path.exists()
             and words_path.exists()
         ):
-            log.info("[skip] %s  unchanged (%.2fs)", seg.filename, entry.duration_seconds)
+            # min_tail_seconds is not part of the hash, so a cached take made under a shorter
+            # tail is padded here. ensure_tail measures the silence first, so a take that
+            # already has enough is left untouched.
+            added = ensure_tail(out_path, cfg)
+            if added:
+                entry.duration_seconds = ffmpeg.probe_duration(out_path)
+                entry.tail_padded_seconds = round((entry.tail_padded_seconds or 0.0) + added, 3)
+                log.info("[skip] %s  unchanged, tail +%ss (%.2fs)", seg.filename, added, entry.duration_seconds)
+            else:
+                log.info("[skip] %s  unchanged (%.2fs)", seg.filename, entry.duration_seconds)
             # A manifest written before the spoken text was recorded gains it here, since the
             # text is part of the hash and so cannot have changed.
             entry.spoken = seg.spoken

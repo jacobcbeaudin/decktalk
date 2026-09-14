@@ -156,3 +156,64 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     assert resumed is not None and abs(resumed) <= 8, "section 3's word does not sit half a second after the clip"
     assert ffmpeg.rms_db(out, 2.1, 1.3) > -30, "the clip's own sound is missing from the pause"
     assert ffmpeg.rms_db(out, 3.55, 0.4) < -50, "something sounds between the clip and section 3's first word"
+
+
+def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_again(tmp_path):
+    """A take voiced under a short tail keeps its hash when min_tail_seconds grows, so narrate pads it in place."""
+    from decktalk.artifacts import Manifest, ManifestSegment, Word, write_words
+    from decktalk.project import Project
+    from decktalk.providers.speech import register
+    from decktalk.stages.narrate import narrate, script_segments, text_hash
+
+    class NeverSpeaks:
+        name = "never"
+
+        def speak(self, request):
+            raise AssertionError("a cached take was sent to the voice again")
+
+        def cache_key(self, request):
+            return "never-voice"
+
+    register("never", lambda project: NeverSpeaks())
+    (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n")
+    (tmp_path / "decktalk.toml").write_text(
+        "[narration]\nmin_tail_seconds = 0.9\n[voice]\nprovider = 'never'\n[[section]]\nnumber = 1\npage = 'a.html'\n"
+    )
+    p = Project.load(tmp_path, environ={})
+    cfg = p.settings.narration
+    p.audio_dir.mkdir(parents=True)
+    # One second of tone for the speech, then the 0.4 s tail an earlier min_tail_seconds left.
+    take = p.audio_dir / "01-open.mp3"
+    ffmpeg.run(
+        "-f", "lavfi", "-i", "sine=f=440:r=44100:d=1", "-af", "apad=pad_dur=0.4",
+        "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(take),
+    )  # fmt: skip
+    write_words(p.audio_dir / "01-open.words.json", [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)])
+    _all, spoken = script_segments(p)
+    seg = spoken[0]
+    settings = p.voice.api_settings()
+    digest = text_hash(seg, cfg, "never-voice", settings)
+    before = ffmpeg.probe_duration(take)
+    manifest = Manifest(script="script.md", model="m", output_format=cfg.output_format)
+    manifest.segments[seg.key] = ManifestSegment(
+        index=1, title="Open", file=seg.filename, words_file=seg.words_filename, hash=digest,
+        words=2, est_seconds=1.0, duration_seconds=before, speech_end_seconds=1.0, tail_padded_seconds=0.1,
+    )  # fmt: skip
+    manifest.save(p.manifest_path)
+    assert ffmpeg.trailing_silence(take) < 0.5
+
+    first = narrate(p)
+    assert first.cached == [seg.key] and first.synthesized == []
+    assert ffmpeg.trailing_silence(take) >= cfg.min_tail_seconds
+    padded = Manifest.load(p.manifest_path).segments[seg.key]
+    assert padded.hash == digest, "padding changed the cache key"
+    assert padded.duration_seconds > before + 0.4
+    assert padded.duration_seconds == pytest.approx(ffmpeg.probe_duration(take), abs=0.001)
+    assert padded.tail_padded_seconds > 0.5
+    assert first.timeline.sections[seg.key].duration == pytest.approx(padded.duration_seconds, abs=0.06)
+
+    second = narrate(p)
+    assert second.cached == [seg.key] and second.synthesized == []
+    again = Manifest.load(p.manifest_path).segments[seg.key]
+    assert again.duration_seconds == padded.duration_seconds, "a second run padded the take again"
+    assert again.tail_padded_seconds == padded.tail_padded_seconds
