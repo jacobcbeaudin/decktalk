@@ -30,7 +30,9 @@ Here is a lesson I made with it.
 
 How does AI learn? [beat] From examples, not rules people write. [beat] Learning from examples is called machine learning. [beat]
 An AI model is like a box of knobs. [beat] It guesses, [beat] and a meter shows its error, how wrong the guess was. [beat]
-Learning turns the knobs until the meter drops, [beat] example after example.
+Learning nudges the knobs. [beat] It guesses again, and now it's right, with a lower error. [beat]
+Then a new example, [beat] and a smaller nudge fixes it. [beat]
+Example after example, the model gets better.
 [pause 1] But which way should each knob turn? [beat]
 In a big model, testing knobs one at a time would take billions of tries for every step. [beat]
 Instead, one round of math gives a direction for every knob at once.
@@ -51,14 +53,34 @@ The large language models behind AI chat apps split the work across thousands of
 
 ## 4. The edit
 
-[Deck scene 4. It opens on white. The lesson's bowl comes back and moves into its card, the script gains four words, the rebuild voices only section 3 again, and verify shows the later cues moved with their words.]
+[Deck scene 4. Opens on the lesson's last picture. The whole frame shrinks into a video player, five part chips appear, the script opens under them, and the player jumps back to the start.]
 
-That's the lesson. [beat] Now I'll change one sentence, [beat] the kind of edit that used to mean recording again. [beat]
-Say a viewer asks why downhill is good. [beat] So I add four words, [beat] and make the video again. [beat]
-Nothing re-recorded or re-edited by hand. [beat] The height is the error, so lower is better. [beat]
-Every later picture moved to stay on its word.
+That's the lesson. [beat] Now let's step out of it. [beat] Everything you just watched is one video, [beat] in five parts, [beat] made from one script. [beat]
+Remember how it started?
 
-## 5. Close
+## 5. The edit
+
+[Clip at media/edit-before.mov. The Open as first built plays inside the player, with its own sound. The narration pauses here. Until the file is in place, a slate plays.]
+
+## 6. The edit
+
+[Deck scene 6. One word is added to the script and a new box waits for it. Build reads only part one aloud again, and the player jumps back to the start.]
+
+Say I want one more step. [beat] I add one word, [beat] four, [beat] and tell a new box to wait for it. [beat] I press build. [beat]
+Only part one is read aloud again. [beat] The rest keep their voice. [beat] Here is the new start.
+
+## 7. The edit
+
+[Clip at media/edit-after.mov. The rebuilt Open plays inside the same player, with its own sound. The narration pauses here. Until the file is in place, a slate plays.]
+
+## 8. The edit
+
+[Deck scene 7. Before and after side by side with their count times, a check, and the player grows back into the video.]
+
+One more count, one more box. [beat] Every picture in the start moved to stay on its word, [beat] and each one is checked. [beat]
+Now let's step back in.
+
+## 9. Close
 
 [Deck scene 5. The end card.]
 

@@ -35,7 +35,11 @@
         { "cue": "3.1box", "on": "box of knobs" },
         { "cue": "3.1guess", "on": "guesses" },
         { "cue": "3.1wrong", "on": "its error" },
-        { "cue": "3.1turn", "on": "turns the knobs" },
+        { "cue": "3.1turn", "on": "nudges the knobs" },
+        { "cue": "3.1right", "on": "now it's right" },
+        { "cue": "3.1lower", "on": "lower error" },
+        { "cue": "3.1next", "on": "new example" },
+        { "cue": "3.1fix", "on": "smaller nudge" },
         { "cue": "3.1again", "on": "example after example" },
         { "cue": "3.2way", "on": "which way" },
         { "cue": "3.2one", "on": "one at a time" },
@@ -66,22 +70,38 @@
         { "cue": "3.8once", "on": "all at once" },
         { "cue": "3.8calc", "on": "billions of billions" },
         { "cue": "3.8llm", "on": "large language models" },
-        { "cue": "3.8split", "on": "split the work" },
-        { "cue": "3.8out", "on": "$end", "offset": -0.25 }
+        { "cue": "3.8split", "on": "split the work" }
       ]
     },
     "4": {
       "cues": [
-        { "cue": "4.1lesson", "on": "lesson" },
-        { "cue": "4.1sentence", "on": "one sentence" },
-        { "cue": "4.1why", "on": "why downhill" },
-        { "cue": "4.1words", "on": "four words" },
-        { "cue": "4.1again", "on": "the video again" },
-        { "cue": "4.1lower", "on": "so lower is better" },
-        { "cue": "4.1moved", "on": "moved" }
+        { "cue": "4.1out", "on": "step out" },
+        { "cue": "4.1video", "on": "one video" },
+        { "cue": "4.1parts", "on": "five parts" },
+        { "cue": "4.1script", "on": "one script" },
+        { "cue": "4.1start", "on": "how it started" }
       ]
     },
-    "5": {
+    "6": {
+      "cues": [
+        { "cue": "6.1step", "on": "step" },
+        { "cue": "6.1four", "on": "four" },
+        { "cue": "6.1box", "on": "new box" },
+        { "cue": "6.1build", "on": "press build" },
+        { "cue": "6.1aloud", "on": "read aloud again" },
+        { "cue": "6.1kept", "on": "rest" },
+        { "cue": "6.1new", "on": "new start" }
+      ]
+    },
+    "8": {
+      "cues": [
+        { "cue": "7.1box", "on": "box" },
+        { "cue": "7.1moved", "on": "moved" },
+        { "cue": "7.1checked", "on": "checked" },
+        { "cue": "7.1back", "on": "step back" }
+      ]
+    },
+    "9": {
       "cues": [
         { "cue": "5.1clear", "on": "video" },
         { "cue": "5.1made", "on": "DeckTalk" },

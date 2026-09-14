@@ -163,8 +163,8 @@ def test_status_json_on_scaffold(tmp_path, monkeypatch, capsys):
     assert st["project"]["name"] == "lesson"
     assert st["project"]["script"] == "script.md" and st["project"]["script_exists"] is True
     assert st["sections"] and not any(s["recorded"] or s["cut"] for s in st["sections"])
-    # The scaffold has five page sections and no clip section.
-    assert [s["kind"] for s in st["sections"]] == ["page"] * 5
+    # The scaffold has seven page sections and two clip sections, the edit's BEFORE and AFTER.
+    assert [s["kind"] for s in st["sections"]] == ["page"] * 4 + ["clip", "page", "clip", "page", "page"]
     assert st["sections"][0]["key"] == "01" and st["sections"][0]["source"].startswith("deck/index.html?scene=")
     assert st["timeline"] == {"exists": False, "estimated": False, "total_seconds": None, "sections": []}
     assert st["beats"] == {"exists": False, "sections": []}

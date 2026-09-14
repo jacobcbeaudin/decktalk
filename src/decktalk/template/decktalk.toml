@@ -52,15 +52,54 @@ title = "How AI learns"
 page = "deck/lesson.html"   # any page in deck/ can hold scenes, and each section names its page
 scene = 3
 
+# The edit steps out of the presentation: a page, the BEFORE clip, a page, the AFTER clip, and a page. Sections
+# 4 to 8 all carry the title "The edit", so they share one chapter.
+#
+# The scaffold ships no clip files, because a clip carries a real voice. Both clip sections are optional, so a
+# fresh build plays a titled slate in each and still passes --strict. The pages around them show stills of the
+# demo video from deck/edit/, which match this scaffold's Open and lesson. After you voice the video, cut each
+# clip from your own build: the page's last frame, with the Open playing in the player's video area at 384, 72,
+# 1152 by 648. Write its words file, so the speech inside it gets captions. Then delete `optional`.
+# https://docs.decktalk.app/guides/clip-section#fill-the-edits-two-clips has the commands.
+
 [[section]]
 number = 4
 title = "The edit"
 page = "deck/index.html"
-scene = 4               # the scene's number in its page, which stays put if the section numbers around it change
+scene = 4               # step out: the lesson shrinks into a player, then back to the start
 ambience = false        # true plays the ambience bed under this section
 
 [[section]]
 number = 5
+title = "The edit"
+clip = "media/edit-before.mov"          # BEFORE: the Open as first built, inside the player
+words = "media/edit-before.words.json"  # the words spoken inside the clip, for the captions
+slate_seconds = 4.36    # the demo's BEFORE clip is 4.36 s, so the slate keeps its timing
+optional = true         # plays the slate under --strict until the clip is in place
+
+[[section]]
+number = 6
+title = "The edit"
+page = "deck/index.html"
+scene = 6               # one word and one cue line, the build, and the new start
+
+[[section]]
+number = 7
+title = "The edit"
+clip = "media/edit-after.mov"           # AFTER: the Open rebuilt with one more count, inside the player
+words = "media/edit-after.words.json"   # the words spoken inside the clip, for the captions
+slate_seconds = 5.04    # the demo's AFTER clip is 5.04 s
+optional = true
+
+[[section]]
+number = 8
+title = "The edit"
+page = "deck/index.html"
+scene = 7               # before and after, the check, and the step back in. A scene keeps its number in its page
+                        # when the section numbers around it change, so section 8 plays scene 7.
+
+[[section]]
+number = 9
 title = "Close"
 page = "deck/index.html"
 scene = 5
