@@ -1,144 +1,142 @@
 ---
 title: Writing for the ear
-description: How to write a DeckTalk narration script that gives every reveal a word to land on, with stage directions, beats, pauses, offsets, time budgets, and a silent rehearsal.
-icon: "ear-listen"
+description: Write a narration script that gives every reveal a word to start on.
 ---
 
-DeckTalk cuts the video to the words, so the script decides the timing. A script that
-reads well on paper can still leave a reveal with no word to land on, or leave a listener
-no moment to look. These are the habits that make the difference. They
-come from building the scaffold and from watching where reveals feel late or early.
+This guide shows how to write a script that gives each reveal a word to start on. Read it before you design slides, and again when a reveal feels early or late.
+
+DeckTalk times every reveal from the spoken words, so the script sets the timing. The advice below comes from building the scaffold and from watching where reveals felt early or late.
 
 ## Write the script first
 
-Write the whole narration before you touch a slide, and read it aloud once. The words
-that carry the argument are the words the visuals will land on, and you cannot pick them
-until they exist. A slide that is designed first tends to demand a sentence that nobody
-would say.
+Write the whole script before you design a slide. Then read it aloud one time. The words that carry the argument are the words that the reveals start on, so you need those words first. A slide that you design first often needs a sentence that nobody would say.
 
-## Say it, then show it
+## Say the name before the reveal
 
-Name the thing, and let the reveal follow the name. When the narration says "here is the
-curve" the curve should start drawing on "curve", not before it. A visual that appears
-ahead of its words makes the listener wonder what they are looking at, and a visual that
-appears long after them has already been imagined. The cue phrase is therefore the
-phrase that names the thing, and the rest of the sentence explains it while it is on
-screen.
+Name the thing, and let the reveal follow the name. When the script says "here is the bowl", the bowl appears on "bowl", not before it.
 
-## Give every reveal a word to land on
+- A reveal before its words makes the listener ask what the picture is.
+- A reveal long after its words shows something the listener has already imagined.
 
-A cue resolves to the first word of its phrase, so the phrase should begin with the word
-that names the visual. The cue for "So it steps downhill" names `steps downhill` and
-lands on "steps", a verb whose referent, the ball's first hop, appears as it is said. A
-phrase such as "and then" lands on nothing in particular. The scaffold's cues are nouns or
-verbs with a concrete referent: `box of knobs`, `guesses`, `steps downhill`, `tensors`,
-`Open source`.
+Choose the phrase that names the thing as the cue phrase. The rest of the sentence then explains the thing while it is on screen.
 
-## One reveal per idea
+## Start the cue phrase on the named thing
 
-Give each idea its own reveal, and give each reveal its own sentence. Roughly one cue
-every ten to fifteen seconds is a comfortable rate for a lesson. Three reveals in one
-breath look like an animation rather than an explanation, and a minute with no reveal at
-all lets the picture go stale. When one sentence carries two ideas, split it.
+A cue time is the start of the first word of the cue phrase. Begin the phrase with the word that names the reveal.
+
+```json cues.json
+{ "cue": "3.4steps", "on": "steps downhill" }
+```
+
+This cue starts on "steps", a verb, and the ball takes its first step as the word is said. A phrase such as "and then" names nothing on the slide. The scaffold's cue phrases are nouns or verbs that name something visible, such as `box of knobs`, `guesses`, `steps downhill`, `tensors`, and `Open source`.
+
+## Give each idea one reveal
+
+Give each idea its own reveal, and give each reveal its own sentence. For a lesson, about one cue every ten to fifteen seconds is a comfortable rate.
+
+- Three reveals in one breath look like an animation, not an explanation.
+- A minute with no reveal gives the listener nothing new to look at.
+
+If one sentence carries two ideas, split it into two sentences.
 
 ## Put silence before a reveal
 
-A short silence before a reveal makes the reveal read as an event. Two directions do
-this, and they reach the voice differently. `[beat]` is a beat: the voice reads it as a
-dash at the end of the sentence before it and pauses there as it would at any dash, and
-nothing else is sent. `[pause N]` sends a `<break time="Ns" />` tag and is the only
-direction that does, because frequent break tags make the voice add fillers and breaths.
-Use beats freely and timed pauses sparingly. The scaffold's lesson puts a beat before each
-step size, so each path sets off as its own event.
+A short silence before a reveal makes the reveal feel like an event. Three kinds of stage direction make that silence.
+
+| Direction | Sent to the voice | Use it for |
+|---|---|---|
+| `[beat]` | a dash after the sentence before it | Use it freely before a reveal. |
+| `[pause N]` | a `<break time="Ns" />` tag | Use it where you want the audience to stop and think. |
+| Any other text in square brackets | a dash, the same as `[beat]` | Use it as a note to yourself. It also makes a beat. |
+
+The scaffold's lesson puts a beat before each step size, so each path starts as its own event:
 
 ```md script.md
-One setting makes every step longer or shorter. [beat]
+[pause 1] One setting makes every step longer or shorter. [beat]
 Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
 ```
 
-A timed pause earns its place where the audience should stop and think, such as a
-`[pause 4]` after a question like "which way should each knob turn?", so the silence
-leaves room to answer it.
+Only a timed pause sends a break tag, because frequent break tags make the voice less steady. Use timed pauses sparingly. Back-to-back directions do not add up, and the longest pause wins. [script.md](/reference/script-md) lists every direction rule.
 
-Anything else in square brackets is a stage direction. It is not spoken and it is a beat
-where it sat, so a direction such as `[Deck scene 3. A box of knobs appears.]` is both a note
-to yourself and a pause. The silence before the first section and after every section's
-last word is added by ffmpeg rather than requested from the voice, so a script never
-needs a pause at either end. [script.md](/reference/script-md) lists every direction.
+DeckTalk adds silence before the first section and after the last word of each section. A script never needs a pause at either end.
 
-## Trail the word, and lead it only when the audience must read
+## Shift a reveal with the offset key
 
-The `offset` key in `cues.json` shifts a cue in seconds. A small positive offset, one or
-two tenths of a second, lets the word finish before the visual moves, which feels like
-the narrator pointing at something. The scaffold's cues carry no offset, because every
-reveal in it snaps in on the frame of its word. To let the word "steps" finish before the
-ball's first hop, trail the cue by a fifth of a second.
+The offset key moves a cue time by a number of seconds. A positive offset key moves it later, and a negative offset key moves it earlier.
 
 ```json cues.json
 { "cue": "3.4steps", "on": "steps downhill", "offset": 0.2 }
 ```
 
-Lead the word with a negative offset only when the audience must read along with the
-narration, such as a line of code that the voice is reading out. Then the text has to be
-on screen before the first word of it is spoken.
+<Frame caption="A positive offset key moves the cue time after the start of its word.">
+  <img className="block dark:hidden" src="/images/cue-offset-light.svg" alt="The words &quot;it steps downhill&quot; from section 3 sit in boxes as long as each word. A line at the start of &quot;steps&quot; marks the cue time with offset key 0. An accent line 0.2 s later marks offset key 0.2. An arrow pointing earlier marks a negative offset key, for text read aloud." />
+  <img className="hidden dark:block" src="/images/cue-offset-dark.svg" alt="The words &quot;it steps downhill&quot; from section 3 sit in boxes as long as each word. A line at the start of &quot;steps&quot; marks the cue time with offset key 0. An accent line 0.2 s later marks offset key 0.2. An arrow pointing earlier marks a negative offset key, for text read aloud." />
+</Frame>
 
-## Close on $end
+- **A positive offset key, 0.1 to 0.2 s.** The reveal comes just after the word starts, while the word is still spoken. This feels like the narrator pointing at something. The example above moves the ball's first step 0.2 s after the start of "steps".
+- **A negative offset key.** Use it only when the audience must read along, such as a line of code that the voice reads out. The text must be on screen before its first word is spoken.
 
-The last visual of a section can land on `$end`, the end of the section's speech, so that
-a summary line or a final state appears as the voice stops. This is also the right place
-for a `hold_seconds` on the last page section, which holds the final frame after the
-narration ends. [cues.json](/reference/cues-json) documents `$start` and `$end`.
+The scaffold's cues have no offset key, so every reveal in the scaffold starts on its word.
+
+## Close a section on $end
+
+The last reveal of a section can use `$end` as its cue phrase. `$end` is the end of the section's last spoken word, so a summary line appears as the voice stops.
+
+To keep the final frame on screen after the narration ends, set `hold_seconds` on the last page section. [cues.json](/reference/cues-json) documents `$start` and `$end`.
 
 ## Write numbers as words
 
-The words come back from the voice, and a cue phrase must match them. A number written
-as digits comes back in whatever form the voice chose to say, so "2x" in the script is
-fragile as a cue. Write "two x" in the script and show `2x` on the slide. The same goes
-for symbols and abbreviations.
+Write numbers, symbols, and abbreviations the way the voice must say them. A cue phrase must match the spoken words, and the voice can say digits in more than one way.
+
+For example, write "two x" in the script and show `2x` on the slide. The scaffold's script says "decktalk dot app", and the slide shows decktalk.app.
 
 ## Rehearse with a silent build
 
-`decktalk build --silent` runs every stage with a silent placeholder track and estimated
-word times, so it costs nothing and needs no key. The estimate paces the words at
-`silent_words_per_minute` and adds every declared pause, and the cues resolve to
-plausible times. The placeholder track is not pure silence: it carries a soft click at
-every estimated word start, so the pacing is audible, and `decktalk verify` can measure
-the picture against the clicks. Watch the result for pacing. A reveal that arrives too
-early in a silent rehearsal usually arrives too early with the real voice as well.
-[How it works](/concepts/how-it-works#the-silent-build) explains what the clicks prove.
+A silent build costs nothing and needs no key. Use it to check the pacing before you spend credits.
+
+```console
+decktalk build --silent
+```
+
+- A silent build estimates word times at `silent_words_per_minute` (150) and adds every declared pause.
+- The click track has a soft click at every estimated word start, so you can hear the pacing.
+- `decktalk verify` measures the picture against the clicks. [The a/v value](/reference/verify#the-a/v-value) explains that check.
+
+Watch the video for pacing. A reveal that comes too early in a silent build usually comes too early with the real voice too. [How it works](/concepts/how-it-works#the-silent-build) explains what a silent build proves.
 
 ## Give a section a time budget
 
-A heading may carry a time budget after a dash, and the narrate table compares it with
-the estimate and, once the voice has spoken, with the real length. The estimate is the
-word count at `words_per_minute`, which defaults to 140. The scaffold's headings carry no
-budget. Add one to section 3 to see the column.
+A time budget is a time range after a dash in a section heading. `decktalk narrate` compares the budget with the estimated length and, after a voiced build, with the real length.
 
 ```md script.md
-## 3. Gradient descent — 0:40 to 1:00
+## 3. How AI learns — 0:40 to 1:40
 ```
 
+This table comes from `decktalk narrate --dry-run` on the scaffold with that heading. The dry run calls no API.
+
+{/* sample: decktalk narrate --dry-run, scaffold with "## 3. How AI learns — 0:40 to 1:40" (table only) */}
 ```text
  #  section                words    est  target  actual  placeholders
 ---------------------------------------------------------------------
- 1  open                      36   0:15    --      0:18  -
- 2  three-files-and-a-voic    60   0:26    --      0:29  -
- 3  gradient-descent         153   1:06    0:20    1:12  -
- 4  the-edit                  36   0:15    --      0:19  -
- 5  close                     21   0:09    --      0:10  -
+ 1  open                      29   0:12    --      --    -
+ 2  how-it-works              39   0:17    --      --    -
+ 3  how-ai-learns            228   1:38    1:00    --    -
+ 5  the-edit                  56   0:24    --      --    -
+ 6  close                     25   0:11    --      --    -
 ---------------------------------------------------------------------
-    total                    306   2:11            2:29
+    total                    377   2:42            --
 ```
 
-The `target` column is the budget's length. Section 3 has a budget of twenty seconds,
-from 0:40 to 1:00, and the silent rehearsal runs to 1:12. That gap is the signal to
-cut a sentence. Widen the budget only after the voice has spoken and the `actual` column
-is real. The
-`min_seconds` key on a section in `cues.json` works the other way around and warns when
-the speech is shorter than the visuals need.
+- `target` is the length of the budget, one minute for section 3.
+- `est` paces the words at `words_per_minute` (140). Section 3 estimates 1:38, so it runs past its budget.
+- `actual` fills in after a voiced build.
+
+If `est` is longer than `target`, delete a sentence. Widen the budget only after a voiced build fills the `actual` column. Section 4 has no row, because a clip section has no script to voice.
+
+A section's `min_seconds` in `cues.json` checks the other direction. If the speech is shorter than `min_seconds`, `decktalk beats` reports an uncertain finding.
 
 ## Next
 
-[Slide recipes](/guides/slide-recipes) pairs script lines with cues and markup for six
-common slides. [Cues](/concepts/cues) has the matching rules and the placement rules of
-thumb in one list.
+- **Copy a common slide:** [Slide recipes](/guides/slide-recipes)
+- **Choose a cue phrase that matches:** [Cues](/concepts/cues#matching-rules)
+- **Write your own section:** [Your first deck](/guides/first-deck)

@@ -1,0 +1,156 @@
+---
+title: Glossary
+description: The one meaning of each DeckTalk term, the words to avoid, and the page that explains it.
+---
+
+This page gives each DeckTalk term its one meaning in these docs. Use it when a word on another page is unclear, or when you write docs or a project for DeckTalk.
+
+Each table lists the term, its meaning, the words that the docs do not use for it, and the page that explains it. Code names, log strings, and JSON keys cannot change, so a log line can still use a word from the "Do not use" column.
+
+## Pipeline and project
+
+| Term | Meaning | Do not use | Explained in |
+|---|---|---|---|
+| build | One run of `decktalk build` through all seven stages. A *plain build* has no `--only`. | "render" for a build, "rebuild" as a noun | [How it works](/concepts/how-it-works) |
+| silent build | A build with `--silent`. Uses estimated word times, writes a click track, and needs no account. | "dry run", "placeholder build" | [How it works](/concepts/how-it-works) |
+| voiced build | A build without `--silent`. The speech provider voices the script. | | [How it works](/concepts/how-it-works) |
+| stage | One of `narrate`, `beats`, `record`, `measure`, `check`, `assemble`, `verify`, always in that order. | "stage" for the page element, "step" for a stage | [How it works](/concepts/how-it-works) |
+| project file | `decktalk.toml`. | "the plan", "project document" | [decktalk.toml](/reference/decktalk-toml) |
+| input files | The four files you write, in this order: `script.md`, `decktalk.toml`, `cues.json`, and the page. | "three files you write" | [How it works](/concepts/how-it-works) |
+| scaffold | The project that `decktalk init` writes. | "demo" for the project, "template", "example deck" | [Quickstart](/quickstart) |
+| demo video | The published video that DeckTalk built from the scaffold. | "demo" for the project | [Quickstart](/quickstart) |
+| section | A numbered part of the script (`## N.`) and its `[[section]]` table. Either a *page section* or a *clip section*. | "part", "segment", "scene" for a section | [decktalk.toml](/reference/decktalk-toml) |
+| clip | A video file of your own that a clip section plays, with its own audio. | "footage", "your own video" | [Add a clip section](/guides/clip-section) |
+| slate | The titled image that plays for `slate_seconds` when a clip file is missing. | | [Add a clip section](/guides/clip-section) |
+
+## Page and runtime
+
+| Term | Meaning | Do not use | Explained in |
+|---|---|---|---|
+| page | An HTML file that page sections play, such as `deck/index.html` or `deck/lesson.html`. | "page" for a doc page, "index page", "slide deck" | [The page contract](/concepts/page-contract) |
+| stage element | The 1920 by 1080 `#dt-stage` element that holds the slide. | "stage" alone | [Runtime](/reference/runtime) |
+| scene | One `DeckTalk.scene(N, …)` in a page. A page section plays one scene. | "section", "slide" | [The page contract](/concepts/page-contract) |
+| step | One entry in a scene's `steps`. Renders one slide. | "step" for a procedure action or a stage | [The page contract](/concepts/page-contract) |
+| slide | The HTML that one step renders. | "slide" for a step or a scene | [The page contract](/concepts/page-contract) |
+| mount | A step's slide enters the page. | "appear" or "show" for a step | [Runtime](/reference/runtime) |
+| mode | `index`, `autoplay`, `cues`, or `frozen`. In prose: index mode, autoplay, cue mode, freeze mode. | "`cues` mode", "frozen mode" | [Runtime](/reference/runtime#modes) |
+| browser preview | A page opened in a browser without `?beats=`. It plays in autoplay. | "the preview" alone | [The page contract](/concepts/page-contract) |
+| own | A step owns a cue by the three ownership rules. | "belongs to", "claims" | [The page contract](/concepts/page-contract#cue-ownership) |
+| `hold` / `hold_seconds` | `hold` is the step key for autoplay seconds. `hold_seconds` is the section key that holds the last slide. | bare "hold" for a third meaning | [Runtime](/reference/runtime), [decktalk.toml](/reference/decktalk-toml) |
+| handler | A function in a step's `on` object, or one registered with `DeckTalk.on(id, fn)`. | "handler cue" | [Runtime](/reference/runtime) |
+
+## Cues and timing
+
+| Term | Meaning | Do not use | Explained in |
+|---|---|---|---|
+| cue | One entry in `cues.json`. Pairs a cue id with a cue phrase. | "named moment", "beat" | [Cues](/concepts/cues) |
+| cue id | The id that ties a cue to the page, such as `1.1bowl`. A step id plus a short word. | | [Cues](/concepts/cues) |
+| cue phrase | The `on` value. A spoken phrase, `$start`, or `$end`. | "the words" for the phrase | [Cues](/concepts/cues) |
+| `$start` / `$end` | `$start` is 0.0 s after the section start. `$end` is the end of the section's last spoken word. | "the end of the audio file" for `$end` | [cues.json](/reference/cues-json) |
+| resolve | The `beats` stage turns a cue phrase into a cue time. "Match" is only for comparing words. | "find" for the whole operation | [Cues](/concepts/cues) |
+| cue time | The start of the cued word plus the offset key, rounded to hundredths, in seconds after the section start. | "the cue's seconds", "beats" | [Cues](/concepts/cues) |
+| fire | The page runs a cue at its cue time. | | [Runtime](/reference/runtime) |
+| reveal | An element becoming visible, with its reveal effect. | "visual", "animation" | [Runtime](/reference/runtime) |
+| appear | What an element does at its reveal. | "reveals" without an object, "snaps in", "lights up" | [Runtime](/reference/runtime) |
+| starts on | A reveal starts on its word when its onset is within the offset limit of its cue time. | "lands on" outside taglines | [Verify](/reference/verify) |
+| offset key | The cue's `offset` in `cues.json`. A positive offset key moves the cue time later. | bare "offset", "trail the word", "lead the word" | [cues.json](/reference/cues-json) |
+| stage direction | Bracketed script text that the voice does not speak. | | [script.md](/reference/script-md) |
+| beat | The pause that `[beat]` or a plain stage direction makes. The voice reads a dash there. | "beats" for cue times | [script.md](/reference/script-md) |
+| timed pause | `[pause N]`, which sends a break tag to the voice. | "pause" alone for a beat | [script.md](/reference/script-md) |
+| placeholder | Text you must replace before a voiced build. `[CAPS]` in the script, or `<placeholder>` in `.env`. | "placeholder" for example ids or for silent audio | [script.md](/reference/script-md) |
+
+## Audio
+
+| Term | Meaning | Do not use | Explained in |
+|---|---|---|---|
+| script | The text of `script.md`. | "narration" for the text, "TTS script" | [script.md](/reference/script-md) |
+| narration | The spoken audio: each section's mp3 and `narration.mp3`. | | [How it works](/concepts/how-it-works) |
+| voice (noun) | The voice that speaks the script. The voice id picks it. | "speaker", "TTS" | [Requirements and costs](/requirements) |
+| speech provider | The module and service that return audio and word times. ElevenLabs is the built-in one. | "the voice" for the software | [Python API](/reference/python-api) |
+| voice (verb), voice again | Make a section's narration with the speech provider. | "synthesize", "regenerate", "re-voice", "narrate" as a verb | [Rebuild one section](/guides/rebuild-one-section) |
+| click track | The audio that a silent build writes. A soft click at every estimated word start. Log strings say "silent placeholder". | "placeholder track", "placeholder narration", "placeholder voice" | [How it works](/concepts/how-it-works) |
+| click | One tick in the click track. | "beep", "marker" | [Verify](/reference/verify) |
+| words file | `build/audio/NN-slug.words.json`. | "word list", "timestamps file" | [Build artifacts](/reference/artifacts) |
+| word times | The start and end of each spoken word. | "word timestamps" | [Build artifacts](/reference/artifacts) |
+| spoken words | The words in the words file. Matching and `?words=` use them. | | [Cues](/concepts/cues) |
+| timeline | `build/audio/timeline.json`. Section and word times in `narration.mp3`. | "timeline" for another tool's track (write "timeline editor") | [Build artifacts](/reference/artifacts) |
+| generate | Make soundscape audio with `decktalk soundscape`. | "generate" for narration | [Sound](/concepts/sound) |
+| underscore | The music under the whole video (`[mix] underscore`). | "music bed", "bed" | [Sound](/concepts/sound) |
+| ambience bed | The `[mix] ambience` audio. | bare "bed" | [Sound](/concepts/sound) |
+| sound effect | A one-shot audio file on a cue (`[[mix.sfx]]`). | bare "effect" outside the sound pages | [Sound](/concepts/sound) |
+| reveal effect | A `data-fx` animation. | bare "effect" | [Runtime](/reference/runtime) |
+| soundscape | The optional audio parts: underscore, ambience bed, and sound effects. | | [Sound](/concepts/sound) |
+| mix | Narration, clip audio, and soundscape summed, then passed through the loudness pass. | | [Sound](/concepts/sound#loudness) |
+| duck | The underscore gets quieter under a spoken span or a clip. | | [Sound](/concepts/sound) |
+
+## Recording, assembly, and verification
+
+| Term | Meaning | Do not use | Explained in |
+|---|---|---|---|
+| recording | The webm that `record` writes for a page section. | "record" for "store", "write", or "log" | [How it works](/concepts/how-it-works) |
+| sidecar | `build/rec/NN-scene.json`. | "recording JSON" | [Build artifacts](/reference/artifacts) |
+| cover | The magenta overlay that hides the page until narration t=0. | "pink" | [The page contract](/concepts/page-contract#the-handshake) |
+| narration t=0 | The moment `DeckTalk.startClock()` runs. The first frame after the cover. After the first use on a page, write t=0. | "clock start" | [The page contract](/concepts/page-contract#the-handshake) |
+| recorder wait | `max(settle_seconds, min_lead_seconds - elapsed)`. The wait before the recorder removes the cover. | "settle time", "the recorder's lead" | [The page contract](/concepts/page-contract#the-handshake) |
+| settle | Only `settle_seconds`. | "settling" for an animation (write "still animating") | [The page contract](/concepts/page-contract) |
+| trim | Remove the frames before t=0. | | [How it works](/concepts/how-it-works) |
+| cut (noun) | The boundary between two sections in the final video. | | [How it works](/concepts/how-it-works) |
+| cut (verb) | `assemble` cutting a recording to its section span. | "cut a sentence" (write "delete"), "cut short" (write "truncated") | [How it works](/concepts/how-it-works) |
+| section span | A section's `start` to `end` in `timeline.json`, including the silence after its last word. | "span" alone | [Verify](/reference/verify) |
+| spoken span | A section's `start` to its speech end. | "span" alone | [Sound](/concepts/sound) |
+| speech end | The end of a section's last spoken word, in seconds after the section start. | | [Verify](/reference/verify) |
+| verify stage | The `verify` stage inside `build`. Checks section starts and cuts only. | "`build` verifies" with no object | [Verify](/reference/verify) |
+| `decktalk verify` | The command. Checks section starts, cuts, and cues. | "the verify check" | [CLI](/reference/cli#decktalk-verify) |
+| cue check | One row of the cue table of `decktalk verify`. | "cue landing", "a/v check" | [Verify](/reference/verify#cues) |
+| changed share | The percentage of pixels, at 480 by 270, whose luma differs by more than a level between two frames. | "the share of pixels that changed" | [Verify](/reference/verify#changed-share) |
+| reference lead | How far before the cue time `verify` sets the reference time. 0.14 s at the defaults. | "lead" alone, "the recorder's lead" | [Verify](/reference/verify#reference-frame) |
+| reference frame | The frame at the reference time, the picture before the cue. | | [Verify](/reference/verify#reference-frame) |
+| probe | The frame `d` seconds after the cue, for each `d` in `probe_delays`. | | [Verify](/reference/verify#probes) |
+| control share | The smaller changed share of two back-to-back spans that end at the reference. | "control span" for the share | [Verify](/reference/verify#control-share) |
+| margin | A probe's changed share minus its control share. | | [Verify](/reference/verify#change-test) |
+| change test | Passes when the reported probe's changed share is at least `min_changed_percent` and its margin is at least `min_margin_percent`. | "lands", "a cue lands" | [Verify](/reference/verify#change-test) |
+| onset | The first frame of a reveal, as the onset rule defines it. | "the first changed frame" | [Verify](/reference/verify#onset-and-offset) |
+| offset column | The onset time minus the cue time, in whole milliseconds. Negative means early. | bare "offset" | [Verify](/reference/verify#onset-and-offset) |
+| click distance | The click time minus the cued word's start, in signed milliseconds. | | [Verify](/reference/verify#the-a/v-value) |
+| a/v | The offset column minus the click distance, in milliseconds. Exists only after a silent build. | | [Verify](/reference/verify#the-a/v-value) |
+| offset limit, a/v limit | `max_offset_frames` (80 ms at 25 fps) and `max_av_frames` (120 ms at 25 fps). | | [Verify](/reference/verify#limits) |
+| verdict | The word or words that a table prints for a row. | | [CLI](/reference/cli) |
+| finding | A verdict or note that counts toward the exit code. *Certain* exits 1. *Uncertain* ends in `?` and exits 1 only with `--strict`. | "error" or "warning" for a finding | [CLI](/reference/cli#exit-codes) |
+| error | A `DeckTalkError` printed as `error: …`. Exits 1 even with `--no-fail`. | "failure" for a finding | [CLI](/reference/cli#exit-codes) |
+
+Note: The scaffold's lesson also says "error", for how wrong a guess is. That word is lesson content, not a DeckTalk term. [What does the lesson mean by error?](/help/faq#what-does-the-lesson-mean-by-error) gives the precise meaning.
+
+## Words with one meaning
+
+These docs use each of these words in one sense only.
+
+| Word | Meaning in these docs | For other senses, write |
+|---|---|---|
+| once | One time | "after" or "when" |
+| since | A point in time, as in "since t=0" | "because" |
+| while | During the time that | "but" for a contrast |
+| as | In the way that | "because" for a cause, "when" for a time |
+| drop | Only the `drop` reveal effect | "remove", "ignore", or "put" |
+| may, might | Not used | "can" for an option, or state the risk |
+| should | Advice to the reader | "must" for a requirement, the present tense for behavior |
+| instead of | The one contrast phrase | not "rather than" |
+| step | Only a step in a scene | "action" or a numbered item for a procedure |
+
+## Retired terms
+
+A reviewer searches the docs for these terms before a release. The docs use none of them.
+
+- three.js
+- WebGL, in the scaffold
+- five-section demo
+- "clips only at the edges"
+- `1.1curve`, `1.1number`, `3.1eq`, `4.1s3`, and `4.1answer`
+- "The curve rises"
+- "placeholder track"
+- "first changed frame"
+
+## Related
+
+- **Terms by page:** [How it works](/concepts/how-it-works)
+- **Every command and verdict:** [CLI](/reference/cli)
+- **How to write docs for DeckTalk:** [CONTRIBUTING.md](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md)

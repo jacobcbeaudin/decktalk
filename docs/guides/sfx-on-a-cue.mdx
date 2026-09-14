@@ -1,49 +1,61 @@
 ---
 title: Put a sound effect on a cue
-description: Place a one-shot sound effect on a spoken cue in DeckTalk with [[mix.sfx]] in decktalk.toml, generate the effect with decktalk soundscape or bring your own file, and hear it in the mix.
-icon: "wand-magic-sparkles"
+description: Play a one-shot sound effect that starts on a spoken cue.
 ---
 
-A sound effect lands where a cue resolved, so it follows the words like a visual does.
-The scaffold carries a commented `[[mix.sfx]]` example. This guide puts a click on
-`1.1one`, the cue in section 1 on which the ball takes its first step down the bowl.
+This guide plays a one-shot sound effect on a cue. The sound starts on a spoken word. Use it when you want a sound to mark a reveal, such as a click when the ball takes its first step.
+
+The example puts a click on `1.1one`, the cue in section 1 where the ball takes its first step down the bowl. The scaffold's `decktalk.toml` has the same example in comments.
+
+## Before you start
+
+- Build the project one time, with `decktalk build --silent` or `decktalk build`. The `beats` stage must resolve the cue first.
+- To generate the effect, put an ElevenLabs API key in `.env`. Generating an effect spends credits. [What spends credits](/requirements#what-spends-credits) lists the cost.
+- If you have your own audio file, you need no key. Any file that ffmpeg can read works.
 
 <Steps>
-  <Step title="Describe the effect, or bring a file">
-    A `[soundscape.sfx.<name>]` table holds a prompt for the ElevenLabs sound generator.
-    The effect is written to `build/sfx/<name>.mp3` unless the table's `out` key says
-    otherwise.
+  <Step title="Describe the effect">
+    If you brought your own file, put it in the project and skip to step 4.
+
+    Add a `[soundscape.sfx.<name>]` table with a prompt for the ElevenLabs sound generator.
 
     ```toml decktalk.toml
     [soundscape.sfx.tick]
     text = "soft interface click, single, short, no reverb"
     ```
 
-    Any audio file that ffmpeg can read works in place of a generated one. Put it
-    anywhere in the project and name its path in the next step.
+    `decktalk soundscape` writes this effect to `build/sfx/tick.mp3`. To use another path, add an `out` key to the table.
   </Step>
 
-  <Step title="Generate it">
-    The dry run prints every request without sending it and needs no key.
+  <Step title="Preview the request">
+    Print the request without sending it. The dry run needs no key and spends nothing.
 
     ```console
-    decktalk soundscape --dry-run
-    decktalk soundscape --only tick
+    decktalk soundscape --dry-run --only tick
     ```
 
+    {/* sample: decktalk soundscape --dry-run --only tick, scaffold with [soundscape.sfx.tick] uncommented */}
     ```text
     == tick -> ~/my-lesson/build/sfx/tick.mp3  [planned]
        POST https://api.elevenlabs.io/v1/sound-generation
        {'text': 'soft interface click, single, short, no reverb', 'duration_seconds': 0.5, 'prompt_influence': 0.5, 'model_id': 'eleven_text_to_sound_v2'}
     ```
 
-    Generated files are cached by their request, so a second run sends nothing unless the
-    prompt changed, and `--force` regenerates one on purpose.
+    Check the output path and the prompt. The effect lasts 0.5 s unless the table sets `duration_seconds`.
   </Step>
 
-  <Step title="Place it on a cue">
-    A `[[mix.sfx]]` table names the file, the section, and the cue id. The `db` key sets
-    the level and `offset` shifts the effect in seconds from the cue.
+  <Step title="Generate the effect">
+    Send the request.
+
+    ```console
+    decktalk soundscape --only tick
+    ```
+
+    The command writes `build/sfx/tick.mp3`. If the request and the file have not changed, a later run sends nothing. To generate the effect again, add `--force`.
+  </Step>
+
+  <Step title="Place the effect on a cue">
+    Add a `[[mix.sfx]]` table that names the file, the section, and the cue id.
 
     ```toml decktalk.toml
     [[mix.sfx]]
@@ -53,20 +65,22 @@ The scaffold carries a commented `[[mix.sfx]]` example. This guide puts a click 
     db = -16
     ```
 
-    The cue must be one that `decktalk beats` resolved for that section. The effect is
-    placed at the section's start in the video plus the cue's seconds plus the offset.
+    - `db` sets the level of the effect. The default is -16.
+    - `offset` moves the effect by a number of seconds. The default is 0.
+
+    DeckTalk places the effect at the section's start in the final video, plus the cue time, plus `offset`.
   </Step>
 
-  <Step title="Assemble">
-    The mix is part of the `assemble` stage, so no recording changes.
+  <Step title="Mix the effect into the video">
+    Run the `assemble` stage. It mixes the audio again, and it records nothing.
 
     ```console
     decktalk assemble
     ```
 
-    An effect whose file is missing, or whose cue did not resolve, is skipped with a
-    warning that names it, and the build continues.
+    If the file is missing, or the cue did not resolve, `assemble` prints a warning and skips the effect. The video still builds.
 
+    {/* sample: decktalk assemble, silent build of the scaffold with the [[mix.sfx]] table above and no tick.mp3 (one line) */}
     ```text
     sfx build/sfx/tick.mp3 missing; skipped
     ```
@@ -75,5 +89,6 @@ The scaffold carries a commented `[[mix.sfx]]` example. This guide puts a click 
 
 ## Next
 
-[Sound](/concepts/sound) describes every part of the mix, including the underscore
-markers that swell or mute the music on a phrase with the same matching keys.
+- **Learn every part of the mix:** [Sound](/concepts/sound)
+- **Swell or mute the underscore on a phrase:** [Markers](/concepts/sound#markers)
+- **Check what a generated effect costs:** [Requirements and costs](/requirements#what-spends-credits)
