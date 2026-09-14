@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.2.0](https://github.com/jacobcbeaudin/decktalk/compare/v0.1.0...v0.2.0) (2026-09-14)
+
+
+### Features
+
+* a demo deck built to a fifteen-person review, with a WebGL loss surface ([148e59f](https://github.com/jacobcbeaudin/decktalk/commit/148e59f0dbdacd6c94de9ae58e3a6b0fa802d148))
+* captions, chapters, measured cue offsets, and a loudness pass that hits its target ([27a8c1d](https://github.com/jacobcbeaudin/decktalk/commit/27a8c1d77ea1d38a477cf27e8123f0030dc83003))
+* close on "Update your video the way you update a doc." ([339dfe9](https://github.com/jacobcbeaudin/decktalk/commit/339dfe990cda887f0063b16cb60ff2f753340bce))
+* closing scene, a cut check in verify, and a cover that survives a late capture ([b1e1cdd](https://github.com/jacobcbeaudin/decktalk/commit/b1e1cdd5bf46637530a50f65009fe3c114e5abf0))
+* demo deck after the round-two design and content review ([1c5e44c](https://github.com/jacobcbeaudin/decktalk/commit/1c5e44cbe724e37bf0650708a069c7d4928ab2f2))
+* demo v10, the storytelling panel's rewrite of all five scenes ([8754f83](https://github.com/jacobcbeaudin/decktalk/commit/8754f83aff96f5791be69449c260a21a1339aa2c))
+* demo v11, a lay lesson on how AI learns, with a slot for B-roll ([dd9147e](https://github.com/jacobcbeaudin/decktalk/commit/dd9147ee93be0a0a6d08aea5123733a417278c38))
+* **demo:** a ball walks the too-long and too-short paths as their markers appear ([e25bade](https://github.com/jacobcbeaudin/decktalk/commit/e25bade3033a011d055280343753924b9a6d24a2))
+* lesson-shaped scaffold, vendored KaTeX, pause directions, and page warnings ([5ee46a8](https://github.com/jacobcbeaudin/decktalk/commit/5ee46a8f27898a76d403b8d511ca53e93698d8b2))
+* machine-readable output and one exit policy for the read-only commands ([393cbf8](https://github.com/jacobcbeaudin/decktalk/commit/393cbf8e109c2b7bce761c3a1695863dc3dcdad4))
+* pass the slide and cue context to handlers, freeze at one cue, and warn on unreachable reveals ([675894d](https://github.com/jacobcbeaudin/decktalk/commit/675894d153dccfd635580991f86edad5dac83e46))
+* play a clip between page sections, with the narration paused around it ([e884b29](https://github.com/jacobcbeaudin/decktalk/commit/e884b293551db437c0a485f79af5e47c2d10f98d))
+* **record:** log when each cue was due, ran, and drew in the sidecar ([a9a25b3](https://github.com/jacobcbeaudin/decktalk/commit/a9a25b3801ada0e5be8c0d9c881f8b8743d99247))
+* **record:** pass the previous section's words as prevwords, so scene 2 carries the Open's real count times ([04cb547](https://github.com/jacobcbeaudin/decktalk/commit/04cb547cdc315054c974d943c36d90ef68ff2320))
+* refine the graphics and adopt the four-tick mark ([142f511](https://github.com/jacobcbeaudin/decktalk/commit/142f511310a7b31ea04459fbcbfb77512f93d928))
+* show the function before naming it in the demo, and close on decktalk.app ([f9f251f](https://github.com/jacobcbeaudin/decktalk/commit/f9f251fd804f7d3b1022deb28aea3c2cb3c09955))
+* **site:** host the demo video with the homepage ([fecdfa2](https://github.com/jacobcbeaudin/decktalk/commit/fecdfa2dcc0762e282f5fc87172ef2487c8ca8e4))
+* social card, README rebuilt around the lesson scaffold, and limiter headroom ([2a4a93b](https://github.com/jacobcbeaudin/decktalk/commit/2a4a93bd0fa183b40aae22787bec5fe32233d0b8))
+* teach the learning rate honestly in the demo's gradient descent scene ([0b8a958](https://github.com/jacobcbeaudin/decktalk/commit/0b8a95883617a28c1eb74c6f46118c58910696f0))
+* **template:** open the lesson on its title and bring in the rules card on "rules" ([e596540](https://github.com/jacobcbeaudin/decktalk/commit/e596540019a6e7340e332a1d80dd9d87a06c254e))
+* **template:** scaffold the v12 demo film ([ce17e25](https://github.com/jacobcbeaudin/decktalk/commit/ce17e256ee1b59fcdb1b0463acd8216fc221510e))
+* verify every cue by default, catch unknown cue ids, and keep clips at the edges ([bd6c236](https://github.com/jacobcbeaudin/decktalk/commit/bd6c2365ca3d1691ff71705dbba5a05ff4a2fbc4))
+
+
+### Bug Fixes
+
+* accept -v and -q after the command, export result types, and report unexpected errors cleanly ([ffd86ad](https://github.com/jacobcbeaudin/decktalk/commit/ffd86ad00fd9878b7c28bb3998319612e0767952))
+* captions keep the script's punctuation and the onset scan sees low-contrast reveals ([24357b7](https://github.com/jacobcbeaudin/decktalk/commit/24357b7a5ed10fcb1a984c8629f47b7be87abf3a))
+* count only the part of a frame stall that falls after narration starts ([1be18ee](https://github.com/jacobcbeaudin/decktalk/commit/1be18eebae076cd8f89df37cb3ddc477c339046b))
+* cover the page until the clock starts so a cut cannot miss the marker ([f33a2d9](https://github.com/jacobcbeaudin/decktalk/commit/f33a2d94c3872ad932798395d05904ad9c1038dc))
+* define gradient descent before the surface appears, and hand off once at the edit ([1b25627](https://github.com/jacobcbeaudin/decktalk/commit/1b25627b091a0553435b9cc5e6eb041b454b106f))
+* exact frame seeks on every ffmpeg build, and sidecars that explain synced reveals ([2499312](https://github.com/jacobcbeaudin/decktalk/commit/249931205f61c076273fc997338c5e0748402aef))
+* fail check on a page error, warn on bad TeX and dead cues, ease the ball steps out, and keep doctor from downloading ([171f4bf](https://github.com/jacobcbeaudin/decktalk/commit/171f4bf654c0a88fa6c10f01c692cb69862ce111))
+* **narrate:** pad cached takes to min_tail_seconds ([df93b08](https://github.com/jacobcbeaudin/decktalk/commit/df93b087172e56ee098f6e034507539dc5023c40))
+* print a skipped verify row's reason once ([2cf727d](https://github.com/jacobcbeaudin/decktalk/commit/2cf727d38d4787a5fbcf00764f018d36f00422f1))
+* quote scene 3's real length in the edit scene and give the close a beat ([7f368cc](https://github.com/jacobcbeaudin/decktalk/commit/7f368cc999818551585a8da4f62e27a436c763c2))
+* read and write every text file as UTF-8, so init works on Windows ([645aebc](https://github.com/jacobcbeaudin/decktalk/commit/645aebc79fe183cc6dc3b8898fabe14ac4468874))
+* **record:** keep frames flowing after the cover so still pages record reveals on time ([0abcf45](https://github.com/jacobcbeaudin/decktalk/commit/0abcf4532d7ec8b1254e6e795355e95d40beeb5c))
+* report unknown cue ids from beats instead of stopping before the table ([63208b9](https://github.com/jacobcbeaudin/decktalk/commit/63208b98518df26d254ab07df8675b5da4c9cef7))
+* **runtime:** draw the preview index in the page's own colors ([5eec565](https://github.com/jacobcbeaudin/decktalk/commit/5eec565d761f7a0e0265e90c0f56a7dd8f6d0c2f))
+* say the thesis once in the demo deck ([a677391](https://github.com/jacobcbeaudin/decktalk/commit/a677391b3d7b10f52c02474ecca54370f241046e))
+* start the clock on the next frame, detect and retry stalled recordings, and make frame comparisons build-proof ([91cd81c](https://github.com/jacobcbeaudin/decktalk/commit/91cd81c3de6846ae0f338a8875447870994d1d8f))
+* timeline positions from decoded audio, word-synced reveals, a click test for sync, and a scaffold that teaches gradient descent ([9b38bc2](https://github.com/jacobcbeaudin/decktalk/commit/9b38bc23cfb177853e4e283c6a84c681057ae541))
+* trim the scanned span per stream so the looped reference frame is not seeked past its end ([028c845](https://github.com/jacobcbeaudin/decktalk/commit/028c84501cc976655cb8e3250f2cb2c5d6b11e97))
+* **verify:** compare luma only, so a static colored frame reads zero ([d74bdc6](https://github.com/jacobcbeaudin/decktalk/commit/d74bdc6ca2f7b9f1a3e8a5ec0e8b680344ead6ac))
+* **verify:** confirm each onset on 8 by 8 blocks, so encoder ringing never reads as an early reveal ([8e9887a](https://github.com/jacobcbeaudin/decktalk/commit/8e9887afa7a48b9961b83b98c175ab571b66806f))
+* warm every scene 3 mesh so no cue freezes the page on its first draw ([938f9a3](https://github.com/jacobcbeaudin/decktalk/commit/938f9a3637f2a90756e176e1185c3844f755f485))
+* warm the scene 3 figure at its real drawing state before narration starts ([90807c4](https://github.com/jacobcbeaudin/decktalk/commit/90807c4cdd8844a67690a93edc1f4cb41822862f))
+* warn on unknown decktalk.toml keys, let doctor pass without KaTeX, and add optional clip sections ([dcc4dbf](https://github.com/jacobcbeaudin/decktalk/commit/dcc4dbf1bcdee7327d38fb57107c1074fbaf25cc))
+* warn when a step mounts equations without KaTeX in cue mode ([2005a4a](https://github.com/jacobcbeaudin/decktalk/commit/2005a4a30b5e57336c1bc3fa87cc4532326525b5))
+
 ## 0.1.0 (2026-09-12)
 
 First release. DeckTalk turns a markdown script, plain HTML slides, and an ElevenLabs
