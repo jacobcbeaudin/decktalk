@@ -153,7 +153,7 @@ narration at each clip between page sections.
 
 - Each part of the narration starts where its first page section starts in the video.
 - No caption covers a clip section.
-- A clip section gets its own chapter.
+- A clip section gets its own chapter, unless the section before it has the same title.
 
 Example: in the silent build of `clip-lesson`, section 5 starts at 170.60 s in `timeline.json` and at 174.60 s
 in the final mp4. The 4 s clip of section 4 sits between them. [Build artifacts](/reference/artifacts#time-bases)
@@ -180,6 +180,12 @@ The clip's own audio joins the mix at its section start.
 
 `verify` checks the start of a clip section, but a clip section has no cut row. The click search of the a/v check
 never reaches into a clip's audio.
+
+## Keep one chapter across several sections
+
+Each section starts a chapter. Consecutive sections with the same `title` share one chapter instead. Give a clip and
+the page sections around it the same title, such as `title = "The edit"`, and the video shows one chapter that
+spans all of them.
 
 ## Choose where the clip plays
 

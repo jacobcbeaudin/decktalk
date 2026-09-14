@@ -325,10 +325,10 @@ The out directory holds each cut section, the final video, its captions, and its
 | File | Meaning |
 |---|---|
 | `NN-section.mp4` | One section cut to its span, at the project's frame size, with no audio. |
-| `<name>.mp4` | The final video, with one chapter per section. |
+| `<name>.mp4` | The final video, with one chapter per section. Consecutive sections with the same title share a chapter. |
 | `<name>-YYYYMMDD-HHMM.mp4` | A timestamped copy of the final video. |
 | `<name>.srt`, `<name>.vtt` | Captions from the word times, in final mp4 time, with the script's punctuation and case. |
-| `<name>.chapters.txt` | An ffmetadata file with one `[CHAPTER]` per section, titled from `decktalk.toml`. |
+| `<name>.chapters.txt` | An ffmetadata file with one `[CHAPTER]` per section, titled from `decktalk.toml`. Consecutive sections with the same title share one `[CHAPTER]`. |
 | `slates/NN-slate.png` | The slate image of a clip section whose file is missing. |
 
 Captions break at sentence ends.

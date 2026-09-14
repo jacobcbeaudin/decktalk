@@ -70,7 +70,7 @@ No. Each part of the soundscape is off until `[mix]` in `decktalk.toml` names it
 Every build writes captions and chapters beside the video.
 
 - The `.srt` and `.vtt` captions come from the word times, with the script's punctuation.
-- An ffmetadata chapters file has one chapter per section.
+- An ffmetadata chapters file has one chapter per section. Consecutive sections with the same title share one chapter.
 - The mp4 holds the same chapters, so video players show the section titles.
 
 `decktalk status` lists all three files. [Build artifacts](/reference/artifacts) gives their formats.

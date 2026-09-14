@@ -1502,3 +1502,54 @@ def test_reference_sits_before_an_early_reveal_the_offset_limit_allows():
     assert ref_wide is not None and ref_wide <= 10.0 - 4 / fps - 1.0 / fps
     # A cue close to the section start still clamps to one frame before the cue.
     assert reference_time(0.0, 0.08, False, 0.0, cfg, fps) is not None
+
+
+TITLED_CLIP_TOML = """
+[project]
+name = "t"
+
+[[section]]
+number = 1
+title = "Open"
+page = "deck/index.html"
+
+[[section]]
+number = 2
+title = "The edit"
+clip = "media/before.mov"
+
+[[section]]
+number = 3
+title = "The edit"
+page = "deck/index.html"
+
+[[section]]
+number = 4
+title = "Close"
+page = "deck/index.html"
+"""
+
+
+def _titled_clip_rows(tmp_path, *, clip_audio: bool = True):
+    from decktalk.stages.assemble import RenderedSection
+
+    p = Project.load(write_project(tmp_path, TITLED_CLIP_TOML), environ={})
+    audio = tmp_path / "media" / "before.mov" if clip_audio else None
+    rows = [
+        RenderedSection(p.sections[0], tmp_path / "01.mp4", 2.0, "page"),
+        RenderedSection(p.sections[1], tmp_path / "02.mp4", 3.0, "clip", audio=audio),
+        RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.52, "page"),
+        RenderedSection(p.sections[3], tmp_path / "04.mp4", 1.48, "page"),
+    ]
+    return p, rows
+
+
+def test_consecutive_sections_with_the_same_title_share_one_chapter(tmp_path):
+    from decktalk.stages.assemble import build_chapters
+
+    _p, rows = _titled_clip_rows(tmp_path)
+    assert [(c.start, c.end, c.title) for c in build_chapters(rows)] == [
+        (0.0, 2.0, "Open"),
+        (2.0, 7.52, "The edit"),
+        (7.52, 9.0, "Close"),
+    ]
