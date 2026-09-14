@@ -1,6 +1,6 @@
 [project]
 name = "decktalk"
-version = "0.1.0"
+version = "0.2.0"
 description = "Narrated presentations, cut to the word. A markdown script, an ElevenLabs voice, and HTML slides go in, and one mp4 comes out."
 readme = "README.md"
 requires-python = ">=3.12"
