@@ -253,8 +253,10 @@ the element is still plain text, the page warns.
 | `now()` | function | Seconds since the clock started, or `-Infinity` before it starts. |
 | `frameGaps` | array | One `{ at, ms }` object for each gap over 100 ms between two animation frames. Cue mode only. |
 | `syncLog` | array | One `{ text, cueAt, runAt, n, firstOn }` object for each `data-sync` element that matched. |
+| `cueLog` | array | One `{ id, due, ran, frame, next, after }` object for each cue that fired from `beats`. Cue mode only. |
+| `longFrames` | array | One `{ start, ms, render, presented }` object for each animation frame over 50 ms after t=0. Cue mode only. |
 
-Note: After a recording, the recorder reads `catalog`, `warnings`, `frameGaps`, and `syncLog`. A
+Note: After a recording, the recorder reads `catalog`, `warnings`, `frameGaps`, `syncLog`, `cueLog`, and `longFrames`. A
 missing or empty `catalog` is a page error. `decktalk shots` reads `catalog` to find every step.
 
 Note: With a numeric `t0`, the clock starts at `load`, so narration t=0 is where `now()` equals
@@ -268,6 +270,16 @@ can do slow first work before t=0, such as drawing a canvas figure or a large SV
 Note: In `syncLog`, `text` is the first 24 characters of the text. `cueAt` is the time the element
 appeared, and `runAt` is the start of its first matched word. `n` is the number of words, and
 `firstOn` is the time the first word appeared. The sidecar field is `sync_log`.
+
+Note: In `cueLog`, every time is in seconds on the narration clock. `due` is the cue's time, and `ran`
+is when the runtime fired it. `frame` is the start of the animation frame that fired it, and `next`
+and `after` are the starts of the two frames after it. A cue with `ran` well past `due` was held up
+before its frame. A cue that ran on time but whose `next` frame started late was held up while its
+frame was drawn. The sidecar field is `cue_log`.
+
+Note: In `longFrames`, `start`, `render`, and `presented` are seconds on the narration clock, and `ms`
+is the frame's length. `presented` is when Chromium showed the frame, or `null` when the browser does
+not report it. The sidecar field is `long_frames`.
 
 The runtime also sets `document.body.dataset.done` to `"1"` when the last step has mounted.
 

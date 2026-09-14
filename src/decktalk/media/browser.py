@@ -188,6 +188,18 @@ def record_page(
     errors = page_errors(page, caught, out.stem)
     gaps = page.evaluate("() => (window.__decktalk && window.__decktalk.frameGaps) || []")
     sync_log = page.evaluate("() => (window.__decktalk && window.__decktalk.syncLog) || []")
+    cue_log = page.evaluate("() => (window.__decktalk && window.__decktalk.cueLog) || []")
+    long_frames = page.evaluate("() => (window.__decktalk && window.__decktalk.longFrames) || []")
+    for entry in cue_log if isinstance(cue_log, list) else []:
+        log.debug(
+            "[cue ] %s  due %s  ran %s  frame %s  next %s  after %s",
+            entry.get("id"),
+            entry.get("due"),
+            entry.get("ran"),
+            entry.get("frame"),
+            entry.get("next"),
+            entry.get("after"),
+        )
     for entry in sync_log if isinstance(sync_log, list) else []:
         log.debug(
             "[sync] %s  cue %.3f  run %.3f  first word on %s",
@@ -224,6 +236,8 @@ def record_page(
         page_errors=errors,
         frame_gaps=frame_gaps,
         sync_log=[dict(e) for e in sync_log if isinstance(e, dict)],
+        cue_log=[dict(e) for e in cue_log if isinstance(e, dict)] if isinstance(cue_log, list) else [],
+        long_frames=[dict(e) for e in long_frames if isinstance(e, dict)] if isinstance(long_frames, list) else [],
     )
     sidecar.save(out.with_suffix(".json"))
     return sidecar

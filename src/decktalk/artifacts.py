@@ -227,6 +227,10 @@ class Sidecar:
     # (seconds, ms) where the page stalled. The time is None for a gap that ended before narration t=0.
     frame_gaps: list[tuple[float | None, int]] = field(default_factory=list)
     sync_log: list[dict[str, Any]] = field(default_factory=list)  # what each data-sync element matched
+    # Each cue as the page ran it: id, due, ran, and the start of its frame and the two after (seconds).
+    cue_log: list[dict[str, Any]] = field(default_factory=list)
+    # Animation frames over 50 ms after t=0: start, ms, render, and presented (seconds, ms for the length).
+    long_frames: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def worst_stall_ms(self) -> int:
