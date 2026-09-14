@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DeckTalk: narrated slide videos from a markdown script, cut to the word</title>
-<meta name="description" content="DeckTalk turns a markdown script, plain HTML slides, and an ElevenLabs voice into one narrated mp4. Every reveal lands on the word that introduces it, and when you change a sentence, only that section is voiced again. Open source, Python, Apache-2.0.">
+<meta name="description" content="DeckTalk turns a markdown script, plain HTML slides, and your voice into one narrated mp4. Every reveal lands on the word that introduces it, and when you change a sentence, only that section is voiced again. Open source, Python, Apache-2.0.">
 <link rel="canonical" href="https://decktalk.app/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DeckTalk">
@@ -17,7 +17,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://decktalk.app/og.png">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"DeckTalk","applicationCategory":"MultimediaApplication","operatingSystem":"Linux, macOS, Windows","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://www.apache.org/licenses/LICENSE-2.0","codeRepository":"https://github.com/jacobcbeaudin/decktalk","url":"https://decktalk.app","description":"DeckTalk turns a markdown script, plain HTML slides, and an ElevenLabs voice into one narrated mp4 in which every reveal lands on the word that introduces it."}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"DeckTalk","applicationCategory":"MultimediaApplication","operatingSystem":"Linux, macOS, Windows","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://www.apache.org/licenses/LICENSE-2.0","codeRepository":"https://github.com/jacobcbeaudin/decktalk","url":"https://decktalk.app","description":"DeckTalk turns a markdown script, plain HTML slides, and your voice into one narrated mp4 in which every reveal lands on the word that introduces it."}
 </script>
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e0e0f" media="(prefers-color-scheme: dark)">
@@ -27,16 +27,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #ffffff; --ink: #0a0a0a; --dim: #a3a3ad; --mute: #71717a; --block: #f4f4f5; --hair: #e4e4e7;
-    --bar: #d4d4d8; --tick: #c4c4c8; --blue: #2c1fea; --on-blue: #ffffff; --code: #f7f7f8;
+    /* --mute-2 is the gray for text on the gray cards (5.3:1 on --block). --tick is the unlit word tick (3.3:1 on --bg). */
+    --bg: #ffffff; --ink: #0a0a0a; --dim: #a3a3ad; --mute: #71717a; --mute-2: #65656d; --block: #f4f4f5; --hair: #e4e4e7;
+    --bar: #d4d4d8; --tick: #8e8e96; --blue: #2c1fea; --on-blue: #ffffff; --code: #f7f7f8;
     --mark-bar: #d4d4d8; /* the unlit ticks of the mark, kept equal to assets/mark-*.svg */
     --sans: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
     --tight: "Inter Tight", "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
     --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #0e0e0f; --ink: #f4f4f5; --dim: #52525b; --mute: #8b8b94; --block: #19191c; --hair: #27272a;
-            --bar: #3f3f46; --tick: #3f3f46; --blue: #7c8cff; --on-blue: #0e0e0f; --code: #141417; --mark-bar: #4f4f57; }
+    :root { --bg: #0e0e0f; --ink: #f4f4f5; --dim: #52525b; --mute: #8b8b94; --mute-2: #8b8b94; --block: #19191c; --hair: #27272a;
+            --bar: #3f3f46; --tick: #6b6b73; --blue: #7c8cff; --on-blue: #0e0e0f; --code: #141417; --mark-bar: #4f4f57; }
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
@@ -46,6 +47,7 @@
   .lab { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
   code, .mono { font-family: var(--mono); }
   h1, h2, h3, .brand, .sentence { font-family: var(--tight); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   /* nav */
   nav { display: flex; align-items: center; justify-content: space-between; height: 72px; }
@@ -71,44 +73,56 @@
   .btn:hover { border-color: var(--ink); }
   .btn.primary:hover { filter: brightness(1.08); }
 
-  /* the demo: scrub the playhead, the slide reacts on the cue words */
-  .demo { margin: 56px 0 0; border: 1px solid var(--hair); border-radius: 20px; padding: 36px 36px 30px; display: grid; grid-template-columns: 1.5fr 1fr; gap: 40px; align-items: center; background: var(--bg); }
+  /* The hero animation: section 1 of the demo counts down the bowl, the script is edited, and the
+     re-voiced count lands on its new word times. Every reveal snaps, as data-fx="none" does in the deck. */
+  .demo { margin: 56px 0 0; border: 1px solid var(--hair); border-radius: 20px; padding: 36px 36px 30px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; background: var(--bg); }
   .demo .lab { margin-bottom: 18px; display: block; }
-  /* Each word carries its own tick, placed under the word by script, so the ticks follow the words
-     onto a second line on a narrow screen. The scrubber below is pulled up so its thumb still sweeps
-     across the last row of ticks. */
-  .words { position: relative; padding-bottom: 30px; margin: 0 0 4px; }
-  .sentence { font-size: clamp(22px, 2.1vw, 30px); font-weight: 600; letter-spacing: -.015em; line-height: 1.3; margin: 0; }
-  .sentence.wrapped { line-height: 2.25; }
-  .sentence span { color: var(--dim); transition: color .25s; }
-  .sentence span.on { color: var(--ink); }
-  .sentence span.on.cue { color: var(--blue); }
-  .ticks { position: absolute; inset: 0; pointer-events: none; }
-  .tk { position: absolute; width: 2.5px; height: 12px; border-radius: 2px; background: var(--tick); transition: background .2s; }
-  .tk.on { background: var(--blue); }
-  .dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--blue); margin-left: -2.25px; opacity: 0; transition: opacity .2s; }
-  .dot.on { opacity: 1; }
-  .track { position: relative; height: 44px; margin: -34px 0 8px; }
-  .track input { position: absolute; left: -2px; right: -2px; top: 0; width: calc(100% + 4px); height: 44px; margin: 0; -webkit-appearance: none; appearance: none; background: transparent; cursor: ew-resize; }
-  .track input::-webkit-slider-thumb { -webkit-appearance: none; width: 2px; height: 38px; background: var(--ink); border-radius: 1px; box-shadow: 0 0 0 14px transparent; }
-  .track input::-moz-range-thumb { width: 2px; height: 38px; background: var(--ink); border: 0; border-radius: 1px; }
-  .track input::-webkit-slider-runnable-track { height: 44px; background: transparent; }
-  .track input::-moz-range-track { height: 44px; background: transparent; }
-  .hint { font-size: 14px; color: var(--mute); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .sentence { font-size: clamp(28px, 3.3vw, 42px); font-weight: 600; letter-spacing: -.02em; line-height: 1.18; margin: 0; min-height: 2.36em; }
+  .sentence .w { color: var(--dim); }
+  .sentence .w.on { color: var(--ink); }
+  .sentence .w.now { color: var(--blue); }
+  .sentence mark { background: var(--blue); color: var(--on-blue); border-radius: 5px; padding: 0 .04em; }
+  .sentence .caret { display: inline-block; width: 3px; height: .92em; margin-left: 2px; vertical-align: -.1em; background: var(--blue); }
+  .sentence .caret.off { visibility: hidden; }
+  .strip { position: relative; height: 58px; margin: 26px 0 6px; }
+  .strip .axis { position: absolute; left: 0; right: 0; top: 18px; height: 2px; background: var(--hair); }
+  .tk { position: absolute; top: 0; width: 0; }
+  .tk.shift { transition: left .6s cubic-bezier(.3,0,.1,1); }
+  .tk i { position: absolute; left: -1.5px; top: 0; width: 3px; height: 20px; border-radius: 2px; background: var(--tick); }
+  .tk.on i { background: var(--ink); }
+  .tk.now i { background: var(--blue); }
+  .tk b { position: absolute; left: 0; top: 28px; transform: translateX(-50%); font: 500 13px/1 var(--mono); color: var(--ink); white-space: nowrap; visibility: hidden; }
+  .tk.lbl b { visibility: visible; }
+  .tk.now b { color: var(--blue); }
+  .tk.ghost i { top: 12px; height: 8px; }
+  .tk[hidden] { display: none; }
+  .strip-cap { font-size: 13px; color: var(--mute); margin: 0 0 22px; }
+  .hint { font-size: 14px; color: var(--mute); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; min-height: 32px; }
   .hint button { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--hair); background: transparent; color: var(--ink); cursor: pointer; }
   .hint button:hover { border-color: var(--ink); }
-  .slide { background: var(--block); border-radius: 14px; aspect-ratio: 348 / 164; position: relative; overflow: hidden; }
+  .chip { font: 500 12px/1 var(--mono); letter-spacing: .02em; padding: 8px 10px; border-radius: 8px; background: var(--blue); color: var(--on-blue); visibility: hidden; }
+  .chip.on { visibility: visible; }
+  .slide { background: var(--block); border-radius: 14px; aspect-ratio: 910 / 555; position: relative; overflow: hidden; }
   .slide svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .slide .axis { stroke: var(--hair); stroke-width: 2; }
-  .slide .curve { stroke: var(--blue); stroke-width: 4; fill: none; stroke-linecap: round; stroke-dasharray: 1 2; stroke-dashoffset: 1; }
-  .slide .num { font-family: var(--tight); font-weight: 700; font-size: 60px; letter-spacing: -.03em; fill: var(--blue); opacity: 0; transform-box: fill-box; transform-origin: center; transform: scale(.7); transition: opacity .25s, transform .3s cubic-bezier(.2,.9,.2,1); }
-  .slide .num.on { opacity: 1; transform: scale(1); }
-  .slide .titlebar { fill: var(--blue); }
-  .slide .bar { fill: var(--bar); }
-  .slide .b { opacity: 0; transform: translateX(24px); transition: opacity .3s, transform .35s cubic-bezier(.2,0,0,1); }
-  .slide .b.on { opacity: 1; transform: none; }
-  .slide .a { transition: opacity .25s, transform .3s cubic-bezier(.2,0,0,1); }
-  .slide .a.off { opacity: 0; transform: translateX(-24px); }
+  .slide .curve { fill: none; stroke: var(--ink); stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; }
+  .slide .dotmark { fill: var(--ink); }
+  .slide .halo { fill: var(--block); }
+  .slide .ball-in { fill: var(--blue); }
+  .slide .box { fill: var(--bg); stroke: var(--ink); stroke-width: 4; }
+  .slide .box.full { fill: var(--blue); stroke: var(--blue); }
+  .slide .lbl { font: 500 36px var(--sans); text-anchor: middle; fill: var(--ink); }
+  .slide .box.full + .lbl { fill: var(--on-blue); }
+  .slide .boxes { transform: translateX(105px); }
+  .slide .boxes.four { transform: none; }
+  .slide .boxes.shift { transition: transform .45s cubic-bezier(.3,0,.1,1); }
+  .slide [hidden] { display: none; }
+
+  /* the demo video */
+  .watch { padding-top: 64px; }
+  .player { margin: 0; }
+  .player video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 20px; background: var(--block); border: 1px solid var(--hair); }
+  .player figcaption { display: flex; justify-content: space-between; gap: 8px 24px; flex-wrap: wrap; margin-top: 14px; font-size: 15px; color: var(--mute); }
+  .player figcaption b { color: var(--ink); font-weight: 600; }
 
   /* sections */
   section { padding: 96px 0 0; }
@@ -118,12 +132,12 @@
   .step .n { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; color: var(--mute); margin-bottom: 14px; }
   .step h3 { font-size: 19px; letter-spacing: -.01em; margin: 0 0 8px; font-weight: 600; }
   .step p { margin: 0; color: var(--mute); font-size: 15px; }
-  .step pre { margin: 0 0 18px; min-height: 142px; background: var(--code); border: 1px solid var(--hair); border-radius: 12px; padding: 14px; font-family: var(--mono); font-size: 12px; line-height: 1.55; overflow: auto; color: var(--ink); }
-  .step pre .c { color: var(--mute); } .step pre .k { color: var(--blue); }
+  .step pre { margin: 0 0 18px; min-height: 160px; background: var(--code); border: 1px solid var(--hair); border-radius: 12px; padding: 14px; font-family: var(--mono); font-size: 12px; line-height: 1.55; overflow: auto; color: var(--ink); }
+  .step pre .c { color: var(--mute-2); } .step pre .k { color: var(--blue); }
   .feats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
   .feat { background: var(--block); border-radius: 16px; padding: 24px; min-width: 0; }
   .feat h3 { font-size: 17px; margin: 0 0 8px; letter-spacing: -.01em; font-weight: 600; }
-  .feat p { margin: 0; color: var(--mute); font-size: 15px; }
+  .feat p { margin: 0; color: var(--mute-2); font-size: 15px; }
   .feat .proof { display: block; font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--blue); margin-bottom: 18px; white-space: pre-wrap; }
   .cmds { background: var(--ink); color: var(--bg); border-radius: 20px; padding: 40px 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
   .cmds > div { min-width: 0; }
@@ -137,7 +151,7 @@
   footer .links a { font-size: 14px; }
 
   @media (max-width: 880px) {
-    .demo { grid-template-columns: 1fr; padding: 26px 22px 22px; }
+    .demo { grid-template-columns: 1fr; padding: 26px 22px 22px; gap: 28px; }
     .steps, .feats { grid-template-columns: 1fr 1fr; }
     .cmds { grid-template-columns: 1fr; padding: 30px 26px; }
   }
@@ -145,11 +159,17 @@
     .links { gap: 18px; } nav .links a:not(.cta) { display: none; }
     .steps, .feats { grid-template-columns: 1fr; }
     section { padding-top: 72px; }
+    .watch { padding-top: 56px; }
     .install { width: 100%; justify-content: space-between; font-size: 13px; padding: 10px 10px 10px 14px; gap: 8px; }
     .install .p { display: none; }
     .cmds pre { font-size: 12.5px; }
+    /* Each long command breaks at a fixed point, with its tail indented under the command. The break
+       and the indent are generated content, so a copied command has no extra characters. */
+    .cmds .nb::before { content: "\A  "; }
+    .player video { border-radius: 14px; }
+    .step pre { min-height: 0; }
   }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } html { scroll-behavior: auto; } }
 </style>
 </head>
 <body>
@@ -162,7 +182,7 @@
     <div class="links">
       <a href="https://github.com/jacobcbeaudin/decktalk"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>GitHub</a>
       <a href="https://pypi.org/project/decktalk/"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.25.18l.9.2.73.26.59.3.45.32.34.34.25.34.16.33.1.3.04.26.02.2-.01.13V8.5l-.05.63-.13.55-.21.46-.26.38-.3.31-.33.25-.35.19-.35.14-.33.1-.3.07-.26.04-.21.02H8.77l-.69.05-.59.14-.5.22-.41.27-.33.32-.27.35-.2.36-.15.37-.1.35-.07.32-.04.27-.02.21v3.06H3.17l-.21-.03-.28-.07-.32-.12-.35-.18-.36-.26-.36-.36-.35-.46-.32-.59-.28-.73-.21-.88-.14-1.05-.05-1.23.06-1.22.16-1.04.24-.87.32-.71.36-.57.4-.44.42-.33.42-.24.4-.16.36-.1.32-.05.24-.01h.16l.06.01h8.16v-.83H6.18l-.01-2.75-.02-.37.05-.34.11-.31.17-.28.25-.26.31-.23.38-.2.44-.18.51-.15.58-.12.64-.1.71-.06.77-.04.84-.02 1.27.05zm-6.3 1.98l-.23.33-.08.41.08.41.23.34.33.22.41.09.41-.09.33-.22.23-.34.08-.41-.08-.41-.23-.33-.33-.22-.41-.09-.41.09zm13.09 3.95l.28.06.32.12.35.18.36.27.36.35.35.47.32.59.28.73.21.88.14 1.04.05 1.23-.06 1.23-.16 1.04-.24.86-.32.71-.36.57-.4.45-.42.33-.42.24-.4.16-.36.09-.32.05-.24.02-.16-.01h-8.22v.82h5.84l.01 2.76.02.36-.05.34-.11.31-.17.29-.25.25-.31.24-.38.2-.44.17-.51.15-.58.13-.64.09-.71.07-.77.04-.84.01-1.27-.04-1.07-.14-.9-.2-.73-.25-.59-.3-.45-.33-.34-.34-.25-.34-.16-.33-.1-.3-.04-.25-.02-.2.01-.13v-5.34l.05-.64.13-.54.21-.46.26-.38.3-.32.33-.24.35-.2.35-.14.33-.1.3-.06.26-.04.21-.02.13-.01h5.84l.69-.05.59-.14.5-.21.41-.28.33-.32.27-.35.2-.36.15-.36.1-.35.07-.32.04-.28.02-.21V6.07h2.09l.14.01zm-6.47 14.25l-.23.33-.08.41.08.41.23.33.33.23.41.08.41-.08.33-.23.23-.33.08-.41-.08-.41-.23-.33-.33-.23-.41-.08-.41.08z"/></svg>PyPI</a>
-      <a class="cta" href="https://docs.decktalk.app">Docs →</a>
+      <a class="cta" href="https://docs.decktalk.app">Docs</a>
     </div>
   </nav>
 
@@ -174,35 +194,36 @@
       <div class="install"><span class="p">$</span><span id="cmd">uv tool install decktalk</span><button id="copy" type="button">Copy</button></div>
       <a class="btn primary" href="https://docs.decktalk.app/quickstart">Read the quickstart</a>
     </div>
-    <!-- demo video goes here after review -->
 
     <div class="demo" id="demo">
-      <div>
-        <span class="lab">Narration · drag the playhead</span>
-        <div class="words" id="words"><p class="sentence" id="sentence"></p><div class="ticks" id="ticks"></div></div>
-        <div class="track" id="track"><input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub the narration"></div>
-        <div class="hint"><button id="play" type="button">Play</button><span>Every word has a timestamp, and every reveal has a cue.</span></div>
+      <p class="sr">Animation of section 1 of the demo. The script line reads "A bowl. A ball. One, two, three." A bowl and a ball appear on their words, and the ball steps down the bowl on each count word, each step half the last. The count words start at 4.49, 5.26 and 5.77 seconds. Then "three." is retyped as "three, four.", section 1 is voiced again, the times move to 4.25, 4.86, 5.33 and 5.80 seconds, and the ball takes a fourth, smallest step on "four".</p>
+      <div aria-hidden="true">
+        <span class="lab">script.md · section 1</span>
+        <p class="sentence" id="sentence"></p>
+        <div class="strip" id="strip"><div class="axis"></div></div>
+        <p class="strip-cap">Start of each count word, in seconds, from the voice's word timestamps</p>
+        <div class="hint"><button id="play" type="button" aria-hidden="false">Pause</button><span class="chip" id="chip">script edited · section 1 re-voiced</span></div>
       </div>
-      <div>
-        <span class="lab">Slide</span>
-        <div class="slide">
-          <svg viewBox="0 0 348 164" aria-hidden="true">
-            <g class="a" id="slideA">
-              <line class="axis" x1="30" y1="126" x2="200" y2="126"/><line class="axis" x1="30" y1="38" x2="30" y2="126"/>
-              <path class="curve" id="curve" pathLength="1" d="M30,120 C70,118 110,98 150,64 S190,36 200,32"/>
-              <text class="num" id="num" x="228" y="106">3×</text>
-            </g>
-            <g class="b" id="slideB">
-              <rect class="titlebar" x="30" y="40" width="150" height="12" rx="6"/>
-              <rect class="bar" x="30" y="72" width="260" height="9" rx="4.5"/>
-              <rect class="bar" x="30" y="94" width="220" height="9" rx="4.5"/>
-              <rect class="bar" x="30" y="116" width="240" height="9" rx="4.5"/>
-            </g>
-          </svg>
-        </div>
+      <div aria-hidden="true">
+        <span class="lab">Slide · 01 Open</span>
+        <div class="slide"><svg id="stage" viewBox="505 335 910 555"></svg></div>
       </div>
     </div>
   </header>
+
+  <section class="watch" id="watch">
+    <span class="lab">Watch the demo · 2:41 · sound on</span>
+    <h2>A lesson on how AI learns, built from one script.</h2>
+    <figure class="player">
+      <!-- The video source lives only here: the poster, the one <source>, and the captions track below.
+           To serve it from Cloudflare Stream or YouTube, replace this <video> element with that player. -->
+      <video id="demo-video" controls preload="none" playsinline width="1920" height="1080" poster="media/decktalk-demo-poster.jpg">
+        <source src="media/decktalk-demo.mp4" type="video/mp4">
+        <track kind="captions" src="media/decktalk-demo.vtt" srclang="en" label="English">
+      </video>
+      <figcaption><span><b>Made with DeckTalk.</b> A markdown script, HTML slides, and one short clip, narrated and cut to the word.</span><span>Captions available in the player.</span></figcaption>
+    </figure>
+  </section>
 
   <section id="how">
     <span class="lab">How it works</span>
@@ -212,32 +233,35 @@
       <div class="step"><div class="n">01 WRITE</div>
         <pre><span class="c">script.md</span>
 ## 1. Open
-The <span class="k">curve</span> rises, then the
-number lands. [beat] You
-just watched DeckTalk.</pre>
+A bowl. [beat] A ball. [beat]
+Watch it step down on my
+count. [beat] <span class="k">One.</span> [beat]
+Two, three. [beat]</pre>
         <h3>A script in markdown</h3><p>One heading starts one section. Bracketed directions are not spoken.</p></div>
       <div class="step"><div class="n">02 NARRATE</div>
         <pre><span class="c">build/audio/01-open.words.json</span>
-{ "word": <span class="k">"curve"</span>,
-  "start": <span class="k">0.42</span> }
+{ "word": <span class="k">"One"</span>,
+  "start": <span class="k">4.485</span> }
 <span class="c">cues.json</span>
-{ "cue": <span class="k">"1.1curve"</span>,
-  "on": <span class="k">"curve"</span> }</pre>
-        <h3>Your voice reads it</h3><p>ElevenLabs returns the audio and a timestamp for every word. A cue names a spoken phrase, and DeckTalk resolves it to the second the word starts.</p></div>
+{ "cue": <span class="k">"1.1one"</span>,
+  "on": <span class="k">"One"</span> }</pre>
+        <h3>Your voice reads it</h3><p>The voice comes back with the audio and a timestamp for every word. A cue names a spoken phrase, and DeckTalk resolves it to the second the word starts.</p></div>
       <div class="step"><div class="n">03 RECORD</div>
         <pre><span class="c">deck/index.html</span>
-&lt;path <span class="k">data-cue="1.1curve"</span>
-      data-fx="draw"/&gt;
-&lt;div data-cue="1.1number"
-     data-fx="pop"&gt;3×&lt;/div&gt;</pre>
+&lt;g <span class="k">data-cue="1.1one"</span>
+   data-fx="none"&gt;
+  &lt;rect class="box full"/&gt;
+  &lt;text&gt;one&lt;/text&gt;
+&lt;/g&gt;</pre>
         <h3>Slides reveal on cue</h3><p>Chromium records the plain HTML, and the page runtime shows each step when its word is spoken.</p></div>
       <div class="step"><div class="n">04 ASSEMBLE</div>
         <pre><span class="c">$ decktalk build</span>
 [cut ] 01 -&gt; 01-section.mp4
-[caps] 32 cues -&gt; srt, vtt
-<span class="c">cue          at  offset</span>
-<span class="k">1:1.1curve</span> 0.42  <span class="k">-20ms</span></pre>
-        <h3>Cut to the frame</h3><p>ffmpeg cuts every section to the frame at 0.42 s, mixes the sound, and verify measures each reveal against its word.</p></div>
+[caps] 35 cue(s) -&gt; srt, vtt
+<span class="c">$ decktalk verify</span>
+<span class="c">cue         at  offset</span>
+<span class="k">1:1.1one</span>  4.49  <span class="k">-10ms</span></pre>
+        <h3>Cut to the frame</h3><p>ffmpeg cuts every section to the frame, so the box fills at 4.49 s, mixes the sound, and verify measures each reveal against its word.</p></div>
     </div>
   </section>
 
@@ -248,17 +272,17 @@ just watched DeckTalk.</pre>
       <div class="feat"><span class="proof">[lead] 01  trim 1.440s</span><h3>Frame-exact cuts</h3><p>Each recording opens on a magenta cover until narration starts. The cut is measured from the frames, not from a timer.</p></div>
       <div class="feat"><span class="proof">[skip] 01-open.mp3 unchanged</span><h3>Cached narration</h3><p>Each section's narration is cached by a hash of its text, voice, model, and settings. An edit synthesizes only the sections that changed, so you pay per change, not per build.</p></div>
       <div class="feat"><span class="proof">[mix ] 3 audio input(s)</span><h3>A soundscape</h3><p>An underscore ducks under speech, ambience beds and effects land on cues, and the mix meets streaming loudness. Every part is optional.</p></div>
-      <div class="feat"><span class="proof">1:1.1number  -40ms  changed</span><h3>Verified output</h3><p>Black or truncated recordings stop before assembly. A cue that cannot be found stops the build. A check proves each cue moved pixels.</p></div>
+      <div class="feat"><span class="proof">1:1.1one  -10ms  changed</span><h3>Verified output</h3><p>Black or truncated recordings stop before assembly. A cue that cannot be found stops the build. A check proves each cue moved pixels.</p></div>
     </div>
   </section>
 
   <section id="start">
     <div class="cmds">
-      <div><h2>From install to a first video.</h2><p>The scaffold is the demo. A silent build takes a few minutes, because recording runs in real time. Build it silently first, and add your ElevenLabs voice when you are ready.</p></div>
-      <pre>$ uv tool install decktalk &amp;&amp; decktalk setup
-$ decktalk init my-lesson &amp;&amp; cd my-lesson
-$ decktalk build --silent   <span class="c"># no key needed</span>
-$ decktalk build            <span class="c"># your voice</span></pre>
+      <div><h2>From install to a first video.</h2><p>The scaffold is the demo. A silent build takes a few minutes, because recording runs in real time. Build it silently first, and add your voice when you are ready.</p></div>
+      <pre>$ uv tool install decktalk &amp;&amp; <span class="nb">decktalk setup</span>
+$ decktalk init my-lesson &amp;&amp; <span class="nb">cd my-lesson</span>
+$ decktalk build --silent   <span class="c nb"># no key needed</span>
+$ decktalk build            <span class="c nb"># your voice</span></pre>
     </div>
   </section>
 
@@ -270,62 +294,138 @@ $ decktalk build            <span class="c"># your voice</span></pre>
 
 <script>
 (() => {
-  // The words, the second each is spoken, and which ones carry a cue.
-  const WORDS = [["The",0.00],["curve",0.42],["rises,",0.98],["then",1.62],["the",2.10],["number",2.46],["lands.",3.18]];
-  const END = 4.2, CURVE_AT = 0.42, NUM_AT = 2.46, SLIDE_AT = 3.9;
-  const words = document.getElementById("words"), sentence = document.getElementById("sentence"), ticks = document.getElementById("ticks");
-  const scrub = document.getElementById("scrub"), curve = document.getElementById("curve"), num = document.getElementById("num");
-  const slideA = document.getElementById("slideA"), slideB = document.getElementById("slideB"), play = document.getElementById("play");
-  const spans = WORDS.map(([w, t], i) => {
-    const s = document.createElement("span"); s.textContent = w; if (i === 1 || i === 5) s.classList.add("cue"); sentence.appendChild(s);
-    if (i < WORDS.length - 1) sentence.appendChild(document.createTextNode(" "));
-    return s;
-  });
-  // A tick sits under each word once layout is known. When the sentence wraps, the lines open up
-  // so the ticks of one line clear the words of the next.
-  const tks = [], dots = {};
-  function layout() {
-    ticks.innerHTML = ""; tks.length = 0; for (const k in dots) delete dots[k];
-    sentence.classList.remove("wrapped");
-    if (new Set(spans.map((s) => s.offsetTop)).size > 1) sentence.classList.add("wrapped");
-    const base = words.getBoundingClientRect();
-    spans.forEach((s, i) => {
-      const r = s.getBoundingClientRect(), x = r.left - base.left, y = r.bottom - base.top;
-      const on = current >= WORDS[i][1] ? " on" : "";  // born in the current state, so a relayout never flashes
-      const tk = document.createElement("div"); tk.className = "tk" + on; tk.style.left = x + "px"; tk.style.top = (y + 12) + "px"; ticks.appendChild(tk); tks.push(tk);
-      if (i === 1 || i === 5) { const d = document.createElement("div"); d.className = "dot" + on; d.style.left = (x + 1.25) + "px"; d.style.top = (y + 2) + "px"; ticks.appendChild(d); dots[i] = d; }
+  // ---- Real word times (seconds after section 1 starts). Never edit these by hand. ----------------
+  // Before the edit: build/audio/01-open.words.json of the voiced demo project,
+  // the demo voice, where section 1 reads "... One. [beat] Two, three. [beat]".
+  const TIMES_BEFORE = { a: 0.700, bowl: 1.048, a2: 1.838, ball: 1.989, one: 4.485, two: 5.263, three: 5.774 };
+  // After the edit: build/audio/01-open.words.json of a copy of that project,
+  // one with section 1 changed to "One. [beat] Two, three, four. [beat]" and only
+  // section 1 voiced again. The whole section is a new take, so every count word moves.
+  const TIMES_AFTER = { one: 4.253, two: 4.856, three: 5.332, four: 5.797 };
+
+  // ---- The loop, in seconds of loop time --------------------------------------------------------
+  // The line shows "A bowl. A ball. One, two, three." and leaves out "Watch it step down on my count.",
+  // so the loop drops that stretch of speech: each group of words keeps its real spacing, shifted as a
+  // block. The times written on screen are always the real ones above.
+  const OPEN_SHIFT = 0.4, COUNT_SHIFT = TIMES_BEFORE.one - (TIMES_BEFORE.ball - OPEN_SHIFT + 1.0);
+  const EDIT_CARET = 4.7, EDIT_SELECT = 5.0, EDIT_TYPE = 5.3, TYPE_STEP = 0.07, CHIP_AT = 5.95, REBUILD = 6.6;
+  const AFTER_SHIFT = TIMES_AFTER.one - 7.6, LOOP = 11.6, FINAL = 11.2;
+  const COUNT = ["one", "two", "three", "four"];
+  const at1 = (k) => TIMES_BEFORE[k] - COUNT_SHIFT, at2 = (k) => TIMES_AFTER[k] - AFTER_SHIFT;
+  const OPEN = [["A", TIMES_BEFORE.a], ["bowl.", TIMES_BEFORE.bowl], ["A", TIMES_BEFORE.a2], ["ball.", TIMES_BEFORE.ball]].map(([w, t]) => [w, t - OPEN_SHIFT]);
+  // Round half up on the millisecond value, so 4.485 reads 4.49 as it does in beats.json and the video.
+  const sec = (t) => (Math.round(Math.round(t * 1000) / 10) / 100).toFixed(2);
+
+  // ---- The script line --------------------------------------------------------------------------
+  const sentence = document.getElementById("sentence");
+  const words = [];
+  const addWord = (text, gap) => { const s = document.createElement("span"); s.className = "w"; s.textContent = text; sentence.appendChild(s); words.push(s); if (gap) sentence.appendChild(document.createTextNode(" ")); return s; };
+  OPEN.forEach(([w]) => addWord(w, true));
+  addWord("One,", true); addWord("two,", true); addWord("three", false);
+  const tail = document.createElement("span"); sentence.appendChild(tail);
+  let tailHtml = null;
+  const setTail = (html) => { if (html !== tailHtml) { tail.innerHTML = html; tailHtml = html; } };
+
+  // ---- The tick strip: the start of each count word on a time axis ------------------------------
+  const strip = document.getElementById("strip");
+  const AX0 = 4.0, AX1 = 6.1, pct = (t) => ((t - AX0) / (AX1 - AX0) * 100).toFixed(2) + "%";
+  const mk = (cls) => { const d = document.createElement("div"); d.className = "tk " + cls; d.innerHTML = "<i></i><b></b>"; strip.appendChild(d); return d; };
+  const ghosts = COUNT.slice(0, 3).map((k) => { const g = mk("ghost"); g.style.left = pct(TIMES_BEFORE[k]); return g; });
+  const ticks = COUNT.map(() => mk(""));
+
+  // ---- The slide: scene 1 of the deck, the bowl y = 720 - 320 u^2 across x = 960 + 400 u -----------
+  // Each count is a step of gradient descent on u^2 at step size 0.25, so each step is half the last.
+  const STEPS = [-0.96, -0.48, -0.24, -0.12, -0.06];
+  const f1 = (v) => (+v).toFixed(1);
+  const sx = (u) => 960 + 400 * u, sy = (u) => 720 - 320 * u * u;
+  const on = (u, r) => { const m = -1.6 * u, n = Math.hypot(m, 1); return [sx(u) + (m / n) * (r + 7), sy(u) - (1 / n) * (r + 7)]; };
+  let curve = "";
+  for (let i = 0; i <= 84; i++) { const u = -1.05 + (2.1 * i) / 84; curve += (i ? "L" : "M") + f1(sx(u)) + " " + f1(sy(u)); }
+  const stage = document.getElementById("stage");
+  stage.innerHTML =
+    `<path class="curve" id="s-curve" d="${curve}"/>` +
+    STEPS.slice(0, 4).map((u, i) => { const [x, y] = on(u, 11); return `<circle class="dotmark" data-dot="${i}" cx="${f1(x)}" cy="${f1(y)}" r="11"/>`; }).join("") +
+    STEPS.map((u, i) => { const [x, y] = on(u, 28); return `<g data-ball="${i}"><circle class="halo" cx="${f1(x)}" cy="${f1(y)}" r="34"/><circle class="ball-in" cx="${f1(x)}" cy="${f1(y)}" r="28"/></g>`; }).join("") +
+    `<g class="boxes" id="s-boxes">` + COUNT.map((w, i) => `<g data-box="${i}"><rect class="box" x="${555 + 210 * i}" y="790" width="180" height="80" rx="14"/><text class="lbl" x="${645 + 210 * i}" y="843">${w}</text></g>`).join("") + `</g>`;
+  const sCurve = stage.querySelector("#s-curve"), sBoxes = stage.querySelector("#s-boxes");
+  const dots = [...stage.querySelectorAll("[data-dot]")], balls = [...stage.querySelectorAll("[data-ball]")], boxes = [...stage.querySelectorAll("[data-box]")];
+  const chip = document.getElementById("chip");
+
+  // SVG elements have no .hidden property, so toggle the attribute itself.
+  const vis = (el, show) => { if (el.hasAttribute("hidden") === show) el.toggleAttribute("hidden", !show); };
+  const cls = (el, name, v) => { if (el.classList.contains(name) !== v) el.classList.toggle(name, v); };
+
+  function render(T) {
+    const take2 = T >= REBUILD;
+    const countAt = COUNT.map((k, i) => take2 ? at2(k) : (i < 3 ? at1(k) : Infinity));
+    // The accent marks only the latest reveal.
+    const events = [[OPEN[1][1], "bowl"], [OPEN[3][1], "ball"], ...COUNT.map((k, i) => [countAt[i], k])].filter(([t]) => t <= T && !(take2 && t < REBUILD));
+    const now = events.length ? events.reduce((a, b) => (b[0] >= a[0] ? b : a))[1] : null;
+
+    OPEN.forEach(([, t], i) => { cls(words[i], "on", T >= t); cls(words[i], "now", (i === 1 && now === "bowl") || (i === 3 && now === "ball")); });
+    COUNT.slice(0, 3).forEach((k, i) => { const w = words[4 + i]; cls(w, "on", T >= countAt[i]); cls(w, "now", now === k); });
+
+    // "three." is retyped as "three, four." with a caret and a selection, as in an editor.
+    const blink = Math.floor(T * 2.5) % 2 === 0 ? "caret" : "caret off";
+    if (T < EDIT_CARET) setTail(".");
+    else if (T < EDIT_SELECT) setTail(`.<span class="${blink}"></span>`);
+    else if (T < EDIT_TYPE) setTail(`<mark>.</mark>`);
+    else if (!take2) {
+      const typed = ", four.", n = Math.min(typed.length, Math.floor((T - EDIT_TYPE) / TYPE_STEP) + 1);
+      setTail(`${typed.slice(0, n)}<span class="${n < typed.length ? "caret" : blink}"></span>`);
+    } else {
+      const fourOn = T >= countAt[3];
+      setTail(`, <span class="w${fourOn ? " on" : ""}${now === "four" ? " now" : ""}">four.</span>`);
+    }
+    cls(chip, "on", T >= CHIP_AT);
+
+    // Ticks sit at the real start times and slide to the new take's times on the rebuild.
+    ticks.forEach((tk, i) => {
+      const k = COUNT[i], show = i < 3 || take2;
+      vis(tk, show);
+      if (!show) return;
+      cls(tk, "shift", take2);
+      const t = take2 ? TIMES_AFTER[k] : TIMES_BEFORE[k], left = pct(t);
+      if (tk.style.left !== left) tk.style.left = left;
+      const b = tk.lastChild, txt = sec(t);
+      if (b.textContent !== txt) b.textContent = txt;
+      cls(tk, "on", T >= countAt[i]);
+      cls(tk, "now", now === k);
+      cls(tk, "lbl", take2 ? (i < 3 || T >= countAt[3]) : T >= countAt[i]);
     });
-    render(current);
+    ghosts.forEach((g) => vis(g, take2));
+
+    // The slide: the bowl on "bowl", the ball on "ball", then one step per count word.
+    vis(sCurve, T >= OPEN[1][1]);
+    let step = T >= OPEN[3][1] ? 0 : -1;
+    countAt.forEach((t) => { if (T >= t) step++; });
+    balls.forEach((b, i) => vis(b, i === step));
+    dots.forEach((d, i) => vis(d, i < step));
+    cls(sBoxes, "shift", take2); cls(sBoxes, "four", take2);
+    boxes.forEach((bx, i) => {
+      vis(bx, T >= OPEN[3][1] && (i < 3 || take2));
+      cls(bx.firstChild, "full", T >= countAt[i]);
+    });
   }
-  let current = 0, timer = null;
-  function render(t) {
-    current = t;
-    WORDS.forEach(([, at], i) => { const on = t >= at; spans[i].classList.toggle("on", on); tks[i] && tks[i].classList.toggle("on", on); if (dots[i]) dots[i].classList.toggle("on", on); });
-    const draw = Math.min(1, Math.max(0, (t - CURVE_AT) / 1.4));
-    curve.style.strokeDashoffset = String(1 - draw);
-    num.classList.toggle("on", t >= NUM_AT);
-    slideA.classList.toggle("off", t >= SLIDE_AT); slideB.classList.toggle("on", t >= SLIDE_AT);
-    scrub.value = String(Math.round(t / END * 1000));
+
+  // ---- Playback: loops while on screen, pauses off screen, and the button always wins ------------
+  const play = document.getElementById("play");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+  let raf = null, base = 0, startedAt = 0, userPaused = reduce.matches, inView = false;
+  const tick = (now) => { render(((now - startedAt) / 1000 + base) % LOOP); raf = requestAnimationFrame(tick); };
+  function start() { if (raf) return; startedAt = performance.now(); raf = requestAnimationFrame(tick); play.textContent = "Pause"; }
+  function stop() { if (!raf) return; cancelAnimationFrame(raf); raf = null; base = ((performance.now() - startedAt) / 1000 + base) % LOOP; play.textContent = "Play"; }
+  play.addEventListener("click", () => { if (raf) { userPaused = true; stop(); } else { userPaused = false; if (reduce.matches && base === FINAL) base = 0; start(); } });
+  // A still frame first: the edited state, which is also all a reduced-motion viewer sees.
+  base = FINAL; render(FINAL); play.textContent = "Play";
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver((es) => { inView = es[0].isIntersecting; if (inView && !userPaused) { if (base === FINAL) base = 0; start(); } else if (!inView) stop(); }, { threshold: .35 }).observe(document.getElementById("demo"));
   }
-  scrub.addEventListener("input", () => { stop(); render(scrub.value / 1000 * END); });
-  function stop() { if (timer) { cancelAnimationFrame(timer); timer = null; play.textContent = "Play"; } }
-  play.addEventListener("click", () => {
-    if (timer) return stop();
-    let t0 = performance.now() - (current >= END - 0.05 ? 0 : current * 1000);
-    play.textContent = "Pause";
-    const step = (now) => { const t = (now - t0) / 1000; render(Math.min(END, t)); if (t < END) timer = requestAnimationFrame(step); else { timer = null; play.textContent = "Replay"; } };
-    timer = requestAnimationFrame(step);
-  });
+  window.dtHero = { at: (t) => { userPaused = true; stop(); base = t; render(t); } };
+
   document.getElementById("copy").addEventListener("click", async (e) => {
     try { await navigator.clipboard.writeText(document.getElementById("cmd").textContent); e.target.textContent = "Copied"; setTimeout(() => e.target.textContent = "Copy", 1400); } catch (_) {}
   });
-  window.addEventListener("resize", layout);
-  document.fonts ? document.fonts.ready.then(layout) : layout();
-  // autoplay once when the demo scrolls into view, unless the viewer prefers reduced motion
-  if (!matchMedia("(prefers-reduced-motion: reduce)").matches && "IntersectionObserver" in window) {
-    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) { io.disconnect(); setTimeout(() => play.click(), 500); } }, { threshold: .5 });
-    io.observe(document.getElementById("demo"));
-  }
 })();
 </script>
 </body>

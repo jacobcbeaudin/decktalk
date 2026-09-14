@@ -1,0 +1,153 @@
+{
+  "source": {
+    "decktalk": "0.1.0",
+    "build": "decktalk build --silent on the scaffold that decktalk init writes",
+    "estimated_words": true,
+    "command": "decktalk verify 5:4.1words --json, and the onset series verify reads"
+  },
+  "check": "5:4.1words",
+  "cue_seconds": 12.19,
+  "final_seconds": 168.03,
+  "section_start": 155.84,
+  "lead_seconds": 0.14,
+  "reference_seconds": -0.14,
+  "fps": 25,
+  "diff_level": 40,
+  "onset_diff_level": 12,
+  "onset_percent": 0.01,
+  "max_offset_ms": 80,
+  "max_av_ms": 120,
+  "probes": [
+    {
+      "delay": 0.7,
+      "changed_percent": 1.267,
+      "control_percent": 0.0,
+      "margin": 1.267,
+      "controls": [
+        {
+          "from": -0.98,
+          "to": -0.14,
+          "percent": 0.0
+        },
+        {
+          "from": -1.82,
+          "to": -0.98,
+          "percent": 0.0
+        }
+      ]
+    },
+    {
+      "delay": 1.5,
+      "changed_percent": 1.267,
+      "control_percent": 0.0,
+      "margin": 1.267,
+      "controls": [
+        {
+          "from": -1.78,
+          "to": -0.14,
+          "percent": 0.0
+        },
+        {
+          "from": -3.42,
+          "to": -1.78,
+          "percent": 0.0
+        }
+      ]
+    }
+  ],
+  "reported_probe": 0,
+  "series": [
+    {
+      "ms": -110,
+      "percent": 0.0
+    },
+    {
+      "ms": -70,
+      "percent": 0.0
+    },
+    {
+      "ms": -30,
+      "percent": 0.0
+    },
+    {
+      "ms": 10,
+      "percent": 1.811
+    },
+    {
+      "ms": 50,
+      "percent": 1.811
+    },
+    {
+      "ms": 90,
+      "percent": 1.811
+    },
+    {
+      "ms": 130,
+      "percent": 1.811
+    },
+    {
+      "ms": 170,
+      "percent": 1.811
+    },
+    {
+      "ms": 210,
+      "percent": 1.8102
+    },
+    {
+      "ms": 250,
+      "percent": 1.8102
+    },
+    {
+      "ms": 290,
+      "percent": 1.8102
+    },
+    {
+      "ms": 330,
+      "percent": 1.8079
+    },
+    {
+      "ms": 370,
+      "percent": 1.8086
+    },
+    {
+      "ms": 410,
+      "percent": 1.8086
+    },
+    {
+      "ms": 450,
+      "percent": 1.8086
+    },
+    {
+      "ms": 490,
+      "percent": 1.8094
+    },
+    {
+      "ms": 530,
+      "percent": 1.8094
+    },
+    {
+      "ms": 570,
+      "percent": 1.8094
+    },
+    {
+      "ms": 610,
+      "percent": 1.8094
+    },
+    {
+      "ms": 650,
+      "percent": 1.8094
+    },
+    {
+      "ms": 690,
+      "percent": 1.8094
+    }
+  ],
+  "row": {
+    "changed_percent": 1.27,
+    "control_percent": 0.0,
+    "offset_ms": 10,
+    "av_ms": 8,
+    "click_ms": 2,
+    "verdict": "changed"
+  }
+}

@@ -1,44 +1,21 @@
 ---
 title: Build in CI and offline
-description: Run DeckTalk in GitHub Actions or any CI with a silent build and cue verification, cache Chromium and ffmpeg, and render equations offline with the vendored KaTeX.
-icon: "server"
+description: Build and check a DeckTalk video on every push, or on a machine with no network.
 ---
 
-A silent build needs no API key and no network once the tools are cached, so a project
-can be built and verified on every push. This is how DeckTalk's own repository does it.
+A silent build needs no API key, and after `decktalk setup` it needs no network. Use this guide to build and
+check the video on every push, or on a machine that is offline.
 
-## The commands
-
-```console
-decktalk setup                            # Chromium, ffmpeg, and KaTeX, once per machine
-decktalk doctor                           # exits 1 when a tool is missing
-DECKTALK_VIDEO_PRESET=veryfast decktalk build --silent
-decktalk check                            # exits 1 on a certain recording verdict
-decktalk verify                           # exits 1 when a cue did not land
-decktalk shots                            # one PNG per step, worth uploading as an artifact
-```
-
-On Linux, `setup` passes `--with-deps` to Playwright so that Chromium's system libraries
-are installed too, and Playwright asks for sudo to install them. The verify command is the
-test, and with no arguments it checks every cue in `beats.json` except the cues that
-`cues.json` marks `"verify": false`. `build` verifies only section starts and cuts, and the
-cue checks measure each reveal in the finished mp4. A silent build's placeholder track
-carries a click at every word start, so the cue table also reports an
-[`a/v`](/concepts/how-it-works#definitions) column, which compares the picture with
-the click at the cued word. The job fails when an `a/v` value is further from zero than
-`max_av_frames`, which is three frames by default. That makes a silent build a
-test of the whole chain, not only of the cues.
-
-`build` exits 1 when a page throws, when a cue phrase is unresolved or a cue id is unknown,
-or when a section start or a cut fails. The `TRUNCATED`, `STALLED`, and `NO COVER` verdicts
-in its check table do not change its exit code, and its verify stage does not measure the
-cues. A script that gates on the video should therefore run all three commands.
+`decktalk build` can pass when `decktalk check` or `decktalk verify` fails. To gate a job on the video, run all
+three commands.
 
 ```console
 decktalk build --silent && decktalk check && decktalk verify
 ```
 
-## A GitHub Actions job
+## Add a GitHub Actions job
+
+This job builds the video with no API key, checks it, and uploads the video and the verify results.
 
 ```yaml .github/workflows/video.yml
 jobs:
@@ -63,6 +40,7 @@ jobs:
       - run: decktalk check
       - run: decktalk verify --json > verify.json
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: video
           path: build/out/*.mp4
@@ -73,28 +51,79 @@ jobs:
           path: verify.json
 ```
 
-Chromium lives in Playwright's cache, which is `~/.cache/ms-playwright` on Linux,
-`~/Library/Caches/ms-playwright` on macOS, and `%LOCALAPPDATA%\ms-playwright` on Windows.
-KaTeX lives in DeckTalk's own cache, which follows the same platform rule under a
-`decktalk` directory, and `DECKTALK_CACHE_DIR` moves it. The `static-ffmpeg` package
-downloads ffmpeg into its own directory, so ffmpeg lives in the Python environment rather
-than in either cache.
+- The cache paths are for Linux. [Requirements](/requirements#what-setup-downloads) lists the paths on macOS and
+  Windows.
+- On Linux, `setup` installs Chromium's system libraries, which needs sudo or root.
+  [Linux system libraries](/requirements#linux-system-libraries) gives the full rule.
+- `setup` downloads ffmpeg into the static-ffmpeg package, inside the Python environment of DeckTalk. This job
+  does not cache it, so each run downloads ffmpeg again.
+- DeckTalk's own CI installs into `.venv` and caches `.venv/lib/*/site-packages/static_ffmpeg/bin`.
+- If a proxy blocks the Chromium download, set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror.
 
-To build a voiced video in CI, put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in the
-job's secrets and export them. DeckTalk never prints either.
+## What each command catches
 
-<Warning>A silent build writes its placeholder tracks over the voiced mp3 files in
-`build/audio/` and empties the narration cache, so the next voiced build voices every
-section again and spends credits on all of them. A job that keeps `build/` between voiced
-builds should never run a silent build in the same directory.</Warning>
+Each command exits 1 on a different set of problems.
 
-A hosted runner has no GPU that Chromium can use, so headless Chromium draws every frame in
-software. A page therefore renders more slowly on a hosted runner than on a laptop, a page with a
-WebGL or canvas figure more slowly still, and the macOS and Windows runners are slower than Linux.
-A reveal can land two or three frames late there, which `verify` reports as `OFF CUE`, and a long first draw can be reported as
-`STALLED`. When that happens on a slower runner, widen the window for that runner with the
-settings' environment variables and keep the default on the machine you record on. DeckTalk's own
-CI keeps Linux at the default and widens macOS and Windows like this.
+| Command | Exits 1 on | Does not catch |
+|---|---|---|
+| `decktalk build` | an error, `PAGE ERROR`, a cue phrase that is not found, an unknown cue id, `BLACK`, `SPEECH AT CUT` | `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, `KATEX?`, every cue result |
+| `decktalk check` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER` | `BLACK?` and `KATEX?`, unless you pass `--strict` |
+| `decktalk verify` | `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED` | a `skipped` row, such as a cue marked `"verify": false` |
+| `decktalk doctor` | a missing required tool | a missing KaTeX cache, unless you pass `--strict` |
+
+A silent build puts a click at every word start, so `verify` also reports an
+[a/v value](/reference/verify#the-a/v-value) for each cue. The job fails when an a/v value is past
+`max_av_frames`, which is three frames at the defaults. A silent build therefore tests the recording, the cut,
+and the mix, not only the cues.
+
+`build --strict` fails on a missing clip, unless the clip section sets `optional = true`. With `--silent`, it
+cannot fail on loudness, because a silent build skips the loudness pass.
+
+## Fail the job on a bad video
+
+`status`, `beats`, `check`, `verify`, and `doctor` share one exit rule. Use their exit codes as the assertions of
+a job.
+
+- A certain finding, such as `OFF CUE` or `TRUNCATED`, exits 1.
+- An uncertain finding ends in `?`, such as `BLACK?` on a slide that is dark on purpose. It exits 1 only with
+  `--strict`.
+- An error always exits 1.
+
+```console
+decktalk check --strict      # also fail on BLACK? and KATEX?
+decktalk verify              # fail on any certain finding
+```
+
+To keep the job running and decide later, add `--no-fail` and read the JSON.
+
+```console
+decktalk verify --json --no-fail > verify.json
+jq -e '.ok' verify.json
+jq '.verify.cues[] | select(.verdict != "changed")' verify.json
+```
+
+`--no-fail` makes the command exit 0 on findings, but an error still exits 1. The JSON `ok` is false when the
+command would exit 1 without `--no-fail`. `jq -e` then exits 1, and the second `jq` line lists the rows to look
+at. [Output and exit flags](/reference/cli#output-and-exit-flags) lists every key.
+
+## Allow for slower runners
+
+A hosted runner has no GPU that Chromium can use, so Chromium draws every frame in software. The macOS and Windows
+runners are slower than Linux.
+
+- A page renders more slowly on a runner than on a laptop.
+- A canvas figure or a large SVG renders more slowly still.
+- A reveal can start two or three frames late, and `verify` reports `OFF CUE`.
+- A long draw after narration t=0 can read `STALLED`.
+
+If that happens only on a slower runner, widen the limits for that runner. Keep the defaults on the machine that
+records the published video. DeckTalk's own CI uses these values.
+
+| Environment variable | Linux | macOS and Windows |
+|---|---|---|
+| `DECKTALK_VERIFY_MAX_OFFSET_FRAMES` | 2 (default) | 4 |
+| `DECKTALK_VERIFY_MAX_AV_FRAMES` | 3 (default) | 5 |
+| `DECKTALK_ALIGN_STALL_MS` | 150 (default) | 400 |
 
 ```yaml .github/workflows/video.yml
       - name: Widen the sync tolerance on the slower runners
@@ -105,63 +134,72 @@ CI keeps Linux at the default and widens macOS and Windows like this.
           echo "DECKTALK_ALIGN_STALL_MS=400" >> "$GITHUB_ENV"
 ```
 
-## Asserting in CI
+## Build a voiced video in CI
 
-`status`, `beats`, `check`, `verify`, and `doctor` share one exit rule, so a job can use
-their exit codes as its assertions. A certain finding, such as `OFF CUE`, `TRUNCATED`,
-or an unknown cue id, exits 1. An uncertain finding, whose verdict ends in a question
-mark, such as `BLACK?` on a page that is dark on purpose, exits 0 unless `--strict` is
-given. A cue marked `"verify": false` in `cues.json` is reported as `skipped` and never
-fails.
+Put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in the job's secrets, and export them to the build step.
+DeckTalk never prints either value.
 
-```console
-decktalk check --strict      # fail on BLACK? and KATEX? too
-decktalk verify              # fail on any certain finding
-```
+<Warning>Never run `decktalk build --silent` in a `build/` directory that you keep for voiced builds. It empties the
+narration cache, and the next voiced build spends credits on every section.</Warning>
 
-To keep the job running and decide later, add `--no-fail` and read the JSON. The object
-on stdout carries `ok` and the finding counts, and progress stays on stderr.
+[A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build) explains why.
 
-```console
-decktalk verify --json --no-fail > verify.json
-jq -e '.ok' verify.json
-jq '.verify.cues[] | select(.verdict != "changed")' verify.json
-```
+## Set the project directory
 
-`jq -e` exits 1 when `ok` is `false`, so the first `jq` line is the assertion and the
-second lists the cues to look at. [Machine-readable output](/reference/cli#machine-readable-output)
-lists every key.
-
-A silent build skips the loudness pass, so `--silent` and `--strict` combine on `build`
-without a false failure.
-
-## The project directory
-
-Every project command takes `--project DIR`, and the `DECKTALK_PROJECT` variable sets
-the default, so a job can run from the repository root.
+Every project command takes `--project DIR`. The `DECKTALK_PROJECT` variable sets the default, so a job can run
+from the repository root.
 
 ```console
 DECKTALK_PROJECT=lessons/derivatives decktalk build --silent
 ```
 
-## Offline
+## Build offline
 
-After `decktalk setup`, a silent build needs no network. `decktalk init` copies the cached
-KaTeX into `deck/katex/`, and the scaffold's page loads it from there. A project created
-before `setup` ran loads KaTeX from a CDN instead, which fails offline and leaves every
-equation as plain text with a `KATEX?` verdict in the check table. Run `setup`, then
-either run `init` again into a fresh directory or copy the cached `katex` directory into
-`deck/` and point the two tags at it.
+A silent build runs with no network after these steps.
+
+<Steps>
+  <Step title="Download the tools">
+    On a machine with network, run `setup`. It downloads Chromium, ffmpeg, and KaTeX.
+
+    ```console
+    decktalk setup
+    ```
+  </Step>
+  <Step title="Create the project">
+    Run `init` after `setup`. `init` copies the cached KaTeX into `deck/katex/`.
+
+    ```console
+    decktalk init my-lesson
+    ```
+  </Step>
+  <Step title="Build the video">
+    Run a silent build in the project directory.
+
+    ```console
+    decktalk build --silent
+    ```
+  </Step>
+</Steps>
+
+In the scaffold, only `deck/index.html` loads KaTeX. If `init` ran before KaTeX was cached, that page loads KaTeX
+from a CDN. Offline, its equations then stay plain text, and `check` reports `KATEX?`.
+
+To fix a project that loads KaTeX from a CDN:
+
+1. Run `decktalk setup`.
+2. Copy the files in the cached KaTeX folder into `deck/katex/`. [Requirements](/requirements#what-setup-downloads)
+   lists the cache folder.
+3. In `deck/index.html`, replace the two KaTeX CDN tags with these tags.
 
 ```html deck/index.html
 <link rel="stylesheet" href="./katex/katex.min.css">
 <script src="./katex/katex.min.js"></script>
 ```
 
-When a proxy blocks Playwright's download, set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror,
-as Playwright documents.
+If the project has no changes of its own yet, run `decktalk init` into a new directory instead.
 
 ## Next
 
-[The CLI reference](/reference/cli#exit-codes) lists every exit code, and
-[Troubleshooting](/help/troubleshooting) explains each verdict that a check can print.
+- **See every exit code:** [CLI](/reference/cli#exit-codes)
+- **Fix a failed check:** [Troubleshooting](/help/troubleshooting)
+- **Understand a cue result:** [Verify](/reference/verify#results)

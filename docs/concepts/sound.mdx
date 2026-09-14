@@ -1,105 +1,183 @@
 ---
 title: Sound
-description: The DeckTalk mix, with the narration, clip audio, the underscore that ducks under speech, ambience beds, sound effects on cues, underscore markers, and generating sound with ElevenLabs.
-icon: "music"
+description: Understand how DeckTalk mixes narration, clip audio, and the optional soundscape into one loudness-normalized track.
 ---
 
-The video always carries the narration and the audio of any clip section. Everything
-else is optional and stays off until `[mix]` in `decktalk.toml` names a file. You can
-bring your own files, or generate them with `decktalk soundscape`.
+DeckTalk mixes the narration, the audio of each clip, and an optional soundscape into one track, then
+normalizes its loudness. To place one sound on a cue, follow [Put a sound effect on a cue](/guides/sfx-on-a-cue).
 
-## The parts of the mix
+1. The narration and the audio of every clip are always in the mix.
+2. The underscore, the ambience bed, and sound effects are the soundscape. Each part stays off until `[mix]` in
+   `decktalk.toml` names a file.
+3. The underscore gets quieter under each spoken span and under each clip.
+4. A markers file can swell or mute the underscore at a spoken phrase.
+5. After the parts are summed, the loudness pass brings the mix to one target.
 
-| Part | Source | Behavior |
+## Parts of the mix
+
+The mix has five parts. Only the first two are always present.
+
+| Part | Source | What it does |
 |---|---|---|
-| Narration | `build/audio/narration.mp3` | The narration is always present. It begins at the start of the first page section and pauses for every clip between page sections, resuming at the next page section. |
-| Clip audio | each clip file | Clip audio plays for the clip's span, trimmed to its picture and faded over twenty milliseconds at both ends. |
-| Underscore | `mix.underscore` | The underscore loops for the length of the video, fades in and out, and ducks by `underscore_duck_db` under every spoken span. |
-| Ambience | `mix.ambience` | Ambience plays under sections that set `ambience = true`, with a ramp at each edge and a short pad on either side. |
-| Effects | `[[mix.sfx]]` | Effects are one-shot files placed where a cue resolved, plus an offset. A cue that did not resolve, or a file that is missing, skips its effect with a warning. |
+| Narration | `build/audio/narration.mp3` | The narration starts with the first page section. It pauses for each clip between page sections. |
+| Clip audio | each clip file | Clip audio plays at its section start, trimmed to the clip's picture. It fades in and out over 20 ms, so a cut never clicks. |
+| Underscore | `[mix] underscore` | The underscore loops for the whole video at `underscore_db`. It fades in over `underscore_fade_in` and out over `underscore_fade_out` seconds. |
+| Ambience bed | `[mix] ambience` | The ambience bed loops at `ambience_db` under each page section that sets `ambience = true`. |
+| Sound effects | `[[mix.sfx]]` | Each sound effect plays once, at the cue time of its cue plus its `offset`. |
 
-Ducking is per spoken section span. Each page section's span runs from its start in the
-narration to the end of its last word, and each clip's span is its whole length, so the
-underscore comes back up during the silence at a section's end and stays down under a
-clip. The duck ramps over `duck_ramp_seconds`, and the ramps and pads are tuning keys
-under `[audio]` in [Configuration](/reference/configuration#audio).
+If a sound effect file is missing, or its cue did not resolve, `assemble` skips that effect with a warning. If the
+underscore file is missing, `assemble` builds the video with no underscore and prints a warning. The `--nomix` flag
+leaves out the whole soundscape, so the mix holds only the narration and the clip audio.
 
-After the parts are summed, the mix is normalized to the targets in `[mix.loudnorm]`.
-[How it works](/concepts/how-it-works#loudness) describes the pass. The `--no-loudnorm`
-flag skips it, and `--nomix` produces narration and clip audio only.
+## Ducking
+
+The underscore ducks by `underscore_duck_db` under each spoken span and under each whole clip. At the default of
+-6 dB, the underscore plays 6 dB quieter than `underscore_db` there.
+
+- A page section's spoken span runs from its start to the end of its last spoken word.
+- Under a clip, the duck covers the whole clip.
+- The duck ramps over `[audio] duck_ramp_seconds`, 0.5 s by default, inside each edge of a spoken span or a clip.
+
+The underscore therefore starts to rise in the last 0.5 s of speech, and it is at full level in the silence after
+it. It stays down under a clip. The ramps are tuning keys under `[audio]` in
+[Configuration](/reference/configuration#audio).
+
+The next figure shows the underscore level around the clip of the scaffold, for a project that has an underscore
+file. DeckTalk computes the level from the scaffold's `[mix]` and `[audio]` settings.
+
+<Frame caption="The underscore rises as the speech of section 3 ends, then stays down under the clip.">
+  <img className="block dark:hidden" src="/images/duck-lane-light.svg" alt="The underscore level around clip section 4 of the scaffold. It sits at −30 dB under each spoken span and under the whole clip. It ramps up to −24 dB over the last 0.5 s of speech in section 3, and briefly at the cut into section 5." />
+  <img className="hidden dark:block" src="/images/duck-lane-dark.svg" alt="The underscore level around clip section 4 of the scaffold. It sits at −30 dB under each spoken span and under the whole clip. It ramps up to −24 dB over the last 0.5 s of speech in section 3, and briefly at the cut into section 5." />
+</Frame>
 
 ## Markers
 
-A markers file swells or mutes the underscore at spoken phrases, which gives a music bed
-some structure without editing it. The scaffold's `media/markers.json` swells the bed at
-the open.
+A markers file swells or mutes the underscore at spoken phrases. It gives the underscore some structure without an
+edit to its file. The scaffold's `media/markers.json` swells the underscore at the start of section 1.
 
 ```json media/markers.json
-{ "boost_db": 3, "boost_seconds": 2,
+{
+  "_comment": "Underscore structure. Each marker swells the bed by boost_db for boost_seconds at a spoken phrase (or $start/$end of a section); mute_seconds silences it for one beat first.",
+  "boost_db": 3,
+  "boost_seconds": 2,
   "markers": [
-    { "name": "open", "section": 1, "on": "$start" },
-    { "name": "answer", "section": 3, "on": "settle", "mute_seconds": 0.6 }
-  ] }
+    { "name": "open", "section": 1, "on": "$start" }
+  ]
+}
 ```
 
-| Key | Where | Meaning |
-|---|---|---|
-| `boost_db` | top level | The key sets how far each marker swells the bed. The default is 3 dB. |
-| `boost_seconds` | top level | The key sets how long the swell lasts. The default is 2 seconds. |
-| `name` | marker | The name labels the marker in the report. |
-| `section` | marker | The value is the number of the section that holds the phrase. |
-| `on` | marker | The value is a spoken phrase, `$start`, or `$end`, matched as a cue is. The default is `$start`. |
-| `occurrence`, `case_sensitive`, `offset` | marker | These keys refine the match as they do for a cue. |
-| `mute_seconds` | marker | The bed goes silent for this long first, and then it swells. |
-| `_comment` | top level | DeckTalk ignores the key. |
+| Key | Where | Default | Meaning |
+|---|---|---|---|
+| `boost_db` | top level | 3 | How far each marker swells the underscore, in dB. |
+| `boost_seconds` | top level | 2 | How long each swell lasts. |
+| `markers` | top level | none | The list of markers. |
+| `name` | marker | none | The name that a warning uses for the marker. |
+| `section` | marker | required | The number of the section that holds the phrase. |
+| `on` | marker | `$start` | A spoken phrase, `$start`, or `$end`, matched as a cue phrase is. |
+| `offset` | marker | 0 | Seconds to add to the matched time. |
+| `occurrence` | marker | 1 | Which match of the phrase to use. |
+| `case_sensitive` | marker | false | Whether the match compares case. |
+| `mute_seconds` | marker | 0 | Seconds of silence before the swell starts. |
+| `_comment` | top level | none | A note. DeckTalk does not read it. |
 
-A marker whose phrase cannot be found is skipped with a warning. The mute and boost ramps
-are `marker_mute_ramp_seconds` and `marker_boost_ramp_seconds` under `[audio]`.
+If `[mix] markers` names a file that does not exist, the underscore plays with no markers and a warning. If a
+marker's phrase is not found, `assemble` skips that marker with a warning. The mute and swell ramps are
+`marker_mute_ramp_seconds` and `marker_boost_ramp_seconds` under `[audio]`.
 
-## Generating sound
+## Loudness
 
-The `soundscape` command turns the prompts in `[soundscape]` into files with the
-ElevenLabs sound and music endpoints. Ambience and music write to the paths named in
-`[mix]`, or to `build/sfx/ambience.mp3` and `build/music/underscore.mp3` when `[mix]`
-names none, and each effect writes to `build/sfx/<name>.mp3`.
+After the parts are summed, the loudness pass runs in this order.
+
+1. It measures the integrated loudness and the true peak of the mix.
+2. It applies the gain that reaches the integrated target, `[mix.loudnorm] I`.
+3. It runs a limiter at 192 kHz to catch peaks between samples. The limiter sits 0.3 dB under the ceiling,
+   `[mix.loudnorm] TP`.
+4. It measures the result again and prints it.
+
+The defaults are -16 LUFS integrated and a -1.5 dBTP ceiling, so the limiter acts on peaks above -1.8 dBTP. A
+plain gain keeps the dynamics of the mix, and the limiter changes only the peaks.
+
+{/* STALE SAMPLE: regenerate from a v11 build. The loudness line needs a voiced build (capture R5, not approved yet). */}
+```text
+[loud] I -22.1 -> -16.0 LUFS (target -16.0), TP -20.6 -> -14.5 dBTP (ceiling -1.5), LRA 2.5 -> 2.6 LU
+```
+
+- If the result is more than 1 LU from the target, or above the ceiling, `assemble` prints a warning.
+- With `--strict`, that warning is an error instead.
+- The `--no-loudnorm` flag skips the pass. [decktalk.toml](/reference/decktalk-toml) lists the `[mix.loudnorm]`
+  keys.
+
+A silent build skips the pass. Its narration is a click track, with no speech to normalize. The clicks stay at
+-24 dBFS, which is the level the [a/v check](/reference/verify#the-a/v-value) listens for.
+
+{/* sample: decktalk build --silent, silent build of the scaffold (R2), assemble log line */}
+```text
+[loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, and the clicks stay at -24 dBFS for the a/v check
+```
+
+## Generated sound
+
+`decktalk soundscape` generates soundscape files from the prompts in `[soundscape]`. It uses the ElevenLabs sound
+and music endpoints, which spend credits.
 
 ```toml decktalk.toml
 [soundscape.music]
-prompt = "calm, minimal instrumental underscore for a lesson: soft piano and warm pads, slow, no drums"
+prompt = "calm, minimal instrumental underscore for a lesson: soft piano and warm pads, slow, no drums, no melody hooks, unobtrusive under a narrator"
 seconds = 120
+force_instrumental = true
 
 [soundscape.ambience]
 text = "quiet lecture hall room tone, distant HVAC, no voices, steady"
+duration_seconds = 25
 
 [soundscape.sfx.tick]
 text = "soft interface click, single, short, no reverb"
 ```
 
 ```console
-decktalk soundscape --dry-run       # prints every request without sending it
-decktalk soundscape                 # generates what is missing
-decktalk soundscape --only music    # one item; --force regenerates it
+decktalk soundscape --dry-run       # print every request, and send nothing
+decktalk soundscape                 # generate what is missing or changed
+decktalk soundscape --only music    # generate one item
 ```
 
+- Music and ambience go to the paths in `[mix]`. With no path there, they go to `build/music/underscore.mp3` and
+  `build/sfx/ambience.mp3`.
+- Each sound effect goes to `build/sfx/<name>.mp3`.
+- Music longer than `[elevenlabs] max_music_chunk_seconds` is requested in chunks and joined with a crossfade.
+- Each output has a manifest file with a hash of its request. A second run sends nothing unless a request changed.
+- `--force` generates an item again, even when its request did not change.
+
+{/* STALE SAMPLE: regenerate from a v11 build (decktalk soundscape --dry-run on the scaffold). */}
 ```text
 == music -> ~/my-lesson/build/music/underscore.mp3  [planned]
    POST https://api.elevenlabs.io/v1/music
    {'prompt': 'calm, minimal instrumental underscore for a lesson: soft piano and warm pads, slow, no drums, no melody hooks, unobtrusive under a narrator', 'force_instrumental': True, 'model_id': 'music_v2', 'music_length_ms': 120000}
 ```
 
-Music longer than `max_music_chunk_seconds` is requested in chunks and joined with a
-crossfade. Every output has a manifest with its request hash, so a second run sends
-nothing unless a prompt changed. These calls spend ElevenLabs credits, and the dry run
-shows exactly what would be sent. [Requirements and costs](/requirements) lists every
-command that spends credits. [decktalk.toml](/reference/decktalk-toml#soundscape)
-lists every key of the three tables.
+[Requirements](/requirements#what-spends-credits) lists every command that spends credits.
+[decktalk.toml](/reference/decktalk-toml) lists every `[soundscape]` key.
 
-## Bringing your own
+## Your own audio files
 
-Point `mix.underscore`, `mix.ambience`, and each `[[mix.sfx]]` at any audio file that
-ffmpeg can read. Keep a file of your own at a path that no `[soundscape]` table writes
-to, because `decktalk soundscape` regenerates any output that has no manifest beside it
-and would overwrite the file. The scaffold's `[soundscape.music]` writes to the
-`mix.underscore` path, so either remove that table or point `mix.underscore` at your own
-file and give the table its own `out`. [Put a sound effect on a cue](/guides/sfx-on-a-cue)
-walks through one effect from prompt to mix.
+Point `[mix] underscore`, `[mix] ambience`, and each `[[mix.sfx]] file` at any audio file that ffmpeg can read.
+
+Keep your own file at a path that no `[soundscape]` table writes to. `decktalk soundscape` generates any output
+that has no manifest file next to it, and it overwrites your file. The scaffold's `[soundscape.music]` writes to
+the `[mix] underscore` path. Delete that table, or point `[mix] underscore` at your own file.
+
+## Terms
+
+| Term | Meaning |
+|---|---|
+| [Underscore](/reference/glossary) | The music under the whole video. |
+| [Ambience bed](/reference/glossary) | A loop of room sound under the sections that set `ambience = true`. |
+| [Sound effect](/reference/glossary) | A one-shot audio file placed on a cue. |
+| [Duck](/reference/glossary) | The underscore gets quieter under a spoken span or a clip. |
+| [Spoken span](/reference/glossary) | A section's start to the end of its last spoken word. |
+| [Mix](/reference/glossary) | The narration, clip audio, and soundscape, summed and passed through the loudness pass. |
+
+## Next
+
+- **Put one sound on a cue:** [Put a sound effect on a cue](/guides/sfx-on-a-cue)
+- **Set the mix levels:** [decktalk.toml](/reference/decktalk-toml)
+- **See what spends credits:** [Requirements](/requirements#what-spends-credits)

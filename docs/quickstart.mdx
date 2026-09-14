@@ -1,15 +1,24 @@
 ---
 title: Quickstart
-description: Install DeckTalk with uv, pipx, or pip, build the scaffold video without an API key, then add an ElevenLabs voice and build the narrated mp4.
-icon: "play"
+description: Install DeckTalk, build the scaffold video without an account, then add your voice.
 ---
 
+This quickstart installs DeckTalk and builds the scaffold video, first with no account and then with your voice. Only part 3 needs an ElevenLabs API key.
+
+If an agent does these steps for you, give it the [Reference card](/reference/card).
+
+## Before you start
+
+- You need Python 3.12 or later.
+- You need uv, pipx, or pip.
+- On Linux, step 2 needs sudo or root.
+- Part 3 needs an ElevenLabs API key and a voice id.
+
+## Part 1: Install DeckTalk
+
 <Steps>
-  <Step title="Install">
-    DeckTalk needs Python 3.12 or later. Everything else arrives through Python packages
-    and the downloads that `decktalk setup` makes. Playwright's package carries its own
-    browser driver, and `static-ffmpeg` fetches ffmpeg and ffprobe for your platform. You do
-    not need Node.
+  <Step title="Install DeckTalk" stepNumber={1}>
+    Install the `decktalk` command with your Python installer.
 
     <Tabs>
       <Tab title="uv">
@@ -17,10 +26,7 @@ icon: "play"
         uv tool install decktalk
         ```
 
-        `uv` is a Python package manager from Astral. The command `uv tool install` puts a
-        command-line tool in its own environment and on your PATH.
-        [Install uv](https://docs.astral.sh/uv/getting-started/installation/) first if you
-        do not have it.
+        uv is a Python package manager. If you do not have it, [install uv](https://docs.astral.sh/uv/getting-started/installation/) first.
       </Tab>
       <Tab title="pipx">
         ```console
@@ -32,63 +38,138 @@ icon: "play"
         python -m venv .venv && source .venv/bin/activate
         pip install decktalk
         ```
+
+        On Windows, activate the environment with `.venv\Scripts\activate`.
       </Tab>
     </Tabs>
 
-    Then fetch the tools DeckTalk drives, once per machine, and confirm that they work.
-
-    ```console
-    decktalk setup     # headless Chromium, ffmpeg, and KaTeX, once per machine
-    decktalk doctor    # reports each tool and exits 1 when one is missing
-    ```
-
+    {/* sample: uv tool install, last line */}
     ```text
-    python    ok      3.13 (.venv/bin/python3)
-    chromium  ok      <version>
-    ffmpeg    ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffmpeg
-    ffprobe   ok      .venv/lib/python3.13/site-packages/static_ffmpeg/bin/darwin/ffprobe
-    config    ok      none (optional, at ~/Library/Application Support/decktalk/decktalk.toml)
-    katex     ok      ~/Library/Caches/decktalk/katex/<version>
+    Installed 1 executable: decktalk
     ```
 
-    Run `setup` before `init`, because `init` copies the cached KaTeX into the project so
-    that equations render with no network. [Requirements and costs](/requirements) says
-    where each download goes and why Linux asks for sudo.
+    Check that the installer names the `decktalk` executable.
   </Step>
 
-  <Step title="Scaffold and build">
+  <Step title="Download Chromium, ffmpeg, and KaTeX" stepNumber={2}>
+    `decktalk setup` downloads the tools that DeckTalk runs. Run it one time per machine.
+
     ```console
-    decktalk init my-lesson && cd my-lesson
-    decktalk build --silent          # every stage with placeholder narration, no key
+    decktalk setup
     ```
 
-    The `--silent` flag runs every stage with a placeholder track, a soft click at every
-    estimated word start, and estimated word times. It needs no account and costs
-    nothing, so use it to prove that a project builds before you spend credits. A first
-    silent build takes a few minutes, because recording runs in real time. Each stage
-    prints a table, and the build ends with the path of the video. The first silent build
-    also warns that the underscore is missing. The scaffold's music comes from
-    `decktalk soundscape`, which spends credits, and the video is complete without it.
-
+    {/* sample: decktalk setup, last lines, uv tool install on macOS */}
     ```text
-    sec    start    probe   YAVG   YMAX  result
-     01     0.00     0.20    232    245  ok
-     02    18.36    18.56    230    247  ok
-     03    47.00    47.20    229    255  ok
-     04   119.16   119.36    227    249  ok
-     05   138.20   138.40    231    249  ok
-    total 150.96s; 0 black section start(s)
+    == ffmpeg / ffprobe
+       ffmpeg  ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffmpeg
+       ffprobe ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffprobe
+    == KaTeX 0.18.7
+       cached  ~/Library/Caches/decktalk/katex/0.18.7
+    setup complete
+    ```
 
-    sec   cut at  before cut  result
-     01    18.35   -130.2 dB  quiet
-     02    47.01   -125.4 dB  quiet
-     03   119.15   -130.2 dB  quiet
-     04   138.21   -125.4 dB  quiet
-     05   148.45   -120.0 dB  quiet
+    Check that the last line is `setup complete`. On Linux, this step asks for sudo. [What setup downloads](/requirements#what-setup-downloads) says where each download goes.
+  </Step>
 
+  <Step title="Check the tools" stepNumber={3}>
+    `decktalk doctor` reports each tool that DeckTalk needs.
+
+    ```console
+    decktalk doctor
+    ```
+
+    {/* sample: decktalk doctor, uv tool install on macOS */}
+    ```text
+    python    ok      3.13.1 (~/.local/share/uv/tools/decktalk/bin/python)
+    chromium  ok      151.0.7922.34
+    ffmpeg    ok      ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffmpeg
+    ffprobe   ok      ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffprobe
+    config    ok      none (optional, at ~/Library/Application Support/decktalk/decktalk.toml)
+    katex     ok      ~/Library/Caches/decktalk/katex/0.18.7
+    ```
+
+    Check that every row says `ok`. If a row does not, run `decktalk setup` again.
+  </Step>
+</Steps>
+
+## Part 2: Build the scaffold without an account
+
+<Steps>
+  <Step title="Create the scaffold" stepNumber={4}>
+    `decktalk init` writes the scaffold, a complete example project.
+
+    ```console
+    decktalk init my-lesson
+    ```
+
+    {/* sample: decktalk init my-lesson, run in ~ */}
+    ```text
+    created ~/my-lesson
+      decktalk.toml  the plan: sections -> pages or clips, voice, mix, soundscape
+      script.md      the narration (## N. sections)
+      cues.json      which spoken phrase each visual lands on
+      deck/          index.html, lesson.html, decktalk-runtime.js (open a page for its scene index)
+      media/         your clips, b-roll, markers.json
+    next: cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID), then `decktalk build`
+          or `decktalk build --silent` to render with placeholder narration and no API key
+    ```
+
+    If you skipped step 2, run `decktalk setup` now, then run `init` in a new folder. `init` copies the cached KaTeX into the project.
+  </Step>
+
+  <Step title="Go into the project" stepNumber={5}>
+    ```console
+    cd my-lesson
+    ```
+  </Step>
+
+  <Step title="Open the slides in a browser" stepNumber={6}>
+    Open the scaffold's main page. This takes seconds, and you see the slides before you build.
+
+    <Tabs>
+      <Tab title="macOS">
+        ```console
+        open deck/index.html
+        ```
+      </Tab>
+      <Tab title="Linux">
+        ```console
+        xdg-open deck/index.html
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```console
+        start deck\index.html
+        ```
+      </Tab>
+    </Tabs>
+
+    <Frame caption="The scene index lists each scene of the page with its steps and cue ids.">
+      <img src="/images/quickstart-index.png" alt="The page my-lesson in index mode. It lists scenes 1, 2, 4, and 5, each with a play link. Under each scene, one step shows its hold seconds and cue ids." />
+    </Frame>
+
+    Check that the page shows an index of its scenes and steps.
+  </Step>
+
+  <Step title="Build the video without an account" stepNumber={7}>
+    A silent build uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took 216.6 seconds. Leave it running, and read [What the example video shows](#what-the-example-video-shows).
+
+    ```console
+    decktalk build --silent
+    ```
+
+    {/* sample: decktalk build --silent, scaffold, uv tool install on macOS (three lines kept from the assemble log and the last line) */}
+    ```text
+    section 04: media/broll-chips.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
+    underscore missing (~/my-lesson/build/music/underscore.mp3); no music (`decktalk soundscape`)
+    done: ~/my-lesson/build/out/my-lesson.mp4  (197.96s)  copy: my-lesson-20260913-1634.mp4
     built ~/my-lesson/build/out/my-lesson.mp4
     ```
 
+    Check that the last line starts with `built`. Both warnings are expected. Section 4 plays a slate until you add its clip, and the scaffold's underscore comes from `decktalk soundscape`.
+  </Step>
+
+  <Step title="Play the video" stepNumber={8}>
     <Tabs>
       <Tab title="macOS">
         ```console
@@ -107,103 +188,102 @@ icon: "play"
       </Tab>
     </Tabs>
 
-    The scaffold is a short lesson in six sections. The open steps a ball down a bowl on
-    the count "One. Two, three." and shows the real start time of each count word under
-    its box. The second section shows a script card beside a slide card, a waveform with
-    word times, and the cue word "bowl" joined to its drawing. Section 3 is a lesson on how
-    AI learns, drawn in SVG, that goes from a box of knobs and a meter to a ball stepping
-    down a bowl, the step size, many valleys, and the tensors and chips that do the math.
-    Section 4 is a clip section, and a titled slate plays for four seconds until a video
-    exists at `media/broll-chips.mp4`. In the fifth section the script gains four words,
-    the rebuild voices only section 3 again, and a caption lights word by word. An end card
-    closes on decktalk.app. Sections 1, 2, 5, and 6 play scenes 1, 2, 4, and 5 of `deck/index.html`,
-    and section 3 plays scene 3 of `deck/lesson.html`, because each section names its page
-    and its scene. A commented-out section 0 shows how to open with a clip of your own, and
-    [Add a clip section](/guides/clip-section) walks through it.
+    The video is 197.96 seconds long, in six sections, with a soft click on each word. [What the example video shows](#what-the-example-video-shows) describes each section.
+  </Step>
+</Steps>
+
+## Part 3: Add your voice and change a sentence
+
+If you have no ElevenLabs account, stop here. The silent video is a complete build.
+
+<Steps>
+  <Step title="Copy the example settings file" stepNumber={9}>
+    <Tabs>
+      <Tab title="macOS and Linux">
+        ```console
+        cp .env.example .env
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```console
+        copy .env.example .env
+        ```
+      </Tab>
+    </Tabs>
   </Step>
 
-  <Step title="Add your voice">
-    Copy `.env.example` to `.env` and replace the two placeholders.
+  <Step title="Set your key and voice id" stepNumber={10}>
+    In `.env`, replace the two placeholders with your API key and voice id.
 
     ```dotenv .env
-    ELEVENLABS_API_KEY=sk_...        # Profile, then API keys, on elevenlabs.io
-    ELEVENLABS_VOICE_ID=...          # the id on a voice's card under Voices
+    ELEVENLABS_API_KEY=<your-elevenlabs-key>     # Profile, then API keys, on elevenlabs.io
+    ELEVENLABS_VOICE_ID=<voice-id>               # the id on a voice's card under Voices
     ```
 
-    Both values can also come from the environment. A value left as `<placeholder>`
-    counts as unset. DeckTalk never prints the key and never writes it under `build/`.
-    Then build the project again. This build voices every section, because a silent
-    build's placeholders are never reused.
+    A value that still starts with `<` counts as unset. DeckTalk never prints the key and never writes it under `build/`.
+  </Step>
+
+  <Step title="Build the video with your voice" stepNumber={11}>
+    <Warning>`decktalk build` without `--silent` spends ElevenLabs credits. [What spends credits](/requirements#what-spends-credits) lists the cost.</Warning>
 
     ```console
     decktalk build
     ```
 
-    <Note>You need an ElevenLabs API key.
-    [Requirements and costs](/requirements) lists which commands spend credits, and the
-    [FAQ](/help/faq#what-does-it-cost) gives the arithmetic.</Note>
+    {/* SAMPLE NEEDED (R5, voiced build): the narrate lines, one [tts ] line per spoken section, then the built line */}
+
+    This build voices every section, because it never reuses the click track. Check that the last line starts with `built`.
   </Step>
 
-  <Step title="Review">
-    Open `deck/index.html` in any browser with no query string. The page shows an index of
-    every scene and step. Add `?scene=2` to play a scene, `?step=2.1` to freeze one step
-    with everything revealed, or `&hud=1` to overlay the clock.
+  <Step title="Change one sentence" stepNumber={12}>
+    In section 3 of `script.md`, add four words to one sentence.
 
-    ```console
-    decktalk shots                          # one PNG per step, under build/shots/
-    decktalk shots --section 3 --at 22      # a frame from section 3 as it plays with its real cues
-    decktalk verify 1:1.1bowl               # measures when the cue changed the picture in the mp4
-    decktalk status                         # the timeline and what is built
+    ```diff script.md
+    -The height is the error. [beat]
+    +The height is the error, so lower is better. [beat]
     ```
   </Step>
 
-  <Step title="Change a sentence">
-    Make the edit that the scaffold's fifth section shows. In section 3 of `script.md`,
-    change "The height is how wrong." to "The height is how wrong, so lower is better."
-    Then build again and read the narrate log.
-
-    ```console
-    decktalk build
-    ```
-
-    The log notes that clip section 4 has no narration, prints a `[skip]` line for
-    sections 1, 2, 5, and 6, whose narration comes from the cache, and prints a `[tts ]`
-    line for section 3. Change a sentence, and only that section is
-    voiced again. A plain build records every section again in real time, and
-    `decktalk build --only N` records only that section. The edit costs the characters of
-    all of section 3, because the cache key is the section's whole text.
-
-    When you know that only section 3 changed, the fast path records only that section. It
-    still takes the other sections' narration from the cache, and it assembles and verifies
-    the whole video.
-
+  <Step title="Build only section 3" stepNumber={13}>
     ```console
     decktalk build --only 3
     ```
 
-    [Rebuild one section](/guides/rebuild-one-section) says what each kind of edit runs
-    again.
+    {/* SAMPLE NEEDED (R5, voiced build): the narrate log after the edit, with [skip] for sections 1, 2, 5, and 6 and [tts ] for section 3 */}
+
+    DeckTalk voices and records only section 3 again. The other sections take their narration from the cache. [Rebuild one section](/guides/rebuild-one-section) says what each kind of edit runs again.
+
+    <Tip>If you are not sure which sections changed, run `decktalk build`. It voices only the sections whose text changed.</Tip>
+  </Step>
+
+  <Step title="Check that a reveal starts on its word" stepNumber={14}>
+    ```console
+    decktalk verify 1:1.1bowl
+    ```
+
+    {/* SAMPLE NEEDED (R5, voiced build): the cue row for 1:1.1bowl */}
+
+    Check that the result is `changed`. The offset column is the time from the cue time to the onset of the reveal, in milliseconds. [Verify](/reference/verify#cues) defines every column.
   </Step>
 </Steps>
 
-## What is in a project
+## What the example video shows
 
-| Path | What it holds |
-|---|---|
-| `decktalk.toml` | The plan. One `[[section]]` per script section, the voice, the transitions, the mix, the soundscape prompts, and any tuning. [Reference](/reference/decktalk-toml). |
-| `script.md` | The narration. Each `## N. Title` heading starts a section, and text in square brackets is a stage direction that is not spoken. [Reference](/reference/script-md). |
-| `cues.json` | The phrase that each visual lands on. [Reference](/reference/cues-json). |
-| `deck/` | Your pages, `index.html` and `lesson.html` in the scaffold, with `decktalk-runtime.js` and a vendored copy of KaTeX beside them. KaTeX typesets any `data-tex` element in a page you write. `deck/fonts/` holds Inter, Inter Tight, and JetBrains Mono as OFL woff2 files, declared with `font-display: block`, so a recorder with no network draws them rather than a fallback face. [Runtime reference](/reference/runtime). |
-| `media/` | Your own clips and the underscore markers. |
-| `.env` | The ElevenLabs key and voice id. Git ignores it. |
-| `build/` | Everything DeckTalk generates, including the video, captions, and chapters. Git ignores it. [Artifacts](/reference/artifacts). |
+The scaffold is a short lesson in six sections. Each section names its page and its scene.
 
-<Tip>Write numbers and symbols in the script the way you want them spoken. The scaffold's
-cue matches the spoken words "decktalk dot app", while the slide shows decktalk.app.</Tip>
+| Section | Plays | What it shows |
+|---|---|---|
+| 1. Open | `deck/index.html`, scene 1 | A bowl and a ball appear on their words. The ball steps down on each count word, and each count word's start time appears. |
+| 2. How it works | `deck/index.html`, scene 2 | A script card and a slide card appear. A waveform runs under one line, and the cue word joins its drawing. |
+| 3. How AI learns | `deck/lesson.html`, scene 3 | A box of knobs guesses, and a meter shows its [error](/help/faq#what-does-the-lesson-mean-by-error). A ball steps down a bowl, and the lesson ends on chips that do the math. |
+| 4. Thousands of chips | clip `media/broll-chips.mp4` | A titled slate plays for 4 seconds until the clip file exists. |
+| 5. The edit | `deck/index.html`, scene 4 | The script gains four words, and DeckTalk voices only section 3 again. `verify` shows that the later cues moved with their words. |
+| 6. Close | `deck/index.html`, scene 5 | The end card. |
+
+The scaffold's `decktalk.toml` also has a section 0 in comments, which opens the video on a clip of your own. [Add a clip section](/guides/clip-section) shows how to use it.
 
 ## Next
 
-[Your first deck](/guides/first-deck) writes one section from scratch and shows how one
-cue id ties the script, the cues, and the page to the words the voice returns.
-[Writing for the ear](/guides/writing-for-the-ear) teaches how a script gives every reveal a
-word to land on.
+- **Write your own section:** [Your first deck](/guides/first-deck)
+- **Make the script time well:** [Writing for the ear](/guides/writing-for-the-ear)
+- **Rebuild only what changed:** [Rebuild one section](/guides/rebuild-one-section)

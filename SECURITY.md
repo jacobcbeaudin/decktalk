@@ -1,10 +1,16 @@
 # Security
 
-DeckTalk reads an ElevenLabs API key from `.env` in the project directory or from the
-environment. It never prints the key, never writes it under `build/`, and sends it only to
-the ElevenLabs API base named in the configuration. Error messages replace the voice id
-with a placeholder.
+This file says how DeckTalk handles your ElevenLabs API key, and how to report a vulnerability.
 
-If you find a vulnerability, please report it privately through
-[GitHub's private vulnerability reporting](https://github.com/jacobcbeaudin/decktalk/security/advisories/new)
-rather than in a public issue. You can expect an acknowledgement within a week.
+## How DeckTalk handles your API key
+
+DeckTalk reads the ElevenLabs API key from the environment or from `.env` in the project directory.
+
+- DeckTalk never prints the key.
+- DeckTalk never writes the key under `build/`.
+- DeckTalk sends the key only to the ElevenLabs API base in the configuration (`api_base`).
+- Error messages show `<voice id>` in place of the voice id.
+
+## Report a vulnerability
+
+Report a vulnerability privately through [GitHub's private vulnerability reporting](https://github.com/jacobcbeaudin/decktalk/security/advisories/new). Do not open a public issue. Expect a reply within a week.

@@ -1,284 +1,151 @@
 ---
 title: How it works
-description: The DeckTalk pipeline from script to mp4, with the stages, the frame-exact alignment of narration and recording, what verify measures, loudness normalization, caching, and the silent build.
-icon: "diagram-project"
+description: Understand how DeckTalk turns a script and HTML pages into one mp4, and why each reveal starts on its word.
 ---
 
-<Frame caption="A script goes in. The voice reads it with a time for every word, the slides reveal on those words in Chromium, and ffmpeg cuts one mp4.">
+`decktalk build` turns your script and pages into one mp4 in seven stages. To build your first video, follow the
+[Quickstart](/quickstart).
+
+<Frame caption="Each panel names the pipeline stages it runs, in order.">
   <picture className="block dark:hidden">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-light-stacked.svg" />
-    <img src="/images/how-it-works-light.svg" alt="A script goes in, the voice reads it with a time for every word, the slides reveal on those words in Chromium, and ffmpeg cuts one mp4." />
+    <img src="/images/how-it-works-light.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and beats, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
   </picture>
   <picture className="hidden dark:block">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-dark-stacked.svg" />
-    <img src="/images/how-it-works-dark.svg" alt="A script goes in, the voice reads it with a time for every word, the slides reveal on those words in Chromium, and ffmpeg cuts one mp4." />
+    <img src="/images/how-it-works-dark.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and beats, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
   </picture>
 </Frame>
 
-`decktalk build` runs seven stages in order. Each stage is a function that takes the
-project and can be run on its own by the command of the same name, and every stage except
-`check` and `verify` writes a typed artifact under `build/`.
+1. You write four files: `script.md`, `decktalk.toml`, `cues.json`, and the page.
+2. The speech provider voices the script and returns a start and an end time for every word.
+3. Headless Chromium records each page section, and each reveal fires at its cue time.
+4. ffmpeg cuts each recording to its section and joins the sections into one mp4.
+5. `verify` measures the final mp4, so an early or late reveal shows as a number.
 
-| Stage | What it does | Writes |
+## Stages
+
+The seven stages always run in this order. Each stage reads files that the stages before it wrote.
+
+```mermaid
+flowchart TB
+  S["script.md"] --> narrate
+  narrate -- "words files, timeline.json" --> beats
+  C["cues.json"] --> beats
+  beats -- "beats.json" --> record
+  P["deck pages"] --> record
+  record -- "webm and sidecar" --> measure
+  measure -- "lead_in_seconds" --> check
+  check --> assemble
+  assemble -- "name.mp4, captions, chapters" --> verify
+```
+
+| Stage | One job | Writes |
 |---|---|---|
-| `narrate` | This stage sends each section of `script.md` to the speech provider and receives audio with a start and end time for every word. It skips a section whose text and voice settings have not changed, as [Caching and cost](#caching-and-cost) describes. It pads each section so speech ends before the file does, then joins the sections into one continuous track. | `build/audio/NN-slug.mp3`, `NN-slug.words.json`, `manifest.json`, `narration.mp3`, `timeline.json` |
-| `beats` | This stage finds each cue phrase in its section's words and turns it into seconds after the section starts. | `build/audio/beats.json`, `beats.anchors.json` |
-| `record` | This stage opens each page section in headless Chromium with `?scene=N&beats=…&words=…&t0=signal`, covers the page in magenta, starts the narration clock, and records for the section span plus `extra_seconds`. | `build/rec/NN-scene.webm` and its sidecar `NN-scene.json`, the file that records what the recorder did |
-| `measure` | This stage finds the first clean frame after the magenta cover in each recording. That frame is narration t=0. | `lead_in_seconds` in each sidecar |
-| `check` | This stage flags a recording that is black, is shorter than requested, has no cover, has equations that never typeset, stalled between frames, or comes from a page that threw an error. | nothing |
-| `assemble` | This stage trims each recording at t=0, cuts it to its section span, scales clips, renders slates, concatenates, mixes the soundscape, normalizes loudness, writes captions and chapters, and publishes the video atomically. | `build/out/NN-section.mp4`, `<name>.mp4`, `<name>.srt`, `<name>.vtt`, `<name>.chapters.txt` |
-| `verify` | This stage confirms that every section opens on a real frame, that the narration is quiet just before every cut, and that each cue in `beats.json` changed the picture on time. After a silent build it also measures the picture against the placeholder click at the cued word. Inside `build` it checks section starts and cuts only. | nothing |
+| `narrate` | `narrate` voices each section and gets a time for every word. | `build/audio/NN-slug.mp3`, `NN-slug.words.json`, `manifest.json`, `narration.mp3`, `timeline.json` |
+| `beats` | `beats` turns each cue phrase into a cue time. | `build/audio/beats.json`, `beats.anchors.json` |
+| `record` | `record` records each page section in headless Chromium. | `build/rec/NN-scene.webm`, `NN-scene.json` |
+| `measure` | `measure` finds narration t=0 in each recording. | `lead_in_seconds` in each sidecar |
+| `check` | `check` flags a recording that is black, short, stalled, or uncovered. | nothing |
+| `assemble` | `assemble` cuts, joins, and mixes the sections into one mp4. | `build/out/NN-section.mp4`, `<name>.mp4`, captions, chapters |
+| `verify` | `verify` checks section starts and cuts in the final mp4. | nothing |
 
-A clip section skips `narrate`, `record`, and `measure`, and its own audio plays for its
-span. A clip may also sit between page sections. The narration then pauses for the clip,
-and `assemble` starts each stretch of the narration track where its first page section
-starts in the video, so captions, cues, and the a/v check all resume after the clip. [Build artifacts](/reference/artifacts) gives the shape of every file.
+Each stage is also a command with the same name, and [the CLI reference](/reference/cli) lists them.
+[Build artifacts](/reference/artifacts) gives the fields of every file. `assemble` also runs the
+[loudness pass](/concepts/sound#loudness).
 
 ## Why the cuts are exact
 
-<Frame caption="A strip of recorded frames. The magenta run is the cover, the first clean frame after it is narration t=0, and the frames in which the curve draws and the number appears line up with the words that name them.">
-  <img className="block dark:hidden" src="/images/alignment-light.svg" alt="A strip of recorded frames opens magenta while the page is covered. The first clean frame is narration t=0, and the frames in which the curve draws and the number appears line up with the words curve and number." />
-  <img className="hidden dark:block" src="/images/alignment-dark.svg" alt="A strip of recorded frames opens magenta while the page is covered. The first clean frame is narration t=0, and the frames in which the curve draws and the number appears line up with the words curve and number." />
+Each reveal starts on its word because DeckTalk finds narration t=0 inside every recording, to the frame.
+
+<Frame caption="The bowl and the ball each appear whole in the first frame after their words.">
+  <img className="block dark:hidden" src="/images/alignment-light.svg" alt="A strip of recorded frames. Three magenta cover frames come first, and a line marks t=0 at the first clean frame. Under the strip, the narration &quot;A bowl. A ball. Watch it step down&quot; starts at t=0. Dashed leads join &quot;bowl&quot; and &quot;ball&quot; to the outlined frames where the bowl and then the ball appear." />
+  <img className="hidden dark:block" src="/images/alignment-dark.svg" alt="A strip of recorded frames. Three magenta cover frames come first, and a line marks t=0 at the first clean frame. Under the strip, the narration &quot;A bowl. A ball. Watch it step down&quot; starts at t=0. Dashed leads join &quot;bowl&quot; and &quot;ball&quot; to the outlined frames where the bowl and then the ball appear." />
 </Frame>
 
-A browser does not start recording at a known instant, and Chromium on Windows starts
-later than Chromium on Linux. A timer therefore cannot say where the narration begins
-inside a recording. DeckTalk does not use one.
-
-The recorder covers the page in magenta from its first paint. It waits for the page's
-`load` event, for `document.fonts.ready`, and for `window.__sceneReady`. Then it waits
-once, for `settle_seconds`, or longer when fewer than `min_lead_seconds` have passed since
-the recorder was created, which is `max(settle_seconds, min_lead_seconds - elapsed)`.
-Then it removes the cover and starts the page's clock in the next animation frame, which
-is the first frame painted without the cover. The cover carries a small element that
-never stops moving, because Chromium's screencast emits a frame only when the compositor
-paints one, so frames keep flowing while the page is covered and the first captured frame
-is magenta no matter when capture attached. The `measure` stage scans the recording for
-the magenta run and takes the first clean frame after it as t=0. That frame is t=0 by
-construction, whenever the capture began.
-
-The video runs at `fps` under `[video]`, which is 25 frames per second by default and
-matches the rate at which Chromium records. The t=0 frame is therefore accurate to one
-frame, which is 40 milliseconds at 25 fps. The assembler trims each recording at that
-frame, rounds each section span to cumulative frame boundaries so the picture never
-drifts, and clones the last frame to fill the span, which is also how `hold_seconds`
-holds the final slide. Every intermediate is video-only, so the concatenation cannot
-reintroduce audio priming, and the picture and the sound of the final mp4 both start at
-zero.
-
-Every cue is a spoken word with a timestamp from the same origin, so the page fires the
-reveal at the right second, and the assembler cuts the recording at the frame that
-matches the narration. Nothing in the chain depends on wall-clock time.
-
-## What verify measures
-
-`build` verifies section starts and cuts. It probes each section `after_dip_seconds`
-after its start, past any dip to black, and reports `BLACK` when nothing is on screen. It
-then measures the RMS level of the narration track in the last `cut_window_seconds` before
-every cut, 150 ms by default, and reports `SPEECH AT CUT` when the level is above
-`cut_max_db`, -40 dBFS by default, so a narration tail that is too short is caught rather
-than heard. A clip section carries its own audio and is exempt. `decktalk verify` also
-measures every cue in `beats.json` in the finished mp4, in section order and then cue
-time, except the cues that `cues.json` marks `"verify": false`. Naming cues as
-`SECTION:CUE` measures only those, even a marked one.
-
-```text
-sec    start    probe   YAVG   YMAX  result
- 01     0.00     0.20    232    245  ok
- 02    18.36    18.56    230    247  ok
- 03    47.00    47.20    229    255  ok
- 04   119.16   119.36    227    249  ok
- 05   138.20   138.40    231    249  ok
-total 150.96s; 0 black section start(s)
-
-sec   cut at  before cut  result
- 01    18.35   -130.2 dB  quiet
- 02    47.01   -125.4 dB  quiet
- 03   119.15   -130.2 dB  quiet
- 04   138.21   -125.4 dB  quiet
- 05   148.45   -120.0 dB  quiet
-
-check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.1p1             39.37    86.37    0.56    0.00    -10ms    -9ms  changed
-3:3.1eq             41.71    88.71    0.41    0.00    -30ms   -32ms  changed
-5:5.1cap             2.80   141.00    0.66    0.00    -40ms   -44ms  changed
-```
-
-| Column | Meaning |
+| Risk | What DeckTalk does |
 |---|---|
-| `cue` | The column gives the cue time in seconds after the section start, from `beats.json`. |
-| `at` | The column gives the same moment as seconds into the final mp4. |
-| `chg %` | The column gives the share of pixels whose luma changed by more than `diff_level` between the reference frame and a probe frame. A probe sits at each of `probe_delays` after the cue, and the later one catches a slow reveal. The row reports the probe with the largest `chg %` minus `ctl %`. |
-| `ctl %` | The column gives the same share over a control span before the reference frame, which captures whatever was already moving, such as a camera push or an earlier reveal still settling. [The control span](#the-control-span) says how it is chosen. |
-| `offset` | The column gives the signed distance in milliseconds from the cue time to the onset, the first frame of the reveal. [The onset](#the-onset) says how it is found. A negative value means the picture began before the cue time. |
-| `a/v` | The column appears after a silent build only. It gives the `offset` minus the click's distance from the cued word's start, in milliseconds, as [Definitions](#definitions) explains. |
-| `result` | The row reads `changed` when the reported probe changed at least `min_changed_percent` of the pixels and beat its control by at least `min_margin_percent`, the `offset` is within the offset limit, and the `a/v` value, when there is one, is within the a/v limit. It reads `OFF CUE` when the picture changed but the `offset` or the `a/v` value is past its limit. It reads `NO CHANGE` when the picture did not change enough. It reads `UNRESOLVED` when a named cue is not in `beats.json`. It reads `skipped` with a reason when nothing could be measured, which never fails the check. |
+| A browser starts to record at an unknown moment. Chromium on Windows starts later than on Linux. | The recorder covers the page in magenta. `measure` takes the first frame after the cover as narration t=0. |
+| Chromium sends a frame only when the page paints. | The cover holds an element that always moves, so frames keep coming while the page is covered. |
+| t=0 is known only to the nearest frame. | The video runs at 25 fps, the rate that Chromium records at. t=0 is exact to one frame, 40 ms. |
+| Section lengths add up to fractions of a frame. | `assemble` rounds each section span to whole frames counted from the start of the narration. |
+| A recording can end before its section span. | `assemble` repeats the last frame to fill the span. `hold_seconds` uses the same repeat. |
+| Joined audio adds a short delay at each join. | Each `NN-section.mp4` has no audio. `assemble` mixes the sound once, from zero. |
 
-A cue that changed the picture but has no onset still reads `changed`, with a blank
-`offset` column. Every field named here is a tuning key under `[verify]` in
-[Configuration](/reference/configuration#verify).
-
-<Frame caption="How verify measured the cue 3.1eq of the scaffold's silent build. The reference is the first frame at or after 0.1 s before the cue, each probe is compared with it, and the control spans before the reference measure motion that has nothing to do with the cue. The probe 1.5 s after the cue changed the most, so its 0.41 percent is the reported chg %. The inset shows the frames around the cue, where the onset is the frame 30 ms before the cue time.">
-  <img className="block dark:hidden" src="/images/verify-strip-light.svg" alt="A time axis runs from 3.3 seconds before the cue 3.1eq to 1.6 seconds after it. An accent line marks the cue time, the word's start plus the cue's offset. The reference is the first frame at or after 0.1 seconds before the cue, which is the frame 70 milliseconds before it, and probes sit 0.7 and 1.5 seconds after the cue. For the 1.5-second probe, two control spans of 1.6 seconds run from 3.3 to 1.7 seconds and from 1.7 to 0.1 seconds before the cue. They changed 0.56 and 0.00 percent, and the smaller share, 0.00 percent, is the ctl percent. The 0.7-second probe changed 0.26 percent of the picture and the 1.5-second probe changed 0.41 percent, so the 1.5-second probe is the one reported. An inset shows seven 40-millisecond frames around the cue with a bar for each frame's changed share. The onset frame, 30 milliseconds before the cue, is outlined, and a band of 80 milliseconds on either side of the cue marks the offset limit." />
-  <img className="hidden dark:block" src="/images/verify-strip-dark.svg" alt="A time axis runs from 3.3 seconds before the cue 3.1eq to 1.6 seconds after it. An accent line marks the cue time, the word's start plus the cue's offset. The reference is the first frame at or after 0.1 seconds before the cue, which is the frame 70 milliseconds before it, and probes sit 0.7 and 1.5 seconds after the cue. For the 1.5-second probe, two control spans of 1.6 seconds run from 3.3 to 1.7 seconds and from 1.7 to 0.1 seconds before the cue. They changed 0.56 and 0.00 percent, and the smaller share, 0.00 percent, is the ctl percent. The 0.7-second probe changed 0.26 percent of the picture and the 1.5-second probe changed 0.41 percent, so the 1.5-second probe is the one reported. An inset shows seven 40-millisecond frames around the cue with a bar for each frame's changed share. The onset frame, 30 milliseconds before the cue, is outlined, and a band of 80 milliseconds on either side of the cue marks the offset limit." />
-</Frame>
-
-### Definitions
-
-Every percentage is a share of the pixels in a frame scaled to `probe_width` by
-`probe_height`, which is 480 by 270 by default, and every percentage is on a 0 to 100
-scale. The default `min_changed_percent` of 0.1 is therefore a thousandth of the pixels.
-
-| Term | Definition | Unit |
-|---|---|---|
-| Section span | The section runs from its `start` to its `end` in `timeline.json`, which includes the silence padded after its last word. `record` records this span plus `extra_seconds`, and `assemble` cuts the section to it. | seconds |
-| Spoken span | The section's speech runs from its `start` to its `speech_end`, the end of its last word. A `$end` cue resolves to that end, and `min_seconds` is compared with the length of this span. | seconds |
-| Cue time | The cue time is the start of the cued word plus the cue's `offset` key, rounded to hundredths, in seconds after the section start. | seconds |
-| `offset` | The `offset` column is the onset's time minus the cue time. | milliseconds |
-| `a/v` | The `a/v` column is the `offset` minus the click's distance from the cued word's start. The click is the loudest sample within `click_search_seconds` on either side of that start. | milliseconds |
-| `chg %` | The changed share is the percentage of pixels whose luma differs by more than `diff_level` between the reference frame and the probe frame. | percent |
-| `ctl %` | The control share is the smaller of the changed shares of two back-to-back control spans, each measured between the first and the last frame of the span. | percent |
-| Offset limit | The offset limit is `max_offset_frames × 1000 / fps`, which is 80 ms at the defaults. | milliseconds |
-| a/v limit | The a/v limit is `max_av_frames × 1000 / fps`, which is 120 ms at the defaults. | milliseconds |
-| Cut RMS | The cut RMS is the RMS level of the narration track alone over the last `cut_window_seconds` of the section span. | dBFS |
-
-The `offset` column compares the picture with the cue time, which is arithmetic on the
-timeline. The `a/v` column compares the picture with the audio that is actually in the
-finished file. The placeholder track of a silent build carries a click at every word
-start, so the click near the cued word's start is that word as it sits in the finished
-file. The `offset` is measured from the cue time, which already includes the cue's
-`offset` key, and the click's distance is measured from the word's start, so the cue's
-`offset` key does not count against `a/v`. The value is zero when the picture begins the
-cue's `offset` after the click. When the two agree, every link in the chain has kept audio
-and picture together: the recording, the trim at t=0, the cut to the section span, the
-concatenation, and the mix. A drift anywhere in the chain shows up as a number here rather
-than as a reveal that feels late. No click is found when the loudest sample is quieter than
-about -38 dBFS, and the JSON row then carries the reason `NO_CLICK`.
-
-The finished file also carries the soundscape. A sound effect or another soundscape part
-that is louder than the click inside the window is taken as the click, so a cue with a
-`[[mix.sfx]]` effect can report a false `a/v` value. A silent build with `--nomix` leaves
-the beds and effects out of the mix, so its `a/v` values measure the clicks alone.
-
-Both limits apply to early and late values alike. The offset limit is two frames by
-default. The a/v limit is three frames, because the click carries encoding jitter too.
-
-### The onset
-
-Once a cue lands, `verify` compares every frame from the reference frame to the reported
-probe with the reference frame, and it counts a pixel as changed when its luma differs by
-more than `onset_diff_level`, 12 by default. The onset is the first frame after the
-reference whose changed share rises by at least `onset_percent` percentage points, 0.01
-by default, over the frame before it. At the probe size of 480 by 270, 0.01 percent is
-about a dozen pixels, so a small element moving elsewhere on the slide does not count. A reveal is abrupt, so it shows as a rise like that,
-while a camera push or a curve still drawing grows a little every frame.
-
-If no frame rises that sharply, the onset is the first frame after the reference whose
-share exceeds both `onset_percent` and the largest share of any frame at or before the
-point `max_offset_frames` plus half a frame before the cue. That fallback catches a reveal
-that grows slowly, such as text typing in. If neither kind of frame exists, the `offset`
-column is blank.
-
-The onset threshold is far below `min_changed_percent` on purpose. A fade or a stroke that
-draws itself begins on its cue but takes many frames to change `min_changed_percent` of the
-pixels, which is 0.1 percent by default.
-
-### The control span
-
-The control span measures motion that has nothing to do with the cue. For each probe,
-`verify` takes two back-to-back spans that end at the reference frame, each as long as the
-probe's distance from the reference, and it measures the changed share between the first
-and the last frame of each span.
-The control is the smaller of the two, so motion that is always present shows in both,
-while an earlier reveal still settling shows in only one. A span that would start before
-the section's first frame or inside its fade-in is dropped, and the control is 0 when both
-spans are dropped.
-
-### The reference frame and skipped cues
-
-The reference frame is the first frame at or after the point `lead_seconds` before the
-cue, or earlier when a reveal that lands `max_offset_frames` early could otherwise already show
-in it. It never sits inside the section's
-fade-in, where the picture is still coming up from black, and it always sits at least one
-frame before the cue. A page section gets no fade-in in the cut when `page_fades_in` under
-`[transition]` is true, which is the default, so its reference may sit on the section's
-first frame. When no frame fits, the cue is reported as `skipped` with a reason instead of
-being measured against the wrong frame.
-
-| Reason | Meaning |
-|---|---|
-| `REFERENCE_CLAMPED` | No reference frame fits after the fade-in and before the cue, which is usual for a `$start` cue. |
-| `SECTION_NOT_ASSEMBLED` | The section has no `NN-section.mp4`. |
-| `TOO_CLOSE_TO_END` | Every probe in `probe_delays` would fall past the end of the section. |
-| `OPTED_OUT` | `cues.json` sets `"verify": false` on the cue, and the cue was not named on the command line. |
-
-A reveal that is too small or too slow for a frame difference, such as a thin arrow or a
-term that fades in over a second, is a good candidate for `"verify": false`. Check it by
-eye with `decktalk shots --step ID --cue CUE` instead.
-
-## Loudness
-
-The whole soundtrack is one mix over a silent anchor of the picture's length. After the
-parts are summed, DeckTalk measures the mix's integrated loudness and true peak, applies
-the gain that reaches the integrated target, runs a limiter oversampled at 192 kHz so that
-inter-sample peaks are caught, and measures the result again. The defaults are -16 LUFS
-integrated with a -1.5 dBTP ceiling. An integrated level of -16 LUFS is a common target for
-spoken audio, and YouTube and Spotify normalize to about -14 LUFS. The limiter sits 0.3 dB
-under the ceiling, so by default it acts on peaks above -1.8 dBTP. A plain gain keeps the
-mix's dynamics, and the limiter touches only the peaks above that level.
-
-```text
-[loud] I -22.1 -> -16.0 LUFS (target -16.0), TP -20.6 -> -14.5 dBTP (ceiling -1.5), LRA 2.5 -> 2.6 LU
-```
-
-A result more than one LU from the target or above the ceiling is reported as a warning,
-and `--strict` turns it into an error. The `--no-loudnorm` flag skips the pass, and the
-targets are `[mix.loudnorm]` in [decktalk.toml](/reference/decktalk-toml#mixloudnorm).
-
-A silent build skips the pass on its own, because its narration is clicks and silence and
-there is no speech to normalize. The clicks stay at -24 dBFS, which is where the `a/v`
-check listens for them, and the log says so.
-
-```text
-[loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, and the clicks stay at -24 dBFS for the a/v check
-```
-
-## Caching and cost
-
-The `narrate` stage keys each section by a hash of the provider, the voice id, the model,
-the output format, the voice settings, and the exact text sent for that section. It skips
-a section when the hash matches, the section's file name is unchanged, and its mp3 and
-words file exist. Renaming a heading changes the file name, so that section is voiced
-again. The text of neighboring sections is not part of the hash, so an edit never voices a
-neighbor again.
-
-Change a sentence, and only that section is voiced again. A plain build records every
-section again in real time, and `decktalk build --only N` records only that section.
-Because cue times are relative to each section's own start, a section's recording stays
-valid when its neighbors change length. [Rebuild one section](/guides/rebuild-one-section)
-says what each edit costs, and [Requirements and costs](/requirements) lists every command
-that spends ElevenLabs credits.
+The recorder removes the cover only when the page is ready. [The handshake](/concepts/page-contract#the-handshake)
+shows each wait. `measure` looks for the cover only in the first `[align] scan_seconds` of each recording, 4 s by
+default. The alignment never depends on wall-clock time.
 
 ## The silent build
 
-The `--silent` flag replaces the voice with a placeholder track sized at
-`silent_words_per_minute` plus every declared pause, and it spaces the estimated words
-evenly across the track. The track is not pure silence. It carries a soft click at every
-word start, which makes a silent draft reviewable for pacing and lets `verify` measure the
-finished file's audio against its picture. Every other stage runs as usual, so a silent
-build proves the cues, the pages, the recording, the assembly, and the verification
-without an API key. The tables mark their times as estimated.
+A silent build replaces the voice with a click track, so it needs no account and no API key.
 
-A silent build writes its placeholder tracks over the voiced mp3 files and marks every
-manifest entry as a placeholder, which empties the narration cache. The next voiced build
-therefore synthesizes every section again and spends credits on all of them.
+{/* sample: decktalk build --silent, silent build of the scaffold (R2), first narrate lines */}
+```text
+[sil ] 01-open.mp3  29 words -> 16.99s (estimated words)
+[sil ] 02-how-it-works.mp3  39 words -> 19.58s (estimated words)
+[sil ] 03-how-ai-learns.mp3  228 words -> 115.39s (estimated words)
+```
 
-## Concurrency and safety
+- The click track has a soft click at the start of every estimated word, at -24 dBFS.
+- `narrate` spaces the estimated words evenly at `silent_words_per_minute`, 150 by default. It adds each pause,
+  beat, and tail. [script.md](/reference/script-md) gives the length rule.
+- Every other stage runs as usual. A silent build therefore tests the cues, the pages, the recording, the cut, and
+  the checks.
+- The `narrate` and `beats` tables mark their times as estimated.
+- The clicks let `verify` compare the picture with the sound in the final mp4. [Verify](/reference/verify#cues)
+  explains the check.
+- A silent build skips the loudness pass, so the clicks keep their level.
 
-Stages run one after another and never in parallel with themselves, and one build runs
-one Chromium. Every JSON artifact is written to a temporary file and renamed into place,
-so a reader never sees a half-written file. The final mp4 is published the same way, and
-a timestamped copy sits beside it. The narration manifest is saved after every paid call,
-so an interrupted run keeps what it bought. Errors raise a `DeckTalkError` subclass with
-the file or field named, and the command line turns that into exit code 1 with the
-message on stderr.
+A silent build after a voiced build empties the narration cache.
+[A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build) explains the cost.
+
+## Clips and the narration
+
+A clip section plays a video with its own audio. `narrate`, `record`, and `measure` skip it, and the narration
+pauses for a clip between two page sections.
+
+<Frame caption="The narration pauses for the clip and resumes with section 5.">
+  <img className="block dark:hidden" src="/images/narration-split-light.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 5, and 6 back to back, with a split after section 3. The video lane plays clip section 4 after section 3, and dashed leads move sections 5 and 6 later by its length. Captions sit under page sections only. Chapters mark all six section starts." />
+  <img className="hidden dark:block" src="/images/narration-split-dark.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 5, and 6 back to back, with a split after section 3. The video lane plays clip section 4 after section 3, and dashed leads move sections 5 and 6 later by its length. Captions sit under page sections only. Chapters mark all six section starts." />
+</Frame>
+
+[Add a clip section](/guides/clip-section) shows how to place a clip and how the narration splits.
+
+## Caching
+
+`narrate` keeps each section's audio and a hash of its text in `build/audio/manifest.json`. After an edit,
+`decktalk build` voices again only the sections whose text changed. A plain build still records every page
+section, and `decktalk build --only N` records only section N. A recording stays valid when a neighbor section
+changes length, because cue times count from the start of their own section.
+[Rebuild one section](/guides/rebuild-one-section) says what each edit runs again.
+
+## What verify checks
+
+`verify` checks the final mp4 in three ways.
+
+- **Section starts:** the frame 0.2 s after each section start has a pixel brighter than luma 60.
+- **Cuts:** the narration is at or below -40 dBFS in the last 0.15 s before each cut.
+- **Cues:** the picture changes within 80 ms of each cue time. After a silent build, it also changes within 120 ms
+  of the click plus the offset key.
+
+The verify stage inside `decktalk build` checks section starts and cuts. `decktalk verify` also checks the cues.
+[Verify](/reference/verify) defines every measurement, limit, and result.
+
+## Terms
+
+| Term | Meaning |
+|---|---|
+| [Stage](/reference/glossary) | One of `narrate`, `beats`, `record`, `measure`, `check`, `assemble`, and `verify`, in that order. |
+| [Silent build](/reference/glossary) | A build with `--silent`. It uses estimated word times and writes a click track. |
+| [Voiced build](/reference/glossary) | A build without `--silent`. The speech provider voices the script. |
+| [Click track](/reference/glossary) | The audio of a silent build, with a soft click at every estimated word start. |
+| [Narration t=0](/reference/glossary) | The first frame after the magenta cover, where the page clock starts. |
+| [Recording](/reference/glossary) | The webm that `record` writes for a page section. |
+| [Cut](/reference/glossary) | The boundary between two sections in the final video. |
+
+## Next
+
+- **Build your first video:** [Quickstart](/quickstart)
+- **Rebuild after an edit:** [Rebuild one section](/guides/rebuild-one-section)
+- **Read a verify table:** [Verify](/reference/verify)
