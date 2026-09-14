@@ -1,0 +1,80 @@
+{
+  "source": {
+    "build": "the v12 lesson film, voiced, section 1 (Open)",
+    "file": "build/audio/01-open.words.json",
+    "script": "A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat] Two, three. [beat]"
+  },
+  "section": 1,
+  "words": [
+    {
+      "word": "A",
+      "start": 0.7,
+      "end": 0.955
+    },
+    {
+      "word": "bowl",
+      "start": 1.048,
+      "end": 1.548
+    },
+    {
+      "word": "A",
+      "start": 1.838,
+      "end": 1.907
+    },
+    {
+      "word": "ball",
+      "start": 1.989,
+      "end": 2.418
+    },
+    {
+      "word": "Watch",
+      "start": 2.697,
+      "end": 2.952
+    },
+    {
+      "word": "it",
+      "start": 3.01,
+      "end": 3.08
+    },
+    {
+      "word": "step",
+      "start": 3.126,
+      "end": 3.324
+    },
+    {
+      "word": "down",
+      "start": 3.382,
+      "end": 3.533
+    },
+    {
+      "word": "on",
+      "start": 3.591,
+      "end": 3.661
+    },
+    {
+      "word": "my",
+      "start": 3.719,
+      "end": 3.8
+    },
+    {
+      "word": "count",
+      "start": 3.87,
+      "end": 4.241
+    },
+    {
+      "word": "One",
+      "start": 4.485,
+      "end": 4.822
+    },
+    {
+      "word": "Two",
+      "start": 5.263,
+      "end": 5.657
+    },
+    {
+      "word": "three",
+      "start": 5.774,
+      "end": 6.192
+    }
+  ]
+}

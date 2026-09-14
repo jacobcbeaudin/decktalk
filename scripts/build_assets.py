@@ -3,11 +3,14 @@
 # dependencies = ["playwright>=1.50", "fonttools[woff]>=4.50"]
 # ///
 """Generate every graphic from one source. The graphics are the hero, how-it-works (wide and
-stacked), alignment, the verify strip, the rebuild lanes, the mark, the wordmark, and the favicon.
+stacked), alignment, the verify probes and onset, the rebuild lanes, the narration split, the duck
+lane, the cue offset, the mark, the wordmark, and the favicon. Every number a figure prints comes
+from scripts/figure-data/*.json, which `--capture` measures from a built scaffold.
 The README reads assets/, and the docs site reads docs/images/ and docs/logo/.
 
     uv run scripts/build_assets.py            # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, docs/favicon.svg
     uv run scripts/build_assets.py --check    # exit 1 if the committed files would change
+    uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson   # re-measure figure data
 
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
 they cannot drift. The copies in assets/ have a transparent background so they sit on whatever
@@ -71,10 +74,17 @@ CUE_WORDS = {1, 5, 6}  # curve, number, lands.
 CAP_HEIGHT = 0.73  # Inter Tight's cap height as a fraction of the font size.
 MEASURE_PX = 32  # The size the words are measured at. Every diagram scales the positions from it.
 HERO_W, HERO_H, HERO_PAD = 1000, 248, 48
-HERO_PX = 30  # the sentence's size in the hero, so it clears the card at this width
-HEAD_START, HEAD_END = 5, 64  # % of the loop the playhead travels
-CARD_W, CARD_H, CARD_R = 324, 152, 12  # the hero's slide card
-SLIDE_W, SLIDE_H = 348, 164  # the slide artwork's own coordinate space
+HERO_PX = 30  # the line's size in the hero, so it clears the card at this width
+CARD_W, CARD_H, CARD_R = 420, 152, 12  # the hero's slide card
+# The hero is the opening of the lesson film: "A bowl. [beat] A ball. [beat] Watch it step down on my
+# count. [beat] One. [beat] Two, three." The line leaves out "Watch it step down on my count.", and
+# every time the hero prints or animates on is a word's real start from scripts/figure-data/hero.json.
+HERO_WORDS = ["A", "bowl.", "A", "ball.", "One.", "Two,", "three."]
+HERO_CUES = {1, 3, 4, 5, 6}  # bowl, ball, and the three count words
+HERO_LOOP, HERO_LEAD = 9.0, 0.5  # the loop plays the words in real time, starting HERO_LEAD s in
+# The film's scene 1 draws the bowl y = 720 - 320 u^2. The ball starts at u = -0.96, and each count
+# is a step of gradient descent on u^2 at step size 0.25, so each step halves u.
+HERO_STEPS = [-0.96, -0.48, -0.24, -0.12]
 FACES = (
     # family, file, weight range: variable fonts subset to the glyphs the diagrams use
     ("DT Sans", "InterTight.woff2", "100 900"),
@@ -161,16 +171,35 @@ def glyph_outlines(text: str, size: float, weight: int, tracking: float) -> tupl
 
 
 def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
-    last_tick = xs[-1] + 1
-    total = 8.0
+    """The lesson film's opening. Each word lights at its real start, the bowl and the ball appear on
+    their words, and on each count the ball steps down and that word's box fills with its start time."""
+    words = figure_data("hero")["words"]
+    times, j = [], 0
+    for w in HERO_WORDS:
+        key = w.strip(".,")
+        while words[j]["word"] != key:
+            j += 1
+        times.append(words[j]["start"])
+        j += 1
+    count_t = next(w["start"] for w in words if w["word"] == "count")
+    bowl_t, ball_t, counts = times[1], times[3], times[4:]
+    total = HERO_LOOP
 
-    def pct(x: float) -> int:
-        return round(HEAD_START + x / last_tick * (HEAD_END - HEAD_START))
+    def pct(t: float) -> float:
+        return round((HERO_LEAD + t) / total * 100, 1)
 
-    word_pct = [pct(x) for x in xs]
-    curve_on = word_pct[1]
-    number_on = word_pct[5]
-    trans = word_pct[6]  # the slide changes on the last word, like every other reveal
+    def show(name: str, on: float, off: float | None = None) -> str:
+        """Hidden until pct `on`, and hidden again from pct `off` when given. The base style is the end state."""
+        a, b = pct(on), None if off is None else pct(off)
+        if b is None:
+            frames = f"0%,{a - 0.1:.1f}%{{opacity:0}}{a:.1f}%,100%{{opacity:1}}"
+            base = ""
+        else:
+            frames = f"0%,{a - 0.1:.1f}%{{opacity:0}}{a:.1f}%,{b - 0.1:.1f}%{{opacity:1}}{b:.1f}%,100%{{opacity:0}}"
+            base = "opacity:0;"
+        return f"@keyframes {name}{{{frames}}}.{name}{{{base}animation:{name} {total}s linear infinite}}"
+
+    ticks_x = [x + 1 for x in xs]
     css = [font_face()]
     css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
     css.append(
@@ -178,92 +207,120 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
     )
     css.append(f".cap{{font:400 14px {SANS};fill:{pal['mute']}}}")
     css.append(f".block{{fill:{pal['block']}}}")
-    css.append(f".axis{{stroke:{pal['hair']};stroke-width:2}}")
     css.append(
         f".tick{{stroke:{pal['accent']};stroke-width:2.5;stroke-linecap:round;animation:{total}s linear infinite}}"
     )
-    css.append(f".dot{{fill:{pal['accent']};animation:{total}s linear infinite}}")
-    css.append(f".num{{font:700 60px {SANS};letter-spacing:-.03em;fill:{pal['accent']}}}")
+    css.append(f".dot{{fill:{pal['accent']}}}")
+    css.append(f".bowl{{stroke:{pal['ink']};stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round}}")
+    css.append(f".ball{{fill:{pal['accent']};stroke:{pal['block']};stroke-width:2.5}}.mark{{fill:{pal['ink']}}}")
+    css.append(
+        f".box{{fill:{pal['bg']};stroke:{pal['ink']};stroke-width:1.5}}.box.full{{fill:{pal['accent']};stroke:{pal['accent']}}}"
+    )
+    css.append(f".bl{{font:600 14px {SANS};fill:{pal['ink']};text-anchor:middle}}.bl.full{{fill:{pal['on_accent']}}}")
+    css.append(f".time{{font:500 12px {SANS};fill:{pal['mute']};text-anchor:middle;font-variant-numeric:tabular-nums}}")
     # The loop dissolves: everything fades out over the last 7 % and back in over the first 4 %.
     css.append(f".loop{{animation:loop {total}s linear infinite}}")
     css.append("@keyframes loop{0%{opacity:0}4%,93%{opacity:1}100%{opacity:0}}")
-    # The playhead is parked on the last tick at rest and travels from 0 during the loop.
-    css.append(f".head{{transform:translateX({last_tick:.1f}px);animation:head {total}s linear infinite}}")
+    # The playhead rests on each word's tick from that word's start, with a short glide between ticks.
+    head = [f"0%,{pct(times[0]):.1f}%{{transform:translateX({ticks_x[0]:.1f}px)}}"]
+    for i in range(1, len(times)):
+        head.append(
+            f"{pct(times[i]) - 0.8:.1f}%{{transform:translateX({ticks_x[i - 1]:.1f}px)}}"
+            f"{pct(times[i]):.1f}%{{transform:translateX({ticks_x[i]:.1f}px)}}"
+        )
+    head.append(f"100%{{transform:translateX({ticks_x[-1]:.1f}px)}}")
     css.append(
-        f"@keyframes head{{0%,{HEAD_START}%{{transform:translateX(0)}}{HEAD_END}%,100%{{transform:translateX({last_tick:.1f}px)}}}}"
+        f".head{{transform:translateX({ticks_x[-1]:.1f}px);animation:head {total}s cubic-bezier(.2,0,0,1) infinite}}"
     )
-    for i, p in enumerate(word_pct):
-        on = pal["accent"] if i in CUE_WORDS else pal["ink"]
-        css.append(f"@keyframes w{i}{{0%,{p - 1}%{{fill:{pal['dim']}}}{p}%,100%{{fill:{on}}}}}")
-        css.append(f"@keyframes t{i}{{0%,{p - 1}%{{stroke:{pal['tick']}}}{p}%,100%{{stroke:{pal['accent']}}}}}")
-        css.append(f".w{i}{{animation-name:w{i}}}.t{i}{{animation-name:t{i}}}")
-    for n, at in ((1, curve_on), (2, number_on), (3, trans)):
-        css.append(f"@keyframes d{n}{{0%,{at - 1}%{{opacity:0}}{at}%,100%{{opacity:1}}}}.d{n}{{animation-name:d{n}}}")
-    # A dash of 1 with a gap of 2 (on a pathLength of 1) keeps the next dash's round cap off the
-    # end of the path before the draw starts, so no dot appears ahead of the curve.
-    css.append(
-        f".curve{{stroke-dasharray:1 2;stroke-dashoffset:0;animation:draw {total}s cubic-bezier(.3,0,.1,1) infinite}}"
-    )
-    css.append(f"@keyframes draw{{0%,{curve_on}%{{stroke-dashoffset:1}}{curve_on + 16}%,100%{{stroke-dashoffset:0}}}}")
-    css.append(
-        f".pop{{transform-box:fill-box;transform-origin:center;animation:pop {total}s cubic-bezier(.2,.9,.2,1) infinite}}"
-    )
-    css.append(
-        f"@keyframes pop{{0%,{number_on}%{{opacity:0;transform:scale(.7)}}{number_on + 4}%,100%{{opacity:1;transform:scale(1)}}}}"
-    )
-    # The slide transition: A out, then B in, sequenced so nothing bleeds through.
-    css.append(f".sa{{animation:sa {total}s cubic-bezier(.2,0,0,1) infinite}}")
-    css.append(
-        f"@keyframes sa{{0%,{trans}%{{opacity:1;transform:translateX(0)}}{trans + 3}%,100%{{opacity:0;transform:translateX(-24px)}}}}"
-    )
-    css.append(f".sb{{opacity:0;transform:translateX(24px);animation:sb {total}s cubic-bezier(.2,0,0,1) infinite}}")
-    css.append(
-        f"@keyframes sb{{0%,{trans + 3}%{{opacity:0;transform:translateX(24px)}}{trans + 7}%,100%{{opacity:1;transform:translateX(0)}}}}"
-    )
+    css.append(f"@keyframes head{{{''.join(head)}}}")
+    for i, t in enumerate(times):
+        p = pct(t)
+        on = pal["accent"] if i in HERO_CUES else pal["ink"]
+        css.append(f"@keyframes w{i}{{0%,{p - 0.1:.1f}%{{fill:{pal['dim']}}}{p:.1f}%,100%{{fill:{on}}}}}")
+        css.append(
+            f"@keyframes t{i}{{0%,{p - 0.1:.1f}%{{stroke:{pal['tick']}}}{p:.1f}%,100%{{stroke:{pal['accent']}}}}}"
+        )
+        css.append(f".w{i}{{fill:{on};animation-name:w{i}}}.t{i}{{animation-name:t{i}}}")
+        if i in HERO_CUES:
+            css.append(show(f"d{i}", t))
+    css.append(show("bw", bowl_t))
+    css.append(show("bx", count_t))
+    steps_on = [ball_t, *counts]
+    for k, on in enumerate(steps_on):
+        css.append(show(f"b{k}", on, steps_on[k + 1] if k + 1 < len(steps_on) else None))
+    for k, t in enumerate(counts):
+        css.append(show(f"m{k}", t))
+        css.append(show(f"f{k}", t))
     css.append(reduced_motion())
 
     words_svg = "".join(
-        f'<tspan class="w w{i}" x="{x:.1f}">{w}</tspan>' for i, (w, x) in enumerate(zip(SENTENCE, xs, strict=True))
+        f'<tspan class="w w{i}" x="{x:.1f}">{w}</tspan>' for i, (w, x) in enumerate(zip(HERO_WORDS, xs, strict=True))
     )
     ticks_svg = "".join(
-        f'<line class="tick t{i}" x1="{x + 1:.1f}" y1="0" x2="{x + 1:.1f}" y2="16"/>' for i, x in enumerate(xs)
+        f'<line class="tick t{i}" x1="{x:.1f}" y1="0" x2="{x:.1f}" y2="16"/>' for i, x in enumerate(ticks_x)
     )
-    dots_svg = "".join(
-        f'<circle class="dot d{n}" cx="{xs[i] + 1:.1f}" cy="-6" r="4"/>'
-        for n, i in enumerate(sorted(CUE_WORDS), start=1)
+    dots_svg = "".join(f'<circle class="dot d{i}" cx="{ticks_x[i]:.1f}" cy="-6" r="4"/>' for i in sorted(HERO_CUES))
+
+    # The slide card, in card pixels: the bowl on the left, the three count boxes on the right.
+    pad = 24
+    bowl_hw, bowl_cx, bowl_floor, bowl_depth = 72, pad + 72, 124, 90
+
+    def on_bowl(u: float, r: float) -> tuple[float, float]:
+        """A point r px off the bowl along its inner normal, so a circle of radius r sits on the line."""
+        dx, dy = bowl_hw, -2 * bowl_depth * u
+        n = (dx * dx + dy * dy) ** 0.5
+        return bowl_cx + bowl_hw * u + r * dy / n, bowl_floor - bowl_depth * u * u - r * dx / n
+
+    bowl_d = "".join(
+        f"{'L' if n else 'M'}{bowl_cx + bowl_hw * u:.1f},{bowl_floor - bowl_depth * u * u:.1f}"
+        for n, u in enumerate(i / 20 - 1 for i in range(41))
     )
-    # The card spans the label row to the caption baseline. The narration column is laid out to
-    # the same extent, with the words and ticks centred between the label and the caption.
+    balls = "".join(
+        f'<circle class="ball b{k}" cx="{on_bowl(u, 10)[0]:.1f}" cy="{on_bowl(u, 10)[1]:.1f}" r="9"/>'
+        for k, u in enumerate(HERO_STEPS)
+    )
+    marks = "".join(
+        f'<circle class="mark m{k}" cx="{on_bowl(u, 4)[0]:.1f}" cy="{on_bowl(u, 4)[1]:.1f}" r="3.5"/>'
+        for k, u in enumerate(HERO_STEPS[:-1])
+    )
+    box_x0, gap, box_y, box_h = bowl_cx + bowl_hw + pad, 8, 48, 36
+    box_w = (CARD_W - pad - box_x0 - 2 * gap) / 3
+    boxes, fills = [], []
+    for k, (label, t) in enumerate(zip(("one", "two", "three"), counts, strict=True)):
+        bx = box_x0 + k * (box_w + gap)
+        mid = bx + box_w / 2
+        boxes.append(
+            f'<rect class="box" x="{bx:.1f}" y="{box_y}" width="{box_w:.1f}" height="{box_h}" rx="8"/>'
+            f'<text class="bl" x="{mid:.1f}" y="{box_y + 23}">{label}</text>'
+        )
+        fills.append(
+            f'<g class="f{k}"><rect class="box full" x="{bx:.1f}" y="{box_y}" width="{box_w:.1f}" height="{box_h}" rx="8"/>'
+            f'<text class="bl full" x="{mid:.1f}" y="{box_y + 23}">{label}</text>'
+            f'<text class="time" x="{mid:.1f}" y="{box_y + box_h + 22}">{t:.2f} s</text></g>'
+        )
     card_x, card_y = HERO_W - HERO_PAD - CARD_W, HERO_PAD
     caption_y = card_y + CARD_H
     words_y = 110
+    spoken = " ".join(HERO_WORDS)
+    time_list = ", ".join(f"{t:.2f} s" for t in counts[:-1]) + f", and {counts[-1]:.2f} s"
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{HERO_W}" height="{HERO_H}" viewBox="0 0 {HERO_W} {HERO_H}" role="img" aria-labelledby="t d">
   <title id="t">DeckTalk</title>
-  <desc id="d">A playhead moves along a spoken sentence, one tick per word. When it reaches "curve", a curve draws on the slide. When it reaches "number", a figure appears. On the last word, the slide changes.</desc>
-  <defs><style>{chr(10).join(css)}</style><clipPath id="card"><rect width="{CARD_W}" height="{CARD_H}" rx="{CARD_R}"/></clipPath></defs>
+  <desc id="d">A playhead moves along the narration "{spoken}", one tick per word. A bowl appears on the slide on "bowl", and a ball appears on its rim on "ball". On each count word, the ball steps down the bowl and a box fills with that word's start time: {time_list}.</desc>
+  <defs><style>{chr(10).join(css)}</style></defs>
   {bg_rect(pal, HERO_W, HERO_H, background)}
   <g class="loop">
   <text class="lab" x="{HERO_PAD}" y="{card_y}">NARRATION</text>
   <g transform="translate({HERO_PAD} {words_y})">
     <text y="0">{words_svg}</text>
-    <g transform="translate(0 30)">{ticks_svg}{dots_svg}<g class="head"><rect x="0" y="-14" width="2" height="38" fill="{pal["ink"]}"/></g></g>
-    <text class="cap" x="0" y="{caption_y - words_y}">Every word has a timestamp, and every reveal has a cue.</text>
+    <g transform="translate(0 30)">{ticks_svg}{dots_svg}<g class="head"><rect x="-1" y="-14" width="2" height="38" fill="{pal["ink"]}"/></g></g>
+    <text class="cap" x="0" y="{caption_y - words_y}">Every word has a start time, and each reveal waits for its word.</text>
   </g>
   <g transform="translate({card_x} {card_y})">
     <rect class="block" width="{CARD_W}" height="{CARD_H}" rx="{CARD_R}"/>
-    <g clip-path="url(#card)"><g transform="scale({CARD_W / SLIDE_W:.4f})">
-      <g class="sa">
-        <line class="axis" x1="30" y1="126" x2="200" y2="126"/><line class="axis" x1="30" y1="38" x2="30" y2="126"/>
-        <path class="curve" pathLength="1" d="M30,120 C70,118 110,98 150,64 S190,36 200,32" fill="none" stroke="{pal["accent"]}" stroke-width="4" stroke-linecap="round"/>
-        <text class="num pop" x="228" y="106">3×</text>
-      </g>
-      <g class="sb">
-        <rect x="30" y="40" width="150" height="12" rx="6" fill="{pal["accent"]}"/>
-        <rect x="30" y="72" width="260" height="9" rx="4.5" fill="{pal["bar"]}"/>
-        <rect x="30" y="94" width="220" height="9" rx="4.5" fill="{pal["bar"]}"/>
-        <rect x="30" y="116" width="240" height="9" rx="4.5" fill="{pal["bar"]}"/>
-      </g>
-    </g></g>
+    <path class="bowl bw" d="{bowl_d}"/>
+    {marks}{balls}
+    <g class="bx">{"".join(boxes)}</g>
+    {"".join(fills)}
   </g>
   </g>
 </svg>
@@ -274,8 +331,8 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
 
 STAGES = [
     ("01 WRITE", "A script in markdown", "One heading starts one section."),
-    ("02 NARRATE", "Your voice reads it", "ElevenLabs returns a time for every word."),
-    ("03 RECORD", "Slides reveal on the words", "Plain HTML, recorded in Chromium."),
+    ("02 NARRATE", "Your voice reads it", "The speech provider times every word."),
+    ("03 RECORD", "Slides appear on their words", "Plain HTML, recorded in Chromium."),
     ("04 ASSEMBLE", "Cut to the frame", "ffmpeg cuts, mixes, verifies."),
 ]
 TICK_XS = [2, 30, 74, 96, 142, 178, 222]
@@ -357,7 +414,7 @@ def stage_svg(i: int, pal: dict[str, str], x: int, y: int) -> str:
         ticks = "".join(f'<line class="tk k{j}" x1="{tx}" y1="46" x2="{tx}" y2="62"/>' for j, tx in enumerate(TICK_XS))
         art = f"""<g transform="translate(0 100)">{ticks}
       <circle class="cd cd1" cx="{TICK_XS[2]}" cy="38" r="4"/><circle class="cd cd2" cx="{TICK_XS[5]}" cy="38" r="4"/>
-      <text class="lab ts cd1" x="{TICK_XS[2] + 8}" y="38">0.82</text>
+      <text class="lab ts cd1" x="{TICK_XS[2] + 8}" y="38">{figure_data("how-it-works")["start"]:.2f}</text>
       <g class="head2"><rect x="1" y="30" width="2" height="38" class="accent"/></g></g>"""
     elif i == 2:
         art = f"""<g transform="translate(0 98)">
@@ -371,22 +428,32 @@ def stage_svg(i: int, pal: dict[str, str], x: int, y: int) -> str:
       <rect class="bar fr f3" x="116" y="0" width="50" height="36" rx="8"/>
       <rect class="bar fr f4" x="174" y="0" width="50" height="36" rx="8"/>
       <g class="out"><rect class="accent" x="0" y="0" width="224" height="36" rx="8"/><text class="lab on-accent" x="14" y="22">OUT.MP4</text></g></g>"""
+    cmds = STAGE_COMMANDS[i]
+    cmd = f'<text class="cmd" x="0" y="102">{" · ".join(cmds)}</text>' if cmds else ""
     return f"""  <g transform="translate({x} {y})">
     <text class="lab n{i}" x="0" y="80">{lab}</text>
+    {cmd}
+    <g transform="translate(0 {CMD_ROW})">
     {art}
     <text class="h" x="0" y="212">{h}</text>
     <text class="s" x="0" y="236">{s}</text>
+    </g>
   </g>"""
 
 
+# The pipeline stages each panel runs, in their fixed order. Writing the script runs none.
+STAGE_COMMANDS = ((), ("narrate", "beats"), ("record", "measure", "check"), ("assemble", "verify"))
+CMD_ROW = 22  # the height the command row adds under each panel label
+
+
 def how_it_works(pal: dict[str, str], stacked: bool, background: bool) -> str:
-    css = hiw_css(pal)
-    title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides reveal on the words in a browser. ffmpeg cuts one mp4."
+    css = hiw_css(pal) + f"\n.cmd{{font:500 13px {MONO};fill:{pal['ink']}}}"
+    title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The seven stages are narrate, beats, record, measure, check, assemble, and verify."
     if not stacked:
-        w, h = 1200, 240
+        w, h = 1200, 240 + CMD_ROW
         stages = "\n".join(stage_svg(i, pal, 60 + 280 * i, -40) for i in range(4))
     else:
-        w, h = 600, 560
+        w, h = 600, 560 + 2 * CMD_ROW
         stages = "\n".join(stage_svg(i, pal, 40 + 280 * (i % 2), 280 * (i // 2)) for i in range(4))
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t">
   <title id="t">{title}</title>
@@ -424,12 +491,15 @@ def mark(pal: dict[str, str], size: int = 24, background: bool = False) -> str:
 
 FRAME_W, FRAME_H, FRAME_GAP = 88, 50, 8
 COVER_FRAMES = 3  # frames that are still covered before the clock starts
-STRIP_CUES = {1, 5}  # The strip shows the curve and the number. The slide change belongs to the hero.
+# The scaffold's open, from template/script.md: "A bowl. [beat] A ball. [beat] Watch it step down on my count."
+ALIGN_WORDS = ["A", "bowl.", "A", "ball.", "Watch", "it", "step", "down"]
+STRIP_CUES = {1, 3}  # cues 1.1bowl and 1.1ball in template/cues.json
 
 
 def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
-    """Why the cuts are exact: the recording opens on a tinted cover, the first clean frame is
-    narration t=0, and each cue is a spoken word measured from that same origin."""
+    """Why the cuts are exact: the recording opens on the magenta cover, the first clean frame is
+    narration t=0, and each cue is a spoken word measured from that same origin. The scaffold's
+    reveals use data-fx="none", so the bowl and the ball each appear whole in one frame."""
     w, h = 1200, 250
     left = 72
     n_frames = 11
@@ -438,8 +508,8 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
     t0_x = left + COVER_FRAMES * pitch
     words_y = 168
     tick_y = 178
-    curve_x = t0_x + xs[1] + 1  # the tick under "curve"
-    number_x = t0_x + xs[5] + 1  # the tick under "number"
+    bowl_x = t0_x + xs[1] + 1  # the tick under "bowl."
+    ball_x = t0_x + xs[3] + 1  # the tick under "ball."
     css = [font_face()]
     css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
     css.append(f".w{{font:600 26px {SANS};letter-spacing:-.01em;fill:{pal['ink']}}}")
@@ -451,43 +521,41 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
     css.append(f".tick{{stroke:{pal['tick']};stroke-width:2.5;stroke-linecap:round}}.tick.on{{stroke:{pal['accent']}}}")
     css.append(f".t0{{stroke:{pal['ink']};stroke-width:2}}")
     css.append(f".lead{{stroke:{pal['accent']};stroke-width:1.5;stroke-dasharray:3 4}}")
-    css.append(f".axis{{stroke:{pal['hair']};stroke-width:1.5}}")
-    css.append(f".num{{font:700 16px {SANS};letter-spacing:-.03em;fill:{pal['accent']}}}")
+    css.append(f".bowl{{stroke:{pal['ink']};stroke-width:2;fill:none;stroke-linejoin:round}}")
+    css.append(f".ball{{fill:{pal['accent']}}}")
     css.append(f".brace{{stroke:{pal['mute']};stroke-width:1.5;fill:none}}")
 
     def frame_at(cue_x: float) -> int:
         """The index of the first frame whose midpoint lies past a cue, where its reveal shows."""
         return next(i for i in range(n_frames) if left + i * pitch + FRAME_W / 2 > cue_x)
 
-    lit = {frame_at(curve_x), frame_at(number_x)}
+    bowl_frame, ball_frame = frame_at(bowl_x), frame_at(ball_x)
+    lit = {bowl_frame, ball_frame}
+    # A miniature of scene 1 of the scaffold's deck/index.html: the bowl y = 720 - 320 u^2 and the
+    # ball at its first position, u = -0.96, scaled into a frame.
+    bowl_pts = [(u, 44 + 30 * u, 42 - 26 * u * u) for u in (i / 10 - 1.05 for i in range(22))]
     frames = []
     for i in range(n_frames):
         x = left + i * pitch
         if i < COVER_FRAMES:
             frames.append(f'<rect class="cover" x="{x}" y="{strip_y}" width="{FRAME_W}" height="{FRAME_H}" rx="6"/>')
             continue
-        # A miniature of the hero slide: a frame shows what had happened by its midpoint. The curve
-        # draws over three frames after the word "curve", and the number appears after "number".
-        mid = x + FRAME_W / 2
-        progress = min(1.0, max(0.0, (mid - curve_x) / (3 * pitch)))
         cls = "frame on" if i in lit else "frame"
         art = [f'<rect class="{cls}" x="{x}" y="{strip_y}" width="{FRAME_W}" height="{FRAME_H}" rx="6"/>']
-        art.append(f'<line class="axis" x1="{x + 10}" y1="{strip_y + 40}" x2="{x + 52}" y2="{strip_y + 40}"/>')
-        art.append(f'<line class="axis" x1="{x + 10}" y1="{strip_y + 12}" x2="{x + 10}" y2="{strip_y + 40}"/>')
-        if progress > 0:
-            art.append(
-                f'<path pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="{1 - progress:.2f}" '
-                f'd="M{x + 10},{strip_y + 38} C{x + 22},{strip_y + 37} {x + 34},{strip_y + 28} {x + 44},{strip_y + 18} '
-                f'S{x + 50},{strip_y + 12} {x + 52},{strip_y + 11}" fill="none" stroke="{pal["accent"]}" '
-                'stroke-width="2.5" stroke-linecap="round"/>'
+        if i >= bowl_frame:
+            d = "".join(
+                f"{'L' if n else 'M'}{x + px:.1f},{strip_y + py:.1f}" for n, (_u, px, py) in enumerate(bowl_pts)
             )
-        if mid > number_x:
-            art.append(f'<text class="num" x="{x + 58}" y="{strip_y + 32}">3×</text>')
+            art.append(f'<path class="bowl" d="{d}"/>')
+        if i >= ball_frame:
+            art.append(
+                f'<circle class="ball" cx="{x + 44 - 30 * 0.96:.1f}" cy="{strip_y + 42 - 26 * 0.96**2 - 6:.1f}" r="5"/>'
+            )
         frames.append("".join(art))
     cover_mid = left + (COVER_FRAMES * pitch - FRAME_GAP) / 2
     words_svg = "".join(
         f'<tspan class="w {"cue" if i in STRIP_CUES else ""}" x="{t0_x + x:.1f}">{w}</tspan>'
-        for i, (w, x) in enumerate(zip(SENTENCE, xs, strict=True))
+        for i, (w, x) in enumerate(zip(ALIGN_WORDS, xs, strict=True))
     )
     ticks_svg = "".join(
         f'<line class="tick {"on" if i in STRIP_CUES else ""}" x1="{t0_x + x + 1:.1f}" y1="{tick_y}" x2="{t0_x + x + 1:.1f}" y2="{tick_y + 14}"/>'
@@ -498,42 +566,32 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
     lead_y = words_y - 26 * CAP_HEIGHT - 6
     leads = "".join(
         f'<line class="lead" x1="{cx:.1f}" y1="{lead_y:.1f}" x2="{left + frame_at(cx) * pitch + FRAME_W / 2:.1f}" y2="{strip_y + FRAME_H + 3}"/>'
-        for cx in (curve_x, number_x)
+        for cx in (bowl_x, ball_x)
     )
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
   <title id="t">Why the cuts are exact</title>
-  <desc id="d">A strip of recorded frames opens on a tinted cover while the page is hidden. The first clean frame is narration t=0. The spoken words start at the same point, and the frames in which the curve draws and the number appears line up with the words "curve" and "number".</desc>
+  <desc id="d">A strip of recorded frames opens on three magenta cover frames. The first clean frame is narration t=0, where the narration "A bowl. A ball. Watch it step down" starts. The bowl appears whole in the first frame after "bowl", and the ball in the first frame after "ball".</desc>
   <defs><style>{chr(10).join(css)}</style></defs>
   {bg_rect(pal, w, h, background)}
   <text class="lab" x="{left}" y="40">RECORDING</text>
   {"".join(frames)}
   <path class="brace" d="M{left},{strip_y + FRAME_H + 8} v5 H{left + COVER_FRAMES * pitch - FRAME_GAP} v-5"/>
-  <text class="cap" x="{cover_mid:.1f}" y="{strip_y + FRAME_H + 30}" text-anchor="middle">covered until the clock starts</text>
+  <text class="cap" x="{cover_mid:.1f}" y="{strip_y + FRAME_H + 30}" text-anchor="middle">magenta cover</text>
   <line class="t0" x1="{t0_x - FRAME_GAP / 2}" y1="{strip_y - 12}" x2="{t0_x - FRAME_GAP / 2}" y2="{tick_y + 18}"/>
   <text class="lab" x="{t0_x + 2}" y="{strip_y - 16}" style="fill:{pal["accent"]}">T = 0</text>
   {leads}
   <text class="lab" x="{left}" y="{words_y}">NARRATION</text>
   <text y="{words_y}">{words_svg}</text>
   {ticks_svg}
-  <text class="cap" x="{left}" y="{h - 18}">The first clean frame is t=0, found in the frames rather than on a timer. Every cue is a word, measured from the same origin.</text>
+  <text class="cap" x="{left}" y="{h - 18}">The first clean frame is t=0.</text>
 </svg>
 """
 
 
-# ---- verify strip -----------------------------------------------------------------------------
+# ---- figure data --------------------------------------------------------------------------------
 
-# Cue 3:3.1eq of the silent v10 build, read from `decktalk verify 3:3.1eq --json` and from the
-# per-frame series that the onset scan reads. The lead and the probe delays are the VerifyConfig
-# defaults, and the offset limit is max_offset_frames (2) at 25 fps.
-VS_FROM, VS_TO = -3.3, 1.6  # seconds from the cue that the time axis spans
-VS_LEAD = 0.1
-VS_PROBES = ((0.7, 0.26), (1.5, 0.41))  # delay after the cue in seconds, and the changed share in percent
-VS_CONTROLS = (0.0, 0.56)  # the two control shares for the reported 1.5 s probe, nearest the reference first
-# The reference is the first frame at or after the lead, so on this cue it is the frame at -70 ms.
-VS_FRAMES = ((-70, 0.0), (-30, 0.2292), (10, 0.2616), (50, 0.2631), (90, 0.2855), (130, 0.2870), (170, 0.2870))
-VS_ONSET_MS = -30
-VS_LIMIT_MS = 80
 MINUS = "&#8722;"
+CUE_OFFSET_KEY = 0.2  # the offset key of the "3.4steps" example in docs/guides/writing-for-the-ear.mdx
 
 
 def _signed(value: float, digits: int, unit: str) -> str:
@@ -542,196 +600,533 @@ def _signed(value: float, digits: int, unit: str) -> str:
     return f"{sign}{abs(value):.{digits}f}{unit}"
 
 
-def verify_strip(pal: dict[str, str], background: bool) -> str:
-    """How `decktalk verify` measures one cue: the reference, the probes, the control spans, and the onset."""
-    w, h = 1200, 300
-    x0, x1 = 60, 770
+def figure_data(name: str) -> dict:
+    """The captured values for one figure, from scripts/figure-data/NAME.json. capture() writes them."""
+    import json
 
-    def tx(t: float) -> float:
-        return x0 + (t - VS_FROM) / (VS_TO - VS_FROM) * (x1 - x0)
+    path = ROOT / "scripts" / "figure-data" / f"{name}.json"
+    if not path.exists():
+        sys.exit(f"{path} is missing. Run `build_assets.py --capture` on a built scaffold.")
+    return json.loads(path.read_text())
 
+
+def fig_css(pal: dict[str, str]) -> list[str]:
+    """The classes the data figures share. Faces and colors come from the palette maps only."""
     css = [font_face()]
     css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
-    css.append(f".tl{{font:500 12px {MONO};fill:{pal['mute']}}}.tl.acc{{fill:{pal['accent']}}}")
-    css.append(f".val{{font:500 11px {MONO};fill:{pal['ink']}}}.val.on{{fill:{pal['on_accent']}}}")
+    css.append(f".ln{{font:500 14px {MONO};fill:{pal['ink']}}}")
+    css.append(
+        f".tl{{font:500 12px {MONO};fill:{pal['mute']}}}.tl.acc{{fill:{pal['accent']}}}.tl.ink{{fill:{pal['ink']}}}"
+    )
+    css.append(f".val{{font:500 12px {MONO};fill:{pal['ink']}}}.val.on{{fill:{pal['on_accent']}}}")
     css.append(f".note{{font:600 13px {SANS};fill:{pal['ink']}}}.note.acc{{fill:{pal['accent']}}}")
     css.append(f".cap{{font:400 14px {SANS};fill:{pal['mute']}}}")
     css.append(f".block{{fill:{pal['block']}}}.bar{{fill:{pal['bar']}}}.accent{{fill:{pal['accent']}}}")
     css.append(f".span{{fill:{pal['block']};stroke:{pal['bar']};stroke-width:1}}")
     css.append(f".end{{fill:{pal['ink']}}}.end.on{{fill:{pal['on_accent']}}}")
     css.append(f".axis{{stroke:{pal['bar']};stroke-width:1.5}}.tk{{stroke:{pal['mute']};stroke-width:1.5}}")
-    css.append(f".cue{{stroke:{pal['accent']};stroke-width:2}}")
+    css.append(f".cue{{stroke:{pal['accent']};stroke-width:2}}.cue.ink{{stroke:{pal['ink']}}}")
     css.append(f".ref{{stroke:{pal['ink']};stroke-width:1.5;stroke-dasharray:3 3}}")
     css.append(f".guide{{stroke:{pal['hair']};stroke-width:1}}")
-    css.append(f".cell{{fill:{pal['bg']};stroke:{pal['bar']};stroke-width:1}}")
-    css.append(f".cell.on{{stroke:{pal['accent']};stroke-width:2.5}}")
     css.append(f".edge{{stroke:{pal['mute']};stroke-width:1;stroke-dasharray:3 3}}")
-
-    cue_x, ref_x = tx(0.0), tx(-VS_LEAD)
-    axis_y = 196
-    parts: list[str] = []
-    # Faint guides drop from each measured time to the axis.
-    for t in (VS_FROM, -1.7, VS_PROBES[0][0], VS_PROBES[1][0]):
-        parts.append(f'<line class="guide" x1="{tx(t):.1f}" y1="92" x2="{tx(t):.1f}" y2="{axis_y}"/>')
-    parts.append(f'<line class="ref" x1="{ref_x:.1f}" y1="84" x2="{ref_x:.1f}" y2="{axis_y + 6}"/>')
-
-    # The control spans for the reported probe. Each is as long as the probe's span and ends where the next begins.
-    best = max(range(len(VS_PROBES)), key=lambda i: VS_PROBES[i][1])
-    delay, _ = VS_PROBES[best]
-    span = delay + VS_LEAD
-    ctl_y = 88
-    spans = []
-    for n, share in enumerate(VS_CONTROLS):
-        b = -VS_LEAD - n * span
-        a = b - span
-        spans.append((a, b, share))
-    quiet_a, quiet_b, _ = min(spans, key=lambda item: item[2])
-    parts.append(
-        f'<text class="note" x="{(tx(quiet_a) + tx(quiet_b)) / 2:.1f}" y="{ctl_y - 10}" text-anchor="middle">ctl % is the smaller</text>'
+    css.append(
+        f".cell{{fill:{pal['bg']};stroke:{pal['bar']};stroke-width:1}}.cell.on{{stroke:{pal['accent']};stroke-width:2.5}}"
     )
-    for a, b, share in spans:
-        xa, xb = tx(a) + 1, tx(b) - 1
-        parts.append(f'<rect class="span" x="{xa:.1f}" y="{ctl_y}" width="{xb - xa:.1f}" height="20" rx="4"/>')
-        parts.append(
-            f'<text class="val" x="{(xa + xb) / 2:.1f}" y="{ctl_y + 14}" text-anchor="middle">{share:.2f}%</text>'
-        )
-        for ex in (xa + 6, xb - 6):
-            parts.append(f'<circle class="end" cx="{ex:.1f}" cy="{ctl_y + 10}" r="2.5"/>')
+    css.append(f".clip{{fill:url(#hatch);stroke:{pal['hair']};stroke-width:1}}")
+    css.append(f".lead{{stroke:{pal['accent']};stroke-width:1.5;stroke-dasharray:4 4;fill:none}}")
+    css.append(f".drop{{stroke:{pal['bar']};stroke-width:1.5;stroke-dasharray:4 4}}")
+    return css
 
-    # The probes, each measured from the reference. The accent marks the probe that the row reports.
-    for i, (delay, share) in enumerate(VS_PROBES):
-        y = 124 + i * 30
-        xb = tx(delay)
-        on = i == best
-        parts.append(
-            f'<rect class="{"accent" if on else "bar"}" x="{ref_x:.1f}" y="{y}" width="{xb - ref_x:.1f}" height="20" rx="4"/>'
-        )
-        label = f"{share:.2f}%, the best probe" if on else f"{share:.2f}%"
-        parts.append(
-            f'<text class="val{" on" if on else ""}" x="{xb - 12:.1f}" y="{y + 14}" text-anchor="end">{label}</text>'
-        )
-        for ex in (ref_x + 6, xb - 6):
-            parts.append(f'<circle class="end{" on" if on else ""}" cx="{ex:.1f}" cy="{y + 10}" r="2.5"/>')
 
-    parts.append(f'<line class="axis" x1="{x0}" y1="{axis_y}" x2="{x1}" y2="{axis_y}"/>')
-    parts.append(f'<line class="cue" x1="{cue_x:.1f}" y1="50" x2="{cue_x:.1f}" y2="{axis_y + 6}"/>')
-    parts.append(f'<text class="note acc" x="{cue_x + 8:.1f}" y="62">word start + offset</text>')
-    marks = [
-        (VS_FROM, _signed(VS_FROM, 1, " s"), "start", ""),
-        (-1.7, _signed(-1.7, 1, " s"), "middle", ""),
-        (-VS_LEAD, f"reference {_signed(-VS_LEAD, 1, ' s')}", "end", ""),
-        (0.0, "cue", "start", " acc"),
-        (VS_PROBES[0][0], f"probe {_signed(VS_PROBES[0][0], 1, ' s')}", "middle", ""),
-        (VS_PROBES[1][0], f"probe {_signed(VS_PROBES[1][0], 1, ' s')}", "middle", ""),
-    ]
-    for t, text, anchor, cls in marks:
-        x = tx(t)
-        parts.append(f'<line class="tk" x1="{x:.1f}" y1="{axis_y - 5}" x2="{x:.1f}" y2="{axis_y + 5}"/>')
-        lx = x - 6 if anchor == "end" else (x + 6 if t == 0.0 else x)
-        parts.append(f'<text class="tl{cls}" x="{lx:.1f}" y="{axis_y + 22}" text-anchor="{anchor}">{text}</text>')
-
-    # The inset: seven 40 ms frames around the cue, each with its changed share against the reference.
-    ix0, ix1 = 830, 1140
-    ms_from, ms_to = -95, 195
-
-    def mx(ms: float) -> float:
-        return ix0 + (ms - ms_from) / (ms_to - ms_from) * (ix1 - ix0)
-
-    band_a, band_b = mx(-VS_LIMIT_MS), mx(VS_LIMIT_MS)
-    parts.append(f'<rect class="block" x="{band_a:.1f}" y="48" width="{band_b - band_a:.1f}" height="154"/>')
-    for bx in (band_a, band_b):
-        parts.append(f'<line class="edge" x1="{bx:.1f}" y1="48" x2="{bx:.1f}" y2="202"/>')
-    parts.append(f'<text class="tl" x="{band_a + 8:.1f}" y="64">&#177;{VS_LIMIT_MS} ms</text>')
-    cell_w = (mx(40) - mx(0)) - 8
-    top, base = 76, 190
-    peak = 0.4
-    for ms, share in VS_FRAMES:
-        cx = mx(ms)
-        on = ms == VS_ONSET_MS
-        parts.append(
-            f'<rect class="cell{" on" if on else ""}" x="{cx - cell_w / 2:.1f}" y="{top}" width="{cell_w:.1f}" height="{base - top + 6}" rx="4"/>'
-        )
-        if share > 0:
-            bh = share / peak * (base - top - 24)
-            parts.append(
-                f'<rect class="{"accent" if on else "bar"}" x="{cx - 8:.1f}" y="{base - bh:.1f}" width="16" height="{bh:.1f}" rx="2"/>'
-            )
-            parts.append(
-                f'<text class="val" x="{cx:.1f}" y="{base - bh - 5:.1f}" text-anchor="middle" style="font-size:10px">{share:.2f}</text>'
-            )
-        else:
-            parts.append(f'<text class="tl" x="{cx:.1f}" y="{base - 4}" text-anchor="middle">ref</text>')
-        parts.append(
-            f'<text class="tl{" acc" if on else ""}" x="{cx:.1f}" y="{axis_y + 22}" text-anchor="middle">{_signed(ms, 0, "")}</text>'
-        )
-    # The cue falls inside the -30 ms frame's span, so it is marked above the cells rather than drawn through them.
-    parts.append(f'<line class="cue" x1="{mx(0):.1f}" y1="50" x2="{mx(0):.1f}" y2="{top - 4}"/>')
-    parts.append(f'<text class="tl acc" x="{mx(0) + 6:.1f}" y="64">cue</text>')
-
-    probe_share = VS_PROBES[best][1]
+def _svg(
+    w: int, h: int, title: str, desc: str, css: list[str], pal: dict[str, str], background: bool, body: str
+) -> str:
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
-  <title id="t">How verify measures one cue</title>
-  <desc id="d">A time axis runs from 3.3 seconds before cue 3.1eq to 1.6 seconds after it. The reference is the first frame at or after 0.1 seconds before the cue, which is the frame 70 milliseconds before it, and probes sit 0.7 and 1.5 seconds after the cue. The 1.5 second probe is the one reported. Its two 1.6 second control spans end at the reference one after the other, and the smaller of their shares, 0.00 percent, is the control. An inset shows seven 40 millisecond frames around the cue with the share of pixels each one changed, and the frame 30 milliseconds before the cue is outlined as the onset, inside the 80 millisecond limit.</desc>
-  <defs><style>{chr(10).join(css)}</style></defs>
+  <title id="t">{title}</title>
+  <desc id="d">{desc}</desc>
+  <defs><style>{chr(10).join(css)}</style>{hatch(pal)}</defs>
   {bg_rect(pal, w, h, background)}
-  <text class="lab" x="{x0}" y="36">CUE 3:3.1EQ, SILENT BUILD</text>
-  <text class="lab" x="{ix0}" y="36">FRAMES AROUND THE CUE, MS</text>
-  {"".join(parts)}
-  <text class="cap" x="{x0}" y="{h - 42}">The best probe changed {probe_share:.2f}% of the picture, and its smaller control changed {min(VS_CONTROLS):.2f}%.</text>
-  <text class="cap" x="{x0}" y="{h - 20}">A control span is as long as its probe's span, and only its first and last frames are compared.</text>
-  <text class="cap" x="{ix0}" y="{h - 42}">The outlined frame is the onset, at {abs(VS_ONSET_MS)} ms</text>
-  <text class="cap" x="{ix0}" y="{h - 20}">before the cue and inside the limit.</text>
+  {body}
 </svg>
 """
 
 
+# ---- verify: probes (figure A) and onset (figure B) ---------------------------------------------
+
+
+def verify_probes(pal: dict[str, str], background: bool) -> str:
+    """Where `decktalk verify` measures one cue: the reference frame, the probes, and the control spans."""
+    d = figure_data("verify-strip")
+    probes, rep = d["probes"], d["reported_probe"]
+    controls = probes[rep]["controls"]
+    w, h = 1200, 280
+    x0, x1 = 60, 1140
+    t_from = min(c["from"] for c in controls) - 0.08
+    t_to = max(p["delay"] for p in probes) + 0.5
+
+    def tx(t: float) -> float:
+        return x0 + (t - t_from) / (t_to - t_from) * (x1 - x0)
+
+    ref_t = d["reference_seconds"]
+    cue_x, ref_x = tx(0.0), tx(ref_t)
+    axis_y = 212
+    parts: list[str] = []
+    for t in [c["from"] for c in controls] + [p["delay"] for p in probes]:
+        parts.append(f'<line class="guide" x1="{tx(t):.1f}" y1="78" x2="{tx(t):.1f}" y2="{axis_y}"/>')
+    parts.append(f'<line class="ref" x1="{ref_x:.1f}" y1="70" x2="{ref_x:.1f}" y2="{axis_y + 6}"/>')
+
+    ctl_y = 82
+    mid = (tx(min(c["from"] for c in controls)) + tx(max(c["to"] for c in controls))) / 2
+    parts.append(
+        f'<text class="note" x="{mid:.1f}" y="{ctl_y - 12}" text-anchor="middle">control spans of the reported probe</text>'
+    )
+    for c in controls:
+        xa, xb = tx(c["from"]) + 1, tx(c["to"]) - 1
+        parts.append(f'<rect class="span" x="{xa:.1f}" y="{ctl_y}" width="{xb - xa:.1f}" height="22" rx="4"/>')
+        parts.append(
+            f'<text class="val" x="{(xa + xb) / 2:.1f}" y="{ctl_y + 15}" text-anchor="middle">{c["percent"]:.2f}%</text>'
+        )
+        for ex in (xa + 6, xb - 6):
+            parts.append(f'<circle class="end" cx="{ex:.1f}" cy="{ctl_y + 11}" r="2.5"/>')
+
+    for i, p in enumerate(probes):
+        y = 122 + i * 34
+        xb = tx(p["delay"])
+        on = i == rep
+        parts.append(
+            f'<rect class="{"accent" if on else "bar"}" x="{ref_x:.1f}" y="{y}" width="{xb - ref_x:.1f}" height="22" rx="4"/>'
+        )
+        label = f"{p['changed_percent']:.2f}%, reported" if on else f"{p['changed_percent']:.2f}%"
+        parts.append(
+            f'<text class="val{" on" if on else ""}" x="{xb - 12:.1f}" y="{y + 15}" text-anchor="end">{label}</text>'
+        )
+        for ex in (ref_x + 6, xb - 6):
+            parts.append(f'<circle class="end{" on" if on else ""}" cx="{ex:.1f}" cy="{y + 11}" r="2.5"/>')
+
+    parts.append(f'<line class="axis" x1="{x0}" y1="{axis_y}" x2="{x1}" y2="{axis_y}"/>')
+    parts.append(f'<line class="cue" x1="{cue_x:.1f}" y1="52" x2="{cue_x:.1f}" y2="{axis_y + 6}"/>')
+    parts.append(f'<text class="note acc" x="{cue_x + 8:.1f}" y="64">cue time</text>')
+    marks = [(c["from"], _signed(c["from"], 2, " s"), "middle", "") for c in controls]
+    marks += [(ref_t, f"reference {_signed(ref_t, 2, ' s')}", "end", ""), (0.0, "cue", "start", " acc")]
+    marks += [(p["delay"], f"probe {_signed(p['delay'], 1, ' s')}", "middle", "") for p in probes]
+    for t, text, anchor, cls in marks:
+        x = tx(t)
+        parts.append(f'<line class="tk" x1="{x:.1f}" y1="{axis_y - 5}" x2="{x:.1f}" y2="{axis_y + 5}"/>')
+        lx = x - 6 if anchor == "end" else (x + 6 if anchor == "start" else x)
+        parts.append(f'<text class="tl{cls}" x="{lx:.1f}" y="{axis_y + 22}" text-anchor="{anchor}">{text}</text>')
+
+    margins = [p["margin"] for p in probes]
+    tie = len(set(margins)) < len(margins)
+    rule = (
+        "Both probes have the same margin, so verify reports the earlier one."
+        if tie
+        else "Verify reports the probe with the largest margin."
+    )
+    parts.append(f'<text class="cap" x="{x0}" y="{h - 18}">{rule}</text>')
+    r = probes[rep]
+    desc = (
+        f"A time axis around cue {d['check']}. The reference frame sits {abs(ref_t):.2f} seconds before the cue. "
+        + " ".join(
+            f"The probe {p['delay']} seconds after the cue changed {p['changed_percent']:.2f} percent." for p in probes
+        )
+        + f" The reported {r['delay']} second probe has two control spans that end at the reference, and both changed "
+        + f"{r['control_percent']:.2f} percent."
+    )
+    body = f'<text class="lab" x="{x0}" y="36">CUE {d["check"].upper()}, SILENT BUILD</text>' + "".join(parts)
+    return _svg(w, h, "Where verify measures one cue", desc, fig_css(pal), pal, background, body)
+
+
+def verify_onset(pal: dict[str, str], background: bool) -> str:
+    """The onset: the changed share of each frame from the reference, with the offset limit around the cue."""
+    d = figure_data("verify-strip")
+    frames = d["series"][:7]
+    onset, limit = d["row"]["offset_ms"], d["max_offset_ms"]
+    w, h = 900, 280
+    ix0, ix1 = 60, 840
+    ms_from, ms_to = frames[0]["ms"] - 26, frames[-1]["ms"] + 26
+
+    def mx(ms: float) -> float:
+        return ix0 + (ms - ms_from) / (ms_to - ms_from) * (ix1 - ix0)
+
+    parts: list[str] = []
+    band_a, band_b = mx(-limit), mx(limit)
+    parts.append(f'<rect class="block" x="{band_a:.1f}" y="56" width="{band_b - band_a:.1f}" height="164"/>')
+    for bx in (band_a, band_b):
+        parts.append(f'<line class="edge" x1="{bx:.1f}" y1="56" x2="{bx:.1f}" y2="220"/>')
+    parts.append(f'<text class="tl" x="{band_a + 8:.1f}" y="72">&#177;{limit} ms offset limit</text>')
+    step = frames[1]["ms"] - frames[0]["ms"]
+    cell_w = mx(step) - mx(0) - 10
+    top, base = 84, 200
+    peak = max(f["percent"] for f in frames) or 1.0
+    axis_y = 238
+    for i, f in enumerate(frames):
+        cx = mx(f["ms"])
+        on = f["ms"] == onset
+        parts.append(
+            f'<rect class="cell{" on" if on else ""}" x="{cx - cell_w / 2:.1f}" y="{top}" width="{cell_w:.1f}" height="{base - top + 6}" rx="4"/>'
+        )
+        if i == 0:
+            parts.append(f'<text class="tl" x="{cx:.1f}" y="{base - 6}" text-anchor="middle">ref</text>')
+        elif f["percent"] > 0:
+            bh = f["percent"] / peak * (base - top - 30)
+            parts.append(
+                f'<rect class="{"accent" if on else "bar"}" x="{cx - 9:.1f}" y="{base - bh:.1f}" width="18" height="{bh:.1f}" rx="2"/>'
+            )
+            parts.append(
+                f'<text class="val" x="{cx:.1f}" y="{base - bh - 6:.1f}" text-anchor="middle">{f["percent"]:.2f}</text>'
+            )
+        else:
+            parts.append(
+                f'<text class="val" x="{cx:.1f}" y="{base - 6}" text-anchor="middle">{f["percent"]:.2f}</text>'
+            )
+        parts.append(
+            f'<text class="tl{" acc" if on else ""}" x="{cx:.1f}" y="{axis_y}" text-anchor="middle">{_signed(f["ms"], 0, "")}</text>'
+        )
+        if on:
+            parts.append(f'<text class="note acc" x="{cx:.1f}" y="{axis_y + 22}" text-anchor="middle">onset</text>')
+    parts.append(f'<line class="cue" x1="{mx(0):.1f}" y1="56" x2="{mx(0):.1f}" y2="{top - 4}"/>')
+    parts.append(f'<text class="tl acc" x="{mx(0) + 6:.1f}" y="{top - 12}">cue</text>')
+    parts.append(f'<text class="tl" x="{ix1}" y="{axis_y}" text-anchor="end" dx="44">ms</text>')
+    shares = ", ".join(f"{f['percent']:.2f}" for f in frames[1:])
+    desc = (
+        f"Seven frames, {step} milliseconds apart, from the reference frame {abs(frames[0]['ms'])} milliseconds before cue "
+        f"{d['check']}. Their changed shares against the reference are {shares} percent. The frame {onset} milliseconds "
+        f"after the cue is outlined as the onset, inside a band of {limit} milliseconds on each side of the cue."
+    )
+    body = (
+        f'<text class="lab" x="{ix0}" y="36">CUE {d["check"].upper()}, CHANGED SHARE PER FRAME AT LEVEL {d["onset_diff_level"]}</text>'
+        + "".join(parts)
+    )
+    return _svg(w, h, "How verify finds the onset", desc, fig_css(pal), pal, background, body)
+
+
+# ---- narration split ----------------------------------------------------------------------------
+
+
+def narration_split(pal: dict[str, str], background: bool) -> str:
+    """A clip between page sections pauses the narration: the track splits, and the later part moves right."""
+    d = figure_data("narration-split")
+    secs = d["sections"]
+    w, h = 1200, 340
+    x0, x1 = 190, 1140
+    scale = (x1 - x0) / d["video_seconds"]
+
+    def tx(t: float) -> float:
+        return x0 + t * scale
+
+    css = fig_css(pal)
+    css.append(
+        f".sec{{fill:{pal['block']};stroke:{pal['hair']};stroke-width:1}}.num{{font:600 14px {SANS};fill:{pal['ink']}}}.num.on{{fill:{pal['on_accent']}}}"
+    )
+    css.append(f".cp{{fill:{pal['bar']}}}.ch{{stroke:{pal['ink']};stroke-width:2}}")
+    narr_y, vid_y, cap_y, chap_y, bh = 64, 164, 236, 268, 40
+    parts: list[str] = ['<text class="lab" x="60" y="30">SCAFFOLD, SILENT BUILD, TO SCALE</text>']
+    for label, y in (
+        ("narration.mp3", narr_y + 25),
+        ("video", vid_y + 25),
+        ("captions", cap_y + 9),
+        ("chapters", chap_y + 11),
+    ):
+        parts.append(f'<text class="ln" x="60" y="{y}">{label}</text>')
+
+    def block(a: float, b: float, y: int, n: int, moved: bool) -> None:
+        xa, xb = tx(a) + 1, tx(b) - 1
+        parts.append(
+            f'<rect class="{"accent" if moved else "sec"}" x="{xa:.1f}" y="{y}" width="{xb - xa:.1f}" height="{bh}" rx="6"/>'
+        )
+        parts.append(
+            f'<text class="num{" on" if moved else ""}" x="{(xa + xb) / 2:.1f}" y="{y + 25}" text-anchor="middle">{n}</text>'
+        )
+
+    split_at = None
+    for s in secs:
+        if s["clip"]:
+            xa, xb = tx(s["video_start"]) + 1, tx(s["video_end"]) - 1
+            parts.append(f'<rect class="clip" x="{xa:.1f}" y="{vid_y}" width="{xb - xa:.1f}" height="{bh}" rx="4"/>')
+            parts.append(
+                f'<text class="note" x="{(xa + xb) / 2:.1f}" y="{vid_y + bh + 18}" text-anchor="middle">{s["number"]} clip</text>'
+            )
+            continue
+        moved = s["offset"] > 0
+        if moved and split_at is None:
+            split_at = s["narration_start"]
+        block(s["narration_start"], s["narration_end"], narr_y, s["number"], moved)
+        block(s["video_start"], s["video_end"], vid_y, s["number"], moved)
+    moved = [s for s in secs if not s["clip"] and s["offset"] > 0]
+    if moved:
+        first, last = moved[0], moved[-1]
+        for na, va in ((first["narration_start"], first["video_start"]), (last["narration_end"], last["video_end"])):
+            parts.append(
+                f'<line class="lead" x1="{tx(na):.1f}" y1="{narr_y + bh + 2}" x2="{tx(va):.1f}" y2="{vid_y - 2}"/>'
+            )
+        sx = tx(split_at)
+        parts.append(f'<line class="cue" x1="{sx:.1f}" y1="{narr_y - 12}" x2="{sx:.1f}" y2="{narr_y + bh + 6}"/>')
+        parts.append(f'<text class="note acc" x="{sx:.1f}" y="{narr_y - 18}" text-anchor="middle">split</text>')
+    for a, b in d["captions"]:
+        parts.append(
+            f'<rect class="cp" x="{tx(a) + 0.6:.1f}" y="{cap_y}" width="{max(tx(b) - tx(a) - 1.2, 0.8):.1f}" height="12" rx="2"/>'
+        )
+    for n, t in enumerate(d["chapters"]):
+        x = tx(t)
+        parts.append(f'<line class="ch" x1="{x:.1f}" y1="{chap_y}" x2="{x:.1f}" y2="{chap_y + 16}"/>')
+        num = secs[n]["number"] if n < len(secs) else n + 1
+        parts.append(f'<text class="tl ink" x="{x + 4:.1f}" y="{chap_y + 13}">{num}</text>')
+    axis_y = chap_y + 36
+    parts.append(f'<line class="axis" x1="{x0}" y1="{axis_y}" x2="{x1}" y2="{axis_y}"/>')
+    t = 0
+    while t <= d["video_seconds"]:
+        x = tx(t)
+        parts.append(f'<line class="tk" x1="{x:.1f}" y1="{axis_y - 4}" x2="{x:.1f}" y2="{axis_y + 4}"/>')
+        parts.append(
+            f'<text class="tl" x="{x:.1f}" y="{axis_y + 20}" text-anchor="middle">{t // 60}:{t % 60:02d}</text>'
+        )
+        t += 30
+    clip = next((s for s in secs if s["clip"]), None)
+    desc = (
+        (
+            f"The narration track holds sections {', '.join(str(s['number']) for s in secs if not s['clip'])} back to back. "
+            f"The video plays section {clip['number']}, a clip of {clip['video_end'] - clip['video_start']:.0f} seconds, after section {clip['number'] - 1}. "
+            f"The narration splits there, and sections {' and '.join(str(s['number']) for s in moved)} start later in the video. "
+            "Captions sit under page sections only, and every section starts a chapter."
+        )
+        if clip and moved
+        else "The narration track and the video, section by section."
+    )
+    return _svg(w, h, "The narration pauses for a clip", desc, css, pal, background, "".join(parts))
+
+
+# ---- duck lane ----------------------------------------------------------------------------------
+
+
+def duck_lane(pal: dict[str, str], background: bool) -> str:
+    """The underscore level around a clip, from [mix] and the spans that plan_mix() ducks under."""
+    import math
+
+    d = figure_data("duck-lane")
+    a, b = d["window"]
+    base, duck, ramp = d["underscore_db"], d["underscore_duck_db"], d["duck_ramp_seconds"]
+    w, h = 1200, 320
+    x0, x1 = 260, 1140
+
+    def tx(t: float) -> float:
+        return x0 + (t - a) / (b - a) * (x1 - x0)
+
+    def level(t: float) -> float:
+        f = max((min(1, max(0, (t - s) / ramp)) * min(1, max(0, (e - t) / ramp)) for s, e in d["spans"]), default=0.0)
+        return 20 * math.log10(10 ** (base / 20) * (1 - (1 - 10 ** (duck / 20)) * f))
+
+    hi, lo = base + 2, base + duck - 2
+    lvl_top, lvl_h = 150, 96
+
+    def ly(db_: float) -> float:
+        return lvl_top + (hi - db_) / (hi - lo) * lvl_h
+
+    css = fig_css(pal)
+    css.append(f".sec{{fill:{pal['block']};stroke:{pal['hair']};stroke-width:1}}")
+    css.append(f".grid{{stroke:{pal['hair']};stroke-width:1.5;stroke-dasharray:4 4}}")
+    css.append(f".curve{{stroke:{pal['accent']};stroke-width:3;fill:none;stroke-linejoin:round}}")
+    sec_y, span_y = 56, 104
+    parts = [f'<clipPath id="win"><rect x="{x0}" y="0" width="{x1 - x0}" height="{h}"/></clipPath>']
+    parts.append('<text class="lab" x="60" y="36">UNDERSCORE LEVEL AROUND A CLIP, SCAFFOLD [MIX] SETTINGS</text>')
+    parts.append(f'<text class="ln" x="60" y="{sec_y + 23}">section</text>')
+    parts.append(f'<text class="ln" x="60" y="{span_y + 17}">ducked</text>')
+    parts.append(f'<text class="ln" x="60" y="{ly(base) + 5:.1f}">underscore</text>')
+    clipped = []
+    for s in d["sections"]:
+        sa, sb = max(s["video_start"], a), min(s["video_end"], b)
+        xa, xb = tx(sa) + 1, tx(sb) - 1
+        cls = "clip" if s["clip"] else "sec"
+        clipped.append(f'<rect class="{cls}" x="{xa:.1f}" y="{sec_y}" width="{xb - xa:.1f}" height="36" rx="6"/>')
+        label = f"{s['number']} clip" if s["clip"] else f"{s['number']} {s['title']}"
+        tx_anchor = (xa + xb) / 2
+        clipped.append(
+            f'<rect class="block" x="{tx_anchor - 7 * len(label) / 2 - 8:.1f}" y="{sec_y + 8}" width="{7 * len(label) + 16:.1f}" height="20" rx="4"/>'
+            if s["clip"]
+            else ""
+        )
+        clipped.append(f'<text class="note" x="{tx_anchor:.1f}" y="{sec_y + 23}" text-anchor="middle">{label}</text>')
+    clip_keys = {(s["video_start"], s["video_end"]) for s in d["sections"] if s["clip"]}
+    for sa, sb in d["spans"]:
+        ca, cb = max(sa, a), min(sb, b)
+        xa, xb = tx(ca) + 1, tx(cb) - 1
+        is_clip = any(abs(sa - p) < 1e-6 and abs(sb - q) < 1e-6 for p, q in clip_keys)
+        clipped.append(f'<rect class="bar" x="{xa:.1f}" y="{span_y}" width="{xb - xa:.1f}" height="22" rx="4"/>')
+        clipped.append(
+            f'<text class="val" x="{(xa + xb) / 2:.1f}" y="{span_y + 15}" text-anchor="middle">{"the whole clip" if is_clip else "spoken span"}</text>'
+        )
+    for db_ in (base, base + duck):
+        y = ly(db_)
+        clipped.append(f'<line class="grid" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
+    n = 1100
+    pts = " ".join(f"{tx(a + (b - a) * i / n):.1f},{ly(level(a + (b - a) * i / n)):.1f}" for i in range(n + 1))
+    clipped.append(f'<polyline class="curve" points="{pts}"/>')
+    parts.append(f'<g clip-path="url(#win)">{"".join(clipped)}</g>')
+    for db_ in (base, base + duck):
+        parts.append(
+            f'<text class="tl" x="{x0 - 10}" y="{ly(db_) + 4:.1f}" text-anchor="end">{_signed(db_, 0, " dB")}</text>'
+        )
+    axis_y = lvl_top + lvl_h + 26
+    parts.append(f'<line class="axis" x1="{x0}" y1="{axis_y}" x2="{x1}" y2="{axis_y}"/>')
+    for t in range(math.ceil(a), math.floor(b) + 1):
+        x = tx(t)
+        parts.append(f'<line class="tk" x1="{x:.1f}" y1="{axis_y - 4}" x2="{x:.1f}" y2="{axis_y + 4}"/>')
+        parts.append(
+            f'<text class="tl" x="{x:.1f}" y="{axis_y + 20}" text-anchor="middle">{t // 60}:{t % 60:02d}</text>'
+        )
+    s3, clip, s5 = d["sections"]
+    desc = (
+        f"The underscore level from {a // 60:.0f}:{a % 60:02.0f} to {b // 60:.0f}:{b % 60:02.0f} of the video, across the end of section {s3['number']}, "
+        f"the clip in section {clip['number']}, and the start of section {s5['number']}. The level sits at {base:.0f} dB, drops to "
+        f"{base + duck:.0f} dB under each spoken span and under the whole clip, and comes back up in the short silence after the last word "
+        f"of section {s3['number']}."
+    )
+    return _svg(w, h, "How the underscore ducks", desc, css, pal, background, "".join(parts))
+
+
+# ---- cue offset ---------------------------------------------------------------------------------
+
+
+def cue_offset(pal: dict[str, str], background: bool) -> str:
+    """A cue time is the start of its word plus the offset key."""
+    d = figure_data("cue-offset")
+    words = d["words"]
+    cued = words[1]
+    w, h = 1200, 250
+    x0, x1 = 60, 1140
+    a, b = words[0]["start"] - 0.45, words[-1]["end"] + 0.15
+
+    def tx(t: float) -> float:
+        return x0 + (t - a) / (b - a) * (x1 - x0)
+
+    css = fig_css(pal)
+    css.append(f".word{{font:600 22px {SANS};fill:{pal['ink']}}}.word.acc{{fill:{pal['accent']}}}")
+    css.append(
+        f".wb{{fill:{pal['block']};stroke:{pal['hair']};stroke-width:1}}.wb.on{{stroke:{pal['accent']};stroke-width:2}}"
+    )
+    css.append(f".arrow{{stroke:{pal['ink']};stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}")
+    word_y = 150
+    parts: list[str] = []
+    for i, wd in enumerate(words):
+        xa, xb = tx(wd["start"]) + 1, tx(wd["end"]) - 1
+        on = i == 1
+        parts.append(
+            f'<rect class="wb{" on" if on else ""}" x="{xa:.1f}" y="{word_y}" width="{xb - xa:.1f}" height="48" rx="8"/>'
+        )
+        parts.append(
+            f'<text class="word{" acc" if on else ""}" x="{(xa + xb) / 2:.1f}" y="{word_y + 32}" text-anchor="middle">{wd["word"]}</text>'
+        )
+    ws = tx(cued["start"])
+    pos = tx(cued["start"] + CUE_OFFSET_KEY)
+    parts.append(f'<line class="cue ink" x1="{ws:.1f}" y1="52" x2="{ws:.1f}" y2="{word_y + 60}"/>')
+    parts.append(f'<text class="tl ink" x="{ws:.1f}" y="{word_y + 78}" text-anchor="middle">word start</text>')
+    parts.append(f'<text class="note" x="{ws - 8:.1f}" y="64" text-anchor="end">offset key 0</text>')
+    parts.append(f'<line class="cue" x1="{pos:.1f}" y1="52" x2="{pos:.1f}" y2="{word_y - 4}"/>')
+    parts.append(f'<text class="note acc" x="{pos + 8:.1f}" y="64">offset key {CUE_OFFSET_KEY}</text>')
+    parts.append(f'<text class="tl" x="{pos + 8:.1f}" y="82">after the word starts</text>')
+    by = 120
+    parts.append(f'<path class="edge" d="M{ws:.1f},{by} H{pos:.1f}"/>')
+    parts.append(
+        f'<text class="tl acc" x="{(ws + pos) / 2:.1f}" y="{by - 6}" text-anchor="middle">{_signed(CUE_OFFSET_KEY, 1, " s")}</text>'
+    )
+    ay = 104
+    tip = ws - 150
+    parts.append(
+        f'<path class="arrow" d="M{ws - 6:.1f},{ay} H{tip:.1f} M{tip + 8:.1f},{ay - 6} L{tip:.1f},{ay} L{tip + 8:.1f},{ay + 6}"/>'
+    )
+    parts.append(f'<text class="note" x="{tip - 10:.1f}" y="{ay - 4}" text-anchor="end">negative offset key</text>')
+    parts.append(f'<text class="tl" x="{tip - 10:.1f}" y="{ay + 14}" text-anchor="end">for text read aloud</text>')
+    desc = (
+        f'The spoken words "{words[0]["word"]} {cued["word"]} {words[2]["word"]}" from section {d["section"]}, each drawn as long as it is spoken. '
+        f'With offset key 0, the cue time is the start of "{cued["word"]}". Offset key {CUE_OFFSET_KEY} moves the cue time '
+        f"{CUE_OFFSET_KEY} seconds later, after the word starts. A negative offset key moves it earlier, for text the audience reads aloud."
+    )
+    body = f'<text class="lab" x="{x0}" y="36">CUE TIME = WORD START + OFFSET KEY</text>' + "".join(parts)
+    return _svg(w, h, "The offset key moves a cue time", desc, css, pal, background, body)
+
+
 # ---- rebuild lanes ----------------------------------------------------------------------------
 
+EDITED_SECTION = 3  # the scaffold's own edit: section 5 of the lesson changes a sentence of section 3
 LANES = (
-    ("narrate (cached)", {3}, "voiced", "cached"),
-    ("record, plain build", {1, 2, 3, 4, 5}, "recorded", ""),
-    ("record, --only 3", {3}, "recorded", "kept"),
+    # lane, the page sections that run in it, the text on those, the text on the other page sections
+    ("narrate", {EDITED_SECTION}, "voiced", "cached"),
+    ("record, plain build", None, "recorded", ""),  # None: every page section
+    (f"record, --only {EDITED_SECTION}", {EDITED_SECTION}, "recorded", "kept"),
 )
+
+
+def scaffold_sections() -> list[tuple[int, str, bool]]:
+    """(number, title, is a clip) for each [[section]] of the scaffold that `decktalk init` writes."""
+    import tomllib
+
+    doc = tomllib.loads((ROOT / "src" / "decktalk" / "template" / "decktalk.toml").read_text())
+    return [(s["number"], s["title"], "clip" in s) for s in doc["section"]]
+
+
+def hatch(pal: dict[str, str], pid: str = "hatch") -> str:
+    """A diagonal hatch for a clip, which DeckTalk neither voices nor records."""
+    return (
+        f'<pattern id="{pid}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+        f'<rect width="8" height="8" fill="{pal["block"]}"/><line x1="0" y1="0" x2="0" y2="8" stroke="{pal["bar"]}" stroke-width="2"/></pattern>'
+    )
 
 
 def rebuild_lanes(pal: dict[str, str], background: bool) -> str:
     """What runs again after section 3 is edited, in narration and in the two kinds of build."""
-    w, h = 1200, 320
-    left, col0, col_w, gap = 60, 330, 162, 12
+    sections = scaffold_sections()
+    w, h = 1200, 332
+    left, col0, gap = 60, 244, 10
+    col_w = (w - left - col0 + gap) / len(sections)
     cell_w = col_w - gap
     css = [font_face()]
     css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
+    css.append(f".ti{{font:600 14px {SANS};fill:{pal['ink']}}}")
     css.append(f".ln{{font:500 14px {MONO};fill:{pal['ink']}}}")
     css.append(f".ct{{font:500 13px {MONO};fill:{pal['mute']}}}.ct.on{{fill:{pal['on_accent']}}}")
     css.append(f".cell{{fill:{pal['block']};stroke:{pal['hair']};stroke-width:1}}.accent{{fill:{pal['accent']}}}")
-    rows = [f'<text class="lab" x="{left}" y="44">LANE</text>']
-    for n in range(5):
-        cx = col0 + n * col_w + cell_w / 2
-        rows.append(f'<text class="lab" x="{cx:.1f}" y="44" text-anchor="middle">SECTION {n + 1}</text>')
+    css.append(f".clip{{fill:url(#hatch);stroke:{pal['hair']};stroke-width:1}}")
+    css.append(f".ct.cl{{fill:{pal['ink']}}}.chip{{fill:{pal['bg']}}}")
+    rows = [f'<text class="lab" x="{left}" y="40">LANE</text>']
+    for n, (number, title, _clip) in enumerate(sections):
+        x = col0 + n * col_w
+        rows.append(f'<text class="lab" x="{x + 2:.1f}" y="40">SECTION {number}</text>')
+        rows.append(f'<text class="ti" x="{x + 2:.1f}" y="62">{title}</text>')
+    top, pitch = 82, 58
     for i, (name, lit, on_text, off_text) in enumerate(LANES):
-        y = 64 + i * 58
+        y = top + i * pitch
         rows.append(f'<text class="ln" x="{left}" y="{y + 26}">{name}</text>')
-        for n in range(5):
+        for n, (number, _title, clip) in enumerate(sections):
             x = col0 + n * col_w
-            on = (n + 1) in lit
+            if clip:
+                rows.append(f'<rect class="clip" x="{x:.1f}" y="{y}" width="{cell_w:.1f}" height="40" rx="8"/>')
+                cx = x + cell_w / 2
+                rows.append(f'<rect class="chip" x="{cx - 22:.1f}" y="{y + 10}" width="44" height="20" rx="4"/>')
+                rows.append(f'<text class="ct cl" x="{cx:.1f}" y="{y + 25}" text-anchor="middle">clip</text>')
+                continue
+            on = lit is None or number in lit
             rows.append(
-                f'<rect class="{"accent" if on else "cell"}" x="{x}" y="{y}" width="{cell_w}" height="40" rx="8"/>'
+                f'<rect class="{"accent" if on else "cell"}" x="{x:.1f}" y="{y}" width="{cell_w:.1f}" height="40" rx="8"/>'
             )
             text = on_text if on else off_text
             if text:
                 rows.append(
                     f'<text class="ct{" on" if on else ""}" x="{x + cell_w / 2:.1f}" y="{y + 25}" text-anchor="middle">{text}</text>'
                 )
-    y = 64 + 3 * 58 + 10
+    y = top + len(LANES) * pitch + 10
     rows.append(f'<text class="ln" x="{left}" y="{y + 26}">assemble</text>')
-    rows.append(f'<rect class="accent" x="{col0}" y="{y}" width="{4 * col_w + cell_w}" height="40" rx="8"/>')
+    rows.append(
+        f'<rect class="accent" x="{col0}" y="{y}" width="{(len(sections) - 1) * col_w + cell_w:.1f}" height="40" rx="8"/>'
+    )
     rows.append(
         f'<text class="ct on" x="{col0 + 16}" y="{y + 25}">Every section is cut and joined into one mp4.</text>'
     )
+    pages = [n for n, _t, clip in sections if not clip]
+    clips = [n for n, _t, clip in sections if clip]
+    others = ", ".join(str(n) for n in pages if n != EDITED_SECTION)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
-  <title id="t">What runs again after an edit to section 3</title>
-  <desc id="d">Five section columns and three lanes. In the narrate lane only section 3 is voiced, and the other sections come from the cache. A plain build records all five sections. A build with --only 3 records only section 3 and keeps the other recordings. Both builds assemble every section into one mp4.</desc>
-  <defs><style>{chr(10).join(css)}</style></defs>
+  <title id="t">What runs again after an edit to section {EDITED_SECTION}</title>
+  <desc id="d">{len(sections)} section columns and three lanes. Section {", ".join(map(str, clips))} is a clip in every lane. In the narrate lane, section {EDITED_SECTION} is voiced, and sections {others} are cached. A plain build records every page section. A build with --only {EDITED_SECTION} records section {EDITED_SECTION} and keeps the other recordings. The assemble bar spans every section.</desc>
+  <defs><style>{chr(10).join(css)}</style>{hatch(pal)}</defs>
   {bg_rect(pal, w, h, background)}
   {"".join(rows)}
 </svg>
@@ -757,7 +1152,7 @@ def wordmark(pal: dict[str, str], name: tuple[str, float]) -> str:
 
 
 def og(pal: dict[str, str], xs: list[float], widths: list[float]) -> str:
-    """The 1200 by 630 card that link previews show. It is the hero at rest with the wordmark."""
+    """The 1200 by 630 card that link previews show: a narration line, a slide card, and the wordmark."""
     w, h = 1200, 630
     css = [font_face()]
     css.append(f".bg{{fill:{pal['bg']}}}")
@@ -817,6 +1212,237 @@ def render_png(svg: str, target: Path, width: int, height: int) -> None:
         b.close()
 
 
+# ---- capture ----------------------------------------------------------------------------------
+
+FIG_DATA = ROOT / "scripts" / "figure-data"
+VERIFY_CUE = "5:4.1words"  # the cue the verify figures and the verify samples in the docs share
+CUE_OFFSET_WORDS = ("3", "it", "steps", "downhill")  # section, then the words around 3.4steps ("So it steps downhill")
+DUCK_SECTIONS = ("03", "04", "05")  # the underscore lane: the end of section 3, the clip, the start of section 5
+DUCK_WINDOW = (-3.0, 4.0)  # seconds before the clip starts and after it ends
+
+
+def capture(project_dir: Path) -> None:
+    """Measure every number the figures print from a built scaffold, with DeckTalk's own code.
+
+    Run it on a scaffold after `decktalk build --silent`, with an interpreter that imports decktalk:
+
+        uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson
+
+    It reads the build and never writes into the project. It writes scripts/figure-data/*.json,
+    and the draw functions read only those files, so a scaffold change is a new capture, not a
+    hand edit. The verify measurement must equal what `decktalk verify` reports, or it stops.
+    """
+    import importlib
+    import json
+    import re
+    from types import SimpleNamespace
+
+    import decktalk
+    from decktalk.media import ffmpeg
+    from decktalk.project import Project
+
+    vmod = importlib.import_module("decktalk.stages.verify")
+    amod = importlib.import_module("decktalk.stages.assemble")
+
+    project = Project.load(project_dir)
+    cfg = project.settings.verify
+    fps = project.settings.video.fps
+    final = project.final
+    timeline = project.timeline()
+    if timeline is None or not final.exists():
+        sys.exit(f"{project_dir}: no timeline or final mp4. Run `decktalk build --silent` there first.")
+    starts, total = vmod.section_starts(project)
+    sections = sorted([*project.page_sections, *project.clip_sections], key=lambda s: s.number)
+    source = {
+        "decktalk": decktalk.__version__,
+        "build": "decktalk build --silent on the scaffold that decktalk init writes",
+        "estimated_words": timeline.estimated,
+    }
+    FIG_DATA.mkdir(parents=True, exist_ok=True)
+
+    def write(name: str, data: dict) -> None:
+        (FIG_DATA / name).write_text(json.dumps(data, indent=2) + "\n")
+        print(f"wrote {(FIG_DATA / name).relative_to(ROOT)}")
+
+    # verify: the reference, both probes with their control spans, and the onset series
+    sec, cue = VERIFY_CUE.split(":")
+    key = f"{int(sec):02d}"
+    row = vmod.verify(project, checks=[VERIFY_CUE]).cues[0]
+    cue_t = project.beats().get(key, cue)
+    sec_start = starts[key]
+    sec_end = next((t for k, t in starts.items() if k > key), total)
+    cue_at = sec_start + cue_t
+    fade_in = amod.fade_flags(project).get(key, (False, False))[0]
+    dip = amod.frame_dip(project.transition.dip_seconds, fps)
+    floor = sec_start + (dip if fade_in else 0.0)
+    before = vmod.reference_time(sec_start, cue_t, fade_in, dip, cfg, fps)
+    lead = max(cfg.lead_seconds, (cfg.max_offset_frames + 1.5) / fps)
+    size = {"width": cfg.probe_width, "height": cfg.probe_height}
+    probes = []
+    for delay in cfg.probe_delays:
+        after = cue_at + delay
+        if after > sec_end - 0.05:
+            continue
+        span = after - before
+        chg = ffmpeg.changed_pixels_percent(final, before, after, level=cfg.diff_level, **size)
+        controls = []
+        for n in (1, 2):
+            b = before - (n - 1) * span
+            a = b - span
+            if a >= floor:
+                pct = ffmpeg.changed_pixels_percent(final, a, b, level=cfg.diff_level, **size)
+                controls.append({"from": round(a - cue_at, 3), "to": round(b - cue_at, 3), "percent": round(pct, 4)})
+        ctl = min((c["percent"] for c in controls), default=0.0)
+        probes.append(
+            {
+                "delay": delay,
+                "changed_percent": round(chg, 4),
+                "control_percent": ctl,
+                "margin": round(chg - ctl, 4),
+                "controls": controls,
+            }
+        )
+    reported = 0
+    for i, p in enumerate(probes):  # the largest margin, the earlier probe on a tie, as verify() chooses
+        if p["margin"] > probes[reported]["margin"]:
+            reported = i
+    after = cue_at + probes[reported]["delay"]
+    series = ffmpeg.changed_series(final, before, before, after, fps=fps, level=cfg.onset_diff_level, **size)
+    tolerance = (cfg.max_offset_frames + 0.5) / fps
+    offset_ms = vmod.onset_offset_ms(series, before, cue_at, cfg.onset_percent, tolerance=tolerance)
+    measured = (round(probes[reported]["changed_percent"], 2), round(probes[reported]["control_percent"], 2), offset_ms)
+    reported_row = (round(row.changed_percent, 2), round(row.control_percent, 2), row.offset_ms)
+    if measured != reported_row:
+        sys.exit(f"capture {measured} differs from decktalk verify {reported_row}")
+    write(
+        "verify-strip.json",
+        {
+            "source": {**source, "command": f"decktalk verify {VERIFY_CUE} --json, and the onset series verify reads"},
+            "check": VERIFY_CUE,
+            "cue_seconds": cue_t,
+            "final_seconds": round(cue_at, 3),
+            "section_start": sec_start,
+            "lead_seconds": round(lead, 4),
+            "reference_seconds": round(before - cue_at, 4),
+            "fps": fps,
+            "diff_level": cfg.diff_level,
+            "onset_diff_level": cfg.onset_diff_level,
+            "onset_percent": cfg.onset_percent,
+            "max_offset_ms": round(cfg.max_offset_frames * 1000 / fps),
+            "max_av_ms": round(cfg.max_av_frames * 1000 / fps),
+            "probes": probes,
+            "reported_probe": reported,
+            "series": [{"ms": round((t - cue_at) * 1000), "percent": pct} for t, pct in series],
+            "row": {
+                "changed_percent": reported_row[0],
+                "control_percent": reported_row[1],
+                "offset_ms": row.offset_ms,
+                "av_ms": row.av_ms,
+                "click_ms": None if row.av_ms is None else row.offset_ms - row.av_ms,
+                "verdict": row.verdict,
+            },
+        },
+    )
+
+    # narration split: the narration track, the video, the captions, and the chapters
+    shim = [SimpleNamespace(section=s) for s in sections]
+    offsets = amod.narration_offsets(shim, timeline, starts)
+    srt = (project.out_dir / f"{project.name}.srt").read_text()
+    stamp = r"(\d+):(\d+):(\d+),(\d+)"
+    captions = [
+        [
+            int(h1) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000,
+            int(h2) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000,
+        ]
+        for h1, m1, s1, ms1, h2, m2, s2, ms2 in re.findall(stamp + r" --> " + stamp, srt)
+    ]
+    chapters = [
+        int(m) / 1000
+        for m in re.findall(r"^START=(\d+)$", (project.out_dir / f"{project.name}.chapters.txt").read_text(), re.M)
+    ]
+    rows = []
+    for s in sections:
+        entry = {
+            "number": s.number,
+            "key": s.key,
+            "title": s.title,
+            "clip": s.is_clip,
+            "video_start": round(starts[s.key], 3),
+        }
+        entry["video_end"] = round(next((t for k, t in starts.items() if k > s.key), total), 3)
+        if s.key in timeline.sections:
+            ts = timeline.sections[s.key]
+            entry.update(
+                narration_start=ts.start,
+                narration_end=ts.end,
+                speech_end=ts.speech_end,
+                offset=round(offsets[s.key], 3),
+            )
+        if s.is_clip:
+            entry.update(file=str(s.clip), file_exists=project.path(s.clip).exists(), slate_seconds=s.slate_seconds)
+        rows.append(entry)
+    write(
+        "narration-split.json",
+        {
+            "source": source,
+            "narration_seconds": timeline.total_seconds,
+            "video_seconds": round(total, 3),
+            "sections": rows,
+            "captions": captions,
+            "chapters": chapters,
+        },
+    )
+
+    # duck lane: the underscore gain from [mix] and the spoken spans, as plan_mix() builds them
+    mix = project.mix
+    spans = [
+        [offsets[k] + ts.start, offsets[k] + (ts.speech_end if ts.speech_end is not None else ts.end)]
+        for k, ts in timeline.sections.items()
+    ]
+    spans += [[starts[s.key], next((t for k, t in starts.items() if k > s.key), total)] for s in sections if s.is_clip]
+    clip = next(r for r in rows if r["key"] == DUCK_SECTIONS[1])
+    window = [clip["video_start"] + DUCK_WINDOW[0], clip["video_end"] + DUCK_WINDOW[1]]
+    write(
+        "duck-lane.json",
+        {
+            "source": {
+                **source,
+                "rule": "gain = underscore_db x (1 - (1 - underscore_duck_db) x max over spans of a linear ramp), from stages/assemble.py plan_mix",
+            },
+            "underscore_db": mix.underscore_db,
+            "underscore_duck_db": mix.underscore_duck_db,
+            "duck_ramp_seconds": project.settings.audio.duck_ramp_seconds,
+            "window": [round(t, 3) for t in window],
+            "spans": [[round(a, 3), round(b, 3)] for a, b in sorted(spans) if b > window[0] and a < window[1]],
+            "sections": [r for r in rows if r["key"] in DUCK_SECTIONS],
+        },
+    )
+
+    # cue offset: one real word and its neighbours from the words file of section 3
+    sec_key = f"{int(CUE_OFFSET_WORDS[0]):02d}"
+    ts = timeline.sections[sec_key]
+    words = [w for w in ts.words]
+    names = [w.word.lower() for w in words]
+    target = list(CUE_OFFSET_WORDS[1:])
+    at = next(i for i in range(len(names) - 2) if names[i : i + 3] == target)
+    write(
+        "cue-offset.json",
+        {
+            "source": {**source, "file": f"build/audio/{sec_key}-*.words.json via timeline.json"},
+            "section": int(sec_key),
+            "words": [
+                {"word": w.word, "start": round(w.start - ts.start, 3), "end": round(w.end - ts.start, 3)}
+                for w in words[at : at + 3]
+            ],
+        },
+    )
+
+    # how it works: the word time printed in the narrate panel is the real start of "bowl"
+    s1 = timeline.sections["01"]
+    bowl = next(w for w in s1.words if w.word.lower() == "bowl")
+    write("how-it-works.json", {"source": source, "word": "bowl", "start": round(bowl.start - s1.start, 2)})
+
+
 # ---- entry ------------------------------------------------------------------------------------
 
 
@@ -833,17 +1459,35 @@ def build() -> dict[Path, str]:
         xs.append(round(x, 1))
         gap = space * (1.6 if SENTENCE[i].endswith((",", ".")) else 1.0)
         x += w + gap
+    h_widths, h_space = measure_words(HERO_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
+    hero_xs: list[float] = []
+    x = 0.0
+    for i, w in enumerate(h_widths):
+        hero_xs.append(round(x, 1))
+        x += w + h_space * (1.6 if HERO_WORDS[i].endswith((",", ".")) else 1.0)
+    a_widths, a_space = measure_words(ALIGN_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
+    align_xs: list[float] = []
+    x = 0.0
+    for i, w in enumerate(a_widths):
+        align_xs.append(round(x, 1))
+        x += w + a_space * (1.6 if ALIGN_WORDS[i].endswith((",", ".")) else 1.0)
     name = glyph_outlines("DeckTalk", size=22, weight=600, tracking=-0.02)
     out: dict[Path, str] = {}
     docs = ROOT / "docs"
     for variant, pal in (("light", LIGHT), ("dark", DARK)):
         for background, folder in ((False, ASSETS), (True, docs / "images")):
-            out[folder / f"hero-{variant}.svg"] = hero(pal, [x * HERO_PX / MEASURE_PX for x in xs], background)
+            out[folder / f"hero-{variant}.svg"] = hero(pal, [x * HERO_PX / MEASURE_PX for x in hero_xs], background)
             out[folder / f"how-it-works-{variant}.svg"] = how_it_works(pal, stacked=False, background=background)
-            out[folder / f"alignment-{variant}.svg"] = alignment(pal, [x * 26 / MEASURE_PX for x in xs], background)
+            out[folder / f"alignment-{variant}.svg"] = alignment(
+                pal, [x * 26 / MEASURE_PX for x in align_xs], background
+            )
         out[ASSETS / f"how-it-works-{variant}-stacked.svg"] = how_it_works(pal, stacked=True, background=False)
         out[docs / "images" / f"how-it-works-{variant}-stacked.svg"] = how_it_works(pal, stacked=True, background=True)
-        out[docs / "images" / f"verify-strip-{variant}.svg"] = verify_strip(pal, background=True)
+        out[docs / "images" / f"verify-probes-{variant}.svg"] = verify_probes(pal, background=True)
+        out[docs / "images" / f"verify-onset-{variant}.svg"] = verify_onset(pal, background=True)
+        out[docs / "images" / f"narration-split-{variant}.svg"] = narration_split(pal, background=True)
+        out[docs / "images" / f"duck-lane-{variant}.svg"] = duck_lane(pal, background=True)
+        out[docs / "images" / f"cue-offset-{variant}.svg"] = cue_offset(pal, background=True)
         out[docs / "images" / f"rebuild-lanes-{variant}.svg"] = rebuild_lanes(pal, background=True)
         out[ASSETS / f"mark-{variant}.svg"] = mark(pal)
         out[docs / "logo" / f"{variant}.svg"] = wordmark(pal, name)
@@ -855,7 +1499,13 @@ def build() -> dict[Path, str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="exit 1 if any generated file would change")
+    ap.add_argument(
+        "--capture", type=Path, metavar="PROJECT", help="measure scripts/figure-data/*.json from a built scaffold"
+    )
     args = ap.parse_args()
+    if args.capture:
+        capture(args.capture.resolve())
+        return 0
     files = build()
     changed = [p for p, s in files.items() if not p.exists() or p.read_text() != s]
     if args.check:
