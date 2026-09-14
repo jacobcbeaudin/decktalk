@@ -28,7 +28,7 @@ Here is a lesson I made with it.
 
 [Lesson page scene 3. A box of knobs learns from examples, a ball steps down a bowl, and the lesson ends on chips that do the math.]
 
-How does AI learn? [beat] From examples, not rules people write. [beat]
+How does AI learn? [beat] From examples, not rules people write. [beat] Learning from examples is called machine learning. [beat]
 An AI model is like a box of knobs. [beat] It guesses, [beat] and a meter shows its error, how wrong the guess was. [beat]
 Learning turns the knobs until the meter drops, [beat] example after example.
 [pause 1] But which way should each knob turn? [beat]
@@ -44,10 +44,10 @@ So it steps downhill, [beat] again and again, and the steps shrink as the ground
 That is gradient descent. [beat] It's what the ball did on my count.
 [pause 1] One setting makes every step longer or shorter. [beat]
 Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
-[pause 1] Zoom out, and the ground can have many valleys, [beat] each about as low.
-[pause 2] Today's AI is trained with a version of this. [beat] One step takes billions of billions of small calculations.
-[pause 1] Inside, the knobs are grids of numbers, called tensors. [beat] Chips like GPUs do math on a whole grid at once. [beat]
-Big models split the work across thousands of chips.
+[pause 1] Zoom out, and the ground can have many valleys. [beat] The ball finds a low one, not always the lowest.
+[pause 2] Today's AI is trained with a version of this. [beat] Inside, the knobs are grids of numbers, called tensors.
+[pause 1] Chips like GPUs and TPUs multiply grids, row times column, all at once. [beat] For a big model, the chips do billions of billions of small calculations for every step. [beat]
+The large language models behind AI chat apps split the work across thousands of chips.
 
 ## 4. The edit
 
