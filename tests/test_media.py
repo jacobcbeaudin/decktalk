@@ -249,3 +249,56 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
     again = Manifest.load(p.manifest_path).segments[seg.key]
     assert again.duration_seconds == padded.duration_seconds, "a second run padded the take again"
     assert again.tail_padded_seconds == padded.tail_padded_seconds
+
+
+def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path):
+    """A close that moves from section 2 to section 3 keeps its take under its new file names."""
+    from decktalk.artifacts import Manifest, ManifestSegment, Word, write_words
+    from decktalk.project import Project
+    from decktalk.providers.speech import register
+    from decktalk.stages.narrate import narrate, script_segments, text_hash
+
+    class NeverSpeaks:
+        name = "never-renumbered"
+
+        def speak(self, request):
+            raise AssertionError("a renumbered take was sent to the voice again")
+
+        def cache_key(self, request):
+            return "never-voice"
+
+    register("never-renumbered", lambda project: NeverSpeaks())
+    (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 3. Close\n\nGoodbye now.\n", encoding="utf-8")
+    (tmp_path / "decktalk.toml").write_text(
+        "[narration]\nmin_tail_seconds = 0.5\n[voice]\nprovider = 'never-renumbered'\n"
+        "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 3\npage = 'a.html'\n",
+        encoding="utf-8",
+    )
+    p = Project.load(tmp_path, environ={})
+    cfg = p.settings.narration
+    p.audio_dir.mkdir(parents=True)
+    _all, spoken = script_segments(p)
+    settings = p.voice.api_settings()
+    manifest = Manifest(script="script.md", model="m", output_format=cfg.output_format)
+    for old_key, seg, freq in [("01", spoken[0], 440), ("02", spoken[1], 660)]:
+        name = f"{old_key}-{seg.slug}"
+        ffmpeg.run(
+            "-f", "lavfi", "-i", f"sine=f={freq}:r=44100:d=1", "-af", "apad=pad_dur=1",
+            "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(p.audio_dir / f"{name}.mp3"),
+        )  # fmt: skip
+        write_words(p.audio_dir / f"{name}.words.json", [Word("word", 0.0, 1.0)])
+        manifest.segments[old_key] = ManifestSegment(
+            index=int(old_key), title=seg.title, file=f"{name}.mp3", words_file=f"{name}.words.json",
+            hash=text_hash(seg, cfg, "never-voice", settings), words=2, est_seconds=1.0,
+            duration_seconds=ffmpeg.probe_duration(p.audio_dir / f"{name}.mp3"),
+        )  # fmt: skip
+    manifest.save(p.manifest_path)
+
+    result = narrate(p)
+    assert result.synthesized == [] and result.cached == ["01", "03"]
+    moved = Manifest.load(p.manifest_path)
+    assert sorted(moved.segments) == ["01", "03"]
+    assert moved.segments["03"].file == "03-close.mp3" and moved.segments["03"].index == 3
+    assert (p.audio_dir / "03-close.mp3").read_bytes() == (p.audio_dir / "02-close.mp3").read_bytes()
+    assert list(result.timeline.sections) == ["01", "03"]
+    assert narrate(p).cached == ["01", "03"]
