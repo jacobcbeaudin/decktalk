@@ -69,8 +69,6 @@ DARK = {
 
 SANS = "'DT Sans', 'Inter Tight', 'Inter', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
 MONO = "'DT Mono', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
-SENTENCE = ["The", "curve", "rises,", "then", "the", "number", "lands."]
-CUE_WORDS = {1, 5, 6}  # curve, number, lands.
 CAP_HEIGHT = 0.73  # Inter Tight's cap height as a fraction of the font size.
 MEASURE_PX = 32  # The size the words are measured at. Every diagram scales the positions from it.
 HERO_W, HERO_H, HERO_PAD = 1000, 248, 48
@@ -85,6 +83,41 @@ HERO_LOOP, HERO_LEAD = 9.0, 0.5  # the loop plays the words in real time, starti
 # The film's scene 1 draws the bowl y = 720 - 320 u^2. The ball starts at u = -0.96, and each count
 # is a step of gradient descent on u^2 at step size 0.25, so each step halves u.
 HERO_STEPS = [-0.96, -0.48, -0.24, -0.12]
+
+
+class Bowl:
+    """The film's bowl, drawn y = floor - depth u^2 for u in [-1, 1], in whatever pixels a figure uses."""
+
+    def __init__(self, cx: float, floor: float, hw: float, depth: float) -> None:
+        self.cx, self.floor, self.hw, self.depth = cx, floor, hw, depth
+
+    def path(self) -> str:
+        return "".join(
+            f"{'L' if n else 'M'}{self.cx + self.hw * u:.1f},{self.floor - self.depth * u * u:.1f}"
+            for n, u in enumerate(i / 20 - 1 for i in range(41))
+        )
+
+    def at(self, u: float, r: float) -> tuple[float, float]:
+        """A point r px off the bowl along its inner normal, so a circle of radius r sits on the line."""
+        dx, dy = self.hw, -2 * self.depth * u
+        n = (dx * dx + dy * dy) ** 0.5
+        return self.cx + self.hw * u + r * dy / n, self.floor - self.depth * u * u - r * dx / n
+
+    def art(self, ball_r: float, ball_off: float, mark_r: float, mark_off: float, pop: bool = False) -> str:
+        """The ball's end state: a mark where each count stepped from, and the ball where it came to rest.
+        With `pop`, each mark and then the ball carries its own pop class, p0 to p3, in step order."""
+
+        def cls(k: int) -> str:
+            return f" mp p{k}" if pop else ""
+
+        marks = "".join(
+            f'<circle class="mark{cls(k)}" cx="{self.at(u, mark_off)[0]:.1f}" cy="{self.at(u, mark_off)[1]:.1f}" r="{mark_r}"/>'
+            for k, u in enumerate(HERO_STEPS[:-1])
+        )
+        bx, by = self.at(HERO_STEPS[-1], ball_off)
+        return f'{marks}<circle class="ball{cls(len(HERO_STEPS) - 1)}" cx="{bx:.1f}" cy="{by:.1f}" r="{ball_r}"/>'
+
+
 FACES = (
     # family, file, weight range: variable fonts subset to the glyphs the diagrams use
     ("DT Sans", "InterTight.woff2", "100 900"),
@@ -263,24 +296,15 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
 
     # The slide card, in card pixels: the bowl on the left, the three count boxes on the right.
     pad = 24
-    bowl_hw, bowl_cx, bowl_floor, bowl_depth = 72, pad + 72, 124, 90
-
-    def on_bowl(u: float, r: float) -> tuple[float, float]:
-        """A point r px off the bowl along its inner normal, so a circle of radius r sits on the line."""
-        dx, dy = bowl_hw, -2 * bowl_depth * u
-        n = (dx * dx + dy * dy) ** 0.5
-        return bowl_cx + bowl_hw * u + r * dy / n, bowl_floor - bowl_depth * u * u - r * dx / n
-
-    bowl_d = "".join(
-        f"{'L' if n else 'M'}{bowl_cx + bowl_hw * u:.1f},{bowl_floor - bowl_depth * u * u:.1f}"
-        for n, u in enumerate(i / 20 - 1 for i in range(41))
-    )
+    bowl_hw, bowl_cx = 72, pad + 72
+    bowl = Bowl(bowl_cx, 124, bowl_hw, 90)
+    bowl_d = bowl.path()
     balls = "".join(
-        f'<circle class="ball b{k}" cx="{on_bowl(u, 10)[0]:.1f}" cy="{on_bowl(u, 10)[1]:.1f}" r="9"/>'
+        f'<circle class="ball b{k}" cx="{bowl.at(u, 10)[0]:.1f}" cy="{bowl.at(u, 10)[1]:.1f}" r="9"/>'
         for k, u in enumerate(HERO_STEPS)
     )
     marks = "".join(
-        f'<circle class="mark m{k}" cx="{on_bowl(u, 4)[0]:.1f}" cy="{on_bowl(u, 4)[1]:.1f}" r="3.5"/>'
+        f'<circle class="mark m{k}" cx="{bowl.at(u, 4)[0]:.1f}" cy="{bowl.at(u, 4)[1]:.1f}" r="3.5"/>'
         for k, u in enumerate(HERO_STEPS[:-1])
     )
     box_x0, gap, box_y, box_h = bowl_cx + bowl_hw + pad, 8, 48, 36
@@ -335,10 +359,16 @@ STAGES = [
     ("03 RECORD", "Slides appear on their words", "Plain HTML, recorded in Chromium."),
     ("04 ASSEMBLE", "Cut to the frame", "ffmpeg cuts, mixes, verifies."),
 ]
-TICK_XS = [2, 30, 74, 96, 142, 178, 222]
+NARRATE_W = 222  # the width the narrate panel's ticks span
+NARRATE_CUES = (1, 3)  # the cue dots sit on "bowl" and "ball"; the timestamp sits on "bowl"
 
 
-def hiw_css(pal: dict[str, str], total: float = 10.0) -> str:
+def narrate_ticks(xs: list[float]) -> list[float]:
+    """The hero's measured word starts, scaled so the ticks span the narrate panel, one per word."""
+    return [round(2 + x * (NARRATE_W - 2) / xs[-1], 1) for x in xs]
+
+
+def hiw_css(pal: dict[str, str], ticks: list[float], total: float = 10.0) -> str:
     css = [font_face()]
     css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
     css.append(f".h{{font:600 20px {SANS};letter-spacing:-.01em;fill:{pal['ink']}}}")
@@ -355,28 +385,31 @@ def hiw_css(pal: dict[str, str], total: float = 10.0) -> str:
         css.append(
             f"@keyframes ty{i}{{0%,{a}%{{transform:scaleX(0)}}{b}%,95%{{transform:scaleX(1)}}99%,100%{{transform:scaleX(0)}}}}.ty{i}{{animation-name:ty{i}}}"
         )
-    # 02: uniform ticks light under a sweeping head, two cue dots, and the first cue's timestamp.
+    # 02: a tick per word of the opening lights under a sweeping head, cue dots on "bowl" and "ball",
+    # and the timestamp of "bowl".
     css.append(
         f".tk{{stroke:{pal['accent']};stroke-width:2.5;stroke-linecap:round;animation:{total}s linear infinite}}"
     )
+    css.append(f".head2{{transform:translateX({ticks[-1] - 1}px);opacity:0;animation:head2 {total}s linear infinite}}")
     css.append(
-        f".head2{{transform:translateX({TICK_XS[-1] - 1}px);opacity:0;animation:head2 {total}s linear infinite}}"
+        f"@keyframes head2{{0%,26%{{transform:translateX(0);opacity:1}}48%{{transform:translateX({ticks[-1] - 1}px);opacity:1}}50%,100%{{transform:translateX({ticks[-1] - 1}px);opacity:0}}}}"
     )
-    css.append(
-        f"@keyframes head2{{0%,26%{{transform:translateX(0);opacity:1}}48%{{transform:translateX({TICK_XS[-1] - 1}px);opacity:1}}50%,100%{{transform:translateX({TICK_XS[-1] - 1}px);opacity:0}}}}"
-    )
-    for i, x in enumerate(TICK_XS):
-        at = round(26 + x / (TICK_XS[-1]) * 22)
+    lit_at = []
+    for i, x in enumerate(ticks):
+        at = round(26 + x / (ticks[-1]) * 22)
+        lit_at.append(at)
         css.append(
             f"@keyframes k{i}{{0%,{at - 1}%{{stroke:{pal['tick']}}}{at}%,95%{{stroke:{pal['accent']}}}99%,100%{{stroke:{pal['tick']}}}}}.k{i}{{animation-name:k{i}}}"
         )
     css.append(f".cd{{fill:{pal['accent']};animation:{total}s linear infinite}}")
     css.append(f".ts{{fill:{pal['accent']};animation:{total}s linear infinite}}")
-    css.append(
-        "@keyframes cd1{0%,32%{opacity:0}33%,95%{opacity:1}99%,100%{opacity:0}}@keyframes cd2{0%,43%{opacity:0}44%,95%{opacity:1}99%,100%{opacity:0}}.cd1{animation-name:cd1}.cd2{animation-name:cd2}"
-    )
-    # 03: the mini curve draws and the figure pops. The 1 2 dasharray keeps the next dash's round
-    # cap off the end of the path before the draw starts.
+    for n, i in enumerate(NARRATE_CUES, start=1):
+        at = lit_at[i]
+        css.append(
+            f"@keyframes cd{n}{{0%,{at - 1}%{{opacity:0}}{at}%,95%{{opacity:1}}99%,100%{{opacity:0}}}}.cd{n}{{animation-name:cd{n}}}"
+        )
+    # 03: the mini bowl draws, then each step mark and last the ball pop in turn. The 1 2 dasharray
+    # keeps the next dash's round cap off the end of the path before the draw starts.
     css.append(
         f".mc{{stroke-dasharray:1 2;stroke-dashoffset:0;animation:mc {total}s cubic-bezier(.3,0,.1,1) infinite}}"
     )
@@ -384,10 +417,15 @@ def hiw_css(pal: dict[str, str], total: float = 10.0) -> str:
     css.append(
         f".mp{{transform-box:fill-box;transform-origin:center;animation:mp {total}s cubic-bezier(.2,.9,.2,1) infinite}}"
     )
+    for k in range(len(HERO_STEPS)):
+        a = 63 + 2 * k
+        css.append(
+            f"@keyframes p{k}{{0%,{a}%{{opacity:0;transform:scale(.4)}}{a + 3}%,95%{{opacity:1;transform:scale(1)}}99%,100%{{opacity:0;transform:scale(.4)}}}}.p{k}{{animation-name:p{k}}}"
+        )
     css.append(
-        "@keyframes mp{0%,64%{opacity:0;transform:scale(.7)}67%,95%{opacity:1;transform:scale(1)}99%,100%{opacity:0;transform:scale(.7)}}"
+        f".mbowl{{stroke:{pal['ink']};stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}}"
+        f".ball{{fill:{pal['accent']};stroke:{pal['block']};stroke-width:2}}.mark{{fill:{pal['ink']}}}"
     )
-    css.append(f".mnum{{font:700 26px {SANS};letter-spacing:-.03em;fill:{pal['accent']}}}")
     # 04: frames wait faintly, brighten in turn, then merge into one bar that carries the output's name to the
     # loop's end. They rest at a low opacity rather than zero, so the panel never stands empty.
     css.append(f".fr{{transform-box:fill-box;animation:{total}s cubic-bezier(.2,0,0,1) infinite}}")
@@ -402,7 +440,7 @@ def hiw_css(pal: dict[str, str], total: float = 10.0) -> str:
     return "\n".join(css)
 
 
-def stage_svg(i: int, pal: dict[str, str], x: int, y: int) -> str:
+def stage_svg(i: int, pal: dict[str, str], x: int, y: int, ticks: list[float]) -> str:
     lab, h, s = STAGES[i]
     if i == 0:
         art = """<g transform="translate(0 100)">
@@ -411,16 +449,18 @@ def stage_svg(i: int, pal: dict[str, str], x: int, y: int) -> str:
       <rect class="bar type ty3" x="0" y="40" width="168" height="8" rx="4"/>
       <rect class="bar type ty4" x="0" y="60" width="184" height="8" rx="4"/></g>"""
     elif i == 1:
-        ticks = "".join(f'<line class="tk k{j}" x1="{tx}" y1="46" x2="{tx}" y2="62"/>' for j, tx in enumerate(TICK_XS))
-        art = f"""<g transform="translate(0 100)">{ticks}
-      <circle class="cd cd1" cx="{TICK_XS[2]}" cy="38" r="4"/><circle class="cd cd2" cx="{TICK_XS[5]}" cy="38" r="4"/>
-      <text class="lab ts cd1" x="{TICK_XS[2] + 8}" y="38">{figure_data("how-it-works")["start"]:.2f}</text>
+        lines = "".join(f'<line class="tk k{j}" x1="{tx}" y1="46" x2="{tx}" y2="62"/>' for j, tx in enumerate(ticks))
+        bowl_x, ball_x = (ticks[j] for j in NARRATE_CUES)
+        art = f"""<g transform="translate(0 100)">{lines}
+      <circle class="cd cd1" cx="{bowl_x}" cy="38" r="4"/><circle class="cd cd2" cx="{ball_x}" cy="38" r="4"/>
+      <text class="lab ts cd1" x="{bowl_x + 8:.1f}" y="38">{figure_data("how-it-works")["start"]:.2f}</text>
       <g class="head2"><rect x="1" y="30" width="2" height="38" class="accent"/></g></g>"""
     elif i == 2:
+        bowl = Bowl(114, 66, 88, 50)
         art = f"""<g transform="translate(0 98)">
       <rect class="block" width="228" height="78" rx="8"/>
-      <path class="mc" pathLength="1" d="M18,60 C48,58 74,44 100,28 S128,16 138,14" fill="none" stroke="{pal["accent"]}" stroke-width="3" stroke-linecap="round"/>
-      <text class="mnum mp" x="160" y="50">3×</text></g>"""
+      <path class="mbowl mc" pathLength="1" d="{bowl.path()}"/>
+      {bowl.art(ball_r=7, ball_off=8, mark_r=3, mark_off=3.5, pop=True)}</g>"""
     else:
         art = """<g transform="translate(0 100)">
       <rect class="bar fr f1" x="0" y="0" width="50" height="36" rx="8"/>
@@ -446,15 +486,15 @@ STAGE_COMMANDS = ((), ("narrate", "beats"), ("record", "measure", "check"), ("as
 CMD_ROW = 22  # the height the command row adds under each panel label
 
 
-def how_it_works(pal: dict[str, str], stacked: bool, background: bool) -> str:
-    css = hiw_css(pal) + f"\n.cmd{{font:500 13px {MONO};fill:{pal['ink']}}}"
+def how_it_works(pal: dict[str, str], stacked: bool, background: bool, ticks: list[float]) -> str:
+    css = hiw_css(pal, ticks) + f"\n.cmd{{font:500 13px {MONO};fill:{pal['ink']}}}"
     title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The seven stages are narrate, beats, record, measure, check, assemble, and verify."
     if not stacked:
         w, h = 1200, 240 + CMD_ROW
-        stages = "\n".join(stage_svg(i, pal, 60 + 280 * i, -40) for i in range(4))
+        stages = "\n".join(stage_svg(i, pal, 60 + 280 * i, -40, ticks) for i in range(4))
     else:
         w, h = 600, 560 + 2 * CMD_ROW
-        stages = "\n".join(stage_svg(i, pal, 40 + 280 * (i % 2), 280 * (i // 2)) for i in range(4))
+        stages = "\n".join(stage_svg(i, pal, 40 + 280 * (i % 2), 280 * (i // 2), ticks) for i in range(4))
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t">
   <title id="t">{title}</title>
   <defs><style>{css}</style></defs>
@@ -1152,7 +1192,7 @@ def wordmark(pal: dict[str, str], name: tuple[str, float]) -> str:
 
 
 def og(pal: dict[str, str], xs: list[float], widths: list[float]) -> str:
-    """The 1200 by 630 card that link previews show: a narration line, a slide card, and the wordmark."""
+    """The 1200 by 630 card that link previews show: the opening line, the bowl slide, and the wordmark."""
     w, h = 1200, 630
     css = [font_face()]
     css.append(f".bg{{fill:{pal['bg']}}}")
@@ -1162,19 +1202,21 @@ def og(pal: dict[str, str], xs: list[float], widths: list[float]) -> str:
     css.append(f".dot{{fill:{pal['accent']}}}.head{{fill:{pal['ink']}}}")
     css.append(f".title{{font:600 30px {SANS};letter-spacing:-.02em;fill:{pal['ink']}}}")
     css.append(f".tag{{font:400 26px {SANS};fill:{pal['mute']}}}")
-    css.append(f".block{{fill:{pal['block']}}}.axis{{stroke:{pal['hair']};stroke-width:2}}")
-    css.append(f".num{{font:700 64px {SANS};letter-spacing:-.03em;fill:{pal['accent']}}}")
+    css.append(f".block{{fill:{pal['block']}}}")
+    css.append(f".bowl{{stroke:{pal['ink']};stroke-width:4;fill:none;stroke-linecap:round;stroke-linejoin:round}}")
+    css.append(f".ball{{fill:{pal['accent']};stroke:{pal['block']};stroke-width:3}}.mark{{fill:{pal['ink']}}}")
     scale = 44 / MEASURE_PX
     words = "".join(
-        f'<tspan class="w {"cue" if i in CUE_WORDS else ""}" x="{x * scale:.1f}">{t}</tspan>'
-        for i, (t, x) in enumerate(zip(SENTENCE, xs, strict=True))
+        f'<tspan class="w {"cue" if i in HERO_CUES else ""}" x="{x * scale:.1f}">{t}</tspan>'
+        for i, (t, x) in enumerate(zip(HERO_WORDS, xs, strict=True))
     )
     ticks = "".join(
-        f'<line class="tick {"on" if i in CUE_WORDS else ""}" x1="{x * scale + 1:.1f}" y1="0" x2="{x * scale + 1:.1f}" y2="22"/>'
+        f'<line class="tick {"on" if i in HERO_CUES else ""}" x1="{x * scale + 1:.1f}" y1="0" x2="{x * scale + 1:.1f}" y2="22"/>'
         for i, x in enumerate(xs)
     )
-    dots = "".join(f'<circle class="dot" cx="{xs[i] * scale + 1:.1f}" cy="-8" r="5"/>' for i in CUE_WORDS)
+    dots = "".join(f'<circle class="dot" cx="{xs[i] * scale + 1:.1f}" cy="-8" r="5"/>' for i in sorted(HERO_CUES))
     head_x = xs[-1] * scale + widths[-1] * scale + 2
+    bowl = Bowl(150, 108, 116, 78)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label="DeckTalk">
   <defs><style>{chr(10).join(css)}</style></defs>
   <rect class="bg" width="{w}" height="{h}"/>
@@ -1187,9 +1229,8 @@ def og(pal: dict[str, str], xs: list[float], widths: list[float]) -> str:
   </g>
   <g transform="translate(80 420)">
     <rect class="block" width="300" height="130" rx="14"/>
-    <line class="axis" x1="26" y1="100" x2="160" y2="100"/><line class="axis" x1="26" y1="30" x2="26" y2="100"/>
-    <path d="M26,96 C60,94 96,76 130,46 S158,26 160,24" fill="none" stroke="{pal["accent"]}" stroke-width="4" stroke-linecap="round"/>
-    <text class="num" x="190" y="86">3×</text>
+    <path class="bowl" d="{bowl.path()}"/>
+    {bowl.art(ball_r=13, ball_off=14, mark_r=5, mark_off=5.5)}
   </g>
   <text class="tag" x="420" y="470">Narrated presentations, cut to the word.</text>
   <text class="tag" x="420" y="510">A markdown script and HTML slides in.</text>
@@ -1452,13 +1493,6 @@ def _clean(svg: str) -> str:
 
 
 def build() -> dict[Path, str]:
-    widths, space = measure_words(SENTENCE, f"600 {MEASURE_PX}px {SANS}", "-.01em")
-    xs: list[float] = []
-    x = 0.0
-    for i, w in enumerate(widths):
-        xs.append(round(x, 1))
-        gap = space * (1.6 if SENTENCE[i].endswith((",", ".")) else 1.0)
-        x += w + gap
     h_widths, h_space = measure_words(HERO_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
     hero_xs: list[float] = []
     x = 0.0
@@ -1471,18 +1505,25 @@ def build() -> dict[Path, str]:
     for i, w in enumerate(a_widths):
         align_xs.append(round(x, 1))
         x += w + a_space * (1.6 if ALIGN_WORDS[i].endswith((",", ".")) else 1.0)
+    ticks = narrate_ticks(hero_xs)
     name = glyph_outlines("DeckTalk", size=22, weight=600, tracking=-0.02)
     out: dict[Path, str] = {}
     docs = ROOT / "docs"
     for variant, pal in (("light", LIGHT), ("dark", DARK)):
         for background, folder in ((False, ASSETS), (True, docs / "images")):
             out[folder / f"hero-{variant}.svg"] = hero(pal, [x * HERO_PX / MEASURE_PX for x in hero_xs], background)
-            out[folder / f"how-it-works-{variant}.svg"] = how_it_works(pal, stacked=False, background=background)
+            out[folder / f"how-it-works-{variant}.svg"] = how_it_works(
+                pal, stacked=False, background=background, ticks=ticks
+            )
             out[folder / f"alignment-{variant}.svg"] = alignment(
                 pal, [x * 26 / MEASURE_PX for x in align_xs], background
             )
-        out[ASSETS / f"how-it-works-{variant}-stacked.svg"] = how_it_works(pal, stacked=True, background=False)
-        out[docs / "images" / f"how-it-works-{variant}-stacked.svg"] = how_it_works(pal, stacked=True, background=True)
+        out[ASSETS / f"how-it-works-{variant}-stacked.svg"] = how_it_works(
+            pal, stacked=True, background=False, ticks=ticks
+        )
+        out[docs / "images" / f"how-it-works-{variant}-stacked.svg"] = how_it_works(
+            pal, stacked=True, background=True, ticks=ticks
+        )
         out[docs / "images" / f"verify-probes-{variant}.svg"] = verify_probes(pal, background=True)
         out[docs / "images" / f"verify-onset-{variant}.svg"] = verify_onset(pal, background=True)
         out[docs / "images" / f"narration-split-{variant}.svg"] = narration_split(pal, background=True)
@@ -1492,7 +1533,7 @@ def build() -> dict[Path, str]:
         out[ASSETS / f"mark-{variant}.svg"] = mark(pal)
         out[docs / "logo" / f"{variant}.svg"] = wordmark(pal, name)
     out[docs / "favicon.svg"] = mark(LIGHT, size=32, background=True)
-    out[ASSETS / "og.svg"] = og(LIGHT, xs, widths)
+    out[ASSETS / "og.svg"] = og(LIGHT, hero_xs, h_widths)
     return {k: _clean(v) for k, v in out.items()}
 
 
