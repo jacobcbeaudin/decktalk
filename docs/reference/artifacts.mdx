@@ -333,7 +333,8 @@ The out directory holds each cut section, the final video, its captions, and its
 
 Captions break at sentence ends.
 
-- A caption never spans two sections, and no caption covers a clip section.
+- A caption never spans two sections.
+- No caption covers a clip section, unless the section sets `words`. Those captions come from the clip's words file.
 - A caption also ends before any silence of 1 s or more.
 - Whole sentences share a caption when they fit. A sentence too long for one caption splits at the comma
   nearest its middle, or else between two words that are not short words like "of" or "the". Each part keeps at

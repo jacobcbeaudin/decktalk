@@ -17,9 +17,9 @@
 4. EBU R128 loudness: pass one measures integrated loudness and true peak, pass two
    applies the gain that reaches the target and a true-peak limiter at the ceiling,
    oversampled at 192 kHz. The result is measured again and reported.
-5. Captions (srt and vtt) come from the word timestamps, and chapter markers from the
-   section titles are muxed into the mp4. Consecutive sections with the same title share
-   one chapter.
+5. Captions (srt and vtt) come from the word timestamps, plus the words file of any clip
+   section that names one, and chapter markers from the section titles are muxed into the
+   mp4. Consecutive sections with the same title share one chapter.
 6. Atomic publish: work file, then one rename to build/out/<name>.mp4, plus a
    timestamped copy.
 """
@@ -689,6 +689,32 @@ def build_captions(
     return cues
 
 
+def clip_captions(project: Project, rows: list[RenderedSection]) -> list[CaptionCue]:
+    """Cues for the speech inside each clip section that names a words file.
+
+    The words count from the clip's start and carry their own punctuation. A word that starts
+    after the clip's picture ends is dropped. A slate, or a clip with no audio, gets no captions.
+    """
+    starts = section_starts(rows)
+    cues: list[CaptionCue] = []
+    for r in rows:
+        sec = r.section
+        if not isinstance(sec, ClipSection) or not sec.words or r.audio is None:
+            continue
+        path = project.path(sec.words)
+        if not path.exists():
+            log.warning("section %s: words file missing: %s; the clip plays without captions", sec.key, sec.words)
+            continue
+        shift = starts[sec.key]
+        words = [
+            Word(w.word, round(shift + w.start, 3), round(shift + min(w.end, r.duration), 3))
+            for w in read_words(path)
+            if w.start < r.duration
+        ]
+        cues += caption_cues(words)
+    return cues
+
+
 def caption_texts(project: Project, timeline: Timeline) -> dict[str, str]:
     """The spoken text per section key, which lends the captions their punctuation and case.
 
@@ -804,6 +830,7 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
 
     starts = section_starts(rows)
     cues = build_captions(timeline, narration_offsets(rows, timeline, starts), caption_texts(project, timeline))
+    cues = sorted(cues + clip_captions(project, rows), key=lambda c: c.start)
     chapters = build_chapters(rows)
     write_srt(paths["srt"], cues)
     write_vtt(paths["vtt"], cues)
