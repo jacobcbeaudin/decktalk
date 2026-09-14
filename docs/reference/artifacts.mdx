@@ -43,8 +43,9 @@ sections, a time in the final mp4 is the narration time plus the length of every
 the first page section shifts every time. Page sections are cut on whole frames, so the two times can also
 differ by up to one frame.
 
-Example: in the scaffold's silent build, section 5 starts at 151.85 s in `timeline.json` and at 155.84 s in the
-final mp4. The 4 s slate of section 4 sits between them. `decktalk status` prints narration times.
+Example: in the silent build of `clip-lesson` from [Add a clip section](/guides/clip-section), section 5 starts at
+158.70 s in `timeline.json` and at 162.68 s in the final mp4. The 4 s clip of section 4 sits between them.
+`decktalk status` prints narration times.
 
 ## `build/audio/NN-slug.words.json`
 
@@ -78,7 +79,7 @@ ends 0.02 s before the next one starts.
 
 The manifest is the narration cache. It holds one entry per spoken section.
 
-{/* sample: build/audio/manifest.json, silent build of the scaffold (R2), first lines */}
+{/* sample: build/audio/manifest.json, silent build of the scaffold, first lines */}
 ```json
 {
   "script": "script.md",
@@ -95,7 +96,7 @@ The manifest is the narration cache. It holds one entry per spoken section.
       "hash": "silent",
       "words": 29,
       "est_seconds": 12.4,
-      "duration_seconds": 16.992,
+      "duration_seconds": 17.832,
       "target_seconds": null,
       "speech_end_seconds": 16.48,
       "tail_padded_seconds": 0.0,
@@ -133,17 +134,17 @@ explains what the hash covers.
 
 The timeline gives section and word times in `narration.mp3`.
 
-{/* sample: build/audio/timeline.json, silent build of the scaffold (R2), first lines */}
+{/* sample: build/audio/timeline.json, silent build of the scaffold, first lines */}
 ```json
 {
  "narration": "narration.mp3",
- "total_seconds": 191.45,
+ "total_seconds": 202.3,
  "sections": {
   "01": {
    "title": "Open",
    "start": 0.0,
-   "end": 16.95,
-   "duration": 16.95,
+   "end": 17.8,
+   "duration": 17.8,
    "speech_end": 16.48,
    "words": [
     {
@@ -173,18 +174,18 @@ Note: The section span runs from `start` to `end`. The spoken span runs from `st
 The beats file holds the cue times of each section, as the string the page receives in `?beats=`. A section with
 no resolved cue is not in the file.
 
-{/* sample: build/audio/beats.json, silent build of a fresh scaffold (F-r2-07) */}
+{/* sample: build/audio/beats.json, silent build of a fresh scaffold */}
 ```json
 {
   "01": "1.1bowl@1.25,1.1ball@2.33,1.1count@6.15,1.1one@6.69,1.1two@7.24,1.1three@7.78,1.1word@15.41",
-  "02": "2.1mark@0.98,2.1script@2.45,2.1aloud@5.39,2.1word@8.81,2.1follows@14.2",
-  "03": "3.1examples@2.52,3.1box@8.06,3.1guess@10.08,3.1wrong@12.6,3.1turn@16.63,3.1again@20.16,3.2way@22.17,3.2one@28.22,3.2billions@31.25,3.2instead@34.27,3.2all@38.8,3.3two@41.32,3.3floor@42.84,3.3height@46.87,3.3bowl@51.4,3.4ball@52.41,3.4see@57.95,3.4steps@64.5,3.4again@65.51,3.4name@72.06,3.5setting@73.58,3.5long@77.1,3.5short@81.14,3.6zoom@84.66,3.6low@89.2,3.7ai@91.21,3.7sums@97.26,3.8tensor@104.32,3.8gpu@105.83,3.8chips@113.39",
-  "05": "4.1words@12.19,4.1again@14.14,4.1lower@20.96,4.1moved@24.38",
-  "06": "5.1made@4.1,5.1cap@4.56,5.1url@10.03"
+  "02": "2.1mark@1.46,2.1script@2.92,2.1aloud@5.85,2.1word@9.26,2.1follows@14.62,2.1lesson@17.06",
+  "03": "3.1examples@2.52,3.1rules@3.52,3.1box@8.05,3.1guess@10.07,3.1wrong@12.59,3.1turn@16.61,3.1again@20.14,3.2way@22.15,3.2one@28.19,3.2billions@31.21,3.2instead@34.23,3.2all@38.76,3.3two@41.28,3.3floor@42.79,3.3height@46.81,3.3bowl@51.35,3.4ball@52.35,3.4see@57.89,3.4steps@64.43,3.4again@65.44,3.4name@71.98,3.5setting@77.52,3.5long@81.05,3.5short@85.07,3.6zoom@88.6,3.6low@93.13,3.7ai@95.14,3.7sums@101.18,3.8tensor@108.23,3.8gpu@109.74,3.8chips@117.29,3.8out@118.53",
+  "04": "4.1lesson@0.99,4.1sentence@2.96,4.1why@10.85,4.1words@14.31,4.1again@16.28,4.1lower@23.19,4.1moved@26.64",
+  "05": "5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03"
 }
 ```
 
-Each item is `cue id@cue time`, and a comma separates the items. Section `05` plays scene 4, so its cue ids start
+Each item is `cue id@cue time`, and a comma separates the items. Section `04` plays scene 4, so its cue ids start
 with `4.`. The page parser splits each item at the last `@`.
 
 ## `build/audio/beats.anchors.json`
@@ -213,26 +214,26 @@ Note: A cue with no offset key has the same time in both files.
 
 The sidecar lists what the recorder did for one page section, and where narration t=0 sits in the webm.
 
-{/* sample: build/rec/05-scene.json, silent build of a fresh scaffold (F-r2-06) */}
+{/* sample: build/rec/04-scene.json, silent build of a fresh scaffold */}
 ```json
 {
-  "url": "file://~/my-lesson/deck/index.html?scene=4&beats=4.1words%4012.19%2C4.1again%4014.14%2C4.1lower%4020.96%2C4.1moved%4024.38&words=Now%400.00%2Cchange%400.49%2Cone%400.97%2Csentence%401.46%2Cthe%401.95%2Ckind%402.44%2Cof%402.93%2Cedit%403.41%2Cthat%403.90%2Cused%404.39%2Cto%404.88%2Cmean%405.36%2Crecording%405.85%2Cagain%406.34%2CSay%406.83%2Ca%407.31%2Cviewer%407.80%2Casks%408.29%2Cwhy%408.78%2Cdownhill%409.26%2Cis%409.75%2Cgood%4010.24%2CSo%4010.72%2CI%4011.21%2Cadd%4011.70%2Cfour%4012.19%2Cwords%4012.68%2Cand%4013.16%2Cmake%4013.65%2Cthe%4014.14%2Cvideo%4014.62%2Cagain%4015.11%2CNothing%4015.60%2Cre-recorded%4016.09%2Cor%4016.58%2Cre-edited%4017.06%2Cby%4017.55%2Chand%4018.04%2CThe%4018.53%2Cheight%4019.01%2Cis%4019.50%2Cthe%4019.99%2Cerror%4020.47%2Cso%4020.96%2Clower%4021.45%2Cis%4021.94%2Cbetter%4022.43%2CEvery%4022.91%2Clater%4023.40%2Cpicture%4023.89%2Cmoved%4024.38%2Cto%4024.86%2Cstay%4025.35%2Con%4025.84%2Cits%4026.33%2Cword%4026.81&t0=signal",
-  "requested_seconds": 28.05,
-  "settle_seconds": 1.332,
-  "load_seconds": 0.184,
-  "lead_seconds": 1.515,
-  "lead_in_seconds": 1.32,
-  "lead_method": "cover (33 magenta frames)",
+  "url": "file://~/my-lesson/deck/index.html?scene=4&beats=4.1lesson%400.99%2C4.1sentence%402.96%2C4.1why%4010.85%2C4.1words%4014.31%2C4.1again%4016.28%2C4.1lower%4023.19%2C4.1moved%4026.64&words=That%27s%400.00%2Cthe%400.49%2Clesson%400.99%2CNow%401.48%2CI%27ll%401.97%2Cchange%402.47%2Cone%402.96%2Csentence%403.45%2Cthe%403.95%2Ckind%404.44%2Cof%404.93%2Cedit%405.43%2Cthat%405.92%2Cused%406.41%2Cto%406.91%2Cmean%407.40%2Crecording%407.89%2Cagain%408.39%2CSay%408.88%2Ca%409.37%2Cviewer%409.87%2Casks%4010.36%2Cwhy%4010.85%2Cdownhill%4011.35%2Cis%4011.84%2Cgood%4012.33%2CSo%4012.83%2CI%4013.32%2Cadd%4013.81%2Cfour%4014.31%2Cwords%4014.80%2Cand%4015.29%2Cmake%4015.79%2Cthe%4016.28%2Cvideo%4016.77%2Cagain%4017.27%2CNothing%4017.76%2Cre-recorded%4018.25%2Cor%4018.75%2Cre-edited%4019.24%2Cby%4019.73%2Chand%4020.23%2CThe%4020.72%2Cheight%4021.21%2Cis%4021.71%2Cthe%4022.20%2Cerror%4022.69%2Cso%4023.19%2Clower%4023.68%2Cis%4024.17%2Cbetter%4024.67%2CEvery%4025.16%2Clater%4025.65%2Cpicture%4026.15%2Cmoved%4026.64%2Cto%4027.13%2Cstay%4027.63%2Con%4028.12%2Cits%4028.61%2Cword%4029.11&prevwords=How%400.00%2Cdoes%400.50%2CAI%401.01%2Clearn%401.51%2CFrom%402.01%2Cexamples%402.52%2Cnot%403.02%2Crules%403.52%2Cpeople%404.03%2Cwrite%404.53%2CAn%405.03%2CAI%405.54%2Cmodel%406.04%2Cis%406.54%2Clike%407.05%2Ca%407.55%2Cbox%408.05%2Cof%408.56%2Cknobs%409.06%2CIt%409.56%2Cguesses%4010.07%2Cand%4010.57%2Ca%4011.07%2Cmeter%4011.58%2Cshows%4012.08%2Cits%4012.59%2Cerror%4013.09%2Chow%4013.59%2Cwrong%4014.09%2Cthe%4014.60%2Cguess%4015.10%2Cwas%4015.60%2CLearning%4016.11%2Cturns%4016.61%2Cthe%4017.12%2Cknobs%4017.62%2Cuntil%4018.12%2Cthe%4018.62%2Cmeter%4019.13%2Cdrops%4019.63%2Cexample%4020.14%2Cafter%4020.64%2Cexample%4021.14%2CBut%4021.65%2Cwhich%4022.15%2Cway%4022.65%2Cshould%4023.16%2Ceach%4023.66%2Cknob%4024.16%2Cturn%4024.67%2CIn%4025.17%2Ca%4025.67%2Cbig%4026.18%2Cmodel%4026.68%2Ctesting%4027.18%2Cknobs%4027.69%2Cone%4028.19%2Cat%4028.69%2Ca%4029.20%2Ctime%4029.70%2Cwould%4030.20%2Ctake%4030.71%2Cbillions%4031.21%2Cof%4031.71%2Ctries%4032.22%2Cfor%4032.72%2Cevery%4033.22%2Cstep%4033.73%2CInstead%4034.23%2Cone%4034.73%2Cround%4035.24%2Cof%4035.74%2Cmath%4036.24%2Cgives%4036.75%2Ca%4037.25%2Cdirection%4037.75%2Cfor%4038.26%2Cevery%4038.76%2Cknob%4039.26%2Cat%4039.77%2Conce%4040.27%2CPicture%4040.77%2Ctwo%4041.28%2Cknobs%4041.78%2CThe%4042.29%2Cfloor%4042.79%2Cis%4043.29%2Cevery%4043.79%2Cway%4044.30%2Cto%4044.80%2Cset%4045.30%2Cthem%4045.81%2CThe%4046.31%2Cheight%4046.82%2Cis%4047.32%2Cthe%4047.82%2Cerror%4048.32%2CFor%4048.83%2Cthis%4049.33%2Clesson%4049.84%2Cit%4050.34%2Cis%4050.84%2Ca%4051.35%2Cbowl%4051.85%2CThe%4052.35%2Cball%4052.86%2Cis%4053.36%2Cwhere%4053.86%2Cthe%4054.37%2Cknobs%4054.87%2Care%4055.37%2Cset%4055.88%2Cright%4056.38%2Cnow%4056.88%2CIt%4057.39%2Ccan%27t%4057.89%2Csee%4058.39%2Cthe%4058.90%2Cwhole%4059.40%2Cbowl%4059.90%2Conly%4060.41%2Cthe%4060.91%2Cslope%4061.41%2Cwhere%4061.92%2Cit%4062.42%2Cstands%4062.92%2CSo%4063.43%2Cit%4063.93%2Csteps%4064.43%2Cdownhill%4064.94%2Cagain%4065.44%2Cand%4065.94%2Cagain%4066.45%2Cand%4066.95%2Cthe%4067.45%2Csteps%4067.96%2Cshrink%4068.46%2Cas%4068.96%2Cthe%4069.47%2Cground%4069.97%2Cflattens%4070.47%2CThat%4070.98%2Cis%4071.48%2Cgradient%4071.98%2Cdescent%4072.49%2CIt%27s%4072.99%2Cwhat%4073.50%2Cthe%4074.00%2Cball%4074.50%2Cdid%4075.00%2Con%4075.51%2Cmy%4076.01%2Ccount%4076.51%2COne%4077.02%2Csetting%4077.52%2Cmakes%4078.03%2Cevery%4078.53%2Cstep%4079.03%2Clonger%4079.54%2Cor%4080.04%2Cshorter%4080.54%2CToo%4081.05%2Clong%4081.55%2Cand%4082.05%2Cit%4082.56%2Cbounces%4083.06%2Cpast%4083.56%2Cthe%4084.07%2Cbottom%4084.57%2CToo%4085.07%2Cshort%4085.58%2Cand%4086.08%2Cit%4086.58%2Cis%4087.09%2Cvery%4087.59%2Cslow%4088.09%2CZoom%4088.60%2Cout%4089.10%2Cand%4089.60%2Cthe%4090.11%2Cground%4090.61%2Ccan%4091.11%2Chave%4091.62%2Cmany%4092.12%2Cvalleys%4092.62%2Ceach%4093.13%2Cabout%4093.63%2Cas%4094.13%2Clow%4094.64%2CToday%27s%4095.14%2CAI%4095.64%2Cis%4096.15%2Ctrained%4096.65%2Cwith%4097.15%2Ca%4097.66%2Cversion%4098.16%2Cof%4098.66%2Cthis%4099.17%2COne%4099.67%2Cstep%40100.18%2Ctakes%40100.68%2Cbillions%40101.18%2Cof%40101.69%2Cbillions%40102.19%2Cof%40102.69%2Csmall%40103.19%2Ccalculations%40103.70%2CInside%40104.20%2Cthe%40104.71%2Cknobs%40105.21%2Care%40105.71%2Cgrids%40106.22%2Cof%40106.72%2Cnumbers%40107.22%2Ccalled%40107.72%2Ctensors%40108.23%2CChips%40108.73%2Clike%40109.24%2CGPUs%40109.74%2Cdo%40110.24%2Cmath%40110.75%2Con%40111.25%2Ca%40111.75%2Cwhole%40112.26%2Cgrid%40112.76%2Cat%40113.26%2Conce%40113.77%2CBig%40114.27%2Cmodels%40114.77%2Csplit%40115.28%2Cthe%40115.78%2Cwork%40116.28%2Cacross%40116.79%2Cthousands%40117.29%2Cof%40117.79%2Cchips%40118.30&t0=signal",
+  "requested_seconds": 31.200000000000006,
+  "settle_seconds": 1.44,
+  "load_seconds": 0.063,
+  "lead_seconds": 1.503,
+  "lead_in_seconds": 1.44,
+  "lead_method": "cover (36 magenta frames)",
   "warnings": [],
   "page_errors": [],
   "frame_gaps": [],
   "sync_log": [
     {
       "text": "The height is the error,",
-      "cueAt": 20.967,
-      "runAt": 18.53,
+      "cueAt": 23.192,
+      "runAt": 20.72,
       "n": 9,
-      "firstOn": 20.967
+      "firstOn": 23.192
     }
   ]
 }
@@ -285,14 +286,14 @@ I wrote the words and drew the pictures,
 and each picture waits for its word.
 ```
 
-{/* sample: build/out/my-lesson.chapters.txt, silent build of the scaffold (R2), first chapter */}
+{/* sample: build/out/my-lesson.chapters.txt, silent build of the scaffold, first chapter */}
 ```text build/out/my-lesson.chapters.txt
 ;FFMETADATA1
 
 [CHAPTER]
 TIMEBASE=1/1000
 START=0
-END=16960
+END=17800
 title=Open
 ```
 

@@ -13,7 +13,7 @@ Start from the scaffold, and remove its section 3.
 
 1. Create a project with `decktalk init my-lesson`. The scaffold puts the runtime and KaTeX in `deck/`.
 2. Go into the project with `cd my-lesson`.
-3. In `script.md`, delete the text from `## 3. How AI learns` up to `## 4. Thousands of chips`.
+3. In `script.md`, delete the text from `## 3. How AI learns` up to `## 4. The edit`.
 4. In `decktalk.toml`, delete the `[[section]]` table that has `number = 3`.
 5. In `cues.json`, delete the `"3"` entry.
 
@@ -197,8 +197,8 @@ Build the video without an account, then measure the reveals.
 {/* sample: decktalk verify 3:3.1rule 3:3.1p1, scaffold with this guide's section 3, silent build (cue table only) */}
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.1rule           22.18    58.66    0.46    0.00    -20ms   -49ms  changed
-3:3.1p1             18.73    55.21    0.16    0.00    -10ms   -38ms  changed
+3:3.1rule           22.18    60.78    0.46    0.00    -20ms   -29ms  changed
+3:3.1p1             18.73    57.33    0.16    0.00    -10ms   -18ms  changed
 ```
 
 Both rows read `changed`. The offset column is the time from the cue time to the onset of the reveal, in milliseconds. `decktalk verify` reports `OFF CUE` and exits 1 when that time is outside the offset limit. Only a silent build gives the `a/v` column, because only the click track has clicks. [Verify](/reference/verify#cues) defines every column.

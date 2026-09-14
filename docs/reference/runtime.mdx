@@ -11,16 +11,15 @@ how the parts work together.
 Include the runtime before the scene definitions. After you upgrade DeckTalk, run
 `decktalk runtime` to refresh the project's copy.
 
-{/* copied from template/deck/index.html, scene 4, with most of the markup cut */}
+{/* copied from template/deck/index.html, scene 4, with most of the markup and the handlers cut */}
 ```html deck/index.html
 <script src="decktalk-runtime.js"></script>
 <script>
 DeckTalk.scene(4, { name: "The edit", steps: [
-  { id: "4.1", hold: 22,
-    cues: { "4.1words": 8.2, "4.1again": 10.6, "4.1lower": 15.4, "4.1moved": 18.2 },
+  { id: "4.1", hold: 25,
+    cues: { "4.1lesson": 0.5, "4.1sentence": 2.2, "4.1why": 7.6, "4.1words": 10.2, "4.1again": 11.7, "4.1lower": 18.1, "4.1moved": 21.0 },
     render: () => `
     <div class="slide s4">
-      <p class="eyebrow">05 The edit</p>
       <p class="s4-cap" data-cue="4.1lower" data-sync>The height is the error, so lower is better.</p>
       <div class="s4-verify" data-cue="4.1moved" data-fx="none">…</div>
     </div>` },
@@ -137,9 +136,12 @@ fields. A handler that takes no arguments still works.
 
 {/* copied from template/deck/index.html, scene 2 */}
 ```js deck/index.html
-{ id: "2.1", hold: 16,
-  cues: { "2.1mark": 0.6, "2.1script": 2.4, "2.1aloud": 4.6, "2.1word": 7.3, "2.1follows": 11.3 },
-  on: { "2.1mark": (slide) => slide.querySelector(".s2-mark").classList.add("up") },
+{ id: "2.1", hold: 21,
+  cues: { "2.1mark": 1.1, "2.1script": 3.4, "2.1aloud": 5.9, "2.1word": 8.5, "2.1follows": 12.3, "2.1lesson": 14.5 },
+  on: handoffs(["2.1mark", "2.1lesson"], {
+    "2.1mark": (slide) => slide.querySelector(".s2-mark").classList.add("up"),
+    "2.1lesson": (slide) => settle(slide.querySelector(".s2-push"), 0.55),
+  }),
   render: () => { … } }
 ```
 

@@ -311,10 +311,10 @@ The error reads `unfilled placeholders ['<NAME>'] in the script; fill them or pa
 
 ### `no spoken sections match` in narrate
 
-{/* sample: decktalk narrate --silent --only 4 on a fresh scaffold */}
+{/* sample: decktalk narrate --silent --only 6 on a fresh scaffold */}
 
 ```text
-error: no spoken sections match [4]; spoken sections are [1, 2, 3, 5, 6]
+error: no spoken sections match [6]; spoken sections are [1, 2, 3, 4, 5]
 ```
 
 **Cause.** `--only` names a clip section or a number with no script heading.
@@ -352,8 +352,8 @@ timeline then covers only the sections that have audio.
 
 ```text
                     ! 3.4name: phrase not found: 'gradient decent'
- 05    27.3      -  4.1words@12.19,4.1again@14.14,4.1lower@20.96,4.1moved@24.38
- 06    11.4      -  5.1made@4.1,5.1cap@4.56,5.1url@10.03
+ 04    29.6      -  4.1lesson@0.99,4.1sentence@2.96,4.1why@10.85,4.1words@14.31,4.1again@16.28,4.1lower@23.19,4.1moved@26.64
+ 05    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
 5 sections with cues; 1 unresolved  (estimated words: times are placeholders)
 error: 1 cue(s) could not be matched to the narration; a step whose cues are unresolved never appears. Fix the phrases in cues.json (see the notes above) or pass allow_unresolved=True / --allow-unresolved:
   section 03: 3.4name: phrase not found: 'gradient decent'
@@ -385,7 +385,7 @@ unresolved never mounts.
                     ! 5.1cap: not in deck/index.html
 5 sections with cues; 0 unresolved  (estimated words: times are placeholders)
 error: 1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal them. Add data-cue="5.1cap" to the step in deck/index.html, fix the id in cues.json, or pass --allow-unknown:
-  section 06: 5.1cap: not in deck/index.html
+  section 05: 5.1cap: not in deck/index.html
 ```
 
 **Cause.** `beats` looks for each cue id in its page in quotes or backticks, and did not find this
@@ -609,16 +609,15 @@ the same amount.
 
 ### `missing; slate for` in assemble
 
-{/* sample: decktalk assemble after a silent build of the scaffold, section 4 with optional = true and no clip file */}
+{/* sample: decktalk assemble in clip-lesson from Add a clip section, with optional = true and no media/chips.mp4 */}
 
 ```text
-section 04: media/broll-chips.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
+section 04: media/chips.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
 ```
 
-**Cause.** The file that `clip` names does not exist, so a titled slate plays for `slate_seconds`. The
-scaffold's section 4 does this until `media/broll-chips.mp4` exists, and that is expected.
+**Cause.** The file that `clip` names does not exist, so a titled slate plays for `slate_seconds`.
 
-The scaffold's section 4 sets `optional = true`, so its warning ends with
+The section in the sample sets `optional = true`, so its warning ends with
 `the section is optional, so --strict allows the slate`. A section without `optional` prints only
 `(drop your clip at that path)`.
 
@@ -631,10 +630,10 @@ The scaffold's section 4 sets `optional = true`, so its warning ends with
 
 ### `clip missing` or `recording missing` in assemble
 
-{/* sample: decktalk assemble --strict in a fresh scaffold after deleting optional = true from section 4, error line (F-r2-09) */}
+{/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true, with no media/chips.mp4, error line */}
 
 ```text
-error: section 4: clip missing: ~/my-lesson/media/broll-chips.mp4. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
+error: section 4: clip missing: ~/clip-lesson/media/chips.mp4. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
 ```
 
 **Cause.** `--strict` turns a missing recording into an error. It does the same for a missing clip,
@@ -669,14 +668,14 @@ unless the clip section sets `optional = true`.
 
 ### `underscore missing` in assemble
 
-{/* sample: assemble stage of decktalk build --silent on a fresh scaffold (A-qs-02) */}
+{/* sample: decktalk assemble after a silent build of the scaffold, with underscore uncommented under [mix] */}
 
 ```text
 underscore missing (~/my-lesson/build/music/underscore.mp3); no music (`decktalk soundscape`)
 ```
 
 **Cause.** `[mix]` names an underscore or ambience file that does not exist. The video plays without
-it. The scaffold names both files, and `decktalk soundscape` generates them.
+it. The scaffold keeps both keys in comments, and `decktalk soundscape` generates both files.
 
 **Fix.**
 1. If you want the sound, run `decktalk soundscape` or put your own file at the path.
@@ -838,7 +837,7 @@ The error reads `malformed check '<text>'; want SECTION:CUE, e.g. 3:3.1draw`.
 **Cause.** A cue argument does not start with a section number and a colon.
 
 **Fix.**
-1. Write each cue as `SECTION:CUE`, such as `5:4.1words`.
+1. Write each cue as `SECTION:CUE`, such as `4:4.1words`.
 
 **More.** [`decktalk verify`](/reference/cli#decktalk-verify)
 
@@ -887,10 +886,10 @@ element appears whole. Usually the slide writes a number as digits and the scrip
 
 ### `matches no element, handler, or step` in a page
 
-{/* sample: record stage of decktalk build --silent on a scaffold copy with data-cue="5.1cap" removed from deck/index.html */}
+{/* sample: decktalk record --only 5 on a scaffold copy with data-cue="5.1cap" removed from deck/index.html */}
 
 ```text
-[page] 06-scene  cue "5.1cap" matches no element, handler, or step
+[page] 05-scene  cue "5.1cap" matches no element, handler, or step
 ```
 
 **Cause.** The cue fired, but no element has that `data-cue`, no handler is registered for it, and no
@@ -950,7 +949,7 @@ time.
 2. For drafts, set `DECKTALK_VIDEO_PRESET=veryfast`, or `preset = "veryfast"` under `[video]`.
 3. For the final video, go back to the default preset.
 
-A silent build of the scaffold took 216.6 s for its 197.96 s video. The machine was a MacBook Pro
+A silent build of the scaffold took 224.4 s for its 204.84 s video. The machine was a MacBook Pro
 with an Apple M5 Pro and 64 GB of memory.
 
 **More.** [Rebuild one section](/guides/rebuild-one-section)

@@ -42,12 +42,12 @@ The underscore therefore starts to rise in the last 0.5 s of speech, and it is a
 it. It stays down under a clip. The ramps are tuning keys under `[audio]` in
 [Configuration](/reference/configuration#audio).
 
-The next figure shows the underscore level around the clip of the scaffold, for a project that has an underscore
-file. DeckTalk computes the level from the scaffold's `[mix]` and `[audio]` settings.
+The next figure shows the underscore level around the clip section from [Add a clip section](/guides/clip-section),
+for a project that has an underscore file. DeckTalk computes the level from the scaffold's `[mix]` and `[audio]` settings.
 
 <Frame caption="The underscore rises as the speech of section 3 ends, then stays down under the clip.">
-  <img className="block dark:hidden" src="/images/duck-lane-light.svg" alt="The underscore level around clip section 4 of the scaffold. It sits at −30 dB under each spoken span and under the whole clip. It ramps up to −24 dB over the last 0.5 s of speech in section 3, and briefly at the cut into section 5." />
-  <img className="hidden dark:block" src="/images/duck-lane-dark.svg" alt="The underscore level around clip section 4 of the scaffold. It sits at −30 dB under each spoken span and under the whole clip. It ramps up to −24 dB over the last 0.5 s of speech in section 3, and briefly at the cut into section 5." />
+  <img className="block dark:hidden" src="/images/duck-lane-light.svg" alt="The underscore level around clip section 4, from 2:36 to 2:47 of the video. It sits at −30 dB under each spoken span and under the whole clip. It ramps up to −24 dB over the last 0.5 s of speech in section 3, and briefly at the cut into section 5." />
+  <img className="hidden dark:block" src="/images/duck-lane-dark.svg" alt="The underscore level around clip section 4, from 2:36 to 2:47 of the video. It sits at −30 dB under each spoken span and under the whole clip. It ramps up to −24 dB over the last 0.5 s of speech in section 3, and briefly at the cut into section 5." />
 </Frame>
 
 ## Markers
@@ -147,7 +147,7 @@ decktalk soundscape --only music    # generate one item
 - Each output has a manifest file with a hash of its request. A second run sends nothing unless a request changed.
 - `--force` generates an item again, even when its request did not change.
 
-{/* STALE SAMPLE: regenerate from a v11 build (decktalk soundscape --dry-run on the scaffold). */}
+{/* sample: decktalk soundscape --dry-run --only music, scaffold with [soundscape.music] uncommented */}
 ```text
 == music -> ~/my-lesson/build/music/underscore.mp3  [planned]
    POST https://api.elevenlabs.io/v1/music
@@ -162,8 +162,9 @@ decktalk soundscape --only music    # generate one item
 Point `[mix] underscore`, `[mix] ambience`, and each `[[mix.sfx]] file` at any audio file that ffmpeg can read.
 
 Keep your own file at a path that no `[soundscape]` table writes to. `decktalk soundscape` generates any output
-that has no manifest file next to it, and it overwrites your file. The scaffold's `[soundscape.music]` writes to
-the `[mix] underscore` path. Delete that table, or point `[mix] underscore` at your own file.
+that has no manifest file next to it, and it overwrites your file. The scaffold's `[soundscape.music]` is in comments,
+and it writes to the `[mix] underscore` path. Leave that table in comments, or point `[mix] underscore` at your own
+file.
 
 ## Terms
 

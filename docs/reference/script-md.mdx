@@ -81,7 +81,7 @@ anyway. `decktalk narrate --dry-run` lists every placeholder.
 | Where | Key in `[narration]` | Default |
 |---|---|---|
 | Before the first spoken section | `lead_break_seconds` | 0.7 |
-| After each section's last word, at least | `min_tail_seconds` | 0.7 (the scaffold sets 0.45) |
+| After each section's last word, at least | `min_tail_seconds` | 0.7 (the scaffold sets 1.3) |
 | Extra padding when the tail is too short | `tail_slack_seconds` | 0.05 |
 
 ffmpeg adds this silence to the audio. The speech provider does not receive it.
