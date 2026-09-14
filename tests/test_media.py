@@ -155,7 +155,8 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
 
     (tmp_path / "decktalk.toml").write_text(
         "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\nclip = 'broll.m4a'\n"
-        "[[section]]\nnumber = 3\npage = 'a.html'\n"
+        "[[section]]\nnumber = 3\npage = 'a.html'\n",
+        encoding="utf-8",
     )
     p = Project.load(tmp_path, environ={})
     p.audio_dir.mkdir(parents=True)
@@ -205,9 +206,10 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
             return "never-voice"
 
     register("never", lambda project: NeverSpeaks())
-    (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n")
+    (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text(
-        "[narration]\nmin_tail_seconds = 0.9\n[voice]\nprovider = 'never'\n[[section]]\nnumber = 1\npage = 'a.html'\n"
+        "[narration]\nmin_tail_seconds = 0.9\n[voice]\nprovider = 'never'\n[[section]]\nnumber = 1\npage = 'a.html'\n",
+        encoding="utf-8",
     )
     p = Project.load(tmp_path, environ={})
     cfg = p.settings.narration

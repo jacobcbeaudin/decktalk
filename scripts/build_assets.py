@@ -648,7 +648,7 @@ def figure_data(name: str) -> dict:
     path = ROOT / "scripts" / "figure-data" / f"{name}.json"
     if not path.exists():
         sys.exit(f"{path} is missing. Run `build_assets.py --capture` on a built scaffold.")
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def fig_css(pal: dict[str, str]) -> list[str]:
@@ -1100,7 +1100,7 @@ def scaffold_sections() -> list[tuple[int, str, bool]]:
     """(number, title, is a clip) for each [[section]] of the scaffold that `decktalk init` writes."""
     import tomllib
 
-    doc = tomllib.loads((ROOT / "src" / "decktalk" / "template" / "decktalk.toml").read_text())
+    doc = tomllib.loads((ROOT / "src" / "decktalk" / "template" / "decktalk.toml").read_text(encoding="utf-8"))
     return [(s["number"], s["title"], "clip" in s) for s in doc["section"]]
 
 
@@ -1309,7 +1309,7 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     FIG_DATA.mkdir(parents=True, exist_ok=True)
 
     def write(name: str, data: dict) -> None:
-        (FIG_DATA / name).write_text(json.dumps(data, indent=2) + "\n")
+        (FIG_DATA / name).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         print(f"wrote {(FIG_DATA / name).relative_to(ROOT)}")
 
     # verify: the reference, both probes with their control spans, and the onset series
@@ -1436,7 +1436,7 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     # narration split: the narration track, the video, the captions, and the chapters
     shim = [SimpleNamespace(section=s) for s in sections]
     offsets = amod.narration_offsets(shim, timeline, starts)
-    srt = (project.out_dir / f"{project.name}.srt").read_text()
+    srt = (project.out_dir / f"{project.name}.srt").read_text(encoding="utf-8")
     stamp = r"(\d+):(\d+):(\d+),(\d+)"
     captions = [
         [
@@ -1447,7 +1447,9 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     ]
     chapters = [
         int(m) / 1000
-        for m in re.findall(r"^START=(\d+)$", (project.out_dir / f"{project.name}.chapters.txt").read_text(), re.M)
+        for m in re.findall(
+            r"^START=(\d+)$", (project.out_dir / f"{project.name}.chapters.txt").read_text(encoding="utf-8"), re.M
+        )
     ]
     rows = []
     for s in sections:
@@ -1580,14 +1582,14 @@ def main() -> int:
         capture(args.capture.resolve(), args.clip_project.resolve() if args.clip_project else None)
         return 0
     files = build()
-    changed = [p for p, s in files.items() if not p.exists() or p.read_text() != s]
+    changed = [p for p, s in files.items() if not p.exists() or p.read_text(encoding="utf-8") != s]
     if args.check:
         for p in changed:
             print(f"stale: {p.relative_to(ROOT)}")
         return 1 if changed else 0
     for p, s in files.items():
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(s)
+        p.write_text(s, encoding="utf-8")
         print(f"wrote {p.relative_to(ROOT)}  ({len(s) // 1024} KB)")
     # The social card is also needed as a PNG. It is not part of --check because raster bytes
     # vary between Chromium builds, so it is only refreshed when the SVG source was rewritten.

@@ -41,7 +41,7 @@ def request_hash(endpoint: str, body: Any) -> str:
 def _load(path: Path) -> dict[str, Any]:
     if path.exists():
         try:
-            return json.loads(path.read_text())
+            return json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             pass
     return {}
@@ -49,7 +49,7 @@ def _load(path: Path) -> dict[str, Any]:
 
 def _save(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def sound_body(spec: SoundSpec, cfg: ElevenLabsConfig, *, loop: bool) -> dict[str, Any]:

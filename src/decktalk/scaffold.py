@@ -149,7 +149,7 @@ def init(target: Path, *, name: str | None = None, force: bool = False) -> Path:
     for src_rel, dst_rel in TEMPLATE_FILES:
         dst = target / dst_rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(fill(package_file(f"template/{src_rel}").read_text()))
+        dst.write_text(fill(package_file(f"template/{src_rel}").read_text(encoding="utf-8")), encoding="utf-8")
     deck_src = package_file(f"template/{TEMPLATE_DECK}")
     for src in sorted(deck_src.rglob("*")):
         if not src.is_file() or src.name.startswith(".") or "__pycache__" in src.parts:
@@ -157,7 +157,7 @@ def init(target: Path, *, name: str | None = None, force: bool = False) -> Path:
         dst = target / TEMPLATE_DECK / src.relative_to(deck_src)
         dst.parent.mkdir(parents=True, exist_ok=True)
         if src.suffix == ".html":
-            dst.write_text(fill(src.read_text()))
+            dst.write_text(fill(src.read_text(encoding="utf-8")), encoding="utf-8")
         else:
             shutil.copyfile(src, dst)
     shutil.copyfile(runtime_path(), target / "deck" / RUNTIME_FILE)

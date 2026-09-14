@@ -20,14 +20,14 @@ from typing import Any, Self
 
 
 def _read_json(path: Path) -> Any:
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _write_json(path: Path, data: Any, indent: int = 2) -> None:
     """Write atomically: a reader never sees a half-written file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(json.dumps(data, indent=indent) + "\n")
+    tmp.write_text(json.dumps(data, indent=indent) + "\n", encoding="utf-8")
     tmp.replace(path)
 
 

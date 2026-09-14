@@ -47,14 +47,14 @@ def template_cues(deck: Path, scene: str) -> list[str]:
     A cue id starts with its scene number, and a page keeps its scene numbers when a clip section
     shifts the section numbers around them, so the cues are found by id rather than by section key.
     """
-    data = json.loads((deck.parent.parent / "cues.json").read_text())
+    data = json.loads((deck.parent.parent / "cues.json").read_text(encoding="utf-8"))
     return [c["cue"] for s in data["sections"].values() for c in s["cues"] if c["cue"].split(".")[0] == scene]
 
 
 def template_pages(deck: Path) -> list[tuple[Path, str]]:
     """(page, scene) for every page section of the scaffold's decktalk.toml, in order."""
     root = deck.parent.parent
-    doc = tomllib.loads((root / "decktalk.toml").read_text())
+    doc = tomllib.loads((root / "decktalk.toml").read_text(encoding="utf-8"))
     return [((root / s["page"]).resolve(), str(s["scene"])) for s in doc["section"] if "page" in s]
 
 
@@ -69,7 +69,8 @@ def custom_page(tmp_path: Path, name: str, script: str) -> str:
     html.write_text(
         '<!doctype html><html><head><meta charset="utf-8"></head><body>'
         f'<script src="{runtime_path().resolve().as_uri()}"></script>'
-        f"<script>{script}</script></body></html>"
+        f"<script>{script}</script></body></html>",
+        encoding="utf-8",
     )
     return html.resolve().as_uri()
 
@@ -179,7 +180,7 @@ def test_katex_typesets_data_tex_with_the_vendored_copy(page, deck, tmp_path):
     """init vendors KaTeX beside the pages, and __sceneReady waits until every [data-tex] element is typeset."""
     if katex_cached() is None:
         pytest.skip("KaTeX is not cached (run `decktalk setup`)")
-    assert "./katex/katex.min.js" in deck.read_text()
+    assert "./katex/katex.min.js" in deck.read_text(encoding="utf-8")
     katex = deck.parent / "katex"
     html = tmp_path / "tex.html"
     html.write_text(
@@ -189,7 +190,8 @@ def test_katex_typesets_data_tex_with_the_vendored_copy(page, deck, tmp_path):
         f'<script src="{runtime_path().resolve().as_uri()}"></script></head><body>'
         "<script>DeckTalk.scene(1, { steps: [ { id: '1.1', render: () => "
         '`<p data-tex="\\\\eta = 2">eta = 2</p><p data-display data-tex="\\\\frac{1}{2}">1/2</p>` } ] });</script>'
-        "</body></html>"
+        "</body></html>",
+        encoding="utf-8",
     )
     page.goto(f"{html.resolve().as_uri()}?step=1.1")
     page.evaluate("() => window.__sceneReady")
@@ -234,7 +236,8 @@ def test_scene_ready_warns_when_katex_never_loads(page, tmp_path):
         '<!doctype html><html><head><meta charset="utf-8"></head><body>'
         f'<script src="{runtime_path().resolve().as_uri()}"></script>'
         "<script>DeckTalk.scene(1, { steps: [ { id: '1.1', render: () => `<p data-tex=\"x^2\">x^2</p>` } ] });</script>"
-        "</body></html>"
+        "</body></html>",
+        encoding="utf-8",
     )
     page.goto(f"{html.resolve().as_uri()}?step=1.1")
     page.evaluate("() => window.__sceneReady")
@@ -251,7 +254,8 @@ def test_cue_mode_warns_when_a_step_mounts_equations_without_katex(page, tmp_pat
         f'<script src="{runtime_path().resolve().as_uri()}"></script>'
         "<script>DeckTalk.scene(1, { steps: [ { id: '1.1', render: () => "
         '`<p data-cue="1.1a" data-tex="x^2">x^2</p>` } ] });</script>'
-        "</body></html>"
+        "</body></html>",
+        encoding="utf-8",
     )
     page.goto(f"{html.resolve().as_uri()}?scene=1&t0=0&beats=1.1a@0.2")
     page.wait_for_function("() => window.__decktalk.warnings.some((w) => w.includes('KaTeX'))", timeout=9000)
@@ -315,7 +319,8 @@ def test_katex_parse_error_is_a_warning(page, deck, tmp_path):
         f'<script src="{katex}"></script><script src="{runtime_path().resolve().as_uri()}"></script></head><body>'
         "<script>DeckTalk.scene(1, { steps: [ { id: '1.1', "
         'render: () => `<p data-tex="\\\\frac{1}">x</p>` } ] });</script>'
-        "</body></html>"
+        "</body></html>",
+        encoding="utf-8",
     )
     page.goto(f"{html.resolve().as_uri()}?step=1.1")
     page.evaluate("() => window.__sceneReady")
@@ -509,10 +514,11 @@ def test_record_page_stores_page_errors_in_the_sidecar(page, tmp_path):
         f'<script src="{runtime}"></script>\n'
         "<script>DeckTalk.scene(1, { steps: [ { id: '1.1', render: () => `<p>hi</p>` } ] });</script>\n"
         "<script>\nnotDefinedAnywhere();\n</script>\n"
-        "</body></html>"
+        "</body></html>",
+        encoding="utf-8",
     )
     bare = tmp_path / "bare.html"
-    bare.write_text("<!doctype html><html><body><p>no runtime here</p></body></html>")
+    bare.write_text("<!doctype html><html><body><p>no runtime here</p></body></html>", encoding="utf-8")
     kw = dict(settle_seconds=0.1, min_lead_seconds=0.1, width=640, height=360, color_scheme="light")
     browser = page.context.browser  # the module's Playwright already owns this thread's sync loop
     side = record_page(browser, f"{broken.as_uri()}?step=1.1", 0.5, tmp_path / "01-section.webm", **kw)

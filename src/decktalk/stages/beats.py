@@ -56,7 +56,7 @@ def load_cues(project: Project) -> list[SectionCues]:
     if not project.cues.exists():
         return []
     try:
-        data = json.loads(project.cues.read_text())
+        data = json.loads(project.cues.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{project.cues}: {exc}") from exc
     sections_raw = data.get("sections") if isinstance(data, dict) else None
@@ -166,11 +166,11 @@ def anchor_time(cue: Cue, words: list[Word]) -> float | None:
 
 def write_anchors(path: Path, anchors: dict[str, dict[str, float]]) -> None:
     """Where each cue's word starts, without the cue's offset. verify uses it to find the word's click."""
-    path.write_text(json.dumps(anchors, indent=1) + "\n")
+    path.write_text(json.dumps(anchors, indent=1) + "\n", encoding="utf-8")
 
 
 def read_anchors(path: Path) -> dict[str, dict[str, float]]:
-    return json.loads(path.read_text()) if path.exists() else {}
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 @dataclass(frozen=True)
