@@ -1,19 +1,23 @@
 ---
 title: Add a clip section
-description: Play a clip of your own with its own audio in a DeckTalk video, as an opening, as B-roll between page sections, or as a close, with a slate when the file is missing and a dip to black at the cut.
-icon: "film"
+description: Play a video clip with its own audio as an opening, between page sections, or as a close.
 ---
 
-A clip section is a video file of your own that plays in the sequence with its own
-audio. DeckTalk does not narrate it, and it scales and pads the picture to the frame
-size. The scaffold ships with two. Section 4 is a clip between two page sections, and a
-commented-out section 0 opens the video on camera before the first slide. The steps below
-turn on section 0.
+A clip section plays a video file of your own, with its own audio, as one section of the video. Use this guide
+to open on camera, to add B-roll between page sections, or to close on a clip.
+
+## Before you start
+
+The steps use the scaffold that `decktalk init` writes. The scaffold already has a clip section 4 between two
+page sections. It also has a section 0 in comments, which opens the video on a clip.
+
+## Open the video on a clip
+
+These steps turn on section 0.
 
 <Steps>
   <Step title="Uncomment section 0 in decktalk.toml">
-    Remove the leading `# ` from the five lines of the clip section, and set the
-    transition so that the cut out of the clip dips to black.
+    Remove the leading `# ` from the five lines of section 0.
 
     ```toml decktalk.toml
     [[section]]
@@ -21,20 +25,23 @@ turn on section 0.
     title = "On camera"
     clip = "media/open.mp4"
     slate_seconds = 6       # a titled slate plays for this long when the file is missing
+    ```
+  </Step>
 
-    [transition]
+  <Step title="Dip the cut out of the clip to black">
+    In the existing `[transition]` table, change `dips = []` to `dips = [[0, 1]]`.
+
+    ```toml decktalk.toml
     dips = [[0, 1]]
     ```
 
-    `dips` lists the boundaries that fade through black as `[from, to]` pairs of section
-    numbers. The scaffold sets it to `[]`, which is straight cuts everywhere. Leave the
-    key out to dip at every cut.
+    `dips` lists each cut that dips to black, as a `[from, to]` pair of section numbers. The scaffold sets
+    `dips = []`, so every cut is straight. If you delete the key, every cut dips.
   </Step>
 
-  <Step title="Add the heading to script.md">
-    Every `[[section]]` needs a heading in the script, so add `## 0. On camera` above
-    section 1. Nothing under it is spoken, because narration skips clip sections, so the
-    body can be a stage direction that reminds you what plays there.
+  <Step title="Add a heading to script.md">
+    Add `## 0. On camera` above section 1. A clip section needs no heading, but the heading keeps the script in
+    the order of the video.
 
     ```md script.md
     ## 0. On camera
@@ -43,94 +50,148 @@ turn on section 0.
 
     ## 1. Open
     ```
+
+    The voice speaks nothing in a clip section, so the body can be a stage direction.
   </Step>
 
-  <Step title="Drop the file in place, or build without it">
-    Put the video at `media/open.mp4`. Git ignores `media/*.mp4` by default. A clip that
-    is not 1920 by 1080 is scaled to fit and padded with black, and a clip with no audio
-    track plays silent with a warning.
+  <Step title="Put the clip file in place">
+    Save your video as `media/open.mp4`.
 
-    The file does not have to exist when you build. A missing clip becomes a titled slate for
-    `slate_seconds`, with the section title and the path where the file belongs, so the
-    project builds before every asset does. The `--strict` flag on `build` or `assemble`
-    turns a missing clip into an error instead.
+    - A clip that is not 1920 by 1080 is scaled to fit and padded with black.
+    - A clip with no audio track plays silent, and `assemble` prints a warning.
+
+    If the file is not ready, skip this step. A missing clip plays a titled slate for `slate_seconds`, with the
+    section title and the path where the file belongs.
+  </Step>
+
+  <Step title="Build the video">
+    Run a silent build.
 
     ```console
     decktalk build --silent
     ```
 
+    {/* sample: decktalk build --silent, fresh scaffold without section 0 (A-qs-02), assemble lines */}
     ```text
-    section 00: media/open.mp4 missing; slate for 6s (drop your clip at that path)
-    [cut ] 00  slate -> 00-section.mp4  (6.000s)
-    [cut ] 01  01-scene.webm (lead 1.4s trimmed) -> 01-section.mp4  (10.160s)
+    [cut ] 03  03-scene.webm (lead 1.44s trimmed) -> 03-section.mp4  (115.360s)
+    section 04: media/broll-chips.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
+    [cut ] 04  slate -> 04-section.mp4  (4.000s)
+    [cut ] 05  05-scene.webm (lead 1.44s trimmed) -> 05-section.mp4  (27.760s)
     ```
 
-    The status report lists the clip with the others.
-
-    ```text
-      00  clip media/open.mp4                          cut
-      01  deck/index.html?scene=1                  rec cut
-    ```
+    Each section gets a `[cut ]` line. A missing clip also gets a slate warning, as section 4 does here.
   </Step>
 </Steps>
 
-## Where a clip may sit
+## Build with --strict
 
-A clip may sit anywhere in the sequence. It can open the video before the first page
-section, close it after the last one, or play between two page sections as B-roll. The
-narration pauses for a clip between page sections and resumes on the first frame of the
-page section after it, so every reveal still lands on its word.
+`--strict` on `build` or `assemble` turns a missing clip into an error. A clip section with `optional = true`
+still plays its slate. The scaffold's section 4 sets it:
 
-The scaffold's section 4 is B-roll of this kind. Until a video exists at
-`media/broll-chips.mp4`, a titled slate plays in its place for `slate_seconds`.
+```toml decktalk.toml
+optional = true         # --strict plays the slate here too; delete this line once your clip is in place
+```
+
+On a fresh scaffold, `decktalk build --strict --silent` exits 0 and prints this warning for section 4.
+
+{/* sample: decktalk build --strict --silent on a fresh scaffold, after the optional-clip fix (fix-text.md) */}
+```text
+section 04: media/broll-chips.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
+```
+
+A clip section without `optional = true` fails under `--strict` when its file is missing. The build exits 1.
+
+{/* sample: decktalk assemble --strict in a fresh scaffold after deleting optional = true from section 4, error line (F-r2-09) */}
+```text
+error: section 4: clip missing: ~/my-lesson/media/broll-chips.mp4. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
+```
+
+After your clip is in place, delete the `optional` line. `--strict` then catches the file if it goes missing
+later.
+
+## Choose where the clip plays
+
+A clip section can sit anywhere in the order of sections.
+
+| Position | Example | What the narration does |
+|---|---|---|
+| Before the first page section | section 0 | The narration starts with the first page section, after the clip. |
+| Between two page sections | section 4 | The narration pauses for the clip. It continues on the first frame of the next page section. |
+| After the last page section | a closing clip | The narration has ended before the clip starts. |
+
+The scaffold's section 4 plays between sections 3 and 5.
 
 ```toml decktalk.toml
 [[section]]
 number = 3
 title = "How AI learns"
-page = "deck/lesson.html"
+page = "deck/lesson.html"   # any page in deck/ can hold scenes, and each section names its page
 scene = 3
 
+# A clip section between two page sections. The narration stops for it and resumes after it.
+# Until the video exists at media/broll-chips.mp4, a titled slate plays for slate_seconds.
 [[section]]
 number = 4
 title = "Thousands of chips"
 clip = "media/broll-chips.mp4"
 slate_seconds = 4
+optional = true         # --strict plays the slate here too; delete this line once your clip is in place
 
 [[section]]
 number = 5
 title = "The edit"
 page = "deck/index.html"
-scene = 4
+scene = 4               # a scene keeps its number in the page when the section numbers around it change
 ```
 
-The script has a `## 4. Thousands of chips` heading between sections 3 and 5, whose body
-is a stage direction, and `cues.json` keys the cues of the page sections after the clip by
-their section numbers, `"5"` and `"6"`. A section's `scene` names the scene in the page, so
-section 5 still plays scene 4 and keeps the cue ids `4.1words` to `4.1moved`. Renumbering
-the sections leaves the pages as they are. The scaffold sets no dip around the clip, so
-both of its cuts are straight.
+- `cues.json` names the cues of sections 5 and 6 by their section numbers, `"5"` and `"6"`.
+- A section's `scene` names the scene in the page. Section 5 plays scene 4, so its cue ids start with `4.1`.
+- If you add or remove a clip section, renumber the sections in `decktalk.toml`, `script.md`, and `cues.json`. The
+  pages stay the same.
+- `hold_seconds` is allowed only on the last page section.
 
-The narration track, `build/audio/narration.mp3`, still holds the spoken sections back to
-back, and `timeline.json` gives their times in that track. The assembler splits the track
-at each clip between page sections and starts each part where its first page section
-starts in the video. The captions follow the same split, so no caption sits over the clip,
-and the clip gets a chapter of its own. Replacing the clip file, or letting a slate stand
-in for it, needs only `decktalk assemble`, because the narration never depends on the
-clip's length.
+## How the narration splits
 
-`hold_seconds` is still allowed only on the last page section, and the load refuses it on
-a page section before a clip.
+`build/audio/narration.mp3` holds the spoken sections back to back, with no gap for a clip. `assemble` splits the
+narration at each clip between page sections.
+
+<Frame caption="The narration pauses for the clip and resumes with section 5.">
+  <img className="block dark:hidden" src="/images/narration-split-light.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 5, and 6 back to back, with a split after section 3. The video lane plays clip section 4 after section 3, and dashed leads move sections 5 and 6 later by its length. Captions sit under page sections only. Chapters mark all six section starts." />
+  <img className="hidden dark:block" src="/images/narration-split-dark.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 5, and 6 back to back, with a split after section 3. The video lane plays clip section 4 after section 3, and dashed leads move sections 5 and 6 later by its length. Captions sit under page sections only. Chapters mark all six section starts." />
+</Frame>
+
+- Each part of the narration starts where its first page section starts in the video.
+- No caption covers a clip section.
+- A clip section gets its own chapter.
+
+Example: in the scaffold's silent build, section 5 starts at 151.85 s in `timeline.json` and at 155.84 s in the
+final mp4. The 4 s slate of section 4 sits between them. [Build artifacts](/reference/artifacts#time-bases)
+explains the two time bases.
+
+{/* sample: decktalk status, silent build of the scaffold (R2), section rows */}
+```text
+  03  deck/lesson.html?scene=3                 rec cut
+  04  clip media/broll-chips.mp4                   cut
+  05  deck/index.html?scene=4                  rec cut
+```
+
+The narration does not depend on the length of a clip. After you replace a clip file, run only `decktalk assemble`,
+then `decktalk verify`.
 
 ## The clip's sound
 
-The clip's own audio is mixed in at the section start, trimmed to its picture, and faded
-over twenty milliseconds at both ends so that a cut never clicks. The narration is silent
-while a clip plays, and the underscore ducks under a clip as it ducks under speech.
-[Sound](/concepts/sound) describes the mix.
+The clip's own audio joins the mix at its section start.
+
+- The audio is trimmed to the clip's picture.
+- The audio fades in and out over 20 ms, so a cut never clicks.
+- The narration is silent while the clip plays.
+- The underscore ducks under the whole clip. [Sound](/concepts/sound#ducking) explains ducking.
+
+`verify` checks the start of a clip section, but a clip section has no cut row. The click search of the a/v check
+never reaches into a clip's audio.
 
 ## Next
 
-[decktalk.toml](/reference/decktalk-toml#section) lists every key of a clip section, and
-[Rebuild one section](/guides/rebuild-one-section) explains that replacing the clip file
-needs only `decktalk assemble`, since a clip is never recorded.
+- **Look up every section key:** [decktalk.toml](/reference/decktalk-toml)
+- **Rebuild after you replace a clip:** [Rebuild one section](/guides/rebuild-one-section)
+- **Understand the mix:** [Sound](/concepts/sound)

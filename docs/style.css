@@ -1,0 +1,34 @@
+/* DeckTalk docs: a small, calm layer on top of the theme.
+   Custom dt-* classes for the docs home, plus one documented Mintlify id
+   (https://www.mintlify.com/docs/customize/custom-scripts). Dark mode is html.dark. */
+
+:root {
+  --dt-hair: #e4e4e7;
+  --dt-surface: #f4f4f5;
+  --dt-muted: #5f5f68;   /* 6.3:1 on white, 5.9:1 on the surface */
+}
+html.dark {
+  --dt-hair: #27272a;
+  --dt-surface: #19191c;
+  --dt-muted: #a1a1aa;   /* 7.6:1 on #0e0e0f, 7.0:1 on the surface */
+}
+
+/* The hero SVG draws its own card, so no frame around it. */
+.dt-hero { width: 100%; height: auto; margin: 0.5rem 0 0; }
+.dt-video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; border: 1px solid var(--dt-hair); border-radius: 12px; }
+.dt-caption { margin-top: 0.75rem; font-size: 0.875rem; color: var(--dt-muted); }
+
+/* Start here: full-width rows separated by hairlines. */
+.mdx-content .dt-start { border-top: 1px solid var(--dt-hair); }
+/* Mintlify renders a Markdown paragraph as <span data-as="p">, so style the direct children. */
+.mdx-content .dt-start > * { display: block; margin: 0; padding: 0.875rem 0; border-bottom: 1px solid var(--dt-hair); color: var(--dt-muted); }
+.mdx-content .dt-start > * a { font-weight: 600; }
+
+/* The section eyebrow is a label, not an action: keep the accent for the active item and links. */
+#header .eyebrow { color: var(--dt-muted); }
+
+/* Agents note: one quiet surface, no accent. */
+.dt-note { margin-top: 2.5rem; padding: 0.25rem 1.25rem; border-radius: 12px; background: var(--dt-surface); color: var(--dt-muted); }
+
+/* One copy button per code block is enough; the assistant stays reachable from the navbar. */
+#ask-assistant-code-block-button { display: none; }

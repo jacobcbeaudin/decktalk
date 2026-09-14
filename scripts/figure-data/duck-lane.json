@@ -1,0 +1,66 @@
+{
+  "source": {
+    "decktalk": "0.1.0",
+    "build": "decktalk build --silent on the scaffold that decktalk init writes",
+    "estimated_words": true,
+    "rule": "gain = underscore_db x (1 - (1 - underscore_duck_db) x max over spans of a linear ramp), from stages/assemble.py plan_mix"
+  },
+  "underscore_db": -24.0,
+  "underscore_duck_db": -6.0,
+  "duck_ramp_seconds": 0.5,
+  "window": [
+    148.84,
+    159.84
+  ],
+  "spans": [
+    [
+      36.5,
+      151.38
+    ],
+    [
+      151.84,
+      155.84
+    ],
+    [
+      155.84,
+      183.12
+    ]
+  ],
+  "sections": [
+    {
+      "number": 3,
+      "key": "03",
+      "title": "How AI learns",
+      "clip": false,
+      "video_start": 36.48,
+      "video_end": 151.84,
+      "narration_start": 36.5,
+      "narration_end": 151.85,
+      "speech_end": 151.38,
+      "offset": 0.0
+    },
+    {
+      "number": 4,
+      "key": "04",
+      "title": "Thousands of chips",
+      "clip": true,
+      "video_start": 151.84,
+      "video_end": 155.84,
+      "file": "media/broll-chips.mp4",
+      "file_exists": false,
+      "slate_seconds": 4.0
+    },
+    {
+      "number": 5,
+      "key": "05",
+      "title": "The edit",
+      "clip": false,
+      "video_start": 155.84,
+      "video_end": 183.6,
+      "narration_start": 151.85,
+      "narration_end": 179.6,
+      "speech_end": 179.13,
+      "offset": 3.99
+    }
+  ]
+}

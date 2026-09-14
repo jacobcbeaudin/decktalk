@@ -1,83 +1,108 @@
 ---
 title: cues.json
-description: The shape and every key of the DeckTalk cue file, with cue, on, offset, occurrence, case_sensitive, verify, min_seconds, the step synonym, and ignored top-level keys.
-icon: "brackets-curly"
+description: Look up the shape and every key of the cue file, which names the spoken phrase for each cue.
 ---
 
-The cue file names the spoken phrase that each visual lands on. It is optional, and a
-project without one plays every page with its built-in timing. This is an example in
-the scaffold's shape.
+`cues.json` is the cue file. It names the spoken phrase for each cue id, section by section. It is
+optional. A project without it plays every page with the page's own autoplay timing. This page
+lists every key.
 
+{/* excerpt copied from template/cues.json */}
 ```json cues.json
 {
-  "_comment": "Which spoken phrase each visual lands on.",
   "sections": {
-    "2": {
+    "5": {
       "cues": [
-        { "cue": "2.1a", "on": "First" },
-        { "cue": "2.1b", "on": "Second" },
-        { "cue": "2.2", "on": "one take" }
+        { "cue": "4.1words", "on": "four words" },
+        { "cue": "4.1again", "on": "the video again" },
+        { "cue": "4.1lower", "on": "so lower is better" },
+        { "cue": "4.1moved", "on": "moved" }
       ]
     },
-    "3": {
-      "min_seconds": 30,
+    "6": {
       "cues": [
-        { "cue": "3.1", "on": "$start" },
-        { "cue": "3.1eq", "on": "learning rate" },
-        { "cue": "3.1min", "on": "settle", "offset": 0.2 }
+        { "cue": "5.1made", "on": "DeckTalk" },
+        { "cue": "5.1cap", "on": "Open source" },
+        { "cue": "5.1url", "on": "decktalk dot app" }
       ]
     }
   }
 }
 ```
 
-<Note>A cue on `$start` with no offset fires at 0.0, which is fine for the page. It leaves
-no frame before it for `decktalk verify` to compare against, so the check reports it as
-`skipped` with `REFERENCE_CLAMPED` rather than measuring it. Verify cues that sit on
-words.</Note>
+Section 5 of the scaffold plays scene 4 of its page, so its cue ids start with `4.1`. The block
+below is a shape, not the scaffold's values. It shows the optional keys.
 
-## Shape
-
-The file is one object with a `sections` key. Every other top-level key, such as
-`_comment`, is ignored. Each key of `sections` is a section number as a string, and it
-must name a `[[section]]` in `decktalk.toml`. Each section is an object with an optional
-`min_seconds` and a `cues` list.
-
-Every cue id must appear in the section's page as a quoted literal, such as
-`data-cue="3.1eq"` or a key of a step's `cues` object. `beats` reports an id it cannot
-find, and `build` stops on it unless `--allow-unknown` is given.
-
-## Keys of a cue
-
-| Key | Required | Meaning |
-|---|---|---|
-| `cue` | yes | The key holds a cue id the page understands. `step` is accepted as a synonym, and `step` wins when both are present. The id may not contain `@` or a comma. |
-| `on` | yes | The key holds a word or short phrase from that section's narration, or `$start`, or `$end`. |
-| `offset` | no | The key holds seconds added to the match. It may be negative. `$start` plus a negative offset is written as is, and the page fires it at t=0. A `$start` cue whose time does not clear the section's fade-in by at least one frame has no frame before it, so `verify` reports it as `skipped` with `REFERENCE_CLAMPED`. |
-| `occurrence` | no | The key picks which repeat of the phrase to use. The default is 1, the first. |
-| `case_sensitive` | no | The key makes the phrase match case as written when it is true. The default is false. |
-| `verify` | no | `false` leaves the cue out of a plain `decktalk verify`, for a reveal too small or too slow for a frame difference to measure. The row reads `skipped` with `OPTED_OUT`. Naming the cue as `SECTION:CUE` measures it anyway. The default is `true`. |
-
-## Keys of a section
-
-| Key | Required | Meaning |
-|---|---|---|
-| `cues` | no | The key holds the list above. A section may have none. |
-| `min_seconds` | no | `beats` warns when the section's speech is shorter than this, so you learn early that the visuals will not fit. |
-
-## What beats writes
-
-`decktalk beats` resolves every cue and writes `build/audio/beats.json`, one string per
-section in the form the page receives as `?beats=`. It also writes
-`build/audio/beats.anchors.json`, each cue's word start without its `offset`, which
-`verify` uses to find the click at the cued word in a silent build.
-
-```json build/audio/beats.json
+```json cues.json
 {
-  "01": "1.1curve@1.18,1.1number@3.09,1.1mark@4.34,1.1md@7.87,1.1times@12.17,1.1cap@15.99",
-  "03": "3.1weights@2.81,3.1loss@5.16,3.1preview@25.31,3.1p0@27.65,3.1height@29.99,3.1up@32.8,3.1neg@37.96,3.1p1@39.37,3.1eq@41.71,3.1scale@43.11,3.1shrink@44.52,3.1rule@47.8,3.1eqA@49.67,3.1eqA2@51.08,3.1eqB@52.49,3.1eqC@53.42,3.1over@55.3,3.1diverge@57.64,3.1crawl@60.45,3.1min@63.0"
+  "sections": {
+    "<section number>": {
+      "min_seconds": 30,
+      "cues": [
+        { "cue": "<cue id>", "on": "<phrase>", "offset": 0.2, "occurrence": 2, "case_sensitive": false, "verify": true }
+      ]
+    }
+  }
 }
 ```
 
-[Cues](/concepts/cues) has the matching rules, what happens to an unresolved cue, and
-how to choose a phrase.
+## Shape
+
+The file is one object with a `sections` key. The load ignores every other top-level key, such as
+`_comment`. Each key of `sections` is a section number as a string, and it must name a
+`[[section]]` in `decktalk.toml`. Each section is an object with an optional `min_seconds` and a
+`cues` list.
+
+Every cue id must appear in its page as a quoted literal, such as `data-cue="4.1lower"` or a key of
+a step's `cues` object. [Cue mismatches](/concepts/cues#cue-mismatches) says what happens when an id
+is missing.
+
+## Section keys
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `cues` | array | `[]` | The cues of the section. |
+| `min_seconds` | number | none | Seconds of speech that the visuals need. Shorter speech is an uncertain finding. |
+
+Note: For short speech, `decktalk beats` prints the note
+`speech <S>s is <D>s shorter than the visuals need`. `beats --strict` exits 1 on it.
+
+## Cue keys
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `cue` | string | required | The cue id. |
+| `step` | string | none | Synonym for `cue`. Wins when both keys are present. |
+| `on` | string | required | A word or short phrase from the section's script, `$start`, or `$end`. |
+| `offset` | number | `0` | The offset key. Seconds added to the match. Can be negative. |
+| `occurrence` | integer | `1` | Which match of the phrase to use. |
+| `case_sensitive` | boolean | `false` | Matches case as written. |
+| `verify` | boolean | `true` | `false` leaves the cue out of a plain `decktalk verify`, which shows the row as `skipped` with `OPTED_OUT`. |
+
+Note: A cue id must not contain a comma, because commas separate the pairs in `?beats=`. DeckTalk
+does not check this. An `@` in an id still works, because the page splits each pair at its last `@`.
+Avoid `@` anyway, so ids stay easy to read.
+
+Note: `decktalk verify` still checks a `"verify": false` cue that you name as `SECTION:CUE`.
+
+## Anchors
+
+| Anchor | Cue time |
+|---|---|
+| `$start` | 0.0 s after the section start, plus the offset key. A negative result stays negative, and the page fires it at t=0. |
+| `$end` | The end of the section's last spoken word, plus the offset key. Not the end of the section's audio file. |
+
+Note: `decktalk verify` skips a `$start` cue with no offset key, as `REFERENCE_CLAMPED`.
+[Skipped rows](/reference/verify#skipped-rows) explains why.
+
+## Output files
+
+`decktalk beats` writes `build/audio/beats.json`, with each section's cue times as its `?beats=`
+string. It also writes `build/audio/beats.anchors.json`, with each cue's word start before the offset
+key. [Build artifacts](/reference/artifacts) has the shape of both files.
+
+## Related
+
+- **Learn the matching rules:** [Cues](/concepts/cues#matching-rules)
+- **Write phrases that time well:** [Writing for the ear](/guides/writing-for-the-ear)
+- **Learn which step owns a cue:** [The page contract](/concepts/page-contract#cue-ownership)

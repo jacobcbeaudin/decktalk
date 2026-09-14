@@ -1,0 +1,94 @@
+---
+title: Design a slide
+description: Size the elements of a slide, choose a reveal effect for each one, and add a camera push.
+---
+
+This guide shows how to size a slide, choose a reveal effect for each element, and add a camera
+push. Use it when you write or change the scenes of a page.
+
+## Before you start
+
+You need a page that includes `decktalk-runtime.js`, such as the scaffold's `deck/index.html`.
+[Your first deck](/guides/first-deck) shows how to add a scene to it.
+
+## Size the slide
+
+Size every element in CSS pixels, on a frame of 1920 by 1080.
+
+{/* copied from template/deck/index.html */}
+```css deck/index.html
+.eyebrow { position: absolute; left: 120px; top: 56px; margin: 0; font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+.wordmark { margin: 0; font: 600 104px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); white-space: nowrap; }
+```
+
+The runtime draws each slide inside the stage element, `#dt-stage`. The stage element is 1920 by
+1080 CSS pixels. The runtime scales it to fit the window and centers it. So a size in your CSS is a
+size on the video frame.
+
+| Element | Suggested size | In the scaffold's `deck/index.html` |
+|---|---|---|
+| Side margin | 96 px or more, and 160 px for titles | 120 px |
+| Body text | 36 px or more | 36 px for the scene 1 labels, and 28 px monospace in the scene 4 script panel |
+| Captions | 30 px, in the muted color | 27 px, in `--mute`, for the scene 4 caption |
+| Headlines | 64 px or more | 64 px for the end card tagline, 104 px for the wordmark, and 132 px for the end card wordmark |
+| Eyebrows and labels | 22 px, in the monospace face and the muted color | 22 px JetBrains Mono, in `--mute` |
+
+<Note>`[video] width` and `height` change only the browser window and the encoded frame. A frame
+with another aspect ratio letterboxes the stage element, and the slides do not reflow.</Note>
+
+A page can supply its own `<div id="dt-stage">`, and the runtime uses it. The scaffold's
+`deck/lesson.html` does this to build one figure under all of its slides.
+
+Put one idea on each slide. A slide with more than three or four reveals is hard to follow. If a
+slide is busy, split it into two steps.
+
+## Choose a reveal effect
+
+Set `data-fx` on an element to choose the animation it plays when it appears.
+
+```html deck/index.html
+<p class="line" data-cue="7.1a">A line of text</p>
+<div class="code" data-cue="7.1b" data-fx="fade">decktalk build</div>
+<p class="answer" data-cue="7.1c" data-fx="pop">2x</p>
+```
+
+An element with no `data-fx` uses `rise`. The table shows what each reveal effect does and where it
+works well.
+
+| Effect | Motion | Use it for | Avoid it for |
+|---|---|---|---|
+| `rise` | `rise` moves the element up 10 px as it fades in over 0.3 s. | Use it for lines of text, labels, and cards. | Avoid it for code, tables, and grids. There, the motion looks like a layout shift. |
+| `fade` | `fade` fades the element in over 0.3 s. | Use it for code lines, chat bubbles, images, and anything that must not move. | Avoid it for one small element on a large slide. A viewer can miss a small fade. |
+| `draw` | `draw` draws the stroke of an SVG path over 0.3 s, at a constant speed. | Use it for an SVG path with `pathLength="1"`. | Avoid it for a filled shape. Only the stroke draws, and the fill shows at once. |
+| `drop` | `drop` moves the element down 24 px as it fades in over 0.35 s. | Use it for a tile or a stamp. | Avoid it for body text. The motion is too large for text. |
+| `pop` | `pop` scales the element from 60% past 108% to 100% over 0.5 s. | Use it for the one result that the section builds to. | Avoid it for more than one element per slide. Two pops compete for attention. |
+| `dim` | `dim` starts visible and fades the element to 16% opacity over 1.2 s. | Use it for an element that recedes when its cue fires. | Avoid it for an element that has not been on screen long enough to notice. |
+| `none` | `none` shows the element on the frame of its cue, with no animation. | Use it for a cursor, a highlight, or a part of a figure. | Avoid it for text. A hard cut can look like a glitch. |
+
+Set `data-dur` in seconds to change the length of an effect. Keep effects short, so each reveal is
+visible on its word and not still moving on the next word. To show math, add
+[`data-tex`](/reference/runtime#data-tex).
+
+## Add a camera push
+
+Set `camera: "push"` on a scene to zoom the stage element slowly from 100% to 103%.
+
+```js deck/index.html
+DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
+  { id: "1.1", hold: 14, render: () => `…` },
+]});
+```
+
+The push lasts the whole scene, and at least 4 s. Freeze mode shows no push.
+[Scene fields](/reference/runtime#scene-fields) gives the exact length.
+
+Use a push on one scene at most, such as the open. A push under every scene makes the whole video
+move. `decktalk verify` removes the push from each probe's margin with the
+[control share](/reference/verify#control-share). Its onset rule ignores the slow growth of the
+push. The push still raises each probe's changed share.
+
+## Next
+
+- **Copy a complete slide:** [Slide recipes](/guides/slide-recipes)
+- **Look up every attribute:** [Runtime](/reference/runtime#data-attributes)
+- **Learn how a page plays:** [The page contract](/concepts/page-contract)

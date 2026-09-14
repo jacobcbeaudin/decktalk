@@ -1,97 +1,112 @@
 ---
 title: FAQ
-description: What DeckTalk costs with ElevenLabs, whether you are locked in, how it compares with Remotion, Motion Canvas, Manim, reveal.js, Descript, Synthesia, and HeyGen, and what it writes besides the video.
-icon: "circle-question"
+description: Answers about cost, lock-in, the voice, other tools, output files, and the scaffold's lesson.
 ---
+
+This page answers common questions about DeckTalk. For a message that DeckTalk prints, see [Troubleshooting](/help/troubleshooting).
 
 ## What does it cost?
 
-You need an ElevenLabs API key. Every ElevenLabs plan, including the free plan, has API
-access. The free plan has no commercial license, requires "elevenlabs.io" or "11.ai" in
-the title of published content, and cannot use Voice Library voices through the API, so
-the Starter plan is the practical floor for a video you publish. A ten-minute narration is
-roughly 9,000 characters.
+A silent build costs nothing. A voiced build spends ElevenLabs credits for each section whose text changed.
 
-DeckTalk caches each section by its whole text, so an edit costs the characters of every
-section whose text changed, not only the sentences you changed. `--force` and a change to
-any `[voice]` setting synthesize every section again. `decktalk narrate --dry-run` prints
-exactly what a build would send before it sends it. `decktalk soundscape` calls the
-ElevenLabs sound and music endpoints, so it spends credits too.
+- Every ElevenLabs plan can call the API, including the free plan. The free plan has limits for a video you publish.
+- `decktalk soundscape` also spends credits, because it generates an underscore, an ambience bed, and sound effects.
+- A silent build after a voiced build empties the narration cache. [Rebuild one section](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build) explains the cache.
 
-Chromium and ffmpeg run on your machine, and a `--silent` build spends nothing. A silent
-build does empty the narration cache, so the next voiced build synthesizes every section
-again. [Requirements and costs](/requirements) lists every command that spends credits.
+[What spends credits](/requirements#what-spends-credits) lists the plan limits and every command that spends credits.
 
 ## Is there lock-in to ElevenLabs?
 
-ElevenLabs is the built-in speech provider because it returns a timestamp for every
-word. The provider is one module behind a two-method protocol, and anything that returns
-word times can take its place. A local text-to-speech engine with a forced aligner is the
-obvious candidate. The `--silent` flag needs no provider at all, so the project format
-does not depend on any vendor. [Python API](/reference/python-api#speech-providers) has
-the protocol.
+No. ElevenLabs is the built-in speech provider, because it returns word times.
+
+- The speech provider is one module behind a two-method protocol. Any service that returns audio and word times can replace it.
+- A local text-to-speech engine with a forced aligner is one such replacement.
+- A silent build needs no speech provider, so the project files do not depend on any service.
+
+[Python API](/reference/python-api) documents the protocol.
 
 ## How does the voice sound?
 
-Any ElevenLabs voice id works, including a clone of your own. Stability, similarity,
-style, and speed are settings under `[voice]` in `decktalk.toml`. DeckTalk sends the
-previous and next text with each section so that the prosody stays continuous across
-cuts.
+It sounds like the ElevenLabs voice you pick. Any voice id works, including a clone of your own voice.
+
+- `[voice]` in `decktalk.toml` sets stability, similarity, style, and speed.
+- DeckTalk sends the text before and after each section with the request. The rhythm and tone of the voice then stay even across cuts.
 
 ## Why not record the screen?
 
-You would record it again after every edit, and you would time every reveal again by
-hand. With DeckTalk, change a sentence, and only that section is voiced again. The reveals
-follow the words wherever they move.
+A screen recording needs a new take after every edit. You would also time every reveal again by hand. DeckTalk times each reveal from the spoken words, so a reveal moves with its word. [Rebuild one section](/guides/rebuild-one-section) shows what a change runs again.
 
 ## How is this different from the other tools?
 
-| Tool | Timing comes from | Slides are | Cost of editing one sentence |
-|---|---|---|---|
-| **DeckTalk** | the spoken words, one timestamp each | your HTML | one section voiced again, and `build --only N` records just that section |
-| Remotion, Motion Canvas | frame numbers or seconds in code, by default | code | you re-time by hand and re-render |
-| Manim | seconds in code, or bookmarks in the narration with manim-voiceover | code | with manim-voiceover, bookmarks in the text re-sync, and you still re-render the scene in Python |
-| reveal.js plus a TTS script | a fixed delay per slide, or a hand-made timeline | your HTML | you re-time every slide after the change |
-| Descript | a recording you made | your screen | Overdub regenerates the words, and the screen recording does not move with them |
-| Synthesia, HeyGen | the avatar's speech | their avatar and scenes | you regenerate the video |
+DeckTalk takes its timing from the spoken words, and the slides are your own HTML.
 
-Remotion, Motion Canvas, and Manim are for animation, where the frame is the unit and
-the narration is fitted afterwards. Manim with manim-voiceover comes closest, because a
-bookmark in the narration text can wait for a word, but the scene is still Python, and
-every change means another render. reveal.js with a text-to-speech track gets you
-slides and a voice, but nothing ties a reveal to a word, so every edit means re-timing.
-Descript edits a recording you already made. Synthesia and HeyGen put an avatar on
-screen. DeckTalk is for the case where the timing should come from the words and the
-slides are yours.
+| Tool | Timing comes from | Slides are | After you edit one sentence |
+|---|---|---|---|
+| **DeckTalk** | the spoken words, one time per word | your HTML | DeckTalk voices one section again. `build --only N` records only that section. |
+| Remotion, Motion Canvas | frame numbers or seconds in code, by default | code | You time the change again by hand and render again. |
+| Manim | seconds in code, or bookmarks in the narration with manim-voiceover | code | With manim-voiceover, bookmarks follow the new text. You still render the scene again in Python. |
+| reveal.js plus a text-to-speech track | a fixed delay per slide, or a timing track you make by hand | your HTML | You time every slide again after the change. |
+| Descript | a recording you made | your screen | Overdub voices the new words. The screen recording does not move with them. |
+| Synthesia, HeyGen | the avatar's speech | their avatar and scenes | You generate the video again. |
+
+Choose DeckTalk when the timing must come from the words and the slides are yours. Other tools fit other jobs:
+
+- For frame-by-frame animation, use Remotion, Motion Canvas, or Manim.
+- To edit a recording you already made, use Descript.
+- For an avatar on screen, use Synthesia or HeyGen.
 
 ## Is generated music required?
 
-No. The soundscape stays off until `[mix]` names a file, and you can bring your own
-files. The `soundscape` command exists for when you want ElevenLabs to make the bed and
-the effects from a prompt, and it spends credits when it does. [Sound](/concepts/sound)
-explains both.
+No. Each part of the soundscape is off until `[mix]` in `decktalk.toml` names its file.
+
+- You can bring your own audio files.
+- `decktalk soundscape` generates the parts from a prompt, and it spends credits.
+- If a named file is missing, the build prints a warning and continues without that part.
+
+[Sound](/concepts/sound) explains both ways.
 
 ## What comes out besides the video?
 
-Every build writes captions as `.srt` and `.vtt` from the word timestamps, with the
-script's punctuation, and an ffmetadata chapters file with one chapter per section, which
-is also muxed into the mp4 so players show the section titles. `decktalk status` lists
-all three. [Build artifacts](/reference/artifacts#buildout) has the formats.
+Every build writes captions and chapters beside the video.
+
+- The `.srt` and `.vtt` captions come from the word times, with the script's punctuation.
+- An ffmetadata chapters file has one chapter per section.
+- The mp4 holds the same chapters, so video players show the section titles.
+
+`decktalk status` lists all three files. [Build artifacts](/reference/artifacts) gives their formats.
 
 ## Does another HTML framework work?
 
-Yes. A page is any HTML that honors the [page contract](/concepts/page-contract), and
-[Write a page by hand](/guides/page-by-hand) shows the minimum. The runtime is one file
-with no dependencies, and it adds nothing to your markup beyond the stage element. KaTeX
-is optional, and `init` vendors it into the project.
+Yes. A page can be any HTML that follows the [page contract](/concepts/page-contract).
+
+- [Write a page by hand](/guides/page-by-hand) shows the minimum page.
+- The runtime is one file with no dependencies. It adds only the stage element to your markup.
+- KaTeX is optional. If `decktalk setup` cached KaTeX, `decktalk init` copies it into the project.
 
 ## Does it run on Windows?
 
-Yes. DeckTalk is maintained by one person. Every push to `main` and every pull request runs the unit tests and a
-full offline build on Linux. The same build runs on macOS and Windows from the Actions tab
-and on release tags that a person pushes. Release tags that release-please creates do not
-start that workflow.
+Yes. DeckTalk runs on Linux, macOS, and Windows.
+
+- Paths in `decktalk.toml` use forward slashes on every platform.
+- `decktalk setup` puts Chromium in `%LOCALAPPDATA%\ms-playwright`. If a corporate proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
+- CI runs the full build on Windows for a `v*` tag that a person pushes, and on request. [What CI runs](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md#what-ci-runs) lists every platform and trigger.
+
+## What does the lesson mean by error?
+
+The lesson's "error" is what machine learning calls the loss. The lesson uses "error" because the everyday word already says that lower is better.
+
+- **One guess.** A loss function scores one guess. For a category guess, such as seal or otter, the usual loss is cross-entropy. It is large when the model gives the right answer a low probability.
+- **The height of the bowl.** Training lowers the average loss over many examples. Gradient descent moves the knobs down the slope of that average.
+- **Not the error rate.** The error rate is the share of wrong guesses. It changes in jumps, so it has no useful slope to follow.
+
+[What the example video shows](/quickstart#what-the-example-video-shows) lists the lesson's sections.
 
 ## Where does the name come from?
 
-A deck is the slides. The talk is the narration. DeckTalk cuts the one to the other.
+A deck is the slides, and the talk is the narration. DeckTalk times the deck to the talk.
+
+## Related
+
+- **Fix a message that DeckTalk prints:** [Troubleshooting](/help/troubleshooting)
+- **Check what a build needs and costs:** [Requirements and costs](/requirements)
+- **Look up a term:** [Glossary](/reference/glossary)

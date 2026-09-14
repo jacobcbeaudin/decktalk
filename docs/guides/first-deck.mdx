@@ -1,25 +1,213 @@
 ---
 title: Your first deck
-description: Write one DeckTalk section from scratch in script.md, decktalk.toml, cues.json, and deck/index.html, then build the slide and verify that every reveal lands on its word.
-icon: "pen-line"
+description: Write one section in the four input files, then build it and verify its reveals.
 ---
 
-You write three files for a DeckTalk section, the script, the cues, and the page, and
-the voice returns a fourth, the words file. One cue id ties them together, and the project
-file maps the section to its page. This guide writes one section, a simplified gradient
-descent scene drawn with SVG and typeset with KaTeX, and shows every reference as it is
-made. Start from `decktalk init my-lesson` so that the runtime and KaTeX are in place, and
-replace the scaffold's section 3 with the code below. In `script.md`, replace everything
-from `## 3. How AI learns` up to `## 4. Thousands of chips`. In `cues.json`, replace the
-`"3"` entry. In `decktalk.toml`, replace the section 3 table with the one below, which
-points the section at `deck/index.html` instead of `deck/lesson.html`. In
-`deck/index.html`, paste the `<style>` and `<script>` blocks below just before `</body>`.
-The scaffold's `index.html` holds scenes 1, 2, 4, and 5 and has no scene 3, so the new
-`DeckTalk.scene(3, …)` call is the only one in the page. A page must register each scene
-number once, because a second `DeckTalk.scene(3, …)` silently replaces the first. The
-scene carries the few CSS rules it needs, because the scaffold's stylesheet defines only
-its own classes. This is the finished section in the
-script, the project file, the cues, and the page.
+This guide writes one section of a deck in the four files you write. Use it after the [quickstart](/quickstart), when you are ready to make a section of your own.
+
+The section is a short lesson on gradient descent. Its slide draws a bowl in SVG and typesets the update rule with KaTeX.
+
+## Before you start
+
+Start from the scaffold, and remove its section 3.
+
+1. Create a project with `decktalk init my-lesson`. The scaffold puts the runtime and KaTeX in `deck/`.
+2. Go into the project with `cd my-lesson`.
+3. In `script.md`, delete the text from `## 3. How AI learns` up to `## 4. Thousands of chips`.
+4. In `decktalk.toml`, delete the `[[section]]` table that has `number = 3`.
+5. In `cues.json`, delete the `"3"` entry.
+
+Keep `deck/index.html`. It has scenes 1, 2, 4, and 5, and no scene 3. The steps below add a new section 3 that plays on `deck/index.html` instead of `deck/lesson.html`.
+
+Register each scene number only one time in a page. A second `DeckTalk.scene(3, …)` replaces the first, and no warning appears.
+
+## How the four files connect
+
+One section number and one cue id tie the four files together.
+
+| In | Name | Refers to |
+|---|---|---|
+| `script.md` | `## 3.` | the section number |
+| `decktalk.toml` | `number = 3`, `scene = 3` | the same section, and the scene the page plays for it |
+| `cues.json` | `"3"`, `"cue": "3.1rule"` | the section, and a cue id that the page knows |
+| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1rule"` | the scene, its step, and the element that appears on the cue |
+
+The `narrate` stage also writes a words file for the section, with the start and end of every spoken word. The `beats` stage matches each cue phrase against those spoken words.
+
+## Write the section
+
+<Steps>
+  <Step title="Add the script to script.md">
+    Paste this section into `script.md`, between section 2 and section 4.
+
+    ```md script.md
+    ## 3. Gradient descent
+
+    [Deck scene 3. A loss bowl draws, a point steps down it, and the update rule appears.]
+
+    Now a short lesson. Here is gradient descent, at a high level. [beat] Start with a loss
+    surface. For this lesson it is a bowl. [beat] Pick a point anywhere on it. [beat] The gradient
+    says which way is uphill, so take a step the other way. [beat] The learning rate sets
+    the size of that step. [beat] Step again. [beat] And again, and each step is smaller as
+    the slope flattens out.
+
+    [beat] Pause and think: what happens if the learning rate is too large?
+
+    [pause 3]
+
+    You overshoot, and bounce from side to side. [beat] Too small, and you crawl. [beat] Just
+    right, and you settle at the bottom.
+    ```
+
+    Each `## N. Title` heading starts a section. The voice does not speak text in square brackets. `[beat]` makes a short pause, and `[pause 3]` asks the voice for three seconds of silence. [script.md](/reference/script-md) lists every rule.
+  </Step>
+
+  <Step title="Add the section to decktalk.toml">
+    Paste this table between the section 2 and section 4 tables.
+
+    ```toml decktalk.toml
+    [[section]]
+    number = 3
+    title = "Gradient descent"
+    page = "deck/index.html"
+    scene = 3
+    ```
+
+    Every script section needs one `[[section]]` table with the same `number`. `page` names the page, and `scene` names the scene that the page plays. [decktalk.toml](/reference/decktalk-toml) lists every key.
+  </Step>
+
+  <Step title="Add the cues to cues.json">
+    Add this entry under `"sections"`.
+
+    ```json cues.json
+    "3": {
+      "min_seconds": 30,
+      "cues": [
+        { "cue": "3.1", "on": "$start" },
+        { "cue": "3.1bowl", "on": "loss surface" },
+        { "cue": "3.1p0", "on": "Pick a point" },
+        { "cue": "3.1p1", "on": "take a step" },
+        { "cue": "3.1rule", "on": "learning rate" },
+        { "cue": "3.1p2", "on": "Step again" },
+        { "cue": "3.1p3", "on": "And again" },
+        { "cue": "3.1think", "on": "Pause and think" },
+        { "cue": "3.1over", "on": "overshoot" },
+        { "cue": "3.1settle", "on": "settle", "offset": 0.2 }
+      ]
+    }
+    ```
+
+    Each reveal starts on one phrase:
+
+    - The bowl draws on "loss surface".
+    - Each move of the point starts on the phrase that names it, such as "take a step".
+    - The update rule appears on "learning rate".
+    - The overshoot path draws on "overshoot".
+    - The settled point appears 0.2 s after the start of "settle", because its offset key is 0.2.
+
+    The `3.1` cue on `$start` only mounts the step at 0.0 s, so `decktalk verify` skips it as `REFERENCE_CLAMPED`. If the speech is shorter than `min_seconds`, `decktalk beats` reports an uncertain finding. [Cues](/concepts/cues) explains how phrases match.
+  </Step>
+
+  <Step title="Add the scene to deck/index.html">
+    Paste the `<style>` and `<script>` blocks just before `</body>` in `deck/index.html`.
+
+    <Warning>Write every backslash twice inside a `render` template. A single backslash breaks a [`data-tex`](/reference/runtime#data-tex) equation or blanks the page.</Warning>
+
+    ```html deck/index.html
+    <style>
+      .row { position: absolute; left: 120px; top: 200px; right: 120px; display: flex; gap: 64px; align-items: flex-start; }
+      .row .text { flex: 1; }
+      .h2 { margin: 0 0 16px; font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
+      .note { margin: 0; font-size: 36px; line-height: 1.3; color: var(--dim); }
+      .math { margin: 40px 0; font-size: 58px; color: var(--ink); }
+      .ax { stroke: var(--hair); stroke-width: 2; }
+      .curve { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; }
+      .zig { fill: none; stroke: var(--dim); stroke-width: 4; stroke-dasharray: 12 10; }
+      .step circle { fill: var(--accent); }
+      .step line { stroke: var(--ink); stroke-width: 4; }
+      .step .ring { fill: none; stroke: var(--accent); stroke-width: 3; }
+    </style>
+    <script>
+    DeckTalk.scene(3, { name: "Gradient descent", steps: [
+      { id: "3.1", hold: 26, cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1rule": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1settle": 21 }, render: () => `
+        <div class="slide">
+          <div class="row">
+            <svg viewBox="0 0 1000 520" width="1000" height="520" style="overflow:visible">
+              <line class="ax" x1="60" y1="470" x2="960" y2="470"/>
+              <line class="ax" x1="60" y1="40" x2="60" y2="470"/>
+              <path class="curve" pathLength="1" data-cue="3.1bowl" data-fx="draw" data-dur="1.6"
+                    d="M80,70 Q510,880 940,70"/>
+              <path class="zig" pathLength="1" data-cue="3.1over" data-fx="draw" data-dur="1.4"
+                    d="M190,200 L830,200 L230,320 L790,320 L300,410"/>
+              <g class="step" data-cue="3.1p0" data-fx="pop"><circle cx="190" cy="200" r="26"/></g>
+              <g class="step" data-cue="3.1p1" data-fx="pop"><line x1="190" y1="200" x2="330" y2="330"/><circle cx="330" cy="330" r="26"/></g>
+              <g class="step" data-cue="3.1p2" data-fx="pop"><line x1="330" y1="330" x2="420" y2="405"/><circle cx="420" cy="405" r="26"/></g>
+              <g class="step" data-cue="3.1p3" data-fx="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
+              <g class="step" data-cue="3.1settle" data-fx="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
+            </svg>
+            <div class="text">
+              <h2 class="h2">Gradient descent</h2>
+              <p class="note">Follow the slope downhill, one step at a time.</p>
+              <div class="math" data-cue="3.1rule" data-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
+              <p class="note" data-cue="3.1think" data-fx="fade">Pause and think: what if the learning rate is too large?</p>
+            </div>
+          </div>
+        </div>` },
+    ]});
+    </script>
+    ```
+
+    - A scene is a list of steps, and each step renders one slide. Step `3.1` owns every cue here, because its `cues` object names each one.
+    - An element with `data-cue` stays hidden until its cue fires. `data-fx` picks its reveal effect.
+    - The bowl path has `pathLength="1"` and `data-fx="draw"`, so its stroke draws over `data-dur` (1.6 s).
+    - KaTeX typesets the `data-tex` element. The plain text inside the element is the fallback.
+
+    The scene brings its own CSS, because the scaffold's stylesheet styles only its own classes. [Runtime](/reference/runtime) lists every attribute.
+  </Step>
+</Steps>
+
+## Look before you build
+
+Check the slide in a browser and in screenshots before you record it. [Browser preview and recording](/concepts/page-contract#browser-preview-and-recording) says which page values a browser preview uses and which values the recording uses.
+
+1. Open `deck/index.html?step=3.1` in a browser. The step mounts with every element visible.
+2. Open `deck/index.html?scene=3&hud=1`. The scene plays in autoplay, with the clock on top.
+3. Take a screenshot of every step with `decktalk shots`. The PNG files go under `build/shots/`.
+
+If the project has no voiced build yet, you can also check where each cue phrase resolves. A silent `narrate` after a voiced build empties the narration cache, so skip these actions on a voiced project.
+
+1. Write estimated word times with `decktalk narrate --silent`.
+2. Print each cue time with `decktalk beats`.
+
+{/* sample: decktalk beats, scaffold with this guide's section 3, silent build (header and section 03 row) */}
+```text
+sec  speech   need  cues
+ 03    49.3   30.0  3.1@0.0,3.1bowl@7.39,3.1p0@11.83,3.1p1@18.73,3.1rule@22.18,3.1p2@26.13,3.1p3@27.11,3.1think@33.03,3.1over@39.44,3.1settle@47.53
+```
+
+Each entry reads `cue id@cue time`, in seconds after the section start. If a phrase is not in the spoken words, `beats` prints `phrase not found`, and `build` stops.
+
+## Build and verify
+
+Build the video without an account, then measure the reveals.
+
+1. Build the video with `decktalk build --silent`.
+2. Measure two cues with `decktalk verify 3:3.1rule 3:3.1p1`.
+
+{/* sample: decktalk verify 3:3.1rule 3:3.1p1, scaffold with this guide's section 3, silent build (cue table only) */}
+```text
+check                 cue       at   chg %   ctl %   offset     a/v  result
+3:3.1rule           22.18    58.66    0.46    0.00    -20ms   -49ms  changed
+3:3.1p1             18.73    55.21    0.16    0.00    -10ms   -38ms  changed
+```
+
+Both rows read `changed`. The offset column is the time from the cue time to the onset of the reveal, in milliseconds. `decktalk verify` reports `OFF CUE` and exits 1 when that time is outside the offset limit. Only a silent build gives the `a/v` column, because only the click track has clicks. [Verify](/reference/verify#cues) defines every column.
+
+If you have an ElevenLabs key in `.env`, run `decktalk build` to voice the video. It spends credits on every section, because the last build was silent.
+
+## The finished section
+
+These are the four files of the section, in one place.
 
 <CodeGroup>
 
@@ -58,12 +246,12 @@ scene = 3
     { "cue": "3.1bowl", "on": "loss surface" },
     { "cue": "3.1p0", "on": "Pick a point" },
     { "cue": "3.1p1", "on": "take a step" },
-    { "cue": "3.1eq", "on": "learning rate" },
+    { "cue": "3.1rule", "on": "learning rate" },
     { "cue": "3.1p2", "on": "Step again" },
     { "cue": "3.1p3", "on": "And again" },
     { "cue": "3.1think", "on": "Pause and think" },
     { "cue": "3.1over", "on": "overshoot" },
-    { "cue": "3.1min", "on": "settle", "offset": 0.2 }
+    { "cue": "3.1settle", "on": "settle", "offset": 0.2 }
   ]
 }
 ```
@@ -73,6 +261,7 @@ scene = 3
   .row { position: absolute; left: 120px; top: 200px; right: 120px; display: flex; gap: 64px; align-items: flex-start; }
   .row .text { flex: 1; }
   .h2 { margin: 0 0 16px; font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
+  .note { margin: 0; font-size: 36px; line-height: 1.3; color: var(--dim); }
   .math { margin: 40px 0; font-size: 58px; color: var(--ink); }
   .ax { stroke: var(--hair); stroke-width: 2; }
   .curve { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; }
@@ -83,9 +272,9 @@ scene = 3
 </style>
 <script>
 DeckTalk.scene(3, { name: "Gradient descent", steps: [
-  { id: "3.1", hold: 26, cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1eq": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1min": 21 }, render: () => `
+  { id: "3.1", hold: 26, cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1rule": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1settle": 21 }, render: () => `
     <div class="slide">
-      <div class="row wide">
+      <div class="row">
         <svg viewBox="0 0 1000 520" width="1000" height="520" style="overflow:visible">
           <line class="ax" x1="60" y1="470" x2="960" y2="470"/>
           <line class="ax" x1="60" y1="40" x2="60" y2="470"/>
@@ -97,13 +286,13 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
           <g class="step" data-cue="3.1p1" data-fx="pop"><line x1="190" y1="200" x2="330" y2="330"/><circle cx="330" cy="330" r="26"/></g>
           <g class="step" data-cue="3.1p2" data-fx="pop"><line x1="330" y1="330" x2="420" y2="405"/><circle cx="420" cy="405" r="26"/></g>
           <g class="step" data-cue="3.1p3" data-fx="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
-          <g class="step min" data-cue="3.1min" data-fx="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
+          <g class="step" data-cue="3.1settle" data-fx="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
         </svg>
         <div class="text">
           <h2 class="h2">Gradient descent</h2>
-          <p class="caption">Follow the slope downhill, one step at a time.</p>
-          <div class="math" data-cue="3.1eq" data-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
-          <p class="caption" data-cue="3.1think" data-fx="fade">Pause and think: what if the learning rate is too large?</p>
+          <p class="note">Follow the slope downhill, one step at a time.</p>
+          <div class="math" data-cue="3.1rule" data-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
+          <p class="note" data-cue="3.1think" data-fx="fade">Pause and think: what if the learning rate is too large?</p>
         </div>
       </div>
     </div>` },
@@ -113,141 +302,8 @@ DeckTalk.scene(3, { name: "Gradient descent", steps: [
 
 </CodeGroup>
 
-<Steps>
-  <Step title="Write the section in script.md">
-    Each `## N. Title` heading starts a section. A heading may also carry a time budget,
-    such as `— 0:40 to 1:20`, which the narrate table compares with the real length, and
-    [Writing for the ear](/guides/writing-for-the-ear#give-a-section-a-time-budget) shows one. Text
-    in square brackets is a stage direction, and it is not spoken. A plain direction and
-    `[beat]` are beats, which the voice reads as a dash and a short pause, and `[pause 3]`
-    is three seconds of silence requested from the voice. Write numbers and symbols as you
-    want them said, because cue phrases match spoken words. The script says "learning
-    rate" and the slide shows η. [script.md](/reference/script-md) lists every rule.
-  </Step>
-
-  <Step title="Declare the section in decktalk.toml">
-    Every script section needs one `[[section]]` table with the same `number`. A section
-    is either a page, which DeckTalk records and cuts, or a clip, which is your own video.
-    The `scene` value is what the page receives as `?scene=`, and it defaults to the
-    section number. [decktalk.toml](/reference/decktalk-toml) lists every key.
-  </Step>
-
-  <Step title="Name the moments in cues.json">
-    A cue pairs a cue id with the spoken phrase it lands on. Matching takes the first
-    occurrence and ignores case and punctuation. The values `$start` and `$end` are the
-    edges of the section's speech, `offset` shifts the moment in seconds, and `occurrence`
-    picks a later repeat of the same words. Here the bowl draws on `loss surface`, each
-    move of the point lands on the verb that makes it, the update rule appears on
-    `learning rate`, the overshoot path draws on `overshoot`, and the settled point trails
-    `settle` by a fifth of a second. The `min_seconds` key warns when the speech is
-    shorter than the thirty seconds the animation needs. [Cues](/concepts/cues) has the
-    matching rules and the advice on choosing a phrase.
-
-    <Warning>The `3.1` cue on `$start` mounts the step at 0.0, and that is all it is for.
-    The verify check needs a reference frame at least one frame before the cue and after the
-    section's fade-in, and a cue at 0.0 leaves no such frame. `decktalk verify` therefore
-    reports a `$start` cue at 0.0 as `skipped` with the reason `REFERENCE_CLAMPED` rather
-    than measuring a landing.</Warning>
-
-    Run `decktalk narrate --silent` once, then `decktalk beats` at any time to see where
-    each phrase resolved. A phrase that is
-    not among the section's words is reported as `phrase not found`, and `build` stops
-    there until you fix it or pass `--allow-unresolved`.
-
-    ```text
-    sec  speech   need  cues
-     03    49.3   30.0  3.1@0.0,3.1bowl@7.39,3.1p0@11.83,3.1p1@18.73,3.1eq@22.18,3.1p2@26.13,3.1p3@27.11,3.1think@33.03,3.1over@39.44,3.1min@47.53
-    ```
-  </Step>
-
-  <Step title="Build the slide in deck/index.html">
-    A page registers one scene per section. A scene is a list of steps, and each step
-    renders one slide. Every cue here belongs to step `3.1`, because the step's `cues`
-    object names it and because `3.1` is the longest prefix of each id. The elements
-    marked `data-cue` stay hidden until their cue fires. The bowl is an SVG path with
-    `pathLength="1"` and `data-fx="draw"`, so its stroke draws itself over 1.6 seconds.
-    Each move of the point pops on its cue, and the moves shrink as the slope flattens.
-    The update rule is a `data-tex` element that KaTeX typesets, with the plain text as
-    its fallback. The overshoot path draws on `overshoot`, and the settled point pops
-    last. [The page contract](/concepts/page-contract) explains ownership, and
-    [the runtime reference](/reference/runtime) lists every attribute.
-
-    Inside the backticks of a `render` template, write every backslash twice. The
-    `data-tex` value `\\theta_{t+1}` reaches KaTeX as `\theta_{t+1}`.
-  </Step>
-
-  <Step title="Look before you build">
-    Open `deck/index.html?step=3.1` in a browser to see the step with everything
-    revealed, or `?scene=3` to watch it autoplay. Then take screenshots of every step, and
-    of the scene at a given second with its real cues.
-
-    ```console
-    decktalk shots
-    decktalk shots --section 3 --at 22
-    ```
-  </Step>
-
-  <Step title="Build and verify">
-    ```console
-    decktalk build --silent          # placeholder voice, no key
-    decktalk verify 3:3.1eq 3:3.1p1
-    decktalk build                   # your voice
-    ```
-
-    Verify after the silent build, because only a silent build's placeholder track has the
-    clicks that the `a/v` column measures. The voiced build then replaces the placeholder
-    narration with your voice, and `decktalk verify` can measure its cues again. The verify
-    table shows, for each cue, the second at which it fired in the final mp4,
-    the share of pixels that changed across it, the same measure over a quiet control
-    span just before it, and how far from the cue time the first changed frame sits. After a
-    silent build it also shows [`a/v`](/concepts/how-it-works#what-verify-measures), which
-    compares the picture with the placeholder click at the cued word and so shows whether
-    the finished file's audio and picture agree.
-
-    ```text
-    check                 cue       at   chg %   ctl %   offset     a/v  result
-    3:3.1eq             22.18    69.18    0.46    0.00    -20ms   -29ms  changed
-    3:3.1p1             18.73    65.73    0.16    0.00    -10ms   -18ms  changed
-    ```
-
-    Every row is within the two-frame limit. A negative offset means that the picture
-    began that many milliseconds before the cue time, which is the word's start plus the
-    cue's `offset`, and one frame is 40 ms at 25 fps. A reveal
-    further from its cue time than that limit is reported as `OFF CUE` by
-    `decktalk verify`, which exits 1. `build` checks only section starts and
-    cuts.
-    [How it works](/concepts/how-it-works#what-verify-measures) explains the columns and
-    the limit that turns `changed` into `OFF CUE`.
-  </Step>
-</Steps>
-
-## The browser preview and the recorded video
-
-A page plays two ways. In a browser with `?scene=3` it autoplays from the timings in the
-page. During a recording the resolved cues drive it and most of those timings are
-ignored. This table says which value matters where.
-
-| Value | In the browser preview | In the recorded video |
-|---|---|---|
-| `hold` on a step | The seconds the step stays before the next one mounts. | Ignored. A step mounts at its earliest cue and the last cued step holds until the recorder stops. |
-| The `cues` object on a step | The seconds after the mount at which each handler cue fires. | Ownership only. The times come from `build/audio/beats.json`. |
-| `data-at` on an element | The seconds after the mount at which the element appears. | Used only when the element's cue is not in `?beats=`, or when it has no `data-cue`. |
-| `data-cue` on an element | The element appears at its `data-at` time, which defaults to zero. | The element appears when the cue fires. |
-| `data-sync` on an element | The element appears whole. | The element appears one word at a time from the `?words=` list the recorder passes. |
-
-## The naming chain
-
-| In | Name | Refers to |
-|---|---|---|
-| `script.md` | `## 3.` | the section number |
-| `decktalk.toml` | `number = 3`, `scene = 3` | the same section, and the scene the page plays for it |
-| `cues.json` | `"3"`, `"cue": "3.1eq"` | the section, and a cue id the page understands |
-| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1eq"` | the scene, its step, and the element that appears on the cue |
-
 ## Next
 
-Add a second section by repeating this guide with another number.
-[How it works](/concepts/how-it-works) explains the stages that turn these files into a
-video, and [Cues](/concepts/cues) has the matching rules and the advice on choosing a
-phrase. [Slide recipes](/guides/slide-recipes) has six slides to copy, and
-[Add a clip section](/guides/clip-section) opens the video with footage of your own.
+- **Copy a common slide:** [Slide recipes](/guides/slide-recipes)
+- **Make the script time well:** [Writing for the ear](/guides/writing-for-the-ear)
+- **Open the video with a clip:** [Add a clip section](/guides/clip-section)

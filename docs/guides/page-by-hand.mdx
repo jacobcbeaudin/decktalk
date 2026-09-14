@@ -1,46 +1,49 @@
 ---
 title: Write a page by hand
-description: Implement the DeckTalk page contract without decktalk-runtime.js, so a page built with any framework honors scene, beats, t0=signal, __sceneReady, and window.__decktalk.
-icon: "code"
+description: Write a page that follows the page contract without decktalk-runtime.js, for a page built with another framework.
 ---
 
-This guide requires writing JavaScript. The runtime is one file with no dependencies, and
-most pages should include it. A page
-built with a framework of its own can implement the contract instead. This guide lists
-what the recorder and the screenshot tool need, and shows a small page that honors all
-of it.
+Most pages should include `decktalk-runtime.js` and skip this guide. Use this guide only when a page
+comes from another framework and cannot include the runtime. It lists what the recorder and
+`decktalk shots` need, and it shows a small page that does all of it.
 
-<Warning>The recorder opens a page with `t0=signal` and starts the narration clock by
-calling `window.DeckTalk.startClock()`. A page that starts its own clock at load fires
-every cue early by the settle time and the recorder's lead, and the video's reveals land
-before their words. Wait for the call.</Warning>
+## Before you start
 
-## What the recorder needs
+You need to write JavaScript. Read [The page contract](/concepts/page-contract) first.
 
-| The recorder | Your page |
+## Meet the needs of the recorder
+
+The recorder drives the page through its URL and a few globals. This table pairs each action of
+the recorder with what your page does.
+
+| What the recorder does | What your page does |
 |---|---|
-| Opens `page.html?scene=N&beats=id@s,…&t0=signal` plus any `params` from the section. | Reads `scene` and `beats`, and schedules cue `id` at `s` seconds after the clock starts. |
-| Adds `&words=word@s,…`, the section's spoken words with their seconds after narration t=0, whenever the timeline has words. | May read it to show text one word at a time, or ignore it. |
-| Awaits `document.fonts.ready` and then `window.__sceneReady` when it is a Promise. | Sets `window.__sceneReady` to a Promise that resolves when the page is ready to be recorded. |
-| Calls `window.DeckTalk.startClock()` once, when narration t=0 falls. | Starts the clock in that call and nowhere else. |
-| Reads `window.__decktalk.warnings` after the recording and logs each string. | Pushes a string for anything the page could not honor, such as an unknown cue id. |
-| Records a viewport of `[video]` width by height. | Draws at 1920 by 1080, or scales a stage of that size to fit. |
+| The recorder opens `page.html?scene=N&beats=id@s,…&t0=signal`, with any `params` from the section. | The page reads `scene` and `beats`. It schedules cue `id` at `s` seconds after the clock starts. |
+| The recorder adds `&words=word@s,…` when the timeline has words for the section. | The page can use the words to show text one word at a time, or it can ignore them. |
+| The recorder awaits `document.fonts.ready`, then `window.__sceneReady` when it is a Promise. | The page sets `window.__sceneReady` to a Promise that resolves when the page is ready. |
+| The recorder calls `window.DeckTalk.startClock()` one time, at narration t=0. | The page starts its clock in that call and nowhere else. |
+| The recorder reads `window.__decktalk.catalog` after the recording. | The page lists at least one scene in `catalog`. A missing or empty list is a page error. |
+| The recorder reads `window.__decktalk.warnings`, `frameGaps`, and `syncLog`. | The page adds a string to `warnings` for anything it cannot do. `frameGaps` and `syncLog` are optional. |
+| The recorder uses a browser window of `[video] width` by `height`. | The page draws at 1920 by 1080, or it scales a 1920 by 1080 element to fit the window. |
 
-The magenta cover that hides the page until t=0 is the recorder's, so a page needs no
-cover of its own. [How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains
-what the cover is for.
+The magenta cover belongs to the recorder, so a page needs no cover of its own.
+[How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains what the cover does.
 
-## What the screenshot tool needs
+## Support decktalk shots
 
-`decktalk shots` opens the page with no query and reads `window.__decktalk.catalog`, a
-list of `{ scene, name, steps }` objects, and then opens `?step=ID` for each step id. A
-page that has no catalog is skipped with a warning. Frame mode, `shots --section N --at S`,
-opens the page as the recorder does and reads `window.__decktalk.fired` for the log.
+`decktalk shots` uses the page in three ways:
 
-## A minimal page
+- It opens the page with no query and reads `window.__decktalk.catalog`. If the page has no catalog, `shots` warns and skips the page.
+- It opens `?step=ID` for each step id in the catalog. With `--cue`, it opens `?step=ID&cue=CUE`.
+- In frame mode, `shots --section N --at S` opens the recorder's URL. It logs `window.__decktalk.fired` with each frame.
 
-The page below honors the whole contract in about forty lines. It has one scene with one
-step, and each cue reveals the element with the matching `data-cue`.
+## Write the minimal page
+
+<Warning>Start the page clock only inside `DeckTalk.startClock()`. A page that starts its clock at
+`load` fires every cue early, and every reveal in the video comes before its word.</Warning>
+
+The page below follows the whole contract in about forty lines. It has one scene with one step. Each
+cue shows the element with the matching `data-cue`.
 
 ```html deck/plain.html
 <!doctype html>
@@ -53,7 +56,7 @@ step, and each cue reveals the element with the matching `data-cue`.
 </style>
 <div id="stage">
   <h1 data-cue="1.1a">A page by hand</h1>
-  <p data-cue="1.1b">It honors the contract without the runtime.</p>
+  <p data-cue="1.1b">It follows the contract without the runtime.</p>
 </div>
 <script>
   const params = new URLSearchParams(location.search);
@@ -66,6 +69,7 @@ step, and each cue reveals the element with the matching `data-cue`.
     const i = tok.lastIndexOf("@");
     return { id: tok.slice(0, i), t: parseFloat(tok.slice(i + 1)) };
   });
+  state.cues = cues;
   for (const c of cues) if (!document.querySelector(`[data-cue="${c.id}"]`)) state.warnings.push(`unknown cue id ${c.id}`);
 
   function fire(id) {
@@ -75,7 +79,7 @@ step, and each cue reveals the element with the matching `data-cue`.
   function startClock() {
     if (state.origin !== null) return;
     state.origin = performance.now();
-    state.mode = "cues";
+    if (cues.length) state.mode = "cues";
     for (const c of cues) setTimeout(() => fire(c.id), c.t * 1000);
   }
   window.DeckTalk = { startClock };
@@ -85,13 +89,32 @@ step, and each cue reveals the element with the matching `data-cue`.
 </script>
 ```
 
-Point a section at it with `page = "deck/plain.html"` and `scene = 1`, and cue `1.1a`
-and `1.1b` in `cues.json`. The page has no autoplay timing, so a browser preview with
-`?scene=1` fires nothing until beats are given, and `?step=1.1` shows everything.
+To use the page in a project, follow these steps:
 
-## What the runtime adds
+1. Save the page as `deck/plain.html`.
+2. Add a `[[section]]` with `page = "deck/plain.html"` and `scene = 1`.
+3. Add cues `1.1a` and `1.1b` for that section in `cues.json`.
+4. Open `deck/plain.html?step=1.1` in a browser to see every element.
 
-The runtime also gives a page an index of scenes and steps, autoplay from `hold` and
-`data-at`, the reveal effects, count-ups, typewriting, KaTeX typesetting with a wait for
-the library, a camera push, and the warning list. [The runtime reference](/reference/runtime)
-lists all of it, and a page by hand can grow any of it as needed.
+The page has no autoplay timing. A browser preview with `?scene=1` shows nothing until you add
+`&beats=1.1a@1,1.1b@2` to the URL.
+
+## Compare with the runtime
+
+The runtime gives a page more than this minimal page does:
+
+- an index of scenes and steps
+- autoplay from `hold` and `data-at`
+- reveal effects, count-ups, typewriting, and word sync
+- KaTeX typesetting, with a wait for the library
+- a camera push
+- a warning for each mismatch between cues and steps
+- a list of gaps between animation frames
+
+[Runtime](/reference/runtime) lists all of it. A page by hand can add any of these features.
+
+## Next
+
+- **Learn how a page plays:** [The page contract](/concepts/page-contract)
+- **Look up the runtime's fields:** [Runtime](/reference/runtime#window-__decktalk)
+- **Write a page with the runtime:** [Your first deck](/guides/first-deck)
