@@ -30,6 +30,7 @@
     "3": {
       "cues": [
         { "cue": "3.1examples", "on": "examples" },
+        { "cue": "3.1rules", "on": "rules" },
         { "cue": "3.1box", "on": "box of knobs" },
         { "cue": "3.1guess", "on": "guesses" },
         { "cue": "3.1wrong", "on": "its error" },

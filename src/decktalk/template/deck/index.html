@@ -88,11 +88,9 @@ __KATEX__
      1000, 250. On "lesson" it scales back to full size, so the section ends on the lesson's first frame. */
   .s2-push { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; transform: translate(1000px, 250px) scale(0.41666667); }
   .s2-frame { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 4.8px solid var(--mute); border-radius: 38.4px; }
-  /* The replica copies lesson.html's .title and .rules, and that page's text rendering. */
+  /* The replica copies lesson.html's .title, and that page's text rendering. */
   .l0 { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; text-rendering: auto; }
   .l0 .title { position: absolute; left: 120px; top: 92px; margin: 0; font: 600 64px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); white-space: nowrap; }
-  .l0 .rules { position: absolute; left: 120px; top: 250px; width: 560px; height: 300px; border-radius: 16px; background: var(--block); padding: 30px 32px; box-sizing: border-box; font: 500 30px/56px var(--mono); color: var(--ink); }
-  .l0 .rules .h { font-size: 24px; line-height: 36px; color: var(--mute); }
 
   /* Scene 4 */
   .s4-script { position: absolute; left: 120px; top: 150px; width: 960px; height: 350px; background: var(--block); border-radius: 16px; font: 500 28px/40px var(--mono); white-space: pre; }
@@ -463,9 +461,8 @@ function s2line(times, shifted) {
 }
 // The card is 16:9, 800 by 450 at 1000, 250. The lesson title sits in its top 70 px, and the bowl below it.
 const s2bowl = bowlStill(1060, 342, 680, 318, false);
-// The lesson page's first frame (lesson.html's title and rules card), drawn at full size for the card.
-const LESSON_T0 = `<div class="l0"><h1 class="title">How does AI learn?</h1>` +
-  `<div class="rules" data-in="2.1lesson" data-xdelay="0.1"><div class="h">rules</div>if it has spots → seal<br>if it has paws → otter<br>if …</div></div>`;
+// The lesson page's first frame (lesson.html's title), drawn at full size for the card.
+const LESSON_T0 = `<div class="l0"><h1 class="title">How does AI learn?</h1></div>`;
 
 scene(2, { name: "How it works", steps: [
   { id: "2.1", hold: 21,

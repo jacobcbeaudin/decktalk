@@ -369,7 +369,7 @@ function buildIntro() {
   rig.insertAdjacentHTML("beforeend", `
     <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${symbols}</defs></svg>
     <div id="intro" class="layer">
-      <div class="rulesg"><div class="rules"><div class="h">rules</div>if it has spots → ${LABEL_A}<br>if it has paws → ${LABEL_B}<br>if …</div></div>
+      <div class="rulesg off"><div class="rules"><div class="h">rules</div>if it has spots → ${LABEL_A}<br>if it has paws → ${LABEL_B}<br>if …</div></div>
       <svg class="full strike off"><line x1="136" y1="532" x2="664" y2="268" stroke="${ACC}" stroke-width="7" stroke-linecap="round"/></svg>
       <div class="tiles off">${tiles}</div>
       <div class="boxg off">
@@ -643,7 +643,7 @@ const fitBox = (bb, x, y, w, h) => { const sc = Math.min(w / (bb[2] - bb[0]), h 
 const MINI = fitBox(S.landBB, 110, 250, 720, 360);
 const BALL_WIDE = 14 / 26;
 
-// Initial state: the title and the rules card. Knob pointers, the probe, and the ball rest at the start.
+// Initial state: the title. Knob pointers, the probe, and the ball rest at the start.
 setKnobs(KA[0]);
 setProbe(START, false);
 placeBall(onS(START)[0], onS(START)[1]);
@@ -653,7 +653,8 @@ placeHaze(...onS(START));
 // Each shows its change on the cue's own frame (a snap), then any motion finishes well before the next word.
 const CUE = {
   // 3.1 What machine learning is
-  "3.1examples": (an) => { show(S.strike, S.tiles); S.rulesg.style.opacity = 0.25; },
+  "3.1examples": (an) => { show(S.tiles); },
+  "3.1rules": (an) => { show(S.rulesg, S.strike); S.rulesg.style.opacity = 0.25; },
   "3.1box": (an) => { hide(S.strike, S.tiles, S.rulesg); show(S.boxg); },
   "3.1guess": (an) => { setAnswer(WRONG_GUESS, false); show(S.outarrow, S.ans); S.in1.classList.add("truth"); },
   "3.1wrong": (an) => { show(S.meterg); run(an, 0, 0.3, (k) => setMeter(0.85 * easeOut(k))); },
@@ -804,7 +805,7 @@ function walk(an, r, delay, hop, rest, arc) {
 
 // ---- The scene --------------------------------------------------------------------------------------------------------
 const STEPS = [
-  { id: "3.1", hold: 20, cues: { "3.1examples": 2.6, "3.1box": 7.4, "3.1guess": 9.6, "3.1wrong": 12.2, "3.1turn": 14.0, "3.1again": 17.3 } },
+  { id: "3.1", hold: 20, cues: { "3.1examples": 2.6, "3.1rules": 3.4, "3.1box": 7.4, "3.1guess": 9.6, "3.1wrong": 12.2, "3.1turn": 14.0, "3.1again": 17.3 } },
   { id: "3.2", hold: 16.6, cues: { "3.2way": 0.5, "3.2one": 5.2, "3.2billions": 6.6, "3.2instead": 9.7, "3.2all": 13.8 } },
   { id: "3.3", hold: 12.4, cues: { "3.3two": 0.5, "3.3floor": 2.3, "3.3height": 5.5, "3.3bowl": 9.6 } },
   { id: "3.4", hold: 19.5, cues: { "3.4ball": 0.5, "3.4see": 4.8, "3.4steps": 10.4, "3.4again": 11.9, "3.4name": 17.4 } },
