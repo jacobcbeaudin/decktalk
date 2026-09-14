@@ -8,6 +8,7 @@ dist/
 .DS_Store
 tests/out/
 *.mp4
+!site/media/decktalk-demo.mp4
 *.mp3
 *.webm
 *.wav
