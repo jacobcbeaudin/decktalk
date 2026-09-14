@@ -13,15 +13,20 @@ is the project document, not tuning; see project.py. Secrets live only in .env.
 
 from __future__ import annotations
 
+import difflib
+import logging
 import os
 import sys
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
 from ._env import from_env
 from .errors import ConfigError
+
+log = logging.getLogger(__name__)
 
 PROJECT_FILE = "decktalk.toml"
 ENV_PREFIX = "decktalk"
@@ -177,7 +182,34 @@ def read_user_toml(path: Path | None = None) -> dict[str, Any]:
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(f"{path}: {unknown} do not belong in a user settings file; only {sorted(allowed)} do")
+    for message in settings_key_warnings(data, str(path)):
+        log.warning(message)
     return data
+
+
+def unknown_key_message(key: str, known: Iterable[str], where: str) -> str:
+    """The warning for one key that DeckTalk does not read, with the closest known key when one is near."""
+    close = difflib.get_close_matches(key, sorted(known), n=1)
+    hint = f" (did you mean '{close[0]}'?)" if close else ""
+    return f"{where}: ignoring unknown key '{key}'{hint}"
+
+
+def unknown_key_warnings(table: dict[str, Any], known: Iterable[str], where: str) -> list[str]:
+    """One warning per key in `table` that is not in `known`. An unknown key is ignored, not an error."""
+    known = set(known)
+    return [unknown_key_message(key, known, where) for key in sorted(set(table) - known)]
+
+
+def settings_key_warnings(doc: dict[str, Any], where: str) -> list[str]:
+    """Warnings for unknown keys inside the tuning tables, such as [video] or [verify], of a parsed file."""
+    defaults = Settings()
+    out: list[str] = []
+    for f in fields(Settings):
+        table = doc.get(f.name)
+        if isinstance(table, dict):
+            known = {g.name for g in fields(getattr(defaults, f.name))}
+            out += unknown_key_warnings(table, known, f"{where}: [{f.name}]")
+    return out
 
 
 def merge_tables(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:

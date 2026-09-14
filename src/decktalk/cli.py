@@ -44,6 +44,10 @@ STRICT_HELP = "Also exit 1 on an uncertain verdict, the ones marked with a quest
 NO_FAIL_HELP = "Exit 0 even when a check fails, for scripts that read the table or the JSON themselves."
 JSON_HELP = "Print the result as one JSON object on stdout instead of the tables. Progress still goes to stderr."
 ALLOW_UNKNOWN_HELP = "Continue when a cue id in cues.json appears nowhere in the page that plays it."
+BUILD_STRICT_HELP = (
+    "fail on a missing clip or recording instead of substituting a slate "
+    "(a clip section with optional = true still plays its slate)"
+)
 
 
 def _project(args: argparse.Namespace) -> Project:
@@ -135,12 +139,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     from .scaffold import doctor
 
     rows = doctor()
-    findings = Findings(certain=sum(not r.ok for r in rows))
+    # A missing optional component such as KaTeX, which pages load from a CDN instead, is only a warning.
+    missing = [r for r in rows if not r.ok]
+    findings = Findings(certain=sum(r.required for r in missing), uncertain=sum(not r.required for r in missing))
+
+    def mark(r: Any) -> str:
+        return "ok     " if r.ok else "MISSING" if r.required else "warning"
+
     return _finish(
         args,
         findings,
         {"components": [r.to_dict() for r in rows]},
-        lambda: "\n".join(f"{r.name:<9} {'ok     ' if r.ok else 'MISSING'} {r.detail}" for r in rows),
+        lambda: "\n".join(f"{r.name:<9} {mark(r)} {r.detail}" for r in rows),
     )
 
 
@@ -399,9 +409,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = proj(sub.add_parser("assemble", help="cut, mix and normalize the final mp4"))
     s.add_argument("--nomix", action="store_true", help="narration only: no beds, no effects")
     s.add_argument("--no-loudnorm", action="store_true", help="skip loudness normalization")
-    s.add_argument(
-        "--strict", action="store_true", help="fail on a missing clip or recording instead of substituting a slate"
-    )
+    s.add_argument("--strict", action="store_true", help=BUILD_STRICT_HELP)
     encoding(s)
     s.set_defaults(fn=cmd_assemble)
 
@@ -431,9 +439,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--nomix", action="store_true", help="narration only: no beds, no effects")
     s.add_argument("--no-loudnorm", action="store_true", help="skip loudness normalization")
-    s.add_argument(
-        "--strict", action="store_true", help="fail on a missing clip or recording instead of substituting a slate"
-    )
+    s.add_argument("--strict", action="store_true", help=BUILD_STRICT_HELP)
     s.add_argument("--allow-unresolved", action="store_true", help="build even if some cue phrases were not found")
     s.add_argument("--allow-unknown", action="store_true", help=ALLOW_UNKNOWN_HELP)
     encoding(s)

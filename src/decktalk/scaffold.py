@@ -206,11 +206,16 @@ def setup() -> None:
 
 @dataclass(frozen=True)
 class DoctorRow:
-    """One component that `decktalk doctor` reports. It unpacks like the (name, ok, detail) tuple it replaced."""
+    """One component that `decktalk doctor` reports. It unpacks like the (name, ok, detail) tuple it replaced.
+
+    A missing component that is not `required`, which is KaTeX because pages fall back to a
+    CDN, is a warning: an uncertain finding, so `doctor` exits 1 on it only with --strict.
+    """
 
     name: str
     ok: bool
     detail: str
+    required: bool = True
 
     def __iter__(self) -> Iterator[str | bool]:
         return iter((self.name, self.ok, self.detail))
@@ -254,7 +259,6 @@ def doctor() -> list[DoctorRow]:
     if cached:
         rows.append(DoctorRow("katex", True, str(cached)))
     else:
-        rows.append(
-            DoctorRow("katex", False, f"not cached at {katex_cache_dir()}  -> run `decktalk setup` (CDN until then)")
-        )
+        detail = f"not cached at {katex_cache_dir()}  -> run `decktalk setup` (pages load KaTeX from a CDN until then)"
+        rows.append(DoctorRow("katex", False, detail, required=False))
     return rows
