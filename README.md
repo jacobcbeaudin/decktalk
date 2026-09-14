@@ -17,7 +17,7 @@ If you change a sentence, DeckTalk voices only that section again.</p>
      1. Upload the mp4 through GitHub's editor.
      2. Put the user-attachments URL on its own line in place of the hero picture at the top.
      3. Move the caption below under that line, and uncomment it.
-     4. Under "Make your first video", change "The scaffold is a five-section lesson" to
+     4. Under "Make your first video", change "The scaffold is a lesson in nine sections, two of them optional clips" to
         "The scaffold is the project that made the demo video above".
 <p align="center">DeckTalk built this video from the project that <code>decktalk init</code> writes, in a cloned voice. Turn the sound on, and each reveal starts on its word.</p>
 -->
@@ -93,7 +93,7 @@ You need Python 3.12 or later. These steps use `uv`, a Python package manager. I
 
    This build spends ElevenLabs credits for every section. It writes the video, SRT and VTT captions, and one chapter per section. [What spends credits](https://docs.decktalk.app/requirements#what-spends-credits) lists the cost.
 
-The scaffold is a five-section lesson. The [quickstart](https://docs.decktalk.app/quickstart) shows the output of each step and [what the example video shows](https://docs.decktalk.app/quickstart#what-the-example-video-shows).
+The scaffold is a lesson in nine sections, two of them optional clips. The [quickstart](https://docs.decktalk.app/quickstart) shows the output of each step and [what the example video shows](https://docs.decktalk.app/quickstart#what-the-example-video-shows).
 
 ## What you write
 
@@ -126,12 +126,12 @@ A browser does not start recording at a known time, so DeckTalk does not use a t
 
 `decktalk verify` then measures every reveal in the finished video. This sample comes from a silent build of the scaffold.
 
-<!-- sample: decktalk verify 1:1.1bowl 3:3.4name 4:4.1words, silent build of the scaffold (cue table only) -->
+<!-- sample: decktalk verify 1:1.1bowl 3:3.4name 8:7.1checked, silent build of the scaffold (cue table only) -->
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
 1:1.1bowl            1.25     1.25    1.05    0.00    -10ms    -9ms  changed
-3:3.4name           74.26   112.86    2.75    0.00    +20ms   +15ms  changed
-4:4.1words          14.31   184.91    1.47    0.00    +10ms    +9ms  changed
+3:3.4name           84.72   123.32    2.74    0.00     +0ms    -4ms  changed
+8:7.1checked        10.03   238.31    6.56    0.00    +10ms    +3ms  changed
 ```
 
 The offset column is the time from the cue time to the onset of the reveal, in milliseconds. [Verify](https://docs.decktalk.app/reference/verify) defines every column and limit.

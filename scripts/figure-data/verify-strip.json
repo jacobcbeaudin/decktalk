@@ -3,12 +3,12 @@
     "decktalk": "0.2.0",
     "build": "decktalk build --silent on the scaffold that decktalk init writes",
     "estimated_words": true,
-    "command": "decktalk verify 4:4.1words --json, and the onset series verify reads"
+    "command": "decktalk verify 8:7.1checked --json, and the onset series verify reads"
   },
-  "check": "4:4.1words",
-  "cue_seconds": 14.31,
-  "final_seconds": 184.91,
-  "section_start": 170.6,
+  "check": "8:7.1checked",
+  "cue_seconds": 10.03,
+  "final_seconds": 238.31,
+  "section_start": 228.28,
   "lead_seconds": 0.14,
   "reference_seconds": -0.14,
   "fps": 25,
@@ -20,9 +20,9 @@
   "probes": [
     {
       "delay": 0.7,
-      "changed_percent": 1.4668,
+      "changed_percent": 0.8287,
       "control_percent": 0.0,
-      "margin": 1.4668,
+      "margin": 0.8287,
       "controls": [
         {
           "from": -0.98,
@@ -38,9 +38,9 @@
     },
     {
       "delay": 1.5,
-      "changed_percent": 1.4668,
+      "changed_percent": 6.5617,
       "control_percent": 0.0,
-      "margin": 1.4668,
+      "margin": 6.5617,
       "controls": [
         {
           "from": -1.78,
@@ -50,12 +50,12 @@
         {
           "from": -3.42,
           "to": -1.78,
-          "percent": 0.0008
+          "percent": 0.0
         }
       ]
     }
   ],
-  "reported_probe": 0,
+  "reported_probe": 1,
   "series": [
     {
       "ms": -110,
@@ -71,83 +71,163 @@
     },
     {
       "ms": 10,
-      "percent": 2.3272
+      "percent": 1.24
     },
     {
       "ms": 50,
-      "percent": 2.3256
+      "percent": 1.24
     },
     {
       "ms": 90,
-      "percent": 2.3248
+      "percent": 1.2392
     },
     {
       "ms": 130,
-      "percent": 2.3248
+      "percent": 1.2392
     },
     {
       "ms": 170,
-      "percent": 2.3248
+      "percent": 1.24
     },
     {
       "ms": 210,
-      "percent": 2.3233
+      "percent": 1.24
     },
     {
       "ms": 250,
-      "percent": 2.3233
+      "percent": 1.24
     },
     {
       "ms": 290,
-      "percent": 2.3233
+      "percent": 1.2407
     },
     {
       "ms": 330,
-      "percent": 2.3233
+      "percent": 1.2407
     },
     {
       "ms": 370,
-      "percent": 2.3233
+      "percent": 1.2407
     },
     {
       "ms": 410,
-      "percent": 2.3241
+      "percent": 1.2407
     },
     {
       "ms": 450,
-      "percent": 2.3241
+      "percent": 1.2407
     },
     {
       "ms": 490,
-      "percent": 2.3248
+      "percent": 1.2407
     },
     {
       "ms": 530,
-      "percent": 2.3264
+      "percent": 1.2407
     },
     {
       "ms": 570,
-      "percent": 2.3264
+      "percent": 1.2407
     },
     {
       "ms": 610,
-      "percent": 2.3264
+      "percent": 1.2407
     },
     {
       "ms": 650,
-      "percent": 2.3264
+      "percent": 1.2407
     },
     {
       "ms": 690,
-      "percent": 2.3264
+      "percent": 1.2407
+    },
+    {
+      "ms": 730,
+      "percent": 1.2407
+    },
+    {
+      "ms": 770,
+      "percent": 1.2407
+    },
+    {
+      "ms": 810,
+      "percent": 1.2407
+    },
+    {
+      "ms": 850,
+      "percent": 1.2407
+    },
+    {
+      "ms": 890,
+      "percent": 1.2407
+    },
+    {
+      "ms": 930,
+      "percent": 1.2407
+    },
+    {
+      "ms": 970,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1010,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1050,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1090,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1130,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1170,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1210,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1250,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1290,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1330,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1370,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1410,
+      "percent": 1.2407
+    },
+    {
+      "ms": 1450,
+      "percent": 9.6497
+    },
+    {
+      "ms": 1490,
+      "percent": 9.6466
     }
   ],
   "row": {
-    "changed_percent": 1.47,
+    "changed_percent": 6.56,
     "control_percent": 0.0,
     "offset_ms": 10,
-    "av_ms": 9,
-    "click_ms": 1,
+    "av_ms": 3,
+    "click_ms": 7,
     "verdict": "changed"
   }
 }

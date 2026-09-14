@@ -11,18 +11,15 @@ lists every key.
 ```json cues.json
 {
   "sections": {
-    "4": {
+    "8": {
       "cues": [
-        { "cue": "4.1lesson", "on": "lesson" },
-        { "cue": "4.1sentence", "on": "one sentence" },
-        { "cue": "4.1why", "on": "why downhill" },
-        { "cue": "4.1words", "on": "four words" },
-        { "cue": "4.1again", "on": "the video again" },
-        { "cue": "4.1lower", "on": "so lower is better" },
-        { "cue": "4.1moved", "on": "moved" }
+        { "cue": "7.1box", "on": "box" },
+        { "cue": "7.1moved", "on": "moved" },
+        { "cue": "7.1checked", "on": "checked" },
+        { "cue": "7.1back", "on": "step back" }
       ]
     },
-    "5": {
+    "9": {
       "cues": [
         { "cue": "5.1clear", "on": "video" },
         { "cue": "5.1made", "on": "DeckTalk" },
@@ -34,8 +31,9 @@ lists every key.
 }
 ```
 
-Section 4 of the scaffold plays scene 4 of its page, so its cue ids start with `4.1`. The block
-below is a shape, not the scaffold's values. It shows the optional keys.
+Section 8 of the scaffold plays scene 7 of its page, so its cue ids start with `7.1`. Section 9 plays
+scene 5, so its cue ids start with `5.1`. The block below is a shape, not the scaffold's values. It
+shows the optional keys.
 
 ```json cues.json
 {
@@ -57,7 +55,7 @@ The file is one object with a `sections` key. The load ignores every other top-l
 `[[section]]` in `decktalk.toml`. Each section is an object with an optional `min_seconds` and a
 `cues` list.
 
-Every cue id must appear in its page as a quoted literal, such as `data-cue="4.1lower"` or a key of
+Every cue id must appear in its page as a quoted literal, such as `data-cue="1.1bowl"` or a key of
 a step's `cues` object. [Cue mismatches](/concepts/cues#cue-mismatches) says what happens when an id
 is missing.
 

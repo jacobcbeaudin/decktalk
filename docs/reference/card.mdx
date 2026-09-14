@@ -107,7 +107,7 @@ Full rules: [Runtime](/reference/runtime) and [Page contract](/concepts/page-con
 ### One number for each section
 
 - The number `N` is the same in the script heading, `[[section]]`, and the `cues.json` key.
-- A section can play a scene with another number. After [Add a clip section](/guides/clip-section), section 5 plays scene 4.
+- A section can play a scene with another number. In the scaffold, section 8 plays scene 7.
 - `beats` exits 1 on a cue id that its page never quotes.
 - `build` stops on such an id unless you pass `--allow-unknown`.
 
@@ -152,11 +152,11 @@ decktalk build --only 3 --preset veryfast   # record section 3 again, with a fas
 decktalk beats                              # the cue time of every cue. Exit 1 on a missing phrase or id.
 decktalk check                              # each recording's length, brightness, and warnings
 decktalk verify                             # section starts, cuts, and every cue in the final video
-decktalk verify 1:1.1bowl --cue 5:5.1cap    # only these two cues
+decktalk verify 1:1.1bowl --cue 9:5.1cap    # only these two cues
 decktalk verify --json                      # the same result as one JSON object on stdout
 decktalk shots                              # one PNG per step
-decktalk shots --step 4.1 --cue 4.1lower    # step 4.1 frozen at cue 4.1lower
-decktalk shots --section 5 --at 12.5        # a frame 12.5 s after narration t=0 in section 5
+decktalk shots --step 2.1 --cue 2.1aloud    # step 2.1 frozen at cue 2.1aloud
+decktalk shots --section 9 --at 12.5        # a frame 12.5 s after narration t=0 in section 9
 decktalk status [--json]                    # what exists and what is built
 decktalk narrate --dry-run                  # the text each section would send. Sends nothing.
 decktalk soundscape --dry-run               # every sound request. Sends nothing.
@@ -166,7 +166,7 @@ decktalk runtime                            # copy the packaged runtime into the
 - A project command takes `-p DIR`. The default is `DECKTALK_PROJECT`, then the current directory.
 - `-v` and `-q` go before or after the command name.
 - `-p` goes before the command name, or after it on every command except `init`, `setup`, and `doctor`.
-- A repeatable option takes one value each time. Write `--only 3 --only 5`.
+- A repeatable option takes one value each time. Write `--only 3 --only 6`.
 - `--strict` on `assemble` and `build` fails on a missing recording or a missing clip.
 - A clip section with `optional = true` still plays its slate under `--strict`.
 

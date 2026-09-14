@@ -1,11 +1,11 @@
 {
   "source": {
     "decktalk": "0.2.0",
-    "build": "decktalk build --silent on the scaffold with the clip section from docs/guides/clip-section.mdx",
+    "build": "decktalk build --silent on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
     "estimated_words": true
   },
-  "narration_seconds": 214.2,
-  "video_seconds": 220.72,
+  "narration_seconds": 245.8,
+  "video_seconds": 257.36,
   "sections": [
     {
       "number": 1,
@@ -37,46 +37,81 @@
       "title": "How AI learns",
       "clip": false,
       "video_start": 38.6,
-      "video_end": 170.6,
+      "video_end": 181.12,
       "narration_start": 38.6,
-      "narration_end": 170.6,
-      "speech_end": 169.28,
+      "narration_end": 181.1,
+      "speech_end": 179.78,
       "offset": 0.0
     },
     {
       "number": 4,
       "key": "04",
-      "title": "Chips",
-      "clip": true,
-      "video_start": 170.6,
-      "video_end": 174.6,
-      "file": "media/chips.mp4",
-      "file_exists": true,
-      "slate_seconds": 4.0
+      "title": "The edit",
+      "clip": false,
+      "video_start": 181.12,
+      "video_end": 196.72,
+      "narration_start": 181.1,
+      "narration_end": 196.7,
+      "speech_end": 195.38,
+      "offset": 0.0
     },
     {
       "number": 5,
       "key": "05",
       "title": "The edit",
-      "clip": false,
-      "video_start": 174.6,
-      "video_end": 205.52,
-      "narration_start": 170.6,
-      "narration_end": 201.5,
-      "speech_end": 200.18,
-      "offset": 4.0
+      "clip": true,
+      "video_start": 196.72,
+      "video_end": 200.72,
+      "file": "media/edit-before.mov",
+      "file_exists": true,
+      "slate_seconds": 4.36
     },
     {
       "number": 6,
       "key": "06",
+      "title": "The edit",
+      "clip": false,
+      "video_start": 200.72,
+      "video_end": 222.88,
+      "narration_start": 196.7,
+      "narration_end": 218.9,
+      "speech_end": 217.58,
+      "offset": 4.02
+    },
+    {
+      "number": 7,
+      "key": "07",
+      "title": "The edit",
+      "clip": true,
+      "video_start": 222.88,
+      "video_end": 227.92,
+      "file": "media/edit-after.mov",
+      "file_exists": false,
+      "slate_seconds": 5.04
+    },
+    {
+      "number": 8,
+      "key": "08",
+      "title": "The edit",
+      "clip": false,
+      "video_start": 227.92,
+      "video_end": 242.16,
+      "narration_start": 218.9,
+      "narration_end": 233.1,
+      "speech_end": 231.78,
+      "offset": 9.02
+    },
+    {
+      "number": 9,
+      "key": "09",
       "title": "Close",
       "clip": false,
-      "video_start": 205.52,
-      "video_end": 220.72,
-      "narration_start": 201.5,
-      "narration_end": 214.2,
-      "speech_end": 212.88,
-      "offset": 4.0
+      "video_start": 242.16,
+      "video_end": 257.36,
+      "narration_start": 233.1,
+      "narration_end": 245.8,
+      "speech_end": 244.48,
+      "offset": 9.02
     }
   ],
   "captions": [
@@ -106,155 +141,178 @@
     ],
     [
       38.6,
-      43.551
+      43.554
     ],
     [
-      43.551,
-      47.016
+      43.554,
+      47.022
     ],
     [
-      47.016,
-      51.472
+      47.022,
+      51.481
     ],
     [
-      51.472,
-      57.908
+      51.481,
+      57.922
     ],
     [
-      57.908,
-      63.354
+      57.922,
+      59.904
     ],
     [
-      63.354,
-      66.819
+      59.904,
+      65.354
     ],
     [
-      66.819,
-      71.77
+      65.354,
+      70.308
     ],
     [
-      71.77,
-      75.731
+      70.308,
+      73.776
     ],
     [
-      75.731,
-      82.167
+      73.776,
+      77.244
     ],
     [
-      82.167,
-      87.612
+      77.244,
+      82.199
     ],
     [
-      87.612,
-      93.553
+      82.199,
+      86.162
     ],
     [
-      93.553,
-      98.504
+      86.162,
+      92.603
     ],
     [
-      98.504,
-      104.445
+      92.603,
+      98.053
     ],
     [
-      104.445,
-      111.871
+      98.053,
+      103.998
     ],
     [
-      111.871,
-      117.812
+      103.998,
+      108.952
     ],
     [
-      117.812,
-      121.773
+      108.952,
+      114.898
     ],
     [
-      121.773,
-      129.199
+      114.898,
+      122.329
     ],
     [
-      129.199,
-      133.655
+      122.329,
+      128.274
     ],
     [
-      133.655,
-      138.605
+      128.274,
+      132.238
     ],
     [
-      138.605,
-      143.061
+      132.238,
+      139.669
     ],
     [
-      143.061,
-      147.517
+      139.669,
+      144.128
     ],
     [
-      147.517,
-      153.953
+      144.128,
+      149.083
     ],
     [
-      153.953,
-      157.418
+      149.083,
+      153.542
     ],
     [
-      157.418,
-      161.874
+      153.542,
+      158.001
     ],
     [
-      161.874,
-      165.834
+      158.001,
+      164.441
     ],
     [
-      165.834,
-      169.48
+      164.441,
+      167.909
     ],
     [
-      174.6,
-      176.08
+      167.909,
+      172.368
     ],
     [
-      176.08,
-      183.48
+      172.368,
+      176.332
     ],
     [
-      183.48,
-      187.427
+      176.332,
+      179.98
     ],
     [
-      187.427,
-      192.36
+      181.1,
+      185.867
     ],
     [
-      192.36,
-      195.32
+      185.867,
+      193.281
     ],
     [
-      195.32,
-      199.76
+      193.281,
+      195.58
     ],
     [
-      199.76,
-      204.38
+      200.72,
+      203.855
     ],
     [
-      205.5,
-      209.604
+      203.855,
+      211.17
     ],
     [
-      209.604,
-      213.708
+      211.17,
+      216.395
     ],
     [
-      213.708,
-      217.08
+      216.395,
+      221.8
+    ],
+    [
+      227.92,
+      230.787
+    ],
+    [
+      230.787,
+      238.431
+    ],
+    [
+      238.431,
+      241.0
+    ],
+    [
+      242.12,
+      246.224
+    ],
+    [
+      246.224,
+      250.328
+    ],
+    [
+      250.328,
+      253.7
     ]
   ],
   "chapters": [
     0.0,
     17.8,
     38.6,
-    170.6,
-    174.6,
-    205.52
+    181.12,
+    242.16
   ]
 }

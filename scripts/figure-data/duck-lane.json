@@ -1,7 +1,7 @@
 {
   "source": {
     "decktalk": "0.2.0",
-    "build": "decktalk build --silent on the scaffold with the clip section from docs/guides/clip-section.mdx",
+    "build": "decktalk build --silent on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
     "estimated_words": true,
     "rule": "gain = underscore_db x (1 - (1 - underscore_duck_db) x max over spans of a linear ramp), from stages/assemble.py plan_mix"
   },
@@ -9,58 +9,58 @@
   "underscore_duck_db": -6.0,
   "duck_ramp_seconds": 0.5,
   "window": [
-    167.6,
-    178.6
+    193.72,
+    204.72
   ],
   "spans": [
     [
-      38.6,
-      169.28
+      181.1,
+      195.38
     ],
     [
-      170.6,
-      174.6
+      196.72,
+      200.72
     ],
     [
-      174.6,
-      204.18
+      200.72,
+      221.6
     ]
   ],
   "sections": [
     {
-      "number": 3,
-      "key": "03",
-      "title": "How AI learns",
-      "clip": false,
-      "video_start": 38.6,
-      "video_end": 170.6,
-      "narration_start": 38.6,
-      "narration_end": 170.6,
-      "speech_end": 169.28,
-      "offset": 0.0
-    },
-    {
       "number": 4,
       "key": "04",
-      "title": "Chips",
-      "clip": true,
-      "video_start": 170.6,
-      "video_end": 174.6,
-      "file": "media/chips.mp4",
-      "file_exists": true,
-      "slate_seconds": 4.0
+      "title": "The edit",
+      "clip": false,
+      "video_start": 181.12,
+      "video_end": 196.72,
+      "narration_start": 181.1,
+      "narration_end": 196.7,
+      "speech_end": 195.38,
+      "offset": 0.0
     },
     {
       "number": 5,
       "key": "05",
       "title": "The edit",
+      "clip": true,
+      "video_start": 196.72,
+      "video_end": 200.72,
+      "file": "media/edit-before.mov",
+      "file_exists": true,
+      "slate_seconds": 4.36
+    },
+    {
+      "number": 6,
+      "key": "06",
+      "title": "The edit",
       "clip": false,
-      "video_start": 174.6,
-      "video_end": 205.52,
-      "narration_start": 170.6,
-      "narration_end": 201.5,
-      "speech_end": 200.18,
-      "offset": 4.0
+      "video_start": 200.72,
+      "video_end": 222.88,
+      "narration_start": 196.7,
+      "narration_end": 218.9,
+      "speech_end": 217.58,
+      "offset": 4.02
     }
   ]
 }
