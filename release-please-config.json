@@ -26,6 +26,7 @@
       ],
       "exclude-paths": [
         "site",
+        "workers",
         "assets",
         "docs/images",
         "docs/logo",

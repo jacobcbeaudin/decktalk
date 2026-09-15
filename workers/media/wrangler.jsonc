@@ -1,0 +1,24 @@
+// The media Worker: serves the decktalk-media R2 bucket at media.decktalk.app through signed links.
+// Deploy: npx wrangler deploy --cwd workers/media
+// The signing key is a Worker secret, never in this file: npx wrangler secret put SIGNING_KEY --cwd workers/media
+{
+  "name": "decktalk-media",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-22",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "media.decktalk.app", "custom_domain": true }],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "decktalk-media" }],
+  // Workers Logs keeps the Worker's own logs. Cloudflare's log of each request is off, because it would
+  // store every signed link. `npx wrangler tail decktalk-media` streams the logs live.
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  "vars": {
+    // Pages allowed to ask for a link, comma separated.
+    "SITE_ORIGINS": "https://decktalk.app",
+    // How long a link plays, from 60 to 86400 seconds. The page asks for a fresh one if a visit outlasts it.
+    "LINK_SECONDS": "21600",
+    // "info" logs refusals and failures. "debug" logs every request too. To debug for a while without
+    // editing this file: npx wrangler deploy --var LOG_LEVEL:debug, then deploy again without it.
+    "LOG_LEVEL": "info"
+  }
+}

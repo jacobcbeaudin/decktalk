@@ -24,6 +24,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23ffffff'/%3E%3Cg stroke-width='2.25' stroke-linecap='round'%3E%3Cline x1='4' y1='12' x2='4' y2='20' stroke='%23d4d4d8'/%3E%3Cline x1='9.5' y1='8' x2='9.5' y2='20' stroke='%232c1fea'/%3E%3Cline x1='15' y1='12' x2='15' y2='20' stroke='%23d4d4d8'/%3E%3Cline x1='20.5' y1='12' x2='20.5' y2='20' stroke='%23d4d4d8'/%3E%3C/g%3E%3Ccircle cx='9.5' cy='3.75' r='2.25' fill='%232c1fea'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://media.decktalk.app" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -152,10 +153,12 @@
     <div class="watch" id="watch">
       <span class="lab">Watch the demo · 3:24 · sound on</span>
       <figure class="player">
-        <!-- The video source lives only here: the poster, the one <source>, and the captions track below.
-             To serve it from Cloudflare Stream or YouTube, replace this <video> element with that player. -->
-        <video id="demo-video" controls preload="none" playsinline width="1920" height="1080" poster="media/decktalk-demo-poster.jpg">
-          <source src="media/decktalk-demo.mp4" type="video/mp4">
+        <!-- The film lives only here: the poster, the data-media key, and the captions track below.
+             The mp4 is in the private decktalk-media R2 bucket. The script at the end of this page asks
+             media.decktalk.app (workers/media) for a signed link to that key and plays it.
+             scripts/publish_demo.sh uploads a new cut and prints its key. Change the key, the poster,
+             and the captions in the same commit. -->
+        <video id="demo-video" controls preload="none" playsinline width="1920" height="1080" poster="media/decktalk-demo-poster.jpg" data-media="decktalk-demo-20260914T155755Z-0810246f57b4.mp4">
           <track kind="captions" src="media/decktalk-demo.vtt" srclang="en" label="English">
         </video>
         <figcaption><span><b>Made with DeckTalk.</b> A markdown script and HTML slides, narrated and cut to the word.</span><span>Captions available in the player.</span></figcaption>
@@ -235,6 +238,90 @@ $ decktalk build            <span class="c nb"># your voice</span></pre>
 (() => {
   document.getElementById("copy").addEventListener("click", async (e) => {
     try { await navigator.clipboard.writeText(document.getElementById("cmd").textContent); e.target.textContent = "Copied"; setTimeout(() => e.target.textContent = "Copy", 1400); } catch (_) {}
+  });
+
+  // The film plays through a signed link from media.decktalk.app that lasts a few hours. The page asks
+  // for a link when it loads, and retries a request that fails on the network or the server. It asks for
+  // a fresh link when the current one is about to expire or stops working, and keeps the film's place.
+  // Add ?debug to the page's address to log each step to the console.
+  const video = document.getElementById("demo-video");
+  const debug = new URLSearchParams(location.search).has("debug");
+  const say = (...args) => { if (debug) console.debug("[film]", ...args); };
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let expires = 0;         // when the current link stops working, in seconds since 1970
+  let pending = null;      // the link request in flight, which every caller shares
+  let wantsPlay = false;   // someone pressed play while the link was on its way
+  let playing = false;     // the visitor pressed play and has not paused since
+  let failures = 0;        // fresh links in a row that failed before the film loaded
+
+  async function requestLink() {
+    for (let attempt = 1; ; attempt++) {
+      let response = null;
+      try {
+        response = await fetch(`https://media.decktalk.app/sign/${video.dataset.media}`);
+      } catch (err) {
+        say("link request failed", { attempt, error: String(err) });
+      }
+      if (response?.ok) {
+        const body = await response.json();
+        expires = body.expires;
+        say("link", { attempt, expires: new Date(expires * 1000).toISOString() });
+        return body.url;
+      }
+      if (response) say("link refused", { attempt, status: response.status });
+      // A refusal stays a refusal. A network failure, a server error, or a rate limit may pass.
+      const retryable = !response || response.status >= 500 || response.status === 429;
+      if (!retryable || attempt === 3) throw new Error(response ? `HTTP ${response.status}` : "network error");
+      await sleep(attempt * 1000);
+    }
+  }
+
+  // Put a fresh link in the player. The place and the play state are read when the link arrives, so
+  // they include anything the visitor did while waiting.
+  function reload(reason, play = false) {
+    wantsPlay ||= play;
+    if (pending) return pending;
+    say("reload", { reason });
+    pending = requestLink()
+      .then((url) => {
+        const at = video.currentTime, resume = wantsPlay || !video.paused;
+        if (at > 0) video.addEventListener("loadedmetadata", () => { video.currentTime = at; }, { once: true });
+        video.src = url;
+        say("new link in place", { at, resume });
+        if (resume) video.play().catch((err) => say("play refused", String(err)));
+      })
+      .catch((err) => say("no link", String(err)))
+      .finally(() => { pending = null; wantsPlay = false; });
+    return pending;
+  }
+
+  reload("page load");
+  // When a download fails, Chrome marks the player paused before it fires error, and fires pause after
+  // it. So whether the visitor meant to watch is tracked here, and a pause that an error caused is ignored.
+  video.addEventListener("pause", () => { if (!video.error) playing = false; });
+  video.addEventListener("play", () => {
+    playing = true;
+    if (!video.getAttribute("src")) reload("play without a link", true);
+    else if (Date.now() / 1000 > expires - 30) reload("link about to expire", true);
+  });
+  video.addEventListener("loadedmetadata", () => { failures = 0; });
+  video.addEventListener("error", () => {
+    const code = video.error?.code;
+    // A fresh link fixes a download that failed, not a file the browser cannot decode.
+    if (code !== MediaError.MEDIA_ERR_NETWORK && code !== MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+      say("film error, not retried", { code });
+      return;
+    }
+    if (failures++ >= 1) {
+      // Chrome refuses play() on a player whose download failed, without even a play event, so the
+      // player goes back to its poster. The next press of play then asks for a link from scratch.
+      say("the fresh link failed too; press play to try again", { code });
+      playing = false;
+      video.removeAttribute("src");
+      video.load();
+      return;
+    }
+    reload(`film error ${code}`, playing);
   });
 })();
 </script>
