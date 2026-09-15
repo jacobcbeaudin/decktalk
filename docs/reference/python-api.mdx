@@ -27,8 +27,8 @@ The package exports these names. Every other name is internal.
 | Project | `Project`, `Section`, `PageSection`, `ClipSection`, `Settings`, `load_settings` |
 | Project tables | `Voice`, `Transition`, `Mix`, `Soundscape` |
 | Artifacts | `Manifest`, `Timeline`, `Beats`, `Word`, `Sidecar` |
-| Stages | `narrate`, `resolve_beats`, `record`, `measure`, `check`, `assemble`, `verify`, `shoot`, `soundscape`, `build`, `status` |
-| Results | `NarrateResult`, `BeatsResult`, `Recording`, `LeadMeasurement`, `RecordingCheck`, `AssembleResult`, `VerifyResult`, `SoundscapeItem`, `BuildResult`, `StatusReport` |
+| Stages | `narrate`, `resolve_beats`, `preflight`, `record`, `measure`, `check`, `assemble`, `verify`, `shoot`, `soundscape`, `build`, `status` |
+| Results | `NarrateResult`, `BeatsResult`, `PreflightResult`, `Recording`, `LeadMeasurement`, `RecordingCheck`, `AssembleResult`, `VerifyResult`, `SoundscapeItem`, `BuildResult`, `StatusReport` |
 | Errors | `DeckTalkError`, `ConfigError`, `MissingInputError`, `ProviderError`, `ToolError` |
 | Speech | `SpeechProvider`, `SpeechRequest`, `register` |
 | Version | `__version__` |
@@ -152,6 +152,7 @@ These functions run one stage each, or read the project.
 |---|---|---|
 | `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None)` | `NarrateResult` with `manifest`, `timeline`, `segments`, `synthesized`, and `cached` | `ConfigError`, `MissingInputError`, `ProviderError` |
 | `resolve_beats(project, *, allow_unknown=False)` | `BeatsResult` with `beats`, `sections`, `unresolved`, `estimated`, `unknown`, `beats_file`, `problems`, and `to_dict(root)` | `ConfigError`, `MissingInputError`, `UnknownCueError` |
+| `preflight(project, *, only=None, frames=True, model=None)` | `PreflightResult` with `takes`, `note`, `beats`, `estimated`, `cues`, `carries`, `frames`, `placeholders`, `findings(allow_unknown=False)`, and `to_dict(root)` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `record(project, *, only=None, seconds=None, use_beats=True)` | A list of `Recording`, each with `section`, `path`, `sidecar`, and `seconds` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `measure(project, only=None)` | A list of `LeadMeasurement`, each with `key`, `lead_in_seconds`, `wallclock_seconds`, and `method` | `MissingInputError` |
 | `check(project, only=None)` | A list of `RecordingCheck`, each with `key`, `duration`, `wanted`, `y10`, `y50`, `y90`, `max50`, `verdict`, `page_errors`, `file`, `ok`, and `to_dict(root)` | `MissingInputError` |
@@ -164,7 +165,7 @@ These functions run one stage each, or read the project.
 - `shoot` with `section` takes frames from a playing section at each time in `at`, 0.5 s by default.
 - `shoot` with `cues` needs exactly one step in `steps`.
 
-`BeatsResult`, `RecordingCheck`, `VerifyResult`, and `StatusReport` each have `to_dict(root)`. It returns the data
+`BeatsResult`, `PreflightResult`, `RecordingCheck`, `VerifyResult`, and `StatusReport` each have `to_dict(root)`. It returns the data
 that the command line prints under `--json`. Numbers stay numbers, and paths are relative to `root` with forward
 slashes. Pass `project.root`.
 

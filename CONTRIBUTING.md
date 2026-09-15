@@ -66,7 +66,7 @@ src/decktalk/
   status.py      what a project has built, read from disk for `decktalk status`
   verdicts.py    every verdict string, and which verdicts are certain
   errors.py      DeckTalkError and its subclasses, which the CLI maps to exit codes
-  stages/        narrate, beats, record, measure (with check), assemble, verify, shots, soundscape, build
+  stages/        narrate, beats, preflight, record, measure (with check), assemble, verify, shots, soundscape, build
   media/         ffmpeg and Chromium (internal)
   providers/     the speech protocol and the ElevenLabs provider (internal)
   runtime/       decktalk-runtime.js, the page contract
@@ -76,6 +76,7 @@ tests/
   test_cli.py        exit codes, --json output, and flags, with stages replaced by fixed results
   test_runtime.py    drives decktalk-runtime.js in a real Chromium (-m browser)
   test_media.py      checks frame analysis against real ffmpeg on a synthetic video (-m media)
+  test_preflight.py  preflight's frozen frames on the scaffold and on a synthetic page (-m browser, -m media)
   smoke.sh           an offline build of the scaffold, verified cue by cue
 scripts/
   build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon

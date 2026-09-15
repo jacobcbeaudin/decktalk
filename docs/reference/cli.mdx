@@ -193,6 +193,117 @@ decktalk runtime [-h] [--project PROJECT] [-v] [-q]
 updated ~/my-lesson/deck/decktalk-runtime.js
 ```
 
+## `decktalk preflight`
+
+Checks a voiced build before it spends credits or records anything. It plans the takes, resolves every cue, and
+estimates each reveal from frozen frames of the pages.
+
+```text
+decktalk preflight [-h] [--project PROJECT] [-v] [-q] [--json]
+                   [--strict] [--no-fail] [--only ONLY] [--no-frames]
+                   [--model MODEL] [--allow-unknown]
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--only ONLY` | every section | Checks only these sections. Repeatable. |
+| `--no-frames` | off | Skips the frozen frames. No browser starts, and nothing is written. |
+| `--model MODEL` | `[voice] model`, then `[narration] model` | Speech model to check the narration cache for. |
+| `--allow-unknown` | off | Does not count a cue id that is missing from its page. The table still notes it. |
+| `--json`, `--strict`, `--no-fail` | off | See [Output and exit flags](#output-and-exit-flags). |
+
+**Reads** `script.md`, `cues.json`, `decktalk.toml`, the pages, and `build/audio`. Needs no key.
+**Writes** `build/preflight/NN/step-<id>-cue-<cue>.png` and `step-<id>-before-<cue>.png`, after it empties
+`build/preflight`. `--no-frames` writes nothing. `preflight` never writes `beats.json` or `build/audio`.
+
+`preflight` runs three checks.
+
+1. **Takes.** It prints [the take plan](#the-take-plan) of `narrate --dry-run`. The plan says which sections a
+   voiced run would voice, keep cached, or move, with the characters each section sends.
+2. **Cues.** It resolves every cue phrase as `beats` does, with the same notes. A cached or moved take resolves
+   on its own words. A section that would be voiced resolves on estimated words at `silent_words_per_minute`, so
+   its cue times are placeholders.
+3. **Frames.** For each cue, it freezes the page just before the cue and at the cue, and compares the two frames
+   as `verify` compares frames. For each page section with `carries_previous = true` after a page section, it
+   compares the previous section's last frozen frame with this section's first one.
+
+A frozen frame shows every reveal in its end state, with nothing in motion. So `chg %` estimates what `verify`
+measures once the reveal has settled, with a control of 0. The verdicts use the `[verify]` limits.
+
+| Verdict | When | Finding |
+|---|---|---|
+| `changed` | `chg %` is at least `thin_change_factor` times `min_changed_percent` and `min_margin_percent`. | none |
+| `THIN CHANGE?` | `chg %` passes both floors, but not `thin_change_factor` times one of them. | uncertain |
+| `NO CHANGE` | `chg %` is below `min_changed_percent` or `min_margin_percent`. | certain |
+| `skipped` | Nothing was compared. The reason follows the verdict. | none |
+| `ok` | A carried cut changes at most `max_pop_percent`. | none |
+| `POP AT CUT` | A carried cut changes more than `max_pop_percent`. | certain |
+
+| Reason | Meaning |
+|---|---|
+| `AT_SECTION_START` | The cue fires within the first frame, so no frame comes before it. |
+| `NO_STEP` | No step of the scene owns the cue. |
+| `NOT_IN_STEP_CUES` | A step owns the cue by its id prefix, and its `cues` list does not name it. A freeze stops only at a listed cue. |
+| `NO_CATALOG` | The page is missing, has no runtime catalog, or does not register the scene. |
+| `RUNTIME_OUTDATED` | The page's `decktalk-runtime.js` has no `catalog[].cues`. Run `decktalk runtime`. |
+| `OPTED_OUT` | `cues.json` sets `"verify": false` on the cue. |
+| `NO_CUES` | A carried cut only. A side of the cut has no resolved cue. |
+| `CLIP` | A carried cut only. A side of the cut is a clip, which `verify` checks after `assemble`. |
+
+- The frames follow cue mode. The first cued step mounts at t=0, and every other step mounts at its earliest cue.
+  The frame before a cue that mounts its step shows the step that was on screen.
+- A freeze fires a step's cues in autoplay order. When the cue times run in another order, the row notes that
+  the frames may differ from the recording.
+- The estimate sees no motion, no camera push, and no close neighbor cue. `verify` measures those on the final mp4.
+- The frames need `catalog[].cues` and `&before=` from [the runtime](/reference/runtime#url-parameters). A page with
+  an older copy of `decktalk-runtime.js` skips every cue as `RUNTIME_OUTDATED`.
+
+| Exit | When |
+|---|---|
+| 0 | No certain finding, and no uncertain finding with `--strict`. |
+| 1 | An unfilled placeholder, `UNRESOLVED`, `UNKNOWN` without `--allow-unknown`, `NO CHANGE`, or `POP AT CUT`. With `--strict`, also `THIN CHANGE?` or speech shorter than `min_seconds`. An error also exits 1. |
+
+These are parts of a run on the scaffold after `decktalk narrate --silent`, with `carries_previous = true` on
+section 2.
+
+{/* sample: decktalk preflight, fresh scaffold with carries_previous = true on section 2, after narrate --silent, no key. The beats table and the cue rows of sections 2, 3, 4, 8, and 9 are cut. */}
+
+```text
+voice: provider=elevenlabs model=eleven_multilingual_v2
+ #  section                take         sent spoken  reason
+-----------------------------------------------------------
+ 1  open                   synthesize    160    142  only a silent take exists
+ 2  how-it-works           synthesize    228    213  only a silent take exists
+ 3  how-ai-learns          synthesize   1745   1520  only a silent take exists
+ 4  the-edit               synthesize    163    148  only a silent take exists
+ 6  the-edit               synthesize    203    182  only a silent take exists
+ 8  the-edit               synthesize    141    132  only a silent take exists
+ 9  close                  synthesize    148    142  only a silent take exists
+-----------------------------------------------------------
+voice 7 section(s): 2788 characters sent, 2479 spoken. 0 cached, 0 moved.
+note: ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set. Put them in ~/my-lesson/.env (see .env.example) or export them. Keys are never printed.
+
+check              step        cue   chg %  result
+1:1.1bowl          1.1        1.25    0.93  changed
+1:1.1ball          1.1        2.33    0.14  THIN CHANGE?
+1:1.1count         1.1        6.15    0.57  changed
+1:1.1one           1.1        6.69    0.99  changed
+1:1.1two           1.1        7.24    0.99  changed
+1:1.1three         1.1        7.78    0.95  changed
+1:1.1word          1.1       15.41    1.04  changed
+6:6.1step          6.1        2.61    0.20  THIN CHANGE?
+6:6.1four          6.1        5.22    0.11  THIN CHANGE?
+6:6.1box           6.1        7.32    0.23  THIN CHANGE?
+6:6.1build         6.1       10.97    3.23  changed
+6:6.1aloud         6.1       14.11    0.54  changed
+6:6.1kept          6.1       16.20    0.29  THIN CHANGE?
+6:6.1new           6.1       19.86    3.73  changed
+75 cue(s): 68 changed, 7 THIN CHANGE?. Frozen frames in build/preflight
+
+sec   chg %  result
+ 02    0.00  ok
+```
+
 ## `decktalk build`
 
 Runs all seven stages in order and prints each stage's table.
@@ -909,7 +1020,7 @@ This shape shows the `--json` payload. The values are types, not a sample.
 
 ## Output and exit flags
 
-`status`, `beats`, `check`, `verify`, and `doctor` take these three options.
+`status`, `beats`, `preflight`, `check`, `verify`, and `doctor` take these three options.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -917,7 +1028,7 @@ This shape shows the `--json` payload. The values are types, not a sample.
 | `--strict` | off | Also exits 1 on an uncertain finding. |
 | `--no-fail` | off | Exits 0 on findings. An error still exits 1. |
 
-An uncertain finding is a verdict that ends in `?`. In `beats`, speech shorter than `min_seconds` is
+An uncertain finding is a verdict that ends in `?`. In `beats` and `preflight`, speech shorter than `min_seconds` is
 also uncertain. On `assemble` and `build`, `--strict` has a different meaning. It fails on a missing
 recording, or a missing clip in a section without `optional = true`.
 
@@ -948,12 +1059,16 @@ This shape shows the JSON envelope. The values are types, not a sample.
 | `beats` | `estimated`, `beats_file`, `unresolved`, `unknown`, and `sections`. |
 | `check` | `recordings`: a list of `{key, file, duration, wanted, y10, y50, y90, max50, verdicts, stall_ms, page_errors}`. |
 | `verify` | `final`, `total_seconds`, `silent`, `starts`, `cuts`, `carries`, and `cues`. |
+| `preflight` | `voice`, `note`, `placeholders`, `takes`, `totals`, `beats`, `cues`, `carries`, and `frames`. |
 | `narrate --dry-run --json` | `voice`, `note`, `sections`, and `totals`, as [the take plan](#the-take-plan) gives. `ok` is always true. |
 
 Note: each `beats` section is `{key, speech_end, min_seconds, skipped, cues, notes}`. Each note is
 `{cue, verdict, detail}`, where `verdict` is `UNRESOLVED`, `UNKNOWN`, or `null`. Each `verify` cue row
 is `{section, cue, cue_seconds, final_seconds, changed_percent, control_percent, offset_ms, av_ms,
-verdict, reason}`. [verify](/reference/verify#json-fields) defines them.
+verdict, reason}`. [verify](/reference/verify#json-fields) defines them. Each `preflight` cue row is `{section,
+cue, cue_seconds, step, changed_percent, verdict, reason, detail, note, before, after}`, and each carry row is
+`{key, changed_percent, verdict, reason, detail, last, first}`. The `preflight` `takes` rows are the take plan rows
+without `text`, and `beats` is the `beats` payload without `beats_file`, plus `estimated_sections`.
 
 - Every `key` is a two-digit section string such as `"03"`. A `verify` cue row's `section` is an integer.
 - A value that does not exist is `null`. Every verdict is the name that the table prints.
@@ -975,11 +1090,12 @@ verdict, reason}`. [verify](/reference/verify#json-fields) defines them.
 | `beats` | `UNRESOLVED`, and `UNKNOWN` without `--allow-unknown`. | Speech shorter than `min_seconds`. |
 | `check` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`. | `BLACK?`, `KATEX?` |
 | `verify` | `BLACK`, `SPEECH AT CUT`, `POP AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`. | `THIN CHANGE?` |
+| `preflight` | An unfilled placeholder, `UNRESOLVED`, `UNKNOWN` without `--allow-unknown`, `NO CHANGE`, `POP AT CUT`. | `THIN CHANGE?`, speech shorter than `min_seconds`. |
 | `status` | Never. | Never. |
 | `build` | See [`decktalk build`](#decktalk-build). | Not used. |
 | Every other command | Only an error. | Not used. |
 
-- `--no-fail` makes `doctor`, `beats`, `check`, `verify`, and `status` exit 0 on findings.
+- `--no-fail` makes `doctor`, `beats`, `preflight`, `check`, `verify`, and `status` exit 0 on findings.
 - With `--no-fail`, the JSON `ok` key still says if the command passed.
 - An error is not a finding. A `DeckTalkError` exits 1, even with `--no-fail`.
 - An unexpected exception prints `error: <type>: <message> (add -v for the traceback)` and exits 1.

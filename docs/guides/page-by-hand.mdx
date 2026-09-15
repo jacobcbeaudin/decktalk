@@ -38,6 +38,10 @@ The magenta cover belongs to the recorder, so a page needs no cover of its own.
 - It opens `?step=ID` for each step id in the catalog. With `--cue`, it opens `?step=ID&cue=CUE`.
 - In frame mode, `shots --section N --at S` opens the recorder's URL. It logs `window.__decktalk.fired` with each frame.
 
+`decktalk preflight` also reads `catalog[].cues`, which maps each step id to its cue ids in autoplay order. It opens
+`?step=ID&cue=CUE` and `?step=ID&before=CUE`. A page whose catalog has no `cues` gets every cue skipped as
+`RUNTIME_OUTDATED`.
+
 ## Write the minimal page
 
 <Warning>Start the page clock only inside `DeckTalk.startClock()`. A page that starts its clock at

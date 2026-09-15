@@ -70,6 +70,7 @@ Each command exits 1 on a different set of problems.
 | `decktalk check` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER` | `BLACK?` and `KATEX?`, unless you pass `--strict` |
 | `decktalk verify` | `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED` | a `skipped` row, such as a cue marked `"verify": false` |
 | `decktalk doctor` | a missing required tool | a missing KaTeX cache, unless you pass `--strict` |
+| `decktalk preflight` | an unfilled placeholder, `UNRESOLVED`, `UNKNOWN`, `NO CHANGE`, and `POP AT CUT` in frozen frames, before any recording | motion, timing, and every check on the final mp4 |
 
 A silent build puts a click at every word start, so `verify` also reports an
 [a/v value](/reference/verify#the-a/v-value) for each cue. The job fails when an a/v value is past

@@ -404,6 +404,21 @@ def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, widt
     return (float(m.group(1)) / 255 * 100) if m else 0.0
 
 
+def changed_images_percent(a: Path, b: Path, *, level: int, width: int, height: int) -> float:
+    """Share (0-100) of pixels whose luma differs by more than `level` between two still images.
+
+    Both images are scaled to width x height and read as luma, as the frames of changed_pixels_percent are.
+    """
+    err = stderr(
+        "-i", str(a), "-i", str(b), "-filter_complex",
+        f"[0:v]scale={width}:{height},format=gray[a];[1:v]scale={width}:{height},format=gray[b];"
+        f"[a][b]blend=all_mode=difference,{_changed_mask(level)}",
+        "-frames:v", "1", "-f", "null", "-",
+    )  # fmt: skip
+    m = re.search(r"YAVG=([0-9.]+)", err)
+    return (float(m.group(1)) / 255 * 100) if m else 0.0
+
+
 def changed_series(
     path: Path, ref_t: float, start: float, end: float, *, fps: int, level: int, width: int, height: int
 ) -> list[tuple[float, float]]:

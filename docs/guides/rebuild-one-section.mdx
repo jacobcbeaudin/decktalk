@@ -176,7 +176,8 @@ decktalk build --force
 
 `decktalk narrate --dry-run` makes no API call. It prints the text that each section would send, and a take
 plan that says which sections a voiced run would voice, keep cached, or move. So you can count the characters
-first. `decktalk narrate --dry-run --json` gives the same plan as JSON.
+first. `decktalk narrate --dry-run --json` gives the same plan as JSON. `decktalk preflight` adds the cue check and
+an estimate of each reveal from frozen frames, so you can fix a small reveal before you pay for the takes.
 
 ## A silent build and a voiced build
 

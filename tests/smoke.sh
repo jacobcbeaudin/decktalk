@@ -59,6 +59,9 @@ FF="$(uv run python -c 'from decktalk.media.ffmpeg import ffmpeg; print(ffmpeg()
 mkdir -p "$T/build/music"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i "sine=f=220:r=44100" -t 8 -af volume=0.5 -c:a libmp3lame "$T/build/music/underscore.mp3"
 DECKTALK_VIDEO_PRESET=veryfast uv run decktalk -p "$T" build --silent
+# Preflight plans the voiced takes, resolves every cue, and estimates each reveal from frozen frames, with no key.
+# A reveal too small for verify reads THIN CHANGE?, an uncertain warning. NO CHANGE or POP AT CUT fails.
+uv run decktalk -p "$T" preflight --json --no-fail | uv run python -c 'import json,sys; v=json.load(sys.stdin)["preflight"]; bad=[r for r in v["cues"] + v["carries"] if r["verdict"] not in ("changed","THIN CHANGE?","skipped","ok")]; assert not bad, bad; assert v["cues"] and v["totals"]["synthesize"] == len(v["takes"]), v["totals"]'
 uv run decktalk -p "$T" shots
 uv run decktalk -p "$T" shots --section 4 --at 8 --at 20 --at 38
 # Cue timing (OFF CUE) is informational on hosted runners until a lighter timing test exists.

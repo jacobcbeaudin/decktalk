@@ -22,7 +22,7 @@ one slide. A page plays in one of four modes, and `window.__decktalk.mode` holds
 | Index mode | `index` | no query | The page lists every scene and step, with play and freeze links. |
 | Autoplay | `autoplay` | `?scene=N` | Each step mounts in turn and stays for its `hold` seconds. A browser preview plays this mode. |
 | Cue mode | `cues` | `?scene=N&beats=id@s,…` | Cue times drive the page. The recorder uses this mode. |
-| Freeze mode | `frozen` | `?step=ID`, optionally with `&cue=CUE` | One step mounts with its reveals in their end state. `decktalk shots` uses this mode. |
+| Freeze mode | `frozen` | `?step=ID`, optionally with `&cue=CUE` | One step mounts with its reveals in their end state. `decktalk shots` and `decktalk preflight` use this mode. |
 
 [Modes](/reference/runtime#modes) in the runtime reference lists the URL, the clock, and what
 mounts in each mode.

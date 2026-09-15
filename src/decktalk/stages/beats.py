@@ -301,66 +301,20 @@ def resolve_beats(project: Project, *, allow_unknown: bool = False) -> BeatsResu
     specs = load_cues(project)
     if not specs:
         log.info("no cues file at %s; pages will run their built-in timing", project.cues)
-    beats = Beats()
-    anchors: dict[str, dict[str, float]] = {}
-    rows: list[SectionBeats] = []
-    unresolved = 0
     unknown_ids = unknown_cue_ids(project, specs)
+    takes: dict[str, tuple[list[Word], float]] = {}
     for spec in specs:
         key = f"{spec.number:02d}"
         entry = manifest.segments.get(key)
-        if entry is None:
-            rows.append(
-                SectionBeats(
-                    key=key,
-                    speech_end=0.0,
-                    min_seconds=spec.min_seconds,
-                    resolved={},
-                    skipped="no narration (clip section, or not rendered)",
-                )
+        if entry is not None:
+            # Cue times count from the section start, which comes lead_seconds before the take.
+            takes[key] = (
+                project.section_words(key, entry.words_file),
+                entry.duration_seconds + project.lead_seconds(key),
             )
-            for k, cue_id, page in unknown_ids:
-                if k == key:
-                    rows[-1].note(cue_id, "UNKNOWN", f"not in {page}")
-            continue
-        # Cue times count from the section start, which comes lead_seconds before the take.
-        lead = project.lead_seconds(key)
-        words = project.section_words(key, entry.words_file)
-        speech_end = words[-1].end if words else entry.duration_seconds + lead
-        row = SectionBeats(key=key, speech_end=speech_end, min_seconds=spec.min_seconds, resolved={})
-        for cue in spec.cues:
-            if not words and cue.on != "$start":
-                row.note(
-                    cue.step,
-                    "UNRESOLVED",
-                    f"no words ({'estimated manifest' if manifest.estimated else 'missing words file'})",
-                )
-                unresolved += 1
-                continue
-            t = resolve_cue(cue, words)
-            if t is None:
-                row.note(cue.step, "UNRESOLVED", f"phrase not found: {cue.on!r}")
-                unresolved += 1
-                continue
-            if t > entry.duration_seconds + lead:
-                length = round(entry.duration_seconds + lead, 3)
-                row.note(cue.step, None, f"{t}s is past the end of the audio ({length}s)")
-            row.resolved[cue.step] = t
-            ambiguous = ambiguity_note(cue, words)
-            if ambiguous:
-                row.note(cue.step, None, ambiguous)
-            anchor = anchor_time(cue, words)
-            if anchor is not None:
-                anchors.setdefault(key, {})[cue.step] = round(anchor, 2)
-        if spec.min_seconds is not None and speech_end < spec.min_seconds:
-            short = spec.min_seconds - speech_end
-            row.note(None, None, f"speech {speech_end:.1f}s is {short:.1f}s shorter than the visuals need")
-        for k, cue_id, page in unknown_ids:
-            if k == key:
-                row.note(cue_id, "UNKNOWN", f"not in {page}")
-        if row.resolved:
-            beats.sections[key] = row.resolved
-        rows.append(row)
+    beats, anchors, rows, unresolved = resolve_sections(
+        specs, takes, unknown_ids=unknown_ids, estimated=manifest.estimated
+    )
     beats.save(project.beats_path)
     write_anchors(project.beats_path.with_name("beats.anchors.json"), anchors)
     log.info(
@@ -381,3 +335,75 @@ def resolve_beats(project: Project, *, allow_unknown: bool = False) -> BeatsResu
     if result.unknown and not allow_unknown:
         raise UnknownCueError(result)
     return result
+
+
+def resolve_sections(
+    specs: list[SectionCues],
+    takes: dict[str, tuple[list[Word], float]],
+    *,
+    unknown_ids: list[tuple[str, str, str]],
+    estimated: bool,
+) -> tuple[Beats, dict[str, dict[str, float]], list[SectionBeats], int]:
+    """(beats, anchors, one row per section, unresolved count) for cues against each section's take.
+
+    `takes` maps a section key to its words and its length, both in seconds after the section
+    starts. A section with no take is skipped. `estimated` names the manifest kind in a no-words note.
+    Nothing is written.
+    """
+    beats = Beats()
+    anchors: dict[str, dict[str, float]] = {}
+    rows: list[SectionBeats] = []
+    unresolved = 0
+    for spec in specs:
+        key = f"{spec.number:02d}"
+        take = takes.get(key)
+        if take is None:
+            rows.append(
+                SectionBeats(
+                    key=key,
+                    speech_end=0.0,
+                    min_seconds=spec.min_seconds,
+                    resolved={},
+                    skipped="no narration (clip section, or not rendered)",
+                )
+            )
+            for k, cue_id, page in unknown_ids:
+                if k == key:
+                    rows[-1].note(cue_id, "UNKNOWN", f"not in {page}")
+            continue
+        words, length = take
+        speech_end = words[-1].end if words else length
+        row = SectionBeats(key=key, speech_end=speech_end, min_seconds=spec.min_seconds, resolved={})
+        for cue in spec.cues:
+            if not words and cue.on != "$start":
+                row.note(
+                    cue.step,
+                    "UNRESOLVED",
+                    f"no words ({'estimated manifest' if estimated else 'missing words file'})",
+                )
+                unresolved += 1
+                continue
+            t = resolve_cue(cue, words)
+            if t is None:
+                row.note(cue.step, "UNRESOLVED", f"phrase not found: {cue.on!r}")
+                unresolved += 1
+                continue
+            if t > length:
+                row.note(cue.step, None, f"{t}s is past the end of the audio ({round(length, 3)}s)")
+            row.resolved[cue.step] = t
+            ambiguous = ambiguity_note(cue, words)
+            if ambiguous:
+                row.note(cue.step, None, ambiguous)
+            anchor = anchor_time(cue, words)
+            if anchor is not None:
+                anchors.setdefault(key, {})[cue.step] = round(anchor, 2)
+        if spec.min_seconds is not None and speech_end < spec.min_seconds:
+            short = spec.min_seconds - speech_end
+            row.note(None, None, f"speech {speech_end:.1f}s is {short:.1f}s shorter than the visuals need")
+        for k, cue_id, page in unknown_ids:
+            if k == key:
+                row.note(cue_id, "UNKNOWN", f"not in {page}")
+        if row.resolved:
+            beats.sections[key] = row.resolved
+        rows.append(row)
+    return beats, anchors, rows, unresolved

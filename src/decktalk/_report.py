@@ -7,10 +7,11 @@ from .config import NarrationConfig
 from .stages.beats import BeatsResult
 from .stages.measure import LeadMeasurement, RecordingCheck
 from .stages.narrate import NarrateResult, Segment, TakePlan, plan_totals
+from .stages.preflight import PreflightResult
 from .stages.soundscape import SoundscapeItem
 from .stages.verify import VerifyResult
 from .status import StatusReport, relpath
-from .verdicts import BLACK, OK, QUIET, SKIPPED, SPEECH_AT_CUT
+from .verdicts import BLACK, CHANGED, NO_CHANGE, OK, QUIET, SKIPPED, SPEECH_AT_CUT, THIN_CHANGE
 
 
 def mmss(seconds: float | None) -> str:
@@ -92,6 +93,42 @@ def beats_table(result: BeatsResult) -> str:
     if result.estimated:
         tail += "  (estimated words: times are placeholders)"
     lines.append(tail)
+    return "\n".join(lines)
+
+
+def preflight_table(result: PreflightResult) -> str:
+    """The take plan, the cues resolved on the words each section will have, and the frozen-frame estimates."""
+    root = result.root
+    voice = result.voice
+    lines = [f"voice: provider={voice['provider']} model={voice['model']}"]
+    lines.append(plan_table(result.takes, result.narration, result.note))
+    if result.placeholders:
+        lines.append(f"a voiced run refuses the unfilled placeholders {result.placeholders}")
+    lines += ["", beats_table(result.beats)]
+    if result.estimated:
+        lines.append(f"estimated words in sections {', '.join(result.estimated)}, which a voiced run will voice")
+    if result.frames is None:
+        lines += ["", "frames skipped (--no-frames)"]
+        return "\n".join(lines)
+    lines.append("")
+    lines.append(f"{'check':<18} {'step':<8} {'cue':>6} {'chg %':>7}  result")
+    for c in result.cues:
+        chg = f"{c.changed_percent:>7.2f}" if c.changed_percent is not None else f"{'-':>7}"
+        label = " ".join(part for part in (c.verdict, c.reason) if part)
+        label += f": {c.detail}" if c.detail else ""
+        label += f" ({c.note})" if c.note else ""
+        lines.append(f"{c.check:<18} {c.step or '-':<8} {c.cue_seconds:>6.2f} {chg}  {label}")
+    tally = {v: sum(c.verdict == v for c in result.cues) for v in (CHANGED, THIN_CHANGE, NO_CHANGE, SKIPPED)}
+    counts = ", ".join(f"{n} {v}" for v, n in tally.items() if n) or "none"
+    where = relpath(result.frames, root) if root is not None else result.frames
+    lines.append(f"{len(result.cues)} cue(s): {counts}. Frozen frames in {where}")
+    if result.carries:
+        lines.append("")
+        lines.append(f"{'sec':>3} {'chg %':>7}  result")
+        for k in result.carries:
+            chg = f"{k.changed_percent:>7.2f}" if k.changed_percent is not None else f"{'-':>7}"
+            label = " ".join(part for part in (k.verdict, k.reason) if part) + (f": {k.detail}" if k.detail else "")
+            lines.append(f"{k.key:>3} {chg}  {label}")
     return "\n".join(lines)
 
 

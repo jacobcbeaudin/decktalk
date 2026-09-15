@@ -173,6 +173,8 @@ Check the slide in a browser and in screenshots before you record it. [Browser p
 1. Open `deck/index.html?step=3.1` in a browser. The step mounts with every element visible.
 2. Open `deck/index.html?scene=3&hud=1`. The scene plays in autoplay, with the clock on top.
 3. Take a screenshot of every step with `decktalk shots`. The PNG files go under `build/shots/`.
+4. Estimate every reveal with `decktalk preflight`. It freezes the page before and at each cue, and flags a reveal
+   too small for `verify` as `THIN CHANGE?` or `NO CHANGE`.
 
 If the project has no voiced build yet, you can also check where each cue phrase resolves. On a voiced project, a silent `narrate` stops, because it would empty the narration cache. Skip these actions there.
 

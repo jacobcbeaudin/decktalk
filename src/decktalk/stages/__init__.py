@@ -5,6 +5,7 @@ from .beats import BeatsResult, resolve_beats
 from .build import BuildResult, build
 from .measure import LeadMeasurement, RecordingCheck, check, measure
 from .narrate import NarrateResult, narrate, script_segments
+from .preflight import PreflightResult, preflight
 from .record import Recording, record
 from .shots import shoot
 from .soundscape import SoundscapeItem, soundscape
@@ -16,6 +17,7 @@ __all__ = [
     "BuildResult",
     "LeadMeasurement",
     "NarrateResult",
+    "PreflightResult",
     "Recording",
     "RecordingCheck",
     "SoundscapeItem",
@@ -25,6 +27,7 @@ __all__ = [
     "check",
     "measure",
     "narrate",
+    "preflight",
     "record",
     "resolve_beats",
     "script_segments",

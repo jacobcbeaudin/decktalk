@@ -12,6 +12,7 @@ Each table lists the term, its meaning, the words that the docs do not use for i
 | Term | Meaning | Do not use | Explained in |
 |---|---|---|---|
 | build | One run of `decktalk build` through all seven stages. A *plain build* has no `--only`. | "render" for a build, "rebuild" as a noun | [How it works](/concepts/how-it-works) |
+| preflight | `decktalk preflight`. Plans the takes, resolves the cues, and estimates each reveal from frozen frames, with no credits and no recording. | "dry run" for it | [CLI](/reference/cli#decktalk-preflight) |
 | silent build | A build with `--silent`. Uses estimated word times, writes a click track, and needs no account. | "dry run", "placeholder build" | [How it works](/concepts/how-it-works) |
 | voiced build | A build without `--silent`. The speech provider voices the script. | | [How it works](/concepts/how-it-works) |
 | stage | One of `narrate`, `beats`, `record`, `measure`, `check`, `assemble`, `verify`, always in that order. | "stage" for the page element, "step" for a stage | [How it works](/concepts/how-it-works) |

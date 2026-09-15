@@ -6,6 +6,7 @@
     decktalk narrate [--silent]       script.md -> build/audio (ElevenLabs, word timestamps, timeline)
     decktalk narrate --dry-run        what a voiced run would send, cache, or move (--json)
     decktalk beats                    cues.json -> build/audio/beats.json
+    decktalk preflight                takes, cues and frozen reveals before a voiced build: no credits, no recording
     decktalk soundscape               ambience, sfx, underscore (ElevenLabs)
     decktalk record                   pages -> build/rec/NN-scene.webm (Chromium)
     decktalk measure                  find narration t=0 in each recording
@@ -20,7 +21,7 @@
 Every project command takes --project/-p DIR (default: DECKTALK_PROJECT, else the current
 directory). The -v and -q flags go before or after the command name.
 Tuning flags such as --preset override decktalk.toml and DECKTALK_* env for one run.
-status, beats, check, verify and doctor take --json, --strict and --no-fail. They exit 1
+status, beats, preflight, check, verify and doctor take --json, --strict and --no-fail. They exit 1
 on a certain finding, and on an uncertain one (a verdict ending in ?) only with --strict.
 """
 
@@ -233,6 +234,15 @@ def cmd_beats(args: argparse.Namespace) -> int:
     return _finish(args, findings, result.to_dict(project.root), lambda: _report.beats_table(result))
 
 
+def cmd_preflight(args: argparse.Namespace) -> int:
+    from .stages.preflight import preflight
+
+    project = _project(args)
+    result = preflight(project, only=_only(args.only), frames=not args.no_frames, model=args.model)
+    findings = result.findings(allow_unknown=args.allow_unknown)
+    return _finish(args, findings, result.to_dict(project.root), lambda: _report.preflight_table(result))
+
+
 def cmd_soundscape(args: argparse.Namespace) -> int:
     from .stages.soundscape import soundscape
 
@@ -410,6 +420,15 @@ def build_parser() -> argparse.ArgumentParser:
     s = policy(proj(sub.add_parser("beats", help="resolve cue phrases to timestamps")))
     s.add_argument("--allow-unknown", action="store_true", help=ALLOW_UNKNOWN_HELP)
     s.set_defaults(fn=cmd_beats)
+
+    s = policy(proj(sub.add_parser("preflight", help="plan the takes, resolve the cues, and estimate every reveal")))
+    s.add_argument("--only", type=int, action="append", help=only_help)
+    s.add_argument(
+        "--no-frames", action="store_true", help="skip the frozen frames, so no browser starts and nothing is written"
+    )
+    s.add_argument("--model", help="speech model to check the narration cache for")
+    s.add_argument("--allow-unknown", action="store_true", help=ALLOW_UNKNOWN_HELP)
+    s.set_defaults(fn=cmd_preflight)
 
     s = proj(sub.add_parser("soundscape", help="generate ambience, sfx and underscore"))
     s.add_argument("--only", action="append", help="one item: ambience, music, or an effect name (repeat for several)")

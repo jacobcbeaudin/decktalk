@@ -2327,3 +2327,120 @@ def test_narrate_dry_run_without_a_voice_key_still_plans_what_it_can(tmp_path, m
     plan = json.loads(capsys.readouterr().out)["narrate"]
     assert {(r["status"], r["reason"]) for r in plan["sections"]} == {("synthesize", "no take yet")}
     assert plan["totals"]["synthesize"] == 7
+
+
+def test_plan_frames_follows_cue_mode_and_freezes_just_before_each_reveal():
+    from decktalk.stages.preflight import (
+        AT_SECTION_START,
+        NO_STEP,
+        NOT_IN_STEP_CUES,
+        ORDER_NOTE,
+        Freeze,
+        first_state,
+        last_state,
+        mounts,
+        owner_step,
+        plan_frames,
+    )
+
+    steps = {"1.1": ["1.1in", "1.1a", "1.1b"], "1.2": ["1.2a", "1.2b"]}
+    beats = {"1.1in": 0.0, "1.1a": 1.0, "1.1b": 2.0, "1.2a": 3.0, "1.2b": 4.0, "1.1zz": 4.5, "9x": 5.0}
+    assert [owner_step(c, steps) for c in ("1.2b", "1.2", "1.1zz", "9x")] == ["1.2", "1.2", "1.1", None]
+    assert mounts(steps, beats) == [("1.1", 0.0), ("1.2", 3.0)]
+    plan = [(p.cue, p.before, p.after, p.reason, p.note) for p in plan_frames(steps, beats, 25)]
+    assert plan == [
+        ("1.1in", None, None, AT_SECTION_START, ""),
+        ("1.1a", Freeze("1.1", cue="1.1in"), Freeze("1.1", cue="1.1a"), None, ""),
+        ("1.1b", Freeze("1.1", cue="1.1a"), Freeze("1.1", cue="1.1b"), None, ""),
+        # 1.2a mounts step 1.2, so the frame before it is step 1.1 with every cue it fired.
+        ("1.2a", Freeze("1.1", cue="1.1b"), Freeze("1.2", cue="1.2a"), None, ""),
+        ("1.2b", Freeze("1.2", cue="1.2a"), Freeze("1.2", cue="1.2b"), None, ""),
+        ("1.1zz", None, None, NOT_IN_STEP_CUES, ""),
+        ("9x", None, None, NO_STEP, ""),
+    ]
+    assert last_state(steps, beats) == Freeze("1.2", cue="1.2b")
+    assert first_state(steps, beats, 25) == Freeze("1.1", cue="1.1in")
+
+    # The first step mounts at 0 even when its first cue comes later, so that cue freezes just before itself.
+    late = {"2.1": ["2.1a", "2.1b"]}
+    late_beats = {"2.1a": 1.5, "2.1b": 3.0}
+    assert plan_frames(late, late_beats, 25)[0].before == Freeze("2.1", before="2.1a")
+    assert first_state(late, late_beats, 25) == Freeze("2.1", before="2.1a")
+    assert Freeze("2.1", before="2.1a").query() == {"step": "2.1", "before": "2.1a"}
+    assert Freeze("2.1", cue="2.1aloud").label == "step-2.1-cue-2.1aloud" and Freeze("2.1").query() == {"step": "2.1"}
+
+    # A freeze fires in autoplay order, so cue times in another order get a note.
+    swapped = plan_frames({"3.1": ["3.1b", "3.1a"]}, {"3.1a": 1.0, "3.1b": 2.0}, 25)
+    assert [(p.before, p.note) for p in swapped] == [
+        (Freeze("3.1", cue="3.1b"), ORDER_NOTE),
+        (Freeze("3.1", before="3.1b"), ORDER_NOTE),
+    ]
+
+
+def test_preflight_verdicts_and_findings():
+    from decktalk.stages.beats import BeatsResult
+    from decktalk.stages.preflight import CarryEstimate, CueEstimate, PreflightResult, cue_verdict
+    from decktalk.verdicts import Findings
+
+    cfg = Settings().verify
+    assert [cue_verdict(x, cfg) for x in (0.05, 0.2, 0.5)] == ["NO CHANGE", "THIN CHANGE?", "changed"]
+    result = PreflightResult(
+        voice={}, narration=Settings().narration, takes=[], note=None, estimated=[],
+        beats=BeatsResult(beats=Beats(), sections=[], unresolved=1, estimated=True, unknown=2),
+        cues=[CueEstimate("1:a", 1.0, "1.1", 0.2, "THIN CHANGE?"), CueEstimate("1:b", 2.0, "1.1", 0.0, "NO CHANGE"),
+              CueEstimate("1:c", 3.0, "1.1", 4.0, "changed"), CueEstimate("1:d", 0.0, None, None, "skipped")],
+        carries=[CarryEstimate("02", 3.1, "POP AT CUT"), CarryEstimate("03", 0.0, "ok")],
+    )  # fmt: skip
+    assert result.findings() == Findings(certain=5, uncertain=1)
+    assert result.findings(allow_unknown=True) == Findings(certain=3, uncertain=1)
+
+
+def test_preflight_resolves_cues_on_the_words_each_section_will_have(tmp_path, monkeypatch, capsys):
+    from decktalk.artifacts import read_words
+    from decktalk.stages.beats import find_phrase
+    from decktalk.stages.preflight import preflight
+
+    p, files = _planned_scaffold(tmp_path, monkeypatch)
+    result = preflight(p, frames=False)
+    assert {t.segment.key: t.status for t in result.takes} == {
+        "01": "cached", "02": "cached", "03": "synthesize", "04": "synthesize",
+        "06": "synthesize", "08": "synthesize", "09": "moved",
+    }  # fmt: skip
+    assert result.estimated == ["03", "04", "06", "08"]
+    assert result.beats.unresolved == 0 and result.beats.unknown == 0
+    resolved = {s.key: s.resolved for s in result.beats.sections}
+    # A cached take and a moved take resolve on their own words, which the fixture spaced 0.4 s apart.
+    open_words = read_words(p.audio_dir / "01-open.words.json")
+    assert resolved["01"]["1.1bowl"] == open_words[find_phrase(open_words, "bowl")].start == 0.4
+    close_words = read_words(p.audio_dir / "07-close.words.json")
+    assert resolved["09"]["5.1url"] == round(close_words[find_phrase(close_words, "decktalk dot app")].start, 2)
+    # A section that would be voiced resolves on estimated words, inside its estimated length.
+    assert all(0 < t < 60 for t in resolved["04"].values()) and len(resolved["04"]) == 5
+    assert result.cues == [] and result.carries == [] and result.frames is None
+    assert _unchanged(p, files) and not p.beats_path.exists() and not (p.build / "preflight").exists()
+
+    assert main(["preflight", "--no-frames", "--json", "-p", str(p.root)]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["command"] == "preflight" and doc["ok"] is True
+    payload = doc["preflight"]
+    assert set(payload) == {"voice", "note", "placeholders", "takes", "totals", "beats", "cues", "carries", "frames"}
+    assert payload["beats"]["estimated_sections"] == ["03", "04", "06", "08"] and payload["totals"]["synthesize"] == 4
+    assert [t["moved_from"] for t in payload["takes"] if t["status"] == "moved"] == ["07"]
+    assert main(["preflight", "--no-frames", "-p", str(p.root)]) == 0
+    out = capsys.readouterr().out
+    assert "2 cached, 1 moved." in out and "frames skipped (--no-frames)" in out
+
+    # A phrase that is not in the script, under an id the page never names, is two certain findings.
+    cues_path = p.root / "cues.json"
+    cues = json.loads(cues_path.read_text(encoding="utf-8"))
+    cues["sections"]["1"]["cues"].append({"cue": "1.1nope", "on": "not in the script"})
+    cues_path.write_text(json.dumps(cues), encoding="utf-8")
+    script = p.root / "script.md"
+    script.write_text(script.read_text(encoding="utf-8").replace("## 9. Close\n", "## 9. Close\n\n[CLIENT_NAME]\n", 1))
+    assert main(["preflight", "--no-frames", "--json", "-p", str(p.root)]) == 1
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["findings"] == {"certain": 3, "uncertain": 0} and doc["preflight"]["placeholders"] == ["CLIENT_NAME"]
+    assert main(["preflight", "--no-frames", "--json", "--allow-unknown", "-p", str(p.root)]) == 1
+    assert json.loads(capsys.readouterr().out)["findings"] == {"certain": 2, "uncertain": 0}
+    assert main(["preflight", "--no-frames", "--no-fail", "-p", str(p.root)]) == 0
+    assert _unchanged(p, files)

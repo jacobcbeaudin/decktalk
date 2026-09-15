@@ -42,7 +42,7 @@ The URL picks the mode. In prose these docs write index mode, autoplay, cue mode
 | Index mode | `index` | no `scene`, `beats`, or `step`, or an unknown scene or step | not used | a list of scenes and steps | a person who picks a scene |
 | Autoplay | `autoplay` | `?scene=N` | at `load` | each step in turn, for `hold / speed` seconds | a browser preview |
 | Cue mode | `cues` | `?beats=…`, usually with `scene` | at `load`, or at `startClock()` with `t0=signal` | each step at the earliest cue it owns | `decktalk record`, `decktalk shots --section` |
-| Freeze mode | `frozen` | `?step=ID`, optionally with `&cue=CUE` or `&before=CUE` | at `load`, after the step has mounted | one step, with its reveals in their end state | `decktalk shots` |
+| Freeze mode | `frozen` | `?step=ID`, optionally with `&cue=CUE` or `&before=CUE` | at `load`, after the step has mounted | one step, with its reveals in their end state | `decktalk shots`, `decktalk preflight` |
 
 Note: `step` wins over `scene` and `beats`. With `beats` and no registered `scene`, the scene that
 owns the earliest cue plays. [Cue ownership](/concepts/page-contract#cue-ownership) gives the

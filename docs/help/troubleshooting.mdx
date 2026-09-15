@@ -60,6 +60,8 @@ explains.
 | `occurs <N> times in this section` | `beats` | [Entry](#occurs-n-times-in-this-section-in-beats) |
 | `no words` | `beats` | [Entry](#no-words-in-beats) |
 | `is not in decktalk.toml` | `beats`, `build` | [Entry](#is-not-in-decktalk-toml-in-beats) |
+| `NO CHANGE`, `THIN CHANGE?` | `preflight` | [Entry](#no-change-or-thin-change-in-preflight) |
+| `RUNTIME_OUTDATED` | `preflight` | [Entry](#runtime_outdated-in-preflight) |
 | `PAGE ERROR`, `page error` | `check`, `record`, `build` | [Entry](#page-error-in-check) |
 | `STALLED`, `frame stall(s)` | `check`, `record` | [Entry](#stalled-in-check) |
 | `TRUNCATED` | `check` | [Entry](#truncated-in-check) |
@@ -510,6 +512,32 @@ The error reads `cues.json: section <N> is not in decktalk.toml`.
 2. If the section is new, add its `[[section]]` table.
 
 **More.** [cues.json](/reference/cues-json)
+
+## preflight
+
+### `NO CHANGE` or `THIN CHANGE?` in preflight
+
+**Cause.** The frozen frame at the cue differs from the frozen frame before it by less than the `[verify]`
+floors, or by less than `thin_change_factor` times them. The reveal is small even in its end state, so `verify`
+is likely to read the same on the final mp4.
+
+**Fix.**
+1. Open the row's two PNG files under `build/preflight/NN/`.
+2. If the reveal is too small to see, make it larger or give it more contrast in the page.
+3. If the reveal is small on purpose, mark the cue `"verify": false`. Or leave it, and check it by eye after the build.
+
+**More.** [`decktalk preflight`](/reference/cli#decktalk-preflight), [`THIN CHANGE?` in verify](#thin-change-in-verify)
+
+### `RUNTIME_OUTDATED` in preflight
+
+**Cause.** The page loads a copy of `decktalk-runtime.js` from before `decktalk preflight`. Its catalog has no
+`cues`, so `preflight` cannot freeze a step just before a cue.
+
+**Fix.**
+1. Run `decktalk runtime` to copy the packaged runtime into the project.
+2. Run `decktalk preflight` again.
+
+**More.** [Runtime](/reference/runtime#url-parameters)
 
 ## record, measure, and check
 

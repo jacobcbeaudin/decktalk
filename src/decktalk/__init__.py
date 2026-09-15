@@ -8,9 +8,9 @@ still move, and a rename is a breaking change once the project leaves the 0.x se
     project tables: Voice, Mix, Soundscape, Transition
     errors: DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
     artifacts: Manifest, Timeline, Beats, Word, Sidecar
-    stages: narrate, resolve_beats, record, measure, check, assemble, verify, shoot,
+    stages: narrate, resolve_beats, preflight, record, measure, check, assemble, verify, shoot,
             soundscape, build, status
-    results: NarrateResult, BeatsResult, Recording, LeadMeasurement, RecordingCheck,
+    results: NarrateResult, BeatsResult, PreflightResult, Recording, LeadMeasurement, RecordingCheck,
              AssembleResult, VerifyResult, SoundscapeItem, BuildResult, StatusReport
     speech: SpeechProvider, SpeechRequest, register
 
@@ -33,6 +33,7 @@ from .stages import (
     BuildResult,
     LeadMeasurement,
     NarrateResult,
+    PreflightResult,
     Recording,
     RecordingCheck,
     SoundscapeItem,
@@ -42,6 +43,7 @@ from .stages import (
     check,
     measure,
     narrate,
+    preflight,
     record,
     resolve_beats,
     shoot,
@@ -69,6 +71,7 @@ __all__ = [
     "Mix",
     "NarrateResult",
     "PageSection",
+    "PreflightResult",
     "Project",
     "ProviderError",
     "Recording",
@@ -94,6 +97,7 @@ __all__ = [
     "load_settings",
     "measure",
     "narrate",
+    "preflight",
     "record",
     "register",
     "resolve_beats",
