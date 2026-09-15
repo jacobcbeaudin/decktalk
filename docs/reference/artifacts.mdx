@@ -296,7 +296,7 @@ The out directory holds each cut section, the final video, its captions, and its
 
 | File | Meaning |
 |---|---|
-| `NN-section.mp4` | One section cut to its span, at the project's frame size, with no audio. |
+| `NN-section.mp4` | One section cut to its span, at the project's frame size, with no audio. `assemble` and `verify` read only the files of sections in `decktalk.toml`, and warn about any other file with this name. |
 | `<name>.mp4` | The final video, with one chapter per section. Consecutive sections with the same title share a chapter. |
 | `<name>-YYYYMMDD-HHMM.mp4` | A timestamped copy of the final video. |
 | `<name>.srt`, `<name>.vtt` | Captions from the word times, in final mp4 time, with the script's punctuation and case. |

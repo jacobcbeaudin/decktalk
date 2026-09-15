@@ -52,8 +52,11 @@ sec    start    probe   YAVG   YMAX  result
 total 257.72s; 0 black section start(s)
 ```
 
-A section's start is the total length of every earlier `build/out/NN-section.mp4`. The check reads one frame
-after each start.
+A section's start is the total length of the `build/out/NN-section.mp4` of every earlier section in `decktalk.toml`.
+The check reads one frame after each start.
+
+`verify` reads only the sections in `decktalk.toml`. A file that matches `NN-section.mp4` but belongs to no section,
+such as one left after you renumber sections, is ignored, and `verify` warns about it.
 
 ```text
 probe  = section start + after_dip_seconds                 # 0.2 s
@@ -421,7 +424,7 @@ Mark such a cue `"verify": false`, and check it by eye with `decktalk shots --st
 | `ok` | boolean | True when the command would exit 0 without `--no-fail`. |
 | `findings.certain`, `findings.uncertain` | integer | Counts of certain and uncertain findings. |
 | `verify.final` | string | Path of the final mp4, relative to the project. |
-| `verify.total_seconds` | number | Length of the video, the sum of every `NN-section.mp4`. |
+| `verify.total_seconds` | number | Length of the video, the sum of the `NN-section.mp4` of every section in `decktalk.toml`. |
 | `verify.silent` | boolean | True after a silent build. Only then can `av_ms` hold a value. |
 | `verify.starts[]` | array | One object per section start, with `key`, `start`, `probe_at`, `yavg`, `ymax`, and `verdict`. |
 | `verify.cuts[]` | array | One object per cut, with `key`, `cut_at`, `rms_db`, and `verdict`. |

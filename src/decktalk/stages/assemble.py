@@ -341,6 +341,23 @@ def measure_warning(project: Project, sec: PageSection, *, strict: bool) -> str 
     return message
 
 
+def stray_warnings(project: Project, command: str) -> list[str]:
+    """One logged warning per NN-section.mp4 in build/out whose section is not in decktalk.toml.
+
+    `command` names the stage that ignores the file, for the message.
+    """
+    messages = []
+    for f in project.stray_section_videos():
+        name = f.relative_to(project.root).as_posix() if f.is_relative_to(project.root) else f.as_posix()
+        message = (
+            f"{name} is not a section in decktalk.toml, so {command} ignores it. "
+            "Delete the file if an earlier build left it."
+        )
+        log.warning(message)
+        messages.append(message)
+    return messages
+
+
 def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> list[RenderedSection]:
     enc = _Encoder(project.settings.video)
     project.out_dir.mkdir(parents=True, exist_ok=True)
@@ -807,6 +824,7 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
         raise MissingInputError(f"{project.timeline_path} not found; run `decktalk narrate` first")
     out_dir = project.out_dir
     paths = output_paths(project)
+    strays = stray_warnings(project, "assemble")
     rows = render_sections(project, timeline, strict=strict)
 
     picture = out_dir / ".picture.mp4"
@@ -816,7 +834,7 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
     work = out_dir / f".{project.name}.tmp.mp4"
     work.unlink(missing_ok=True)
     plan = plan_mix(project, rows, timeline, nomix=nomix)
-    warnings = [r.warning for r in rows if r.warning] + plan.warnings
+    warnings = strays + [r.warning for r in rows if r.warning] + plan.warnings
     for w in plan.warnings:
         log.warning(w)
     enc = _Encoder(project.settings.video)

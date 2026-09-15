@@ -46,8 +46,9 @@ never a failure, and its reason says why nothing was measured:
 A measured row after a silent build carries the reason NO_CLICK when no click was found
 near the cued word, so its a/v value is empty.
 
-Section starts are the cumulative lengths of build/out/NN-section.mp4, the same
-arithmetic the assembler uses.
+Section starts are the cumulative lengths of build/out/NN-section.mp4 for the sections in
+decktalk.toml, in order, the same arithmetic the assembler uses. A leftover NN-section.mp4
+of a section that is not in decktalk.toml is ignored with a warning.
 """
 
 from __future__ import annotations
@@ -73,10 +74,14 @@ NO_CLICK = "NO_CLICK"
 
 
 def section_starts(project: Project) -> tuple[dict[str, float], float]:
+    """(where each assembled section of decktalk.toml starts, the total length). Other files are never counted."""
     starts: dict[str, float] = {}
     t = 0.0
-    for f in sorted(project.out_dir.glob("[0-9][0-9]-section.mp4")):
-        starts[f.name[:2]] = t
+    for sec in project.sections:
+        f = project.section_video(sec)
+        if not f.exists():
+            continue
+        starts[sec.key] = t
         t += ffmpeg.probe_duration(f)
     return starts, t
 
@@ -270,8 +275,11 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
     opted out in cues.json, and an empty list checks no cues. `only` keeps the cue checks
     of those section numbers. A cue named explicitly is measured even when it is opted out.
     """
+    from .assemble import stray_warnings
+
     cfg = project.settings.verify
     final = project.final
+    stray_warnings(project, "verify")
     starts, total = section_starts(project)
     if not starts or not final.exists():
         raise MissingInputError("need build/out/NN-section.mp4 files and the final mp4; run `decktalk assemble` first")

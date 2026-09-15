@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -575,6 +576,18 @@ class Project:
 
     def section_video(self, section: Section) -> Path:
         return self.out_dir / f"{section.key}-section.mp4"
+
+    def stray_section_videos(self) -> list[Path]:
+        """Files in build/out named like a section video whose section is not in decktalk.toml.
+
+        A build before sections were renumbered or removed leaves such files behind.
+        """
+        if not self.out_dir.is_dir():
+            return []
+        listed = {self.section_video(s).name for s in self.sections}
+        return sorted(
+            f for f in self.out_dir.iterdir() if re.fullmatch(r"\d+-section\.mp4", f.name) and f.name not in listed
+        )
 
     # ---- secrets ---------------------------------------------------------------------
     def env(self, key: str) -> str:

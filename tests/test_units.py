@@ -1768,3 +1768,41 @@ def test_assemble_refuses_a_stale_measurement_with_strict_and_warns_without(tmp_
     side.save(side_path)
     (measured,) = render(p, timeline, strict=True)
     assert measured.warning is None and "lead 1.44s trimmed" in measured.note
+
+
+def test_verify_and_assemble_ignore_a_leftover_section_video(tmp_path, monkeypatch, caplog):
+    """A 04-section.mp4 left after sections were renumbered is not counted as a section."""
+    import importlib
+
+    from decktalk.stages.verify import verify
+
+    asm = importlib.import_module("decktalk.stages.assemble")
+    p = _verify_project(tmp_path, monkeypatch, {"01": "a@1.0"})
+    (p.out_dir / "04-section.mp4").write_bytes(b"x")
+    (p.out_dir / "t-20260101-0000.mp4").write_bytes(b"x")  # other files in build/out are not section videos
+    assert p.stray_section_videos() == [p.out_dir / "04-section.mp4"]
+
+    with caplog.at_level("WARNING", logger="decktalk"):
+        result = verify(p, checks=[])
+    assert [s.key for s in result.starts] == ["01", "02"] and result.total_seconds == 10.0
+    assert [r.getMessage() for r in caplog.records] == [
+        "build/out/04-section.mp4 is not a section in decktalk.toml, so verify ignores it. "
+        "Delete the file if an earlier build left it."
+    ]
+
+    (p.root / "script.md").write_text("## 1. A\n\nHi.\n\n## 2. B\n\nYes.\n\n## 3. C\n\nNo.\n", encoding="utf-8")
+    Timeline(
+        narration="narration.mp3",
+        total_seconds=5.0,
+        sections={"01": TimelineSection("A", 0, 5.0, 5.0, 1.0, [Word("Hi", 0.7, 1.0)])},
+        estimated=True,
+    ).save(p.timeline_path)
+    rows = [asm.RenderedSection(p.sections[0], p.out_dir / "01-section.mp4", 5.0, "page")]
+    monkeypatch.setattr(asm, "render_sections", lambda project, timeline, strict: rows)
+    monkeypatch.setattr(asm, "concat", lambda files, out: out.write_bytes(b"x"))
+    monkeypatch.setattr(asm, "mux_chapters", lambda src, chapters, dst: dst.write_bytes(b"x"))
+    monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"x"))
+    assert asm.assemble(p, nomix=True).warnings == [
+        "build/out/04-section.mp4 is not a section in decktalk.toml, so assemble ignores it. "
+        "Delete the file if an earlier build left it."
+    ]

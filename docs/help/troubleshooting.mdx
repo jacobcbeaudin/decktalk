@@ -83,6 +83,7 @@ explains.
 | `skipped` | `verify` | [Entry](#skipped-in-verify) |
 | `malformed check` | `verify` | [Entry](#malformed-check-in-verify) |
 | `need build/out/NN-section.mp4 files` | `verify` | [Entry](#need-build/out/nn-section-mp4-files-in-verify) |
+| `is not a section in decktalk.toml` | `assemble`, `verify` | [Entry](#is-not-a-section-in-decktalk-toml-in-assemble-or-verify) |
 | `data-sync text not found in the spoken words` | page | [Entry](#data-sync-text-not-found-in-the-spoken-words-in-a-page) |
 | `matches no element, handler, or step` | page | [Entry](#matches-no-element-handler-or-step-in-a-page) |
 | `unknown cue id` | page | [Entry](#unknown-cue-id-in-a-page) |
@@ -876,6 +877,21 @@ error: need build/out/NN-section.mp4 files and the final mp4; run `decktalk asse
 2. Run `decktalk verify`.
 
 **More.** [`decktalk build`](/reference/cli#decktalk-build)
+
+### `is not a section in decktalk.toml` in assemble or verify
+
+```text
+build/out/04-section.mp4 is not a section in decktalk.toml, so verify ignores it. Delete the file if an earlier build left it.
+```
+
+**Cause.** `build/out` holds a section video whose number is not a section in `decktalk.toml`. An earlier build
+usually left it before you renumbered or removed sections. `assemble` and `verify` read only the sections in
+`decktalk.toml`, so the file changes nothing.
+
+**Fix.**
+1. If you renumbered or removed the section, delete the file.
+
+**More.** [`build/out/`](/reference/artifacts#build/out/)
 
 ### A typewriter reveal fails the cue check
 
