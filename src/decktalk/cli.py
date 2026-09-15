@@ -4,6 +4,7 @@
     decktalk setup                    fetch headless Chromium, ffmpeg, and KaTeX (once per machine)
     decktalk doctor                   report what is installed
     decktalk narrate [--silent]       script.md -> build/audio (ElevenLabs, word timestamps, timeline)
+    decktalk narrate --dry-run        what a voiced run would send, cache, or move (--json)
     decktalk beats                    cues.json -> build/audio/beats.json
     decktalk soundscape               ambience, sfx, underscore (ElevenLabs)
     decktalk record                   pages -> build/rec/NN-scene.webm (Chromium)
@@ -165,19 +166,35 @@ def cmd_runtime(args: argparse.Namespace) -> int:
 
 
 def cmd_narrate(args: argparse.Namespace) -> int:
-    from .stages.narrate import narrate, script_segments
+    from .stages.narrate import narrate, narration_plan, plan_totals, script_segments
 
+    if args.json and not args.dry_run:
+        args.parser.error("--json needs --dry-run")
     project = _project(args)
     cfg = project.settings.narration
     if args.dry_run:
         _all, spoken = script_segments(project)
         targets = [s for s in spoken if not args.only or s.index in set(args.only)]
+        model = args.model or project.voice.model or cfg.model
+        plans, note = narration_plan(project, targets, model=model, force=args.force)
+        if args.json:
+            payload = {
+                "voice": {"provider": project.voice.provider, "model": model, "settings": project.voice.api_settings()},
+                "note": note,
+                "sections": [{**p.to_dict(cfg), "text": p.segment.tts_text(cfg)} for p in plans],
+                "totals": plan_totals(plans, cfg),
+            }
+            doc = {"command": args.cmd, "version": __version__, "ok": True, "findings": Findings().to_dict()}
+            print(json.dumps({**doc, args.cmd: payload}, indent=2))
+            return 0
         for seg in targets:
             print(f"=== {seg.key} {seg.title}  -> {seg.filename}")
             print(seg.tts_text(cfg))
             print()
-        print(f"voice: model={args.model or project.voice.model or cfg.model} {project.voice.api_settings()}")
+        print(f"voice: model={model} {project.voice.api_settings()}")
         print(_report.segments_table(targets, cfg.words_per_minute))
+        print()
+        print(_report.plan_table(plans, cfg, note))
         unfilled = sorted({p for s in targets for p in s.placeholders})
         if unfilled:
             print(f"\nnote: unfilled placeholders {unfilled}; fill them before the real run.")
@@ -380,10 +397,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--allow-placeholders", action="store_true", help="synthesize a section that still has a [CAPITAL] placeholder"
     )
-    s.add_argument("--dry-run", action="store_true", help="parse and print without any API call")
+    s.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print each section's text and what a voiced run would voice, cache, or move, without any API call",
+    )
+    s.add_argument("--json", action="store_true", help="with --dry-run, print the plan as one JSON object on stdout")
     s.add_argument("--silent", action="store_true", help="silent placeholders, no API key")
     s.add_argument("--model", help="ElevenLabs model for this run")
-    s.set_defaults(fn=cmd_narrate)
+    s.set_defaults(fn=cmd_narrate, parser=s)
 
     s = policy(proj(sub.add_parser("beats", help="resolve cue phrases to timestamps")))
     s.add_argument("--allow-unknown", action="store_true", help=ALLOW_UNKNOWN_HELP)

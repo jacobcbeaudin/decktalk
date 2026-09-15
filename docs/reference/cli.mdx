@@ -279,7 +279,7 @@ Voices the script and writes each section's audio and word times.
 
 ```text
 decktalk narrate [-h] [--project PROJECT] [-v] [-q] [--only ONLY]
-                 [--force] [--allow-placeholders] [--dry-run]
+                 [--force] [--allow-placeholders] [--dry-run] [--json]
                  [--silent] [--model MODEL]
 ```
 
@@ -288,7 +288,8 @@ decktalk narrate [-h] [--project PROJECT] [-v] [-q] [--only ONLY]
 | `--only ONLY` | every spoken section | Voices only these sections. Repeatable. |
 | `--force` | off | Ignores the narration cache. Spends credits on every section it voices. With `--silent`, replaces voiced takes. |
 | `--allow-placeholders` | off | Voices a section that still has a `[CAPS]` placeholder. |
-| `--dry-run` | off | Prints each section's text, the voice settings, and the table. Sends nothing. |
+| `--dry-run` | off | Prints each section's text, the voice settings, the table, and the take plan. Sends nothing. |
+| `--json` | off | With `--dry-run`, prints the take plan as one JSON object on stdout. Without `--dry-run`, exits 2. |
 | `--silent` | off | Writes a click track with estimated word times. Needs no key. Stops when `build/audio/manifest.json` holds voiced takes, unless `--force` is on. |
 | `--model MODEL` | `[voice] model`, then `[narration] model` | Speech model id for this run. |
 
@@ -310,6 +311,52 @@ length (`actual`). The second table is the timeline in `narration.mp3`.
 |---|---|
 | 0 | Every target section is voiced or cached. |
 | 1 | An error: no script, no sections, a section with no `[[section]]`, a placeholder, a missing key, or a provider error. |
+
+#### The take plan
+
+`--dry-run` checks the narration cache the way a voiced run does, and ends with the take plan. Each
+section gets one take status.
+
+| Take | Meaning |
+|---|---|
+| `synthesize` | A voiced run sends the section to the voice and spends its characters. |
+| `cached` | A voiced run uses the section's take as it is. |
+| `moved` | A take of the same text under another section number is copied to this section. No request is sent. |
+| `unknown` | The speech provider could not be set up, so the cache cannot be checked. The `note` line says why. |
+
+A `synthesize` row gives its reason: `no take yet`, `only a silent take exists`,
+`the text, voice, model, or voice settings changed`, `the file name changed from <file>`,
+`the mp3 or the words file is missing`, or `forced`. `sent` counts the characters the voice receives,
+with dashes and break tags. `spoken` counts the spoken words' characters.
+
+Without a key, a project with no voiced take plans every section as `synthesize`. A project with voiced
+takes plans them as `unknown`, because the cache key needs the voice id.
+
+{/* sample: decktalk narrate --dry-run on a fresh scaffold with no key, the take plan only */}
+
+```text
+ #  section                take         sent spoken  reason
+-----------------------------------------------------------
+ 1  open                   synthesize    160    142  no take yet
+ 2  how-it-works           synthesize    228    213  no take yet
+ 3  how-ai-learns          synthesize   1745   1520  no take yet
+ 4  the-edit               synthesize    163    148  no take yet
+ 6  the-edit               synthesize    203    182  no take yet
+ 8  the-edit               synthesize    141    132  no take yet
+ 9  close                  synthesize    148    142  no take yet
+-----------------------------------------------------------
+voice 7 section(s): 2788 characters sent, 2479 spoken. 0 cached, 0 moved.
+note: ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set. Put them in ~/my-lesson/.env (see .env.example) or export them. Keys are never printed.
+```
+
+With `--json`, the payload under `narrate` has these keys.
+
+| Key | Meaning |
+|---|---|
+| `voice` | `provider`, `model`, and `settings`. |
+| `note` | Why the speech provider could not be set up, or `null`. |
+| `sections` | One row per section: `key`, `title`, `file`, `status`, `reason`, `moved_from`, `characters_sent`, `characters_spoken`, `words`, `est_seconds`, `placeholders`, and `text`. |
+| `totals` | The count of each status, and `characters_sent` and `characters_spoken` of the `synthesize` rows. |
 
 {/* sample: narrate stage of decktalk build --silent on a fresh scaffold, stdout only */}
 
@@ -901,6 +948,7 @@ This shape shows the JSON envelope. The values are types, not a sample.
 | `beats` | `estimated`, `beats_file`, `unresolved`, `unknown`, and `sections`. |
 | `check` | `recordings`: a list of `{key, file, duration, wanted, y10, y50, y90, max50, verdicts, stall_ms, page_errors}`. |
 | `verify` | `final`, `total_seconds`, `silent`, `starts`, `cuts`, `carries`, and `cues`. |
+| `narrate --dry-run --json` | `voice`, `note`, `sections`, and `totals`, as [the take plan](#the-take-plan) gives. `ok` is always true. |
 
 Note: each `beats` section is `{key, speech_end, min_seconds, skipped, cues, notes}`. Each note is
 `{cue, verdict, detail}`, where `verdict` is `UNRESOLVED`, `UNKNOWN`, or `null`. Each `verify` cue row

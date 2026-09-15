@@ -2190,3 +2190,140 @@ def test_a_hold_between_page_sections_pauses_the_narration(tmp_path):
         ("gamma delta", 4.1),
         ("epsilon", 6.6),
     ]
+
+
+# ---- the take plan and preflight ---------------------------------------------------------
+
+
+def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, str]]:
+    """The scaffold voiced by a fake provider: 01 and 02 cached, 03 changed, 09's take under old key 07, the rest new.
+
+    Returns the project and the path of every file the plan must leave alone, with its bytes' hash.
+    """
+    import hashlib
+
+    from decktalk.artifacts import write_words
+    from decktalk.providers.speech import register
+    from decktalk.scaffold import init
+    from decktalk.stages.narrate import PUNCT, script_segments, text_hash
+
+    class PlanVoice:
+        name = "plan-voice"
+
+        def speak(self, request):
+            raise AssertionError("a plan sent a request")
+
+        def cache_key(self, request):
+            return "plan-voice"
+
+    register("plan-voice", lambda project: PlanVoice())
+    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("ELEVENLABS_VOICE_ID", raising=False)
+    root = init(tmp_path / "proj", name="proj")
+    toml = root / "decktalk.toml"
+    toml.write_text(toml.read_text(encoding="utf-8").replace("[voice]\n", "[voice]\nprovider = 'plan-voice'\n", 1))
+    p = Project.load(root, environ={})
+    cfg = p.settings.narration
+    settings = p.voice.api_settings()
+    spoken = {s.key: s for s in script_segments(p)[1]}
+    p.audio_dir.mkdir(parents=True)
+    manifest = Manifest(script="script.md", model=cfg.model, output_format=cfg.output_format)
+    takes = {"01": ("01", "real"), "02": ("02", "real"), "03": ("03", "stale"), "07": ("09", "real")}
+    for key, (source, kind) in takes.items():
+        seg = spoken[source]
+        name = f"{key}-{seg.slug}"
+        (p.audio_dir / f"{name}.mp3").write_bytes(f"take {key}".encode())
+        tokens = [t.strip(PUNCT) for t in seg.spoken.split()]
+        write_words(
+            p.audio_dir / f"{name}.words.json",
+            [Word(t, round(i * 0.4, 3), round(i * 0.4 + 0.3, 3)) for i, t in enumerate(tokens)],
+        )
+        manifest.segments[key] = ManifestSegment(
+            index=int(key), title=seg.title, file=f"{name}.mp3", words_file=f"{name}.words.json",
+            hash=text_hash(seg, cfg, "plan-voice", settings) if kind == "real" else "0123456789abcdef",
+            words=seg.word_count, est_seconds=seg.est_seconds(cfg), duration_seconds=len(tokens) * 0.4 + 1.3,
+            spoken=seg.spoken,
+        )  # fmt: skip
+    manifest.save(p.manifest_path)
+    files = {str(f): hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(p.audio_dir.iterdir())}
+    return p, files
+
+
+def _unchanged(p: Project, files: dict[str, str]) -> bool:
+    import hashlib
+
+    now = {str(f): hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(p.audio_dir.iterdir())}
+    return now == files
+
+
+def test_narrate_dry_run_json_lists_each_take_with_its_characters_and_moves(tmp_path, monkeypatch, capsys):
+    from decktalk.stages.narrate import script_segments
+
+    p, files = _planned_scaffold(tmp_path, monkeypatch)
+    cfg = p.settings.narration
+    assert main(["narrate", "--dry-run", "--json", "-p", str(p.root)]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["command"] == "narrate" and doc["ok"] is True and doc["findings"] == {"certain": 0, "uncertain": 0}
+    plan = doc["narrate"]
+    assert plan["voice"]["provider"] == "plan-voice" and plan["note"] is None
+    rows = {r["key"]: r for r in plan["sections"]}
+    assert {k: (r["status"], r["moved_from"]) for k, r in rows.items()} == {
+        "01": ("cached", None),
+        "02": ("cached", None),
+        "03": ("synthesize", None),
+        "04": ("synthesize", None),
+        "06": ("synthesize", None),
+        "08": ("synthesize", None),
+        "09": ("moved", "07"),
+    }
+    assert rows["03"]["reason"] == "the text, voice, model, or voice settings changed"
+    assert rows["04"]["reason"] == "no take yet"
+    assert rows["09"]["reason"] == "the same text as section 7"
+    segs = {s.key: s for s in script_segments(p)[1]}
+    for key, row in rows.items():
+        assert row["characters_sent"] == len(segs[key].tts_text(cfg)) == len(row["text"])
+        assert row["characters_spoken"] == len(segs[key].spoken)
+    voiced = ["03", "04", "06", "08"]
+    assert plan["totals"] == {
+        "synthesize": 4,
+        "cached": 2,
+        "moved": 1,
+        "unknown": 0,
+        "characters_sent": sum(len(segs[k].tts_text(cfg)) for k in voiced),
+        "characters_spoken": sum(len(segs[k].spoken) for k in voiced),
+    }
+    assert _unchanged(p, files), "a dry run wrote to build/audio"
+
+    assert main(["narrate", "--dry-run", "-p", str(p.root)]) == 0
+    out = capsys.readouterr().out
+    assert f"voice 4 section(s): {plan['totals']['characters_sent']} characters sent" in out
+    assert "2 cached, 1 moved." in out
+    with pytest.raises(SystemExit) as exc:
+        main(["narrate", "--json", "-p", str(p.root)])
+    assert exc.value.code == 2
+
+
+def test_narrate_dry_run_without_a_voice_key_still_plans_what_it_can(tmp_path, monkeypatch, capsys):
+    p, _files = _planned_scaffold(tmp_path, monkeypatch)
+    toml = p.root / "decktalk.toml"
+    toml.write_text(toml.read_text(encoding="utf-8").replace("provider = 'plan-voice'\n", ""), encoding="utf-8")
+    assert main(["narrate", "--dry-run", "--json", "-p", str(p.root)]) == 0
+    plan = json.loads(capsys.readouterr().out)["narrate"]
+    assert "ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set" in plan["note"]
+    # Without a key, a section with a voiced take cannot be checked, and a section with no take still needs one.
+    voiced = p.manifest().segments
+    keys = [r["key"] for r in plan["sections"]]
+    assert any(k in voiced for k in keys) and any(k not in voiced for k in keys), "the scaffold needs both kinds"
+    for r in plan["sections"]:
+        expected = ("unknown",) if r["key"] in voiced else ("synthesize", "no take yet")
+        assert (r["status"], r["reason"])[: len(expected)] == expected, r
+    assert plan["totals"]["synthesize"] == sum(k not in voiced for k in keys)
+    sent = sum(r["characters_sent"] for r in plan["sections"] if r["key"] not in voiced)
+    assert plan["totals"]["characters_sent"] == sent
+    p.manifest_path.unlink()
+    assert main(["narrate", "--dry-run", "--json", "-p", str(p.root)]) == 0
+    plan = json.loads(capsys.readouterr().out)["narrate"]
+    assert {(r["status"], r["reason"]) for r in plan["sections"]} == {("synthesize", "no take yet")}
+    assert plan["totals"]["synthesize"] == 7

@@ -44,7 +44,7 @@ A silent build stops when the project has voiced takes. With `--force`, it empti
 
 To see a run before it spends credits, use `--dry-run`. Neither of these commands calls the API:
 
-- `decktalk narrate --dry-run` prints the text of each section.
+- `decktalk narrate --dry-run` prints the text of each section, and which sections a voiced run would voice, with their characters.
 - `decktalk soundscape --dry-run` prints every request.
 
 These commands never spend credits: a silent build, `setup`, `init`, `doctor`, `beats`, `record`, `measure`, `check`, `assemble`, `verify`, `shots`, `status`, and `runtime`.

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from .artifacts import Timeline
+from .config import NarrationConfig
 from .stages.beats import BeatsResult
 from .stages.measure import LeadMeasurement, RecordingCheck
-from .stages.narrate import NarrateResult, Segment
+from .stages.narrate import NarrateResult, Segment, TakePlan, plan_totals
 from .stages.soundscape import SoundscapeItem
 from .stages.verify import VerifyResult
 from .status import StatusReport, relpath
@@ -41,6 +42,28 @@ def segments_table(segments: list[Segment], wpm: int, result: NarrateResult | No
     lines.append("-" * len(lines[0]))
     actual_total = mmss(total_actual) if total_actual else "  --  "
     lines.append(f"{'':>2}  {'total':<22} {int(total_words):>5}  {mmss(total_est):>5}  {'':>6}  {actual_total:>6}")
+    return "\n".join(lines)
+
+
+def plan_table(plans: list[TakePlan], cfg: NarrationConfig, note: str | None = None) -> str:
+    """What a voiced narrate would do with each section: voice it, use its cached take, or move a take."""
+    lines = [f"{'#':>2}  {'section':<22} {'take':<10} {'sent':>6} {'spoken':>6}  reason"]
+    lines.append("-" * len(lines[0]))
+    for p in plans:
+        seg = p.segment
+        lines.append(
+            f"{seg.index:>2}  {seg.slug[:22]:<22} {p.status:<10} {len(seg.tts_text(cfg)):>6} "
+            f"{len(seg.spoken):>6}  {p.reason or '-'}"
+        )
+    t = plan_totals(plans, cfg)
+    lines.append("-" * len(lines[0]))
+    unknown = f", {t['unknown']} unknown" if t["unknown"] else ""
+    lines.append(
+        f"voice {t['synthesize']} section(s): {t['characters_sent']} characters sent, "
+        f"{t['characters_spoken']} spoken. {t['cached']} cached, {t['moved']} moved{unknown}."
+    )
+    if note:
+        lines.append(f"note: {note}")
     return "\n".join(lines)
 
 

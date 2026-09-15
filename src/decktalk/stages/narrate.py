@@ -332,6 +332,119 @@ def refuse_silent_over_voiced(project: Project, previous: Manifest | None) -> No
     )
 
 
+# ---- the take plan ----------------------------------------------------------------------
+
+SYNTHESIZE = "synthesize"  # The section is sent to the voice, which spends credits.
+CACHED = "cached"  # The take under the section's own file names is used as it is.
+MOVED = "moved"  # The take of the same text under another section number is copied to this section.
+UNKNOWN = "unknown"  # The provider could not be set up, so the cache key cannot be computed.
+
+
+@dataclass
+class TakePlan:
+    """What a voiced narrate would do with one section, and why."""
+
+    segment: Segment
+    status: str
+    reason: str = ""
+    digest: str | None = None
+    source_key: str | None = None  # The section key whose take a move copies.
+    source: ManifestSegment | None = None
+
+    def to_dict(self, cfg: NarrationConfig) -> dict[str, Any]:
+        seg = self.segment
+        return {
+            "key": seg.key,
+            "title": seg.title,
+            "file": seg.filename,
+            "status": self.status,
+            "reason": self.reason or None,
+            "moved_from": self.source_key,
+            "characters_sent": len(seg.tts_text(cfg)),
+            "characters_spoken": len(seg.spoken),
+            "words": seg.word_count,
+            "est_seconds": seg.est_seconds(cfg),
+            "placeholders": seg.placeholders,
+        }
+
+
+def plan_totals(plans: list[TakePlan], cfg: NarrationConfig) -> dict[str, int]:
+    """How many sections have each status, and the characters of the sections that would be voiced."""
+    totals = {status: sum(p.status == status for p in plans) for status in (SYNTHESIZE, CACHED, MOVED, UNKNOWN)}
+    voiced = [p.segment for p in plans if p.status == SYNTHESIZE]
+    totals["characters_sent"] = sum(len(s.tts_text(cfg)) for s in voiced)
+    totals["characters_spoken"] = sum(len(s.spoken) for s in voiced)
+    return totals
+
+
+def _miss_reason(entry: ManifestSegment | None, seg: Segment, digest: str, previous: Manifest | None) -> str:
+    if entry is None:
+        if previous is not None and previous.estimated and seg.key in previous.segments:
+            return "only a silent take exists"
+        return "no take yet"
+    if entry.hash != digest:
+        return "the text, voice, model, or voice settings changed"
+    if entry.file != seg.filename:
+        return f"the file name changed from {entry.file}"
+    return "the mp3 or the words file is missing"
+
+
+def plan_takes(
+    project: Project,
+    targets: list[Segment],
+    previous: Manifest | None,
+    *,
+    provider: SpeechProvider | None,
+    model: str,
+    force: bool = False,
+) -> list[TakePlan]:
+    """What a voiced run would do with each target section. It sends nothing and writes nothing.
+
+    The checks are narrate's own, in the same order: force, the cache under the section's file
+    names, then a take of the same text under another section number. With no provider, a section
+    that has no voiced take still needs one, and every other section is unknown.
+    """
+    cfg = project.settings.narration
+    voice_settings = project.voice.api_settings()
+    voiced = previous if previous is not None and not previous.estimated else None
+    plans: list[TakePlan] = []
+    for seg in targets:
+        entry = voiced.segments.get(seg.key) if voiced else None
+        if provider is None:
+            if entry is None:
+                plans.append(TakePlan(seg, SYNTHESIZE, _miss_reason(None, seg, "", previous)))
+            else:
+                plans.append(TakePlan(seg, UNKNOWN, "the voice is not set up, so the cache cannot be checked"))
+            continue
+        request = SpeechRequest(
+            text=seg.tts_text(cfg), model=model, voice_settings=voice_settings, output_format=cfg.output_format
+        )
+        digest = text_hash(seg, cfg, provider.cache_key(request), voice_settings)
+        if force:
+            plans.append(TakePlan(seg, SYNTHESIZE, "forced", digest))
+        elif is_cached(entry, seg, digest, project.audio_dir):
+            plans.append(TakePlan(seg, CACHED, "", digest))
+        elif (found := reusable_entry(previous, seg, digest, project.audio_dir)) is not None:
+            key, source = found
+            plans.append(TakePlan(seg, MOVED, f"the same text as section {int(key)}", digest, key, source))
+        else:
+            plans.append(TakePlan(seg, SYNTHESIZE, _miss_reason(entry, seg, digest, previous), digest))
+    return plans
+
+
+def narration_plan(
+    project: Project, targets: list[Segment], *, model: str, force: bool = False
+) -> tuple[list[TakePlan], str | None]:
+    """(the take plan, why the provider could not be set up or None), for a dry run that needs no key."""
+    try:
+        provider: SpeechProvider | None = get_provider(project)
+    except ConfigError as exc:
+        provider, note = None, str(exc)
+    else:
+        note = None
+    return plan_takes(project, targets, project.manifest(), provider=provider, model=model, force=force), note
+
+
 def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -> Timeline:
     cfg = project.settings.narration
     keys = [s.key for s in order if s.key in manifest.segments]
@@ -423,18 +536,15 @@ def narrate(
         # A renumbered section keeps its take. Its files are copied to the new names before any
         # section is voiced, so a new take never replaces a file that a move still needs.
         moves: list[tuple[ManifestSegment, Segment]] = []
-        for seg in targets:
-            request = SpeechRequest(
-                text=seg.tts_text(cfg), model=model, voice_settings=voice_settings, output_format=cfg.output_format
-            )
-            digest = text_hash(seg, cfg, provider.cache_key(request), voice_settings)
-            if force or is_cached(manifest.segments.get(seg.key), seg, digest, project.audio_dir):
-                continue
-            found = reusable_entry(previous, seg, digest, project.audio_dir)
-            if found is not None:
-                key, entry = found
-                moves.append((entry, seg))
-                log.info("[move] %s  from %s, the same text under section %s", seg.filename, entry.file, int(key))
+        for plan in plan_takes(project, targets, previous, provider=provider, model=model, force=force):
+            if plan.status == MOVED and plan.source is not None and plan.source_key is not None:
+                moves.append((plan.source, plan.segment))
+                log.info(
+                    "[move] %s  from %s, the same text under section %s",
+                    plan.segment.filename,
+                    plan.source.file,
+                    int(plan.source_key),
+                )
         reuse_takes(moves, project.audio_dir)
         for entry, seg in moves:
             manifest.segments[seg.key] = replace(

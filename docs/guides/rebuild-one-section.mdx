@@ -174,8 +174,9 @@ decktalk narrate --force
 decktalk build --force
 ```
 
-`decktalk narrate --dry-run` makes no API call. It prints the text that each section would send, so you
-can count the characters first.
+`decktalk narrate --dry-run` makes no API call. It prints the text that each section would send, and a take
+plan that says which sections a voiced run would voice, keep cached, or move. So you can count the characters
+first. `decktalk narrate --dry-run --json` gives the same plan as JSON.
 
 ## A silent build and a voiced build
 
