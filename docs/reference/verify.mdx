@@ -9,9 +9,9 @@ measurement, limit, and result, in the order that `verify` computes them.
 {/* sample: decktalk verify 1:1.1bowl 3:3.4name 8:7.1checked, silent build of the scaffold, cue table only */}
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
-1:1.1bowl            1.25     1.25    1.05    0.00    -10ms    -9ms  changed
-3:3.4name           84.72   123.32    2.74    0.00     +0ms    -4ms  changed
-8:7.1checked        10.03   238.31    6.56    0.00    +10ms    +3ms  changed
+1:1.1bowl            1.25     1.25    0.93    0.00    +30ms   +31ms  changed
+3:3.4name           84.72   123.32    2.76    0.00     +0ms    -4ms  changed
+8:7.1checked        10.03   238.31    0.83    0.00    +10ms    +3ms  changed
 ```
 
 Every field named on this page is a key under `[verify]` in [Configuration](/reference/configuration#verify),
@@ -109,7 +109,7 @@ The cue check confirms that the picture changes on each cue, at the cue time.
     {/* sample: decktalk verify 8:7.1checked, silent build of the scaffold, cue table only */}
     ```text
     check                 cue       at   chg %   ctl %   offset     a/v  result
-    8:7.1checked        10.03   238.31    6.56    0.00    +10ms    +3ms  changed
+    8:7.1checked        10.03   238.31    0.83    0.00    +10ms    +3ms  changed
     ```
   </Tab>
   <Tab title="Voiced build">
@@ -166,7 +166,7 @@ changed share(a, b, level) = 100 * (pixels where |luma of a - luma of b| > level
   block share at `block_width` by `block_height` (240 by 135). [Onset and offset](#onset-and-offset) says why.
 - A pixel counts only when its difference is strictly greater than the level.
 
-Example: the `chg %` of 6.56 for `8:7.1checked` is about 8,500 of 129,600 pixels.
+Example: the `chg %` of 0.83 for `8:7.1checked` is about 1,070 of 129,600 pixels.
 
 ### Reference frame
 
@@ -215,8 +215,8 @@ dropped   when  probe(d) > section end - 0.05
 The control share measures motion that has nothing to do with the cue. Each probe gets its own control share.
 
 <Frame caption="Probes run forward from the reference, and two back-to-back control spans run back from it.">
-  <img className="block dark:hidden" src="/images/verify-probes-light.svg" alt="A time axis around cue 8:7.1checked. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, which changed 0.83% and 6.56%. The 1.5 s probe is marked reported. Its two back-to-back control spans of 1.64 s run back from the reference, and each changed 0.00%." />
-  <img className="hidden dark:block" src="/images/verify-probes-dark.svg" alt="A time axis around cue 8:7.1checked. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.5 s after the cue, which changed 0.83% and 6.56%. The 1.5 s probe is marked reported. Its two back-to-back control spans of 1.64 s run back from the reference, and each changed 0.00%." />
+  <img className="block dark:hidden" src="/images/verify-probes-light.svg" alt="A time axis around cue 8:7.1checked. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.3 s after the cue, which changed 0.83% and 0.83%. The 0.7 s probe is marked reported. Its two back-to-back control spans of 0.84 s run back from the reference, and each changed 0.00%." />
+  <img className="hidden dark:block" src="/images/verify-probes-dark.svg" alt="A time axis around cue 8:7.1checked. A dashed line marks the reference time, 0.14 s before the cue. Bars run from it to probes 0.7 s and 1.3 s after the cue, which changed 0.83% and 0.83%. The 0.7 s probe is marked reported. Its two back-to-back control spans of 0.84 s run back from the reference, and each changed 0.00%." />
 </Frame>
 
 ```text
@@ -229,6 +229,34 @@ control  = min(changed share(reference - 2 * span, reference - span),
 - A span that starts before the floor is dropped. If both spans are dropped, the control share is 0.
 - Steady motion, such as a camera push, shows in both spans. An earlier reveal that is still finishing shows in
   only one, so the smaller share leaves it out.
+
+### Close cues
+
+A cue close to another cue gets probes that fit the gap between them. Otherwise the other cue's reveal would
+count as this cue's change, or as motion in every control span.
+
+```text
+neighbor       = another cue of the section, more than the reference lead from this cue   # 0.14 s
+window         = the neighbor's cue time, plus or minus the reference lead
+spoiled probe  when  a window overlaps the span from the reference to the probe,
+               or    a window overlaps every control span that is measured
+fitted probe   = the longest delay below the probe's delay that is not spoiled,
+                 at least (max_offset_frames + 1) / fps                              # 0.12 s
+```
+
+- A probe that is not spoiled is used as it is. A cue whose probes are all unspoiled is measured exactly as
+  the sections above describe.
+- A fitted probe has shorter control spans, because each span still lasts as long as the probe's span.
+- Two probes fitted to the same delay count once. The probes are then taken in order of delay.
+- If no probe can be fitted, `verify` uses `probe_delays` as they are.
+- A cue within the reference lead of another is part of the same reveal, so it is not a neighbor.
+- Every cue of the section in `beats.json` can be a neighbor, including a cue that the run does not check.
+- `verify` logs `another cue is close, so the probes are fitted to <delays> s after the cue` for each such cue.
+
+Example: a count reveals a box on each of four cues, at 4.42, 5.11, 5.62, and 6.18 s. The last cue's reference
+time is 6.04 s. Its 0.7 s probe has control spans from 5.20 to 6.04 s and from 4.36 to 5.20 s. The 5.62 s window
+overlaps the first span, and the 4.42 s window overlaps the second, so the probe is spoiled. The probe is
+fitted to 0.14 s. Its first control span, from 5.76 to 6.04 s, clears the 5.62 s window, which ends at 5.76 s.
 
 ### Change test
 
@@ -251,9 +279,10 @@ thin when       changed share < thin_change_factor * min_changed_percent        
 - The `chg %` and `ctl %` columns show the reported probe, which is not always the probe that changed most.
 - `min_changed_percent` applies to the raw changed share. A camera push raises that share too.
 
-Example: `8:7.1checked` has a changed share of 6.56 and a control share of 0.00. Its margin is 6.56, so it
-passes.
-Its 0.7 s probe has a margin of 0.83, and its 1.5 s probe has a margin of 6.56. `verify` reports the 1.5 s probe.
+Example: `8:7.1checked` has a changed share of 0.83 and a control share of 0.00. Its margin is 0.83, so it
+passes, and the change is not thin. The next cue, `7.1back`, fires 1.44 s later, so `verify` fits the 1.5 s probe
+to 1.3 s, as [Close cues](#close-cues) describes. Both probes have a margin of 0.83, so `verify` reports the
+earlier 0.7 s probe.
 
 ### Onset and offset
 
@@ -273,8 +302,8 @@ After a cue passes the change test, `verify` finds its onset, the first frame of
   <img className="hidden dark:block" src="/images/verify-onset-dark.svg" alt="Seven frames 40 ms apart around cue 8:7.1checked. The first is the reference frame, 110 ms before the cue. The frames at 70 and 30 ms before the cue changed 0.00%. The frame 10 ms after the cue changed 1.24% and is outlined as the onset. A shaded band spans 80 ms on each side of the cue." />
 </Frame>
 
-The figure's shares use `onset_diff_level` (12), so the onset frame reads 1.24%. The `chg %` column reads 6.56%,
-because the change test uses `diff_level` (40), at the probe 1.5 s after the cue.
+The figure's shares use `onset_diff_level` (12), so the onset frame reads 1.24%. The `chg %` column reads 0.83%,
+because the change test uses `diff_level` (40), at the probe 0.7 s after the cue.
 
 ```text
 series[0]      = 0                                                   # the reference frame itself
@@ -374,7 +403,8 @@ Each cue row gets its result from the first rule that matches.
 2. If a named cue is not in `beats.json`, the row is `UNRESOLVED`.
 3. If the section has no `NN-section.mp4`, the row is `skipped` with the reason `SECTION_NOT_ASSEMBLED`.
 4. If no reference frame fits, the row is `skipped` with the reason `REFERENCE_CLAMPED`.
-5. If every probe is dropped, the row is `skipped` with the reason `TOO_CLOSE_TO_END`.
+5. If every probe is dropped, the row is `skipped` with the reason `TOO_CLOSE_TO_END`. A cue close to another
+   cue gets [fitted probes](#close-cues) first.
 6. If the reported probe fails the change test, the row is `NO CHANGE`.
 7. If the scan finds no onset, the row is `changed`, with `-` in the offset column and no `a/v`. A thin change
    reads `THIN CHANGE?` instead.
@@ -416,7 +446,7 @@ Mark such a cue `"verify": false`, and check it by eye with `decktalk shots --st
         "cue": "7.1checked",
         "cue_seconds": 10.03,
         "final_seconds": 238.31,
-        "changed_percent": 6.56,
+        "changed_percent": 0.83,
         "control_percent": 0.0,
         "offset_ms": 10,
         "av_ms": 3,

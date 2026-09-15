@@ -18,6 +18,14 @@ cues     for each SECTION:CUE, the picture changes across the cue. With no list,
          control by min_margin_percent. Everything stays inside the section. A cue that lands
          with a changed share or a margin below thin_change_factor times its floor reads
          THIN CHANGE?, an uncertain finding: a slightly smaller reveal would fail.
+close    another cue of the section more than the reference lead from this one is a
+         neighbor, and its reveal can show anywhere within the reference lead of its time. A
+         probe is spoiled when a neighbor's reveal can fall inside its span from the reference,
+         or inside every control span that is measured. A probe that nothing spoils is used as
+         it is, so a well-spaced cue is measured exactly as above. A spoiled probe is replaced
+         by the longest shorter delay that nothing spoils, down to max_offset_frames + 1 frames,
+         and its control spans shrink with it. When no probe fits, probe_delays are used as they
+         are.
 offset   once a cue lands, every frame from the reference to the passing probe is
          compared with the reference at onset_diff_level, which gives each frame's changed
          share. A frame can be the onset only when a copy scaled to block_width by
@@ -56,6 +64,7 @@ of a section that is not in decktalk.toml is ignored with a warning.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -243,14 +252,106 @@ def reference_time(
     """
     floor = sec_start + (dip if fade_in else 0.0)
     latest = sec_start + cue_t - 1.0 / fps
-    # A reveal may land up to max_offset_frames early and still pass, so the reference must sit
-    # before that whole window. Otherwise the early reveal is already in the reference frame,
-    # and the scan measures the change only when the reveal settles, frames too late.
-    lead = max(cfg.lead_seconds, (cfg.max_offset_frames + 1.5) / fps)
-    ref = max(floor, sec_start + cue_t - lead)
+    ref = max(floor, sec_start + cue_t - cue_reach(cfg, fps))
     if ref > latest + 1e-6:
         return None
     return round(ref, 4)
+
+
+def cue_reach(cfg: VerifyConfig, fps: int) -> float:
+    """The reference lead: how far from its cue time a reveal can show, 0.14 s at the defaults.
+
+    A reveal may land up to max_offset_frames early and still pass, so the reference must sit
+    before that whole window. Otherwise the early reveal is already in the reference frame, and
+    the scan measures the change only when the reveal settles, frames too late.
+    """
+    return max(cfg.lead_seconds, (cfg.max_offset_frames + 1.5) / fps)
+
+
+def control_spans(before: float, span: float, floor: float) -> list[tuple[float, float]]:
+    """The measured control spans: two back-to-back spans of `span` that end at the reference, past the floor."""
+    spans = []
+    for n in (1, 2):
+        ctl_b = before - (n - 1) * span
+        ctl_a = ctl_b - span
+        if ctl_a >= floor:
+            spans.append((ctl_a, ctl_b))
+    return spans
+
+
+def probe_plan(
+    cue_at: float,
+    before: float,
+    floor: float,
+    sec_end: float,
+    neighbors: Iterable[float],
+    cfg: VerifyConfig,
+    fps: int,
+) -> tuple[list[float], bool]:
+    """The probe delays for the cue at `cue_at`, and whether any was fitted between neighboring cues.
+
+    Every time is in the final file. A neighbor is another cue of the section more than the
+    reference lead away, and its reveal can show anywhere within the reference lead of its time.
+    A closer cue is part of the same reveal. A probe is spoiled when a neighbor's reveal can
+    fall inside its span, where it would count as this cue's change, or inside every measured
+    control span, where it would count as motion. A probe of probe_delays that nothing spoils
+    is kept exactly, so a well-spaced cue is measured as it always was. A spoiled probe becomes
+    the longest shorter delay that nothing spoils, down to max_offset_frames + 1 frames, so a
+    reveal at the late limit still shows. When no probe can be fitted, probe_delays are used.
+    """
+    eps = 1e-6
+    reach = cue_reach(cfg, fps)
+    others = [n for n in neighbors if abs(n - cue_at) > reach + eps]
+
+    def holds(a: float, b: float) -> bool:
+        return any(n + reach > a + eps and n - reach < b - eps for n in others)
+
+    def spoiled(delay: float) -> bool:
+        after = cue_at + delay
+        spans = control_spans(before, after - before, floor)
+        return holds(before, after) or (bool(spans) and all(holds(a, b) for a, b in spans))
+
+    configured = [d for d in cfg.probe_delays if cue_at + d <= sec_end - 0.05]
+    if not any(spoiled(d) for d in configured):
+        return configured, False
+    shortest = (cfg.max_offset_frames + 1) / fps
+    delays: list[float] = []
+    for d in configured:
+        if spoiled(d):
+            # Where a later reveal can begin, where the nearer control span clears an earlier
+            # reveal, and every frame in between.
+            bounds = {d - k / fps for k in range(1, int(d * fps) + 1)}
+            bounds |= {n - reach - cue_at for n in others} | {2 * before - n - reach - cue_at for n in others}
+            fit = next((x for x in sorted(bounds, reverse=True) if shortest - eps <= x < d and not spoiled(x)), None)
+        else:
+            fit = d
+        if fit is not None and round(fit, 4) not in delays:
+            delays.append(round(fit, 4))
+    return (sorted(delays), True) if delays else (configured, False)
+
+
+def best_probe(
+    final: Path, before: float, floor: float, cue_at: float, delays: list[float], cfg: VerifyConfig
+) -> tuple[float, float, float, float] | None:
+    """(margin, changed, control, probe time) of the probe with the largest margin, the earlier on a tie.
+
+    Each probe after the cue is compared with the reference, and the control is the quieter of
+    two spans of the same length that end at the reference. Motion that is always there shows in
+    both, while an earlier reveal still settling shows in one.
+    """
+    size = {"level": cfg.diff_level, "width": cfg.probe_width, "height": cfg.probe_height}
+    best: tuple[float, float, float, float] | None = None
+    for delay in delays:
+        after = cue_at + delay
+        chg = ffmpeg.changed_pixels_percent(final, before, after, **size)
+        controls = [
+            ffmpeg.changed_pixels_percent(final, a, b, **size) for a, b in control_spans(before, after - before, floor)
+        ]
+        ctl = min(controls) if controls else 0.0
+        margin = chg - ctl
+        if best is None or margin > best[0]:
+            best = (margin, chg, ctl, after)
+    return best
 
 
 def thin_change(changed: float, margin: float, cfg: VerifyConfig) -> bool:
@@ -329,7 +430,6 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
     from .assemble import fade_flags, frame_dip
     from .beats import read_anchors
 
-    probe_w, probe_h = cfg.probe_width, cfg.probe_height
     fps = project.settings.video.fps
     flags = fade_flags(project)
     dip = frame_dip(project.transition.dip_seconds, fps)
@@ -371,31 +471,16 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
                 skipped(check, REFERENCE_CLAMPED, f"the cue at {cue_t:.2f}s leaves no frame before it past the fade-in")
             )
             continue
-        best: tuple[float, float, float, float] | None = None  # (margin, changed, control, probe time)
-        for delay in cfg.probe_delays:
-            after = sec_start + cue_t + delay
-            if after > sec_end - 0.05:
-                continue
-            span = after - before
-            chg = ffmpeg.changed_pixels_percent(
-                final, before, after, level=cfg.diff_level, width=probe_w, height=probe_h
+        # Another cue close by would spoil a probe or its control, so the probes fit the gap instead.
+        neighbors = [sec_start + t for c, t in beats.sections.get(key, {}).items() if c != cue]
+        delays, fitted = probe_plan(sec_start + cue_t, before, floor, sec_end, neighbors, cfg, fps)
+        if fitted:
+            log.info(
+                "%s: another cue is close, so the probes are fitted to %s s after the cue",
+                check,
+                ", ".join(f"{d:g}" for d in delays),
             )
-            # The control is the quieter of two equal spans before the reference. Motion that
-            # is always there shows in both, while an earlier reveal still settling shows in one.
-            controls = []
-            for n in (1, 2):
-                ctl_b = before - (n - 1) * span
-                ctl_a = ctl_b - span
-                if ctl_a >= floor:
-                    controls.append(
-                        ffmpeg.changed_pixels_percent(
-                            final, ctl_a, ctl_b, level=cfg.diff_level, width=probe_w, height=probe_h
-                        )
-                    )
-            ctl = min(controls) if controls else 0.0
-            margin = chg - ctl
-            if best is None or margin > best[0]:
-                best = (margin, chg, ctl, after)
+        best = best_probe(final, before, floor, sec_start + cue_t, delays, cfg)
         if best is None:
             result.cues.append(skipped(check, TOO_CLOSE_TO_END, "every probe falls past the section end"))
             continue

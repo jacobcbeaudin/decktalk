@@ -129,9 +129,9 @@ A browser does not start recording at a known time, so DeckTalk does not use a t
 <!-- sample: decktalk verify 1:1.1bowl 3:3.4name 8:7.1checked, silent build of the scaffold (cue table only) -->
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
-1:1.1bowl            1.25     1.25    1.05    0.00    -10ms    -9ms  changed
-3:3.4name           84.72   123.32    2.74    0.00     +0ms    -4ms  changed
-8:7.1checked        10.03   238.31    6.56    0.00    +10ms    +3ms  changed
+1:1.1bowl            1.25     1.25    0.93    0.00    +30ms   +31ms  changed
+3:3.4name           84.72   123.32    2.76    0.00     +0ms    -4ms  changed
+8:7.1checked        10.03   238.31    0.83    0.00    +10ms    +3ms  changed
 ```
 
 The offset column is the time from the cue time to the onset of the reveal, in milliseconds. [Verify](https://docs.decktalk.app/reference/verify) defines every column and limit.

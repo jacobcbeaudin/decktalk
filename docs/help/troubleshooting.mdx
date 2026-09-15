@@ -820,7 +820,10 @@ The usual reasons:
 2. If the reveal is subtle on purpose, mark the cue `"verify": false` in `cues.json`.
 3. If the reveal is slow, lengthen `[verify] probe_delays`.
 
-**More.** [Change test](/reference/verify#change-test)
+A cue less than a second after another cue gets probes that fit the gap. `verify` logs `another cue is close`
+for it. A slow reveal may not finish inside a short gap. Check such a reveal by eye.
+
+**More.** [Change test](/reference/verify#change-test), [Close cues](/reference/verify#close-cues)
 
 ### `THIN CHANGE?` in verify
 

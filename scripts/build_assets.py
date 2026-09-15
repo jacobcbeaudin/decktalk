@@ -1342,22 +1342,20 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     dip = amod.frame_dip(project.transition.dip_seconds, fps)
     floor = sec_start + (dip if fade_in else 0.0)
     before = vmod.reference_time(sec_start, cue_t, fade_in, dip, cfg, fps)
-    lead = max(cfg.lead_seconds, (cfg.max_offset_frames + 1.5) / fps)
+    lead = vmod.cue_reach(cfg, fps)
     size = {"width": cfg.probe_width, "height": cfg.probe_height}
+    # The probes verify uses: probe_delays, or probes fitted between the cue and a close neighbor.
+    neighbors = [sec_start + t for c, t in project.beats().sections.get(key, {}).items() if c != cue]
+    delays, fitted = vmod.probe_plan(cue_at, before, floor, sec_end, neighbors, cfg, fps)
     probes = []
-    for delay in cfg.probe_delays:
+    for delay in delays:
         after = cue_at + delay
-        if after > sec_end - 0.05:
-            continue
         span = after - before
         chg = ffmpeg.changed_pixels_percent(final, before, after, level=cfg.diff_level, **size)
         controls = []
-        for n in (1, 2):
-            b = before - (n - 1) * span
-            a = b - span
-            if a >= floor:
-                pct = ffmpeg.changed_pixels_percent(final, a, b, level=cfg.diff_level, **size)
-                controls.append({"from": round(a - cue_at, 3), "to": round(b - cue_at, 3), "percent": round(pct, 4)})
+        for a, b in vmod.control_spans(before, span, floor):
+            pct = ffmpeg.changed_pixels_percent(final, a, b, level=cfg.diff_level, **size)
+            controls.append({"from": round(a - cue_at, 3), "to": round(b - cue_at, 3), "percent": round(pct, 4)})
         ctl = min((c["percent"] for c in controls), default=0.0)
         probes.append(
             {
@@ -1396,6 +1394,8 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
             "onset_percent": cfg.onset_percent,
             "max_offset_ms": round(cfg.max_offset_frames * 1000 / fps),
             "max_av_ms": round(cfg.max_av_frames * 1000 / fps),
+            "probe_delays": list(cfg.probe_delays),
+            "fitted": fitted,
             "probes": probes,
             "reported_probe": reported,
             "series": [{"ms": round((t - cue_at) * 1000), "percent": pct} for t, pct in series],

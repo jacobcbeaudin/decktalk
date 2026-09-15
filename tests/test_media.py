@@ -19,7 +19,7 @@ import pytest
 
 from decktalk.config import Settings
 from decktalk.media import ffmpeg
-from decktalk.stages.verify import first_change_offset
+from decktalk.stages.verify import best_probe, first_change_offset, probe_plan, reference_time
 
 pytestmark = pytest.mark.media
 
@@ -144,6 +144,70 @@ def test_onset_is_the_first_revealed_frame_at_every_grid_phase(card, before):
     assert first_change_offset(card, before, 5.7, reveal, cfg, FPS) == 0
     # A cue between two frames reports the distance to the frame that shows the reveal.
     assert first_change_offset(card, before, 5.7, reveal + 0.02, cfg, FPS) == -20
+
+
+A_FRAME, B_FRAME = 25, 39  # 1.00 s and 1.56 s, 0.56 s apart
+A_PERCENT = 100 * 100 * 60 / (W * H)
+B_PERCENT = 100 * 40 * 30 / (W * H)
+
+
+@pytest.fixture(scope="module")
+def close_card(tmp_path_factory) -> Path:
+    """A three-second section whose large panel appears at 1.00 s and a smaller box 0.56 s later."""
+    out = tmp_path_factory.mktemp("media") / "close.mp4"
+    boxes = [
+        "drawbox=x=20:y=20:w=220:h=6:color=0x2c1fea:t=fill",
+        "drawbox=x=60:y=40:w=160:h=160:color=0x2c1fea:t=3",
+        f"drawbox=x=300:y=100:w=100:h=60:color=0x2c1fea:t=fill:enable='gte(n,{A_FRAME})'",
+        f"drawbox=x=60:y=220:w=40:h=30:color=black:t=fill:enable='gte(n,{B_FRAME})'",
+    ]
+    ffmpeg.run(
+        "-f", "lavfi", "-i", f"color=c=white:s={W}x{H}:r={FPS}:d=3," + ",".join(boxes),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "250", "-crf", "18", str(out),
+    )  # fmt: skip
+    return out
+
+
+def test_close_cues_get_probes_and_controls_that_fit_the_gap(close_card):
+    cfg = Settings().verify
+    a, b, end = A_FRAME / FPS, B_FRAME / FPS, 3.0
+
+    def measure(cue_at: float, neighbors: list[float]) -> tuple[float, float, float, list[float], bool]:
+        before = reference_time(0.0, cue_at, False, 0.0, cfg, FPS)
+        assert before is not None
+        delays, fitted = probe_plan(cue_at, before, 0.0, end, neighbors, cfg, FPS)
+        best = best_probe(close_card, before, 0.0, cue_at, delays, cfg)
+        assert best is not None
+        margin, chg, ctl, _after = best
+        return margin, chg, ctl, delays, fitted
+
+    def lands(margin: float, chg: float) -> bool:
+        return chg >= cfg.min_changed_percent and margin >= cfg.min_margin_percent
+
+    # Measured without its neighbor, the second cue's only probe has a control that holds the
+    # first reveal, which is larger, so the second cue reads NO CHANGE.
+    margin, chg, ctl, delays, fitted = measure(b, [])
+    assert (delays, fitted) == ([0.7], False) and ctl > A_PERCENT * 0.9 and not lands(margin, chg)
+    # With the first cue as its neighbor, the probe shortens until one control span is clear of the
+    # first reveal, in the quiet before it, and the second cue lands.
+    margin, chg, ctl, delays, fitted = measure(b, [a])
+    assert (delays, fitted) == ([0.54], True) and ctl == 0.0
+    assert B_PERCENT * 0.9 < chg < B_PERCENT * 1.1 and lands(margin, chg)
+
+    # The first cue's probe no longer reaches the second reveal, so it measures its own panel alone.
+    _, alone, _, _, _ = measure(a, [])
+    assert alone > (A_PERCENT + B_PERCENT) * 0.9
+    margin, chg, ctl, delays, fitted = measure(a, [b])
+    assert (delays, fitted) == ([0.42], True) and A_PERCENT * 0.9 < chg < A_PERCENT * 1.1 and lands(margin, chg)
+
+    # The check is never weaker: a cue where nothing appears no longer passes on the next cue's reveal.
+    margin, chg, _, _, _ = measure(0.44, [])
+    assert lands(margin, chg)
+    margin, chg, _, delays, fitted = measure(0.44, [a, b])
+    assert (delays, fitted) == ([0.42], True) and not lands(margin, chg)
+
+    # A neighbor outside every span changes nothing.
+    assert measure(a, [2.9]) == measure(a, [])
 
 
 def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):

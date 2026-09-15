@@ -1575,6 +1575,34 @@ def test_provider_errors_never_show_the_voice_id(monkeypatch):
     assert "voices/<voice id>" in str(info.value)
 
 
+def test_probe_plan_fits_the_gap_between_close_cues_and_keeps_well_spaced_cues():
+    from decktalk.stages.verify import probe_plan, reference_time
+
+    cfg = Settings().verify
+    fps = 25
+    # The demo's section 1: 1.1four fires 0.56 s after 1.1three, in a run of counting cues.
+    cues = {"bowl": 0.86, "ball": 1.76, "count": 3.58, "one": 4.42, "two": 5.11, "three": 5.62, "four": 6.18}
+    cues["word"] = 10.52
+
+    def plan(cue: str, end: float = 30.0) -> tuple[list[float], bool]:
+        before = reference_time(0.0, cues[cue], False, 0.0, cfg, fps)
+        assert before is not None
+        others = [t for c, t in cues.items() if c != cue]
+        return probe_plan(cues[cue], before, 0.0, end, others, cfg, fps)
+
+    # Both control spans of 1.1four's probes hold an earlier count, so its probe and control fit after 1.1three.
+    assert plan("four") == ([0.14], True)
+    # The later probe of 1.1count would reach 1.1one's reveal, so it stops where that reveal can begin.
+    assert plan("count") == ([0.7], True)
+    # A well-spaced cue keeps probe_delays exactly, and so does every cue with no neighbor.
+    assert plan("word") == ([0.7, 1.5], False)
+    assert plan("word", end=11.5) == ([0.7], False)
+    assert probe_plan(6.18, 6.04, 0.0, 30.0, [], cfg, fps) == ([0.7, 1.5], False)
+    # A cue within the reference lead is the same reveal, and a gap too short for any probe keeps probe_delays.
+    assert probe_plan(6.18, 6.04, 0.0, 30.0, [6.1, 6.3], cfg, fps) == ([0.7, 1.5], False)
+    assert probe_plan(6.18, 6.04, 0.0, 30.0, [6.4], cfg, fps) == ([0.7, 1.5], False)
+
+
 def test_reference_sits_before_an_early_reveal_the_offset_limit_allows():
     import dataclasses
 

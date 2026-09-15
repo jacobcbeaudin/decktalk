@@ -106,6 +106,7 @@ Each table lists the term, its meaning, the words that the docs do not use for i
 | reference lead | How far before the cue time `verify` sets the reference time. 0.14 s at the defaults. | "lead" alone, "the recorder's lead" | [Verify](/reference/verify#reference-frame) |
 | reference frame | The frame at the reference time, the picture before the cue. | | [Verify](/reference/verify#reference-frame) |
 | probe | The frame `d` seconds after the cue, for each `d` in `probe_delays`. | | [Verify](/reference/verify#probes) |
+| fitted probe | A probe shortened to fit between close cues, so that no other cue's reveal falls in its span or in every control span. | | [Verify](/reference/verify#close-cues) |
 | control share | The smaller changed share of two back-to-back spans that end at the reference. | "control span" for the share | [Verify](/reference/verify#control-share) |
 | margin | A probe's changed share minus its control share. | | [Verify](/reference/verify#change-test) |
 | change test | Passes when the reported probe's changed share is at least `min_changed_percent` and its margin is at least `min_margin_percent`. | "lands", "a cue lands" | [Verify](/reference/verify#change-test) |
