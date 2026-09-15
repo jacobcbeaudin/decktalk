@@ -20,6 +20,7 @@ nothing worth assembling.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -78,6 +79,40 @@ class LeadMeasurement:
     method: str
 
 
+def recording_hash(path: Path) -> str:
+    """The first 16 hex digits of the file's sha256, which ties a measurement to one recording."""
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()[:16]
+
+
+def stale_measure(webm: Path, side: Sidecar | None, root: Path | None = None) -> str | None:
+    """Why the sidecar's narration t=0 does not belong to this recording, or None when it does.
+
+    `record` writes a sidecar with no measurement, and `measure` fills it in with the hash of the
+    webm it read. A sidecar written by an older `measure` has no hash, so its file time must not
+    be older than the recording's.
+    """
+    name = webm.relative_to(root).as_posix() if root is not None and webm.is_relative_to(root) else webm.name
+    if side is None:
+        return f"{name} has no sidecar, so `measure` never found its narration t=0"
+    if side.lead_in_seconds is None:
+        return (
+            f"{name} was never measured, so the cut would trim the recorder's wall-clock estimate "
+            f"of {side.lead_seconds:g}s"
+        )
+    if side.lead_in_hash is not None:
+        if side.lead_in_hash != recording_hash(webm):
+            return f"{name} changed after `measure` read it"
+        return None
+    sidecar = webm.with_suffix(".json")
+    if sidecar.exists() and sidecar.stat().st_mtime < webm.stat().st_mtime:
+        return f"{name} is newer than its measurement"
+    return None
+
+
 def measure(project: Project, only: list[int] | None = None) -> list[LeadMeasurement]:
     cfg = project.settings.align
     out: list[LeadMeasurement] = []
@@ -93,6 +128,7 @@ def measure(project: Project, only: list[int] | None = None) -> list[LeadMeasure
         lead_in, method = measure_lead(webm, side.settle_seconds, cfg)
         side.lead_in_seconds = lead_in
         side.lead_method = method
+        side.lead_in_hash = recording_hash(webm)
         side.save(sidecar_path)
         out.append(
             LeadMeasurement(

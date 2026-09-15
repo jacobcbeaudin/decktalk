@@ -1662,3 +1662,109 @@ def test_a_padded_take_within_a_frame_of_min_tail_is_not_padded_again(monkeypatc
     assert padded == []
     assert ensure_tail(Path("a.mp3"), cfg) == 0.09  # a take never padded before gets the full tail
     assert padded == [0.09]
+
+
+# ---- stale measurement ------------------------------------------------------------------------
+
+
+def _recorded(tmp_path: Path) -> tuple[Project, Path]:
+    """A one-page project with a recording and the sidecar that `record` writes, not yet measured."""
+    root = write_project(tmp_path, "[[section]]\nnumber = 1\npage = 'a.html'\n")
+    (root / "script.md").write_text("## 1. A\n\nHi.\n", encoding="utf-8")
+    p = Project.load(root, environ={})
+    p.rec_dir.mkdir(parents=True)
+    webm = p.rec_dir / "01-scene.webm"
+    webm.write_bytes(b"take one")
+    Sidecar(url="u", requested_seconds=2, settle_seconds=0.5, load_seconds=0.1, lead_seconds=1.506).save(
+        webm.with_suffix(".json")
+    )
+    return p, webm
+
+
+def test_stale_measure_ties_the_measurement_to_one_recording(tmp_path, monkeypatch):
+    import os
+
+    from decktalk.media import ffmpeg
+    from decktalk.stages.measure import measure, recording_hash, stale_measure
+
+    p, webm = _recorded(tmp_path)
+    side_path = webm.with_suffix(".json")
+    name = "build/rec/01-scene.webm"
+    assert stale_measure(webm, Sidecar.load(side_path), p.root) == (
+        f"{name} was never measured, so the cut would trim the recorder's wall-clock estimate of 1.506s"
+    )
+    assert stale_measure(webm, None, p.root) == f"{name} has no sidecar, so `measure` never found its narration t=0"
+
+    monkeypatch.setattr(ffmpeg, "frame_stats", lambda path, seconds: [])
+    (row,) = measure(p)
+    side = Sidecar.load(side_path)
+    assert side is not None and side.lead_in_seconds == row.lead_in_seconds
+    assert side.lead_in_hash == recording_hash(webm) and len(side.lead_in_hash) == 16
+    assert stale_measure(webm, side, p.root) is None
+
+    webm.write_bytes(b"take two")  # a new take over the measured one
+    assert stale_measure(webm, side, p.root) == f"{name} changed after `measure` read it"
+
+    # A sidecar that an older measure wrote has no hash, so the file times decide.
+    side.lead_in_hash = None
+    side.save(side_path)
+    os.utime(side_path, (1_000_000, 1_000_000))
+    os.utime(webm, (2_000_000, 2_000_000))
+    assert stale_measure(webm, side, p.root) == f"{name} is newer than its measurement"
+    os.utime(side_path, (3_000_000, 3_000_000))
+    assert stale_measure(webm, side, p.root) is None
+
+
+def test_assemble_refuses_a_stale_measurement_with_strict_and_warns_without(tmp_path, monkeypatch, caplog):
+    import importlib
+
+    from decktalk.errors import MissingInputError
+    from decktalk.stages.measure import recording_hash
+
+    asm = importlib.import_module("decktalk.stages.assemble")
+    p, webm = _recorded(tmp_path)
+    Timeline(
+        narration="narration.mp3",
+        total_seconds=2.0,
+        sections={"01": TimelineSection("A", 0, 2.0, 2.0, 1.0, [Word("Hi", 0.7, 1.0)])},
+        estimated=True,
+    ).save(p.timeline_path)
+    timeline = p.timeline()
+    assert timeline is not None
+    render = asm.render_sections
+    ran: list[tuple] = []
+    monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: ran.append(args))
+    monkeypatch.setattr(asm.ffmpeg, "probe_duration", lambda path: 2.0)
+
+    with pytest.raises(MissingInputError) as err:
+        asm.render_sections(p, timeline, strict=True)
+    assert str(err.value) == (
+        "section 1: STALE MEASUREMENT: build/rec/01-scene.webm was never measured, so the cut would trim the "
+        "recorder's wall-clock estimate of 1.506s. Run `decktalk measure --only 1`, then `decktalk assemble` again."
+    )
+    assert ran == []
+
+    expected = (
+        "section 01: STALE MEASUREMENT: build/rec/01-scene.webm was never measured, so the cut would trim the "
+        "recorder's wall-clock estimate of 1.506s. Every reveal in the section may play early or late. "
+        "Run `decktalk measure --only 1`, or pass --strict to stop on this."
+    )
+    with caplog.at_level("WARNING", logger="decktalk"):
+        (row,) = asm.render_sections(p, timeline, strict=False)
+    assert row.warning == expected
+    assert [r.getMessage() for r in caplog.records] == [expected]
+
+    # The warning reaches the result, next to the mix warnings.
+    monkeypatch.setattr(asm, "render_sections", lambda project, timeline, strict: [row])
+    monkeypatch.setattr(asm, "concat", lambda files, out: out.write_bytes(b"x"))
+    monkeypatch.setattr(asm, "mux_chapters", lambda src, chapters, dst: dst.write_bytes(b"x"))
+    monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"x"))
+    assert asm.assemble(p, nomix=True).warnings == [expected]
+
+    side_path = webm.with_suffix(".json")
+    side = Sidecar.load(side_path)
+    assert side is not None
+    side.lead_in_seconds, side.lead_in_hash = 1.44, recording_hash(webm)
+    side.save(side_path)
+    (measured,) = render(p, timeline, strict=True)
+    assert measured.warning is None and "lead 1.44s trimmed" in measured.note

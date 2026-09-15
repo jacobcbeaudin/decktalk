@@ -46,7 +46,8 @@ JSON_HELP = "Print the result as one JSON object on stdout instead of the tables
 ALLOW_UNKNOWN_HELP = "Continue when a cue id in cues.json appears nowhere in the page that plays it."
 BUILD_STRICT_HELP = (
     "fail on a missing clip or recording instead of substituting a slate "
-    "(a clip section with optional = true still plays its slate)"
+    "(a clip section with optional = true still plays its slate), "
+    "and on a recording that measure has not read since it was recorded"
 )
 
 

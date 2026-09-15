@@ -211,7 +211,7 @@ decktalk build [-h] [--project PROJECT] [-v] [-q] [--silent] [--force]
 | `--only ONLY` | every section | Records, measures, and checks only these sections. Repeatable. |
 | `--allow-unresolved` | off | Continues when a cue phrase is not found. |
 | `--allow-unknown` | off | Continues when a cue id is not in its page. |
-| `--strict` | off | Fails on a missing recording, or a missing clip without `optional = true`. In a voiced build, also fails on a loudness miss. |
+| `--strict` | off | Fails on a missing recording, a missing clip without `optional = true`, or a recording that `measure` has not read since it was recorded. In a voiced build, also fails on a loudness miss. |
 | `--nomix` | off | Mixes narration and clip audio only. |
 | `--no-loudnorm` | off | Skips the loudness pass. |
 | `--preset PRESET` | `[video] preset` | x264 preset for this run. |
@@ -230,6 +230,7 @@ explains.
 | `beats` | A cue id is not in its page. The build stops after the beats table. | `--allow-unknown` |
 | `check` | A page threw an error or has no catalog (`PAGE ERROR`). The build stops after the check table. | none |
 | `assemble` | With `--strict`, a recording is missing, or a clip is missing from a section without `optional = true`. | Set `optional = true`, or leave out `--strict`. |
+| `assemble` | With `--strict`, a recording has no measurement that matches it (`STALE MEASUREMENT`). | Run `decktalk measure --only N`, or leave out `--strict`. |
 | `verify` | A section starts black (`BLACK`), or speech is still sounding at a cut (`SPEECH AT CUT`). | none |
 | any | A stage raises an error. | none |
 
@@ -545,7 +546,7 @@ decktalk assemble [-h] [--project PROJECT] [-v] [-q] [--nomix]
 |---|---|---|
 | `--nomix` | off | Mixes narration and clip audio only. No underscore, ambience bed, or sound effects. |
 | `--no-loudnorm` | off | Skips the loudness pass. |
-| `--strict` | off | Fails on a missing recording, or a missing clip without `optional = true`. In a voiced build, also fails on a loudness miss. |
+| `--strict` | off | Fails on a missing recording, a missing clip without `optional = true`, or a recording that `measure` has not read since it was recorded. In a voiced build, also fails on a loudness miss. |
 | `--preset PRESET` | `[video] preset` | x264 preset for this run. `veryfast` is for drafts. |
 | `--crf CRF` | `[video] crf` | x264 quality for this run. |
 
@@ -555,6 +556,9 @@ markers file, the underscore, the ambience bed, and the sound effects. **Writes*
 `<name>.vtt`, `<name>.chapters.txt`, and `build/out/slates/`.
 
 - Without `--strict`, a missing clip plays a titled slate for `slate_seconds`, and a missing recording plays black.
+- `assemble` trims each recording at the `lead_in_seconds` that `measure` wrote. If `measure` has not read the
+  recording since it was recorded, `assemble` prints `STALE MEASUREMENT`. The section may then play early or late.
+  Without `--strict`, `assemble` warns and continues. With `--strict`, it stops.
 - A missing underscore, ambience bed, markers file, or sound effect logs a warning and plays without it.
 - A silent build skips the loudness pass, so `--strict` has no loudness to fail on.
 - `assemble` prints the final path and length on stdout.

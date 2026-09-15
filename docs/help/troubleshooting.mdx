@@ -69,6 +69,7 @@ explains.
 | `missing; slate for` | `assemble` | [Entry](#missing-slate-for-in-assemble) |
 | `clip missing`, `recording missing` | `assemble` with `--strict` | [Entry](#clip-missing-or-recording-missing-in-assemble) |
 | `using black` | `assemble` | [Entry](#using-black-in-assemble) |
+| `STALE MEASUREMENT` | `assemble` | [Entry](#stale-measurement-in-assemble) |
 | `has no span in` | `assemble` | [Entry](#has-no-span-in-in-assemble) |
 | `underscore missing`, `ambience missing` | `assemble` | [Entry](#underscore-missing-in-assemble) |
 | `unresolved; skipped` | `assemble` | [Entry](#unresolved-skipped-in-assemble) |
@@ -601,9 +602,10 @@ that section, or `narrate` has not run since you added it.
 the same amount.
 
 **Fix.**
-1. Open `build/rec/NN-scene.json` and read `lead_method`.
-2. If it starts with `NO COVER`, follow [`NO COVER` in measure or check](#no-cover-in-measure-or-check).
-3. Record the section again.
+1. If `assemble` printed `STALE MEASUREMENT`, follow [`STALE MEASUREMENT` in assemble](#stale-measurement-in-assemble).
+2. Open `build/rec/NN-scene.json` and read `lead_method`.
+3. If it starts with `NO COVER`, follow [`NO COVER` in measure or check](#no-cover-in-measure-or-check).
+4. Record the section again.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
@@ -656,6 +658,22 @@ unless the clip section sets `optional = true`.
 1. Record the section again.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
+
+### `STALE MEASUREMENT` in assemble
+
+```text
+section 04: STALE MEASUREMENT: build/rec/04-scene.webm was never measured, so the cut would trim the recorder's wall-clock estimate of 1.506s. Every reveal in the section may play early or late. Run `decktalk measure --only 4`, or pass --strict to stop on this.
+```
+
+**Cause.** `measure` has not read this recording since it was recorded. The sidecar has no `lead_in_seconds`,
+its `lead_in_hash` belongs to another take, or the webm is newer than the sidecar. The cut trims at the wrong
+point, so every reveal in the section is early or late by the same amount. With `--strict`, `assemble` stops.
+
+**Fix.**
+1. Run `decktalk measure --only N` for the section in the message.
+2. Run `decktalk assemble`.
+
+**More.** [`build/rec/NN-scene.json`](/reference/artifacts#build/rec/nn-scene-json)
 
 ### `has no span in` in assemble
 

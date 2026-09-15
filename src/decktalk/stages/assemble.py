@@ -56,6 +56,7 @@ from ..media import ffmpeg
 from ..media.browser import render_slate
 from ..project import ClipSection, PageSection, Project, Section
 from .beats import find_phrase
+from .measure import stale_measure
 
 log = logging.getLogger(__name__)
 
@@ -200,6 +201,7 @@ class RenderedSection:
     duration: float
     note: str
     audio: Path | None = None  # A clip with its own sound, mixed in at the section start.
+    warning: str | None = None  # Why the section may be out of sync, such as a stale measurement.
 
 
 def section_slate(project: Project, sec: ClipSection) -> Path | None:
@@ -313,6 +315,32 @@ def _render_page(
     return note
 
 
+def measure_warning(project: Project, sec: PageSection, *, strict: bool) -> str | None:
+    """The warning for a recording whose narration t=0 was not measured on it, or None.
+
+    A cut trims the recording at the sidecar's measurement. When `measure` did not read this
+    recording, the trim belongs to another take or is the recorder's wall-clock estimate, and
+    every reveal in the section plays early or late. --strict refuses such a section.
+    """
+    webm = project.recording(sec)
+    if not webm.exists():
+        return None
+    reason = stale_measure(webm, Sidecar.load(project.rec_dir / f"{sec.key}-scene.json"), project.root)
+    if reason is None:
+        return None
+    if strict:
+        raise MissingInputError(
+            f"section {sec.number}: STALE MEASUREMENT: {reason}. Run `decktalk measure --only {sec.number}`, "
+            "then `decktalk assemble` again."
+        )
+    message = (
+        f"section {sec.key}: STALE MEASUREMENT: {reason}. Every reveal in the section may play early or late. "
+        f"Run `decktalk measure --only {sec.number}`, or pass --strict to stop on this."
+    )
+    log.warning(message)
+    return message
+
+
 def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> list[RenderedSection]:
     enc = _Encoder(project.settings.video)
     project.out_dir.mkdir(parents=True, exist_ok=True)
@@ -323,6 +351,7 @@ def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> li
     for sec in project.sections:
         out = project.section_video(sec)
         audio: Path | None = None
+        warning: str | None = None
         if isinstance(sec, ClipSection):
             note, audio = _render_clip(project, enc, sec, out, flags[sec.key], dip, strict=strict)
         else:
@@ -332,10 +361,11 @@ def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> li
                     f"section {sec.key} has no span in {project.timeline_path}; run `decktalk narrate`"
                 )
             total = round(total + sec.hold_seconds, 3)  # validated at load: only the last page section holds
+            warning = measure_warning(project, sec, strict=strict)
             note = _render_page(project, enc, sec, out, flags[sec.key], dip, total, strict=strict)
         dur = ffmpeg.probe_duration(out)
         log.info("[cut ] %s  %s -> %s  (%.3fs)", sec.key, note, out.name, dur)
-        rows.append(RenderedSection(section=sec, path=out, duration=dur, note=note, audio=audio))
+        rows.append(RenderedSection(section=sec, path=out, duration=dur, note=note, audio=audio, warning=warning))
     return rows
 
 
@@ -786,7 +816,7 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
     work = out_dir / f".{project.name}.tmp.mp4"
     work.unlink(missing_ok=True)
     plan = plan_mix(project, rows, timeline, nomix=nomix)
-    warnings = list(plan.warnings)
+    warnings = [r.warning for r in rows if r.warning] + plan.warnings
     for w in plan.warnings:
         log.warning(w)
     enc = _Encoder(project.settings.video)

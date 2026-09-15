@@ -277,6 +277,7 @@ The sidecar lists what the recorder did for one page section, and where narratio
 | `lead_seconds` | number | Wall-clock seconds from the recorder's start to narration t=0. Not the same as `[verify] lead_seconds`. |
 | `lead_in_seconds` | number or null | Time of the first frame after the magenta cover, in the webm. `measure` writes it, and `assemble` trims there. |
 | `lead_method` | string or null | How `measure` found `lead_in_seconds`. A value that starts with `NO COVER` is a guess. |
+| `lead_in_hash` | string or null | The first 16 hex digits of the sha256 of the webm that `measure` read. A sidecar from an older `measure` has none. |
 | `warnings` | array of strings | `window.__decktalk.warnings`, read after the recording, such as an unknown cue id. |
 | `page_errors` | array of strings | One line per uncaught exception, plus one line when the page has no runtime catalog. |
 | `frame_gaps` | array | `[seconds, ms]` pairs from `window.__decktalk.frameGaps`, one per long gap between two page frames. |
@@ -286,7 +287,8 @@ The sidecar lists what the recorder did for one page section, and where narratio
 
 Note: `check` reports `PAGE ERROR` for any entry in `page_errors`, and `decktalk build` stops. `check` reports
 `STALLED` when the part of a frame gap after t=0 is longer than `[align] stall_ms`. `record` sets `lead_in_seconds`
-to `null`, and `measure` fills it.
+to `null`, and `measure` fills it. `assemble` prints `STALE MEASUREMENT` when `lead_in_seconds` is `null`, when
+`lead_in_hash` does not match the webm, or, with no `lead_in_hash`, when the webm is newer than the sidecar.
 
 ## `build/out/`
 

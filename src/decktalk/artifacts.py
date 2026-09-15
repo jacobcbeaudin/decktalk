@@ -223,6 +223,7 @@ class Sidecar:
     lead_seconds: float  # wall-clock estimate from the recorder
     lead_in_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
     lead_method: str | None = None
+    lead_in_hash: str | None = None  # the sha256 prefix of the webm that measure read, so a stale measure shows
     warnings: list[str] = field(default_factory=list)
     page_errors: list[str] = field(default_factory=list)  # uncaught exceptions, or no runtime catalog at all
     # (seconds, ms) where the page stalled. The time is None for a gap that ended before narration t=0.
