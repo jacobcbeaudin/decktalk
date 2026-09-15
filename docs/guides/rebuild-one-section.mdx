@@ -116,8 +116,8 @@ its words moved. `--only` needs a page section, because a clip section has no re
 Use these steps when a recording of section `N` is bad, for example after `STALLED` or `TRUNCATED`. The
 steps voice nothing when the text is unchanged, and they keep every other recording.
 
-<Warning>Run `decktalk build --silent` only if the last build was silent. In a voiced project, it empties
-the narration cache, and the next voiced build spends credits on every section.</Warning>
+<Warning>Run `decktalk build --silent` only if the last build was silent. In a voiced project, it stops with an
+error. With `--force`, it empties the narration cache, and the next voiced build spends credits on every section.</Warning>
 
 <Steps>
   <Step title="Build the section again">
@@ -177,10 +177,15 @@ can count the characters first.
 
 ## A silent build and a voiced build
 
-A silent build after a voiced build empties the narration cache. The next voiced build then voices every
-section again and spends credits on all of them.
+A silent build after a voiced build would empty the narration cache. The next voiced build would then voice
+every section again and spend credits on all of them. So a silent `narrate` or `build` stops when
+`build/audio/manifest.json` holds voiced takes, and it writes nothing.
 
-This happens for three reasons:
+```text
+error: build/audio/manifest.json holds voiced takes for sections 01. A silent run writes click tracks over those mp3 files and replaces the manifest, so the next voiced build voices every section again and spends credits on all of them. Rehearse the silent build in a copy of the project, or pass --force to replace the voiced takes.
+```
+
+The cache would be lost for three reasons:
 
 1. The manifest notes whether its entries came from a silent build.
 2. `narrate` reuses the previous manifest only when it is the same kind of build.
@@ -190,7 +195,8 @@ This happens for three reasons:
 In a project that has never been voiced, a silent build loses nothing. The first voiced build voices every
 section anyway.
 
-After a project has been voiced, rehearse with a silent build in a copy of the project. Neither kind of
+After a project has been voiced, rehearse with a silent build in a copy of the project. To replace the voiced
+takes on purpose, pass `--force`, as in `decktalk build --silent --force`. Neither kind of
 build replaces the final mp4 until it finishes. A timestamped copy of each finished video stays next to
 `build/out/<name>.mp4`.
 

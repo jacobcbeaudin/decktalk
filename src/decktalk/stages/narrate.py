@@ -16,7 +16,8 @@ word at absolute time; the recorder and the assembler cut the visuals to it.
 
 silent=True needs no API key: silent placeholders sized at silent_words_per_minute
 plus the declared pauses, with evenly spaced estimated words, so the whole pipeline
-runs offline.
+runs offline. A silent run refuses a manifest that holds voiced takes unless force is
+set, because it would write click tracks over them.
 """
 
 from __future__ import annotations
@@ -305,6 +306,21 @@ def reuse_takes(moves: list[tuple[ManifestSegment, Segment]], audio_dir: Path) -
         tmp.replace(dst)
 
 
+def refuse_silent_over_voiced(project: Project, previous: Manifest | None) -> None:
+    """Raise when a silent run would replace voiced takes, which only a paid voiced run can bring back."""
+    voiced = sorted(k for k, entry in (previous.segments.items() if previous else ()) if entry.hash != "silent")
+    if not voiced:
+        return
+    manifest = project.manifest_path
+    where = manifest.relative_to(project.root).as_posix() if manifest.is_relative_to(project.root) else manifest
+    raise ConfigError(
+        f"{where} holds voiced takes for sections {', '.join(voiced)}. A silent run writes click tracks over "
+        "those mp3 files and replaces the manifest, so the next voiced build voices every section again and "
+        "spends credits on all of them. Rehearse the silent build in a copy of the project, or pass --force "
+        "to replace the voiced takes."
+    )
+
+
 def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -> Timeline:
     cfg = project.settings.narration
     keys = [s.key for s in order if s.key in manifest.segments]
@@ -363,6 +379,9 @@ def narrate(
     targets = [s for s in spoken if not only or s.index in set(only)]
     if not targets:
         raise ConfigError(f"no spoken sections match {only}; spoken sections are {[s.index for s in spoken]}")
+    previous = project.manifest()
+    if silent and not force:
+        refuse_silent_over_voiced(project, previous)
     if project.clip_numbers:
         log.info("skipping clip sections (no narration): %s", sorted(project.clip_numbers))
 
@@ -376,7 +395,6 @@ def narrate(
         estimated=silent,
         estimate_basis=f"{cfg.silent_words_per_minute} wpm + declared pauses" if silent else "",
     )
-    previous = project.manifest()
     if previous is not None and previous.estimated == silent:
         manifest.segments = dict(previous.segments)
 

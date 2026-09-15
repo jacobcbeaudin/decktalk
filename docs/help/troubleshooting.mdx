@@ -22,7 +22,7 @@ Search the page for the text you see.
 
 If the project has no voiced build yet, run `decktalk build --silent` first. It spends no credits,
 and it shows if the problem is in the cues, the pages, or the assembly. If the project has a voiced
-build, rehearse in a copy of the project. A silent build empties the narration cache, as
+build, rehearse in a copy of the project. A silent build stops on voiced takes, because it would empty the narration cache, as
 [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build)
 explains.
 
@@ -49,6 +49,7 @@ explains.
 | `no spoken sections match` | `narrate` | [Entry](#no-spoken-sections-match-in-narrate) |
 | `have no [[section]] in decktalk.toml` | `narrate`, `build` | [Entry](#have-no-section-in-decktalk-toml-in-narrate) |
 | `have no narration yet` | `narrate` | [Entry](#have-no-narration-yet-in-narrate) |
+| `holds voiced takes` | `narrate --silent`, `build --silent` | [Entry](#holds-voiced-takes-in-narrate) |
 | `phrase not found` | `beats`, `build` | [Entry](#phrase-not-found-in-beats) |
 | `could not be matched to the narration` | `build` | [Entry](#phrase-not-found-in-beats) |
 | `not in deck/index.html` | `beats`, `build` | [Entry](#not-in-its-page-in-beats) |
@@ -345,6 +346,22 @@ timeline then covers only the sections that have audio.
 1. Run `decktalk narrate` with no `--only`.
 
 **More.** [Rebuild one section](/guides/rebuild-one-section)
+
+### `holds voiced takes` in narrate
+
+```text
+error: build/audio/manifest.json holds voiced takes for sections 01. A silent run writes click tracks over those mp3 files and replaces the manifest, so the next voiced build voices every section again and spends credits on all of them. Rehearse the silent build in a copy of the project, or pass --force to replace the voiced takes.
+```
+
+**Cause.** You ran `decktalk narrate --silent` or `decktalk build --silent` in a project with voiced takes. A silent
+run would write click tracks over the voiced mp3 files and replace the manifest. The next voiced build would then
+spend credits on every section.
+
+**Fix.**
+1. If you want to rehearse, copy the project and run the silent build in the copy.
+2. If you want to drop the voiced takes, run the same command with `--force`.
+
+**More.** [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build)
 
 ## beats
 

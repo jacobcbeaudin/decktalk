@@ -206,8 +206,8 @@ decktalk build [-h] [--project PROJECT] [-v] [-q] [--silent] [--force]
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--silent` | off | Uses estimated word times and writes a click track. Needs no key. |
-| `--force` | off | Voices every section again. Spends credits on every section. |
+| `--silent` | off | Uses estimated word times and writes a click track. Needs no key. Stops when `build/audio/manifest.json` holds voiced takes, unless `--force` is on. |
+| `--force` | off | Voices every section again. Spends credits on every section. With `--silent`, replaces the voiced takes with click tracks. |
 | `--only ONLY` | every section | Records, measures, and checks only these sections. Repeatable. |
 | `--allow-unresolved` | off | Continues when a cue phrase is not found. |
 | `--allow-unknown` | off | Continues when a cue id is not in its page. |
@@ -218,14 +218,15 @@ decktalk build [-h] [--project PROJECT] [-v] [-q] [--silent] [--force]
 | `--crf CRF` | `[video] crf` | x264 quality for this run. |
 
 Note: with `--only`, `narrate` still runs on every section and `assemble` still uses every section.
-Recordings of other sections stay as they are. A silent build after a voiced build empties the
-narration cache, as [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build)
+Recordings of other sections stay as they are. A silent build stops when the project has voiced
+takes, as [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build)
 explains.
 
 **Reads** and **writes** what each stage reads and writes, below.
 
 | Stage | `build` exits 1 when | Override |
 |---|---|---|
+| `narrate` | With `--silent`, `build/audio/manifest.json` holds voiced takes. The build stops before it writes anything. | `--force`, or build in a copy of the project |
 | `beats` | A cue phrase is not found. The build stops after the beats table. | `--allow-unresolved` |
 | `beats` | A cue id is not in its page. The build stops after the beats table. | `--allow-unknown` |
 | `check` | A page threw an error or has no catalog (`PAGE ERROR`). The build stops after the check table. | none |
@@ -285,10 +286,10 @@ decktalk narrate [-h] [--project PROJECT] [-v] [-q] [--only ONLY]
 | Option | Default | Meaning |
 |---|---|---|
 | `--only ONLY` | every spoken section | Voices only these sections. Repeatable. |
-| `--force` | off | Ignores the narration cache. Spends credits on every section it voices. |
+| `--force` | off | Ignores the narration cache. Spends credits on every section it voices. With `--silent`, replaces voiced takes. |
 | `--allow-placeholders` | off | Voices a section that still has a `[CAPS]` placeholder. |
 | `--dry-run` | off | Prints each section's text, the voice settings, and the table. Sends nothing. |
-| `--silent` | off | Writes a click track with estimated word times. Needs no key. |
+| `--silent` | off | Writes a click track with estimated word times. Needs no key. Stops when `build/audio/manifest.json` holds voiced takes, unless `--force` is on. |
 | `--model MODEL` | `[voice] model`, then `[narration] model` | Speech model id for this run. |
 
 **Reads** `script.md`, `decktalk.toml`, and `.env`. `--silent` and `--dry-run` need no key.

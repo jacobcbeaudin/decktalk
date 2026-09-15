@@ -40,7 +40,7 @@ Only two parts of DeckTalk call ElevenLabs. The `narrate` stage calls the text-t
 
 A voiced section costs the characters of its whole text. An edit therefore costs every changed section in full, not only the changed sentences. A ten-minute narration is about 9,000 characters.
 
-A silent build after a voiced build empties the narration cache, so the next voiced build voices every section again. [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build) explains the cache.
+A silent build stops when the project has voiced takes. With `--force`, it empties the narration cache, so the next voiced build voices every section again. [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build) explains the cache.
 
 To see a run before it spends credits, use `--dry-run`. Neither of these commands calls the API:
 

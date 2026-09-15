@@ -1806,3 +1806,61 @@ def test_verify_and_assemble_ignore_a_leftover_section_video(tmp_path, monkeypat
         "build/out/04-section.mp4 is not a section in decktalk.toml, so assemble ignores it. "
         "Delete the file if an earlier build left it."
     ]
+
+
+# ---- silent runs over voiced takes ------------------------------------------------------------
+
+
+def _voiced(tmp_path: Path) -> tuple[Project, Path, Path]:
+    """A project whose build/audio holds one voiced take."""
+    root = write_project(tmp_path, "[[section]]\nnumber = 1\npage = 'a.html'\n")
+    (root / "script.md").write_text("## 1. Open\n\nHello there.\n", encoding="utf-8")
+    p = Project.load(root, environ={})
+    p.audio_dir.mkdir(parents=True)
+    take = p.audio_dir / "01-open.mp3"
+    take.write_bytes(b"voiced take")
+    manifest = Manifest(script="script.md", model="eleven_v3", output_format="mp3_44100_128")
+    manifest.segments["01"] = ManifestSegment(
+        index=1, title="Open", file=take.name, words_file="01-open.words.json", hash="3f2a9c0d1e2b4a5f",
+        words=2, est_seconds=1.0, duration_seconds=2.3,
+    )  # fmt: skip
+    manifest.save(p.manifest_path)
+    return p, take, p.manifest_path
+
+
+VOICED_REFUSAL = (
+    "build/audio/manifest.json holds voiced takes for sections 01. A silent run writes click tracks over those "
+    "mp3 files and replaces the manifest, so the next voiced build voices every section again and spends credits "
+    "on all of them. Rehearse the silent build in a copy of the project, or pass --force to replace the voiced takes."
+)
+
+
+def test_a_silent_narrate_refuses_voiced_takes_unless_forced(tmp_path, monkeypatch):
+    from decktalk.media import ffmpeg
+    from decktalk.stages.narrate import narrate
+
+    p, take, manifest_path = _voiced(tmp_path)
+    before = manifest_path.read_bytes()
+    with pytest.raises(ConfigError) as err:
+        narrate(p, silent=True)
+    assert str(err.value) == VOICED_REFUSAL
+    assert take.read_bytes() == b"voiced take" and manifest_path.read_bytes() == before
+
+    monkeypatch.setattr(ffmpeg, "write_clicks", lambda path, *a, **kw: Path(path).write_bytes(b"clicks"))
+    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
+    monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)
+    monkeypatch.setattr(ffmpeg, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
+    result = narrate(p, silent=True, force=True)
+    assert result.synthesized == ["01"] and take.read_bytes() == b"clicks"
+    manifest = Manifest.load(manifest_path)
+    assert manifest is not None and manifest.estimated and manifest.segments["01"].hash == "silent"
+    assert narrate(p, silent=True).synthesized == ["01"]  # a silent manifest is never refused
+
+
+@pytest.mark.parametrize("command", [["build", "--silent"], ["narrate", "--silent"]])
+def test_cli_silent_run_over_voiced_takes_exits_1_with_the_risk(tmp_path, capsys, command):
+    p, take, _manifest = _voiced(tmp_path)
+    assert main([*command, "-p", str(p.root)]) == 1
+    assert capsys.readouterr().err.strip().splitlines()[-1] == f"error: {VOICED_REFUSAL}"
+    assert take.read_bytes() == b"voiced take"
+    assert build_parser().parse_args(["build", "--silent", "--force"]).force

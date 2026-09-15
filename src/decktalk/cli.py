@@ -373,7 +373,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = proj(sub.add_parser("narrate", help="synthesize narration with word timestamps"))
     s.add_argument("--only", type=int, action="append", help=only_help)
-    s.add_argument("--force", action="store_true", help="ignore the text-hash cache")
+    s.add_argument(
+        "--force", action="store_true", help="ignore the text-hash cache, and let --silent replace voiced takes"
+    )
     s.add_argument(
         "--allow-placeholders", action="store_true", help="synthesize a section that still has a [CAPITAL] placeholder"
     )
@@ -434,7 +436,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = proj(sub.add_parser("build", help="run the whole pipeline"))
     s.add_argument("--silent", action="store_true", help="placeholder narration, no API key")
-    s.add_argument("--force", action="store_true", help="re-synthesize every section")
+    s.add_argument(
+        "--force", action="store_true", help="re-synthesize every section, and let --silent replace voiced takes"
+    )
     s.add_argument(
         "--only", type=int, action="append", help="re-record only these sections (repeat the flag for several)"
     )

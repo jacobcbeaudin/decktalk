@@ -87,8 +87,8 @@ decktalk.build(project, *, silent=False, force=False, only=None, nomix=False, lo
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `silent` | `False` | Uses a click track and estimated word times. Needs no API key. |
-| `force` | `False` | Voices every section again, and ignores the narration cache. |
+| `silent` | `False` | Uses a click track and estimated word times. Needs no API key. Raises `ConfigError` when `build/audio/manifest.json` holds voiced takes, unless `force` is set. |
+| `force` | `False` | Voices every section again, and ignores the narration cache. With `silent`, replaces voiced takes. |
 | `only` | `None` | Section numbers for `record`, `measure`, and `check`. The other stages still use every section. |
 | `nomix` | `False` | Leaves the soundscape out of the mix. |
 | `loudnorm` | `True` | Runs the loudness pass. |

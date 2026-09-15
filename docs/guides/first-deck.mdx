@@ -174,7 +174,7 @@ Check the slide in a browser and in screenshots before you record it. [Browser p
 2. Open `deck/index.html?scene=3&hud=1`. The scene plays in autoplay, with the clock on top.
 3. Take a screenshot of every step with `decktalk shots`. The PNG files go under `build/shots/`.
 
-If the project has no voiced build yet, you can also check where each cue phrase resolves. A silent `narrate` after a voiced build empties the narration cache, so skip these actions on a voiced project.
+If the project has no voiced build yet, you can also check where each cue phrase resolves. On a voiced project, a silent `narrate` stops, because it would empty the narration cache. Skip these actions there.
 
 1. Write estimated word times with `decktalk narrate --silent`.
 2. Print each cue time with `decktalk beats`.
