@@ -302,3 +302,66 @@ def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path)
     assert (p.audio_dir / "03-close.mp3").read_bytes() == (p.audio_dir / "02-close.mp3").read_bytes()
     assert list(result.timeline.sections) == ["01", "03"]
     assert narrate(p).cached == ["01", "03"]
+
+
+def _tone_with_tail(path: Path, *, tail: float, rate: int = 44100, bitrate: str = "128k") -> None:
+    """One second of tone, then `tail` seconds of silence, encoded the way narrate pads a take."""
+    ffmpeg.run(
+        "-f", "lavfi", "-i", f"sine=f=440:r={rate}:d=1", "-af", f"apad=pad_dur={tail}",
+        "-c:a", "libmp3lame", "-b:a", bitrate, str(path),
+    )  # fmt: skip
+
+
+def test_trailing_silence_counts_a_silence_that_ends_in_the_encoder_padding(tmp_path):
+    """The container length includes the mp3 encoder padding, so the silence ends just over 0.05 s before it."""
+    take = tmp_path / "take.mp3"
+    _tone_with_tail(take, tail=1.3)
+    duration = ffmpeg.probe_duration(take)
+    decoded = ffmpeg.decoded_duration(take, sample_rate=44100)
+    assert duration - decoded > 0.05, "the synthetic take no longer reproduces the gap"
+    assert ffmpeg.trailing_silence(take) == pytest.approx(1.3 + (duration - decoded), abs=0.03)
+
+
+@pytest.mark.parametrize("tail", [1.3, 0.2])
+def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
+    """A take that meets min_tail_seconds, padded or not, keeps its hash, bytes, and duration on the next run."""
+    from decktalk.artifacts import Manifest, Word
+    from decktalk.project import Project
+    from decktalk.providers.speech import register
+    from decktalk.stages.narrate import narrate
+
+    class ToneVoice:
+        name = f"tone-{tail}"
+        calls = 0
+
+        def speak(self, request):
+            ToneVoice.calls += 1
+            src = tmp_path / "voice.mp3"
+            _tone_with_tail(src, tail=tail)
+            return src.read_bytes(), [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)]
+
+        def cache_key(self, request):
+            return f"tone-voice-{tail}"
+
+    register(ToneVoice.name, lambda project: ToneVoice())
+    (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
+    (tmp_path / "decktalk.toml").write_text(
+        f"[narration]\nmin_tail_seconds = 1.3\nlead_break_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
+        "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\npage = 'a.html'\n",
+        encoding="utf-8",
+    )
+    p = Project.load(tmp_path, environ={})
+    first = narrate(p)
+    assert first.synthesized == ["01", "02"] and ToneVoice.calls == 2
+    entry = Manifest.load(p.manifest_path).segments["02"]
+    take = p.audio_dir / entry.file
+    assert (entry.tail_padded_seconds > 0) == (tail < 1.3)
+    data = take.read_bytes()
+
+    second = narrate(p)
+    assert second.cached == ["01", "02"] and second.synthesized == [] and ToneVoice.calls == 2
+    again = Manifest.load(p.manifest_path).segments["02"]
+    assert again.hash == entry.hash
+    assert again.duration_seconds == entry.duration_seconds, "a cached take was padded again"
+    assert again.tail_padded_seconds == entry.tail_padded_seconds
+    assert take.read_bytes() == data

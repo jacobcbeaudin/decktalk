@@ -89,6 +89,11 @@ anyway. `decktalk narrate --dry-run` lists every placeholder.
 ffmpeg adds this silence to the audio. The speech provider does not receive it.
 The tail is not part of the narration cache. If you raise `min_tail_seconds`, the next `narrate` pads each cached mp3
 and sends no request.
+
+`narrate` measures the tail before it pads. A silence that ends within 0.06 s or one mp3 frame of the end of the
+file counts as the tail, because the mp3 encoder adds up to 50 ms of padding there. A cached mp3 that `narrate`
+already padded is not padded again when its tail is within 0.06 s of `min_tail_seconds`. So a second run leaves
+each cached mp3 and its duration unchanged.
 [Configuration](/reference/configuration) lists every `[narration]` key.
 
 ## Markdown stripping

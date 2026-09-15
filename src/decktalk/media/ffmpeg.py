@@ -177,15 +177,28 @@ def rms_db(path: Path, start: float, seconds: float) -> float:
     return -120.0 if m[-1] == "-inf" else float(m[-1])
 
 
+SILENCE_END_TOLERANCE_SECONDS = 0.06  # A silence that ends this close to the end of the file runs to the end.
+MP3_FRAME_SAMPLES = 1152  # Samples in one MPEG-1 Layer III frame.
+
+
 def trailing_silence(path: Path, *, noise_db: int = -35, min_run: float = 0.05) -> float:
-    """Seconds of silence at the end of an audio file."""
+    """Seconds of silence at the end of an audio file.
+
+    The container length includes the encoder padding, which decodes to nothing. For an mp3 that
+    padding is up to about 50 ms, so silencedetect reports the last silence ending that far before
+    the container end. A silence that ends within one audio frame or SILENCE_END_TOLERANCE_SECONDS
+    of the end, whichever is longer, counts as running to the end.
+    """
     duration = probe_duration(path)
     err = stderr("-i", str(path), "-af", f"silencedetect=noise={noise_db}dB:d={min_run}", "-f", "null", "-")
     starts = re.findall(r"silence_start: ([0-9.]+)", err)
     ends = re.findall(r"silence_end: ([0-9.]+)", err)
     if not starts:
         return 0.0
-    if len(ends) < len(starts) or float(ends[-1]) >= duration - 0.05:
+    rate = re.search(r"Audio: [^\n]*?(\d+) Hz", err)
+    frame = MP3_FRAME_SAMPLES / int(rate.group(1)) if rate and int(rate.group(1)) > 0 else 0.0
+    tolerance = max(SILENCE_END_TOLERANCE_SECONDS, frame)
+    if len(ends) < len(starts) or float(ends[-1]) >= duration - tolerance:
         return round(duration - float(starts[-1]), 3)
     return 0.0
 

@@ -224,10 +224,13 @@ def script_segments(project: Project) -> tuple[list[Segment], list[Segment]]:
 # ---- audio ---------------------------------------------------------------------------
 
 
-def ensure_tail(path: Path, cfg: NarrationConfig) -> float:
-    """Pad with silence so speech ends at least min_tail_seconds before the file ends. Returns seconds added."""
+def ensure_tail(path: Path, cfg: NarrationConfig, *, tolerance: float = 0.0) -> float:
+    """Pad with silence so speech ends at least min_tail_seconds before the file ends. Returns seconds added.
+
+    A tail within `tolerance` of min_tail_seconds counts as long enough.
+    """
     tail = ffmpeg.trailing_silence(path)
-    if tail >= cfg.min_tail_seconds:
+    if tail >= cfg.min_tail_seconds - tolerance:
         return 0.0
     add = round(cfg.min_tail_seconds - tail + cfg.tail_slack_seconds, 3)
     ffmpeg.pad_tail(path, add, bitrate=cfg.mp3_bitrate)
@@ -451,8 +454,11 @@ def narrate(
         if not force and entry is not None and is_cached(entry, seg, digest, project.audio_dir):
             # min_tail_seconds is not part of the hash, so a cached take made under a shorter
             # tail is padded here. ensure_tail measures the silence first, so a take that
-            # already has enough is left untouched.
-            added = ensure_tail(out_path, cfg)
+            # already has enough is left untouched. A take that narrate already padded keeps
+            # its tail when the measurement lands within a frame of min_tail_seconds, so a
+            # rounding difference never pads it again on every run.
+            tolerance = ffmpeg.SILENCE_END_TOLERANCE_SECONDS if entry.tail_padded_seconds else 0.0
+            added = ensure_tail(out_path, cfg, tolerance=tolerance)
             if added:
                 entry.duration_seconds = ffmpeg.probe_duration(out_path)
                 entry.tail_padded_seconds = round((entry.tail_padded_seconds or 0.0) + added, 3)

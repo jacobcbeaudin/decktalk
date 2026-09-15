@@ -122,7 +122,7 @@ The manifest is the narration cache. It holds one entry per spoken section.
 | `segments.NN.duration_seconds` | number | Real length of the mp3. |
 | `segments.NN.target_seconds` | number or null | Time budget from the time range in the heading, or `null` when the heading has none. |
 | `segments.NN.speech_end_seconds` | number or null | End of the last spoken word. |
-| `segments.NN.tail_padded_seconds` | number | Silence that `narrate` added after the last word. |
+| `segments.NN.tail_padded_seconds` | number | Silence that `narrate` added after the last word. A take with a value above 0 is not padded again while its tail is within 0.06 s of `min_tail_seconds`. |
 | `segments.NN.spoken` | string | The words sent to the voice, with the script's punctuation and case, and without break tags. |
 | `total_seconds` | number | Sum of every `duration_seconds`. |
 

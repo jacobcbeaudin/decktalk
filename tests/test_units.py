@@ -1622,3 +1622,43 @@ def test_a_renumbered_take_is_found_by_its_hash_and_moves_without_clobbering(tmp
     assert (audio / "05-x.mp3").read_text(encoding="utf-8") == "six"
     assert (audio / "05-x.words.json").read_text(encoding="utf-8") == "[6]"
     assert not list(audio.glob(".reuse-*"))
+
+
+# ---- narration tail -------------------------------------------------------------------------
+
+
+def test_trailing_silence_counts_a_silence_ending_0_0502_s_before_the_end(monkeypatch):
+    """The numbers of the demo's 08-the-edit.mp3: every narrate run padded it again by 1.35 s."""
+    from decktalk.media import ffmpeg
+
+    detect = (
+        "  Stream #0:0: Audio: mp3 (mp3float), 44100 Hz, mono, fltp, 128 kb/s\n"
+        "[silencedetect @ 0x1] silence_start: 13.914717\n"
+        "[silencedetect @ 0x1] silence_end: 13.974331 | silence_duration: 0.0596145\n"
+        "[silencedetect @ 0x1] silence_start: 14.380816\n"
+        "[silencedetect @ 0x1] silence_end: {end} | silence_duration: 1.320998\n"
+    )
+    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 15.752)
+    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: detect.format(end=15.701814))
+    assert ffmpeg.trailing_silence(Path("08-the-edit.mp3")) == 1.371
+    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: detect.format(end=15.5))  # speech after the silence
+    assert ffmpeg.trailing_silence(Path("08-the-edit.mp3")) == 0.0
+    # At 8 kHz one mp3 frame lasts 0.144 s, longer than the fixed tolerance.
+    low = detect.replace("44100 Hz", "8000 Hz").format(end=15.62)
+    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: low)
+    assert ffmpeg.trailing_silence(Path("08-the-edit.mp3")) == 1.371
+
+
+def test_a_padded_take_within_a_frame_of_min_tail_is_not_padded_again(monkeypatch):
+    from decktalk.config import NarrationConfig
+    from decktalk.media import ffmpeg
+    from decktalk.stages.narrate import ensure_tail
+
+    padded: list[float] = []
+    monkeypatch.setattr(ffmpeg, "pad_tail", lambda path, seconds, bitrate: padded.append(seconds))
+    monkeypatch.setattr(ffmpeg, "trailing_silence", lambda path: 1.26)
+    cfg = NarrationConfig(min_tail_seconds=1.3)
+    assert ensure_tail(Path("a.mp3"), cfg, tolerance=ffmpeg.SILENCE_END_TOLERANCE_SECONDS) == 0.0
+    assert padded == []
+    assert ensure_tail(Path("a.mp3"), cfg) == 0.09  # a take never padded before gets the full tail
+    assert padded == [0.09]
