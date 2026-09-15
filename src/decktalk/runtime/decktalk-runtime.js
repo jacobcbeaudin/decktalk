@@ -28,6 +28,8 @@
  *   ?step=ID                 freeze step ID with everything revealed (screenshots, review)
  *   &cue=ID                  with ?step=, freeze at cue ID instead: the step's cues fire in
  *                            autoplay order up to and including ID, and later cues stay hidden
+ *   &before=ID               with ?step= and no &cue=, freeze just before cue ID: the step's cues
+ *                            before ID in autoplay order fire, and ID and later cues stay hidden
  *   &speed=X                 autoplay time scale (cue mode ignores it)
  *   &hud=1                   overlay scene · step · clock
  *   (no params)              index page listing every scene and step
@@ -493,23 +495,37 @@
       t += st.hold / SPEED;
     });
   }
+  // A step's cue ids in autoplay order: timed cues by their seconds, then listed cues, each in declared order.
+  function cueOrder(st) {
+    return [...st.cues.entries()]
+      .map(([id, delay], i) => ({ id, delay: delay ?? Infinity, i }))
+      .sort((a, b) => (a.delay - b.delay) || (a.i - b.i))
+      .map((c) => c.id);
+  }
+  function catalogOf() {
+    return [...SCENES.values()].map((sc) => ({
+      scene: sc.id,
+      name: sc.name,
+      steps: sc.steps.map((s) => s.id),
+      cues: Object.fromEntries(sc.steps.map((s) => [s.id, cueOrder(s)])),
+    }));
+  }
   // Freeze a step with its cues fired in autoplay order: every cue, or with cueId only the cues
-  // up to and including it. An element that waits for a later cue stays hidden.
-  function freeze(stepId, cueId) {
+  // up to and including it, or with beforeId only the cues before it. An element that waits for
+  // a later cue stays hidden.
+  function freeze(stepId, cueId, beforeId) {
     const found = findStep(stepId);
     if (!found) return renderIndex(`unknown step ${esc(stepId)}`);
     state.mode = "frozen";
     state.scene = found.scene;
     document.documentElement.classList.add("dt-frozen");
-    const order = [...found.step.cues.entries()]
-      .map(([id, delay], i) => ({ id, delay: delay ?? Infinity, i }))
-      .sort((a, b) => (a.delay - b.delay) || (a.i - b.i))
-      .map((c) => c.id);
+    const order = cueOrder(found.step);
     let fire = order;
-    if (cueId) {
-      const k = order.indexOf(cueId);
-      if (k < 0) warn(`cue "${cueId}" is not one of step ${found.step.id}'s cues`);
-      else fire = order.slice(0, k + 1);
+    const stop = cueId || beforeId;
+    if (stop) {
+      const k = order.indexOf(stop);
+      if (k < 0) warn(`cue "${stop}" is not one of step ${found.step.id}'s cues`);
+      else fire = order.slice(0, cueId ? k + 1 : k);
     }
     mountStep(found.scene, found.step, null, new Set(order.slice(fire.length)));
     fire.forEach((id) => fireCue(id));
@@ -534,14 +550,14 @@
   function start() {
     if (state.started) return;
     state.started = true;
-    state.catalog = [...SCENES.values()].map((sc) => ({ scene: sc.id, name: sc.name, steps: sc.steps.map((s) => s.id) }));
+    state.catalog = catalogOf();
     ensureStage();
     const beatsRaw = params.get("beats");
     const cues = beatsRaw ? parseBeats(beatsRaw) : [];
     const wordsRaw = params.get("words");
     state.words = wordsRaw ? parseWords(wordsRaw) : null;
     if (frozen) {
-      freeze(params.get("step"), params.get("cue"));
+      freeze(params.get("step"), params.get("cue"), params.get("before"));
     } else if (params.has("scene") || cues.length) {
       let sc = params.has("scene") ? SCENES.get(String(params.get("scene"))) : null;
       if (!sc && cues.length) sc = ownerOf(cues[0].id, null)?.scene || null;
@@ -573,7 +589,7 @@
     get cues() { return state.cues; },
     get fired() { return state.fired; },
     get warnings() { return state.warnings; },
-    get catalog() { return state.catalog.length ? state.catalog : [...SCENES.values()].map((sc) => ({ scene: sc.id, name: sc.name, steps: sc.steps.map((s) => s.id) })); },
+    get catalog() { return state.catalog.length ? state.catalog : catalogOf(); },
     now,
   };
 })();

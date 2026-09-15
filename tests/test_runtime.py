@@ -542,6 +542,37 @@ def test_freeze_at_one_cue_stops_there(page, deck):
     assert not page.errors
 
 
+def test_catalog_lists_each_steps_cues_in_autoplay_order(page, deck):
+    page.goto(deck.as_uri())
+    catalog = page.evaluate("() => window.__decktalk.catalog")
+    assert all(list(c["cues"]) == c["steps"] for c in catalog)
+    assert next(c for c in catalog if c["scene"] == "2")["cues"] == {"2.1": template_cues(deck, "2")}
+    assert not page.errors
+
+
+def test_freeze_before_one_cue_stops_just_before_it(page, deck):
+    """?step=2.1&before=2.1aloud fires the step's cues before 2.1aloud, and 2.1aloud stays hidden."""
+    cues = template_cues(deck, "2")
+    on = "(sel) => document.querySelector(sel).classList.contains('dt-on')"
+    page.goto(f"{deck.as_uri()}?step=2.1&before=2.1aloud")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    assert page.evaluate("() => window.__decktalk.mode") == "frozen"
+    assert page.evaluate("() => window.__decktalk.fired") == cues[: cues.index("2.1aloud")]
+    assert page.evaluate(on, "[data-cue='2.1aloud']") is False
+    assert page.evaluate(on, "[data-cue='2.1word']") is False
+    assert page.evaluate("() => window.__decktalk.warnings") == []
+    # Before the first cue, the step shows with nothing fired.
+    page.goto(f"{deck.as_uri()}?step=2.1&before={cues[0]}")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    assert page.evaluate("() => window.__decktalk.fired") == []
+    # cue wins over before.
+    page.goto(f"{deck.as_uri()}?step=2.1&cue=2.1aloud&before={cues[0]}")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    assert page.evaluate("() => window.__decktalk.fired") == cues[: cues.index("2.1aloud") + 1]
+    assert page.evaluate(on, "[data-cue='2.1aloud']") is True
+    assert not page.errors
+
+
 def test_record_page_stores_page_errors_in_the_sidecar(page, tmp_path):
     """A page that throws, and a page without the runtime, both leave page_errors that check turns into PAGE ERROR."""
     from decktalk.config import AlignConfig

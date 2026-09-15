@@ -42,7 +42,7 @@ The URL picks the mode. In prose these docs write index mode, autoplay, cue mode
 | Index mode | `index` | no `scene`, `beats`, or `step`, or an unknown scene or step | not used | a list of scenes and steps | a person who picks a scene |
 | Autoplay | `autoplay` | `?scene=N` | at `load` | each step in turn, for `hold / speed` seconds | a browser preview |
 | Cue mode | `cues` | `?beats=…`, usually with `scene` | at `load`, or at `startClock()` with `t0=signal` | each step at the earliest cue it owns | `decktalk record`, `decktalk shots --section` |
-| Freeze mode | `frozen` | `?step=ID`, optionally with `&cue=CUE` | at `load`, after the step has mounted | one step, with its reveals in their end state | `decktalk shots` |
+| Freeze mode | `frozen` | `?step=ID`, optionally with `&cue=CUE` or `&before=CUE` | at `load`, after the step has mounted | one step, with its reveals in their end state | `decktalk shots` |
 
 Note: `step` wins over `scene` and `beats`. With `beats` and no registered `scene`, the scene that
 owns the earliest cue plays. [Cue ownership](/concepts/page-contract#cue-ownership) gives the
@@ -59,6 +59,7 @@ ownership and mount rules of cue mode.
 | `prevwords` | string | none | The spoken words of the section just before this one in the narration, in the same form, in seconds after that section starts. The runtime ignores them. A page that opens on the previous section's last frame can read them, so a value it carries across the cut matches. |
 | `step` | string | none | Turns on freeze mode for this step. |
 | `cue` | string | none | With `step`, fires the step's cues up to and including this one. Elements of later cues stay hidden. |
+| `before` | string | none | With `step` and no `cue`, fires the step's cues before this one. Elements of this cue and later cues stay hidden. |
 | `speed` | number | `1` | Divides autoplay time. The minimum is 0.05. Cue mode ignores it. |
 | `hud` | `1` | off | Shows the mode, scene, step, and clock in the top left corner. Never use it in a recording. |
 
@@ -77,7 +78,7 @@ Note: In freeze mode, the step's cues fire in autoplay order. A cue in a `cues` 
 seconds, fires after the timed cues. Animations take no time. A count-up shows its final value, a
 typewriter shows its full text, and a `data-sync` element shows whole.
 
-Note: With `cue`, only the cues that fire run their handlers. `enter` still gets `ctx.frozen` as
+Note: With `cue` or `before`, only the cues that fire run their handlers. A `cue` or `before` id that is not one of the step's cues adds the warning `cue "ID" is not one of step STEP's cues`, and every cue fires. `enter` still gets `ctx.frozen` as
 true, so a figure that `enter` draws in its end state shows that state at every cue. A `cue` that is
 not one of the step's cues adds a warning, and the whole step freezes. In the scaffold,
 `?step=2.1&cue=2.1aloud` shows the script card and the waveform with its word times. It hides the
@@ -256,7 +257,7 @@ the element is still plain text, the page warns.
 | `step` | string or `null` | The id of the mounted step. |
 | `cues` | array | The parsed `beats` pairs, as `{ id, t }` objects in time order. |
 | `fired` | array of strings | Cue ids fired so far, in order. `decktalk shots --section` logs it with each frame. |
-| `catalog` | array | One `{ scene, name, steps }` object per scene. `steps` lists the step ids. |
+| `catalog` | array | One `{ scene, name, steps, cues }` object per scene. `steps` lists the step ids. `cues` maps each step id to its cue ids in autoplay order. |
 | `warnings` | array of strings | Everything the runtime could not do, each listed one time. |
 | `now()` | function | Seconds since the clock started, or `-Infinity` before it starts. |
 | `frameGaps` | array | One `{ at, ms }` object for each gap over 100 ms between two animation frames. Cue mode only. |
