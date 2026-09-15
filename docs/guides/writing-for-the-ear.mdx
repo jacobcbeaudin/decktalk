@@ -82,7 +82,7 @@ The scaffold's cues have no offset key, so every reveal in the scaffold starts o
 
 The last reveal of a section can use `$end` as its cue phrase. `$end` is the end of the section's last spoken word, so a summary line appears as the voice stops.
 
-To keep the final frame on screen after the narration ends, set `hold_seconds` on the last page section. [cues.json](/reference/cues-json) documents `$start` and `$end`.
+To keep a section's last frame on screen after its narration ends, set `hold_seconds` on that page section. To open a section on silence, set `lead_seconds`. [cues.json](/reference/cues-json) documents `$start` and `$end`.
 
 ## Write numbers as words
 

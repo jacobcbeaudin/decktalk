@@ -29,6 +29,7 @@ Find your edit in the first column. `N` is the number of the section you changed
 | A cue of section N in `cues.json` | `decktalk build --only N` |
 | A slide in a page | `decktalk build` with one `--only N` for each section that plays the changed scene, such as `decktalk build --only 1 --only 9` |
 | `extra_seconds` on section N | `decktalk build --only N` |
+| `lead_seconds` or `tail_seconds` on section N | `decktalk build --only N` |
 | The voice id, the model, the output format, or a `[voice]` setting | `decktalk build` |
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | `decktalk assemble`, then `decktalk verify` |
 
@@ -58,6 +59,7 @@ The next table gives the reason for each row of the first table.
 | A cue of section N | none | section N | The page receives its cue times when `record` opens it. |
 | A slide | none | each section that plays the scene | A recording captures the page as it was. |
 | `extra_seconds` on section N | none | section N | The recording length changes. |
+| `lead_seconds` or `tail_seconds` on section N | none | section N | The section span changes. `narrate` adds the silence without a request. |
 | The voice id, model, output format, or a `[voice]` setting | every section | every section | The cache key includes each of them, so every word time moves. |
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | none | none | Only `assemble` reads them. |
 

@@ -36,7 +36,7 @@ Each table lists the term, its meaning, the words that the docs do not use for i
 | mode | `index`, `autoplay`, `cues`, or `frozen`. In prose: index mode, autoplay, cue mode, freeze mode. | "`cues` mode", "frozen mode" | [Runtime](/reference/runtime#modes) |
 | browser preview | A page opened in a browser without `?beats=`. It plays in autoplay. | "the preview" alone | [The page contract](/concepts/page-contract) |
 | own | A step owns a cue by the three ownership rules. | "belongs to", "claims" | [The page contract](/concepts/page-contract#cue-ownership) |
-| `hold` / `hold_seconds` | `hold` is the step key for autoplay seconds. `hold_seconds` is the section key that holds the last slide. | bare "hold" for a third meaning | [Runtime](/reference/runtime), [decktalk.toml](/reference/decktalk-toml) |
+| `hold` / `hold_seconds` | `hold` is the step key for autoplay seconds. `hold_seconds` is the section key that holds a page section's last frame after its narration. | bare "hold" for a third meaning | [Runtime](/reference/runtime), [decktalk.toml](/reference/decktalk-toml) |
 | handler | A function in a step's `on` object, or one registered with `DeckTalk.on(id, fn)`. | "handler cue" | [Runtime](/reference/runtime) |
 
 ## Cues and timing

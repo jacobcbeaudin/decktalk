@@ -44,7 +44,6 @@ explains.
 | `ignoring unknown key` | every project command | [Entry](#ignoring-unknown-key-in-decktalk-toml) |
 | `must be int, got float` | every project command | [Entry](#must-be-in-decktalk-toml) |
 | `invalid tuning value` | every project command | [Entry](#invalid-tuning-value-in-decktalk-toml) |
-| `hold_seconds is allowed only on the last page section` | every project command | [Entry](#hold_seconds-is-allowed-only-on-the-last-page-section-in-decktalk-toml) |
 | `unfilled placeholders` | `narrate`, `build` | [Entry](#unfilled-placeholders-in-narrate) |
 | `no spoken sections match` | `narrate` | [Entry](#no-spoken-sections-match-in-narrate) |
 | `have no [[section]] in decktalk.toml` | `narrate`, `build` | [Entry](#have-no-section-in-decktalk-toml-in-narrate) |
@@ -289,17 +288,6 @@ variable has a value of the wrong type.
 
 **More.** [Configuration](/reference/configuration)
 
-### `hold_seconds is allowed only on the last page section` in decktalk.toml
-
-**Cause.** A page section other than the last page section sets `hold_seconds`. A hold there would move
-every later picture off its words.
-
-**Fix.**
-1. Move `hold_seconds` to the last page section.
-2. If you need a pause in the middle, add words or a `[pause N]` to the script instead.
-
-**More.** [Page section keys](/reference/decktalk-toml#page-section-keys)
-
 ## narrate
 
 ### `unfilled placeholders` in narrate
@@ -365,6 +353,18 @@ spend credits on every section.
 2. If you want to drop the voiced takes, run the same command with `--force`.
 
 **More.** [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build)
+
+### A section opens on its first word
+
+**Cause.** `narrate` removes a direction before the first words of a section, `[pause N]` included. So the
+first word plays as the section's first frame appears.
+
+**Fix.**
+1. Set `lead_seconds` on the page section in `decktalk.toml`. `narrate` joins that much silence in before the
+   take and sends no request.
+2. Run `decktalk build --only N`, so the recording covers the lead.
+
+**More.** [Silence in a section](/reference/decktalk-toml#silence-in-a-section)
 
 ## beats
 

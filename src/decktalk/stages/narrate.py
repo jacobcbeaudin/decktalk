@@ -11,6 +11,9 @@ settings and text, padded so speech ends at least min_tail_seconds before the fi
 ends, then every section is concatenated with no gaps into build/audio/narration.mp3.
 A renumbered section keeps its take: when its key misses, an entry of the previous
 manifest with the same hash lends its files, copied to the new name.
+A page section's lead_seconds joins that much silence in before its take when the takes are
+concatenated, and its tail_seconds replaces min_tail_seconds for it. Neither is part of the
+hash, so neither voices a take again.
 build/audio/timeline.json records each section's absolute start and end and every
 word at absolute time; the recorder and the assembler cut the visuals to it.
 
@@ -31,11 +34,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import Manifest, ManifestSegment, Timeline, TimelineSection, Word, read_words, write_words
+from ..artifacts import Manifest, ManifestSegment, Timeline, TimelineSection, Word, write_words
 from ..config import NarrationConfig
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
-from ..project import Project
+from ..project import PageSection, Project
 from ..providers import elevenlabs as _elevenlabs  # noqa: F401  (registers the default provider)
 from ..providers.speech import SpeechProvider, SpeechRequest, get_provider
 
@@ -225,6 +228,14 @@ def script_segments(project: Project) -> tuple[list[Segment], list[Segment]]:
 # ---- audio ---------------------------------------------------------------------------
 
 
+def section_config(project: Project, seg: Segment) -> NarrationConfig:
+    """The narration settings for one section: its own `tail_seconds`, when it sets one, replaces min_tail_seconds."""
+    cfg = project.settings.narration
+    sec = project.section(seg.index)
+    tail = sec.tail_seconds if isinstance(sec, PageSection) else None
+    return cfg if tail is None else replace(cfg, min_tail_seconds=tail)
+
+
 def ensure_tail(path: Path, cfg: NarrationConfig, *, tolerance: float = 0.0) -> float:
     """Pad with silence so speech ends at least min_tail_seconds before the file ends. Returns seconds added.
 
@@ -325,13 +336,17 @@ def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -
     cfg = project.settings.narration
     keys = [s.key for s in order if s.key in manifest.segments]
     files = [project.audio_dir / manifest.segments[k].file for k in keys]
+    # A section's lead_seconds is silence joined in before its take, so the take and its cache stay as they are.
+    leads = [project.lead_seconds(k) for k in keys]
     narration = project.audio_dir / "narration.mp3"
-    ffmpeg.concat_audio(files, narration, bitrate=cfg.mp3_bitrate, sample_rate=project.settings.video.sample_rate)
+    ffmpeg.concat_audio(
+        files, narration, bitrate=cfg.mp3_bitrate, sample_rate=project.settings.video.sample_rate, leads=leads
+    )
     t = 0.0
     sections: dict[str, TimelineSection] = {}
-    for k, f in zip(keys, files, strict=True):
-        dur = ffmpeg.decoded_duration(f, sample_rate=project.settings.video.sample_rate)
-        words = read_words(project.audio_dir / manifest.segments[k].words_file)
+    for k, f, lead in zip(keys, files, leads, strict=True):
+        dur = lead + ffmpeg.decoded_duration(f, sample_rate=project.settings.video.sample_rate)
+        words = project.section_words(k, manifest.segments[k].words_file)
         sections[k] = TimelineSection(
             title=manifest.segments[k].title,
             start=round(t, 3),
@@ -339,6 +354,7 @@ def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -
             duration=round(dur, 3),
             speech_end=round(t + words[-1].end, 3) if words else None,
             words=[Word(w.word, round(t + w.start, 3), round(t + w.end, 3)) for w in words],
+            lead_seconds=lead,
         )
         t += dur
     timeline = Timeline(
@@ -432,9 +448,10 @@ def narrate(
     for seg in targets:
         out_path = project.audio_dir / seg.filename
         words_path = project.audio_dir / seg.words_filename
+        scfg = section_config(project, seg)
         if silent:
-            duration = seg.silent_seconds(cfg)
-            words = estimated_words(seg, duration, cfg)
+            duration = seg.silent_seconds(scfg)
+            words = estimated_words(seg, duration, scfg)
             ffmpeg.write_clicks(
                 out_path,
                 duration,
@@ -476,7 +493,7 @@ def narrate(
             # its tail when the measurement lands within a frame of min_tail_seconds, so a
             # rounding difference never pads it again on every run.
             tolerance = ffmpeg.SILENCE_END_TOLERANCE_SECONDS if entry.tail_padded_seconds else 0.0
-            added = ensure_tail(out_path, cfg, tolerance=tolerance)
+            added = ensure_tail(out_path, scfg, tolerance=tolerance)
             if added:
                 entry.duration_seconds = ffmpeg.probe_duration(out_path)
                 entry.tail_padded_seconds = round((entry.tail_padded_seconds or 0.0) + added, 3)
@@ -509,7 +526,7 @@ def narrate(
                 for w in words
             ]
         write_words(words_path, words)
-        added = ensure_tail(out_path, cfg)
+        added = ensure_tail(out_path, scfg)
         duration = ffmpeg.probe_duration(out_path)
         speech_end = words[-1].end if words else None
         log.info(

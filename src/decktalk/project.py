@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .artifacts import Beats, Manifest, Timeline
+from .artifacts import Beats, Manifest, Timeline, Word, read_words
 from .config import (
     PROJECT_FILE,
     Settings,
@@ -82,6 +82,11 @@ class PageSection:
 
     `carries_previous` says the page opens on the previous section's last picture, so the cut
     into it should not show. verify compares the two frames.
+
+    `lead_seconds` is silence in the narration before the section's first word. It is added when
+    the takes are joined, not sent to the voice, so a cached take stays cached. `tail_seconds`
+    replaces `[narration] min_tail_seconds` for this section. `hold_seconds` holds the section's
+    last frame after its narration, and the narration pauses for it.
     """
 
     number: int
@@ -93,6 +98,8 @@ class PageSection:
     ambience: bool = False
     params: dict[str, str] = field(default_factory=dict)
     carries_previous: bool = False
+    lead_seconds: float = 0.0
+    tail_seconds: float | None = None  # None uses [narration] min_tail_seconds.
 
     @property
     def key(self) -> str:
@@ -253,7 +260,19 @@ class _Table:
 VOICE_KEYS = frozenset({"provider", "model", "stability", "similarity_boost", "style", "speaker_boost", "speed"})
 CLIP_KEYS = frozenset({"number", "title", "clip", "slate_seconds", "optional", "words", "carries_previous"})
 PAGE_KEYS = frozenset(
-    {"number", "title", "page", "scene", "extra_seconds", "hold_seconds", "ambience", "params", "carries_previous"}
+    {
+        "number",
+        "title",
+        "page",
+        "scene",
+        "extra_seconds",
+        "hold_seconds",
+        "lead_seconds",
+        "tail_seconds",
+        "ambience",
+        "params",
+        "carries_previous",
+    }
 )
 SOUND_KEYS = frozenset({"text", "out", "duration_seconds", "prompt_influence", "model_id"})
 
@@ -294,6 +313,10 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
     scene = raw.get("scene", number)
     if isinstance(scene, bool) or not isinstance(scene, (int, str)):
         raise ConfigError(f"{where}: 'scene' must be a number or a string")
+    for key in ("extra_seconds", "hold_seconds", "lead_seconds", "tail_seconds"):
+        value = t.get_num(key)
+        if value is not None and value < 0:
+            raise ConfigError(f"{where}: '{key}' must be 0 or more, got {value:g}")
     return PageSection(
         number=number,
         page=t.get_str("page"),
@@ -304,6 +327,8 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
         ambience=t.get_bool("ambience"),
         params={str(k): str(v) for k, v in params_raw.items()},
         carries_previous=t.get_bool("carries_previous"),
+        lead_seconds=t.get_num("lead_seconds", 0.0),
+        tail_seconds=t.get_num("tail_seconds"),
     )
 
 
@@ -535,17 +560,7 @@ class Project:
         )
         for message in settings_key_warnings(doc, PROJECT_FILE):
             log.warning(message)
-        project._check_holds()
         return project
-
-    def _check_holds(self) -> None:
-        pages = [s for s in self.sections if isinstance(s, PageSection)]
-        holders = [s for s in pages if s.hold_seconds > 0]
-        if holders and (len(holders) > 1 or holders[0] is not pages[-1]):
-            raise ConfigError(
-                f"{PROJECT_FILE}: hold_seconds is allowed only on the last page section ({pages[-1].number}); "
-                "the narration is continuous, so holding earlier would push every later visual off its words"
-            )
 
     # ---- paths -------------------------------------------------------------------
     def path(self, rel: str | Path) -> Path:
@@ -632,6 +647,19 @@ class Project:
     @property
     def clip_sections(self) -> list[ClipSection]:
         return [s for s in self.sections if isinstance(s, ClipSection)]
+
+    def lead_seconds(self, key: str) -> float:
+        """Silence before the first word of the section with this two-digit key, rounded to whole milliseconds."""
+        sec = self.section(int(key))
+        return round(sec.lead_seconds, 3) if isinstance(sec, PageSection) else 0.0
+
+    def section_words(self, key: str, words_file: str) -> list[Word]:
+        """A take's words in seconds after its section starts, which is after the section's lead_seconds."""
+        lead = self.lead_seconds(key)
+        words = read_words(self.audio_dir / words_file)
+        if not lead:
+            return words
+        return [Word(w.word, round(w.start + lead, 3), round(w.end + lead, 3)) for w in words]
 
     @property
     def clip_numbers(self) -> set[int]:

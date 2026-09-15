@@ -113,6 +113,7 @@ class TimelineSection:
     duration: float
     speech_end: float | None
     words: list[Word] = field(default_factory=list)
+    lead_seconds: float = 0.0  # Silence joined in before the take, part of `duration`. The words already include it.
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Self:
@@ -123,6 +124,7 @@ class TimelineSection:
             duration=float(d["duration"]),
             speech_end=None if d.get("speech_end") is None else float(d["speech_end"]),
             words=[Word.from_dict(w) for w in d.get("words", [])],
+            lead_seconds=float(d.get("lead_seconds", 0.0)),
         )
 
 

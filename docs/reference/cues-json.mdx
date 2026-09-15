@@ -95,6 +95,8 @@ Note: `decktalk verify` still checks a `"verify": false` cue that you name as `S
 | `$end` | The end of the section's last spoken word, plus the offset key. Not the end of the section's audio file. |
 
 Note: `decktalk verify` skips a `$start` cue with no offset key, as `REFERENCE_CLAMPED`.
+
+Note: A section's `lead_seconds` moves every word, and so every phrase cue and `$end`, that much later. `$start` stays at 0.
 [Skipped rows](/reference/verify#skipped-rows) explains why.
 
 ## Output files

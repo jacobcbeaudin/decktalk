@@ -104,7 +104,8 @@ title = "Close"
 page = "deck/index.html"
 scene = 5
 extra_seconds = 2
-hold_seconds = 2.5       # allowed only on the last page section
+hold_seconds = 2.5       # the last frame holds after the narration. Any page section can hold, and lead_seconds
+                         # adds silence before a section's first word.
 
 [transition]
 dips = []               # boundaries that dip to black, as [from, to] pairs. Omit the key to dip at every cut.

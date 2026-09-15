@@ -47,7 +47,7 @@ Full rules: [script.md](/reference/script-md).
 - Consecutive sections with the same `title` share one chapter.
 - A clip section with `optional = true` plays its slate under `--strict` too.
 - A clip section can sit before, between, or after page sections.
-- Only the last page section can set `hold_seconds`.
+- A page section can set `lead_seconds`, `tail_seconds`, and `hold_seconds` to add silence. A hold pauses the narration.
 - `[transition]`, `[mix]`, `[soundscape]`, and the tuning tables are optional.
 - An unknown top-level table fails the load.
 - DeckTalk warns about an unknown key inside a table, then ignores the key.

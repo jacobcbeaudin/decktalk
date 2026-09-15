@@ -475,3 +475,66 @@ def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
     assert again.duration_seconds == entry.duration_seconds, "a cached take was padded again"
     assert again.tail_padded_seconds == entry.tail_padded_seconds
     assert take.read_bytes() == data
+
+
+def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
+    """A section's lead joins silence into narration.mp3 and its tail pads the take, and neither voices it again."""
+    from decktalk.artifacts import Manifest, Word
+    from decktalk.project import Project
+    from decktalk.providers.speech import register
+    from decktalk.stages.narrate import narrate
+
+    class ToneVoice:
+        name = "tone-lead"
+        calls = 0
+
+        def speak(self, request):
+            ToneVoice.calls += 1
+            src = tmp_path / "voice.mp3"
+            _tone_with_tail(src, tail=0.8)
+            return src.read_bytes(), [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)]
+
+        def cache_key(self, request):
+            return "tone-lead-voice"
+
+    register(ToneVoice.name, lambda project: ToneVoice())
+    (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
+    base = (
+        f"[narration]\nmin_tail_seconds = 0.7\nlead_break_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
+        "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\npage = 'a.html'\n"
+    )
+    toml = tmp_path / "decktalk.toml"
+    toml.write_text(base, encoding="utf-8")
+    first = narrate(Project.load(tmp_path, environ={}))
+    assert first.synthesized == ["01", "02"] and ToneVoice.calls == 2
+    manifest_path = tmp_path / "build" / "audio" / "manifest.json"
+    entry = Manifest.load(manifest_path).segments["02"]
+    take = tmp_path / "build" / "audio" / entry.file
+    data = take.read_bytes()
+    before = first.timeline.sections["02"]
+
+    toml.write_text(base + "lead_seconds = 1.5\n", encoding="utf-8")
+    p = Project.load(tmp_path, environ={})
+    second = narrate(p)
+    assert second.synthesized == [] and second.cached == ["01", "02"] and ToneVoice.calls == 2
+    assert take.read_bytes() == data and Manifest.load(manifest_path).segments["02"] == entry
+    after = second.timeline.sections["02"]
+    assert after.start == before.start and after.lead_seconds == 1.5
+    assert after.duration == pytest.approx(before.duration + 1.5, abs=0.002)
+    assert [w.start for w in after.words] == [pytest.approx(w.start + 1.5, abs=0.001) for w in before.words]
+    narration = p.audio_dir / "narration.mp3"
+    assert ffmpeg.decoded_duration(narration) == pytest.approx(first.timeline.total_seconds + 1.5, abs=0.03)
+    assert ffmpeg.rms_db(narration, after.start + 0.1, 1.3) < -60, "the lead is not silent"
+    assert ffmpeg.rms_db(narration, after.start + 1.55, 0.4) > -30, "the take does not follow the lead"
+
+    toml.write_text(base + "lead_seconds = 1.5\ntail_seconds = 2\n", encoding="utf-8")
+    p = Project.load(tmp_path, environ={})
+    third = narrate(p)
+    assert third.synthesized == [] and third.cached == ["01", "02"] and ToneVoice.calls == 2
+    padded = Manifest.load(manifest_path).segments["02"]
+    assert padded.hash == entry.hash and padded.tail_padded_seconds > 1.0
+    assert ffmpeg.trailing_silence(take) >= 2.0
+    assert Manifest.load(manifest_path).segments["01"].tail_padded_seconds == 0.0
+    fourth = narrate(p)
+    assert fourth.synthesized == [] and ToneVoice.calls == 2
+    assert Manifest.load(manifest_path).segments["02"].duration_seconds == padded.duration_seconds

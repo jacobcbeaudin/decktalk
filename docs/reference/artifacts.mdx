@@ -160,11 +160,12 @@ The timeline gives section and word times in `narration.mp3`.
 | `total_seconds` | number | Length of the narration track. |
 | `sections` | table | One entry per spoken section, keyed by `NN`. |
 | `sections.NN.title` | string | Section title. |
-| `sections.NN.start` | number | Start of the section in `narration.mp3`. |
+| `sections.NN.start` | number | Start of the section in `narration.mp3`, where its `lead_seconds` of silence begins. |
 | `sections.NN.end` | number | End of the section, including the silence after its last word. |
 | `sections.NN.duration` | number | `end` minus `start`. |
 | `sections.NN.speech_end` | number or null | End of the section's last spoken word, in `narration.mp3`. |
 | `sections.NN.words` | array of tables | The words of the section, with `word`, `start`, and `end` in `narration.mp3`. |
+| `sections.NN.lead_seconds` | number | Silence joined in before the section's mp3, from the section's `lead_seconds`. `duration` and the word times include it. |
 | `estimated` | boolean | True after a silent build. |
 
 Note: The section span runs from `start` to `end`. The spoken span runs from `start` to `speech_end`.

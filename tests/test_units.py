@@ -93,21 +93,14 @@ def test_project_loads_sections_in_order(tmp_path):
         ("[[section]]\nnumber = 1\n", "needs 'page'"),
         ("[[section]]\nnumber = 1\npage = 'a.html'\nclip = 'b.mp4'\n", "either 'clip' or 'page'"),
         ("[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 1\npage = 'a.html'\n", "duplicate"),
-        (
-            "[[section]]\nnumber = 1\npage = 'a.html'\nhold_seconds = 2\n[[section]]\nnumber = 2\npage = 'a.html'\n",
-            "hold_seconds",
-        ),
+        ("[[section]]\nnumber = 1\npage = 'a.html'\nlead_seconds = -1\n", "'lead_seconds' must be 0 or more, got -1"),
+        ("[[section]]\nnumber = 1\npage = 'a.html'\nhold_seconds = -0.5\n", "'hold_seconds' must be 0 or more"),
         ("[[section]]\nnumber = 1\npage = 'a.html'\nextra_seconds = 'lots'\n", "must be"),
         ("[[section]]\nnumber = 1\npage = 'a.html'\n[transition]\ndips = [[1, 9]]\n", "does not exist"),
         ("[[section]]\nnumber = 1\npage = 'a.html'\n[bogus]\nx = 1\n", "unknown table"),
         (
             "[[section]]\nnumber = 1\npage = 'a.html'\n[[mix.sfx]]\nfile = 'x.mp3'\nsection = 1\n",
             "missing required key 'cue'",
-        ),
-        (
-            "[[section]]\nnumber = 1\npage = 'a.html'\nhold_seconds = 2\n[[section]]\nnumber = 2\nclip = 'c.mp4'\n"
-            "[[section]]\nnumber = 3\npage = 'a.html'\n",
-            r"hold_seconds is allowed only on the last page section \(3\)",
         ),
     ],
 )
@@ -2038,3 +2031,162 @@ def test_cli_silent_run_over_voiced_takes_exits_1_with_the_risk(tmp_path, capsys
     assert capsys.readouterr().err.strip().splitlines()[-1] == f"error: {VOICED_REFUSAL}"
     assert take.read_bytes() == b"voiced take"
     assert build_parser().parse_args(["build", "--silent", "--force"]).force
+
+
+# ---- section silence -----------------------------------------------------------------------
+
+
+def _two_takes(tmp_path: Path, second: str = "") -> tuple[Project, Manifest]:
+    """Two page sections with a 3 s take each, words at 0.5 s and 1.0 s. `second` adds keys to section 2."""
+    from decktalk.artifacts import write_words
+
+    root = write_project(
+        tmp_path, f"[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\npage = 'a.html'\n{second}"
+    )
+    (root / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye now.\n", encoding="utf-8")
+    p = Project.load(root, environ={})
+    p.audio_dir.mkdir(parents=True)
+    manifest = Manifest(script="script.md", model="m", output_format="mp3_44100_128")
+    for key, slug in (("01", "open"), ("02", "close")):
+        write_words(p.audio_dir / f"{key}-{slug}.words.json", [Word("a", 0.5, 0.9), Word("b", 1.0, 1.6)])
+        manifest.segments[key] = ManifestSegment(
+            index=int(key), title=slug.title(), file=f"{key}-{slug}.mp3", words_file=f"{key}-{slug}.words.json",
+            hash="h", words=2, est_seconds=1.0, duration_seconds=3.0,
+        )  # fmt: skip
+    manifest.save(p.manifest_path)
+    return p, manifest
+
+
+def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr(logging.getLogger("decktalk"), "propagate", True)
+    toml = (
+        "[[section]]\nnumber = 1\npage = 'a.html'\nlead_seconds = 1.5\ntail_seconds = 2\n"
+        "[[section]]\nnumber = 2\nclip = 'c.mp4'\nlead_seconds = 1\n"
+    )
+    with caplog.at_level(logging.WARNING, logger="decktalk"):
+        p = Project.load(write_project(tmp_path, toml), environ={})
+    page = p.page_sections[0]
+    assert (page.lead_seconds, page.tail_seconds) == (1.5, 2.0)
+    assert p.lead_seconds("01") == 1.5 and p.lead_seconds("02") == 0.0
+    assert "ignoring 'lead_seconds', which applies only to a page section" in caplog.text
+    assert Project.load(write_project(tmp_path, MINIMAL_TOML), environ={}).page_sections[0].tail_seconds is None
+
+
+def test_timeline_joins_each_section_lead_before_its_take(tmp_path, monkeypatch):
+    """lead_seconds is silence in narration.mp3 before the take. The words and cues move, and the take does not."""
+    from decktalk.media import ffmpeg
+    from decktalk.stages.assemble import resolve_marker_time
+    from decktalk.stages.beats import resolve_beats
+    from decktalk.stages.narrate import build_timeline, script_segments
+
+    p, manifest = _two_takes(tmp_path, "lead_seconds = 1.25\n")
+    joined: dict = {}
+    monkeypatch.setattr(
+        ffmpeg, "concat_audio", lambda files, out, **kw: joined.update(files=[f.name for f in files], leads=kw["leads"])
+    )
+    monkeypatch.setattr(
+        ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 7.25 if path.name == "narration.mp3" else 3.0
+    )
+    tl = build_timeline(p, manifest, script_segments(p)[1])
+    assert joined == {"files": ["01-open.mp3", "02-close.mp3"], "leads": [0.0, 1.25]}
+    one, two = tl.sections["01"], tl.sections["02"]
+    assert (one.start, one.end, one.duration, one.lead_seconds) == (0.0, 3.0, 3.0, 0.0)
+    assert (two.start, two.end, two.duration, two.lead_seconds) == (3.0, 7.25, 4.25, 1.25)
+    assert [(w.start, w.end) for w in two.words] == [(4.75, 5.15), (5.25, 5.85)]
+    assert two.speech_end == 5.85 and tl.total_seconds == 7.25
+    saved = Timeline.load(p.timeline_path)
+    assert saved is not None and saved.sections["02"].lead_seconds == 1.25
+
+    # Cue times count from the section start, so the lead moves each word cue, and $start stays at 0.
+    cues = [{"step": "2.0", "on": "$start"}, {"step": "2.1", "on": "b"}, {"step": "2.2", "on": "$end"}]
+    (p.root / "cues.json").write_text(json.dumps({"sections": {"2": {"cues": cues}}}), encoding="utf-8")
+    result = resolve_beats(p)
+    assert result.beats.sections["02"] == {"2.0": 0.0, "2.1": 2.25, "2.2": 2.85}
+    assert result.sections[0].speech_end == 2.85
+    marker = {"section": 2, "on": "b"}
+    assert resolve_marker_time(marker, {"02": 10.0}, manifest, p.audio_dir, {"02": 1.25}) == pytest.approx(12.25)
+    assert resolve_marker_time(marker, {"02": 10.0}, manifest, p.audio_dir) == pytest.approx(11.0)
+
+
+def test_a_section_tail_seconds_replaces_min_tail_seconds(tmp_path, monkeypatch):
+    from decktalk.media import ffmpeg
+    from decktalk.stages.narrate import ensure_tail, narrate, script_segments, section_config
+
+    root = write_project(
+        tmp_path,
+        "[narration]\nmin_tail_seconds = 0.7\nlead_break_seconds = 0\n[[section]]\nnumber = 1\npage = 'a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'a.html'\ntail_seconds = 2.5\n",
+    )
+    (root / "script.md").write_text(
+        "## 1. One\n\nSame words here.\n\n## 2. Two\n\nSame words here.\n", encoding="utf-8"
+    )
+    p = Project.load(root, environ={})
+    lengths: dict[str, float] = {}
+
+    def clicks(path, duration, times, **kw):
+        lengths[Path(path).name] = duration
+        Path(path).write_bytes(b"clicks")
+
+    monkeypatch.setattr(ffmpeg, "write_clicks", clicks)
+    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: lengths[Path(path).name])
+    monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: lengths.get(Path(path).name, 0.0))
+    monkeypatch.setattr(ffmpeg, "concat_audio", lambda files, out, **kw: None)
+    narrate(p, silent=True)
+    # The same words take the same time, so the click tracks differ by the tails alone.
+    assert lengths["02-two.mp3"] - lengths["01-one.mp3"] == pytest.approx(1.8)
+
+    padded: list[tuple[str, float]] = []
+    monkeypatch.setattr(ffmpeg, "trailing_silence", lambda path: 1.0)
+    monkeypatch.setattr(ffmpeg, "pad_tail", lambda path, seconds, bitrate: padded.append((Path(path).name, seconds)))
+    for seg in script_segments(p)[1]:
+        ensure_tail(p.audio_dir / seg.filename, section_config(p, seg))
+    assert padded == [("02-two.mp3", 1.55)]  # a 1.0 s tail passes 0.7 but not 2.5, which it reaches plus the slack
+
+
+def test_a_hold_between_page_sections_pauses_the_narration(tmp_path):
+    from decktalk.stages.assemble import (
+        NarrationRun,
+        RenderedSection,
+        build_captions,
+        narration_offsets,
+        narration_runs,
+        plan_mix,
+        section_starts,
+    )
+
+    toml = (
+        "[[section]]\nnumber = 1\npage = 'a.html'\nhold_seconds = 2\n[[section]]\nnumber = 2\npage = 'a.html'\n"
+        "[[section]]\nnumber = 3\npage = 'a.html'\nhold_seconds = 1\n"
+    )
+    p = Project.load(write_project(tmp_path, toml), environ={})
+    tl = Timeline(
+        narration="narration.mp3",
+        total_seconds=6.0,
+        sections={
+            "01": TimelineSection("A", 0.0, 2.0, 2.0, 1.6, _spoken("alpha beta", 0.7)),
+            "02": TimelineSection("B", 2.0, 4.5, 2.5, 4.1, _spoken("gamma delta", 2.1)),
+            "03": TimelineSection("C", 4.5, 6.0, 1.5, 5.8, _spoken("epsilon", 4.6)),
+        },
+    )
+    rows = [
+        RenderedSection(p.sections[0], tmp_path / "01.mp4", 4.0, "page"),  # 2 s of narration and a 2 s hold
+        RenderedSection(p.sections[1], tmp_path / "02.mp4", 2.52, "page"),
+        RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.48, "page"),
+    ]
+    starts = section_starts(rows)
+    assert narration_runs(rows, tl, starts) == [
+        NarrationRun(keys=("01",), at=0.0, start=0.0, end=2.0),
+        NarrationRun(keys=("02", "03"), at=4.0, start=2.0, end=None),
+    ]
+    offsets = narration_offsets(rows, tl, starts)
+    assert offsets == {"01": 0.0, "02": 2.0, "03": 2.0}
+    plan = plan_mix(p, rows, tl, nomix=True)
+    assert "atrim=start=0.000:end=2.000,asetpts=PTS-STARTPTS,adelay=0:all=1[narr0]" in plan.filter
+    assert "atrim=start=2.000,asetpts=PTS-STARTPTS,adelay=4000:all=1[narr1]" in plan.filter
+    assert [(c.text, c.start) for c in build_captions(tl, offsets)] == [
+        ("alpha beta", 0.7),
+        ("gamma delta", 4.1),
+        ("epsilon", 6.6),
+    ]

@@ -73,7 +73,7 @@ anyway. `decktalk narrate --dry-run` lists every placeholder.
 
 | Directions | Result |
 |---|---|
-| Before the first prose of a section | Removed. No pause. |
+| Before the first prose of a section | Removed. No pause. Set `lead_seconds` on the section instead. |
 | After the last prose of a section | Removed. No pause. |
 | Two or more in a row | One pause, the longest. |
 | A beat next to `[pause N]` | The timed pause. |
@@ -86,7 +86,15 @@ anyway. `decktalk narrate --dry-run` lists every placeholder.
 | After each section's last word, at least | `min_tail_seconds` | 0.7 (the scaffold sets 1.3) |
 | Extra padding when the tail is too short | `tail_slack_seconds` | 0.05 |
 
-ffmpeg adds this silence to the audio. The speech provider does not receive it.
+A page section in `decktalk.toml` can add its own silence.
+
+| Where | Key in `[[section]]` | Default |
+|---|---|---|
+| Before the section's first word | `lead_seconds` | 0 |
+| After the section's last word, at least | `tail_seconds` | `min_tail_seconds` |
+
+ffmpeg adds this silence to the audio. The speech provider does not receive it. `lead_seconds` goes into
+`narration.mp3` before the section's mp3, which stays as the voice returned it.
 The tail is not part of the narration cache. If you raise `min_tail_seconds`, the next `narrate` pads each cached mp3
 and sends no request.
 
@@ -121,7 +129,8 @@ silent section length = words / silent_words_per_minute * 60
                       + timed pause seconds
                       + beats * direction_break_seconds
                       + lead_break_seconds      (first spoken section only)
-                      + min_tail_seconds
+                      + min_tail_seconds        (tail_seconds when the section sets it)
+section span          = section length + lead_seconds
 ```
 
 `words` is the number of spoken words. Timed pause seconds add up every `[pause N]` and every

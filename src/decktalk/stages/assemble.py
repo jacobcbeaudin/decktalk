@@ -377,7 +377,7 @@ def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> li
                 raise MissingInputError(
                     f"section {sec.key} has no span in {project.timeline_path}; run `decktalk narrate`"
                 )
-            total = round(total + sec.hold_seconds, 3)  # validated at load: only the last page section holds
+            total = round(total + sec.hold_seconds, 3)  # the narration pauses for the hold, as it does for a clip
             warning = measure_warning(project, sec, strict=strict)
             note = _render_page(project, enc, sec, out, flags[sec.key], dip, total, strict=strict)
         dur = ffmpeg.probe_duration(out)
@@ -417,8 +417,13 @@ class MixPlan:
 
 
 def resolve_marker_time(
-    marker: dict[str, Any], starts: dict[str, float], manifest: Manifest, audio_dir: Path
+    marker: dict[str, Any],
+    starts: dict[str, float],
+    manifest: Manifest,
+    audio_dir: Path,
+    leads: Mapping[str, float] | None = None,
 ) -> float | None:
+    """Where a markers.json entry falls in the final file. `leads` gives each section's lead_seconds."""
     key = f"{int(marker['section']):02d}"
     if key not in starts:
         return None
@@ -429,7 +434,8 @@ def resolve_marker_time(
     entry = manifest.segments.get(key)
     if entry is None:
         return None
-    words = read_words(audio_dir / entry.words_file)
+    lead = (leads or {}).get(key, 0.0)
+    words = [Word(w.word, w.start + lead, w.end + lead) for w in read_words(audio_dir / entry.words_file)]
     if on == "$end":
         return starts[key] + words[-1].end + offset if words else None
     idx = find_phrase(words, on, int(marker.get("occurrence", 1)), bool(marker.get("case_sensitive", False)))
@@ -462,11 +468,12 @@ class NarrationRun:
 
 
 def narration_runs(rows: list[RenderedSection], timeline: Timeline, starts: dict[str, float]) -> list[NarrationRun]:
-    """The narration split at every clip that sits between page sections.
+    """The narration split at every clip that sits between page sections, and after every held page section.
 
     The track holds the spoken sections with no gaps, so a clip between two page sections
-    pauses it, and the next page section resumes it on its own first frame. A project with
-    no clip between page sections has one run.
+    pauses it, and the next page section resumes it on its own first frame. A page section's
+    hold_seconds pauses it the same way. A project with no clip or hold between page sections
+    has one run.
     """
     groups: list[list[str]] = []
     open_run = False
@@ -479,6 +486,8 @@ def narration_runs(rows: list[RenderedSection], timeline: Timeline, starts: dict
                 groups.append([])
                 open_run = True
             groups[-1].append(key)
+            if isinstance(row.section, PageSection) and row.section.hold_seconds > 0:
+                open_run = False
     return [
         NarrationRun(
             keys=tuple(keys),
@@ -586,7 +595,8 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
                 boosts: list[str] = []
                 mutes: list[str] = []
                 for marker in mspec.get("markers", []):
-                    mt = resolve_marker_time(marker, starts, manifest, project.audio_dir)
+                    leads = {r.section.key: project.lead_seconds(r.section.key) for r in rows}
+                    mt = resolve_marker_time(marker, starts, manifest, project.audio_dir, leads)
                     if mt is None:
                         plan.warnings.append(f"marker {marker.get('name')!r} unresolved; skipped")
                         continue

@@ -263,15 +263,20 @@ def pad_tail(path: Path, seconds: float, *, bitrate: str) -> None:
     tmp.replace(path)
 
 
-def concat_audio(files: list[Path], out: Path, *, bitrate: str, sample_rate: int) -> None:
+def concat_audio(
+    files: list[Path], out: Path, *, bitrate: str, sample_rate: int, leads: list[float] | None = None
+) -> None:
+    """Join audio files back to back. `leads` gives each file seconds of silence before it, in whole milliseconds."""
     inputs: list[str] = []
     for f in files:
         inputs += ["-i", str(f)]
-    labels = "".join(f"[{i}:a]" for i in range(len(files)))
+    delays = [int(round(x * 1000)) for x in (leads or [])] + [0] * len(files)
+    pads = "".join(f"[{i}:a]adelay=delays={delays[i]}:all=1[l{i}];" for i in range(len(files)) if delays[i] > 0)
+    labels = "".join(f"[l{i}]" if delays[i] > 0 else f"[{i}:a]" for i in range(len(files)))
     run(
         *inputs,
         "-filter_complex",
-        f"{labels}concat=n={len(files)}:v=0:a=1[a]",
+        f"{pads}{labels}concat=n={len(files)}:v=0:a=1[a]",
         "-map",
         "[a]",
         "-c:a",

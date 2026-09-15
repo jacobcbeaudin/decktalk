@@ -56,7 +56,7 @@ Every project command loads `decktalk.toml` first. The load fails in each of the
 - A value has the wrong type. For example, `seconds = 120.5` under `[soundscape.music]` fails.
 - Two sections share a `number`.
 - A section has both `page` and `clip`, or neither.
-- `hold_seconds` is set on a section other than the last page section.
+- `extra_seconds`, `hold_seconds`, `lead_seconds`, or `tail_seconds` is below 0.
 - `carries_previous` is set on the first section.
 - A `dips` pair or a `[[mix.sfx]]` table names a section that does not exist.
 
@@ -136,15 +136,42 @@ Write one `[[section]]` table for each `## N.` section of the script. DeckTalk s
 | `page` | path | required | HTML file, such as `deck/index.html`. |
 | `scene` | integer or string | `= number` | Value the page receives as `?scene=`. |
 | `extra_seconds` | number | 0.3 | Seconds the recording runs past the section span. |
-| `hold_seconds` | number | 0 | Seconds the last frame holds after the narration. Last page section only. |
+| `hold_seconds` | number | 0 | Seconds the section's last frame holds after its narration. The narration pauses for the hold. |
+| `lead_seconds` | number | 0 | Seconds of silence before the section's first word. |
+| `tail_seconds` | number | `[narration] min_tail_seconds` | Shortest silence after the section's last word. |
 | `ambience` | boolean | false | Plays the ambience bed under this section. |
 | `params` | table | none | Extra query parameters for the page, written as `[section.params]`. |
 
 Note: `params` values become strings. A `beats` key replaces the cue times, a `scene` key replaces
 `scene`, a `words` key replaces the spoken words, and a `prevwords` key replaces the previous section's words. `t0` is always `signal`, whatever `params` says.
 
-`hold_seconds` exists only on the last page section. The narration is continuous, so a hold on an
-earlier section would move every later picture off its words.
+### Silence in a section
+
+Three keys add silence to a page section. None of them is sent to the voice or changes the narration cache,
+so a cached take stays cached.
+
+| Key | Where the silence goes | How DeckTalk adds it |
+|---|---|---|
+| `lead_seconds` | Before the first word | `narrate` joins it into `narration.mp3` before the take. The take is not changed. |
+| `tail_seconds` | After the last word | `narrate` pads the take, as it does for `min_tail_seconds`. |
+| `hold_seconds` | After the section's narration | `assemble` holds the last frame, and the narration waits. |
+
+- The section starts when its silence starts. So `lead_seconds` moves every word and every word cue of the
+  section later, and `$start` stays at 0.
+- The recording covers the lead, because the section span in `timeline.json` includes it.
+- `tail_seconds` is a least value, like `min_tail_seconds`. A take that already has a longer tail keeps it.
+- A hold on any page section pauses the narration, as a clip between page sections does. The next section
+  starts after the hold, on its own words.
+- A `[pause N]` before a section's first words is removed. Use `lead_seconds` to open a section on silence.
+
+```toml decktalk.toml
+[[section]]
+number = 4
+title = "The edit"
+page = "deck/index.html"
+lead_seconds = 1.5    # the page shows 1.5 s before the first word
+hold_seconds = 2      # the last frame stays 2 s before section 5
+```
 
 Set `carries_previous = true` when a section continues the previous section's picture, such as a page that
 opens where the last page ended. `verify` compares the two frames at the cut, outside any dip. A dip still

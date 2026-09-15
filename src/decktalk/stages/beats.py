@@ -9,6 +9,8 @@ cues.json:
     step    a cue id the page understands (decktalk-runtime.js); "cue" is accepted as a synonym
     on      a word or short phrase from that section's narration: first occurrence,
             case-insensitive, punctuation ignored. "$start" = 0, "$end" = end of speech.
+            Times count from the section start, so a section's lead_seconds moves every word
+            cue later, and "$start" stays at 0.
     occurrence / case_sensitive / offset (seconds) refine the match. A phrase that occurs more
             than once in its section, on a cue that sets no occurrence, gets a warning that names
             every occurrence and its time.
@@ -29,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import Beats, Word, read_words
+from ..artifacts import Beats, Word
 from ..errors import ConfigError, MissingInputError
 from ..project import PageSection, Project
 
@@ -321,8 +323,10 @@ def resolve_beats(project: Project, *, allow_unknown: bool = False) -> BeatsResu
                 if k == key:
                     rows[-1].note(cue_id, "UNKNOWN", f"not in {page}")
             continue
-        words = read_words(project.audio_dir / entry.words_file)
-        speech_end = words[-1].end if words else entry.duration_seconds
+        # Cue times count from the section start, which comes lead_seconds before the take.
+        lead = project.lead_seconds(key)
+        words = project.section_words(key, entry.words_file)
+        speech_end = words[-1].end if words else entry.duration_seconds + lead
         row = SectionBeats(key=key, speech_end=speech_end, min_seconds=spec.min_seconds, resolved={})
         for cue in spec.cues:
             if not words and cue.on != "$start":
@@ -338,8 +342,9 @@ def resolve_beats(project: Project, *, allow_unknown: bool = False) -> BeatsResu
                 row.note(cue.step, "UNRESOLVED", f"phrase not found: {cue.on!r}")
                 unresolved += 1
                 continue
-            if t > entry.duration_seconds:
-                row.note(cue.step, None, f"{t}s is past the end of the audio ({entry.duration_seconds}s)")
+            if t > entry.duration_seconds + lead:
+                length = round(entry.duration_seconds + lead, 3)
+                row.note(cue.step, None, f"{t}s is past the end of the audio ({length}s)")
             row.resolved[cue.step] = t
             ambiguous = ambiguity_note(cue, words)
             if ambiguous:
