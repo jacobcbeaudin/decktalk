@@ -67,14 +67,19 @@ jobs:
       - run: uv run pytest -q -m "browser or media"
       # Headless Chromium draws the page in software, and the hosted macOS and Windows runners do it
       # more slowly than a laptop, so a reveal on the demo's busiest scenes can land two or three
-      # frames late there. Those runners measure with a wider window. On every runner, smoke.sh reports
-      # OFF CUE rows without failing until a lighter timing test exists.
+      # frames late there. Those runners measure with a wider window. smoke.sh reports the scaffold's
+      # OFF CUE rows without failing, because a runner presents frames late while a large layer moves.
       - name: Widen the sync tolerance on the slower runners
         if: runner.os != 'Linux'
         run: |
           echo "DECKTALK_VERIFY_MAX_OFFSET_FRAMES=4" >> "$GITHUB_ENV"
           echo "DECKTALK_VERIFY_MAX_AV_FRAMES=5" >> "$GITHUB_ENV"
           echo "DECKTALK_ALIGN_STALL_MS=400" >> "$GITHUB_ENV"
+      # A small deck of still pages whose reveals snap in. Any verify finding fails it, OFF CUE included.
+      # It gates the job on Linux. The slower runners run it with the wider window and only report.
+      - name: Cue timing gate
+        continue-on-error: ${{ runner.os != 'Linux' }}
+        run: bash tests/timing.sh
       - run: bash tests/smoke.sh
       - uses: actions/upload-artifact@v7
         if: always()
@@ -86,4 +91,7 @@ jobs:
             tests/out/smoke/build/rec/*.json
             tests/out/smoke/build/audio/beats.json
             tests/out/smoke/build/audio/timeline.json
+            tests/out/timing/build/out/timing.mp4
+            tests/out/timing/build/rec/*.json
+            tests/out/timing/verify.json
           if-no-files-found: ignore

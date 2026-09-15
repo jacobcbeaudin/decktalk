@@ -30,6 +30,7 @@ uv run ty check src
 uv run pytest -q                                 # unit tests
 uv run pytest -q -m "browser or media"           # the runtime in Chromium, frame analysis in ffmpeg
 bash tests/smoke.sh                              # scaffold a project and build it offline
+bash tests/timing.sh                             # build a still deck offline, and fail on any OFF CUE
 uv run scripts/build_assets.py --check           # fails if assets/*.svg or docs/images are out of date
 uv run scripts/build_config_reference.py --check # fails if docs/reference/configuration.mdx is out of date
 ```
@@ -41,7 +42,8 @@ No check needs an ElevenLabs key. After `decktalk setup`, no check needs the net
 CI runs two jobs from `.github/workflows/ci.yml`.
 
 - The `checks` job runs every check above except the browser tests, the smoke build, and `scripts/build_assets.py --check`. It runs on Linux with Python 3.12, 3.13, and 3.14.
-- The `build` job runs `decktalk setup`, `decktalk doctor`, the browser and media tests, and the smoke build.
+- The `build` job runs `decktalk setup`, `decktalk doctor`, the browser and media tests, the cue timing gate, and
+  the smoke build.
 
 | Trigger | `checks` job | `build` job platforms |
 |---|---|---|
@@ -52,7 +54,13 @@ CI runs two jobs from `.github/workflows/ci.yml`.
 | A tag that release-please creates | Does not run | Does not run |
 
 - On macOS and Windows, the `build` job widens the sync limits. It sets `DECKTALK_VERIFY_MAX_OFFSET_FRAMES=4`, `DECKTALK_VERIFY_MAX_AV_FRAMES=5`, and `DECKTALK_ALIGN_STALL_MS=400`.
-- Each `build` job uploads the smoke video, the shots, the sidecars, `beats.json`, and `timeline.json`. It uploads them even when the job fails.
+- The cue timing gate is `tests/timing.sh`. It builds `tests/timing`, a deck of still pages whose reveals snap in,
+  and fails on any verify finding, `OFF CUE` included. It fails the job on Linux. On macOS and Windows it runs
+  with the wider limits and does not fail the job.
+- The smoke build reports the scaffold's `OFF CUE` rows without failing. A hosted runner presents frames 50 to
+  120 ms late while a large layer moves, so those rows are not a fair gate.
+- Each `build` job uploads the smoke video, the shots, the sidecars, `beats.json`, and `timeline.json`, and the timing
+  video, its sidecars, and its `verify.json`. It uploads them even when the job fails.
 
 ## Layout
 
@@ -78,6 +86,8 @@ tests/
   test_media.py      checks frame analysis against real ffmpeg on a synthetic video (-m media)
   test_preflight.py  preflight's frozen frames on the scaffold and on a synthetic page (-m browser, -m media)
   smoke.sh           an offline build of the scaffold, verified cue by cue
+  timing.sh          the cue timing gate: an offline build of tests/timing that fails on OFF CUE
+  timing/            the timing deck: two still pages whose reveals snap in
 scripts/
   build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon
   build_changelog.py          generates docs/changelog.mdx from CHANGELOG.md

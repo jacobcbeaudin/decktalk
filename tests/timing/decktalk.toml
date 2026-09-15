@@ -1,0 +1,21 @@
+# The cue timing test deck. tests/timing.sh copies it to tests/out/timing, adds the runtime, builds it silently,
+# and fails on any verify finding, OFF CUE included. Each page is still, and each reveal is a solid block that
+# snaps in on its frame, so a hosted runner has almost nothing to draw while a cue lands.
+
+[project]
+name = "timing"
+
+[[section]]
+number = 1
+title = "Blocks"
+page = "deck/index.html"
+scene = 1
+
+[[section]]
+number = 2
+title = "Bars"
+page = "deck/index.html"
+scene = 2
+
+[transition]
+dips = []

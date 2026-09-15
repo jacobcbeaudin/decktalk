@@ -126,6 +126,10 @@ records the published video. DeckTalk's own CI uses these values.
 | `DECKTALK_VERIFY_MAX_AV_FRAMES` | 3 (default) | 5 |
 | `DECKTALK_ALIGN_STALL_MS` | 150 (default) | 400 |
 
+A reveal can also start late while a large layer moves, such as a canvas figure that pans. To gate a job on cue
+timing, verify a light deck whose reveals land on still pages, and report the busy deck without failing. DeckTalk's
+own CI builds `tests/timing` and fails on any finding there. It runs `decktalk verify --no-fail` on the scaffold.
+
 ```yaml .github/workflows/video.yml
       - name: Widen the sync tolerance on the slower runners
         if: runner.os != 'Linux'

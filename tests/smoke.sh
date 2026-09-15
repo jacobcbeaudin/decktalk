@@ -64,7 +64,8 @@ DECKTALK_VIDEO_PRESET=veryfast uv run decktalk -p "$T" build --silent
 uv run decktalk -p "$T" preflight --json --no-fail | uv run python -c 'import json,sys; v=json.load(sys.stdin)["preflight"]; bad=[r for r in v["cues"] + v["carries"] if r["verdict"] not in ("changed","THIN CHANGE?","skipped","ok")]; assert not bad, bad; assert v["cues"] and v["totals"]["synthesize"] == len(v["takes"]), v["totals"]'
 uv run decktalk -p "$T" shots
 uv run decktalk -p "$T" shots --section 4 --at 8 --at 20 --at 38
-# Cue timing (OFF CUE) is informational on hosted runners until a lighter timing test exists.
+# Cue timing (OFF CUE) is informational here, because a hosted runner presents frames late while the scaffold's
+# large layers move. tests/timing.sh gates cue timing on a deck of still pages.
 uv run decktalk -p "$T" verify --no-fail
 # Every other verdict still fails: a black section start, speech at a cut, and a cue that is unresolved or never changes.
 # THIN CHANGE? is an uncertain warning, and the scaffold has a few small reveals.
