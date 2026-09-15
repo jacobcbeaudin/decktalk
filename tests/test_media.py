@@ -210,6 +210,52 @@ def test_close_cues_get_probes_and_controls_that_fit_the_gap(close_card):
     assert measure(a, [2.9]) == measure(a, [])
 
 
+def _synthetic_section(out: Path, panel_x: int, fade_out: bool) -> None:
+    """Two seconds of the card with the accent panel at panel_x, fading out over its last 0.16 s like a dip."""
+    graph = (
+        f"color=c=white:s={W}x{H}:r={FPS}:d=2,drawbox=x=20:y=20:w=220:h=6:color=0x2c1fea:t=fill,"
+        f"drawbox=x={panel_x}:y=100:w=100:h=60:color=0x2c1fea:t=fill"
+    )
+    if fade_out:
+        graph += ",fade=t=out:st=1.84:d=0.16"
+    ffmpeg.run(
+        "-f", "lavfi", "-i", graph, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "250", "-crf", "18", str(out)
+    )  # fmt: skip
+
+
+def test_verify_finds_a_pop_between_synthetic_sections_outside_the_dip(tmp_path):
+    from decktalk.project import Project
+    from decktalk.stages.verify import verify
+
+    toml = '[project]\nname = "t"\n' + "".join(
+        f'[[section]]\nnumber = {n}\npage = "deck/index.html"\n' + ("carries_previous = true\n" if n > 1 else "")
+        for n in (1, 2, 3)
+    )
+    (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
+    p = Project.load(tmp_path, environ={})
+    p.out_dir.mkdir(parents=True)
+    p.audio_dir.mkdir(parents=True)
+    p.beats_path.write_text("{}", encoding="utf-8")
+    # Section 2 continues section 1's picture. Section 3 opens with the panel moved, a pop. Every cut dips,
+    # so sections 1 and 2 fade out, the way assemble renders a page section before a dip.
+    videos = []
+    for key, panel_x, fade_out in (("01", 300, True), ("02", 300, True), ("03", 60, False)):
+        videos.append(p.out_dir / f"{key}-section.mp4")
+        _synthetic_section(videos[-1], panel_x, fade_out)
+    listing = tmp_path / "sections.txt"
+    listing.write_text("".join(f"file '{v.as_posix()}'\n" for v in videos), encoding="utf-8")
+    ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(p.final))
+
+    result = verify(p, checks=[])
+    assert [(c.key, c.cut_at, c.verdict) for c in result.carries] == [("02", 2.0, "ok"), ("03", 4.0, "POP AT CUT")]
+    continuous, pop = result.carries
+    assert continuous.changed_percent == 0.0
+    assert pop.changed_percent > 2 * PANEL_PERCENT * 0.9  # the panel left one place and appeared in another
+    assert not result.ok
+    # Across the dip itself the frame at 1.96 s is still fading to black, which would read as a pop.
+    assert ffmpeg.changed_pixels_percent(p.final, 1.95, 2.0, level=40, width=W, height=H) > 10
+
+
 def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     """Pages 1 and 3 around a clip at 2, where section 3's words resume after the clip's own sound."""
     from decktalk.artifacts import Timeline, TimelineSection

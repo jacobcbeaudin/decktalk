@@ -4,6 +4,10 @@ starts   every section opens on a real frame: past the dip-to-black, YMAX above
          visible_ymax means content is on screen.
 cuts     the audio in the last cut_window_seconds before every cut is quieter than
          cut_max_db, so no cut lands on speech.
+carries  for each section that sets carries_previous, the last frame of the previous section
+         before any dip and the first frame of this section after any dip are compared, at
+         diff_level and probe_width by probe_height. A changed share above max_pop_percent is a
+         visible pop, and the row reads POP AT CUT.
 cues     for each SECTION:CUE, the picture changes across the cue. With no list, every cue
          in beats.json is checked, in section order and then cue time, except the cues
          that cues.json marks "verify": false. The reference frame is the first frame at
@@ -74,7 +78,7 @@ from ..config import VerifyConfig
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
 from ..project import Project
-from ..verdicts import CHANGED, THIN_CHANGE
+from ..verdicts import CHANGED, OK, POP_AT_CUT, THIN_CHANGE
 
 log = logging.getLogger(__name__)
 
@@ -154,6 +158,32 @@ class CutCheck:
 
 
 @dataclass
+class CarryCheck:
+    """The cut into a section that sets carries_previous. A picture that jumps there is a pop."""
+
+    key: str
+    cut_at: float
+    last_at: float  # The previous section's last frame before any dip, in the final mp4.
+    first_at: float  # This section's first frame after any dip, in the final mp4.
+    changed_percent: float
+    ok: bool
+
+    @property
+    def verdict(self) -> str:
+        return OK if self.ok else POP_AT_CUT
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "key": self.key,
+            "cut_at": round(self.cut_at, 3),
+            "last_at": round(self.last_at, 3),
+            "first_at": round(self.first_at, 3),
+            "changed_percent": round(self.changed_percent, 2),
+            "verdict": self.verdict,
+        }
+
+
+@dataclass
 class CueCheck:
     check: str
     cue_seconds: float | None
@@ -211,6 +241,7 @@ class VerifyResult:
     starts: list[StartCheck] = field(default_factory=list)
     cuts: list[CutCheck] = field(default_factory=list)
     cues: list[CueCheck] = field(default_factory=list)
+    carries: list[CarryCheck] = field(default_factory=list)
     final: Path | None = None
     silent: bool = False  # The build carries placeholder narration, so the a/v column is measured.
 
@@ -219,6 +250,7 @@ class VerifyResult:
         return (
             all(s.ok for s in self.starts)
             and all(c.ok for c in self.cuts)
+            and all(c.ok for c in self.carries)
             and all(c.ok for c in self.cues if not c.skipped)
         )
 
@@ -234,6 +266,7 @@ class VerifyResult:
             "silent": self.silent,
             "starts": [s.to_dict() for s in self.starts],
             "cuts": [c.to_dict() for c in self.cuts],
+            "carries": [c.to_dict() for c in self.carries],
             "cues": [c.to_dict() for c in self.cues],
         }
 
@@ -386,7 +419,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
     opted out in cues.json, and an empty list checks no cues. `only` keeps the cue checks
     of those section numbers. A cue named explicitly is measured even when it is opted out.
     """
-    from .assemble import stray_warnings
+    from .assemble import fade_flags, frame_dip, stray_warnings
 
     cfg = project.settings.verify
     final = project.final
@@ -415,6 +448,10 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
             level = ffmpeg.rms_db(narration, max(0.0, sec.end - window), window)
             cut = starts[key] + sec.duration
             result.cuts.append(CutCheck(key=key, cut_at=round(cut, 3), rms_db=level, ok=level <= cfg.cut_max_db))
+    fps = project.settings.video.fps
+    flags = fade_flags(project)
+    dip = frame_dip(project.transition.dip_seconds, fps)
+    result.carries = carry_checks(project, final, starts, flags, dip, fps)
     beats = project.beats()
     opt_out: set[tuple[str, str]] = set()
     if checks is None:
@@ -427,12 +464,8 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
         checks = [c for c in checks if not only or int(c.split(":", 1)[0]) in only]
     if not checks:
         return result
-    from .assemble import fade_flags, frame_dip
     from .beats import read_anchors
 
-    fps = project.settings.video.fps
-    flags = fade_flags(project)
-    dip = frame_dip(project.transition.dip_seconds, fps)
     anchors = read_anchors(project.beats_path.with_name("beats.anchors.json")) if clicks else {}
     for check in checks:
         sec, cue = check.split(":", 1)
@@ -533,6 +566,35 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
             )
         )
     return result
+
+
+def carry_checks(
+    project: Project,
+    final: Path,
+    starts: dict[str, float],
+    flags: dict[str, tuple[bool, bool]],
+    dip: float,
+    fps: int,
+) -> list[CarryCheck]:
+    """One row per assembled section that sets carries_previous and follows an assembled section.
+
+    The frames compared sit outside any dip, so a fade to black is never taken for a pop. Each
+    time sits half a frame before the frame it names, because a frame is the first at or after it.
+    """
+    cfg = project.settings.verify
+    rows: list[CarryCheck] = []
+    for prev, sec in zip(project.sections, project.sections[1:], strict=False):
+        if not sec.carries_previous or sec.key not in starts or prev.key not in starts:
+            continue
+        cut = starts[sec.key]
+        last = cut - (dip if flags.get(prev.key, (False, False))[1] else 0.0) - 1.5 / fps
+        first = cut + (dip if flags.get(sec.key, (False, False))[0] else 0.0) - 0.5 / fps
+        first = max(first, cut)
+        share = ffmpeg.changed_pixels_percent(
+            final, last, first, level=cfg.diff_level, width=cfg.probe_width, height=cfg.probe_height
+        )
+        rows.append(CarryCheck(sec.key, cut, last, first, share, share <= cfg.max_pop_percent))
+    return rows
 
 
 def first_change_offset(

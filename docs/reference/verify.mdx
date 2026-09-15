@@ -1,10 +1,11 @@
 ---
 title: Verify
-description: Look up how decktalk verify measures section starts, cuts, and cues, and what each result means.
+description: Look up how decktalk verify measures section starts, cuts, cut continuity, and cues, and what each result means.
 ---
 
-`decktalk verify` checks the final mp4 in three ways: section starts, cuts, and cues. This page defines each
-measurement, limit, and result, in the order that `verify` computes them.
+`decktalk verify` checks the final mp4 in three ways: section starts, cuts, and cues. A section that sets
+`carries_previous` adds a fourth check, cut continuity. This page defines each measurement, limit, and result,
+in the order that `verify` computes them.
 
 {/* sample: decktalk verify 1:1.1bowl 3:3.4name 8:7.1checked, silent build of the scaffold, cue table only */}
 ```text
@@ -19,15 +20,15 @@ unless the page names another table. The defaults assume 25 fps, so one frame la
 
 ## Which checks run
 
-The verify stage inside `decktalk build` checks section starts and cuts, and no cue. `decktalk verify`
-checks all three.
+The verify stage inside `decktalk build` checks section starts, cuts, and cut continuity, and no cue.
+`decktalk verify` checks all four.
 
 - With no cue named, `verify` checks every cue in `beats.json`, in section order and then cue time.
 - With no cue named, `verify` skips a cue that `cues.json` marks `"verify": false`.
 - Named cues run in the order given, positional cues first, then each `--cue`.
 - A named cue runs even when `cues.json` marks it `"verify": false`.
 - `--only N` keeps only the cues of section `N`, named cues included. A named cue outside `--only` gets no row.
-- Section starts and cuts are always checked, whatever `--only` names.
+- Section starts, cuts, and cut continuity are always checked, whatever `--only` names.
 
 A named cue has the form `SECTION:CUE`, such as `8:7.1checked`. `SECTION` is the section number, not the scene
 number. Section 8 of the scaffold plays scene 7. A name that does not start with a section number is an error (`malformed check`), and the command
@@ -99,6 +100,33 @@ SPEECH AT CUT  when  RMS of narration.mp3 over the window > cut_max_db  # -40 dB
 - A clip section has no row, because it has no narration. In the sample, sections `05` and `07` have none.
 - The last page section's `hold_seconds` comes after its `cut at`. In the sample, section `09` holds its last
   slide from 255.22 s to the end of the video.
+
+## Cut continuity
+
+The continuity check confirms that the cut into a section that sets `carries_previous = true` in
+`decktalk.toml` does not show. It runs only for those sections.
+
+{/* sample: decktalk verify, silent build of the scaffold with carries_previous = true added to sections 2 and 9, continuity table only */}
+```text
+sec   cut at   chg %  result
+ 02    17.80    0.00  ok
+ 09   242.52    0.00  ok
+```
+
+`cut at` is the section start in the final mp4. `chg %` is the [changed share](#changed-share) of two frames at
+`diff_level`: the previous section's last frame before any dip, and this section's first frame after any dip.
+
+```text
+last frame   = the frame 1 frame before (cut at - the dip, when the previous section fades out)
+first frame  = the frame at (cut at + the dip, when this section fades in)
+POP AT CUT   when  changed share(last frame, first frame) > max_pop_percent        # 0.1
+```
+
+- The frames sit outside the dip, so a fade through black is never a pop. A dip still shows on screen, so leave
+  the pair out of `[transition] dips` for a cut that should not show.
+- The default of 0.1 matches `min_changed_percent`, so any change that would pass as a reveal is a pop.
+- A section with no `NN-section.mp4`, or whose previous section has none, gets no row.
+- `POP AT CUT` is a certain finding, so `decktalk verify` and `decktalk build` exit 1 on it.
 
 ## Cues
 
@@ -413,7 +441,7 @@ Each cue row gets its result from the first rule that matches.
 10. After a silent build, if the `a/v` is past the a/v limit, the row is `OFF CUE`.
 11. Otherwise, the row is `changed`, or `THIN CHANGE?` when the change is thin.
 
-`OFF CUE`, `NO CHANGE`, `UNRESOLVED`, `BLACK`, and `SPEECH AT CUT` are certain findings, so `decktalk verify`
+`OFF CUE`, `NO CHANGE`, `UNRESOLVED`, `BLACK`, `SPEECH AT CUT`, and `POP AT CUT` are certain findings, so `decktalk verify`
 exits 1. `THIN CHANGE?` is an uncertain finding, so `verify` exits 1 on it only with `--strict`. A `skipped` row
 never fails. [Exit codes](/reference/cli#exit-codes) lists the codes for every
 command.
@@ -467,6 +495,7 @@ Mark such a cue `"verify": false`, and check it by eye with `decktalk shots --st
 | `verify.silent` | boolean | True after a silent build. Only then can `av_ms` hold a value. |
 | `verify.starts[]` | array | One object per section start, with `key`, `start`, `probe_at`, `yavg`, `ymax`, and `verdict`. |
 | `verify.cuts[]` | array | One object per cut, with `key`, `cut_at`, `rms_db`, and `verdict`. |
+| `verify.carries[]` | array | One object per section that sets `carries_previous`, with `key`, `cut_at`, `last_at`, `first_at`, `changed_percent`, and `verdict` (`ok` or `POP AT CUT`). |
 | `verify.cues[]` | array | One object per cue row, with the fields of the next table. |
 
 | Cue field | Type | Meaning |

@@ -57,6 +57,7 @@ Every project command loads `decktalk.toml` first. The load fails in each of the
 - Two sections share a `number`.
 - A section has both `page` and `clip`, or neither.
 - `hold_seconds` is set on a section other than the last page section.
+- `carries_previous` is set on the first section.
 - A `dips` pair or a `[[mix.sfx]]` table names a section that does not exist.
 
 The error names the table and the key.
@@ -126,6 +127,7 @@ Write one `[[section]]` table for each `## N.` section of the script. DeckTalk s
 |---|---|---|---|
 | `number` | integer | required | Matches `## N.` in the script. |
 | `title` | string | empty | Chapter title and slate title. An empty title becomes `Section N`. Consecutive sections with the same title share one chapter. |
+| `carries_previous` | boolean | false | The section opens on the previous section's last picture. `verify` flags a visible jump at the cut as `POP AT CUT`. Not allowed on the first section. |
 
 ### Page section keys
 
@@ -143,6 +145,11 @@ Note: `params` values become strings. A `beats` key replaces the cue times, a `s
 
 `hold_seconds` exists only on the last page section. The narration is continuous, so a hold on an
 earlier section would move every later picture off its words.
+
+Set `carries_previous = true` when a section continues the previous section's picture, such as a page that
+opens where the last page ended. `verify` compares the two frames at the cut, outside any dip. A dip still
+fades through black, so leave the pair out of `[transition] dips` for a cut that should not show.
+[Cut continuity](/reference/verify#cut-continuity) defines the check.
 
 ### Clip section keys
 

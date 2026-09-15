@@ -105,6 +105,7 @@ def _verify_findings(result: Any) -> Findings:
     verdicts: Iterable[str] = [
         *(OK if s.ok else BLACK for s in result.starts),
         *(QUIET if c.ok else SPEECH_AT_CUT for c in result.cuts),
+        *(c.verdict for c in result.carries),
         *(c.verdict for c in result.cues),
     ]
     return count(verdicts)

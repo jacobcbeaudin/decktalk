@@ -182,7 +182,7 @@ Every option: [CLI](/reference/cli).
 
 ## Gate a script on the video
 
-- `build` checks section starts and cuts. It measures no cue.
+- `build` checks section starts, cuts, and cut continuity. It measures no cue.
 - `build` exits 0 on `TRUNCATED`, `STALLED`, and `NO COVER`.
 - To gate on the whole video, run `decktalk build --silent && decktalk check && decktalk verify`.
 - The offset column must be between -80 ms and +80 ms.

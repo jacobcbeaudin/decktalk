@@ -22,6 +22,7 @@ TRUNCATED = "TRUNCATED"
 NO_COVER = "NO COVER"
 BLACK = "BLACK"
 SPEECH_AT_CUT = "SPEECH AT CUT"
+POP_AT_CUT = "POP AT CUT"
 OFF_CUE = "OFF CUE"
 NO_CHANGE = "NO CHANGE"
 UNRESOLVED = "UNRESOLVED"
@@ -40,7 +41,20 @@ OK = "ok"
 SKIPPED = "skipped"
 
 CERTAIN: frozenset[str] = frozenset(
-    {PAGE_ERROR, STALLED, TRUNCATED, NO_COVER, BLACK, SPEECH_AT_CUT, OFF_CUE, NO_CHANGE, UNRESOLVED, UNKNOWN, MISSING}
+    {
+        PAGE_ERROR,
+        STALLED,
+        TRUNCATED,
+        NO_COVER,
+        BLACK,
+        SPEECH_AT_CUT,
+        POP_AT_CUT,
+        OFF_CUE,
+        NO_CHANGE,
+        UNRESOLVED,
+        UNKNOWN,
+        MISSING,
+    }
 )
 UNCERTAIN: frozenset[str] = frozenset({BLACK_UNSURE, KATEX_UNSURE, THIN_CHANGE})
 PASSING: frozenset[str] = frozenset({CHANGED, QUIET, OK, SKIPPED})

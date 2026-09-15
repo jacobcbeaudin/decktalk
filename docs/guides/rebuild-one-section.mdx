@@ -130,7 +130,7 @@ error. With `--force`, it empties the narration cache, and the next voiced build
     If the last build was silent, run `decktalk build --silent --only N` instead.
   </Step>
   <Step title="Measure the cues of the section">
-    The build checks section starts and cuts, but not cues. Run `decktalk verify` for the cues.
+    The build checks section starts, cuts, and cut continuity, but not cues. Run `decktalk verify` for the cues.
 
     ```console
     decktalk verify --only N

@@ -133,6 +133,8 @@ class VerifyConfig:
     visible_ymax: float = 60  # The start check reports `BLACK` when the brightest luma of its frame is at most this.
     cut_window_seconds: float = 0.15  # Seconds of narration before each cut that the cut check measures.
     cut_max_db: float = -40.0  # Loudest RMS level of the cut window, in dBFS, that passes the cut check.
+    max_pop_percent: float = 0.1  # Largest changed share, in percent, across the cut into a section that sets
+    # `carries_previous`. A larger share reads `POP AT CUT`.
     probe_width: int = 480  # Width in pixels that frames are scaled to before a comparison.
     probe_height: int = 270  # Height in pixels that frames are scaled to before a comparison.
     block_width: int = 240  # Width in pixels of the block-averaged copy of each frame that confirms an onset.

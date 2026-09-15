@@ -57,6 +57,7 @@ def verify_result(*cues: SimpleNamespace) -> SimpleNamespace:
         cues=list(cues),
         black_starts=0,
         ok=all(c.verdict in ("changed", "skipped") for c in cues),
+        carries=[],
         to_dict=lambda root: {"cues": [{"check": c.check, "verdict": c.verdict} for c in cues]},
     )
 

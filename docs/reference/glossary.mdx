@@ -99,7 +99,7 @@ Each table lists the term, its meaning, the words that the docs do not use for i
 | section span | A section's `start` to `end` in `timeline.json`, including the silence after its last word. | "span" alone | [Verify](/reference/verify) |
 | spoken span | A section's `start` to its speech end. | "span" alone | [Sound](/concepts/sound) |
 | speech end | The end of a section's last spoken word, in seconds after the section start. | | [Verify](/reference/verify) |
-| verify stage | The `verify` stage inside `build`. Checks section starts and cuts only. | "`build` verifies" with no object | [Verify](/reference/verify) |
+| verify stage | The `verify` stage inside `build`. Checks section starts, cuts, and cut continuity only. | "`build` verifies" with no object | [Verify](/reference/verify) |
 | `decktalk verify` | The command. Checks section starts, cuts, and cues. | "the verify check" | [CLI](/reference/cli#decktalk-verify) |
 | cue check | One row of the cue table of `decktalk verify`. | "cue landing", "a/v check" | [Verify](/reference/verify#cues) |
 | changed share | The percentage of pixels, at 480 by 270, whose luma differs by more than a level between two frames. | "the share of pixels that changed" | [Verify](/reference/verify#changed-share) |

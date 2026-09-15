@@ -1156,11 +1156,13 @@ def test_reference_time_skips_the_fade_and_keeps_the_lead():
     assert reference_time(10.0, 0.0, False, 0.16, cfg, 25) is None  # a $start cue has no frame before it
 
 
-def _verify_project(tmp_path, monkeypatch, beats: dict[str, str], cues: dict | None = None, change: float = 0.0):
+def _verify_project(
+    tmp_path, monkeypatch, beats: dict[str, str], cues: dict | None = None, change: float = 0.0, toml: str = PAGES_TOML
+):
     """A project with sections 01 and 02 assembled and every ffmpeg measurement replaced."""
     from decktalk.media import ffmpeg as ffmpeg_module
 
-    root = write_project(tmp_path, PAGES_TOML)
+    root = write_project(tmp_path, toml)
     p = Project.load(root, environ={})
     p.out_dir.mkdir(parents=True)
     for key in ("01", "02"):
@@ -1260,6 +1262,69 @@ def test_verify_marks_a_thin_change_as_uncertain(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("decktalk.media.ffmpeg.changed_pixels_percent", lambda path, t1, t2, **kw: 0.11)
     monkeypatch.setenv("DECKTALK_VERIFY_THIN_CHANGE_FACTOR", "1")
     assert [c.verdict for c in verify(Project.load(p.root)).cues] == ["changed"]
+
+
+def test_carries_previous_parses_on_any_section_but_the_first(tmp_path, caplog):
+    toml = (
+        "[[section]]\nnumber = 1\npage = 'a.html'\n"
+        "[[section]]\nnumber = 2\nclip = 'b.mp4'\ncarries_previous = true\n"
+        "[[section]]\nnumber = 3\npage = 'a.html'\ncarries_previous = true\n"
+    )
+    with caplog.at_level("WARNING", logger="decktalk"):
+        p = Project.load(write_project(tmp_path, toml), environ={})
+    assert [s.carries_previous for s in p.sections] == [False, True, True] and not caplog.records
+    first = toml.replace("number = 1\npage = 'a.html'\n", "number = 1\npage = 'a.html'\ncarries_previous = true\n")
+    with pytest.raises(ConfigError, match="number=1: carries_previous is set on the first section"):
+        Project.load(write_project(tmp_path, first), environ={})
+    with pytest.raises(ConfigError, match="'carries_previous' must be bool"):
+        Project.load(
+            write_project(tmp_path, toml.replace("carries_previous = true", "carries_previous = 1")), environ={}
+        )
+
+
+def test_verify_flags_a_pop_at_the_cut_into_a_section_that_carries_the_previous_one(tmp_path, monkeypatch, capsys):
+    from decktalk.media import ffmpeg as ffmpeg_module
+    from decktalk.stages.verify import verify
+
+    carries = PAGES_TOML.replace(
+        'number = 2\npage = "deck/index.html"\n', 'number = 2\npage = "deck/index.html"\ncarries_previous = true\n'
+    )
+    carries = carries.replace(
+        'number = 3\npage = "deck/index.html"\n', 'number = 3\npage = "deck/index.html"\ncarries_previous = true\n'
+    )
+    p = _verify_project(tmp_path, monkeypatch, {}, toml=carries)
+    calls: list[tuple[float, float, dict]] = []
+    share = [0.05]
+
+    def changed(path, t1, t2, **kw):
+        calls.append((round(t1, 3), round(t2, 3), kw))
+        return share[0]
+
+    monkeypatch.setattr(ffmpeg_module, "changed_pixels_percent", changed)
+    result = verify(p)
+    # Section 1 dips out over 0.16 s, so the last frame compared sits before the dip. Section 3 is not assembled.
+    assert calls == [(4.78, 5.0, {"level": 40, "width": 480, "height": 270})]
+    (row,) = result.carries
+    assert (row.key, row.cut_at, row.verdict, row.ok) == ("02", 5.0, "ok", True) and result.ok
+
+    share[0] = 0.5
+    result = verify(p)
+    assert [c.verdict for c in result.carries] == ["POP AT CUT"] and not result.ok
+    assert result.to_dict(p.root)["carries"] == [
+        {"key": "02", "cut_at": 5.0, "last_at": 4.78, "first_at": 5.0, "changed_percent": 0.5, "verdict": "POP AT CUT"}
+    ]
+    assert main(["-p", str(p.root), "verify"]) == 1
+    assert "POP AT CUT" in capsys.readouterr().out
+    assert main(["-p", str(p.root), "verify", "--json"]) == 1
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["findings"] == {"certain": 1, "uncertain": 0} and doc["verify"]["carries"][0]["verdict"] == "POP AT CUT"
+
+    # A straight cut compares the frame just before the cut, and a section without the key gets no row.
+    calls.clear()
+    (p.root / "decktalk.toml").write_text(carries + "\n[transition]\ndips = []\n", encoding="utf-8")
+    assert [c.last_at for c in verify(Project.load(p.root, environ={})).carries] == [4.94]
+    (p.root / "decktalk.toml").write_text(PAGES_TOML, encoding="utf-8")
+    assert verify(Project.load(p.root, environ={})).carries == []
 
 
 def test_verify_to_dict_is_json_serialisable_and_relative(tmp_path, monkeypatch):

@@ -100,6 +100,11 @@ def verify_table(result: VerifyResult) -> str:
         lines.append(f"{'sec':>3} {'cut at':>8} {'before cut':>11}  result")
         for c in result.cuts:
             lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {QUIET if c.ok else SPEECH_AT_CUT}")
+    if result.carries:
+        lines.append("")
+        lines.append(f"{'sec':>3} {'cut at':>8} {'chg %':>7}  result")
+        for k in result.carries:
+            lines.append(f"{k.key:>3} {k.cut_at:>8.2f} {k.changed_percent:>7.2f}  {k.verdict}")
     if result.cues:
         lines.append("")
         av = any(c.av_ms is not None for c in result.cues)

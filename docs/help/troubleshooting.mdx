@@ -79,6 +79,7 @@ explains.
 | `true peak`, `integrated loudness` | `assemble` | [Entry](#true-peak-or-integrated-loudness-in-assemble) |
 | `BLACK` | `verify` | [Entry](#black-in-verify) |
 | `SPEECH AT CUT` | `verify` | [Entry](#speech-at-cut-in-verify) |
+| `POP AT CUT` | `verify`, `build` | [Entry](#pop-at-cut-in-verify) |
 | `NO CHANGE` | `verify` | [Entry](#no-change-in-verify) |
 | `THIN CHANGE?` | `verify` | [Entry](#thin-change-in-verify) |
 | `OFF CUE` | `verify` | [Entry](#off-cue-in-verify) |
@@ -807,6 +808,22 @@ If the section must stay short, end its script sooner instead.
 Clip sections carry their own audio and have no cut row.
 
 **More.** [Cuts](/reference/verify#cuts)
+
+### `POP AT CUT` in verify
+
+**Cause.** A section sets `carries_previous = true`, but its first frame differs from the previous section's last
+frame by more than `[verify] max_pop_percent` (0.1 percent of the pixels). The picture jumps at the cut. The
+usual reasons:
+- The page opens in a different state than the previous page ended in, such as a step that is not shown yet.
+- An element sits at a different position or size in the two pages.
+- The previous section's last step fires after its narration ends, so its recording ends early.
+
+**Fix.**
+1. Run `decktalk shots --section N --at 0` for this section, and compare it with the last frame of the previous section.
+2. Make the page's opening state match the previous page's final state.
+3. If the jump is intended, remove `carries_previous` from the section.
+
+**More.** [Cut continuity](/reference/verify#cut-continuity)
 
 ### `NO CHANGE` in verify
 

@@ -232,7 +232,7 @@ explains.
 | `check` | A page threw an error or has no catalog (`PAGE ERROR`). The build stops after the check table. | none |
 | `assemble` | With `--strict`, a recording is missing, or a clip is missing from a section without `optional = true`. | Set `optional = true`, or leave out `--strict`. |
 | `assemble` | With `--strict`, a recording has no measurement that matches it (`STALE MEASUREMENT`). | Run `decktalk measure --only N`, or leave out `--strict`. |
-| `verify` | A section starts black (`BLACK`), or speech is still sounding at a cut (`SPEECH AT CUT`). | none |
+| `verify` | A section starts black (`BLACK`), speech is still sounding at a cut (`SPEECH AT CUT`), or the picture jumps at the cut into a section with `carries_previous` (`POP AT CUT`). | none |
 | any | A stage raises an error. | none |
 
 `build` does not measure cues. It exits 0 on `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, and
@@ -595,7 +595,7 @@ done: ~/my-lesson/build/out/my-lesson.mp4  (257.72s)  copy: my-lesson-20260914-0
 
 ### `decktalk verify`
 
-Checks section starts, cuts, and cues in the final video.
+Checks section starts, cuts, cut continuity, and cues in the final video.
 
 ```text
 decktalk verify [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
@@ -617,15 +617,17 @@ decktalk verify [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
 |---|---|---|
 | Start | The brightest luma 0.2 s after the section start is above 60. | `after_dip_seconds`, `visible_ymax` |
 | Cut | Narration RMS in the last 0.15 s before the cut is at most -40 dBFS. | `cut_window_seconds`, `cut_max_db` |
+| Continuity | For a section with `carries_previous = true`, the frames on each side of the cut differ by at most 0.1 percent. | `max_pop_percent`, `diff_level` |
 | Cue | The change test passes, and the onset is within the offset limit. After a silent build, `a/v` is within the a/v limit too. | [verify reference](/reference/verify#cues) |
 
 - With no cue arguments, `verify` checks every cue in `beats.json`, by section and then by cue time.
 - With no cue arguments, `verify` skips a cue that `cues.json` marks `"verify": false`.
 - Named cues run in the order given, positional cues first. A named cue runs even when it is opted out.
 - `--only` also filters named cues. A named cue outside `--only` gets no row.
-- The `verify` stage inside `build` checks starts and cuts, and no cue.
+- The `verify` stage inside `build` checks starts, cuts, and continuity, and no cue.
 
-`verify` prints up to three tables: section starts, cuts, and cues. A clip section has a start row but
+`verify` prints up to four tables: section starts, cuts, cut continuity, and cues. The continuity table appears
+only when a section sets `carries_previous`. A clip section has a start row but
 no cut row. `cut at` is where the section's narration ends in the final video. The cue table gains an
 `a/v` column only when at least one measured cue has an `a/v` value. The JSON `silent` key says if
 the build was silent. [verify](/reference/verify#cues) defines each column.
@@ -636,6 +638,7 @@ the build was silent. [verify](/reference/verify#cues) defines each column.
 | `BLACK` | certain | The brightest luma at the start probe is at most `visible_ymax`. |
 | `quiet` | none | The cut has no speech. |
 | `SPEECH AT CUT` | certain | Narration RMS before the cut is above `cut_max_db`. |
+| `POP AT CUT` | certain | The picture jumps at the cut into a section with `carries_previous = true`. |
 | `changed` | none | The change test passed, and the onset is within the offset limit or no onset was found. |
 | `THIN CHANGE?` | uncertain | Like `changed`, but the changed share or the margin is below `thin_change_factor` (3) times its floor. |
 | `OFF CUE` | certain | The change test passed, but the offset column or the `a/v` column is past its limit. |
@@ -897,7 +900,7 @@ This shape shows the JSON envelope. The values are types, not a sample.
 | `status` | The shape under [`decktalk status`](#decktalk-status). |
 | `beats` | `estimated`, `beats_file`, `unresolved`, `unknown`, and `sections`. |
 | `check` | `recordings`: a list of `{key, file, duration, wanted, y10, y50, y90, max50, verdicts, stall_ms, page_errors}`. |
-| `verify` | `final`, `total_seconds`, `silent`, `starts`, `cuts`, and `cues`. |
+| `verify` | `final`, `total_seconds`, `silent`, `starts`, `cuts`, `carries`, and `cues`. |
 
 Note: each `beats` section is `{key, speech_end, min_seconds, skipped, cues, notes}`. Each note is
 `{cue, verdict, detail}`, where `verdict` is `UNRESOLVED`, `UNKNOWN`, or `null`. Each `verify` cue row
@@ -923,7 +926,7 @@ verdict, reason}`. [verify](/reference/verify#json-fields) defines them.
 | `doctor` | A `MISSING` row. | A `warning` row, such as `katex`. |
 | `beats` | `UNRESOLVED`, and `UNKNOWN` without `--allow-unknown`. | Speech shorter than `min_seconds`. |
 | `check` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`. | `BLACK?`, `KATEX?` |
-| `verify` | `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`. | `THIN CHANGE?` |
+| `verify` | `BLACK`, `SPEECH AT CUT`, `POP AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`. | `THIN CHANGE?` |
 | `status` | Never. | Never. |
 | `build` | See [`decktalk build`](#decktalk-build). | Not used. |
 | Every other command | Only an error. | Not used. |

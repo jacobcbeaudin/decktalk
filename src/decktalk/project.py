@@ -56,6 +56,7 @@ class ClipSection:
     A missing clip plays a titled slate for `slate_seconds`. With `strict` that is an error,
     unless the section is `optional`, as the scaffold's B-roll slot is. `words` names a words
     file of the speech inside the clip, in seconds after the clip starts, which the captions add.
+    `carries_previous` says the clip continues the previous section's picture, which verify checks.
     """
 
     number: int
@@ -64,6 +65,7 @@ class ClipSection:
     slate_seconds: float = 5.0
     optional: bool = False
     words: str | None = None
+    carries_previous: bool = False
 
     @property
     def key(self) -> str:
@@ -76,7 +78,11 @@ class ClipSection:
 
 @dataclass(frozen=True)
 class PageSection:
-    """A section recorded from an HTML page, cut to the narration."""
+    """A section recorded from an HTML page, cut to the narration.
+
+    `carries_previous` says the page opens on the previous section's last picture, so the cut
+    into it should not show. verify compares the two frames.
+    """
 
     number: int
     page: str
@@ -86,6 +92,7 @@ class PageSection:
     hold_seconds: float = 0.0
     ambience: bool = False
     params: dict[str, str] = field(default_factory=dict)
+    carries_previous: bool = False
 
     @property
     def key(self) -> str:
@@ -244,8 +251,10 @@ class _Table:
 
 
 VOICE_KEYS = frozenset({"provider", "model", "stability", "similarity_boost", "style", "speaker_boost", "speed"})
-CLIP_KEYS = frozenset({"number", "title", "clip", "slate_seconds", "optional", "words"})
-PAGE_KEYS = frozenset({"number", "title", "page", "scene", "extra_seconds", "hold_seconds", "ambience", "params"})
+CLIP_KEYS = frozenset({"number", "title", "clip", "slate_seconds", "optional", "words", "carries_previous"})
+PAGE_KEYS = frozenset(
+    {"number", "title", "page", "scene", "extra_seconds", "hold_seconds", "ambience", "params", "carries_previous"}
+)
 SOUND_KEYS = frozenset({"text", "out", "duration_seconds", "prompt_influence", "model_id"})
 
 
@@ -276,6 +285,7 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
             slate_seconds=t.get_num("slate_seconds", 5.0),
             optional=t.get_bool("optional"),
             words=t.get_str("words"),
+            carries_previous=t.get_bool("carries_previous"),
         )
     if "page" not in raw:
         raise ConfigError(f"{where}: needs 'page' (an HTML file) or 'clip' (a video file)")
@@ -293,6 +303,7 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
         hold_seconds=t.get_num("hold_seconds", 0.0),
         ambience=t.get_bool("ambience"),
         params={str(k): str(v) for k, v in params_raw.items()},
+        carries_previous=t.get_bool("carries_previous"),
     )
 
 
@@ -305,7 +316,13 @@ def _parse_sections(doc: dict[str, Any]) -> list[Section]:
     dupes = sorted({n for n in numbers if numbers.count(n) > 1})
     if dupes:
         raise ConfigError(f"{PROJECT_FILE}: duplicate section number(s) {dupes}")
-    return sorted(sections, key=lambda s: s.number)
+    sections.sort(key=lambda s: s.number)
+    if sections[0].carries_previous:
+        raise ConfigError(
+            f"{PROJECT_FILE}: [[section]] number={sections[0].number}: carries_previous is set on the first section, "
+            "which has no previous section"
+        )
+    return sections
 
 
 def _parse_voice(doc: dict[str, Any]) -> Voice:

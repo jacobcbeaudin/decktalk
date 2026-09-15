@@ -99,7 +99,7 @@ decktalk.build(project, *, silent=False, force=False, only=None, nomix=False, lo
 
 **Returns** a `BuildResult` with one field per stage: `narration`, `beats`, `recordings`, `leads`, `checks`,
 `assembly`, and `verification`. Its `ok` is true when the video was assembled and `verification.ok` is true. The
-verification checks section starts and cuts, and no cue.
+verification checks section starts, cuts, and cut continuity, and no cue.
 
 **Raises**
 
@@ -126,7 +126,7 @@ measurement.
 | Parameter | Default | Meaning |
 |---|---|---|
 | `checks` | `None` | `None` checks every cue in `beats.json` that `cues.json` does not opt out. An empty list checks no cue. A list of `SECTION:CUE` strings checks those cues, even opted-out ones. |
-| `only` | `None` | Section numbers whose cues to keep. Section starts and cuts are always checked. |
+| `only` | `None` | Section numbers whose cues to keep. Section starts, cuts, and cut continuity are always checked. |
 
 **Returns** a `VerifyResult`.
 
@@ -135,6 +135,7 @@ measurement.
 | `final`, `total_seconds`, `silent` | Path of the final mp4, its length, and whether the build was silent. |
 | `starts` | One `StartCheck` per section, with `key`, `start`, `probe_at`, `yavg`, `ymax`, `ok`, and `verdict`. |
 | `cuts` | One `CutCheck` per spoken section, with `key`, `cut_at`, `rms_db`, `ok`, and `verdict`. |
+| `carries` | One `CarryCheck` per section with `carries_previous = true`, with `key`, `cut_at`, `last_at`, `first_at`, `changed_percent`, `ok`, and `verdict`. |
 | `cues` | One `CueCheck` per cue row, with `check`, `section`, `cue`, `cue_seconds`, `final_seconds`, `changed_percent`, `control_percent`, `offset_ms`, `av_ms`, `ok`, `verdict`, `reason`, and `skipped`. |
 | `black_starts` | Count of section starts that read `BLACK`. |
 | `ok` | True when every start, cut, and measured cue passed. A skipped row never counts against it. |

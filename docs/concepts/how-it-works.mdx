@@ -48,7 +48,7 @@ flowchart TB
 | `measure` | `measure` finds narration t=0 in each recording. | `lead_in_seconds` in each sidecar |
 | `check` | `check` flags a recording that is black, short, stalled, or uncovered. | nothing |
 | `assemble` | `assemble` cuts, joins, and mixes the sections into one mp4. | `build/out/NN-section.mp4`, `<name>.mp4`, captions, chapters |
-| `verify` | `verify` checks section starts and cuts in the final mp4. | nothing |
+| `verify` | `verify` checks section starts, cuts, and cut continuity in the final mp4. | nothing |
 
 Each stage is also a command with the same name, and [the CLI reference](/reference/cli) lists them.
 [Build artifacts](/reference/artifacts) gives the fields of every file. `assemble` also runs the
@@ -129,7 +129,7 @@ changes length, because cue times count from the start of their own section.
 - **Cues:** the picture changes within 80 ms of each cue time. After a silent build, it also changes within 120 ms
   of the click plus the offset key.
 
-The verify stage inside `decktalk build` checks section starts and cuts. `decktalk verify` also checks the cues.
+The verify stage inside `decktalk build` checks section starts and cuts, and cut continuity for a section that sets `carries_previous`. `decktalk verify` also checks the cues.
 [Verify](/reference/verify) defines every measurement, limit, and result.
 
 ## Terms
