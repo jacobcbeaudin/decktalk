@@ -66,9 +66,9 @@
  * step's hold, KaTeX never arriving or refusing a data-tex value) is pushed onto
  * __decktalk.warnings, which the recorder reads back and logs. A warning never throws.
  */
-(function () {
+(() => {
+  // The runtime loads as a classic <script>, not a module, so this directive is what makes it strict.
   "use strict";
-
   const CSS = `
   #dt-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0}
   #dt-cam,#dt-pan{position:absolute;inset:0}
@@ -130,7 +130,9 @@
   const frozen = params.has("step");
 
   // ---- time ----------------------------------------------------------------------
-  const setOrigin = () => { if (state.origin === null) state.origin = performance.now(); };
+  const setOrigin = () => {
+    if (state.origin === null) state.origin = performance.now();
+  };
   if (!SIGNAL) {
     if (document.readyState === "complete") setOrigin();
     else window.addEventListener("load", setOrigin, { once: true });
@@ -167,16 +169,18 @@
   }
   function fitStage() {
     const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-    const x = (window.innerWidth - 1920 * s) / 2, y = (window.innerHeight - 1080 * s) / 2;
+    const x = (window.innerWidth - 1920 * s) / 2,
+      y = (window.innerHeight - 1080 * s) / 2;
     stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
   }
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const esc = (s) =>
+    String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   // Each distinct warning is recorded once and echoed to the console.
   // A recording is only as good as the frames the compositor produced. A gap between two
   // animation frames longer than a few frames means a reveal was captured late, so the gap
   // is recorded for the recorder to judge.
   const frameGaps = [];
-  const syncLog = [];  // what each data-sync element matched, for the recorder's sidecar
+  const syncLog = []; // what each data-sync element matched, for the recorder's sidecar
   // When each cue was due, when it ran, and when the frame that ran it and the two frames after it
   // began, all in seconds on the narration clock. A cue that ran on time but whose next frame began
   // late was held up by the frame that drew it; a cue that ran late was held up before its frame.
@@ -192,23 +196,43 @@
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-    if (!(window.PerformanceObserver && (PerformanceObserver.supportedEntryTypes || []).includes("long-animation-frame"))) return;
+    if (
+      !(window.PerformanceObserver && (PerformanceObserver.supportedEntryTypes || []).includes("long-animation-frame"))
+    )
+      return;
     new PerformanceObserver((list) => {
       for (const e of list.getEntries()) {
         if (state.origin === null || e.startTime < state.origin || longFrames.length >= 5000) continue;
-        longFrames.push({ start: clockAt(e.startTime), ms: Math.round(e.duration), render: clockAt(e.renderStart), presented: e.presentationTime ? clockAt(e.presentationTime) : null });
+        longFrames.push({
+          start: clockAt(e.startTime),
+          ms: Math.round(e.duration),
+          render: clockAt(e.renderStart),
+          presented: e.presentationTime ? clockAt(e.presentationTime) : null,
+        });
       }
     }).observe({ type: "long-animation-frame" });
   }
   function logCue(id, due) {
-    const entry = { id, due: +due.toFixed(3), ran: +now().toFixed(3), frame: clockAt(state.frameAt), next: null, after: null };
+    const entry = {
+      id,
+      due: +due.toFixed(3),
+      ran: +now().toFixed(3),
+      frame: clockAt(state.frameAt),
+      next: null,
+      after: null,
+    };
     cueLog.push(entry);
-    requestAnimationFrame((t1) => { entry.next = clockAt(t1); requestAnimationFrame((t2) => { entry.after = clockAt(t2); }); });
+    requestAnimationFrame((t1) => {
+      entry.next = clockAt(t1);
+      requestAnimationFrame((t2) => {
+        entry.after = clockAt(t2);
+      });
+    });
   }
   function warn(msg) {
     if (state.warnings.includes(msg)) return;
     state.warnings.push(msg);
-    console.warn("decktalk: " + msg);
+    console.warn(`decktalk: ${msg}`);
   }
 
   // ---- scenes ---------------------------------------------------------------------
@@ -228,8 +252,11 @@
   // cues: ["a","b"] (ownership only) or {a: 1.5, b: 3} (ownership + autoplay seconds after mount)
   function normalizeCues(c) {
     const out = new Map();
-    if (Array.isArray(c)) c.forEach((k) => out.set(String(k), null));
-    else if (c && typeof c === "object") Object.entries(c).forEach(([k, v]) => out.set(String(k), Number(v) || 0));
+    if (Array.isArray(c)) {
+      for (const k of c) out.set(String(k), null);
+    } else if (c && typeof c === "object") {
+      for (const [k, v] of Object.entries(c)) out.set(String(k), Number(v) || 0);
+    }
     return out;
   }
   function on(id, fn) {
@@ -268,7 +295,13 @@
   }
   const wordKey = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, "");
   function parseWords(raw) {
-    return raw.split(",").map((item) => { const at = item.lastIndexOf("@"); return { k: wordKey(item.slice(0, at)), t: parseFloat(item.slice(at + 1)) }; }).filter((w) => w.k && !isNaN(w.t));
+    return raw
+      .split(",")
+      .map((item) => {
+        const at = item.lastIndexOf("@");
+        return { k: wordKey(item.slice(0, at)), t: parseFloat(item.slice(at + 1)) };
+      })
+      .filter((w) => w.k && !Number.isNaN(w.t));
   }
   // Reveal one word at a time, each at the second the voice reaches it. The element's text
   // is matched against the section's spoken words, preferring the run nearest the cue.
@@ -277,23 +310,36 @@
     const words = state.words;
     if (frozen || !words || !words.length) return;
     const tokens = full.split(/(\s+)/);
-    const keys = tokens.filter((t) => t.trim()).map(wordKey).filter(Boolean);
+    const keys = tokens
+      .filter((t) => t.trim())
+      .map(wordKey)
+      .filter(Boolean);
     if (!keys.length) return;
     const t0 = now();
     let start = -1;
     for (let i = 0; i + keys.length <= words.length; i++) {
       let ok = true;
-      for (let j = 0; j < keys.length; j++) if (words[i + j].k !== keys[j]) { ok = false; break; }
+      for (let j = 0; j < keys.length; j++)
+        if (words[i + j].k !== keys[j]) {
+          ok = false;
+          break;
+        }
       if (!ok) continue;
       start = i;
       if (words[i].t >= t0 - 1.5) break;
     }
-    if (start < 0) { warn(`data-sync text not found in the spoken words: "${full.slice(0, 40)}"`); return; }
+    if (start < 0) {
+      warn(`data-sync text not found in the spoken words: "${full.slice(0, 40)}"`);
+      return;
+    }
     syncLog.push({ text: full.slice(0, 24), cueAt: +t0.toFixed(3), runAt: words[start].t, n: keys.length });
     el.textContent = "";
     let wi = 0;
     tokens.forEach((t) => {
-      if (!t.trim()) { el.appendChild(document.createTextNode(t)); return; }
+      if (!t.trim()) {
+        el.appendChild(document.createTextNode(t));
+        return;
+      }
       const span = document.createElement("span");
       span.className = "dt-w";
       span.textContent = t;
@@ -305,8 +351,10 @@
       const n = now();
       let pending = false;
       el.querySelectorAll(".dt-w:not(.dt-on)").forEach((sp) => {
-        if (n >= parseFloat(sp.dataset.at) - 0.02) { sp.classList.add("dt-on"); if (entry && entry.firstOn === undefined) entry.firstOn = +n.toFixed(3); }
-        else pending = true;
+        if (n >= parseFloat(sp.dataset.at) - 0.02) {
+          sp.classList.add("dt-on");
+          if (entry && entry.firstOn === undefined) entry.firstOn = +n.toFixed(3);
+        } else pending = true;
       });
       if (pending) requestAnimationFrame(tick);
     };
@@ -314,31 +362,64 @@
   }
   function countUp(el) {
     const full = el.dataset.ccFull ?? el.textContent;
-    const m = el.dataset.count === "first" ? full.match(/(\d[\d,]*(?:\.\d+)?)/) : full.match(/(\d[\d,]*(?:\.\d+)?)(?!.*\d)/);
-    if (!m || frozen) { el.textContent = full; return; }
-    const target = parseFloat(m[1].replace(/,/g, "")), decimals = (m[1].split(".")[1] || "").length, commas = m[1].includes(",");
-    const fmt = (v) => { let s = v.toFixed(decimals); if (commas) s = s.replace(/\B(?=(\d{3})+(?!\d))/g, ","); return full.slice(0, m.index) + s + full.slice(m.index + m[1].length); };
-    const t0 = performance.now(), dur = (parseFloat(el.dataset.dur) * 1000 || 900) / (state.mode === "autoplay" ? SPEED : 1);
-    const tick = (t) => { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(target * e); if (k < 1) requestAnimationFrame(tick); };
+    const m =
+      el.dataset.count === "first" ? full.match(/(\d[\d,]*(?:\.\d+)?)/) : full.match(/(\d[\d,]*(?:\.\d+)?)(?!.*\d)/);
+    if (!m || frozen) {
+      el.textContent = full;
+      return;
+    }
+    const target = parseFloat(m[1].replace(/,/g, "")),
+      decimals = (m[1].split(".")[1] || "").length,
+      commas = m[1].includes(",");
+    const fmt = (v) => {
+      let s = v.toFixed(decimals);
+      if (commas) s = s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      return full.slice(0, m.index) + s + full.slice(m.index + m[1].length);
+    };
+    const t0 = performance.now(),
+      dur = (parseFloat(el.dataset.dur) * 1000 || 900) / (state.mode === "autoplay" ? SPEED : 1);
+    const tick = (t) => {
+      const k = Math.min(1, (t - t0) / dur),
+        e = 1 - (1 - k) ** 3;
+      el.textContent = fmt(target * e);
+      if (k < 1) requestAnimationFrame(tick);
+    };
     requestAnimationFrame(tick);
   }
   function typewriter(el) {
     const full = el.dataset.ccFull ?? el.textContent;
-    if (frozen) { el.textContent = full; return; }
+    if (frozen) {
+      el.textContent = full;
+      return;
+    }
     const ms = (parseFloat(el.dataset.type) || 40) / (state.mode === "autoplay" ? SPEED : 1);
     // The box keeps the size of its finished text, so nothing around it shifts while typing.
-    el.style.minWidth = el.offsetWidth + "px";
-    el.style.minHeight = el.offsetHeight + "px";
+    el.style.minWidth = `${el.offsetWidth}px`;
+    el.style.minHeight = `${el.offsetHeight}px`;
     el.textContent = "";
     let i = 0;
-    const id = setInterval(() => { el.textContent = full.slice(0, ++i); if (i >= full.length) clearInterval(id); }, ms);
+    const id = setInterval(() => {
+      el.textContent = full.slice(0, ++i);
+      if (i >= full.length) clearInterval(id);
+    }, ms);
   }
   function typeset(root) {
-    if (!window.katex) { if (root.querySelector("[data-tex]")) watchKatex(); return; }
+    if (!window.katex) {
+      if (root.querySelector("[data-tex]")) watchKatex();
+      return;
+    }
     root.querySelectorAll("[data-tex]:not([data-typeset])").forEach((el) => {
-      try { window.katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: el.hasAttribute("data-display") }); el.dataset.typeset = "1"; } catch (_) { /* keep plain text */ }
+      try {
+        window.katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: el.hasAttribute("data-display") });
+        el.dataset.typeset = "1";
+      } catch (_) {
+        /* keep plain text */
+      }
       // With throwOnError off a bad value renders in red instead of throwing, so it is reported here.
-      if (el.querySelector(".katex-error")) warn(`data-tex could not be parsed: "${el.dataset.tex}" (write \\\\ for every backslash inside a template literal)`);
+      if (el.querySelector(".katex-error"))
+        warn(
+          `data-tex could not be parsed: "${el.dataset.tex}" (write \\\\ for every backslash inside a template literal)`,
+        );
     });
   }
   // In cue mode the first step mounts after the clock starts, so katexReady finds no [data-tex]
@@ -349,7 +430,8 @@
     if (katexWatched) return;
     katexWatched = true;
     setTimeout(() => {
-      if (!window.katex && document.querySelector("[data-tex]:not([data-typeset])")) warn("KaTeX did not load within 5 s, so [data-tex] elements stay plain text");
+      if (!window.katex && document.querySelector("[data-tex]:not([data-typeset])"))
+        warn("KaTeX did not load within 5 s, so [data-tex] elements stay plain text");
     }, 5000);
   }
   // Resolves once window.katex exists, when the page needs it, or after 5 s with a warning.
@@ -360,8 +442,16 @@
     return new Promise((resolve) => {
       const started = performance.now();
       const tick = () => {
-        if (window.katex) { if (pan) typeset(pan); resolve(true); return; }
-        if (performance.now() - started > 5000) { warn("KaTeX did not load within 5 s, so [data-tex] elements stay plain text"); resolve(true); return; }
+        if (window.katex) {
+          if (pan) typeset(pan);
+          resolve(true);
+          return;
+        }
+        if (performance.now() - started > 5000) {
+          warn("KaTeX did not load within 5 s, so [data-tex] elements stay plain text");
+          resolve(true);
+          return;
+        }
         setTimeout(tick, 100);
       };
       tick();
@@ -377,7 +467,8 @@
     state.frameAt = frameAt ?? performance.now();
     const t = now();
     while (state.queue.length && state.queue[0].t <= t) state.queue.shift().run();
-    if (hud) hud.textContent = `${state.mode} · scene ${state.scene?.id ?? "-"} · step ${state.step?.id ?? "-"} · t ${Math.max(0, t).toFixed(2)}s`;
+    if (hud)
+      hud.textContent = `${state.mode} · scene ${state.scene?.id ?? "-"} · step ${state.step?.id ?? "-"} · t ${Math.max(0, t).toFixed(2)}s`;
     requestAnimationFrame(loop);
   }
 
@@ -400,39 +491,73 @@
     // A reveal mode runs when its element reveals, so an element with no cue and no timer never runs it.
     slide.querySelectorAll("[data-sync],[data-count],[data-type]").forEach((el) => {
       if (el.hasAttribute("data-cue") || el.hasAttribute("data-at")) return;
-      ["data-sync", "data-count", "data-type"].filter((a) => el.hasAttribute(a))
-        .forEach((a) => warn(`${a} on an element without data-cue or data-at never reveals, so add data-at="0"`));
+      ["data-sync", "data-count", "data-type"]
+        .filter((a) => el.hasAttribute(a))
+        .forEach((a) => {
+          warn(`${a} on an element without data-cue or data-at never reveals, so add data-at="0"`);
+        });
     });
     slide.querySelectorAll("[data-cue],[data-at]").forEach((el) => {
       el.classList.add("dt-reveal");
       // A fade on the container would fight the per-word reveal, so data-sync implies no animation.
       if (el.hasAttribute("data-sync") && !el.hasAttribute("data-fx")) el.dataset.fx = "none";
-      if (el.hasAttribute("data-count") || el.hasAttribute("data-type") || el.hasAttribute("data-sync")) el.dataset.ccFull = el.textContent;
-      if (el.dataset.dur) el.style.animationDuration = `${parseFloat(el.dataset.dur) / (state.mode === "autoplay" ? SPEED : 1)}s`;
+      if (el.hasAttribute("data-count") || el.hasAttribute("data-type") || el.hasAttribute("data-sync"))
+        el.dataset.ccFull = el.textContent;
+      if (el.dataset.dur)
+        el.style.animationDuration = `${parseFloat(el.dataset.dur) / (state.mode === "autoplay" ? SPEED : 1)}s`;
       const cueId = el.dataset.cue;
-      if (frozen) { if (!(cueId && held && held.has(cueId))) reveal(el); return; }
-      if (cueId && listedCues && listedCues.has(cueId)) return; // its cue event reveals it
-      if (cueId && listedCues) warn(`data-cue "${cueId}" is not in ?beats=, so it reveals at its data-at time after the mount`);
+      if (frozen) {
+        if (!(cueId && held?.has(cueId))) reveal(el);
+        return;
+      }
+      if (cueId && listedCues?.has(cueId)) return; // its cue event reveals it
+      if (cueId && listedCues)
+        warn(`data-cue "${cueId}" is not in ?beats=, so it reveals at its data-at time after the mount`);
       const at = (parseFloat(el.dataset.at) || 0) / (state.mode === "autoplay" ? SPEED : 1);
-      if (at <= 0) reveal(el); else schedule(mountT + at, "reveal", cueId || "", () => reveal(el));
+      if (at <= 0) reveal(el);
+      else schedule(mountT + at, "reveal", cueId || "", () => reveal(el));
     });
-    if (old) { old.classList.remove("dt-enter"); old.classList.add("dt-leave"); setTimeout(() => old.remove(), 400); }
+    if (old) {
+      old.classList.remove("dt-enter");
+      old.classList.add("dt-leave");
+      setTimeout(() => old.remove(), 400);
+    }
     pan.appendChild(slide);
-    if (st.enter) { try { st.enter(slide, { id: st.id, at: +mountT.toFixed(3), frozen, step: st.id }); } catch (e) { console.error(e); } }
+    if (st.enter) {
+      try {
+        st.enter(slide, { id: st.id, at: +mountT.toFixed(3), frozen, step: st.id });
+      } catch (e) {
+        console.error(e);
+      }
+    }
     return slide;
   }
   function fireCue(id) {
     state.fired.push(id);
     const hits = pan.querySelectorAll(`.dt-slide:not(.dt-leave) [data-cue="${CSS_escape(id)}"]`);
     hits.forEach(reveal);
-    const st = state.step, slide = state.slide;
+    const st = state.step,
+      slide = state.slide;
     const ctx = { id, at: +now().toFixed(3), frozen, step: st ? st.id : null };
     const handled = !!(st && typeof st.on[id] === "function");
-    if (handled) { try { st.on[id](slide, ctx); } catch (e) { console.error(e); } }
-    (HANDLERS.get(id) || []).forEach((fn) => { try { fn(slide, ctx); } catch (e) { console.error(e); } });
+    if (handled) {
+      try {
+        st.on[id](slide, ctx);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    (HANDLERS.get(id) || []).forEach((fn) => {
+      try {
+        fn(slide, ctx);
+      } catch (e) {
+        console.error(e);
+      }
+    });
     // A cue that reveals nothing and runs nothing is almost always a typo between cues.json,
     // the step's cues object and a data-cue attribute, so it is reported rather than ignored.
-    if (!hits.length && !handled && !HANDLERS.has(id) && !findStep(id)) warn(`cue "${id}" matches no element, handler, or step`);
+    if (!hits.length && !handled && !HANDLERS.has(id) && !findStep(id))
+      warn(`cue "${id}" matches no element, handler, or step`);
   }
   const CSS_escape = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&"));
   function startCamera(sc, seconds) {
@@ -443,10 +568,16 @@
 
   // ---- modes ----------------------------------------------------------------------
   function parseBeats(raw) {
-    return raw.split(",").map((tok) => tok.trim()).filter(Boolean).map((tok) => {
-      const i = tok.lastIndexOf("@");
-      return { id: tok.slice(0, i), t: parseFloat(tok.slice(i + 1)) };
-    }).filter((c) => c.id && !isNaN(c.t)).sort((a, b) => a.t - b.t);
+    return raw
+      .split(",")
+      .map((tok) => tok.trim())
+      .filter(Boolean)
+      .map((tok) => {
+        const i = tok.lastIndexOf("@");
+        return { id: tok.slice(0, i), t: parseFloat(tok.slice(i + 1)) };
+      })
+      .filter((c) => c.id && !Number.isNaN(c.t))
+      .sort((a, b) => a.t - b.t);
   }
   function playCues(sc, cues) {
     state.mode = "cues";
@@ -457,20 +588,38 @@
     const mountAt = new Map(); // step -> t
     for (const c of cues) {
       const owner = ownerOf(c.id, sc);
-      if (!owner) { if (!HANDLERS.has(c.id)) warn(`unknown cue id ${c.id} (no step id or cues list matches it)`); continue; }
+      if (!owner) {
+        if (!HANDLERS.has(c.id)) warn(`unknown cue id ${c.id} (no step id or cues list matches it)`);
+        continue;
+      }
       mountAt.set(owner.step, Math.min(mountAt.get(owner.step) ?? Infinity, c.t));
     }
     const steps = [...mountAt.entries()].sort((a, b) => a[1] - b[1]);
-    if (!steps.length) { warn("no step owns any listed cue, so nothing will mount"); return; }
-    sc.steps.forEach((st) => { if (!mountAt.has(st)) warn(`step "${st.id}" owns no cue in ?beats=, so it never appears`); });
+    if (!steps.length) {
+      warn("no step owns any listed cue, so nothing will mount");
+      return;
+    }
+    sc.steps.forEach((st) => {
+      if (!mountAt.has(st)) warn(`step "${st.id}" owns no cue in ?beats=, so it never appears`);
+    });
     // The first cued step mounts at narration t=0 so the section never opens on an empty
     // stage; its listed reveals still wait for their own cues.
     steps[0][1] = Math.min(steps[0][1], 0);
     const last = steps[steps.length - 1][0];
     const tEnd = Math.max(...cues.map((c) => c.t));
     startCamera(sc, tEnd - T0 + 8);
-    steps.forEach(([st, t]) => schedule(T0 + t, "mount", st.id, () => { mountStep(sc, st, listed); if (st === last) document.body.dataset.done = "1"; }));
-    cues.forEach((c) => schedule(T0 + c.t, "cue", c.id, () => { logCue(c.id, T0 + c.t); fireCue(c.id); }));
+    for (const [st, t] of steps) {
+      schedule(T0 + t, "mount", st.id, () => {
+        mountStep(sc, st, listed);
+        if (st === last) document.body.dataset.done = "1";
+      });
+    }
+    for (const c of cues) {
+      schedule(T0 + c.t, "cue", c.id, () => {
+        logCue(c.id, T0 + c.t);
+        fireCue(c.id);
+      });
+    }
   }
   function playAuto(sc) {
     state.mode = "autoplay";
@@ -484,12 +633,15 @@
       // elements or handlers exist. The last step holds until the end, so its cues always land.
       if (i < sc.steps.length - 1) {
         st.cues.forEach((delay, id) => {
-          if (delay !== null && delay >= st.hold) warn(`step "${st.id}" fires "${id}" at ${delay} s but holds ${st.hold} s, so it fires on the next step`);
+          if (delay !== null && delay >= st.hold)
+            warn(`step "${st.id}" fires "${id}" at ${delay} s but holds ${st.hold} s, so it fires on the next step`);
         });
       }
       schedule(at, "mount", st.id, () => {
         mountStep(sc, st, null);
-        st.cues.forEach((delay, id) => { if (delay !== null) schedule(at + delay / SPEED, "cue", id, () => fireCue(id)); });
+        st.cues.forEach((delay, id) => {
+          if (delay !== null) schedule(at + delay / SPEED, "cue", id, () => fireCue(id));
+        });
         if (i === sc.steps.length - 1) document.body.dataset.done = "1";
       });
       t += st.hold / SPEED;
@@ -499,7 +651,7 @@
   function cueOrder(st) {
     return [...st.cues.entries()]
       .map(([id, delay], i) => ({ id, delay: delay ?? Infinity, i }))
-      .sort((a, b) => (a.delay - b.delay) || (a.i - b.i))
+      .sort((a, b) => a.delay - b.delay || a.i - b.i)
       .map((c) => c.id);
   }
   function catalogOf() {
@@ -528,7 +680,7 @@
       else fire = order.slice(0, cueId ? k + 1 : k);
     }
     mountStep(found.scene, found.step, null, new Set(order.slice(fire.length)));
-    fire.forEach((id) => fireCue(id));
+    for (const id of fire) fireCue(id);
     document.body.dataset.done = "1";
   }
   function renderIndex(note) {
@@ -541,8 +693,12 @@
     div.innerHTML = `<h1>${esc(title)}</h1>${note ? `<p><b>${note}</b></p>` : ""}
       <p>1920×1080. <code>?scene=N</code> autoplays a scene; <code>?step=ID</code> freezes a step; <code>&amp;speed=2</code> runs faster;
       <code>&amp;hud=1</code> shows the clock; <code>&amp;beats=id@s,…</code> (+<code>&amp;t0=</code>) cues from narration.</p>
-      ${[...SCENES.values()].map((sc) => `<h2>Scene ${esc(sc.id)} — ${esc(sc.name)} <a href="?scene=${esc(sc.id)}">▶ play</a></h2>
-        <div class="dt-steps">${sc.steps.map((st) => `<a href="?step=${esc(st.id)}">step ${esc(st.id)} <code>(${st.hold}s${st.cues.size ? `, cues ${[...st.cues.keys()].join(" ")}` : ""})</code></a>`).join("")}</div>`).join("")}`;
+      ${[...SCENES.values()]
+        .map(
+          (sc) => `<h2>Scene ${esc(sc.id)} — ${esc(sc.name)} <a href="?scene=${esc(sc.id)}">▶ play</a></h2>
+        <div class="dt-steps">${sc.steps.map((st) => `<a href="?step=${esc(st.id)}">step ${esc(st.id)} <code>(${st.hold}s${st.cues.size ? `, cues ${[...st.cues.keys()].join(" ")}` : ""})</code></a>`).join("")}</div>`,
+        )
+        .join("")}`;
     document.body.appendChild(div);
   }
 
@@ -574,22 +730,58 @@
     }
     requestAnimationFrame(loop);
   }
-  document.addEventListener("DOMContentLoaded", () => { if (SCENES.size) start(); });
+  document.addEventListener("DOMContentLoaded", () => {
+    if (SCENES.size) start();
+  });
 
-  const DeckTalk = { scene, on, start, startClock: setOrigin, reveal, fireCue, findStep, get scenes() { return SCENES; }, params };
+  const DeckTalk = {
+    scene,
+    on,
+    start,
+    startClock: setOrigin,
+    reveal,
+    fireCue,
+    findStep,
+    get scenes() {
+      return SCENES;
+    },
+    params,
+  };
   window.DeckTalk = DeckTalk;
   window.__decktalk = {
-    get frameGaps() { return frameGaps; },
-    get syncLog() { return syncLog; },
-    get cueLog() { return cueLog; },
-    get longFrames() { return longFrames; },
-    get mode() { return state.mode; },
-    get scene() { return state.scene?.id ?? null; },
-    get step() { return state.step?.id ?? null; },
-    get cues() { return state.cues; },
-    get fired() { return state.fired; },
-    get warnings() { return state.warnings; },
-    get catalog() { return state.catalog.length ? state.catalog : catalogOf(); },
+    get frameGaps() {
+      return frameGaps;
+    },
+    get syncLog() {
+      return syncLog;
+    },
+    get cueLog() {
+      return cueLog;
+    },
+    get longFrames() {
+      return longFrames;
+    },
+    get mode() {
+      return state.mode;
+    },
+    get scene() {
+      return state.scene?.id ?? null;
+    },
+    get step() {
+      return state.step?.id ?? null;
+    },
+    get cues() {
+      return state.cues;
+    },
+    get fired() {
+      return state.fired;
+    },
+    get warnings() {
+      return state.warnings;
+    },
+    get catalog() {
+      return state.catalog.length ? state.catalog : catalogOf();
+    },
     now,
   };
 })();

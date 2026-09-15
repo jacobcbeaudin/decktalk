@@ -34,6 +34,17 @@ jobs:
       - run: uv run pytest -q
       - run: uv run scripts/build_config_reference.py --check
 
+  lint:
+    name: lint (JavaScript and shell)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      # The same versions as .pre-commit-config.yaml. The runner's own shellcheck is older, so the
+      # pinned build comes from shellcheck-py.
+      - run: npx --yes @biomejs/biome@2.5.13 ci .
+      - run: git ls-files -z '*.sh' | xargs -0 uvx --from shellcheck-py==0.11.0.1 shellcheck
+
   build:
     name: build (${{ matrix.os }})
     strategy:

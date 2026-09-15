@@ -19,6 +19,19 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  # JavaScript lint + format, as CI does (config in biome.json). Keep rev in step with the version
+  # pinned in biome.json's $schema and in ci.yml.
+  - repo: https://github.com/biomejs/pre-commit
+    rev: v2.5.13
+    hooks:
+      - id: biome-check
+
+  # Shell scripts, as CI does.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

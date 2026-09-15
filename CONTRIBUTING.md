@@ -11,6 +11,7 @@ You need:
 
 - [uv](https://docs.astral.sh/uv/). It installs Python and every dependency.
 - bash, for `tests/smoke.sh`. On Windows, use Git Bash.
+- [Node.js](https://nodejs.org/), for `npx`. It runs Biome, the JavaScript linter and formatter.
 
 Run every command in this file from the repository root.
 
@@ -27,6 +28,8 @@ Run these checks before you open a pull request.
 ```console
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run ty check src
+npx --yes @biomejs/biome@2.5.13 ci .             # lint and format check for JavaScript
+git ls-files -z '*.sh' | xargs -0 uvx --from shellcheck-py==0.11.0.1 shellcheck
 uv run pytest -q                                 # unit tests
 uv run pytest -q -m "browser or media"           # the runtime in Chromium, frame analysis in ffmpeg
 bash tests/smoke.sh                              # scaffold a project and build it offline
@@ -39,9 +42,10 @@ No check needs an ElevenLabs key. After `decktalk setup`, no check needs the net
 
 ### What CI runs
 
-CI runs two jobs from `.github/workflows/ci.yml`.
+CI runs three jobs from `.github/workflows/ci.yml`.
 
-- The `checks` job runs every check above except the browser tests, the smoke build, and `scripts/build_assets.py --check`. It runs on Linux with Python 3.12, 3.13, and 3.14.
+- The `checks` job runs ruff, ty, the unit tests, and `scripts/build_config_reference.py --check`. It runs on Linux with Python 3.12, 3.13, and 3.14.
+- The `lint` job runs Biome on JavaScript and ShellCheck on shell scripts. It runs once on Linux, on the same triggers as the `checks` job.
 - The `build` job runs `decktalk setup`, `decktalk doctor`, the browser and media tests, the cue timing gate, and
   the smoke build.
 
