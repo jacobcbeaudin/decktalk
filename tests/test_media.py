@@ -423,13 +423,16 @@ def _tone_with_tail(path: Path, *, tail: float, rate: int = 44100, bitrate: str 
 
 
 def test_trailing_silence_counts_a_silence_that_ends_in_the_encoder_padding(tmp_path):
-    """The container length includes the mp3 encoder padding, so the silence ends just over 0.05 s before it."""
+    """The silence runs to the end of the take, whether or not the container length counts the encoder padding.
+
+    Some ffmpeg builds, such as the static 7.0 build for Apple silicon, count the mp3 encoder padding in the
+    container length, so the silence ends just over 0.05 s before the container end. Newer builds, and the
+    static builds for Linux and Windows, write the padding into the header, so the two lengths match.
+    """
     take = tmp_path / "take.mp3"
     _tone_with_tail(take, tail=1.3)
-    duration = ffmpeg.probe_duration(take)
-    decoded = ffmpeg.decoded_duration(take, sample_rate=44100)
-    assert duration - decoded > 0.05, "the synthetic take no longer reproduces the gap"
-    assert ffmpeg.trailing_silence(take) == pytest.approx(1.3 + (duration - decoded), abs=0.03)
+    gap = ffmpeg.probe_duration(take) - ffmpeg.decoded_duration(take, sample_rate=44100)
+    assert ffmpeg.trailing_silence(take) == pytest.approx(1.3 + max(gap, 0.0), abs=0.03)
 
 
 @pytest.mark.parametrize("tail", [1.3, 0.2])
