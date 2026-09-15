@@ -77,7 +77,7 @@ Note: For short speech, `decktalk beats` prints the note
 | `step` | string | none | Synonym for `cue`. Wins when both keys are present. |
 | `on` | string | required | A word or short phrase from the section's script, `$start`, or `$end`. |
 | `offset` | number | `0` | The offset key. Seconds added to the match. Can be negative. |
-| `occurrence` | integer | `1` | Which match of the phrase to use. |
+| `occurrence` | integer | `1` | Which match of the phrase to use. When the phrase occurs more than once and this key is not set, `beats` warns. |
 | `case_sensitive` | boolean | `false` | Matches case as written. |
 | `verify` | boolean | `true` | `false` leaves the cue out of a plain `decktalk verify`, which shows the row as `skipped` with `OPTED_OUT`. |
 

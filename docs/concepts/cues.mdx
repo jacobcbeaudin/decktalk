@@ -55,7 +55,7 @@ The `beats` stage matches a cue phrase against the section's spoken words with t
 3. Matching ignores case, unless `case_sensitive` is true.
 4. A phrase token with no characters left is ignored. For example, the phrase `learning rate η` matches as `learning rate`.
 5. A hyphenated word is one token. "zig-zag" becomes `zigzag`, so the phrase "zig zag" does not match it.
-6. The stage looks through the spoken words, in order, for a run that matches the phrase token for token. `occurrence` picks the run, and the default is the first.
+6. The stage looks through the spoken words, in order, for a run that matches the phrase token for token. `occurrence` picks the run, and the default is the first. When the phrase matches more than once and the cue does not set `occurrence`, the stage warns and names each match with its time.
 7. The cue time is the start of the run's first word, plus the offset key, rounded to hundredths of a second.
 8. `$start` is 0.0 s plus the offset key. A negative result stays negative, and the page fires it at t=0.
 9. `$end` is the end of the section's last spoken word, plus the offset key.
@@ -143,7 +143,7 @@ These guidelines help a reveal start on the right word.
 [Writing for the ear](/guides/writing-for-the-ear) explains each one.
 
 - Start the phrase with the word that names the thing that appears, because the cue time is the start of the first word. A noun such as `box of knobs` works, and so does a verb with its object, such as `steps downhill`. A connective such as "and then" does not.
-- If a word repeats in the section, use two or three words, or set `occurrence`.
+- If a word repeats in the section, use two or three words, or set `occurrence`. Set `occurrence` to 1 to keep the first match and silence the warning.
 - Set a small positive offset key, 0.1 to 0.2 s, so the viewer hears the word start before the element moves.
 - Use a negative offset key only when the audience must read along.
 - Put a `[beat]` or a `[pause N]` before a reveal that should feel like an event.

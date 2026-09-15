@@ -9,7 +9,9 @@ cues.json:
     step    a cue id the page understands (decktalk-runtime.js); "cue" is accepted as a synonym
     on      a word or short phrase from that section's narration: first occurrence,
             case-insensitive, punctuation ignored. "$start" = 0, "$end" = end of speech.
-    occurrence / case_sensitive / offset (seconds) refine the match.
+    occurrence / case_sensitive / offset (seconds) refine the match. A phrase that occurs more
+            than once in its section, on a cue that sets no occurrence, gets a warning that names
+            every occurrence and its time.
     verify  false leaves the cue out of a plain `decktalk verify`, for a reveal too small
             or too slow for a frame difference to measure. The default is true.
 
@@ -42,6 +44,7 @@ class Cue:
     case_sensitive: bool = False
     offset: float = 0.0
     verify: bool = True  # False leaves the cue out of a plain `decktalk verify`.
+    occurrence_set: bool = False  # cues.json names the occurrence, so a repeated phrase is not ambiguous.
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,7 @@ def load_cues(project: Project) -> list[SectionCues]:
                     case_sensitive=bool(raw.get("case_sensitive", False)),
                     offset=float(raw.get("offset", 0.0)),
                     verify=check,
+                    occurrence_set="occurrence" in raw,
                 )
             )
         need = spec.get("min_seconds")
@@ -134,19 +138,33 @@ def norm(token: str, case_sensitive: bool = False) -> str:
     return token if case_sensitive else token.lower()
 
 
-def find_phrase(words: list[Word], phrase: str, occurrence: int = 1, case_sensitive: bool = False) -> int | None:
-    """Index of the first word of the n-th occurrence of phrase, or None."""
+def phrase_matches(words: list[Word], phrase: str, case_sensitive: bool = False) -> list[int]:
+    """Index of the first word of every occurrence of phrase, in order."""
     target = [t for t in (norm(t, case_sensitive) for t in phrase.split()) if t]
     if not target:
-        return None
+        return []
     normalized = [norm(w.word, case_sensitive) for w in words]
-    seen = 0
-    for i in range(len(normalized) - len(target) + 1):
-        if normalized[i : i + len(target)] == target:
-            seen += 1
-            if seen == occurrence:
-                return i
-    return None
+    return [i for i in range(len(normalized) - len(target) + 1) if normalized[i : i + len(target)] == target]
+
+
+def find_phrase(words: list[Word], phrase: str, occurrence: int = 1, case_sensitive: bool = False) -> int | None:
+    """Index of the first word of the n-th occurrence of phrase, or None."""
+    matches = phrase_matches(words, phrase, case_sensitive)
+    return matches[occurrence - 1] if 1 <= occurrence <= len(matches) else None
+
+
+def ambiguity_note(cue: Cue, words: list[Word]) -> str | None:
+    """The warning for a phrase that occurs more than once when the cue does not name its occurrence, else None."""
+    if cue.occurrence_set or cue.on in ("$start", "$end"):
+        return None
+    matches = phrase_matches(words, cue.on, cue.case_sensitive)
+    if len(matches) < 2:
+        return None
+    times = ", ".join(f"{words[i].start:.2f}s" for i in matches)
+    return (
+        f"{cue.on!r} occurs {len(matches)} times in this section, at {times}. The cue uses the first. "
+        'Set "occurrence" to choose one.'
+    )
 
 
 def resolve_cue(cue: Cue, words: list[Word]) -> float | None:
@@ -323,6 +341,9 @@ def resolve_beats(project: Project, *, allow_unknown: bool = False) -> BeatsResu
             if t > entry.duration_seconds:
                 row.note(cue.step, None, f"{t}s is past the end of the audio ({entry.duration_seconds}s)")
             row.resolved[cue.step] = t
+            ambiguous = ambiguity_note(cue, words)
+            if ambiguous:
+                row.note(cue.step, None, ambiguous)
             anchor = anchor_time(cue, words)
             if anchor is not None:
                 anchors.setdefault(key, {})[cue.step] = round(anchor, 2)

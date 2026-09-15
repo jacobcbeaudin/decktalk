@@ -1343,6 +1343,45 @@ def test_beats_to_dict_counts_unresolved(tmp_path):
     assert sum(n["verdict"] == "UNRESOLVED" for s in d["sections"] for n in s["notes"]) == d["unresolved"]
 
 
+def test_beats_warns_about_a_repeated_phrase_unless_the_cue_names_its_occurrence(tmp_path, capsys):
+    from decktalk.artifacts import write_words
+    from decktalk.stages.beats import resolve_beats
+
+    cues = {
+        "1": {
+            "cues": [
+                {"cue": "1.1step", "on": "every step"},
+                {"cue": "1.1later", "on": "every step", "occurrence": 1},
+                {"cue": "1.1once", "on": "there"},
+                {"cue": "1.1case", "on": "Every", "case_sensitive": True},
+                {"cue": "1.1end", "on": "$end"},
+            ]
+        }
+    }
+    ids = "".join(f"<b data-cue='{c}'></b>" for c in ("1.1step", "1.1later", "1.1once", "1.1case", "1.1end"))
+    p = _beats_project(tmp_path, ids, cues)
+    words = [
+        Word("Every", 0.5, 0.8), Word("step", 0.9, 1.2), Word("there.", 1.3, 1.6),
+        Word("For", 36.0, 36.2), Word("every", 36.3, 36.6), Word("step!", 36.7, 37.1),
+    ]  # fmt: skip
+    write_words(p.audio_dir / "01-a.words.json", words)
+    manifest = p.manifest()
+    assert manifest is not None
+    manifest.segments["01"].duration_seconds = 38.0
+    manifest.save(p.manifest_path)
+    result = resolve_beats(p)
+    (section,) = [s for s in result.sections if s.key == "01"]
+    detail = (
+        "'every step' occurs 2 times in this section, at 0.50s, 36.30s. The cue uses the first. "
+        'Set "occurrence" to choose one.'
+    )
+    # Only the cue that names no occurrence is ambiguous. A case-sensitive phrase counts only its own case.
+    assert [(n.cue, n.verdict, n.detail) for n in section.findings] == [("1.1step", None, detail)]
+    assert section.resolved["1.1step"] == 0.5 and result.unresolved == 0
+    assert main(["-p", str(p.root), "beats", "--strict"]) == 0  # A warning, not a finding.
+    assert f"! 1.1step: {detail}" in capsys.readouterr().out
+
+
 def test_build_captions_uses_manifest_spoken_text(tmp_path):
     from decktalk.stages.assemble import build_captions, caption_texts
 
