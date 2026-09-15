@@ -31,6 +31,7 @@ MISSING = "MISSING"
 # Uncertain verdicts.
 BLACK_UNSURE = "BLACK?"
 KATEX_UNSURE = "KATEX?"
+THIN_CHANGE = "THIN CHANGE?"
 
 # Passing verdicts, which are never findings.
 CHANGED = "changed"
@@ -41,7 +42,7 @@ SKIPPED = "skipped"
 CERTAIN: frozenset[str] = frozenset(
     {PAGE_ERROR, STALLED, TRUNCATED, NO_COVER, BLACK, SPEECH_AT_CUT, OFF_CUE, NO_CHANGE, UNRESOLVED, UNKNOWN, MISSING}
 )
-UNCERTAIN: frozenset[str] = frozenset({BLACK_UNSURE, KATEX_UNSURE})
+UNCERTAIN: frozenset[str] = frozenset({BLACK_UNSURE, KATEX_UNSURE, THIN_CHANGE})
 PASSING: frozenset[str] = frozenset({CHANGED, QUIET, OK, SKIPPED})
 
 # The longest names come first, so that "BLACK?" is matched before "BLACK".

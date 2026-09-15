@@ -109,6 +109,7 @@ Each table lists the term, its meaning, the words that the docs do not use for i
 | control share | The smaller changed share of two back-to-back spans that end at the reference. | "control span" for the share | [Verify](/reference/verify#control-share) |
 | margin | A probe's changed share minus its control share. | | [Verify](/reference/verify#change-test) |
 | change test | Passes when the reported probe's changed share is at least `min_changed_percent` and its margin is at least `min_margin_percent`. | "lands", "a cue lands" | [Verify](/reference/verify#change-test) |
+| thin change | A pass of the change test by less than `thin_change_factor` times a floor. The row reads `THIN CHANGE?`. | "weak pass" | [Verify](/reference/verify#change-test) |
 | onset | The first frame of a reveal, as the onset rule defines it. | "the first changed frame" | [Verify](/reference/verify#onset-and-offset) |
 | offset column | The onset time minus the cue time, in whole milliseconds. Negative means early. | bare "offset" | [Verify](/reference/verify#onset-and-offset) |
 | click distance | The click time minus the cued word's start, in signed milliseconds. | | [Verify](/reference/verify#the-a/v-value) |

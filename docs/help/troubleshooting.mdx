@@ -80,6 +80,7 @@ explains.
 | `BLACK` | `verify` | [Entry](#black-in-verify) |
 | `SPEECH AT CUT` | `verify` | [Entry](#speech-at-cut-in-verify) |
 | `NO CHANGE` | `verify` | [Entry](#no-change-in-verify) |
+| `THIN CHANGE?` | `verify` | [Entry](#thin-change-in-verify) |
 | `OFF CUE` | `verify` | [Entry](#off-cue-in-verify) |
 | `NO_CLICK` | `verify --json` | [Entry](#no_click-in-verify) |
 | `skipped` | `verify` | [Entry](#skipped-in-verify) |
@@ -818,6 +819,21 @@ The usual reasons:
 1. Run `decktalk shots --section N --at S`, where `S` is just after the value in the `cue` column.
 2. If the reveal is subtle on purpose, mark the cue `"verify": false` in `cues.json`.
 3. If the reveal is slow, lengthen `[verify] probe_delays`.
+
+**More.** [Change test](/reference/verify#change-test)
+
+### `THIN CHANGE?` in verify
+
+**Cause.** The cue passed the change test, but only just. Its `chg %` is below 0.3, or its `chg %` minus its
+`ctl %` is below 0.3. Those limits are `[verify] thin_change_factor` (3) times the floors of 0.1. A slightly
+smaller reveal, or a little more motion elsewhere, would read `NO CHANGE`. This is an uncertain finding, so
+`verify` exits 1 on it only with `--strict`.
+
+**Fix.**
+1. Run `decktalk shots --section N --at S`, where `S` is just after the value in the `cue` column.
+2. If the reveal is too small to see, make it larger or give it more contrast in the page.
+3. If the reveal is small on purpose and plainly visible, leave it. Or mark the cue `"verify": false`.
+4. To turn the warning off, set `[verify] thin_change_factor = 1`.
 
 **More.** [Change test](/reference/verify#change-test)
 

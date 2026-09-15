@@ -15,7 +15,9 @@ cues     for each SECTION:CUE, the picture changes across the cue. With no list,
          the other, and each span compares only its first and its last frame. The control
          captures anything else in motion, such as a camera push. A cue lands when the
          best probe changes at least min_changed_percent of the pixels and exceeds its
-         control by min_margin_percent. Everything stays inside the section.
+         control by min_margin_percent. Everything stays inside the section. A cue that lands
+         with a changed share or a margin below thin_change_factor times its floor reads
+         THIN CHANGE?, an uncertain finding: a slightly smaller reveal would fail.
 offset   once a cue lands, every frame from the reference to the passing probe is
          compared with the reference at onset_diff_level, which gives each frame's changed
          share. A frame can be the onset only when a copy scaled to block_width by
@@ -35,7 +37,7 @@ a/v      after a silent build, the loudest sample within click_search_seconds of
          value is the offset minus the click's distance from the cued word's start, and a
          cue also fails when that value exceeds max_av_frames.
 
-Cue verdicts are changed, OFF CUE, NO CHANGE, UNRESOLVED, and skipped. A skipped row is
+Cue verdicts are changed, THIN CHANGE?, OFF CUE, NO CHANGE, UNRESOLVED, and skipped. A skipped row is
 never a failure, and its reason says why nothing was measured:
 
     REFERENCE_CLAMPED      no reference frame fits after the fade-in and before the cue
@@ -63,6 +65,7 @@ from ..config import VerifyConfig
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
 from ..project import Project
+from ..verdicts import CHANGED, THIN_CHANGE
 
 log = logging.getLogger(__name__)
 
@@ -152,7 +155,7 @@ class CueCheck:
     note: str = ""
     offset_ms: int | None = None  # Where the first changed frame sits relative to the cue.
     av_ms: int | None = None  # The offset minus the click's distance from the cued word's start, in a silent build.
-    verdict: str = ""  # changed, OFF CUE, NO CHANGE, UNRESOLVED, or skipped. Derived from ok when left empty.
+    verdict: str = ""  # changed, THIN CHANGE?, OFF CUE, NO CHANGE, UNRESOLVED, or skipped. Derived from ok when empty.
     reason: str | None = None  # Why a row was skipped, or NO_CLICK on a measured row with no a/v value.
 
     def __post_init__(self) -> None:
@@ -248,6 +251,13 @@ def reference_time(
     if ref > latest + 1e-6:
         return None
     return round(ref, 4)
+
+
+def thin_change(changed: float, margin: float, cfg: VerifyConfig) -> bool:
+    """Whether a cue that passed the change test passed by less than thin_change_factor times either floor."""
+    factor = cfg.thin_change_factor
+    # The small allowance keeps a share of exactly 3 times a floor of 0.1 from reading thin by rounding.
+    return changed < factor * cfg.min_changed_percent - 1e-9 or margin < factor * cfg.min_margin_percent - 1e-9
 
 
 def default_checks(beats: Beats, only: list[int] | None = None) -> list[str]:
@@ -394,9 +404,11 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
         if not landed:
             result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, False, verdict="NO CHANGE"))
             continue
+        # A pass by a thin margin is still a pass, but a slightly smaller reveal would fail.
+        passed = THIN_CHANGE if thin_change(chg, margin, cfg) else CHANGED
         offset_ms = first_change_offset(final, before, after, sec_start + cue_t, cfg, fps)
         if offset_ms is None:
-            result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, True, verdict="changed"))
+            result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, True, verdict=passed))
             continue
         limit_ms = cfg.max_offset_frames * 1000 / fps
         on_time = abs(offset_ms) <= limit_ms + 0.5
@@ -431,7 +443,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
                 note,
                 offset_ms,
                 av_ms,
-                verdict="changed" if on_time else "OFF CUE",
+                verdict=passed if on_time else "OFF CUE",
                 reason=reason,
             )
         )

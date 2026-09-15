@@ -637,6 +637,7 @@ the build was silent. [verify](/reference/verify#cues) defines each column.
 | `quiet` | none | The cut has no speech. |
 | `SPEECH AT CUT` | certain | Narration RMS before the cut is above `cut_max_db`. |
 | `changed` | none | The change test passed, and the onset is within the offset limit or no onset was found. |
+| `THIN CHANGE?` | uncertain | Like `changed`, but the changed share or the margin is below `thin_change_factor` (3) times its floor. |
 | `OFF CUE` | certain | The change test passed, but the offset column or the `a/v` column is past its limit. |
 | `NO CHANGE` | certain | The change test failed. |
 | `UNRESOLVED` | certain | A named cue is not in `beats.json`. |
@@ -922,7 +923,7 @@ verdict, reason}`. [verify](/reference/verify#json-fields) defines them.
 | `doctor` | A `MISSING` row. | A `warning` row, such as `katex`. |
 | `beats` | `UNRESOLVED`, and `UNKNOWN` without `--allow-unknown`. | Speech shorter than `min_seconds`. |
 | `check` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`. | `BLACK?`, `KATEX?` |
-| `verify` | `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`. | none |
+| `verify` | `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`. | `THIN CHANGE?` |
 | `status` | Never. | Never. |
 | `build` | See [`decktalk build`](#decktalk-build). | Not used. |
 | Every other command | Only an error. | Not used. |

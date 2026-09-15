@@ -121,6 +121,8 @@ class VerifyConfig:
     diff_level: int = 40  # Luma difference that a pixel must exceed to count as changed, for probes and control shares.
     min_changed_percent: float = 0.1  # Smallest changed share, in percent, that the reported probe needs.
     min_margin_percent: float = 0.1  # Smallest margin, in percentage points, that the reported probe needs.
+    thin_change_factor: float = 3.0  # A passing cue whose changed share or margin is below this many times its floor
+    # reads `THIN CHANGE?`, an uncertain finding. 1 turns the warning off.
     onset_percent: float = 0.01  # Rise in changed share from one frame to the next that marks the onset.
     # It is in percentage points. 0.01 is about 13 pixels.
     onset_diff_level: int = 12  # Luma difference that a pixel must exceed to count as changed, for the onset scan only.

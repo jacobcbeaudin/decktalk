@@ -1220,6 +1220,48 @@ def test_verify_opted_out_cue_is_skipped(tmp_path, monkeypatch):
         load_cues(p)
 
 
+def test_verify_marks_a_thin_change_as_uncertain(tmp_path, monkeypatch, capsys):
+    import dataclasses
+    import importlib
+
+    from decktalk.stages.verify import thin_change, verify
+
+    verify_module = importlib.import_module("decktalk.stages.verify")
+
+    cfg = Settings().verify
+    assert cfg.thin_change_factor == 3.0
+    assert thin_change(0.11, 0.11, cfg) and thin_change(0.29, 5.0, cfg) and thin_change(5.0, 0.29, cfg)
+    assert not thin_change(0.3, 0.3, cfg) and not thin_change(6.56, 6.56, cfg)
+    assert not thin_change(0.11, 0.11, dataclasses.replace(cfg, thin_change_factor=1.0))
+
+    p = _verify_project(tmp_path, monkeypatch, {"01": "a@1.0"}, change=0.11)
+    (row,) = verify(p).cues
+    assert (row.verdict, row.ok, row.reason) == ("THIN CHANGE?", True, None)
+    assert verify(p).ok and row.to_dict()["verdict"] == "THIN CHANGE?"
+    # The onset branch keeps the thin verdict when on time, and OFF CUE still wins when late.
+    monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: 0)
+    assert [c.verdict for c in verify(p).cues] == ["THIN CHANGE?"]
+    monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: 400)
+    assert [c.verdict for c in verify(p).cues] == ["OFF CUE"]
+    monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: None)
+
+    # An uncertain finding: exit 0, and 1 only with --strict. The table and the JSON both show it.
+    assert main(["-p", str(p.root), "verify"]) == 0
+    assert "THIN CHANGE?" in capsys.readouterr().out
+    assert main(["-p", str(p.root), "verify", "--strict"]) == 1
+    capsys.readouterr()
+    assert main(["-p", str(p.root), "verify", "--json"]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["findings"] == {"certain": 0, "uncertain": 1} and doc["verify"]["cues"][0]["verdict"] == "THIN CHANGE?"
+
+    # A clear change reads changed, and the factor can turn the warning off.
+    monkeypatch.setattr("decktalk.media.ffmpeg.changed_pixels_percent", lambda path, t1, t2, **kw: 0.5)
+    assert [c.verdict for c in verify(p).cues] == ["changed"]
+    monkeypatch.setattr("decktalk.media.ffmpeg.changed_pixels_percent", lambda path, t1, t2, **kw: 0.11)
+    monkeypatch.setenv("DECKTALK_VERIFY_THIN_CHANGE_FACTOR", "1")
+    assert [c.verdict for c in verify(Project.load(p.root)).cues] == ["changed"]
+
+
 def test_verify_to_dict_is_json_serialisable_and_relative(tmp_path, monkeypatch):
     from decktalk.stages.verify import CueCheck, verify
 

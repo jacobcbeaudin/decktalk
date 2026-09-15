@@ -238,9 +238,16 @@ The change test decides whether the picture changed because of the cue.
 margin(d)       = changed share(d) - control share(d)
 reported probe  = the probe with the largest margin, the earlier probe on a tie
 passes when     changed share >= min_changed_percent  and  margin >= min_margin_percent   # 0.1 and 0.1
+thin when       changed share < thin_change_factor * min_changed_percent                  # 3 * 0.1
+                or  margin < thin_change_factor * min_margin_percent                      # 3 * 0.1
 ```
 
 - If the reported probe fails the change test, the row is `NO CHANGE`.
+- A row that passes by a thin change reads `THIN CHANGE?` instead of `changed`. The change is thin when the
+  changed share is below `thin_change_factor` times `min_changed_percent`, or the margin is below
+  `thin_change_factor` times `min_margin_percent`. At the default factor of 3, both limits are 0.3.
+- `THIN CHANGE?` is an uncertain finding. The cue passed, but a slightly smaller reveal or a little more motion
+  would fail it. `verify` exits 1 on it only with `--strict`. Set `thin_change_factor` to 1 to turn it off.
 - The `chg %` and `ctl %` columns show the reported probe, which is not always the probe that changed most.
 - `min_changed_percent` applies to the raw changed share. A camera push raises that share too.
 
@@ -369,14 +376,16 @@ Each cue row gets its result from the first rule that matches.
 4. If no reference frame fits, the row is `skipped` with the reason `REFERENCE_CLAMPED`.
 5. If every probe is dropped, the row is `skipped` with the reason `TOO_CLOSE_TO_END`.
 6. If the reported probe fails the change test, the row is `NO CHANGE`.
-7. If the scan finds no onset, the row is `changed`, with `-` in the offset column and no `a/v`.
+7. If the scan finds no onset, the row is `changed`, with `-` in the offset column and no `a/v`. A thin change
+   reads `THIN CHANGE?` instead.
 8. If the offset column is past the offset limit, the row is `OFF CUE`.
 9. After a silent build, if no click is found, the row gets the reason `NO_CLICK` and keeps the result of rule 8.
 10. After a silent build, if the `a/v` is past the a/v limit, the row is `OFF CUE`.
-11. Otherwise, the row is `changed`.
+11. Otherwise, the row is `changed`, or `THIN CHANGE?` when the change is thin.
 
 `OFF CUE`, `NO CHANGE`, `UNRESOLVED`, `BLACK`, and `SPEECH AT CUT` are certain findings, so `decktalk verify`
-exits 1. A `skipped` row never fails. [Exit codes](/reference/cli#exit-codes) lists the codes for every
+exits 1. `THIN CHANGE?` is an uncertain finding, so `verify` exits 1 on it only with `--strict`. A `skipped` row
+never fails. [Exit codes](/reference/cli#exit-codes) lists the codes for every
 command.
 
 ## Skipped rows
@@ -440,7 +449,7 @@ Mark such a cue `"verify": false`, and check it by eye with `decktalk shots --st
 | `control_percent` | number or null | Control share of the reported probe. |
 | `offset_ms` | integer or null | Offset column. Null when the row has no onset. |
 | `av_ms` | integer or null | `a/v` value. Null after a voiced build, with no onset, or with `NO_CLICK`. |
-| `verdict` | string | `changed`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`, or `skipped`. |
+| `verdict` | string | `changed`, `THIN CHANGE?`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`, or `skipped`. |
 | `reason` | string or null | The skip reason, or `NO_CLICK` on a measured row. |
 
 Note: Seconds are rounded to three decimals, and shares to two. A skipped row has null measurements.

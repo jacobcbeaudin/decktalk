@@ -97,6 +97,8 @@ def test_exit_policy_table(certain, uncertain, strict, no_fail, code):
 
 
 def test_verdicts_split_and_certainty():
+    assert split("THIN CHANGE?") == ["THIN CHANGE?"] and not is_certain("THIN CHANGE?")
+    assert count(["THIN CHANGE?", "changed"]) == Findings(0, 1)
     assert split("BLACK? TRUNCATED STALLED 1840ms PAGE ERROR") == ["BLACK?", "TRUNCATED", "STALLED", "PAGE ERROR"]
     assert split("ok") == ["ok"]
     assert is_certain("STALLED 1840ms") and is_certain("NO COVER")
