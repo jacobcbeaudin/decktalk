@@ -538,3 +538,67 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     fourth = narrate(p)
     assert fourth.synthesized == [] and ToneVoice.calls == 2
     assert Manifest.load(manifest_path).segments["02"].duration_seconds == padded.duration_seconds
+
+
+def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
+    """The picture, the take over the same span after the section's lead, the gain, the hold, and the words file."""
+    from decktalk.artifacts import Manifest, ManifestSegment, Timeline, TimelineSection, Word, read_words
+    from decktalk.cli import main
+    from decktalk.project import Project
+    from decktalk.stages.clip import cut_clip
+
+    (tmp_path / "decktalk.toml").write_text(
+        "[[section]]\nnumber = 1\ntitle = 'Open'\npage = 'a.html'\nlead_seconds = 0.5\n", encoding="utf-8"
+    )
+    p = Project.load(tmp_path, environ={})
+    p.out_dir.mkdir(parents=True)
+    p.audio_dir.mkdir(parents=True)
+    # A 4 s section: red until 2.0 s, then blue.
+    ffmpeg.run(
+        "-f", "lavfi", "-i", "color=c=red:s=320x180:r=25:d=2", "-f", "lavfi", "-i", "color=c=blue:s=320x180:r=25:d=2",
+        "-filter_complex", "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(p.section_video(p.sections[0])),
+    )  # fmt: skip
+    # The take has a tone from 1.5 to 2.0 s, which is 2.0 to 2.5 s in the section after its 0.5 s lead.
+    ffmpeg.run(
+        "-f", "lavfi", "-i", "sine=f=440:r=44100:d=0.5", "-af", "adelay=1500:all=1,apad=whole_dur=3.5",
+        "-c:a", "libmp3lame", "-b:a", "128k", str(p.audio_dir / "01-open.mp3"),
+    )  # fmt: skip
+    words = [Word("go", 0.9, 1.1), Word("Watch", 2.0, 2.2), Word("it", 2.25, 2.5), Word("now", 3.0, 3.4)]
+    timeline = Timeline("narration.mp3", 4.0, {"01": TimelineSection("Open", 0.0, 4.0, 4.0, 3.4, words, 0.5)})
+    timeline.save(p.timeline_path)
+    manifest = Manifest(script="script.md", model="m", output_format="mp3_44100_128")
+    manifest.segments["01"] = ManifestSegment(
+        index=1, title="Open", file="01-open.mp3", words_file="01-open.words.json", hash="h",
+        words=4, est_seconds=3.0, duration_seconds=3.5, spoken="Go. Watch it, now.",
+    )  # fmt: skip
+    manifest.save(p.manifest_path)
+
+    result = cut_clip(p, 1, start=1.0, end=3.0, out="media/x.mp4", gain_db=-6, hold_seconds=0.4)
+    clip = tmp_path / "media" / "x.mp4"
+    assert (result.video, result.words_file) == (clip, tmp_path / "media" / "x.words.json")
+    assert (result.first_frame, result.last_frame, result.start, result.end) == (25, 74, 1.0, 3.0)
+    assert (result.hold_seconds, result.duration) == (0.4, 2.4)
+    assert ffmpeg.probe_duration(clip) == pytest.approx(2.4, abs=0.05)
+    red, blue = ffmpeg.luma_at(clip, 0.5)[0], ffmpeg.luma_at(clip, 1.5)[0]
+    assert red > blue + 20, (red, blue)
+    assert ffmpeg.luma_at(clip, 2.2)[0] == pytest.approx(blue, abs=3), "the hold does not show the last frame"
+    loud = ffmpeg.rms_db(clip, 1.05, 0.4)
+    assert loud > -40, "the take's tone is not at 1.0 s in the clip"  # The tone is about -24 dB before the -6 dB gain.
+    assert ffmpeg.rms_db(clip, 0.1, 0.8) < -50, "sound before the tone"
+    assert ffmpeg.rms_db(clip, 1.6, 0.7) < -50, "sound after the tone or in the hold"
+    # Words wholly inside the span keep the script's spelling, shifted to the clip. "go" crosses the start.
+    assert result.words == [Word("Watch", 1.0, 1.2), Word("it,", 1.25, 1.5)]
+    assert result.cut_words == ["Go."]
+    assert read_words(result.words_file) == result.words
+
+    assert main(["-p", str(tmp_path), "clip", "1", "--from", "1", "--to", "3", "--out", "media/y.mp4"]) == 0
+    out = capsys.readouterr().out
+    assert "wrote media/y.mp4  (2.00s: frames 25 to 74 of 01-section.mp4, 1.00 to 3.00s, hold 0s, gain +0 dB)" in out
+    assert "wrote media/y.words.json  (2 words)" in out
+    assert ffmpeg.rms_db(tmp_path / "media" / "y.mp4", 1.05, 0.4) == pytest.approx(loud + 6, abs=1)
+
+    # A span inside the lead is silent, and still has its full length.
+    early = cut_clip(p, 1, start=0.0, end=0.4, out="media/z.mp4")
+    assert early.words == [] and ffmpeg.has_audio(early.video)
+    assert ffmpeg.probe_duration(early.video) == pytest.approx(0.4, abs=0.05)

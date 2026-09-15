@@ -9,9 +9,9 @@ still move, and a rename is a breaking change once the project leaves the 0.x se
     errors: DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
     artifacts: Manifest, Timeline, Beats, Word, Sidecar
     stages: narrate, resolve_beats, preflight, record, measure, check, assemble, verify, shoot,
-            soundscape, build, status
+            soundscape, build, status, cut_clip, spoken_words
     results: NarrateResult, BeatsResult, PreflightResult, Recording, LeadMeasurement, RecordingCheck,
-             AssembleResult, VerifyResult, SoundscapeItem, BuildResult, StatusReport
+             AssembleResult, VerifyResult, SoundscapeItem, BuildResult, StatusReport, ClipResult, SectionWords
     speech: SpeechProvider, SpeechRequest, register
 
 Everything under decktalk.media, everything under decktalk.providers other than the
@@ -31,16 +31,19 @@ from .stages import (
     AssembleResult,
     BeatsResult,
     BuildResult,
+    ClipResult,
     LeadMeasurement,
     NarrateResult,
     PreflightResult,
     Recording,
     RecordingCheck,
+    SectionWords,
     SoundscapeItem,
     VerifyResult,
     assemble,
     build,
     check,
+    cut_clip,
     measure,
     narrate,
     preflight,
@@ -48,6 +51,7 @@ from .stages import (
     resolve_beats,
     shoot,
     soundscape,
+    spoken_words,
     verify,
 )
 from .status import StatusReport, status
@@ -62,6 +66,7 @@ __all__ = [
     "Beats",
     "BeatsResult",
     "BuildResult",
+    "ClipResult",
     "ClipSection",
     "ConfigError",
     "DeckTalkError",
@@ -77,6 +82,7 @@ __all__ = [
     "Recording",
     "RecordingCheck",
     "Section",
+    "SectionWords",
     "Settings",
     "Sidecar",
     "Soundscape",
@@ -94,6 +100,7 @@ __all__ = [
     "assemble",
     "build",
     "check",
+    "cut_clip",
     "load_settings",
     "measure",
     "narrate",
@@ -103,6 +110,7 @@ __all__ = [
     "resolve_beats",
     "shoot",
     "soundscape",
+    "spoken_words",
     "status",
     "verify",
 ]

@@ -89,6 +89,10 @@ explains.
 | `malformed check` | `verify` | [Entry](#malformed-check-in-verify) |
 | `need build/out/NN-section.mp4 files` | `verify` | [Entry](#need-build/out/nn-section-mp4-files-in-verify) |
 | `is not a section in decktalk.toml` | `assemble`, `verify` | [Entry](#is-not-a-section-in-decktalk-toml-in-assemble-or-verify) |
+| `timeline.json not found` | `words`, `clip` | [Entry](#timeline-json-not-found-in-words-or-clip) |
+| `has no section video` | `clip` | [Entry](#has-no-section-video-in-clip) |
+| `is a clip section` | `clip` | [Entry](#is-a-clip-section-in-clip) |
+| `cuts the word` | `clip` | [Entry](#cuts-the-word-in-clip) |
 | `data-sync text not found in the spoken words` | page | [Entry](#data-sync-text-not-found-in-the-spoken-words-in-a-page) |
 | `matches no element, handler, or step` | page | [Entry](#matches-no-element-handler-or-step-in-a-page) |
 | `unknown cue id` | page | [Entry](#unknown-cue-id-in-a-page) |
@@ -1001,6 +1005,74 @@ little at a time, so the first probe sees too little change.
 2. Keep `data-type` or `data-sync` on the text inside it.
 
 **More.** [Slide recipes](/guides/slide-recipes)
+
+## words and clip
+
+### `timeline.json not found` in words or clip
+
+{/* sample: decktalk words on a fresh scaffold with no build */}
+
+```text
+error: ~/my-lesson/build/audio/timeline.json not found. Run `decktalk narrate` first.
+```
+
+**Cause.** The project has no narration yet, so no section has word times.
+
+**Fix.**
+1. Run `decktalk narrate`, or `decktalk build --silent`.
+2. Run the command again.
+
+**More.** [`decktalk words`](/reference/cli#decktalk-words)
+
+### `has no section video` in clip
+
+{/* sample: decktalk clip 1 --from 2 --to 8 --out media/count.mp4 on a fresh scaffold with no build */}
+
+```text
+error: section 1 has no section video at ~/my-lesson/build/out/01-section.mp4. Run `decktalk assemble` first.
+```
+
+**Cause.** `clip` cuts from the section video that `assemble` writes, and the section has none.
+
+**Fix.**
+1. Run `decktalk build --silent`, or `decktalk assemble` if the recordings exist.
+2. Run `decktalk clip` again.
+
+**More.** [`decktalk clip`](/reference/cli#decktalk-clip)
+
+### `is a clip section` in clip
+
+{/* sample: decktalk clip 5 --from 0 --to 1 --out media/x.mp4 on a fresh scaffold */}
+
+```text
+error: section 5 is a clip section; cut a clip from a page section
+```
+
+**Cause.** The section number names a clip section. A clip section has no narration, so `clip` has no mp3 to cut.
+
+**Fix.**
+1. Run `decktalk status`. Each page section row names its page, and each clip section row starts with `clip`.
+2. Run `decktalk clip` with the number of a page section.
+
+**More.** [`decktalk clip`](/reference/cli#decktalk-clip)
+
+### `cuts the word` in clip
+
+{/* sample: decktalk clip 1 --from 2.5 --to 8.32 --out media/cut.mp4 after decktalk build --silent on a fresh scaffold */}
+
+```text
+section 01: the span cuts the word 'ball.' in two, so the words file leaves it out
+```
+
+**Cause.** `--from` or `--to` falls inside a spoken word. The clip keeps the part of the word inside the span, but the
+words file has no entry for the word, so no caption shows it.
+
+**Fix.**
+1. Run `decktalk words --only N` for the section.
+2. Move `--from` before the word's start, or `--to` after the word's end, into the silence next to the word.
+3. Run `decktalk clip` again.
+
+**More.** [`decktalk words`](/reference/cli#decktalk-words)
 
 ## Pages in a browser
 

@@ -74,7 +74,8 @@ src/decktalk/
   status.py      what a project has built, read from disk for `decktalk status`
   verdicts.py    every verdict string, and which verdicts are certain
   errors.py      DeckTalkError and its subclasses, which the CLI maps to exit codes
-  stages/        narrate, beats, preflight, record, measure (with check), assemble, verify, shots, soundscape, build
+  stages/        narrate, beats, preflight, record, measure (with check), assemble, verify, shots, clip (with words),
+                 soundscape, build
   media/         ffmpeg and Chromium (internal)
   providers/     the speech protocol and the ElevenLabs provider (internal)
   runtime/       decktalk-runtime.js, the page contract

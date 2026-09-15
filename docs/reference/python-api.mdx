@@ -27,8 +27,8 @@ The package exports these names. Every other name is internal.
 | Project | `Project`, `Section`, `PageSection`, `ClipSection`, `Settings`, `load_settings` |
 | Project tables | `Voice`, `Transition`, `Mix`, `Soundscape` |
 | Artifacts | `Manifest`, `Timeline`, `Beats`, `Word`, `Sidecar` |
-| Stages | `narrate`, `resolve_beats`, `preflight`, `record`, `measure`, `check`, `assemble`, `verify`, `shoot`, `soundscape`, `build`, `status` |
-| Results | `NarrateResult`, `BeatsResult`, `PreflightResult`, `Recording`, `LeadMeasurement`, `RecordingCheck`, `AssembleResult`, `VerifyResult`, `SoundscapeItem`, `BuildResult`, `StatusReport` |
+| Stages | `narrate`, `resolve_beats`, `preflight`, `record`, `measure`, `check`, `assemble`, `verify`, `shoot`, `soundscape`, `build`, `status`, `cut_clip`, `spoken_words` |
+| Results | `NarrateResult`, `BeatsResult`, `PreflightResult`, `Recording`, `LeadMeasurement`, `RecordingCheck`, `AssembleResult`, `VerifyResult`, `SoundscapeItem`, `BuildResult`, `StatusReport`, `ClipResult`, `SectionWords` |
 | Errors | `DeckTalkError`, `ConfigError`, `MissingInputError`, `ProviderError`, `ToolError` |
 | Speech | `SpeechProvider`, `SpeechRequest`, `register` |
 | Version | `__version__` |
@@ -160,10 +160,16 @@ These functions run one stage each, or read the project.
 | `shoot(project, *, pages=None, steps=None, section=None, at=None, cues=None)` | A list of screenshot paths | `ConfigError` |
 | `soundscape(project, *, only=None, force=False, dry_run=False)` | A list of `SoundscapeItem`, each with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds` | `ConfigError`, `ProviderError` |
 | `status(project)` | `StatusReport`, which reads what exists and runs nothing | none |
+| `spoken_words(project, only=None)` | A list of `SectionWords`, each with `key`, `section`, `title`, `lead_seconds`, `duration`, `estimated`, `words`, `texts`, and `to_dict()` | `ConfigError`, `MissingInputError` |
+| `cut_clip(project, number, *, start, end, out, words_out=None, gain_db=0.0, hold_seconds=0.0)` | `ClipResult` with `section`, `video`, `words_file`, `start`, `end`, `first_frame`, `last_frame`, `hold_seconds`, `duration`, `gain_db`, `estimated`, `words`, and `cut_words` | `ConfigError`, `MissingInputError`, `ToolError` |
 
 - `record` with `seconds` records every section for that long. With `use_beats=False`, the pages play in autoplay.
 - `shoot` with `section` takes frames from a playing section at each time in `at`, 0.5 s by default.
 - `shoot` with `cues` needs exactly one step in `steps`.
+- `spoken_words` gives each word in seconds after its section starts. `words` keeps the voice's spelling, and `texts`
+  gives the same words with the script's punctuation and case.
+- `cut_clip` resolves a relative `out` or `words_out` against the project. `words_out` defaults to `out` with
+  `.words.json`. [`decktalk clip`](/reference/cli#decktalk-clip) describes the cut.
 
 `BeatsResult`, `PreflightResult`, `RecordingCheck`, `VerifyResult`, and `StatusReport` each have `to_dict(root)`. It returns the data
 that the command line prints under `--json`. Numbers stay numbers, and paths are relative to `root` with forward

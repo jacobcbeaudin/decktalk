@@ -5,6 +5,7 @@ from __future__ import annotations
 from .artifacts import Timeline
 from .config import NarrationConfig
 from .stages.beats import BeatsResult
+from .stages.clip import SectionWords
 from .stages.measure import LeadMeasurement, RecordingCheck
 from .stages.narrate import NarrateResult, Segment, TakePlan, plan_totals
 from .stages.preflight import PreflightResult
@@ -219,6 +220,23 @@ def status_table(report: StatusReport) -> str:
     for out in report.outputs:
         lines.append(f"{out.label:<8} {relpath(out.path, root)}  {'ok' if out.exists else 'not built'}")
     return "\n".join(lines)
+
+
+def words_table(sections: list[SectionWords]) -> str:
+    """The text of `decktalk words`: each section's words, in seconds after the section starts."""
+    lines: list[str] = []
+    for sec in sections:
+        notes = [f"{sec.duration:.2f}s"]
+        if sec.lead_seconds:
+            notes.append(f"lead {sec.lead_seconds:g}s")
+        if sec.estimated:
+            notes.append("estimated")
+        if lines:
+            lines.append("")
+        lines.append(f"== {sec.key} {sec.title}  ({', '.join(notes)})")
+        lines.append("  start     end  word")
+        lines += [f"{w.start:7.3f} {w.end:7.3f}  {text}" for w, text in zip(sec.words, sec.texts, strict=True)]
+    return "\n".join(lines) or "no spoken sections"
 
 
 def soundscape_table(items: list[SoundscapeItem]) -> str:

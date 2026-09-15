@@ -1018,6 +1018,113 @@ This shape shows the `--json` payload. The values are types, not a sample.
 
 `status` exits 0 unless the project does not load.
 
+## Clip commands
+
+### `decktalk words`
+
+Prints each spoken section's words, with times in seconds after the section starts.
+
+```text
+decktalk words [-h] [--project PROJECT] [-v] [-q] [--only ONLY] [--json]
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--only ONLY` | every spoken section | Prints only these sections. Repeatable. |
+| `--json` | off | Prints one JSON object on stdout instead of the table. |
+
+**Reads** `timeline.json`, and `manifest.json` for the script's spelling. **Writes** nothing.
+
+- Each time counts from the section's own start, as `?words=` and `beats.json` do. [Time bases](/reference/artifacts#time-bases) explains the clocks.
+- A section's `lead_seconds` counts, so its first word starts after the lead.
+- Each row gives the word's start, its end, and the word with the script's punctuation and case.
+- After a silent build, the times are estimates, and each section header says `estimated`.
+- A page that prints real word times can take them from this output.
+
+| Exit | When |
+|---|---|
+| 0 | The words are printed. |
+| 1 | No `timeline.json`, or an `--only` section with no words. |
+
+{/* sample: decktalk words --only 1 after decktalk build --silent on a fresh scaffold, first rows */}
+
+```text
+== 01 Open  (17.80s, estimated)
+  start     end  word
+  0.700   1.225  A
+  1.245   1.770  bowl.
+  1.790   2.314  A
+  2.334   2.859  ball.
+  2.879   3.404  Watch
+```
+
+This shape shows the `--json` payload. The values are types, not a sample.
+
+```jsonc
+"words": {
+  "sections": [ { "key": "01", "section": 1, "title": "string", "lead_seconds": 0.0, "duration": 0.0,
+                  "estimated": true,
+                  "words": [ { "word": "string", "text": "string", "start": 0.0, "end": 0.0 } ] } ]
+}
+```
+
+`word` is the word as the voice returned it, with punctuation removed. `text` is the same word with the script's
+punctuation and case.
+
+### `decktalk clip`
+
+Cuts a span of a built page section into a video file and a words file, for a clip section.
+
+```text
+decktalk clip [-h] [--project PROJECT] [-v] [-q] --from SECONDS
+              --to SECONDS --out OUT [--words WORDS] [--gain DB]
+              [--hold SECONDS] [--preset PRESET] [--crf CRF]
+              section
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `section` | required | The page section to cut from. |
+| `--from SECONDS` | required | Start of the span, in seconds after the section starts. |
+| `--to SECONDS` | required | End of the span, in seconds after the section starts. |
+| `--out OUT` | required | The clip file, relative to the project, such as `media/open.mp4`. |
+| `--words WORDS` | `--out` with `.words.json` | The words file, relative to the project. |
+| `--gain DB` | 0 | Gain on the clip's sound, in dB. |
+| `--hold SECONDS` | 0 | Holds the last frame this long, in silence. |
+| `--preset PRESET`, `--crf CRF` | `[video]` | x264 settings for this run. |
+
+**Reads** `build/out/NN-section.mp4`, the section's mp3, `manifest.json`, and `timeline.json`. **Writes** the clip
+and its words file.
+
+- `--from` and `--to` use the clock that [`decktalk words`](#decktalk-words) prints. Run it first to pick the span.
+- The picture is the section video's frames from `--from` to `--to`, each time rounded to the nearest frame.
+- The sound is the section's mp3 over the same span. A span inside the section's `lead_seconds` is silent.
+- The sound fades in and out over 10 ms, so a cut inside a word does not click.
+- The clip is H.264 video and AAC audio, at the frame rate and sample rate in `[video]`.
+- The words file lists each word wholly inside the span, in seconds after the clip starts, with the script's
+  punctuation and case. A word that the span cuts in two is left out, and `clip` prints a warning.
+- After a silent build, the sound is the click track and the words are estimates, and `clip` prints a warning.
+
+| Exit | When |
+|---|---|
+| 0 | The clip and its words file are written. |
+| 1 | No section video, no narration, a clip section, or a span that ends past the section video. |
+| 2 | A missing `section`, `--from`, `--to`, or `--out`. |
+
+{/* sample: decktalk clip 1 --from 2.87 --to 8.32 --hold 0.5 --out media/count.mp4 after decktalk build --silent on a fresh scaffold */}
+
+```text
+section 01: the narration is a silent placeholder, so the word times are estimates
+wrote media/count.mp4  (5.92s: frames 72 to 207 of 01-section.mp4, 2.88 to 8.32s, hold 0.48s, gain +0 dB)
+wrote media/count.words.json  (10 words)
+use it in a clip section: clip = "media/count.mp4" and words = "media/count.words.json"
+```
+
+The line gives the clip's length with the hold, the frames it took, the span after rounding to whole frames, the
+hold, and the gain. `--from 2.87` rounds to frame 72, at 2.88 s. `--hold 0.5` rounds to 12 frames, which is 0.48 s.
+
+[Cut a clip from a build](/guides/clip-section#cut-a-clip-from-a-build) puts the clip in a clip section.
+
 ## Output and exit flags
 
 `status`, `beats`, `preflight`, `check`, `verify`, and `doctor` take these three options.
@@ -1061,6 +1168,7 @@ This shape shows the JSON envelope. The values are types, not a sample.
 | `verify` | `final`, `total_seconds`, `silent`, `starts`, `cuts`, `carries`, and `cues`. |
 | `preflight` | `voice`, `note`, `placeholders`, `takes`, `totals`, `beats`, `cues`, `carries`, and `frames`. |
 | `narrate --dry-run --json` | `voice`, `note`, `sections`, and `totals`, as [the take plan](#the-take-plan) gives. `ok` is always true. |
+| `words --json` | `sections`, as [`decktalk words`](#decktalk-words) gives. `ok` is always true. |
 
 Note: each `beats` section is `{key, speech_end, min_seconds, skipped, cues, notes}`. Each note is
 `{cue, verdict, detail}`, where `verdict` is `UNRESOLVED`, `UNKNOWN`, or `null`. Each `verify` cue row

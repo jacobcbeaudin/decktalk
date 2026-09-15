@@ -232,8 +232,82 @@ The captions come from the narration's word times, so a clip's own speech has no
 - A slate or a clip with no audio track has no captions.
 - If the words file is missing, `assemble` prints a warning and the clip has no captions.
 
-A `NN-slug.words.json` file from `build/audio` has this format. A clip cut from an earlier build can reuse its
-words, shifted to the clip's start. [Fill the edit's two clips](#fill-the-edits-two-clips) does this.
+A `NN-slug.words.json` file from `build/audio` has this format. `decktalk clip` writes the words file of a clip that
+it cuts from a build. [Cut a clip from a build](#cut-a-clip-from-a-build) shows how.
+
+## Cut a clip from a build
+
+`decktalk clip` cuts a span of a built page section into a clip and its words file. Use it to play part of the video
+again in a clip section, such as the Open's count inside a later scene.
+
+These steps use a scaffold after `decktalk build --silent`. After a voiced build, the clip carries the real voice.
+
+<Steps>
+  <Step title="Find the span">
+    Print the words of section 1 with their times, in seconds after the section starts.
+
+    ```console
+    decktalk words --only 1
+    ```
+
+    {/* sample: decktalk words --only 1 after decktalk build --silent on a fresh scaffold, header and rows 5 to 14 */}
+    ```text
+    == 01 Open  (17.80s, estimated)
+      start     end  word
+      2.879   3.404  Watch
+      3.424   3.949  it
+      3.969   4.494  step
+      4.514   5.039  down
+      5.059   5.583  on
+      5.603   6.128  my
+      6.148   6.673  count.
+      6.693   7.218  One.
+      7.238   7.763  Two,
+      7.783   8.308  three.
+    ```
+
+    The count runs from the start of "Watch" at 2.879 s to the end of "three." at 8.308 s.
+  </Step>
+
+  <Step title="Cut the clip">
+    ```console
+    decktalk clip 1 --from 2.87 --to 8.32 --hold 0.5 --out media/count.mp4
+    ```
+
+    {/* sample: decktalk clip 1 --from 2.87 --to 8.32 --hold 0.5 --out media/count.mp4 after decktalk build --silent on a fresh scaffold */}
+    ```text
+    section 01: the narration is a silent placeholder, so the word times are estimates
+    wrote media/count.mp4  (5.92s: frames 72 to 207 of 01-section.mp4, 2.88 to 8.32s, hold 0.48s, gain +0 dB)
+    wrote media/count.words.json  (10 words)
+    use it in a clip section: clip = "media/count.mp4" and words = "media/count.words.json"
+    ```
+
+    - The picture comes from `build/out/01-section.mp4`. `--from` and `--to` round to whole frames.
+    - The sound is section 1's mp3 over the same span. `--hold 0.5` adds 0.48 s of the last frame in silence.
+    - `media/count.words.json` lists the 10 words from "Watch" to "three.", in seconds after the clip starts.
+    - A span that cuts a word in two leaves that word out of the words file, and `clip` prints a warning.
+  </Step>
+
+  <Step title="Play the clip in a clip section">
+    Add a clip section that names both files, and renumber the sections after it as
+    [Add a clip section of your own](#add-a-clip-section-of-your-own) describes.
+
+    ```toml decktalk.toml
+    [[section]]
+    number = 4
+    title = "The count again"
+    clip = "media/count.mp4"
+    words = "media/count.words.json"
+    ```
+
+    Then run `decktalk assemble`, and check that the section reads `count.mp4 (own audio)`.
+  </Step>
+</Steps>
+
+- `--gain` changes the clip's level in dB, so a clip cut from another build can match the voice around it.
+- The clip keeps the section's full picture. [Fill the edit's two clips](#fill-the-edits-two-clips) places a clip
+  inside a player by hand.
+- [`decktalk clip`](/reference/cli#decktalk-clip) lists every option.
 
 ## Keep one chapter across several sections
 

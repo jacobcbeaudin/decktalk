@@ -14,6 +14,9 @@
     decktalk assemble                 ffmpeg -> build/out/<name>.mp4
     decktalk verify [SEC:CUE ...]     section starts, cuts, and every cue landing on the final mp4
     decktalk shots                    per-step screenshots, or frames from a playing section
+    decktalk words [--json]           each spoken section's words, in seconds after the section starts
+    decktalk clip N --from S --to E --out FILE
+                                      a span of a built section and its narration -> a clip and its words file
     decktalk build [--silent]         narrate -> beats -> record -> measure -> check -> assemble -> verify
     decktalk status                   timeline and what is built
     decktalk runtime                  copy the packaged decktalk-runtime.js into the project
@@ -306,6 +309,46 @@ def cmd_shots(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_words(args: argparse.Namespace) -> int:
+    from .stages.clip import spoken_words
+
+    project = _project(args)
+    sections = spoken_words(project, only=_only(args.only))
+    if args.json:
+        payload = {"sections": [s.to_dict() for s in sections]}
+        doc = {"command": args.cmd, "version": __version__, "ok": True, "findings": Findings().to_dict()}
+        print(json.dumps({**doc, args.cmd: payload}, indent=2))
+        return 0
+    print(_report.words_table(sections))
+    return 0
+
+
+def cmd_clip(args: argparse.Namespace) -> int:
+    from .stages.clip import cut_clip
+    from .status import relpath
+
+    project = _project(args)
+    result = cut_clip(
+        project,
+        args.section,
+        start=args.start,
+        end=args.end,
+        out=args.out,
+        words_out=args.words,
+        gain_db=args.gain,
+        hold_seconds=args.hold,
+    )
+    video, words = (relpath(p, project.root) for p in (result.video, result.words_file))
+    source = f"{args.section:02d}-section.mp4"
+    print(
+        f"wrote {video}  ({result.duration:.2f}s: frames {result.first_frame} to {result.last_frame} of {source}, "
+        f"{result.start:.2f} to {result.end:.2f}s, hold {result.hold_seconds:g}s, gain {result.gain_db:+g} dB)"
+    )
+    print(f"wrote {words}  ({len(result.words)} words)")
+    print(f'use it in a clip section: clip = "{video}" and words = "{words}"')
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     from .status import status
 
@@ -473,6 +516,26 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--section", type=int, help="play this section with its resolved cues")
     s.add_argument("--at", type=float, action="append", help="seconds after narration t=0 (with --section)")
     s.set_defaults(fn=cmd_shots, parser=s)
+
+    s = proj(sub.add_parser("words", help="each spoken section's words, in seconds after the section starts"))
+    s.add_argument("--only", type=int, action="append", help=only_help)
+    s.add_argument("--json", action="store_true", help=JSON_HELP)
+    s.set_defaults(fn=cmd_words)
+
+    s = proj(sub.add_parser("clip", help="cut a span of a built section and its narration into a clip"))
+    s.add_argument("section", type=int, help="the page section to cut from")
+    s.add_argument(
+        "--from", dest="start", type=float, required=True, metavar="SECONDS", help="start, after the section starts"
+    )
+    s.add_argument(
+        "--to", dest="end", type=float, required=True, metavar="SECONDS", help="end, after the section starts"
+    )
+    s.add_argument("--out", required=True, help="the clip file, relative to the project, such as media/open.mp4")
+    s.add_argument("--words", help="the words file (default: the clip's path with .words.json)")
+    s.add_argument("--gain", type=float, default=0.0, metavar="DB", help="gain on the clip's sound, in dB")
+    s.add_argument("--hold", type=float, default=0.0, metavar="SECONDS", help="hold the last frame this long, silent")
+    encoding(s)
+    s.set_defaults(fn=cmd_clip)
 
     policy(proj(sub.add_parser("status", help="what is built"))).set_defaults(fn=cmd_status)
 

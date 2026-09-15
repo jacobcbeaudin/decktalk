@@ -2444,3 +2444,113 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(tmp_path, m
     assert json.loads(capsys.readouterr().out)["findings"] == {"certain": 2, "uncertain": 0}
     assert main(["preflight", "--no-frames", "--no-fail", "-p", str(p.root)]) == 0
     assert _unchanged(p, files)
+
+
+# ---- words and clip -------------------------------------------------------------------
+
+
+def _words_project(tmp_path: Path) -> Project:
+    """Page sections 1 (with a 0.5 s lead) and 2, a clip section 3, a timeline, and a manifest entry for 1 only."""
+    (tmp_path / "decktalk.toml").write_text(
+        "[[section]]\nnumber = 1\ntitle = 'Open'\npage = 'a.html'\nlead_seconds = 0.5\n"
+        "[[section]]\nnumber = 2\ntitle = 'Close'\npage = 'a.html'\n"
+        "[[section]]\nnumber = 3\nclip = 'media/c.mp4'\n",
+        encoding="utf-8",
+    )
+    p = Project.load(tmp_path, environ={})
+    Timeline(
+        narration="narration.mp3",
+        total_seconds=6.0,
+        sections={
+            "01": TimelineSection("Open", 0.0, 3.0, 3.0, 1.4, [Word("Hello", 0.6, 0.9), Word("there", 1.0, 1.4)], 0.5),
+            "02": TimelineSection("Close", 3.0, 6.0, 3.0, 4.1, [Word("Bye", 3.2, 3.5), Word("now", 3.6, 4.1)]),
+        },
+    ).save(p.timeline_path)
+    manifest = Manifest(script="script.md", model="m", output_format="mp3_44100_128")
+    manifest.segments["01"] = ManifestSegment(
+        index=1, title="Open", file="01-open.mp3", words_file="01-open.words.json", hash="h",
+        words=2, est_seconds=1.0, duration_seconds=2.5, spoken="Hello, there.",
+    )  # fmt: skip
+    manifest.save(p.manifest_path)
+    return p
+
+
+def test_spoken_words_are_relative_to_each_section_with_the_scripts_spelling(tmp_path):
+    from decktalk.stages.clip import spoken_words
+
+    p = _words_project(tmp_path)
+    first, second = spoken_words(p)
+    assert (first.key, first.title, first.lead_seconds, first.duration) == ("01", "Open", 0.5, 3.0)
+    assert first.estimated is False
+    assert first.words == [Word("Hello", 0.6, 0.9), Word("there", 1.0, 1.4)]
+    assert first.texts == ["Hello,", "there."]
+    # Section 2 starts at 3.0 s in narration.mp3, and it has no manifest entry, so it keeps the voice's spelling.
+    assert second.words == [Word("Bye", 0.2, 0.5), Word("now", 0.6, 1.1)]
+    assert second.texts == ["Bye", "now"]
+    assert [s.key for s in spoken_words(p, only=[2])] == ["02"]
+    no_words = r"section\(s\) \[3\] have no words in timeline.json; spoken sections are \[1, 2\]"
+    with pytest.raises(ConfigError, match=no_words):
+        spoken_words(p, only=[3])
+
+
+def test_spoken_words_needs_a_timeline(tmp_path):
+    from decktalk.errors import MissingInputError
+    from decktalk.stages.clip import spoken_words
+
+    (tmp_path / "decktalk.toml").write_text("[[section]]\nnumber = 1\npage = 'a.html'\n", encoding="utf-8")
+    with pytest.raises(MissingInputError, match="Run `decktalk narrate` first"):
+        spoken_words(Project.load(tmp_path, environ={}))
+
+
+def test_cli_words_prints_a_table_and_json(tmp_path, capsys):
+    _words_project(tmp_path)
+    assert main(["-p", str(tmp_path), "words", "--only", "1"]) == 0
+    table = capsys.readouterr().out
+    assert "== 01 Open  (3.00s, lead 0.5s)" in table
+    assert "  0.600   0.900  Hello," in table
+    assert "Close" not in table
+    assert main(["-p", str(tmp_path), "words", "--json"]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert (doc["command"], doc["ok"], doc["findings"]) == ("words", True, {"certain": 0, "uncertain": 0})
+    first, second = doc["words"]["sections"]
+    assert first["section"] == 1 and first["lead_seconds"] == 0.5
+    assert first["words"][0] == {"word": "Hello", "text": "Hello,", "start": 0.6, "end": 0.9}
+    assert second["words"][1] == {"word": "now", "text": "now", "start": 0.6, "end": 1.1}
+
+
+def test_clip_words_keep_only_whole_words_shifted_to_the_clip(tmp_path):
+    from decktalk.stages.clip import _clip_words
+
+    p = _words_project(tmp_path)
+    assert _clip_words(p, "01", 0.55, 1.2) == ([Word("Hello,", 0.05, 0.35)], ["there."])
+    assert _clip_words(p, "01", 0.6, 1.4) == ([Word("Hello,", 0.0, 0.3), Word("there.", 0.4, 0.8)], [])
+    assert _clip_words(p, "01", 1.5, 2.0) == ([], [])
+
+
+def test_cut_clip_refuses_a_bad_span_before_it_runs_ffmpeg(tmp_path):
+    from decktalk.errors import MissingInputError
+    from decktalk.stages.clip import cut_clip
+
+    p = _words_project(tmp_path)
+    with pytest.raises(ConfigError, match="section 3 is a clip section"):
+        cut_clip(p, 3, start=0, end=1, out="media/x.mp4")
+    with pytest.raises(ConfigError, match="section 7 is not in decktalk.toml"):
+        cut_clip(p, 7, start=0, end=1, out="media/x.mp4")
+    with pytest.raises(ConfigError, match="end after it starts, got 2 to 1"):
+        cut_clip(p, 1, start=2, end=1, out="media/x.mp4")
+    with pytest.raises(ConfigError, match="--hold must be 0 or more"):
+        cut_clip(p, 1, start=0, end=1, out="media/x.mp4", hold_seconds=-1)
+    with pytest.raises(MissingInputError, match="no section video at .*01-section.mp4. Run `decktalk assemble` first"):
+        cut_clip(p, 1, start=0, end=1, out="media/x.mp4")
+    (p.out_dir).mkdir(parents=True)
+    p.section_video(p.sections[1]).write_bytes(b"")
+    with pytest.raises(MissingInputError, match="section 2 has no narration yet"):
+        cut_clip(p, 2, start=0, end=1, out="media/x.mp4")
+
+
+def test_cli_clip_parses_its_span_and_defaults():
+    args = build_parser().parse_args(["clip", "1", "--from", "1.5", "--to", "4", "--out", "media/a.mp4"])
+    assert (args.section, args.start, args.end, args.out) == (1, 1.5, 4.0, "media/a.mp4")
+    assert (args.words, args.gain, args.hold, args.preset, args.crf) == (None, 0.0, 0.0, None, None)
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["clip", "1", "--from", "1.5", "--out", "media/a.mp4"])

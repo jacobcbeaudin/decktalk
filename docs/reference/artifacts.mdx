@@ -33,7 +33,8 @@ compare times from two files.
 |---|---|
 | `NN-slug.words.json` `start` and `end` | The start of that section's mp3. The first spoken section includes `lead_break_seconds`. |
 | `timeline.json` section and word times | The start of `narration.mp3`, which holds the spoken sections back to back. |
-| `beats.json`, `beats.anchors.json`, `?beats=`, `?words=` | The section's own start, which is narration t=0 of its recording. |
+| `beats.json`, `beats.anchors.json`, `?beats=`, `?words=`, `decktalk words`, `decktalk clip --from` and `--to` | The section's own start, which is narration t=0 of its recording. |
+| A words file that `decktalk clip` writes | The start of that clip. |
 | Sidecar `lead_in_seconds` | The start of the webm. |
 | Sidecar `frame_gaps` seconds | Narration t=0 of that recording, or `null` for a gap that ended before t=0. |
 | `.srt`, `.vtt`, `.chapters.txt`, and the verify `at` and `cut at` columns | The start of the final mp4. |
@@ -74,6 +75,9 @@ A words file lists each spoken word of one section, with its times in that secti
 
 Note: A silent build writes estimated words, spaced evenly at `silent_words_per_minute`. Each estimated word
 ends 0.02 s before the next one starts.
+
+Note: [`decktalk words`](/reference/cli#decktalk-words) prints the same words in seconds after the section starts,
+with the script's punctuation and case.
 
 ## `build/audio/manifest.json`
 
