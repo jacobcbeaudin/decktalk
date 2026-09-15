@@ -13,6 +13,29 @@ migration note. The file formats are `decktalk.toml`, `cues.json`, and the build
 
 After an upgrade, run `decktalk runtime` to update `deck/decktalk-runtime.js`.
 
+<Update label="0.3.0" description="2026-09-15" tags={["feature", "fix"]}>
+
+**Features**
+
+* **beats:** warn when a cue phrase occurs more than once in its section ([1174081](https://github.com/jacobcbeaudin/decktalk/commit/1174081fd0a1f49c855c779f9123fe9615cf2b55))
+* **clip:** add decktalk clip and decktalk words ([846de9f](https://github.com/jacobcbeaudin/decktalk/commit/846de9f4f857f8d1621875f232b0ed9ff1f856bb))
+* **narrate:** add lead_seconds and tail_seconds, and allow hold_seconds on any page section ([ce4baf9](https://github.com/jacobcbeaudin/decktalk/commit/ce4baf9b0006a8489d8ea9efc8fbbb55f51b2105))
+* **narrate:** print the take plan in a dry run, and add --json ([bd34f89](https://github.com/jacobcbeaudin/decktalk/commit/bd34f890c8515d0ce969f762ba46d9f39332336e))
+* **preflight:** check a voiced build before it spends credits or records ([6af0507](https://github.com/jacobcbeaudin/decktalk/commit/6af050748dd21332306bac1cbeb0bfa96445207d))
+* **runtime:** list each step's cues in the catalog, and freeze just before a cue ([fe329dd](https://github.com/jacobcbeaudin/decktalk/commit/fe329ddc1c2678314d3a3ecee5dc52b937632ab4))
+* **verify:** check that the cut into a carries_previous section does not pop ([91e6578](https://github.com/jacobcbeaudin/decktalk/commit/91e6578a842f8cd3db1d929751597cb9d88dd251))
+* **verify:** mark a cue that passes by a thin change as THIN CHANGE? ([ffc09b6](https://github.com/jacobcbeaudin/decktalk/commit/ffc09b64f948c3e94f654999e55d28560215778c))
+
+**Bug Fixes**
+
+* **assemble:** warn about a recording that measure has not read ([95896c0](https://github.com/jacobcbeaudin/decktalk/commit/95896c01f38cf80c075fd8c93c1157867b79abb5))
+* **narrate:** refuse a silent run over voiced takes unless forced ([6517ebc](https://github.com/jacobcbeaudin/decktalk/commit/6517ebccf5629812ab1d0c938a4797515f6ab7db))
+* **narrate:** stop padding a cached take again on every run ([93d643a](https://github.com/jacobcbeaudin/decktalk/commit/93d643ac7f3ad772c20534a0850eee3e59c9c9e9))
+* **verify:** count only the sections in decktalk.toml ([32112eb](https://github.com/jacobcbeaudin/decktalk/commit/32112ebd8686f6b2a82efd1606ed6630f5d26fa0))
+* **verify:** fit probes and controls between close cues ([f4dee0e](https://github.com/jacobcbeaudin/decktalk/commit/f4dee0ea54372c0e2e8f025a50708737901ce39b))
+
+</Update>
+
 <Update label="0.2.1" description="2026-09-14" tags={["feature"]}>
 
 **Features**
