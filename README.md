@@ -1,26 +1,10 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/hero-dark.svg">
-  <img alt="A playhead moves along a spoken sentence, one tick per word. The slide reacts on exactly the right words." src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/hero-light.svg" width="100%">
-</picture>
-
 <h1 align="center">DeckTalk</h1>
 
-<p align="center"><b>Narrated presentations, cut to the word.</b><br>
-DeckTalk makes a narrated video from a markdown script and HTML slides.
-Each reveal starts on the word that introduces it.
-If you change a sentence, DeckTalk voices only that section again.</p>
+<p align="center"><b>Every picture lands on its word, and you edit the video like a doc.</b><br>
+Before this, one wrong word meant editing, rendering and recording the whole thing again.</p>
 
-<p align="center">DeckTalk is for lecturers, course authors, developer advocates, and the agents that help them.</p>
-
-<!-- demo: the video waits for the founder's approval. GitHub strips a <video> tag, so do
-     not paste one.
-     1. Upload the mp4 through GitHub's editor.
-     2. Put the user-attachments URL on its own line in place of the hero picture at the top.
-     3. Move the caption below under that line, and uncomment it.
-     4. Under "Make your first video", change "The scaffold is a lesson in nine sections, two of them optional clips" to
-        "The scaffold is the project that made the demo video above".
-<p align="center">DeckTalk built this video from the project that <code>decktalk init</code> writes, in a cloned voice. Turn the sound on, and each reveal starts on its word.</p>
--->
+<p align="center"><a href="https://decktalk.ai/#watch"><img src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/site/media/decktalk-demo-poster.jpg" alt="The first frame of the demo film. A blue ball rests in a bowl above three boxes named one, two, and three, and under each box is the second at which its word was spoken." width="100%"></a><br>
+DeckTalk built this film from text files, and every reveal in it starts on its word. <a href="https://decktalk.ai/#watch">Watch it with the sound on at decktalk.ai</a>.</p>
 
 <p align="center">
 <a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/v/decktalk?style=flat-square&label=pypi&color=2c1fea" alt="PyPI"></a>
@@ -37,63 +21,41 @@ If you change a sentence, DeckTalk voices only that section again.</p>
 Agents can read <a href="https://docs.decktalk.ai/llms.txt">llms.txt</a>.
 </p>
 
+## What it is
+
+DeckTalk makes a narrated video from a markdown script and plain HTML slides. Your cloned voice reads the script and comes back with a time for every word, so each reveal starts on the word that introduces it. The script and the slides are text you keep in a repository, so you change a sentence and build again, the way you would change a doc or a codebase.
+
+Four things are different from a video editor, a slide tool, or an animation library.
+
+- **Every reveal is cut to the spoken word.** A cue names a phrase, not a second, so a reveal follows the narration wherever the voice puts it. `decktalk verify` measures every reveal in the finished video, and in the [sample below](#why-the-cuts-are-exact) each one lands within one frame of its word.
+- **A changed sentence voices only its own section again.** DeckTalk caches every section's narration by its text and voice settings, so an edit spends credits only on the sections that changed. `build --only N` records only the section you name.
+- **The whole video is text.** You write four files, and an agent can write them too. There is no timeline to drag and no project file a person cannot read.
+- **Your coding agent already knows how to drive it.** `decktalk init` installs six skills into the project, one each for the script, the slides, the cues, the build, the fixes and a revision, so an agent writes the files, reads the JSON every command prints, and fixes what it finds. [The skills](https://docs.decktalk.ai/agents/skills) lists them.
+
+## Who it is for
+
+- **Technical tutorials.** A viewer watches a walkthrough whose commands and screenshots match the version she just installed. When the library changes, you change the sentence and build again.
+- **Product demos.** A viewer sees the feature narrated over the screen it runs on, with every callout landing on the word that names it.
+- **Lessons.** A viewer follows an explanation in which each idea appears as it is spoken, so nothing is read ahead.
+
+Internal presentations and estimation walkthroughs run the same pipeline. Neither has a shipped example yet.
+
 ## Make your first video
 
-You need Python 3.12 or later. These steps use `uv`, a Python package manager. If you use pipx, run `pipx install decktalk` in step 1 instead.
+You need Python 3.12 or later. These commands use `uv`, a Python package manager. If you use pipx, run `pipx install decktalk` instead of the first line.
 
-1. Install DeckTalk.
+```console
+uv tool install decktalk
+decktalk setup
+decktalk init my-lesson && cd my-lesson
+decktalk build --silent
+```
 
-   ```console
-   uv tool install decktalk
-   ```
+`decktalk setup` downloads Chromium, ffmpeg, and KaTeX one time per machine, and on Linux it asks for sudo. `decktalk init` writes the scaffold, a complete example project. The silent build needs no account, ends with `built`, and prints the path of `build/out/my-lesson.mp4`. Recording runs in real time, so the build takes a few minutes.
 
-   uv ends with `Installed 1 executable: decktalk`.
+To hear it in your own voice, copy `.env.example` to `.env`, set your ElevenLabs API key and voice id, and run `decktalk build`. DeckTalk never prints the key. A voiced build of the scaffold spends about 2,800 characters of voice for a video of just over four minutes, and it writes the mp4, SRT and VTT captions, and one chapter per section. [What spends credits](https://docs.decktalk.ai/requirements#what-spends-credits) lists the cost of every command.
 
-2. Download Chromium, ffmpeg, and KaTeX. You do this one time per machine.
-
-   ```console
-   decktalk setup
-   ```
-
-   On Linux, this step asks for sudo. The last line is `setup complete`.
-
-3. Create the scaffold, a complete example project.
-
-   ```console
-   decktalk init my-lesson
-   ```
-
-4. Go into the project.
-
-   ```console
-   cd my-lesson
-   ```
-
-5. Build the video without an account.
-
-   ```console
-   decktalk build --silent
-   ```
-
-   The build ends with `built` and the path of `build/out/my-lesson.mp4`. The build took 224.4 seconds on a MacBook Pro with Apple M5 Pro and 64 GB memory, because recording runs in real time.
-
-6. Copy the example settings file.
-
-   ```console
-   cp .env.example .env
-   ```
-
-7. In `.env`, set your ElevenLabs API key and voice id. DeckTalk never prints the key.
-
-8. Build the video with your voice.
-
-   ```console
-   decktalk build
-   ```
-
-   This build spends ElevenLabs credits for every section. It writes the video, SRT and VTT captions, and one chapter per section. [What spends credits](https://docs.decktalk.ai/requirements#what-spends-credits) lists the cost.
-
-The scaffold is a lesson in nine sections, two of them optional clips. The [quickstart](https://docs.decktalk.ai/quickstart) shows the output of each step and [what the example video shows](https://docs.decktalk.ai/quickstart#what-the-example-video-shows).
+The [quickstart](https://docs.decktalk.ai/quickstart) shows the output of each step and [what the example video shows](https://docs.decktalk.ai/quickstart#what-the-example-video-shows). If you try DeckTalk on one section of something you teach, tell me in [Issues](https://github.com/jacobcbeaudin/decktalk/issues) what stopped you.
 
 ## What you write
 
@@ -124,7 +86,7 @@ The `narrate` stage writes a words file with the start and end of every spoken w
 
 A browser does not start recording at a known time, so DeckTalk does not use a timer. The recorder covers the page in magenta until the narration starts. The first frame without magenta is narration t=0, on Linux, macOS, and Windows.
 
-`decktalk verify` then measures every reveal in the finished video. This sample comes from a silent build of the scaffold.
+`decktalk verify` then measures every reveal in the finished video. This sample comes from a silent build of the scaffold, and one frame lasts 40 ms.
 
 <!-- sample: decktalk verify 1:1.1bowl 3:3.4name 8:7.1checked, silent build of the scaffold (cue table only) -->
 ```text
@@ -170,6 +132,7 @@ DeckTalk is alpha, and a minor release can still break things. One person mainta
 CI runs the unit tests and a full offline build on Linux for every push to `main` and every pull request. [CONTRIBUTING](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md#what-ci-runs) lists the macOS and Windows runs.
 
 - Report bugs and ask questions in [Issues](https://github.com/jacobcbeaudin/decktalk/issues).
+- Show what you made in [Discussions](https://github.com/jacobcbeaudin/decktalk/discussions).
 - Report a vulnerability privately. [SECURITY.md](https://github.com/jacobcbeaudin/decktalk/blob/main/SECURITY.md) explains how.
 - The [changelog](https://docs.decktalk.ai/changelog) lists every release.
 
