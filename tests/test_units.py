@@ -991,37 +991,6 @@ def test_user_settings_sit_between_defaults_and_the_project(tmp_path, monkeypatc
 # ---- doctor and runtime ------------------------------------------------------------------------
 
 
-def test_doctor_reports_missing_ffmpeg_without_fetching(tmp_path, monkeypatch):
-    import sys
-
-    from static_ffmpeg import run as static_run
-
-    from decktalk import scaffold
-    from decktalk.media import ffmpeg as ffmpeg_module
-
-    def fetch(*args, **kwargs):
-        raise AssertionError("doctor must not download ffmpeg")
-
-    monkeypatch.setattr(static_run, "get_or_fetch_platform_executables_else_raise", fetch)
-    monkeypatch.setattr(static_run, "get_platform_dir", lambda: str(tmp_path / "bin" / "nowhere"))
-    monkeypatch.setattr(ffmpeg_module.shutil, "which", lambda name: None)
-    monkeypatch.delenv("DECKTALK_FFMPEG", raising=False)
-    monkeypatch.delenv("DECKTALK_FFPROBE", raising=False)
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", None)  # keeps the test free of Chromium
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    rows = {name: (ok, detail) for name, ok, detail in scaffold.doctor()}
-    assert rows["ffmpeg"] == (False, "not fetched yet and none on PATH  -> run `decktalk setup`")
-    assert "ffprobe" not in rows
-    # Binaries already on disk are reported without asking static-ffmpeg for them either.
-    exe_dir = tmp_path / "bin" / "nowhere"
-    exe_dir.mkdir(parents=True)
-    for name in ("ffmpeg", "ffprobe", "installed.crumb"):
-        (exe_dir / name).write_text("", encoding="utf-8")
-    rows = {name: (ok, detail) for name, ok, detail in scaffold.doctor()}
-    assert rows["ffmpeg"] == (True, str(exe_dir / "ffmpeg"))
-    assert rows["ffprobe"] == (True, str(exe_dir / "ffprobe"))
-
-
 def test_runtime_says_wrote_on_first_copy_and_updated_after(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
     from decktalk.scaffold import RUNTIME_FILE, init

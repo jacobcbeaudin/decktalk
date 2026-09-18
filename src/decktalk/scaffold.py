@@ -188,9 +188,12 @@ def setup() -> None:
         cmd.append("--with-deps")
     if subprocess.call(cmd) != 0:
         raise ToolError("playwright install failed. See the output above.")
-    log.info("== ffmpeg / ffprobe")
-    from .media.ffmpeg import ffmpeg_paths
+    from .media.ffmpeg import FFMPEG_VERSION, ffmpeg_paths, installed_pinned
 
+    log.info("== ffmpeg %s", FFMPEG_VERSION)
+    found = installed_pinned()
+    if found:
+        log.info("   cached  %s", found[0])
     ff, fp = ffmpeg_paths()
     log.info("   ffmpeg  %s", ff)
     log.info("   ffprobe %s", fp)
@@ -227,8 +230,8 @@ class DoctorRow:
 def doctor() -> list[DoctorRow]:
     """One DoctorRow for each of python, chromium, ffmpeg, ffprobe, config and katex.
 
-    Nothing is fetched or written. In particular the ffmpeg row looks for binaries that are
-    already on disk, because asking static-ffmpeg for them would download them.
+    Nothing is fetched or written. In particular the ffmpeg row looks for executables that are
+    already on disk, because asking for them would download the pinned build.
     """
     rows = [DoctorRow("python", True, f"{sys.version.split()[0]} ({sys.executable})")]
     try:

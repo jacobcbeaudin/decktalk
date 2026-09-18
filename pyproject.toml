@@ -38,7 +38,7 @@ classifiers = [
     "Topic :: Multimedia :: Video",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
-dependencies = ["playwright>=1.50", "static-ffmpeg>=2.7"]
+dependencies = ["playwright>=1.50,<2"]
 
 [project.urls]
 Homepage = "https://decktalk.app"
