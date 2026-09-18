@@ -55,7 +55,13 @@ requires = ["uv_build>=0.8.0,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.11", "ty>=0.0.1"]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=6",
+    "pytest-timeout>=2.3",
+    "ruff>=0.11",
+    "ty>=0.0.1",
+]
 
 [tool.ruff]
 line-length = 120
@@ -78,5 +84,18 @@ testpaths = ["tests"]
 markers = [
     "browser: needs headless Chromium (run `decktalk setup` first)",
     "media: runs the ffmpeg that `decktalk setup` fetches",
+    "e2e: builds the pipeline fixture in tests/e2e with Chromium and ffmpeg, about a minute",
+    "scaffold: builds the whole scaffold project, about twenty minutes",
 ]
-addopts = "-m 'not browser and not media'"
+# A bare `pytest` runs the unit suite alone. Pass -m to pick the slower suites, as scripts/check.py does.
+addopts = "-m 'not browser and not media and not e2e and not scaffold' --strict-markers"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["decktalk"]
+
+[tool.coverage.report]
+# The floor is the whole suite measured on Linux with `-m 'not scaffold'`, rounded down. Raise it when coverage grows.
+fail_under = 82
+show_missing = false
+skip_empty = true
