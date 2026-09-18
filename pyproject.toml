@@ -54,6 +54,12 @@ decktalk = "decktalk.cli:main"
 requires = ["uv_build>=0.8.0,<0.13.0"]
 build-backend = "uv_build"
 
+# `uv build` reads the working tree, so a Finder sidecar next to the template would ship in a wheel
+# cut from a laptop. tests/test_wheel.py checks the built wheel against the files git tracks.
+[tool.uv.build-backend]
+source-exclude = ["**/.DS_Store"]
+wheel-exclude = ["**/.DS_Store"]
+
 [dependency-groups]
 dev = [
     "pytest>=8",
