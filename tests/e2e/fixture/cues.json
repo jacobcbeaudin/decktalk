@@ -1,0 +1,23 @@
+{
+  "sections": {
+    "1": {
+      "cues": [
+        { "cue": "1.1first", "on": "first" },
+        { "cue": "1.1second", "on": "second" },
+        { "cue": "1.1third", "on": "third" }
+      ]
+    },
+    "2": {
+      "cues": [
+        { "cue": "2.1fourth", "on": "fourth" },
+        { "cue": "2.1fifth", "on": "fifth" }
+      ]
+    },
+    "4": {
+      "cues": [
+        { "cue": "3.1eq", "on": "equation" },
+        { "cue": "3.1bar", "on": "bar" }
+      ]
+    }
+  }
+}
