@@ -1,6 +1,6 @@
 """What a project has built so far, read from disk without running any stage.
 
-`status(project)` collects everything `decktalk status` reports into a `StatusReport`. The
+`status(project)` collects everything `decktalk status` reports into a `StatusResult`. The
 CLI's table and its `--json` output both read that one object, so the two never disagree.
 """
 
@@ -44,7 +44,7 @@ class OutputStatus:
 
 
 @dataclass
-class StatusReport:
+class StatusResult:
     """Everything `decktalk status` prints, as data."""
 
     root: Path
@@ -55,8 +55,8 @@ class StatusReport:
     cues_exists: bool
     sections: list[SectionStatus]
     timeline: Timeline | None
-    beats_exists: bool
-    beats_sections: dict[str, dict[str, float]]
+    cue_times_exists: bool
+    cue_times_sections: dict[str, dict[str, float]]
     final: Path
     final_exists: bool
     final_duration: float | None
@@ -88,9 +88,9 @@ class StatusReport:
                     for key, sec in (tl.sections.items() if tl else [])
                 ],
             },
-            "beats": {
-                "exists": self.beats_exists,
-                "sections": [{"key": key, "cues": dict(cues)} for key, cues in self.beats_sections.items()],
+            "cue_times": {
+                "exists": self.cue_times_exists,
+                "sections": [{"key": key, "cues": dict(cues)} for key, cues in self.cue_times_sections.items()],
             },
             "final": {
                 "path": relpath(self.final, root),
@@ -101,7 +101,7 @@ class StatusReport:
         }
 
 
-def status(project: Project) -> StatusReport:
+def status(project: Project) -> StatusResult:
     """Read what exists for the project. Nothing is written, and only the final mp4 is probed."""
     from .stages.assemble import output_paths
 
@@ -130,8 +130,8 @@ def status(project: Project) -> StatusReport:
         OutputStatus(label, key, paths[key], paths[key].exists())
         for label, key in (("captions", "srt"), ("captions", "vtt"), ("chapters", "chapters"))
     ]
-    beats = project.beats()
-    return StatusReport(
+    cue_times = project.cue_times()
+    return StatusResult(
         root=project.root,
         name=project.name,
         script=project.script,
@@ -140,8 +140,8 @@ def status(project: Project) -> StatusReport:
         cues_exists=project.cues.exists(),
         sections=sections,
         timeline=project.timeline(),
-        beats_exists=project.beats_path.exists(),
-        beats_sections={k: v for k, v in beats.sections.items() if v},
+        cue_times_exists=project.cue_times_path.exists(),
+        cue_times_sections={k: v for k, v in cue_times.sections.items() if v},
         final=project.final,
         final_exists=project.final.exists(),
         final_duration=duration,

@@ -17,7 +17,7 @@ preset = "veryfast"
 ```
 
 ```console
-DECKTALK_VIDEO_PRESET=veryfast decktalk build --silent
+DECKTALK_VIDEO_PRESET=veryfast decktalk build --no-voice
 ```
 
 The scaffold builds with every default. Change `[video]` for faster drafts. Change `[verify]` when a
@@ -83,9 +83,9 @@ These keys govern how the script is turned into audio. Environment variables sta
 | `output_format` | `string` | `"mp3_44100_128"` | Audio format that the speech provider returns. It is part of the narration cache key. |
 | `mp3_bitrate` | `string` | `"128k"` | Bitrate of the mp3 files that DeckTalk writes. They include click tracks and `narration.mp3`. |
 | `words_per_minute` | `integer` | `140` | Pacing of the estimated length in the `narrate` table. |
-| `silent_words_per_minute` | `integer` | `150` | Pacing of the click track in a silent build. |
-| `lead_break_seconds` | `number` | `0.7` | Silence before the first spoken section. |
-| `direction_break_seconds` | `number` | `0.7` | Seconds that each beat adds to the length of a silent build's section. |
+| `silent_words_per_minute` | `integer` | `150` | Pacing of the click track in a build without voice. |
+| `opening_silence_seconds` | `number` | `0.7` | Silence before the first spoken section. |
+| `silent_beat_seconds` | `number` | `0.7` | Seconds each beat adds to a section's length in a build without voice. |
 | `min_tail_seconds` | `number` | `0.7` | Shortest silence after the last word of a section, so a cut never falls on speech. |
 | `tail_slack_seconds` | `number` | `0.05` | Extra silence added when `narrate` pads a short tail. |
 | `context_chars` | `integer` | `1500` | Characters of each neighbor section sent with a request, for continuous prosody. |
@@ -93,27 +93,20 @@ These keys govern how the script is turned into audio. Environment variables sta
 
 ## `[record]`
 
-These keys tune the headless Chromium recording. Environment variables start with `DECKTALK_RECORD_`.
+These keys tune the headless Chromium recording, how narration t=0 is found in it, and its sanity check. Environment variables start with `DECKTALK_RECORD_`.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `settle_seconds` | `number` | `0.5` | Shortest wait after the page is ready and before narration t=0. `record --settle` overrides it. |
-| `min_lead_seconds` | `number` | `1.5` | Shortest time from the start of the recorder to narration t=0. |
+| `min_cover_seconds` | `number` | `1.5` | Shortest time from the start of the recorder to narration t=0. |
 | `color_scheme` | `string` | `"light"` | Color scheme that Chromium reports to the page, such as `light` or `dark`. |
 | `retries` | `integer` | `2` | How many more times `record` records a section whose frames stalled. |
-| `shot_settle_ms` | `integer` | `400` | Milliseconds that `decktalk shots` waits before each step screenshot. |
-
-## `[align]`
-
-These keys tune how narration t=0 is found in a recording, and the recording sanity check. Environment variables start with `DECKTALK_ALIGN_`.
-
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `scan_seconds` | `number` | `4.0` | Seconds at the start of each recording that `measure` scans for the magenta cover. |
+| `screenshot_settle_ms` | `integer` | `400` | Milliseconds that `decktalk screenshots` waits before each slide screenshot. |
+| `cover_scan_seconds` | `number` | `4.0` |  |
 | `fallback_first_paint_seconds` | `number` | `1.1` | Guessed first paint if `measure` finds no cover and no painted frame. `measure` adds `settle_seconds` to it. |
-| `magenta_luma_min` | `number` | `70` | A cover frame has an average luma above this. |
-| `magenta_luma_max` | `number` | `140` | A cover frame has an average luma below this. |
-| `magenta_chroma_min` | `number` | `165` | A cover frame has an average U and an average V above this. |
+| `cover_luma_min` | `number` | `70` | A cover frame has an average luma above this. |
+| `cover_luma_max` | `number` | `140` | A cover frame has an average luma below this. |
+| `cover_chroma_min` | `number` | `165` | A cover frame has an average U and an average V above this. |
 | `painted_ymax` | `number` | `60` | A painted frame has a brightest luma above this. |
 | `painted_yavg_max` | `number` | `120` | A painted frame has an average luma below this, so a white flash does not count. |
 | `black_ymax` | `number` | `40` | `check` reports `BLACK?` when the brightest luma of the middle frame is below this. |
@@ -126,7 +119,7 @@ These keys set the mix mechanics. Levels live in `[mix]` in `decktalk.toml`. Env
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `duck_ramp_seconds` | `number` | `0.5` | Ramp of the underscore duck at each edge of a spoken span or a clip. |
+| `duck_ramp_seconds` | `number` | `0.5` | Ramp of the music duck at each edge of a spoken span or a clip. |
 | `ambience_ramp_seconds` | `number` | `1.0` | Ramp of the ambience bed at each edge of its span. |
 | `ambience_pad_seconds` | `number` | `0.5` | Seconds that the ambience bed extends past each edge of its section. |
 | `marker_mute_ramp_seconds` | `number` | `0.04` | Ramp into and out of a marker's mute. |
@@ -139,7 +132,7 @@ These keys tune the checks on the assembled mp4. Environment variables start wit
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `after_dip_seconds` | `number` | `0.2` | Seconds after a section start to the frame that the start check reads. |
-| `lead_seconds` | `number` | `0.1` | Reference lead. It has an effect only above (`max_offset_frames` + 1.5) / `fps`, which is 0.14 s at the defaults. |
+| `reference_lead_seconds` | `number` | `0.1` | Reference lead. It has an effect only above (`max_offset_frames` + 1.5) / `fps`, which is 0.14 s at the defaults. |
 | `probe_delays` | `array of numbers` | `[0.7, 1.5]` | Seconds after the cue time for each probe. The later probe catches a slow reveal. |
 | `diff_level` | `integer` | `40` | Luma difference that a pixel must exceed to count as changed, for probes and control shares. |
 | `min_changed_percent` | `number` | `0.1` | Smallest changed share, in percent, that the reported probe needs. |
@@ -153,7 +146,7 @@ These keys tune the checks on the assembled mp4. Environment variables start wit
 | `visible_ymax` | `number` | `60` | The start check reports `BLACK` when the brightest luma of its frame is at most this. |
 | `cut_window_seconds` | `number` | `0.15` | Seconds of narration before each cut that the cut check measures. |
 | `cut_max_db` | `number` | `-40.0` | Loudest RMS level of the cut window, in dBFS, that passes the cut check. |
-| `max_pop_percent` | `number` | `0.1` | Largest changed share, in percent, across the cut into a section that sets `carries_previous`. A larger share reads `POP AT CUT`. |
+| `max_pop_percent` | `number` | `0.1` | Largest changed share, in percent, across the cut into a section that sets `seamless`. A larger share reads `POP AT CUT`. |
 | `probe_width` | `integer` | `480` | Width in pixels that frames are scaled to before a comparison. |
 | `probe_height` | `integer` | `270` | Height in pixels that frames are scaled to before a comparison. |
 | `block_width` | `integer` | `240` | Width in pixels of the block-averaged copy of each frame that confirms an onset. Each pixel then averages an 8 by 8 block of a 1080p frame, the size of an H.264 transform block. The encoder can shift a few pixels of a still picture by up to about 15 levels in the frames just before a change. The average cancels that ringing, so a frame is the onset only when a block also changed. |

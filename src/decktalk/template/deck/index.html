@@ -57,7 +57,7 @@
   [data-in] { opacity: 0; }
   @keyframes x-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes x-out { from { opacity: 1; } to { opacity: 0; } }
-  /* Freeze mode (shots) shows every hand-off and move at its end state. */
+  /* Freeze mode (screenshots) shows every hand-off and move at its end state. */
   .dt-frozen .slide, .dt-frozen .slide * { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; transition-delay: 0s !important; }
 
   /* Scene 1 */
@@ -68,7 +68,7 @@
   .s1 .box.full + .lbl { fill: #ffffff; }
   .s1 .time { font: 500 30px var(--mono); text-anchor: middle; fill: var(--ink); }
   /* The balls are listed last position first, so a ball that has arrived hides every earlier one after it. */
-  .s1 .ball.dt-on ~ .ball { visibility: hidden; }
+  .s1 .ball.dt-shown ~ .ball { visibility: hidden; }
   .s1-mark { position: absolute; left: 0; right: 0; top: 155px; text-align: center; }
 
   /* Scene 2 */
@@ -211,21 +211,21 @@
 <div id="dt-stage"><div id="t0" aria-hidden="true"></div></div>
 <script src="decktalk-runtime.js"></script>
 <script>
-// Scene numbers are the "## N." sections of script.md. Each step id is N.S and each cue id
-// is the step id plus a short word. cues.json maps every cue id to the spoken phrase it
-// lands on. Open this file with no query for an index of scenes and steps, and add
-// ?step=ID to freeze one step with everything revealed. Scene 3 lives in lesson.html, and
+// Scene numbers are the "## N." sections of script.md. Each slide id is N.S and each cue id
+// is the slide id plus a short word. cues.json maps every cue id to the spoken phrase it
+// lands on. Open this file with no query for an index of scenes and slides, and add
+// ?slide=ID to freeze one slide with everything revealed. Scene 3 lives in lesson.html, and
 // decktalk.toml says which page each section records.
 //
-// Each step is a { id, hold, cues, render } object. The HTML between the backticks of
-// `render` is safe to edit freely. The `cues:` object and the data-cue attributes in that
+// Each slide is a { id, hold, preview, render } object. The HTML between the backticks of
+// `render` is safe to edit freely. The `preview:` object and the data-cue attributes in that
 // HTML must use the same ids, and cues.json names those same ids. A backslash inside the
 // backticks must be written twice, so a data-tex value reads data-tex="\\frac{1}{2}".
 // The `on:` block is JavaScript that runs when a cue fires. Each function receives the
-// step's slide element and a context object { id, at, frozen, step }, so a handler finds its
-// elements with slide.querySelector and needs no global. Copy a whole step object to add a step.
+// slide's element and a context object { id, at, frozen, slideId }, so a handler finds its
+// elements with slide.querySelector and needs no global. Copy a whole slide object to add a slide.
 //
-// Every reveal here uses data-fx="none", so each picture snaps in on the frame of its word.
+// Every reveal here uses data-reveal="instant", so each picture snaps in on the frame of its word.
 
 // The footer of every slide: the four-tick mark and DECKTALK at left, the section tracker at right.
 // It counts the sections of decktalk.toml, and each scene passes its section number. A section that
@@ -268,14 +268,14 @@ function handoff(slide, id) {
   slide.querySelectorAll(`[data-out~="${id}"]`).forEach(fade("x-out"));
   slide.querySelectorAll(`[data-in~="${id}"]`).forEach(fade("x-in"));
 }
-// A step's on: object that runs the hand-off of every listed cue, then any extra move for that cue.
+// A slide's on: object that runs the hand-off of every listed cue, then any extra move for that cue.
 const handoffs = (ids, extra = {}) => Object.fromEntries(ids.map((id) => [id, (slide, ctx) => { handoff(slide, id); if (extra[id]) extra[id](slide, ctx); }]));
-// Every scene is registered through scene(), which keeps its first step's render for the t=0 underlay
-// and removes the underlay two frames after that step mounts (see the end of this script).
+// Every scene is registered through scene(), which keeps its first slide's render for the t=0 underlay
+// and removes the underlay two frames after that slide mounts (see the end of this script).
 const T0_RENDER = {};
 function dropUnderlay() { requestAnimationFrame(() => requestAnimationFrame(() => { const el = document.getElementById("t0"); if (el) el.remove(); })); }
 function scene(n, def) {
-  const first = def.steps[0], enter = first.enter;
+  const first = def.slides[0], enter = first.enter;
   T0_RENDER[n] = first.render;
   first.enter = (slide, ctx) => { if (enter) enter(slide, ctx); dropUnderlay(); };
   DeckTalk.scene(n, def);
@@ -387,7 +387,7 @@ const bowlStill = (() => {
 // cues.json line for 1.1four is the whole edit. A recording of scene 1 reads the counts from the words
 // the recorder passes (?words=), and scene 2, which opens on scene 1's last frame, reads the same counts
 // from the Open's words (?prevwords=). Screenshots with no words fall back to these values, from
-// build/audio/01-open.words.json as voiced.
+// build/narration/01-open.words.json as voiced.
 const S1_COUNT_TIMES = [4.49, 5.26, 5.77];
 const S1_COUNT_WORDS = ["one", "two", "three", "four", "five"];
 
@@ -423,42 +423,42 @@ const s1ball = (u) => { const [x, y] = s1on(u, 28); return `<circle cx="${f1(x)}
 function s1svg(carry = false) {
   const times = s1countTimes(carry ? "prevwords" : "words"), n = times.length, words = S1_COUNT_WORDS.slice(0, n);
   // Each dot marks where the ball stood, and appears as the ball leaves it. The ball stands at n + 1 places.
-  const dots = S1_STEPS.slice(0, n).map((u, i) => { const [x, y] = s1on(u, 11); return `<circle data-cue="${S1_CUES[i + 1]}" data-fx="none" cx="${f1(x)}" cy="${f1(y)}" r="11" fill="${INK}"/>`; }).join("");
-  const balls = S1_STEPS.slice(0, n + 1).map((u, i) => `<g class="ball" data-cue="${S1_CUES[i]}" data-fx="none">${s1ball(u)}</g>`).reverse();
+  const dots = S1_STEPS.slice(0, n).map((u, i) => { const [x, y] = s1on(u, 11); return `<circle data-cue="${S1_CUES[i + 1]}" data-reveal="instant" cx="${f1(x)}" cy="${f1(y)}" r="11" fill="${INK}"/>`; }).join("");
+  const balls = S1_STEPS.slice(0, n + 1).map((u, i) => `<g class="ball" data-cue="${S1_CUES[i]}" data-reveal="instant">${s1ball(u)}</g>`).reverse();
   const box = (i, full) => `<rect class="box${full ? " full" : ""}" x="${s1boxX(n, i)}" y="790" width="200" height="80" rx="14"/><text class="lbl" x="${s1boxX(n, i) + 100}" y="843">${words[i]}</text>`;
   const svg = `
     <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true">
-      <path class="curve" data-cue="1.1bowl" data-fx="none" d="${s1curve()}"/>
+      <path class="curve" data-cue="1.1bowl" data-reveal="instant" d="${s1curve()}"/>
       ${dots}
       ${carry ? balls[0] : balls.join("")}
-      <g data-cue="1.1count" data-fx="none">${words.map((_, i) => box(i, false)).join("")}</g>
-      ${words.map((_, i) => `<g data-cue="${S1_CUES[i + 1]}" data-fx="none">${box(i, true)}</g>`).join("")}
-      <g data-cue="1.1word" data-fx="none">${times.map((t, i) => `<text class="time" x="${s1boxX(n, i) + 100}" y="926">${t.toFixed(2)} s</text>`).join("")}</g>
+      <g data-cue="1.1count" data-reveal="instant">${words.map((_, i) => box(i, false)).join("")}</g>
+      ${words.map((_, i) => `<g data-cue="${S1_CUES[i + 1]}" data-reveal="instant">${box(i, true)}</g>`).join("")}
+      <g data-cue="1.1word" data-reveal="instant">${times.map((t, i) => `<text class="time" x="${s1boxX(n, i) + 100}" y="926">${t.toFixed(2)} s</text>`).join("")}</g>
     </svg>`;
-  return carry ? svg.replace(/ data-cue="[^"]*" data-fx="none"/g, "") : svg;
+  return carry ? svg.replace(/ data-cue="[^"]*" data-reveal="instant"/g, "") : svg;
 }
-// Step 1.1's cue map for autoplay and screenshots, with one entry per count heard, 0.5 s apart after "three".
+// Slide 1.1's cue map for preview and screenshots, with one entry per count heard, 0.5 s apart after "three".
 function s1cues() {
   const cues = { "1.1bowl": 0.3, "1.1ball": 1.6, "1.1count": 4.4, "1.1one": 5.4, "1.1two": 6.3, "1.1three": 6.6, "1.1word": 12.4 };
   s1countTimes().slice(3).forEach((_, i) => { cues[S1_CUES[4 + i]] = 7.1 + 0.5 * i; });
   return cues;
 }
 
-scene(1, { name: "Open", steps: [
+scene(1, { name: "Open", slides: [
   { id: "1.1", hold: 14,
-    cues: s1cues(),
+    preview: s1cues(),
     render: () => `
     <div class="slide s1">
       <p class="eyebrow">01 Open</p>
       ${s1svg()}
-      <p class="wordmark s1-mark" data-cue="1.1word" data-fx="none">DeckTalk</p>
+      <p class="wordmark s1-mark" data-cue="1.1word" data-reveal="instant">DeckTalk</p>
       ${footer(1)}
     </div>` },
 ]});
 
 // ---- Scene 2: how it works --------------------------------------------------------------
 // Real values, in seconds after section 3 starts: the start of each word of "For this lesson it
-// is a bowl." in section 3's words file, build/audio/03-how-ai-learns.words.json, as voiced.
+// is a bowl." in section 3's words file, build/narration/03-how-ai-learns.words.json, as voiced.
 const S2_LINE_TIMES = [46.86, 47.05, 47.31, 47.87, 48.06, 48.20, 48.30];
 
 // The script card quotes section 3 of script.md line for line. JetBrains Mono advances 0.6 em,
@@ -494,14 +494,14 @@ function s2line(times) {
     wave += `<rect x="${f1(px)}" y="${f1(602 - h / 2)}" width="4.5" height="${f1(h)}" rx="2.2" fill="${MUTE}"/>`;
   }
   const stamps = words.map((w, k) => `<text class="t" x="${x(w.ci)}" y="${652 + (k % 2) * 30}">${times[k].toFixed(2)}</text>`).join("");
-  svg += `<g data-cue="2.1aloud" data-fx="none">${wave}${stamps}</g>`;
+  svg += `<g data-cue="2.1aloud" data-reveal="instant">${wave}${stamps}</g>`;
   // The cue word gets an outline, joined by a line to the outline around the drawing.
   const bowl = words[words.length - 1], wx = S2_X + bowl.ci * S2_CW - 7, ww = 4 * S2_CW + 14;
   const [bx, by, , bh] = s2bowl.box, rx = bx - 12, ry = by - 12, x1 = wx + ww, y1 = S2_FOCUS_Y - 8, y2 = ry + bh / 2 + 12;
   const join = `<rect x="${f1(wx)}" y="${S2_FOCUS_Y - 29}" width="${f1(ww)}" height="42" rx="8" fill="none" stroke="${ACCENT}" stroke-width="4"/>` +
     `<path class="join" d="M${f1(x1)} ${y1}C${f1(x1 + 160)} ${y1} ${f1(rx - 160)} ${f1(y2)} ${f1(rx)} ${f1(y2)}"/>` +
     `<circle cx="${f1(x1)}" cy="${y1}" r="6" fill="${ACCENT}"/><circle cx="${f1(rx)}" cy="${f1(y2)}" r="6" fill="${ACCENT}"/>`;
-  svg += `<g data-cue="2.1word" data-fx="none">${join}</g>`;
+  svg += `<g data-cue="2.1word" data-reveal="instant">${join}</g>`;
   return svg;
 }
 // The card is 16:9, 800 by 450 at 1000, 250. The lesson title sits in its top 70 px, and the bowl below it.
@@ -509,9 +509,9 @@ const s2bowl = bowlStill(1060, 342, 680, 318, false);
 // The lesson page's first frame (lesson.html's title), drawn at full size for the card.
 const LESSON_T0 = `<div class="l0"><h1 class="title">How does AI learn?</h1></div>`;
 
-scene(2, { name: "How it works", steps: [
+scene(2, { name: "How it works", slides: [
   { id: "2.1", hold: 21,
-    cues: { "2.1mark": 1.1, "2.1script": 3.4, "2.1aloud": 5.9, "2.1word": 8.5, "2.1follows": 12.3, "2.1lesson": 14.5 },
+    preview: { "2.1mark": 1.1, "2.1script": 3.4, "2.1aloud": 5.9, "2.1word": 8.5, "2.1follows": 12.3, "2.1lesson": 14.5 },
     // "DeckTalk" clears the Open's drawing, crosses the eyebrow and tracker to 02, and raises the wordmark.
     // "lesson" clears everything but the slide card, which scales up to become the lesson's first frame.
     on: handoffs(["2.1mark", "2.1follows", "2.1lesson"], {
@@ -527,7 +527,7 @@ scene(2, { name: "How it works", steps: [
       <div class="s1" data-out="2.1mark">${s1svg(true)}</div>
       <div class="s2-markfade" data-out="2.1lesson" data-xdur="0.2"><p class="wordmark s2-mark">DeckTalk</p></div>
       <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true" data-out="2.1lesson" data-xdur="0.2">
-        <g data-cue="2.1script" data-fx="none">
+        <g data-cue="2.1script" data-reveal="instant">
           <text class="filelabel" x="120" y="230" fill="${MUTE}">script.md</text>
           <text class="filelabel" x="1000" y="230" fill="${MUTE}">deck/lesson.html</text>
           <rect x="120" y="250" width="820" height="450" rx="16" fill="#f4f4f5"/>
@@ -535,13 +535,13 @@ scene(2, { name: "How it works", steps: [
           ${s2code(S2_EDIT_Y, S2_HEIGHT)}${s2line(S2_LINE_TIMES)}
         </g>
       </svg>
-      <div class="s2-cardwrap" data-cue="2.1script" data-fx="none">
+      <div class="s2-cardwrap" data-cue="2.1script" data-reveal="instant">
         <div class="s2-push"><div class="s2-frame" data-out="2.1lesson" data-xdur="0.15" data-xdelay="0.4"></div>${LESSON_T0}</div>
       </div>
       <svg class="stage-svg" viewBox="0 0 1920 1080" aria-hidden="true" data-out="2.1lesson" data-xdur="0.2">
-        <g data-cue="2.1script" data-fx="none">${s2bowl.svg}</g>
-        <rect data-cue="2.1word" data-fx="none" x="${f1(bx - 12)}" y="${f1(by - 12)}" width="${f1(bw + 24)}" height="${f1(bh + 24)}" rx="14" fill="none" stroke="${ACCENT}" stroke-width="4"/>
-        <g data-cue="2.1follows" data-fx="none">
+        <g data-cue="2.1script" data-reveal="instant">${s2bowl.svg}</g>
+        <rect data-cue="2.1word" data-reveal="instant" x="${f1(bx - 12)}" y="${f1(by - 12)}" width="${f1(bw + 24)}" height="${f1(bh + 24)}" rx="14" fill="none" stroke="${ACCENT}" stroke-width="4"/>
+        <g data-cue="2.1follows" data-reveal="instant">
           <circle cx="530" cy="712" r="12" fill="${ACCENT}"/>
           <path class="follow" pathLength="1" d="${S2_ARROW}"/>
           <path d="M1382 744L1400 716L1418 744" fill="none" stroke="${ACCENT}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -558,7 +558,7 @@ scene(2, { name: "How it works", steps: [
 // each page opens and ends on exactly the frame its clip shares.
 //
 // Real values from the voiced demo video, copied from its build outputs: the start of each count word in its
-// build/audio/01-open.words.json (before), and in a rebuild with ", four" added to the Open (after), that
+// build/narration/01-open.words.json (before), and in a rebuild with ", four" added to the Open (after), that
 // rebuild's narrate lines as `decktalk build` printed them (its sections numbered as the five parts, so the
 // file numbers match the chips), and its verify totals. A build of this scaffold makes different values, so
 // set them from your own builds.
@@ -621,10 +621,10 @@ const edFrame = (key, cls = "") => `<img class="frame ${cls}" src="${ED_IMG[key]
 const edAdd = (slide, sel, cls) => slide.querySelectorAll(sel).forEach((el) => el.classList.add(cls));
 const edDel = (slide, sel, cls) => slide.querySelectorAll(sel).forEach((el) => el.classList.remove(cls));
 
-scene(4, { name: "The edit", steps: [
+scene(4, { name: "The edit", slides: [
   // It opens on the lesson's last frame, full frame with its chrome.
   { id: "4.1", hold: 12.4,
-    cues: { "4.1out": 1.78, "4.1video": 4.88, "4.1parts": 6.66, "4.1script": 8.6, "4.1start": 10.16 },
+    preview: { "4.1out": 1.78, "4.1video": 4.88, "4.1parts": 6.66, "4.1script": 8.6, "4.1start": 10.16 },
     on: {
       // "step out": the whole frame, chrome and all, snaps to 90 % inside the player and eases into it.
       "4.1out": (slide) => { edAdd(slide, ".ed-inside", "off"); edDel(slide, ".ed-player", "off"); edAdd(slide, ".lesson", "shrink"); },
@@ -660,10 +660,10 @@ function edMarks() {
     </svg>`;
 }
 
-scene(6, { name: "The edit", steps: [
+scene(6, { name: "The edit", slides: [
   // It opens on the BEFORE clip's last frame, with the player as page 4 left it.
   { id: "6.1", hold: 17.1,
-    cues: { "6.1step": 1.03, "6.1four": 3.52, "6.1box": 5.14, "6.1build": 7.48, "6.1aloud": 10.32, "6.1kept": 12.2, "6.1new": 14.87 },
+    preview: { "6.1step": 1.03, "6.1four": 3.52, "6.1box": 5.14, "6.1build": 7.48, "6.1aloud": 10.32, "6.1kept": 12.2, "6.1new": 14.87 },
     on: {
       "6.1step": (slide) => edDel(slide, ".mk-ghost", "off"),
       "6.1four": (slide) => edDel(slide, ".l2 em", "none"),
@@ -713,10 +713,10 @@ function edProof() {
     </div>`;
 }
 
-scene(7, { name: "The edit", steps: [
+scene(7, { name: "The edit", slides: [
   // It opens on the AFTER clip's last frame, with the player as page 6 left it.
   { id: "7.1", hold: 10.2,
-    cues: { "7.1box": 1.32, "7.1moved": 3.34, "7.1checked": 6.27, "7.1back": 7.73 },
+    preview: { "7.1box": 1.32, "7.1moved": 3.34, "7.1checked": 6.27, "7.1back": 7.73 },
     on: {
       "7.1box": (slide) => { edAdd(slide, ".p-player", "off"); edDel(slide, ".p-proof", "off"); },
       "7.1moved": (slide) => edDel(slide, ".p-times", "off"),
@@ -754,8 +754,8 @@ const s5bowl = () => {
   return `<path class="curve" d="${s1curve()}"/>${dots}${s1ball(0)}`;
 };
 
-scene(5, { name: "Close", steps: [
-  { id: "5.1", hold: 14, cues: { "5.1clear": 0.6, "5.1made": 3.0, "5.1cap": 3.8, "5.1url": 7.7 },
+scene(5, { name: "Close", slides: [
+  { id: "5.1", hold: 14, preview: { "5.1clear": 0.6, "5.1made": 3.0, "5.1cap": 3.8, "5.1url": 7.7 },
     on: handoffs(["5.1clear"]),
     render: () => `
     <div class="slide s5">
@@ -763,29 +763,29 @@ scene(5, { name: "Close", steps: [
       <p class="s5-tag" data-in="5.1clear" data-xdur="0.15">Update your video the way you update a doc.</p>
       <svg class="stage-svg s1" viewBox="0 0 1920 1080" aria-hidden="true" data-in="5.1clear" data-xdur="0.15">
         ${s5bowl()}
-        <g data-cue="5.1cap" data-fx="none"><text class="s5-lic" x="960" y="926">Apache-2.0 · github.com/jacobcbeaudin/decktalk</text></g>
-        <g data-cue="5.1url" data-fx="none"><rect x="720" y="790" width="480" height="80" rx="14" fill="${ACCENT}"/><text class="s5-url" x="960" y="846">decktalk.ai</text></g>
+        <g data-cue="5.1cap" data-reveal="instant"><text class="s5-lic" x="960" y="926">Apache-2.0 · github.com/jacobcbeaudin/decktalk</text></g>
+        <g data-cue="5.1url" data-reveal="instant"><rect x="720" y="790" width="480" height="80" rx="14" fill="${ACCENT}"/><text class="s5-url" x="960" y="846">decktalk.ai</text></g>
       </svg>
-      <p class="wordmark s5-mark" data-cue="5.1made" data-fx="none">DeckTalk</p>
+      <p class="wordmark s5-mark" data-cue="5.1made" data-reveal="instant">DeckTalk</p>
       ${footer(5)}
     </div>` },
 ]});
 // Narration t=0 waits until every face this page uses has loaded and been painted once. The fonts use
-// font-display: block, and nothing asks for them before the first step mounts, so without this a section
+// font-display: block, and nothing asks for them before the first slide mounts, so without this a section
 // that opens on text (every hand-off does) records its first frame with the text still invisible.
 document.addEventListener("DOMContentLoaded", () => {
-  // The runtime mounts a scene's first step at narration t=0, and the recorder can capture that frame
-  // before the step paints, which leaves one blank frame on the cut. So the first step is drawn here
-  // first, with every cued element hidden, which is exactly its t=0 frame, and the mounted step covers
+  // The runtime mounts a scene's first slide at narration t=0, and the recorder can capture that frame
+  // before the slide paints, which leaves one blank frame on the cut. So the first slide is drawn here
+  // first, with every cued element hidden, which is exactly its t=0 frame, and the mounted slide covers
   // it. Freeze mode and the index page draw no underlay.
   const params = new URLSearchParams(location.search), n = params.get("scene"), under = document.getElementById("t0");
-  if (under && n && !params.has("step") && T0_RENDER[n]) under.innerHTML = T0_RENDER[n]({ frozen: false }); else if (under) under.remove();
+  if (under && n && !params.has("slide") && T0_RENDER[n]) under.innerHTML = T0_RENDER[n]({ frozen: false }); else if (under) under.remove();
   const faces = ['600 104px "Inter Tight"', '500 22px "JetBrains Mono"', '700 25px "JetBrains Mono"', '600 40px "JetBrains Mono"', '500 36px Inter', '600 28px Inter',
     '500 36px "JetBrains Mono"', '600 30px "JetBrains Mono"', '500 24px Inter', '600 22px Inter', '500 30px Inter', '500 32px Inter'];
   // The edit's stills are decoded before t=0, so a still that shows on a cue is never drawn late.
   const stills = n && Number(n) >= 4 && Number(n) <= 7 ? Object.values(ED_IMG).map((src) => { const img = new Image(); img.src = src; return img.decode().catch(() => {}); }) : [];
   const painted = Promise.all([...faces.map((f) => document.fonts.load(f)), ...stills]).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))));
-  window.__sceneReady = Promise.all([window.__sceneReady, painted]).then(([ready]) => ready);
+  window.__decktalk.ready = Promise.all([window.__decktalk.ready, painted]).then(([ready]) => ready);
 });
 </script>
 </body>

@@ -1,8 +1,8 @@
-"""Beds and one-shots from ElevenLabs: ambience, sfx, and an underscore, from decktalk.toml [soundscape].
+"""Beds and one-shots from ElevenLabs: ambience, sfx, and music, from decktalk.toml [soundscape].
 
 Ambience and sfx use sound generation (billed per second when a duration is set);
 music is requested in chunks of at most max_music_chunk_seconds and joined with a
-crossfade. Every output has a manifest with the request hash, so unchanged requests
+crossfade. Every output has a cache file with the request hash, so unchanged requests
 are skipped. dry_run reports the requests without calling the API.
 """
 
@@ -101,17 +101,17 @@ def _sound(
     item = SoundscapeItem(name=name, out=out, endpoint=endpoint, requests=[body], status="planned")
     if client is None:
         return item
-    manifest_path = out.with_suffix(".manifest.json")
+    cache_path = out.with_suffix(".cache.json")
     digest = request_hash(endpoint, body)
-    manifest = _load(manifest_path)
-    if not force and out.exists() and manifest.get("hash") == digest:
-        item.status, item.duration_seconds = "unchanged", manifest.get("duration_seconds")
+    cache = _load(cache_path)
+    if not force and out.exists() and cache.get("hash") == digest:
+        item.status, item.duration_seconds = "unchanged", cache.get("duration_seconds")
         return item
     out.parent.mkdir(parents=True, exist_ok=True)
     log.info("[gen ] %s -> %s", name, out)
     out.write_bytes(client.sound_effect(body, output_format=fmt))
     item.duration_seconds = ffmpeg.probe_duration(out)
-    _save(manifest_path, {"hash": digest, "file": out.name, "duration_seconds": item.duration_seconds, "request": body})
+    _save(cache_path, {"hash": digest, "file": out.name, "duration_seconds": item.duration_seconds, "request": body})
     item.status = "generated"
     return item
 
@@ -124,29 +124,29 @@ def _music(
     item = SoundscapeItem(name="music", out=out, endpoint=endpoint, requests=chunks, status="planned")
     if client is None:
         return item
-    manifest_path = out.with_suffix(".manifest.json")
+    cache_path = out.with_suffix(".cache.json")
     digest = request_hash(endpoint, {"chunks": chunks, "xfade": cfg.music_crossfade_seconds})
-    manifest = _load(manifest_path)
-    if not force and out.exists() and manifest.get("hash") == digest:
-        item.status, item.duration_seconds = "unchanged", manifest.get("duration_seconds")
+    cache = _load(cache_path)
+    if not force and out.exists() and cache.get("hash") == digest:
+        item.status, item.duration_seconds = "unchanged", cache.get("duration_seconds")
         return item
     out.parent.mkdir(parents=True, exist_ok=True)
     parts: list[Path] = []
     for i, body in enumerate(chunks):
         part = out.with_name(f"{out.stem}-part{i + 1}.mp3")
         part_hash = request_hash(endpoint, body)
-        if not force and part.exists() and manifest.get("parts", {}).get(part.name) == part_hash:
+        if not force and part.exists() and cache.get("parts", {}).get(part.name) == part_hash:
             log.info("[skip] %s unchanged", part.name)
         else:
             log.info("[gen ] %s ...", part.name)
             part.write_bytes(client.music(body, output_format=fmt))
-            manifest.setdefault("parts", {})[part.name] = part_hash
-            _save(manifest_path, manifest)
+            cache.setdefault("parts", {})[part.name] = part_hash
+            _save(cache_path, cache)
         parts.append(part)
     ffmpeg.crossfade_join(parts, out, crossfade_seconds=cfg.music_crossfade_seconds, bitrate=cfg.music_bitrate)
     item.duration_seconds = ffmpeg.probe_duration(out)
-    manifest.update({"hash": digest, "file": out.name, "duration_seconds": item.duration_seconds, "request": chunks})
-    _save(manifest_path, manifest)
+    cache.update({"hash": digest, "file": out.name, "duration_seconds": item.duration_seconds, "request": chunks})
+    _save(cache_path, cache)
     item.status = "generated"
     return item
 
@@ -178,6 +178,6 @@ def soundscape(
                 )
             )
     if spec.music and want("music"):
-        out = project.path(spec.music.out or project.mix.underscore or "build/music/underscore.mp3")
+        out = project.path(spec.music.out or project.mix.music or "build/music/music.mp3")
         items.append(_music(spec.music, out, client, cfg, fmt, force=force))
     return items

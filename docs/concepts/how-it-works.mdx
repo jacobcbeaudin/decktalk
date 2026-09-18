@@ -9,11 +9,11 @@ description: Understand how DeckTalk turns a script and HTML pages into one mp4,
 <Frame caption="Each panel names the pipeline stages it runs, in order.">
   <picture className="block dark:hidden">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-light-stacked.svg" />
-    <img src="/images/how-it-works-light.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and beats, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
+    <img src="/images/how-it-works-light.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
   </picture>
   <picture className="hidden dark:block">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-dark-stacked.svg" />
-    <img src="/images/how-it-works-dark.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and beats, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
+    <img src="/images/how-it-works-dark.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
   </picture>
 </Frame>
 
@@ -30,24 +30,24 @@ The seven stages always run in this order. Each stage reads files that the stage
 ```mermaid
 flowchart TB
   S["script.md"] --> narrate
-  narrate -- "words files, timeline.json" --> beats
-  C["cues.json"] --> beats
-  beats -- "beats.json" --> record
+  narrate -- "words files, timeline.json" --> align
+  C["cues.json"] --> align
+  align -- "cue-times.json" --> record
   P["deck pages"] --> record
-  record -- "webm and sidecar" --> measure
-  measure -- "lead_in_seconds" --> check
+  record -- "webm and recording log" --> measure
+  measure -- "t0_seconds" --> check
   check --> assemble
   assemble -- "name.mp4, captions, chapters" --> verify
 ```
 
 | Stage | One job | Writes |
 |---|---|---|
-| `narrate` | `narrate` voices each section and gets a time for every word. | `build/audio/NN-slug.mp3`, `NN-slug.words.json`, `manifest.json`, `narration.mp3`, `timeline.json` |
-| `beats` | `beats` turns each cue phrase into a cue time. | `build/audio/beats.json`, `beats.anchors.json` |
-| `record` | `record` records each page section in headless Chromium. | `build/rec/NN-scene.webm`, `NN-scene.json` |
-| `measure` | `measure` finds narration t=0 in each recording. | `lead_in_seconds` in each sidecar |
+| `narrate` | `narrate` voices each section and gets a time for every word. | `build/narration/NN-slug.mp3`, `NN-slug.words.json`, `takes.json`, `narration.mp3`, `timeline.json` |
+| `align` | `align` turns each cue phrase into a cue time. | `build/cue-times.json`, `cue-times.anchors.json` |
+| `record` | `record` records each page section in headless Chromium. | `build/recordings/NN.webm`, `recordings/NN.json` |
+| `measure` | `measure` finds narration t=0 in each recording. | `t0_seconds` in each recording log |
 | `check` | `check` flags a recording that is black, short, stalled, or uncovered. | nothing |
-| `assemble` | `assemble` cuts, joins, and mixes the sections into one mp4. | `build/out/NN-section.mp4`, `<name>.mp4`, captions, chapters |
+| `assemble` | `assemble` cuts, joins, and mixes the sections into one mp4. | `build/sections/NN.mp4`, `<name>.mp4`, captions, chapters |
 | `verify` | `verify` checks section starts, cuts, and cut continuity in the final mp4. | nothing |
 
 Each stage is also a command with the same name, and [the CLI reference](/reference/cli) lists them.
@@ -70,17 +70,17 @@ Each reveal starts on its word because DeckTalk finds narration t=0 inside every
 | t=0 is known only to the nearest frame. | The video runs at 25 fps, the rate that Chromium records at. t=0 is exact to one frame, 40 ms. |
 | Section lengths add up to fractions of a frame. | `assemble` rounds each section span to whole frames counted from the start of the narration. |
 | A recording can end before its section span. | `assemble` repeats the last frame to fill the span. `hold_seconds` uses the same repeat. |
-| Joined audio adds a short delay at each join. | Each `NN-section.mp4` has no audio. `assemble` mixes the sound once, from zero. |
+| Joined audio adds a short delay at each join. | Each `sections/NN.mp4` has no audio. `assemble` mixes the sound once, from zero. |
 
 The recorder removes the cover only when the page is ready. [The handshake](/concepts/page-contract#the-handshake)
-shows each wait. `measure` looks for the cover only in the first `[align] scan_seconds` of each recording, 4 s by
+shows each wait. `measure` looks for the cover only in the first `[record] cover_scan_seconds` of each recording, 4 s by
 default. The alignment never depends on wall-clock time.
 
-## The silent build
+## The build without voice
 
-A silent build replaces the voice with a click track, so it needs no account and no API key.
+A build without voice replaces the voice with a click track, so it needs no account and no API key.
 
-{/* sample: decktalk build --silent, silent build of the scaffold, first narrate lines */}
+{/* sample: decktalk build --no-voice, build without voice of the scaffold, first narrate lines */}
 ```text
 [sil ] 01-open.mp3  29 words -> 17.83s (estimated words)
 [sil ] 02-how-it-works.mp3  40 words -> 20.83s (estimated words)
@@ -90,15 +90,15 @@ A silent build replaces the voice with a click track, so it needs no account and
 - The click track has a soft click at the start of every estimated word, at -24 dBFS.
 - `narrate` spaces the estimated words evenly at `silent_words_per_minute`, 150 by default. It adds each pause,
   beat, and tail. [script.md](/reference/script-md) gives the length rule.
-- Every other stage runs as usual. A silent build therefore tests the cues, the pages, the recording, the cut, and
+- Every other stage runs as usual. A build without voice therefore tests the cues, the pages, the recording, the cut, and
   the checks.
-- The `narrate` and `beats` tables mark their times as estimated.
+- The `narrate` and `align` tables mark their times as estimated.
 - The clicks let `verify` compare the picture with the sound in the final mp4. [Verify](/reference/verify#cues)
   explains the check.
-- A silent build skips the loudness pass, so the clicks keep their level.
+- A build without voice skips the loudness pass, so the clicks keep their level.
 
-A silent build stops when the project has voiced takes, because it would empty the narration cache.
-[A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build) explains the cost.
+A build without voice stops when the project has voiced takes, because it would empty the narration cache.
+[A build without voice and a voiced build](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build) explains the cost.
 
 ## Clips and the narration
 
@@ -114,7 +114,7 @@ pauses for a clip between two page sections.
 
 ## Caching
 
-`narrate` keeps each section's audio and a hash of its text in `build/audio/manifest.json`. After an edit,
+`narrate` keeps each section's audio and a hash of its text in `build/narration/takes.json`. After an edit,
 `decktalk build` voices again only the sections whose text changed. A plain build still records every page
 section, and `decktalk build --only N` records only section N. A recording stays valid when a neighbor section
 changes length, because cue times count from the start of their own section.
@@ -126,20 +126,20 @@ changes length, because cue times count from the start of their own section.
 
 - **Section starts:** the frame 0.2 s after each section start has a pixel brighter than luma 60.
 - **Cuts:** the narration is at or below -40 dBFS in the last 0.15 s before each cut.
-- **Cues:** the picture changes within 80 ms of each cue time. After a silent build, it also changes within 120 ms
+- **Cues:** the picture changes within 80 ms of each cue time. After a build without voice, it also changes within 120 ms
   of the click plus the offset key.
 
-The verify stage inside `decktalk build` checks section starts and cuts, and cut continuity for a section that sets `carries_previous`. `decktalk verify` also checks the cues.
+The verify stage inside `decktalk build` checks section starts and cuts, and cut continuity for a section that sets `seamless`. `decktalk verify` also checks the cues.
 [Verify](/reference/verify) defines every measurement, limit, and result.
 
 ## Terms
 
 | Term | Meaning |
 |---|---|
-| [Stage](/reference/glossary) | One of `narrate`, `beats`, `record`, `measure`, `check`, `assemble`, and `verify`, in that order. |
-| [Silent build](/reference/glossary) | A build with `--silent`. It uses estimated word times and writes a click track. |
-| [Voiced build](/reference/glossary) | A build without `--silent`. The speech provider voices the script. |
-| [Click track](/reference/glossary) | The audio of a silent build, with a soft click at every estimated word start. |
+| [Stage](/reference/glossary) | One of `narrate`, `align`, `record`, `measure`, `check`, `assemble`, and `verify`, in that order. |
+| [Build without voice](/reference/glossary) | A build with `--no-voice`. It uses estimated word times and writes a click track. |
+| [Voiced build](/reference/glossary) | A build without `--no-voice`. The speech provider voices the script. |
+| [Click track](/reference/glossary) | The audio of a build without voice, with a soft click at every estimated word start. |
 | [Narration t=0](/reference/glossary) | The first frame after the magenta cover, where the page clock starts. |
 | [Recording](/reference/glossary) | The webm that `record` writes for a page section. |
 | [Cut](/reference/glossary) | The boundary between two sections in the final video. |

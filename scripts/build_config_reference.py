@@ -41,7 +41,7 @@ preset = "veryfast"
 ```
 
 ```console
-DECKTALK_VIDEO_PRESET=veryfast decktalk build --silent
+DECKTALK_VIDEO_PRESET=veryfast decktalk build --no-voice
 ```
 
 The scaffold builds with every default. Change `[video]` for faster drafts. Change `[verify]` when a

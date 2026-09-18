@@ -1,11 +1,11 @@
 """Clips and word times taken from a built section.
 
-    decktalk clip N --from S --to E --out media/x.mp4   a span of build/out/NN-section.mp4 with the section's take
+    decktalk clip N --start S --end E --out media/x.mp4   a span of build/sections/NN.mp4 with the section's take
                                                           over the same span, and the words spoken inside it
     decktalk words [--only N] [--json]                   each spoken section's words, in seconds after it starts
 
-Both read the section's own clock, the one `?words=` and `beats.json` use: 0 is the section start, which is
-narration t=0 of its recording and the first frame of its NN-section.mp4. A section's `lead_seconds` of
+Both read the section's own clock, the one `?words=` and `cue-times.json` use: 0 is the section start, which is
+narration t=0 of its recording and the first frame of its sections/NN.mp4. A section's `lead_seconds` of
 silence counts, so its first word starts after the lead.
 """
 
@@ -66,11 +66,11 @@ class SectionWords:
         }
 
 
-def spoken_words(project: Project, only: list[int] | None = None) -> list[SectionWords]:
+def words(project: Project, only: list[int] | None = None) -> list[SectionWords]:
     """Each spoken section's words from timeline.json, in seconds after the section starts.
 
     These are the times the recorder passes to a page as `?words=`, to three decimals. The script's
-    spelling comes from manifest.json, so each word also has its punctuation and case.
+    spelling comes from takes.json, so each word also has its punctuation and case.
     """
     timeline = _timeline(project)
     keys = timeline.keys
@@ -83,12 +83,12 @@ def spoken_words(project: Project, only: list[int] | None = None) -> list[Sectio
                 f"spoken sections are {[int(k) for k in keys]}"
             )
         keys = [k for k in keys if k in wanted]
-    manifest = project.manifest()
+    takes = project.takes()
     out: list[SectionWords] = []
     for key in keys:
         sec = timeline.sections[key]
         words = [Word(w.word, round(w.start - sec.start, 3), round(w.end - sec.start, 3)) for w in sec.words]
-        entry = manifest.segments.get(key) if manifest else None
+        entry = takes.sections.get(key) if takes else None
         shown = display_words(words, entry.spoken) if entry and entry.spoken else words
         out.append(
             SectionWords(
@@ -106,7 +106,7 @@ def spoken_words(project: Project, only: list[int] | None = None) -> list[Sectio
 
 @dataclass
 class ClipResult:
-    """What `cut_clip` wrote."""
+    """What `clip` wrote."""
 
     section: int
     video: Path
@@ -118,12 +118,12 @@ class ClipResult:
     hold_seconds: float
     duration: float  # The clip's length, with the hold.
     gain_db: float
-    estimated: bool  # True when the words come from a silent build.
+    estimated: bool  # True when the words come from a build without voice.
     words: list[Word] = field(default_factory=list)  # in seconds after the clip starts, with the script's spelling
     cut_words: list[str] = field(default_factory=list)  # words the span cuts in two, left out of the words file
 
 
-def cut_clip(
+def clip(
     project: Project,
     number: int,
     *,
@@ -136,7 +136,7 @@ def cut_clip(
 ) -> ClipResult:
     """Cut a span of a built page section into a video file and a words file for a clip section.
 
-    The picture is frames `round(start * fps)` up to `round(end * fps)` of build/out/NN-section.mp4. The
+    The picture is frames `round(start * fps)` up to `round(end * fps)` of build/sections/NN.mp4. The
     sound is the section's take over the same span, with `gain_db` applied and a 10 ms fade at each edge.
     The part of the span inside the section's `lead_seconds` is silence. `hold_seconds` holds the last
     frame in silence. The words file lists each word wholly inside the span, in seconds after the clip
@@ -156,11 +156,11 @@ def cut_clip(
         raise MissingInputError(f"section {number} has no section video at {video}. Run `decktalk assemble` first.")
     timeline = _timeline(project)
     tsec = timeline.sections.get(sec.key)
-    manifest = project.manifest()
-    entry = manifest.segments.get(sec.key) if manifest else None
+    takes = project.takes()
+    entry = takes.sections.get(sec.key) if takes else None
     if tsec is None or entry is None:
         raise MissingInputError(f"section {number} has no narration yet. Run `decktalk narrate` first.")
-    take = project.audio_dir / entry.file
+    take = project.narration_dir / entry.file
     if not take.exists():
         raise MissingInputError(f"section {number}'s take is missing: {take}. Run `decktalk narrate` first.")
 
@@ -234,7 +234,7 @@ def cut_clip(
 
 def _clip_words(project: Project, key: str, t0: float, t1: float) -> tuple[list[Word], list[str]]:
     """(the words wholly inside the span, in seconds after t0 with the script's spelling, the words it cuts)."""
-    (section,) = [s for s in spoken_words(project, only=[int(key)]) if s.key == key]
+    (section,) = [s for s in words(project, only=[int(key)]) if s.key == key]
     inside: list[Word] = []
     cut: list[str] = []
     for w, text in zip(section.words, section.texts, strict=True):

@@ -1,6 +1,6 @@
 """ffmpeg and ffprobe: the pinned build and its fetch, invocation, probing, and the frame-analysis helpers.
 
-`decktalk setup` downloads one pinned GPL build of ffmpeg and ffprobe for this machine's platform
+`decktalk install` downloads one pinned GPL build of ffmpeg and ffprobe for this machine's platform
 from the fixed URL in FFMPEG_BUILDS, checks each archive against the SHA-256 recorded there before
 anything is unpacked, and keeps the two executables under DeckTalk's per-user cache. The same fetch
 runs the first time a render needs ffmpeg, so every machine renders with the same build. The binary
@@ -293,7 +293,7 @@ def ffmpeg_paths() -> tuple[str, str]:
             return on_path
         raise ToolError(
             f"ffmpeg/ffprobe not found: the pinned build could not be downloaded ({exc}) and none is on PATH. "
-            "Run `decktalk setup` with network access, or install ffmpeg."
+            "Run `decktalk install` with network access, or install ffmpeg."
         ) from exc
 
 
@@ -439,7 +439,7 @@ def trailing_silence(path: Path, *, noise_db: int = -35, min_run: float = 0.05) 
 def write_clicks(
     path: Path, duration: float, times: list[float], *, sample_rate: int, bitrate: str, level_db: float = -24.0
 ) -> None:
-    """A placeholder track for silent builds: silence with a soft click at each word start.
+    """A placeholder track for builds without voice: silence with a soft click at each word start.
 
     The clicks let `verify` measure the finished file's audio against its picture, and
     they make a silent draft reviewable for pacing.

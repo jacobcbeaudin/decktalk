@@ -32,7 +32,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
-      - name: Cache Chromium, ffmpeg and KaTeX
+      - name: Cache Chromium and ffmpeg
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -40,10 +40,8 @@ jobs:
             ~/AppData/Local/decktalk
             ~/Library/Caches/ms-playwright
             ~/Library/Caches/decktalk
-            .venv/lib/*/site-packages/static_ffmpeg/bin
-            .venv/Lib/site-packages/static_ffmpeg/bin
           key: tools-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-      - run: uv run decktalk setup
+      - run: uv run decktalk install
       - run: uv run decktalk doctor
       - run: uv run pytest -q -m "browser or media or e2e" --durations=10
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -52,8 +50,8 @@ jobs:
           name: e2e-${{ matrix.os }}
           path: |
             tests/out/e2e/pipeline/verify.json
-            tests/out/e2e/pipeline/build/rec/*.json
-            tests/out/e2e/pipeline/build/audio/*.json
-            tests/out/e2e/pipeline/build/shots/
+            tests/out/e2e/pipeline/build/recordings/*.json
+            tests/out/e2e/pipeline/build/narration/*.json
+            tests/out/e2e/pipeline/build/screenshots/
             tests/out/e2e/pipeline/build/out/*.mp4
           if-no-files-found: ignore

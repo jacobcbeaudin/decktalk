@@ -9,7 +9,7 @@ The example puts a click on `1.1one`, the cue in section 1 where the ball takes 
 
 ## Before you start
 
-- Build the project one time, with `decktalk build --silent` or `decktalk build`. The `beats` stage must resolve the cue first.
+- Build the project one time, with `decktalk build --no-voice` or `decktalk build`. The `align` stage must resolve the cue first.
 - To generate the effect, put an ElevenLabs API key in `.env`. Generating an effect spends credits. [What spends credits](/requirements#what-spends-credits) lists the cost.
 - If you have your own audio file, you need no key. Any file that ffmpeg can read works.
 
@@ -31,10 +31,10 @@ The example puts a click on `1.1one`, the cue in section 1 where the ball takes 
     Print the request without sending it. The dry run needs no key and spends nothing.
 
     ```console
-    decktalk soundscape --dry-run --only tick
+    decktalk soundscape --dry-run tick
     ```
 
-    {/* sample: decktalk soundscape --dry-run --only tick, scaffold with [soundscape.sfx.tick] uncommented */}
+    {/* sample: decktalk soundscape --dry-run tick, scaffold with [soundscape.sfx.tick] uncommented */}
     ```text
     == tick -> ~/my-lesson/build/sfx/tick.mp3  [planned]
        POST https://api.elevenlabs.io/v1/sound-generation
@@ -48,7 +48,7 @@ The example puts a click on `1.1one`, the cue in section 1 where the ball takes 
     Send the request.
 
     ```console
-    decktalk soundscape --only tick
+    decktalk soundscape tick
     ```
 
     The command writes `build/sfx/tick.mp3`. If the request and the file have not changed, a later run sends nothing. To generate the effect again, add `--force`.
@@ -80,7 +80,7 @@ The example puts a click on `1.1one`, the cue in section 1 where the ball takes 
 
     If the file is missing, or the cue did not resolve, `assemble` prints a warning and skips the effect. The video still builds.
 
-    {/* sample: decktalk assemble, silent build of the scaffold with the [[mix.sfx]] table above and no tick.mp3 (one line) */}
+    {/* sample: decktalk assemble, build without voice of the scaffold with the [[mix.sfx]] table above and no tick.mp3 (one line) */}
     ```text
     sfx build/sfx/tick.mp3 missing; skipped
     ```
@@ -90,5 +90,5 @@ The example puts a click on `1.1one`, the cue in section 1 where the ball takes 
 ## Next
 
 - **Learn every part of the mix:** [Sound](/concepts/sound)
-- **Swell or mute the underscore on a phrase:** [Markers](/concepts/sound#markers)
+- **Swell or mute the music on a phrase:** [Markers](/concepts/sound#markers)
 - **Check what a generated effect costs:** [Requirements and costs](/requirements#what-spends-credits)

@@ -4,7 +4,7 @@ description: Look up the shape and every key of the cue file, which names the sp
 ---
 
 `cues.json` is the cue file. It names the spoken phrase for each cue id, section by section. It is
-optional. A project without it plays every page with the page's own autoplay timing. This page
+optional. A project without it plays every page with the page's own preview timing. This page
 lists every key.
 
 {/* excerpt copied from template/cues.json */}
@@ -56,7 +56,7 @@ The file is one object with a `sections` key. The load ignores every other top-l
 `cues` list.
 
 Every cue id must appear in its page as a quoted literal, such as `data-cue="1.1bowl"` or a key of
-a step's `cues` object. [Cue mismatches](/concepts/cues#cue-mismatches) says what happens when an id
+a slide's `preview` object. [Cue mismatches](/concepts/cues#cue-mismatches) says what happens when an id
 is missing.
 
 ## Section keys
@@ -66,22 +66,21 @@ is missing.
 | `cues` | array | `[]` | The cues of the section. |
 | `min_seconds` | number | none | Seconds of speech that the visuals need. Shorter speech is an uncertain finding. |
 
-Note: For short speech, `decktalk beats` prints the note
-`speech <S>s is <D>s shorter than the visuals need`. `beats --strict` exits 1 on it.
+Note: For short speech, `decktalk align` prints the note
+`speech <S>s is <D>s shorter than the visuals need`. `align --strict` exits 1 on it.
 
 ## Cue keys
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `cue` | string | required | The cue id. |
-| `step` | string | none | Synonym for `cue`. Wins when both keys are present. |
 | `on` | string | required | A word or short phrase from the section's script, `$start`, or `$end`. |
 | `offset` | number | `0` | The offset key. Seconds added to the match. Can be negative. |
-| `occurrence` | integer | `1` | Which match of the phrase to use. When the phrase occurs more than once and this key is not set, `beats` warns. |
+| `occurrence` | integer | `1` | Which match of the phrase to use. When the phrase occurs more than once and this key is not set, `align` warns. |
 | `case_sensitive` | boolean | `false` | Matches case as written. |
 | `verify` | boolean | `true` | `false` leaves the cue out of a plain `decktalk verify`, which shows the row as `skipped` with `OPTED_OUT`. |
 
-Note: A cue id must not contain a comma, because commas separate the pairs in `?beats=`. DeckTalk
+Note: A cue id must not contain a comma, because commas separate the pairs in `?cues=`. DeckTalk
 does not check this. An `@` in an id still works, because the page splits each pair at its last `@`.
 Avoid `@` anyway, so ids stay easy to read.
 
@@ -101,12 +100,12 @@ Note: A section's `lead_seconds` moves every word, and so every phrase cue and `
 
 ## Output files
 
-`decktalk beats` writes `build/audio/beats.json`, with each section's cue times as its `?beats=`
-string. It also writes `build/audio/beats.anchors.json`, with each cue's word start before the offset
+`decktalk align` writes `build/cue-times.json`, with each section's cue times as its `?cues=`
+string. It also writes `build/cue-times.anchors.json`, with each cue's word start before the offset
 key. [Build artifacts](/reference/artifacts) has the shape of both files.
 
 ## Related
 
 - **Learn the matching rules:** [Cues](/concepts/cues#matching-rules)
 - **Write phrases that time well:** [Writing for the ear](/guides/writing-for-the-ear)
-- **Learn which step owns a cue:** [The page contract](/concepts/page-contract#cue-ownership)
+- **Learn which slide owns a cue:** [The page contract](/concepts/page-contract#cue-ownership)

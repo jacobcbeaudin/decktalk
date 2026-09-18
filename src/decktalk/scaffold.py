@@ -1,7 +1,7 @@
 """The project scaffold and the tool cache.
 
 `decktalk init DIR` writes the template project, with the packaged runtime and KaTeX beside
-its pages. `decktalk setup` fetches Chromium and ffmpeg into the per-user cache. `decktalk
+its pages. `decktalk install` fetches Chromium and ffmpeg into the per-user cache. `decktalk
 doctor` reports on all of them.
 """
 
@@ -140,23 +140,7 @@ def init(target: Path, *, name: str | None = None, force: bool = False) -> Path:
     return target
 
 
-def update_runtime(project_root: Path) -> list[tuple[Path, bool]]:
-    """Copy the packaged runtime over every decktalk-runtime.js in the project.
-
-    Returns (path, existed) per file written, so the caller can say whether each one was
-    created or replaced. A project with no copy at all gets one at deck/decktalk-runtime.js.
-    """
-    found = list(project_root.rglob(RUNTIME_FILE)) or [project_root / "deck" / RUNTIME_FILE]
-    out: list[tuple[Path, bool]] = []
-    for dst in found:
-        existed = dst.exists()
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(runtime_path(), dst)
-        out.append((dst, existed))
-    return out
-
-
-def setup() -> None:
+def install() -> None:
     """Fetch the headless Chromium and the pinned ffmpeg build."""
     log.info("== Chromium (Playwright)")
     cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
@@ -177,16 +161,11 @@ def setup() -> None:
 
 @dataclass(frozen=True)
 class DoctorRow:
-    """One component that `decktalk doctor` reports. It unpacks like the (name, ok, detail) tuple it replaced.
-
-    A missing component that is not `required` is a warning: an uncertain finding, so `doctor`
-    exits 1 on it only with --strict.
-    """
+    """One component that `decktalk doctor` reports. Every component it reports is needed to build."""
 
     name: str
     ok: bool
     detail: str
-    required: bool = True
 
     def __iter__(self) -> Iterator[str | bool]:
         return iter((self.name, self.ok, self.detail))
@@ -211,7 +190,7 @@ def doctor() -> list[DoctorRow]:
                 rows.append(DoctorRow("chromium", True, b.version))
                 b.close()
             except Exception as exc:
-                rows.append(DoctorRow("chromium", False, f"{str(exc).splitlines()[0]}  -> run `decktalk setup`"))
+                rows.append(DoctorRow("chromium", False, f"{str(exc).splitlines()[0]}  -> run `decktalk install`"))
     except ImportError:
         rows.append(DoctorRow("chromium", False, "playwright package missing"))
     from .media.ffmpeg import installed_paths
@@ -221,7 +200,7 @@ def doctor() -> list[DoctorRow]:
         rows.append(DoctorRow("ffmpeg", True, found[0]))
         rows.append(DoctorRow("ffprobe", True, found[1]))
     else:
-        rows.append(DoctorRow("ffmpeg", False, "not fetched yet and none on PATH  -> run `decktalk setup`"))
+        rows.append(DoctorRow("ffmpeg", False, "not fetched yet and none on PATH  -> run `decktalk install`"))
     from .config import user_config_path
 
     cfg_path = user_config_path()

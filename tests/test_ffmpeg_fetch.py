@@ -249,7 +249,7 @@ def test_path_is_the_fallback_when_the_download_cannot_run(monkeypatch, caplog):
 def test_no_download_and_no_path_is_a_tool_error_that_names_setup(monkeypatch):
     pin(monkeypatch, "test-offline", ff.FFMPEG_BUILDS["linux-x86_64"])
     serve(monkeypatch, {})
-    with pytest.raises(ToolError, match="decktalk setup"):
+    with pytest.raises(ToolError, match="decktalk install"):
         ff.ffmpeg_paths()
 
 
@@ -268,7 +268,7 @@ def test_doctor_reports_missing_ffmpeg_without_fetching(tmp_path, monkeypatch):
     monkeypatch.setattr(ff, "fetch_ffmpeg", lambda key=None: pytest.fail("doctor must not download ffmpeg"))
     monkeypatch.setitem(sys.modules, "playwright.sync_api", None)  # keeps the test free of Chromium
     rows = {name: (ok, detail) for name, ok, detail in scaffold.doctor()}
-    assert rows["ffmpeg"] == (False, "not fetched yet and none on PATH  -> run `decktalk setup`")
+    assert rows["ffmpeg"] == (False, "not fetched yet and none on PATH  -> run `decktalk install`")
     assert "ffprobe" not in rows
     # Executables already on disk are reported without fetching either.
     d = ff.install_dir()

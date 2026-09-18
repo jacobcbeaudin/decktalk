@@ -14,7 +14,7 @@ from ..config import ElevenLabsConfig
 from ..errors import ConfigError
 from ..project import Project
 from ._http import post_bytes, post_json
-from .speech import SpeechRequest, register
+from .speech import SpeechRequest, register_speech_provider
 
 PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 ELEVENLABS_DOMAIN = "elevenlabs.io"
@@ -168,4 +168,4 @@ class ElevenLabs:
         return f"{self.cfg.api_base}/music?output_format={output_format}"
 
 
-register("elevenlabs", ElevenLabs.for_project)
+register_speech_provider("elevenlabs", ElevenLabs.for_project)

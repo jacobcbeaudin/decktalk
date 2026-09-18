@@ -5,7 +5,7 @@ description: Write a page that follows the page contract without decktalk-runtim
 
 Most pages should include `decktalk-runtime.js` and skip this guide. Use this guide only when a page
 comes from another framework and cannot include the runtime. It lists what the recorder and
-`decktalk shots` need, and it shows a small page that does all of it.
+`decktalk screenshots` need, and it shows a small page that does all of it.
 
 ## Before you start
 
@@ -18,36 +18,38 @@ the recorder with what your page does.
 
 | What the recorder does | What your page does |
 |---|---|
-| The recorder opens `page.html?scene=N&beats=id@s,…&t0=signal`, with any `params` from the section. | The page reads `scene` and `beats`. It schedules cue `id` at `s` seconds after the clock starts. |
+| The recorder opens `page.html?scene=N&cues=id@s,…&t0=signal`, with any `params` from the section. | The page reads `scene` and `cues`. It schedules cue `id` at `s` seconds after the clock starts. |
 | The recorder adds `&words=word@s,…` when the timeline has words for the section. | The page can use the words to show text one word at a time, or it can ignore them. |
 | The recorder adds `&prevwords=word@s,…` when the section just before has words. | A page that opens on the previous section's last frame can read them, or it can ignore them. |
-| The recorder awaits `document.fonts.ready`, then `window.__sceneReady` when it is a Promise. | The page sets `window.__sceneReady` to a Promise that resolves when the page is ready. |
+| The recorder awaits `document.fonts.ready`, then `window.__decktalk.ready` when it is a Promise. | The page sets `window.__decktalk.ready` to a Promise that resolves when the page is ready. |
 | The recorder calls `window.DeckTalk.startClock()` one time, at narration t=0. | The page starts its clock in that call and nowhere else. |
 | The recorder reads `window.__decktalk.catalog` after the recording. | The page lists at least one scene in `catalog`. A missing or empty list is a page error. |
-| The recorder reads `window.__decktalk.warnings`, `frameGaps`, and `syncLog`. | The page adds a string to `warnings` for anything it cannot do. `frameGaps` and `syncLog` are optional. |
+| `preflight` freezes a slide at and before each cue. | Each catalog entry carries `slides`, the slide ids in page order, and `cues`, each slide id mapped to its cue ids in preview order. |
+| The recorder reads `window.__decktalk.warnings`, `frameGaps`, and `spokenLog`. | The page adds a string to `warnings` for anything it cannot do. `frameGaps` and `spokenLog` are optional. |
 | The recorder uses a browser window of `[video] width` by `height`. | The page draws at 1920 by 1080, or it scales a 1920 by 1080 element to fit the window. |
 
 The magenta cover belongs to the recorder, so a page needs no cover of its own.
 [How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains what the cover does.
 
-## Support decktalk shots
+## Support decktalk screenshots
 
-`decktalk shots` uses the page in three ways:
+`decktalk screenshots` uses the page in three ways:
 
-- It opens the page with no query and reads `window.__decktalk.catalog`. If the page has no catalog, `shots` warns and skips the page.
-- It opens `?step=ID` for each step id in the catalog. With `--cue`, it opens `?step=ID&cue=CUE`.
-- In frame mode, `shots --section N --at S` opens the recorder's URL. It logs `window.__decktalk.fired` with each frame.
+- It opens the page with no query and reads `window.__decktalk.catalog`. If the page has no catalog, `screenshots` warns and skips the page.
+- It opens `?slide=ID` for each slide id in the catalog. With `--after`, it opens `?slide=ID&after=CUE`.
+- In frame mode, `screenshots --section N --at S` opens the recorder's URL. It logs `window.__decktalk.fired` with each frame.
 
-`decktalk preflight` also reads `catalog[].cues`, which maps each step id to its cue ids in autoplay order. It opens
-`?step=ID&cue=CUE` and `?step=ID&before=CUE`. A page whose catalog has no `cues` gets every cue skipped as
-`RUNTIME_OUTDATED`.
+`decktalk preflight` also reads `catalog[].cues`, which maps each slide id to its cue ids in preview order. It opens
+`?slide=ID&after=CUE` and `?slide=ID&before=CUE`. A scene whose entry carries no `cues` map gets every cue skipped as
+`NO_CATALOG`, and a cue that the map does not name is skipped as `NOT_IN_SLIDE_CUES`, because a freeze stops only at a
+listed cue.
 
 ## Write the minimal page
 
 <Warning>Start the page clock only inside `DeckTalk.startClock()`. A page that starts its clock at
 `load` fires every cue early, and every reveal in the video comes before its word.</Warning>
 
-The page below follows the whole contract in about forty lines. It has one scene with one step. Each
+The page below follows the whole contract in about forty lines. It has one scene with one slide. Each
 cue shows the element with the matching `data-cue`.
 
 ```html deck/plain.html
@@ -65,12 +67,13 @@ cue shows the element with the matching `data-cue`.
 </div>
 <script>
   const params = new URLSearchParams(location.search);
-  const state = { mode: "index", scene: params.get("scene"), step: "1.1", cues: [], fired: [], warnings: [], origin: null,
-                  catalog: [{ scene: "1", name: "By hand", steps: ["1.1"] }], now: () => state.origin === null ? -Infinity : (performance.now() - state.origin) / 1000 };
+  const state = { mode: "index", scene: params.get("scene"), slide: "1.1", cues: [], fired: [], warnings: [], origin: null,
+                  catalog: [{ scene: "1", name: "By hand", slides: ["1.1"], cues: { "1.1": ["1.1a", "1.1b"] } }],
+                  now: () => state.origin === null ? -Infinity : (performance.now() - state.origin) / 1000 };
   window.__decktalk = state;
-  window.__sceneReady = document.fonts.ready;
+  window.__decktalk.ready = document.fonts.ready;
 
-  const cues = (params.get("beats") || "").split(",").filter(Boolean).map((tok) => {
+  const cues = (params.get("cues") || "").split(",").filter(Boolean).map((tok) => {
     const i = tok.lastIndexOf("@");
     return { id: tok.slice(0, i), t: parseFloat(tok.slice(i + 1)) };
   });
@@ -84,12 +87,12 @@ cue shows the element with the matching `data-cue`.
   function startClock() {
     if (state.origin !== null) return;
     state.origin = performance.now();
-    if (cues.length) state.mode = "cues";
+    if (cues.length) state.mode = "cue";
     for (const c of cues) setTimeout(() => fire(c.id), c.t * 1000);
   }
   window.DeckTalk = { startClock };
 
-  if (params.has("step")) { state.mode = "frozen"; document.querySelectorAll("[data-cue]").forEach((el) => el.classList.add("on")); }
+  if (params.has("slide")) { state.mode = "freeze"; document.querySelectorAll("[data-cue]").forEach((el) => el.classList.add("on")); }
   else if (params.get("t0") !== "signal") startClock();   // a browser preview starts at once
 </script>
 ```
@@ -99,21 +102,21 @@ To use the page in a project, follow these steps:
 1. Save the page as `deck/plain.html`.
 2. Add a `[[section]]` with `page = "deck/plain.html"` and `scene = 1`.
 3. Add cues `1.1a` and `1.1b` for that section in `cues.json`.
-4. Open `deck/plain.html?step=1.1` in a browser to see every element.
+4. Open `deck/plain.html?slide=1.1` in a browser to see every element.
 
-The page has no autoplay timing. A browser preview with `?scene=1` shows nothing until you add
-`&beats=1.1a@1,1.1b@2` to the URL.
+The page has no preview timing. A browser preview with `?scene=1` shows nothing until you add
+`&cues=1.1a@1,1.1b@2` to the URL.
 
 ## Compare with the runtime
 
 The runtime gives a page more than this minimal page does:
 
-- an index of scenes and steps
-- autoplay from `hold` and `data-at`
+- an index of scenes and slides
+- preview timing from `hold` and `data-delay`
 - reveal effects, count-ups, typewriting, and word sync
 - KaTeX typesetting, with a wait for the library
 - a camera push
-- a warning for each mismatch between cues and steps
+- a warning for each mismatch between cues and slides
 - a list of gaps between animation frames
 
 [Runtime](/reference/runtime) lists all of it. A page by hand can add any of these features.

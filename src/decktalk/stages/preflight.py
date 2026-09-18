@@ -4,8 +4,8 @@ takes    what `narrate` would voice, keep cached, or move, as `narrate --dry-run
          characters each section sends and speaks.
 cues     every cue of cues.json resolved against the words each section will have: a cached or
          moved take's own words, or estimated words at silent_words_per_minute for a section that
-         would be voiced. The notes and findings are those of `decktalk beats`, the repeated-phrase
-         warning included. beats.json is not written.
+         would be voiced. The notes and findings are those of `decktalk align`, the repeated-phrase
+         warning included. cue-times.json is not written.
 frames   for each cue, the page frozen just before the cue fires and frozen at the cue, in
          build/preflight. They are compared as `verify` compares frames: the share of pixels whose
          luma changes by more than diff_level at probe_width by probe_height. A frozen frame shows
@@ -13,26 +13,25 @@ frames   for each cue, the page frozen just before the cue fires and frozen at t
          probe reads once the reveal has settled, with a control of 0. The share reads NO CHANGE
          below min_changed_percent or min_margin_percent, THIN CHANGE? below thin_change_factor
          times either floor, and changed otherwise.
-carries  for each page section that sets carries_previous after a page section, the previous
+seams    for each page section that sets seamless after a page section, the previous
          section's last frozen state against this section's first one. A share above
          max_pop_percent reads POP AT CUT.
 
-The frozen frames follow the runtime's cue mode. The first cued step mounts at t=0, and every other
-step mounts at its earliest cue. The frame before a cue is its step with the cues before it fired,
-or the step on screen before it when the cue mounts its step. A freeze fires a step's cues in
-autoplay order, so a step whose cue times run in another order gets a note. The page reads
-`catalog[].cues` and `&before=`, which decktalk-runtime.js has had since this command came in.
+The frozen frames follow the runtime's cue mode. The first cued slide mounts at t=0, and every other
+slide mounts at its earliest cue. The frame before a cue is its slide with the cues before it fired,
+or the slide on screen before it when the cue mounts its slide. A freeze fires a slide's cues in
+preview order, so a slide whose cue times run in another order gets a note. The page reads
+`catalog[].cues` and `&before=`, which decktalk-runtime.js provides.
 
 A skipped cue row carries one of these reasons:
 
-    AT_SECTION_START   the cue fires within the first frame, so no frame comes before it
-    NO_STEP            no step of the scene owns the cue
-    NOT_IN_STEP_CUES   the step owns the cue by its id prefix, and a freeze can stop only at a listed cue
-    NO_CATALOG         the page is missing, has no runtime catalog, or does not register the scene
-    RUNTIME_OUTDATED   the page's decktalk-runtime.js has no catalog cues, so run `decktalk runtime`
-    OPTED_OUT          cues.json sets "verify": false on the cue
+    AT_SECTION_START    the cue fires within the first frame, so no frame comes before it
+    NO_SLIDE            no slide of the scene owns the cue
+    NOT_IN_SLIDE_CUES   the slide owns the cue by its id prefix, and a freeze can stop only at a listed cue
+    NO_CATALOG          the page is missing, or its catalog registers the scene with no slides and cues
+    OPTED_OUT           cues.json sets "verify": false on the cue
 
-A carry row is skipped as NO_CUES when a side has no resolved cue, and as CLIP when a side is a clip.
+A seam row is skipped as NO_CUES when a side has no resolved cue, and as CLIP when a side is a clip.
 """
 
 from __future__ import annotations
@@ -46,13 +45,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from ..artifacts import Beats, Word
+from ..artifacts import CueTimes, Word
 from ..config import NarrationConfig, VerifyConfig
 from ..media import ffmpeg
 from ..media.browser import await_ready, chromium, page_error_text, screenshot
 from ..project import PageSection, Project
 from ..verdicts import CHANGED, NO_CHANGE, OK, POP_AT_CUT, SKIPPED, THIN_CHANGE, Findings, count
-from .beats import BeatsResult, load_cues, resolve_sections, unknown_cue_ids
+from .align import AlignResult, load_cues, resolve_sections, unknown_cue_ids
 from .narrate import (
     CACHED,
     MOVED,
@@ -70,17 +69,16 @@ from .verify import opted_out, thin_change
 log = logging.getLogger(__name__)
 
 AT_SECTION_START = "AT_SECTION_START"
-NO_STEP = "NO_STEP"
-NOT_IN_STEP_CUES = "NOT_IN_STEP_CUES"
+NO_SLIDE = "NO_SLIDE"
+NOT_IN_SLIDE_CUES = "NOT_IN_SLIDE_CUES"
 NO_CATALOG = "NO_CATALOG"
-RUNTIME_OUTDATED = "RUNTIME_OUTDATED"
 OPTED_OUT = "OPTED_OUT"
 NO_CUES = "NO_CUES"
 CLIP = "CLIP"
 
-ORDER_NOTE = "the step's cues fire in another order when frozen, so these frames may differ from the recording"
+ORDER_NOTE = "the slide's cues fire in another order when frozen, so these frames may differ from the recording"
 
-Steps = dict[str, list[str]]  # Each step id of a scene, in page order, with its cue ids in autoplay order.
+Slides = dict[str, list[str]]  # Each slide id of a scene, in page order, with its cue ids in preview order.
 
 
 # ---- frame planning, with no browser ------------------------------------------------------
@@ -88,22 +86,22 @@ Steps = dict[str, list[str]]  # Each step id of a scene, in page order, with its
 
 @dataclass(frozen=True)
 class Freeze:
-    """One frozen state of a page: a step, with its cues fired up to `cue`, or before `before`, or all of them."""
+    """One frozen state of a page: a slide, with its cues fired up to `cue`, or before `before`, or all of them."""
 
-    step: str
+    slide: str
     cue: str | None = None
     before: str | None = None
 
     def query(self) -> dict[str, str]:
         if self.cue is not None:
-            return {"step": self.step, "cue": self.cue}
+            return {"slide": self.slide, "after": self.cue}
         if self.before is not None:
-            return {"step": self.step, "before": self.before}
-        return {"step": self.step}
+            return {"slide": self.slide, "before": self.before}
+        return {"slide": self.slide}
 
     @property
     def label(self) -> str:
-        """The query as one file-name-safe word, such as step-2.1-cue-2.1aloud."""
+        """The query as one file-name-safe word, such as slide-2.1-after-2.1aloud."""
         text = "-".join(part for pair in self.query().items() for part in pair)
         return re.sub(r"[^A-Za-z0-9._-]+", "_", text)
 
@@ -114,7 +112,7 @@ class FramePair:
 
     cue: str
     seconds: float
-    step: str | None
+    slide: str | None
     before: Freeze | None = None
     after: Freeze | None = None
     reason: str | None = None
@@ -122,10 +120,28 @@ class FramePair:
     note: str = ""
 
 
-def owner_step(cue: str, steps: Steps) -> str | None:
-    """The step that owns a cue, by the runtime's rules: the same id or a listed cue first, else the longest prefix."""
+def slide_cues(catalog: list[dict[str, Any]] | None, scene: str) -> tuple[Slides | None, str]:
+    """Each slide of a scene with its cue ids in preview order, or the reason the scene gives none.
+
+    A catalog entry carries `slides` and `cues`, which the runtime page contract defines. A page
+    that registers a scene without them tells `preflight` nothing it can freeze, so that scene
+    reads as a scene with no catalog.
+    """
+    if not catalog:
+        return None, "is missing or has no runtime catalog"
+    entry = next((c for c in catalog if str(c.get("scene")) == scene), None)
+    if entry is None:
+        return None, f"registers no scene {scene}"
+    slides, cues = entry.get("slides"), entry.get("cues")
+    if not isinstance(slides, list) or not isinstance(cues, dict):
+        return None, f"registers scene {scene} without a slides list and a cues map"
+    return {str(sid): [str(c) for c in cues.get(str(sid), [])] for sid in slides}, ""
+
+
+def owner_slide(cue: str, slides: Slides) -> str | None:
+    """The slide that owns a cue, by the runtime's rules: the same id or a listed cue first, else the longest prefix."""
     best: str | None = None
-    for sid, cues in steps.items():
+    for sid, cues in slides.items():
         if sid == cue or cue in cues:
             return sid
         if cue.startswith(sid) and (best is None or len(sid) > len(best)):
@@ -133,11 +149,11 @@ def owner_step(cue: str, steps: Steps) -> str | None:
     return best
 
 
-def mounts(steps: Steps, beats: dict[str, float]) -> list[tuple[str, float]]:
-    """(step, mount time) in mount order: each step at its earliest cue, and the first at 0 at the latest."""
+def mounts(slides: Slides, cue_times: dict[str, float]) -> list[tuple[str, float]]:
+    """(slide, mount time) in mount order: each slide at its earliest cue, and the first at 0 at the latest."""
     at: dict[str, float] = {}
-    for cue, t in sorted(beats.items(), key=lambda item: item[1]):
-        sid = owner_step(cue, steps)
+    for cue, t in sorted(cue_times.items(), key=lambda item: item[1]):
+        sid = owner_slide(cue, slides)
         if sid is not None:
             at[sid] = min(at.get(sid, math.inf), t)
     seq = sorted(at.items(), key=lambda item: item[1])
@@ -146,31 +162,31 @@ def mounts(steps: Steps, beats: dict[str, float]) -> list[tuple[str, float]]:
     return seq
 
 
-def _fired(steps: Steps, beats: dict[str, float], sid: str, until: float, *, inclusive: bool) -> list[str]:
-    """The step's listed cues that have fired by `until`, in autoplay order."""
+def _fired(slides: Slides, cue_times: dict[str, float], sid: str, until: float, *, inclusive: bool) -> list[str]:
+    """The slide's listed cues that have fired by `until`, in preview order."""
     return [
         c
-        for c in steps[sid]
-        if c in beats
-        and owner_step(c, steps) == sid
-        and (beats[c] <= until + 1e-9 if inclusive else beats[c] < until - 1e-9)
+        for c in slides[sid]
+        if c in cue_times
+        and owner_slide(c, slides) == sid
+        and (cue_times[c] <= until + 1e-9 if inclusive else cue_times[c] < until - 1e-9)
     ]
 
 
-def plan_frames(steps: Steps, beats: dict[str, float], fps: int) -> list[FramePair]:
+def plan_frames(slides: Slides, cue_times: dict[str, float], fps: int) -> list[FramePair]:
     """One FramePair per cue of a section, in cue time order."""
-    seq = mounts(steps, beats)
+    seq = mounts(slides, cue_times)
     mount = dict(seq)
     pairs: list[FramePair] = []
-    for cue, t in sorted(beats.items(), key=lambda item: item[1]):
-        sid = owner_step(cue, steps)
+    for cue, t in sorted(cue_times.items(), key=lambda item: item[1]):
+        sid = owner_slide(cue, slides)
         if sid is None:
-            pairs.append(FramePair(cue, t, None, reason=NO_STEP, detail="no step of the scene owns the cue"))
+            pairs.append(FramePair(cue, t, None, reason=NO_SLIDE, detail="no slide of the scene owns the cue"))
             continue
-        order = steps[sid]
+        order = slides[sid]
         if cue not in order:
-            detail = f"step {sid} owns the cue by its id, and its cues list does not name it"
-            pairs.append(FramePair(cue, t, sid, reason=NOT_IN_STEP_CUES, detail=detail))
+            detail = f"slide {sid} owns the cue by its id, and its preview list does not name it"
+            pairs.append(FramePair(cue, t, sid, reason=NOT_IN_SLIDE_CUES, detail=detail))
             continue
         if t * fps < 1:
             detail = "the cue fires within the first frame, so no frame comes before it"
@@ -181,42 +197,42 @@ def plan_frames(steps: Steps, beats: dict[str, float], fps: int) -> list[FramePa
         if mount[sid] < t - 1e-9 or not earlier:
             before = Freeze(sid, cue=order[k - 1]) if k > 0 else Freeze(sid, before=cue)
         else:
-            # The cue mounts its step, so the frame before it shows the step that was on screen.
+            # The cue mounts its slide, so the frame before it shows the slide that was on screen.
             prev = earlier[-1][0]
-            fired = _fired(steps, beats, prev, t, inclusive=False)
+            fired = _fired(slides, cue_times, prev, t, inclusive=False)
             if fired:
                 before = Freeze(prev, cue=fired[-1])
-            elif steps[prev]:
-                before = Freeze(prev, before=steps[prev][0])
+            elif slides[prev]:
+                before = Freeze(prev, before=slides[prev][0])
             else:
                 before = Freeze(prev)
-        by_time = set(_fired(steps, beats, sid, t, inclusive=True))
-        frozen = {c for c in order[: k + 1] if c in beats and owner_step(c, steps) == sid}
+        by_time = set(_fired(slides, cue_times, sid, t, inclusive=True))
+        frozen = {c for c in order[: k + 1] if c in cue_times and owner_slide(c, slides) == sid}
         note = "" if by_time == frozen else ORDER_NOTE
         pairs.append(FramePair(cue, t, sid, before, Freeze(sid, cue=cue), note=note))
     return pairs
 
 
-def last_state(steps: Steps, beats: dict[str, float]) -> Freeze | None:
-    """The frozen state a section ends on: its last mounted step with every listed cue fired."""
-    seq = mounts(steps, beats)
+def last_state(slides: Slides, cue_times: dict[str, float]) -> Freeze | None:
+    """The frozen state a section ends on: its last mounted slide with every listed cue fired."""
+    seq = mounts(slides, cue_times)
     if not seq:
         return None
     sid = seq[-1][0]
-    fired = _fired(steps, beats, sid, math.inf, inclusive=True)
+    fired = _fired(slides, cue_times, sid, math.inf, inclusive=True)
     return Freeze(sid, cue=fired[-1]) if fired else Freeze(sid)
 
 
-def first_state(steps: Steps, beats: dict[str, float], fps: int) -> Freeze | None:
-    """The frozen state a section opens on: its first step with the cues of its first frame fired."""
-    seq = mounts(steps, beats)
+def first_state(slides: Slides, cue_times: dict[str, float], fps: int) -> Freeze | None:
+    """The frozen state a section opens on: its first slide with the cues of its first frame fired."""
+    seq = mounts(slides, cue_times)
     if not seq:
         return None
     sid = seq[0][0]
-    fired = _fired(steps, beats, sid, 1.0 / fps, inclusive=False)
+    fired = _fired(slides, cue_times, sid, 1.0 / fps, inclusive=False)
     if fired:
         return Freeze(sid, cue=fired[-1])
-    return Freeze(sid, before=steps[sid][0]) if steps[sid] else Freeze(sid)
+    return Freeze(sid, before=slides[sid][0]) if slides[sid] else Freeze(sid)
 
 
 # ---- results ------------------------------------------------------------------------------
@@ -239,7 +255,7 @@ def cue_verdict(share: float, cfg: VerifyConfig) -> str:
 class CueEstimate:
     check: str  # SECTION:CUE
     cue_seconds: float
-    step: str | None
+    slide: str | None
     changed_percent: float | None
     verdict: str
     reason: str | None = None
@@ -254,7 +270,7 @@ class CueEstimate:
             "section": int(section),
             "cue": cue,
             "cue_seconds": round(self.cue_seconds, 3),
-            "step": self.step,
+            "slide": self.slide,
             "changed_percent": None if self.changed_percent is None else round(self.changed_percent, 2),
             "verdict": self.verdict,
             "reason": self.reason,
@@ -266,7 +282,7 @@ class CueEstimate:
 
 
 @dataclass
-class CarryEstimate:
+class SeamEstimate:
     key: str
     changed_percent: float | None
     verdict: str
@@ -293,10 +309,10 @@ class PreflightResult:
     narration: NarrationConfig
     takes: list[TakePlan]
     note: str | None
-    beats: BeatsResult
+    align: AlignResult
     estimated: list[str]  # Section keys whose cue times come from estimated words.
     cues: list[CueEstimate] = field(default_factory=list)
-    carries: list[CarryEstimate] = field(default_factory=list)
+    seams: list[SeamEstimate] = field(default_factory=list)
     frames: Path | None = None  # build/preflight, or None when no frame was rendered.
     root: Path | None = None  # The project root, which the table prints paths against.
 
@@ -308,33 +324,33 @@ class PreflightResult:
     def short(self) -> int:
         return sum(
             1
-            for s in self.beats.sections
+            for s in self.align.sections
             if not s.skipped and s.min_seconds is not None and s.speech_end < s.min_seconds
         )
 
-    def findings(self, *, allow_unknown: bool = False) -> Findings:
-        """Certain: a placeholder a voiced run refuses, UNRESOLVED, UNKNOWN, NO CHANGE, POP AT CUT.
+    def findings(self, *, allow_unknown_cues: bool = False) -> Findings:
+        """Certain: a placeholder a voiced run refuses, UNRESOLVED, UNKNOWN CUE, NO CHANGE, POP AT CUT.
 
         Uncertain: speech shorter than min_seconds, and THIN CHANGE?.
         """
         own = Findings(
-            certain=len(self.placeholders) + self.beats.unresolved + (0 if allow_unknown else self.beats.unknown),
+            certain=len(self.placeholders) + self.align.unresolved + (0 if allow_unknown_cues else self.align.unknown),
             uncertain=self.short,
         )
-        return own + count(c.verdict for c in self.cues) + count(k.verdict for k in self.carries)
+        return own + count(c.verdict for c in self.cues) + count(k.verdict for k in self.seams)
 
     def to_dict(self, root: Path) -> dict[str, Any]:
-        beats = self.beats.to_dict(root)
-        beats.pop("beats_file", None)
+        cue_times = self.align.to_dict(root)
+        cue_times.pop("cue_times_file", None)
         return {
             "voice": self.voice,
             "note": self.note,
             "placeholders": self.placeholders,
             "takes": [p.to_dict(self.narration) for p in self.takes],
             "totals": plan_totals(self.takes, self.narration),
-            "beats": {**beats, "estimated_sections": self.estimated},
+            "cue_times": {**cue_times, "estimated_sections": self.estimated},
             "cues": [c.to_dict(root) for c in self.cues],
-            "carries": [k.to_dict(root) for k in self.carries],
+            "seams": [k.to_dict(root) for k in self.seams],
             "frames": _rel(self.frames, root),
         }
 
@@ -347,8 +363,8 @@ def planned_words(project: Project, plan: TakePlan) -> tuple[list[Word], float, 
     seg = plan.segment
     key = seg.key
     lead = project.lead_seconds(key)
-    manifest = project.manifest()
-    entry = manifest.segments.get(key) if manifest is not None and not manifest.estimated else None
+    takes = project.takes()
+    entry = takes.sections.get(key) if takes is not None and not takes.estimated else None
     if plan.status == CACHED and entry is not None:
         return project.section_words(key, entry.words_file), entry.duration_seconds + lead, False
     if plan.status == MOVED and plan.source is not None:
@@ -369,7 +385,7 @@ def preflight(
     frames: bool = True,
     model: str | None = None,
 ) -> PreflightResult:
-    """Plan the takes, resolve the cues, and estimate every reveal and carried cut from frozen renders.
+    """Plan the takes, resolve the cues, and estimate every reveal and seam from frozen renders.
 
     `only` keeps these section numbers. With `frames` off, no browser starts and no file is written.
     Otherwise the frozen frames go to build/preflight, which is emptied first. Nothing else is written.
@@ -381,52 +397,56 @@ def preflight(
     def named(number: int) -> bool:
         return not only or number in wanted
 
-    # A carried cut compares the previous section's last picture with this section's first, so a
+    # A seam compares the previous section's last picture with this section's first, so a
     # previous section that `only` leaves out still gets its take and cues resolved. It is not reported.
     behind = {
         prev.number
         for prev, sec in zip(project.sections, project.sections[1:], strict=False)
-        if only and sec.carries_previous and sec.number in wanted and prev.number not in wanted
+        if only and sec.seamless and sec.number in wanted and prev.number not in wanted
     }
     model = model or project.voice.model or cfg.model
     plans, note = narration_plan(project, [s for s in spoken if named(s.index) or s.index in behind], model=model)
-    takes: dict[str, tuple[list[Word], float]] = {}
+    take_words: dict[str, tuple[list[Word], float]] = {}
     estimated: list[str] = []
     for plan in plans:
         words, length, guessed = planned_words(project, plan)
-        takes[plan.segment.key] = (words, length)
+        take_words[plan.segment.key] = (words, length)
         if guessed and named(plan.segment.index):
             estimated.append(plan.segment.key)
     all_specs = load_cues(project)
     specs = [s for s in all_specs if named(s.number)]
     unknown_ids = unknown_cue_ids(project, specs)
-    beats, _anchors, rows, unresolved = resolve_sections(specs, takes, unknown_ids=unknown_ids, estimated=True)
+    cue_times, _anchors, rows, unresolved = resolve_sections(specs, take_words, unknown_ids=unknown_ids, estimated=True)
     result = PreflightResult(
         voice={"provider": project.voice.provider, "model": model, "settings": project.voice.api_settings()},
         narration=cfg,
         takes=[plan for plan in plans if named(plan.segment.index)],
         note=note,
-        beats=BeatsResult(
-            beats=beats, sections=rows, unresolved=unresolved, estimated=bool(estimated), unknown=len(unknown_ids)
+        align=AlignResult(
+            cue_times=cue_times,
+            sections=rows,
+            unresolved=unresolved,
+            estimated=bool(estimated),
+            unknown=len(unknown_ids),
         ),
         estimated=estimated,
         root=project.root,
     )
     if frames:
-        carried = beats
+        carried = cue_times
         extra = [s for s in all_specs if s.number in behind]
         if extra:
             extra_ids = unknown_cue_ids(project, extra)
-            behind_beats, _a, _r, _u = resolve_sections(extra, takes, unknown_ids=extra_ids, estimated=True)
-            carried = Beats({**behind_beats.sections, **beats.sections})
-        result.cues, result.carries = frame_estimates(project, carried, only=only)
+            behind_cue_times, _a, _r, _u = resolve_sections(extra, take_words, unknown_ids=extra_ids, estimated=True)
+            carried = CueTimes({**behind_cue_times.sections, **cue_times.sections})
+        result.cues, result.seams = frame_estimates(project, carried, only=only)
         result.frames = project.build / "preflight"
     return result
 
 
 def freeze_url(project: Project, section: PageSection, freeze: Freeze) -> str:
     """The page URL of a frozen state, with the section's own params and the words the recorder would pass."""
-    params = {k: v for k, v in section.params.items() if k not in ("beats", "t0", "step", "cue", "before")}
+    params = {k: v for k, v in section.params.items() if k not in ("cues", "t0", "slide", "after", "before")}
     words = words_query(project, section)
     if words and "words" not in params:
         params["words"] = words
@@ -437,9 +457,9 @@ def freeze_url(project: Project, section: PageSection, freeze: Freeze) -> str:
 
 
 def frame_estimates(
-    project: Project, beats: Beats, *, only: list[int] | None = None
-) -> tuple[list[CueEstimate], list[CarryEstimate]]:
-    """Render the frozen frames into build/preflight and compare them for every cue and every carried cut."""
+    project: Project, cue_times: CueTimes, *, only: list[int] | None = None
+) -> tuple[list[CueEstimate], list[SeamEstimate]]:
+    """Render the frozen frames into build/preflight and compare them for every cue and every seam."""
     vcfg = project.settings.verify
     video = project.settings.video
     out_dir = project.build / "preflight"
@@ -449,15 +469,15 @@ def frame_estimates(
     size = {"level": vcfg.diff_level, "width": vcfg.probe_width, "height": vcfg.probe_height}
     wanted = [s for s in project.sections if not only or s.number in set(only)]
     cues: list[CueEstimate] = []
-    carries: list[CarryEstimate] = []
+    seams: list[SeamEstimate] = []
     with chromium() as browser:
         page = browser.new_page(viewport={"width": video.width, "height": video.height})
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(page_error_text(e)))
         catalogs: dict[str, list[dict[str, Any]] | None] = {}
-        shots: dict[str, Path] = {}
+        frames: dict[str, Path] = {}
 
-        def scene_steps(sec: PageSection) -> tuple[Steps | None, str | None, str]:
+        def scene_slides(sec: PageSection) -> tuple[Slides | None, str | None, str]:
             if sec.page not in catalogs:
                 html = project.path(sec.page)
                 if not html.exists():
@@ -466,73 +486,68 @@ def frame_estimates(
                     page.goto(html.resolve().as_uri())
                     await_ready(page)
                     catalogs[sec.page] = page.evaluate("() => (window.__decktalk && window.__decktalk.catalog) || null")
-            catalog = catalogs[sec.page]
-            if not catalog:
-                return None, NO_CATALOG, f"{sec.page} is missing or has no runtime catalog"
-            scene = next((c for c in catalog if str(c.get("scene")) == sec.scene), None)
-            if scene is None:
-                return None, NO_CATALOG, f"{sec.page} registers no scene {sec.scene}"
-            if not isinstance(scene.get("cues"), dict):
-                return None, RUNTIME_OUTDATED, f"{sec.page} has an older decktalk-runtime.js. Run `decktalk runtime`."
-            return {sid: [str(c) for c in scene["cues"].get(sid, [])] for sid in scene["steps"]}, None, ""
+            slides, why = slide_cues(catalogs[sec.page], sec.scene)
+            if slides is None:
+                return None, NO_CATALOG, f"{sec.page} {why}"
+            return slides, None, ""
 
-        def shoot(sec: PageSection, freeze: Freeze) -> Path:
+        def render_frozen(sec: PageSection, freeze: Freeze) -> Path:
             url = freeze_url(project, sec, freeze)
-            if url not in shots:
+            if url not in frames:
                 target = out_dir / sec.key / f"{freeze.label}.png"
-                screenshot(page, url, target, settle_ms=project.settings.record.shot_settle_ms)
-                shots[url] = target
-            return shots[url]
+                screenshot(page, url, target, settle_ms=project.settings.record.screenshot_settle_ms)
+                frames[url] = target
+            return frames[url]
 
         for sec in wanted:
-            if not isinstance(sec, PageSection) or not beats.sections.get(sec.key):
+            if not isinstance(sec, PageSection) or not cue_times.sections.get(sec.key):
                 continue
-            section_beats = beats.sections[sec.key]
-            steps, reason, detail = scene_steps(sec)
-            if steps is None:
-                for cue, t in sorted(section_beats.items(), key=lambda item: item[1]):
+            section_cue_times = cue_times.sections[sec.key]
+            slides, reason, detail = scene_slides(sec)
+            if slides is None:
+                for cue, t in sorted(section_cue_times.items(), key=lambda item: item[1]):
                     cues.append(CueEstimate(f"{sec.number}:{cue}", t, None, None, SKIPPED, reason, detail))
                 continue
-            for pair in plan_frames(steps, section_beats, video.fps):
+            for pair in plan_frames(slides, section_cue_times, video.fps):
                 check = f"{sec.number}:{pair.cue}"
                 if (sec.key, pair.cue) in skip:
                     detail = 'cues.json sets "verify": false'
-                    cues.append(CueEstimate(check, pair.seconds, pair.step, None, SKIPPED, OPTED_OUT, detail))
+                    cues.append(CueEstimate(check, pair.seconds, pair.slide, None, SKIPPED, OPTED_OUT, detail))
                     continue
                 if pair.reason is not None or pair.before is None or pair.after is None:
-                    cues.append(CueEstimate(check, pair.seconds, pair.step, None, SKIPPED, pair.reason, pair.detail))
+                    cues.append(CueEstimate(check, pair.seconds, pair.slide, None, SKIPPED, pair.reason, pair.detail))
                     continue
-                a, b = shoot(sec, pair.before), shoot(sec, pair.after)
+                a, b = render_frozen(sec, pair.before), render_frozen(sec, pair.after)
                 share = ffmpeg.changed_images_percent(a, b, **size)
                 verdict = cue_verdict(share, vcfg)
                 cues.append(
-                    CueEstimate(check, pair.seconds, pair.step, share, verdict, note=pair.note, before=a, after=b)
+                    CueEstimate(check, pair.seconds, pair.slide, share, verdict, note=pair.note, before=a, after=b)
                 )
 
         for prev, sec in zip(project.sections, project.sections[1:], strict=False):
-            if not sec.carries_previous or sec not in wanted:
+            if not sec.seamless or sec not in wanted:
                 continue
             if not isinstance(sec, PageSection) or not isinstance(prev, PageSection):
-                detail = "a clip has no frozen frame. `decktalk verify` checks this cut after assemble"
-                carries.append(CarryEstimate(sec.key, None, SKIPPED, CLIP, detail))
+                detail = "a clip has no frozen frame. `decktalk verify` checks this seam after assemble"
+                seams.append(SeamEstimate(sec.key, None, SKIPPED, CLIP, detail))
                 continue
-            prev_steps, _r1, _d1 = scene_steps(prev)
-            steps, _r2, _d2 = scene_steps(sec)
-            last = last_state(prev_steps, beats.sections.get(prev.key, {})) if prev_steps else None
-            first = first_state(steps, beats.sections.get(sec.key, {}), video.fps) if steps else None
+            prev_slides, _r1, _d1 = scene_slides(prev)
+            slides, _r2, _d2 = scene_slides(sec)
+            last = last_state(prev_slides, cue_times.sections.get(prev.key, {})) if prev_slides else None
+            first = first_state(slides, cue_times.sections.get(sec.key, {}), video.fps) if slides else None
             if last is None or first is None:
                 detail = "a side of the cut has no resolved cue, or its page has no catalog"
-                carries.append(CarryEstimate(sec.key, None, SKIPPED, NO_CUES, detail))
+                seams.append(SeamEstimate(sec.key, None, SKIPPED, NO_CUES, detail))
                 continue
-            a, b = shoot(prev, last), shoot(sec, first)
+            a, b = render_frozen(prev, last), render_frozen(sec, first)
             share = ffmpeg.changed_images_percent(a, b, **size)
             verdict = OK if share <= vcfg.max_pop_percent else POP_AT_CUT
-            carries.append(CarryEstimate(sec.key, share, verdict, last=a, first=b))
+            seams.append(SeamEstimate(sec.key, share, verdict, last=a, first=b))
         for e in sorted(set(errors)):
             log.warning("[page] preflight  page error: %s", e)
     log.info(
         "[pre ] %d frozen frame(s) in %s",
-        len(shots),
+        len(frames),
         out_dir.relative_to(project.root) if out_dir.is_relative_to(project.root) else out_dir,
     )
-    return cues, carries
+    return cues, seams

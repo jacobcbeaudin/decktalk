@@ -3,7 +3,7 @@
 Each "## N." section is one cut of the video. Bracketed directions are not spoken: `[beat]`
 is a short pause, `[pause 4]` is a four second pause, and anything else in brackets is a
 note to yourself. Write numbers and symbols the way you want them said ("forty one", not
-"41"), because the cue phrases in `cues.json` match spoken words, and a `data-sync` line on a
+"41"), because the cue phrases in `cues.json` match spoken words, and a `data-text="spoken"` line on a
 slide must be word for word what the voice says. To open with a clip of your own, follow the
 comment block in `decktalk.toml` and add a `## 0. On camera` heading above section 1.
 

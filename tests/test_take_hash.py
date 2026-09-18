@@ -2,7 +2,7 @@
 
 Every ElevenLabs take is paid for once and cached by the digest that `text_hash` computes from the
 provider identity (name, voice id, model, output format), the voice settings and the exact text sent
-to the voice. The digests here are copied from `lay-demo/v11-voiced/build/audio/manifest.json`, with
+to the voice. The digests here are copied from `lay-demo/v11-voiced/build/narration/takes.json`, with
 each section's script markdown and the text `parse_script` makes of it. If any of them changes, the
 next `narrate` run pays to re-voice that section, so this test must never be updated without the
 founder re-voicing the film. It needs no audio, no network and no API key, and runs in milliseconds.
@@ -73,7 +73,7 @@ def test_script_syntax_yields_the_voiced_text(section: dict[str, str]) -> None:
 
 @pytest.mark.parametrize("section", SECTIONS, ids=IDS)
 def test_take_hash_matches_the_paid_take(section: dict[str, str]) -> None:
-    """The digest of the voiced text under the film's voice settings is the one in its manifest."""
+    """The digest of the voiced text under the film's voice settings is the one in its take index."""
     segment = Segment(index=int(section["key"]), title=section["title"], slug="x", text=section["text"])
     settings = Voice(**GOLDEN["voice"]).api_settings()
     assert text_hash(segment, NarrationConfig(), provider_key(), settings) == section["hash"]

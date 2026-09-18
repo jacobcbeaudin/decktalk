@@ -4,7 +4,7 @@
       decktalk.toml      the document (below) plus optional tuning tables (config.py)
       script.md          narration; "## N. Title" sections, [bracketed directions] unspoken
       cues.json          which spoken phrase each visual lands on
-      deck/index.html    HTML scenes; decktalk-runtime.js gives them the ?beats= contract
+      deck/index.html    HTML scenes; decktalk-runtime.js gives them the ?cues= contract
       media/             your clips, b-roll, slate, markers.json
       .env               ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID (never committed)
       build/             everything generated (git-ignored)
@@ -13,9 +13,9 @@ decktalk.toml, the document:
 
     [project]                name, script, cues, build
     [voice]                  ElevenLabs voice settings for this presentation
-    [[section]]              number, title, then either page+scene or clip
+    [[section]]              number, chapter, then either page+scene or clip
     [transition]             dips, dip_seconds, page_fades_in
-    [mix]                    underscore, ambience, markers, sfx, levels, loudnorm
+    [mix]                    music, ambience, music_markers, sfx, levels, loudness
     [soundscape]             prompts for `decktalk soundscape`
 
 Every path is relative to the project directory. Validation happens here, so a bad
@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .artifacts import Beats, Manifest, Timeline, Word, read_words
+from .artifacts import CueTimes, Takes, Timeline, Word, read_words
 from .config import (
     PROJECT_FILE,
     Settings,
@@ -56,16 +56,16 @@ class ClipSection:
     A missing clip plays a titled slate for `slate_seconds`. With `strict` that is an error,
     unless the section is `optional`, as the scaffold's B-roll slot is. `words` names a words
     file of the speech inside the clip, in seconds after the clip starts, which the captions add.
-    `carries_previous` says the clip continues the previous section's picture, which verify checks.
+    `seamless` says the clip continues the previous section's picture, which verify checks.
     """
 
     number: int
     clip: str
-    title: str = ""
+    chapter: str = ""
     slate_seconds: float = 5.0
     optional: bool = False
     words: str | None = None
-    carries_previous: bool = False
+    seamless: bool = False
 
     @property
     def key(self) -> str:
@@ -80,7 +80,7 @@ class ClipSection:
 class PageSection:
     """A section recorded from an HTML page, cut to the narration.
 
-    `carries_previous` says the page opens on the previous section's last picture, so the cut
+    `seamless` says the page opens on the previous section's last picture, so the cut
     into it should not show. verify compares the two frames.
 
     `lead_seconds` is silence in the narration before the section's first word. It is added when
@@ -92,12 +92,12 @@ class PageSection:
     number: int
     page: str
     scene: str
-    title: str = ""
-    extra_seconds: float = 0.3
+    chapter: str = ""
+    record_margin_seconds: float = 0.3
     hold_seconds: float = 0.0
     ambience: bool = False
     params: dict[str, str] = field(default_factory=dict)
-    carries_previous: bool = False
+    seamless: bool = False
     lead_seconds: float = 0.0
     tail_seconds: float | None = None  # None uses [narration] min_tail_seconds.
 
@@ -143,10 +143,10 @@ class Transition:
 
 
 @dataclass(frozen=True)
-class Loudnorm:
-    i: float = -16.0
-    tp: float = -1.5
-    lra: float = 11.0
+class Loudness:
+    target_lufs: float = -16.0
+    true_peak_db: float = -1.5
+    range_lu: float = 11.0
 
 
 @dataclass(frozen=True)
@@ -160,17 +160,17 @@ class Sfx:
 
 @dataclass(frozen=True)
 class Mix:
-    underscore: str | None = None
-    underscore_db: float = -24.0
-    underscore_duck_db: float = -6.0
-    underscore_fade_in: float = 2.0
-    underscore_fade_out: float = 3.0
-    markers: str | None = None
+    music: str | None = None
+    music_db: float = -24.0
+    music_duck_db: float = -6.0
+    music_fade_in_seconds: float = 2.0
+    music_fade_out_seconds: float = 3.0
+    music_markers: str | None = None
     ambience: str | None = None
     ambience_db: float = -20.0
     slate: str | None = None
     sfx: tuple[Sfx, ...] = ()
-    loudnorm: Loudnorm = Loudnorm()
+    loudness: Loudness = Loudness()
 
 
 @dataclass(frozen=True)
@@ -258,20 +258,20 @@ class _Table:
 
 
 VOICE_KEYS = frozenset({"provider", "model", "stability", "similarity_boost", "style", "speaker_boost", "speed"})
-CLIP_KEYS = frozenset({"number", "title", "clip", "slate_seconds", "optional", "words", "carries_previous"})
+CLIP_KEYS = frozenset({"number", "chapter", "clip", "slate_seconds", "optional", "words", "seamless"})
 PAGE_KEYS = frozenset(
     {
         "number",
-        "title",
+        "chapter",
         "page",
         "scene",
-        "extra_seconds",
+        "record_margin_seconds",
         "hold_seconds",
         "lead_seconds",
         "tail_seconds",
         "ambience",
         "params",
-        "carries_previous",
+        "seamless",
     }
 )
 SOUND_KEYS = frozenset({"text", "out", "duration_seconds", "prompt_influence", "model_id"})
@@ -292,7 +292,7 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
     number = t.get_int("number", required=True)
     where = f"{PROJECT_FILE}: [[section]] number={number}"
     t.where = where
-    title = t.get_str("title", "")
+    chapter = t.get_str("chapter", "")
     if "clip" in raw and "page" in raw:
         raise ConfigError(f"{where}: give either 'clip' or 'page', not both")
     if "clip" in raw:
@@ -300,11 +300,11 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
         return ClipSection(
             number=number,
             clip=t.get_str("clip"),
-            title=title,
+            chapter=chapter,
             slate_seconds=t.get_num("slate_seconds", 5.0),
             optional=t.get_bool("optional"),
             words=t.get_str("words"),
-            carries_previous=t.get_bool("carries_previous"),
+            seamless=t.get_bool("seamless"),
         )
     if "page" not in raw:
         raise ConfigError(f"{where}: needs 'page' (an HTML file) or 'clip' (a video file)")
@@ -313,7 +313,7 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
     scene = raw.get("scene", number)
     if isinstance(scene, bool) or not isinstance(scene, (int, str)):
         raise ConfigError(f"{where}: 'scene' must be a number or a string")
-    for key in ("extra_seconds", "hold_seconds", "lead_seconds", "tail_seconds"):
+    for key in ("record_margin_seconds", "hold_seconds", "lead_seconds", "tail_seconds"):
         value = t.get_num(key)
         if value is not None and value < 0:
             raise ConfigError(f"{where}: '{key}' must be 0 or more, got {value:g}")
@@ -321,12 +321,12 @@ def _parse_section(raw: dict[str, Any], index: int) -> Section:
         number=number,
         page=t.get_str("page"),
         scene=str(scene),
-        title=title,
-        extra_seconds=t.get_num("extra_seconds", 0.3),
+        chapter=chapter,
+        record_margin_seconds=t.get_num("record_margin_seconds", 0.3),
         hold_seconds=t.get_num("hold_seconds", 0.0),
         ambience=t.get_bool("ambience"),
         params={str(k): str(v) for k, v in params_raw.items()},
-        carries_previous=t.get_bool("carries_previous"),
+        seamless=t.get_bool("seamless"),
         lead_seconds=t.get_num("lead_seconds", 0.0),
         tail_seconds=t.get_num("tail_seconds"),
     )
@@ -342,9 +342,9 @@ def _parse_sections(doc: dict[str, Any]) -> list[Section]:
     if dupes:
         raise ConfigError(f"{PROJECT_FILE}: duplicate section number(s) {dupes}")
     sections.sort(key=lambda s: s.number)
-    if sections[0].carries_previous:
+    if sections[0].seamless:
         raise ConfigError(
-            f"{PROJECT_FILE}: [[section]] number={sections[0].number}: carries_previous is set on the first section, "
+            f"{PROJECT_FILE}: [[section]] number={sections[0].number}: seamless is set on the first section, "
             "which has no previous section"
         )
     return sections
@@ -397,9 +397,9 @@ def _parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
         return Mix()
     t = _Table(raw, f"{PROJECT_FILE}: [mix]")
     t.warn_unknown(Mix.__dataclass_fields__)
-    ln_raw = t.get_table("loudnorm") or {}
-    ln = _Table(ln_raw, f"{PROJECT_FILE}: [mix.loudnorm]")
-    ln.warn_unknown({"I", "TP", "LRA", "i", "tp", "lra"})
+    ln_raw = t.get_table("loudness") or {}
+    ln = _Table(ln_raw, f"{PROJECT_FILE}: [mix.loudness]")
+    ln.warn_unknown({"target_lufs", "true_peak_db", "range_lu"})
     sfx: list[Sfx] = []
     for i, item in enumerate(t.get_tables("sfx")):
         s = _Table(item, f"{PROJECT_FILE}: [[mix.sfx]] #{i + 1}")
@@ -417,20 +417,20 @@ def _parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
             )
         )
     return Mix(
-        underscore=t.get_str("underscore"),
-        underscore_db=t.get_num("underscore_db", -24.0),
-        underscore_duck_db=t.get_num("underscore_duck_db", -6.0),
-        underscore_fade_in=t.get_num("underscore_fade_in", 2.0),
-        underscore_fade_out=t.get_num("underscore_fade_out", 3.0),
-        markers=t.get_str("markers"),
+        music=t.get_str("music"),
+        music_db=t.get_num("music_db", -24.0),
+        music_duck_db=t.get_num("music_duck_db", -6.0),
+        music_fade_in_seconds=t.get_num("music_fade_in_seconds", 2.0),
+        music_fade_out_seconds=t.get_num("music_fade_out_seconds", 3.0),
+        music_markers=t.get_str("music_markers"),
         ambience=t.get_str("ambience"),
         ambience_db=t.get_num("ambience_db", -20.0),
         slate=t.get_str("slate"),
         sfx=tuple(sfx),
-        loudnorm=Loudnorm(
-            i=ln.get_num("I", ln.get_num("i", -16.0)),
-            tp=ln.get_num("TP", ln.get_num("tp", -1.5)),
-            lra=ln.get_num("LRA", ln.get_num("lra", 11.0)),
+        loudness=Loudness(
+            target_lufs=ln.get_num("target_lufs", -16.0),
+            true_peak_db=ln.get_num("true_peak_db", -1.5),
+            range_lu=ln.get_num("range_lu", 11.0),
         ),
     )
 
@@ -568,32 +568,40 @@ class Project:
         return p if p.is_absolute() else self.root / p
 
     @property
-    def audio_dir(self) -> Path:
-        return self.build / "audio"
+    def narration_dir(self) -> Path:
+        return self.build / "narration"
 
     @property
-    def rec_dir(self) -> Path:
-        return self.build / "rec"
+    def recordings_dir(self) -> Path:
+        return self.build / "recordings"
 
     @property
     def out_dir(self) -> Path:
         return self.build / "out"
 
     @property
-    def shots_dir(self) -> Path:
-        return self.build / "shots"
+    def sections_dir(self) -> Path:
+        return self.build / "sections"
 
     @property
-    def manifest_path(self) -> Path:
-        return self.audio_dir / "manifest.json"
+    def screenshots_dir(self) -> Path:
+        return self.build / "screenshots"
+
+    @property
+    def takes_path(self) -> Path:
+        return self.narration_dir / "takes.json"
 
     @property
     def timeline_path(self) -> Path:
-        return self.audio_dir / "timeline.json"
+        return self.narration_dir / "timeline.json"
 
     @property
-    def beats_path(self) -> Path:
-        return self.audio_dir / "beats.json"
+    def cue_times_path(self) -> Path:
+        return self.build / "cue-times.json"
+
+    @property
+    def cue_times_anchors_path(self) -> Path:
+        return self.build / "cue-times.anchors.json"
 
     @property
     def final(self) -> Path:
@@ -604,21 +612,24 @@ class Project:
         return self.root / ".env"
 
     def recording(self, section: Section) -> Path:
-        return self.rec_dir / f"{section.key}-scene.webm"
+        return self.recordings_dir / f"{section.key}.webm"
+
+    def recording_log(self, section: Section) -> Path:
+        return self.recordings_dir / f"{section.key}.json"
 
     def section_video(self, section: Section) -> Path:
-        return self.out_dir / f"{section.key}-section.mp4"
+        return self.sections_dir / f"{section.key}.mp4"
 
     def stray_section_videos(self) -> list[Path]:
-        """Files in build/out named like a section video whose section is not in decktalk.toml.
+        """Files in build/sections named like a section video whose section is not in decktalk.toml.
 
         A build before sections were renumbered or removed leaves such files behind.
         """
-        if not self.out_dir.is_dir():
+        if not self.sections_dir.is_dir():
             return []
         listed = {self.section_video(s).name for s in self.sections}
         return sorted(
-            f for f in self.out_dir.iterdir() if re.fullmatch(r"\d+-section\.mp4", f.name) and f.name not in listed
+            f for f in self.sections_dir.iterdir() if re.fullmatch(r"\d+\.mp4", f.name) and f.name not in listed
         )
 
     # ---- secrets ---------------------------------------------------------------------
@@ -656,7 +667,7 @@ class Project:
     def section_words(self, key: str, words_file: str) -> list[Word]:
         """A take's words in seconds after its section starts, which is after the section's lead_seconds."""
         lead = self.lead_seconds(key)
-        words = read_words(self.audio_dir / words_file)
+        words = read_words(self.narration_dir / words_file)
         if not lead:
             return words
         return [Word(w.word, round(w.start + lead, 3), round(w.end + lead, 3)) for w in words]
@@ -674,11 +685,11 @@ class Project:
         return seen
 
     # ---- artifacts -------------------------------------------------------------------
-    def manifest(self) -> Manifest | None:
-        return Manifest.load(self.manifest_path)
+    def takes(self) -> Takes | None:
+        return Takes.load(self.takes_path)
 
     def timeline(self) -> Timeline | None:
         return Timeline.load(self.timeline_path)
 
-    def beats(self) -> Beats:
-        return Beats.load(self.beats_path)
+    def cue_times(self) -> CueTimes:
+        return CueTimes.load(self.cue_times_path)

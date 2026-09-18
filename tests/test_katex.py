@@ -56,7 +56,7 @@ def test_katex_missing_names_each_absent_file(tmp_path, monkeypatch):
     assert katex_missing(copy) == ["LICENSE", "fonts/KaTeX_Main-Regular.woff2"]
     monkeypatch.setattr(scaffold, "katex_dir", lambda: copy)
     row = {r.name: r for r in scaffold.doctor()}["katex"]
-    assert row.ok is False and row.required is True
+    assert row.ok is False
     assert row.detail.endswith("lacks LICENSE, fonts/KaTeX_Main-Regular.woff2  -> reinstall decktalk")
     assert isinstance(row.detail, str) and str(copy) in row.detail
 

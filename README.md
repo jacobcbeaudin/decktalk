@@ -46,12 +46,12 @@ You need Python 3.12 or later. These commands use `uv`, a Python package manager
 
 ```console
 uv tool install decktalk
-decktalk setup
+decktalk install
 decktalk init my-lesson && cd my-lesson
-decktalk build --silent
+decktalk build --no-voice
 ```
 
-`decktalk setup` downloads Chromium, ffmpeg, and KaTeX one time per machine, and on Linux it asks for sudo. `decktalk init` writes the scaffold, a complete example project. The silent build needs no account, ends with `built`, and prints the path of `build/out/my-lesson.mp4`. Recording runs in real time, so the build takes a few minutes.
+`decktalk install` downloads Chromium and ffmpeg one time per machine, and on Linux it asks for sudo. `decktalk init` writes the scaffold, a complete example project. The build without voice needs no account, ends with `built`, and prints the path of `build/out/my-lesson.mp4`. Recording runs in real time, so the build takes a few minutes.
 
 To hear it in your own voice, copy `.env.example` to `.env`, set your ElevenLabs API key and voice id, and run `decktalk build`. DeckTalk never prints the key. A voiced build of the scaffold spends about 2,800 characters of voice for a video of just over four minutes, and it writes the mp4, SRT and VTT captions, and one chapter per section. [What spends credits](https://docs.decktalk.ai/requirements#what-spends-credits) lists the cost of every command.
 
@@ -63,7 +63,7 @@ The [quickstart](https://docs.decktalk.ai/quickstart) shows the output of each s
   <source media="(prefers-color-scheme: dark) and (max-width: 640px)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-dark-stacked.svg">
   <source media="(max-width: 640px)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-light-stacked.svg">
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-dark.svg">
-  <img alt="Four panels. Write shows a markdown script. Narrate runs narrate and beats, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-light.svg" width="100%">
+  <img alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-light.svg" width="100%">
 </picture>
 
 You write four files. One cue id per reveal, such as `1.1bowl`, ties the script, the cues, and the page together.
@@ -86,9 +86,9 @@ The `narrate` stage writes a words file with the start and end of every spoken w
 
 A browser does not start recording at a known time, so DeckTalk does not use a timer. The recorder covers the page in magenta until the narration starts. The first frame without magenta is narration t=0, on Linux, macOS, and Windows.
 
-`decktalk verify` then measures every reveal in the finished video. This sample comes from a silent build of the scaffold, and one frame lasts 40 ms.
+`decktalk verify` then measures every reveal in the finished video. This sample comes from a build without voice of the scaffold, and one frame lasts 40 ms.
 
-<!-- sample: decktalk verify 1:1.1bowl 3:3.4name 8:7.1checked, silent build of the scaffold (cue table only) -->
+<!-- sample: decktalk verify 1:1.1bowl 3:3.4name 8:7.1checked, build without voice of the scaffold (cue table only) -->
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
 1:1.1bowl            1.25     1.25    0.93    0.00    +30ms   +31ms  changed
@@ -100,8 +100,8 @@ The offset column is the time from the cue time to the onset of the reveal, in m
 
 ## Requirements and costs
 
-- **Software.** DeckTalk needs Python 3.12 or later, on Linux, macOS, or Windows. `decktalk setup` downloads the rest.
-- **Accounts.** A silent build needs no account. A voiced build needs an ElevenLabs API key and a voice id.
+- **Software.** DeckTalk needs Python 3.12 or later, on Linux, macOS, or Windows. `decktalk install` downloads the rest.
+- **Accounts.** A build without voice needs no account. A voiced build needs an ElevenLabs API key and a voice id.
 - **Cost.** Every ElevenLabs plan can call the API. The free plan has limits for a video you publish.
 
 [Requirements and costs](https://docs.decktalk.ai/requirements) lists every download and every command that spends credits.
@@ -118,10 +118,10 @@ The offset column is the time from the cue time to the onset of the reveal, in m
 
 The [FAQ](https://docs.decktalk.ai/help/faq#how-is-this-different-from-the-other-tools) has the full comparison. Every build also gives you these parts:
 
-- **A free silent build.** Every stage runs with no key, and a click marks each word.
+- **A free build without voice.** Every stage runs with no key, and a click marks each word.
 - **Cached narration.** DeckTalk voices a section again only when it changes.
 - **Captions and chapters.** Every build writes SRT, VTT, and chapters.
-- **A soundscape.** Add [an underscore, an ambience bed, and sound effects](https://docs.decktalk.ai/concepts/sound).
+- **A soundscape.** Add [music, an ambience bed, and sound effects](https://docs.decktalk.ai/concepts/sound).
 - **Loudness.** DeckTalk normalizes the mix to -16 LUFS.
 - **Checked output.** `check` and `verify` catch bad recordings and late reveals.
 

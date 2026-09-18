@@ -82,7 +82,7 @@ anyway. `decktalk narrate --dry-run` lists every placeholder.
 
 | Where | Key in `[narration]` | Default |
 |---|---|---|
-| Before the first spoken section | `lead_break_seconds` | 0.7 |
+| Before the first spoken section | `opening_silence_seconds` | 0.7 |
 | After each section's last word, at least | `min_tail_seconds` | 0.7 (the scaffold sets 1.3) |
 | Extra padding when the tail is too short | `tail_slack_seconds` | 0.05 |
 
@@ -121,21 +121,21 @@ matching and captions use the spoken words, so write each cue phrase with plain 
 
 ## Length
 
-The narrate table and a silent build estimate each section's length with these formulas.
+The narrate table and a build without voice estimate each section's length with these formulas.
 
 ```text
 est column            = words / words_per_minute * 60
 silent section length = words / silent_words_per_minute * 60
                       + timed pause seconds
-                      + beats * direction_break_seconds
-                      + lead_break_seconds      (first spoken section only)
+                      + beat_directions * silent_beat_seconds
+                      + opening_silence_seconds      (first spoken section only)
                       + min_tail_seconds        (tail_seconds when the section sets it)
 section span          = section length + lead_seconds
 ```
 
 `words` is the number of spoken words. Timed pause seconds add up every `[pause N]` and every
 written break tag. The defaults are 140 for `words_per_minute` and 150 for
-`silent_words_per_minute`. `direction_break_seconds`, `lead_break_seconds`, and `min_tail_seconds`
+`silent_words_per_minute`. `silent_beat_seconds`, `opening_silence_seconds`, and `min_tail_seconds`
 are each 0.7 by default.
 
 Note: an em dash with a space before it counts as a beat, even when you type it in the prose. A

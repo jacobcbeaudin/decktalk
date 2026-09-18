@@ -1,42 +1,41 @@
 """The pipeline, one module per stage. Each stage takes a Project, logs progress, and returns a result."""
 
+from .align import AlignResult, align
 from .assemble import AssembleResult, assemble
-from .beats import BeatsResult, resolve_beats
 from .build import BuildResult, build
-from .clip import ClipResult, SectionWords, cut_clip, spoken_words
+from .clip import ClipResult, SectionWords, clip, words
 from .measure import LeadMeasurement, RecordingCheck, check, measure
-from .narrate import NarrateResult, narrate, script_segments
+from .narrate import NarrateResult, narrate
 from .preflight import PreflightResult, preflight
-from .record import Recording, record
-from .shots import shoot
+from .record import RecordResult, record
+from .screenshots import screenshots
 from .soundscape import SoundscapeItem, soundscape
 from .verify import VerifyResult, verify
 
 __all__ = [
+    "AlignResult",
     "AssembleResult",
-    "BeatsResult",
     "BuildResult",
     "ClipResult",
     "LeadMeasurement",
     "NarrateResult",
     "PreflightResult",
-    "Recording",
+    "RecordResult",
     "RecordingCheck",
     "SectionWords",
     "SoundscapeItem",
     "VerifyResult",
+    "align",
     "assemble",
     "build",
     "check",
-    "cut_clip",
+    "clip",
     "measure",
     "narrate",
     "preflight",
     "record",
-    "resolve_beats",
-    "script_segments",
-    "shoot",
+    "screenshots",
     "soundscape",
-    "spoken_words",
     "verify",
+    "words",
 ]

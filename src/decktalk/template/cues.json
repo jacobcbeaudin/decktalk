@@ -1,9 +1,9 @@
 {
   "_comment": [
-    "Which spoken phrase each visual lands on. `cue` is a cue id from the section's page (a step id plus a short word).",
+    "Which spoken phrase each visual lands on. `cue` is a cue id from the section's page (a slide id plus a short word).",
     "`on` is a word or short phrase from that section of script.md, matched at its first occurrence, ignoring",
     "case and punctuation. `$start` is the section start and `$end` is the end of speech. `offset` shifts the",
-    "cue in seconds, and `occurrence` picks a later match. `decktalk beats` reports any phrase it cannot find."
+    "cue in seconds, and `occurrence` picks a later match. `decktalk align` reports any phrase it cannot find."
   ],
   "sections": {
     "1": {

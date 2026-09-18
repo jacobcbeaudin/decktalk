@@ -29,31 +29,31 @@ speed = 1.0
 # to black.
 # [[section]]
 # number = 0
-# title = "On camera"
+# chapter = "On camera"
 # clip = "media/open.mp4"
 # slate_seconds = 6       # a titled slate plays for this long when the file is missing
 
 [[section]]
 number = 1
-title = "Open"
+chapter = "Open"
 page = "deck/index.html"
 scene = 1
-extra_seconds = 0.3     # recorded past the narration, so the cut never lands on a frame that was never drawn
+record_margin_seconds = 0.3     # recorded past the narration, so the cut never lands on a frame that was never drawn
 
 [[section]]
 number = 2
-title = "How it works"
+chapter = "How it works"
 page = "deck/index.html"
 scene = 2
 
 [[section]]
 number = 3
-title = "How AI learns"
+chapter = "How AI learns"
 page = "deck/lesson.html"   # any page in deck/ can hold scenes, and each section names its page
 scene = 3
 
 # The edit steps out of the presentation: a page, the BEFORE clip, a page, the AFTER clip, and a page. Sections
-# 4 to 8 all carry the title "The edit", so they share one chapter.
+# 4 to 8 all name the chapter "The edit", so they share one chapter.
 #
 # The scaffold ships no clip files, because a clip carries a real voice. Both clip sections are optional, so a
 # fresh build plays a titled slate in each and still passes --strict. The pages around them show stills of the
@@ -64,14 +64,14 @@ scene = 3
 
 [[section]]
 number = 4
-title = "The edit"
+chapter = "The edit"
 page = "deck/index.html"
 scene = 4               # step out: the lesson shrinks into a player, then back to the start
 ambience = false        # true plays the ambience bed under this section
 
 [[section]]
 number = 5
-title = "The edit"
+chapter = "The edit"
 clip = "media/edit-before.mov"          # BEFORE: the Open as first built, inside the player
 words = "media/edit-before.words.json"  # the words spoken inside the clip, for the captions
 slate_seconds = 4.36    # the demo's BEFORE clip is 4.36 s, so the slate keeps its timing
@@ -79,13 +79,13 @@ optional = true         # plays the slate under --strict until the clip is in pl
 
 [[section]]
 number = 6
-title = "The edit"
+chapter = "The edit"
 page = "deck/index.html"
 scene = 6               # one word and one cue line, the build, and the new start
 
 [[section]]
 number = 7
-title = "The edit"
+chapter = "The edit"
 clip = "media/edit-after.mov"           # AFTER: the Open rebuilt with one more count, inside the player
 words = "media/edit-after.words.json"   # the words spoken inside the clip, for the captions
 slate_seconds = 5.04    # the demo's AFTER clip is 5.04 s
@@ -93,17 +93,17 @@ optional = true
 
 [[section]]
 number = 8
-title = "The edit"
+chapter = "The edit"
 page = "deck/index.html"
 scene = 7               # before and after, the check, and the step back in. A scene keeps its number in its page
                         # when the section numbers around it change, so section 8 plays scene 7.
 
 [[section]]
 number = 9
-title = "Close"
+chapter = "Close"
 page = "deck/index.html"
 scene = 5
-extra_seconds = 2
+record_margin_seconds = 2
 hold_seconds = 2.5       # the last frame holds after the narration. Any page section can hold, and lead_seconds
                          # adds silence before a section's first word.
 
@@ -113,14 +113,14 @@ dip_seconds = 0.15
 page_fades_in = true    # pages fade themselves up, so no fade-in is added on their side
 
 [mix]
-# Voice only. To add a music bed, run `decktalk soundscape` with [soundscape.music] below uncommented,
-# then uncomment `underscore` here. `ambience` works the same way with [soundscape.ambience].
-# underscore = "build/music/underscore.mp3"
-underscore_db = -24
-underscore_duck_db = -6    # under speech
-underscore_fade_in = 2
-underscore_fade_out = 3
-markers = "media/markers.json"
+# Voice only. To add music, run `decktalk soundscape` with [soundscape.music] below uncommented,
+# then uncomment `music` here. `ambience` works the same way with [soundscape.ambience].
+# music = "build/music/music.mp3"
+music_db = -24
+music_duck_db = -6    # under speech
+music_fade_in_seconds = 2
+music_fade_out_seconds = 3
+music_markers = "media/markers.json"
 # ambience = "build/sfx/ambience.mp3"
 ambience_db = -20
 # [[mix.sfx]]
@@ -129,14 +129,14 @@ ambience_db = -20
 # cue = "1.1one"
 # db = -16
 
-[mix.loudnorm]
-I = -16
-TP = -1.5
-LRA = 11
+[mix.loudness]
+target_lufs = -16
+true_peak_db = -1.5
+range_lu = 11
 
 # Commented out so no `decktalk soundscape` run spends music credits by accident.
 # [soundscape.music]
-# prompt = "calm, minimal instrumental underscore for a lesson: soft piano and warm pads, slow, no drums, no melody hooks, unobtrusive under a narrator"
+# prompt = "calm, minimal instrumental music for a lesson: soft piano and warm pads, slow, no drums, no melody hooks, unobtrusive under a narrator"
 # seconds = 120
 # force_instrumental = true
 

@@ -178,7 +178,7 @@ count. [beat] <span class="k">One.</span> [beat]
 Two, three. [beat]</pre>
         <h3>A script in markdown</h3><p>One heading starts one section. Bracketed directions are not spoken.</p></div>
       <div class="step"><div class="n">02 NARRATE</div>
-        <pre><span class="c">build/audio/01-open.words.json</span>
+        <pre><span class="c">build/narration/01-open.words.json</span>
 { "word": <span class="k">"One"</span>,
   "start": <span class="k">4.485</span> }
 <span class="c">cues.json</span>
@@ -188,14 +188,14 @@ Two, three. [beat]</pre>
       <div class="step"><div class="n">03 RECORD</div>
         <pre><span class="c">deck/index.html</span>
 &lt;g <span class="k">data-cue="1.1one"</span>
-   data-fx="none"&gt;
+   data-reveal="instant"&gt;
   &lt;rect class="box full"/&gt;
   &lt;text&gt;one&lt;/text&gt;
 &lt;/g&gt;</pre>
-        <h3>Slides reveal on cue</h3><p>Chromium records the plain HTML, and the page runtime shows each step when its word is spoken.</p></div>
+        <h3>Slides reveal on cue</h3><p>Chromium records the plain HTML, and the page runtime shows each slide when its word is spoken.</p></div>
       <div class="step"><div class="n">04 ASSEMBLE</div>
         <pre><span class="c">$ decktalk build</span>
-[cut ] 01 -&gt; 01-section.mp4
+[cut ] 01 -&gt; sections/01.mp4
 [caps] 35 cue(s) -&gt; srt, vtt
 <span class="c">$ decktalk verify</span>
 <span class="c">cue         at  offset</span>
@@ -211,7 +211,7 @@ Two, three. [beat]</pre>
     <div class="feats">
       <div class="feat"><span class="proof">[lead] 01  trim 1.440s</span><h3>The cut is measured, not timed.</h3><p>Each recording opens on a magenta cover until narration starts. The cut is measured from the frames, not from a timer.</p></div>
       <div class="feat"><span class="proof">[skip] 01-open.mp3 unchanged</span><h3>An edit voices only what changed.</h3><p>Each section's narration is cached by a hash of its text, voice, model, and settings. An edit synthesizes only the sections that changed, so you pay per change, not per build.</p></div>
-      <div class="feat"><span class="proof">[mix ] 3 audio input(s)</span><h3>The soundscape is optional.</h3><p>An underscore ducks under speech, ambience beds and effects land on cues, and the mix meets streaming loudness. Every part is optional.</p></div>
+      <div class="feat"><span class="proof">[mix ] 3 audio input(s)</span><h3>The soundscape is optional.</h3><p>Music ducks under speech, ambience beds and effects land on cues, and the mix meets streaming loudness. Every part is optional.</p></div>
       <div class="feat"><span class="proof">1:1.1one  -10ms  changed</span><h3>Every reveal is checked.</h3><p>Black or truncated recordings stop before assembly. A cue that cannot be found stops the build. A check proves each cue moved pixels.</p></div>
       <div class="feat"><span class="proof">.agents/skills/decktalk-cues</span><h3>Your coding agent already knows it.</h3><p>Six skills install with every project, one each for the script, the slides, the cues, the build, the fixes and a revision. Every command prints one JSON envelope an agent reads.</p></div>
     </div>
@@ -231,10 +231,10 @@ Two, three. [beat]</pre>
 
   <section id="start">
     <div class="cmds">
-      <div><h2>From install to a first video.</h2><p>You need Python 3.12 or later. A silent build is free, needs no account, and takes a few minutes, because recording runs in real time. A voiced build needs an ElevenLabs API key and a voice id, and a full build of the scaffold, a version of the film above in nine sections, spends about 2,800 characters of voice. Build it silently first, and add your voice when you are ready.</p></div>
-      <pre>$ uv tool install decktalk &amp;&amp; <span class="nb">decktalk setup</span>
+      <div><h2>From install to a first video.</h2><p>You need Python 3.12 or later. A build without voice is free, needs no account, and takes a few minutes, because recording runs in real time. A voiced build needs an ElevenLabs API key and a voice id, and a full build of the scaffold, a version of the film above in nine sections, spends about 2,800 characters of voice. Build it without voice first, and add your voice when you are ready.</p></div>
+      <pre>$ uv tool install decktalk &amp;&amp; <span class="nb">decktalk install</span>
 $ decktalk init my-lesson &amp;&amp; <span class="nb">cd my-lesson</span>
-$ decktalk build --silent   <span class="c nb"># no key needed</span>
+$ decktalk build --no-voice   <span class="c nb"># no key needed</span>
 $ decktalk build            <span class="c nb"># your voice</span></pre>
     </div>
   </section>

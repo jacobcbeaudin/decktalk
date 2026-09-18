@@ -1,7 +1,7 @@
 {
   "source": {
     "build": "the v12 lesson film, voiced, section 1 (Open)",
-    "file": "build/audio/01-open.words.json",
+    "file": "build/narration/01-open.words.json",
     "script": "A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat] Two, three. [beat]"
   },
   "section": 1,

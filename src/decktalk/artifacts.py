@@ -3,11 +3,11 @@
 These file shapes are part of the public contract: the page runtime and users' own
 scripts read them. Field names match the JSON keys.
 
-    build/audio/manifest.json     Manifest: one entry per narrated section
-    build/audio/NN-slug.words.json  list[Word]
-    build/audio/timeline.json     Timeline: absolute section and word times in narration.mp3
-    build/audio/beats.json        Beats: {"NN": "cue@seconds,..."} relative to the section start
-    build/rec/NN-scene.json       Sidecar: what the recorder did and where t=0 landed
+    build/narration/takes.json          Takes: one entry per narrated section
+    build/narration/NN-slug.words.json  list[Word]
+    build/narration/timeline.json       Timeline: absolute section and word times in narration.mp3
+    build/cue-times.json                CueTimes: {"NN": "cue@seconds,..."} relative to the section start
+    build/recordings/NN.json            RecordingLog: what the recorder did and where t=0 landed
 """
 
 from __future__ import annotations
@@ -54,14 +54,14 @@ def write_words(path: Path, words: list[Word]) -> None:
 
 
 @dataclass
-class ManifestSegment:
+class Take:
     index: int
-    title: str
+    chapter: str
     file: str
     words_file: str
     hash: str
-    words: int
-    est_seconds: float
+    word_count: int
+    estimated_seconds: float
     duration_seconds: float
     target_seconds: float | None = None
     speech_end_seconds: float | None = None
@@ -74,13 +74,13 @@ class ManifestSegment:
 
 
 @dataclass
-class Manifest:
+class Takes:
     script: str
     model: str
     output_format: str
     estimated: bool = False
     estimate_basis: str = ""
-    segments: dict[str, ManifestSegment] = field(default_factory=dict)
+    sections: dict[str, Take] = field(default_factory=dict)
     total_seconds: float = 0.0
 
     @classmethod
@@ -88,20 +88,20 @@ class Manifest:
         if not path.exists():
             return None
         d = _read_json(path)
-        segs = {k: ManifestSegment.from_dict(v) for k, v in d.get("segments", {}).items()}
+        rows = {k: Take.from_dict(v) for k, v in d.get("sections", {}).items()}
         return cls(
             script=str(d.get("script", "")),
             model=str(d.get("model", "")),
             output_format=str(d.get("output_format", "")),
             estimated=bool(d.get("estimated", False)),
             estimate_basis=str(d.get("estimate_basis", "")),
-            segments=dict(sorted(segs.items())),
+            sections=dict(sorted(rows.items())),
             total_seconds=float(d.get("total_seconds", 0.0)),
         )
 
     def save(self, path: Path) -> None:
-        self.segments = dict(sorted(self.segments.items()))
-        self.total_seconds = round(sum(s.duration_seconds for s in self.segments.values()), 3)
+        self.sections = dict(sorted(self.sections.items()))
+        self.total_seconds = round(sum(s.duration_seconds for s in self.sections.values()), 3)
         _write_json(path, asdict(self))
 
 
@@ -162,7 +162,7 @@ class Timeline:
 
 
 @dataclass
-class Beats:
+class CueTimes:
     """Resolved cue times per section, seconds relative to the section's start."""
 
     sections: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -171,13 +171,13 @@ class Beats:
     def load(cls, path: Path) -> Self:
         if not path.exists():
             return cls()
-        return cls({k: parse_beats_string(v) for k, v in _read_json(path).items()})
+        return cls({k: parse_cue_times(v) for k, v in _read_json(path).items()})
 
     def save(self, path: Path) -> None:
         _write_json(path, {k: self.query(k) for k in sorted(self.sections) if self.sections[k]})
 
     def query(self, key: str) -> str | None:
-        """The ?beats= value for a section, or None when it has no resolved cues."""
+        """The ?cues= value for a section, or None when it has no resolved cues."""
         cues = self.sections.get(key)
         if not cues:
             return None
@@ -187,7 +187,7 @@ class Beats:
         return self.sections.get(key, {}).get(cue)
 
 
-def parse_beats_string(value: str) -> dict[str, float]:
+def parse_cue_times(value: str) -> dict[str, float]:
     """'a@1.5,b@2' -> {'a': 1.5, 'b': 2.0}; malformed items are skipped."""
     out: dict[str, float] = {}
     for item in value.split(","):
@@ -205,8 +205,7 @@ def parse_beats_string(value: str) -> dict[str, float]:
 def gap_time(value: Any) -> float | None:
     """A frame gap's time in seconds, or None when the gap ended before the narration clock started.
 
-    The page reports such a gap at negative infinity, and older sidecars hold that value as the
-    non-standard JSON token -Infinity, so any value that is not a finite number becomes None.
+    The page reports such a gap at negative infinity, so any value that is not a finite number becomes None.
     """
     if value is None:
         return None
@@ -215,22 +214,22 @@ def gap_time(value: Any) -> float | None:
 
 
 @dataclass
-class Sidecar:
+class RecordingLog:
     """What the recorder did for one section, and where narration t=0 sits in the webm."""
 
     url: str
     requested_seconds: float
     settle_seconds: float
     load_seconds: float
-    lead_seconds: float  # wall-clock estimate from the recorder
-    lead_in_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
-    lead_method: str | None = None
-    lead_in_hash: str | None = None  # the sha256 prefix of the webm that measure read, so a stale measure shows
+    clock_start_seconds: float  # wall-clock seconds from the recorder's start to t=0, the recorder's own estimate
+    t0_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
+    t0_method: str | None = None
+    t0_hash: str | None = None  # the sha256 prefix of the webm that measure read, so a stale measure shows
     warnings: list[str] = field(default_factory=list)
     page_errors: list[str] = field(default_factory=list)  # uncaught exceptions, or no runtime catalog at all
     # (seconds, ms) where the page stalled. The time is None for a gap that ended before narration t=0.
     frame_gaps: list[tuple[float | None, int]] = field(default_factory=list)
-    sync_log: list[dict[str, Any]] = field(default_factory=list)  # what each data-sync element matched
+    spoken_log: list[dict[str, Any]] = field(default_factory=list)  # what each data-text="spoken" element matched
     # Each cue as the page ran it: id, due, ran, and the start of its frame and the two after (seconds).
     cue_log: list[dict[str, Any]] = field(default_factory=list)
     # Animation frames over 50 ms after t=0: start, ms, render, and presented (seconds, ms for the length).
@@ -253,9 +252,9 @@ class Sidecar:
         if not path.exists():
             return None
         d = _read_json(path)
-        side = cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
-        side.frame_gaps = [(gap_time(at), int(ms)) for at, ms in side.frame_gaps]
-        return side
+        recording_log = cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        recording_log.frame_gaps = [(at, int(ms)) for at, ms in recording_log.frame_gaps]
+        return recording_log
 
     def save(self, path: Path) -> None:
         """Write standard JSON, with null for a gap time that is not a finite number."""
@@ -265,7 +264,7 @@ class Sidecar:
 
     @property
     def trim_seconds(self) -> float:
-        return self.lead_in_seconds if self.lead_in_seconds is not None else self.lead_seconds
+        return self.t0_seconds if self.t0_seconds is not None else self.clock_start_seconds
 
 
 # ---- captions and chapters -----------------------------------------------------------

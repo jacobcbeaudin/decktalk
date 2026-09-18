@@ -1,12 +1,12 @@
 {
   "source": {
     "decktalk": "0.2.0",
-    "build": "decktalk build --silent on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
+    "build": "decktalk build --no-voice on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
     "estimated_words": true,
-    "rule": "gain = underscore_db x (1 - (1 - underscore_duck_db) x max over spans of a linear ramp), from stages/assemble.py plan_mix"
+    "rule": "gain = music_db x (1 - (1 - music_duck_db) x max over spans of a linear ramp), from stages/assemble.py plan_mix"
   },
-  "underscore_db": -24.0,
-  "underscore_duck_db": -6.0,
+  "music_db": -24.0,
+  "music_duck_db": -6.0,
   "duck_ramp_seconds": 0.5,
   "window": [
     193.72,
@@ -30,7 +30,7 @@
     {
       "number": 4,
       "key": "04",
-      "title": "The edit",
+      "chapter": "The edit",
       "clip": false,
       "video_start": 181.12,
       "video_end": 196.72,
@@ -42,7 +42,7 @@
     {
       "number": 5,
       "key": "05",
-      "title": "The edit",
+      "chapter": "The edit",
       "clip": true,
       "video_start": 196.72,
       "video_end": 200.72,
@@ -53,7 +53,7 @@
     {
       "number": 6,
       "key": "06",
-      "title": "The edit",
+      "chapter": "The edit",
       "clip": false,
       "video_start": 200.72,
       "video_end": 222.88,

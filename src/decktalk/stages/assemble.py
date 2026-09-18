@@ -1,6 +1,6 @@
 """Stage 5: recordings, narration, clips and the soundscape become the final mp4 (ffmpeg).
 
-1. Every section becomes a video-only NN-section.mp4. A page section is cut to its exact
+1. Every section becomes a video-only sections/NN.mp4. A page section is cut to its exact
    span in the timeline, rounded on cumulative frame boundaries so the picture never
    drifts; the recorder lead-in is trimmed off the head and the last frame is cloned to
    fill. A missing clip becomes a titled slate. A missing recording becomes black. No
@@ -11,15 +11,15 @@
    narration from the first page section, each clip's own audio delayed to its section
    start with a 20 ms fade at both ends, and the optional beds. A clip between page
    sections pauses the narration, so the track is split into runs of consecutive page
-   sections and each run starts where its first section starts. An underscore is ducked
+   sections and each run starts where its first section starts. The music is ducked
    under speech and shaped by markers.json, an ambience bed sits under sections flagged
    ambience, and one-shot sfx land on resolved cues.
 4. EBU R128 loudness: pass one measures integrated loudness and true peak, pass two
    applies the gain that reaches the target and a true-peak limiter at the ceiling,
    oversampled at 192 kHz. The result is measured again and reported.
 5. Captions (srt and vtt) come from the word timestamps, plus the words file of any clip
-   section that names one, and chapter markers from the section titles are muxed into the
-   mp4. Consecutive sections with the same title share one chapter.
+   section that names one, and chapter markers from the section chapters are muxed into the
+   mp4. Consecutive sections with the same chapter share one chapter marker.
 6. Atomic publish: work file, then one rename to build/out/<name>.mp4, plus a
    timestamped copy.
 """
@@ -36,11 +36,11 @@ from pathlib import Path
 from typing import Any
 
 from ..artifacts import (
-    Beats,
     CaptionCue,
     Chapter,
-    Manifest,
-    Sidecar,
+    CueTimes,
+    RecordingLog,
+    Takes,
     Timeline,
     Word,
     caption_cues,
@@ -55,7 +55,7 @@ from ..errors import ConfigError, MissingInputError, ToolError
 from ..media import ffmpeg
 from ..media.browser import render_slate
 from ..project import ClipSection, PageSection, Project, Section
-from .beats import find_phrase
+from .align import find_phrase
 from .measure import stale_measure
 
 log = logging.getLogger(__name__)
@@ -212,7 +212,7 @@ def section_slate(project: Project, sec: ClipSection) -> Path | None:
     try:
         return render_slate(
             out,
-            title=sec.title or f"Section {sec.number}",
+            title=sec.chapter or f"Section {sec.number}",
             sub="Your clip goes here",
             eyebrow=f"section {sec.number} · slate",
             foot=f"drop it at {sec.clip} and run `decktalk assemble`",
@@ -294,11 +294,10 @@ def _render_page(
     if webm.exists():
         vin = ["-i", str(webm)]
         note = webm.name
-        side = project.rec_dir / f"{sec.key}-scene.json"
-        sidecar = Sidecar.load(side)
-        if sidecar is not None:
-            vlead = f"trim=start={sidecar.trim_seconds},setpts=PTS-STARTPTS,"
-            note += f" (lead {sidecar.trim_seconds}s trimmed)"
+        recording_log = RecordingLog.load(project.recording_log(sec))
+        if recording_log is not None:
+            vlead = f"trim=start={recording_log.trim_seconds},setpts=PTS-STARTPTS,"
+            note += f" (t0 {recording_log.trim_seconds}s trimmed)"
     else:
         if strict:
             raise MissingInputError(f"section {sec.number}: recording missing: {webm}")
@@ -318,14 +317,14 @@ def _render_page(
 def measure_warning(project: Project, sec: PageSection, *, strict: bool) -> str | None:
     """The warning for a recording whose narration t=0 was not measured on it, or None.
 
-    A cut trims the recording at the sidecar's measurement. When `measure` did not read this
+    A cut trims the recording at the recording log's measurement. When `measure` did not read this
     recording, the trim belongs to another take or is the recorder's wall-clock estimate, and
     every reveal in the section plays early or late. --strict refuses such a section.
     """
     webm = project.recording(sec)
     if not webm.exists():
         return None
-    reason = stale_measure(webm, Sidecar.load(project.rec_dir / f"{sec.key}-scene.json"), project.root)
+    reason = stale_measure(webm, RecordingLog.load(project.recording_log(sec)), project.root)
     if reason is None:
         return None
     if strict:
@@ -342,7 +341,7 @@ def measure_warning(project: Project, sec: PageSection, *, strict: bool) -> str 
 
 
 def stray_warnings(project: Project, command: str) -> list[str]:
-    """One logged warning per NN-section.mp4 in build/out whose section is not in decktalk.toml.
+    """One logged warning per sections/NN.mp4 in build/sections whose section is not in decktalk.toml.
 
     `command` names the stage that ignores the file, for the message.
     """
@@ -361,6 +360,7 @@ def stray_warnings(project: Project, command: str) -> list[str]:
 def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> list[RenderedSection]:
     enc = _Encoder(project.settings.video)
     project.out_dir.mkdir(parents=True, exist_ok=True)
+    project.sections_dir.mkdir(parents=True, exist_ok=True)
     flags = fade_flags(project)
     targets = timeline_targets(timeline, enc.v.fps)
     dip = frame_dip(project.transition.dip_seconds, enc.v.fps)
@@ -419,8 +419,8 @@ class MixPlan:
 def resolve_marker_time(
     marker: dict[str, Any],
     starts: dict[str, float],
-    manifest: Manifest,
-    audio_dir: Path,
+    takes: Takes,
+    narration_dir: Path,
     leads: Mapping[str, float] | None = None,
 ) -> float | None:
     """Where a markers.json entry falls in the final file. `leads` gives each section's lead_seconds."""
@@ -431,11 +431,11 @@ def resolve_marker_time(
     offset = float(marker.get("offset", 0))
     if on == "$start":
         return starts[key] + offset
-    entry = manifest.segments.get(key)
+    entry = takes.sections.get(key)
     if entry is None:
         return None
     lead = (leads or {}).get(key, 0.0)
-    words = [Word(w.word, w.start + lead, w.end + lead) for w in read_words(audio_dir / entry.words_file)]
+    words = [Word(w.word, w.start + lead, w.end + lead) for w in read_words(narration_dir / entry.words_file)]
     if on == "$end":
         return starts[key] + words[-1].end + offset if words else None
     idx = find_phrase(words, on, int(marker.get("occurrence", 1)), bool(marker.get("case_sensitive", False)))
@@ -513,12 +513,12 @@ def narration_offsets(rows: list[RenderedSection], timeline: Timeline, starts: d
     return {key: offsets.get(key, runs[0].offset) for key in timeline.sections}
 
 
-def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, *, nomix: bool) -> MixPlan:
+def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, *, soundscape: bool) -> MixPlan:
     mix = project.mix
     audio: AudioConfig = project.settings.audio
     sr = project.settings.video.sample_rate
-    manifest = project.manifest() or Manifest(script="", model="", output_format="")
-    beats: Beats = project.beats()
+    takes = project.takes() or Takes(script="", model="", output_format="")
+    cue_times: CueTimes = project.cue_times()
     plan = MixPlan()
     starts = section_starts(rows)
     plan.total = sum(r.duration for r in rows)
@@ -538,7 +538,7 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
     labels.append("[anchor]")
 
     # narration under the picture from the first page section
-    narration = project.audio_dir / timeline.narration
+    narration = project.narration_dir / timeline.narration
     runs = narration_runs(rows, timeline, starts)
     if len(runs) <= 1:
         t0 = narration_offset(rows, timeline, starts)
@@ -576,15 +576,15 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
         )
         labels.append(f"[clip{key}]")
 
-    # underscore
-    music = project.path(mix.underscore) if mix.underscore and not nomix else None
+    # music
+    music = project.path(mix.music) if mix.music and soundscape else None
     if music is not None and music.exists():
         idx = add_input("loop", str(music))
-        base = db(mix.underscore_db)
-        duck = db(mix.underscore_duck_db)
+        base = db(mix.music_db)
+        duck = db(mix.music_duck_db)
         factors = [f"(1-{1 - duck:.5f}*{max_expr([ramp_expr(a, b, audio.duck_ramp_seconds) for a, b in speech])})"]
-        if mix.markers:
-            mpath = project.path(mix.markers)
+        if mix.music_markers:
+            mpath = project.path(mix.music_markers)
             if mpath.exists():
                 try:
                     mspec = json.loads(mpath.read_text(encoding="utf-8"))
@@ -596,7 +596,7 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
                 mutes: list[str] = []
                 for marker in mspec.get("markers", []):
                     leads = {r.section.key: project.lead_seconds(r.section.key) for r in rows}
-                    mt = resolve_marker_time(marker, starts, manifest, project.audio_dir, leads)
+                    mt = resolve_marker_time(marker, starts, takes, project.narration_dir, leads)
                     if mt is None:
                         plan.warnings.append(f"marker {marker.get('name')!r} unresolved; skipped")
                         continue
@@ -609,19 +609,20 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
                 if mutes:
                     factors.append(f"(1-{max_expr(mutes)})")
             else:
-                plan.warnings.append(f"markers file missing ({mpath}); underscore without structure")
+                plan.warnings.append(f"markers file missing ({mpath}); music without structure")
         vol = f"{base:.5f}*" + "*".join(factors)
         chain.append(
             f"[{idx}:a]{fmt},atrim=duration={plan.total:.3f},asetpts=PTS-STARTPTS,volume='{vol}':eval=frame,"
-            f"afade=t=in:d={mix.underscore_fade_in},"
-            f"afade=t=out:st={max(plan.total - mix.underscore_fade_out, 0):.3f}:d={mix.underscore_fade_out}[music]"
+            f"afade=t=in:d={mix.music_fade_in_seconds},"
+            f"afade=t=out:st={max(plan.total - mix.music_fade_out_seconds, 0):.3f}"
+            f":d={mix.music_fade_out_seconds}[music]"
         )
         labels.append("[music]")
-    elif mix.underscore and not nomix:
-        plan.warnings.append(f"underscore missing ({project.path(mix.underscore)}); no music (`decktalk soundscape`)")
+    elif mix.music and soundscape:
+        plan.warnings.append(f"music missing ({project.path(mix.music)}); no music (`decktalk soundscape`)")
 
     # ambience under flagged sections
-    amb = project.path(mix.ambience) if mix.ambience and not nomix else None
+    amb = project.path(mix.ambience) if mix.ambience and soundscape else None
     flagged = [r for r in rows if isinstance(r.section, PageSection) and r.section.ambience]
     if amb is not None and amb.exists() and flagged:
         idx = add_input("loop", str(amb))
@@ -636,14 +637,14 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
             f"[{idx}:a]{fmt},atrim=duration={plan.total:.3f},asetpts=PTS-STARTPTS,volume='{db(mix.ambience_db):.5f}*{max_expr(spans)}':eval=frame[amb]"
         )
         labels.append("[amb]")
-    elif mix.ambience and not nomix and flagged:
+    elif mix.ambience and soundscape and flagged:
         plan.warnings.append(f"ambience missing ({amb}); no ambience")
 
     # one-shot sfx on resolved cues
-    for n, sfx in enumerate(() if nomix else mix.sfx):
+    for n, sfx in enumerate(mix.sfx if soundscape else ()):
         path = project.path(sfx.file)
         key = f"{sfx.section:02d}"
-        cue_t = beats.get(key, sfx.cue)
+        cue_t = cue_times.get(key, sfx.cue)
         if not path.exists():
             plan.warnings.append(f"sfx {sfx.file} missing; skipped")
             continue
@@ -683,11 +684,11 @@ def normalize_loudness(project: Project, src: Path, dst: Path) -> tuple[ffmpeg.L
     would cross the ceiling. It runs oversampled so inter-sample peaks are caught, which
     is what a true-peak ceiling promises.
     """
-    ln = project.mix.loudnorm
+    ln = project.mix.loudness
     enc = _Encoder(project.settings.video)
-    before = ffmpeg.measure_loudness(src, i=ln.i, tp=ln.tp, lra=ln.lra)
-    gain = ln.i - before.i
-    ceiling = db(ln.tp - LIMITER_HEADROOM_DB)
+    before = ffmpeg.measure_loudness(src, i=ln.target_lufs, tp=ln.true_peak_db, lra=ln.range_lu)
+    gain = ln.target_lufs - before.i
+    ceiling = db(ln.true_peak_db - LIMITER_HEADROOM_DB)
     ffmpeg.run(
         "-i", str(src), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
         "-af",
@@ -695,19 +696,20 @@ def normalize_loudness(project: Project, src: Path, dst: Path) -> tuple[ffmpeg.L
         f"alimiter=limit={ceiling:.4f}:attack=5:release=50:level=false,aresample={enc.v.sample_rate}",
         *enc.aenc, "-movflags", "+faststart", str(dst),
     )  # fmt: skip
-    after = ffmpeg.measure_loudness(dst, i=ln.i, tp=ln.tp, lra=ln.lra)
+    after = ffmpeg.measure_loudness(dst, i=ln.target_lufs, tp=ln.true_peak_db, lra=ln.range_lu)
     return before, after
 
 
 def loudness_problems(project: Project, after: ffmpeg.Loudness) -> list[str]:
     """What is wrong with the normalized result, if anything: a peak over the ceiling or a missed target."""
-    ln = project.mix.loudnorm
+    ln = project.mix.loudness
     problems: list[str] = []
-    if after.tp > ln.tp:
-        problems.append(f"true peak {after.tp:.1f} dBTP is above the {ln.tp:.1f} dBTP ceiling")
-    if abs(after.i - ln.i) > LOUDNESS_TOLERANCE_LU:
+    if after.tp > ln.true_peak_db:
+        problems.append(f"true peak {after.tp:.1f} dBTP is above the {ln.true_peak_db:.1f} dBTP ceiling")
+    if abs(after.i - ln.target_lufs) > LOUDNESS_TOLERANCE_LU:
         problems.append(
-            f"integrated loudness {after.i:.1f} LUFS is {abs(after.i - ln.i):.1f} LU from the {ln.i:.1f} LUFS target"
+            f"integrated loudness {after.i:.1f} LUFS is {abs(after.i - ln.target_lufs):.1f} LU "
+            f"from the {ln.target_lufs:.1f} LUFS target"
         )
     return problems
 
@@ -775,12 +777,12 @@ def clip_captions(project: Project, rows: list[RenderedSection]) -> list[Caption
 def caption_texts(project: Project, timeline: Timeline) -> dict[str, str]:
     """The spoken text per section key, which lends the captions their punctuation and case.
 
-    The manifest records the text each section was narrated from, so the captions match
-    the audio even when the script has been edited since. A manifest written before that
+    The take index records the text each section was narrated from, so the captions match
+    the audio even when the script has been edited since. A take index written before that
     field existed has empty entries, and those sections fall back to the script as it is now.
     """
-    manifest = project.manifest()
-    texts = {k: seg.spoken for k, seg in (manifest.segments.items() if manifest else ()) if seg.spoken}
+    takes = project.takes()
+    texts = {k: seg.spoken for k, seg in (takes.sections.items() if takes else ()) if seg.spoken}
     if any(key not in texts for key in timeline.keys):
         from .narrate import script_segments
 
@@ -790,12 +792,12 @@ def caption_texts(project: Project, timeline: Timeline) -> dict[str, str]:
 
 
 def build_chapters(rows: list[RenderedSection]) -> list[Chapter]:
-    """One chapter per section, where consecutive sections with the same title share one chapter."""
+    """One chapter per section, where consecutive sections with the same chapter share one chapter marker."""
     starts = section_starts(rows)
     chapters: list[Chapter] = []
     for r in rows:
         start = starts[r.section.key]
-        title = r.section.title or f"Section {r.section.number}"
+        title = r.section.chapter or f"Section {r.section.number}"
         if chapters and chapters[-1].title == title:
             chapters[-1] = Chapter(start=chapters[-1].start, end=start + r.duration, title=title)
         else:
@@ -828,7 +830,9 @@ class AssembleResult:
     chapters: Path | None = None
 
 
-def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, strict: bool = False) -> AssembleResult:
+def assemble(
+    project: Project, *, soundscape: bool = True, loudness: bool = True, strict: bool = False
+) -> AssembleResult:
     timeline = project.timeline()
     if timeline is None:
         raise MissingInputError(f"{project.timeline_path} not found; run `decktalk narrate` first")
@@ -843,7 +847,7 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
 
     work = out_dir / f".{project.name}.tmp.mp4"
     work.unlink(missing_ok=True)
-    plan = plan_mix(project, rows, timeline, nomix=nomix)
+    plan = plan_mix(project, rows, timeline, soundscape=soundscape)
     warnings = strays + [r.warning for r in rows if r.warning] + plan.warnings
     for w in plan.warnings:
         log.warning(w)
@@ -858,26 +862,26 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
     finally:
         picture.unlink(missing_ok=True)
 
-    loudness = None
-    if loudnorm and timeline.estimated:
-        # A silent build carries clicks and silence, and normalizing them would move the clicks
+    measured = None
+    if loudness and timeline.estimated:
+        # A build without voice carries clicks and silence, and normalizing them would move the clicks
         # the a/v check listens for, so the pass is skipped and the result has no loudness.
         log.info(
             "[loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, "
             "and the clicks stay at -24 dBFS for the a/v check"
         )
-    elif loudnorm:
+    elif loudness:
         raw = out_dir / ".premix-loudness.mp4"
         work.rename(raw)
         try:
-            loudness = normalize_loudness(project, raw, work)
+            measured = normalize_loudness(project, raw, work)
         finally:
             raw.unlink(missing_ok=True)
-        b, a = loudness
-        ln = project.mix.loudnorm
+        b, a = measured
+        ln = project.mix.loudness
         log.info(
             "[loud] I %.1f -> %.1f LUFS (target %.1f), TP %.1f -> %.1f dBTP (ceiling %.1f), LRA %.1f -> %.1f LU",
-            b.i, a.i, ln.i, b.tp, a.tp, ln.tp, b.lra, a.lra,
+            b.i, a.i, ln.target_lufs, b.tp, a.tp, ln.true_peak_db, b.lra, a.lra,
         )  # fmt: skip
         problems = loudness_problems(project, a)
         for p in problems:
@@ -912,7 +916,7 @@ def assemble(project: Project, *, nomix: bool = False, loudnorm: bool = True, st
         duration=duration,
         sections=rows,
         warnings=warnings,
-        loudness=loudness,
+        loudness=measured,
         captions_srt=paths["srt"],
         captions_vtt=paths["vtt"],
         chapters=paths["chapters"],

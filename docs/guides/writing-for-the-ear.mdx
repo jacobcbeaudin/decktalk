@@ -49,10 +49,10 @@ A short silence before a reveal makes the reveal feel like an event. Three kinds
 | `[pause N]` | a `<break time="Ns" />` tag | Use it where you want the audience to stop and think. |
 | Any other text in square brackets | a dash, the same as `[beat]` | Use it as a note to yourself. It also makes a beat. |
 
-The scaffold's lesson puts a beat before each step size, so each path starts as its own event:
+The scaffold's lesson puts a beat before each slide size, so each path starts as its own event:
 
 ```md script.md
-[pause 1] One setting makes every step longer or shorter. [beat]
+[pause 1] One setting makes every slide longer or shorter. [beat]
 Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
 ```
 
@@ -90,19 +90,19 @@ Write numbers, symbols, and abbreviations the way the voice must say them. A cue
 
 For example, write "two x" in the script and show `2x` on the slide. The scaffold's script says "decktalk dot AI", and the slide shows decktalk.ai.
 
-## Rehearse with a silent build
+## Rehearse with a build without voice
 
-A silent build costs nothing and needs no key. Use it to check the pacing before you spend credits.
+A build without voice costs nothing and needs no key. Use it to check the pacing before you spend credits.
 
 ```console
-decktalk build --silent
+decktalk build --no-voice
 ```
 
-- A silent build estimates word times at `silent_words_per_minute` (150) and adds every declared pause.
+- A build without voice estimates word times at `silent_words_per_minute` (150) and adds every declared pause.
 - The click track has a soft click at every estimated word start, so you can hear the pacing.
 - `decktalk verify` measures the picture against the clicks. [The a/v value](/reference/verify#the-a/v-value) explains that check.
 
-Watch the video for pacing. A reveal that comes too early in a silent build usually comes too early with the real voice too. [How it works](/concepts/how-it-works#the-silent-build) explains what a silent build proves.
+Watch the video for pacing. A reveal that comes too early in a build without voice usually comes too early with the real voice too. [How it works](/concepts/how-it-works#the-build-without-voice) explains what a build without voice proves.
 
 ## Give a section a time budget
 
@@ -135,7 +135,7 @@ This table comes from `decktalk narrate --dry-run` on the scaffold with that hea
 
 If `est` is longer than `target`, delete a sentence. Widen the budget only after a voiced build fills the `actual` column.
 
-A section's `min_seconds` in `cues.json` checks the other direction. If the speech is shorter than `min_seconds`, `decktalk beats` reports an uncertain finding.
+A section's `min_seconds` in `cues.json` checks the other direction. If the speech is shorter than `min_seconds`, `decktalk align` reports an uncertain finding.
 
 ## Next
 

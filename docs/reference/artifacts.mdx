@@ -11,14 +11,14 @@ stable surface that the [changelog](/changelog) tracks.
 
 ```text
 build/
-  audio/   NN-slug.mp3, NN-slug.words.json, manifest.json, narration.mp3, timeline.json,
-           beats.json, beats.anchors.json
-  rec/     NN-scene.webm, NN-scene.json
-  out/     NN-section.mp4, <name>.mp4, <name>-YYYYMMDD-HHMM.mp4, <name>.srt, <name>.vtt,
+  audio/   NN-slug.mp3, NN-slug.words.json, takes.json, narration.mp3, timeline.json,
+           cue-times.json, cue-times.anchors.json
+  rec/     recordings/NN.webm, recordings/NN.json
+  out/     sections/NN.mp4, <name>.mp4, <name>-YYYYMMDD-HHMM.mp4, <name>.srt, <name>.vtt,
            <name>.chapters.txt, slates/NN-slate.png
-  shots/   [<page>/]step-<id>.png, [<page>/]step-<id>-cue-<cue>.png, section-NN-at-<S>s.png
+  screenshots/   [<page>/]slide-<id>.png, [<page>/]slide-<id>-after-<cue>.png, section-NN-at-<S>s.png
   sfx/     ambience.mp3, <name>.mp3, and a manifest file next to each
-  music/   underscore.mp3, its chunk files, and its manifest file
+  music/   music.mp3, its chunk files, and its manifest file
 ```
 
 `NN` is the two-digit section number. `slug` comes from the section title in `script.md`. `<name>` is
@@ -31,12 +31,12 @@ compare times from two files.
 
 | Value | Counts from |
 |---|---|
-| `NN-slug.words.json` `start` and `end` | The start of that section's mp3. The first spoken section includes `lead_break_seconds`. |
+| `NN-slug.words.json` `start` and `end` | The start of that section's mp3. The first spoken section includes `opening_silence_seconds`. |
 | `timeline.json` section and word times | The start of `narration.mp3`, which holds the spoken sections back to back. |
-| `beats.json`, `beats.anchors.json`, `?beats=`, `?words=`, `decktalk words`, `decktalk clip --from` and `--to` | The section's own start, which is narration t=0 of its recording. |
+| `cue-times.json`, `cue-times.anchors.json`, `?cues=`, `?words=`, `decktalk words`, `decktalk clip --start` and `--end` | The section's own start, which is narration t=0 of its recording. |
 | A words file that `decktalk clip` writes | The start of that clip. |
-| Sidecar `lead_in_seconds` | The start of the webm. |
-| Sidecar `frame_gaps` seconds | Narration t=0 of that recording, or `null` for a gap that ended before t=0. |
+| RecordingLog `t0_seconds` | The start of the webm. |
+| RecordingLog `frame_gaps` seconds | Narration t=0 of that recording, or `null` for a gap that ended before t=0. |
 | `.srt`, `.vtt`, `.chapters.txt`, and the verify `at` and `cut at` columns | The start of the final mp4. |
 
 A clip section adds its length to the final mp4, but not to `narration.mp3`. After a clip between two page
@@ -44,15 +44,15 @@ sections, a time in the final mp4 is the narration time plus the length of every
 the first page section shifts every time. Page sections are cut on whole frames, so the two times can also
 differ by up to one frame.
 
-Example: in the silent build of the scaffold, section 6 starts at 196.70 s in `timeline.json` and at 201.08 s in the
+Example: in the build without voice of the scaffold, section 6 starts at 196.70 s in `timeline.json` and at 201.08 s in the
 final mp4. The 4.36 s slate of clip section 5 sits between them, and the whole-frame cuts before it add 0.02 s.
 `decktalk status` prints narration times.
 
-## `build/audio/NN-slug.words.json`
+## `build/narration/NN-slug.words.json`
 
 A words file lists each spoken word of one section, with its times in that section's mp3.
 
-{/* sample: build/audio/01-open.words.json, silent build of the scaffold (R2), first two words */}
+{/* sample: build/narration/01-open.words.json, build without voice of the scaffold (R2), first two words */}
 ```json
 [
  {
@@ -73,17 +73,17 @@ A words file lists each spoken word of one section, with its times in that secti
 | `start` | number | Start of the word, in seconds. |
 | `end` | number | End of the word, in seconds. |
 
-Note: A silent build writes estimated words, spaced evenly at `silent_words_per_minute`. Each estimated word
+Note: A build without voice writes estimated words, spaced evenly at `silent_words_per_minute`. Each estimated word
 ends 0.02 s before the next one starts.
 
 Note: [`decktalk words`](/reference/cli#decktalk-words) prints the same words in seconds after the section starts,
 with the script's punctuation and case.
 
-## `build/audio/manifest.json`
+## `build/narration/takes.json`
 
-The manifest is the narration cache. It holds one entry per spoken section.
+The take index is the narration cache. It holds one entry per spoken section.
 
-{/* sample: build/audio/manifest.json, silent build of the scaffold, first lines */}
+{/* sample: build/narration/takes.json, build without voice of the scaffold, first lines */}
 ```json
 {
   "script": "script.md",
@@ -91,7 +91,7 @@ The manifest is the narration cache. It holds one entry per spoken section.
   "output_format": "mp3_44100_128",
   "estimated": true,
   "estimate_basis": "150 wpm + declared pauses",
-  "segments": {
+  "sections": {
     "01": {
       "index": 1,
       "title": "Open",
@@ -99,7 +99,7 @@ The manifest is the narration cache. It holds one entry per spoken section.
       "words_file": "01-open.words.json",
       "hash": "silent",
       "words": 29,
-      "est_seconds": 12.4,
+      "estimated_seconds": 12.4,
       "duration_seconds": 17.832,
       "target_seconds": null,
       "speech_end_seconds": 16.48,
@@ -111,34 +111,34 @@ The manifest is the narration cache. It holds one entry per spoken section.
 | Field | Type | Meaning |
 |---|---|---|
 | `script` | string | Path of the script, relative to the project. |
-| `model` | string | Speech model. `silent-placeholder` after a silent build. |
+| `model` | string | Speech model. `silent-placeholder` after a build without voice. |
 | `output_format` | string | Audio format that the speech provider returned. |
-| `estimated` | boolean | True after a silent build. |
-| `estimate_basis` | string | Pacing of a silent build, such as `150 wpm + declared pauses`. Empty after a voiced build. |
-| `segments` | table | One entry per spoken section, keyed by `NN`. |
-| `segments.NN.index` | integer | Section number. |
-| `segments.NN.title` | string | Section title from the script heading. |
-| `segments.NN.file` | string | Name of the section's mp3. |
-| `segments.NN.words_file` | string | Name of the section's words file. |
-| `segments.NN.hash` | string | Cache key of the section. `silent` after a silent build. |
-| `segments.NN.words` | integer | Word count of the spoken text. |
-| `segments.NN.est_seconds` | number | Length estimate at `words_per_minute`. |
-| `segments.NN.duration_seconds` | number | Real length of the mp3. |
-| `segments.NN.target_seconds` | number or null | Time budget from the time range in the heading, or `null` when the heading has none. |
-| `segments.NN.speech_end_seconds` | number or null | End of the last spoken word. |
-| `segments.NN.tail_padded_seconds` | number | Silence that `narrate` added after the last word. A take with a value above 0 is not padded again while its tail is within 0.06 s of `min_tail_seconds`. |
-| `segments.NN.spoken` | string | The words sent to the voice, with the script's punctuation and case, and without break tags. |
+| `estimated` | boolean | True after a build without voice. |
+| `estimate_basis` | string | Pacing of a build without voice, such as `150 wpm + declared pauses`. Empty after a voiced build. |
+| `sections` | table | One entry per spoken section, keyed by `NN`. |
+| `sections.NN.index` | integer | Section number. |
+| `sections.NN.chapter` | string | The chapter, which is the script heading. |
+| `sections.NN.file` | string | Name of the section's mp3. |
+| `sections.NN.words_file` | string | Name of the section's words file. |
+| `sections.NN.hash` | string | Cache key of the section. `silent` after a build without voice. |
+| `sections.NN.word_count` | integer | Word count of the spoken text. |
+| `sections.NN.estimated_seconds` | number | Length estimate at `words_per_minute`. |
+| `sections.NN.duration_seconds` | number | Real length of the mp3. |
+| `sections.NN.target_seconds` | number or null | Time budget from the time range in the heading, or `null` when the heading has none. |
+| `sections.NN.speech_end_seconds` | number or null | End of the last spoken word. |
+| `sections.NN.tail_padded_seconds` | number | Silence that `narrate` added after the last word. A take with a value above 0 is not padded again while its tail is within 0.06 s of `min_tail_seconds`. |
+| `sections.NN.spoken` | string | The words sent to the voice, with the script's punctuation and case, and without break tags. |
 | `total_seconds` | number | Sum of every `duration_seconds`. |
 
 Note: Captions take their spelling from `spoken`, so they match the audio even after the script changes. A
-manifest without `spoken` falls back to the current script. [Rebuild one section](/guides/rebuild-one-section#the-narration-cache)
+take index without `spoken` falls back to the current script. [Rebuild one section](/guides/rebuild-one-section#the-narration-cache)
 explains what the hash covers.
 
-## `build/audio/timeline.json`
+## `build/narration/timeline.json`
 
 The timeline gives section and word times in `narration.mp3`.
 
-{/* sample: build/audio/timeline.json, silent build of the scaffold, first lines */}
+{/* sample: build/narration/timeline.json, build without voice of the scaffold, first lines */}
 ```json
 {
  "narration": "narration.mp3",
@@ -170,16 +170,16 @@ The timeline gives section and word times in `narration.mp3`.
 | `sections.NN.speech_end` | number or null | End of the section's last spoken word, in `narration.mp3`. |
 | `sections.NN.words` | array of tables | The words of the section, with `word`, `start`, and `end` in `narration.mp3`. |
 | `sections.NN.lead_seconds` | number | Silence joined in before the section's mp3, from the section's `lead_seconds`. `duration` and the word times include it. |
-| `estimated` | boolean | True after a silent build. |
+| `estimated` | boolean | True after a build without voice. |
 
 Note: The section span runs from `start` to `end`. The spoken span runs from `start` to `speech_end`.
 
-## `build/audio/beats.json`
+## `build/cue-times.json`
 
-The beats file holds the cue times of each section, as the string the page receives in `?beats=`. A section with
+The cue times file holds the cue times of each section, as the string the page receives in `?cues=`. A section with
 no resolved cue is not in the file.
 
-{/* sample: build/audio/beats.json, silent build of a fresh scaffold */}
+{/* sample: build/cue-times.json, build without voice of a fresh scaffold */}
 ```json
 {
   "01": "1.1bowl@1.25,1.1ball@2.33,1.1count@6.15,1.1one@6.69,1.1two@7.24,1.1three@7.78,1.1word@15.41",
@@ -195,12 +195,12 @@ no resolved cue is not in the file.
 Each item is `cue id@cue time`, and a comma separates the items. Section `08` plays scene 7, so its cue ids start
 with `7.`. The page parser splits each item at the last `@`.
 
-## `build/audio/beats.anchors.json`
+## `build/cue-times.anchors.json`
 
 The anchors file holds the start of each cued word without its offset key, per section. `verify` uses it after a
-silent build to find the click at the cued word.
+build without voice to find the click at the cued word.
 
-{/* sample: build/audio/beats.anchors.json, silent build of the scaffold (R2), first section */}
+{/* sample: build/cue-times.anchors.json, build without voice of the scaffold (R2), first section */}
 ```json
 {
  "01": {
@@ -217,24 +217,24 @@ silent build to find the click at the cued word.
 Note: A cue with no offset key has the same time in both files.
 [The a/v value](/reference/verify#the-a/v-value) explains why the anchor matters.
 
-## `build/rec/NN-scene.json`
+## `build/recordings/NN.json`
 
-The sidecar lists what the recorder did for one page section, and where narration t=0 sits in the webm.
+The recording log lists what the recorder did for one page section, and where narration t=0 sits in the webm.
 
-{/* sample: build/rec/08-scene.json, silent build of a fresh scaffold */}
+{/* sample: build/recordings/08.json, build without voice of a fresh scaffold */}
 ```json
 {
-  "url": "file://~/my-lesson/deck/index.html?scene=7&beats=7.1box%402.39%2C7.1moved%405.26%2C7.1checked%4010.03%2C7.1back%4011.47&words=One%400.00%2Cmore%400.48%2Ccount%400.96%2Cone%401.43%2Cmore%401.91%2Cbox%402.39%2CEvery%402.87%2Cpicture%403.34%2Cin%403.82%2Cthe%404.30%2Cstart%404.78%2Cmoved%405.26%2Cto%405.73%2Cstay%406.21%2Con%406.69%2Cits%407.17%2Cword%407.64%2Cand%408.12%2Ceach%408.60%2Cone%409.08%2Cis%409.56%2Cchecked%4010.03%2CNow%4010.51%2Clet%27s%4010.99%2Cstep%4011.47%2Cback%4011.94%2Cin%4012.42&prevwords=Say%400.00%2CI%400.52%2Cwant%401.05%2Cone%401.57%2Cmore%402.09%2Cstep%402.61%2CI%403.14%2Cadd%403.66%2Cone%404.18%2Cword%404.70%2Cfour%405.23%2Cand%405.75%2Ctell%406.27%2Ca%406.79%2Cnew%407.31%2Cbox%407.84%2Cto%408.36%2Cwait%408.88%2Cfor%409.41%2Cit%409.93%2CI%4010.45%2Cpress%4010.97%2Cbuild%4011.50%2COnly%4012.02%2Cpart%4012.54%2Cone%4013.06%2Cis%4013.59%2Cread%4014.11%2Caloud%4014.63%2Cagain%4015.15%2CThe%4015.68%2Crest%4016.20%2Ckeep%4016.72%2Ctheir%4017.24%2Cvoice%4017.77%2CHere%4018.29%2Cis%4018.81%2Cthe%4019.33%2Cnew%4019.86%2Cstart%4020.38&t0=signal",
+  "url": "file://~/my-lesson/deck/index.html?scene=7&cues=7.1box%402.39%2C7.1moved%405.26%2C7.1checked%4010.03%2C7.1back%4011.47&words=One%400.00%2Cmore%400.48%2Ccount%400.96%2Cone%401.43%2Cmore%401.91%2Cbox%402.39%2CEvery%402.87%2Cpicture%403.34%2Cin%403.82%2Cthe%404.30%2Cstart%404.78%2Cmoved%405.26%2Cto%405.73%2Cstay%406.21%2Con%406.69%2Cits%407.17%2Cword%407.64%2Cand%408.12%2Ceach%408.60%2Cone%409.08%2Cis%409.56%2Cchecked%4010.03%2CNow%4010.51%2Clet%27s%4010.99%2Cstep%4011.47%2Cback%4011.94%2Cin%4012.42&prevwords=Say%400.00%2CI%400.52%2Cwant%401.05%2Cone%401.57%2Cmore%402.09%2Cstep%402.61%2CI%403.14%2Cadd%403.66%2Cone%404.18%2Cword%404.70%2Cfour%405.23%2Cand%405.75%2Ctell%406.27%2Ca%406.79%2Cnew%407.31%2Cbox%407.84%2Cto%408.36%2Cwait%408.88%2Cfor%409.41%2Cit%409.93%2CI%4010.45%2Cpress%4010.97%2Cbuild%4011.50%2COnly%4012.02%2Cpart%4012.54%2Cone%4013.06%2Cis%4013.59%2Cread%4014.11%2Caloud%4014.63%2Cagain%4015.15%2CThe%4015.68%2Crest%4016.20%2Ckeep%4016.72%2Ctheir%4017.24%2Cvoice%4017.77%2CHere%4018.29%2Cis%4018.81%2Cthe%4019.33%2Cnew%4019.86%2Cstart%4020.38&t0=signal",
   "requested_seconds": 14.49999999999999,
   "settle_seconds": 1.452,
   "load_seconds": 0.05,
   "lead_seconds": 1.502,
-  "lead_in_seconds": 1.44,
-  "lead_method": "cover (36 magenta frames)",
+  "t0_seconds": 1.44,
+  "t0_method": "cover (36 magenta frames)",
   "warnings": [],
   "page_errors": [],
   "frame_gaps": [],
-  "sync_log": [],
+  "spoken_log": [],
   "cue_log": [
     {
       "id": "7.1box",
@@ -275,25 +275,25 @@ The sidecar lists what the recorder did for one page section, and where narratio
 
 | Field | Type | Meaning |
 |---|---|---|
-| `url` | string | Page URL that the recorder opened, with `scene`, `beats`, `words`, `prevwords`, `t0=signal`, and any section `params`. |
-| `requested_seconds` | number | Recording length after narration t=0: the section span plus `extra_seconds`. |
+| `url` | string | Page URL that the recorder opened, with `scene`, `cues`, `words`, `prevwords`, `t0=signal`, and any section `params`. |
+| `requested_seconds` | number | Recording length after narration t=0: the section span plus `record_margin_seconds`. |
 | `settle_seconds` | number | Wall-clock seconds from the page's `load` event to narration t=0. |
 | `load_seconds` | number | Wall-clock seconds from the recorder's start to the page's `load` event. |
-| `lead_seconds` | number | Wall-clock seconds from the recorder's start to narration t=0. Not the same as `[verify] lead_seconds`. |
-| `lead_in_seconds` | number or null | Time of the first frame after the magenta cover, in the webm. `measure` writes it, and `assemble` trims there. |
-| `lead_method` | string or null | How `measure` found `lead_in_seconds`. A value that starts with `NO COVER` is a guess. |
-| `lead_in_hash` | string or null | The first 16 hex digits of the sha256 of the webm that `measure` read. A sidecar from an older `measure` has none. |
+| `clock_start_seconds` | number | Wall-clock seconds from the recorder's start to narration t=0. Not the same as `[verify] reference_lead_seconds`. |
+| `t0_seconds` | number or null | Time of the first frame after the magenta cover, in the webm. `measure` writes it, and `assemble` trims there. |
+| `t0_method` | string or null | How `measure` found `t0_seconds`. A value that starts with `NO COVER` is a guess. |
+| `t0_hash` | string or null | The first 16 hex digits of the sha256 of the webm that `measure` read. A recording log from an older `measure` has none. |
 | `warnings` | array of strings | `window.__decktalk.warnings`, read after the recording, such as an unknown cue id. |
 | `page_errors` | array of strings | One line per uncaught exception, plus one line when the page has no runtime catalog. |
 | `frame_gaps` | array | `[seconds, ms]` pairs from `window.__decktalk.frameGaps`, one per long gap between two page frames. |
-| `sync_log` | array of tables | One `{ text, cueAt, runAt, n, firstOn }` table per `data-sync` element that matched. |
+| `spoken_log` | array of tables | One `{ text, cueAt, runAt, n, firstOn }` table per `data-text="spoken"` element that matched. |
 | `cue_log` | array of tables | One `{ id, due, ran, frame, next, after }` table per cue, from `window.__decktalk.cueLog`. Times are seconds after narration t=0. |
 | `long_frames` | array of tables | One `{ start, ms, render, presented }` table per page frame over 50 ms after t=0, from `window.__decktalk.longFrames`. |
 
 Note: `check` reports `PAGE ERROR` for any entry in `page_errors`, and `decktalk build` stops. `check` reports
-`STALLED` when the part of a frame gap after t=0 is longer than `[align] stall_ms`. `record` sets `lead_in_seconds`
-to `null`, and `measure` fills it. `assemble` prints `STALE MEASUREMENT` when `lead_in_seconds` is `null`, when
-`lead_in_hash` does not match the webm, or, with no `lead_in_hash`, when the webm is newer than the sidecar.
+`STALLED` when the part of a frame gap after t=0 is longer than `[record] stall_ms`. `record` sets `t0_seconds`
+to `null`, and `measure` fills it. `assemble` prints `STALE MEASUREMENT` when `t0_seconds` is `null`, when
+`t0_hash` does not match the webm, or, with no `t0_hash`, when the webm is newer than the recording log.
 
 ## `build/out/`
 
@@ -301,7 +301,7 @@ The out directory holds each cut section, the final video, its captions, and its
 
 | File | Meaning |
 |---|---|
-| `NN-section.mp4` | One section cut to its span, at the project's frame size, with no audio. `assemble` and `verify` read only the files of sections in `decktalk.toml`, and warn about any other file with this name. |
+| `sections/NN.mp4` | One section cut to its span, at the project's frame size, with no audio. `assemble` and `verify` read only the files of sections in `decktalk.toml`, and warn about any other file with this name. |
 | `<name>.mp4` | The final video, with one chapter per section. Consecutive sections with the same title share a chapter. |
 | `<name>-YYYYMMDD-HHMM.mp4` | A timestamped copy of the final video. |
 | `<name>.srt`, `<name>.vtt` | Captions from the word times, in final mp4 time, with the script's punctuation and case. |
@@ -321,7 +321,7 @@ Captions break at sentence ends.
 - No caption and no line is a single word, unless that word is a whole sentence.
 - A caption starts at its first word and ends 0.2 s after its last word, or when the next caption starts.
 
-{/* sample: build/out/my-lesson.srt, silent build of the scaffold (R2), first two captions */}
+{/* sample: build/out/my-lesson.srt, build without voice of the scaffold (R2), first two captions */}
 ```text build/out/my-lesson.srt
 1
 00:00:00,700 --> 00:00:02,879
@@ -333,7 +333,7 @@ Watch it step down on my count.
 One. Two, three.
 ```
 
-{/* sample: build/out/my-lesson.chapters.txt, silent build of the scaffold, first chapter */}
+{/* sample: build/out/my-lesson.chapters.txt, build without voice of the scaffold, first chapter */}
 ```text build/out/my-lesson.chapters.txt
 ;FFMETADATA1
 
@@ -344,27 +344,27 @@ END=17800
 title=Open
 ```
 
-## `build/shots/`
+## `build/screenshots/`
 
-`decktalk shots` writes screenshots here. With two or more pages, it writes one folder per page, named after the
+`decktalk screenshots` writes screenshots here. With two or more pages, it writes one folder per page, named after the
 page file.
 
-{/* sample: decktalk shots, silent build of the scaffold, first lines */}
+{/* sample: decktalk screenshots, build without voice of the scaffold, first lines */}
 ```text
-wrote build/shots/index/step-1.1.png
-wrote build/shots/index/step-2.1.png
-wrote build/shots/index/step-4.1.png
-wrote build/shots/index/step-6.1.png
-wrote build/shots/index/step-7.1.png
-wrote build/shots/index/step-5.1.png
-wrote build/shots/lesson/step-3.1.png
+wrote build/screenshots/index/slide-1.1.png
+wrote build/screenshots/index/slide-2.1.png
+wrote build/screenshots/index/slide-4.1.png
+wrote build/screenshots/index/slide-6.1.png
+wrote build/screenshots/index/slide-7.1.png
+wrote build/screenshots/index/slide-5.1.png
+wrote build/screenshots/lesson/slide-3.1.png
 ```
 
 | File | Written by |
 |---|---|
-| `step-<id>.png` | `decktalk shots`, one per step |
-| `step-<id>-cue-<cue>.png` | `decktalk shots --step ID --cue CUE`, one per cue |
-| `section-NN-at-<S>s.png` | `decktalk shots --section N --at S`, one per time |
+| `slide-<id>.png` | `decktalk screenshots`, one per slide |
+| `slide-<id>-after-<cue>.png` | `decktalk screenshots --slide ID --after CUE`, one per cue |
+| `section-NN-at-<S>s.png` | `decktalk screenshots --section N --at S`, one per time |
 
 Note: `--page` with one page file writes no page folder. `--section` frames never go in a page folder.
 
@@ -373,11 +373,11 @@ Note: `--page` with one page file writes no page folder. `--section` frames neve
 DeckTalk writes files so that a reader never sees half of one.
 
 - Stages run one after another, and one build runs one Chromium.
-- `manifest.json`, `timeline.json`, `beats.json`, each words file, and each sidecar go to a temporary file first.
+- `takes.json`, `timeline.json`, `cue-times.json`, each words file, and each recording log go to a temporary file first.
   A rename then puts each one in place.
 - The final mp4 is written to a work file, then renamed to `build/out/<name>.mp4`. The timestamped copy comes
   after the rename.
-- `narrate` saves the manifest after each paid request, so an interrupted voiced run keeps the sections it paid
+- `narrate` saves the take index after each paid request, so an interrupted voiced run keeps the sections it paid
   for.
 - An error is a `DeckTalkError` subclass that names the file or field. The command line prints it as `error: …`
   and exits 1.

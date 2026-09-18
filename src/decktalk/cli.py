@@ -1,31 +1,31 @@
 """decktalk command line.
 
     decktalk init DIR                 scaffold a project (decktalk.toml, script, cues, deck with the runtime)
-    decktalk setup                    fetch headless Chromium, ffmpeg, and KaTeX (once per machine)
+    decktalk install                  fetch headless Chromium and ffmpeg (once per machine)
     decktalk doctor                   report what is installed
-    decktalk narrate [--silent]       script.md -> build/audio (ElevenLabs, word timestamps, timeline)
+    decktalk narrate [--no-voice]     script.md -> build/narration (ElevenLabs, word timestamps, timeline)
     decktalk narrate --dry-run        what a voiced run would send, cache, or move (--json)
-    decktalk beats                    cues.json -> build/audio/beats.json
+    decktalk align                    cues.json -> build/cue-times.json
     decktalk preflight                takes, cues and frozen reveals before a voiced build: no credits, no recording
-    decktalk soundscape               ambience, sfx, underscore (ElevenLabs)
-    decktalk record                   pages -> build/rec/NN-scene.webm (Chromium)
+    decktalk soundscape               ambience, sfx, music (ElevenLabs)
+    decktalk record                   pages -> build/recordings/NN.webm (Chromium)
     decktalk measure                  find narration t=0 in each recording
     decktalk check                    recording sanity (black / truncated)
     decktalk assemble                 ffmpeg -> build/out/<name>.mp4
-    decktalk verify [SEC:CUE ...]     section starts, cuts, and every cue landing on the final mp4
-    decktalk shots                    per-step screenshots, or frames from a playing section
+    decktalk verify [SECTION:CUE ...] section starts, cuts, and every cue landing on the final mp4
+    decktalk screenshots              one PNG per slide, per cue of one slide, or per second of a playing section
     decktalk words [--json]           each spoken section's words, in seconds after the section starts
-    decktalk clip N --from S --to E --out FILE
+    decktalk clip N --start S --end E --out FILE
                                       a span of a built section and its narration -> a clip and its words file
-    decktalk build [--silent]         narrate -> beats -> record -> measure -> check -> assemble -> verify
+    decktalk build [--no-voice]       narrate -> align -> record -> measure -> check -> assemble -> verify
     decktalk status                   timeline and what is built
-    decktalk runtime                  copy the packaged decktalk-runtime.js into the project
 
 Every project command takes --project/-p DIR (default: DECKTALK_PROJECT, else the current
 directory). The -v and -q flags go before or after the command name.
 Tuning flags such as --preset override decktalk.toml and DECKTALK_* env for one run.
-status, beats, preflight, check, verify and doctor take --json, --strict and --no-fail. They exit 1
-on a certain finding, and on an uncertain one (a verdict ending in ?) only with --strict.
+Six read-only commands print JSON with --json. The five that judge, align, preflight, check, verify
+and doctor, take --exit-zero, and the four that can end a verdict in ? also take --strict. They exit
+1 on a certain finding, and on an uncertain one only with --strict.
 """
 
 from __future__ import annotations
@@ -45,10 +45,10 @@ from .verdicts import BLACK, OK, QUIET, SPEECH_AT_CUT, Findings, count
 
 log = logging.getLogger("decktalk")
 
-STRICT_HELP = "Also exit 1 on an uncertain verdict, the ones marked with a question mark."
-NO_FAIL_HELP = "Exit 0 even when a check fails, for scripts that read the table or the JSON themselves."
-JSON_HELP = "Print the result as one JSON object on stdout instead of the tables. Progress still goes to stderr."
-ALLOW_UNKNOWN_HELP = "Continue when a cue id in cues.json appears nowhere in the page that plays it."
+STRICT_HELP = "also exit 1 on an uncertain verdict, the ones marked with a question mark"
+EXIT_ZERO_HELP = "exit 0 even when a check fails, for a caller that reads the table or the JSON itself"
+JSON_HELP = "print the result as one JSON object on stdout instead of the tables (progress stays on stderr)"
+ALLOW_UNKNOWN_HELP = "continue when a cue id in cues.json appears nowhere in the page that plays it"
 BUILD_STRICT_HELP = (
     "fail on a missing clip or recording instead of substituting a slate "
     "(a clip section with optional = true still plays its slate), "
@@ -75,14 +75,14 @@ def _only(values: list[int] | None) -> list[int] | None:
 # ---- exit policy and output ------------------------------------------------------------
 
 
-def _exit_for(findings: Findings, strict: bool, no_fail: bool) -> int:
+def _exit_for(findings: Findings, strict: bool, exit_zero: bool) -> int:
     """The exit code of a read-only command, from what it found.
 
     A certain finding exits 1. An uncertain finding exits 1 only with `strict`. With
-    `no_fail` the command exits 0 whatever it found. An error is not a finding, so it
+    `exit_zero` the command exits 0 whatever it found. An error is not a finding, so it
     still exits 1 through main.
     """
-    if no_fail:
+    if exit_zero:
         return 0
     if findings.certain or (strict and findings.uncertain):
         return 1
@@ -95,14 +95,14 @@ def _finish(args: argparse.Namespace, findings: Findings, payload: dict[str, Any
         doc = {
             "command": args.cmd,
             "version": __version__,
-            "ok": _exit_for(findings, args.strict, no_fail=False) == 0,
+            "ok": _exit_for(findings, args.strict, exit_zero=False) == 0,
             "findings": findings.to_dict(),
             args.cmd: payload,
         }
         print(json.dumps(doc, indent=2))
     else:
         print(table())
-    return _exit_for(findings, args.strict, args.no_fail)
+    return _exit_for(findings, args.strict, args.exit_zero)
 
 
 def _verify_findings(result: Any) -> Findings:
@@ -110,7 +110,7 @@ def _verify_findings(result: Any) -> Findings:
     verdicts: Iterable[str] = [
         *(OK if s.ok else BLACK for s in result.starts),
         *(QUIET if c.ok else SPEECH_AT_CUT for c in result.cuts),
-        *(c.verdict for c in result.carries),
+        *(c.verdict for c in result.seams),
         *(c.verdict for c in result.cues),
     ]
     return count(verdicts)
@@ -124,21 +124,21 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     target = init(Path(args.dir), name=args.name, force=args.force)
     print(f"created {target}")
-    print("  decktalk.toml  the plan: sections -> pages or clips, voice, mix, soundscape")
+    print("  decktalk.toml  the project file: sections -> pages or clips, voice, mix, soundscape")
     print("  script.md      the narration (## N. sections)")
     print("  cues.json      which spoken phrase each visual lands on")
     print("  deck/          index.html, lesson.html, decktalk-runtime.js (open a page for its scene index)")
     print("  media/         your clips, b-roll, markers.json")
     print("next: cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID), then `decktalk build`")
-    print("      or `decktalk build --silent` to render with placeholder narration and no API key")
+    print("      or `decktalk build --no-voice` to render with placeholder narration and no API key")
     return 0
 
 
-def cmd_setup(args: argparse.Namespace) -> int:
-    from .scaffold import setup
+def cmd_install(args: argparse.Namespace) -> int:
+    from .scaffold import install
 
-    setup()
-    print("setup complete")
+    install()
+    print("install complete")
     return 0
 
 
@@ -146,27 +146,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     from .scaffold import doctor
 
     rows = doctor()
-    # A missing optional component such as KaTeX, which pages load from a CDN instead, is only a warning.
-    missing = [r for r in rows if not r.ok]
-    findings = Findings(certain=sum(r.required for r in missing), uncertain=sum(not r.required for r in missing))
-
-    def mark(r: Any) -> str:
-        return "ok     " if r.ok else "MISSING" if r.required else "warning"
-
+    findings = Findings(certain=sum(1 for r in rows if not r.ok))
     return _finish(
         args,
         findings,
         {"components": [r.to_dict() for r in rows]},
-        lambda: "\n".join(f"{r.name:<9} {mark(r)} {r.detail}" for r in rows),
+        lambda: "\n".join(f"{r.name:<9} {'ok     ' if r.ok else 'MISSING'} {r.detail}" for r in rows),
     )
-
-
-def cmd_runtime(args: argparse.Namespace) -> int:
-    from .scaffold import update_runtime
-
-    for path, existed in update_runtime(_project(args).root):
-        print(f"{'updated' if existed else 'wrote'} {path}")
-    return 0
 
 
 def cmd_narrate(args: argparse.Namespace) -> int:
@@ -208,7 +194,7 @@ def cmd_narrate(args: argparse.Namespace) -> int:
         only=_only(args.only),
         force=args.force,
         allow_placeholders=args.allow_placeholders,
-        silent=args.silent,
+        silent=args.no_voice,
         model=args.model,
     )
     print()
@@ -218,23 +204,23 @@ def cmd_narrate(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_beats(args: argparse.Namespace) -> int:
-    from .stages.beats import UnknownCueError, resolve_beats
+def cmd_align(args: argparse.Namespace) -> int:
+    from .stages.align import UnknownCueError, align
 
     project = _project(args)
     try:
-        result = resolve_beats(project, allow_unknown=args.allow_unknown)
+        result = align(project, allow_unknown_cues=args.allow_unknown_cues)
     except UnknownCueError as err:
-        # beats.json is already written, so report the result like any other finding
+        # cue-times.json is already written, so report the result like any other finding
         # instead of stopping before the table or the JSON is printed.
         result = err.result
-    unknown = 0 if args.allow_unknown else result.unknown
+    unknown = 0 if args.allow_unknown_cues else result.unknown
     # A section whose speech ends before its min_seconds is probably too short for its visuals.
     short = sum(
         1 for s in result.sections if not s.skipped and s.min_seconds is not None and s.speech_end < s.min_seconds
     )
     findings = Findings(certain=result.unresolved + unknown, uncertain=short)
-    return _finish(args, findings, result.to_dict(project.root), lambda: _report.beats_table(result))
+    return _finish(args, findings, result.to_dict(project.root), lambda: _report.align_table(result))
 
 
 def cmd_preflight(args: argparse.Namespace) -> int:
@@ -242,21 +228,25 @@ def cmd_preflight(args: argparse.Namespace) -> int:
 
     project = _project(args)
     result = preflight(project, only=_only(args.only), frames=not args.no_frames, model=args.model)
-    findings = result.findings(allow_unknown=args.allow_unknown)
+    findings = result.findings(allow_unknown_cues=args.allow_unknown_cues)
     return _finish(args, findings, result.to_dict(project.root), lambda: _report.preflight_table(result))
 
 
 def cmd_soundscape(args: argparse.Namespace) -> int:
     from .stages.soundscape import soundscape
 
-    print(_report.soundscape_table(soundscape(_project(args), only=args.only, force=args.force, dry_run=args.dry_run)))
+    print(
+        _report.soundscape_table(
+            soundscape(_project(args), only=args.names or None, force=args.force, dry_run=args.dry_run)
+        )
+    )
     return 0
 
 
 def cmd_record(args: argparse.Namespace) -> int:
     from .stages.record import record
 
-    record(_project(args), only=_only(args.only), seconds=args.seconds, use_beats=not args.no_beats)
+    record(_project(args), only=_only(args.only), seconds=args.seconds, use_cues=not args.no_cues)
     return 0
 
 
@@ -280,7 +270,9 @@ def cmd_check(args: argparse.Namespace) -> int:
 def cmd_assemble(args: argparse.Namespace) -> int:
     from .stages.assemble import assemble
 
-    result = assemble(_project(args), nomix=args.nomix, loudnorm=not args.no_loudnorm, strict=args.strict)
+    result = assemble(
+        _project(args), soundscape=not args.no_soundscape, loudness=not args.no_loudness, strict=args.strict
+    )
     print(f"{result.final}  ({result.duration:.2f}s)")
     return 0
 
@@ -289,31 +281,32 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from .stages.verify import verify
 
     project = _project(args)
-    checks = [*args.checks, *(args.cue or [])]
-    result = verify(project, checks=checks or None, only=_only(args.only))
+    result = verify(project, checks=list(args.checks) or None, only=_only(args.only))
     return _finish(args, _verify_findings(result), result.to_dict(project.root), lambda: _report.verify_table(result))
 
 
-def cmd_shots(args: argparse.Namespace) -> int:
-    if args.cue:
-        # A cue freezes one step at the moment that cue fires, so it needs exactly one step.
-        if not args.step or len(args.step) != 1 or args.section is not None:
-            args.parser.error("--cue needs exactly one --step, and it does not combine with --section")
-        from .stages.shots import shoot_steps
+def cmd_screenshots(args: argparse.Namespace) -> int:
+    if args.after:
+        # A cue freezes one slide at the moment that cue fires, so it needs exactly one slide.
+        if not args.slide or len(args.slide) != 1 or args.section is not None:
+            args.parser.error("--after needs exactly one --slide, and it does not combine with --section")
+        from .stages.screenshots import screenshot_slides
 
-        shoot_steps(_project(args), args.page or None, args.step, cues=args.cue)
+        screenshot_slides(_project(args), args.page or None, args.slide, cues=args.after)
         return 0
-    from .stages.shots import shoot
+    from .stages.screenshots import screenshots
 
-    shoot(_project(args), pages=args.page or None, steps=args.step or None, section=args.section, at=args.at or None)
+    screenshots(
+        _project(args), pages=args.page or None, slides=args.slide or None, section=args.section, at=args.at or None
+    )
     return 0
 
 
 def cmd_words(args: argparse.Namespace) -> int:
-    from .stages.clip import spoken_words
+    from .stages.clip import words
 
     project = _project(args)
-    sections = spoken_words(project, only=_only(args.only))
+    sections = words(project, only=_only(args.only))
     if args.json:
         payload = {"sections": [s.to_dict() for s in sections]}
         doc = {"command": args.cmd, "version": __version__, "ok": True, "findings": Findings().to_dict()}
@@ -324,11 +317,11 @@ def cmd_words(args: argparse.Namespace) -> int:
 
 
 def cmd_clip(args: argparse.Namespace) -> int:
-    from .stages.clip import cut_clip
+    from .stages.clip import clip
     from .status import relpath
 
     project = _project(args)
-    result = cut_clip(
+    result = clip(
         project,
         args.section,
         start=args.start,
@@ -339,7 +332,7 @@ def cmd_clip(args: argparse.Namespace) -> int:
         hold_seconds=args.hold,
     )
     video, words = (relpath(p, project.root) for p in (result.video, result.words_file))
-    source = f"{args.section:02d}-section.mp4"
+    source = f"sections/{args.section:02d}.mp4"
     print(
         f"wrote {video}  ({result.duration:.2f}s: frames {result.first_frame} to {result.last_frame} of {source}, "
         f"{result.start:.2f} to {result.end:.2f}s, hold {result.hold_seconds:g}s, gain {result.gain_db:+g} dB)"
@@ -368,8 +361,8 @@ def cmd_build(args: argparse.Namespace) -> int:
         if stage == "narrate":
             print(_report.segments_table(result.segments, wpm, result))
             print(_report.timeline_table(result.timeline))
-        elif stage == "beats":
-            print(_report.beats_table(result))
+        elif stage == "align":
+            print(_report.align_table(result))
         elif stage == "measure":
             print(_report.leads_table(result))
         elif stage == "check":
@@ -379,14 +372,14 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     result = build(
         project,
-        silent=args.silent,
+        silent=args.no_voice,
         force=args.force,
         only=_only(args.only),
-        nomix=args.nomix,
-        loudnorm=not args.no_loudnorm,
+        soundscape=not args.no_soundscape,
+        loudness=not args.no_loudness,
         strict=args.strict,
-        allow_unresolved=args.allow_unresolved,
-        allow_unknown=args.allow_unknown,
+        allow_unresolved_cues=args.allow_unresolved_cues,
+        allow_unknown_cues=args.allow_unknown_cues,
         report=report,
     )
     if result.assembly:
@@ -421,11 +414,23 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--project", "-p", default=argparse.SUPPRESS, help=project_help)
         return common(sp)
 
-    def policy(sp: argparse.ArgumentParser) -> argparse.ArgumentParser:
-        """The output and exit flags shared by the five read-only commands."""
+    def policy(sp: argparse.ArgumentParser, *, strict: bool = True, exit_zero: bool = True) -> argparse.ArgumentParser:
+        """The output and exit flags of a read-only command, for the findings that command can make.
+
+        A command that can never report an uncertain finding takes no `--strict`, and one that
+        reports no finding at all also takes no `--exit-zero`, because a flag that cannot change an
+        outcome is a promise the command breaks. Each command still exits through one policy, so
+        the defaults stand in for the flags it does not offer.
+        """
         sp.add_argument("--json", action="store_true", help=JSON_HELP)
-        sp.add_argument("--strict", action="store_true", help=STRICT_HELP)
-        sp.add_argument("--no-fail", action="store_true", help=NO_FAIL_HELP)
+        if strict:
+            sp.add_argument("--strict", action="store_true", help=STRICT_HELP)
+        else:
+            sp.set_defaults(strict=False)
+        if exit_zero:
+            sp.add_argument("--exit-zero", action="store_true", help=EXIT_ZERO_HELP)
+        else:
+            sp.set_defaults(exit_zero=False)
         return sp
 
     def encoding(sp: argparse.ArgumentParser) -> None:
@@ -438,14 +443,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true", help="write into a non-empty directory")
     s.set_defaults(fn=cmd_init)
 
-    common(sub.add_parser("setup", help="fetch Chromium, ffmpeg, and KaTeX")).set_defaults(fn=cmd_setup)
-    policy(common(sub.add_parser("doctor", help="report installed tools"))).set_defaults(fn=cmd_doctor)
-    proj(sub.add_parser("runtime", help="copy the packaged runtime into the project")).set_defaults(fn=cmd_runtime)
+    common(sub.add_parser("install", help="fetch headless Chromium and ffmpeg once per machine")).set_defaults(
+        fn=cmd_install
+    )
+    policy(common(sub.add_parser("doctor", help="report installed tools")), strict=False).set_defaults(fn=cmd_doctor)
 
     s = proj(sub.add_parser("narrate", help="synthesize narration with word timestamps"))
-    s.add_argument("--only", type=int, action="append", help=only_help)
+    s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
     s.add_argument(
-        "--force", action="store_true", help="ignore the text-hash cache, and let --silent replace voiced takes"
+        "--force", action="store_true", help="ignore the text-hash cache, and let --no-voice replace voiced takes"
     )
     s.add_argument(
         "--allow-placeholders", action="store_true", help="synthesize a section that still has a [CAPITAL] placeholder"
@@ -456,80 +462,81 @@ def build_parser() -> argparse.ArgumentParser:
         help="print each section's text and what a voiced run would voice, cache, or move, without any API call",
     )
     s.add_argument("--json", action="store_true", help="with --dry-run, print the plan as one JSON object on stdout")
-    s.add_argument("--silent", action="store_true", help="silent placeholders, no API key")
+    s.add_argument("--no-voice", action="store_true", help="placeholder narration with no API key and no spend")
     s.add_argument("--model", help="ElevenLabs model for this run")
     s.set_defaults(fn=cmd_narrate, parser=s)
 
-    s = policy(proj(sub.add_parser("beats", help="resolve cue phrases to timestamps")))
-    s.add_argument("--allow-unknown", action="store_true", help=ALLOW_UNKNOWN_HELP)
-    s.set_defaults(fn=cmd_beats)
+    s = policy(
+        proj(sub.add_parser("align", help="resolve each cue phrase in cues.json to a second on its section clock"))
+    )
+    s.add_argument("--allow-unknown-cues", action="store_true", help=ALLOW_UNKNOWN_HELP)
+    s.set_defaults(fn=cmd_align)
 
     s = policy(proj(sub.add_parser("preflight", help="plan the takes, resolve the cues, and estimate every reveal")))
-    s.add_argument("--only", type=int, action="append", help=only_help)
+    s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
     s.add_argument(
         "--no-frames", action="store_true", help="skip the frozen frames, so no browser starts and nothing is written"
     )
     s.add_argument("--model", help="speech model to check the narration cache for")
-    s.add_argument("--allow-unknown", action="store_true", help=ALLOW_UNKNOWN_HELP)
+    s.add_argument("--allow-unknown-cues", action="store_true", help=ALLOW_UNKNOWN_HELP)
     s.set_defaults(fn=cmd_preflight)
 
-    s = proj(sub.add_parser("soundscape", help="generate ambience, sfx and underscore"))
-    s.add_argument("--only", action="append", help="one item: ambience, music, or an effect name (repeat for several)")
+    s = proj(sub.add_parser("soundscape", help="generate ambience, sfx and music"))
+    s.add_argument("names", nargs="*", metavar="NAME", help="only these items: ambience, music, or an effect name")
     s.add_argument("--force", action="store_true", help="regenerate even if the file exists")
     s.add_argument("--dry-run", action="store_true", help="print every request without sending it")
     s.set_defaults(fn=cmd_soundscape)
 
     s = proj(sub.add_parser("record", help="record the pages with headless Chromium"))
-    s.add_argument("--only", type=int, action="append", help=only_help)
+    s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
     s.add_argument("--seconds", type=float, help="override every duration (smoke tests)")
     s.add_argument("--settle", type=float, help="seconds after load before the clock starts")
-    s.add_argument("--no-beats", action="store_true", help="autoplay timing instead of ?beats=")
+    s.add_argument("--no-cues", action="store_true", help="preview timing instead of ?cues=")
     s.set_defaults(fn=cmd_record)
 
     s = proj(sub.add_parser("measure", help="find narration t=0 in each recording"))
-    s.add_argument("--only", type=int, action="append", help=only_help)
+    s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
     s.set_defaults(fn=cmd_measure)
 
     s = policy(proj(sub.add_parser("check", help="recording sanity: duration and luma")))
-    s.add_argument("--only", type=int, action="append", help=only_help)
+    s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
     s.set_defaults(fn=cmd_check)
 
     s = proj(sub.add_parser("assemble", help="cut, mix and normalize the final mp4"))
-    s.add_argument("--nomix", action="store_true", help="narration only: no beds, no effects")
-    s.add_argument("--no-loudnorm", action="store_true", help="skip loudness normalization")
+    s.add_argument("--no-soundscape", action="store_true", help="narration only: no music, no ambience, no effects")
+    s.add_argument("--no-loudness", action="store_true", help="skip loudness normalization")
     s.add_argument("--strict", action="store_true", help=BUILD_STRICT_HELP)
     encoding(s)
     s.set_defaults(fn=cmd_assemble)
 
     s = policy(proj(sub.add_parser("verify", help="check section starts, cuts and cue landings on the final mp4")))
-    s.add_argument("checks", nargs="*", metavar="SECTION:CUE", help="cues to check (default: every cue in beats.json)")
     s.add_argument(
-        "--cue", action="append", metavar="SECTION:CUE", help="one cue to check, added to any positional ones (repeat)"
+        "checks", nargs="*", metavar="SECTION:CUE", help="cues to check (default: every cue in cue-times.json)"
     )
-    s.add_argument("--only", type=int, action="append", help=only_help)
+    s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
     s.set_defaults(fn=cmd_verify)
 
-    s = proj(sub.add_parser("shots", help="screenshots per step, or frames from a playing section"))
+    s = proj(
+        sub.add_parser(
+            "screenshots", help="one PNG per slide, per cue of one slide, or per second of a playing section"
+        )
+    )
     s.add_argument("--page", action="append", help="page file (default: every page in decktalk.toml)")
-    s.add_argument("--step", action="append", help="only these step ids")
-    s.add_argument("--cue", action="append", metavar="ID", help="freeze the one --step at this cue id (repeat)")
+    s.add_argument("--slide", action="append", metavar="ID", help="only these slide ids")
+    s.add_argument("--after", action="append", metavar="ID", help="freeze the one --slide at this cue id (repeat)")
     s.add_argument("--section", type=int, help="play this section with its resolved cues")
     s.add_argument("--at", type=float, action="append", help="seconds after narration t=0 (with --section)")
-    s.set_defaults(fn=cmd_shots, parser=s)
+    s.set_defaults(fn=cmd_screenshots, parser=s)
 
     s = proj(sub.add_parser("words", help="each spoken section's words, in seconds after the section starts"))
-    s.add_argument("--only", type=int, action="append", help=only_help)
+    s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
     s.add_argument("--json", action="store_true", help=JSON_HELP)
     s.set_defaults(fn=cmd_words)
 
     s = proj(sub.add_parser("clip", help="cut a span of a built section and its narration into a clip"))
     s.add_argument("section", type=int, help="the page section to cut from")
-    s.add_argument(
-        "--from", dest="start", type=float, required=True, metavar="SECONDS", help="start, after the section starts"
-    )
-    s.add_argument(
-        "--to", dest="end", type=float, required=True, metavar="SECONDS", help="end, after the section starts"
-    )
+    s.add_argument("--start", type=float, required=True, metavar="SECONDS", help="start, after the section starts")
+    s.add_argument("--end", type=float, required=True, metavar="SECONDS", help="end, after the section starts")
     s.add_argument("--out", required=True, help="the clip file, relative to the project, such as media/open.mp4")
     s.add_argument("--words", help="the words file (default: the clip's path with .words.json)")
     s.add_argument("--gain", type=float, default=0.0, metavar="DB", help="gain on the clip's sound, in dB")
@@ -537,21 +544,27 @@ def build_parser() -> argparse.ArgumentParser:
     encoding(s)
     s.set_defaults(fn=cmd_clip)
 
-    policy(proj(sub.add_parser("status", help="what is built"))).set_defaults(fn=cmd_status)
+    policy(proj(sub.add_parser("status", help="what is built")), strict=False, exit_zero=False).set_defaults(
+        fn=cmd_status
+    )
 
     s = proj(sub.add_parser("build", help="run the whole pipeline"))
-    s.add_argument("--silent", action="store_true", help="placeholder narration, no API key")
+    s.add_argument("--no-voice", action="store_true", help="placeholder narration with no API key and no spend")
     s.add_argument(
-        "--force", action="store_true", help="re-synthesize every section, and let --silent replace voiced takes"
+        "--force", action="store_true", help="re-synthesize every section, and let --no-voice replace voiced takes"
     )
     s.add_argument(
-        "--only", type=int, action="append", help="re-record only these sections (repeat the flag for several)"
+        "--only",
+        type=int,
+        action="append",
+        metavar="N",
+        help="re-record only these sections (repeat the flag for several)",
     )
-    s.add_argument("--nomix", action="store_true", help="narration only: no beds, no effects")
-    s.add_argument("--no-loudnorm", action="store_true", help="skip loudness normalization")
+    s.add_argument("--no-soundscape", action="store_true", help="narration only: no music, no ambience, no effects")
+    s.add_argument("--no-loudness", action="store_true", help="skip loudness normalization")
     s.add_argument("--strict", action="store_true", help=BUILD_STRICT_HELP)
-    s.add_argument("--allow-unresolved", action="store_true", help="build even if some cue phrases were not found")
-    s.add_argument("--allow-unknown", action="store_true", help=ALLOW_UNKNOWN_HELP)
+    s.add_argument("--allow-unresolved-cues", action="store_true", help="build even if some cue phrases were not found")
+    s.add_argument("--allow-unknown-cues", action="store_true", help=ALLOW_UNKNOWN_HELP)
     encoding(s)
     s.set_defaults(fn=cmd_build)
     return p

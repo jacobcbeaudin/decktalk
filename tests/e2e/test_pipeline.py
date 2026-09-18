@@ -26,12 +26,12 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts import Manifest, Word, write_words
+from decktalk.artifacts import Takes, Word, write_words
 from decktalk.cli import main
 from decktalk.media import ffmpeg
 from decktalk.project import Project
 from decktalk.providers.speech import SpeechRequest, get_provider
-from decktalk.scaffold import katex_missing, update_runtime, vendor_katex
+from decktalk.scaffold import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 from decktalk.stages.narrate import build_timeline, script_segments, text_hash
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(180)]
@@ -45,7 +45,7 @@ CUES = ("1:1.1first", "1:1.1second", "1:1.1third", "2:2.1fourth", "2:2.1fifth", 
 
 @dataclass
 class Built:
-    """The fixture project after `build --silent`, with the exit code and the verify JSON of that build."""
+    """The fixture project after `build --no-voice`, with the exit code and the verify JSON of that build."""
 
     root: Path
     exit_code: int
@@ -79,7 +79,7 @@ class Built:
         t = 0.0
         spans: dict[str, tuple[float, float]] = {}
         for key in ("01", "02", "03", "04", "05"):
-            dur = ffmpeg.probe_duration(self.out / f"{key}-section.mp4")
+            dur = ffmpeg.probe_duration(self.root / "build" / "sections" / f"{key}.mp4")
             spans[key] = (t, t + dur)
             t += dur
         return spans
@@ -121,23 +121,23 @@ def generate_media(root: Path) -> None:
         "-f", "lavfi", "-i", "testsrc=s=1280x720:r=30", "-f", "lavfi", "-i", "sine=f=660:r=48000",
         "-t", "2.5", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(media / "broll.mp4"),
     )  # fmt: skip
-    ffmpeg.run("-f", "lavfi", "-i", "sine=f=220:r=44100", "-t", "8", "-af", "volume=0.5", str(media / "underscore.mp3"))
+    ffmpeg.run("-f", "lavfi", "-i", "sine=f=220:r=44100", "-t", "8", "-af", "volume=0.5", str(media / "music.mp3"))
     ffmpeg.run("-f", "lavfi", "-i", "anoisesrc=c=pink:r=44100:a=0.2", "-t", "6", str(media / "ambience.mp3"))
     ffmpeg.run("-f", "lavfi", "-i", "sine=f=1000:r=44100", "-t", "0.1", str(media / "tick.mp3"))
 
 
 @pytest.fixture(scope="session")
 def built() -> Iterator[Built]:
-    """Copy the fixture, add the runtime and KaTeX, generate the media, and build it silently offline."""
+    """Copy the fixture, add the runtime and KaTeX, generate the media, and build it without voice offline."""
     if ffmpeg.installed_paths() is None:
-        pytest.skip("ffmpeg is missing: run `decktalk setup` first")
+        pytest.skip("ffmpeg is missing: run `decktalk install` first")
     if not chromium_available():
-        pytest.skip("Chromium is missing: run `decktalk setup` first")
+        pytest.skip("Chromium is missing: run `decktalk install` first")
     assert not katex_missing(), "the packaged KaTeX copy is incomplete"
     root = OUT / "pipeline"
     shutil.rmtree(root, ignore_errors=True)
     shutil.copytree(FIXTURE, root)
-    update_runtime(root)
+    shutil.copyfile(runtime_path(), root / "deck" / RUNTIME_FILE)
     assert vendor_katex(root / "deck")
     generate_media(root)
     # The user's own settings file and any key in the environment must not reach the build.
@@ -156,9 +156,9 @@ def built() -> Iterator[Built]:
         attempts: list[str] = []
         built = Built(root, 1, "", {}, attempts)
         with offline(attempts):
-            built.exit_code, built.stdout = built.cli("build", "--silent")
+            built.exit_code, built.stdout = built.cli("build", "--no-voice")
             # One strict verify run over the sections with no slate. Its JSON is kept for the CI upload.
-            doc = built.json("verify", "--json", "--strict", "--no-fail", "--only", "1", "--only", "2", "--only", "4")
+            doc = built.json("verify", "--json", "--strict", "--exit-zero", "--only", "1", "--only", "2", "--only", "4")
         (root / "verify.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
         built.verify = doc
         yield built
@@ -170,13 +170,17 @@ def built() -> Iterator[Built]:
 
 
 def voiced_copy(built: Built, name: str, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A copy of the built project whose manifest reads as voiced takes with the hash a real run would compute.
+    """A copy of the built project whose take index reads as voiced takes with the hash a real run would compute.
 
-    The dry run plans against that manifest and sends nothing, so a placeholder key is enough for it.
+    The dry run plans against that take index and sends nothing, so a placeholder key is enough for it.
     """
     root = OUT / name
     shutil.rmtree(root, ignore_errors=True)
-    shutil.copytree(built.root, root, ignore=shutil.ignore_patterns("rec", "out", "preflight", "shots", "*.mp4"))
+    shutil.copytree(
+        built.root,
+        root,
+        ignore=shutil.ignore_patterns("recordings", "out", "sections", "preflight", "screenshots", "*.mp4"),
+    )
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
     monkeypatch.setenv("ELEVENLABS_VOICE_ID", "test-voice")
     project = Project.load(root)
@@ -184,14 +188,14 @@ def voiced_copy(built: Built, name: str, monkeypatch: pytest.MonkeyPatch) -> Pat
     model = project.voice.model or cfg.model
     settings = project.voice.api_settings()
     provider = get_provider(project)
-    manifest = Manifest.load(project.manifest_path)
-    assert manifest is not None and manifest.estimated
-    manifest.estimated = False
-    manifest.model = model
+    take_index = Takes.load(project.takes_path)
+    assert take_index is not None and take_index.estimated
+    take_index.estimated = False
+    take_index.model = model
     for seg in script_segments(project)[1]:
         request = SpeechRequest(seg.tts_text(cfg), model, voice_settings=settings, output_format=cfg.output_format)
-        manifest.segments[seg.key].hash = text_hash(seg, cfg, provider.cache_key(request), settings)
-    manifest.save(project.manifest_path)
+        take_index.sections[seg.key].hash = text_hash(seg, cfg, provider.cache_key(request), settings)
+    take_index.save(project.takes_path)
     return root
 
 
@@ -225,7 +229,7 @@ def test_build_exits_zero_with_the_network_blocked(built: Built) -> None:
 def test_the_missing_optional_clip_plays_its_slate(built: Built) -> None:
     """Section 5 has no clip file, so a titled slate of slate_seconds plays there. Asserted apart from --strict."""
     assert (built.out / "slates" / "05-slate.png").stat().st_size > 0
-    assert ffmpeg.probe_duration(built.out / "05-section.mp4") == pytest.approx(1.0, abs=1 / FPS)
+    assert ffmpeg.probe_duration(built.root / "build" / "sections" / "05.mp4") == pytest.approx(1.0, abs=1 / FPS)
     _yavg, ymax = ffmpeg.luma_at(built.out / "pipeline.mp4", built.spans()["05"][0] + 0.5)
     assert ymax > 60, "the slate frame is black"
 
@@ -247,7 +251,7 @@ def test_verify_strict_finds_nothing_but_timing(built: Built) -> None:
     assert {c["key"]: c["verdict"] for c in v["cuts"]} == {k: "quiet" for k in SPOKEN}
     bad = [c for c in v["cues"] if c["verdict"] not in ("changed", "OFF CUE")]
     assert not bad, bad  # THIN CHANGE?, NO CHANGE, UNRESOLVED and skipped all fail here
-    assert all(c["av_ms"] is not None for c in v["cues"]), "a silent build carries a click at every cued word"
+    assert all(c["av_ms"] is not None for c in v["cues"]), "a build without voice carries a click at every cued word"
 
 
 def test_cue_timing_gate(built: Built, request: pytest.FixtureRequest) -> None:
@@ -275,10 +279,10 @@ def test_cue_timing_gate(built: Built, request: pytest.FixtureRequest) -> None:
         assert av_ms is not None and abs(av_ms) <= av_limit, (check, av_ms)
 
 
-def test_section_2_carries_section_1s_last_frame(built: Built) -> None:
-    [carry] = built.verify["verify"]["carries"]
-    assert (carry["key"], carry["verdict"]) == ("02", "ok"), carry
-    assert carry["changed_percent"] <= 0.1
+def test_section_2_is_seamless_after_section_1(built: Built) -> None:
+    [seam] = built.verify["verify"]["seams"]
+    assert (seam["key"], seam["verdict"]) == ("02", "ok"), seam
+    assert seam["changed_percent"] <= 0.1
 
 
 def test_streams_start_together_and_sections_sum_to_the_film(built: Built) -> None:
@@ -324,36 +328,36 @@ def test_the_broll_clip_keeps_its_own_sound(built: Built) -> None:
     assert ffmpeg.rms_db(built.out / "pipeline.mp4", clip_at + 0.5, clip_end - clip_at - 1.0) > -30
 
 
-def test_the_equation_typesets_offline_and_the_step_shot_shows_it(built: Built) -> None:
-    """KaTeX comes from deck/katex, so section 4 records with no warning, and its step screenshot is written."""
-    sidecar = json.loads((built.root / "build" / "rec" / "04-scene.json").read_text(encoding="utf-8"))
-    assert sidecar["warnings"] == [] and sidecar["page_errors"] == []
-    assert any(e["id"] == "3.1eq" for e in sidecar["cue_log"]), sidecar["cue_log"]
-    code, _out = built.cli("shots", "--step", "3.1")
+def test_the_equation_typesets_offline_and_the_slide_screenshot_shows_it(built: Built) -> None:
+    """KaTeX comes from deck/katex, so section 4 records with no warning, and its slide screenshot is written."""
+    recording_log = json.loads((built.root / "build" / "recordings" / "04.json").read_text(encoding="utf-8"))
+    assert recording_log["warnings"] == [] and recording_log["page_errors"] == []
+    assert any(e["id"] == "3.1eq" for e in recording_log["cue_log"]), recording_log["cue_log"]
+    code, _out = built.cli("screenshots", "--slide", "3.1")
     assert code == 0
-    shot = built.root / "build" / "shots" / "step-3.1.png"
-    assert shot.stat().st_size > 0
-    # The card with the equation is dark on a white page, so the frozen step is far from blank.
-    blank = built.root / "build" / "shots" / "blank.png"
+    png = built.root / "build" / "screenshots" / "slide-3.1.png"
+    assert png.stat().st_size > 0
+    # The card with the equation is dark on a white page, so the frozen slide is far from blank.
+    blank = built.root / "build" / "screenshots" / "blank.png"
     ffmpeg.run("-f", "lavfi", "-i", "color=c=white:s=1920x1080", "-frames:v", "1", str(blank))
-    assert ffmpeg.changed_images_percent(blank, shot, level=40, width=480, height=270) > 5
+    assert ffmpeg.changed_images_percent(blank, png, level=40, width=480, height=270) > 5
 
 
 def test_preflight_plans_every_take_and_estimates_each_reveal(built: Built) -> None:
-    doc = built.json("preflight", "--json", "--no-fail")
+    doc = built.json("preflight", "--json", "--exit-zero")
     p = doc["preflight"]
     assert [t["key"] for t in p["takes"]] == list(SPOKEN)
     assert p["totals"]["synthesize"] == len(p["takes"]) == 3, p["totals"]
     verdicts = {f"{c['section']}:{c['cue']}": c["verdict"] for c in p["cues"]}
     assert set(verdicts) == set(CUES)
     assert set(verdicts.values()) <= {"changed", "THIN CHANGE?", "skipped"}, verdicts
-    assert [(k["key"], k["verdict"]) for k in p["carries"]] == [("02", "ok")]
+    assert [(k["key"], k["verdict"]) for k in p["seams"]] == [("02", "ok")]
 
 
-def test_shots_write_a_frame_from_a_playing_section(built: Built) -> None:
-    code, _out = built.cli("shots", "--section", "1", "--at", "1")
+def test_screenshots_write_a_frame_from_a_playing_section(built: Built) -> None:
+    code, _out = built.cli("screenshots", "--section", "1", "--at", "1")
     assert code == 0
-    assert (built.root / "build" / "shots" / "section-01-at-1s.png").stat().st_size > 0
+    assert (built.root / "build" / "screenshots" / "section-01-at-1s.png").stat().st_size > 0
 
 
 def test_status_lists_every_output(built: Built) -> None:
@@ -363,7 +367,7 @@ def test_status_lists_every_output(built: Built) -> None:
     assert all(o["exists"] for o in s["outputs"].values()) and set(s["outputs"]) == {"srt", "vtt", "chapters"}
     assert all(sec["cut"] for sec in s["sections"])
     assert [sec["key"] for sec in s["sections"] if sec["recorded"]] == list(SPOKEN)
-    assert s["timeline"]["estimated"] and s["beats"]["exists"]
+    assert s["timeline"]["estimated"] and s["cue_times"]["exists"]
 
 
 # ---- what a voiced run would spend, with no key and no call --------------------------------------
@@ -393,7 +397,7 @@ def test_narrate_dry_run_plans_one_take_for_an_inserted_section(built: Built, mo
     toml = root / "decktalk.toml"
     toml.write_text(
         toml.read_text(encoding="utf-8")
-        + '\n[[section]]\nnumber = 6\ntitle = "Coda"\npage = "deck/index.html"\nscene = 3\n',
+        + '\n[[section]]\nnumber = 6\nchapter = "Coda"\npage = "deck/index.html"\nscene = 3\n',
         encoding="utf-8",
     )
     script = root / "script.md"
@@ -416,15 +420,15 @@ def test_cues_resolve_on_uneven_word_timestamps(built: Built, monkeypatch: pytes
     """A words file with real-looking spacing resolves by occurrence, keeps its cached take, and answers --only."""
     root = voiced_copy(built, "sync", monkeypatch)
     project = Project.load(root)
-    manifest = project.manifest()
-    assert manifest is not None
-    entry = manifest.segments["01"]
+    take_index = project.takes()
+    assert take_index is not None
+    entry = take_index.sections["01"]
     words = [
         Word(w, start, round((UNEVEN[i + 1][1] if i + 1 < len(UNEVEN) else start + 0.4) - 0.05, 3))
         for i, (w, start) in enumerate(UNEVEN)
     ]
-    write_words(project.audio_dir / entry.words_file, words)
-    build_timeline(project, manifest, script_segments(project)[1])
+    write_words(project.narration_dir / entry.words_file, words)
+    build_timeline(project, take_index, script_segments(project)[1])
     (root / "cues.json").write_text(
         json.dumps(
             {
@@ -442,9 +446,9 @@ def test_cues_resolve_on_uneven_word_timestamps(built: Built, monkeypatch: pytes
         encoding="utf-8",
     )
     run = Built(root, 0, "", {})
-    beats = run.json("beats", "--json")
-    assert beats["ok"], beats["findings"]
-    [section] = beats["beats"]["sections"]
+    aligned = run.json("align", "--json")
+    assert aligned["ok"], aligned["findings"]
+    [section] = aligned["align"]["sections"]
     assert section["key"] == "01" and section["notes"] == []
     assert section["cues"] == {"1.1first": 0.81, "1.1second": 4.05, "1.1third": pytest.approx(3.9)}
     # The words file is not part of the take hash, so the take stays cached, and --only keeps section 1 alone.
@@ -461,13 +465,13 @@ def test_cues_resolve_on_uneven_word_timestamps(built: Built, monkeypatch: pytes
 
 
 def test_build_only_rerecords_section_4(built: Built) -> None:
-    rec = built.root / "build" / "rec"
-    before = {k: (rec / f"{k}-scene.webm").stat().st_mtime_ns for k in SPOKEN}
+    rec = built.root / "build" / "recordings"
+    before = {k: (rec / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
     length = ffmpeg.probe_duration(built.out / "pipeline.mp4")
     with offline(built.network_attempts):
-        code, out = built.cli("build", "--silent", "--only", "4")
+        code, out = built.cli("build", "--no-voice", "--only", "4")
     assert code == 0, out
-    after = {k: (rec / f"{k}-scene.webm").stat().st_mtime_ns for k in SPOKEN}
+    after = {k: (rec / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
     assert after["01"] == before["01"] and after["02"] == before["02"], "only section 4 should be recorded again"
     assert after["04"] > before["04"]
     assert abs(ffmpeg.probe_duration(built.out / "pipeline.mp4") - length) < 0.05

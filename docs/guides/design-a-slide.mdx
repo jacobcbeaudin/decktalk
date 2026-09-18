@@ -40,19 +40,19 @@ A page can supply its own `<div id="dt-stage">`, and the runtime uses it. The sc
 `deck/lesson.html` does this to build one figure under all of its slides.
 
 Put one idea on each slide. A slide with more than three or four reveals is hard to follow. If a
-slide is busy, split it into two steps.
+slide is busy, split it into two slides.
 
 ## Choose a reveal effect
 
-Set `data-fx` on an element to choose the animation it plays when it appears.
+Set `data-reveal` on an element to choose the animation it plays when it appears.
 
 ```html deck/index.html
 <p class="line" data-cue="7.1a">A line of text</p>
-<div class="code" data-cue="7.1b" data-fx="fade">decktalk build</div>
-<p class="answer" data-cue="7.1c" data-fx="pop">2x</p>
+<div class="code" data-cue="7.1b" data-reveal="fade">decktalk build</div>
+<p class="answer" data-cue="7.1c" data-reveal="pop">2x</p>
 ```
 
-An element with no `data-fx` uses `rise`. The table shows what each reveal effect does and where it
+An element with no `data-reveal` uses `rise`. The table shows what each reveal effect does and where it
 works well.
 
 | Effect | Motion | Use it for | Avoid it for |
@@ -65,7 +65,7 @@ works well.
 | `dim` | `dim` starts visible and fades the element to 16% opacity over 1.2 s. | Use it for an element that recedes when its cue fires. | Avoid it for an element that has not been on screen long enough to notice. |
 | `none` | `none` shows the element on the frame of its cue, with no animation. | Use it for a cursor, a highlight, or a part of a figure. | Avoid it for text. A hard cut can look like a glitch. |
 
-Set `data-dur` in seconds to change the length of an effect. Keep effects short, so each reveal is
+Set `data-duration` in seconds to change the length of an effect. Keep effects short, so each reveal is
 visible on its word and not still moving on the next word. To show math, add
 [`data-tex`](/reference/runtime#data-tex).
 
@@ -74,7 +74,7 @@ visible on its word and not still moving on the next word. To show math, add
 Set `camera: "push"` on a scene to zoom the stage element slowly from 100% to 103%.
 
 ```js deck/index.html
-DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
+DeckTalk.scene(1, { name: "Open", camera: "push", slides: [
   { id: "1.1", hold: 14, render: () => `…` },
 ]});
 ```

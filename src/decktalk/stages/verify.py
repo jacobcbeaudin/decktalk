@@ -4,14 +4,14 @@ starts   every section opens on a real frame: past the dip-to-black, YMAX above
          visible_ymax means content is on screen.
 cuts     the audio in the last cut_window_seconds before every cut is quieter than
          cut_max_db, so no cut lands on speech.
-carries  for each section that sets carries_previous, the last frame of the previous section
+seams    for each section that sets seamless, the last frame of the previous section
          before any dip and the first frame of this section after any dip are compared, at
          diff_level and probe_width by probe_height. A changed share above max_pop_percent is a
          visible pop, and the row reads POP AT CUT.
 cues     for each SECTION:CUE, the picture changes across the cue. With no list, every cue
-         in beats.json is checked, in section order and then cue time, except the cues
+         in cue-times.json is checked, in section order and then cue time, except the cues
          that cues.json marks "verify": false. The reference frame is the first frame at
-         or after lead_seconds before the cue, but never inside the section's fade-in and
+         or after reference_lead_seconds before the cue, but never inside the section's fade-in and
          always at least one frame before the cue. For each delay in probe_delays, the
          share of pixels that change by more than diff_level between the reference and the
          probe is compared with a control. The control is the smaller share of two spans
@@ -44,7 +44,7 @@ offset   once a cue lands, every frame from the reference to the passing probe i
          used instead, which catches a reveal that grows slowly, such as text typing in.
          The frame's distance from the cue is reported in milliseconds, and a cue fails
          when the distance exceeds max_offset_frames.
-a/v      after a silent build, the loudest sample within click_search_seconds of the
+a/v      after a build without voice, the loudest sample within click_search_seconds of the
          cued word's start, and inside the cue's section, is taken as the click. The a/v
          value is the offset minus the click's distance from the cued word's start, and a
          cue also fails when that value exceeds max_av_frames.
@@ -53,15 +53,15 @@ Cue verdicts are changed, THIN CHANGE?, OFF CUE, NO CHANGE, UNRESOLVED, and skip
 never a failure, and its reason says why nothing was measured:
 
     REFERENCE_CLAMPED      no reference frame fits after the fade-in and before the cue
-    SECTION_NOT_ASSEMBLED  the section has no NN-section.mp4
+    SECTION_NOT_ASSEMBLED  the section has no sections/NN.mp4
     TOO_CLOSE_TO_END       every probe would fall past the end of the section
     OPTED_OUT              cues.json sets "verify": false on the cue
 
-A measured row after a silent build carries the reason NO_CLICK when no click was found
+A measured row after a build without voice carries the reason NO_CLICK when no click was found
 near the cued word, so its a/v value is empty.
 
-Section starts are the cumulative lengths of build/out/NN-section.mp4 for the sections in
-decktalk.toml, in order, the same arithmetic the assembler uses. A leftover NN-section.mp4
+Section starts are the cumulative lengths of build/sections/NN.mp4 for the sections in
+decktalk.toml, in order, the same arithmetic the assembler uses. A leftover sections/NN.mp4
 of a section that is not in decktalk.toml is ignored with a warning.
 """
 
@@ -73,7 +73,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import Beats
+from ..artifacts import CueTimes
 from ..config import VerifyConfig
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
@@ -158,8 +158,8 @@ class CutCheck:
 
 
 @dataclass
-class CarryCheck:
-    """The cut into a section that sets carries_previous. A picture that jumps there is a pop."""
+class SeamCheck:
+    """The cut into a section that sets seamless. A picture that jumps there is a pop."""
 
     key: str
     cut_at: float
@@ -193,7 +193,7 @@ class CueCheck:
     ok: bool
     note: str = ""
     offset_ms: int | None = None  # Where the first changed frame sits relative to the cue.
-    av_ms: int | None = None  # The offset minus the click's distance from the cued word's start, in a silent build.
+    av_ms: int | None = None  # The offset minus the click's distance from the cued word's start, with no voice.
     verdict: str = ""  # changed, THIN CHANGE?, OFF CUE, NO CHANGE, UNRESOLVED, or skipped. Derived from ok when empty.
     reason: str | None = None  # Why a row was skipped, or NO_CLICK on a measured row with no a/v value.
 
@@ -241,7 +241,7 @@ class VerifyResult:
     starts: list[StartCheck] = field(default_factory=list)
     cuts: list[CutCheck] = field(default_factory=list)
     cues: list[CueCheck] = field(default_factory=list)
-    carries: list[CarryCheck] = field(default_factory=list)
+    seams: list[SeamCheck] = field(default_factory=list)
     final: Path | None = None
     silent: bool = False  # The build carries placeholder narration, so the a/v column is measured.
 
@@ -250,7 +250,7 @@ class VerifyResult:
         return (
             all(s.ok for s in self.starts)
             and all(c.ok for c in self.cuts)
-            and all(c.ok for c in self.carries)
+            and all(c.ok for c in self.seams)
             and all(c.ok for c in self.cues if not c.skipped)
         )
 
@@ -266,7 +266,7 @@ class VerifyResult:
             "silent": self.silent,
             "starts": [s.to_dict() for s in self.starts],
             "cuts": [c.to_dict() for c in self.cuts],
-            "carries": [c.to_dict() for c in self.carries],
+            "seams": [c.to_dict() for c in self.seams],
             "cues": [c.to_dict() for c in self.cues],
         }
 
@@ -276,7 +276,7 @@ def reference_time(
 ) -> float | None:
     """Where the reference frame for a cue sits in the final file, or None when no frame fits.
 
-    The reference wants to sit lead_seconds before the cue, or earlier when a reveal that lands
+    The reference wants to sit reference_lead_seconds before the cue, or earlier when a reveal that lands
     max_offset_frames early could otherwise already show in it, and the frame it names is the
     first frame at or after that time. It may not sit inside the
     section's fade-in, where the picture is still coming up from black, and it must sit at
@@ -298,7 +298,7 @@ def cue_reach(cfg: VerifyConfig, fps: int) -> float:
     before that whole window. Otherwise the early reveal is already in the reference frame, and
     the scan measures the change only when the reveal settles, frames too late.
     """
-    return max(cfg.lead_seconds, (cfg.max_offset_frames + 1.5) / fps)
+    return max(cfg.reference_lead_seconds, (cfg.max_offset_frames + 1.5) / fps)
 
 
 def control_spans(before: float, span: float, floor: float) -> list[tuple[float, float]]:
@@ -394,28 +394,28 @@ def thin_change(changed: float, margin: float, cfg: VerifyConfig) -> bool:
     return changed < factor * cfg.min_changed_percent - 1e-9 or margin < factor * cfg.min_margin_percent - 1e-9
 
 
-def default_checks(beats: Beats, only: list[int] | None = None) -> list[str]:
+def default_checks(cue_times: CueTimes, only: list[int] | None = None) -> list[str]:
     """Every resolved cue as SECTION:CUE, in section order and then cue time."""
     checks: list[str] = []
-    for key in sorted(beats.sections):
+    for key in sorted(cue_times.sections):
         if only and int(key) not in only:
             continue
-        for cue, _t in sorted(beats.sections[key].items(), key=lambda item: item[1]):
+        for cue, _t in sorted(cue_times.sections[key].items(), key=lambda item: item[1]):
             checks.append(f"{int(key)}:{cue}")
     return checks
 
 
 def opted_out(project: Project) -> set[tuple[str, str]]:
     """(section key, cue id) for every cue that cues.json marks "verify": false."""
-    from .beats import load_cues
+    from .align import load_cues
 
-    return {(f"{spec.number:02d}", cue.step) for spec in load_cues(project) for cue in spec.cues if not cue.verify}
+    return {(f"{spec.number:02d}", cue.cue) for spec in load_cues(project) for cue in spec.cues if not cue.verify}
 
 
 def verify(project: Project, checks: list[str] | None = None, only: list[int] | None = None) -> VerifyResult:
     """Check section starts, cuts, and cues on the final mp4.
 
-    `checks` names cues as SECTION:CUE. None checks every cue in beats.json except those
+    `checks` names cues as SECTION:CUE. None checks every cue in cue-times.json except those
     opted out in cues.json, and an empty list checks no cues. `only` keeps the cue checks
     of those section numbers. A cue named explicitly is measured even when it is opted out.
     """
@@ -426,9 +426,9 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
     stray_warnings(project, "verify")
     starts, total = section_starts(project)
     if not starts or not final.exists():
-        raise MissingInputError("need build/out/NN-section.mp4 files and the final mp4; run `decktalk assemble` first")
-    manifest = project.manifest()
-    clicks = bool(manifest and manifest.estimated)
+        raise MissingInputError("need build/sections/NN.mp4 files and the final mp4; run `decktalk assemble` first")
+    takes = project.takes()
+    clicks = bool(takes and takes.estimated)
     result = VerifyResult(total_seconds=total, final=final, silent=clicks)
     for key, t in starts.items():
         probe = t + cfg.after_dip_seconds
@@ -436,10 +436,10 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
         result.starts.append(
             StartCheck(key=key, start=t, probe_at=probe, yavg=yavg, ymax=ymax, ok=ymax > cfg.visible_ymax)
         )
-    # The cut check listens to the narration track alone, so an underscore or an effect
+    # The cut check listens to the narration track alone, so the music or an effect
     # at a boundary does not count as speech. A clip carries its own audio and is exempt.
     timeline = project.timeline()
-    narration = project.audio_dir / (timeline.narration if timeline else "narration.mp3")
+    narration = project.narration_dir / (timeline.narration if timeline else "narration.mp3")
     if timeline and narration.exists():
         for key, sec in timeline.sections.items():
             if key not in starts:
@@ -451,11 +451,11 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
     fps = project.settings.video.fps
     flags = fade_flags(project)
     dip = frame_dip(project.transition.dip_seconds, fps)
-    result.carries = carry_checks(project, final, starts, flags, dip, fps)
-    beats = project.beats()
+    result.seams = seam_checks(project, final, starts, flags, dip, fps)
+    cue_times = project.cue_times()
     opt_out: set[tuple[str, str]] = set()
     if checks is None:
-        checks = default_checks(beats, only)
+        checks = default_checks(cue_times, only)
         opt_out = opted_out(project) if checks else set()
     else:
         for check in checks:
@@ -464,13 +464,13 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
         checks = [c for c in checks if not only or int(c.split(":", 1)[0]) in only]
     if not checks:
         return result
-    from .beats import read_anchors
+    from .align import read_anchors
 
-    anchors = read_anchors(project.beats_path.with_name("beats.anchors.json")) if clicks else {}
+    anchors = read_anchors(project.cue_times_anchors_path) if clicks else {}
     for check in checks:
         sec, cue = check.split(":", 1)
         key = f"{int(sec):02d}"
-        cue_t = beats.get(key, cue)
+        cue_t = cue_times.get(key, cue)
         if (key, cue) in opt_out:
             result.cues.append(skipped(check, OPTED_OUT, 'cues.json sets "verify": false'))
             continue
@@ -483,13 +483,13 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
                     None,
                     None,
                     False,
-                    "UNRESOLVED: the cue is not in beats.json",
+                    "UNRESOLVED: the cue is not in cue-times.json",
                     verdict="UNRESOLVED",
                 )
             )
             continue
         if key not in starts:
-            result.cues.append(skipped(check, SECTION_NOT_ASSEMBLED, f"no {key}-section.mp4"))
+            result.cues.append(skipped(check, SECTION_NOT_ASSEMBLED, f"no sections/{key}.mp4"))
             continue
         sec_start = starts[key]
         sec_end = next((t for k, t in starts.items() if k > key), total)
@@ -505,7 +505,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
             )
             continue
         # Another cue close by would spoil a probe or its control, so the probes fit the gap instead.
-        neighbors = [sec_start + t for c, t in beats.sections.get(key, {}).items() if c != cue]
+        neighbors = [sec_start + t for c, t in cue_times.sections.get(key, {}).items() if c != cue]
         delays, fitted = probe_plan(sec_start + cue_t, before, floor, sec_end, neighbors, cfg, fps)
         if fitted:
             log.info(
@@ -534,7 +534,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
         av_ms = None
         reason = None
         if clicks:
-            # A silent build carries a click at every word start, so the finished file's audio
+            # A build without voice carries a click at every word start, so the finished file's audio
             # can be measured against its picture: the click nearest the cue is the word.
             word_t = anchors.get(key, {}).get(cue, cue_t)
             click_ms = click_offset_ms(
@@ -568,23 +568,23 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
     return result
 
 
-def carry_checks(
+def seam_checks(
     project: Project,
     final: Path,
     starts: dict[str, float],
     flags: dict[str, tuple[bool, bool]],
     dip: float,
     fps: int,
-) -> list[CarryCheck]:
-    """One row per assembled section that sets carries_previous and follows an assembled section.
+) -> list[SeamCheck]:
+    """One row per assembled section that sets seamless and follows an assembled section.
 
     The frames compared sit outside any dip, so a fade to black is never taken for a pop. Each
     time sits half a frame before the frame it names, because a frame is the first at or after it.
     """
     cfg = project.settings.verify
-    rows: list[CarryCheck] = []
+    rows: list[SeamCheck] = []
     for prev, sec in zip(project.sections, project.sections[1:], strict=False):
-        if not sec.carries_previous or sec.key not in starts or prev.key not in starts:
+        if not sec.seamless or sec.key not in starts or prev.key not in starts:
             continue
         cut = starts[sec.key]
         last = cut - (dip if flags.get(prev.key, (False, False))[1] else 0.0) - 1.5 / fps
@@ -593,7 +593,7 @@ def carry_checks(
         share = ffmpeg.changed_pixels_percent(
             final, last, first, level=cfg.diff_level, width=cfg.probe_width, height=cfg.probe_height
         )
-        rows.append(CarryCheck(sec.key, cut, last, first, share, share <= cfg.max_pop_percent))
+        rows.append(SeamCheck(sec.key, cut, last, first, share, share <= cfg.max_pop_percent))
     return rows
 
 

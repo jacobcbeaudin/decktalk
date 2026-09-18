@@ -6,8 +6,8 @@
     uv run scripts/check.py           # lint, types, every test suite but the scaffold build, the generated files
     uv run scripts/check.py --fast    # lint, types and the unit tests alone, in a few seconds
 
-The first run may download headless Chromium, ffmpeg and KaTeX through `decktalk setup`, once per machine.
-No check needs an ElevenLabs key, and after `decktalk setup` no check needs the network. Each step prints
+The first run may download headless Chromium and ffmpeg through `decktalk install`, once per machine.
+No check needs an ElevenLabs key, and after `decktalk install` no check needs the network. Each step prints
 its command and its time, and the script exits 1 after the first step that fails.
 """
 
@@ -32,12 +32,12 @@ LINT: list[list[str]] = [
 ]
 UNIT: list[list[str]] = [[*UV, "pytest", "-q"]]
 FULL: list[list[str]] = [
-    [*UV, "decktalk", "setup"],
+    [*UV, "decktalk", "install"],
     # Every suite but the scaffold build. The unit tests run here too, so coverage counts the whole net.
     [*UV, "pytest", "-q", "-m", "not scaffold", "--cov", "--cov-report=term", "--durations=10"],
     [*UV, "scripts/build_config_reference.py", "--check"],
     [*UV, "scripts/build_changelog.py", "--check"],
-    # In the project environment, so the check draws with the Chromium that `decktalk setup` installed rather
+    # In the project environment, so the check draws with the Chromium that `decktalk install` installed rather
     # than with whatever playwright the script's own header would resolve.
     [*UV, "--with", "fonttools[woff]>=4.50", "python", "scripts/build_assets.py", "--check"],
 ]

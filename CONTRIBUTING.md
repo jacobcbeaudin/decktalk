@@ -19,15 +19,15 @@ Run every command in this file from the repository root.
 
 ```console
 uv sync --group dev
-uv run decktalk setup            # headless Chromium, ffmpeg, and KaTeX, once per machine
+uv run decktalk install            # headless Chromium and ffmpeg, once per machine
 uvx pre-commit install           # the lint hooks and the commit message hook
 ```
 
 ## Checks
 
 One command runs every check a pull request must pass: lint, types, every test suite but the scaffold build,
-and the generated-file checks. On its first run it may download headless Chromium, ffmpeg, and KaTeX through
-`decktalk setup`, once per machine.
+and the generated-file checks. On its first run it may download headless Chromium and ffmpeg through
+`decktalk install`, once per machine.
 
 ```console
 uv run scripts/check.py          # everything CI runs on a pull request, in about three minutes
@@ -58,17 +58,17 @@ slower suites, and `--strict-markers` rejects a marker that is not registered in
 | none | nothing | 1 s | config, project validation, script parsing, cue matching, the CLI with stages faked |
 | `browser` | Chromium | 1 min | `decktalk-runtime.js` in a real page, preflight's frozen frames |
 | `media` | ffmpeg | 10 s | frame analysis and loudness on synthetic video |
-| `e2e` | Chromium, ffmpeg, KaTeX | 1 min | `tests/e2e/test_pipeline.py`: a silent build of the five-section fixture, checked property by property |
-| `scaffold` | Chromium, ffmpeg, KaTeX | 20 min | reserved for the full scaffold build |
+| `e2e` | Chromium, ffmpeg | 1 min | `tests/e2e/test_pipeline.py`: a build without voice of the five-section fixture, checked property by property |
+| `scaffold` | Chromium, ffmpeg | 20 min | reserved for the full scaffold build |
 
 The pipeline test builds `tests/e2e/fixture` with the network blocked, then asserts the build, the recording
-checks, every cue, the carried frame, the merged chapter, the slate, the captions, the B-roll sound, preflight,
-shots, status, the `narrate --dry-run` plan, cue resolution on uneven word timestamps, and a rebuild of one
+checks, every cue, the seam, the merged chapter, the slate, the captions, the B-roll sound, preflight,
+screenshots, status, the `narrate --dry-run` plan, cue resolution on uneven word timestamps, and a rebuild of one
 section with `--only`. It fails on `OFF CUE` on Linux. On macOS and Windows it reports `OFF CUE` and asserts
 the wider limits of four offset frames and five a/v frames, because the hosted runners there present frames
 late. Pass `--gate-timing` to fail on `OFF CUE` everywhere. The test has a 180-second timeout.
 
-No check needs an ElevenLabs key, and no ElevenLabs key is ever a CI secret. After `decktalk setup`, no check
+No check needs an ElevenLabs key, and no ElevenLabs key is ever a CI secret. After `decktalk install`, no check
 needs the network. Do not add a check that calls the API.
 
 ### What CI runs
@@ -78,9 +78,9 @@ CI runs four jobs from `.github/workflows/ci.yml` on every pull request and push
 - The `checks` job runs `uv lock --check`, ruff, ty, the unit tests, and the generated-file checks for the
   configuration reference and the changelog. It runs on Linux with Python 3.12, 3.13, and 3.14.
 - The `lint` job runs Biome on JavaScript, once on Linux.
-- The `e2e` job runs `decktalk setup`, `decktalk doctor`, and every test suite but the scaffold build with
+- The `e2e` job runs `decktalk install`, `decktalk doctor`, and every test suite but the scaffold build with
   coverage, on Linux. Coverage must stay at or above the floor in `pyproject.toml`, and the report goes to the
-  job summary. When a test fails, the job uploads the pipeline project's `verify.json`, sidecars, shots, and mp4.
+  job summary. When a test fails, the job uploads the pipeline project's `verify.json`, recording logs, screenshots, and mp4.
 - The `cross-platform` job runs the browser, media, and pipeline suites on macOS and Windows. It runs on pushes
   to `main` and from the Actions tab, and `release.yml` runs it before `publish`, so a platform regression stops
   a release. It never runs on the tag that release-please creates, because that tag triggers no workflow.
@@ -96,12 +96,12 @@ src/decktalk/
   cli.py         the command line: its tables, --json output, and exit codes
   config.py      tuning settings: defaults, machine file, decktalk.toml, DECKTALK_* env, flags
   project.py     the decktalk.toml document, validated at load
-  artifacts.py   typed build artifacts (manifest, timeline, beats, sidecar)
-  scaffold.py    setup, doctor, and init: the downloads and the template copy
+  artifacts.py   typed build artifacts (takes, timeline, cue times, recording log)
+  scaffold.py    install, doctor, and init: the downloads and the template copy
   status.py      what a project has built, read from disk for `decktalk status`
   verdicts.py    every verdict string, and which verdicts are certain
   errors.py      DeckTalkError and its subclasses, which the CLI maps to exit codes
-  stages/        narrate, beats, preflight, record, measure (with check), assemble, verify, shots, clip (with words),
+  stages/        narrate, align, preflight, record, measure (with check), assemble, verify, screenshots, clip (with words),
                  soundscape, build
   media/         ffmpeg and Chromium (internal)
   providers/     the speech protocol and the ElevenLabs provider (internal)
@@ -115,7 +115,7 @@ tests/
   test_preflight.py  preflight's frozen frames on the scaffold and on a synthetic page (-m browser, -m media)
   conftest.py        the --gate-timing option
   e2e/test_pipeline.py  an offline build of tests/e2e/fixture, checked property by property (-m e2e)
-  e2e/fixture/       the five-section still deck: a shared chapter, a carried frame, a B-roll clip, a held
+  e2e/fixture/       the five-section still deck: a shared chapter, a seam, a B-roll clip, a held
                      page with an equation, and a missing optional clip
 scripts/
   check.py                    every check a pull request must pass, in one command
@@ -135,7 +135,7 @@ You can extend DeckTalk in two places:
 
 ## Roadmap
 
-- A local text-to-speech provider with a forced aligner will let a project build with no API.
+- A local speech provider with word timings will let a project build with no API.
 - A second slide template will offer a lighter visual style.
 - The README will show a real demo video, built from the scaffold with a cloned voice.
 
@@ -146,7 +146,7 @@ People and agents read these docs. Write so that neither has to guess.
 - Put the most important fact first in each page, section, and paragraph.
 - Write one idea per sentence. Aim for 20 words, and use 25 at most.
 - Number every procedure. Give each step one action, and show its output.
-- Put a condition before its action: "If the build stops, run `decktalk beats`."
+- Put a condition before its action: "If the build stops, run `decktalk align`."
 - Use active voice and present tense.
 - Use the [glossary](https://docs.decktalk.app/reference/glossary) term for each thing. Never use a synonym.
 - Write complete sentences. In reference tables, a short phrase is fine.

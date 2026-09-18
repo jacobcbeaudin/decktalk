@@ -483,13 +483,13 @@ def stage_svg(i: int, pal: dict[str, str], x: int, y: int, ticks: list[float]) -
 
 
 # The pipeline stages each panel runs, in their fixed order. Writing the script runs none.
-STAGE_COMMANDS = ((), ("narrate", "beats"), ("record", "measure", "check"), ("assemble", "verify"))
+STAGE_COMMANDS = ((), ("narrate", "align"), ("record", "measure", "check"), ("assemble", "verify"))
 CMD_ROW = 22  # the height the command row adds under each panel label
 
 
 def how_it_works(pal: dict[str, str], stacked: bool, background: bool, ticks: list[float]) -> str:
     css = hiw_css(pal, ticks) + f"\n.cmd{{font:500 13px {MONO};fill:{pal['ink']}}}"
-    title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The seven stages are narrate, beats, record, measure, check, assemble, and verify."
+    title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The seven stages are narrate, align, record, measure, check, assemble, and verify."
     if not stacked:
         w, h = 1200, 240 + CMD_ROW
         stages = "\n".join(stage_svg(i, pal, 60 + 280 * i, -40, ticks) for i in range(4))
@@ -540,7 +540,7 @@ STRIP_CUES = {1, 3}  # cues 1.1bowl and 1.1ball in template/cues.json
 def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
     """Why the cuts are exact: the recording opens on the magenta cover, the first clean frame is
     narration t=0, and each cue is a spoken word measured from that same origin. The scaffold's
-    reveals use data-fx="none", so the bowl and the ball each appear whole in one frame."""
+    reveals use data-reveal="instant", so the bowl and the ball each appear whole in one frame."""
     w, h = 1200, 250
     left = 72
     n_frames = 11
@@ -773,7 +773,7 @@ def verify_probes(pal: dict[str, str], background: bool) -> str:
         + f" The reported {r['delay']} second probe has two control spans that end at the reference, and both changed "
         + f"{r['control_percent']:.2f} percent."
     )
-    body = f'<text class="lab" x="{x0}" y="36">CUE {d["check"].upper()}, SILENT BUILD</text>' + "".join(parts)
+    body = f'<text class="lab" x="{x0}" y="36">CUE {d["check"].upper()}, BUILD WITHOUT VOICE</text>' + "".join(parts)
     return _svg(w, h, "Where verify measures one cue", desc, fig_css(pal), pal, background, body)
 
 
@@ -861,7 +861,9 @@ def narration_split(pal: dict[str, str], background: bool) -> str:
     )
     css.append(f".cp{{fill:{pal['bar']}}}.ch{{stroke:{pal['ink']};stroke-width:2}}")
     narr_y, vid_y, cap_y, chap_y, bh = 64, 164, 236, 268, 40
-    parts: list[str] = ['<text class="lab" x="60" y="30">SCAFFOLD WITH A CLIP SECTION, SILENT BUILD, TO SCALE</text>']
+    parts: list[str] = [
+        '<text class="lab" x="60" y="30">SCAFFOLD WITH A CLIP SECTION, BUILD WITHOUT VOICE, TO SCALE</text>'
+    ]
     for label, y in (
         ("narration.mp3", narr_y + 25),
         ("video", vid_y + 25),
@@ -951,12 +953,12 @@ def narration_split(pal: dict[str, str], background: bool) -> str:
 
 
 def duck_lane(pal: dict[str, str], background: bool) -> str:
-    """The underscore level around a clip, from [mix] and the spans that plan_mix() ducks under."""
+    """The music level around a clip, from [mix] and the spans that plan_mix() ducks under."""
     import math
 
     d = figure_data("duck-lane")
     a, b = d["window"]
-    base, duck, ramp = d["underscore_db"], d["underscore_duck_db"], d["duck_ramp_seconds"]
+    base, duck, ramp = d["music_db"], d["music_duck_db"], d["duck_ramp_seconds"]
     w, h = 1200, 320
     x0, x1 = 260, 1140
 
@@ -979,17 +981,17 @@ def duck_lane(pal: dict[str, str], background: bool) -> str:
     css.append(f".curve{{stroke:{pal['accent']};stroke-width:3;fill:none;stroke-linejoin:round}}")
     sec_y, span_y = 56, 104
     parts = [f'<clipPath id="win"><rect x="{x0}" y="0" width="{x1 - x0}" height="{h}"/></clipPath>']
-    parts.append('<text class="lab" x="60" y="36">UNDERSCORE LEVEL AROUND A CLIP, SCAFFOLD [MIX] SETTINGS</text>')
+    parts.append('<text class="lab" x="60" y="36">MUSIC LEVEL AROUND A CLIP, SCAFFOLD [MIX] SETTINGS</text>')
     parts.append(f'<text class="ln" x="60" y="{sec_y + 23}">section</text>')
     parts.append(f'<text class="ln" x="60" y="{span_y + 17}">ducked</text>')
-    parts.append(f'<text class="ln" x="60" y="{ly(base) + 5:.1f}">underscore</text>')
+    parts.append(f'<text class="ln" x="60" y="{ly(base) + 5:.1f}">music</text>')
     clipped = []
     for s in d["sections"]:
         sa, sb = max(s["video_start"], a), min(s["video_end"], b)
         xa, xb = tx(sa) + 1, tx(sb) - 1
         cls = "clip" if s["clip"] else "sec"
         clipped.append(f'<rect class="{cls}" x="{xa:.1f}" y="{sec_y}" width="{xb - xa:.1f}" height="36" rx="6"/>')
-        label = f"{s['number']} clip" if s["clip"] else f"{s['number']} {s['title']}"
+        label = f"{s['number']} clip" if s["clip"] else f"{s['number']} {s['chapter']}"
         tx_anchor = (xa + xb) / 2
         clipped.append(
             f'<rect class="block" x="{tx_anchor - 7 * len(label) / 2 - 8:.1f}" y="{sec_y + 8}" width="{7 * len(label) + 16:.1f}" height="20" rx="4"/>'
@@ -1027,12 +1029,12 @@ def duck_lane(pal: dict[str, str], background: bool) -> str:
         )
     s3, clip, s5 = d["sections"]
     desc = (
-        f"The underscore level from {a // 60:.0f}:{a % 60:02.0f} to {b // 60:.0f}:{b % 60:02.0f} of the video, across the end of section {s3['number']}, "
+        f"The music level from {a // 60:.0f}:{a % 60:02.0f} to {b // 60:.0f}:{b % 60:02.0f} of the video, across the end of section {s3['number']}, "
         f"the clip in section {clip['number']}, and the start of section {s5['number']}. The level sits at {base:.0f} dB, drops to "
         f"{base + duck:.0f} dB under each spoken span and under the whole clip, and comes back up in the short silence after the last word "
         f"of section {s3['number']}."
     )
-    return _svg(w, h, "How the underscore ducks", desc, css, pal, background, "".join(parts))
+    return _svg(w, h, "How the music ducks", desc, css, pal, background, "".join(parts))
 
 
 # ---- cue offset ---------------------------------------------------------------------------------
@@ -1108,11 +1110,11 @@ LANES = (
 
 
 def scaffold_sections() -> list[tuple[int, str, bool]]:
-    """(number, title, is a clip) for each [[section]] of the scaffold that `decktalk init` writes."""
+    """(number, chapter, is a clip) for each [[section]] of the scaffold that `decktalk init` writes."""
     import tomllib
 
     doc = tomllib.loads((ROOT / "src" / "decktalk" / "template" / "decktalk.toml").read_text(encoding="utf-8"))
-    return [(s["number"], s["title"], "clip" in s) for s in doc["section"]]
+    return [(s["number"], s["chapter"], "clip" in s) for s in doc["section"]]
 
 
 def hatch(pal: dict[str, str], pid: str = "hatch") -> str:
@@ -1279,14 +1281,14 @@ VERIFY_CUE = "8:7.1checked"
 CUE_OFFSET_WORDS = ("3", "it", "steps", "downhill")  # section, then the words around 3.4steps ("So it steps downhill")
 # The clip figures come from the clip project: the scaffold with the test clip that docs/guides/clip-section.mdx
 # puts in its clip section 5, the BEFORE clip of the edit. Section 7 stays a slate.
-DUCK_SECTIONS = ("04", "05", "06")  # the underscore lane: the end of section 4, the clip, the start of section 6
+DUCK_SECTIONS = ("04", "05", "06")  # the music lane: the end of section 4, the clip, the start of section 6
 DUCK_WINDOW = (-3.0, 4.0)  # seconds before the clip starts and after it ends
 
 
 def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     """Measure every number the figures print from a built scaffold, with DeckTalk's own code.
 
-    Run it on a scaffold after `decktalk build --silent`, with an interpreter that imports decktalk:
+    Run it on a scaffold after `decktalk build --no-voice`, with an interpreter that imports decktalk:
 
         uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson --clip-project path/to/clip-lesson
 
@@ -1316,12 +1318,12 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     final = project.final
     timeline = project.timeline()
     if timeline is None or not final.exists():
-        sys.exit(f"{project_dir}: no timeline or final mp4. Run `decktalk build --silent` there first.")
+        sys.exit(f"{project_dir}: no timeline or final mp4. Run `decktalk build --no-voice` there first.")
     starts, total = vmod.section_starts(project)
     sections = sorted([*project.page_sections, *project.clip_sections], key=lambda s: s.number)
     source = {
         "decktalk": decktalk.__version__,
-        "build": "decktalk build --silent on the scaffold that decktalk init writes",
+        "build": "decktalk build --no-voice on the scaffold that decktalk init writes",
         "estimated_words": timeline.estimated,
     }
     FIG_DATA.mkdir(parents=True, exist_ok=True)
@@ -1334,7 +1336,7 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     sec, cue = VERIFY_CUE.split(":")
     key = f"{int(sec):02d}"
     row = vmod.verify(project, checks=[VERIFY_CUE]).cues[0]
-    cue_t = project.beats().get(key, cue)
+    cue_t = project.cue_times().get(key, cue)
     sec_start = starts[key]
     sec_end = next((t for k, t in starts.items() if k > key), total)
     cue_at = sec_start + cue_t
@@ -1345,7 +1347,7 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     lead = vmod.cue_reach(cfg, fps)
     size = {"width": cfg.probe_width, "height": cfg.probe_height}
     # The probes verify uses: probe_delays, or probes fitted between the cue and a close neighbor.
-    neighbors = [sec_start + t for c, t in project.beats().sections.get(key, {}).items() if c != cue]
+    neighbors = [sec_start + t for c, t in project.cue_times().sections.get(key, {}).items() if c != cue]
     delays, fitted = vmod.probe_plan(cue_at, before, floor, sec_end, neighbors, cfg, fps)
     probes = []
     for delay in delays:
@@ -1386,7 +1388,7 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
             "cue_seconds": cue_t,
             "final_seconds": round(cue_at, 3),
             "section_start": sec_start,
-            "lead_seconds": round(lead, 4),
+            "reference_lead_seconds": round(lead, 4),
             "reference_seconds": round(before - cue_at, 4),
             "fps": fps,
             "diff_level": cfg.diff_level,
@@ -1420,7 +1422,7 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     write(
         "cue-offset.json",
         {
-            "source": {**source, "file": f"build/audio/{sec_key}-*.words.json via timeline.json"},
+            "source": {**source, "file": f"build/narration/{sec_key}-*.words.json via timeline.json"},
             "section": int(sec_key),
             "words": [
                 {"word": w.word, "start": round(w.start - ts.start, 3), "end": round(w.end - ts.start, 3)}
@@ -1440,14 +1442,14 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
     project = Project.load(clip_dir)
     timeline = project.timeline()
     if timeline is None or not project.final.exists():
-        sys.exit(f"{clip_dir}: no timeline or final mp4. Run `decktalk build --silent` there first.")
+        sys.exit(f"{clip_dir}: no timeline or final mp4. Run `decktalk build --no-voice` there first.")
     starts, total = vmod.section_starts(project)
     sections = sorted([*project.page_sections, *project.clip_sections], key=lambda s: s.number)
     if not any(s.is_clip for s in sections):
         sys.exit(f"{clip_dir}: no clip section. Put in the test clip from docs/guides/clip-section.mdx.")
     source = {
         **source,
-        "build": "decktalk build --silent on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
+        "build": "decktalk build --no-voice on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
         "estimated_words": timeline.estimated,
     }
 
@@ -1474,7 +1476,7 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
         entry = {
             "number": s.number,
             "key": s.key,
-            "title": s.title,
+            "chapter": s.chapter,
             "clip": s.is_clip,
             "video_start": round(starts[s.key], 3),
         }
@@ -1502,7 +1504,7 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
         },
     )
 
-    # duck lane: the underscore gain from [mix] and the spoken spans, as plan_mix() builds them
+    # duck lane: the music gain from [mix] and the spoken spans, as plan_mix() builds them
     mix = project.mix
     spans = [
         [offsets[k] + ts.start, offsets[k] + (ts.speech_end if ts.speech_end is not None else ts.end)]
@@ -1516,10 +1518,10 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
         {
             "source": {
                 **source,
-                "rule": "gain = underscore_db x (1 - (1 - underscore_duck_db) x max over spans of a linear ramp), from stages/assemble.py plan_mix",
+                "rule": "gain = music_db x (1 - (1 - music_duck_db) x max over spans of a linear ramp), from stages/assemble.py plan_mix",
             },
-            "underscore_db": mix.underscore_db,
-            "underscore_duck_db": mix.underscore_duck_db,
+            "music_db": mix.music_db,
+            "music_duck_db": mix.music_duck_db,
             "duck_ramp_seconds": project.settings.audio.duck_ramp_seconds,
             "window": [round(t, 3) for t in window],
             "spans": [[round(a, 3), round(b, 3)] for a, b in sorted(spans) if b > window[0] and a < window[1]],

@@ -1,6 +1,6 @@
 """Frame analysis against real ffmpeg on a synthetic video.
 
-These tests need the ffmpeg that `decktalk setup` fetches, so they carry the media marker:
+These tests need the ffmpeg that `decktalk install` fetches, so they carry the media marker:
 
     uv run pytest -m media
 
@@ -228,27 +228,28 @@ def test_verify_finds_a_pop_between_synthetic_sections_outside_the_dip(tmp_path)
     from decktalk.stages.verify import verify
 
     toml = '[project]\nname = "t"\n' + "".join(
-        f'[[section]]\nnumber = {n}\npage = "deck/index.html"\n' + ("carries_previous = true\n" if n > 1 else "")
+        f'[[section]]\nnumber = {n}\npage = "deck/index.html"\n' + ("seamless = true\n" if n > 1 else "")
         for n in (1, 2, 3)
     )
     (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
     p = Project.load(tmp_path, environ={})
     p.out_dir.mkdir(parents=True)
-    p.audio_dir.mkdir(parents=True)
-    p.beats_path.write_text("{}", encoding="utf-8")
+    p.sections_dir.mkdir(parents=True)
+    p.narration_dir.mkdir(parents=True)
+    p.cue_times_path.write_text("{}", encoding="utf-8")
     # Section 2 continues section 1's picture. Section 3 opens with the panel moved, a pop. Every cut dips,
     # so sections 1 and 2 fade out, the way assemble renders a page section before a dip.
     videos = []
     for key, panel_x, fade_out in (("01", 300, True), ("02", 300, True), ("03", 60, False)):
-        videos.append(p.out_dir / f"{key}-section.mp4")
+        videos.append(p.sections_dir / f"{key}.mp4")
         _synthetic_section(videos[-1], panel_x, fade_out)
     listing = tmp_path / "sections.txt"
     listing.write_text("".join(f"file '{v.as_posix()}'\n" for v in videos), encoding="utf-8")
     ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(p.final))
 
     result = verify(p, checks=[])
-    assert [(c.key, c.cut_at, c.verdict) for c in result.carries] == [("02", 2.0, "ok"), ("03", 4.0, "POP AT CUT")]
-    continuous, pop = result.carries
+    assert [(c.key, c.cut_at, c.verdict) for c in result.seams] == [("02", 2.0, "ok"), ("03", 4.0, "POP AT CUT")]
+    continuous, pop = result.seams
     assert continuous.changed_percent == 0.0
     assert pop.changed_percent > 2 * PANEL_PERCENT * 0.9  # the panel left one place and appeared in another
     assert not result.ok
@@ -269,9 +270,9 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
         encoding="utf-8",
     )
     p = Project.load(tmp_path, environ={})
-    p.audio_dir.mkdir(parents=True)
+    p.narration_dir.mkdir(parents=True)
     # The track holds section 1 from 0 to 2 s and section 3 from 2 to 4 s, with a click half a second into each.
-    ffmpeg.write_clicks(p.audio_dir / "narration.mp3", 4.0, [0.5, 2.5], sample_rate=48000, bitrate="128k")
+    ffmpeg.write_clicks(p.narration_dir / "narration.mp3", 4.0, [0.5, 2.5], sample_rate=48000, bitrate="128k")
     clip = tmp_path / "broll.m4a"
     ffmpeg.run("-f", "lavfi", "-i", "sine=f=660:r=48000:d=2", "-c:a", "aac", str(clip))
     tl = Timeline(
@@ -284,7 +285,7 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
         RenderedSection(p.sections[1], tmp_path / "02.mp4", 1.5, "clip", audio=clip),
         RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.0, "page"),
     ]
-    plan = plan_mix(p, rows, tl, nomix=True)
+    plan = plan_mix(p, rows, tl, soundscape=False)
     out = tmp_path / "mix.wav"
     ffmpeg.run(
         "-f", "lavfi", "-t", f"{plan.total}", "-i", "color=c=black:s=64x36:r=25", *mix_input_args(plan),
@@ -301,9 +302,9 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
 
 def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_again(tmp_path):
     """A take voiced under a short tail keeps its hash when min_tail_seconds grows, so narrate pads it in place."""
-    from decktalk.artifacts import Manifest, ManifestSegment, Word, write_words
+    from decktalk.artifacts import Take, Takes, Word, write_words
     from decktalk.project import Project
-    from decktalk.providers.speech import register
+    from decktalk.providers.speech import register_speech_provider
     from decktalk.stages.narrate import narrate, script_segments, text_hash
 
     class NeverSpeaks:
@@ -315,7 +316,7 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
         def cache_key(self, request):
             return "never-voice"
 
-    register("never", lambda project: NeverSpeaks())
+    register_speech_provider("never", lambda project: NeverSpeaks())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text(
         "[narration]\nmin_tail_seconds = 0.9\n[voice]\nprovider = 'never'\n[[section]]\nnumber = 1\npage = 'a.html'\n",
@@ -323,31 +324,31 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
     )
     p = Project.load(tmp_path, environ={})
     cfg = p.settings.narration
-    p.audio_dir.mkdir(parents=True)
+    p.narration_dir.mkdir(parents=True)
     # One second of tone for the speech, then the 0.4 s tail an earlier min_tail_seconds left.
-    take = p.audio_dir / "01-open.mp3"
+    take = p.narration_dir / "01-open.mp3"
     ffmpeg.run(
         "-f", "lavfi", "-i", "sine=f=440:r=44100:d=1", "-af", "apad=pad_dur=0.4",
         "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(take),
     )  # fmt: skip
-    write_words(p.audio_dir / "01-open.words.json", [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)])
+    write_words(p.narration_dir / "01-open.words.json", [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)])
     _all, spoken = script_segments(p)
     seg = spoken[0]
     settings = p.voice.api_settings()
     digest = text_hash(seg, cfg, "never-voice", settings)
     before = ffmpeg.probe_duration(take)
-    manifest = Manifest(script="script.md", model="m", output_format=cfg.output_format)
-    manifest.segments[seg.key] = ManifestSegment(
-        index=1, title="Open", file=seg.filename, words_file=seg.words_filename, hash=digest,
-        words=2, est_seconds=1.0, duration_seconds=before, speech_end_seconds=1.0, tail_padded_seconds=0.1,
+    take_index = Takes(script="script.md", model="m", output_format=cfg.output_format)
+    take_index.sections[seg.key] = Take(
+        index=1, chapter="Open", file=seg.filename, words_file=seg.words_filename, hash=digest,
+        word_count=2, estimated_seconds=1.0, duration_seconds=before, speech_end_seconds=1.0, tail_padded_seconds=0.1,
     )  # fmt: skip
-    manifest.save(p.manifest_path)
+    take_index.save(p.takes_path)
     assert ffmpeg.trailing_silence(take) < 0.5
 
     first = narrate(p)
     assert first.cached == [seg.key] and first.synthesized == []
     assert ffmpeg.trailing_silence(take) >= cfg.min_tail_seconds
-    padded = Manifest.load(p.manifest_path).segments[seg.key]
+    padded = Takes.load(p.takes_path).sections[seg.key]
     assert padded.hash == digest, "padding changed the cache key"
     assert padded.duration_seconds > before + 0.4
     assert padded.duration_seconds == pytest.approx(ffmpeg.probe_duration(take), abs=0.001)
@@ -356,16 +357,16 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
 
     second = narrate(p)
     assert second.cached == [seg.key] and second.synthesized == []
-    again = Manifest.load(p.manifest_path).segments[seg.key]
+    again = Takes.load(p.takes_path).sections[seg.key]
     assert again.duration_seconds == padded.duration_seconds, "a second run padded the take again"
     assert again.tail_padded_seconds == padded.tail_padded_seconds
 
 
 def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path):
     """A close that moves from section 2 to section 3 keeps its take under its new file names."""
-    from decktalk.artifacts import Manifest, ManifestSegment, Word, write_words
+    from decktalk.artifacts import Take, Takes, Word, write_words
     from decktalk.project import Project
-    from decktalk.providers.speech import register
+    from decktalk.providers.speech import register_speech_provider
     from decktalk.stages.narrate import narrate, script_segments, text_hash
 
     class NeverSpeaks:
@@ -377,7 +378,7 @@ def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path)
         def cache_key(self, request):
             return "never-voice"
 
-    register("never-renumbered", lambda project: NeverSpeaks())
+    register_speech_provider("never-renumbered", lambda project: NeverSpeaks())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 3. Close\n\nGoodbye now.\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text(
         "[narration]\nmin_tail_seconds = 0.5\n[voice]\nprovider = 'never-renumbered'\n"
@@ -386,30 +387,30 @@ def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path)
     )
     p = Project.load(tmp_path, environ={})
     cfg = p.settings.narration
-    p.audio_dir.mkdir(parents=True)
+    p.narration_dir.mkdir(parents=True)
     _all, spoken = script_segments(p)
     settings = p.voice.api_settings()
-    manifest = Manifest(script="script.md", model="m", output_format=cfg.output_format)
+    take_index = Takes(script="script.md", model="m", output_format=cfg.output_format)
     for old_key, seg, freq in [("01", spoken[0], 440), ("02", spoken[1], 660)]:
         name = f"{old_key}-{seg.slug}"
         ffmpeg.run(
             "-f", "lavfi", "-i", f"sine=f={freq}:r=44100:d=1", "-af", "apad=pad_dur=1",
-            "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(p.audio_dir / f"{name}.mp3"),
+            "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(p.narration_dir / f"{name}.mp3"),
         )  # fmt: skip
-        write_words(p.audio_dir / f"{name}.words.json", [Word("word", 0.0, 1.0)])
-        manifest.segments[old_key] = ManifestSegment(
-            index=int(old_key), title=seg.title, file=f"{name}.mp3", words_file=f"{name}.words.json",
-            hash=text_hash(seg, cfg, "never-voice", settings), words=2, est_seconds=1.0,
-            duration_seconds=ffmpeg.probe_duration(p.audio_dir / f"{name}.mp3"),
+        write_words(p.narration_dir / f"{name}.words.json", [Word("word", 0.0, 1.0)])
+        take_index.sections[old_key] = Take(
+            index=int(old_key), chapter=seg.title, file=f"{name}.mp3", words_file=f"{name}.words.json",
+            hash=text_hash(seg, cfg, "never-voice", settings), word_count=2, estimated_seconds=1.0,
+            duration_seconds=ffmpeg.probe_duration(p.narration_dir / f"{name}.mp3"),
         )  # fmt: skip
-    manifest.save(p.manifest_path)
+    take_index.save(p.takes_path)
 
     result = narrate(p)
     assert result.synthesized == [] and result.cached == ["01", "03"]
-    moved = Manifest.load(p.manifest_path)
-    assert sorted(moved.segments) == ["01", "03"]
-    assert moved.segments["03"].file == "03-close.mp3" and moved.segments["03"].index == 3
-    assert (p.audio_dir / "03-close.mp3").read_bytes() == (p.audio_dir / "02-close.mp3").read_bytes()
+    moved = Takes.load(p.takes_path)
+    assert sorted(moved.sections) == ["01", "03"]
+    assert moved.sections["03"].file == "03-close.mp3" and moved.sections["03"].index == 3
+    assert (p.narration_dir / "03-close.mp3").read_bytes() == (p.narration_dir / "02-close.mp3").read_bytes()
     assert list(result.timeline.sections) == ["01", "03"]
     assert narrate(p).cached == ["01", "03"]
 
@@ -438,9 +439,9 @@ def test_trailing_silence_counts_a_silence_that_ends_in_the_encoder_padding(tmp_
 @pytest.mark.parametrize("tail", [1.3, 0.2])
 def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
     """A take that meets min_tail_seconds, padded or not, keeps its hash, bytes, and duration on the next run."""
-    from decktalk.artifacts import Manifest, Word
+    from decktalk.artifacts import Takes, Word
     from decktalk.project import Project
-    from decktalk.providers.speech import register
+    from decktalk.providers.speech import register_speech_provider
     from decktalk.stages.narrate import narrate
 
     class ToneVoice:
@@ -456,24 +457,24 @@ def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
         def cache_key(self, request):
             return f"tone-voice-{tail}"
 
-    register(ToneVoice.name, lambda project: ToneVoice())
+    register_speech_provider(ToneVoice.name, lambda project: ToneVoice())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text(
-        f"[narration]\nmin_tail_seconds = 1.3\nlead_break_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
+        f"[narration]\nmin_tail_seconds = 1.3\nopening_silence_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
         "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\npage = 'a.html'\n",
         encoding="utf-8",
     )
     p = Project.load(tmp_path, environ={})
     first = narrate(p)
     assert first.synthesized == ["01", "02"] and ToneVoice.calls == 2
-    entry = Manifest.load(p.manifest_path).segments["02"]
-    take = p.audio_dir / entry.file
+    entry = Takes.load(p.takes_path).sections["02"]
+    take = p.narration_dir / entry.file
     assert (entry.tail_padded_seconds > 0) == (tail < 1.3)
     data = take.read_bytes()
 
     second = narrate(p)
     assert second.cached == ["01", "02"] and second.synthesized == [] and ToneVoice.calls == 2
-    again = Manifest.load(p.manifest_path).segments["02"]
+    again = Takes.load(p.takes_path).sections["02"]
     assert again.hash == entry.hash
     assert again.duration_seconds == entry.duration_seconds, "a cached take was padded again"
     assert again.tail_padded_seconds == entry.tail_padded_seconds
@@ -482,9 +483,9 @@ def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
 
 def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     """A section's lead joins silence into narration.mp3 and its tail pads the take, and neither voices it again."""
-    from decktalk.artifacts import Manifest, Word
+    from decktalk.artifacts import Takes, Word
     from decktalk.project import Project
-    from decktalk.providers.speech import register
+    from decktalk.providers.speech import register_speech_provider
     from decktalk.stages.narrate import narrate
 
     class ToneVoice:
@@ -500,19 +501,19 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
         def cache_key(self, request):
             return "tone-lead-voice"
 
-    register(ToneVoice.name, lambda project: ToneVoice())
+    register_speech_provider(ToneVoice.name, lambda project: ToneVoice())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
     base = (
-        f"[narration]\nmin_tail_seconds = 0.7\nlead_break_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
+        f"[narration]\nmin_tail_seconds = 0.7\nopening_silence_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
         "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\npage = 'a.html'\n"
     )
     toml = tmp_path / "decktalk.toml"
     toml.write_text(base, encoding="utf-8")
     first = narrate(Project.load(tmp_path, environ={}))
     assert first.synthesized == ["01", "02"] and ToneVoice.calls == 2
-    manifest_path = tmp_path / "build" / "audio" / "manifest.json"
-    entry = Manifest.load(manifest_path).segments["02"]
-    take = tmp_path / "build" / "audio" / entry.file
+    takes_path = tmp_path / "build" / "narration" / "takes.json"
+    entry = Takes.load(takes_path).sections["02"]
+    take = tmp_path / "build" / "narration" / entry.file
     data = take.read_bytes()
     before = first.timeline.sections["02"]
 
@@ -520,12 +521,12 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     p = Project.load(tmp_path, environ={})
     second = narrate(p)
     assert second.synthesized == [] and second.cached == ["01", "02"] and ToneVoice.calls == 2
-    assert take.read_bytes() == data and Manifest.load(manifest_path).segments["02"] == entry
+    assert take.read_bytes() == data and Takes.load(takes_path).sections["02"] == entry
     after = second.timeline.sections["02"]
     assert after.start == before.start and after.lead_seconds == 1.5
     assert after.duration == pytest.approx(before.duration + 1.5, abs=0.002)
     assert [w.start for w in after.words] == [pytest.approx(w.start + 1.5, abs=0.001) for w in before.words]
-    narration = p.audio_dir / "narration.mp3"
+    narration = p.narration_dir / "narration.mp3"
     assert ffmpeg.decoded_duration(narration) == pytest.approx(first.timeline.total_seconds + 1.5, abs=0.03)
     assert ffmpeg.rms_db(narration, after.start + 0.1, 1.3) < -60, "the lead is not silent"
     assert ffmpeg.rms_db(narration, after.start + 1.55, 0.4) > -30, "the take does not follow the lead"
@@ -534,28 +535,29 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     p = Project.load(tmp_path, environ={})
     third = narrate(p)
     assert third.synthesized == [] and third.cached == ["01", "02"] and ToneVoice.calls == 2
-    padded = Manifest.load(manifest_path).segments["02"]
+    padded = Takes.load(takes_path).sections["02"]
     assert padded.hash == entry.hash and padded.tail_padded_seconds > 1.0
     assert ffmpeg.trailing_silence(take) >= 2.0
-    assert Manifest.load(manifest_path).segments["01"].tail_padded_seconds == 0.0
+    assert Takes.load(takes_path).sections["01"].tail_padded_seconds == 0.0
     fourth = narrate(p)
     assert fourth.synthesized == [] and ToneVoice.calls == 2
-    assert Manifest.load(manifest_path).segments["02"].duration_seconds == padded.duration_seconds
+    assert Takes.load(takes_path).sections["02"].duration_seconds == padded.duration_seconds
 
 
 def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
     """The picture, the take over the same span after the section's lead, the gain, the hold, and the words file."""
-    from decktalk.artifacts import Manifest, ManifestSegment, Timeline, TimelineSection, Word, read_words
+    from decktalk.artifacts import Take, Takes, Timeline, TimelineSection, Word, read_words
     from decktalk.cli import main
     from decktalk.project import Project
-    from decktalk.stages.clip import cut_clip
+    from decktalk.stages.clip import clip
 
     (tmp_path / "decktalk.toml").write_text(
-        "[[section]]\nnumber = 1\ntitle = 'Open'\npage = 'a.html'\nlead_seconds = 0.5\n", encoding="utf-8"
+        "[[section]]\nnumber = 1\nchapter = 'Open'\npage = 'a.html'\nlead_seconds = 0.5\n", encoding="utf-8"
     )
     p = Project.load(tmp_path, environ={})
     p.out_dir.mkdir(parents=True)
-    p.audio_dir.mkdir(parents=True)
+    p.sections_dir.mkdir(parents=True)
+    p.narration_dir.mkdir(parents=True)
     # A 4 s section: red until 2.0 s, then blue.
     ffmpeg.run(
         "-f", "lavfi", "-i", "color=c=red:s=320x180:r=25:d=2", "-f", "lavfi", "-i", "color=c=blue:s=320x180:r=25:d=2",
@@ -565,43 +567,43 @@ def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
     # The take has a tone from 1.5 to 2.0 s, which is 2.0 to 2.5 s in the section after its 0.5 s lead.
     ffmpeg.run(
         "-f", "lavfi", "-i", "sine=f=440:r=44100:d=0.5", "-af", "adelay=1500:all=1,apad=whole_dur=3.5",
-        "-c:a", "libmp3lame", "-b:a", "128k", str(p.audio_dir / "01-open.mp3"),
+        "-c:a", "libmp3lame", "-b:a", "128k", str(p.narration_dir / "01-open.mp3"),
     )  # fmt: skip
     words = [Word("go", 0.9, 1.1), Word("Watch", 2.0, 2.2), Word("it", 2.25, 2.5), Word("now", 3.0, 3.4)]
     timeline = Timeline("narration.mp3", 4.0, {"01": TimelineSection("Open", 0.0, 4.0, 4.0, 3.4, words, 0.5)})
     timeline.save(p.timeline_path)
-    manifest = Manifest(script="script.md", model="m", output_format="mp3_44100_128")
-    manifest.segments["01"] = ManifestSegment(
-        index=1, title="Open", file="01-open.mp3", words_file="01-open.words.json", hash="h",
-        words=4, est_seconds=3.0, duration_seconds=3.5, spoken="Go. Watch it, now.",
+    take_index = Takes(script="script.md", model="m", output_format="mp3_44100_128")
+    take_index.sections["01"] = Take(
+        index=1, chapter="Open", file="01-open.mp3", words_file="01-open.words.json", hash="h",
+        word_count=4, estimated_seconds=3.0, duration_seconds=3.5, spoken="Go. Watch it, now.",
     )  # fmt: skip
-    manifest.save(p.manifest_path)
+    take_index.save(p.takes_path)
 
-    result = cut_clip(p, 1, start=1.0, end=3.0, out="media/x.mp4", gain_db=-6, hold_seconds=0.4)
-    clip = tmp_path / "media" / "x.mp4"
-    assert (result.video, result.words_file) == (clip, tmp_path / "media" / "x.words.json")
+    result = clip(p, 1, start=1.0, end=3.0, out="media/x.mp4", gain_db=-6, hold_seconds=0.4)
+    clip_file = tmp_path / "media" / "x.mp4"
+    assert (result.video, result.words_file) == (clip_file, tmp_path / "media" / "x.words.json")
     assert (result.first_frame, result.last_frame, result.start, result.end) == (25, 74, 1.0, 3.0)
     assert (result.hold_seconds, result.duration) == (0.4, 2.4)
-    assert ffmpeg.probe_duration(clip) == pytest.approx(2.4, abs=0.05)
-    red, blue = ffmpeg.luma_at(clip, 0.5)[0], ffmpeg.luma_at(clip, 1.5)[0]
+    assert ffmpeg.probe_duration(clip_file) == pytest.approx(2.4, abs=0.05)
+    red, blue = ffmpeg.luma_at(clip_file, 0.5)[0], ffmpeg.luma_at(clip_file, 1.5)[0]
     assert red > blue + 20, (red, blue)
-    assert ffmpeg.luma_at(clip, 2.2)[0] == pytest.approx(blue, abs=3), "the hold does not show the last frame"
-    loud = ffmpeg.rms_db(clip, 1.05, 0.4)
+    assert ffmpeg.luma_at(clip_file, 2.2)[0] == pytest.approx(blue, abs=3), "the hold does not show the last frame"
+    loud = ffmpeg.rms_db(clip_file, 1.05, 0.4)
     assert loud > -40, "the take's tone is not at 1.0 s in the clip"  # The tone is about -24 dB before the -6 dB gain.
-    assert ffmpeg.rms_db(clip, 0.1, 0.8) < -50, "sound before the tone"
-    assert ffmpeg.rms_db(clip, 1.6, 0.7) < -50, "sound after the tone or in the hold"
+    assert ffmpeg.rms_db(clip_file, 0.1, 0.8) < -50, "sound before the tone"
+    assert ffmpeg.rms_db(clip_file, 1.6, 0.7) < -50, "sound after the tone or in the hold"
     # Words wholly inside the span keep the script's spelling, shifted to the clip. "go" crosses the start.
     assert result.words == [Word("Watch", 1.0, 1.2), Word("it,", 1.25, 1.5)]
     assert result.cut_words == ["Go."]
     assert read_words(result.words_file) == result.words
 
-    assert main(["-p", str(tmp_path), "clip", "1", "--from", "1", "--to", "3", "--out", "media/y.mp4"]) == 0
+    assert main(["-p", str(tmp_path), "clip", "1", "--start", "1", "--end", "3", "--out", "media/y.mp4"]) == 0
     out = capsys.readouterr().out
-    assert "wrote media/y.mp4  (2.00s: frames 25 to 74 of 01-section.mp4, 1.00 to 3.00s, hold 0s, gain +0 dB)" in out
+    assert "wrote media/y.mp4  (2.00s: frames 25 to 74 of sections/01.mp4, 1.00 to 3.00s, hold 0s, gain +0 dB)" in out
     assert "wrote media/y.words.json  (2 words)" in out
     assert ffmpeg.rms_db(tmp_path / "media" / "y.mp4", 1.05, 0.4) == pytest.approx(loud + 6, abs=1)
 
     # A span inside the lead is silent, and still has its full length.
-    early = cut_clip(p, 1, start=0.0, end=0.4, out="media/z.mp4")
+    early = clip(p, 1, start=0.0, end=0.4, out="media/z.mp4")
     assert early.words == [] and ffmpeg.has_audio(early.video)
     assert ffmpeg.probe_duration(early.video) == pytest.approx(0.4, abs=0.05)

@@ -51,24 +51,22 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
     Check that the installer names the `decktalk` executable.
   </Step>
 
-  <Step title="Download Chromium, ffmpeg, and KaTeX" stepNumber={2}>
-    `decktalk setup` downloads the tools that DeckTalk runs. Run it one time per machine.
+  <Step title="Download Chromium and ffmpeg" stepNumber={2}>
+    `decktalk install` downloads the tools that DeckTalk runs. Run it one time per machine.
 
     ```console
-    decktalk setup
+    decktalk install
     ```
 
-    {/* sample: decktalk setup, last lines, uv tool install on macOS */}
+    {/* sample: decktalk install, last lines, uv tool install on macOS */}
     ```text
-    == ffmpeg / ffprobe
-       ffmpeg  ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffmpeg
-       ffprobe ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffprobe
-    == KaTeX 0.18.7
-       cached  ~/Library/Caches/decktalk/katex/0.18.7
-    setup complete
+    == ffmpeg 8.1.2
+       ffmpeg  ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
+       ffprobe ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
+    install complete
     ```
 
-    Check that the last line is `setup complete`. On Linux, this step asks for sudo. [What setup downloads](/requirements#what-setup-downloads) says where each download goes.
+    Check that the last line is `install complete`. On Linux, this step asks for sudo. [What install downloads](/requirements#what-install-downloads) says where each download goes.
   </Step>
 
   <Step title="Check the tools" stepNumber={3}>
@@ -82,13 +80,13 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
     ```text
     python    ok      3.13.1 (~/.local/share/uv/tools/decktalk/bin/python)
     chromium  ok      151.0.7922.34
-    ffmpeg    ok      ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffmpeg
-    ffprobe   ok      ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffprobe
+    ffmpeg    ok      ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
+    ffprobe   ok      ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
     config    ok      none (optional, at ~/Library/Application Support/decktalk/decktalk.toml)
-    katex     ok      ~/Library/Caches/decktalk/katex/0.18.7
+    katex     ok      0.18.7 in the wheel (~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/decktalk/katex)
     ```
 
-    Check that every row says `ok`. If a row does not, run `decktalk setup` again.
+    Check that every row says `ok`. If a row does not, run `decktalk install` again.
   </Step>
 </Steps>
 
@@ -105,16 +103,16 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
     {/* sample: decktalk init my-lesson, run in ~ */}
     ```text
     created ~/my-lesson
-      decktalk.toml  the plan: sections -> pages or clips, voice, mix, soundscape
+      decktalk.toml  the project file: sections -> pages or clips, voice, mix, soundscape
       script.md      the narration (## N. sections)
       cues.json      which spoken phrase each visual lands on
       deck/          index.html, lesson.html, decktalk-runtime.js (open a page for its scene index)
       media/         your clips, b-roll, markers.json
     next: cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID), then `decktalk build`
-          or `decktalk build --silent` to render with placeholder narration and no API key
+          or `decktalk build --no-voice` to render with placeholder narration and no API key
     ```
 
-    If you skipped step 2, run `decktalk setup` now, then run `init` in a new folder. `init` copies the cached KaTeX into the project.
+    If you skipped step 2, run `decktalk install` now. `init` copies the packaged KaTeX into `deck/katex/` either way.
   </Step>
 
   <Step title="Go into the project" stepNumber={5}>
@@ -144,21 +142,21 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
       </Tab>
     </Tabs>
 
-    <Frame caption="The scene index lists each scene of the page with its steps and cue ids.">
-      <img src="/images/quickstart-index.png" alt="The page my-lesson in index mode. It lists scenes 1, 2, 4, 6, 7, and 5, each with a play link. Under each scene, one step shows its hold seconds and cue ids." />
+    <Frame caption="The scene index lists each scene of the page with its slides and cue ids.">
+      <img src="/images/quickstart-index.png" alt="The page my-lesson in index mode. It lists scenes 1, 2, 4, 6, 7, and 5, each with a play link. Under each scene, one slide shows its hold seconds and cue ids." />
     </Frame>
 
-    Check that the page shows an index of its scenes and steps.
+    Check that the page shows an index of its scenes and slides.
   </Step>
 
   <Step title="Build the video without an account" stepNumber={7}>
-    A silent build uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took about 276 seconds. Leave it running, and read [What the example video shows](#what-the-example-video-shows).
+    A build without voice uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took about 276 seconds. Leave it running, and read [What the example video shows](#what-the-example-video-shows).
 
     ```console
-    decktalk build --silent
+    decktalk build --no-voice
     ```
 
-    {/* sample: decktalk build --silent, fresh scaffold on macOS (the last line of the assemble log and the last line) */}
+    {/* sample: decktalk build --no-voice, fresh scaffold on macOS (the last line of the assemble log and the last line) */}
     ```text
     done: ~/my-lesson/build/out/my-lesson.mp4  (257.72s)  copy: my-lesson-20260914-0003.mp4
     built ~/my-lesson/build/out/my-lesson.mp4
@@ -192,7 +190,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
 
 ## Part 3: Add your voice and change a sentence
 
-If you have no ElevenLabs account, stop here. The silent video is a complete build.
+If you have no ElevenLabs account, stop here. The video without voice is a complete build.
 
 <Steps>
   <Step title="Copy the example settings file" stepNumber={9}>
@@ -222,7 +220,7 @@ If you have no ElevenLabs account, stop here. The silent video is a complete bui
   </Step>
 
   <Step title="Build the video with your voice" stepNumber={11}>
-    <Warning>`decktalk build` without `--silent` spends ElevenLabs credits. [What spends credits](/requirements#what-spends-credits) lists the cost.</Warning>
+    <Warning>`decktalk build` without `--no-voice` spends ElevenLabs credits. [What spends credits](/requirements#what-spends-credits) lists the cost.</Warning>
 
     ```console
     decktalk build
@@ -276,7 +274,7 @@ If you have no ElevenLabs account, stop here. The silent video is a complete bui
 
 ## What the example video shows
 
-The scaffold is a short lesson in nine sections. Sections 4 to 8 share the title "The edit", so the video has five chapters. Each page section names its page and its scene, and each clip section names its video file.
+The scaffold is a short lesson in nine sections. Sections 4 to 8 name the chapter "The edit", so the video has five chapters. Each page section names its page and its scene, and each clip section names its video file.
 
 | Section | Plays | What it shows |
 |---|---|---|

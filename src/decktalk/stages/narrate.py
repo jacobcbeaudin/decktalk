@@ -8,18 +8,18 @@ project maps to a clip are skipped.
 
 Each section is synthesized with word timestamps, cached by a hash of model, voice,
 settings and text, padded so speech ends at least min_tail_seconds before the file
-ends, then every section is concatenated with no gaps into build/audio/narration.mp3.
+ends, then every section is concatenated with no gaps into build/narration/narration.mp3.
 A renumbered section keeps its take: when its key misses, an entry of the previous
-manifest with the same hash lends its files, copied to the new name.
+take index with the same hash lends its files, copied to the new name.
 A page section's lead_seconds joins that much silence in before its take when the takes are
 concatenated, and its tail_seconds replaces min_tail_seconds for it. Neither is part of the
 hash, so neither voices a take again.
-build/audio/timeline.json records each section's absolute start and end and every
+build/narration/timeline.json records each section's absolute start and end and every
 word at absolute time; the recorder and the assembler cut the visuals to it.
 
 silent=True needs no API key: silent placeholders sized at silent_words_per_minute
 plus the declared pauses, with evenly spaced estimated words, so the whole pipeline
-runs offline. A silent run refuses a manifest that holds voiced takes unless force is
+runs offline. A silent run refuses a take index that holds voiced takes unless force is
 set, because it would write click tracks over them.
 """
 
@@ -34,7 +34,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import Manifest, ManifestSegment, Timeline, TimelineSection, Word, write_words
+from ..artifacts import Take, Takes, Timeline, TimelineSection, Word, write_words
 from ..config import NarrationConfig
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
@@ -71,7 +71,7 @@ class Segment:
     text: str  # prose with direction pauses as <break/> tags
     start: str | None = None
     end: str | None = None
-    lead_break: bool = False
+    first_spoken: bool = False
 
     @property
     def key(self) -> str:
@@ -111,15 +111,15 @@ class Segment:
         word is added to the audio afterwards rather than requested with break tags."""
         return self.text
 
-    def est_seconds(self, cfg: NarrationConfig) -> float:
+    def estimated_seconds(self, cfg: NarrationConfig) -> float:
         return round(self.word_count / cfg.words_per_minute * 60, 1)
 
     def silent_seconds(self, cfg: NarrationConfig) -> float:
         breaks = sum(float(t) for t in BREAK_RE.findall(self.text))
-        beats = self.text.count(" —") * cfg.direction_break_seconds
-        lead = cfg.lead_break_seconds if self.lead_break else 0.0
+        beat_seconds = self.text.count(" —") * cfg.silent_beat_seconds
+        lead = cfg.opening_silence_seconds if self.first_spoken else 0.0
         return round(
-            self.word_count / cfg.silent_words_per_minute * 60 + breaks + beats + lead + cfg.min_tail_seconds, 3
+            self.word_count / cfg.silent_words_per_minute * 60 + breaks + beat_seconds + lead + cfg.min_tail_seconds, 3
         )
 
 
@@ -133,7 +133,7 @@ def slugify(title: str) -> str:
     return slug or "section"
 
 
-def strip_markdown(text: str, *, direction_break_seconds: float) -> str:
+def strip_markdown(text: str) -> str:
     """Prose ready for speech. Every direction becomes a break tag appended to the paragraph before it."""
     text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)  # links, before directions
     # A timed pause carries its own length through the direction marker, and every other
@@ -168,7 +168,7 @@ def strip_markdown(text: str, *, direction_break_seconds: float) -> str:
     return "\n\n".join(out)
 
 
-def parse_script(markdown: str, *, direction_break_seconds: float = 0.7) -> list[Segment]:
+def parse_script(markdown: str) -> list[Segment]:
     segments: list[Segment] = []
     current: dict[str, Any] | None = None
     body: list[str] = []
@@ -181,7 +181,7 @@ def parse_script(markdown: str, *, direction_break_seconds: float = 0.7) -> list
                 index=int(current["num"]),
                 title=current["title"].strip(),
                 slug=slugify(current["title"]),
-                text=strip_markdown("\n".join(body), direction_break_seconds=direction_break_seconds),
+                text=strip_markdown("\n".join(body)),
                 start=current["start"],
                 end=current["end"],
             )
@@ -206,13 +206,10 @@ def parse_script(markdown: str, *, direction_break_seconds: float = 0.7) -> list
 
 
 def script_segments(project: Project) -> tuple[list[Segment], list[Segment]]:
-    """(every section in the script, the spoken ones in order with lead_break set)."""
+    """(every section in the script, the spoken ones in order with first_spoken set)."""
     if not project.script.exists():
         raise MissingInputError(f"script not found: {project.script}")
-    cfg = project.settings.narration
-    all_segments = parse_script(
-        project.script.read_text(encoding="utf-8"), direction_break_seconds=cfg.direction_break_seconds
-    )
+    all_segments = parse_script(project.script.read_text(encoding="utf-8"))
     if not all_segments:
         raise ConfigError(f"no '## N. Title' sections found in {project.script}")
     declared = {s.number for s in project.sections}
@@ -221,7 +218,7 @@ def script_segments(project: Project) -> tuple[list[Segment], list[Segment]]:
         raise ConfigError(f"script sections {undeclared} have no [[section]] in decktalk.toml")
     spoken = [s for s in all_segments if s.index not in project.clip_numbers]
     for i, seg in enumerate(spoken):
-        seg.lead_break = i == 0
+        seg.first_spoken = i == 0
     return all_segments, spoken
 
 
@@ -254,7 +251,7 @@ def estimated_words(segment: Segment, duration: float, cfg: NarrationConfig) -> 
     tokens = segment.spoken.split()
     if not tokens:
         return []
-    lead = cfg.lead_break_seconds if segment.lead_break else 0.0
+    lead = cfg.opening_silence_seconds if segment.first_spoken else 0.0
     span = max(0.1, duration - lead - cfg.min_tail_seconds)
     per = span / len(tokens)
     return [
@@ -269,65 +266,63 @@ def text_hash(segment: Segment, cfg: NarrationConfig, provider_key: str, setting
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
-def is_cached(entry: ManifestSegment | None, seg: Segment, digest: str, audio_dir: Path) -> bool:
+def is_cached(entry: Take | None, seg: Segment, digest: str, narration_dir: Path) -> bool:
     """True when the entry holds this section's take under its current file names."""
     return (
         entry is not None
         and entry.hash == digest
         and entry.file == seg.filename
-        and (audio_dir / seg.filename).exists()
-        and (audio_dir / seg.words_filename).exists()
+        and (narration_dir / seg.filename).exists()
+        and (narration_dir / seg.words_filename).exists()
     )
 
 
-def reusable_entry(
-    previous: Manifest | None, seg: Segment, digest: str, audio_dir: Path
-) -> tuple[str, ManifestSegment] | None:
+def reusable_entry(previous: Takes | None, seg: Segment, digest: str, narration_dir: Path) -> tuple[str, Take] | None:
     """(key, entry) of a previous take of the same text under another section number, or None.
 
     A section that was renumbered keeps its hash, because the hash has no section number in
-    it. Only the first spoken section carries the lead-in silence, so a take never moves into
+    it. Only the first spoken section carries the opening silence, so a take never moves into
     or out of that place.
     """
-    if previous is None or seg.lead_break or not previous.segments:
+    if previous is None or seg.first_spoken or not previous.sections:
         return None
-    first = min(previous.segments)
-    for key, entry in previous.segments.items():
+    first = min(previous.sections)
+    for key, entry in previous.sections.items():
         if (
             key != first
             and key != seg.key
             and entry.hash == digest
-            and (audio_dir / entry.file).exists()
-            and (audio_dir / entry.words_file).exists()
+            and (narration_dir / entry.file).exists()
+            and (narration_dir / entry.words_file).exists()
         ):
             return key, entry
     return None
 
 
-def reuse_takes(moves: list[tuple[ManifestSegment, Segment]], audio_dir: Path) -> None:
+def reuse_takes(moves: list[tuple[Take, Segment]], narration_dir: Path) -> None:
     """Copy each take to its new file names. Every source is copied aside first, so a move never
     overwrites a file that another move still reads."""
     staged: list[tuple[Path, Path]] = []
     for i, (entry, seg) in enumerate(moves):
         for j, (src, dst) in enumerate(((entry.file, seg.filename), (entry.words_file, seg.words_filename))):
-            tmp = audio_dir / f".reuse-{i}-{j}.tmp"
-            shutil.copyfile(audio_dir / src, tmp)
-            staged.append((tmp, audio_dir / dst))
+            tmp = narration_dir / f".reuse-{i}-{j}.tmp"
+            shutil.copyfile(narration_dir / src, tmp)
+            staged.append((tmp, narration_dir / dst))
     for tmp, dst in staged:
         tmp.replace(dst)
 
 
-def refuse_silent_over_voiced(project: Project, previous: Manifest | None) -> None:
-    """Raise when a silent run would replace voiced takes, which only a paid voiced run can bring back."""
-    voiced = sorted(k for k, entry in (previous.segments.items() if previous else ()) if entry.hash != "silent")
+def refuse_silent_over_voiced(project: Project, previous: Takes | None) -> None:
+    """Raise when a build without voice would replace voiced takes, which only a paid voiced run can bring back."""
+    voiced = sorted(k for k, entry in (previous.sections.items() if previous else ()) if entry.hash != "silent")
     if not voiced:
         return
-    manifest = project.manifest_path
-    where = manifest.relative_to(project.root).as_posix() if manifest.is_relative_to(project.root) else manifest
+    takes = project.takes_path
+    where = takes.relative_to(project.root).as_posix() if takes.is_relative_to(project.root) else takes
     raise ConfigError(
-        f"{where} holds voiced takes for sections {', '.join(voiced)}. A silent run writes click tracks over "
-        "those mp3 files and replaces the manifest, so the next voiced build voices every section again and "
-        "spends credits on all of them. Rehearse the silent build in a copy of the project, or pass --force "
+        f"{where} holds voiced takes for sections {', '.join(voiced)}. A build without voice writes click tracks over "
+        "those mp3 files and replaces the take index, so the next voiced build voices every section again and "
+        "spends credits on all of them. Rehearse the build without voice in a copy of the project, or pass --force "
         "to replace the voiced takes."
     )
 
@@ -349,21 +344,21 @@ class TakePlan:
     reason: str = ""
     digest: str | None = None
     source_key: str | None = None  # The section key whose take a move copies.
-    source: ManifestSegment | None = None
+    source: Take | None = None
 
     def to_dict(self, cfg: NarrationConfig) -> dict[str, Any]:
         seg = self.segment
         return {
             "key": seg.key,
-            "title": seg.title,
+            "chapter": seg.title,
             "file": seg.filename,
             "status": self.status,
             "reason": self.reason or None,
             "moved_from": self.source_key,
             "characters_sent": len(seg.tts_text(cfg)),
             "characters_spoken": len(seg.spoken),
-            "words": seg.word_count,
-            "est_seconds": seg.est_seconds(cfg),
+            "word_count": seg.word_count,
+            "estimated_seconds": seg.estimated_seconds(cfg),
             "placeholders": seg.placeholders,
         }
 
@@ -377,9 +372,9 @@ def plan_totals(plans: list[TakePlan], cfg: NarrationConfig) -> dict[str, int]:
     return totals
 
 
-def _miss_reason(entry: ManifestSegment | None, seg: Segment, digest: str, previous: Manifest | None) -> str:
+def _miss_reason(entry: Take | None, seg: Segment, digest: str, previous: Takes | None) -> str:
     if entry is None:
-        if previous is not None and previous.estimated and seg.key in previous.segments:
+        if previous is not None and previous.estimated and seg.key in previous.sections:
             return "only a silent take exists"
         return "no take yet"
     if entry.hash != digest:
@@ -392,7 +387,7 @@ def _miss_reason(entry: ManifestSegment | None, seg: Segment, digest: str, previ
 def plan_takes(
     project: Project,
     targets: list[Segment],
-    previous: Manifest | None,
+    previous: Takes | None,
     *,
     provider: SpeechProvider | None,
     model: str,
@@ -409,7 +404,7 @@ def plan_takes(
     voiced = previous if previous is not None and not previous.estimated else None
     plans: list[TakePlan] = []
     for seg in targets:
-        entry = voiced.segments.get(seg.key) if voiced else None
+        entry = voiced.sections.get(seg.key) if voiced else None
         if provider is None:
             if entry is None:
                 plans.append(TakePlan(seg, SYNTHESIZE, _miss_reason(None, seg, "", previous)))
@@ -422,9 +417,9 @@ def plan_takes(
         digest = text_hash(seg, cfg, provider.cache_key(request), voice_settings)
         if force:
             plans.append(TakePlan(seg, SYNTHESIZE, "forced", digest))
-        elif is_cached(entry, seg, digest, project.audio_dir):
+        elif is_cached(entry, seg, digest, project.narration_dir):
             plans.append(TakePlan(seg, CACHED, "", digest))
-        elif (found := reusable_entry(previous, seg, digest, project.audio_dir)) is not None:
+        elif (found := reusable_entry(previous, seg, digest, project.narration_dir)) is not None:
             key, source = found
             plans.append(TakePlan(seg, MOVED, f"the same text as section {int(key)}", digest, key, source))
         else:
@@ -442,16 +437,16 @@ def narration_plan(
         provider, note = None, str(exc)
     else:
         note = None
-    return plan_takes(project, targets, project.manifest(), provider=provider, model=model, force=force), note
+    return plan_takes(project, targets, project.takes(), provider=provider, model=model, force=force), note
 
 
-def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -> Timeline:
+def build_timeline(project: Project, takes: Takes, order: list[Segment]) -> Timeline:
     cfg = project.settings.narration
-    keys = [s.key for s in order if s.key in manifest.segments]
-    files = [project.audio_dir / manifest.segments[k].file for k in keys]
+    keys = [s.key for s in order if s.key in takes.sections]
+    files = [project.narration_dir / takes.sections[k].file for k in keys]
     # A section's lead_seconds is silence joined in before its take, so the take and its cache stay as they are.
     leads = [project.lead_seconds(k) for k in keys]
-    narration = project.audio_dir / "narration.mp3"
+    narration = project.narration_dir / "narration.mp3"
     ffmpeg.concat_audio(
         files, narration, bitrate=cfg.mp3_bitrate, sample_rate=project.settings.video.sample_rate, leads=leads
     )
@@ -459,9 +454,9 @@ def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -
     sections: dict[str, TimelineSection] = {}
     for k, f, lead in zip(keys, files, leads, strict=True):
         dur = lead + ffmpeg.decoded_duration(f, sample_rate=project.settings.video.sample_rate)
-        words = project.section_words(k, manifest.segments[k].words_file)
+        words = project.section_words(k, takes.sections[k].words_file)
         sections[k] = TimelineSection(
-            title=manifest.segments[k].title,
+            title=takes.sections[k].chapter,
             start=round(t, 3),
             end=round(t + dur, 3),
             duration=round(dur, 3),
@@ -472,7 +467,7 @@ def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -
         t += dur
     timeline = Timeline(
         narration=narration.name,
-        estimated=manifest.estimated,
+        estimated=takes.estimated,
         total_seconds=ffmpeg.decoded_duration(narration, sample_rate=project.settings.video.sample_rate),
         sections=sections,
     )
@@ -485,7 +480,7 @@ def build_timeline(project: Project, manifest: Manifest, order: list[Segment]) -
 
 @dataclass
 class NarrateResult:
-    manifest: Manifest
+    takes: Takes
     timeline: Timeline
     segments: list[Segment]  # the sections this run considered
     synthesized: list[str]  # keys that hit the API (or were regenerated silently)
@@ -508,14 +503,14 @@ def narrate(
     targets = [s for s in spoken if not only or s.index in set(only)]
     if not targets:
         raise ConfigError(f"no spoken sections match {only}; spoken sections are {[s.index for s in spoken]}")
-    previous = project.manifest()
+    previous = project.takes()
     if silent and not force:
         refuse_silent_over_voiced(project, previous)
     if project.clip_numbers:
         log.info("skipping clip sections (no narration): %s", sorted(project.clip_numbers))
 
-    project.audio_dir.mkdir(parents=True, exist_ok=True)
-    manifest = Manifest(
+    project.narration_dir.mkdir(parents=True, exist_ok=True)
+    takes = Takes(
         script=str(project.script.relative_to(project.root))
         if project.script.is_relative_to(project.root)
         else str(project.script),
@@ -525,7 +520,7 @@ def narrate(
         estimate_basis=f"{cfg.silent_words_per_minute} wpm + declared pauses" if silent else "",
     )
     if previous is not None and previous.estimated == silent:
-        manifest.segments = dict(previous.segments)
+        takes.sections = dict(previous.sections)
 
     provider: SpeechProvider | None = None
     if not silent:
@@ -535,7 +530,7 @@ def narrate(
         provider = get_provider(project)
         # A renumbered section keeps its take. Its files are copied to the new names before any
         # section is voiced, so a new take never replaces a file that a move still needs.
-        moves: list[tuple[ManifestSegment, Segment]] = []
+        moves: list[tuple[Take, Segment]] = []
         for plan in plan_takes(project, targets, previous, provider=provider, model=model, force=force):
             if plan.status == MOVED and plan.source is not None and plan.source_key is not None:
                 moves.append((plan.source, plan.segment))
@@ -545,10 +540,10 @@ def narrate(
                     plan.source.file,
                     int(plan.source_key),
                 )
-        reuse_takes(moves, project.audio_dir)
+        reuse_takes(moves, project.narration_dir)
         for entry, seg in moves:
-            manifest.segments[seg.key] = replace(
-                entry, index=seg.index, title=seg.title, file=seg.filename, words_file=seg.words_filename
+            takes.sections[seg.key] = replace(
+                entry, index=seg.index, chapter=seg.title, file=seg.filename, words_file=seg.words_filename
             )
 
     by_index = {s.index: s for s in all_segments}
@@ -556,8 +551,8 @@ def narrate(
     synthesized: list[str] = []
     cached: list[str] = []
     for seg in targets:
-        out_path = project.audio_dir / seg.filename
-        words_path = project.audio_dir / seg.words_filename
+        out_path = project.narration_dir / seg.filename
+        words_path = project.narration_dir / seg.words_filename
         scfg = section_config(project, seg)
         if silent:
             duration = seg.silent_seconds(scfg)
@@ -572,14 +567,14 @@ def narrate(
             duration = ffmpeg.probe_duration(out_path)
             write_words(words_path, words)
             log.info("[sil ] %s  %d words -> %.2fs (estimated words)", seg.filename, seg.word_count, duration)
-            manifest.segments[seg.key] = ManifestSegment(
+            takes.sections[seg.key] = Take(
                 index=seg.index,
-                title=seg.title,
+                chapter=seg.title,
                 file=seg.filename,
                 words_file=seg.words_filename,
                 hash="silent",
-                words=seg.word_count,
-                est_seconds=seg.est_seconds(cfg),
+                word_count=seg.word_count,
+                estimated_seconds=seg.estimated_seconds(cfg),
                 duration_seconds=duration,
                 target_seconds=seg.target_seconds,
                 speech_end_seconds=words[-1].end if words else None,
@@ -595,8 +590,8 @@ def narrate(
             output_format=cfg.output_format,
         )
         digest = text_hash(seg, cfg, provider.cache_key(request), voice_settings)
-        entry = manifest.segments.get(seg.key)
-        if not force and entry is not None and is_cached(entry, seg, digest, project.audio_dir):
+        entry = takes.sections.get(seg.key)
+        if not force and entry is not None and is_cached(entry, seg, digest, project.narration_dir):
             # min_tail_seconds is not part of the hash, so a cached take made under a shorter
             # tail is padded here. ensure_tail measures the silence first, so a take that
             # already has enough is left untouched. A take that narrate already padded keeps
@@ -610,15 +605,15 @@ def narrate(
                 log.info("[skip] %s  unchanged, tail +%ss (%.2fs)", seg.filename, added, entry.duration_seconds)
             else:
                 log.info("[skip] %s  unchanged (%.2fs)", seg.filename, entry.duration_seconds)
-            # A manifest written before the spoken text was recorded gains it here, since the
-            # text is part of the hash and so cannot have changed.
+            # A cached entry carries its spoken text forward, since the text is part of the hash
+            # and so cannot have changed.
             entry.spoken = seg.spoken
             cached.append(seg.key)
             continue
         pos = order.index(seg.index)
         prev_seg = by_index[order[pos - 1]] if pos > 0 else None
         next_seg = by_index[order[pos + 1]] if pos + 1 < len(order) else None
-        log.info("[tts ] %s  %d words, est %.1fs ...", seg.filename, seg.word_count, seg.est_seconds(cfg))
+        log.info("[tts ] %s  %d words, est %.1fs ...", seg.filename, seg.word_count, seg.estimated_seconds(cfg))
         request = SpeechRequest(
             text=request.text,
             model=model,
@@ -629,10 +624,14 @@ def narrate(
         )
         audio, words = provider.speak(request)
         out_path.write_bytes(audio)
-        if seg.lead_break and cfg.lead_break_seconds > 0:
-            ffmpeg.pad_head(out_path, cfg.lead_break_seconds, bitrate=cfg.mp3_bitrate)
+        if seg.first_spoken and cfg.opening_silence_seconds > 0:
+            ffmpeg.pad_head(out_path, cfg.opening_silence_seconds, bitrate=cfg.mp3_bitrate)
             words = [
-                Word(w.word, round(w.start + cfg.lead_break_seconds, 3), round(w.end + cfg.lead_break_seconds, 3))
+                Word(
+                    w.word,
+                    round(w.start + cfg.opening_silence_seconds, 3),
+                    round(w.end + cfg.opening_silence_seconds, 3),
+                )
                 for w in words
             ]
         write_words(words_path, words)
@@ -646,28 +645,28 @@ def narrate(
             speech_end,
             f", tail +{added}s" if added else "",
         )
-        manifest.segments[seg.key] = ManifestSegment(
+        takes.sections[seg.key] = Take(
             index=seg.index,
-            title=seg.title,
+            chapter=seg.title,
             file=seg.filename,
             words_file=seg.words_filename,
             hash=digest,
-            words=seg.word_count,
-            est_seconds=seg.est_seconds(cfg),
+            word_count=seg.word_count,
+            estimated_seconds=seg.estimated_seconds(cfg),
             duration_seconds=duration,
             target_seconds=seg.target_seconds,
             speech_end_seconds=speech_end,
             tail_padded_seconds=added,
             spoken=seg.spoken,
         )
-        manifest.save(project.manifest_path)  # checkpoint after every paid call
+        takes.save(project.takes_path)  # checkpoint after every paid call
         synthesized.append(seg.key)
 
     valid = {s.key for s in spoken}
-    manifest.segments = {k: v for k, v in manifest.segments.items() if k in valid}
-    manifest.save(project.manifest_path)
-    missing = [s.key for s in spoken if s.key not in manifest.segments]
+    takes.sections = {k: v for k, v in takes.sections.items() if k in valid}
+    takes.save(project.takes_path)
+    missing = [s.key for s in spoken if s.key not in takes.sections]
     if missing:
         log.warning("sections %s have no narration yet; the timeline covers the rest", missing)
-    timeline = build_timeline(project, manifest, spoken)
-    return NarrateResult(manifest=manifest, timeline=timeline, segments=targets, synthesized=synthesized, cached=cached)
+    timeline = build_timeline(project, takes, spoken)
+    return NarrateResult(takes=takes, timeline=timeline, segments=targets, synthesized=synthesized, cached=cached)

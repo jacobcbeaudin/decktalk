@@ -30,9 +30,9 @@ One section number and one cue id tie the four files together.
 | `script.md` | `## 3.` | the section number |
 | `decktalk.toml` | `number = 3`, `scene = 3` | the same section, and the scene the page plays for it |
 | `cues.json` | `"3"`, `"cue": "3.1rule"` | the section, and a cue id that the page knows |
-| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1rule"` | the scene, its step, and the element that appears on the cue |
+| `deck/index.html` | `DeckTalk.scene(3, …)`, `id: "3.1"`, `data-cue="3.1rule"` | the scene, its slide, and the element that appears on the cue |
 
-The `narrate` stage also writes a words file for the section, with the start and end of every spoken word. The `beats` stage matches each cue phrase against those spoken words.
+The `narrate` stage also writes a words file for the section, with the start and end of every spoken word. The `align` stage matches each cue phrase against those spoken words.
 
 ## Write the section
 
@@ -48,7 +48,7 @@ The `narrate` stage also writes a words file for the section, with the start and
     Now a short lesson. Here is gradient descent, at a high level. [beat] Start with a loss
     surface. For this lesson it is a bowl. [beat] Pick a point anywhere on it. [beat] The gradient
     says which way is uphill, so take a step the other way. [beat] The learning rate sets
-    the size of that step. [beat] Step again. [beat] And again, and each step is smaller as
+    the size of that slide. [beat] Step again. [beat] And again, and each step is smaller as
     the slope flattens out.
 
     [beat] Pause and think: what happens if the learning rate is too large?
@@ -68,7 +68,7 @@ The `narrate` stage also writes a words file for the section, with the start and
     ```toml decktalk.toml
     [[section]]
     number = 3
-    title = "Gradient descent"
+    chapter = "Gradient descent"
     page = "deck/index.html"
     scene = 3
     ```
@@ -86,7 +86,7 @@ The `narrate` stage also writes a words file for the section, with the start and
         { "cue": "3.1", "on": "$start" },
         { "cue": "3.1bowl", "on": "loss surface" },
         { "cue": "3.1p0", "on": "Pick a point" },
-        { "cue": "3.1p1", "on": "take a step" },
+        { "cue": "3.1p1", "on": "take a slide" },
         { "cue": "3.1rule", "on": "learning rate" },
         { "cue": "3.1p2", "on": "Step again" },
         { "cue": "3.1p3", "on": "And again" },
@@ -100,12 +100,12 @@ The `narrate` stage also writes a words file for the section, with the start and
     Each reveal starts on one phrase:
 
     - The bowl draws on "loss surface".
-    - Each move of the point starts on the phrase that names it, such as "take a step".
+    - Each move of the point starts on the phrase that names it, such as "take a slide".
     - The update rule appears on "learning rate".
     - The overshoot path draws on "overshoot".
     - The settled point appears 0.2 s after the start of "settle", because its offset key is 0.2.
 
-    The `3.1` cue on `$start` only mounts the step at 0.0 s, so `decktalk verify` skips it as `REFERENCE_CLAMPED`. If the speech is shorter than `min_seconds`, `decktalk beats` reports an uncertain finding. [Cues](/concepts/cues) explains how phrases match.
+    The `3.1` cue on `$start` only mounts the slide at 0.0 s, so `decktalk verify` skips it as `REFERENCE_CLAMPED`. If the speech is shorter than `min_seconds`, `decktalk align` reports an uncertain finding. [Cues](/concepts/cues) explains how phrases match.
   </Step>
 
   <Step title="Add the scene to deck/index.html">
@@ -128,28 +128,28 @@ The `narrate` stage also writes a words file for the section, with the start and
       .step .ring { fill: none; stroke: var(--accent); stroke-width: 3; }
     </style>
     <script>
-    DeckTalk.scene(3, { name: "Gradient descent", steps: [
-      { id: "3.1", hold: 26, cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1rule": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1settle": 21 }, render: () => `
+    DeckTalk.scene(3, { name: "Gradient descent", slides: [
+      { id: "3.1", hold: 26, preview: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1rule": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1settle": 21 }, render: () => `
         <div class="slide">
           <div class="row">
             <svg viewBox="0 0 1000 520" width="1000" height="520" style="overflow:visible">
               <line class="ax" x1="60" y1="470" x2="960" y2="470"/>
               <line class="ax" x1="60" y1="40" x2="60" y2="470"/>
-              <path class="curve" pathLength="1" data-cue="3.1bowl" data-fx="draw" data-dur="1.6"
+              <path class="curve" pathLength="1" data-cue="3.1bowl" data-reveal="draw" data-duration="1.6"
                     d="M80,70 Q510,880 940,70"/>
-              <path class="zig" pathLength="1" data-cue="3.1over" data-fx="draw" data-dur="1.4"
+              <path class="zig" pathLength="1" data-cue="3.1over" data-reveal="draw" data-duration="1.4"
                     d="M190,200 L830,200 L230,320 L790,320 L300,410"/>
-              <g class="step" data-cue="3.1p0" data-fx="pop"><circle cx="190" cy="200" r="26"/></g>
-              <g class="step" data-cue="3.1p1" data-fx="pop"><line x1="190" y1="200" x2="330" y2="330"/><circle cx="330" cy="330" r="26"/></g>
-              <g class="step" data-cue="3.1p2" data-fx="pop"><line x1="330" y1="330" x2="420" y2="405"/><circle cx="420" cy="405" r="26"/></g>
-              <g class="step" data-cue="3.1p3" data-fx="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
-              <g class="step" data-cue="3.1settle" data-fx="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
+              <g class="step" data-cue="3.1p0" data-reveal="pop"><circle cx="190" cy="200" r="26"/></g>
+              <g class="step" data-cue="3.1p1" data-reveal="pop"><line x1="190" y1="200" x2="330" y2="330"/><circle cx="330" cy="330" r="26"/></g>
+              <g class="step" data-cue="3.1p2" data-reveal="pop"><line x1="330" y1="330" x2="420" y2="405"/><circle cx="420" cy="405" r="26"/></g>
+              <g class="step" data-cue="3.1p3" data-reveal="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
+              <g class="step" data-cue="3.1settle" data-reveal="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
             </svg>
             <div class="text">
               <h2 class="h2">Gradient descent</h2>
               <p class="note">Follow the slope downhill, one step at a time.</p>
-              <div class="math" data-cue="3.1rule" data-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
-              <p class="note" data-cue="3.1think" data-fx="fade">Pause and think: what if the learning rate is too large?</p>
+              <div class="math" data-cue="3.1rule" data-tex-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
+              <p class="note" data-cue="3.1think" data-reveal="fade">Pause and think: what if the learning rate is too large?</p>
             </div>
           </div>
         </div>` },
@@ -157,9 +157,9 @@ The `narrate` stage also writes a words file for the section, with the start and
     </script>
     ```
 
-    - A scene is a list of steps, and each step renders one slide. Step `3.1` owns every cue here, because its `cues` object names each one.
-    - An element with `data-cue` stays hidden until its cue fires. `data-fx` picks its reveal effect.
-    - The bowl path has `pathLength="1"` and `data-fx="draw"`, so its stroke draws over `data-dur` (1.6 s).
+    - A scene is a list of slides, and each slide renders its HTML. Slide `3.1` owns every cue here, because its `preview` object names each one.
+    - An element with `data-cue` stays hidden until its cue fires. `data-reveal` picks its reveal effect.
+    - The bowl path has `pathLength="1"` and `data-reveal="draw"`, so its stroke draws over `data-duration` (1.6 s).
     - KaTeX typesets the `data-tex` element. The plain text inside the element is the fallback.
 
     The scene brings its own CSS, because the scaffold's stylesheet styles only its own classes. [Runtime](/reference/runtime) lists every attribute.
@@ -170,42 +170,42 @@ The `narrate` stage also writes a words file for the section, with the start and
 
 Check the slide in a browser and in screenshots before you record it. [Browser preview and recording](/concepts/page-contract#browser-preview-and-recording) says which page values a browser preview uses and which values the recording uses.
 
-1. Open `deck/index.html?step=3.1` in a browser. The step mounts with every element visible.
-2. Open `deck/index.html?scene=3&hud=1`. The scene plays in autoplay, with the clock on top.
-3. Take a screenshot of every step with `decktalk shots`. The PNG files go under `build/shots/`.
+1. Open `deck/index.html?slide=3.1` in a browser. The slide mounts with every element visible.
+2. Open `deck/index.html?scene=3&hud=1`. The scene plays in preview, with the clock on top.
+3. Take a screenshot of every slide with `decktalk screenshots`. The PNG files go under `build/screenshots/`.
 4. Estimate every reveal with `decktalk preflight`. It freezes the page before and at each cue, and flags a reveal
    too small for `verify` as `THIN CHANGE?` or `NO CHANGE`.
 
-If the project has no voiced build yet, you can also check where each cue phrase resolves. On a voiced project, a silent `narrate` stops, because it would empty the narration cache. Skip these actions there.
+If the project has no voiced build yet, you can also check where each cue phrase resolves. On a voiced project, a `narrate` without voice stops, because it would empty the narration cache. Skip these actions there.
 
-1. Write estimated word times with `decktalk narrate --silent`.
-2. Print each cue time with `decktalk beats`.
+1. Write estimated word times with `decktalk narrate --no-voice`.
+2. Print each cue time with `decktalk align`.
 
-{/* sample: decktalk beats, scaffold with this guide's section 3, silent build (header and section 03 row) */}
+{/* sample: decktalk align, scaffold with this guide's section 3, build without voice (header and section 03 row) */}
 ```text
 sec  speech   need  cues
  03    49.3   30.0  3.1@0.0,3.1bowl@7.39,3.1p0@11.83,3.1p1@18.73,3.1rule@22.18,3.1p2@26.13,3.1p3@27.11,3.1think@33.03,3.1over@39.44,3.1settle@47.53
 ```
 
-Each entry reads `cue id@cue time`, in seconds after the section start. If a phrase is not in the spoken words, `beats` prints `phrase not found`, and `build` stops.
+Each entry reads `cue id@cue time`, in seconds after the section start. If a phrase is not in the spoken words, `align` prints `phrase not found`, and `build` stops.
 
 ## Build and verify
 
 Build the video without an account, then measure the reveals.
 
-1. Build the video with `decktalk build --silent`.
+1. Build the video with `decktalk build --no-voice`.
 2. Measure two cues with `decktalk verify 3:3.1rule 3:3.1p1`.
 
-{/* sample: decktalk verify 3:3.1rule 3:3.1p1, scaffold with this guide's section 3, silent build (cue table only) */}
+{/* sample: decktalk verify 3:3.1rule 3:3.1p1, scaffold with this guide's section 3, build without voice (cue table only) */}
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
 3:3.1rule           22.18    60.78    0.46    0.00    -20ms   -29ms  changed
 3:3.1p1             18.73    57.33    0.16    0.00    -10ms   -18ms  changed
 ```
 
-Both rows read `changed`. The offset column is the time from the cue time to the onset of the reveal, in milliseconds. `decktalk verify` reports `OFF CUE` and exits 1 when that time is outside the offset limit. Only a silent build gives the `a/v` column, because only the click track has clicks. [Verify](/reference/verify#cues) defines every column.
+Both rows read `changed`. The offset column is the time from the cue time to the onset of the reveal, in milliseconds. `decktalk verify` reports `OFF CUE` and exits 1 when that time is outside the offset limit. Only a build without voice gives the `a/v` column, because only the click track has clicks. [Verify](/reference/verify#cues) defines every column.
 
-If you have an ElevenLabs key in `.env`, run `decktalk build` to voice the video. It spends credits on every section, because the last build was silent.
+If you have an ElevenLabs key in `.env`, run `decktalk build` to voice the video. It spends credits on every section, because the last build had no voice.
 
 ## The finished section
 
@@ -221,7 +221,7 @@ These are the four files of the section, in one place.
 Now a short lesson. Here is gradient descent, at a high level. [beat] Start with a loss
 surface. For this lesson it is a bowl. [beat] Pick a point anywhere on it. [beat] The gradient
 says which way is uphill, so take a step the other way. [beat] The learning rate sets
-the size of that step. [beat] Step again. [beat] And again, and each step is smaller as
+the size of that slide. [beat] Step again. [beat] And again, and each step is smaller as
 the slope flattens out.
 
 [beat] Pause and think: what happens if the learning rate is too large?
@@ -235,7 +235,7 @@ right, and you settle at the bottom.
 ```toml decktalk.toml
 [[section]]
 number = 3
-title = "Gradient descent"
+chapter = "Gradient descent"
 page = "deck/index.html"
 scene = 3
 ```
@@ -247,7 +247,7 @@ scene = 3
     { "cue": "3.1", "on": "$start" },
     { "cue": "3.1bowl", "on": "loss surface" },
     { "cue": "3.1p0", "on": "Pick a point" },
-    { "cue": "3.1p1", "on": "take a step" },
+    { "cue": "3.1p1", "on": "take a slide" },
     { "cue": "3.1rule", "on": "learning rate" },
     { "cue": "3.1p2", "on": "Step again" },
     { "cue": "3.1p3", "on": "And again" },
@@ -273,28 +273,28 @@ scene = 3
   .step .ring { fill: none; stroke: var(--accent); stroke-width: 3; }
 </style>
 <script>
-DeckTalk.scene(3, { name: "Gradient descent", steps: [
-  { id: "3.1", hold: 26, cues: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1rule": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1settle": 21 }, render: () => `
+DeckTalk.scene(3, { name: "Gradient descent", slides: [
+  { id: "3.1", hold: 26, preview: { "3.1bowl": 0.5, "3.1p0": 3, "3.1p1": 5, "3.1rule": 7, "3.1p2": 9, "3.1p3": 11, "3.1think": 13, "3.1over": 17, "3.1settle": 21 }, render: () => `
     <div class="slide">
       <div class="row">
         <svg viewBox="0 0 1000 520" width="1000" height="520" style="overflow:visible">
           <line class="ax" x1="60" y1="470" x2="960" y2="470"/>
           <line class="ax" x1="60" y1="40" x2="60" y2="470"/>
-          <path class="curve" pathLength="1" data-cue="3.1bowl" data-fx="draw" data-dur="1.6"
+          <path class="curve" pathLength="1" data-cue="3.1bowl" data-reveal="draw" data-duration="1.6"
                 d="M80,70 Q510,880 940,70"/>
-          <path class="zig" pathLength="1" data-cue="3.1over" data-fx="draw" data-dur="1.4"
+          <path class="zig" pathLength="1" data-cue="3.1over" data-reveal="draw" data-duration="1.4"
                 d="M190,200 L830,200 L230,320 L790,320 L300,410"/>
-          <g class="step" data-cue="3.1p0" data-fx="pop"><circle cx="190" cy="200" r="26"/></g>
-          <g class="step" data-cue="3.1p1" data-fx="pop"><line x1="190" y1="200" x2="330" y2="330"/><circle cx="330" cy="330" r="26"/></g>
-          <g class="step" data-cue="3.1p2" data-fx="pop"><line x1="330" y1="330" x2="420" y2="405"/><circle cx="420" cy="405" r="26"/></g>
-          <g class="step" data-cue="3.1p3" data-fx="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
-          <g class="step" data-cue="3.1settle" data-fx="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
+          <g class="step" data-cue="3.1p0" data-reveal="pop"><circle cx="190" cy="200" r="26"/></g>
+          <g class="step" data-cue="3.1p1" data-reveal="pop"><line x1="190" y1="200" x2="330" y2="330"/><circle cx="330" cy="330" r="26"/></g>
+          <g class="step" data-cue="3.1p2" data-reveal="pop"><line x1="330" y1="330" x2="420" y2="405"/><circle cx="420" cy="405" r="26"/></g>
+          <g class="step" data-cue="3.1p3" data-reveal="pop"><line x1="420" y1="405" x2="470" y2="440"/><circle cx="470" cy="440" r="26"/></g>
+          <g class="step" data-cue="3.1settle" data-reveal="pop"><circle cx="510" cy="453" r="34"/><circle class="ring" cx="510" cy="453" r="52"/></g>
         </svg>
         <div class="text">
           <h2 class="h2">Gradient descent</h2>
           <p class="note">Follow the slope downhill, one step at a time.</p>
-          <div class="math" data-cue="3.1rule" data-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
-          <p class="note" data-cue="3.1think" data-fx="fade">Pause and think: what if the learning rate is too large?</p>
+          <div class="math" data-cue="3.1rule" data-tex-display data-tex="\\theta_{t+1} = \\theta_t - \\eta\\,\\nabla L(\\theta_t)">θ(t+1) = θ(t) − η ∇L(θ(t))</div>
+          <p class="note" data-cue="3.1think" data-reveal="fade">Pause and think: what if the learning rate is too large?</p>
         </div>
       </div>
     </div>` },

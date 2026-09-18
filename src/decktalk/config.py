@@ -58,9 +58,9 @@ class NarrationConfig:
     mp3_bitrate: str = "128k"  # Bitrate of the mp3 files that DeckTalk writes.
     # They include click tracks and `narration.mp3`.
     words_per_minute: int = 140  # Pacing of the estimated length in the `narrate` table.
-    silent_words_per_minute: int = 150  # Pacing of the click track in a silent build.
-    lead_break_seconds: float = 0.7  # Silence before the first spoken section.
-    direction_break_seconds: float = 0.7  # Seconds that each beat adds to the length of a silent build's section.
+    silent_words_per_minute: int = 150  # Pacing of the click track in a build without voice.
+    opening_silence_seconds: float = 0.7  # Silence before the first spoken section.
+    silent_beat_seconds: float = 0.7  # Seconds each beat adds to a section's length in a build without voice.
     min_tail_seconds: float = 0.7  # Shortest silence after the last word of a section, so a cut never falls on speech.
     tail_slack_seconds: float = 0.05  # Extra silence added when `narrate` pads a short tail.
     context_chars: int = 1500  # Characters of each neighbor section sent with a request, for continuous prosody.
@@ -69,26 +69,22 @@ class NarrationConfig:
 
 @dataclass
 class RecordConfig:
-    """These keys tune the headless Chromium recording."""
+    """These keys tune the headless Chromium recording, how narration t=0 is found in it, and its sanity check."""
 
     settle_seconds: float = 0.5  # Shortest wait after the page is ready and before narration t=0.
     # `record --settle` overrides it.
-    min_lead_seconds: float = 1.5  # Shortest time from the start of the recorder to narration t=0.
+    min_cover_seconds: float = 1.5  # Shortest time from the start of the recorder to narration t=0.
     color_scheme: str = "light"  # Color scheme that Chromium reports to the page, such as `light` or `dark`.
     retries: int = 2  # How many more times `record` records a section whose frames stalled.
-    shot_settle_ms: int = 400  # Milliseconds that `decktalk shots` waits before each step screenshot.
-
-
-@dataclass
-class AlignConfig:
-    """These keys tune how narration t=0 is found in a recording, and the recording sanity check."""
-
-    scan_seconds: float = 4.0  # Seconds at the start of each recording that `measure` scans for the magenta cover.
+    screenshot_settle_ms: int = 400  # Milliseconds that `decktalk screenshots` waits before each slide screenshot.
+    cover_scan_seconds: float = (
+        4.0  # Seconds at the start of each recording that `measure` scans for the magenta cover.
+    )
     fallback_first_paint_seconds: float = 1.1  # Guessed first paint if `measure` finds no cover and no painted frame.
     # `measure` adds `settle_seconds` to it.
-    magenta_luma_min: float = 70  # A cover frame has an average luma above this.
-    magenta_luma_max: float = 140  # A cover frame has an average luma below this.
-    magenta_chroma_min: float = 165  # A cover frame has an average U and an average V above this.
+    cover_luma_min: float = 70  # A cover frame has an average luma above this.
+    cover_luma_max: float = 140  # A cover frame has an average luma below this.
+    cover_chroma_min: float = 165  # A cover frame has an average U and an average V above this.
     painted_ymax: float = 60  # A painted frame has a brightest luma above this.
     painted_yavg_max: float = 120  # A painted frame has an average luma below this, so a white flash does not count.
     black_ymax: float = 40  # `check` reports `BLACK?` when the brightest luma of the middle frame is below this.
@@ -102,7 +98,7 @@ class AlignConfig:
 class AudioConfig:
     """These keys set the mix mechanics. Levels live in `[mix]` in `decktalk.toml`."""
 
-    duck_ramp_seconds: float = 0.5  # Ramp of the underscore duck at each edge of a spoken span or a clip.
+    duck_ramp_seconds: float = 0.5  # Ramp of the music duck at each edge of a spoken span or a clip.
     ambience_ramp_seconds: float = 1.0  # Ramp of the ambience bed at each edge of its span.
     ambience_pad_seconds: float = 0.5  # Seconds that the ambience bed extends past each edge of its section.
     marker_mute_ramp_seconds: float = 0.04  # Ramp into and out of a marker's mute.
@@ -114,7 +110,7 @@ class VerifyConfig:
     """These keys tune the checks on the assembled mp4."""
 
     after_dip_seconds: float = 0.2  # Seconds after a section start to the frame that the start check reads.
-    lead_seconds: float = 0.1  # Reference lead.
+    reference_lead_seconds: float = 0.1  # Reference lead.
     # It has an effect only above (`max_offset_frames` + 1.5) / `fps`, which is 0.14 s at the defaults.
     probe_delays: tuple[float, ...] = (0.7, 1.5)  # Seconds after the cue time for each probe.
     # The later probe catches a slow reveal.
@@ -134,7 +130,7 @@ class VerifyConfig:
     cut_window_seconds: float = 0.15  # Seconds of narration before each cut that the cut check measures.
     cut_max_db: float = -40.0  # Loudest RMS level of the cut window, in dBFS, that passes the cut check.
     max_pop_percent: float = 0.1  # Largest changed share, in percent, across the cut into a section that sets
-    # `carries_previous`. A larger share reads `POP AT CUT`.
+    # `seamless`. A larger share reads `POP AT CUT`.
     probe_width: int = 480  # Width in pixels that frames are scaled to before a comparison.
     probe_height: int = 270  # Height in pixels that frames are scaled to before a comparison.
     block_width: int = 240  # Width in pixels of the block-averaged copy of each frame that confirms an onset.
@@ -174,7 +170,6 @@ class Settings:
     video: VideoConfig = field(default_factory=VideoConfig)
     narration: NarrationConfig = field(default_factory=NarrationConfig)
     record: RecordConfig = field(default_factory=RecordConfig)
-    align: AlignConfig = field(default_factory=AlignConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     verify: VerifyConfig = field(default_factory=VerifyConfig)
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)

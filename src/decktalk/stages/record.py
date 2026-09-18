@@ -1,9 +1,9 @@
 """Stage 3: record each page section with headless Chromium, driven by the resolved cues.
 
-The page is opened as file:///<project>/<page>?scene=<scene>&<params>&t0=<settle>&beats=<id@t,...>
-and recorded for its span in the timeline plus extra_seconds. The page is covered in
+The page is opened as file:///<project>/<page>?scene=<scene>&<params>&t0=<settle>&cues=<id@t,...>
+and recorded for its span in the timeline plus record_margin_seconds. The page is covered in
 magenta from its first paint until the recorder starts the narration clock, which it does
-only after `settle` seconds past load and at least `min_lead` seconds after the recorder
+only after `settle` seconds past load and at least `min_cover` seconds after the recorder
 was created. The first clean frame in the recording is therefore narration t=0, and
 `decktalk measure` finds it, regardless of when Chromium's capture actually began.
 """
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
 
-from ..artifacts import Beats, Sidecar, TimelineSection
+from ..artifacts import CueTimes, RecordingLog, TimelineSection
 from ..errors import ConfigError, MissingInputError
 from ..media.browser import chromium, record_page
 from ..project import PageSection, Project
@@ -23,13 +23,13 @@ from ..project import PageSection, Project
 log = logging.getLogger(__name__)
 
 
-def scene_params(section: PageSection, beats: Beats | None) -> dict[str, str]:
-    """The section's own query parameters, plus its resolved cues as `beats` unless the section sets that key itself."""
+def scene_params(section: PageSection, cue_times: CueTimes | None) -> dict[str, str]:
+    """The section's own query parameters, plus its resolved cues as `cues` unless the section sets that key itself."""
     params = dict(section.params)
-    if beats is not None and "beats" not in params:
-        query = beats.query(section.key)
+    if cue_times is not None and "cues" not in params:
+        query = cue_times.query(section.key)
         if query:
-            params["beats"] = query
+            params["cues"] = query
     return params
 
 
@@ -59,7 +59,7 @@ def _words_param(sec: TimelineSection) -> str | None:
 
 
 def words_query(project: Project, section: PageSection) -> str | None:
-    """The section's spoken words with their seconds after the section starts, for data-sync reveals."""
+    """The section's spoken words with their seconds after the section starts, for data-text="spoken" reveals."""
     timeline = project.timeline()
     if timeline is None or section.key not in timeline.sections:
         return None
@@ -81,10 +81,10 @@ def prev_words_query(project: Project, section: PageSection) -> str | None:
 
 
 @dataclass
-class Recording:
+class RecordResult:
     section: PageSection
     path: Path
-    sidecar: Sidecar
+    log: RecordingLog
     seconds: float
 
 
@@ -93,14 +93,14 @@ def record(
     *,
     only: list[int] | None = None,
     seconds: float | None = None,
-    use_beats: bool = True,
-) -> list[Recording]:
+    use_cues: bool = True,
+) -> list[RecordResult]:
     cfg = project.settings.record
     video = project.settings.video
     timeline = project.timeline()
     if timeline is None and seconds is None:
         raise MissingInputError(f"{project.timeline_path} not found; run `decktalk narrate` first, or pass seconds")
-    beats = project.beats() if use_beats else None
+    cue_times = project.cue_times() if use_cues else None
     wanted = set(only) if only else None
 
     jobs: list[tuple[PageSection, str, float, Path]] = []
@@ -108,33 +108,33 @@ def record(
         if wanted is not None and section.number not in wanted:
             continue
         span = timeline.span(section.key) if timeline else None
-        length = seconds if seconds is not None else (span + section.extra_seconds if span else None)
+        length = seconds if seconds is not None else (span + section.record_margin_seconds if span else None)
         if not length:
             log.warning("section %s: no narration span yet; skipped", section.key)
             continue
-        url = scene_url(project, section, scene_params(section, beats))
+        url = scene_url(project, section, scene_params(section, cue_times))
         jobs.append((section, url, length, project.recording(section)))
     if not jobs:
         raise ConfigError("nothing to record: no page sections matched")
 
-    results: list[Recording] = []
+    results: list[RecordResult] = []
     with chromium() as browser:
         for section, url, length, out in jobs:
             log.info("[rec ] section %s (%s?scene=%s)  %.1fs ...", section.key, section.page, section.scene, length)
             for attempt in range(1, cfg.retries + 2):
-                sidecar = record_page(
+                recording_log = record_page(
                     browser,
                     url,
                     length,
                     out,
                     settle_seconds=cfg.settle_seconds,
-                    min_lead_seconds=cfg.min_lead_seconds,
+                    min_cover_seconds=cfg.min_cover_seconds,
                     width=video.width,
                     height=video.height,
                     color_scheme=cfg.color_scheme,
                 )
-                stall = sidecar.worst_stall_ms
-                if stall <= project.settings.align.stall_ms or attempt > cfg.retries:
+                stall = recording_log.worst_stall_ms
+                if stall <= cfg.stall_ms or attempt > cfg.retries:
                     break
                 # A stalled page froze a reveal for a few frames, which no cut can repair, so
                 # the section is recorded again while the machine is quieter.
@@ -145,6 +145,6 @@ def record(
                     attempt,
                     cfg.retries,
                 )
-            log.info("       %s  (lead %.2fs)", out.relative_to(project.root), sidecar.lead_seconds)
-            results.append(Recording(section=section, path=out, sidecar=sidecar, seconds=length))
+            log.info("       %s  (clock start %.2fs)", out.relative_to(project.root), recording_log.clock_start_seconds)
+            results.append(RecordResult(section=section, path=out, log=recording_log, seconds=length))
     return results

@@ -4,105 +4,109 @@
  *
  *   <script src="decktalk-runtime.js"></script>
  *   <script>
- *     DeckTalk.scene(3, { name: "How often", camera: "push", steps: [
+ *     DeckTalk.scene(3, { name: "How often", camera: "push", slides: [
  *       { id: "3.1", hold: 8, render: () => `
  *           <h1>Value still listed</h1>
- *           <p data-at="1.2">by hour, through first pitch</p>
- *           <div class="tile" data-cue="3.1b" data-count>1 in 10</div>` },
+ *           <p data-delay="1.2">by hour, through first pitch</p>
+ *           <div class="tile" data-cue="3.1b" data-text="count">1 in 10</div>` },
  *       { id: "3.2", hold: 6, render: () => `…` },
  *     ]});
  *     DeckTalk.on("3.2b", (slide) => slide.querySelector(".bars").classList.add("grow"));
  *   </script>
  *
- * URL contract (what the recorder and the screenshot tool send)
+ * URL contract (what the recorder and the screenshot command send)
  *   ?scene=N                 play scene N
- *   &beats=id@s,id@s,…       cue mode: fire cue `id` at `s` seconds after narration t=0.
- *                            A step mounts at the earliest of its cues (the first cued step
- *                            at t=0, so the stage is never empty); steps with no cue never
- *                            show; the last cued step holds forever.
+ *   &cues=id@s,id@s,…        cue mode: fire cue `id` at `s` seconds after narration t=0.
+ *                            A slide mounts at the earliest of its cues (the first cued slide
+ *                            at t=0, so the stage is never empty); slides with no cue never
+ *                            show; the last cued slide holds forever.
  *   &t0=S                    seconds after page load at which narration t=0 falls;
  *                            t0=signal waits for DeckTalk.startClock() (what the recorder sends)
  *   &prevwords=word@s,…      the previous section's spoken words, in seconds after that section
  *                            starts. The runtime ignores them; a page that opens on the previous
  *                            section's last frame reads them from DeckTalk.params
- *   ?step=ID                 freeze step ID with everything revealed (screenshots, review)
- *   &cue=ID                  with ?step=, freeze at cue ID instead: the step's cues fire in
- *                            autoplay order up to and including ID, and later cues stay hidden
- *   &before=ID               with ?step= and no &cue=, freeze just before cue ID: the step's cues
- *                            before ID in autoplay order fire, and ID and later cues stay hidden
- *   &speed=X                 autoplay time scale (cue mode ignores it)
- *   &hud=1                   overlay scene · step · clock
- *   (no params)              index page listing every scene and step
+ *   ?slide=ID                freeze slide ID with everything revealed (screenshots, review)
+ *   &after=ID                with ?slide=, freeze at cue ID instead: the slide's cues fire in
+ *                            preview order up to and including ID, and later cues stay hidden
+ *   &before=ID               with ?slide= and no &after=, freeze just before cue ID: the slide's cues
+ *                            before ID in preview order fire, and ID and later cues stay hidden
+ *   &speed=X                 preview time scale (cue mode ignores it)
+ *   &hud=1                   overlay scene · slide · clock
+ *   (no params)              index page listing every scene and slide
  *
- * Markup inside a step
- *   data-cue="id"            reveal on cue `id` (cue mode) or at data-at seconds after the
- *                            step mounts (autoplay, or when the cue is not in ?beats=)
- *   data-at="s"              reveal s seconds after the step mounts (no cue needed)
- *   data-fx="rise|fade|draw|drop|pop|dim|none"   reveal animation (default rise)
- *   data-dur="s"             animation length
- *   data-count               count the last number in the text up from 0 on reveal
- *   data-type="ms"           type the text at ms per character on reveal
- *   data-sync                reveal the element word by word as each word is spoken. The text
+ * Markup inside a slide
+ *   data-cue="id"            reveal on cue `id` (cue mode) or at data-delay seconds after the
+ *                            slide mounts (preview, or when the cue is not in ?cues=)
+ *   data-delay="s"           reveal s seconds after the slide mounts (no cue needed)
+ *   data-reveal="rise|fade|draw|drop|pop|dim|instant"   reveal effect (default rise)
+ *   data-duration="s"        animation length, and the length of a count-up
+ *   data-text="count"        count the last number in the text up from 0 on reveal;
+ *                            data-text="count first" counts the first number instead
+ *   data-text="type 40ms"    type the text at that many milliseconds per character on reveal
+ *   data-text="spoken"       reveal the element word by word as each word is spoken. The text
  *                            must match a run of the section's spoken words, which the recorder
  *                            passes as &words=word@s,word@s,… (punctuation and case are ignored).
- *                            The element gets data-fx="none" unless it sets its own data-fx.
- *   data-tex="…"             typeset with KaTeX if window.katex is present
+ *                            The element gets data-reveal="instant" unless it sets its own data-reveal.
+ *   data-tex="…"             typeset with KaTeX if window.katex is present; data-tex-display
+ *                            typesets in display mode
  *
- * Cue ownership: a cue belongs to the step with the same id, or whose `cues` list names
- * it, or whose id is the longest prefix of the cue id ("4.2b1" -> step "4.2", "9a" -> "9").
+ * Cue ownership: a cue belongs to the slide with the same id, or whose `owns` list or
+ * `preview` object names it, or whose id is the longest prefix of the cue id ("4.2b1" -> slide
+ * "4.2", "9a" -> "9"). `owns` lists cue ids; `preview` maps a cue id to its seconds after the
+ * mount, which preview mode uses.
  *
- * Handlers: a step's `enter(slide, ctx)`, its `on[id](slide, ctx)`, and every
+ * Handlers: a slide's `enter(slide, ctx)`, its `on[id](slide, ctx)`, and every
  * `DeckTalk.on(id, (slide, ctx) => …)` receive the mounted slide element and a context
- * object { id, at, frozen, step }. `id` is the cue id (the step id for `enter`), `at` is the
- * second after narration t=0, `frozen` is true in freeze mode, and `step` is the id of the
- * mounted step. A handler that takes no arguments keeps working.
+ * object { id, at, frozen, slideId }. `id` is the cue id (the slide id for `enter`), `at` is the
+ * second after narration t=0, `frozen` is true in freeze mode, and `slideId` is the id of the
+ * mounted slide. A handler that takes no arguments keeps working.
  *
- * The page exposes window.__decktalk { mode, scene, step, cues, fired, catalog, warnings, now() }
- * and sets window.__sceneReady unless the page set its own. That promise resolves once fonts
+ * The page exposes window.__decktalk { mode, scene, slide, cues, fired, catalog, warnings, ready, now() }
+ * and sets window.__decktalk.ready unless the page set it first. That promise resolves once fonts
  * are loaded and, when the page uses [data-tex] or loads KaTeX, once window.katex exists
- * (polled for up to 5 s). Anything the runtime cannot honor (an unknown cue id, a cue no
- * step owns, a cue that reveals no element and runs no handler, a step that owns no listed
- * cue, a data-cue that is not listed, a reveal mode with no trigger, an autoplay cue past its
- * step's hold, KaTeX never arriving or refusing a data-tex value) is pushed onto
- * __decktalk.warnings, which the recorder reads back and logs. A warning never throws.
+ * (polled for up to 5 s). The mode is one of index, preview, cue and freeze. Anything the runtime
+ * cannot honor (an unknown cue id, a cue no slide owns, a cue that reveals no element and runs no
+ * handler, a slide that owns no listed cue, a data-cue that is not listed, a text mode with no
+ * trigger, a preview cue past its slide's hold, KaTeX never arriving or refusing a data-tex value)
+ * is pushed onto __decktalk.warnings, which the recorder reads back and logs. A warning never throws.
  */
 (() => {
   // The runtime loads as a classic <script>, not a module, so this directive is what makes it strict.
   "use strict";
   const CSS = `
   #dt-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0}
-  #dt-cam,#dt-pan{position:absolute;inset:0}
-  #dt-cam.dt-push{animation:dt-push var(--dt-scene-dur,20s) linear forwards}
+  #dt-camera,#dt-pan{position:absolute;inset:0}
+  #dt-camera.dt-push{animation:dt-push var(--dt-scene-dur,20s) linear forwards}
   @keyframes dt-push{from{transform:scale(1)}to{transform:scale(1.03)}}
   .dt-slide{position:absolute;inset:0}
   .dt-slide.dt-enter{animation:dt-fadein var(--dt-xfade,.35s) ease both}
   .dt-slide.dt-enter.dt-first{animation:dt-slidein .3s ease both}
   .dt-slide.dt-leave{animation:dt-fadeout var(--dt-xfade,.35s) ease both;pointer-events:none}
-  .dt-w{opacity:0;transition:opacity .12s ease}
-  .dt-w.dt-on{opacity:1}
+  .dt-word{opacity:0;transition:opacity .12s ease}
+  .dt-word.dt-shown{opacity:1}
   @keyframes dt-slidein{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
   @keyframes dt-fadein{from{opacity:0}to{opacity:1}}
   @keyframes dt-fadeout{from{opacity:1}to{opacity:0}}
   .dt-reveal{opacity:0}
-  .dt-reveal[data-fx=dim]{opacity:1}
-  .dt-reveal.dt-on{opacity:1;animation:dt-rise .3s cubic-bezier(.2,.7,.2,1) both}
+  .dt-reveal[data-reveal=dim]{opacity:1}
+  .dt-reveal.dt-shown{opacity:1;animation:dt-rise .3s cubic-bezier(.2,.7,.2,1) both}
   @keyframes dt-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-  .dt-reveal.dt-on[data-fx=fade]{animation-name:dt-fadein}
-  .dt-reveal.dt-on[data-fx=draw]{animation-name:dt-draw;animation-timing-function:linear;stroke-dasharray:1;stroke-dashoffset:1}
+  .dt-reveal.dt-shown[data-reveal=fade]{animation-name:dt-fadein}
+  .dt-reveal.dt-shown[data-reveal=draw]{animation-name:dt-draw;animation-timing-function:linear;stroke-dasharray:1;stroke-dashoffset:1}
   @keyframes dt-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
-  .dt-reveal.dt-on[data-fx=drop]{animation-name:dt-drop;animation-duration:.35s}
+  .dt-reveal.dt-shown[data-reveal=drop]{animation-name:dt-drop;animation-duration:.35s}
   @keyframes dt-drop{from{opacity:0;transform:translateY(-24px)}to{opacity:1;transform:none}}
-  .dt-reveal.dt-on[data-fx=pop]{animation-name:dt-pop;animation-duration:.5s}
+  .dt-reveal.dt-shown[data-reveal=pop]{animation-name:dt-pop;animation-duration:.5s}
   @keyframes dt-pop{0%{opacity:0;transform:scale(.6)}45%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}
-  .dt-reveal.dt-on[data-fx=dim]{animation-name:dt-dim;animation-duration:1.2s}
+  .dt-reveal.dt-shown[data-reveal=dim]{animation-name:dt-dim;animation-duration:1.2s}
   @keyframes dt-dim{from{opacity:1}to{opacity:.16}}
-  .dt-reveal.dt-on[data-fx=none]{animation:none}
-  .dt-frozen .dt-reveal.dt-on,.dt-frozen .dt-slide,.dt-frozen #dt-cam{animation-duration:0s!important;animation-delay:0s!important}
+  .dt-reveal.dt-shown[data-reveal=instant]{animation:none}
+  .dt-frozen .dt-reveal.dt-shown,.dt-frozen .dt-slide,.dt-frozen #dt-camera{animation-duration:0s!important;animation-delay:0s!important}
   #dt-hud{position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}
   #dt-index{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}
   #dt-index h1{font-size:28px}#dt-index h2{font-size:20px;margin-top:28px}
   #dt-index a{color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}#dt-index code{color:inherit;opacity:.7}
-  #dt-index .dt-steps{display:flex;flex-wrap:wrap;gap:8px 4px}
+  #dt-index .dt-slides{display:flex;flex-wrap:wrap;gap:8px 4px}
   `;
 
   const params = new URLSearchParams(location.search);
@@ -115,8 +119,8 @@
   const state = {
     mode: "index",
     scene: null,
-    step: null,
-    slide: null, // the slide element mounted last, which every handler receives
+    slide: null, // the slide mounted last
+    mounted: null, // the slide element mounted last, which every handler receives
     cues: [],
     fired: [],
     catalog: [],
@@ -127,7 +131,7 @@
     lastMountAt: 0,
     frameAt: 0, // the rAF timestamp of the frame the queue last ran in (ms)
   };
-  const frozen = params.has("step");
+  const frozen = params.has("slide");
 
   // ---- time ----------------------------------------------------------------------
   const setOrigin = () => {
@@ -154,7 +158,7 @@
       document.body.appendChild(stage);
     }
     cam = document.createElement("div");
-    cam.id = "dt-cam";
+    cam.id = "dt-camera";
     pan = document.createElement("div");
     pan.id = "dt-pan";
     cam.appendChild(pan);
@@ -180,7 +184,7 @@
   // animation frames longer than a few frames means a reveal was captured late, so the gap
   // is recorded for the recorder to judge.
   const frameGaps = [];
-  const syncLog = []; // what each data-sync element matched, for the recorder's sidecar
+  const spokenLog = []; // what each data-text="spoken" element matched, for the recording log
   // When each cue was due, when it ran, and when the frame that ran it and the two frames after it
   // began, all in seconds on the narration clock. A cue that ran on time but whose next frame began
   // late was held up by the frame that drew it; a cue that ran late was held up before its frame.
@@ -238,24 +242,25 @@
   // ---- scenes ---------------------------------------------------------------------
   function scene(id, def) {
     const sid = String(id);
-    const steps = (def.steps || []).map((st, i) => ({
+    const slides = (def.slides || []).map((st, i) => ({
       id: String(st.id ?? `${sid}.${i + 1}`),
       hold: Number(st.hold ?? 8),
       render: st.render || (() => ""),
-      cues: normalizeCues(st.cues),
+      cues: normalizeCues(st.owns, st.preview),
       enter: st.enter || null,
       on: st.on || {},
     }));
-    SCENES.set(sid, { id: sid, name: def.name || `Scene ${sid}`, camera: def.camera || null, steps });
+    SCENES.set(sid, { id: sid, name: def.name || `Scene ${sid}`, camera: def.camera || null, slides });
     return DeckTalk;
   }
-  // cues: ["a","b"] (ownership only) or {a: 1.5, b: 3} (ownership + autoplay seconds after mount)
-  function normalizeCues(c) {
+  // owns: ["a","b"] (ownership only) and preview: {a: 1.5, b: 3} (ownership + preview seconds after mount)
+  function normalizeCues(owns, preview) {
     const out = new Map();
-    if (Array.isArray(c)) {
-      for (const k of c) out.set(String(k), null);
-    } else if (c && typeof c === "object") {
-      for (const [k, v] of Object.entries(c)) out.set(String(k), Number(v) || 0);
+    if (Array.isArray(owns)) {
+      for (const k of owns) out.set(String(k), null);
+    }
+    if (preview && typeof preview === "object") {
+      for (const [k, v] of Object.entries(preview)) out.set(String(k), Number(v) || 0);
     }
     return out;
   }
@@ -265,33 +270,37 @@
     HANDLERS.set(String(id), list);
     return DeckTalk;
   }
-  function findStep(stepId) {
+  function findSlide(slideId) {
     for (const sc of SCENES.values()) {
-      const st = sc.steps.find((s) => s.id === String(stepId));
-      if (st) return { scene: sc, step: st };
+      const st = sc.slides.find((s) => s.id === String(slideId));
+      if (st) return { scene: sc, slide: st };
     }
     return null;
   }
-  // The step that owns a cue id, within one scene (or across all scenes when sc is null).
+  // The slide that owns a cue id, within one scene (or across all scenes when sc is null).
   function ownerOf(cueId, sc) {
     const scenes = sc ? [sc] : [...SCENES.values()];
     let best = null;
     for (const s of scenes) {
-      for (const st of s.steps) {
-        if (st.id === cueId || st.cues.has(cueId)) return { scene: s, step: st };
-        if (cueId.startsWith(st.id) && (!best || st.id.length > best.step.id.length)) best = { scene: s, step: st };
+      for (const st of s.slides) {
+        if (st.id === cueId || st.cues.has(cueId)) return { scene: s, slide: st };
+        if (cueId.startsWith(st.id) && (!best || st.id.length > best.slide.id.length)) best = { scene: s, slide: st };
       }
     }
     return best;
   }
 
   // ---- reveals --------------------------------------------------------------------
+  // data-text="count", "count first", "type 40ms" or "spoken": the first word is the mode, the rest its argument.
+  const textMode = (el) => (el.dataset.text ?? "").trim().split(/\s+/)[0] || null;
+  const textArg = (el) => (el.dataset.text ?? "").trim().split(/\s+/).slice(1).join(" ");
   function reveal(el) {
-    if (el.classList.contains("dt-on")) return;
-    el.classList.add("dt-on");
-    if (el.hasAttribute("data-count")) countUp(el);
-    if (el.hasAttribute("data-type")) typewriter(el);
-    if (el.hasAttribute("data-sync")) syncWords(el);
+    if (el.classList.contains("dt-shown")) return;
+    el.classList.add("dt-shown");
+    const mode = textMode(el);
+    if (mode === "count") countUp(el);
+    if (mode === "type") typewriter(el);
+    if (mode === "spoken") syncWords(el);
   }
   const wordKey = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, "");
   function parseWords(raw) {
@@ -329,10 +338,10 @@
       if (words[i].t >= t0 - 1.5) break;
     }
     if (start < 0) {
-      warn(`data-sync text not found in the spoken words: "${full.slice(0, 40)}"`);
+      warn(`data-text="spoken" text not found in the spoken words: "${full.slice(0, 40)}"`);
       return;
     }
-    syncLog.push({ text: full.slice(0, 24), cueAt: +t0.toFixed(3), runAt: words[start].t, n: keys.length });
+    spokenLog.push({ text: full.slice(0, 24), cueAt: +t0.toFixed(3), runAt: words[start].t, n: keys.length });
     el.textContent = "";
     let wi = 0;
     tokens.forEach((t) => {
@@ -341,18 +350,18 @@
         return;
       }
       const span = document.createElement("span");
-      span.className = "dt-w";
+      span.className = "dt-word";
       span.textContent = t;
-      span.dataset.at = wordKey(t) ? words[start + wi++].t : -Infinity;
+      span.dataset.spokenAt = wordKey(t) ? words[start + wi++].t : -Infinity;
       el.appendChild(span);
     });
-    const entry = syncLog[syncLog.length - 1];
+    const entry = spokenLog[spokenLog.length - 1];
     const tick = () => {
       const n = now();
       let pending = false;
-      el.querySelectorAll(".dt-w:not(.dt-on)").forEach((sp) => {
-        if (n >= parseFloat(sp.dataset.at) - 0.02) {
-          sp.classList.add("dt-on");
+      el.querySelectorAll(".dt-word:not(.dt-shown)").forEach((sp) => {
+        if (n >= parseFloat(sp.dataset.spokenAt) - 0.02) {
+          sp.classList.add("dt-shown");
           if (entry && entry.firstOn === undefined) entry.firstOn = +n.toFixed(3);
         } else pending = true;
       });
@@ -362,8 +371,7 @@
   }
   function countUp(el) {
     const full = el.dataset.ccFull ?? el.textContent;
-    const m =
-      el.dataset.count === "first" ? full.match(/(\d[\d,]*(?:\.\d+)?)/) : full.match(/(\d[\d,]*(?:\.\d+)?)(?!.*\d)/);
+    const m = textArg(el) === "first" ? full.match(/(\d[\d,]*(?:\.\d+)?)/) : full.match(/(\d[\d,]*(?:\.\d+)?)(?!.*\d)/);
     if (!m || frozen) {
       el.textContent = full;
       return;
@@ -377,7 +385,7 @@
       return full.slice(0, m.index) + s + full.slice(m.index + m[1].length);
     };
     const t0 = performance.now(),
-      dur = (parseFloat(el.dataset.dur) * 1000 || 900) / (state.mode === "autoplay" ? SPEED : 1);
+      dur = (parseFloat(el.dataset.duration) * 1000 || 900) / (state.mode === "preview" ? SPEED : 1);
     const tick = (t) => {
       const k = Math.min(1, (t - t0) / dur),
         e = 1 - (1 - k) ** 3;
@@ -392,7 +400,7 @@
       el.textContent = full;
       return;
     }
-    const ms = (parseFloat(el.dataset.type) || 40) / (state.mode === "autoplay" ? SPEED : 1);
+    const ms = (parseFloat(textArg(el)) || 40) / (state.mode === "preview" ? SPEED : 1);
     // The box keeps the size of its finished text, so nothing around it shifts while typing.
     el.style.minWidth = `${el.offsetWidth}px`;
     el.style.minHeight = `${el.offsetHeight}px`;
@@ -410,7 +418,10 @@
     }
     root.querySelectorAll("[data-tex]:not([data-typeset])").forEach((el) => {
       try {
-        window.katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: el.hasAttribute("data-display") });
+        window.katex.render(el.dataset.tex, el, {
+          throwOnError: false,
+          displayMode: el.hasAttribute("data-tex-display"),
+        });
         el.dataset.typeset = "1";
       } catch (_) {
         /* keep plain text */
@@ -422,8 +433,8 @@
         );
     });
   }
-  // In cue mode the first step mounts after the clock starts, so katexReady finds no [data-tex]
-  // element and resolves without waiting. A step that mounts [data-tex] without KaTeX therefore
+  // In cue mode the first slide mounts after the clock starts, so katexReady finds no [data-tex]
+  // element and resolves without waiting. A slide that mounts [data-tex] without KaTeX therefore
   // starts one check, five seconds later, which warns if the equations are still plain text.
   let katexWatched = false;
   function watchKatex() {
@@ -468,43 +479,40 @@
     const t = now();
     while (state.queue.length && state.queue[0].t <= t) state.queue.shift().run();
     if (hud)
-      hud.textContent = `${state.mode} · scene ${state.scene?.id ?? "-"} · step ${state.step?.id ?? "-"} · t ${Math.max(0, t).toFixed(2)}s`;
+      hud.textContent = `${state.mode} · scene ${state.scene?.id ?? "-"} · slide ${state.slide?.id ?? "-"} · t ${Math.max(0, t).toFixed(2)}s`;
     requestAnimationFrame(loop);
   }
 
   // ---- mounting -------------------------------------------------------------------
   let mounted = 0;
-  // listedCues is the set of cue ids in ?beats=, given in cue mode only. held is the set of cue
+  // listedCues is the set of cue ids in ?cues=, given in cue mode only. held is the set of cue
   // ids whose elements a freeze at one cue leaves hidden, given in freeze mode only.
-  function mountStep(sc, st, listedCues, held) {
+  function mountSlide(sc, st, listedCues, held) {
     const old = pan.querySelector(".dt-slide:not(.dt-leave)");
     const slide = document.createElement("div");
     slide.className = `dt-slide dt-enter${mounted === 0 ? " dt-first" : ""}`;
-    slide.dataset.step = st.id;
-    slide.innerHTML = st.render({ scene: sc, step: st, frozen });
+    slide.dataset.slide = st.id;
+    slide.innerHTML = st.render({ scene: sc, slide: st, frozen });
     mounted++;
     typeset(slide);
     const mountT = now();
-    state.step = st;
-    state.slide = slide;
+    state.slide = st;
+    state.mounted = slide;
     state.lastMountAt = mountT;
-    // A reveal mode runs when its element reveals, so an element with no cue and no timer never runs it.
-    slide.querySelectorAll("[data-sync],[data-count],[data-type]").forEach((el) => {
-      if (el.hasAttribute("data-cue") || el.hasAttribute("data-at")) return;
-      ["data-sync", "data-count", "data-type"]
-        .filter((a) => el.hasAttribute(a))
-        .forEach((a) => {
-          warn(`${a} on an element without data-cue or data-at never reveals, so add data-at="0"`);
-        });
+    // A text mode runs when its element reveals, so an element with no cue and no timer never runs it.
+    slide.querySelectorAll("[data-text]").forEach((el) => {
+      if (el.hasAttribute("data-cue") || el.hasAttribute("data-delay")) return;
+      warn(
+        `data-text="${el.dataset.text}" on an element without data-cue or data-delay never reveals, so add data-delay="0"`,
+      );
     });
-    slide.querySelectorAll("[data-cue],[data-at]").forEach((el) => {
+    slide.querySelectorAll("[data-cue],[data-delay]").forEach((el) => {
       el.classList.add("dt-reveal");
-      // A fade on the container would fight the per-word reveal, so data-sync implies no animation.
-      if (el.hasAttribute("data-sync") && !el.hasAttribute("data-fx")) el.dataset.fx = "none";
-      if (el.hasAttribute("data-count") || el.hasAttribute("data-type") || el.hasAttribute("data-sync"))
-        el.dataset.ccFull = el.textContent;
-      if (el.dataset.dur)
-        el.style.animationDuration = `${parseFloat(el.dataset.dur) / (state.mode === "autoplay" ? SPEED : 1)}s`;
+      // A fade on the container would fight the per-word reveal, so data-text="spoken" implies no animation.
+      if (textMode(el) === "spoken" && !el.hasAttribute("data-reveal")) el.dataset.reveal = "instant";
+      if (textMode(el)) el.dataset.ccFull = el.textContent;
+      if (el.dataset.duration)
+        el.style.animationDuration = `${parseFloat(el.dataset.duration) / (state.mode === "preview" ? SPEED : 1)}s`;
       const cueId = el.dataset.cue;
       if (frozen) {
         if (!(cueId && held?.has(cueId))) reveal(el);
@@ -512,8 +520,8 @@
       }
       if (cueId && listedCues?.has(cueId)) return; // its cue event reveals it
       if (cueId && listedCues)
-        warn(`data-cue "${cueId}" is not in ?beats=, so it reveals at its data-at time after the mount`);
-      const at = (parseFloat(el.dataset.at) || 0) / (state.mode === "autoplay" ? SPEED : 1);
+        warn(`data-cue "${cueId}" is not in ?cues=, so it reveals at its data-delay time after the mount`);
+      const at = (parseFloat(el.dataset.delay) || 0) / (state.mode === "preview" ? SPEED : 1);
       if (at <= 0) reveal(el);
       else schedule(mountT + at, "reveal", cueId || "", () => reveal(el));
     });
@@ -525,20 +533,20 @@
     pan.appendChild(slide);
     if (st.enter) {
       try {
-        st.enter(slide, { id: st.id, at: +mountT.toFixed(3), frozen, step: st.id });
+        st.enter(slide, { id: st.id, at: +mountT.toFixed(3), frozen, slideId: st.id });
       } catch (e) {
         console.error(e);
       }
     }
     return slide;
   }
-  function fireCue(id) {
+  function fire(id) {
     state.fired.push(id);
     const hits = pan.querySelectorAll(`.dt-slide:not(.dt-leave) [data-cue="${CSS_escape(id)}"]`);
     hits.forEach(reveal);
-    const st = state.step,
-      slide = state.slide;
-    const ctx = { id, at: +now().toFixed(3), frozen, step: st ? st.id : null };
+    const st = state.slide,
+      slide = state.mounted;
+    const ctx = { id, at: +now().toFixed(3), frozen, slideId: st ? st.id : null };
     const handled = !!(st && typeof st.on[id] === "function");
     if (handled) {
       try {
@@ -555,9 +563,9 @@
       }
     });
     // A cue that reveals nothing and runs nothing is almost always a typo between cues.json,
-    // the step's cues object and a data-cue attribute, so it is reported rather than ignored.
-    if (!hits.length && !handled && !HANDLERS.has(id) && !findStep(id))
-      warn(`cue "${id}" matches no element, handler, or step`);
+    // the slide's preview object and a data-cue attribute, so it is reported rather than ignored.
+    if (!hits.length && !handled && !HANDLERS.has(id) && !findSlide(id))
+      warn(`cue "${id}" matches no element, handler, or slide`);
   }
   const CSS_escape = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&"));
   function startCamera(sc, seconds) {
@@ -567,7 +575,7 @@
   }
 
   // ---- modes ----------------------------------------------------------------------
-  function parseBeats(raw) {
+  function parseCues(raw) {
     return raw
       .split(",")
       .map((tok) => tok.trim())
@@ -580,74 +588,74 @@
       .sort((a, b) => a.t - b.t);
   }
   function playCues(sc, cues) {
-    state.mode = "cues";
+    state.mode = "cue";
     watchFrames();
     state.scene = sc;
     state.cues = cues;
     const listed = new Set(cues.map((c) => c.id));
-    const mountAt = new Map(); // step -> t
+    const mountAt = new Map(); // slide -> t
     for (const c of cues) {
       const owner = ownerOf(c.id, sc);
       if (!owner) {
-        if (!HANDLERS.has(c.id)) warn(`unknown cue id ${c.id} (no step id or cues list matches it)`);
+        if (!HANDLERS.has(c.id)) warn(`unknown cue id ${c.id} (no slide id, owns list or preview object matches it)`);
         continue;
       }
-      mountAt.set(owner.step, Math.min(mountAt.get(owner.step) ?? Infinity, c.t));
+      mountAt.set(owner.slide, Math.min(mountAt.get(owner.slide) ?? Infinity, c.t));
     }
-    const steps = [...mountAt.entries()].sort((a, b) => a[1] - b[1]);
-    if (!steps.length) {
-      warn("no step owns any listed cue, so nothing will mount");
+    const slides = [...mountAt.entries()].sort((a, b) => a[1] - b[1]);
+    if (!slides.length) {
+      warn("no slide owns any listed cue, so nothing will mount");
       return;
     }
-    sc.steps.forEach((st) => {
-      if (!mountAt.has(st)) warn(`step "${st.id}" owns no cue in ?beats=, so it never appears`);
+    sc.slides.forEach((st) => {
+      if (!mountAt.has(st)) warn(`slide "${st.id}" owns no cue in ?cues=, so it never appears`);
     });
-    // The first cued step mounts at narration t=0 so the section never opens on an empty
+    // The first cued slide mounts at narration t=0 so the section never opens on an empty
     // stage; its listed reveals still wait for their own cues.
-    steps[0][1] = Math.min(steps[0][1], 0);
-    const last = steps[steps.length - 1][0];
+    slides[0][1] = Math.min(slides[0][1], 0);
+    const last = slides[slides.length - 1][0];
     const tEnd = Math.max(...cues.map((c) => c.t));
     startCamera(sc, tEnd - T0 + 8);
-    for (const [st, t] of steps) {
+    for (const [st, t] of slides) {
       schedule(T0 + t, "mount", st.id, () => {
-        mountStep(sc, st, listed);
+        mountSlide(sc, st, listed);
         if (st === last) document.body.dataset.done = "1";
       });
     }
     for (const c of cues) {
       schedule(T0 + c.t, "cue", c.id, () => {
         logCue(c.id, T0 + c.t);
-        fireCue(c.id);
+        fire(c.id);
       });
     }
   }
-  function playAuto(sc) {
-    state.mode = "autoplay";
+  function playPreview(sc) {
+    state.mode = "preview";
     state.scene = sc;
     let t = T0;
-    const total = sc.steps.reduce((s, st) => s + st.hold, 0) / SPEED;
+    const total = sc.slides.reduce((s, st) => s + st.hold, 0) / SPEED;
     startCamera(sc, total);
-    sc.steps.forEach((st, i) => {
+    sc.slides.forEach((st, i) => {
       const at = t;
-      // A cue at or past the hold fires after the next step has mounted, where none of its
-      // elements or handlers exist. The last step holds until the end, so its cues always land.
-      if (i < sc.steps.length - 1) {
+      // A cue at or past the hold fires after the next slide has mounted, where none of its
+      // elements or handlers exist. The last slide holds until the end, so its cues always land.
+      if (i < sc.slides.length - 1) {
         st.cues.forEach((delay, id) => {
           if (delay !== null && delay >= st.hold)
-            warn(`step "${st.id}" fires "${id}" at ${delay} s but holds ${st.hold} s, so it fires on the next step`);
+            warn(`slide "${st.id}" fires "${id}" at ${delay} s but holds ${st.hold} s, so it fires on the next slide`);
         });
       }
       schedule(at, "mount", st.id, () => {
-        mountStep(sc, st, null);
+        mountSlide(sc, st, null);
         st.cues.forEach((delay, id) => {
-          if (delay !== null) schedule(at + delay / SPEED, "cue", id, () => fireCue(id));
+          if (delay !== null) schedule(at + delay / SPEED, "cue", id, () => fire(id));
         });
-        if (i === sc.steps.length - 1) document.body.dataset.done = "1";
+        if (i === sc.slides.length - 1) document.body.dataset.done = "1";
       });
       t += st.hold / SPEED;
     });
   }
-  // A step's cue ids in autoplay order: timed cues by their seconds, then listed cues, each in declared order.
+  // A slide's cue ids in preview order: timed cues by their seconds, then listed cues, each in declared order.
   function cueOrder(st) {
     return [...st.cues.entries()]
       .map(([id, delay], i) => ({ id, delay: delay ?? Infinity, i }))
@@ -658,29 +666,29 @@
     return [...SCENES.values()].map((sc) => ({
       scene: sc.id,
       name: sc.name,
-      steps: sc.steps.map((s) => s.id),
-      cues: Object.fromEntries(sc.steps.map((s) => [s.id, cueOrder(s)])),
+      slides: sc.slides.map((s) => s.id),
+      cues: Object.fromEntries(sc.slides.map((s) => [s.id, cueOrder(s)])),
     }));
   }
-  // Freeze a step with its cues fired in autoplay order: every cue, or with cueId only the cues
+  // Freeze a slide with its cues fired in preview order: every cue, or with afterId only the cues
   // up to and including it, or with beforeId only the cues before it. An element that waits for
   // a later cue stays hidden.
-  function freeze(stepId, cueId, beforeId) {
-    const found = findStep(stepId);
-    if (!found) return renderIndex(`unknown step ${esc(stepId)}`);
-    state.mode = "frozen";
+  function freeze(slideId, afterId, beforeId) {
+    const found = findSlide(slideId);
+    if (!found) return renderIndex(`unknown slide ${esc(slideId)}`);
+    state.mode = "freeze";
     state.scene = found.scene;
     document.documentElement.classList.add("dt-frozen");
-    const order = cueOrder(found.step);
-    let fire = order;
-    const stop = cueId || beforeId;
+    const order = cueOrder(found.slide);
+    let firing = order;
+    const stop = afterId || beforeId;
     if (stop) {
       const k = order.indexOf(stop);
-      if (k < 0) warn(`cue "${stop}" is not one of step ${found.step.id}'s cues`);
-      else fire = order.slice(0, cueId ? k + 1 : k);
+      if (k < 0) warn(`cue "${stop}" is not one of slide ${found.slide.id}'s cues`);
+      else firing = order.slice(0, afterId ? k + 1 : k);
     }
-    mountStep(found.scene, found.step, null, new Set(order.slice(fire.length)));
-    for (const id of fire) fireCue(id);
+    mountSlide(found.scene, found.slide, null, new Set(order.slice(firing.length)));
+    for (const id of firing) fire(id);
     document.body.dataset.done = "1";
   }
   function renderIndex(note) {
@@ -691,12 +699,12 @@
     div.id = "dt-index";
     const title = document.title || "decktalk scenes";
     div.innerHTML = `<h1>${esc(title)}</h1>${note ? `<p><b>${note}</b></p>` : ""}
-      <p>1920×1080. <code>?scene=N</code> autoplays a scene; <code>?step=ID</code> freezes a step; <code>&amp;speed=2</code> runs faster;
-      <code>&amp;hud=1</code> shows the clock; <code>&amp;beats=id@s,…</code> (+<code>&amp;t0=</code>) cues from narration.</p>
+      <p>1920×1080. <code>?scene=N</code> previews a scene; <code>?slide=ID</code> freezes a slide; <code>&amp;speed=2</code> runs faster;
+      <code>&amp;hud=1</code> shows the clock; <code>&amp;cues=id@s,…</code> (+<code>&amp;t0=</code>) cues from narration.</p>
       ${[...SCENES.values()]
         .map(
           (sc) => `<h2>Scene ${esc(sc.id)} — ${esc(sc.name)} <a href="?scene=${esc(sc.id)}">▶ play</a></h2>
-        <div class="dt-steps">${sc.steps.map((st) => `<a href="?step=${esc(st.id)}">step ${esc(st.id)} <code>(${st.hold}s${st.cues.size ? `, cues ${[...st.cues.keys()].join(" ")}` : ""})</code></a>`).join("")}</div>`,
+        <div class="dt-slides">${sc.slides.map((st) => `<a href="?slide=${esc(st.id)}">slide ${esc(st.id)} <code>(${st.hold}s${st.cues.size ? `, cues ${[...st.cues.keys()].join(" ")}` : ""})</code></a>`).join("")}</div>`,
         )
         .join("")}`;
     document.body.appendChild(div);
@@ -708,25 +716,25 @@
     state.started = true;
     state.catalog = catalogOf();
     ensureStage();
-    const beatsRaw = params.get("beats");
-    const cues = beatsRaw ? parseBeats(beatsRaw) : [];
+    const cuesRaw = params.get("cues");
+    const cues = cuesRaw ? parseCues(cuesRaw) : [];
     const wordsRaw = params.get("words");
     state.words = wordsRaw ? parseWords(wordsRaw) : null;
     if (frozen) {
-      freeze(params.get("step"), params.get("cue"), params.get("before"));
+      freeze(params.get("slide"), params.get("after"), params.get("before"));
     } else if (params.has("scene") || cues.length) {
       let sc = params.has("scene") ? SCENES.get(String(params.get("scene"))) : null;
       if (!sc && cues.length) sc = ownerOf(cues[0].id, null)?.scene || null;
       if (!sc) renderIndex(`unknown scene ${esc(params.get("scene") ?? "")}`);
       else if (cues.length) playCues(sc, cues);
-      else playAuto(sc);
+      else playPreview(sc);
     } else {
       renderIndex();
     }
-    // Set after the mode has mounted its first step, so a frozen step's [data-tex] is in the DOM.
-    if (!window.__sceneReady) {
+    // Set after the mode has mounted its first slide, so a frozen slide's [data-tex] is in the DOM.
+    if (!window.__decktalk.ready) {
       const fonts = document.fonts ? document.fonts.ready : Promise.resolve();
-      window.__sceneReady = fonts.then(katexReady);
+      window.__decktalk.ready = fonts.then(katexReady);
     }
     requestAnimationFrame(loop);
   }
@@ -740,8 +748,8 @@
     start,
     startClock: setOrigin,
     reveal,
-    fireCue,
-    findStep,
+    fire,
+    findSlide,
     get scenes() {
       return SCENES;
     },
@@ -749,11 +757,12 @@
   };
   window.DeckTalk = DeckTalk;
   window.__decktalk = {
+    ready: null, // the readiness promise, set by start() unless the page set it first
     get frameGaps() {
       return frameGaps;
     },
-    get syncLog() {
-      return syncLog;
+    get spokenLog() {
+      return spokenLog;
     },
     get cueLog() {
       return cueLog;
@@ -767,8 +776,8 @@
     get scene() {
       return state.scene?.id ?? null;
     },
-    get step() {
-      return state.step?.id ?? null;
+    get slide() {
+      return state.slide?.id ?? null;
     },
     get cues() {
       return state.cues;

@@ -1,7 +1,7 @@
 {
   "source": {
     "decktalk": "0.2.1",
-    "build": "decktalk build --silent on the scaffold that decktalk init writes",
+    "build": "decktalk build --no-voice on the scaffold that decktalk init writes",
     "estimated_words": true,
     "command": "decktalk verify 8:7.1checked --json, and the onset series verify reads"
   },
@@ -9,7 +9,7 @@
   "cue_seconds": 10.03,
   "final_seconds": 238.31,
   "section_start": 228.28,
-  "lead_seconds": 0.14,
+  "reference_lead_seconds": 0.14,
   "reference_seconds": -0.14,
   "fps": 25,
   "diff_level": 40,

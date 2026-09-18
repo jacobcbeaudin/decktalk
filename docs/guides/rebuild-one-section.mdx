@@ -14,9 +14,9 @@ Check which kind of build the project had last, because you run the same kind ag
 decktalk status
 ```
 
-After a [silent build](/concepts/how-it-works#the-silent-build), the timeline line ends in
+After a [build without voice](/concepts/how-it-works#the-build-without-voice), the timeline line ends in
 `(estimated: silent placeholders)`. After a voiced build, it does not. If you run the other kind, read
-[A silent build and a voiced build](#a-silent-build-and-a-voiced-build) first.
+[A build without voice and a voiced build](#a-build-without-voice-and-a-voiced-build) first.
 
 ## Find the command for your edit
 
@@ -28,12 +28,12 @@ Find your edit in the first column. `N` is the number of the section you changed
 | The title in the heading of section N | `decktalk build --only N` |
 | A cue of section N in `cues.json` | `decktalk build --only N` |
 | A slide in a page | `decktalk build` with one `--only N` for each section that plays the changed scene, such as `decktalk build --only 1 --only 9` |
-| `extra_seconds` on section N | `decktalk build --only N` |
+| `record_margin_seconds` on section N | `decktalk build --only N` |
 | `lead_seconds` or `tail_seconds` on section N | `decktalk build --only N` |
 | The voice id, the model, the output format, or a `[voice]` setting | `decktalk build` |
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | `decktalk assemble`, then `decktalk verify` |
 
-After a silent build, add `--silent` to each `decktalk build` command.
+After a build without voice, add `--no-voice` to each `decktalk build` command.
 
 A page can show the words of the section before it, which it reads from
 [`prevwords`](/reference/runtime#url-parameters). The scaffold's scene 2 opens on the Open's last frame with
@@ -58,7 +58,7 @@ The next table gives the reason for each row of the first table.
 | The heading title of section N | section N | section N | The audio file name comes from the section number and title. |
 | A cue of section N | none | section N | The page receives its cue times when `record` opens it. |
 | A slide | none | each section that plays the scene | A recording captures the page as it was. |
-| `extra_seconds` on section N | none | section N | The recording length changes. |
+| `record_margin_seconds` on section N | none | section N | The recording length changes. |
 | `lead_seconds` or `tail_seconds` on section N | none | section N | The section span changes. `narrate` adds the silence without a request. |
 | The voice id, model, output format, or a `[voice]` setting | every section | every section | The cache key includes each of them, so every word time moves. |
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | none | none | Only `assemble` reads them. |
@@ -69,7 +69,7 @@ exception. It shows the words of the section before it, so record it again after
 
 ## The narration cache
 
-The narration cache is `build/audio/manifest.json`. It holds one hash per section, made from these values:
+The narration cache is `build/narration/takes.json`. It holds one hash per section, made from these values:
 
 - the speech provider's name and the voice id
 - the model and the output format
@@ -118,7 +118,7 @@ its words moved. `--only` needs a page section, because a clip section has no re
 Use these steps when a recording of section `N` is bad, for example after `STALLED` or `TRUNCATED`. The
 steps voice nothing when the text is unchanged, and they keep every other recording.
 
-<Warning>Run `decktalk build --silent` only if the last build was silent. In a voiced project, it stops with an
+<Warning>Run `decktalk build --no-voice` only if the last build had no voice. In a voiced project, it stops with an
 error. With `--force`, it empties the narration cache, and the next voiced build spends credits on every section.</Warning>
 
 <Steps>
@@ -129,7 +129,7 @@ error. With `--force`, it empties the narration cache, and the next voiced build
     decktalk build --only N
     ```
 
-    If the last build was silent, run `decktalk build --silent --only N` instead.
+    If the last build had no voice, run `decktalk build --no-voice --only N` instead.
   </Step>
   <Step title="Measure the cues of the section">
     The build checks section starts, cuts, and cut continuity, but not cues. Run `decktalk verify` for the cues.
@@ -148,8 +148,8 @@ error. With `--force`, it empties the narration cache, and the next voiced build
 Each stage is also a command. These are the commands that `decktalk build --only 3` runs, plus a cue check.
 
 ```console
-decktalk narrate                   # add --silent if the last build was silent
-decktalk beats
+decktalk narrate                   # add --no-voice if the last build had no voice
+decktalk align
 decktalk record --only 3
 decktalk measure --only 3
 decktalk check --only 3
@@ -179,28 +179,28 @@ plan that says which sections a voiced run would voice, keep cached, or move. So
 first. `decktalk narrate --dry-run --json` gives the same plan as JSON. `decktalk preflight` adds the cue check and
 an estimate of each reveal from frozen frames, so you can fix a small reveal before you pay for the takes.
 
-## A silent build and a voiced build
+## A build without voice and a voiced build
 
-A silent build after a voiced build would empty the narration cache. The next voiced build would then voice
-every section again and spend credits on all of them. So a silent `narrate` or `build` stops when
-`build/audio/manifest.json` holds voiced takes, and it writes nothing.
+A build without voice after a voiced build would empty the narration cache. The next voiced build would then voice
+every section again and spend credits on all of them. So a `narrate` or `build` without voice stops when
+`build/narration/takes.json` holds voiced takes, and it writes nothing.
 
 ```text
-error: build/audio/manifest.json holds voiced takes for sections 01. A silent run writes click tracks over those mp3 files and replaces the manifest, so the next voiced build voices every section again and spends credits on all of them. Rehearse the silent build in a copy of the project, or pass --force to replace the voiced takes.
+error: build/narration/takes.json holds voiced takes for sections 01. A build without voice writes click tracks over those mp3 files and replaces the take index, so the next voiced build voices every section again and spends credits on all of them. Rehearse the build without voice in a copy of the project, or pass --force to replace the voiced takes.
 ```
 
 The cache would be lost for three reasons:
 
-1. The manifest notes whether its entries came from a silent build.
-2. `narrate` reuses the previous manifest only when it is the same kind of build.
-3. A silent build writes a [click track](/concepts/how-it-works#the-silent-build) over the voiced mp3 of
-   the same name, and it replaces the manifest.
+1. The take index notes whether its entries came from a build without voice.
+2. `narrate` reuses the previous take index only when it is the same kind of build.
+3. A build without voice writes a [click track](/concepts/how-it-works#the-build-without-voice) over the voiced mp3 of
+   the same name, and it replaces the take index.
 
-In a project that has never been voiced, a silent build loses nothing. The first voiced build voices every
+In a project that has never been voiced, a build without voice loses nothing. The first voiced build voices every
 section anyway.
 
-After a project has been voiced, rehearse with a silent build in a copy of the project. To replace the voiced
-takes on purpose, pass `--force`, as in `decktalk build --silent --force`. Neither kind of
+After a project has been voiced, rehearse with a build without voice in a copy of the project. To replace the voiced
+takes on purpose, pass `--force`, as in `decktalk build --no-voice --force`. Neither kind of
 build replaces the final mp4 until it finishes. A timestamped copy of each finished video stays next to
 `build/out/<name>.mp4`.
 

@@ -120,15 +120,15 @@
 <script src="decktalk-runtime.js"></script>
 <script>
 "use strict";
-// Scene 3 of the demo: "How AI learns". One scene, eight steps (3.1 to 3.8), one cue per stressed word.
+// Scene 3 of the demo: "How AI learns". One scene, eight slides (3.1 to 3.8), one cue per stressed word.
 //
 // How this page differs from deck/index.html: the whole lesson is one figure that carries its state
 // from the first cue to the last (the meter becomes the height axis, the bowl zooms out into the
 // landscape, the landscape shrinks beside the chips). So the figure is built once, here, into
-// #dt-stage under the runtime's slide layer, before narration t=0. Each step's slide is empty, and
+// #dt-stage under the runtime's slide layer, before narration t=0. Each slide's element is empty, and
 // every cue only toggles or moves what already exists, so no cue creates DOM or paints a large
 // layer for the first time. CUE[id](animate) holds each cue's change. With animate false (freeze
-// mode) it shows the end state at once, and a frozen step first replays every earlier cue.
+// mode) it shows the end state at once, and a frozen slide first replays every earlier cue.
 //
 // Every picture is computed from a formula at load: the bowl is error = 0.5·knob1² + 1.5·knob2²,
 // the paths are real gradient descent (knob ← knob − step size × slope), and the zoom-out landscape
@@ -899,22 +899,22 @@ function walk(an, r, delay, hop, rest, arc) {
 }
 
 // ---- The scene --------------------------------------------------------------------------------------------------------
-const STEPS = [
-  { id: "3.1", hold: 29.2, cues: { "3.1examples": 1.7, "3.1rules": 2.54, "3.1ml": 5.47, "3.1box": 8.1, "3.1guess": 9.74, "3.1wrong": 11.46, "3.1turn": 14.61, "3.1right": 17.81, "3.1lower": 18.99, "3.1next": 20.76, "3.1fix": 22.61, "3.1again": 24.75 } },
-  { id: "3.2", hold: 14.3, cues: { "3.2way": 0.5, "3.2one": 5.0, "3.2billions": 6.3, "3.2instead": 9.0, "3.2all": 11.9 } },
-  { id: "3.3", hold: 9.9, cues: { "3.3two": 0.5, "3.3floor": 1.9, "3.3height": 4.2, "3.3bowl": 7.7 } },
-  { id: "3.4", hold: 20.8, cues: { "3.4ball": 0.5, "3.4see": 4.3, "3.4steps": 9.0, "3.4again": 10.5, "3.4name": 15.8 } },
-  { id: "3.5", hold: 9.8, cues: { "3.5setting": 0.5, "3.5long": 4.2, "3.5short": 7.4 } },
-  { id: "3.6", hold: 8.8, cues: { "3.6zoom": 0.5, "3.6low": 4.8, "3.6lowest": 6.5 } },
-  { id: "3.7", hold: 8.6, cues: { "3.7ai": 0.5, "3.7inside": 4.1, "3.7num": 5.7, "3.7tensor": 6.5 } },
-  { id: "3.8", hold: 18.9, cues: { "3.8gpu": 0.5, "3.8row": 3.2, "3.8once": 4.5, "3.8calc": 7.8, "3.8llm": 12.3, "3.8split": 14.9 } },
+const SLIDES = [
+  { id: "3.1", hold: 29.2, preview: { "3.1examples": 1.7, "3.1rules": 2.54, "3.1ml": 5.47, "3.1box": 8.1, "3.1guess": 9.74, "3.1wrong": 11.46, "3.1turn": 14.61, "3.1right": 17.81, "3.1lower": 18.99, "3.1next": 20.76, "3.1fix": 22.61, "3.1again": 24.75 } },
+  { id: "3.2", hold: 14.3, preview: { "3.2way": 0.5, "3.2one": 5.0, "3.2billions": 6.3, "3.2instead": 9.0, "3.2all": 11.9 } },
+  { id: "3.3", hold: 9.9, preview: { "3.3two": 0.5, "3.3floor": 1.9, "3.3height": 4.2, "3.3bowl": 7.7 } },
+  { id: "3.4", hold: 20.8, preview: { "3.4ball": 0.5, "3.4see": 4.3, "3.4steps": 9.0, "3.4again": 10.5, "3.4name": 15.8 } },
+  { id: "3.5", hold: 9.8, preview: { "3.5setting": 0.5, "3.5long": 4.2, "3.5short": 7.4 } },
+  { id: "3.6", hold: 8.8, preview: { "3.6zoom": 0.5, "3.6low": 4.8, "3.6lowest": 6.5 } },
+  { id: "3.7", hold: 8.6, preview: { "3.7ai": 0.5, "3.7inside": 4.1, "3.7num": 5.7, "3.7tensor": 6.5 } },
+  { id: "3.8", hold: 18.9, preview: { "3.8gpu": 0.5, "3.8row": 3.2, "3.8once": 4.5, "3.8calc": 7.8, "3.8llm": 12.3, "3.8split": 14.9 } },
 ];
 const fire = (id, animate) => { finishJobs(); CUE[id](animate); };
-DeckTalk.scene(3, { name: "How AI learns", steps: STEPS.map((st, n) => ({
-  id: st.id, hold: st.hold, cues: st.cues,
-  // A frozen step starts from every earlier cue's end state, because the figure carries over.
-  enter: (slide, ctx) => { slide.rig = rig; if (ctx.frozen) STEPS.slice(0, n).forEach((prev) => Object.keys(prev.cues).forEach((id) => fire(id, false))); },
-  on: Object.fromEntries(Object.keys(st.cues).map((id) => [id, (slide, ctx) => fire(id, !ctx.frozen)])),
+DeckTalk.scene(3, { name: "How AI learns", slides: SLIDES.map((st, n) => ({
+  id: st.id, hold: st.hold, preview: st.preview,
+  // A frozen slide starts from every earlier cue's end state, because the figure carries over.
+  enter: (slide, ctx) => { slide.rig = rig; if (ctx.frozen) SLIDES.slice(0, n).forEach((prev) => Object.keys(prev.preview).forEach((id) => fire(id, false))); },
+  on: Object.fromEntries(Object.keys(st.preview).map((id) => [id, (slide, ctx) => fire(id, !ctx.frozen)])),
 })) });
 
 // Narration t=0 waits until the fonts are in and the figure has been painted once, with the landscape and
@@ -923,7 +923,7 @@ DeckTalk.scene(3, { name: "How AI learns", steps: STEPS.map((st, n) => ({
 document.addEventListener("DOMContentLoaded", () => {
   const faces = ['600 64px "Inter Tight"', '600 60px "Inter Tight"', '500 30px Inter', '500 44px Inter', '500 30px "JetBrains Mono"', '400 24px "JetBrains Mono"'];
   const painted = Promise.all(faces.map((f) => document.fonts.load(f))).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))));
-  window.__sceneReady = Promise.all([window.__sceneReady, painted]).then(([ready]) => ready);
+  window.__decktalk.ready = Promise.all([window.__decktalk.ready, painted]).then(([ready]) => ready);
 });
 </script>
 </body>

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from .artifacts import Timeline
 from .config import NarrationConfig
-from .stages.beats import BeatsResult
+from .stages.align import AlignResult
 from .stages.clip import SectionWords
 from .stages.measure import LeadMeasurement, RecordingCheck
 from .stages.narrate import NarrateResult, Segment, TakePlan, plan_totals
 from .stages.preflight import PreflightResult
 from .stages.soundscape import SoundscapeItem
 from .stages.verify import VerifyResult
-from .status import StatusReport, relpath
+from .status import StatusResult, relpath
 from .verdicts import BLACK, CHANGED, NO_CHANGE, OK, QUIET, SKIPPED, SPEECH_AT_CUT, THIN_CHANGE
 
 
@@ -32,7 +32,7 @@ def segments_table(segments: list[Segment], wpm: int, result: NarrateResult | No
         total_est += est
         actual = None
         if result is not None:
-            entry = result.manifest.segments.get(seg.key)
+            entry = result.takes.sections.get(seg.key)
             if entry:
                 actual = entry.duration_seconds
                 total_actual += actual
@@ -80,7 +80,7 @@ def timeline_table(timeline: Timeline) -> str:
     return "\n".join(lines)
 
 
-def beats_table(result: BeatsResult) -> str:
+def align_table(result: AlignResult) -> str:
     lines = [f"{'sec':>3}  {'speech':>6}  {'need':>5}  cues"]
     for s in result.sections:
         if s.skipped:
@@ -90,7 +90,7 @@ def beats_table(result: BeatsResult) -> str:
         lines.append(f"{s.key:>3}  {s.speech_end:>6.1f}  {str(s.min_seconds or '-'):>5}  {cues}")
         for note in s.notes:
             lines.append(f"{'':>3}  {'':>6}  {'':>5}  ! {note}")
-    tail = f"{len(result.beats.sections)} sections with cues; {result.unresolved} unresolved"
+    tail = f"{len(result.cue_times.sections)} sections with cues; {result.unresolved} unresolved"
     if result.estimated:
         tail += "  (estimated words: times are placeholders)"
     lines.append(tail)
@@ -105,28 +105,28 @@ def preflight_table(result: PreflightResult) -> str:
     lines.append(plan_table(result.takes, result.narration, result.note))
     if result.placeholders:
         lines.append(f"a voiced run refuses the unfilled placeholders {result.placeholders}")
-    lines += ["", beats_table(result.beats)]
+    lines += ["", align_table(result.align)]
     if result.estimated:
         lines.append(f"estimated words in sections {', '.join(result.estimated)}, which a voiced run will voice")
     if result.frames is None:
         lines += ["", "frames skipped (--no-frames)"]
         return "\n".join(lines)
     lines.append("")
-    lines.append(f"{'check':<18} {'step':<8} {'cue':>6} {'chg %':>7}  result")
+    lines.append(f"{'check':<18} {'slide':<8} {'cue':>6} {'chg %':>7}  result")
     for c in result.cues:
         chg = f"{c.changed_percent:>7.2f}" if c.changed_percent is not None else f"{'-':>7}"
         label = " ".join(part for part in (c.verdict, c.reason) if part)
         label += f": {c.detail}" if c.detail else ""
         label += f" ({c.note})" if c.note else ""
-        lines.append(f"{c.check:<18} {c.step or '-':<8} {c.cue_seconds:>6.2f} {chg}  {label}")
+        lines.append(f"{c.check:<18} {c.slide or '-':<8} {c.cue_seconds:>6.2f} {chg}  {label}")
     tally = {v: sum(c.verdict == v for c in result.cues) for v in (CHANGED, THIN_CHANGE, NO_CHANGE, SKIPPED)}
     counts = ", ".join(f"{n} {v}" for v, n in tally.items() if n) or "none"
     where = relpath(result.frames, root) if root is not None else result.frames
     lines.append(f"{len(result.cues)} cue(s): {counts}. Frozen frames in {where}")
-    if result.carries:
+    if result.seams:
         lines.append("")
         lines.append(f"{'sec':>3} {'chg %':>7}  result")
-        for k in result.carries:
+        for k in result.seams:
             chg = f"{k.changed_percent:>7.2f}" if k.changed_percent is not None else f"{'-':>7}"
             label = " ".join(part for part in (k.verdict, k.reason) if part) + (f": {k.detail}" if k.detail else "")
             lines.append(f"{k.key:>3} {chg}  {label}")
@@ -135,7 +135,7 @@ def preflight_table(result: PreflightResult) -> str:
 
 def leads_table(rows: list[LeadMeasurement]) -> str:
     lines = [f"{'sec':>3} {'trim':>7} {'wall':>7}  method"]
-    lines += [f"{r.key:>3} {r.lead_in_seconds:>7.3f} {r.wallclock_seconds:>7.3f}  {r.method}" for r in rows]
+    lines += [f"{r.key:>3} {r.t0_seconds:>7.3f} {r.wallclock_seconds:>7.3f}  {r.method}" for r in rows]
     return "\n".join(lines)
 
 
@@ -161,10 +161,10 @@ def verify_table(result: VerifyResult) -> str:
         lines.append(f"{'sec':>3} {'cut at':>8} {'before cut':>11}  result")
         for c in result.cuts:
             lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {QUIET if c.ok else SPEECH_AT_CUT}")
-    if result.carries:
+    if result.seams:
         lines.append("")
         lines.append(f"{'sec':>3} {'cut at':>8} {'chg %':>7}  result")
-        for k in result.carries:
+        for k in result.seams:
             lines.append(f"{k.key:>3} {k.cut_at:>8.2f} {k.changed_percent:>7.2f}  {k.verdict}")
     if result.cues:
         lines.append("")
@@ -196,29 +196,29 @@ def verify_table(result: VerifyResult) -> str:
     return "\n".join(lines)
 
 
-def status_table(report: StatusReport) -> str:
+def status_table(report: StatusResult) -> str:
     """The text of `decktalk status`, read from the same report its --json output prints."""
     root = report.root
     lines = [
-        f"project  {root}  (name: {report.name})",
-        f"script   {relpath(report.script, root)}  {'ok' if report.script_exists else 'MISSING'}",
-        f"cues     {relpath(report.cues, root)}  {'ok' if report.cues_exists else 'none'}",
+        f"project   {root}  (name: {report.name})",
+        f"script    {relpath(report.script, root)}  {'ok' if report.script_exists else 'MISSING'}",
+        f"cues      {relpath(report.cues, root)}  {'ok' if report.cues_exists else 'none'}",
     ]
     for sec in report.sections:
         what = f"clip {sec.source}" if sec.kind == "clip" else sec.source
         lines.append(f"  {sec.key}  {what:<40} {'rec ' if sec.recorded else '    '}{'cut' if sec.cut else ''}")
-    lines.append(timeline_table(report.timeline) if report.timeline else "timeline none (run `decktalk narrate`)")
+    lines.append(timeline_table(report.timeline) if report.timeline else "timeline  none (run `decktalk narrate`)")
     lines.append(
-        f"beats    {len(report.beats_sections)} section(s) with resolved cues"
-        if report.beats_sections
-        else "beats    none (run `decktalk beats`)"
+        f"cue times {len(report.cue_times_sections)} section(s) resolved"
+        if report.cue_times_sections
+        else "cue times none (run `decktalk align`)"
     )
     if report.final_exists:
-        lines.append(f"final    {relpath(report.final, root)}  {mmss(report.final_duration)}")
+        lines.append(f"final     {relpath(report.final, root)}  {mmss(report.final_duration)}")
     else:
-        lines.append("final    not built")
+        lines.append("final     not built")
     for out in report.outputs:
-        lines.append(f"{out.label:<8} {relpath(out.path, root)}  {'ok' if out.exists else 'not built'}")
+        lines.append(f"{out.label:<9} {relpath(out.path, root)}  {'ok' if out.exists else 'not built'}")
     return "\n".join(lines)
 
 

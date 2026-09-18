@@ -37,7 +37,7 @@ These steps put a test clip in section 5 of a new scaffold named `clip-lesson`.
     ```toml decktalk.toml
     [[section]]
     number = 5
-    title = "The edit"
+    chapter = "The edit"
     clip = "media/edit-before.mov"          # BEFORE: the Open as first built, inside the player
     words = "media/edit-before.words.json"  # the words spoken inside the clip, for the captions
     slate_seconds = 4.36    # the demo's BEFORE clip is 4.36 s, so the slate keeps its timing
@@ -51,20 +51,20 @@ These steps put a test clip in section 5 of a new scaffold named `clip-lesson`.
   </Step>
 
   <Step title="Build the video">
-    Run a silent build.
+    Run a build without voice.
 
     ```console
-    decktalk build --silent
+    decktalk build --no-voice
     ```
 
-    {/* sample: decktalk build --silent in clip-lesson, a fresh scaffold with no clip files (assemble lines of sections 4 to 7) */}
+    {/* sample: decktalk build --no-voice in clip-lesson, a fresh scaffold with no clip files (assemble lines of sections 4 to 7) */}
     ```text
-    [cut ] 04  04-scene.webm (lead 1.44s trimmed) -> 04-section.mp4  (15.600s)
+    [cut ] 04  recordings/04.webm (lead 1.44s trimmed) -> sections/04.mp4  (15.600s)
     section 05: media/edit-before.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
-    [cut ] 05  slate -> 05-section.mp4  (4.360s)
-    [cut ] 06  06-scene.webm (lead 1.44s trimmed) -> 06-section.mp4  (22.160s)
+    [cut ] 05  slate -> sections/05.mp4  (4.360s)
+    [cut ] 06  recordings/06.webm (lead 1.44s trimmed) -> sections/06.mp4  (22.160s)
     section 07: media/edit-after.mov missing; slate for 5.04s (drop your clip at that path; the section is optional, so --strict allows the slate)
-    [cut ] 07  slate -> 07-section.mp4  (5.040s)
+    [cut ] 07  slate -> sections/07.mp4  (5.040s)
     ```
 
     Each section gets a `[cut ]` line. Neither clip file exists yet, so sections 5 and 7 play titled slates.
@@ -91,9 +91,9 @@ These steps put a test clip in section 5 of a new scaffold named `clip-lesson`.
 
     {/* sample: decktalk assemble in clip-lesson after the test clip above is in place (cut lines of sections 4 to 6, and the words warning) */}
     ```text
-    [cut ] 04  04-scene.webm (lead 1.44s trimmed) -> 04-section.mp4  (15.600s)
-    [cut ] 05  edit-before.mov (own audio) -> 05-section.mp4  (4.000s)
-    [cut ] 06  06-scene.webm (lead 1.44s trimmed) -> 06-section.mp4  (22.160s)
+    [cut ] 04  recordings/04.webm (lead 1.44s trimmed) -> sections/04.mp4  (15.600s)
+    [cut ] 05  edit-before.mov (own audio) -> sections/05.mp4  (4.000s)
+    [cut ] 06  recordings/06.webm (lead 1.44s trimmed) -> sections/06.mp4  (22.160s)
     section 05: words file missing: media/edit-before.words.json; the clip plays without captions
     ```
 
@@ -137,7 +137,7 @@ and renumber every section after it.
    ```toml decktalk.toml
    [[section]]
    number = 4
-   title = "Interview"
+   chapter = "Interview"
    clip = "media/interview.mp4"
    slate_seconds = 4
    optional = true         # plays the slate under --strict until the clip is in place
@@ -161,7 +161,7 @@ A renumbered section keeps its narration. `narrate` finds the take by its hash a
 
 ## How the narration splits
 
-`build/audio/narration.mp3` holds the spoken sections back to back, with no gap for a clip. `assemble` splits the
+`build/narration/narration.mp3` holds the spoken sections back to back, with no gap for a clip. `assemble` splits the
 narration at each clip between page sections.
 
 <Frame caption="The narration pauses for each clip, and resumes with the next page section.">
@@ -195,7 +195,7 @@ The clip's own audio joins the mix at its section start.
 - The audio is trimmed to the clip's picture.
 - The audio fades in and out over 20 ms, so a cut never clicks.
 - The narration is silent while the clip plays.
-- The underscore ducks under the whole clip. [Sound](/concepts/sound#ducking) explains ducking.
+- The music ducks under the whole clip. [Sound](/concepts/sound#ducking) explains ducking.
 
 `verify` checks the start of a clip section, but a clip section has no cut row. The click search of the a/v check
 never reaches into a clip's audio.
@@ -221,7 +221,7 @@ The captions come from the narration's word times, so a clip's own speech has no
    ```toml decktalk.toml
    [[section]]
    number = 4
-   title = "Interview"
+   chapter = "Interview"
    clip = "media/interview.mp4"
    words = "media/interview.words.json"
    ```
@@ -232,7 +232,7 @@ The captions come from the narration's word times, so a clip's own speech has no
 - A slate or a clip with no audio track has no captions.
 - If the words file is missing, `assemble` prints a warning and the clip has no captions.
 
-A `NN-slug.words.json` file from `build/audio` has this format. `decktalk clip` writes the words file of a clip that
+A `NN-slug.words.json` file from `build/narration` has this format. `decktalk clip` writes the words file of a clip that
 it cuts from a build. [Cut a clip from a build](#cut-a-clip-from-a-build) shows how.
 
 ## Cut a clip from a build
@@ -240,7 +240,7 @@ it cuts from a build. [Cut a clip from a build](#cut-a-clip-from-a-build) shows 
 `decktalk clip` cuts a span of a built page section into a clip and its words file. Use it to play part of the video
 again in a clip section, such as the Open's count inside a later scene.
 
-These steps use a scaffold after `decktalk build --silent`. After a voiced build, the clip carries the real voice.
+These steps use a scaffold after `decktalk build --no-voice`. After a voiced build, the clip carries the real voice.
 
 <Steps>
   <Step title="Find the span">
@@ -250,7 +250,7 @@ These steps use a scaffold after `decktalk build --silent`. After a voiced build
     decktalk words --only 1
     ```
 
-    {/* sample: decktalk words --only 1 after decktalk build --silent on a fresh scaffold, header and rows 5 to 14 */}
+    {/* sample: decktalk words --only 1 after decktalk build --no-voice on a fresh scaffold, header and rows 5 to 14 */}
     ```text
     == 01 Open  (17.80s, estimated)
       start     end  word
@@ -271,18 +271,18 @@ These steps use a scaffold after `decktalk build --silent`. After a voiced build
 
   <Step title="Cut the clip">
     ```console
-    decktalk clip 1 --from 2.87 --to 8.32 --hold 0.5 --out media/count.mp4
+    decktalk clip 1 --start 2.87 --end 8.32 --hold 0.5 --out media/count.mp4
     ```
 
-    {/* sample: decktalk clip 1 --from 2.87 --to 8.32 --hold 0.5 --out media/count.mp4 after decktalk build --silent on a fresh scaffold */}
+    {/* sample: decktalk clip 1 --start 2.87 --end 8.32 --hold 0.5 --out media/count.mp4 after decktalk build --no-voice on a fresh scaffold */}
     ```text
     section 01: the narration is a silent placeholder, so the word times are estimates
-    wrote media/count.mp4  (5.92s: frames 72 to 207 of 01-section.mp4, 2.88 to 8.32s, hold 0.48s, gain +0 dB)
+    wrote media/count.mp4  (5.92s: frames 72 to 207 of sections/01.mp4, 2.88 to 8.32s, hold 0.48s, gain +0 dB)
     wrote media/count.words.json  (10 words)
     use it in a clip section: clip = "media/count.mp4" and words = "media/count.words.json"
     ```
 
-    - The picture comes from `build/out/01-section.mp4`. `--from` and `--to` round to whole frames.
+    - The picture comes from `build/sections/01.mp4`. `--start` and `--end` round to whole frames.
     - The sound is section 1's mp3 over the same span. `--hold 0.5` adds 0.48 s of the last frame in silence.
     - `media/count.words.json` lists the 10 words from "Watch" to "three.", in seconds after the clip starts.
     - A span that cuts a word in two leaves that word out of the words file, and `clip` prints a warning.
@@ -295,7 +295,7 @@ These steps use a scaffold after `decktalk build --silent`. After a voiced build
     ```toml decktalk.toml
     [[section]]
     number = 4
-    title = "The count again"
+    chapter = "The count again"
     clip = "media/count.mp4"
     words = "media/count.words.json"
     ```
@@ -362,8 +362,8 @@ use `bash` variables.
     ```
 
     ```console
-    read B0 B1 < <(python3 clip_words.py build/audio/01-open.words.json media/edit-before.words.json)
-    read A0 A1 < <(python3 clip_words.py ../my-lesson-after/build/audio/01-open.words.json media/edit-after.words.json)
+    read B0 B1 < <(python3 clip_words.py build/narration/01-open.words.json media/edit-before.words.json)
+    read A0 A1 < <(python3 clip_words.py ../my-lesson-after/build/narration/01-open.words.json media/edit-after.words.json)
     ```
   </Step>
 
@@ -371,11 +371,11 @@ use `bash` variables.
     Each still is a lossless WebP. `-update 1` keeps the last frame of the span.
 
     ```console
-    A=../my-lesson-after/build/out/01-section.mp4
-    ffmpeg -sseof -0.1 -i build/out/03-section.mp4 -update 1 -c:v libwebp -lossless 1 -f image2 deck/edit/s3-last.webp
-    ffmpeg -ss $B0 -i build/out/01-section.mp4 -vf scale=1152:648 -frames:v 1 -c:v libwebp -lossless 1 -f image2 deck/edit/before-first.webp
-    ffmpeg -ss $B0 -to $B1 -i build/out/01-section.mp4 -vf scale=1152:648 -update 1 -c:v libwebp -lossless 1 -f image2 deck/edit/before-last.webp
-    ffmpeg -ss $B0 -to $B1 -i build/out/01-section.mp4 -vf scale=864:486 -update 1 -c:v libwebp -lossless 1 -f image2 deck/edit/before-last-864.webp
+    A=../my-lesson-after/build/sections/01.mp4
+    ffmpeg -sseof -0.1 -i build/sections/03.mp4 -update 1 -c:v libwebp -lossless 1 -f image2 deck/edit/s3-last.webp
+    ffmpeg -ss $B0 -i build/sections/01.mp4 -vf scale=1152:648 -frames:v 1 -c:v libwebp -lossless 1 -f image2 deck/edit/before-first.webp
+    ffmpeg -ss $B0 -to $B1 -i build/sections/01.mp4 -vf scale=1152:648 -update 1 -c:v libwebp -lossless 1 -f image2 deck/edit/before-last.webp
+    ffmpeg -ss $B0 -to $B1 -i build/sections/01.mp4 -vf scale=864:486 -update 1 -c:v libwebp -lossless 1 -f image2 deck/edit/before-last-864.webp
     ffmpeg -ss $A0 -i $A -vf scale=1152:648 -frames:v 1 -c:v libwebp -lossless 1 -f image2 deck/edit/after-first.webp
     ffmpeg -ss $A0 -to $A1 -i $A -vf scale=1152:648 -update 1 -c:v libwebp -lossless 1 -f image2 deck/edit/after-last.webp
     ffmpeg -ss $A0 -to $A1 -i $A -vf scale=864:486 -update 1 -c:v libwebp -lossless 1 -f image2 deck/edit/after-last-864.webp
@@ -395,12 +395,12 @@ use `bash` variables.
     page's strip at y 706 goes back on top, so the progress line stays in place.
 
     ```console
-    ffmpeg -sseof -0.1 -i build/out/04-section.mp4 -update 1 media/edit-before-bg.png
-    ffmpeg -sseof -0.1 -i build/out/06-section.mp4 -update 1 media/edit-after-bg.png
+    ffmpeg -sseof -0.1 -i build/sections/04.mp4 -update 1 media/edit-before-bg.png
+    ffmpeg -sseof -0.1 -i build/sections/06.mp4 -update 1 media/edit-after-bg.png
     F="[0:v]scale=1152:648,tpad=stop_mode=clone:stop_duration=0.5[ex];[2:v]split[bg][s];[s]crop=1156:16:382:706[strip];[bg][ex]overlay=384:72:shortest=1[t];[t][strip]overlay=382:706,format=yuv420p[v];[1:a]afade=t=in:d=0.01,apad=pad_dur=0.5[a]"
-    ffmpeg -ss $B0 -to $B1 -i build/out/01-section.mp4 -ss $B0 -to $B1 -i build/audio/01-open.mp3 -loop 1 -framerate 25 -i media/edit-before-bg.png \
+    ffmpeg -ss $B0 -to $B1 -i build/sections/01.mp4 -ss $B0 -to $B1 -i build/narration/01-open.mp3 -loop 1 -framerate 25 -i media/edit-before-bg.png \
       -filter_complex "$F" -map "[v]" -map "[a]" -shortest -r 25 -c:v libx264 -crf 12 -c:a pcm_s16le media/edit-before.mov
-    ffmpeg -ss $A0 -to $A1 -i $A -ss $A0 -to $A1 -i ../my-lesson-after/build/audio/01-open.mp3 -loop 1 -framerate 25 -i media/edit-after-bg.png \
+    ffmpeg -ss $A0 -to $A1 -i $A -ss $A0 -to $A1 -i ../my-lesson-after/build/narration/01-open.mp3 -loop 1 -framerate 25 -i media/edit-after-bg.png \
       -filter_complex "$F" -map "[v]" -map "[a]" -shortest -r 25 -c:v libx264 -crf 12 -c:a pcm_s16le media/edit-after.mov
     ```
   </Step>
@@ -451,7 +451,7 @@ needs no renumbering.
     ```toml decktalk.toml
     [[section]]
     number = 0
-    title = "On camera"
+    chapter = "On camera"
     clip = "media/open.mp4"
     slate_seconds = 6       # a titled slate plays for this long when the file is missing
     ```
@@ -485,21 +485,21 @@ needs no renumbering.
     Save your video as `media/open.mp4`.
 
     If the file is not ready, skip this step. A missing clip plays a titled slate for `slate_seconds`, with the
-    section title and the path where the file belongs.
+    section's chapter and the path where the file belongs.
   </Step>
 
   <Step title="Build the video">
-    Run a silent build.
+    Run a build without voice.
 
     ```console
-    decktalk build --silent
+    decktalk build --no-voice
     ```
 
     {/* sample: decktalk assemble in a copy of the silent scaffold build with section 0 turned on as above, with no media/open.mp4 (first lines) */}
     ```text
     section 00: media/open.mp4 missing; slate for 6s (drop your clip at that path)
-    [cut ] 00  slate -> 00-section.mp4  (6.000s)
-    [cut ] 01  01-scene.webm (lead 1.36s trimmed) -> 01-section.mp4  (17.800s)
+    [cut ] 00  slate -> sections/00.mp4  (6.000s)
+    [cut ] 01  recordings/01.webm (lead 1.36s trimmed) -> sections/01.mp4  (17.800s)
     ```
 
     Section 0 has no `optional` key, so its warning ends with `(drop your clip at that path)`. `--strict` fails

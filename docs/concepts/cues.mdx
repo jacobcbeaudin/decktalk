@@ -26,20 +26,20 @@ A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat]
 ```
 
 ```html deck/index.html
-<path class="curve" data-cue="1.1bowl" data-fx="none" d="${s1curve()}"/>
+<path class="curve" data-cue="1.1bowl" data-reveal="instant" d="${s1curve()}"/>
 ```
 </CodeGroup>
 
 1. You write the cue phrase in `cues.json`, and the cue id in the page.
-2. The `beats` stage resolves each cue phrase to a cue time, in seconds after the section start. The cue time of `1.1bowl` is the start of the word "bowl".
-3. The `beats` stage writes the cue times to `build/audio/beats.json`.
-4. The recorder passes the cue times to the page as `?beats=`, and the page fires each cue at its time.
+2. The `align` stage resolves each cue phrase to a cue time, in seconds after the section start. The cue time of `1.1bowl` is the start of the word "bowl".
+3. The `align` stage writes the cue times to `build/cue-times.json`.
+4. The recorder passes the cue times to the page as `?cues=`, and the page fires each cue at its time.
 5. `decktalk verify` checks that each reveal starts on its word.
 
-`decktalk beats` prints the cue times of every section. These lines come from a silent build, so
+`decktalk align` prints the cue times of every section. These lines come from a build without voice, so
 the times are estimates.
 
-{/* sample: decktalk beats, silent build of the scaffold, trimmed to section 1 */}
+{/* sample: decktalk align, build without voice of the scaffold, trimmed to section 1 */}
 ```text
 sec  speech   need  cues
  01    16.5      -  1.1bowl@1.25,1.1ball@2.33,1.1count@6.15,1.1one@6.69,1.1two@7.24,1.1three@7.78,1.1word@15.41
@@ -48,7 +48,7 @@ sec  speech   need  cues
 
 ## Matching rules
 
-The `beats` stage matches a cue phrase against the section's spoken words with these rules:
+The `align` stage matches a cue phrase against the section's spoken words with these rules:
 
 1. It splits the phrase and the spoken words on whitespace only.
 2. Each token keeps only A to Z, a to z, 0 to 9, and the straight apostrophe. Accented letters, Greek letters, and curly apostrophes are removed.
@@ -60,8 +60,8 @@ The `beats` stage matches a cue phrase against the section's spoken words with t
 8. `$start` is 0.0 s plus the offset key. A negative result stays negative, and the page fires it at t=0.
 9. `$end` is the end of the section's last spoken word, plus the offset key.
 
-The page matches `data-sync` text with a different rule. It ignores apostrophes, but the `beats`
-stage keeps them. [`data-sync`](/reference/runtime#data-sync) has the page's rules.
+The page matches `data-text="spoken"` text with a different rule. It ignores apostrophes, but the `align`
+stage keeps them. [`data-text="spoken"`](/reference/runtime#data-text="spoken") has the page's rules.
 
 Write a cue phrase the way the voice says it, because the spoken words come from the voice. The
 scaffold's script says "decktalk dot AI", and its slide shows decktalk.ai. So the cue `5.1url`
@@ -75,37 +75,37 @@ tag. Neither is a word, so a phrase that spans a direction still matches.
 ## Which sections have cues
 
 Every section key in `cues.json` must name a `[[section]]` in `decktalk.toml`. A section can have no
-cues. A page section with no cues plays its autoplay timing in the recording. A clip section has no
-narration, so the `beats` stage skips its cues.
+cues. A page section with no cues plays its preview timing in the recording. A clip section has no
+narration, so the `align` stage skips its cues.
 
 ## Cue mismatches
 
-A cue can disagree with its page in six ways. The `beats` stage catches the first one before the
+A cue can disagree with its page in six ways. The `align` stage catches the first one before the
 recording. The page catches the others during the recording.
 
 | Mismatch | Caught by | Message | Result |
 |---|---|---|---|
-| A cue id in `cues.json` appears nowhere in its page. | the `beats` stage | `<id>: not in deck/index.html` | `beats` exits 1, and `build` stops after the `beats` table. |
-| No step of the playing scene owns the cue. | the page, at the start | `unknown cue id <id> (no step id or cues list matches it)` | The cue fires but mounts no step. A matching element appears only if its slide is mounted at that time. |
-| A step owns the cue, but no element, handler, or step id matches it. | the page, when the cue fires | `cue "<id>" matches no element, handler, or step` | The cue fires with no visible effect. It still counts toward the mount time of its step. |
-| An element's `data-cue` is not in `?beats=`. | the page, when the step mounts | `data-cue "<id>" is not in ?beats=, so it reveals at its data-at time after the mount` | The element appears at its `data-at` time after the step mounts. |
-| A step owns no cue in `?beats=`. | the page, at the start | `step "<step>" owns no cue in ?beats=, so it never appears` | The step never mounts. |
-| No cue in `?beats=` has an owner. | the page, at the start | `no step owns any listed cue, so nothing will mount` | No step mounts, and the recording shows an empty stage element. |
+| A cue id in `cues.json` appears nowhere in its page. | the `align` stage | `<id>: not in deck/index.html` | `align` exits 1, and `build` stops after the `align` table. |
+| No slide of the playing scene owns the cue. | the page, at the start | `unknown cue id <id> (no slide id, owns list or preview object matches it)` | The cue fires but mounts no slide. A matching element appears only if its slide is mounted at that time. |
+| A slide owns the cue, but no element, handler, or slide id matches it. | the page, when the cue fires | `cue "<id>" matches no element, handler, or slide` | The cue fires with no visible effect. It still counts toward the mount time of its slide. |
+| An element's `data-cue` is not in `?cues=`. | the page, when the slide mounts | `data-cue "<id>" is not in ?cues=, so it reveals at its data-delay time after the mount` | The element appears at its `data-delay` time after the slide mounts. |
+| A slide owns no cue in `?cues=`. | the page, at the start | `slide "<slide>" owns no cue in ?cues=, so it never appears` | The slide never mounts. |
+| No cue in `?cues=` has an owner. | the page, at the start | `no slide owns any listed cue, so nothing will mount` | No slide mounts, and the recording shows an empty stage element. |
 
-In each message, `<id>` and `<step>` stand for real ids. The page lists its warnings in
-`window.__decktalk.warnings`. The recorder logs each one and writes it to the sidecar. A handler that
+In each message, `<id>` and `<slide>` stand for real ids. The page lists its warnings in
+`window.__decktalk.warnings`. The recorder logs each one and writes it to the recording log. A handler that
 `DeckTalk.on` registers for an id stops the second and third warnings for that id.
 [Cue ownership](/concepts/page-contract#cue-ownership) has the ownership rules.
 
-The `beats` stage looks for each cue id in the page as a quoted literal, in single quotes, double
-quotes, or backticks. So `data-cue="1.1bowl"`, a key of a step's `cues` object, and a key of an `on`
+The `align` stage looks for each cue id in the page as a quoted literal, in single quotes, double
+quotes, or backticks. So `data-cue="1.1bowl"`, a key of a slide's `preview` object, and a key of an `on`
 object all count. The stage skips clip sections, and it skips a page file that does not exist,
-because the recorder reports that. The cue still resolves, and `beats` still writes `beats.json`.
+because the recorder reports that. The cue still resolves, and `align` still writes `cue-times.json`.
 
 These lines come from a copy of the scaffold with `data-cue="5.1cap"` and the `"5.1cap"` key
-removed from `deck/index.html`. `beats` exits 1.
+removed from `deck/index.html`. `align` exits 1.
 
-{/* sample: decktalk beats, silent build of the scaffold with cue id 5.1cap removed from the page, trimmed to section 9 */}
+{/* sample: decktalk align, build without voice of the scaffold with cue id 5.1cap removed from the page, trimmed to section 9 */}
 ```text
 sec  speech   need  cues
  09    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
@@ -114,14 +114,14 @@ sec  speech   need  cues
 ```
 
 To fix an unknown id, add it to the page, or fix the id in `cues.json`. If a page builds its ids at
-run time, pass `--allow-unknown`. The page warnings are then the only check.
+run time, pass `--allow-unknown-cues`. The page warnings are then the only check.
 
 ## Unresolved cues
 
-If the `beats` stage cannot match a phrase, it notes `phrase not found` and exits 1. These lines come
+If the `align` stage cannot match a phrase, it notes `phrase not found` and exits 1. These lines come
 from a copy of the scaffold whose cue `3.4name` has the typo "gradient decent".
 
-{/* sample: decktalk beats, silent build of a fresh scaffold with a typo in the 3.4name phrase, trimmed to section 3 */}
+{/* sample: decktalk align, build without voice of a fresh scaffold with a typo in the 3.4name phrase, trimmed to section 3 */}
 ```text
 sec  speech   need  cues
  03   141.2      -  3.1examples@2.48,3.1rules@3.47,3.1ml@7.43,3.1box@11.39,3.1guess@13.38,3.1wrong@15.85,3.1turn@19.82,3.1right@23.29,3.1lower@25.76,3.1next@27.75,3.1fix@29.73,3.1again@31.71,3.2way@35.67,3.2one@41.62,3.2billions@44.59,3.2instead@47.56,3.2all@52.02,3.3two@54.5,3.3floor@55.98,3.3height@59.95,3.3bowl@64.41,3.4ball@65.4,3.4see@70.85,3.4steps@77.29,3.4again@78.28,3.5setting@90.17,3.5long@93.64,3.5short@97.6,3.6zoom@101.07,3.6low@107.02,3.6lowest@109.99,3.7ai@110.48,3.7inside@114.94,3.7num@117.91,3.7tensor@118.91,3.8gpu@120.39,3.8row@122.87,3.8once@124.36,3.8calc@129.31,3.8llm@134.26,3.8split@137.73
@@ -129,11 +129,11 @@ sec  speech   need  cues
 7 sections with cues; 1 unresolved  (estimated words: times are placeholders)
 ```
 
-`decktalk build` stops after the `beats` stage, because a step whose only cues are unresolved never
-mounts. Fix the phrase, or pass `--allow-unresolved` to build without the cue. The page then warns
-that the cue is not in `?beats=`, and its element appears at its `data-at` time.
+`decktalk build` stops after the `align` stage, because a slide whose only cues are unresolved never
+mounts. Fix the phrase, or pass `--allow-unresolved-cues` to build without the cue. The page then warns
+that the cue is not in `?cues=`, and its element appears at its `data-delay` time.
 
-A cue that resolves past the end of the section's audio stays, with a note. A silent build estimates
+A cue that resolves past the end of the section's audio stays, with a note. A build without voice estimates
 word times, so its cue times are estimates too. The table then ends with
 `(estimated words: times are placeholders)`.
 
@@ -153,17 +153,17 @@ These guidelines help a reveal start on the right word.
 ## Sound on cues
 
 A sound effect in `[[mix.sfx]]` names a `section` and a `cue`. The `assemble` stage places the sound
-effect at that cue's time. An underscore marker uses the same `on`, `occurrence`, `case_sensitive`,
-and `offset` keys to raise or mute the underscore at a phrase. [Sound](/concepts/sound) explains both.
+effect at that cue's time. Music marker uses the same `on`, `occurrence`, `case_sensitive`,
+and `offset` keys to raise or mute the music at a phrase. [Sound](/concepts/sound) explains both.
 
 ## Terms
 
 | Term | Meaning |
 |---|---|
 | [cue](/reference/glossary) | A cue is one entry in `cues.json`. It pairs a cue id with a cue phrase. |
-| [cue id](/reference/glossary) | A cue id ties a cue to the page. It is a step id plus a short word, such as `1.1bowl`. |
+| [cue id](/reference/glossary) | A cue id ties a cue to the page. It is a slide id plus a short word, such as `1.1bowl`. |
 | [cue phrase](/reference/glossary) | The cue phrase is the `on` value: a spoken phrase, `$start`, or `$end`. |
-| [resolve](/reference/glossary) | The `beats` stage resolves a cue phrase to a cue time. |
+| [resolve](/reference/glossary) | The `align` stage resolves a cue phrase to a cue time. |
 | [cue time](/reference/glossary) | The cue time is the start of the cued word plus the offset key, rounded to hundredths, in seconds after the section start. |
 | [offset key](/reference/glossary) | The offset key is the cue's `offset` in `cues.json`. A positive value moves the cue time later. |
 | [spoken words](/reference/glossary) | The spoken words are the words in the section's words file. Matching and `?words=` use them. |
@@ -172,4 +172,4 @@ and `offset` keys to raise or mute the underscore at a phrase. [Sound](/concepts
 
 - **Write phrases that time well:** [Writing for the ear](/guides/writing-for-the-ear)
 - **Look up every key:** [cues.json](/reference/cues-json)
-- **Learn which step owns a cue:** [The page contract](/concepts/page-contract#cue-ownership)
+- **Learn which slide owns a cue:** [The page contract](/concepts/page-contract#cue-ownership)

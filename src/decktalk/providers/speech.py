@@ -2,8 +2,8 @@
 
 DeckTalk needs exactly one thing from a voice: audio plus a start and end time for every
 word, because the cut is made on words. Today ElevenLabs is the only implementation. A
-local model that returns timestamps (or a TTS engine paired with a forced aligner) plugs
-in by implementing `SpeechProvider` and registering a name.
+local speech provider with word timings plugs in by implementing `SpeechProvider` and
+registering a name.
 
     [voice]
     provider = "elevenlabs"   # default; the name a provider registered under
@@ -48,7 +48,7 @@ ProviderFactory = Callable[[Project], SpeechProvider]
 _REGISTRY: dict[str, ProviderFactory] = {}
 
 
-def register(name: str, factory: ProviderFactory) -> None:
+def register_speech_provider(name: str, factory: ProviderFactory) -> None:
     """Make a provider selectable as `[voice] provider = "<name>"`.
 
     The factory receives the loaded Project, so it can read the project's env and
