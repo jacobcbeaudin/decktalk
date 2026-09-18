@@ -2,6 +2,9 @@
 
 Issues and pull requests are welcome. One person maintains DeckTalk, so expect a reply within about a week.
 
+- The tree is being rebuilt for 0.4.0, with new names and a new layout. Until that release is out, please open
+  an issue instead of a pull request, so that your change lands on the new tree rather than on code that is
+  about to move.
 - Before a large change, open an issue, so that we agree on the design first.
 - If you build something with DeckTalk, share a link in an issue.
 
@@ -22,37 +25,69 @@ uvx pre-commit install           # the lint hooks and the commit message hook
 
 ## Checks
 
-Run these checks before you open a pull request.
+One command runs every check a pull request must pass: lint, types, every test suite but the scaffold build,
+and the generated-file checks. On its first run it may download headless Chromium, ffmpeg, and KaTeX through
+`decktalk setup`, once per machine.
 
 ```console
-uv run ruff check src tests && uv run ruff format --check src tests
+uv run scripts/check.py          # everything CI runs on a pull request, in about three minutes
+uv run scripts/check.py --fast   # lint, types, and the unit tests alone, in a few seconds
+```
+
+The steps, for running one on its own:
+
+```console
+uv lock --check                                  # the lockfile matches pyproject.toml
+uv run ruff check src tests scripts && uv run ruff format --check src tests scripts
 uv run ty check src
 npx --yes @biomejs/biome@2.5.13 ci .             # lint and format check for JavaScript
 uv run pytest -q                                 # unit tests
 uv run pytest -q -m "browser or media"           # the runtime in Chromium, frame analysis in ffmpeg
-uv run scripts/build_assets.py --check           # fails if assets/*.svg or docs/images are out of date
+uv run pytest -q -m e2e                          # the pipeline test: an offline build of tests/e2e/fixture
+uv run --with "fonttools[woff]>=4.50" python scripts/build_assets.py --check
+                                                 # fails if assets/*.svg or docs/images are out of date
 uv run scripts/build_config_reference.py --check # fails if docs/reference/configuration.mdx is out of date
+uv run scripts/build_changelog.py --check        # fails if docs/changelog.mdx is out of date
 ```
 
-No check needs an ElevenLabs key. After `decktalk setup`, no check needs the network. Do not add a check that calls the API.
+A bare `pytest` runs the unit tests alone. The `browser`, `media`, `e2e`, and `scaffold` markers select the
+slower suites, and `--strict-markers` rejects a marker that is not registered in `pyproject.toml`.
+
+| Marker | Needs | Time | What it covers |
+|---|---|---|---|
+| none | nothing | 1 s | config, project validation, script parsing, cue matching, the CLI with stages faked |
+| `browser` | Chromium | 1 min | `decktalk-runtime.js` in a real page, preflight's frozen frames |
+| `media` | ffmpeg | 10 s | frame analysis and loudness on synthetic video |
+| `e2e` | Chromium, ffmpeg, KaTeX | 1 min | `tests/e2e/test_pipeline.py`: a silent build of the five-section fixture, checked property by property |
+| `scaffold` | Chromium, ffmpeg, KaTeX | 20 min | reserved for the full scaffold build |
+
+The pipeline test builds `tests/e2e/fixture` with the network blocked, then asserts the build, the recording
+checks, every cue, the carried frame, the merged chapter, the slate, the captions, the B-roll sound, preflight,
+shots, status, the `narrate --dry-run` plan, cue resolution on uneven word timestamps, and a rebuild of one
+section with `--only`. It fails on `OFF CUE` on Linux. On macOS and Windows it reports `OFF CUE` and asserts
+the wider limits of four offset frames and five a/v frames, because the hosted runners there present frames
+late. Pass `--gate-timing` to fail on `OFF CUE` everywhere. The test has a 180-second timeout.
+
+No check needs an ElevenLabs key, and no ElevenLabs key is ever a CI secret. After `decktalk setup`, no check
+needs the network. Do not add a check that calls the API.
 
 ### What CI runs
 
-CI runs three jobs from `.github/workflows/ci.yml`.
+CI runs four jobs from `.github/workflows/ci.yml` on every pull request and push to `main`.
 
-- The `checks` job runs ruff, ty, the unit tests, and `scripts/build_config_reference.py --check`. It runs on Linux with Python 3.12, 3.13, and 3.14.
-- The `lint` job runs Biome on JavaScript. It runs once on Linux, on the same triggers as the `checks` job.
-- The `build` job runs `decktalk setup`, `decktalk doctor`, and the browser and media tests.
+- The `checks` job runs `uv lock --check`, ruff, ty, the unit tests, and the generated-file checks for the
+  configuration reference and the changelog. It runs on Linux with Python 3.12, 3.13, and 3.14.
+- The `lint` job runs Biome on JavaScript, once on Linux.
+- The `e2e` job runs `decktalk setup`, `decktalk doctor`, and every test suite but the scaffold build with
+  coverage, on Linux. Coverage must stay at or above the floor in `pyproject.toml`, and the report goes to the
+  job summary. When a test fails, the job uploads the pipeline project's `verify.json`, sidecars, shots, and mp4.
+- The `cross-platform` job runs the browser, media, and pipeline suites on macOS and Windows. It runs on pushes
+  to `main` and from the Actions tab, and `release.yml` runs it before `publish`, so a platform regression stops
+  a release. It never runs on the tag that release-please creates, because that tag triggers no workflow.
 
-| Trigger | `checks` job | `build` job platforms |
-|---|---|---|
-| A push to `main` | Runs | Linux |
-| A pull request | Runs | Linux |
-| A `v*` tag that a person pushes | Runs | Linux, macOS, Windows |
-| "Run workflow" in the Actions tab | Runs | The platforms you choose: all, ubuntu, macos, or windows |
-| A tag that release-please creates | Does not run | Does not run |
-
-- On macOS and Windows, the `build` job widens the sync limits. It sets `DECKTALK_VERIFY_MAX_OFFSET_FRAMES=4`, `DECKTALK_VERIFY_MAX_AV_FRAMES=5`, and `DECKTALK_ALIGN_STALL_MS=400`.
+Every action is pinned to a commit SHA with its version in a comment, and every workflow grants `contents: read`
+at the top and more only per job. `release.yml` and the `pypi` environment are names registered with PyPI's
+trusted publisher, so neither may be renamed.
 
 ## Layout
 
@@ -78,8 +113,12 @@ tests/
   test_runtime.py    drives decktalk-runtime.js in a real Chromium (-m browser)
   test_media.py      checks frame analysis against real ffmpeg on a synthetic video (-m media)
   test_preflight.py  preflight's frozen frames on the scaffold and on a synthetic page (-m browser, -m media)
-  e2e/               the pipeline test and its fixture project (-m e2e)
+  conftest.py        the --gate-timing option
+  e2e/test_pipeline.py  an offline build of tests/e2e/fixture, checked property by property (-m e2e)
+  e2e/fixture/       the five-section still deck: a shared chapter, a carried frame, a B-roll clip, a held
+                     page with an equation, and a missing optional clip
 scripts/
+  check.py                    every check a pull request must pass, in one command
   build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon
   build_changelog.py          generates docs/changelog.mdx from CHANGELOG.md
   build_config_reference.py   generates docs/reference/configuration.mdx from config.py
