@@ -1,7 +1,7 @@
 [project]
 name = "decktalk"
 version = "0.3.0"
-description = "Narrated presentations, cut to the word. A markdown script, an ElevenLabs voice, and HTML slides go in, and one mp4 comes out."
+description = "Every picture lands on its word, and you edit the video like a doc. DeckTalk turns a markdown script, HTML slides, and your voice into one narrated mp4, for technical tutorials, product demos, and lessons."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -41,9 +41,9 @@ classifiers = [
 dependencies = ["playwright>=1.50,<2"]
 
 [project.urls]
-Homepage = "https://decktalk.app"
+Homepage = "https://decktalk.ai"
 Repository = "https://github.com/jacobcbeaudin/decktalk"
-Documentation = "https://docs.decktalk.app"
+Documentation = "https://docs.decktalk.ai"
 Issues = "https://github.com/jacobcbeaudin/decktalk/issues"
 Changelog = "https://github.com/jacobcbeaudin/decktalk/blob/main/CHANGELOG.md"
 
