@@ -85,4 +85,4 @@ Now let's step back in.
 [Deck scene 5. The end card.]
 
 Update your video the way you update a doc. [beat] DeckTalk. Open source, narrated presentations, cut to the word.
-[beat] Make your own at decktalk dot app.
+[beat] Make your own at decktalk dot AI.

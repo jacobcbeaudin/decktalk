@@ -29,12 +29,12 @@ If you change a sentence, DeckTalk voices only that section again.</p>
 </p>
 
 <p align="center">
-<a href="https://docs.decktalk.app/quickstart">Quickstart</a> ·
-<a href="https://docs.decktalk.app">Docs</a> ·
-<a href="https://docs.decktalk.app/requirements">Requirements and costs</a> ·
-<a href="https://docs.decktalk.app/reference/card">Reference card for agents</a> ·
-<a href="https://docs.decktalk.app/changelog">Changelog</a><br>
-Agents can read <a href="https://docs.decktalk.app/llms.txt">llms.txt</a>.
+<a href="https://docs.decktalk.ai/quickstart">Quickstart</a> ·
+<a href="https://docs.decktalk.ai">Docs</a> ·
+<a href="https://docs.decktalk.ai/requirements">Requirements and costs</a> ·
+<a href="https://docs.decktalk.ai/reference/card">Reference card for agents</a> ·
+<a href="https://docs.decktalk.ai/changelog">Changelog</a><br>
+Agents can read <a href="https://docs.decktalk.ai/llms.txt">llms.txt</a>.
 </p>
 
 ## Make your first video
@@ -91,9 +91,9 @@ You need Python 3.12 or later. These steps use `uv`, a Python package manager. I
    decktalk build
    ```
 
-   This build spends ElevenLabs credits for every section. It writes the video, SRT and VTT captions, and one chapter per section. [What spends credits](https://docs.decktalk.app/requirements#what-spends-credits) lists the cost.
+   This build spends ElevenLabs credits for every section. It writes the video, SRT and VTT captions, and one chapter per section. [What spends credits](https://docs.decktalk.ai/requirements#what-spends-credits) lists the cost.
 
-The scaffold is a lesson in nine sections, two of them optional clips. The [quickstart](https://docs.decktalk.app/quickstart) shows the output of each step and [what the example video shows](https://docs.decktalk.app/quickstart#what-the-example-video-shows).
+The scaffold is a lesson in nine sections, two of them optional clips. The [quickstart](https://docs.decktalk.ai/quickstart) shows the output of each step and [what the example video shows](https://docs.decktalk.ai/quickstart#what-the-example-video-shows).
 
 ## What you write
 
@@ -113,7 +113,7 @@ You write four files. One cue id per reveal, such as `1.1bowl`, ties the script,
 | `cues.json` | The phrase that each reveal starts on. |
 | A page in `deck/` | The slides, as plain HTML. |
 
-The `narrate` stage writes a words file with the start and end of every spoken word. If a cue phrase is not in the spoken words, the build stops and names the cue. [Your first deck](https://docs.decktalk.app/guides/first-deck) writes one section in all four files.
+The `narrate` stage writes a words file with the start and end of every spoken word. If a cue phrase is not in the spoken words, the build stops and names the cue. [Your first deck](https://docs.decktalk.ai/guides/first-deck) writes one section in all four files.
 
 ## Why the cuts are exact
 
@@ -134,7 +134,7 @@ check                 cue       at   chg %   ctl %   offset     a/v  result
 8:7.1checked        10.03   238.31    0.83    0.00    +10ms    +3ms  changed
 ```
 
-The offset column is the time from the cue time to the onset of the reveal, in milliseconds. [Verify](https://docs.decktalk.app/reference/verify) defines every column and limit.
+The offset column is the time from the cue time to the onset of the reveal, in milliseconds. [Verify](https://docs.decktalk.ai/reference/verify) defines every column and limit.
 
 ## Requirements and costs
 
@@ -142,7 +142,7 @@ The offset column is the time from the cue time to the onset of the reveal, in m
 - **Accounts.** A silent build needs no account. A voiced build needs an ElevenLabs API key and a voice id.
 - **Cost.** Every ElevenLabs plan can call the API. The free plan has limits for a video you publish.
 
-[Requirements and costs](https://docs.decktalk.app/requirements) lists every download and every command that spends credits.
+[Requirements and costs](https://docs.decktalk.ai/requirements) lists every download and every command that spends credits.
 
 ## How it compares
 
@@ -154,12 +154,12 @@ The offset column is the time from the cue time to the onset of the reveal, in m
 | Descript | a recording you made | your screen | Overdub voices the new words. The screen recording does not move with them. |
 | Synthesia, HeyGen | the avatar's speech | their avatar and scenes | You generate the video again. |
 
-The [FAQ](https://docs.decktalk.app/help/faq#how-is-this-different-from-the-other-tools) has the full comparison. Every build also gives you these parts:
+The [FAQ](https://docs.decktalk.ai/help/faq#how-is-this-different-from-the-other-tools) has the full comparison. Every build also gives you these parts:
 
 - **A free silent build.** Every stage runs with no key, and a click marks each word.
 - **Cached narration.** DeckTalk voices a section again only when it changes.
 - **Captions and chapters.** Every build writes SRT, VTT, and chapters.
-- **A soundscape.** Add [an underscore, an ambience bed, and sound effects](https://docs.decktalk.app/concepts/sound).
+- **A soundscape.** Add [an underscore, an ambience bed, and sound effects](https://docs.decktalk.ai/concepts/sound).
 - **Loudness.** DeckTalk normalizes the mix to -16 LUFS.
 - **Checked output.** `check` and `verify` catch bad recordings and late reveals.
 
@@ -171,15 +171,15 @@ CI runs the unit tests and a full offline build on Linux for every push to `main
 
 - Report bugs and ask questions in [Issues](https://github.com/jacobcbeaudin/decktalk/issues).
 - Report a vulnerability privately. [SECURITY.md](https://github.com/jacobcbeaudin/decktalk/blob/main/SECURITY.md) explains how.
-- The [changelog](https://docs.decktalk.app/changelog) lists every release.
+- The [changelog](https://docs.decktalk.ai/changelog) lists every release.
 
 ## Documentation
 
-The docs are at **[docs.decktalk.app](https://docs.decktalk.app)**.
+The docs are at **[docs.decktalk.ai](https://docs.decktalk.ai)**.
 
-- **Install and build a first video:** [Quickstart](https://docs.decktalk.app/quickstart)
-- **Write your own section:** [Your first deck](https://docs.decktalk.app/guides/first-deck)
-- **Give an agent the whole contract:** [Reference card for agents](https://docs.decktalk.app/reference/card)
+- **Install and build a first video:** [Quickstart](https://docs.decktalk.ai/quickstart)
+- **Write your own section:** [Your first deck](https://docs.decktalk.ai/guides/first-deck)
+- **Give an agent the whole contract:** [Reference card for agents](https://docs.decktalk.ai/reference/card)
 
 ## Contributing
 

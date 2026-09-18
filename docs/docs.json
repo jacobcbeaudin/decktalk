@@ -106,8 +106,8 @@
   "navbar": {
     "links": [
       {
-        "label": "decktalk.app",
-        "href": "https://decktalk.app"
+        "label": "decktalk.ai",
+        "href": "https://decktalk.ai"
       },
       {
         "label": "GitHub",
@@ -118,7 +118,7 @@
   "footer": {
     "socials": {
       "github": "https://github.com/jacobcbeaudin/decktalk",
-      "website": "https://decktalk.app"
+      "website": "https://decktalk.ai"
     }
   },
   "seo": {

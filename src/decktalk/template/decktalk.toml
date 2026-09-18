@@ -1,5 +1,5 @@
 # DeckTalk project. Paths are relative to this directory.
-# Full reference: https://docs.decktalk.app/concepts/project-file
+# Full reference: https://docs.decktalk.ai/reference/decktalk-toml
 
 [project]
 name = "__NAME__"
@@ -60,7 +60,7 @@ scene = 3
 # demo video from deck/edit/, which match this scaffold's Open and lesson. After you voice the video, cut each
 # clip from your own build: the page's last frame, with the Open playing in the player's video area at 384, 72,
 # 1152 by 648. Write its words file, so the speech inside it gets captions. Then delete `optional`.
-# https://docs.decktalk.app/guides/clip-section#fill-the-edits-two-clips has the commands.
+# https://docs.decktalk.ai/guides/clip-section#fill-the-edits-two-clips has the commands.
 
 [[section]]
 number = 4

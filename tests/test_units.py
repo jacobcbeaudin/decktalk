@@ -2318,7 +2318,7 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(tmp_path, m
     open_words = read_words(p.audio_dir / "01-open.words.json")
     assert resolved["01"]["1.1bowl"] == open_words[find_phrase(open_words, "bowl")].start == 0.4
     close_words = read_words(p.audio_dir / "07-close.words.json")
-    assert resolved["09"]["5.1url"] == round(close_words[find_phrase(close_words, "decktalk dot app")].start, 2)
+    assert resolved["09"]["5.1url"] == round(close_words[find_phrase(close_words, "decktalk dot AI")].start, 2)
     # A section that would be voiced resolves on estimated words, inside its estimated length.
     assert all(0 < t < 60 for t in resolved["04"].values()) and len(resolved["04"]) == 5
     assert result.cues == [] and result.carries == [] and result.frames is None
