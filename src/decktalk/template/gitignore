@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 build/
 media/*.mp4
 media/*.mov
