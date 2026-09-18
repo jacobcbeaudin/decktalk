@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Which platforms run the browser tests and the smoke build"
+        description: "Which platforms run the browser tests"
         type: choice
         default: all
         options: [all, ubuntu, macos, windows]
@@ -35,15 +35,13 @@ jobs:
       - run: uv run scripts/build_config_reference.py --check
 
   lint:
-    name: lint (JavaScript and shell)
+    name: lint (JavaScript)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
-      # The same versions as .pre-commit-config.yaml. The runner's own shellcheck is older, so the
-      # pinned build comes from shellcheck-py.
+      # The same version as .pre-commit-config.yaml.
       - run: npx --yes @biomejs/biome@2.5.13 ci .
-      - run: git ls-files -z '*.sh' | xargs -0 uvx --from shellcheck-py==0.11.0.1 shellcheck
 
   build:
     name: build (${{ matrix.os }})
@@ -76,33 +74,3 @@ jobs:
       - run: uv run decktalk setup
       - run: uv run decktalk doctor
       - run: uv run pytest -q -m "browser or media"
-      # Headless Chromium draws the page in software, and the hosted macOS and Windows runners do it
-      # more slowly than a laptop, so a reveal on the demo's busiest scenes can land two or three
-      # frames late there. Those runners measure with a wider window. smoke.sh reports the scaffold's
-      # OFF CUE rows without failing, because a runner presents frames late while a large layer moves.
-      - name: Widen the sync tolerance on the slower runners
-        if: runner.os != 'Linux'
-        run: |
-          echo "DECKTALK_VERIFY_MAX_OFFSET_FRAMES=4" >> "$GITHUB_ENV"
-          echo "DECKTALK_VERIFY_MAX_AV_FRAMES=5" >> "$GITHUB_ENV"
-          echo "DECKTALK_ALIGN_STALL_MS=400" >> "$GITHUB_ENV"
-      # A small deck of still pages whose reveals snap in. Any verify finding fails it, OFF CUE included.
-      # It gates the job on Linux. The slower runners run it with the wider window and only report.
-      - name: Cue timing gate
-        continue-on-error: ${{ runner.os != 'Linux' }}
-        run: bash tests/timing.sh
-      - run: bash tests/smoke.sh
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: smoke-${{ matrix.os }}
-          path: |
-            tests/out/smoke/build/out/smoke.mp4
-            tests/out/smoke/build/shots/
-            tests/out/smoke/build/rec/*.json
-            tests/out/smoke/build/audio/beats.json
-            tests/out/smoke/build/audio/timeline.json
-            tests/out/timing/build/out/timing.mp4
-            tests/out/timing/build/rec/*.json
-            tests/out/timing/verify.json
-          if-no-files-found: ignore

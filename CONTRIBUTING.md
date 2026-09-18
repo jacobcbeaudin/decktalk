@@ -10,7 +10,6 @@ Issues and pull requests are welcome. One person maintains DeckTalk, so expect a
 You need:
 
 - [uv](https://docs.astral.sh/uv/). It installs Python and every dependency.
-- bash, for `tests/smoke.sh`. On Windows, use Git Bash.
 - [Node.js](https://nodejs.org/), for `npx`. It runs Biome, the JavaScript linter and formatter.
 
 Run every command in this file from the repository root.
@@ -29,11 +28,8 @@ Run these checks before you open a pull request.
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run ty check src
 npx --yes @biomejs/biome@2.5.13 ci .             # lint and format check for JavaScript
-git ls-files -z '*.sh' | xargs -0 uvx --from shellcheck-py==0.11.0.1 shellcheck
 uv run pytest -q                                 # unit tests
 uv run pytest -q -m "browser or media"           # the runtime in Chromium, frame analysis in ffmpeg
-bash tests/smoke.sh                              # scaffold a project and build it offline
-bash tests/timing.sh                             # build a still deck offline, and fail on any OFF CUE
 uv run scripts/build_assets.py --check           # fails if assets/*.svg or docs/images are out of date
 uv run scripts/build_config_reference.py --check # fails if docs/reference/configuration.mdx is out of date
 ```
@@ -45,9 +41,8 @@ No check needs an ElevenLabs key. After `decktalk setup`, no check needs the net
 CI runs three jobs from `.github/workflows/ci.yml`.
 
 - The `checks` job runs ruff, ty, the unit tests, and `scripts/build_config_reference.py --check`. It runs on Linux with Python 3.12, 3.13, and 3.14.
-- The `lint` job runs Biome on JavaScript and ShellCheck on shell scripts. It runs once on Linux, on the same triggers as the `checks` job.
-- The `build` job runs `decktalk setup`, `decktalk doctor`, the browser and media tests, the cue timing gate, and
-  the smoke build.
+- The `lint` job runs Biome on JavaScript. It runs once on Linux, on the same triggers as the `checks` job.
+- The `build` job runs `decktalk setup`, `decktalk doctor`, and the browser and media tests.
 
 | Trigger | `checks` job | `build` job platforms |
 |---|---|---|
@@ -58,13 +53,6 @@ CI runs three jobs from `.github/workflows/ci.yml`.
 | A tag that release-please creates | Does not run | Does not run |
 
 - On macOS and Windows, the `build` job widens the sync limits. It sets `DECKTALK_VERIFY_MAX_OFFSET_FRAMES=4`, `DECKTALK_VERIFY_MAX_AV_FRAMES=5`, and `DECKTALK_ALIGN_STALL_MS=400`.
-- The cue timing gate is `tests/timing.sh`. It builds `tests/timing`, a deck of still pages whose reveals snap in,
-  and fails on any verify finding, `OFF CUE` included. It fails the job on Linux. On macOS and Windows it runs
-  with the wider limits and does not fail the job.
-- The smoke build reports the scaffold's `OFF CUE` rows without failing. A hosted runner presents frames 50 to
-  120 ms late while a large layer moves, so those rows are not a fair gate.
-- Each `build` job uploads the smoke video, the shots, the sidecars, `beats.json`, and `timeline.json`, and the timing
-  video, its sidecars, and its `verify.json`. It uploads them even when the job fails.
 
 ## Layout
 
@@ -90,9 +78,7 @@ tests/
   test_runtime.py    drives decktalk-runtime.js in a real Chromium (-m browser)
   test_media.py      checks frame analysis against real ffmpeg on a synthetic video (-m media)
   test_preflight.py  preflight's frozen frames on the scaffold and on a synthetic page (-m browser, -m media)
-  smoke.sh           an offline build of the scaffold, verified cue by cue
-  timing.sh          the cue timing gate: an offline build of tests/timing that fails on OFF CUE
-  timing/            the timing deck: two still pages whose reveals snap in
+  e2e/               the pipeline test and its fixture project (-m e2e)
 scripts/
   build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon
   build_changelog.py          generates docs/changelog.mdx from CHANGELOG.md
