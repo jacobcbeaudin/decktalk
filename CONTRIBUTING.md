@@ -34,7 +34,6 @@ uv run pytest -q                                 # unit tests
 uv run pytest -q -m "browser or media"           # the runtime in Chromium, frame analysis in ffmpeg
 bash tests/smoke.sh                              # scaffold a project and build it offline
 bash tests/timing.sh                             # build a still deck offline, and fail on any OFF CUE
-npm --prefix workers/media ci && npm --prefix workers/media test   # the media Worker, in the Workers runtime
 uv run scripts/build_assets.py --check           # fails if assets/*.svg or docs/images are out of date
 uv run scripts/build_config_reference.py --check # fails if docs/reference/configuration.mdx is out of date
 ```
@@ -43,11 +42,10 @@ No check needs an ElevenLabs key. After `decktalk setup`, no check needs the net
 
 ### What CI runs
 
-CI runs four jobs from `.github/workflows/ci.yml`.
+CI runs three jobs from `.github/workflows/ci.yml`.
 
 - The `checks` job runs ruff, ty, the unit tests, and `scripts/build_config_reference.py --check`. It runs on Linux with Python 3.12, 3.13, and 3.14.
 - The `lint` job runs Biome on JavaScript and ShellCheck on shell scripts. It runs once on Linux, on the same triggers as the `checks` job.
-- The `worker` job runs the media Worker's tests with Node on Linux. It runs whenever the `checks` job runs.
 - The `build` job runs `decktalk setup`, `decktalk doctor`, the browser and media tests, the cue timing gate, and
   the smoke build.
 
@@ -92,7 +90,6 @@ tests/
   test_runtime.py    drives decktalk-runtime.js in a real Chromium (-m browser)
   test_media.py      checks frame analysis against real ffmpeg on a synthetic video (-m media)
   test_preflight.py  preflight's frozen frames on the scaffold and on a synthetic page (-m browser, -m media)
-  test_site.py       drives the landing page's film player in Chromium, with the media Worker faked (-m browser)
   smoke.sh           an offline build of the scaffold, verified cue by cue
   timing.sh          the cue timing gate: an offline build of tests/timing that fails on OFF CUE
   timing/            the timing deck: two still pages whose reveals snap in
@@ -100,8 +97,6 @@ scripts/
   build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon
   build_changelog.py          generates docs/changelog.mdx from CHANGELOG.md
   build_config_reference.py   generates docs/reference/configuration.mdx from config.py
-  publish_demo.sh             uploads a cut of the demo film to media.decktalk.app
-workers/media/                 the Worker that serves the demo film at media.decktalk.app, with its tests
 docs/                          the Mintlify site at docs.decktalk.app
 site/                          the landing page at decktalk.app
 ```

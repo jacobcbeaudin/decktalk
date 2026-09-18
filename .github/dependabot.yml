@@ -1,4 +1,4 @@
-# Dependabot keeps the GitHub Actions, the locked Python dependencies, and the media Worker's npm packages current.
+# Dependabot keeps the GitHub Actions and the locked Python dependencies current.
 # Updates arrive as one grouped pull request per ecosystem, once a week.
 version: 2
 updates:
@@ -15,11 +15,4 @@ updates:
       interval: weekly
     groups:
       python:
-        patterns: ["*"]
-  - package-ecosystem: npm
-    directory: /workers/media
-    schedule:
-      interval: weekly
-    groups:
-      worker:
         patterns: ["*"]

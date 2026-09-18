@@ -12,4 +12,3 @@ tests/out/
 *.webm
 *.wav
 .claude/
-.wrangler/
