@@ -1,0 +1,78 @@
+{
+  "source": "lay-demo/v11-voiced: script.md and build/audio/manifest.json, the founder's voiced demo film",
+  "provider": "elevenlabs",
+  "model": "eleven_multilingual_v2",
+  "output_format": "mp3_44100_128",
+  "voice": {
+    "stability": 0.55,
+    "similarity_boost": 0.75,
+    "style": 0.0,
+    "speaker_boost": true,
+    "speed": 1.0
+  },
+  "sections": [
+    {
+      "key": "00",
+      "title": "Open",
+      "markdown": "## 0. Open\n\n[Deck scene 0. No chrome. A timeline of this film. One small thing is off, and the tracks dim around it. It is edited, rendered and recorded again, a loop arrow draws around the tracks, the playhead watches it back and finds one more thing, and the take pill rolls to take 7. The tracks give way to the script panel. On \"built this\" an empty player, its screen switched off, appears above the panel. On \"press build\" the Build pill fills and a bar fills its track. On \"video\" the Open's first frame lights the player's screen, and when the voice stops the frame grows to fill the screen, which is where the Open begins.]\n\nEvery small change to my videos meant editing again, [beat] rendering again, [beat] and recording again. [beat]\nI want every detail exactly right, [beat] so I'd watch it back [beat] and find one more thing. [beat]\nI wanted to update a video the way I update a doc. [beat] So I built this. [beat] Here's my script. [beat] I press build, and it makes the narrated video.\n",
+      "text": "Every small change to my videos meant editing again, \u2014\n\nrendering again, \u2014\n\nand recording again. \u2014\n\nI want every detail exactly right, \u2014\n\nso I'd watch it back \u2014\n\nand find one more thing. \u2014\n\nI wanted to update a video the way I update a doc. \u2014\n\nSo I built this. \u2014\n\nHere's my script. \u2014\n\nI press build, and it makes the narrated video.",
+      "hash": "f3cdca432855f91a"
+    },
+    {
+      "key": "01",
+      "title": "Open",
+      "markdown": "## 1. Open\n\n[Deck scene 1. It opens on the hook's last frame: white, with its eyebrow, tracker and curve. A ball appears on its word. The ball steps down on each count word, and each count word's start time appears under its box.]\n\nWatch this ball step down on my count. [beat] One. [beat] Two, three. [beat]\nI wrote the words and drew the pictures, [beat] and each picture waits for its word.\n",
+      "text": "Watch this ball step down on my count. \u2014\n\nOne. \u2014\n\nTwo, three. \u2014\n\nI wrote the words and drew the pictures, \u2014\n\nand each picture waits for its word.",
+      "hash": "ac17443d029ddc6b"
+    },
+    {
+      "key": "02",
+      "title": "How it works",
+      "markdown": "## 2. How it works\n\n[Deck scene 2. It opens on the Open's last frame. The count clears and the wordmark moves to the top. A script card and a slide card appear, a waveform runs under one line, the cue word joins its drawing, a \"+ one word\" pill appears in the script card's header, and on \"that ball\" the slide card pushes in to become the lesson.]\n\nYou just watched DeckTalk. [beat] You write a script and simple slides. [beat] It reads your script aloud, [beat]\nand you pick the word each picture waits for. [beat] Change the script, and the video follows. [beat]\nLater, I'll add one word to this video. [beat] But first, here is a lesson I made with DeckTalk, about what that ball has to do with AI.\n",
+      "text": "You just watched DeckTalk. \u2014\n\nYou write a script and simple slides. \u2014\n\nIt reads your script aloud, \u2014\n\nand you pick the word each picture waits for. \u2014\n\nChange the script, and the video follows. \u2014\n\nLater, I'll add one word to this video. \u2014\n\nBut first, here is a lesson I made with DeckTalk, about what that ball has to do with AI.",
+      "hash": "14b17af6be8ff7e8"
+    },
+    {
+      "key": "03",
+      "title": "How AI learns",
+      "markdown": "## 3. How AI learns\n\n[Lesson page scene 3. A box of knobs learns from examples, a ball steps down a bowl, and the lesson ends on chips that do the math.]\n\nHow does AI learn? [beat] From examples, not rules people write. [beat] Learning from examples is called machine learning. [beat]\nAn AI model is like a box of knobs. [beat] It guesses, [beat] and a meter shows its error, how wrong the guess was. [beat]\nLearning nudges the knobs. [beat] It guesses again, and now it's right, with a lower error. [beat]\nThen a new example, [beat] and a smaller nudge fixes it. [beat]\nExample after example, the model gets better.\n[pause 1] But which way should each knob turn? [beat]\nIn a big model, testing knobs one at a time would take billions of tries for every step. [beat]\nInstead, one round of math gives a direction for every knob at once.\n[pause 1] Picture two knobs. [beat]\nThe floor is every way to set them. [beat]\nThe height is the error. [beat]\nFor this lesson it is a bowl.\n[pause 2] The ball is where the knobs are set right now. [beat]\nIt can't see the whole bowl, only the slope where it stands. [beat]\nSo it steps downhill, [beat] again and again, and the steps shrink as the ground flattens. [beat]\nThat is gradient descent. [beat] It's what the ball did on my count.\n[pause 1] One setting makes every step longer or shorter. [beat]\nToo long, and it bounces past the bottom. [beat] Too short, and it is very slow.\n[pause 1] Zoom out, and the ground can have many valleys. [beat] The ball finds a low one, not always the lowest.\n[pause 2] Today's AI is trained with a version of this. [beat] Inside, the knobs are grids of numbers, called tensors.\n[pause 1] Chips like GPUs and TPUs multiply grids, row times column, all at once. [beat] For a big model, the chips do billions of billions of small calculations for every step. [beat]\nThe large language models behind AI chat apps split the work across thousands of chips.\n",
+      "text": "How does AI learn? \u2014\n\nFrom examples, not rules people write. \u2014\n\nLearning from examples is called machine learning. \u2014\n\nAn AI model is like a box of knobs. \u2014\n\nIt guesses, \u2014\n\nand a meter shows its error, how wrong the guess was. \u2014\n\nLearning nudges the knobs. \u2014\n\nIt guesses again, and now it's right, with a lower error. \u2014\n\nThen a new example, \u2014\n\nand a smaller nudge fixes it. \u2014\n\nExample after example, the model gets better. <break time=\"1s\" />\n\nBut which way should each knob turn? \u2014\n\nIn a big model, testing knobs one at a time would take billions of tries for every step. \u2014\n\nInstead, one round of math gives a direction for every knob at once. <break time=\"1s\" />\n\nPicture two knobs. \u2014\n\nThe floor is every way to set them. \u2014\n\nThe height is the error. \u2014\n\nFor this lesson it is a bowl. <break time=\"2s\" />\n\nThe ball is where the knobs are set right now. \u2014\n\nIt can't see the whole bowl, only the slope where it stands. \u2014\n\nSo it steps downhill, \u2014\n\nagain and again, and the steps shrink as the ground flattens. \u2014\n\nThat is gradient descent. \u2014\n\nIt's what the ball did on my count. <break time=\"1s\" />\n\nOne setting makes every step longer or shorter. \u2014\n\nToo long, and it bounces past the bottom. \u2014\n\nToo short, and it is very slow. <break time=\"1s\" />\n\nZoom out, and the ground can have many valleys. \u2014\n\nThe ball finds a low one, not always the lowest. <break time=\"2s\" />\n\nToday's AI is trained with a version of this. \u2014\n\nInside, the knobs are grids of numbers, called tensors. <break time=\"1s\" />\n\nChips like GPUs and TPUs multiply grids, row times column, all at once. \u2014\n\nFor a big model, the chips do billions of billions of small calculations for every step. \u2014\n\nThe large language models behind AI chat apps split the work across thousands of chips.",
+      "hash": "784963ac3d09378f"
+    },
+    {
+      "key": "04",
+      "title": "How AI learns",
+      "markdown": "## 4. How AI learns\n\n[Lesson page scene 8, continued. Opens on the lesson's last frame. A crowd of tiny figures fills the upper band and the chip wall drops below it, unlit. The years land under the crowd, then every chip lights at once and the ball takes one more step.]\n\nBy hand, everyone on Earth would need years for one step. [beat] The chips take seconds.\n",
+      "text": "By hand, everyone on Earth would need years for one step. \u2014\n\nThe chips take seconds.",
+      "hash": "9e39fbc2bb4f6df3"
+    },
+    {
+      "key": "05",
+      "title": "The edit",
+      "markdown": "## 5. The edit\n\n[Deck scene 4. Opens on the stat's last picture. The whole frame shrinks into a video player, five part chips appear, the script opens under them, and the player shows the Open's finished count, labeled Before.]\n\nThat's the lesson. [beat] Now let's step out of it. [beat] Everything you just watched is one video, [beat] in five parts, [beat] made from one script. [beat]\nRemember my count?\n",
+      "text": "That's the lesson. \u2014\n\nNow let's step out of it. \u2014\n\nEverything you just watched is one video, \u2014\n\nin five parts, \u2014\n\nmade from one script. \u2014\n\nRemember my count?",
+      "hash": "eb6228960cf4ae82"
+    },
+    {
+      "key": "06",
+      "title": "The edit",
+      "markdown": "## 6. The edit\n\n[Deck scene 6. It opens on page 5's still of the finished count. One word is added to the script and a new box waits for it. Build reads only part one aloud again, and the player jumps back to the start, labeled After.]\n\nSay I want one more step. [beat] I add one word, [beat] four, [beat] and tell a new box to wait for it. [beat] I press build. [beat]\nOnly part one is read aloud again. [beat] The rest keep their voice. [beat] Here is the new start.\n",
+      "text": "Say I want one more step. \u2014\n\nI add one word, \u2014\n\nfour, \u2014\n\nand tell a new box to wait for it. \u2014\n\nI press build. \u2014\n\nOnly part one is read aloud again. \u2014\n\nThe rest keep their voice. \u2014\n\nHere is the new start.",
+      "hash": "f36cd41d0c6823d1"
+    },
+    {
+      "key": "08",
+      "title": "The edit",
+      "markdown": "## 8. The edit\n\n[Deck scene 7. Before and after side by side with their count times, a check, no timeline and no new take, the loop that is now cheap. On \"step back\" the player returns showing the Close's first frame, the Open's bowl with the count finished, and grows to fill the screen, which is where the Close begins.]\n\nOne more count, one more box. [beat] Every picture in the count moved to stay on its word, [beat] and each one is checked. [beat]\nI didn't touch a timeline, or record a new take. [beat] So I can keep changing this video until it's exactly right. [beat]\nNow let's step back in.\n",
+      "text": "One more count, one more box. \u2014\n\nEvery picture in the count moved to stay on its word, \u2014\n\nand each one is checked. \u2014\n\nI didn't touch a timeline, or record a new take. \u2014\n\nSo I can keep changing this video until it's exactly right. \u2014\n\nNow let's step back in.",
+      "hash": "d9e81bc6c9663c03"
+    },
+    {
+      "key": "09",
+      "title": "Close",
+      "markdown": "## 9. Close\n\n[Deck scene 5. The end card. It opens on the bowl the player grew into. The tagline builds word by word as it is spoken, the wordmark and its line land on \"DeckTalk\", the licence on \"Open source\", and the address last.]\n\nUpdate your video the way you update a doc. [beat] DeckTalk. Open source, narrated presentations, cut to the word.\n[beat] Make your own at decktalk dot app.\n",
+      "text": "Update your video the way you update a doc. \u2014\n\nDeckTalk. Open source, narrated presentations, cut to the word. \u2014\n\nMake your own at decktalk dot app.",
+      "hash": "13aba90ac20ce808"
+    }
+  ]
+}
