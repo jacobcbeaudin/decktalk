@@ -12,3 +12,6 @@ tests/out/
 *.webm
 *.wav
 .claude/
+.coverage
+coverage.xml
+.env.*
