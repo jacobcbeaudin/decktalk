@@ -3,16 +3,44 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
+import os
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..artifacts import Word
 from ..config import ElevenLabsConfig
+from ..errors import ConfigError
 from ..project import Project
 from ._http import post_bytes, post_json
 from .speech import SpeechRequest, register
 
 PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
+ELEVENLABS_DOMAIN = "elevenlabs.io"
+# Set to 1 to let `[elevenlabs] api_base` name any host, for a local mock of the API. The
+# environment is the user's own machine and a project file is not, so the file alone can never
+# redirect the key. The value is read the way _env.py reads a bool.
+ALLOW_ANY_API_BASE = "DECKTALK_ALLOW_ANY_API_BASE"
+
+
+def check_api_base(api_base: str, environ: Mapping[str, str] | None = None) -> str:
+    """`api_base` when it is an https URL on an ElevenLabs host, or the override is set; else a ConfigError.
+
+    The key travels in a header to whatever host `api_base` names, so the value is checked here,
+    before the first request, wherever it came from.
+    """
+    env = os.environ if environ is None else environ
+    if env.get(ALLOW_ANY_API_BASE, "").lower() not in ("false", "0", "no", ""):
+        return api_base
+    parts = urlsplit(api_base)
+    host = (parts.hostname or "").lower()
+    if parts.scheme == "https" and (host == ELEVENLABS_DOMAIN or host.endswith(f".{ELEVENLABS_DOMAIN}")):
+        return api_base
+    raise ConfigError(
+        f"[elevenlabs] api_base must be an https URL on {ELEVENLABS_DOMAIN}, not {api_base!r}. "
+        f"Set {ALLOW_ANY_API_BASE}=1 to send the key to another host on purpose."
+    )
 
 
 def words_from_alignment(chars: list[str], starts: list[float], ends: list[float]) -> list[Word]:
@@ -48,14 +76,21 @@ def words_from_alignment(chars: list[str], starts: list[float], ends: list[float
 
 @dataclass
 class ElevenLabs:
-    """Speech with word timestamps, sound effects and music. The default SpeechProvider."""
+    """Speech with word timestamps, sound effects and music. The default SpeechProvider.
 
-    api_key: str
+    The key is kept out of repr, so no log line, error or JSON payload that shows the provider
+    shows it. The base URL is checked once, when the provider is built.
+    """
+
+    api_key: str = field(repr=False)
     cfg: ElevenLabsConfig
     voice_id: str = ""
     context_chars: int = 1500
     timeout: int = 180
     name: str = "elevenlabs"
+
+    def __post_init__(self) -> None:
+        check_api_base(self.cfg.api_base)
 
     @classmethod
     def for_project(cls, project: Project) -> ElevenLabs:

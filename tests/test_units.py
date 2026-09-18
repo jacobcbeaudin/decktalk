@@ -1520,7 +1520,7 @@ def test_provider_errors_never_show_the_voice_id(monkeypatch):
     def refuse(req, timeout):
         raise urllib.error.HTTPError(req.full_url, 404, "Not Found", None, io.BytesIO(body.encode()))  # type: ignore[arg-type]
 
-    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(_http, "urlopen", refuse)
     with pytest.raises(ProviderError) as info:
         _http.post_json(url, {"text": "hi"}, {"xi-api-key": api_key}, timeout=1)
     message = str(info.value)
@@ -1531,7 +1531,7 @@ def test_provider_errors_never_show_the_voice_id(monkeypatch):
     def unreachable(req, timeout):
         raise urllib.error.URLError("timed out")
 
-    monkeypatch.setattr(urllib.request, "urlopen", unreachable)
+    monkeypatch.setattr(_http, "urlopen", unreachable)
     with pytest.raises(ProviderError) as info:
         _http.get_json(f"https://api.elevenlabs.io/v1/voices/{voice_id}", {"xi-api-key": api_key}, timeout=1)
     assert voice_id not in str(info.value) and api_key not in str(info.value)
