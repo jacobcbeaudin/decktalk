@@ -16,4 +16,3 @@ tests/out/
 .claude/
 .coverage
 coverage.xml
-.env.*

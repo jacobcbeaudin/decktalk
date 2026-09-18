@@ -31,7 +31,7 @@ from decktalk.cli import main
 from decktalk.media import ffmpeg
 from decktalk.project import Project
 from decktalk.providers.speech import SpeechRequest, get_provider
-from decktalk.scaffold import katex_cached, update_runtime, vendor_katex
+from decktalk.scaffold import katex_missing, update_runtime, vendor_katex
 from decktalk.stages.narrate import build_timeline, script_segments, text_hash
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(180)]
@@ -133,8 +133,7 @@ def built() -> Iterator[Built]:
         pytest.skip("ffmpeg is missing: run `decktalk setup` first")
     if not chromium_available():
         pytest.skip("Chromium is missing: run `decktalk setup` first")
-    if katex_cached() is None:
-        pytest.skip("KaTeX is not cached: run `decktalk setup` first")
+    assert not katex_missing(), "the packaged KaTeX copy is incomplete"
     root = OUT / "pipeline"
     shutil.rmtree(root, ignore_errors=True)
     shutil.copytree(FIXTURE, root)
