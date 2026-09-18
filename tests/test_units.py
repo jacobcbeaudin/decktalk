@@ -477,75 +477,6 @@ def test_sidecar_warnings_default_and_roundtrip(tmp_path):
     assert again is not None and again.warnings == old.warnings
 
 
-def _fake_katex_cache(cache_root: Path) -> Path:
-    from decktalk.scaffold import KATEX_VERSION
-
-    d = cache_root / "katex" / KATEX_VERSION
-    (d / "fonts").mkdir(parents=True)
-    (d / "katex.min.js").write_text("window.katex = {};", encoding="utf-8")
-    (d / "katex.min.css").write_text(".katex{}", encoding="utf-8")
-    (d / "fonts" / "KaTeX_Main-Regular.woff2").write_bytes(b"\0")
-    return d
-
-
-def test_init_vendors_cached_katex(tmp_path, monkeypatch):
-    from decktalk.scaffold import init, katex_cached
-
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "cache"))
-    _fake_katex_cache(tmp_path / "cache")
-    assert katex_cached() is not None
-    root = init(tmp_path / "proj", name="proj")
-    assert (root / "deck" / "katex" / "katex.min.js").exists()
-    assert (root / "deck" / "katex" / "fonts" / "KaTeX_Main-Regular.woff2").exists()
-    html = (root / "deck" / "index.html").read_text(encoding="utf-8")
-    assert "./katex/katex.min.css" in html and "./katex/katex.min.js" in html
-    assert "cdnjs" not in html and "__KATEX__" not in html
-
-
-def test_init_falls_back_to_cdn_with_a_warning(tmp_path, monkeypatch, caplog):
-    from decktalk.scaffold import init, katex_cached
-
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    assert katex_cached() is None
-    with caplog.at_level("WARNING", logger="decktalk.scaffold"):
-        root = init(tmp_path / "proj", name="proj")
-    assert not (root / "deck" / "katex").exists()
-    html = (root / "deck" / "index.html").read_text(encoding="utf-8")
-    assert "cdnjs.cloudflare.com/ajax/libs/KaTeX" in html and "__KATEX__" not in html
-    assert any("KaTeX is not cached" in r.getMessage() for r in caplog.records)
-
-
-def test_fetch_katex_unpacks_only_what_the_deck_needs(tmp_path, monkeypatch):
-    import io
-    import zipfile
-
-    from decktalk import scaffold
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("katex/katex.min.js", "js")
-        zf.writestr("katex/katex.min.css", "css")
-        zf.writestr("katex/katex.mjs", "not needed")
-        zf.writestr("katex/contrib/auto-render.min.js", "not needed")
-        zf.writestr("katex/fonts/KaTeX_Main-Regular.woff2", "font")
-        zf.writestr("katex/fonts/", "")
-
-    class Response(io.BytesIO):
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            self.close()
-
-    monkeypatch.setattr(scaffold.urllib.request, "urlopen", lambda url, timeout: Response(buf.getvalue()))
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "cache"))
-    dest = scaffold.fetch_katex()
-    assert dest == scaffold.katex_cache_dir()
-    assert sorted(p.name for p in dest.iterdir()) == ["fonts", "katex.min.css", "katex.min.js"]
-    assert (dest / "fonts" / "KaTeX_Main-Regular.woff2").read_text(encoding="utf-8") == "font"
-    assert scaffold.katex_cached() == dest
-
-
 def test_init_copies_every_file_of_the_template_deck(tmp_path, monkeypatch):
     """Every page and asset under the template's deck/ arrives, with placeholders filled only in HTML."""
     from decktalk.scaffold import init, package_file
@@ -556,11 +487,16 @@ def test_init_copies_every_file_of_the_template_deck(tmp_path, monkeypatch):
     wanted = {f.relative_to(src) for f in src.rglob("*") if f.is_file() and not f.name.startswith(".")}
     assert Path("index.html") in wanted
     got = {f.relative_to(root / "deck") for f in (root / "deck").rglob("*") if f.is_file()}
-    assert wanted <= got and got - wanted == {Path("decktalk-runtime.js")}
+    assert wanted <= got
+    # Beside the template's own files arrive the runtime and the packaged KaTeX, and nothing else.
+    assert {p if p.parts[0] != "katex" else Path("katex") for p in got - wanted} == {
+        Path("decktalk-runtime.js"),
+        Path("katex"),
+    }
     for rel in wanted:
         if rel.suffix == ".html":
             html = (root / "deck" / rel).read_text(encoding="utf-8")
-            assert "__NAME__" not in html and "__KATEX__" not in html, rel
+            assert "__NAME__" not in html, rel
         else:
             assert (root / "deck" / rel).read_bytes() == (src / rel).read_bytes(), rel
     assert not (root / "deck" / "vendor").exists()

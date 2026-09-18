@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.scaffold import init, katex_cached, runtime_path
+from decktalk.scaffold import init, runtime_path
 
 pytestmark = pytest.mark.browser
 
@@ -185,8 +185,6 @@ def test_signal_mode_waits_for_start_clock(page, deck):
 
 def test_katex_typesets_data_tex_with_the_vendored_copy(page, deck, tmp_path):
     """init vendors KaTeX beside the pages, and __sceneReady waits until every [data-tex] element is typeset."""
-    if katex_cached() is None:
-        pytest.skip("KaTeX is not cached (run `decktalk setup`)")
     assert "./katex/katex.min.js" in deck.read_text(encoding="utf-8")
     katex = deck.parent / "katex"
     html = tmp_path / "tex.html"
@@ -331,8 +329,6 @@ def test_every_template_scene_plays_its_full_cue_list_without_warnings(page, dec
 
 def test_katex_parse_error_is_a_warning(page, deck, tmp_path):
     """A data-tex value KaTeX cannot parse renders in red and is reported, since throwOnError is off."""
-    if katex_cached() is None:
-        pytest.skip("KaTeX is not cached (run `decktalk setup`)")
     katex = (deck.parent / "katex" / "katex.min.js").resolve().as_uri()
     html = tmp_path / "badtex.html"
     html.write_text(

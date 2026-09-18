@@ -117,10 +117,10 @@ def test_doctor_json_stdout_is_pure_json(tmp_path, monkeypatch, capsys):
     assert doc["command"] == "doctor" and isinstance(doc["version"], str)
     names = {c["name"]: c for c in doc["doctor"]["components"]}
     assert names["python"]["ok"] is True and names["python"]["required"] is True
-    assert names["katex"]["ok"] is False and names["katex"]["required"] is False
-    assert names["katex"]["detail"].endswith("-> run `decktalk setup` (pages load KaTeX from a CDN until then)")
-    # Chromium is missing here too, which is certain. The KaTeX row alone is only uncertain.
-    assert doc["findings"]["certain"] >= 1 and doc["findings"]["uncertain"] == 1
+    assert names["katex"]["ok"] is True and names["katex"]["required"] is True
+    assert names["katex"]["detail"].startswith("0.18.7 in the wheel")
+    # Chromium is missing here, which is certain. KaTeX ships in the wheel, so nothing is uncertain.
+    assert doc["findings"]["certain"] >= 1 and doc["findings"]["uncertain"] == 0
     assert doc["ok"] is False and code == 1
     assert main(["doctor", "--json", "--no-fail"]) == 0
     assert json.loads(capsys.readouterr().out)["ok"] is False
