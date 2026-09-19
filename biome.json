@@ -19,7 +19,7 @@
   },
   "overrides": [
     {
-      "includes": ["src/decktalk/runtime/decktalk-runtime.js"],
+      "includes": ["src/decktalk/runtime/decktalk-runtime.js", "src/decktalk/runtime/decktalk-probe.js"],
       "linter": {
         "rules": {
           "suspicious": { "noRedundantUseStrict": "off" }

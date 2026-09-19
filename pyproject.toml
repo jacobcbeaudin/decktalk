@@ -89,6 +89,8 @@ python-version = "3.12"
 testpaths = ["tests"]
 # Two modules of the tree are named plan.py, so their mirrored test files share a basename.
 consider_namespace_packages = true
+# tests/ is on the path, so a module that holds pages several test modules share is imported by name.
+pythonpath = ["tests"]
 markers = [
     "browser: needs headless Chromium (run `decktalk install` first)",
     "media: runs the ffmpeg that `decktalk install` fetches",

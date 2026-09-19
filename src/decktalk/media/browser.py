@@ -23,58 +23,21 @@ from typing import Any
 
 from ..artifacts import RecordingLog, gap_time
 from ..errors import ToolError
+from ..toolchain.assets import probe_path
 from .origin import Assets, route_pages
 
 log = logging.getLogger(__name__)
 
-# The page may expose a Promise the recorder awaits before starting the narration clock.
-READY_JS = "() => (window.__decktalk && window.__decktalk.ready instanceof Promise ? window.__decktalk.ready : null)"
-FONTS_JS = "() => document.fonts.ready"
-# The page is covered in magenta from its first paint until the narration clock starts, so the
-# first clean frame in the recording is t=0 no matter when the recorder began capturing.
-#
-# The init script also adds a keep-alive: a 2 px square in the bottom-right corner that turns
-# for the whole recording. Chromium's screencast only emits a frame when the compositor paints
-# one, and a static cover paints once, so without motion the cover might never be recorded.
-# The keep-alive outlives the cover on purpose. Playwright stamps each frame by when it was
-# swapped, rounded down to its 25 fps grid, and a busy compositor swaps later in the frame than
-# an idle one. If the motion stopped with the cover, the cover-off frame (t=0) would be stamped
-# busy and every later reveal on a still page stamped idle, one or two frames earlier, so
-# reveals would record 30 to 90 ms ahead of their words. It is mid-gray at 3 % opacity, so it
-# moves a pixel's luma by 4 steps at most: under verify's diff levels (12 and 40), and far too
-# small to move the frame averages that cover detection and the black checks read. Screenshots never
-# run this script, so it never shows in one.
-COVER_JS = """() => {
-  const add = () => {
-    if (document.getElementById("__t0cover")) return;
-    const parent = document.body || document.documentElement;
-    const d = document.createElement("div");
-    d.id = "__t0cover";
-    d.style.cssText = "position:fixed;inset:0;background:#ff00ff;z-index:2147483647;pointer-events:none";
-    parent.appendChild(d);
-    const k = document.createElement("div");
-    k.id = "__dtkeepalive";
-    k.setAttribute("aria-hidden", "true");
-    k.style.cssText = "position:fixed;right:1px;bottom:1px;width:2px;height:2px;background:#808080;opacity:.03;"
-      + "z-index:2147483647;pointer-events:none;animation:__dtkeepalive .5s linear infinite";
-    const s = document.createElement("style");
-    s.textContent = "@keyframes __dtkeepalive{to{transform:rotate(360deg)}}";
-    k.appendChild(s);
-    parent.appendChild(k);
-  };
-  if (document.documentElement) add(); else document.addEventListener("DOMContentLoaded", add, { once: true });
-}"""
+# decktalk-probe.js is the instrumentation every command needs from a page and no page carries:
+# the magenta cover over the first paint, the helper that says when a page has settled, the
+# measured catalog's boxes and the freeze that stops at one cue. It is added as an init script, so
+# it runs before the page's own scripts and the runtime finds it, and it is never a <script src>
+# in a deck. The cover is drawn only where it is asked for, so a screenshot never shows it.
+PROBE_JS = probe_path().read_text(encoding="utf-8")
+COVER_JS = "() => window.__dtprobe.cover()"
 # Remove the cover, then start the page clock on the next animation frame.
-START_JS = """() => new Promise((resolve) => {
-  const d = document.getElementById("__t0cover");
-  if (d) d.remove();
-  // The frame that shows the cover gone is composited on the next animation frame, and
-  // that frame is the recording's t=0, so the clock starts there rather than now.
-  requestAnimationFrame(() => {
-    if (window.DeckTalk && window.DeckTalk.startClock) window.DeckTalk.startClock();
-    resolve(performance.now());
-  });
-})"""
+START_JS = "() => window.__dtprobe.lift()"
+READY_JS = "() => window.__dtprobe.ready()"
 # What the runtime could not honor: unknown cue ids, cues no slide owns, KaTeX that never loaded.
 WARNINGS_JS = "() => (window.__decktalk && window.__decktalk.warnings) || []"
 # Whether the runtime is present and the page registered at least one scene.
@@ -119,6 +82,18 @@ def chromium(browser_path: str = "") -> Iterator[Any]:
             browser.close()
 
 
+def instrument(page: Any) -> Any:
+    """Add decktalk-probe.js to every page `page` loads from here on. Returns the page.
+
+    A page that a command opened more than once keeps the one copy, because an init script is
+    added to the page and not to a navigation.
+    """
+    if not getattr(page, "_decktalk_probe", False):
+        page.add_init_script(PROBE_JS)
+        page._decktalk_probe = True
+    return page
+
+
 def open_page(
     browser: Any,
     root: Path,
@@ -127,19 +102,23 @@ def open_page(
     height: int,
     color_scheme: str = "no-preference",
 ) -> tuple[Any, Assets]:
-    """A page whose requests under the local origin are answered from `root`, and the record of what it loaded."""
+    """A page a command drives, and the record of what it loaded.
+
+    Its requests under the local origin are answered from `root`, and it carries the probe, because
+    every page a command opens is a page that command has to be able to freeze and measure.
+    """
     page = browser.new_page(
         viewport={"width": width, "height": height}, device_scale_factor=1, color_scheme=color_scheme
     )
+    instrument(page)
     return page, route_pages(page, root)
 
 
 def await_ready(page: Any) -> None:
-    for js in (FONTS_JS, READY_JS):
-        try:
-            page.evaluate(js)
-        except Exception:
-            pass
+    try:
+        page.evaluate(READY_JS)
+    except Exception:
+        pass
 
 
 def page_error_text(err: Any) -> str:
@@ -209,7 +188,8 @@ def record_page(
     )
     assets = route_pages(context, root)
     created = time.monotonic()
-    context.add_init_script(COVER_JS + "\n;(" + COVER_JS + ")();")
+    context.add_init_script(PROBE_JS)
+    context.add_init_script("(" + COVER_JS + ")()")
     page = context.new_page()
     caught: list[str] = []
     page.on("pageerror", lambda e: caught.append(page_error_text(e)))
@@ -268,7 +248,8 @@ def record_page(
     recording_log = RecordingLog(
         url=url,
         assets=list(assets.paths),
-        requested_seconds=seconds,
+        external=list(assets.external),
+        requested_seconds=round(seconds, 3),
         settle_seconds=round(started - loaded, 3),
         load_seconds=round(loaded - created, 3),
         clock_start_seconds=round(started - created, 3),
@@ -308,7 +289,7 @@ def render_slate(
     *,
     title: str,
     sub: str = "",
-    eyebrow: str = "slate",
+    eyebrow: str,
     foot: str = "",
     width: int,
     height: int,

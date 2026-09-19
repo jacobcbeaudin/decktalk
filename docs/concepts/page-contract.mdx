@@ -7,10 +7,11 @@ The page contract is the set of rules that lets the recorder play an HTML page i
 narration. To write a page, follow [Your first deck](/guides/first-deck).
 
 1. `decktalk-runtime.js` implements the contract. A page can also [follow it by hand](/guides/page-by-hand).
-2. The URL of a page picks one of four modes.
-3. The recorder hides the page under a magenta cover, then starts the page clock at narration t=0.
-4. Each slide mounts at the earliest cue it owns, and each cue fires at its cue time.
-5. Your CSS styles the slides. The runtime adds only the stage element (`#dt-stage`), slide transitions, and reveal effects.
+2. A scene is markup: a `[data-scene]` wrapper holding one `<template data-slide>` per slide. Attributes do the work, and a page needs no JavaScript.
+3. The URL of a page picks one of four modes.
+4. The recorder hides the page under a magenta cover, then starts the page clock at narration t=0.
+5. The first slide is already on the stage when the cover lifts. Every later slide mounts at the earliest cue it owns, and each cue fires at its cue time.
+6. Your CSS styles the slides. The runtime adds only the stage element (`#dt-stage`), slide transitions, and reveal effects, and every rule of its own sits in `:where()`, so one rule of yours wins.
 
 ## Modes
 
@@ -22,7 +23,7 @@ one slide. A page plays in one of four modes, and `window.__decktalk.mode` holds
 | Index mode | `index` | no query | The page lists every scene and slide, with play and freeze links. |
 | Preview | `preview` | `?scene=N` | Each slide mounts in turn and stays for its `hold` seconds. A browser preview plays this mode. |
 | Cue mode | `cue` | `?scene=N&cues=id@s,…` | Cue times drive the page. The recorder uses this mode. |
-| Freeze mode | `freeze` | `?slide=ID`, optionally with `&after=CUE` | One slide mounts with its reveals in their end state. `decktalk screenshots` and `decktalk preflight` use this mode. |
+| Freeze mode | `freeze` | `?slide=ID`, optionally with `&after=CUE`, which `decktalk-probe.js` reads | One slide mounts with its reveals in their end state. `decktalk screenshots` and `decktalk preflight` use this mode. |
 
 [Modes](/reference/runtime#modes) in the runtime reference lists the URL, the clock, and what
 mounts in each mode.
@@ -35,13 +36,14 @@ cue mode. This table shows which values matter in each.
 | Value | In a browser preview | In a recording |
 |---|---|---|
 | `hold` on a slide | The slide stays this many seconds, then the next slide mounts. | The recorder ignores it. A slide mounts at its earliest cue, and the last slide stays until the recording ends. |
-| The `preview` object on a slide | Each cue fires this many seconds after the slide mounts. | The object gives ownership only. The cue times come from `build/cue-times.json`. |
-| `data-delay` on an element | The element appears this many seconds after the slide mounts. | The page uses it only for an element with no `data-cue`, or with a cue that `?cues=` does not list. |
-| `data-cue` on an element | The element appears at its `data-delay` time, or when its cue fires, whichever comes first. | The element appears when its cue fires. |
+| The `preview` object, or `data-preview` | Each cue fires this many seconds after the slide mounts. | Ignored. The cue times come from `build/cue-times.json`, and the object grants no ownership. |
+| `data-delay` on an element | The element appears this many seconds after the slide mounts. | The same, for an element with no `data-cue`. |
+| `data-cue` on an element | The element appears when the slide's preview timing fires its cue. | The element appears when its cue fires. |
 | `data-text="spoken"` on an element | The element appears whole. | The words appear one at a time, from the `?words=` list. |
 
-`data-delay` defaults to 0. So a browser preview shows a `data-cue` element with no `data-delay` as soon
-as its slide mounts, before its cue.
+`data-cue` and `data-delay` are two triggers for one element, so an element that carries both warns
+and the delay is ignored. A cued element with no preview timing stays hidden through a browser
+preview, which is what a page whose whole timing lives in `cues.json` shows.
 
 ### Where a page is served from
 
@@ -60,7 +62,7 @@ sequenceDiagram
     participant P as Page
     R->>P: add the magenta cover with an init script
     R->>P: open page.html?scene=N&cues=…&words=…&t0=signal
-    Note over P: the runtime starts the mode, and no cued slide mounts yet
+    Note over P: the runtime starts the mode and mounts the first slide
     P-->>R: load event
     R->>P: await document.fonts.ready, then window.__decktalk.ready
     Note over R: recorder wait
@@ -114,16 +116,17 @@ Each cue in `?cues=` has one owner, a slide of the playing scene. The runtime pi
 three rules.
 
 1. A slide whose id equals the cue id owns the cue.
-2. A slide whose `owns` list or `preview` object names the cue owns the cue.
+2. A slide whose `owns` list names the cue owns the cue.
 3. Otherwise, the slide whose id is the longest prefix of the cue id owns it. For example, slide `4.2` owns cue `4.2b1`, and slide `9` owns cue `9a`.
 
-Rules 1 and 2 have the same priority. The first slide in the scene that matches either rule owns the
-cue. The runtime looks only in the playing scene.
+Rule 3 is the rule, and rules 1 and 2 are for the cue id that does not carry its slide's id. A
+slide's preview timing grants no ownership, so seconds and ownership are never edited together by
+accident. The runtime looks only in the playing scene.
 
 In cue mode, ownership decides when each slide mounts:
 
 - A slide mounts at the earliest cue time it owns.
-- The first slide to mount does so at t=0, even when its earliest cue is later.
+- The first slide to mount is on the stage before the clock starts, whatever its earliest cue is, so no frame of the recording is drawn on an empty stage.
 - A slide that owns no cue in `?cues=` never mounts.
 - The last slide to mount stays until the recording ends.
 
@@ -156,8 +159,8 @@ words as `?words=`, and the words of the section before it as `?prevwords=`, bot
 | Term | Meaning |
 |---|---|
 | [page](/reference/glossary) | A page is an HTML file that page sections play, such as `deck/index.html`. |
-| [scene](/reference/glossary) | A scene is one `DeckTalk.scene(N, …)` call in a page. A page section plays one scene. |
-| [slide](/reference/glossary) | A slide is one entry in a scene's `slides`, and the HTML it renders. |
+| [scene](/reference/glossary) | A scene is one `[data-scene]` wrapper, or one `DeckTalk.scene(N, …)` call, in a page. A page section plays one scene. |
+| [slide](/reference/glossary) | A slide is one `<template data-slide>` of a scene, or one entry in its `slides`, and the markup it mounts. |
 | [mount](/reference/glossary) | A slide mounts when it enters the page. |
 | [own](/reference/glossary) | A slide owns a cue by the three ownership rules. |
 | [browser preview](/reference/glossary) | A browser preview is a page opened in a browser without `?cues=`. It plays in preview. |

@@ -9,7 +9,6 @@
   /* No web fonts, no canvas, no SVG and no transitions: every reveal is a solid block that appears on its frame. */
   html, body { margin: 0; background: #ffffff; color: #0a0a0a; font-family: Arial, sans-serif; }
   body { width: 100vw; height: 100vh; overflow: hidden; }
-  #dt-pan > .dt-slide.dt-first { animation: none; }
   .t-title { position: absolute; left: 120px; top: 80px; margin: 0; font: 700 64px/1.1 Arial, sans-serif; }
   .t-block { position: absolute; width: 480px; height: 300px; border-radius: 24px; }
   .t-bar { position: absolute; left: 120px; width: 1680px; height: 180px; border-radius: 24px; }
@@ -24,16 +23,9 @@
 const block = (cue, x, y, color) =>
   `<div class="t-block" ${cue ? `data-cue="${cue}" data-reveal="instant"` : ""} style="left: ${x}px; top: ${y}px; background: ${color}"></div>`;
 
-// Scene 2 opens on scene 1's last frame. Its title and its three blocks are drawn under the stage as soon as
-// the page loads, so the first recorded frame already carries them, whether or not the runtime has mounted
-// the slide by then. The same layer shows when the slide is frozen for a screenshot or a preflight frame.
-const query = new URLSearchParams(location.search);
-if (query.get("scene") === "2" || (query.get("slide") || "").startsWith("2.")) {
-  const under = document.createElement("div");
-  under.innerHTML = `<p class="t-title">Blocks</p>
-    ${block("", 120, 260, "#2c1fea")}${block("", 720, 260, "#0a0a0a")}${block("", 120, 660, "#e5484d")}`;
-  document.body.appendChild(under);
-}
+// Scene 2 opens on scene 1's last frame, so its slide carries scene 1's picture as content with no
+// cue of its own. The runtime mounts the first slide of a section before the clock starts, so that
+// picture is already on the first recorded frame, and a frozen screenshot of the slide shows it too.
 
 DeckTalk.scene(1, { name: "Blocks", slides: [
   { id: "1.1", hold: 8, preview: { "1.1first": 1, "1.1second": 3, "1.1third": 5 }, render: () => `
@@ -48,6 +40,10 @@ DeckTalk.scene(1, { name: "Blocks", slides: [
 DeckTalk.scene(2, { name: "Blocks", slides: [
   { id: "2.1", hold: 8, preview: { "2.1fourth": 1, "2.1fifth": 3 }, render: () => `
     <div class="slide">
+      <p class="t-title">Blocks</p>
+      ${block("", 120, 260, "#2c1fea")}
+      ${block("", 720, 260, "#0a0a0a")}
+      ${block("", 120, 660, "#e5484d")}
       ${block("2.1fourth", 1320, 260, "#30a46c")}
       ${block("2.1fifth", 720, 660, "#f5a524")}
     </div>` },

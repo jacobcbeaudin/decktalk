@@ -1,11 +1,13 @@
 """What ships inside the wheel: the page runtime, the pinned KaTeX release, and the starter project.
 
     decktalk/runtime/decktalk-runtime.js  the page contract every deck loads
+    decktalk/runtime/decktalk-probe.js    the instrumentation a command injects, never in a deck
     decktalk/katex/                       the pinned KaTeX release with its licence and fonts
     decktalk/template/                    the starter project `decktalk init` writes
 
 `decktalk init` copies the runtime and KaTeX beside a project's pages, so a project renders
-equations with no network and no CDN tag.
+equations with no network and no CDN tag. The probe is never copied, because a command injects it
+into the page it opens.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ TEMPLATE_FILES = [
 # copied byte for byte.
 TEMPLATE_DECK = "deck"
 RUNTIME_FILE = "decktalk-runtime.js"
+PROBE_FILE = "decktalk-probe.js"
 
 # KaTeX typesets the [data-tex] elements. The pinned release ships inside the wheel under
 # decktalk/katex with its licence, and `decktalk init` copies it into deck/katex/, so a project
@@ -45,6 +48,11 @@ def package_file(rel: str) -> Path:
 
 def runtime_path() -> Path:
     return package_file(f"runtime/{RUNTIME_FILE}")
+
+
+def probe_path() -> Path:
+    """The recorder's instrumentation, which `media/browser.py` injects and no project ever holds."""
+    return package_file(f"runtime/{PROBE_FILE}")
 
 
 def katex_dir() -> Path:

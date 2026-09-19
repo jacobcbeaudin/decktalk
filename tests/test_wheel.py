@@ -85,6 +85,7 @@ def test_the_package_ships_what_the_scaffold_and_the_stages_need(entries):
     package = set(entries)
     assert "decktalk/py.typed" in package
     assert "decktalk/runtime/decktalk-runtime.js" in package
+    assert "decktalk/runtime/decktalk-probe.js" in package
     assert {"decktalk/katex/katex.min.js", "decktalk/katex/katex.min.css", "decktalk/katex/LICENSE"} <= package
     assert len([n for n in package if n.startswith("decktalk/katex/fonts/")]) == 20
     assert "decktalk/template/deck/index.html" in package and "decktalk/template/decktalk.toml" in package

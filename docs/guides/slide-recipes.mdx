@@ -16,22 +16,21 @@ slide, such as a derivation or a code block.
 ## Before you start
 
 Each recipe is one section, shown as four files: `script.md`, `decktalk.toml`, `cues.json`, and
-`deck/index.html`. The recipes use section numbers 7 to 12, which the scaffold does not use. Each
-`<style>` block defines the classes that its recipe needs. The recipes also use the scaffold's
-`.slide` and `.eyebrow` classes and its color and font variables.
+`deck/index.html`. The recipes use section numbers 7 to 12, which the starter does not use. Each
+`<style>` block defines the classes that its recipe needs. The recipes also use the starter's
+`.eyebrow` class and its color and font variables.
 
 To add a recipe to a project, follow these steps:
 
 1. Paste the `script.md` lines after the last section of the script.
 2. Paste the `[[section]]` table after the last `[[section]]` in `decktalk.toml`.
 3. Paste the `cues.json` entry inside the `sections` object.
-4. Paste the `<style>` and `<script>` blocks into `deck/index.html`, after the `decktalk-runtime.js` tag.
+4. Paste the `<style>` block into the page's `<style>`, and the scene markup into `<body>`.
 5. If the section number is already in use, change it in all four files.
 
 ## Sync a subtitle to the voice
 
-An element with `data-text="spoken"` shows its words one at a time, as the voice says them. The scaffold's
-edit section uses it for its caption.
+An element with `data-text="spoken"` shows its words one at a time, as the voice says them.
 
 <CodeGroup>
 ```md script.md
@@ -64,7 +63,7 @@ scene = 7
 <script>
 DeckTalk.scene(7, { name: "The idea", slides: [
   { id: "7.1", hold: 10, preview: { "7.1a": 1, "7.1b": 3.5, "7.1c": 6 }, render: () => `
-    <div class="slide">
+    <div>
       <p class="eyebrow">The idea</p>
       <div class="stack">
         <p class="line" data-cue="7.1a" data-text="spoken">Write the script.</p>
@@ -85,11 +84,12 @@ the script word for word. If a line differs by one word, it appears whole, and t
 ## Show a derivation line by line
 
 Each line of the derivation is its own element with its own cue. `data-tex-display` typesets it as
-display math, and the answer uses `pop` so it stands out. The scaffold's `deck/index.html` loads
-KaTeX.
+display math, and the answer uses `pop` so it stands out. The starter's `deck/index.html` loads
+KaTeX from the copy `decktalk init` put beside it.
 
-<Warning>Inside the backticks of `render`, write every backslash twice. A single backslash breaks
-the TeX or blanks the page ([`data-tex`](/reference/runtime#data-tex)).</Warning>
+<Warning>Inside the backticks of a `render` function, write every backslash twice, because a single
+backslash breaks the TeX or blanks the page. In markup a backslash is written once, which is the
+reason this recipe is a `<template data-slide>` ([`data-tex`](/reference/runtime#data-tex)).</Warning>
 
 <CodeGroup>
 ```md script.md
@@ -118,28 +118,28 @@ scene = 8
 <style>
   .derivation { position: absolute; left: 120px; top: 300px; display: flex; flex-direction: column; gap: 56px; }
   .math { margin: 0; font-size: 58px; color: var(--ink); }
-  .math .katex-display { margin: 0; text-align: left; }
+  .math .katex-display { margin: 0; }
+  .math .katex-display > .katex { text-align: left; }
   .answer { color: var(--accent); }
 </style>
-<script>
-DeckTalk.scene(8, { name: "The derivative of x squared", slides: [
-  { id: "8.1", hold: 14, preview: { "8.1a": 1, "8.1b": 5, "8.1c": 9 }, render: () => `
-    <div class="slide">
-      <div class="derivation">
-        <p class="math" data-cue="8.1a" data-tex-display
-           data-tex="\\frac{d}{dx}\\,x^2 = \\lim_{h \\to 0} \\frac{(x+h)^2 - x^2}{h}">d/dx x^2 = lim (x+h)^2 - x^2 / h</p>
-        <p class="math" data-cue="8.1b" data-tex-display
-           data-tex="= \\lim_{h \\to 0} \\frac{2xh + h^2}{h} = \\lim_{h \\to 0} (2x + h)">= lim (2xh + h^2) / h = lim (2x + h)</p>
-        <p class="math answer" data-cue="8.1c" data-reveal="pop" data-tex-display
-           data-tex="\\frac{d}{dx}\\,x^2 = 2x">d/dx x^2 = 2x</p>
-      </div>
-    </div>` },
-]});
-</script>
+<div data-scene="8" data-name="The derivative of x squared">
+  <template data-slide="8.1" data-hold="14" data-preview="8.1a@1 8.1b@5 8.1c@9">
+    <div class="derivation">
+      <p class="math" data-cue="8.1a" data-tex-display
+         data-tex="\frac{d}{dx}\,x^2 = \lim_{h \to 0} \frac{(x+h)^2 - x^2}{h}">(d/dx) of x^2 = the limit as h goes to 0 of ((x+h)^2 - x^2) / h</p>
+      <p class="math" data-cue="8.1b" data-tex-display
+         data-tex="= \lim_{h \to 0} \frac{2xh + h^2}{h} = \lim_{h \to 0} (2x + h)">= the limit of (2xh + h^2) / h = the limit of (2x + h)</p>
+      <p class="math answer" data-cue="8.1c" data-reveal="pop" data-tex-display
+         data-tex="\frac{d}{dx}\,x^2 = 2x">(d/dx) of x^2 = 2x</p>
+    </div>
+  </template>
+</div>
 ```
 </CodeGroup>
 
 The plain text inside each element shows when KaTeX is absent, so write it as a readable fallback.
+In markup a backslash is written once. A slide built by a `render` function is a JavaScript string,
+where every backslash has to be written twice, which is the reason to prefer a `<template>`.
 
 ## Show a chat before and after
 
@@ -184,12 +184,12 @@ scene = 9
   .bubble { max-width: 1100px; padding: 28px 40px; border-radius: 24px; font: 450 36px/1.4 var(--sans); }
   .bubble p { margin: 0 0 12px; }
   .ask { align-self: flex-end; background: var(--accent); color: var(--ground); }
-  .reply { align-self: flex-start; background: var(--block); color: var(--ink); }
+  .reply { align-self: flex-start; background: #f4f4f5; color: var(--ink); }
 </style>
 <script>
 DeckTalk.scene(9, { name: "Before and after", slides: [
   { id: "9.1", hold: 12, preview: { "9.1ask": 1, "9.1r1": 5, "9.1r2": 7 }, render: () => `
-    <div class="slide">
+    <div>
       <p class="eyebrow">Before</p>
       <div class="chat">
         <div class="bubble ask" data-cue="9.1ask" data-text="type 40ms" data-reveal="fade">Write about photosynthesis.</div>
@@ -200,7 +200,7 @@ DeckTalk.scene(9, { name: "Before and after", slides: [
       </div>
     </div>` },
   { id: "9.2", hold: 12, preview: { "9.2ask": 1, "9.2reply": 6 }, render: () => `
-    <div class="slide">
+    <div>
       <p class="eyebrow">After</p>
       <div class="chat">
         <div class="bubble ask" data-cue="9.2ask" data-text="type 30ms" data-reveal="fade">Explain photosynthesis to a ninth grader in three sentences.</div>
@@ -245,13 +245,13 @@ scene = 10
 
 ```html deck/index.html
 <style>
-  .code { position: absolute; left: 120px; top: 360px; font: 500 40px/1.5 var(--mono); white-space: pre; color: var(--ink); background: var(--block); border-radius: 24px; padding: 40px 56px; }
+  .code { position: absolute; left: 120px; top: 360px; font: 500 40px/1.5 var(--mono); white-space: pre; color: var(--ink); background: #f4f4f5; border-radius: 24px; padding: 40px 56px; }
   .code .cmt { color: var(--mute); }
 </style>
 <script>
 DeckTalk.scene(10, { name: "Three commands", slides: [
   { id: "10.1", hold: 10, preview: { "10.1a": 1, "10.1b": 4, "10.1c": 7 }, render: () => `
-    <div class="slide">
+    <div>
       <div class="code"><div data-cue="10.1a" data-reveal="fade">decktalk init my-lesson</div><div data-cue="10.1b" data-reveal="fade">decktalk build --no-voice   <span class="cmt"># no key</span></div><div data-cue="10.1c" data-reveal="fade">decktalk build</div></div>
     </div>` },
 ]});
@@ -293,8 +293,8 @@ scene = 11
 ```html deck/index.html
 <style>
   .cols { position: absolute; left: 120px; right: 120px; top: 300px; display: flex; gap: 48px; }
-  .pane { flex: 1; background: var(--block); border-radius: 24px; padding: 48px; min-height: 520px; }
-  .pane h2 { margin: 0 0 24px; font: 600 56px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); }
+  .pane { flex: 1; background: #f4f4f5; border-radius: 24px; padding: 48px; min-height: 520px; }
+  .pane h2 { margin: 0 0 24px; font: 600 56px/1.1 var(--sans); letter-spacing: -.02em; color: var(--ink); }
   .pane .line { margin: 0 0 16px; font: 450 36px/1.4 var(--sans); color: var(--ink); }
   .pane .caption { margin: 0; font: 450 30px/1.4 var(--sans); color: var(--mute); }
   .pane .accent { color: var(--accent); }
@@ -302,7 +302,7 @@ scene = 11
 <script>
 DeckTalk.scene(11, { name: "Two ways to time a reveal", slides: [
   { id: "11.1", hold: 12, preview: { "11.1left": 1, "11.1right": 6 }, render: () => `
-    <div class="slide">
+    <div>
       <div class="cols">
         <div class="pane" data-cue="11.1left">
           <h2>A timeline editor</h2>
@@ -357,7 +357,7 @@ scene = 12
 <script>
 DeckTalk.scene(12, { name: "The status report", slides: [
   { id: "12.1", hold: 10, preview: { "12.1screenshot": 0.5, "12.1note": 5 }, render: () => `
-    <div class="slide">
+    <div>
       <img class="screenshot" src="../media/status.png" alt="" data-cue="12.1screenshot" data-reveal="fade">
       <p class="note" data-cue="12.1note">Captions and chapters sit beside the video.</p>
     </div>` },

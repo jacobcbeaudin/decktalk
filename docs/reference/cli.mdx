@@ -226,7 +226,7 @@ measures once the reveal has settled, with a control of 0. The verdicts use the 
 - A freeze fires a slide's cues in preview order. When the cue times run in another order, the row notes that
   the frames may differ from the recording.
 - The estimate sees no motion, no camera push, and no close neighbor cue. `verify` measures those on the final mp4.
-- The frames need `catalog[].cues` and `&before=` from [the runtime](/reference/runtime#url-parameters).
+- The frames need `catalog[].cues` from [the runtime](/reference/runtime#url-parameters) and `&before=`, which DeckTalk injects.
 - Every warning the runtime records while the frames are drawn is a finding too, so `KATEX ERROR` and `KATEX NOT LOADED` are caught here, before a single second is voiced. `--json` lists them under `warnings`.
 
 | Exit | When |
