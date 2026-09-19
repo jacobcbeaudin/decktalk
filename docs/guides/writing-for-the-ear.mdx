@@ -5,7 +5,7 @@ description: Write a narration script that gives every reveal a word to start on
 
 This guide shows how to write a script that gives each reveal a word to start on. Read it before you design slides, and again when a reveal feels early or late.
 
-DeckTalk times every reveal from the spoken words, so the script sets the timing. The advice below comes from building the scaffold and from watching where reveals felt early or late.
+DeckTalk times every reveal from the spoken words, so the script sets the timing. The advice below comes from building DeckTalk's own films and from watching where reveals felt early or late.
 
 ## Write the script first
 
@@ -28,7 +28,7 @@ A cue time is the start of the first word of the cue phrase. Begin the phrase wi
 { "cue": "3.4steps", "on": "steps downhill" }
 ```
 
-This cue starts on "steps", a verb, and the ball takes its first step as the word is said. A phrase such as "and then" names nothing on the slide. The scaffold's cue phrases are nouns or verbs that name something visible, such as `box of knobs`, `guesses`, `steps downhill`, `tensors`, and `Open source`.
+This cue starts on "steps", a verb, and the ball takes its first step as the word is said. A phrase such as "and then" names nothing on the slide. The starter's cue phrases are nouns that name something visible, such as `This is DeckTalk`, `what you will say`, `the slides`, `the formula`, and `in code`.
 
 ## Give each idea one reveal
 
@@ -49,16 +49,16 @@ A short silence before a reveal makes the reveal feel like an event. Three kinds
 | `[pause N]` | a `<break time="Ns" />` tag | Use it where you want the audience to stop and think. |
 | Any other text in square brackets | a dash, the same as `[beat]` | Use it as a note to yourself. It also makes a beat. |
 
-The scaffold's lesson puts a beat before each slide size, so each path starts as its own event:
+The starter puts a beat before each card, so each one arrives as its own event:
 
 ```md script.md
-[pause 1] One setting makes every slide longer or shorter. [beat]
-Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
+This is DeckTalk. [beat] You write what you will say, [beat] and you write the slides that go with it.
+[beat] Then every picture waits for its own word.
 ```
 
 Only a timed pause sends a break tag, because frequent break tags make the voice less steady. Use timed pauses sparingly. Back-to-back directions do not add up, and the longest pause wins. [script.md](/reference/script-md) lists every direction rule.
 
-DeckTalk adds silence before the first section and after the last word of each section. A script never needs a pause at either end.
+DeckTalk adds silence before the first word and after the last word of every section, so the picture changes before the voice speaks. A script never needs a pause at either end.
 
 ## Shift a reveal with the offset key
 
@@ -76,19 +76,19 @@ The offset key moves a cue time by a number of seconds. A positive offset key mo
 - **A positive offset key, 0.1 to 0.2 s.** The reveal comes just after the word starts, while the word is still spoken. This feels like the narrator pointing at something. The example above moves the ball's first step 0.2 s after the start of "steps".
 - **A negative offset key.** Use it only when the audience must read along, such as a line of code that the voice reads out. The text must be on screen before its first word is spoken.
 
-The scaffold's cues have no offset key, so every reveal in the scaffold starts on its word.
+The starter's cues have no offset key, so every reveal in a new project starts on its word.
 
 ## Close a section on $end
 
 The last reveal of a section can use `$end` as its cue phrase. `$end` is the end of the section's last spoken word, so a summary line appears as the voice stops.
 
-To keep a section's last frame on screen after its narration ends, set `hold_seconds` on that page section. To open a section on silence, set `lead_seconds`. [cues.json](/reference/cues-json) documents `$start` and `$end`.
+To keep a section's last frame on screen after its narration ends, set `hold_seconds` on that page section. To open a section on a longer or a shorter silence, set its `lead_seconds`. [cues.json](/reference/cues-json) documents `$start` and `$end`.
 
 ## Write numbers as words
 
 Write numbers, symbols, and abbreviations the way the voice must say them. A cue phrase must match the spoken words, and the voice can say digits in more than one way.
 
-For example, write "two x" in the script and show `2x` on the slide. The scaffold's script says "decktalk dot AI", and the slide shows decktalk.ai.
+For example, write "two x" in the script and show `2x` on the slide. The starter's script says "decktalk dot AI", and its end card shows decktalk.ai. `decktalk narrate` reports a section whose spoken text still holds a digit or a symbol as `SPOKEN SYMBOL?`, an uncertain finding.
 
 ## Rehearse with a build without voice
 
@@ -112,26 +112,25 @@ A time budget is a time range after a dash in a section heading. `decktalk narra
 ## 3. How AI learns — 0:40 to 1:40
 ```
 
-This table comes from `decktalk narrate --dry-run` on the scaffold with that heading. The dry run calls no API.
+This table comes from `decktalk narrate --dry-run` on the starter, with the section from
+[Your first deck](/guides/first-deck) added and its heading budgeted `— 0:20 to 0:30`. The dry run calls no API.
 
-{/* sample: decktalk narrate --dry-run, scaffold with "## 3. How AI learns — 0:40 to 1:40" (table only) */}
+{/* sample: decktalk narrate --dry-run, starter plus the first-deck section headed "## 4. Gradient descent — 0:20 to 0:30" (table only) */}
 ```text
  #  section                words    est  target  actual  placeholders
 ---------------------------------------------------------------------
- 1  open                      29   0:12    --      --    -
- 2  how-it-works              40   0:17    --      --    -
- 3  how-ai-learns            285   2:02    1:00    --    -
- 4  the-edit                  27   0:12    --      --    -
- 6  the-edit                  40   0:17    --      --    -
- 8  the-edit                  27   0:12    --      --    -
- 9  close                     25   0:11    --      --    -
+ 1  open                      26   0:11    --      --    -
+ 2  how-it-works              30   0:13    --      --    -
+ 3  close                     25   0:11    --      --    -
+ 4  gradient-descent         100   0:43    0:10    --    -
 ---------------------------------------------------------------------
-    total                    473   3:23            --
+    total                    181   1:18            --
 ```
 
-- `target` is the length of the budget, one minute for section 3.
-- `est` paces the words at `words_per_minute` (140). Section 3 estimates 2:02, so it runs past its budget.
+- `target` is the length of the budget, ten seconds for section 4.
+- `est` paces the words at `words_per_minute` (140). Section 4 estimates 0:43, so it runs far past its budget.
 - `actual` fills in after a voiced build.
+- A section with no budget in its heading reads `--` in both columns.
 
 If `est` is longer than `target`, delete a sentence. Widen the budget only after a voiced build fills the `actual` column.
 

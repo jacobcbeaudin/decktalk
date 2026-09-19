@@ -3,9 +3,9 @@ title: Put a sound effect on a cue
 description: Play a one-shot sound effect that starts on a spoken cue.
 ---
 
-This guide plays a one-shot sound effect on a cue. The sound starts on a spoken word. Use it when you want a sound to mark a reveal, such as a click when the ball takes its first step.
+This guide plays a one-shot sound effect on a cue. The sound starts on a spoken word. Use it when you want a sound to mark a reveal, such as a click as a card lands.
 
-The example puts a click on `1.1one`, the cue in section 1 where the ball takes its first step down the bowl. The scaffold's `decktalk.toml` has the same example in comments.
+The example puts a click on `1.1word`, the cue in the starter's section 1 where the closing band appears. The starter ships no `[soundscape]` or `[[mix.sfx]]` tables, so every table below is one you add.
 
 ## Before you start
 
@@ -34,8 +34,9 @@ The example puts a click on `1.1one`, the cue in section 1 where the ball takes 
     decktalk soundscape --dry-run tick
     ```
 
-    {/* sample: decktalk soundscape --dry-run tick, scaffold with [soundscape.sfx.tick] uncommented */}
+    {/* sample: decktalk soundscape --dry-run tick, starter with the [soundscape.sfx.tick] table above */}
     ```text
+    items 1, generated 0
     == tick -> ~/my-lesson/build/sfx/tick.mp3  [planned]
        POST https://api.elevenlabs.io/v1/sound-generation
        {'text': 'soft interface click, single, short, no reverb', 'duration_seconds': 0.5, 'prompt_influence': 0.5, 'model_id': 'eleven_text_to_sound_v2'}
@@ -61,12 +62,14 @@ The example puts a click on `1.1one`, the cue in section 1 where the ball takes 
     [[mix.sfx]]
     file = "build/sfx/tick.mp3"
     section = 1
-    cue = "1.1one"
+    cue = "1.1word"
     db = -16
+    caption = "soft click"
     ```
 
     - `db` sets the level of the effect. The default is -16.
     - `offset` moves the effect by a number of seconds. The default is 0.
+    - `caption` is the line a caption reader sees when the sound plays. Without it the sound is in the video and in no caption. [Accessible video](/guides/accessible-video#captions-that-carry-the-sound-not-only-the-speech) explains why it matters.
 
     DeckTalk places the effect at the section's start in the final video, plus the cue time, plus `offset`.
   </Step>
@@ -80,9 +83,9 @@ The example puts a click on `1.1one`, the cue in section 1 where the ball takes 
 
     If the file is missing, or the cue did not resolve, `assemble` prints a warning and skips the effect. The video still builds.
 
-    {/* sample: decktalk assemble, build without voice of the scaffold with the [[mix.sfx]] table above and no tick.mp3 (one line) */}
+    {/* sample: decktalk assemble, build without voice of the starter with the [[mix.sfx]] table above and no tick.mp3 (one line) */}
     ```text
-    sfx build/sfx/tick.mp3 missing; skipped
+    sfx build/sfx/tick.mp3 is missing, so it is skipped
     ```
   </Step>
 </Steps>

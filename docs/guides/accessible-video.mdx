@@ -14,11 +14,12 @@ see what arrives free, what is yours to write and how to check the result.
 |---|---|
 | `build/out/<name>.srt` and `build/out/<name>.vtt` | The captions, cut from the words the voice actually said, keeping the script's punctuation and case. |
 | `build/out/<name>.chapters.txt` | One chapter per section, named by the section's `chapter` value, which defaults to its script heading. |
-| `build/out/<name>-transcript.html` | The transcript page, with one heading per chapter, the spoken text and each section's still. |
+| `build/out/<name>-transcript.html` | The transcript page, with one heading per chapter, the section's span in the video, the spoken text, and a list of the reveals with their seconds. |
 
-Set `language` in the `[project]` table to the language tag of the narration, such as `en`. The
-captions, the transcript and the subtitle track all read that one value, so the tag cannot disagree
-with itself.
+Set `language` in the `[project]` table to the language tag of the narration, such as `en`, which is
+the default. The transcript page takes it as its `lang` attribute, and the mp4's audio and video
+streams are tagged with its three-letter form, so a player names the audio from the project's own
+key. One value reaches everything a viewer picks from, and the tag cannot disagree with itself.
 
 ## Captions that carry the sound, not only the speech
 
@@ -36,21 +37,23 @@ cue = "2.1ball"
 caption = "ball bounces"
 ```
 
-The music bed earns one entry the same way. `decktalk preflight` raises an uncertain finding for a
-sound with no caption, so a missing line is reported rather than forgotten. Run it with `--strict`
-to make that finding fail.
+A sound with no `caption` string is left out of the captions, and `assemble` reports it as
+`NO CAPTION?` on every run. It is uncertain, so it costs exit 1 only under `--strict`, and the row
+names the cue, which is how to find the `[[mix.sfx]]` table to give a line to.
 
 A caption stays on screen for at least one second, except where a longer stay would overlap the cue
-after it, so a one-word caption never flashes past.
+after it, so a one-word caption never flashes past. Two captions are never on screen at once,
+because a sound that lands inside a speech cue joins that caption as a line of its own.
 
 ## The transcript, and the describe attribute
 
 The transcript page is the media alternative for a viewer who cannot see the video. Out of the box
-it carries the spoken text and one still per section, which tells a reader what was said and
-roughly what was on screen.
+it carries the spoken text of every section, under one heading per chapter, with the section's span
+in the finished video.
 
-What it cannot guess is what a reveal meant. Write that yourself, one sentence per reveal, in a
-`data-describe` attribute beside the cue.
+What it cannot carry is what a reveal meant, because nothing but you knows. Write that yourself, one
+sentence per reveal, in a `data-describe` attribute beside the cue. Every reveal that has one gets a
+line under its section, with the second it fired.
 
 ```html
 <figure data-cue="3.2error" data-reveal="draw"
@@ -59,7 +62,8 @@ What it cannot guess is what a reveal meant. Write that yourself, one sentence p
 
 The transcript prints those sentences in cue order under their section, so a reader gets the
 diagram as prose. A described audio track can voice the same strings later, which is the second
-reason to write them as full sentences rather than as labels.
+reason to write them as full sentences rather than as labels. The starter writes one on every cued
+element, so a first project's transcript already reads end to end.
 
 Describe the reveals that carry meaning. A decorative flourish needs no sentence, and a description
 of one only makes the transcript harder to read.
@@ -67,8 +71,11 @@ of one only makes the transcript harder to read.
 ## What the author still owes
 
 - **Keep cued elements out of the caption band.** A player draws captions across the bottom of the
-  frame, so anything in the bottom fifteen percent can be covered at the moment it appears. The
-  static page scan raises an uncertain finding when a cued element's box sits in that band.
+  frame, so anything in the bottom fifteen percent, which is 162 px of a 1080 px frame, can be
+  covered at the moment it appears. `preflight` reads the measured boxes and reports one as
+  `IN CAPTION BAND?`, which is uncertain because a deck may put something there on purpose, so
+  `--strict` is how a project says the band is reserved.
+  [Design a slide](/guides/design-a-slide#make-each-reveal-big-enough-to-measure) gives the numbers.
 - **Change lightness, not only hue.** `decktalk verify` compares luma alone, so a reveal that
   changes colour without changing lightness fails the check and also fails a viewer with low vision.
 - **Give an image its alt text.** A slide image is ordinary HTML, and nothing writes its `alt`
@@ -88,12 +95,13 @@ of one only makes the transcript harder to read.
     at the wrong moment.
   </Step>
   <Step title="Fail on the uncertain findings too">
-    `decktalk preflight --strict` turns a sound with no caption and a cued element in the caption
-    band into failures rather than notes.
+    `decktalk preflight --strict` and `decktalk verify --strict` turn an uncertain finding, such as a
+    reveal too thin to measure, into a failure rather than a note. A thin reveal is one a viewer with
+    low vision is likeliest to miss.
   </Step>
   <Step title="Read the transcript page">
-    Open `build/out/<name>-transcript.html` and read it with the video closed. If a section makes no
-    sense, that section needs a `data-describe` sentence.
+    Open `build/out/<name>-transcript.html` and read it with the video closed. A section whose list of
+    reveals is short or missing is a section whose page needs `data-describe` sentences.
   </Step>
   <Step title="Watch it with the sound off">
     Play the video with the captions on and the sound off. Anything you learn only from the audio is

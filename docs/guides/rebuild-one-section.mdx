@@ -27,7 +27,8 @@ Find your edit in the first column. `N` is the number of the section you changed
 | A sentence in section N of `script.md` | `decktalk build --only N` |
 | The title in the heading of section N | `decktalk build --only N` |
 | A cue of section N in `cues.json` | `decktalk build --only N` |
-| A slide in a page | `decktalk build` with one `--only N` for each section that plays the changed scene, such as `decktalk build --only 1 --only 9` |
+| A slide in the scene that section N plays | `decktalk build --only N`, with one `--only` for each section that plays that scene |
+| The head, a style, a script or the runtime file of a page | `decktalk build` with one `--only N` for each section that plays that page, such as `decktalk build --only 1 --only 9`, because those parts sit outside every scene and reach all of them |
 | `record_margin_seconds` on section N | `decktalk build --only N` |
 | `lead_seconds` or `tail_seconds` on section N | `decktalk build --only N` |
 | The voice id, the model, the output format, or a `[voice]` setting | `decktalk build` |
@@ -36,11 +37,11 @@ Find your edit in the first column. `N` is the number of the section you changed
 After a build without voice, add `--no-voice` to each `decktalk build` command.
 
 A page can show the words of the section before it, which it reads from
-[`prevwords`](/reference/runtime#url-parameters). The scaffold's scene 2 opens on the Open's last frame with
-the Open's count times. So after an edit to section 1, record section 2 as well.
+[`prevwords`](/reference/runtime#url-parameters). The starter's pages do not, but a page of yours that opens on
+the previous section's last frame does. After an edit to section 1, record such a section 2 as well.
 
 ```console
-decktalk build --only 1 --only 2
+decktalk build --only 1,2
 ```
 
 <Frame caption="After an edit to section 1, only section 1 is voiced again, and --only 1 records only section 1.">
@@ -57,9 +58,10 @@ The next table gives the reason for each row of the first table.
 | A sentence in section N | section N | section N | The cache key includes the exact text of the section. |
 | The heading title of section N | none | none | A take is named by its content hash, so the heading is display only. |
 | A cue of section N | none | section N | The page receives its cue times when `record` opens it. |
-| A slide | none | each section that plays the scene | A recording captures the page as it was. |
+| A slide in the scene that section N plays | none | section N | The hash covers that one scene's markup, so no other section of the page moves. |
+| The head, a style, a script or the runtime file of a page | none | each section that plays the page | Those parts are shared by every scene, so the hash of every section of that page moves. |
 | `record_margin_seconds` on section N | none | section N | The recording length changes. |
-| `lead_seconds` or `tail_seconds` on section N | none | section N | The section span changes. `narrate` adds the silence without a request. |
+| `lead_seconds` or `tail_seconds` on section N | none | section N | The section span changes. `narrate` places the silence without a request. |
 | The voice id, model, output format, or a `[voice]` setting | every section | every section | The cache key includes each of them, so every word time moves. |
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | none | none | Only `assemble` reads them. |
 
@@ -84,8 +86,9 @@ The hash leaves out the text of the neighbor sections, so an edit never voices a
 
 The hash also leaves out the section number and the heading. Inserting a section, renumbering one, or
 retitling one moves no file and voices nothing, and two sections with the same words share one take. No
-silence is inside a take: `lead_seconds` and `opening_silence_seconds` are joined in when the takes are
-joined, so even the first spoken section's take is free to move.
+silence DeckTalk adds is inside a take: every section's lead and tail are placed when the takes are joined,
+from the take and that section's own keys alone, so a take is free to move and a section reused beside an
+edited one lands exactly where it did.
 
 Set [`[narration] cache_dir`](/reference/configuration#narration) to keep the take files outside `build/`,
 where a fresh clone and a second worktree find them again. A hash names each one, so several projects may
@@ -93,17 +96,47 @@ share one such directory. The take index and `narration.mp3` stay under `build/n
 belong to one project.
 
 A section that is voiced again costs the characters of its whole text, not only the changed sentence.
-[Requirements](/requirements#what-spends-credits) lists every command that spends credits. The `record`
-stage has no cache, so `--only` is the way to keep a recording.
+[Requirements](/requirements#what-spends-credits) lists every command that spends credits.
+
+## The recording cache
+
+`record` has a cache of its own, and it needs no flag. The recording log of each section carries
+`input_hash`, the digest of the markup of the one scene the section plays, the rest of its page file,
+its cues, its spoken words, the frame geometry and every local file the page loaded, which the log
+lists under `assets`. A section whose hash has not moved keeps its webm and is not recorded again.
+
+The scene is the `[data-scene]` element the section plays, read from the page source as you wrote it,
+so no browser has to open for a run to know which recordings still stand. A page that builds its
+scenes in script instead, with `DeckTalk.scene(N, …)`, has no such element to cut out, so every
+section of that page is keyed on the whole file. A section you leave out of `--only` whose scene or
+whose shared page did move is reported as `INCONSISTENT`, and the film keeps the recording made
+before the edit.
+
+{/* sample: decktalk record on a starter that was just built */}
+```text
+[rec ] section 01  kept: its scene, the page around it, its assets, words and cues are unchanged
+[rec ] section 02  kept: its scene, the page around it, its assets, words and cues are unchanged
+[rec ] section 03  kept: its scene, the page around it, its assets, words and cues are unchanged
+sections 3, recorded 0, kept 3
+```
+
+So a plain `decktalk build` records only what changed. `--only` is for the other direction: it records
+the sections you name whether they changed or not, which is how you take a bad recording again.
 
 ## Limit a build to some sections
 
-Pass `--only` with a section number. Repeat the flag for more sections, because it does not take commas.
+Pass `--only` with a section number. It also takes a comma list and a range, and the flag repeats, so these four
+lines name the same kind of thing.
 
 ```console
 decktalk build --only 3
+decktalk build --only 3,6
+decktalk build --only 7-9
 decktalk build --only 3 --only 6
 ```
+
+`--only` means the same on every command that works per section, which is `build`, `narrate`, `record`,
+`preflight`, `verify` and `words`.
 
 The flag limits `record` to the sections you name, and records them whether or not they changed. Without it, `record` keeps every section whose scene, shared page, loaded files, words and cues are unchanged. The other stages still work on
 every section:
@@ -156,7 +189,7 @@ decktalk narrate                   # add --no-voice if the last build had no voi
 decktalk align
 decktalk record --only 3
 decktalk assemble
-decktalk verify 3:3.3height
+decktalk verify --only 3
 ```
 
 Some edits need fewer commands.
@@ -188,7 +221,8 @@ build would then voice those sections again and spend credits on them. So a `nar
 stops when a section it was asked to write already holds a paid take, and it writes nothing.
 
 ```text
-error: build/narration/takes.json holds paid takes for section(s) 01. A run without voice would replace them in the take index, so the next voiced build would voice them again and spend credits on all of them. Rehearse the sections nobody has paid for: --only 4 --only 6 --only 8 --only 9.
+error[CONFIG]: build/narration/takes.json holds paid takes for section(s) 01, and a run without voice would replace them in the take index, so the next voiced build would voice them again and spend credits on all of them.
+  hint: Rehearse the sections nobody has paid for: --only 2 --only 3.
 ```
 
 The refusal is scoped to the sections the run was asked to write, so a film you have already paid for still

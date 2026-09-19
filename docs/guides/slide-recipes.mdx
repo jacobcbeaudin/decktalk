@@ -225,7 +225,7 @@ wrong on code.
 ## 10. Three commands
 
 Three commands run the whole thing. [beat] Initialize a project. [beat] Build it
-silently, with no key. [beat] Then build it with your voice.
+without voice, with no key. [beat] Then build it with your voice.
 ```
 
 ```toml decktalk.toml
@@ -238,7 +238,7 @@ scene = 10
 ```json cues.json
 "10": { "cues": [
   { "cue": "10.1a", "on": "Initialize" },
-  { "cue": "10.1b", "on": "silently" },
+  { "cue": "10.1b", "on": "without voice" },
   { "cue": "10.1c", "on": "your voice" }
 ] }
 ```
@@ -323,9 +323,9 @@ DeckTalk.scene(11, { name: "Two ways to time a reveal", slides: [
 
 ## Wait for a screenshot to load
 
-The recorder starts the clock only after `window.__decktalk.ready` resolves. This recipe adds the
-decode of a large image to that wait, so the image is ready before narration t=0. The recipe
-extends the runtime's own wait, so the KaTeX wait still applies.
+The recorder starts the clock only after `window.__decktalk.ready` resolves. This recipe hands the
+decode of a large image to `DeckTalk.waitFor`, so the image is ready before narration t=0. `waitFor`
+adds a condition to the runtime's own wait rather than replacing it, so the KaTeX wait still applies.
 
 <CodeGroup>
 ```md script.md
@@ -364,18 +364,16 @@ DeckTalk.scene(12, { name: "The status report", slides: [
 ]});
 
 // Narration t=0 also waits until the screenshot has decoded.
-document.addEventListener("DOMContentLoaded", () => {
-  const image = new Image();
-  image.src = "../media/status.png";
-  const decoded = image.decode().catch(() => {});
-  window.__decktalk.ready = Promise.all([window.__decktalk.ready, decoded]).then(([ready]) => ready);
-});
+const image = new Image();
+image.src = "../media/status.png";
+DeckTalk.waitFor(image.decode());
 </script>
 ```
 </CodeGroup>
 
-The listener runs after the runtime's own `DOMContentLoaded` listener, so `window.__decktalk.ready`
-already holds the runtime's Promise. [`window.__decktalk.ready`](/reference/runtime#window-__decktalk-ready)
+`DeckTalk.waitFor` takes a Promise and holds narration t=0 until it settles. A Promise that rejects,
+or one that has not settled after five seconds, becomes a page warning and the recording goes ahead,
+so a missing image never hangs a build. [`window.__decktalk.ready`](/reference/runtime#window-__decktalk-ready)
 explains the default wait.
 
 ## Next

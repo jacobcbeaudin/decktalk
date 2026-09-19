@@ -63,47 +63,62 @@ Each command exits 1 on a different set of problems.
 
 | Command | Exits 1 on | Does not catch |
 |---|---|---|
-| `decktalk build` | an error, `PAGE ERROR`, a cue phrase that is not found, an unknown cue id, an uncued element, `BLACK`, `SPEECH AT CUT` | `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, `SPOKEN SYMBOL?`, every cue result |
-| `decktalk record` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`, `KATEX ERROR`, `KATEX NOT LOADED` | `BLACK?`, unless you pass `--strict` |
+| `decktalk build` | `PAGE ERROR`, `BLACK`, `SPEECH AT CUT` | `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, `SPOKEN SYMBOL?`, every cue result |
+| `decktalk align` | `UNRESOLVED`, `UNCUED ELEMENT`, an unknown cue id | anything about the pages or the video |
+| `decktalk record` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`, `KATEX ERROR`, `KATEX NOT LOADED`, `CDN ASSET` | `BLACK?`, unless you pass `--strict` |
 | `decktalk verify` | `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED` | a `skipped` row, such as a cue marked `"verify": false` |
+| `decktalk status` | a missing or unreadable input file, and two input files that disagree | anything the build wrote |
 | `decktalk doctor` | a missing tool | nothing about the project itself |
-| `decktalk preflight` | an unfilled placeholder, `UNRESOLVED`, `UNKNOWN CUE`, `UNCUED ELEMENT`, `NO CHANGE`, and `POP AT CUT` in frozen frames, before any recording | motion, timing, and every check on the final mp4 |
+| `decktalk preflight` | an unfilled placeholder, `UNRESOLVED`, `UNCUED ELEMENT`, `OFF STAGE`, and `PAGE ERROR`, `NO CHANGE` or `POP AT CUT` in frozen frames, before any recording | motion, timing, and every check on the final mp4. `IN CAPTION BAND?` and `CUES OVERLAP?` are reported and cost exit 1 only with `--strict` |
+
+A cue phrase that is not found and a cue id that no page carries stop `build` as errors rather than
+findings, so those two exit 3 there. `decktalk align` reports both as findings and exits 1.
 
 A build without voice puts a click at every word start, so `verify` also reports an
 [a/v value](/reference/verify#the-a/v-value) for each cue. The job fails when an a/v value is past
 `max_av_frames`, which is three frames at the defaults. A build without voice therefore tests the recording, the cut,
 and the mix, not only the cues.
 
-`build --strict` fails on a missing clip, unless the clip section sets `optional = true`. With `--no-voice`, it
-cannot fail on loudness, because a build without voice skips the loudness pass.
+`build --strict` stops on a missing clip, unless the clip section sets `optional = true`. That one is an error
+rather than a finding, so it exits 3. With `--no-voice`, a build cannot fail on loudness at all, because a build
+without voice skips the loudness pass.
 
 ## Fail the job on a bad video
 
-`status`, `align`, `record`, `verify`, and `doctor` share one exit rule. Use their exit codes as the assertions of
-a job.
+Every command shares one exit rule. Use the exit codes as the assertions of a job.
 
-- A certain finding, such as `OFF CUE` or `TRUNCATED`, exits 1.
-- An uncertain finding ends in `?`, such as `BLACK?` on a slide that is dark on purpose, or `SPOKEN SYMBOL?`
-  on a script line that writes a number as digits. It exits 1 only with
-  `--strict`.
-- An error always exits 1.
+| Code | What it means |
+|---|---|
+| 0 | The command ran and found nothing, or `--exit-zero` was passed. |
+| 1 | The command found something. A certain finding, such as `OFF CUE` or `TRUNCATED`, always does this. An uncertain finding, whose label ends in `?`, does it only under `--strict`. |
+| 2 | A usage error, such as an unknown flag. |
+| 3 | DeckTalk itself could not run. A missing input file, a malformed `decktalk.toml` or a provider that refused does this. |
+| 130 | The run was interrupted. |
+
+A non-zero exit with `error` null in the JSON is a finding the job can fix. A non-null `error.code`
+is an error, and the job stops.
 
 ```console
 decktalk record --strict     # also fail on BLACK?
 decktalk verify              # fail on any certain finding
 ```
 
+`status` and `doctor` take `--exit-zero` and refuse `--strict`, because every finding they report is
+certain and the flag could change nothing.
+
 To keep the job running and decide later, add `--exit-zero` and read the JSON.
 
 ```console
 decktalk verify --json --exit-zero > verify.json
 jq -e '.ok' verify.json
-jq '.verify.cues[] | select(.verdict != "changed")' verify.json
+jq '.verify.cues[] | select(.verdict.code != "CHANGED")' verify.json
+jq '.findings.items[]' verify.json
 ```
 
-`--exit-zero` makes the command exit 0 on findings, but an error still exits 1. The JSON `ok` is false when the
-command would exit 1 without `--exit-zero`. `jq -e` then exits 1, and the second `jq` line lists the rows to look
-at. [Output and exit flags](/reference/cli#output-and-exit-flags) lists every key.
+`--exit-zero` makes the command exit 0 on findings, but an error still exits 3. The JSON `ok` is false when the
+command would exit non-zero without `--exit-zero`. `jq -e` then exits 1, the second `jq` line lists the cue rows
+to look at, and the third lists every finding of the run in the shape every command shares.
+[The `--json` envelope](/reference/cli#the-json-envelope) lists every key.
 
 ## Allow for slower runners
 
@@ -116,19 +131,21 @@ runners are slower than Linux.
 - A long draw after narration t=0 can read `STALLED`.
 
 If that happens only on a slower runner, widen the limits for that runner. Keep the defaults on the machine that
-records the published video. DeckTalk's own CI uses these values.
+records the published video. These three variables are the ones a slow runner needs, and the values on the right
+are a starting point rather than a rule.
 
-| Environment variable | Linux | macOS and Windows |
+| Environment variable | Default | A slower runner |
 |---|---|---|
-| `DECKTALK_VERIFY_MAX_OFFSET_FRAMES` | 2 (default) | 4 |
-| `DECKTALK_VERIFY_MAX_AV_FRAMES` | 3 (default) | 5 |
-| `DECKTALK_RECORD_STALL_MS` | 150 (default) | 400 |
+| `DECKTALK_VERIFY_MAX_OFFSET_FRAMES` | 2 | 4 |
+| `DECKTALK_VERIFY_MAX_AV_FRAMES` | 3 | 5 |
+| `DECKTALK_RECORD_STALL_MS` | 150 | 400 |
 
 A reveal can also start late while a large layer moves, such as a canvas figure that pans. To gate a job on cue
 timing, verify a light deck whose reveals land on still pages, and report the busy deck without failing. DeckTalk's
-own CI builds `tests/e2e/fixture`, a five-section still deck, with `pytest -m e2e`, and fails on any verify
-finding there, `OFF CUE` included, on Linux. The same test runs on macOS and Windows on every push to `main`
-and before a release is published, where it reports `OFF CUE` and asserts wider limits instead.
+own test builds `tests/e2e/fixture`, a five-section still deck, with `pytest -m e2e`. It decides from the platform
+it is running on: it fails on a cue offset over the limit on Linux, and on macOS and Windows it prints the largest
+offset it saw and asserts a wider bound instead. Those two platforms run on every push to `main` and before a
+release is published.
 
 ```yaml .github/workflows/video.yml
       - name: Widen the sync tolerance on the slower runners
@@ -144,8 +161,10 @@ and before a release is published, where it reports `OFF CUE` and asserts wider 
 Put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in the job's secrets, and export them to the build step.
 DeckTalk never prints either value.
 
-<Warning>Never run `decktalk build --no-voice` in a `build/` directory that you keep for voiced builds. It empties the
-narration cache, and the next voiced build spends credits on every section.</Warning>
+<Warning>A build without voice refuses to run in a project whose take index holds paid takes for the sections it was
+asked to write, because replacing those rows would make the next voiced build pay for them again. The refusal names
+the sections that are free to rehearse. Give a CI job that builds without voice its own checkout, or its own
+`build/` directory.</Warning>
 
 [A build without voice and a voiced build](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build) explains why.
 
@@ -186,7 +205,7 @@ A build without voice runs with no network after these steps.
   </Step>
 </Steps>
 
-In the scaffold, only `deck/index.html` loads KaTeX, and it loads it from `deck/katex/`. A page of your own
+In the starter, `deck/index.html` loads KaTeX from `deck/katex/`, before the runtime. A page of your own
 that points its KaTeX tags anywhere else leaves its equations as plain text offline, and `record` reports
 `KATEX NOT LOADED`, which fails the command. Point the tags at the copy beside the page.
 

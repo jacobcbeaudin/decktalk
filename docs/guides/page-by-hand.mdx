@@ -41,16 +41,18 @@ The magenta cover belongs to the recorder, so a page needs no cover of its own.
 
 `decktalk preflight` also reads `catalog[].cues`, which maps each slide id to its cue ids in preview order. It opens
 `?slide=ID&after=CUE` and `?slide=ID&before=CUE`. A scene whose entry carries no `cues` map gets every cue skipped as
-`NO_CATALOG`, and a cue that the map does not name is skipped as `NOT_IN_SLIDE_CUES`, because a freeze stops only at a
-listed cue.
+`NO_CATALOG`, and a cue that the map does not name is skipped as `NO_SLIDE`, because a freeze stops only at a
+listed cue. A page that answers neither parameter is not skipped: it shows every element both times, and each cue
+reads `NO CHANGE`.
 
 ## Write the minimal page
 
 <Warning>Start the page clock only inside `DeckTalk.startClock()`. A page that starts its clock at
 `load` fires every cue early, and every reveal in the video comes before its word.</Warning>
 
-The page below follows the whole contract in about forty lines. It has one scene with one slide. Each
-cue shows the element with the matching `data-cue`.
+The page below follows the whole contract in about forty lines. It has one scene with one slide, and
+each cue shows the element with the matching `data-cue`. Its `ORDER` list is the one place the cue
+ids are written, which is what lets freeze mode answer `&after=` and `&before=`.
 
 ```html deck/plain.html
 <!doctype html>
@@ -60,22 +62,24 @@ cue shows the element with the matching `data-cue`.
   #stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; padding: 100px 160px; box-sizing: border-box; }
   [data-cue] { opacity: 0; transition: opacity .35s; }
   [data-cue].on { opacity: 1; }
+  .block { margin-top: 40px; width: 1200px; height: 220px; border-radius: 24px; background: #2c1fea; }
 </style>
 <div id="stage">
-  <h1 data-cue="1.1a">A page by hand</h1>
-  <p data-cue="1.1b">It follows the contract without the runtime.</p>
+  <h1 data-cue="4.1a">A page by hand</h1>
+  <div class="block" data-cue="4.1b"></div>
 </div>
 <script>
+  const ORDER = ["4.1a", "4.1b"];
   const params = new URLSearchParams(location.search);
-  const state = { mode: "index", scene: params.get("scene"), slide: "1.1", cues: [], fired: [], warnings: [], origin: null,
-                  catalog: [{ scene: "1", name: "By hand", slides: ["1.1"], cues: { "1.1": ["1.1a", "1.1b"] } }],
+  const state = { mode: "index", scene: params.get("scene"), slide: "4.1", cues: [], fired: [], warnings: [], origin: null,
+                  catalog: [{ scene: "4", name: "By hand", slides: ["4.1"], cues: { "4.1": ORDER } }],
                   now: () => state.origin === null ? -Infinity : (performance.now() - state.origin) / 1000 };
   window.__decktalk = state;
   window.__decktalk.ready = document.fonts.ready;
 
-  const cues = (params.get("cues") || "").split(",").filter(Boolean).map((tok) => {
-    const i = tok.lastIndexOf("@");
-    return { id: tok.slice(0, i), t: parseFloat(tok.slice(i + 1)) };
+  const cues = (params.get("cues") || "").split(",").filter(Boolean).map((token) => {
+    const at = token.lastIndexOf("@");
+    return { id: token.slice(0, at), t: parseFloat(token.slice(at + 1)) };
   });
   state.cues = cues;
   for (const c of cues) if (!document.querySelector(`[data-cue="${c.id}"]`)) state.warnings.push(`unknown cue id ${c.id}`);
@@ -92,20 +96,109 @@ cue shows the element with the matching `data-cue`.
   }
   window.DeckTalk = { startClock };
 
-  if (params.has("slide")) { state.mode = "freeze"; document.querySelectorAll("[data-cue]").forEach((el) => el.classList.add("on")); }
-  else if (params.get("t0") !== "signal") startClock();   // a browser preview starts at once
+  if (params.has("slide")) {
+    state.mode = "freeze";
+    const after = params.get("after"), before = params.get("before");
+    const last = after ? ORDER.indexOf(after) : before ? ORDER.indexOf(before) - 1 : ORDER.length - 1;
+    ORDER.slice(0, last + 1).forEach(fire);
+  } else if (params.get("t0") !== "signal") {
+    startClock();   // a browser preview starts at once
+  }
 </script>
 ```
 
-To use the page in a project, follow these steps:
+## Put the page in a project
 
-1. Save the page as `deck/plain.html`.
-2. Add a `[[section]]` with `page = "deck/plain.html"` and `scene = 1`.
-3. Add cues `1.1a` and `1.1b` for that section in `cues.json`.
-4. Open `deck/plain.html?slide=1.1` in a browser to see every element.
+These steps add the page as section 4 of the starter that `decktalk init` writes, so nothing already
+there has to change.
 
-The page has no preview timing. A browser preview with `?scene=1` shows nothing until you add
-`&cues=1.1a@1,1.1b@2` to the URL.
+<Steps>
+  <Step title="Save the page">
+    Save the page above as `deck/plain.html` in the project.
+  </Step>
+
+  <Step title="Add the section to decktalk.toml">
+    ```toml decktalk.toml
+    [[section]]
+    number = 4
+    chapter = "By hand"
+    page = "deck/plain.html"
+    scene = 4
+    ```
+
+    The scene number, the section number and the cue id prefix agree, which is the rule every project follows.
+  </Step>
+
+  <Step title="Add the script and the cues">
+    <CodeGroup>
+    ```md script.md
+    ## 4. By hand
+
+    This page follows the contract with no runtime. [beat] It shows one block on its own word.
+    ```
+
+    ```json cues.json
+    "4": { "cues": [
+      { "cue": "4.1a", "on": "This page" },
+      { "cue": "4.1b", "on": "one block" }
+    ] }
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Resolve the cues">
+    ```console
+    decktalk narrate --no-voice
+    decktalk align
+    ```
+
+    {/* sample: decktalk align, the starter with this page as section 4, build without voice (section 04 row) */}
+    ```text
+    sec  speech   need  cues
+     04     7.6      -  4.1a@0.5,4.1b@4.94
+    ```
+
+    `align` finds each cue id in the page as a quoted literal, so `data-cue="4.1a"` and the `ORDER` list both count.
+  </Step>
+
+  <Step title="Check the frozen states">
+    ```console
+    decktalk screenshots --page deck/plain.html
+    decktalk preflight --only 4
+    ```
+
+    {/* sample: decktalk preflight --only 4, the starter with this page as section 4 */}
+    ```text
+    check              slide       cue   chg %  result
+    4:4.1a             4.1        0.50    1.12  changed
+    4:4.1b             4.1        4.94   12.69  changed
+    2 cue(s): 2 changed. Frozen frames in build/preflight
+    ```
+
+    A page that ignores `&after=` and `&before=` shows every element in freeze mode, so each pair of frames is
+    identical and every cue reads `NO CHANGE`. That is the check this page's `ORDER` list exists for.
+  </Step>
+
+  <Step title="Record the section">
+    ```console
+    decktalk record --only 4
+    ```
+
+    {/* sample: decktalk record --only 4, the starter with this page as section 4 */}
+    ```text
+    [rec ] section 04 (deck/plain.html?scene=4)  9.2s ...
+           build/recordings/04.webm  (t=0 at 1.440s, ok)
+    sections 1, recorded 1, kept 0
+    ```
+
+    The row reads `ok`, and `t0_method` in `build/recordings/04.json` starts with `cover`. A `NO COVER` there
+    means the page started its own clock instead of waiting for `DeckTalk.startClock()`.
+  </Step>
+</Steps>
+
+The page has no preview timing. A browser preview with `?scene=4` shows nothing until you add
+`&cues=4.1a@1,4.1b@2` to the URL. Run `decktalk serve` and open the page from the URL it prints, because
+the recorder opens every page over http and not from a `file://` URL.
 
 ## Compare with the runtime
 

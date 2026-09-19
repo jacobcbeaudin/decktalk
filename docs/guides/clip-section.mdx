@@ -58,16 +58,17 @@ These steps add a test clip as section 4 of a new project named `clip-lesson`.
     decktalk build --no-voice
     ```
 
-    {/* sample: decktalk build --no-voice in clip-lesson, a fresh project with the clip section added and no clip file (assemble lines of sections 4 to 7) */}
+    {/* sample: decktalk build --no-voice in clip-lesson, the starter with the clip section added and no clip file (assemble lines) */}
     ```text
-    [cut ] 04  recordings/04.webm (lead 1.44s trimmed) -> sections/04.mp4  (15.600s)
-    section 04: media/intro.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
-    [cut ] 05  slate -> sections/05.mp4  (4.360s)
-    [cut ] 06  recordings/06.webm (lead 1.44s trimmed) -> sections/06.mp4  (22.160s)
-    [cut ] 07  slate -> sections/07.mp4  (5.040s)
+    [cut ] 01  01.webm (t0 1.4s trimmed) -> 01.mp4  (14.280s)
+    [cut ] 02  02.webm (t0 1.44s trimmed) -> 02.mp4  (15.880s)
+    [cut ] 03  03.webm (t0 1.44s trimmed) -> 03.mp4  (14.720s)
+    section 04: media/intro.mov is missing, so a slate plays for 4s. Drop your clip at that path. The section is optional, so --strict allows the slate
+    [cut ] 04  slate -> 04.mp4  (4.000s)
+    [cat ] 4 sections, straight cuts
     ```
 
-    Each section gets a `[cut ]` line. The clip file does not exist yet, so section 4 plays a titled slate.
+    Each section gets a `[cut ]` line. The clip file does not exist yet, so section 4 plays a titled slate for its `slate_seconds`.
   </Step>
 
   <Step title="Put the clip file in place">
@@ -89,16 +90,18 @@ These steps add a test clip as section 4 of a new project named `clip-lesson`.
     decktalk assemble
     ```
 
-    {/* sample: decktalk assemble in clip-lesson after the test clip above is in place (cut lines of sections 4 to 6, and the words warning) */}
+    {/* sample: decktalk assemble in clip-lesson after the test clip above is in place */}
     ```text
-    [cut ] 04  recordings/04.webm (lead 1.44s trimmed) -> sections/04.mp4  (15.600s)
-    [cut ] 04  intro.mov (own audio) -> sections/05.mp4  (4.000s)
-    [cut ] 06  recordings/06.webm (lead 1.44s trimmed) -> sections/06.mp4  (22.160s)
-    section 04: words file missing: media/intro.words.json; the clip plays without captions
+    [cut ] 03  03.webm (t0 1.44s trimmed) -> 03.mp4  (14.720s)
+    [cut ] 04  intro.mov (own audio) -> 04.mp4  (4.000s)
+    [cat ] 4 sections, straight cuts
+    [mix ] 3 audio input(s) -> clip-lesson.mp4
+    section 04: the words file media/intro.words.json is missing, so the clip plays without captions
     ```
 
-    Check that section 4 reads `intro.mov (own audio)`. The test clip has no words file, so its sound has no
-    captions. Then run `decktalk verify` to check the video.
+    Check that section 4 reads `intro.mov (own audio)`. The mix gains a third input, which is the clip's own
+    sound. The test clip has no words file, so that sound has no captions. Then run `decktalk verify` to check
+    the video.
   </Step>
 </Steps>
 
@@ -107,19 +110,29 @@ These steps add a test clip as section 4 of a new project named `clip-lesson`.
 `--strict` on `build` or `assemble` turns a missing clip into an error. A clip section with `optional = true`
 still plays its slate.
 
-Before the test clip was in place, `decktalk assemble --strict` exited 0 and printed this warning for each clip
+Before the test clip was in place, `decktalk assemble --strict` exited 0 and printed this warning for the clip
 section.
 
-{/* sample: decktalk assemble --strict in clip-lesson, a fresh project with the clip section added and no clip file */}
+{/* sample: decktalk assemble --strict in clip-lesson, the starter with the clip section added and no clip file */}
 ```text
-section 04: media/intro.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
+section 04: media/intro.mov is missing, so a slate plays for 4s. Drop your clip at that path. The section is optional, so --strict allows the slate
 ```
 
-A clip section without `optional = true` fails under `--strict` when its file is missing. The command exits 1.
+A clip section without `optional = true` stops `--strict` when its file is missing. That is an error rather than a
+finding, so the command exits 3 and writes no video.
 
 {/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true from section 4, with no media/intro.mov, error line */}
 ```text
-error: section 4: clip missing: ~/clip-lesson/media/intro.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
+error[MISSING_INPUT]: section 4: clip missing: ~/clip-lesson/media/intro.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
+```
+
+`decktalk status` reports the same thing without building. The missing clip is a `MISSING` row, and `status`
+exits 1.
+
+{/* sample: decktalk status in clip-lesson with no media/intro.mov */}
+```text
+sections 4, cut 4, final True | 1 certain, 0 uncertain finding(s)
+MISSING  media/intro.mov: section 04 names a clip that is not there
 ```
 
 After your clip is in place, delete the `optional` line. `--strict` then catches the file if it goes missing
@@ -178,11 +191,12 @@ narration clock, plus the frame rounding of every cut before it. `decktalk statu
 and `build/out/cuts.json` the final ones. [Build artifacts](/reference/artifacts#time-bases) explains the two
 time bases.
 
-{/* sample: decktalk status in clip-lesson after the steps above, section rows 04 to 06 */}
+{/* sample: decktalk status in clip-lesson after the steps above, the section rows */}
 ```text
-  04  deck/index.html?scene=4                  rec cut
-  04  clip media/intro.mov                   cut
-  06  deck/index.html?scene=6                  rec cut
+  01  deck/index.html?scene=1                  rec cut
+  02  deck/index.html?scene=2                  rec cut
+  03  deck/index.html?scene=3                  rec cut
+  04  clip media/intro.mov                         cut
 ```
 
 The narration does not depend on the length of a clip. After you replace a clip file, run only `decktalk assemble`,
@@ -250,42 +264,46 @@ These steps use a project after `decktalk build --no-voice`. After a voiced buil
     decktalk words --only 1
     ```
 
-    {/* sample: decktalk words --only 1 after decktalk build --no-voice on a fresh project, header and rows 5 to 14 */}
+    {/* sample: decktalk words --only 1 after decktalk build --no-voice on a fresh starter, header and the first rows */}
     ```text
-    == 01 Open  (17.80s, estimated)
+    sections 1, words 26
+    == 01 Open  (14.29s, lead 0.5s, estimated)
       start     end  word
-      2.879   3.404  Watch
-      3.424   3.949  it
-      3.969   4.494  step
-      4.514   5.039  down
-      5.059   5.583  on
-      5.603   6.128  my
-      6.148   6.673  count.
-      6.693   7.218  One.
-      7.238   7.763  Two,
-      7.783   8.308  three.
+      0.500   0.961  This
+      0.981   1.442  is
+      1.462   1.922  DeckTalk.
+      1.942   2.403  You
+      2.423   2.884  write
+      2.904   3.365  what
+      3.385   3.845  you
+      3.865   4.326  will
+      4.346   4.807  say,
     ```
 
-    The count runs from the start of "Watch" at 2.879 s to the end of "three." at 8.308 s.
+    The opening sentence runs from the start of "This" at 0.500 s to the end of "DeckTalk." at 1.922 s.
   </Step>
 
   <Step title="Cut the clip">
     ```console
-    decktalk clip 1 --start 2.87 --end 8.32 --hold 0.5 --out media/count.mp4
+    decktalk clip 1 --start 0.48 --end 1.92 --hold 0.5 --out media/open-line.mp4
     ```
 
-    {/* sample: decktalk clip 1 --start 2.87 --end 8.32 --hold 0.5 --out media/count.mp4 after decktalk build --no-voice on a fresh project */}
+    {/* sample: decktalk clip 1 --start 0.48 --end 1.92 --hold 0.5 --out media/open-line.mp4 after decktalk build --no-voice on a fresh starter */}
     ```text
+    section 01: the span cuts the word 'DeckTalk.' in two, so the words file leaves it out
     section 01: the narration is a silent placeholder, so the word times are estimates
-    wrote media/count.mp4  (5.92s: frames 72 to 207 of sections/01.mp4, 2.88 to 8.32s, hold 0.48s, gain +0 dB)
-    wrote media/count.words.json  (10 words)
-    use it in a clip section: clip = "media/count.mp4" and words = "media/count.words.json"
+    seconds 1.92, words 2 | 0 certain, 1 uncertain finding(s)
+    wrote media/open-line.mp4  (1.92s: frames 12 to 47 of sections/01.mp4, 0.48 to 1.92s, hold 0.48s, gain +0 dB)
+    wrote media/open-line.words.json  (2 words)
+    use it in a clip section: clip = "media/open-line.mp4" and words = "media/open-line.words.json"
     ```
 
-    - The picture comes from `build/sections/01.mp4`. `--start` and `--end` round to whole frames.
-    - The sound is section 1's mp3 over the same span. `--hold 0.5` adds 0.48 s of the last frame in silence.
-    - `media/count.words.json` lists the 10 words from "Watch" to "three.", in seconds after the clip starts.
-    - A span that cuts a word in two leaves that word out of the words file, and `clip` prints a warning.
+    - The picture comes from `build/sections/01.mp4`. `--start` and `--end` round to whole frames, so the span
+      ran to 1.92 s rather than 1.93 s.
+    - The sound is section 1's narration over the same span. `--hold 0.5` adds 0.48 s of the last frame in silence.
+    - `media/open-line.words.json` lists the two whole words inside the span, in seconds after the clip starts.
+    - The frame grid put the end inside "DeckTalk.", so that word is left out of the words file and `clip` reports
+      it as an uncertain finding. Move `--end` into the silence beside the word to keep it.
   </Step>
 
   <Step title="Play the clip in a clip section">
@@ -295,18 +313,17 @@ These steps use a project after `decktalk build --no-voice`. After a voiced buil
     ```toml decktalk.toml
     [[section]]
     number = 4
-    chapter = "The count again"
-    clip = "media/count.mp4"
-    words = "media/count.words.json"
+    chapter = "The opening line again"
+    clip = "media/open-line.mp4"
+    words = "media/open-line.words.json"
     ```
 
-    Then run `decktalk assemble`, and check that the section reads `count.mp4 (own audio)`.
+    Then run `decktalk assemble`, and check that the section reads `open-line.mp4 (own audio)`.
   </Step>
 </Steps>
 
 - `--gain` changes the clip's level in dB, so a clip cut from another build can match the voice around it.
-- The clip keeps the section's full picture. [Fill the edit's two clips](#fill-the-edits-two-clips) places a clip
-  inside a player by hand.
+- The clip keeps the section's full picture, so a clip cut from a slide plays that whole slide.
 - [`decktalk clip`](/reference/cli#decktalk-clip) lists every option.
 
 ## Keep one chapter across several sections
@@ -338,8 +355,8 @@ These steps add a section 0 to a project, such as `my-lesson` from the [quicksta
 comes before section 1, so it needs no renumbering.
 
 <Steps>
-  <Step title="Uncomment section 0 in decktalk.toml">
-    Remove the leading `# ` from the five lines of section 0.
+  <Step title="Add section 0 to decktalk.toml">
+    Put this table above the section 1 table.
 
     ```toml decktalk.toml
     [[section]]
@@ -388,14 +405,14 @@ comes before section 1, so it needs no renumbering.
     decktalk build --no-voice
     ```
 
-    {/* sample: decktalk assemble in a copy of the silent build with section 0 turned on as above, with no media/open.mp4 (first lines) */}
+    {/* sample: the assemble stage of decktalk build --no-voice, the starter with section 0 added as above and no media/open.mp4 (first lines) */}
     ```text
-    section 00: media/open.mp4 missing; slate for 6s (drop your clip at that path)
-    [cut ] 00  slate -> sections/00.mp4  (6.000s)
-    [cut ] 01  recordings/01.webm (lead 1.36s trimmed) -> sections/01.mp4  (17.800s)
+    section 00: media/open.mp4 is missing, so a slate plays for 6s. Drop your clip at that path
+    [cut ] 00  slate -> 00.mp4  (6.000s)
+    [cut ] 01  01.webm (t0 1.44s trimmed) -> 01.mp4  (14.280s)
     ```
 
-    Section 0 has no `optional` key, so its warning ends with `(drop your clip at that path)`. `--strict` fails
+    Section 0 has no `optional` key, so its warning ends with `Drop your clip at that path`. `--strict` fails
     on this section until the file exists.
   </Step>
 </Steps>
