@@ -73,7 +73,7 @@ def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, s
             index=int(key), chapter=seg.title, file=take_name(digest), words_file=words_name(digest),
             hash=digest, word_count=seg.word_count, estimated_seconds=seg.estimated_seconds(cfg),
             duration_seconds=len(tokens) * 0.4 + 1.3, voiced=True, spoken=seg.spoken,
-            lead_seconds=p.lead_seconds(key),
+            sound_end_seconds=len(tokens) * 0.4, lead_seconds=p.lead_seconds(key), tail_seconds=p.tail_seconds(key),
         )  # fmt: skip
     take_index.save(p.takes_path)
     files = {str(f): hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(p.narration_dir.iterdir())}

@@ -6,23 +6,21 @@ import importlib
 
 import pytest
 
-from decktalk.artifacts import Timeline, TimelineSection
+from decktalk.artifacts import Take, Takes
 from decktalk.errors import MissingInputError
 from decktalk.media.encode import Encoder
 from decktalk.model import Project
 from decktalk.pipeline import Substitute
 
 
-def test_timeline_targets_are_frame_exact():
+def test_section_targets_are_frame_exact():
     """A section is cut to a whole number of frames, so the film never drifts off the narration."""
-    from decktalk.stages.assemble.cut import timeline_targets
+    from decktalk.stages.assemble.cut import section_targets
 
-    tl = Timeline(
-        narration="n",
-        total_seconds=2.5,
-        sections={"01": TimelineSection("a", 0, 1.02, 1.02, None), "02": TimelineSection("b", 1.02, 2.5, 1.48, None)},
-    )
-    t = timeline_targets(tl, 30)
+    takes = Takes(script="s", model="m", output_format="mp3")
+    takes.sections["01"] = Take(1, "a", "a.mp3", "a.words.json", "h1", 0, 1.02, 1.02)
+    takes.sections["02"] = Take(2, "b", "b.mp3", "b.words.json", "h2", 0, 1.48, 1.48)
+    t = section_targets(takes, 30)
     assert abs(t["01"] - 1.0333) < 1e-3 and abs(t["02"] - 1.4667) < 1e-3
 
 
@@ -66,7 +64,7 @@ def test_strict_fails_on_a_missing_clip_unless_the_section_is_optional(tmp_path,
         )
     assert len(ran) == 2
     assert [r.getMessage() for r in caplog.records] == [
-        "section 03: media/slot.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, "
-        "so --strict allows the slate)",
-        "section 02: media/real.mp4 missing; slate for 5s (drop your clip at that path)",
+        "section 03: media/slot.mp4 is missing, so a slate plays for 4s. Drop your clip at that path. The "
+        "section is optional, so --strict allows the slate",
+        "section 02: media/real.mp4 is missing, so a slate plays for 5s. Drop your clip at that path",
     ]

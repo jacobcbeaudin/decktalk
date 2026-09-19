@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ...artifacts import Timeline
+from ...artifacts import Takes
 from ...media import audio, frames
 from ...model import Project
 from ...model.document import frame_dip
@@ -31,14 +31,26 @@ class StartCheck:
     def verdict(self) -> Verdict:
         return Verdict.OK if self.ok else Verdict.BLACK
 
-    def to_dict(self) -> dict[str, Any]:
+    @property
+    def detail(self) -> str | None:
+        """The one sentence a judged row carries, with the measured number a reader needs in it."""
+        if self.ok:
+            return None
+        return (
+            f"section {self.key} starts at {self.start:.3f}s and the frame read at {self.probe_at:.3f}s "
+            f"is dark, with an average luma of {self.yavg:.1f} and a brightest luma of {self.ymax:.1f}."
+        )
+
+    def to_dict(self, where: str | None = None) -> dict[str, Any]:
         return {
             "key": self.key,
+            "where": where,
             "start": round(self.start, 3),
             "probe_at": round(self.probe_at, 3),
             "yavg": round(self.yavg, 2),
             "ymax": round(self.ymax, 2),
-            "verdict": self.verdict,
+            "verdict": self.verdict.to_dict(),
+            "detail": self.detail,
         }
 
 
@@ -55,12 +67,24 @@ class CutCheck:
     def verdict(self) -> Verdict:
         return Verdict.QUIET if self.ok else Verdict.SPEECH_AT_CUT
 
-    def to_dict(self) -> dict[str, Any]:
+    @property
+    def detail(self) -> str | None:
+        """The one sentence a judged row carries, with the measured number a reader needs in it."""
+        if self.ok:
+            return None
+        return (
+            f"the cut into section {self.key} at {self.cut_at:.3f}s still carries sound at "
+            f"{self.rms_db:.1f} dBFS, so a word is cut off."
+        )
+
+    def to_dict(self, where: str | None = None) -> dict[str, Any]:
         return {
             "key": self.key,
+            "where": where,
             "cut_at": round(self.cut_at, 3),
             "rms_db": round(self.rms_db, 2),
-            "verdict": self.verdict,
+            "verdict": self.verdict.to_dict(),
+            "detail": self.detail,
         }
 
 
@@ -79,14 +103,26 @@ class SeamCheck:
     def verdict(self) -> Verdict:
         return Verdict.OK if self.ok else Verdict.POP_AT_CUT
 
-    def to_dict(self) -> dict[str, Any]:
+    @property
+    def detail(self) -> str | None:
+        """The one sentence a judged row carries, with the measured number a reader needs in it."""
+        if self.ok:
+            return None
+        return (
+            f"section {self.key} declares seamless and {self.changed_percent:.2f} percent of the "
+            f"picture changes across its cut at {self.cut_at:.3f}s, so the join shows."
+        )
+
+    def to_dict(self, where: str | None = None) -> dict[str, Any]:
         return {
             "key": self.key,
+            "where": where,
             "cut_at": round(self.cut_at, 3),
             "last_at": round(self.last_at, 3),
             "first_at": round(self.first_at, 3),
             "changed_percent": round(self.changed_percent, 2),
-            "verdict": self.verdict,
+            "verdict": self.verdict.to_dict(),
+            "detail": self.detail,
         }
 
 
@@ -126,22 +162,23 @@ def start_checks(project: Project, final: Path, starts: dict[str, float]) -> lis
     return rows
 
 
-def cut_checks(project: Project, timeline: Timeline | None, starts: dict[str, float]) -> list[CutCheck]:
+def cut_checks(project: Project, takes: Takes | None, starts: dict[str, float]) -> list[CutCheck]:
     """One row per spoken section: the narration is quiet in the window before the cut out of it.
 
     The check listens to the narration track alone, so music or an effect at a boundary does not
     count as speech, and a clip, which carries its own audio, is exempt.
     """
     cfg = project.settings.verify
-    narration = project.narration_dir / (timeline.narration if timeline else "narration.mp3")
-    if timeline is None or not narration.exists():
+    narration = project.narration_path
+    if takes is None or not narration.exists():
         return []
     rows: list[CutCheck] = []
-    for key, sec in timeline.sections.items():
-        if key not in starts:
+    for key in takes.keys:
+        span, end = takes.span(key), takes.end(key)
+        if key not in starts or span is None or end is None:
             continue
-        window = min(cfg.cut_window_seconds, sec.duration)
-        level = audio.rms_db(narration, max(0.0, sec.end - window), window)
-        cut = starts[key] + sec.duration
+        window = min(cfg.cut_window_seconds, span)
+        level = audio.rms_db(narration, max(0.0, end - window), window)
+        cut = starts[key] + span
         rows.append(CutCheck(key=key, cut_at=round(cut, 3), rms_db=level, ok=level <= cfg.cut_max_db))
     return rows

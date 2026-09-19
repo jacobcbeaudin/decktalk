@@ -14,12 +14,14 @@ from pathlib import Path
 from typing import Any
 
 from ..jsonio import relative
+from ..pipeline import Stage, TakeStatus
 from ..stages.align import UnknownCueError
 from ..stages.align import align as resolve
 from ..stages.assemble import assemble as cut_and_mix
-from ..stages.build import STAGES, required_inputs, stage_plan
 from ..stages.build import build as run_pipeline
+from ..stages.build import required_inputs, stage_plan
 from ..stages.narrate import narrate as voice
+from ..stages.narrate.plan import plan_totals
 from ..stages.record import record as capture
 from ..stages.verify import verify as read_final
 from ..verdicts import Finding, Findings, Verdict
@@ -30,37 +32,41 @@ from .options import load_project
 
 
 def _narrate_files(project: Any, result: Any) -> list[Path]:
-    """Every file a narrate run wrote: each take and its words, then the indexes beside them.
+    """Every file a narrate run wrote: each take it made and its words, then the indexes beside them.
 
     A take is named by its content hash and lives in the take directory, which several projects may
-    share, so the path comes from `takes_dir` rather than from the project's own build directory.
+    share, so the path comes from `takes_dir` rather than from the project's own build directory. A
+    take the run reused is on disk already and is not a file this run wrote, so `written` leaves it
+    out and a caller that re-reads what it names re-reads nothing it does not have to.
     """
-    takes = list(result.takes.sections.values()) if result.takes is not None else []
-    files = [
-        *(project.takes_dir / take.file for take in takes),
-        *(project.takes_dir / take.words_file for take in takes),
+    index = result.takes
+    made = [] if index is None else [index.sections[key] for key in result.synthesized if key in index.sections]
+    return [
+        *(project.takes_dir / take.file for take in made),
+        *(project.takes_dir / take.words_file for take in made),
         project.takes_path,
+        project.narration_path,
     ]
-    if result.timeline is not None:
-        files.append(project.timeline_path)
-    return files
 
 
 def _recorded_files(project: Any, result: Any) -> list[Path]:
-    """Each section's recording and the log written beside it, which is one artifact in two files."""
-    return [path for row in result.sections for path in (row.path, project.workspace.recording_log(row.key))]
+    """Each section this run recorded and the log written beside it, which is one artifact in two files.
+
+    A section the run kept is on disk from an earlier run and is not a file this run wrote, which is
+    the rule `_narrate_files` applies to a take the run reused.
+    """
+    return [
+        path for row in result.sections if not row.kept for path in (row.path, project.workspace.recording_log(row.key))
+    ]
 
 
 def _assemble_files(result: Any) -> list[Path]:
-    """Each section as it was cut, then the final video and everything written beside it."""
-    return [
-        *(section.path for section in result.sections),
-        result.final,
-        result.stamped,
-        result.captions_srt,
-        result.captions_vtt,
-        result.chapters,
-    ]
+    """Each section as it was cut, then every file the result itself says it wrote.
+
+    The result is the one place that knows what `assemble` wrote, so the cut list, the transcript
+    and the poster cannot go missing from `written` by being forgotten in a second list here.
+    """
+    return [*(section.path for section in result.sections), *result.written]
 
 
 def narrate(opts: opt.NarrateOptions) -> Outcome:
@@ -79,10 +85,17 @@ def narrate(opts: opt.NarrateOptions) -> Outcome:
         model=opts.model,
         dry_run=opts.dry_run,
     )
+    # A dry run does the work of no section, so it reports the plan rather than a pair of zeroes a
+    # reader would take for "nothing to voice".
+    planned = plan_totals(result.plans, result.narration, result.rate)
+    did = (
+        {"would_synthesize": planned[TakeStatus.SYNTHESIZE.value], "cached": planned[TakeStatus.CACHED.value]}
+        if opts.dry_run
+        else {"synthesized": len(result.synthesized), "cached": len(result.cached)}
+    )
     summary = {
         "sections": len(result.plans),
-        "synthesized": len(result.synthesized),
-        "cached": len(result.cached),
+        **did,
         "total_seconds": result.takes.total_seconds if result.takes is not None else None,
     }
     written = [] if opts.dry_run else wrote(project.root, *_narrate_files(project, result))
@@ -154,14 +167,13 @@ class StagePrefix(logging.Filter):
 
 
 # The files each stage of a run wrote, read from that stage's own result. A stage with no row here
-# wrote nothing this list can name, and every key is a stage the pipeline runs.
-STAGE_FILES: dict[str, Callable[[Any, Any], list[Path]]] = {
-    "narrate": _narrate_files,
-    "align": lambda project, result: [result.cue_times_file],
-    "record": _recorded_files,
-    "assemble": lambda project, result: _assemble_files(result),
+# wrote nothing this list can name.
+STAGE_FILES: dict[Stage, Callable[[Any, Any], list[Path]]] = {
+    Stage.NARRATE: _narrate_files,
+    Stage.ALIGN: lambda project, result: [result.cue_times_file],
+    Stage.RECORD: _recorded_files,
+    Stage.ASSEMBLE: lambda project, result: _assemble_files(result),
 }
-assert set(STAGE_FILES) <= set(STAGES), "a stage that writes files has to be a stage the run runs"
 
 
 def build(opts: opt.BuildOptions) -> Outcome:
@@ -171,8 +183,8 @@ def build(opts: opt.BuildOptions) -> Outcome:
         # A plan that needs a file no earlier stage in it writes is a plan that cannot run, and the
         # dry run is the call a caller makes to learn exactly that.
         missing = [relative(path, project.root) for path in required_inputs(project, plan)]
-        payload = {"stages": list(plan), "missing": missing}
-        table = " -> ".join(plan) + (f"\nmissing: {', '.join(missing)}" if missing else "")
+        payload = {"stages": [stage.value for stage in plan], "missing": missing}
+        table = " -> ".join(stage.value for stage in plan) + (f"\nmissing: {', '.join(missing)}" if missing else "")
         return Outcome(payload=payload, summary={"stages": len(plan)}, findings=Findings(certain=len(missing)),
                        rows=[Finding(detail=f"{name} is not there", verdict=Verdict.MISSING, where=name)
                              for name in missing], text=table)  # fmt: skip
@@ -182,21 +194,21 @@ def build(opts: opt.BuildOptions) -> Outcome:
     prefix = StagePrefix()
     prefix.follow(True)
 
-    def show(stage: str, result: Any) -> None:
+    def show(stage: Stage, result: Any) -> None:
         """Open a stage on its own event, and close it with what it wrote and what a person reads.
 
         The progress log is `build`'s own, so nothing is written here: this is the stage prefix a
         person reads on stderr, the elapsed line, and the table each stage prints as it finishes.
         """
         nonlocal opened
-        index = plan.index(stage) + 1
+        where = f"[{plan.index(stage) + 1}/{len(plan)} {stage.value}]"
         if result is None:
             opened = time.monotonic()
-            prefix.label = f"[{index}/{len(plan)} {stage}]"
+            prefix.label = where
             return
         done.append(stage)
         made.extend(STAGE_FILES[stage](project, result) if stage in STAGE_FILES else [])
-        print(f"[{index}/{len(plan)} {stage}] done in {time.monotonic() - opened:.1f}s", file=sys.stderr)
+        print(f"{where} done in {time.monotonic() - opened:.1f}s", file=sys.stderr)
         if not opts.json:
             table = output.stage_table(stage, result)
             if table:

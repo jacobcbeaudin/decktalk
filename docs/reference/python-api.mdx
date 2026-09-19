@@ -66,8 +66,8 @@ the table and the field.
 | `sections` | property | Every `PageSection` and `ClipSection`, in number order. |
 | `voice`, `transition`, `mix`, `soundscape` | property | The project tables, as frozen dataclasses with the keys of [decktalk.toml](/reference/decktalk-toml). |
 | `narration_dir`, `recordings_dir`, `out_dir`, `screenshots_dir` | property | The `build/` subdirectories. |
-| `takes_path`, `timeline_path`, `cue_times_path`, `final` | property | Paths of the take index, the narration clock, the cue times file, and the final mp4. |
-| `takes()`, `timeline()`, `cue_times()` | method | Loads the artifact. `takes()` and `timeline()` return `None` when the file does not exist. |
+| `takes_path`, `narration_path`, `cue_times_path`, `final` | property | Paths of the take index, which is also the narration clock, the joined narration track, the cue times file, and the final mp4. |
+| `takes()`, `cue_times()` | method | Loads the artifact. `takes()` returns `None` when the file does not exist. |
 | `section(number)` | method | Returns the section with that number, or `None`. |
 | `page_sections`, `clip_sections`, `clip_numbers`, `page_files` | property | The page sections, the clip sections, the clip numbers, and the page files in first-use order. |
 | `recording(section)`, `section_video(section)` | method | Returns the path of the section's webm or its `sections/NN.mp4`. |
@@ -75,6 +75,7 @@ the table and the field.
 | `chapters()` | method | One chapter title per section: its own `chapter`, its script heading, or its number. |
 | `env.get(key)` | method | Returns the variable as an opaque value that prints as its own name. Call `reveal()` for the string. It is falsy when the value is unset or starts with `<`. |
 | `require_env(*keys)` | method | Returns those same opaque values in order. Raises `ConfigError` that names every missing key and no value. |
+| `section_words(key, words_file)`, `narration_words(key, words_file, *, at)` | method | A take's words in seconds after its section starts, or shifted to `at` on the narration clock. |
 | `script_sections()`, `cue_specs()`, `markers()` | method | Parses `script.md`, `cues.json` and the markers file, each checked against `decktalk.toml`. |
 
 `load_settings(root=None, *, toml=None, environ=None, user=None)` builds a `Settings` from the defaults, the
@@ -158,7 +159,7 @@ run judged, and `to_dict(root)`, the same thing as JSON-ready data with every pa
 
 | Function | Returns | Raises |
 |---|---|---|
-| `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None, dry_run=False)` | `NarrateResult` with `plans`, `voice`, `rate`, `rows`, `note`, `takes`, `timeline`, `segments`, `synthesized`, and `cached`. With `dry_run`, `takes` and `timeline` are `None` and nothing is written. | `ConfigError`, `MissingInputError`, `ProviderError` |
+| `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None, dry_run=False)` | `NarrateResult` with `plans`, `voice`, `narration`, `rate`, `rows`, `note`, `takes`, `segments`, `synthesized`, and `cached`. With `dry_run`, `takes` is `None` and nothing is written. | `ConfigError`, `MissingInputError`, `ProviderError` |
 | `align(project, *, allow_unknown_cues=False)` | `AlignResult` with `cue_times`, `sections`, `unresolved`, `estimated`, `unknown`, `uncued`, `cue_times_file`, `short`, and `problems` | `ConfigError`, `MissingInputError`, `UnknownCueError` |
 | `preflight(project, *, only=None, frames=True, model=None, allow_unknown_cues=False)` | `PreflightResult` with `takes`, `note`, `align`, `estimated`, `cues`, `seams`, `frames`, `page_warnings`, `placeholders`, and `short` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `record(project, *, only=None, seconds=None, use_cues=True)` | `RecordResult` with `sections`, each a `SectionRecording` with `section`, `path`, `log`, `key`, `verdicts`, `ok`, and `label`, and `page_errors` | `ConfigError`, `MissingInputError`, `ToolError` |
@@ -198,7 +199,7 @@ and names the files that no public class reads.
 | Class | Members |
 |---|---|
 | `Word` | `word`, `start`, `end` |
-| `Takes` | The narration cache. `load(path)` returns `None` when the file does not exist. `save(path)`. |
+| `Takes` | The take index and the narration clock. `load(path)` returns `None` when the file does not exist, `save(path)`, `keys`, `voiced_keys`, `span(key)`, `start(key)`, `end(key)`, `starts`, and `speech_end(key)`. |
 | `CueTimes` | The resolved cues per section, as `CueTime` rows. `load(path)`, `save(path)`, `query(key)` for the `?cues=` string, `times(key)`, `get(key, cue)`, and `word_at(key, cue)`. |
 | `RecordingLog` | What the recorder did for one section. `load(path)`, `save(path)`, `trim_seconds`, and `worst_stall_ms`. |
 

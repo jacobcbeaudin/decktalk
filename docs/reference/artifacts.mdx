@@ -11,7 +11,7 @@ stable surface that the [changelog](/changelog) tracks.
 
 ```text
 build/
-  narration/  <hash>.mp3, <hash>.words.json, takes.json, narration.mp3, timeline.json
+  narration/  <hash>.mp3, <hash>.words.json, takes.json, narration.mp3
   cue-times.json
   rec/     recordings/NN.webm, recordings/NN.json
   out/     sections/NN.mp4, <name>.mp4, <name>.srt, <name>.vtt,
@@ -33,7 +33,7 @@ compare times from two files.
 | Value | Counts from |
 |---|---|
 | `<hash>.words.json` `start` and `end` | The start of that take's mp3, which holds no silence of its own. |
-| `timeline.json` section and word times | The start of `narration.mp3`, which holds the spoken sections back to back. |
+| `takes.json` section starts and ends | The start of `narration.mp3`, which holds the spoken sections back to back. |
 | `cue-times.json`, `?cues=`, `?words=`, `decktalk words`, `decktalk clip --start` and `--end` | The section's own start, which is narration t=0 of its recording. |
 | A words file that `decktalk clip` writes | The start of that clip. |
 | RecordingLog `t0_seconds` | The start of the webm. |
@@ -45,9 +45,10 @@ sections, a time in the final mp4 is the narration time plus the length of every
 the first page section shifts every time. Page sections are cut on whole frames, so the two times can also
 differ by up to one frame.
 
-Example: in the build without voice of the scaffold, section 6 starts at 196.70 s in `timeline.json` and at 201.08 s in the
-final mp4. The 4.36 s slate of clip section 5 sits between them, and the whole-frame cuts before it add 0.02 s.
-`decktalk status` prints narration times.
+Example: a page section that follows a 4.36 s clip starts 4.36 s later in the final mp4 than it does in the
+narration, and the whole-frame cuts before it move it by up to one more frame. `decktalk status` prints
+narration times, and `build/out/cuts.json` prints final-mp4 times, so comparing the two rows for one section
+gives the offset for that section.
 
 ## `build/narration/<hash>.words.json`
 
@@ -93,6 +94,12 @@ The cache is the narration directory itself: a take whose mp3 and words file are
 where a fresh clone and a second worktree find them again, and where several projects may share them
 because a hash names each one. `takes.json` and `narration.mp3` stay here, because they belong to one
 project.
+
+The index is also the narration clock. A section runs for its take plus the silence joined either side of
+it, which is `duration_seconds` plus `lead_seconds` plus `tail_joined_seconds`, and the sections are joined
+in key order. Where each one sits in `narration.mp3` is therefore arithmetic over the rows: its start is the
+sum of every earlier section's length, and its end is that plus its own. `decktalk status` prints those
+times, and `decktalk words` prints each section's words against its own start.
 
 {/* sample: build/narration/takes.json, build without voice of the scaffold, first lines */}
 ```json
@@ -147,49 +154,13 @@ project.
 | `sections.NN.spoken` | string | The words sent to the voice, with the script's punctuation and case, and without break tags. |
 | `total_seconds` | number | Every take plus every lead and every joined tail, which is the length of `narration.mp3`. |
 
+Note: The section span runs from a section's start to its end in `narration.mp3`, and its length is
+`duration_seconds + lead_seconds + tail_joined_seconds`. The spoken span runs from that start to the end of
+the last word, which is the start plus `lead_seconds` plus `speech_end_seconds`.
+
 Note: Captions take their spelling from `spoken`, so they match the audio even after the script changes. A
 take index without `spoken` falls back to the current script. [Rebuild one section](/guides/rebuild-one-section#the-narration-cache)
 explains what the hash covers.
-
-## `build/narration/timeline.json`
-
-The timeline gives section and word times in `narration.mp3`.
-
-{/* sample: build/narration/timeline.json, build without voice of the scaffold, first lines */}
-```json
-{
- "narration": "narration.mp3",
- "total_seconds": 245.8,
- "sections": {
-  "01": {
-   "title": "Open",
-   "start": 0.0,
-   "end": 17.8,
-   "duration": 17.8,
-   "speech_end": 16.48,
-   "words": [
-    {
-     "word": "A",
-     "start": 0.7,
-     "end": 1.225
-    },
-```
-
-| Field | Type | Meaning |
-|---|---|---|
-| `narration` | string | File name of the narration track. |
-| `total_seconds` | number | Length of the narration track. |
-| `sections` | table | One entry per spoken section, keyed by `NN`. |
-| `sections.NN.title` | string | Section title. |
-| `sections.NN.start` | number | Start of the section in `narration.mp3`, where its `lead_seconds` of silence begins. |
-| `sections.NN.end` | number | End of the section, including the silence after its last word. |
-| `sections.NN.duration` | number | `end` minus `start`. |
-| `sections.NN.speech_end` | number or null | End of the section's last spoken word, in `narration.mp3`. |
-| `sections.NN.words` | array of tables | The words of the section, with `word`, `start`, and `end` in `narration.mp3`. |
-| `sections.NN.lead_seconds` | number | Silence joined in before the section's mp3: the section's own `lead_seconds`, plus `opening_silence_seconds` for the first spoken section. `duration` and the word times include it. |
-| `estimated` | boolean | True after a build without voice. |
-
-Note: The section span runs from `start` to `end`. The spoken span runs from `start` to `speech_end`.
 
 ## `build/cue-times.json`
 
@@ -262,6 +233,7 @@ measurement always belongs to the recording beside it and a long run can be read
       "due": 2.39,
       "ran": 2.392,
       "frame": 2.392,
+      "describe": null,
       "next": 2.4,
       "after": 2.408
     },
@@ -270,6 +242,7 @@ measurement always belongs to the recording beside it and a long run can be read
       "due": 5.26,
       "ran": 5.266,
       "frame": 5.266,
+      "describe": null,
       "next": 5.275,
       "after": 5.283
     },
@@ -278,6 +251,7 @@ measurement always belongs to the recording beside it and a long run can be read
       "due": 10.03,
       "ran": 10.034,
       "frame": 10.034,
+      "describe": null,
       "next": 10.042,
       "after": 10.05
     },
@@ -286,6 +260,7 @@ measurement always belongs to the recording beside it and a long run can be read
       "due": 11.47,
       "ran": 11.475,
       "frame": 11.475,
+      "describe": null,
       "next": 11.483,
       "after": 11.492
     }
@@ -311,7 +286,7 @@ measurement always belongs to the recording beside it and a long run can be read
 | `page_errors` | array of strings | One line per uncaught exception, plus one line when the page has no runtime catalog. |
 | `frame_gaps` | array | `[seconds, ms]` pairs from `window.__decktalk.frameGaps`, one per long gap between two page frames. |
 | `spoken_log` | array of tables | One `{ text, cueAt, runAt, n, firstOn }` table per `data-text="spoken"` element that matched. |
-| `cue_log` | array of tables | One `{ id, due, ran, frame, next, after }` table per cue, from `window.__decktalk.cueLog`. Times are seconds after narration t=0. |
+| `cue_log` | array of tables | One `{ id, due, ran, frame, describe, next, after }` table per cue, from `window.__decktalk.cueLog`. Times are seconds after narration t=0, and `describe` is what the reveals of that cue say they show, or null. |
 | `long_frames` | array of tables | One `{ start, ms, render, presented }` table per page frame over 50 ms after t=0, from `window.__decktalk.longFrames`. |
 
 Note: `record` reports `PAGE ERROR` for any entry in `page_errors`, and `decktalk build` stops. It reports
@@ -455,7 +430,7 @@ Note: `--page` with one page file writes no page folder. `--section` frames neve
 DeckTalk writes files so that a reader never sees half of one.
 
 - Stages run one after another, and one build runs one Chromium.
-- `takes.json`, `timeline.json`, `cue-times.json`, each words file, and each recording log go to a temporary file first.
+- `takes.json`, `cue-times.json`, each words file, and each recording log go to a temporary file first.
   A rename then puts each one in place.
 - The final mp4 is written to a work file, then renamed to `build/out/<name>.mp4`. The timestamped copy, when
   `[output] timestamped_copy` is on, comes after the rename.

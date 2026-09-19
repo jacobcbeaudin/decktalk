@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
-from ...artifacts import CueTimes, RecordingLog, TimelineSection, input_hash, text_digest
+from ...artifacts import CueTimes, RecordingLog, Word, input_hash, text_digest
 from ...errors import ConfigError
 from ...media.browser import record_page
 from ...media.origin import page_url
@@ -66,35 +66,39 @@ def scene_url(project: Project, section: PageSection, params: dict[str, str]) ->
     return page_url(section.page, query)
 
 
-def words_param(sec: TimelineSection) -> str | None:
-    """A timeline section's words as word@seconds pairs, in seconds after that section starts."""
-    if not sec.words:
+def words_param(words: list[Word]) -> str | None:
+    """A section's words as word@seconds pairs, in seconds after that section starts."""
+    if not words:
         return None
-    return ",".join(
-        f"{w.word.replace(',', '').replace('@', '')}@{max(0.0, w.start - sec.start):.2f}" for w in sec.words
-    )
+    return ",".join(f"{w.word.replace(',', '').replace('@', '')}@{max(0.0, w.start):.2f}" for w in words)
+
+
+def _spoken(project: Project, key: str) -> list[Word]:
+    """One section's words in seconds after it starts, or nothing when it has no take."""
+    takes = project.takes()
+    take = takes.sections.get(key) if takes is not None else None
+    return [] if take is None else project.section_words(key, take.words_file)
 
 
 def words_query(project: Project, section: PageSection) -> str | None:
     """The section's spoken words with their seconds after the section starts, for data-text="spoken" reveals."""
-    timeline = project.timeline()
-    if timeline is None or section.key not in timeline.sections:
-        return None
-    return words_param(timeline.sections[section.key])
+    return words_param(_spoken(project, section.key))
 
 
 def prev_words_query(project: Project, section: PageSection) -> str | None:
-    """The spoken words of the section just before this one in the narration, in seconds after that section starts.
+    """The spoken words of the section before a seamless one, in seconds after that section starts.
 
-    A page that opens on the previous section's last frame reads them, so a value it carries
-    across the cut, such as a word's time, matches what the previous recording showed.
+    A page that opens on the previous section's last frame reads them, so a value it carries across
+    the cut, such as a word's time, matches what the previous recording showed. A section that opens
+    on its own picture reads nothing from the section before it, and giving it those words anyway
+    would put them in its recorded URL and re-record it whenever the section before it was reworded.
     """
-    timeline = project.timeline()
-    if timeline is None or section.key not in timeline.sections:
+    takes = project.takes()
+    if takes is None or not section.seamless or section.key not in takes.sections:
         return None
-    keys = list(timeline.sections)
+    keys = takes.keys
     at = keys.index(section.key)
-    return words_param(timeline.sections[keys[at - 1]]) if at > 0 else None
+    return words_param(_spoken(project, keys[at - 1])) if at > 0 else None
 
 
 # ---- the page, cut into the scene one section plays and the part every scene shares -----------
@@ -296,7 +300,7 @@ def capture_section(project: Project, browser: object, job: Job) -> RecordingLog
         # A stalled page froze a reveal for a few frames, which no cut can repair, so the section
         # is recorded again while the machine is quieter.
         log.warning(
-            "       frames stalled for %d ms; recording section %s again (%d/%d)",
+            "       frames stalled for %d ms, so section %s is recorded again (%d/%d)",
             stall,
             job.section.key,
             attempt,

@@ -103,21 +103,22 @@ src/decktalk/
   tomlmap.py     one mapping loader: located errors, key hints, and dataclass trees
   settings.py    tuning settings: defaults, machine file, decktalk.toml, DECKTALK_* env, flags
   toolchain/     what ships in the wheel and what is fetched per machine: cache, ffmpeg, assets
-  artifacts/     one module per build artifact: words, takes, timeline, cue times, recording log, cut list
+  artifacts/     one module per build artifact: words, takes, cue times, recording log, cut list
   captions/      caption layout, and the srt, vtt, chapter and transcript files
   media/         ffmpeg, audio, frames, the encoder, Chromium and the local origin (internal)
   speech/        the speech protocol, the provider registry, and ElevenLabs (internal)
   model/         one project: the decktalk.toml document, the build paths, .env, the script and cues
   cli/           the command line: the command table, the typed options, one handler module per
                  group of it, the --json envelope with its exit policy and progress log, the tables
-  scaffold.py    install, doctor, and init: the downloads and the template copy
+  scaffold/      init, examples, skills, install and doctor: the template copy and the downloads
   status.py      what a project has built, read from disk for `decktalk status`
   stages/        narrate/ (plan, script_rules, takes), align/ (pages), preflight/ (freeze, scan),
                  record/ (capture, start, checks), assemble/ (cut, mix, loudness, publish),
                  verify/ (plan, measure, seams), screenshots, clip (with words), soundscape, build
-  runtime/       decktalk-runtime.js, the page contract
+  runtime/       decktalk-runtime.js, the page contract, and decktalk-probe.js, the instrumentation
   katex/         the pinned KaTeX release the pages typeset with
-  template/      what `decktalk init` writes
+  template/      the starter and the examples that `decktalk init` writes
+  skills/        the six packaged skills that `decktalk init` installs
 tests/
   test_imports.py    the layers: no import points up or sideways, and every stage returns a result
   unit/              one test file per module, at the path mirroring it under src/decktalk/

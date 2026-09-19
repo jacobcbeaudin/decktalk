@@ -62,7 +62,7 @@ def _no_project(opts: opt.StatusOptions, err: ConfigError) -> Outcome:
         cues=root / "cues.json",
         cues_exists=(root / "cues.json").exists(),
         sections=[],
-        timeline=None,
+        takes=None,
         cue_times_exists=False,
         cue_times_sections={},
         final=root / "build" / "out" / f"{root.name}.mp4",

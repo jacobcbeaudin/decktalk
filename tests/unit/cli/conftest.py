@@ -1,14 +1,23 @@
-"""Hand-built stage results, so a handler is tested with no recording, no ffmpeg and no browser."""
+"""Stage results built by hand, so a handler is tested with no recording, no ffmpeg and no browser.
+
+Each fixture returns the real result class a stage returns, so the payload a handler prints is the
+payload a caller receives, and a test reads it back through `cli.schema` like any other caller.
+"""
 
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from decktalk.artifacts import Luma, RecordingChecks, RecordingLog
 from decktalk.cli import authoring, video
-from decktalk.verdicts import Findings, Verdict
+from decktalk.model import PageSection
+from decktalk.stages.record import RecordResult, SectionRecording
+from decktalk.stages.verify import CueCheck, CutCheck, StartCheck, VerifyResult
+from decktalk.verdicts import SkipReason, Verdict
 
 
 @pytest.fixture
@@ -36,13 +45,14 @@ def fake_project(monkeypatch, tmp_path):
         narration_dir=narration,
         takes_dir=narration,
         takes_path=narration / "takes.json",
-        timeline_path=narration / "timeline.json",
+        narration_path=narration / "narration.mp3",
         settings=SimpleNamespace(narration=SimpleNamespace(words_per_minute=150)),
         voice=SimpleNamespace(price_per_1000_characters=0.0),
         workspace=SimpleNamespace(
             recording_log=lambda key: tmp_path / "build" / "recordings" / f"{key}.json",
             progress_path=tmp_path / "build" / "progress.jsonl",
         ),
+        page_files=["deck/index.html"],
     )
     for module in (authoring, video):
         monkeypatch.setattr(module, "load_project", lambda opts: project)
@@ -50,24 +60,18 @@ def fake_project(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def recording_row():
+def recording_row(tmp_path):
     """One section of a `record` run, carrying whichever verdicts a test wants judged."""
 
-    def row(*verdicts: Verdict) -> SimpleNamespace:
-        luma = SimpleNamespace(y10=100.0, y50=100.0, y90=100.0, max50=200.0)
-        checks = SimpleNamespace(duration_seconds=9.0, wanted_seconds=10.5, luma=luma, verdicts=verdicts)
-        log = SimpleNamespace(
-            checks=checks, page_errors=[], assets=[], trim_seconds=1.4, t0_guessed=False, t0_method="cover"
-        )
-        return SimpleNamespace(
-            key="01",
-            kept=False,
-            log=log,
-            path=None,
-            verdicts=verdicts,
-            label=" ".join(verdicts) or "ok",
-            to_dict=lambda root: {"key": "01", "verdicts": list(verdicts)},
-        )
+    def row(*verdicts: Verdict, number: int = 1, kept: bool = False) -> SectionRecording:
+        checks = RecordingChecks(9.0, 10.5, Luma(y10=100.0, y50=100.0, y90=100.0, max50=200.0), verdicts)
+        log = RecordingLog(
+            url="u", requested_seconds=10.5, settle_seconds=0.5, load_seconds=0.1, clock_start_seconds=1.4,
+            t0_method="cover", checks=checks,
+        )  # fmt: skip
+        section = PageSection(number=number, page="deck/index.html", scene=str(number))
+        path = Path(tmp_path) / "build" / "recordings" / f"{section.key}.webm"
+        return SectionRecording(section=section, path=path, log=log, kept=kept)
 
     return row
 
@@ -76,14 +80,8 @@ def recording_row():
 def record_result():
     """A whole `record` result around the section rows a test hands it."""
 
-    def result(*rows: SimpleNamespace) -> SimpleNamespace:
-        return SimpleNamespace(
-            sections=list(rows),
-            kept_sections=[r for r in rows if r.kept],
-            page_errors=[r for r in rows if r.log.page_errors],
-            findings=Findings.of(v for r in rows for v in r.verdicts),
-            to_dict=lambda root: {"recordings": [r.to_dict(root) for r in rows]},
-        )
+    def result(*rows: SectionRecording) -> RecordResult:
+        return RecordResult(sections=list(rows))
 
     return result
 
@@ -92,46 +90,33 @@ def record_result():
 def cue_row():
     """One cue row of `verify`, with the fields a test cares about overridden."""
 
-    def row(check: str, verdict: Verdict, **fields) -> SimpleNamespace:
+    def row(check: str, verdict: Verdict, reason: SkipReason | None = None, **fields) -> CueCheck:
         built = dict(
-            check=check,
             cue_seconds=1.0,
             final_seconds=1.0,
             changed_percent=1.0,
             control_percent=0.0,
-            ok=verdict == Verdict.CHANGED,
+            ok=verdict is Verdict.CHANGED,
             note="",
             offset_ms=0,
-            av_ms=None,
-            verdict=verdict,
-            reason=None,
         )
         built.update(fields)
-        return SimpleNamespace(**built)
+        return CueCheck(check=check, verdict=verdict, reason=reason, **built)
 
     return row
 
 
 @pytest.fixture
-def verify_result():
-    """A whole `verify` result around the cue rows a test hands it."""
+def verify_result(tmp_path):
+    """A whole `verify` result around the cue rows a test hands it, over a film that opens and cuts cleanly."""
 
-    def result(*cues: SimpleNamespace) -> SimpleNamespace:
-        start = SimpleNamespace(key="01", start=0.0, probe_at=0.5, yavg=50.0, ymax=200.0, ok=True, verdict=Verdict.OK)
-        cut = SimpleNamespace(key="01", cut_at=10.0, rms_db=-120.0, ok=True, verdict=Verdict.QUIET)
-        return SimpleNamespace(
+    def result(*cues: CueCheck) -> VerifyResult:
+        return VerifyResult(
             total_seconds=10.0,
-            starts=[start],
-            cuts=[cut],
+            starts=[StartCheck(key="01", start=0.0, probe_at=0.5, yavg=50.0, ymax=200.0, ok=True)],
+            cuts=[CutCheck(key="01", cut_at=10.0, rms_db=-120.0, ok=True)],
             cues=list(cues),
-            black_starts=0,
-            ok=all(c.verdict in (Verdict.CHANGED, Verdict.SKIPPED) for c in cues),
-            seams=[],
-            recordings=[],
-            recorded_findings=Findings(),
-            film_findings=Findings.of([start.verdict, cut.verdict, *(c.verdict for c in cues)]),
-            findings=Findings.of([start.verdict, cut.verdict, *(c.verdict for c in cues)]),
-            to_dict=lambda root: {"cues": [{"cue": c.check, "verdict": c.verdict} for c in cues]},
+            final=Path(tmp_path) / "build" / "out" / "deck.mp4",
         )
 
     return result

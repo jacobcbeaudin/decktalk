@@ -37,7 +37,7 @@ def test_preflight_estimates_each_reveal_from_frozen_frames(tmp_path, monkeypatc
 
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
     root = init(tmp_path / "p", name="p").root
-    narrate(Project.load(root, environ={}), silent=True)  # the timeline gives the pages their words
+    narrate(Project.load(root, environ={}), silent=True)  # the take index gives the pages their words
     p = Project.load(root, environ={})
     result = preflight(p, only=[1, 2])
     assert result.frames == root / "build" / "preflight"
@@ -180,7 +180,8 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(
     assert doc["command"] == "preflight" and doc["ok"] is True
     payload = doc["preflight"]
     assert set(payload) == {
-        "voice", "note", "placeholders", "takes", "totals", "cue_times", "cues", "seams", "warnings", "frames",
+        "voice", "note", "placeholders", "takes", "totals", "cue_times", "cues", "seams", "warnings",
+        "page_errors", "page_scan", "frames",
     }  # fmt: skip
     assert payload["cue_times"]["estimated_sections"] == ["02"] and payload["totals"]["synthesize"] == 1
     assert [t["hash"] for t in payload["takes"] if t["status"] == "cached"] == [
@@ -246,3 +247,26 @@ class _Silent:
 
     def cache_key(self, request) -> str:
         return "test-voice"
+
+
+def test_a_page_that_threw_is_a_certain_finding_and_a_row_a_reader_can_dispatch_on():
+    """`preflight` is the gate before a credit is spent, so a page that failed may not exit 0."""
+    from decktalk.artifacts import CueTimes
+    from decktalk.settings import Settings
+    from decktalk.stages.align import AlignResult
+    from decktalk.stages.preflight import PreflightResult
+
+    result = PreflightResult(
+        voice={},
+        narration=Settings().narration,
+        takes=[],
+        note=None,
+        align=AlignResult(cue_times=CueTimes(), sections=[], unresolved=0, estimated=[]),
+        estimated=[],
+        rate=0.0,
+        page_errors=[("deck/index.html", "Error: boom")],
+    )
+    assert result.findings == Findings(certain=1)
+    [row] = result.error_rows
+    assert (row.verdict, row.where, row.detail) == (Verdict.PAGE_ERROR, "deck/index.html", "Error: boom")
+    assert result.to_dict(Path("."))["page_errors"] == [row.to_dict()]

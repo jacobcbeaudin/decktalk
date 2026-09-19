@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...artifacts import BLACK, CLIP, PAGE, SLATE, Cut, Cuts, RecordingLog, Timeline
+from ...artifacts import Cut, Cuts, RecordingLog, Takes
 from ...errors import MissingInputError, ToolError
 from ...jsonio import relative
 from ...media import ffmpeg
@@ -24,6 +24,7 @@ from ...media.browser import render_slate
 from ...media.encode import Encoder
 from ...model import ClipSection, PageSection, Project, Section
 from ...model.document import frame_dip
+from ...pipeline import SectionKind, Stage, Substitute
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class RenderedSection:
     duration: float
     note: str
     source: str = ""  # The recording or the clip this section was cut from, project-relative.
-    substitute: str | None = None  # SLATE or BLACK when the real thing was missing.
+    substitute: Substitute | None = None  # What played because the real thing was missing.
     audio: Path | None = None  # A clip with its own sound, mixed in at the section start.
 
 
@@ -58,7 +59,7 @@ def section_slate(project: Project, sec: ClipSection) -> Path | None:
             browser_path=project.settings.record.browser_path,
         )
     except ToolError as exc:
-        log.warning("could not render a slate (%s); using a plain frame", exc)
+        log.warning("could not render a slate (%s), so a plain frame is used", exc)
         return None
 
 
@@ -71,7 +72,7 @@ def render_clip(
     dip: float,
     *,
     strict: bool,
-) -> tuple[str, str, str | None, Path | None]:
+) -> tuple[str, str, Substitute | None, Path | None]:
     """(note, source, substitute, audio) for one clip section. Its picture alone goes to the file."""
     clip = project.path(sec.clip)
     if clip.exists():
@@ -85,7 +86,7 @@ def render_clip(
         where = relative(clip, project.root)
         if ffmpeg.has_audio(clip):
             return f"{clip.name} (own audio)", where, None, clip
-        log.warning("%s has no audio track; it plays silent", clip)
+        log.warning("%s has no audio track, so it plays silent", clip)
         return f"{clip.name} (silent)", where, None, None
     if strict and not sec.optional:
         raise MissingInputError(
@@ -95,12 +96,14 @@ def render_clip(
     secs = sec.slate_seconds
     if sec.optional:
         log.warning(
-            "section %s: %s missing; slate for %gs (drop your clip at that path; the section is optional, "
-            "so --strict allows the slate)",
+            "section %s: %s is missing, so a slate plays for %gs. Drop your clip at that path. The "
+            "section is optional, so --strict allows the slate",
             sec.key, sec.clip, secs,
         )  # fmt: skip
     else:
-        log.warning("section %s: %s missing; slate for %gs (drop your clip at that path)", sec.key, sec.clip, secs)
+        log.warning(
+            "section %s: %s is missing, so a slate plays for %gs. Drop your clip at that path", sec.key, sec.clip, secs
+        )
     configured = project.path(project.mix.slate) if project.mix.slate else None
     png = configured if configured and configured.exists() else section_slate(project, sec)
     vin = (
@@ -114,7 +117,7 @@ def render_clip(
         "-filter_complex", f"[0:v]{enc.fit}{f}[v]",
         "-map", "[v]", "-an", "-t", f"{secs}", *enc.venc, "-movflags", "+faststart", str(out),
     )  # fmt: skip
-    return "slate", sec.clip, SLATE, None
+    return Substitute.SLATE.value, sec.clip, Substitute.SLATE, None
 
 
 def render_page(
@@ -127,11 +130,11 @@ def render_page(
     total: float,
     *,
     strict: bool,
-) -> tuple[str, str, str | None]:
+) -> tuple[str, str, Substitute | None]:
     """(note, source, substitute) for one page section, cut from its recording or from black."""
     webm = project.recording(sec)
     vlead = ""
-    substitute: str | None = None
+    substitute: Substitute | None = None
     source = relative(webm, project.root)
     if webm.exists():
         vin = ["-i", str(webm)]
@@ -143,9 +146,9 @@ def render_page(
     else:
         if strict:
             raise MissingInputError(f"section {sec.number}: recording missing: {webm}")
-        log.warning("section %s: %s missing; using black", sec.key, webm.name)
-        vin = enc.color_source("black", total)
-        note, substitute = "black", BLACK
+        log.warning("section %s: %s is missing, so the section is black", sec.key, webm.name)
+        vin = enc.color_source("0x000000", total)
+        note, substitute = Substitute.BLACK.value, Substitute.BLACK
     f = vfades(total, *fades, dip)
     ffmpeg.run(
         *vin,
@@ -156,12 +159,12 @@ def render_page(
     return note, source, substitute
 
 
-def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> list[RenderedSection]:
+def render_sections(project: Project, takes: Takes, *, strict: bool) -> list[RenderedSection]:
     enc = Encoder(project.settings.video)
     project.out_dir.mkdir(parents=True, exist_ok=True)
     project.sections_dir.mkdir(parents=True, exist_ok=True)
     flags = project.document.fade_flags
-    targets = timeline_targets(timeline, enc.v.fps)
+    targets = section_targets(takes, enc.v.fps)
     dip = frame_dip(project.transition.dip_seconds, enc.v.fps)
     rows: list[RenderedSection] = []
     for sec in project.sections:
@@ -173,7 +176,9 @@ def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> li
             total = targets.get(sec.key, 0.0)
             if total <= 0:
                 raise MissingInputError(
-                    f"section {sec.key} has no span in {project.timeline_path}; run `decktalk narrate`"
+                    f"section {sec.key} has no span in {project.takes_path.name}.",
+                    hint="Run `decktalk narrate` first.",
+                    path=project.takes_path,
                 )
             total = round(total + sec.hold_seconds, 3)  # the narration pauses for the hold, as it does for a clip
             note, source, substitute = render_page(project, enc, sec, out, flags[sec.key], dip, total, strict=strict)
@@ -199,7 +204,7 @@ def cut_list(project: Project, rows: list[RenderedSection]) -> Cuts:
         cuts.sections.append(
             Cut(
                 section=row.section.number,
-                kind=CLIP if row.section.is_clip else PAGE,
+                kind=SectionKind.CLIP if row.section.is_clip else SectionKind.PAGE,
                 start=round(starts[key], 3),
                 end=round(starts[key] + row.duration, 3),
                 source=row.source,
@@ -231,13 +236,14 @@ def concat(files: list[Path], out: Path) -> None:
         lst.unlink(missing_ok=True)
 
 
-def timeline_targets(timeline: Timeline, fps: int) -> dict[str, float]:
+def section_targets(takes: Takes, fps: int) -> dict[str, float]:
     """Frame-exact video length per spoken section, from cumulative frame boundaries."""
     targets: dict[str, float] = {}
-    for key, sec in timeline.sections.items():
-        start_f = round(sec.start * fps)
-        end_f = round(sec.end * fps)
-        targets[key] = (end_f - start_f) / fps
+    for key in takes.keys:
+        start, end = takes.start(key), takes.end(key)
+        if start is None or end is None:
+            continue
+        targets[key] = (round(end * fps) - round(start * fps)) / fps
     return targets
 
 
@@ -250,9 +256,9 @@ def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:
     return out
 
 
-def stray_warnings(project: Project, command: str) -> list[str]:
-    """Warn about every leftover section video, and return what was said."""
-    messages = project.stray_section_warnings(command)
+def stray_warnings(project: Project) -> list[str]:
+    """Warn about every leftover section video, which `assemble` leaves out, and return what was said."""
+    messages = project.stray_section_warnings(Stage.ASSEMBLE)
     for message in messages:
         log.warning(message)
     return messages

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from decktalk.artifacts import Timeline, TimelineSection, Word
+from decktalk.artifacts import Take, Takes, Word, write_words
 from decktalk.model import Project
 from decktalk.stages.assemble.cut import RenderedSection
 
 MINIMAL_TOML = """
 [project]
 name = "t"
+
+[narration]
+lead_seconds = 0
 
 [[section]]
 number = 0
@@ -31,6 +34,9 @@ hold_seconds = 1.5
 PAGES_TOML = """
 [project]
 name = "t"
+
+[narration]
+lead_seconds = 0
 
 [[section]]
 number = 1
@@ -55,6 +61,9 @@ MID_CLIP_TOML = """
 [project]
 name = "t"
 
+[narration]
+lead_seconds = 0
+
 [[section]]
 number = 1
 page = "deck/index.html"
@@ -76,6 +85,9 @@ page = "deck/index.html"
 TITLED_CLIP_TOML = """
 [project]
 name = "t"
+
+[narration]
+lead_seconds = 0
 
 [[section]]
 number = 1
@@ -111,16 +123,42 @@ def spoken(text: str, start: float = 0.0, step: float = 0.4, gap_after: str | No
     return words
 
 
+def take_index(project: Project, rows: dict[str, tuple[str, float, float | None, list[Word]]]) -> Takes:
+    """A take index built from (chapter, span, speech end, words) per section, with its words on disk.
+
+    Every span is the take alone, because the projects here set `[narration] lead_seconds = 0`, so a
+    section starts where the one before it ended, and the words are written where the take names
+    them, which is what every reader of the clock opens.
+    """
+    project.takes_dir.mkdir(parents=True, exist_ok=True)
+    index = Takes(script="script.md", model="m", output_format="mp3")
+    for key, (chapter, span, speech_end_seconds, words) in rows.items():
+        name = f"{key}-take"
+        write_words(project.takes_dir / f"{name}.words.json", words)
+        index.sections[key] = Take(
+            index=int(key),
+            chapter=chapter,
+            file=f"{name}.mp3",
+            words_file=f"{name}.words.json",
+            hash=f"h{key}",
+            word_count=len(words),
+            estimated_seconds=span,
+            duration_seconds=span,
+            speech_end_seconds=speech_end_seconds,
+        )
+    index.total_seconds = round(sum(index.span(k) or 0.0 for k in index.keys), 3)
+    return index
+
+
 def mid_clip_plan(tmp_path):
-    """Pages 1, 3 and 4 around a 3-second clip at 2, with the rows and timeline assemble would build."""
+    """Pages 1, 3 and 4 around a 3-second clip at 2, with the rows and take index assemble would build."""
     p = Project.load(write_project(tmp_path, MID_CLIP_TOML), environ={})
-    tl = Timeline(
-        narration="narration.mp3",
-        total_seconds=6.0,
-        sections={
-            "01": TimelineSection("A", 0.0, 2.0, 2.0, 1.6, spoken("alpha beta", 0.7)),
-            "03": TimelineSection("C", 2.0, 4.5, 2.5, 4.1, spoken("gamma delta", 2.1)),
-            "04": TimelineSection("D", 4.5, 6.0, 1.5, 5.8, spoken("epsilon", 4.6)),
+    takes = take_index(
+        p,
+        {
+            "01": ("A", 2.0, 1.6, spoken("alpha beta", 0.7)),
+            "03": ("C", 2.5, 2.1, spoken("gamma delta", 0.1)),
+            "04": ("D", 1.5, 1.3, spoken("epsilon", 0.1)),
         },
     )
     rows = [
@@ -129,7 +167,7 @@ def mid_clip_plan(tmp_path):
         RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.52, "03.webm"),
         RenderedSection(p.sections[3], tmp_path / "04.mp4", 1.48, "04.webm"),
     ]
-    return p, tl, rows
+    return p, takes, rows
 
 
 def titled_clip_rows(tmp_path, *, clip_audio: bool = True):
@@ -161,6 +199,12 @@ def write_project_fixture():
 def spoken_fixture():
     """Evenly spaced words, as a silent narration gives them."""
     return spoken
+
+
+@pytest.fixture(name="take_index")
+def take_index_fixture():
+    """A take index whose words are on disk, which is what the narration clock is read from."""
+    return take_index
 
 
 @pytest.fixture(name="mid_clip_plan")

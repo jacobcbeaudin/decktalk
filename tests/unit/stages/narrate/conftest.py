@@ -18,7 +18,8 @@ provider = "test-voice"
 price_per_1000_characters = 0.30
 
 [narration]
-opening_silence_seconds = 0.7
+lead_seconds = 0.5
+min_tail_seconds = 0.7
 
 [[section]]
 number = 1

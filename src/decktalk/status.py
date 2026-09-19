@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .artifacts import Timeline
+from .artifacts import Takes
 from .errors import DeckTalkError
 from .jsonio import relative
 from .media.ffmpeg import probe_duration
@@ -140,7 +140,7 @@ class StatusResult:
     cues: Path
     cues_exists: bool
     sections: list[SectionStatus]
-    timeline: Timeline | None
+    takes: Takes | None
     cue_times_exists: bool
     cue_times_sections: dict[str, dict[str, float]]
     final: Path
@@ -157,7 +157,7 @@ class StatusResult:
 
     def to_dict(self, root: Path) -> dict[str, Any]:
         """The report as JSON-ready data, with every path relative to the project root."""
-        tl = self.timeline
+        index = self.takes
         return {
             "project": {
                 "root": self.root.as_posix(),
@@ -168,17 +168,20 @@ class StatusResult:
                 "cues_exists": self.cues_exists,
             },
             "sections": [
-                {"key": s.key, "kind": s.kind, "source": s.source, "recorded": s.recorded, "cut": s.cut}
+                {
+                    "key": s.key,
+                    "kind": s.kind,
+                    "source": s.source,
+                    "recorded": s.recorded,
+                    "cut": s.cut,
+                }
                 for s in self.sections
             ],
-            "timeline": {
-                "exists": tl is not None,
-                "estimated": bool(tl and tl.estimated),
-                "total_seconds": tl.total_seconds if tl else None,
-                "sections": [
-                    {"key": key, "title": sec.title, "start": sec.start, "end": sec.end, "duration": sec.duration}
-                    for key, sec in (tl.sections.items() if tl else [])
-                ],
+            "narration": {
+                "exists": index is not None,
+                "estimated": bool(index and index.estimated),
+                "total_seconds": index.total_seconds if index else None,
+                "sections": [] if index is None else [_clock_row(index, key) for key in index.keys],
             },
             "cue_times": {
                 "exists": self.cue_times_exists,
@@ -282,6 +285,17 @@ def _read(load: Callable[[], Any], path: Path, root: Path) -> tuple[Any, Finding
         return None, Finding(detail=detail, verdict=Verdict.UNREADABLE, where=relative(path, root))
 
 
+def _clock_row(index: Takes, key: str) -> dict[str, Any]:
+    """Where one section sits on the narration clock, which the take index works out from its rows."""
+    return {
+        "key": key,
+        "title": index.sections[key].chapter,
+        "start": index.start(key),
+        "end": index.end(key),
+        "duration": index.span(key),
+    }
+
+
 def status(project: Project) -> StatusResult:
     """Read what exists for the project. Nothing is written, and only the final mp4 is probed."""
     sections = []
@@ -309,8 +323,8 @@ def status(project: Project) -> StatusResult:
     # A build artifact a hand edit broke is a row like any other, because reading what is on disk is
     # this command's work and a reader that met exit 3 here would be told DeckTalk was at fault.
     cue_times, broken = _read(project.cue_times, project.cue_times_path, project.root)
-    timeline, timeline_broken = _read(project.timeline, project.timeline_path, project.root)
-    found += [row for row in (broken, timeline_broken) if row is not None]
+    takes, takes_broken = _read(project.takes, project.takes_path, project.root)
+    found += [row for row in (broken, takes_broken) if row is not None]
     times = {} if cue_times is None else {k: cue_times.times(k) for k in cue_times.sections if cue_times.sections[k]}
     return StatusResult(
         root=project.root,
@@ -320,7 +334,7 @@ def status(project: Project) -> StatusResult:
         cues=project.cues,
         cues_exists=project.cues.exists(),
         sections=sections,
-        timeline=timeline,
+        takes=takes,
         cue_times_exists=project.cue_times_path.exists(),
         cue_times_sections=times,
         final=project.final,

@@ -15,7 +15,6 @@ that starts past a missing artifact stops and names the file rather than assembl
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from collections.abc import Callable
@@ -24,9 +23,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..artifacts import ProgressRow, append_row, start_log
 from ..errors import ConfigError, MissingInputError
 from ..jsonio import relative
 from ..model import PageSection, Project
+from ..pipeline import ProgressEvent, Stage
 from ..verdicts import Findings
 from .align import AlignResult, UnknownCueError, align
 from .assemble import AssembleResult, assemble
@@ -36,12 +37,8 @@ from .verify import VerifyResult, verify
 
 log = logging.getLogger(__name__)
 
-Reporter = Callable[[str, Any], None]
+Reporter = Callable[[Stage, Any], None]
 """`report(stage, None)` opens a stage and `report(stage, result)` closes it with what it produced."""
-
-# The five stages in the only order they run in. Both ends of --from and --to are inclusive.
-STAGES = ("narrate", "align", "record", "assemble", "verify")
-"""Every stage a run executes, in the order it executes them, which is what a progress log counts."""
 
 
 @dataclass
@@ -54,27 +51,26 @@ class Progress:
     """
 
     path: Path
-    stages: tuple[str, ...]
+    stages: tuple[Stage, ...]
 
     def start(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text("", encoding="utf-8")
+        start_log(self.path)
 
-    def event(self, stage: str, event: str, *, section: int | None = None, detail: str | None = None) -> None:
+    def event(
+        self, stage: Stage, event: ProgressEvent, *, section: int | None = None, detail: str | None = None
+    ) -> None:
         """Append one event. `detail` is one sentence, because a reader relays it to a person."""
-        row = {
-            "ts": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-            "pid": os.getpid(),
-            "stage": stage,
-            "stage_index": self.stages.index(stage) + 1,
-            "stage_count": len(self.stages),
-            "section": section,
-            "event": event,
-            "detail": detail,
-        }
-        with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(row) + "\n")
-            fh.flush()
+        row = ProgressRow(
+            ts=datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            pid=os.getpid(),
+            stage=stage,
+            stage_index=self.stages.index(stage) + 1,
+            stage_count=len(self.stages),
+            section=section,
+            event=event,
+            detail=detail,
+        )
+        append_row(self.path, row)
 
 
 def stopped_on(exc: BaseException) -> str:
@@ -88,32 +84,30 @@ def stopped_on(exc: BaseException) -> str:
     return f"The run stopped on {name}: {first}" if first else f"The run stopped on {name}."
 
 
-def stage_plan(from_stage: str | None, to_stage: str | None) -> tuple[str, ...]:
+def stage_plan(from_stage: Stage | None, to_stage: Stage | None) -> tuple[Stage, ...]:
     """The stages this run executes, both ends inclusive, in the fixed order."""
-    for name in (from_stage, to_stage):
-        if name is not None and name not in STAGES:
-            raise ConfigError(f"unknown stage {name!r}; the five stages are {', '.join(STAGES)}")
-    first = STAGES.index(from_stage) if from_stage else 0
-    last = STAGES.index(to_stage) if to_stage else len(STAGES) - 1
-    if first > last:
-        raise ConfigError(f"--from {STAGES[first]} comes after --to {STAGES[last]}")
-    return STAGES[first : last + 1]
+    plan = Stage.span(from_stage, to_stage)
+    if not plan:
+        assert from_stage is not None and to_stage is not None
+        raise ConfigError(f"the stage {from_stage.value} comes after the stage {to_stage.value}, so this run is empty")
+    return plan
 
 
-def required_inputs(project: Project, plan: tuple[str, ...]) -> list[Path]:
+def required_inputs(project: Project, plan: tuple[Stage, ...]) -> list[Path]:
     """The artifacts a skipped stage would have written, which this run reads instead of writing.
 
     A run that starts at `assemble` needs the recordings a skipped `record` would have made, and a
     run that starts anywhere past `narrate` needs the narration clock. Only a missing one matters.
     """
+    ran = set(plan)
     needed: list[Path] = []
-    if "narrate" not in plan and {"align", "record", "assemble", "verify"} & set(plan):
-        needed.append(project.timeline_path)
-    if "align" not in plan and {"record", "assemble", "verify"} & set(plan):
+    if Stage.NARRATE not in ran and ran & {Stage.ALIGN, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY}:
+        needed.append(project.takes_path)
+    if Stage.ALIGN not in ran and ran & {Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY}:
         needed.append(project.cue_times_path)
-    if "record" not in plan and {"assemble"} & set(plan):
+    if Stage.RECORD not in ran and Stage.ASSEMBLE in ran:
         needed += [project.recording(sec) for sec in project.page_sections]
-    if "assemble" not in plan and "verify" in plan:
+    if Stage.ASSEMBLE not in ran and Stage.VERIFY in ran:
         needed.append(project.final)
     return [path for path in needed if not path.exists()]
 
@@ -122,7 +116,7 @@ def required_inputs(project: Project, plan: tuple[str, ...]) -> list[Path]:
 class BuildResult:
     """What each stage of one run produced, in the order the run made them."""
 
-    stages: tuple[str, ...] = STAGES
+    stages: tuple[Stage, ...] = tuple(Stage)
     narration: NarrateResult | None = None
     align: AlignResult | None = None
     recordings: RecordResult | None = None
@@ -131,10 +125,10 @@ class BuildResult:
     progress: Path | None = None
 
     @property
-    def ran(self) -> tuple[tuple[str, Any], ...]:
+    def ran(self) -> tuple[tuple[Stage, Any], ...]:
         """Each stage and the result it returned, in the order the stages run."""
         results = (self.narration, self.align, self.recordings, self.assembly, self.verification)
-        return tuple(zip(STAGES, results, strict=True))
+        return tuple(zip(Stage, results, strict=True))
 
     @property
     def ok(self) -> bool:
@@ -143,7 +137,7 @@ class BuildResult:
         The exit code is not this: an uncertain finding, such as a slate standing in for a clip the
         project does not have, fails the run only under `--strict`, as it does on every command.
         """
-        done = [result for name, result in self.ran if name in self.stages]
+        done = [result for stage, result in self.ran if stage in self.stages]
         return all(result is not None for result in done) and self.findings == Findings()
 
     @property
@@ -156,10 +150,10 @@ class BuildResult:
         narration span, is counted here through `verify`, which is the only stage that read it.
         """
         total = Findings()
-        for name, result in self.ran:
+        for stage, result in self.ran:
             if result is None:
                 continue
-            if name == "verify" and self.recordings is not None and self.verification is not None:
+            if stage is Stage.VERIFY and self.recordings is not None and self.verification is not None:
                 judged = {row.key for row in self.recordings.sections}
                 unjudged = (row for row in self.verification.recordings if row.key not in judged)
                 total = total + self.verification.film_findings
@@ -169,9 +163,11 @@ class BuildResult:
         return total
 
     def to_dict(self, root: Path) -> dict[str, Any]:
-        """One entry per stage that ran, each the stage's own JSON-ready data."""
-        doc: dict[str, Any] = {name: None if result is None else result.to_dict(root) for name, result in self.ran}
-        doc["stages"] = list(self.stages)
+        """One entry per stage, under the name a build gives it, each the stage's own JSON-ready data."""
+        doc: dict[str, Any] = {
+            stage.value: None if result is None else result.to_dict(root) for stage, result in self.ran
+        }
+        doc["stages"] = [stage.value for stage in self.stages]
         doc["progress"] = None if self.progress is None else relative(self.progress, root)
         return doc
 
@@ -187,8 +183,8 @@ def build(
     strict: bool = False,
     allow_unresolved_cues: bool = False,
     allow_unknown_cues: bool = False,
-    from_stage: str | None = None,
-    to_stage: str | None = None,
+    from_stage: Stage | None = None,
+    to_stage: Stage | None = None,
     progress_path: Path | None = None,
     report: Reporter | None = None,
 ) -> BuildResult:
@@ -206,95 +202,102 @@ def build(
     missing = required_inputs(project, plan)
     if missing:
         names = ", ".join(relative(path, project.root) for path in missing)
-        steps.event(plan[0], "fail", detail=f"The run needs {names}, which an earlier stage writes.")
+        steps.event(plan[0], ProgressEvent.FAIL, detail=f"The run needs {names}, which an earlier stage writes.")
         raise MissingInputError(
-            f"this run starts at {plan[0]} and needs {names}, which an earlier stage writes. "
+            f"this run starts at {plan[0].value} and needs {names}, which an earlier stage writes. "
             "Run the earlier stage, or start the build further back with --from."
         )
     sections = [s for s in project.page_sections if not only or s.number in only]
     running = plan[0]
 
-    def emit(stage: str, result: Any) -> None:
+    def emit(stage: Stage, result: Any) -> None:
         if report:
             report(stage, result)
 
-    def run(stage: str, detail: str) -> bool:
+    def run(stage: Stage, detail: str) -> bool:
         nonlocal running
         if stage not in plan:
             return False
         running = stage
-        log.info("===== %s =====", stage)
-        steps.event(stage, "start", detail=detail)
+        # The reporter opens a stage on a result of None, which is what names the stage in every
+        # stderr line that follows and starts the clock the closing line reports.
+        emit(stage, None)
+        log.info("===== %s =====", stage.value)
+        steps.event(stage, ProgressEvent.START, detail=detail)
         return True
 
     try:
-        if run("narrate", "Narrating the script into one take per spoken section."):
+        if run(Stage.NARRATE, "Narrating the script into one take per spoken section."):
             out.narration = narrate(project, silent=silent, force=force)
             wrote = len(out.narration.synthesized)
-            steps.event("narrate", "done", detail=f"Wrote {wrote} take(s) and reused the rest.")
-            emit("narrate", out.narration)
-        if run("align", "Matching every cue phrase against the narrated words."):
+            steps.event(Stage.NARRATE, ProgressEvent.DONE, detail=f"Wrote {wrote} take(s) and reused the rest.")
+            emit(Stage.NARRATE, out.narration)
+        if run(Stage.ALIGN, "Matching every cue phrase against the narrated words."):
             # The flag passes straight through, and the align table still prints before the build stops.
             try:
                 out.align = align(project, allow_unknown_cues=allow_unknown_cues)
             except UnknownCueError as exc:
                 out.align = exc.result
-                steps.event("align", "fail", detail="A cue id appears nowhere in the page that plays it.")
-                emit("align", out.align)
+                nowhere = "A cue id appears nowhere in the page that plays it."
+                steps.event(Stage.ALIGN, ProgressEvent.FAIL, detail=nowhere)
+                emit(Stage.ALIGN, out.align)
                 raise
-            steps.event("align", "done", detail=f"Left {out.align.unresolved} cue(s) unresolved.")
-            emit("align", out.align)
+            steps.event(Stage.ALIGN, ProgressEvent.DONE, detail=f"Left {out.align.unresolved} cue(s) unresolved.")
+            emit(Stage.ALIGN, out.align)
             if out.align.unresolved and not allow_unresolved_cues:
-                steps.event("align", "fail", detail=f"{out.align.unresolved} cue phrase(s) were not found.")
+                missed = f"{out.align.unresolved} cue phrase(s) were not found."
+                steps.event(Stage.ALIGN, ProgressEvent.FAIL, detail=missed)
                 raise ConfigError(
                     f"{out.align.unresolved} cue(s) could not be matched to the narration, and a slide whose "
                     "cues are unresolved never appears.",
                     hint="Fix these phrases in cues.json, or pass --allow-unresolved-cues:\n  "
                     + "\n  ".join(out.align.problems),
                 )
-        if run("record", f"Recording up to {len(sections)} section(s) with headless Chromium."):
+        if run(Stage.RECORD, f"Recording up to {len(sections)} section(s) with headless Chromium."):
 
             def opening(section: PageSection) -> None:
                 where = 1 + [s.number for s in sections].index(section.number)
-                steps.event("record", "start", section=section.number, detail=f"Section {where} of {len(sections)}.")
+                opened = f"Section {where} of {len(sections)}."
+                steps.event(Stage.RECORD, ProgressEvent.START, section=section.number, detail=opened)
 
             def recorded(row: SectionRecording) -> None:
                 what = "Kept the recording on disk" if row.kept else "Recorded the section"
-                event = "skip" if row.kept else "done"
-                steps.event("record", event, section=row.section.number, detail=f"{what}: {row.label}.")
+                event = ProgressEvent.SKIP if row.kept else ProgressEvent.DONE
+                steps.event(Stage.RECORD, event, section=row.section.number, detail=f"{what}: {row.label}.")
 
             out.recordings = record(project, only=only, opening=opening, report=recorded)
             kept = len(out.recordings.kept_sections)
             done = len(out.recordings.sections) - kept
-            steps.event("record", "done", detail=f"Recorded {done} section(s) and kept {kept}.")
-            emit("record", out.recordings)
+            steps.event(Stage.RECORD, ProgressEvent.DONE, detail=f"Recorded {done} section(s) and kept {kept}.")
+            emit(Stage.RECORD, out.recordings)
             broken = out.recordings.page_errors
             if broken:
                 # A page that threw recorded whatever was left on the stage, usually nothing, so the
                 # build stops here rather than delivering a blank section as if it were fine.
-                steps.event("record", "fail", detail=f"{len(broken)} section(s) hit a page error.")
+                steps.event(Stage.RECORD, ProgressEvent.FAIL, detail=f"{len(broken)} section(s) hit a page error.")
                 raise ConfigError(
                     f"{len(broken)} section(s) hit a page error while recording, so each recorded an empty stage.",
                     hint="Fix these page errors and run `decktalk build` again:\n  "
                     + "\n  ".join(f"section {r.key}: {e}" for r in broken for e in r.log.page_errors),
                 )
-        if run("assemble", f"Cutting {len(project.sections)} section(s) and mixing the soundtrack."):
+        if run(Stage.ASSEMBLE, f"Cutting {len(project.sections)} section(s) and mixing the soundtrack."):
             out.assembly = assemble(project, soundscape=soundscape, loudness=loudness, strict=strict)
-            steps.event("assemble", "done", detail=f"Wrote {out.assembly.duration:.2f} seconds of film.")
-            emit("assemble", out.assembly)
-        if run("verify", "Measuring every reveal on the finished film against its cue."):
+            wrote_film = f"Wrote {out.assembly.duration:.2f} seconds of film."
+            steps.event(Stage.ASSEMBLE, ProgressEvent.DONE, detail=wrote_film)
+            emit(Stage.ASSEMBLE, out.assembly)
+        if run(Stage.VERIFY, "Measuring every reveal on the finished film against its cue."):
             # Every cue, so a build that exits 0 has measured each reveal against its word.
             out.verification = verify(project)
             found = out.verification.findings
             steps.event(
-                "verify",
-                "done",
+                Stage.VERIFY,
+                ProgressEvent.DONE,
                 detail=f"Found {found.certain} certain and {found.uncertain} uncertain finding(s).",
             )
-            emit("verify", out.verification)
+            emit(Stage.VERIFY, out.verification)
     except BaseException as exc:
         # Whatever ends the run, the log closes on a row for the stage that was running, because a
         # reader cannot tell a stage that is still working from one whose process died.
-        steps.event(running, "fail", detail=stopped_on(exc))
+        steps.event(running, ProgressEvent.FAIL, detail=stopped_on(exc))
         raise
     return out

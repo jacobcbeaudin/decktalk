@@ -30,7 +30,7 @@ The five stages always run in this order. Each stage reads files that the stages
 ```mermaid
 flowchart TB
   S["script.md"] --> narrate
-  narrate -- "words files, timeline.json" --> align
+  narrate -- "words files, takes.json" --> align
   C["cues.json"] --> align
   align -- "cue-times.json" --> record
   P["deck pages"] --> record
@@ -40,7 +40,7 @@ flowchart TB
 
 | Stage | One job | Writes |
 |---|---|---|
-| `narrate` | `narrate` voices each section and gets a time for every word. | `build/narration/<hash>.mp3`, `<hash>.words.json`, `takes.json`, `narration.mp3`, `timeline.json` |
+| `narrate` | `narrate` voices each section and gets a time for every word. | `build/narration/<hash>.mp3`, `<hash>.words.json`, `takes.json`, `narration.mp3` |
 | `align` | `align` turns each cue phrase into a cue time. | `build/cue-times.json` |
 | `record` | `record` records each page section in headless Chromium, finds narration t=0 in the webm, and flags a recording that is black, short, stalled, or uncovered. | `build/recordings/NN.webm`, `recordings/NN.json` |
 | `assemble` | `assemble` cuts, joins, and mixes the sections into one mp4. | `build/sections/NN.mp4`, `<name>.mp4`, captions, chapters |

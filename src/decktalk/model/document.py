@@ -64,9 +64,10 @@ class PageSection:
     `seamless` says the page opens on the previous section's last picture, so the cut
     into it should not show. verify compares the two frames.
 
-    `lead_seconds` is silence in the narration before the section's first word. It is added when
-    the takes are joined, not sent to the voice, so a cached take stays cached. `tail_seconds`
-    replaces `[narration] min_tail_seconds` for this section. `hold_seconds` holds the section's
+    `lead_seconds` replaces `[narration] lead_seconds`, the silence in the narration before the
+    section's first word, and `tail_seconds` replaces `[narration] min_tail_seconds`, the silence
+    after its last. Both are placed when the takes are joined, not sent to the voice, so a cached
+    take stays cached. `hold_seconds` holds the section's
     last frame after its narration, and the narration pauses for it.
     """
 
@@ -79,7 +80,7 @@ class PageSection:
     ambience: bool = False
     params: dict[str, str] = field(default_factory=dict)
     seamless: bool = False
-    lead_seconds: float = 0.0
+    lead_seconds: float | None = None  # None uses [narration] lead_seconds.
     tail_seconds: float | None = None  # None uses [narration] min_tail_seconds.
 
     @property
@@ -344,7 +345,7 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
         ambience=t.get_bool("ambience"),
         params={str(k): str(v) for k, v in params_raw.items()},
         seamless=t.get_bool("seamless"),
-        lead_seconds=t.get_num("lead_seconds", 0.0),
+        lead_seconds=t.get_num("lead_seconds"),
         tail_seconds=t.get_num("tail_seconds"),
     )
 

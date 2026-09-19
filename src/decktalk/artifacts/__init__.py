@@ -5,43 +5,41 @@ them. Field names match the JSON keys, every file is written atomically through 
 module here owns each file.
 
     build/narration/<hash>.words.json   words.py       the time base everything shares
-    build/narration/takes.json          takes.py       the take index and the narration cache
-    build/narration/timeline.json       timeline.py    section and word times in narration.mp3
+    build/narration/takes.json          takes.py       the take index and the narration clock
     build/cue-times.json                cue_times.py   every cue resolved against the words
     build/recordings/NN.json            recordings.py  what `record` did, judged and measured
     build/out/cuts.json                 cuts.py        where every section sits in the finished film
+    build/progress.jsonl                progress.py    what a running build has done so far
 """
 
 from __future__ import annotations
 
 from .cue_times import CueTime, CueTimes
-from .cuts import BLACK, CLIP, PAGE, SLATE, Cut, Cuts
+from .cuts import Cut, Cuts
+from .progress import ProgressRow, append_row, read_rows, start_log
 from .recordings import Luma, RecordingChecks, RecordingLog, file_digest, gap_time, input_hash, text_digest
 from .takes import Take, Takes
-from .timeline import Timeline, TimelineSection
 from .words import Word, read_words, write_words
 
 __all__ = [
-    "BLACK",
-    "CLIP",
-    "PAGE",
-    "SLATE",
     "CueTime",
     "CueTimes",
     "Cut",
     "Cuts",
     "Luma",
+    "ProgressRow",
     "RecordingChecks",
     "RecordingLog",
     "Take",
     "Takes",
-    "Timeline",
-    "TimelineSection",
     "Word",
+    "append_row",
     "file_digest",
     "gap_time",
     "input_hash",
+    "read_rows",
     "read_words",
+    "start_log",
     "text_digest",
     "write_words",
 ]

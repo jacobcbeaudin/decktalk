@@ -6,7 +6,7 @@ import dataclasses
 
 import pytest
 
-from decktalk.artifacts import Take, Takes, Timeline, TimelineSection, Word, write_words
+from decktalk.artifacts import Take, Takes, Word, write_words
 from decktalk.model import Project
 
 
@@ -25,26 +25,19 @@ def test_a_marker_falls_where_its_phrase_plays_in_the_final_file(tmp_path):
     assert resolve_marker_time(Marker(name="gone", section=9), {"02": 10.0}, takes, tmp_path) is None
 
 
-def test_plan_mix_delays_clip_audio_and_drops_the_limiter(tmp_path, write_project):
+def test_plan_mix_delays_clip_audio_and_drops_the_limiter(tmp_path, write_project, take_index):
     from decktalk.stages.assemble.cut import RenderedSection
     from decktalk.stages.assemble.mix import mix_input_args, plan_mix
     from decktalk.stages.assemble.publish import build_chapters
 
     p = Project.load(write_project(tmp_path), environ={})
-    tl = Timeline(
-        narration="narration.mp3",
-        total_seconds=4.0,
-        sections={
-            "01": TimelineSection("Open", 0, 2.0, 2.0, 1.8),
-            "02": TimelineSection("Close", 2.0, 4.0, 2.0, 3.8),
-        },
-    )
+    takes = take_index(p, {"01": ("Open", 2.0, 1.8, []), "02": ("Close", 2.0, 1.8, [])})
     rows = [
         RenderedSection(p.sections[0], tmp_path / "00.mp4", 3.0, "00.mp4 (own audio)", audio=tmp_path / "open.mp4"),
         RenderedSection(p.sections[1], tmp_path / "01.mp4", 2.0, "01.webm"),
         RenderedSection(p.sections[2], tmp_path / "02.mp4", 3.5, "02.webm"),
     ]
-    plan = plan_mix(p, rows, tl, soundscape=False)
+    plan = plan_mix(p, rows, takes, soundscape=False)
     assert plan.total == 8.5
     assert [(i.mode, i.path) for i in plan.inputs][0] == ("lavfi", "anullsrc=r=48000:cl=stereo")
     assert mix_input_args(plan)[:5] == ["-f", "lavfi", "-t", "8.500", "-i"]
@@ -67,27 +60,27 @@ def test_narration_runs_pause_for_a_clip_between_page_sections(tmp_path, mid_cli
     from decktalk.stages.assemble.cut import rendered_starts
     from decktalk.stages.assemble.mix import NarrationRun, narration_offsets, narration_runs
 
-    p, tl, rows = mid_clip_plan(tmp_path)
+    p, takes, rows = mid_clip_plan(tmp_path)
     starts = rendered_starts(rows)
     assert starts == {"01": 0.0, "02": 2.0, "03": 5.0, "04": 7.52}
-    assert narration_runs(rows, tl, starts) == [
+    assert narration_runs(rows, takes, starts) == [
         NarrationRun(keys=("01",), at=0.0, start=0.0, end=2.0),
         NarrationRun(keys=("03", "04"), at=5.0, start=2.0, end=None),
     ]
     # Every section after the clip hears its words one clip later than the track holds them.
-    assert narration_offsets(rows, tl, starts) == {"01": 0.0, "03": 3.0, "04": 3.0}
+    assert narration_offsets(rows, takes, starts) == {"01": 0.0, "03": 3.0, "04": 3.0}
     # Without a clip between page sections there is one run, and every section shares its offset.
     edge = [rows[1], rows[0], rows[2], rows[3]]
     edge_starts = rendered_starts(edge)
-    assert len(narration_runs(edge, tl, edge_starts)) == 1
-    assert narration_offsets(edge, tl, edge_starts) == {"01": 3.0, "03": 3.0, "04": 3.0}
+    assert len(narration_runs(edge, takes, edge_starts)) == 1
+    assert narration_offsets(edge, takes, edge_starts) == {"01": 3.0, "03": 3.0, "04": 3.0}
 
 
 def test_plan_mix_places_each_narration_run_at_its_section_start(tmp_path, mid_clip_plan):
     from decktalk.stages.assemble.mix import plan_mix
 
-    p, tl, rows = mid_clip_plan(tmp_path)
-    plan = plan_mix(p, rows, tl, soundscape=False)
+    p, takes, rows = mid_clip_plan(tmp_path)
+    plan = plan_mix(p, rows, takes, soundscape=False)
     assert plan.total == 9.0
     narration = str(p.narration_dir / "narration.mp3")
     assert [path for mode, path in ((i.mode, i.path) for i in plan.inputs)] == [
@@ -104,28 +97,28 @@ def test_plan_mix_places_each_narration_run_at_its_section_start(tmp_path, mid_c
     music = tmp_path / "music.mp3"
     music.write_bytes(b"x")
     p.document = dataclasses.replace(p.document, mix=type(p.mix)(music=str(music)))
-    ducked = plan_mix(p, rows, tl, soundscape=True).filter
+    ducked = plan_mix(p, rows, takes, soundscape=True).filter
     for a, b in [(0.0, 1.6), (5.0, 7.1), (7.5, 8.8), (2.0, 5.0)]:
         assert f"(t-{a:.3f})" in ducked and f"({b:.3f}-t)" in ducked, (a, b)
 
 
-def test_a_hold_between_page_sections_pauses_the_narration(tmp_path, spoken, write_project):
+def test_a_hold_between_page_sections_pauses_the_narration(tmp_path, spoken, write_project, take_index):
     from decktalk.stages.assemble.cut import RenderedSection, rendered_starts
     from decktalk.stages.assemble.mix import NarrationRun, narration_offsets, narration_runs, plan_mix
     from decktalk.stages.assemble.publish import build_captions
 
     toml = (
+        "[narration]\nlead_seconds = 0\n"
         "[[section]]\nnumber = 1\npage = 'a.html'\nhold_seconds = 2\n[[section]]\nnumber = 2\npage = 'a.html'\n"
         "[[section]]\nnumber = 3\npage = 'a.html'\nhold_seconds = 1\n"
     )
     p = Project.load(write_project(tmp_path, toml), environ={})
-    tl = Timeline(
-        narration="narration.mp3",
-        total_seconds=6.0,
-        sections={
-            "01": TimelineSection("A", 0.0, 2.0, 2.0, 1.6, spoken("alpha beta", 0.7)),
-            "02": TimelineSection("B", 2.0, 4.5, 2.5, 4.1, spoken("gamma delta", 2.1)),
-            "03": TimelineSection("C", 4.5, 6.0, 1.5, 5.8, spoken("epsilon", 4.6)),
+    takes = take_index(
+        p,
+        {
+            "01": ("A", 2.0, 1.6, spoken("alpha beta", 0.7)),
+            "02": ("B", 2.5, 2.1, spoken("gamma delta", 0.1)),
+            "03": ("C", 1.5, 1.3, spoken("epsilon", 0.1)),
         },
     )
     rows = [
@@ -134,16 +127,16 @@ def test_a_hold_between_page_sections_pauses_the_narration(tmp_path, spoken, wri
         RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.48, "03.webm"),
     ]
     starts = rendered_starts(rows)
-    assert narration_runs(rows, tl, starts) == [
+    assert narration_runs(rows, takes, starts) == [
         NarrationRun(keys=("01",), at=0.0, start=0.0, end=2.0),
         NarrationRun(keys=("02", "03"), at=4.0, start=2.0, end=None),
     ]
-    offsets = narration_offsets(rows, tl, starts)
+    offsets = narration_offsets(rows, takes, starts)
     assert offsets == {"01": 0.0, "02": 2.0, "03": 2.0}
-    plan = plan_mix(p, rows, tl, soundscape=False)
+    plan = plan_mix(p, rows, takes, soundscape=False)
     assert "atrim=start=0.000:end=2.000,asetpts=PTS-STARTPTS,adelay=0:all=1[narr0]" in plan.filter
     assert "atrim=start=2.000,asetpts=PTS-STARTPTS,adelay=4000:all=1[narr1]" in plan.filter
-    assert [(c.text, c.start) for c in build_captions(tl, offsets)] == [
+    assert [(c.text, c.start) for c in build_captions(p, takes, offsets)] == [
         ("alpha beta", 0.7),
         ("gamma delta", 4.1),
         ("epsilon", 6.6),

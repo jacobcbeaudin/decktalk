@@ -22,6 +22,7 @@ from decktalk.media import audio, ffmpeg, frames
 from decktalk.settings import Settings
 from decktalk.stages.verify.measure import best_probe, first_change_offset
 from decktalk.stages.verify.plan import probe_plan, reference_time
+from decktalk.verdicts import Verdict
 
 pytestmark = pytest.mark.media
 
@@ -250,7 +251,10 @@ def test_verify_finds_a_pop_between_synthetic_sections_outside_the_dip(tmp_path)
     ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(p.final))
 
     result = verify(p, checks=[])
-    assert [(c.key, c.cut_at, c.verdict) for c in result.seams] == [("02", 2.0, "ok"), ("03", 4.0, "POP AT CUT")]
+    assert [(c.key, c.cut_at, c.verdict) for c in result.seams] == [
+        ("02", 2.0, Verdict.OK),
+        ("03", 4.0, Verdict.POP_AT_CUT),
+    ]
     continuous, pop = result.seams
     assert continuous.changed_percent == 0.0
     assert pop.changed_percent > 2 * PANEL_PERCENT * 0.9  # the panel left one place and appeared in another
@@ -261,7 +265,7 @@ def test_verify_finds_a_pop_between_synthetic_sections_outside_the_dip(tmp_path)
 
 def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     """Pages 1 and 3 around a clip at 2, where section 3's words resume after the clip's own sound."""
-    from decktalk.artifacts import Timeline, TimelineSection
+    from decktalk.artifacts import Take, Takes
     from decktalk.model import Project
     from decktalk.stages.assemble.cut import RenderedSection
     from decktalk.stages.assemble.mix import mix_input_args, plan_mix
@@ -278,17 +282,15 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     audio.write_clicks(p.narration_dir / "narration.mp3", 4.0, [0.5, 2.5], sample_rate=48000, bitrate="128k")
     clip = tmp_path / "broll.m4a"
     ffmpeg.run("-f", "lavfi", "-i", "sine=f=660:r=48000:d=2", "-c:a", "aac", str(clip))
-    tl = Timeline(
-        narration="narration.mp3",
-        total_seconds=4.0,
-        sections={"01": TimelineSection("A", 0.0, 2.0, 2.0, 0.6), "03": TimelineSection("C", 2.0, 4.0, 2.0, 2.6)},
-    )
+    takes = Takes(script="script.md", model="m", output_format="mp3")
+    takes.sections["01"] = Take(1, "A", "h1.mp3", "h1.words.json", "h1", 0, 2.0, 2.0, speech_end_seconds=0.6)
+    takes.sections["03"] = Take(3, "C", "h3.mp3", "h3.words.json", "h3", 0, 2.0, 2.0, speech_end_seconds=0.6)
     rows = [
-        RenderedSection(p.sections[0], tmp_path / "01.mp4", 2.0, "page"),
-        RenderedSection(p.sections[1], tmp_path / "02.mp4", 1.5, "clip", audio=clip),
-        RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.0, "page"),
+        RenderedSection(p.sections[0], tmp_path / "01.mp4", 2.0, "01.webm"),
+        RenderedSection(p.sections[1], tmp_path / "02.mp4", 1.5, "02.mp4 (own audio)", audio=clip),
+        RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.0, "03.webm"),
     ]
-    plan = plan_mix(p, rows, tl, soundscape=False)
+    plan = plan_mix(p, rows, takes, soundscape=False)
     out = tmp_path / "mix.wav"
     ffmpeg.run(
         "-f", "lavfi", "-t", f"{plan.total}", "-i", "color=c=black:s=64x36:r=25", *mix_input_args(plan),
@@ -303,8 +305,8 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     assert audio.rms_db(out, 3.55, 0.4) < -50, "something sounds between the clip and section 3's first word"
 
 
-def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_again(tmp_path):
-    """A take voiced under a short tail keeps its hash when min_tail_seconds grows, so narrate pads it in place."""
+def test_a_cached_take_with_a_short_tail_is_placed_and_never_rewritten_or_voiced_again(tmp_path):
+    """A take whose own silence is shorter than min_tail_seconds gets the rest from the join, and keeps its bytes."""
     from decktalk.artifacts import Take, Takes, Word, write_words
     from decktalk.model import Project
     from decktalk.speech import register_speech_provider
@@ -332,40 +334,38 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
     seg = spoken[0]
     settings = p.voice.api_settings()
     digest = text_hash(seg, cfg, "never-voice", settings)
-    # One second of tone for the speech, then the 0.4 s tail an earlier min_tail_seconds left.
+    # One second of tone for the speech, then the 0.4 s of silence the voice left after it.
     take = p.narration_dir / take_name(digest)
     ffmpeg.run(
         "-f", "lavfi", "-i", "sine=f=440:r=44100:d=1", "-af", "apad=pad_dur=0.4",
         "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(take),
     )  # fmt: skip
     write_words(p.narration_dir / words_name(digest), [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)])
-    before = ffmpeg.probe_duration(take)
+    data = take.read_bytes()
     take_index = Takes(script="script.md", model="m", output_format=cfg.output_format)
     take_index.sections[seg.key] = Take(
         index=1, chapter="Open", file=take_name(digest), words_file=words_name(digest), hash=digest,
-        word_count=2, estimated_seconds=1.0, duration_seconds=before, speech_end_seconds=1.0, tail_padded_seconds=0.1,
+        word_count=2, estimated_seconds=1.0, duration_seconds=ffmpeg.probe_duration(take), speech_end_seconds=1.0,
     )  # fmt: skip
     take_index.save(p.takes_path)
-    assert audio.trailing_silence(take) < 0.5
 
     first = narrate(p)
     assert first.cached == [seg.key] and first.synthesized == []
-    assert audio.trailing_silence(take) >= cfg.min_tail_seconds
-    padded = Takes.load(p.takes_path).sections[seg.key]
-    assert padded.hash == digest, "padding changed the cache key"
-    assert padded.duration_seconds > before + 0.4
-    assert padded.duration_seconds == pytest.approx(ffmpeg.probe_duration(take), abs=0.001)
-    assert padded.tail_padded_seconds > 0.5
-    # The section's span is the take plus the silence joined in before it, which is the opening silence here.
+    assert take.read_bytes() == data, "a cached take was rewritten"
+    placed = Takes.load(p.takes_path).sections[seg.key]
+    assert placed.hash == digest and placed.sound_end_seconds == pytest.approx(1.0, abs=0.03)
+    # The section runs for its lead, its take to its last sound, and exactly min_tail_seconds after that.
     lead = p.lead_seconds(seg.key)
-    assert lead == cfg.opening_silence_seconds
-    assert first.timeline.sections[seg.key].duration == pytest.approx(padded.duration_seconds + lead, abs=0.06)
+    assert (placed.lead_seconds, placed.tail_seconds) == (lead, 0.9)
+    assert first.takes.span(seg.key) == pytest.approx(lead + 1.0 + 0.9, abs=0.03)
+    narration = p.narration_path
+    assert ffmpeg.decoded_duration(narration) == pytest.approx(first.takes.total_seconds, abs=0.03)
+    assert audio.rms_db(narration, lead + 1.05, 0.8) < -60, "the tail is not silent"
 
     second = narrate(p)
     assert second.cached == [seg.key] and second.synthesized == []
-    again = Takes.load(p.takes_path).sections[seg.key]
-    assert again.duration_seconds == padded.duration_seconds, "a second run padded the take again"
-    assert again.tail_padded_seconds == padded.tail_padded_seconds
+    assert Takes.load(p.takes_path).sections[seg.key] == placed, "a second run placed the take differently"
+    assert take.read_bytes() == data
 
 
 def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path):
@@ -422,20 +422,20 @@ def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path)
     assert sorted(f.name for f in p.narration_dir.glob("*.mp3")) == sorted(
         [take_name(digests["01"]), take_name(digests["02"]), "narration.mp3"]
     )
-    assert list(result.timeline.sections) == ["01", "03"]
+    assert result.takes.keys == ["01", "03"]
     assert narrate(p).cached == ["01", "03"]
 
 
 def _tone_with_tail(path: Path, *, tail: float, rate: int = 44100, bitrate: str = "128k") -> None:
-    """One second of tone, then `tail` seconds of silence, encoded the way narrate pads a take."""
+    """One second of tone, then `tail` seconds of silence, the way a voice leaves a pause after its last word."""
     ffmpeg.run(
         "-f", "lavfi", "-i", f"sine=f=440:r={rate}:d=1", "-af", f"apad=pad_dur={tail}",
         "-c:a", "libmp3lame", "-b:a", bitrate, str(path),
     )  # fmt: skip
 
 
-def test_trailing_silence_counts_a_silence_that_ends_in_the_encoder_padding(tmp_path):
-    """The silence runs to the end of the take, whether or not the container length counts the encoder padding.
+def test_sound_end_finds_the_last_sound_whether_or_not_the_container_counts_the_encoder_padding(tmp_path):
+    """The sound ends where the tone ends, whether or not the container length counts the encoder padding.
 
     Some ffmpeg builds, such as the static 7.0 build for Apple silicon, count the mp3 encoder padding in the
     container length, so the silence ends just over 0.05 s before the container end. Newer builds, and the
@@ -443,13 +443,12 @@ def test_trailing_silence_counts_a_silence_that_ends_in_the_encoder_padding(tmp_
     """
     take = tmp_path / "take.mp3"
     _tone_with_tail(take, tail=1.3)
-    gap = ffmpeg.probe_duration(take) - ffmpeg.decoded_duration(take, sample_rate=44100)
-    assert audio.trailing_silence(take) == pytest.approx(1.3 + max(gap, 0.0), abs=0.03)
+    assert audio.sound_end(take) == pytest.approx(1.0, abs=0.03)
 
 
 @pytest.mark.parametrize("tail", [1.3, 0.2])
 def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
-    """A take that meets min_tail_seconds, padded or not, keeps its hash, bytes, and duration on the next run."""
+    """A take lands the same way on every run, and its own silence reaches none of its placement."""
     from decktalk.artifacts import Takes, Word
     from decktalk.model import Project
     from decktalk.speech import register_speech_provider
@@ -471,7 +470,7 @@ def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
     register_speech_provider(ToneVoice.name, lambda context: ToneVoice())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text(
-        f"[narration]\nmin_tail_seconds = 1.3\nopening_silence_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
+        f"[narration]\nmin_tail_seconds = 1.3\nlead_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
         "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\npage = 'a.html'\n",
         encoding="utf-8",
     )
@@ -480,20 +479,20 @@ def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
     assert first.synthesized == ["01", "02"] and ToneVoice.calls == 2
     entry = Takes.load(p.takes_path).sections["02"]
     take = p.narration_dir / entry.file
-    assert (entry.tail_padded_seconds > 0) == (tail < 1.3)
+    # A long pause the voice left and a short one both give the section 1.3 s after its last sound.
+    assert entry.sound_end_seconds == pytest.approx(1.0, abs=0.03)
+    assert entry.span_seconds == pytest.approx(1.0 + 1.3, abs=0.03)
     data = take.read_bytes()
 
     second = narrate(p)
     assert second.cached == ["01", "02"] and second.synthesized == [] and ToneVoice.calls == 2
     again = Takes.load(p.takes_path).sections["02"]
-    assert again.hash == entry.hash
-    assert again.duration_seconds == entry.duration_seconds, "a cached take was padded again"
-    assert again.tail_padded_seconds == entry.tail_padded_seconds
+    assert again == entry, "a cached take was placed differently"
     assert take.read_bytes() == data
 
 
 def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
-    """A section's lead joins silence into narration.mp3 and its tail pads the take, and neither voices it again."""
+    """A section's lead and tail are silence placed around its take in narration.mp3, and neither voices it again."""
     from decktalk.artifacts import Takes, Word
     from decktalk.model import Project
     from decktalk.speech import register_speech_provider
@@ -515,7 +514,7 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     register_speech_provider(ToneVoice.name, lambda context: ToneVoice())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
     base = (
-        f"[narration]\nmin_tail_seconds = 0.7\nopening_silence_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
+        f"[narration]\nmin_tail_seconds = 0.7\nlead_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
         "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\npage = 'a.html'\n"
     )
     toml = tmp_path / "decktalk.toml"
@@ -526,41 +525,50 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     entry = Takes.load(takes_path).sections["02"]
     take = tmp_path / "build" / "narration" / entry.file
     data = take.read_bytes()
-    before = first.timeline.sections["02"]
+    before_start, before_span = first.takes.start("02"), first.takes.span("02")
+    before_words = Project.load(tmp_path, environ={}).narration_words("02", entry.words_file, at=before_start)
+    before_total = first.takes.total_seconds
 
     toml.write_text(base + "lead_seconds = 1.5\n", encoding="utf-8")
     p = Project.load(tmp_path, environ={})
     second = narrate(p)
     assert second.synthesized == [] and second.cached == ["01", "02"] and ToneVoice.calls == 2
-    # The take is byte-identical and still cached: a lead is silence joined in, so only the row records it.
+    # The take is byte-identical and still cached: a lead is silence placed before it, so only the row records it.
     assert take.read_bytes() == data
     after = Takes.load(takes_path).sections["02"]
     assert after == replace(entry, lead_seconds=1.5) and after.lead_seconds == 1.5
-    after = second.timeline.sections["02"]
-    assert after.start == before.start and after.lead_seconds == 1.5
-    assert after.duration == pytest.approx(before.duration + 1.5, abs=0.002)
-    assert [w.start for w in after.words] == [pytest.approx(w.start + 1.5, abs=0.001) for w in before.words]
-    narration = p.narration_dir / "narration.mp3"
-    assert ffmpeg.decoded_duration(narration) == pytest.approx(first.timeline.total_seconds + 1.5, abs=0.03)
-    assert audio.rms_db(narration, after.start + 0.1, 1.3) < -60, "the lead is not silent"
-    assert audio.rms_db(narration, after.start + 1.55, 0.4) > -30, "the take does not follow the lead"
+    start = second.takes.start("02")
+    assert start == before_start
+    assert second.takes.span("02") == pytest.approx(before_span + 1.5, abs=0.002)
+    after_words = p.narration_words("02", after.words_file, at=start)
+    assert [w.start for w in after_words] == [pytest.approx(w.start + 1.5, abs=0.001) for w in before_words]
+    narration = p.narration_path
+    assert ffmpeg.decoded_duration(narration) == pytest.approx(before_total + 1.5, abs=0.03)
+    assert audio.rms_db(narration, start + 0.1, 1.3) < -60, "the lead is not silent"
+    assert audio.rms_db(narration, start + 1.55, 0.4) > -30, "the take does not follow the lead"
 
     toml.write_text(base + "lead_seconds = 1.5\ntail_seconds = 2\n", encoding="utf-8")
     p = Project.load(tmp_path, environ={})
     third = narrate(p)
     assert third.synthesized == [] and third.cached == ["01", "02"] and ToneVoice.calls == 2
-    padded = Takes.load(takes_path).sections["02"]
-    assert padded.hash == entry.hash and padded.tail_padded_seconds > 1.0
-    assert audio.trailing_silence(take) >= 2.0
-    assert Takes.load(takes_path).sections["01"].tail_padded_seconds == 0.0
+    assert take.read_bytes() == data
+    tailed = Takes.load(takes_path).sections["02"]
+    assert tailed == replace(after, tail_seconds=2.0)
+    # The section now runs 2 s past its last sound where it ran 0.7 s, and section 01 keeps its own tail.
+    assert third.takes.span("02") == pytest.approx(second.takes.span("02") + 1.3, abs=0.002)
+    assert Takes.load(takes_path).sections["01"].tail_seconds == 0.7
+    narration = p.narration_path
+    assert ffmpeg.decoded_duration(narration) == pytest.approx(third.takes.total_seconds, abs=0.03)
+    speech_ends = start + 1.5 + tailed.sound_end_seconds
+    assert audio.rms_db(narration, speech_ends + 0.05, 1.9) < -60, "the tail is not silent"
     fourth = narrate(p)
     assert fourth.synthesized == [] and ToneVoice.calls == 2
-    assert Takes.load(takes_path).sections["02"].duration_seconds == padded.duration_seconds
+    assert Takes.load(takes_path).sections["02"] == tailed
 
 
 def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
     """The picture, the take over the same span after the section's lead, the gain, the hold, and the words file."""
-    from decktalk.artifacts import Take, Takes, Timeline, TimelineSection, Word, read_words
+    from decktalk.artifacts import Take, Takes, Word, read_words, write_words
     from decktalk.cli import main
     from decktalk.model import Project
     from decktalk.stages.clip import clip
@@ -583,13 +591,16 @@ def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
         "-f", "lavfi", "-i", "sine=f=440:r=44100:d=0.5", "-af", "adelay=1500:all=1,apad=whole_dur=3.5",
         "-c:a", "libmp3lame", "-b:a", "128k", str(p.narration_dir / "01-open.mp3"),
     )  # fmt: skip
-    words = [Word("go", 0.9, 1.1), Word("Watch", 2.0, 2.2), Word("it", 2.25, 2.5), Word("now", 3.0, 3.4)]
-    timeline = Timeline("narration.mp3", 4.0, {"01": TimelineSection("Open", 0.0, 4.0, 4.0, 3.4, words, 0.5)})
-    timeline.save(p.timeline_path)
+    # The take's own words, which the section's 0.5 s lead moves to 0.9, 2.0, 2.25 and 3.0 on its clock.
+    write_words(
+        p.takes_dir / "01-open.words.json",
+        [Word("go", 0.4, 0.6), Word("Watch", 1.5, 1.7), Word("it", 1.75, 2.0), Word("now", 2.5, 2.9)],
+    )
     take_index = Takes(script="script.md", model="m", output_format="mp3_44100_128")
     take_index.sections["01"] = Take(
         index=1, chapter="Open", file="01-open.mp3", words_file="01-open.words.json", hash="h",
-        word_count=4, estimated_seconds=3.0, duration_seconds=3.5, spoken="Go. Watch it, now.",
+        word_count=4, estimated_seconds=3.0, duration_seconds=3.5, speech_end_seconds=2.9,
+        lead_seconds=0.5, spoken="Go. Watch it, now.",
     )  # fmt: skip
     take_index.save(p.takes_path)
 
@@ -621,3 +632,81 @@ def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
     early = clip(p, 1, start=0.0, end=0.4, out="media/z.mp4")
     assert early.words == [] and ffmpeg.has_audio(early.video)
     assert ffmpeg.probe_duration(early.video) == pytest.approx(0.4, abs=0.05)
+
+
+def _take_with_a_noisy_tail(path: Path, *, speech: float) -> None:
+    """`speech` seconds of tone, then 0.3 s of noise just under the silence threshold, the way a voice breathes out.
+
+    Re-encoding such a file lets one sample near its end cross the threshold, so any placement that measured
+    a file some run had rewritten would drift. This seed and level sit there on purpose.
+    """
+    ffmpeg.run(
+        "-f", "lavfi", "-i", f"sine=f=440:r=44100:d={speech}",
+        "-f", "lavfi", "-i", "anoisesrc=r=44100:a=0.0125:c=white:seed=6:d=0.3",
+        "-filter_complex", "[0:a]volume=0.25[s];[s][1:a]concat=n=2:v=0:a=1[a]", "-map", "[a]",
+        "-c:a", "libmp3lame", "-b:a", "128k", str(path),
+    )  # fmt: skip
+
+
+def test_changing_one_section_leaves_its_neighbours_placed_as_they_were(tmp_path):
+    """A rebuild after one section's words change keeps every other section's length, words and recording key.
+
+    A take's place in the narration is a pure function of the take and its own section's settings, so a
+    section that was voiced by the last run and reused by this one lands exactly where it did.
+    """
+    from decktalk.artifacts import Word
+    from decktalk.model import Project
+    from decktalk.speech import register_speech_provider
+    from decktalk.stages.narrate import narrate
+    from decktalk.stages.record import jobs
+
+    class BreathingVoice:
+        name = "breathing-voice"
+        calls: list[str] = []
+
+        def speak(self, request):
+            BreathingVoice.calls.append(request.text)
+            words = request.text.split()
+            speech = 1.2 if len(words) <= 3 else 1.6
+            src = tmp_path / "voice.mp3"
+            _take_with_a_noisy_tail(src, speech=speech)
+            per = speech / len(words)
+            timed = [
+                Word(w.strip(".,"), round(i * per, 3), round((i + 1) * per - 0.02, 3)) for i, w in enumerate(words)
+            ]
+            return src.read_bytes(), timed
+
+        def cache_key(self, request):
+            return self.name
+
+    register_speech_provider(BreathingVoice.name, lambda context: BreathingVoice())
+    (tmp_path / "a.html").write_text("<!doctype html><title>a</title>", encoding="utf-8")
+    script = tmp_path / "script.md"
+    script.write_text("## 1. Open\n\nHello there.\n\n## 2. Middle\n\nA middle line.\n\n## 3. Close\n\nBye now.\n")
+    (tmp_path / "decktalk.toml").write_text(
+        f"[narration]\nmin_tail_seconds = 1.3\n[voice]\nprovider = '{BreathingVoice.name}'\n"
+        + "".join(f"[[section]]\nnumber = {n}\npage = 'a.html'\nscene = {n}\n" for n in (1, 2, 3)),
+        encoding="utf-8",
+    )
+
+    def placed() -> dict[str, tuple[float | None, list[Word], str]]:
+        p = Project.load(tmp_path, environ={})
+        takes = p.takes()
+        assert takes is not None
+        keys = {job.section.key: job.input_hash for job in jobs(p, None, None, use_cues=False)}
+        return {
+            key: (takes.span(key), p.section_words(key, takes.sections[key].words_file), keys[key])
+            for key in ("01", "02", "03")
+        }
+
+    first = narrate(Project.load(tmp_path, environ={}))
+    assert first.synthesized == ["01", "02", "03"]
+    before = placed()
+
+    script.write_text(script.read_text(encoding="utf-8").replace("A middle line.", "A longer middle line than before."))
+    second = narrate(Project.load(tmp_path, environ={}))
+    assert second.synthesized == ["02"] and second.cached == ["01", "03"]
+    after = placed()
+    assert after["02"] != before["02"]
+    for key in ("01", "03"):
+        assert after[key] == before[key], f"section {key} moved although only section 02 changed"

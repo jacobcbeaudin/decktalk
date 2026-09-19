@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from decktalk.artifacts import RecordingLog, Take, Takes, Timeline, TimelineSection, Word, write_words
+from decktalk.artifacts import RecordingLog, Take, Takes, Word, write_words
 from decktalk.model import Project
 
 
@@ -13,8 +13,8 @@ def test_captions_and_chapters_skip_over_a_clip_between_page_sections(tmp_path, 
     from decktalk.stages.assemble.mix import narration_offsets
     from decktalk.stages.assemble.publish import build_captions, build_chapters
 
-    p, tl, rows = mid_clip_plan(tmp_path)
-    cues = build_captions(tl, narration_offsets(rows, tl, rendered_starts(rows)))
+    p, takes, rows = mid_clip_plan(tmp_path)
+    cues = build_captions(p, takes, narration_offsets(rows, takes, rendered_starts(rows)))
     assert [(c.text, c.start) for c in cues] == [("alpha beta", 0.7), ("gamma delta", 5.1), ("epsilon", 7.6)]
     assert all(c.end <= 2.0 or c.start >= 5.0 for c in cues)  # nothing is captioned over the clip
     assert cues[0].end <= 2.0
@@ -27,19 +27,21 @@ def test_captions_and_chapters_skip_over_a_clip_between_page_sections(tmp_path, 
     ]
 
 
-def test_build_captions_shift_every_section_to_where_its_narration_plays(spoken):
+def test_build_captions_shift_every_section_to_where_its_narration_plays(
+    tmp_path, spoken, write_project, pages_toml, take_index
+):
     """The narration may start well into the film, and no cue may cross from one section into the next."""
     from decktalk.stages.assemble.publish import build_captions
 
-    tl = Timeline(
-        narration="n",
-        total_seconds=4.0,
-        sections={
-            "01": TimelineSection("a", 0, 2.0, 2.0, None, spoken("alpha beta", 0.1)),
-            "02": TimelineSection("b", 2.0, 4.0, 2.0, None, spoken("gamma delta", 2.1)),
+    p = Project.load(write_project(tmp_path, pages_toml), environ={})
+    takes = take_index(
+        p,
+        {
+            "01": ("a", 2.0, None, spoken("alpha beta", 0.1)),
+            "02": ("b", 2.0, None, spoken("gamma delta", 0.1)),
         },
     )
-    shifted = build_captions(tl, 3.0)  # narration starts three seconds into the final file
+    shifted = build_captions(p, takes, 3.0)  # narration starts three seconds into the final file
     assert [c.text for c in shifted] == ["alpha beta", "gamma delta"]
     assert shifted[0].start == 3.1 and shifted[1].start == 5.1
 
@@ -49,22 +51,23 @@ def test_build_captions_uses_the_take_index_spoken_text(tmp_path, write_project,
 
     root = write_project(tmp_path, pages_toml)
     p = Project.load(root, environ={})
-    words = [Word("hello", 0.5, 0.9), Word("there", 1.0, 1.4)]
-    tl = Timeline(narration="n.mp3", total_seconds=2.0, sections={"01": TimelineSection("A", 0, 2.0, 2.0, 1.4, words)})
+    p.takes_dir.mkdir(parents=True)
+    write_words(p.takes_dir / "01-a.words.json", [Word("hello", 0.5, 0.9), Word("there", 1.0, 1.4)])
     m = Takes(script="script.md", model="m", output_format="mp3")
     m.sections["01"] = Take(1, "A", "01-a.mp3", "01-a.words.json", "h", 2, 1.0, 2.0, spoken="Hello, there.")
     m.save(p.takes_path)
-    # No script.md exists, so the text can only come from the take_index.
-    assert caption_texts(p, tl) == {"01": "Hello, there."}
-    assert [c.text for c in build_captions(tl, 0.0, caption_texts(p, tl))] == ["Hello, there."]
-    # A take_index written before the field existed falls back to the script.
+    # No script.md exists, so the text can only come from the take index.
+    assert caption_texts(p, m) == {"01": "Hello, there."}
+    assert [c.text for c in build_captions(p, m, 0.0, caption_texts(p, m))] == ["Hello, there."]
+    # A take index written before the field existed falls back to the script.
     raw = json.loads(p.takes_path.read_text(encoding="utf-8"))
     del raw["sections"]["01"]["spoken"]
     p.takes_path.write_text(json.dumps(raw), encoding="utf-8")
     (root / "script.md").write_text(
         "## 1. A\n\nHello there!\n\n## 2. B\n\nTwo.\n\n## 3. C\n\nThree.\n", encoding="utf-8"
     )
-    assert caption_texts(p, tl)["01"] == "Hello there!"
+    reloaded = Takes.load(p.takes_path)
+    assert reloaded is not None and caption_texts(p, reloaded)["01"] == "Hello there!"
 
 
 def test_clip_captions_place_the_clip_speech_at_the_clip_start(tmp_path, caplog, titled_clip_rows):
@@ -83,7 +86,7 @@ def test_clip_captions_place_the_clip_speech_at_the_clip_start(tmp_path, caplog,
     # A missing words file warns and captions nothing.
     (tmp_path / "media" / "before.words.json").unlink()
     assert clip_captions(p, rows) == []
-    assert "words file missing" in caplog.text
+    assert "the words file media/before.words.json is missing" in caplog.text
 
 
 def test_consecutive_sections_with_the_same_title_share_one_chapter(tmp_path, titled_clip_rows):
@@ -144,6 +147,19 @@ def test_a_cued_sound_that_names_a_caption_gets_its_own_cue(tmp_path, write_proj
     # The sound with no caption says nothing, and the one whose cue never resolved has nowhere to sit.
     assert [(c.start, c.end, c.text) for c in cues] == [(11.5, 12.5, "[ball bounces]")]
     assert sound_captions(p, {}) == []
+
+
+def test_a_cued_sound_with_no_caption_is_reported_rather_than_dropped_in_silence(tmp_path, write_project):
+    """A caption track that leaves a sound out is a hole a deaf viewer cannot know about."""
+    from decktalk.stages.assemble.publish import uncaptioned_sounds
+    from decktalk.verdicts import Verdict
+
+    p = Project.load(write_project(tmp_path, SFX_TOML), environ={})
+    [row] = uncaptioned_sounds(p)
+    assert row.verdict is Verdict.NO_CAPTION and not row.verdict.certain
+    assert (row.section, row.cue) == (1, "1.1hum")
+    assert row.detail is not None and "names no caption" in row.detail
+    assert row.where == "media/hum.mp3"
 
 
 def test_the_transcript_says_what_plays_where_nothing_is_spoken(tmp_path, write_project):
@@ -234,6 +250,20 @@ def test_no_caption_runs_into_the_one_after_it():
     assert [(c.start, c.end) for c in apart] == [(4.5, 5.5), (9.0, 10.0)]
 
 
+def test_a_caption_with_no_room_left_to_it_is_not_written_at_all():
+    """A cue whose end is its start is dropped by every player, so it is never written as one."""
+    from decktalk.captions import CaptionCue
+    from decktalk.stages.assemble.publish import one_at_a_time
+
+    # The second cue starts where the first does, so cutting the first back leaves it no length.
+    assert one_at_a_time([CaptionCue(1.0, 3.0, ("a",)), CaptionCue(1.0, 2.0, ("b",))]) == [CaptionCue(1.0, 2.0, ("b",))]
+    # A cue the next one starts inside is cut back to it rather than dropped.
+    assert one_at_a_time([CaptionCue(1.0, 3.0, ("a",)), CaptionCue(2.0, 4.0, ("b",))]) == [
+        CaptionCue(1.0, 2.0, ("a",)),
+        CaptionCue(2.0, 4.0, ("b",)),
+    ]
+
+
 def test_a_sound_with_no_room_of_its_own_joins_the_cue_after_it_rather_than_flashing():
     """A caption is read or it is not written, so a sliver and a cue of no length are both refused."""
     from decktalk.captions import CaptionCue
@@ -268,3 +298,36 @@ def test_a_reveal_the_page_described_reaches_the_transcript(tmp_path, write_proj
     log.save(p.workspace.recording_log("01"))
     assert described_cues(p, "01", 10.0) == ((12.04, "A bowl appears."), (14.0, "The sum lands."))
     assert described_cues(p, "02", 0.0) == ()
+
+
+def test_the_timestamped_copy_is_written_only_when_the_project_asks_for_it(tmp_path, write_project, monkeypatch):
+    """A build wrote a dated second mp4 unasked, so the key is off by default and is read here."""
+    import dataclasses
+    from importlib import import_module
+
+    from decktalk.stages.assemble.publish import publish
+
+    # The package re-exports `publish` under its module's own name, so the module is fetched by name.
+    module = import_module("decktalk.stages.assemble.publish")
+
+    p = Project.load(write_project(tmp_path, SFX_TOML), environ={})
+    p.out_dir.mkdir(parents=True, exist_ok=True)
+    work = p.out_dir / "work.mp4"
+
+    def place(source, chapters_file, out, language):
+        out.write_bytes(b"a film")
+
+    monkeypatch.setattr(module, "mux_chapters", place)
+    paths = {"chapters": p.out_dir / "c.txt"}
+    paths["chapters"].write_text(";FFMETADATA1\n", encoding="utf-8")
+
+    work.write_bytes(b"a film")
+    assert publish(p, work, [], paths) is None, "the copy is off unless the project turns it on"
+    assert [f.name for f in p.out_dir.glob("*.mp4")] == [p.final.name]
+
+    on = dataclasses.replace(p.settings, output=dataclasses.replace(p.settings.output, timestamped_copy=True))
+    object.__setattr__(p, "settings", on)
+    work.write_bytes(b"a film")
+    stamped = publish(p, work, [], paths)
+    assert stamped is not None and stamped.exists() and stamped != p.final
+    assert stamped.name.startswith(f"{p.name}-") and stamped.suffix == ".mp4"

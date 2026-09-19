@@ -60,7 +60,7 @@ def test_inserting_or_retitling_a_section_plans_no_new_take(make_project, base, 
     from decktalk.media import audio, ffmpeg
     from decktalk.stages.narrate import narrate
 
-    monkeypatch.setattr(audio, "trailing_silence", lambda path, **kw: 1.0)
+    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 1.0)
     monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
     monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)
@@ -74,6 +74,11 @@ def test_inserting_or_retitling_a_section_plans_no_new_take(make_project, base, 
     moved = make_project(toml=toml + '\n[[section]]\nnumber = 4\npage = "deck/index.html"\n', script=grown)
     after = {p.segment.index: p.status for p in voiced_plan(moved, moved.script_sections()[1], model="m")[0]}
     assert after == {1: TakeStatus.SYNTHESIZE, 2: TakeStatus.CACHED, 3: TakeStatus.CACHED, 4: TakeStatus.CACHED}
+    # Being first gives a section no silence of its own, so the old opening lands the same way as section 2.
+    assert (moved.lead_seconds("02"), moved.tail_seconds("02")) == (
+        project.lead_seconds("01"),
+        project.tail_seconds("01"),
+    )
     # Retitling alone changes no number and still voices nothing.
     retitled = make_project(toml=toml, script=script.replace("## 2. Middle", "## 2. A better heading"), name="proj")
     assert {p.status for p in voiced_plan(retitled, retitled.script_sections()[1], model="m")[0]} == {TakeStatus.CACHED}
@@ -151,7 +156,7 @@ def test_two_sections_with_the_same_words_share_one_take(project, voice, monkeyp
     """One digest is one take, so the second section of identical words is covered and never paid for."""
     from decktalk.media import audio, ffmpeg
 
-    monkeypatch.setattr(audio, "trailing_silence", lambda path, **kw: 1.0)
+    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 1.0)
     monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
     monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)
@@ -172,7 +177,7 @@ def test_a_forced_run_voices_every_target_again_and_lifts_the_refusal(project, v
     from decktalk.media import audio, ffmpeg
     from decktalk.stages.narrate import narrate
 
-    monkeypatch.setattr(audio, "trailing_silence", lambda path, **kw: 1.0)
+    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 1.0)
     monkeypatch.setattr(audio, "write_clicks", lambda path, *a, **kw: Path(path).write_bytes(b"clicks"))
     monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)

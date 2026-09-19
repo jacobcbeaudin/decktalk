@@ -49,26 +49,28 @@ SILENCE_END_TOLERANCE_SECONDS = 0.06  # A silence that ends this close to the en
 MP3_FRAME_SAMPLES = 1152  # Samples in one MPEG-1 Layer III frame.
 
 
-def trailing_silence(path: Path, *, noise_db: int = -35, min_run: float = 0.05) -> float:
-    """Seconds of silence at the end of an audio file.
+def sound_end(path: Path, *, noise_db: int = -35, min_run: float = 0.05) -> float:
+    """Where the sound in an audio file ends: the start of the silence that runs to its end, or its length.
 
-    The container length includes the encoder padding, which decodes to nothing. For an mp3 that
-    padding is up to about 50 ms, so silencedetect reports the last silence ending that far before
-    the container end. A silence that ends within one audio frame or SILENCE_END_TOLERANCE_SECONDS
-    of the end, whichever is longer, counts as running to the end.
+    It reads the file and nothing else, so the same bytes always give the same answer. The container
+    length includes the encoder padding, which decodes to nothing. For an mp3 that padding is up to
+    about 50 ms, so silencedetect reports the last silence ending that far before the container end.
+    A silence that ends within one audio frame or SILENCE_END_TOLERANCE_SECONDS of the end, whichever
+    is longer, counts as running to the end, and where it starts is measured on the decoded audio,
+    which the padding never reaches.
     """
     duration = ffmpeg.probe_duration(path)
     err = ffmpeg.stderr("-i", str(path), "-af", f"silencedetect=noise={noise_db}dB:d={min_run}", "-f", "null", "-")
     starts = re.findall(r"silence_start: ([0-9.]+)", err)
     ends = re.findall(r"silence_end: ([0-9.]+)", err)
     if not starts:
-        return 0.0
+        return round(duration, 3)
     rate = re.search(r"Audio: [^\n]*?(\d+) Hz", err)
     frame = MP3_FRAME_SAMPLES / int(rate.group(1)) if rate and int(rate.group(1)) > 0 else 0.0
     tolerance = max(SILENCE_END_TOLERANCE_SECONDS, frame)
     if len(ends) < len(starts) or float(ends[-1]) >= duration - tolerance:
-        return round(duration - float(starts[-1]), 3)
-    return 0.0
+        return round(float(starts[-1]), 3)
+    return round(duration, 3)
 
 
 def write_clicks(
@@ -117,12 +119,6 @@ def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int = 480
     return list(a)
 
 
-def pad_tail(path: Path, seconds: float, *, bitrate: str) -> None:
-    tmp = path.with_suffix(".pad.mp3")
-    ffmpeg.run("-i", str(path), "-af", f"apad=pad_dur={seconds}", "-c:a", "libmp3lame", "-b:a", bitrate, str(tmp))
-    tmp.replace(path)
-
-
 def concat_audio(
     files: list[Path],
     out: Path,
@@ -130,26 +126,27 @@ def concat_audio(
     bitrate: str,
     sample_rate: int,
     leads: list[float] | None = None,
-    tails: list[float] | None = None,
+    lengths: list[float] | None = None,
 ) -> None:
     """Join audio files back to back.
 
-    `leads` gives each file seconds of silence before it, in whole milliseconds, and `tails` seconds
-    of silence after it, so a file the join never rewrites still lands with the silence its section
-    needs around it.
+    `leads` gives each file seconds of silence before it, in whole milliseconds. `lengths` gives
+    each file the seconds it runs for after its lead, to the sample: a longer file is cut there and a
+    shorter one is followed by silence up to it, so where every file lands is arithmetic over the
+    two lists and never depends on the files around it.
     """
     inputs: list[str] = []
     for f in files:
         inputs += ["-i", str(f)]
     delays = [int(round(x * 1000)) for x in (leads or [])] + [0] * len(files)
-    after = [round(x, 3) for x in (tails or [])] + [0.0] * len(files)
+    samples = [int(round(x * sample_rate)) for x in (lengths or [])] + [None] * len(files)
     steps, shaped = [], set()
     for i in range(len(files)):
         chain = []
+        if samples[i] is not None:
+            chain += [f"aresample={sample_rate}", f"atrim=end_sample={samples[i]}", f"apad=whole_len={samples[i]}"]
         if delays[i] > 0:
             chain.append(f"adelay=delays={delays[i]}:all=1")
-        if after[i] > 0:
-            chain.append(f"apad=pad_dur={after[i]}")
         if chain:
             steps.append(f"[{i}:a]{','.join(chain)}[l{i}];")
             shaped.add(i)

@@ -10,7 +10,9 @@ from pathlib import Path
 import pytest
 
 from decktalk.cli import main
+from decktalk.cli.schema import LoggedRecording, SectionStart, VerifyPayload, read_envelope
 from decktalk.errors import ConfigError
+from decktalk.jsonio import read_as
 from decktalk.model import Project
 from decktalk.settings import Settings
 from decktalk.stages.verify import verify
@@ -113,7 +115,7 @@ def test_verify_marks_a_thin_change_as_uncertain(verify_project, monkeypatch, ca
     p = verify_project({"01": "a@1.0"}, change=0.11)
     (row,) = verify(p).cues
     assert (row.verdict, row.ok, row.reason) == (Verdict.THIN_CHANGE, True, None)
-    assert verify(p).ok and row.to_dict()["verdict"] == Verdict.THIN_CHANGE.value
+    assert verify(p).ok and Verdict.from_dict(row.to_dict()["verdict"]) is Verdict.THIN_CHANGE
     # The onset branch keeps the thin verdict when on time, and OFF CUE still wins when late.
     monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: 0)
     assert [c.verdict for c in verify(p).cues] == [Verdict.THIN_CHANGE]
@@ -123,17 +125,13 @@ def test_verify_marks_a_thin_change_as_uncertain(verify_project, monkeypatch, ca
 
     # An uncertain finding: exit 0, and 1 only with --strict. The table and the JSON both show it.
     assert main(["-p", str(p.root), "verify"]) == 0
-    assert Verdict.THIN_CHANGE.value in capsys.readouterr().out
+    assert Verdict.THIN_CHANGE.label in capsys.readouterr().out
     assert main(["-p", str(p.root), "verify", "--strict"]) == 1
     capsys.readouterr()
     assert main(["-p", str(p.root), "verify", "--json"]) == 0
-    doc = json.loads(capsys.readouterr().out)
-    assert (doc["findings"]["certain"], doc["findings"]["uncertain"]) == (0, 1)
-    assert doc["verify"]["cues"][0]["verdict"] == {
-        "code": "THIN_CHANGE",
-        "label": Verdict.THIN_CHANGE.value,
-        "certain": False,
-    }
+    doc = read_envelope(capsys.readouterr().out)
+    assert (doc.findings.certain, doc.findings.uncertain) == (0, 1)
+    assert doc.payload.cues[0].verdict is Verdict.THIN_CHANGE
 
     # A clear change reads changed, and the factor can turn the warning off.
     monkeypatch.setattr("decktalk.media.frames.changed_pixels_percent", lambda path, t1, t2, **kw: 0.5)
@@ -146,26 +144,31 @@ def test_verify_marks_a_thin_change_as_uncertain(verify_project, monkeypatch, ca
 def test_verify_to_dict_is_json_serialisable_and_relative(verify_project, monkeypatch):
     from decktalk.stages.verify import CueCheck
 
-    p = verify_project({"01": "start@0.0,a@1.23456"})
-    d = json.loads(json.dumps(verify(p).to_dict(p.root)))
-    assert d["final"] == "build/out/t.mp4" and d["total_seconds"] == 10.0 and d["silent"] is False
-    first = {"key": "01", "start": 0.0, "probe_at": 0.2, "yavg": 100.0, "ymax": 200.0, "verdict": "ok"}
-    assert d["starts"][0] == first and d["cuts"] == []
-    start, a = d["cues"]
-    assert start["section"] == 1 and start["cue"] == "start" and start["reason"] == "REFERENCE_CLAMPED"
-    assert a["cue_seconds"] == 1.235 and a["verdict"] == "NO CHANGE" and a["reason"] is None
-    row = CueCheck("3:3.1eq", 15.6612, 72.38123, 0.29444, 0.0, True, "", -20, -5).to_dict()
+    p = verify_project({"01": "open@0.0,a@1.23456"})
+    d = read_as(VerifyPayload, json.loads(json.dumps(verify(p).to_dict(p.root))))
+    assert d.final == "build/out/t.mp4" and d.total_seconds == 10.0 and d.silent is False
+    first = SectionStart(
+        key="01", where="build/out/t.mp4", start=0.0, probe_at=0.2, yavg=100.0, ymax=200.0, verdict=Verdict.OK,
+        detail=None,
+    )  # fmt: skip
+    assert d.starts[0] == first and d.cuts == []
+    start, a = d.cues
+    assert (start.section, start.cue, start.reason) == (1, "open", SkipReason.REFERENCE_CLAMPED)
+    assert (a.cue_seconds, a.verdict, a.reason) == (1.235, Verdict.NO_CHANGE, None)
+    row = CueCheck("3:3.1eq", 15.6612, 72.38123, 0.29444, 0.0, True, "", -20, -5).to_dict("build/out/t.mp4")
     assert row == {
         "section": 3,
         "cue": "3.1eq",
+        "where": "build/out/t.mp4",
         "cue_seconds": 15.661,
         "final_seconds": 72.381,
         "changed_percent": 0.29,
         "control_percent": 0.0,
         "offset_ms": -20,
         "av_ms": -5,
-        "verdict": "changed",
+        "verdict": Verdict.CHANGED.to_dict(),
         "reason": None,
+        "detail": None,
     }
 
 
@@ -217,7 +220,7 @@ def test_reference_sits_before_an_early_reveal_the_offset_limit_allows():
 
 def test_verify_and_assemble_ignore_a_leftover_section_video(verify_project, tmp_path, monkeypatch, caplog):
     """A sections/04.mp4 left after sections were renumbered is not counted as a section."""
-    from decktalk.artifacts import Timeline, TimelineSection, Word
+    from decktalk.artifacts import Take, Takes, Word, write_words
 
     asm = importlib.import_module("decktalk.stages.assemble")
     cut_module = importlib.import_module("decktalk.stages.assemble.cut")
@@ -236,14 +239,14 @@ def test_verify_and_assemble_ignore_a_leftover_section_video(verify_project, tmp
     ]
 
     (p.root / "script.md").write_text("## 1. A\n\nHi.\n\n## 2. B\n\nYes.\n\n## 3. C\n\nNo.\n", encoding="utf-8")
-    Timeline(
-        narration="narration.mp3",
-        total_seconds=5.0,
-        sections={"01": TimelineSection("A", 0, 5.0, 5.0, 1.0, [Word("Hi", 0.7, 1.0)])},
-        estimated=True,
-    ).save(p.timeline_path)
-    rows = [cut_module.RenderedSection(p.sections[0], p.sections_dir / "01.mp4", 5.0, "page")]
-    monkeypatch.setattr(asm, "render_sections", lambda project, timeline, strict: rows)
+    write_words(p.takes_dir / "h1.words.json", [Word("Hi", 0.7, 1.0)])
+    takes = Takes(script="script.md", model="m", output_format="mp3")
+    takes.sections["01"] = Take(
+        1, "A", "h1.mp3", "h1.words.json", "h1", 1, 5.0, 5.0, voiced=False, speech_end_seconds=1.0
+    )
+    takes.save(p.takes_path)
+    rows = [cut_module.RenderedSection(p.sections[0], p.sections_dir / "01.mp4", 5.0, "01.webm")]
+    monkeypatch.setattr(asm, "render_sections", lambda project, takes, strict: rows)
     monkeypatch.setattr(asm, "concat", lambda files, out: out.write_bytes(b"x"))
     monkeypatch.setattr(publish_module, "mux_chapters", lambda src, chapters, dst, language: dst.write_bytes(b"x"))
     monkeypatch.setattr(publish_module, "render_poster", lambda project, out: None)
@@ -278,6 +281,9 @@ def test_the_recordings_table_repeats_what_each_recording_log_judged(verify_proj
     assert (row.key, row.verdicts, row.ok) == ("01", (Verdict.KATEX_NOT_LOADED,), False)
     assert row.where == "build/recordings/01.json" and row.t0_method.startswith("cover")
     assert result.findings == Findings(certain=1) and not result.ok
-    assert result.to_dict(p.root)["recordings"][0]["verdicts"] == ["KATEX_NOT_LOADED"]
+    row_json = result.to_dict(p.root)["recordings"][0]
+    logged = read_as(LoggedRecording, row_json)
+    assert logged.verdicts == [Verdict.KATEX_NOT_LOADED]
+    assert logged.detail is not None and Verdict.KATEX_NOT_LOADED.label in logged.detail
     # `--only` keeps the table to the sections it names, as it does every other table.
     assert verify(p, checks=[], only=[2]).recordings == []

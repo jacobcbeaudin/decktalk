@@ -18,14 +18,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ...artifacts import Cuts, Timeline
+from ...artifacts import Cuts, Takes
 from ...captions import write_transcript
 from ...errors import MissingInputError, ToolError
 from ...jsonio import as_json, relative
 from ...media import audio, ffmpeg
 from ...media.encode import Encoder
 from ...model import Project
-from ...verdicts import Findings, Verdict
+from ...verdicts import Finding, Findings, Verdict
 from .cut import RenderedSection, concat, cut_list, render_sections, rendered_starts, stray_warnings
 from .loudness import loudness_problems, normalize_loudness
 from .mix import MixInput, MixPlan, encode_soundtrack, mix_input_args, narration_offsets, plan_mix
@@ -38,6 +38,7 @@ from .publish import (
     render_poster,
     sound_captions,
     transcript_sections,
+    uncaptioned_sounds,
     with_sound_captions,
     write_caption_files,
 )
@@ -74,6 +75,7 @@ class AssembleResult:
     transcript: Path | None = None
     poster: Path | None = None
     loudness_problems: list[str] = field(default_factory=list)  # A peak over the ceiling, or a missed target.
+    rows: list[Finding] = field(default_factory=list)  # A cued sound that names no caption line.
 
     @property
     def substituted(self) -> list[RenderedSection]:
@@ -88,8 +90,12 @@ class AssembleResult:
 
     @property
     def findings(self) -> Findings:
-        """Uncertain: a substituted slate or black section, and a loudness result that missed its mark."""
-        return Findings(uncertain=len(self.loudness_problems)) + Findings.of(Verdict.SLATE for _ in self.substituted)
+        """Uncertain: a slate or black section, a loudness miss, and a cued sound with no caption."""
+        return (
+            Findings(uncertain=len(self.loudness_problems))
+            + Findings.of(Verdict.SLATE for _ in self.substituted)
+            + Findings.of(row.verdict for row in self.rows)
+        )
 
     def to_dict(self, root: Path) -> dict[str, Any]:
         """The build as JSON-ready data, with every written path relative to the project root."""
@@ -124,11 +130,12 @@ class AssembleResult:
                 "problems": [row.to_dict() for row in self.loudness_problems],
             },
             "warnings": list(self.warnings),
+            "uncaptioned": [row.to_dict() for row in self.rows],
         }
 
 
 def mix_soundtrack(
-    project: Project, rows: list[RenderedSection], timeline: Timeline, work: Path, *, soundscape: bool
+    project: Project, rows: list[RenderedSection], takes: Takes, work: Path, *, soundscape: bool
 ) -> MixPlan:
     """Concatenate the sections and lay the whole soundtrack under them, into one work file.
 
@@ -139,7 +146,7 @@ def mix_soundtrack(
     picture = out_dir / ".picture.mp4"
     log.info("[cat ] %d sections, %s", len(rows), project.document.cut_summary)
     concat([r.path for r in rows], picture)
-    plan = plan_mix(project, rows, timeline, soundscape=soundscape)
+    plan = plan_mix(project, rows, takes, soundscape=soundscape)
     for message in plan.warnings:
         log.warning(message)
     enc = Encoder(project.settings.video)
@@ -156,17 +163,17 @@ def mix_soundtrack(
 
 
 def deliver(
-    project: Project, mixed: Path, work: Path, timeline: Timeline, *, loudness: bool, strict: bool
+    project: Project, mixed: Path, work: Path, takes: Takes, *, loudness: bool, strict: bool
 ) -> tuple[tuple[audio.Loudness, audio.Loudness] | None, list[str]]:
     """Encode the mixed soundtrack to its delivery codec, normalized when there is speech to normalize.
 
     Returns (the loudness before and after, the problems). The encode happens exactly once, here or
     in `normalize_loudness`, so nothing a viewer hears has been through AAC twice.
     """
-    if timeline.estimated or not loudness:
+    if takes.estimated or not loudness:
         # A build without voice carries clicks and silence, and normalizing them would move the clicks
         # the a/v check listens for, so the pass is skipped and the result has no loudness.
-        why = "the narration is a silent placeholder" if timeline.estimated else "--no-loudness was passed"
+        why = "the narration is a silent placeholder" if takes.estimated else "--no-loudness was passed"
         log.info("[loud] skipped: %s, so the soundtrack is encoded as it was mixed", why)
         encode_soundtrack(project, mixed, work)
         return None, []
@@ -189,27 +196,31 @@ def assemble(
     project: Project, *, soundscape: bool = True, loudness: bool = True, strict: bool = False
 ) -> AssembleResult:
     """Cut, mix, normalize and publish the whole film, with everything a viewer receives beside it."""
-    timeline = project.timeline()
-    if timeline is None:
-        raise MissingInputError(f"{project.timeline_path} not found; run `decktalk narrate` first")
+    takes = project.takes()
+    if takes is None:
+        raise MissingInputError(
+            f"{relative(project.takes_path, project.root)} is not there, so there is nothing to assemble.",
+            hint="Run `decktalk narrate` first.",
+            path=project.takes_path,
+        )
     paths = project.workspace.output_paths()
     warnings = stray_warnings(project, "assemble")
-    rows = render_sections(project, timeline, strict=strict)
+    rows = render_sections(project, takes, strict=strict)
 
     work = project.out_dir / f".{project.name}.tmp.mp4"
     mixed = project.out_dir / f".{project.name}.mix.mov"
     for path in (work, mixed):
         path.unlink(missing_ok=True)
-    plan = mix_soundtrack(project, rows, timeline, mixed, soundscape=soundscape)
+    plan = mix_soundtrack(project, rows, takes, mixed, soundscape=soundscape)
     warnings += plan.warnings
     try:
-        measured, problems = deliver(project, mixed, work, timeline, loudness=loudness, strict=strict)
+        measured, problems = deliver(project, mixed, work, takes, loudness=loudness, strict=strict)
     finally:
         mixed.unlink(missing_ok=True)
 
     starts = rendered_starts(rows)
-    texts = caption_texts(project, timeline)
-    cues = build_captions(timeline, narration_offsets(rows, timeline, starts), texts)
+    texts = caption_texts(project, takes)
+    cues = build_captions(project, takes, narration_offsets(rows, takes, starts), texts)
     cues = with_sound_captions(
         sorted(cues + clip_captions(project, rows), key=lambda c: c.start), sound_captions(project, starts)
     )
@@ -234,6 +245,7 @@ def assemble(
         warnings=warnings,
         loudness=measured,
         loudness_problems=problems,
+        rows=uncaptioned_sounds(project),
         cuts=cuts,
         cuts_file=paths["cuts"],
         captions_srt=paths["srt"],

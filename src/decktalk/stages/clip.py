@@ -16,14 +16,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import Timeline, Word, write_words
+from ..artifacts import Takes, Word, write_words
 from ..captions import display_words
 from ..errors import ConfigError, MissingInputError
 from ..jsonio import relative
 from ..media import ffmpeg
 from ..media.encode import Encoder
 from ..model import PageSection, Project
-from ..verdicts import Findings
+from ..verdicts import Finding, Findings, Verdict
 
 log = logging.getLogger(__name__)
 
@@ -31,15 +31,15 @@ EDGE_FADE_SECONDS = 0.01  # The clip's audio fades in and out over this long, so
 WORD_SLACK_SECONDS = 0.001  # A word that sits this close to an edge of the span still counts as inside it.
 
 
-def _timeline(project: Project) -> Timeline:
-    timeline = project.timeline()
-    if timeline is None:
+def _takes(project: Project) -> Takes:
+    takes = project.takes()
+    if takes is None:
         raise MissingInputError(
-            "The narration clock is not there, so no section has a start to cut from.",
+            "The take index is not there, so no section has a start to cut from.",
             hint="Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.",
-            path=project.timeline_path,
+            path=project.takes_path,
         )
-    return timeline
+    return takes
 
 
 @dataclass
@@ -89,36 +89,35 @@ class WordsResult:
 
 
 def words(project: Project, only: list[int] | None = None) -> WordsResult:
-    """Each spoken section's words from timeline.json, in seconds after the section starts.
+    """Each spoken section's words from its take, in seconds after the section starts.
 
     These are the times the recorder passes to a page as `?words=`, to three decimals. The script's
     spelling comes from takes.json, so each word also has its punctuation and case.
     """
-    timeline = _timeline(project)
-    keys = timeline.keys
+    takes = _takes(project)
+    keys = takes.keys
     if only:
         wanted = {f"{n:02d}" for n in only}
         missing = sorted(wanted - set(keys))
         if missing:
             raise ConfigError(
-                f"section(s) {[int(k) for k in missing]} have no words in {project.timeline_path.name}; "
-                f"spoken sections are {[int(k) for k in keys]}"
+                f"section(s) {[int(k) for k in missing]} have no take in {project.takes_path.name}.",
+                hint=f"The spoken sections are {[int(k) for k in keys]}.",
+                path=project.takes_path,
             )
         keys = [k for k in keys if k in wanted]
-    takes = project.takes()
     out: list[SectionWords] = []
     for key in keys:
-        sec = timeline.sections[key]
-        words = [Word(w.word, round(w.start - sec.start, 3), round(w.end - sec.start, 3)) for w in sec.words]
-        entry = takes.sections.get(key) if takes else None
-        shown = display_words(words, entry.spoken) if entry and entry.spoken else words
+        entry = takes.sections[key]
+        words = project.section_words(key, entry.words_file)
+        shown = display_words(words, entry.spoken) if entry.spoken else words
         out.append(
             SectionWords(
                 key=key,
-                title=sec.title,
-                lead_seconds=sec.lead_seconds,
-                duration=sec.duration,
-                estimated=timeline.estimated,
+                title=entry.chapter,
+                lead_seconds=entry.lead_seconds,
+                duration=takes.span(key) or 0.0,
+                estimated=not entry.voiced,
                 words=words,
                 texts=[w.word for w in shown],
             )
@@ -145,9 +144,22 @@ class ClipResult:
     cut_words: list[str] = field(default_factory=list)  # words the span cuts in two, left out of the words file
 
     @property
+    def rows(self) -> list[Finding]:
+        """One judged row per word the span cuts in two, so a reader learns which word and where."""
+        return [
+            Finding(
+                verdict=Verdict.CUT_WORD,
+                section=self.section,
+                where=self.words_file.name,
+                detail=f"the span cuts the word {word!r} in two, so the words file leaves it out.",
+            )
+            for word in self.cut_words
+        ]
+
+    @property
     def findings(self) -> Findings:
         """Uncertain: a word the span cuts in two, which the words file leaves out."""
-        return Findings(uncertain=len(self.cut_words))
+        return Findings.of(row.verdict for row in self.rows)
 
     def to_dict(self, root: Path) -> dict[str, Any]:
         return {
@@ -164,6 +176,7 @@ class ClipResult:
             "estimated": self.estimated,
             "word_count": len(self.words),
             "cut_words": list(self.cut_words),
+            "cuts": [row.to_dict() for row in self.rows],
         }
 
 
@@ -190,7 +203,10 @@ def clip(
     if sec is None:
         raise ConfigError(f"section {number} is not in decktalk.toml")
     if not isinstance(sec, PageSection):
-        raise ConfigError(f"section {number} is a clip section; cut a clip from a page section")
+        raise ConfigError(
+            f"section {number} is a clip section.",
+            hint="Cut a clip from a page section.",
+        )
     if start < 0 or end <= start:
         raise ConfigError(f"the span must start at 0 or later and end after it starts, got {start:g} to {end:g}")
     if hold_seconds < 0:
@@ -198,11 +214,9 @@ def clip(
     video = project.section_video(sec)
     if not video.exists():
         raise MissingInputError(f"section {number} has no section video at {video}. Run `decktalk assemble` first.")
-    timeline = _timeline(project)
-    tsec = timeline.sections.get(sec.key)
-    takes = project.takes()
-    entry = takes.sections.get(sec.key) if takes else None
-    if tsec is None or entry is None:
+    takes = _takes(project)
+    entry = takes.sections.get(sec.key)
+    if entry is None:
         raise MissingInputError(f"section {number} has no narration yet. Run `decktalk narrate` first.")
     take = project.takes_dir / entry.file
     if not take.exists():
@@ -222,7 +236,7 @@ def clip(
     total = (f1 - f0 + hold_frames) / fps
 
     # The take starts after the section's lead, so a span that begins inside the lead starts with silence.
-    lead = tsec.lead_seconds
+    lead = entry.lead_seconds
     head = max(0.0, lead - t0)
     a0 = max(0.0, t0 - lead)
     # A span wholly inside the lead still reads a millisecond, so atrim outputs a frame.
@@ -256,7 +270,7 @@ def clip(
     words, cut = _clip_words(project, sec.key, t0, t1)
     for text in cut:
         log.warning("section %s: the span cuts the word %r in two, so the words file leaves it out", sec.key, text)
-    if timeline.estimated:
+    if not entry.voiced:
         log.warning("section %s: the narration is a silent placeholder, so the word times are estimates", sec.key)
     write_words(words_dst, words)
     return ClipResult(
@@ -270,7 +284,7 @@ def clip(
         hold_seconds=round(hold_frames / fps, 3),
         duration=round(total, 3),
         gain_db=gain_db,
-        estimated=timeline.estimated,
+        estimated=not entry.voiced,
         words=words,
         cut_words=cut,
     )

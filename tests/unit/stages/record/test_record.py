@@ -7,8 +7,10 @@ import json
 
 import pytest
 
-from decktalk.artifacts import Luma, RecordingChecks, RecordingLog, Timeline, TimelineSection, Word
+from decktalk.artifacts import Luma, RecordingChecks, RecordingLog, Take, Takes, Word, write_words
+from decktalk.cli.schema import RecordedSection
 from decktalk.errors import ConfigError, MissingInputError
+from decktalk.jsonio import read_as
 from decktalk.model import Project
 from decktalk.stages.record import RecordResult, SectionRecording, jobs, record
 from decktalk.verdicts import Findings, Verdict
@@ -49,14 +51,13 @@ def project(tmp_path) -> Project:
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text(PAGE, encoding="utf-8")
     p = Project.load(tmp_path, environ={})
-    Timeline(
-        narration="n.mp3",
-        total_seconds=6.0,
-        sections={
-            "01": TimelineSection("A", 0.0, 3.0, 3.0, 2.5, [Word("one", 0.7, 1.0)]),
-            "02": TimelineSection("B", 3.0, 6.0, 3.0, 5.5, [Word("two", 3.4, 3.8)]),
-        },
-    ).save(p.timeline_path)
+    p.takes_dir.mkdir(parents=True)
+    write_words(p.takes_dir / "h1.words.json", [Word("one", 0.7, 1.0)])
+    write_words(p.takes_dir / "h2.words.json", [Word("two", 0.4, 0.8)])
+    takes = Takes(script="script.md", model="m", output_format="mp3")
+    takes.sections["01"] = Take(1, "A", "h1.mp3", "h1.words.json", "h1", 1, 3.0, 3.0, speech_end_seconds=2.5)
+    takes.sections["02"] = Take(2, "B", "h2.mp3", "h2.words.json", "h2", 1, 3.0, 3.0, speech_end_seconds=2.5)
+    takes.save(p.takes_path)
     return p
 
 
@@ -91,7 +92,8 @@ def drive(monkeypatch, project, logs: dict[str, RecordingLog]) -> None:
     monkeypatch.setattr(
         record_stage,
         "check_recording",
-        lambda webm, log, cfg: RecordingChecks(3.5, 3.5, Luma(90.0, 90.0, 90.0, 200.0), tuple(log.warnings and ())),
+        # No verdict is raised here, because what these tests measure is which sections ran.
+        lambda webm, log, cfg: RecordingChecks(3.5, 3.5, Luma(90.0, 90.0, 90.0, 200.0), ()),
     )
 
 
@@ -104,19 +106,22 @@ class _NoBrowser:
 
 
 def test_a_section_with_no_span_yet_is_skipped_and_an_empty_run_says_so(project, caplog):
-    Timeline(narration="n.mp3", total_seconds=0.0, sections={}).save(project.timeline_path)
+    Takes(script="script.md", model="m", output_format="mp3").save(project.takes_path)
     with caplog.at_level("WARNING", logger="decktalk"), pytest.raises(ConfigError, match="nothing to record"):
         jobs(project, None, None, use_cues=True)
     assert [r.getMessage() for r in caplog.records] == [
-        "section 01: no narration span yet; skipped",
-        "section 02: no narration span yet; skipped",
+        "section 01: there is no narration span yet, so it is skipped",
+        "section 02: there is no narration span yet, so it is skipped",
     ]
 
 
-def test_without_a_timeline_and_without_seconds_the_stage_names_the_command_to_run(project):
-    project.timeline_path.unlink()
-    with pytest.raises(MissingInputError, match="run `decktalk narrate` first"):
+def test_without_a_take_index_and_without_seconds_the_stage_names_the_command_to_run(project):
+    project.takes_path.unlink()
+    with pytest.raises(MissingInputError, match="no section has a length to record") as raised:
         jobs(project, None, None, use_cues=True)
+    # The next action is the hint and the file is the path, so the message stays one sentence.
+    assert raised.value.hint is not None and "decktalk narrate" in raised.value.hint
+    assert raised.value.path == project.takes_path
 
 
 def test_each_job_asks_for_the_section_span_plus_its_margin(project):
@@ -142,21 +147,24 @@ def test_every_section_is_measured_checked_and_logged_before_the_next_one_starts
     assert [row.key for row in result.sections] == ["01", "02"]
     for row in result.sections:
         assert row.log.t0_seconds == 0.44 and row.log.t0_method == "cover (11 magenta frames)"
-        assert row.log.checks is not None and row.ok and row.label == "ok"
+        assert row.log.checks is not None and row.ok and row.label == Verdict.OK.label
     stored = json.loads((project.recordings_dir / "01.json").read_text(encoding="utf-8"))
     assert stored["t0_seconds"] == 0.44 and stored["checks"]["verdicts"] == []
 
 
 def test_a_row_carries_everything_a_reader_needs_about_one_recording(project):
     checks = RecordingChecks(3.481, 3.5, Luma(10.0, 20.0, 30.0, 200.0), (Verdict.NO_COVER,))
-    row = a_row(project, checks=checks, t0_seconds=0.44, t0_method="NO COVER: fallback", assets=["deck/index.html"])
+    row = a_row(project, checks=checks, t0_seconds=0.44, t0_method="no cover", assets=["deck/index.html"])
     row.log.frame_gaps = [(1.0, 140)]
-    d = json.loads(json.dumps(row.to_dict(project.root)))
-    assert d["key"] == "01" and d["file"] == "build/recordings/01.webm"
-    assert d["duration"] == 3.481 and d["wanted"] == 3.5 and d["t0_seconds"] == 0.44
-    assert d["luma"] == {"y10": 10.0, "y50": 20.0, "y90": 30.0, "max50": 200.0}
-    assert d["verdicts"] == ["NO_COVER"] and d["stall_ms"] == 140 and d["assets"] == ["deck/index.html"]
-    assert row.label == "NO COVER" and not row.ok
+    d = read_as(RecordedSection, json.loads(json.dumps(row.to_dict(project.root))))
+    assert d.key == "01" and d.file == "build/recordings/01.webm"
+    assert d.duration == 3.481 and d.wanted == 3.5 and d.t0_seconds == 0.44
+    assert d.luma == Luma(10.0, 20.0, 30.0, 200.0)
+    # A verdict in a payload is the {code, label, certain} object, so it reads back as the member.
+    assert d.verdicts == [Verdict.NO_COVER]
+    assert d.stall_ms == 140 and d.assets == ["deck/index.html"]
+    assert d.detail is not None and Verdict.NO_COVER.label in d.detail
+    assert row.label == Verdict.NO_COVER.label and not row.ok
 
 
 def test_the_result_tallies_every_verdict_and_names_the_pages_that_threw(project):
@@ -189,6 +197,23 @@ def test_a_section_whose_inputs_are_unchanged_is_kept(project, monkeypatch, capl
     assert again.kept_sections == again.sections and again.findings == Findings()
     kept_line = "kept: its scene, the page around it, its assets, words and cues are unchanged"
     assert any(kept_line in r.getMessage() for r in caplog.records)
+
+
+def test_a_section_only_passed_over_is_reported_when_its_recording_no_longer_stands(project, monkeypatch):
+    """A build assembles every section, so a stale one the run did not name may not go unreported."""
+    drive(monkeypatch, project, {"01": a_log(), "02": a_log()})
+    record(project)
+    # Section 1's page moves while the run names only section 2, so section 1 is out of date.
+    (project.root / "deck" / "index.html").write_text("<!doctype html><p>new</p>", encoding="utf-8")
+    result = record(project, only=[2])
+    assert [row.key for row in result.sections] == ["02"]
+    [stale] = result.rows
+    assert stale.section == 1 and stale.verdict.certain
+    assert "--only did not name it" in (stale.detail or "")
+    assert result.findings == Findings(certain=1)
+    assert result.to_dict(project.root)["stale"][0]["section"] == 1
+    # A run that names nothing judges every section itself, so it reports no such row.
+    assert record(project).rows == []
 
 
 def test_a_section_named_by_only_is_recorded_however_unchanged_it_is(project, monkeypatch):
@@ -237,7 +262,7 @@ def test_the_stale_reason_names_what_moved(project, monkeypatch):
     assert record_stage.stale_recording(project, section) == (
         "section 01: its scene, the page around it, its assets, its words or its cues changed since it was recorded"
     )
-    Timeline(narration="n.mp3", total_seconds=0.0, sections={}).save(project.timeline_path)
+    Takes(script="script.md", model="m", output_format="mp3").save(project.takes_path)
     assert record_stage.stale_recording(project, section) == "section 01 has no narration span yet"
 
 

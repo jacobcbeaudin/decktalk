@@ -54,16 +54,7 @@ def test_the_public_api_names_the_vocabulary_a_caller_needs():
         assert name in decktalk.__all__, name
     for name in ("Takes", "CueTimes", "RecordingLog"):
         assert name in decktalk.__all__, name
-
-
-def test_the_public_api_carries_no_name_the_contract_retired():
-    """`Timeline` leaves the public names, and the module that reads the file stays where it is."""
-    for name in ("Timeline", "TimelineSection", "LeadMeasurement", "RecordingCheck", "measure", "check"):
-        assert name not in decktalk.__all__, name
-        assert not hasattr(decktalk, name), name
-    from decktalk.artifacts import Timeline  # still readable, and not part of the supported API
-
-    assert Timeline.load(Path("nowhere.json")) is None
+    assert decktalk.Takes.load(Path("nowhere.json")) is None
 
 
 def test_the_certainty_of_a_verdict_and_the_code_of_an_error_are_exported_types():

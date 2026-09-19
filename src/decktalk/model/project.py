@@ -24,9 +24,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import CueTimes, Cuts, RecordingLog, Takes, Timeline, Word, read_words
+from ..artifacts import CueTimes, Cuts, RecordingLog, Takes, Word, read_words
 from ..errors import ConfigError, DeckTalkError
 from ..jsonio import relative
+from ..pipeline import Stage
 from ..secret import Secret
 from ..settings import PROJECT_FILE, Settings, load_settings, read_project_toml, settings_key_warnings
 from .cues import SectionCues, load_cues
@@ -190,8 +191,8 @@ class Project:
         return self.workspace.takes_path
 
     @property
-    def timeline_path(self) -> Path:
-        return self.workspace.timeline_path
+    def narration_path(self) -> Path:
+        return self.workspace.narration_path
 
     @property
     def cue_times_path(self) -> Path:
@@ -226,10 +227,10 @@ class Project:
         """Section videos in build/sections whose section is no longer in decktalk.toml."""
         return self.workspace.stray_section_videos([s.key for s in self.sections])
 
-    def stray_section_warnings(self, command: str) -> list[str]:
-        """One sentence per leftover section video, naming the command that ignores it."""
+    def stray_section_warnings(self, stage: Stage) -> list[str]:
+        """One sentence per leftover section video, naming the stage that ignores it."""
         return [
-            f"{relative(f, self.root)} is not a section in decktalk.toml, so {command} ignores it. "
+            f"{relative(f, self.root)} is not a section in decktalk.toml, so {stage.value} ignores it. "
             "Delete the file if an earlier build left it."
             for f in self.stray_section_videos()
         ]
@@ -277,28 +278,32 @@ class Project:
         return load_markers(path) if path.exists() else None
 
     # ---- narration times -------------------------------------------------------------
-    @property
-    def first_spoken_key(self) -> str | None:
-        """The two-digit key of the section the voice reads first, or None when the script cannot be read."""
-        try:
-            spoken = self.script_sections()[1]
-        except DeckTalkError:
-            return None
-        return spoken[0].key if spoken else None
-
     def lead_seconds(self, key: str) -> float:
         """Silence before the first word of the section with this two-digit key, in whole milliseconds.
 
-        It is the section's own `lead_seconds` plus, for the section the voice reads first,
-        `[narration] opening_silence_seconds`. Both are silence rather than speech, so they are
-        joined in when the takes are joined and are never part of a take or of its content hash,
-        which is what lets a take serve whatever section number it ends up under.
+        It is the section's own `lead_seconds`, or `[narration] lead_seconds` when the section sets
+        none, and it depends on nothing else: not on where the section sits, not on its neighbours,
+        and not on whether this run voiced its take. It is silence rather than speech, so it is placed
+        when the takes are joined and is never part of a take or of its content hash, which is what
+        lets a take serve whatever section number it ends up under. A clip has no take, and no lead.
         """
         sec = self.section(int(key))
-        lead = sec.lead_seconds if isinstance(sec, PageSection) else 0.0
-        if key == self.first_spoken_key:
-            lead += self.settings.narration.opening_silence_seconds
-        return round(lead, 3)
+        if not isinstance(sec, PageSection):
+            return 0.0
+        own = sec.lead_seconds
+        return round(self.settings.narration.lead_seconds if own is None else own, 3)
+
+    def tail_seconds(self, key: str) -> float:
+        """Silence after the last sound of the section with this two-digit key, in whole milliseconds.
+
+        It is the section's own `tail_seconds`, or `[narration] min_tail_seconds` when the section
+        sets none, and like the lead it is placement rather than take content. A clip has no take, and no tail.
+        """
+        sec = self.section(int(key))
+        if not isinstance(sec, PageSection):
+            return 0.0
+        own = sec.tail_seconds
+        return round(self.settings.narration.min_tail_seconds if own is None else own, 3)
 
     def section_words(self, key: str, words_file: str) -> list[Word]:
         """A take's words in seconds after its section starts, which is after the section's lead_seconds."""
@@ -312,8 +317,9 @@ class Project:
     def takes(self) -> Takes | None:
         return Takes.load(self.takes_path)
 
-    def timeline(self) -> Timeline | None:
-        return Timeline.load(self.timeline_path)
+    def narration_words(self, key: str, words_file: str, *, at: float) -> list[Word]:
+        """A take's words at their seconds in the joined narration, where `at` is the section's start."""
+        return [Word(w.word, round(at + w.start, 3), round(at + w.end, 3)) for w in self.section_words(key, words_file)]
 
     def cue_times(self) -> CueTimes:
         return CueTimes.load(self.cue_times_path)

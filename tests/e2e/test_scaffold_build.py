@@ -47,8 +47,9 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(tmp_path, monkey
     assert final.is_file() and final.stat().st_size > 0
 
     # Nothing the runtime could not honor, on any page of any section.
-    for recording in result.recordings:
-        assert recording.log is not None, recording.section
+    assert result.recordings is not None
+    for recording in result.recordings.sections:
+        assert recording.log is not None, recording.key
         assert recording.log.warnings == [], recording.log.warnings
         assert recording.log.page_errors == [], recording.log.page_errors
 

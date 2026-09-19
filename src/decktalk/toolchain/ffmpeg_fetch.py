@@ -61,7 +61,7 @@ class FfmpegBuild:
 # never a "latest" alias, and every digest was computed from the archive as downloaded on
 # 2026-09-17. A new version changes the URL, the digest and the THIRD_PARTY_NOTICES.md row together.
 # 8.1.2 is pinned rather than 9.0.1 because the 9.0.1 libmp3lame encoder refuses the padded frames
-# that pad_tail feeds it ("inadequate AVFrame plane padding"), on every platform's build.
+# that the narration join pads with silence ("inadequate AVFrame plane padding"), on every platform's build.
 FFMPEG_BUILDS: dict[str, FfmpegBuild] = {
     "linux-x86_64": FfmpegBuild(
         builder="BtbN/FFmpeg-Builds",

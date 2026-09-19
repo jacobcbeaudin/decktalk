@@ -294,8 +294,8 @@ def drive_clip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
     _assembled(project)
     monkeypatch.setattr(clip_module.ffmpeg, "probe_duration", lambda path: 3.0)
     monkeypatch.setattr(clip_module.ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"x"))
-    # Section 01's clock puts "Hello" at 1.2 to 1.6 s, so a span ending at 1.4 s cuts it in two.
-    return clip_module.clip(project, 1, start=0.0, end=1.4, out="media/cut.mp4")
+    # Section 01's 0.5 s lead puts "Hello" at 1.0 to 1.4 s, so a span ending at 1.2 s cuts it in two.
+    return clip_module.clip(project, 1, start=0.0, end=1.2, out="media/cut.mp4")
 
 
 def drive_words(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:

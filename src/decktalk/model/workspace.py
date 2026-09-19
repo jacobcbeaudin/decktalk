@@ -62,8 +62,9 @@ class Workspace:
         return self.narration_dir / "takes.json"
 
     @property
-    def timeline_path(self) -> Path:
-        return self.narration_dir / "timeline.json"
+    def narration_path(self) -> Path:
+        """The takes joined into one track, which `assemble` mixes under the picture."""
+        return self.narration_dir / "narration.mp3"
 
     @property
     def cue_times_path(self) -> Path:

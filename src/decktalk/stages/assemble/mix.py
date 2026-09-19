@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ...artifacts import CueTimes, Takes, Timeline, Word, read_words
+from ...artifacts import CueTimes, Takes, Word, read_words
 from ...media import ffmpeg
 from ...media.encode import Encoder
 from ...model import PageSection, Project
@@ -137,7 +137,7 @@ class NarrationRun:
         return self.at - self.start
 
 
-def narration_runs(rows: list[RenderedSection], timeline: Timeline, starts: dict[str, float]) -> list[NarrationRun]:
+def narration_runs(rows: list[RenderedSection], takes: Takes, starts: dict[str, float]) -> list[NarrationRun]:
     """The narration split at every clip that sits between page sections, and after every held page section.
 
     The track holds the spoken sections with no gaps, so a clip between two page sections
@@ -151,7 +151,7 @@ def narration_runs(rows: list[RenderedSection], timeline: Timeline, starts: dict
         key = row.section.key
         if row.section.is_clip:
             open_run = False
-        elif key in timeline.sections:
+        elif key in takes.sections:
             if not open_run:
                 groups.append([])
                 open_run = True
@@ -162,38 +162,37 @@ def narration_runs(rows: list[RenderedSection], timeline: Timeline, starts: dict
         NarrationRun(
             keys=tuple(keys),
             at=starts[keys[0]],
-            start=timeline.sections[keys[0]].start,
-            end=None if i == len(groups) - 1 else timeline.sections[keys[-1]].end,
+            start=takes.start(keys[0]) or 0.0,
+            end=None if i == len(groups) - 1 else takes.end(keys[-1]),
         )
         for i, keys in enumerate(groups)
     ]
 
 
-def narration_offset(rows: list[RenderedSection], timeline: Timeline, starts: dict[str, float]) -> float:
+def narration_offset(rows: list[RenderedSection], takes: Takes, starts: dict[str, float]) -> float:
     """Where narration t=0 sits in the final file: the start of the first page section."""
-    first = next((r.section.key for r in rows if r.section.key in timeline.sections), None)
+    first = next((r.section.key for r in rows if r.section.key in takes.sections), None)
     return starts[first] if first else 0.0
 
 
-def narration_offsets(rows: list[RenderedSection], timeline: Timeline, starts: dict[str, float]) -> dict[str, float]:
+def narration_offsets(rows: list[RenderedSection], takes: Takes, starts: dict[str, float]) -> dict[str, float]:
     """What to add to a time in narration.mp3 to place it in the final file, per spoken section key.
 
     With one run every section shares the offset of the first page section. A section in
-    the timeline that has no rendered row takes the offset of the first run.
+    the take index that has no rendered row takes the offset of the first run.
     """
-    runs = narration_runs(rows, timeline, starts)
+    runs = narration_runs(rows, takes, starts)
     if len(runs) <= 1:
-        t0 = narration_offset(rows, timeline, starts)
-        return {key: t0 for key in timeline.sections}
+        t0 = narration_offset(rows, takes, starts)
+        return {key: t0 for key in takes.sections}
     offsets = {key: run.offset for run in runs for key in run.keys}
-    return {key: offsets.get(key, runs[0].offset) for key in timeline.sections}
+    return {key: offsets.get(key, runs[0].offset) for key in takes.sections}
 
 
-def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, *, soundscape: bool) -> MixPlan:
+def plan_mix(project: Project, rows: list[RenderedSection], takes: Takes, *, soundscape: bool) -> MixPlan:
     mix = project.mix
     audio: AudioConfig = project.settings.audio
     sr = project.settings.video.sample_rate
-    takes = project.takes() or Takes(script="", model="", output_format="")
     cue_times: CueTimes = project.cue_times()
     plan = MixPlan()
     starts = rendered_starts(rows)
@@ -214,10 +213,10 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
     labels.append("[anchor]")
 
     # narration under the picture from the first page section
-    narration = project.narration_dir / timeline.narration
-    runs = narration_runs(rows, timeline, starts)
+    narration = project.narration_path
+    runs = narration_runs(rows, takes, starts)
     if len(runs) <= 1:
-        t0 = narration_offset(rows, timeline, starts)
+        t0 = narration_offset(rows, takes, starts)
         idx = add_input(ONCE, str(narration))
         chain.append(f"[{idx}:a]{fmt},adelay={int(round(t0 * 1000))}:all=1[narr]")
         labels.append("[narr]")
@@ -231,11 +230,13 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
                 f"[{idx}:a]{fmt},{trim},asetpts=PTS-STARTPTS,adelay={int(round(run.at * 1000))}:all=1[narr{n}]"
             )
             labels.append(f"[narr{n}]")
-    offsets = narration_offsets(rows, timeline, starts)
-    speech: list[tuple[float, float]] = [
-        (offsets[key] + s.start, offsets[key] + (s.speech_end if s.speech_end is not None else s.end))
-        for key, s in timeline.sections.items()
-    ]
+    offsets = narration_offsets(rows, takes, starts)
+    # A section is speaking from its start until its last word, or until it ends when it says nothing.
+    speech: list[tuple[float, float]] = []
+    for key in takes.keys:
+        said = takes.speech_end_seconds(key)
+        until = said if said is not None else takes.end(key)
+        speech.append((offsets[key] + (takes.start(key) or 0.0), offsets[key] + (until or 0.0)))
     speech += [(starts[r.section.key], starts[r.section.key] + r.duration) for r in rows if r.section.is_clip]
 
     # each clip's own audio, at its section start, trimmed to its picture and faded at both ends
@@ -263,7 +264,7 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
             mpath = project.path(mix.music_markers)
             spec = project.markers()
             if spec is None:
-                plan.warnings.append(f"markers file missing ({mpath}); music without structure")
+                plan.warnings.append(f"markers file missing ({mpath}), so the music has no structure")
             else:
                 boost = db(spec.boost_db) - 1
                 boosts: list[str] = []
@@ -272,7 +273,7 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
                 for marker in spec.markers:
                     mt = resolve_marker_time(marker, starts, takes, project.takes_dir, leads)
                     if mt is None:
-                        plan.warnings.append(f"marker {marker.name!r} unresolved; skipped")
+                        plan.warnings.append(f"marker {marker.name!r} is unresolved, so it is skipped")
                         continue
                     if marker.mute_seconds > 0:
                         mutes.append(ramp_expr(mt, mt + marker.mute_seconds, audio.marker_mute_ramp_seconds))
@@ -291,7 +292,9 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
         )
         labels.append("[music]")
     elif mix.music and soundscape:
-        plan.warnings.append(f"music missing ({project.path(mix.music)}); no music (`decktalk soundscape`)")
+        plan.warnings.append(
+            f"music missing ({project.path(mix.music)}), so there is no music. Run `decktalk soundscape` to make it"
+        )
 
     # ambience under flagged sections
     amb = project.path(mix.ambience) if mix.ambience and soundscape else None
@@ -310,7 +313,7 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
         )
         labels.append("[amb]")
     elif mix.ambience and soundscape and flagged:
-        plan.warnings.append(f"ambience missing ({amb}); no ambience")
+        plan.warnings.append(f"ambience missing ({amb}), so there is no ambience")
 
     # one-shot sfx on resolved cues
     for n, sfx in enumerate(mix.sfx if soundscape else ()):
@@ -318,10 +321,12 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
         key = f"{sfx.section:02d}"
         cue_t = cue_times.get(key, sfx.cue)
         if not path.exists():
-            plan.warnings.append(f"sfx {sfx.file} missing; skipped")
+            plan.warnings.append(f"sfx {sfx.file} is missing, so it is skipped")
             continue
         if key not in starts or cue_t is None:
-            plan.warnings.append(f"sfx {sfx.file}: cue {sfx.cue!r} in section {sfx.section} is unresolved; skipped")
+            plan.warnings.append(
+                f"sfx {sfx.file}: cue {sfx.cue!r} in section {sfx.section} is unresolved, so it is skipped"
+            )
             continue
         idx = add_input(ONCE, str(path))
         at_ms = int(round((starts[key] + cue_t + sfx.offset) * 1000))

@@ -101,16 +101,21 @@ class NarrationConfig:
     )
     words_per_minute: int = tune(140, "Pacing of the estimated length in the `narrate` table.", ABOVE_ZERO)
     silent_words_per_minute: int = tune(150, "Pacing of the click track in a build without voice.", ABOVE_ZERO)
-    opening_silence_seconds: float = tune(0.7, "Silence before the first spoken section.", NOT_NEGATIVE)
+    lead_seconds: float = tune(
+        0.5,
+        "Silence before the first word of every spoken section, so the picture changes before the voice speaks. "
+        "A section's own `lead_seconds` replaces it.",
+        NOT_NEGATIVE,
+    )
     silent_beat_seconds: float = tune(
         0.7, "Seconds each beat adds to a section's length in a build without voice.", NOT_NEGATIVE
     )
     min_tail_seconds: float = tune(
         0.7,
-        "Shortest silence after the last word of a section, so a cut never falls on speech.",
+        "Silence after the last word of every spoken section, so a cut never falls on speech. The take is "
+        "placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it.",
         NOT_NEGATIVE,
     )
-    tail_slack_seconds: float = tune(0.05, "Extra silence added when `narrate` pads a short tail.", NOT_NEGATIVE)
     cache_dir: str = tune(
         "",
         "Directory that holds the take files and their words files, each named by its content hash. It is "

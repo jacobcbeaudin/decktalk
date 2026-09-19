@@ -30,7 +30,7 @@ from ...errors import ConfigError, MissingInputError
 from ...jsonio import relative
 from ...media.browser import chromium
 from ...model import PageSection, Project
-from ...verdicts import Findings, Verdict
+from ...verdicts import Finding, Findings, Verdict
 from .capture import Job, capture_section, plan_job, prev_words_query, scene_params, scene_url, words_query
 from .checks import check_recording, label
 from .start import find_start
@@ -78,6 +78,17 @@ class SectionRecording:
         """Every verdict as one line, with the stall length beside STALLED, as the table prints it."""
         return label(self.log.checks, self.log.worst_stall_ms)
 
+    @property
+    def detail(self) -> str | None:
+        """The one sentence a judged row carries, with the measured number a reader needs in it."""
+        if not self.verdicts:
+            return None
+        checks = self.log.checks
+        measured = "" if checks is None else f" It ran {checks.duration_seconds:.1f}s of {checks.wanted_seconds:.1f}s."
+        stall = f" The worst frame gap was {self.log.worst_stall_ms}ms." if self.log.worst_stall_ms else ""
+        outside = f" It loaded from {', '.join(self.log.external)}." if self.log.external else ""
+        return f"Section {self.key} recorded {self.label}.{measured}{stall}{outside}"
+
     def to_dict(self, root: Path) -> dict[str, Any]:
         """The row as JSON-ready data: what was recorded, where t=0 landed, and every verdict."""
         checks = self.log.checks
@@ -92,10 +103,12 @@ class SectionRecording:
             "duration": None if checks is None else round(checks.duration_seconds, 3),
             "wanted": None if checks is None else round(checks.wanted_seconds, 3),
             "luma": None if checks is None else {k: round(v, 2) for k, v in vars(checks.luma).items()},
-            "verdicts": [v.name for v in self.verdicts],
+            "verdicts": [v.to_dict() for v in self.verdicts],
+            "detail": self.detail,
             "stall_ms": self.log.worst_stall_ms or None,
             "page_errors": list(self.log.page_errors),
             "assets": list(self.log.assets),
+            "external": list(self.log.external),
         }
 
 
@@ -104,6 +117,10 @@ class RecordResult:
     """Every section one `record` run touched, in the order it touched them."""
 
     sections: list[SectionRecording] = field(default_factory=list)
+    # A section `--only` left out whose recording no longer matches the project. The run did not
+    # touch it, and the film it goes into would show the old picture, so it is reported rather than
+    # left for the author to notice by eye.
+    rows: list[Finding] = field(default_factory=list)
 
     @property
     def kept_sections(self) -> list[SectionRecording]:
@@ -117,28 +134,35 @@ class RecordResult:
 
     @property
     def findings(self) -> Findings:
-        """Every verdict of every recording, tallied."""
-        return Findings.of(v for row in self.sections for v in row.verdicts)
+        """Every verdict of every recording, and every section this run left behind out of date."""
+        return Findings.of(v for row in self.sections for v in row.verdicts) + Findings.of(r.verdict for r in self.rows)
 
     def to_dict(self, root: Path) -> dict[str, Any]:
-        return {"recordings": [row.to_dict(root) for row in self.sections]}
+        return {
+            "recordings": [row.to_dict(root) for row in self.sections],
+            "stale": [row.to_dict() for row in self.rows],
+        }
 
 
 def jobs(project: Project, only: list[int] | None, seconds: float | None, *, use_cues: bool) -> list[Job]:
     """One job per page section that has a length to record, in section order."""
-    timeline = project.timeline()
-    if timeline is None and seconds is None:
-        raise MissingInputError(f"{project.timeline_path} not found; run `decktalk narrate` first, or pass seconds")
+    takes = project.takes()
+    if takes is None and seconds is None:
+        raise MissingInputError(
+            f"{relative(project.takes_path, project.root)} is not there, so no section has a length to record.",
+            hint="Run `decktalk narrate` first, or pass --seconds.",
+            path=project.takes_path,
+        )
     cue_times = project.cue_times() if use_cues else None
     wanted = set(only) if only else None
     planned: list[Job] = []
     for section in project.page_sections:
         if wanted is not None and section.number not in wanted:
             continue
-        span = timeline.span(section.key) if timeline else None
+        span = takes.span(section.key) if takes else None
         length = seconds if seconds is not None else (span + section.record_margin_seconds if span else None)
         if not length:
-            log.warning("section %s: no narration span yet; skipped", section.key)
+            log.warning("section %s: there is no narration span yet, so it is skipped", section.key)
             continue
         planned.append(plan_job(project, section, cue_times, length))
     if not planned:
@@ -153,8 +177,8 @@ def stale_recording(project: Project, section: PageSection) -> str | None:
     what any other reader calls stale are the same question answered once, and neither compares file
     times.
     """
-    timeline = project.timeline()
-    span = timeline.span(section.key) if timeline else None
+    takes = project.takes()
+    span = takes.span(section.key) if takes else None
     if not span:
         return f"section {section.key} has no narration span yet"
     cue_times = project.cue_times() if project.cue_times_path.exists() else None
@@ -194,6 +218,21 @@ def record(
     # A section named by --only is recorded whatever its inputs say, because that is how an author
     # asks for another take of a page that has not changed.
     fresh = [job for job in planned if not job.unchanged or job.section.number in named]
+    # A run that names sections says nothing about the others, so each one it passed over is asked
+    # whether its recording still stands. A build assembles every section, not only the named ones.
+    for section in project.page_sections if named else []:
+        if section.number in named:
+            continue
+        why = stale_recording(project, section)
+        if why is not None:
+            result.rows.append(
+                Finding(
+                    verdict=Verdict.MISSING if "no recording" in why else Verdict.INCONSISTENT,
+                    section=section.number,
+                    where=relative(project.recording(section), project.root),
+                    detail=f"{why}, and --only did not name it, so the film keeps what was recorded before.",
+                )
+            )
     for job in planned:
         if job not in fresh:
             assert job.previous is not None
@@ -228,7 +267,7 @@ def record(
             if report:
                 report(row)
             if start.guessed:
-                log.warning("       no magenta cover found; narration t=0 is a guess (%s)", start.method)
+                log.warning("       no magenta cover was found, so narration t=0 is a guess (%s)", start.method)
             log.info("       %s  (t=0 at %.3fs, %s)", relative(job.out, project.root), start.seconds, row.label)
             for message in recording_log.page_errors:
                 log.warning("       page error: %s", message)

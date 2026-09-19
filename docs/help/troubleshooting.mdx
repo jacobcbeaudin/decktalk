@@ -45,7 +45,7 @@ explains.
 | `unfilled placeholders` | `narrate`, `build` | [Entry](#unfilled-placeholders-in-narrate) |
 | `no spoken section matches` | `narrate` | [Entry](#no-spoken-section-matches-in-narrate) |
 | `have no [[section]] in decktalk.toml` | `narrate`, `build` | [Entry](#have-no-section-in-decktalk-toml-in-narrate) |
-| `have no narration yet` | `narrate` | [Entry](#have-no-narration-yet-in-narrate) |
+| `have no take yet` | `narrate` | [Entry](#have-no-take-yet-in-narrate) |
 | `holds voiced takes` | `narrate --no-voice`, `build --no-voice` | [Entry](#holds-voiced-takes-in-narrate) |
 | `phrase not found` | `align`, `build` | [Entry](#phrase-not-found-in-align) |
 | `could not be matched to the narration` | `build` | [Entry](#phrase-not-found-in-align) |
@@ -85,7 +85,7 @@ explains.
 | `malformed check` | `verify` | [Entry](#malformed-check-in-verify) |
 | `need build/sections/NN.mp4 files` | `verify` | [Entry](#need-build/out/nn-section-mp4-files-in-verify) |
 | `is not a section in decktalk.toml` | `assemble`, `verify` | [Entry](#is-not-a-section-in-decktalk-toml-in-assemble-or-verify) |
-| `timeline.json not found` | `words`, `clip` | [Entry](#timeline-json-not-found-in-words-or-clip) |
+| `The take index is not there` | `words`, `clip` | [Entry](#the-take-index-is-not-there-in-words-or-clip) |
 | `has no section video` | `clip` | [Entry](#has-no-section-video-in-clip) |
 | `is a clip section` | `clip` | [Entry](#is-a-clip-section-in-clip) |
 | `cuts the word` | `clip` | [Entry](#cuts-the-word-in-clip) |
@@ -305,10 +305,10 @@ error: no spoken section matches [5]. The spoken sections are [1, 2, 3, 4, 6, 8,
 
 **More.** [Headings](/reference/script-md#headings)
 
-### `have no narration yet` in narrate
+### `have no take yet` in narrate
 
 **Cause.** `narrate --only` voiced some sections, and other spoken sections have no audio yet. The
-timeline then covers only the sections that have audio.
+narration then covers only the sections that have a take.
 
 **Fix.**
 1. Run `decktalk narrate` with no `--only`.
@@ -527,7 +527,7 @@ common first:
 
 ### `STALLED` in record
 
-`check` prints `STALLED <ms>ms`. `record` logs `frame stall(s) after narration t=0` and
+`record` prints `STALLED <ms>ms` and logs `frame stall(s) after narration t=0`, and
 `recording section NN again`.
 
 **Cause.** The machine was too busy to paint, so a reveal was recorded late. After narration t=0, the
@@ -615,8 +615,8 @@ The starter's `deck/index.html` loads KaTeX before the runtime, which is the ord
 
 ### `no narration span yet` in record
 
-**Cause.** A page section has no span in `timeline.json`. Usually the script has no `## N.` heading for
-that section, or `narrate` has not run since you added it.
+**Cause.** A page section has no take in `build/narration/takes.json`, so it has no length to record.
+Usually the script has no `## N.` heading for that section, or `narrate` has not run since you added it.
 
 **Fix.**
 1. If the heading is missing, add `## N. Title` to `script.md`.
@@ -688,8 +688,8 @@ unless the clip section sets `optional = true`.
 
 ### `has no span in` in assemble
 
-**Cause.** A page section has no span in `timeline.json`. The script has no heading for it, or
-`narrate` has not run since you added it.
+**Cause.** A page section has no take in `build/narration/takes.json`, so it has no span to cut to. The
+script has no heading for it, or `narrate` has not run since you added it.
 
 **Fix.**
 1. If the heading is missing, add `## N. Title` to `script.md`.
@@ -950,12 +950,13 @@ little at a time, so the first probe sees too little change.
 
 ## words and clip
 
-### `timeline.json not found` in words or clip
+### `The take index is not there` in words or clip
 
-{/* sample: decktalk words on a fresh scaffold with no build */}
+{/* sample: decktalk words on a fresh starter with no build */}
 
 ```text
-error: ~/my-lesson/build/narration/timeline.json not found. Run `decktalk narrate` first.
+error[MISSING_INPUT]: The take index is not there, so no section has a start to cut from.
+  hint: Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.
 ```
 
 **Cause.** The project has no narration yet, so no section has word times.

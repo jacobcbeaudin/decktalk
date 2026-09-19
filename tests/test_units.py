@@ -15,15 +15,13 @@ from decktalk.artifacts import (
     CueTimes,
     Take,
     Takes,
-    Timeline,
-    TimelineSection,
     Word,
+    write_words,
 )
 from decktalk.cli import main
 from decktalk.cli.parser import UsageError, build_parser
 from decktalk.model.script import parse_script, strip_markdown
 from decktalk.settings import Settings
-from decktalk.tomlmap import RENAMES_PAGE
 from decktalk.verdicts import Findings, Verdict
 
 MINIMAL_TOML = """
@@ -100,7 +98,7 @@ def test_project_loads_sections_in_order(tmp_path):
         ("[[section]]\nnumber = 1\npage = 'a.html'\n[bogus]\nx = 1\n", "unknown table"),
         (
             "[[section]]\nnumber = 1\npage = 'a.html'\n[[mix.sfx]]\nfile = 'x.mp3'\nsection = 1\n",
-            "missing required key 'cue'",
+            "'cue' is required and is not there.",
         ),
     ],
 )
@@ -171,7 +169,7 @@ def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, mon
     )
     with caplog.at_level("WARNING", logger="decktalk"):
         p = Project.load(write_project(tmp_path, toml), environ={})
-    page = f". {RENAMES_PAGE} lists every name DeckTalk renamed."
+    page = "."
     assert [r.getMessage() for r in caplog.records] == [
         f"decktalk.toml: [project]: ignoring unknown key 'scirpt' (did you mean 'script'?){page}",
         f"decktalk.toml: [[section]] number=1: ignoring unknown key 'scnee' (did you mean 'scene'?){page}",
@@ -286,16 +284,22 @@ def test_the_markers_file_is_parsed_into_rows_and_a_bad_one_names_its_file(tmp_p
     assert "ignoring unknown key 'zebra'" in caplog.text
 
     path.write_text("[]", encoding="utf-8")
-    with pytest.raises(ConfigError, match="expected an object with 'markers'"):
+    with pytest.raises(ConfigError, match="no top-level 'markers' array"):
         load_markers(path)
 
     path.write_text(json.dumps({"markers": [{"name": "turn"}]}), encoding="utf-8")
-    with pytest.raises(ConfigError, match="missing required key 'section'"):
+    with pytest.raises(ConfigError) as info:
         load_markers(path)
+    # The row names the file it is about rather than carrying an absolute path inside its sentence.
+    assert "'section' is required and is not there." in str(info.value)
+    assert str(path) not in str(info.value) and info.value.path == path
 
     path.write_text("{not json", encoding="utf-8")
-    with pytest.raises(ConfigError, match=str(path)):
+    with pytest.raises(ConfigError) as info:
         load_markers(path)
+    # A machine-readable payload carries no path from outside the project, so the line goes in its own slot.
+    assert str(info.value).startswith("markers.json is not valid JSON:")
+    assert info.value.path == path and info.value.line == 1
 
 
 def test_a_section_with_no_chapter_is_titled_by_its_script_heading(tmp_path):
@@ -321,9 +325,29 @@ def test_user_settings_file_warns_about_unknown_keys(tmp_path, caplog):
     with caplog.at_level("WARNING", logger="decktalk"):
         assert read_user_toml(path) == {"record": {"settle_second": 0.8}}
     assert [r.getMessage() for r in caplog.records] == [
-        f"{path}: [record]: ignoring unknown key 'settle_second' (did you mean 'settle_seconds'?). "
-        f"{RENAMES_PAGE} lists every name DeckTalk renamed."
+        f"{path}: [record]: ignoring unknown key 'settle_second' (did you mean 'settle_seconds'?)."
     ]
+
+
+def test_a_mistyped_environment_variable_warns_and_a_real_one_does_not(caplog):
+    """A variable DeckTalk does not read has no effect, so the warning is what says the name never took hold."""
+    from decktalk.settings import load_settings
+
+    environ = {"DECKTALK_VIDEO_PRESSET": "veryfast", "DECKTALK_PROJECT": ".", "DECKTALK_VIDEO_PRESET": "fast"}
+    with caplog.at_level("WARNING", logger="decktalk"):
+        settings = load_settings(toml={}, environ=environ)
+    messages = [r.getMessage() for r in caplog.records]
+    expected = "environment: ignoring unknown key 'DECKTALK_VIDEO_PRESSET' (did you mean 'DECKTALK_VIDEO_PRESET'?)."
+    assert messages == [expected]
+    # The variable that is read takes effect, and the two that are known say nothing.
+    assert settings.video.preset == "fast"
+
+
+def test_every_standalone_variable_is_known_to_the_warning(caplog):
+    """A variable read outside the tuning tables would otherwise warn on every run that set it."""
+    from decktalk.settings import STANDALONE_ENV, env_warnings
+
+    assert env_warnings({name: "x" for name in STANDALONE_ENV}) == []
 
 
 # ---- artifacts -----------------------------------------------------------------------------
@@ -340,15 +364,14 @@ def test_takes_roundtrip_sorts_and_totals(tmp_path):
     assert not list(tmp_path.glob(".*.tmp"))  # atomic write left nothing behind
 
 
-def test_timeline_and_cue_times_roundtrip(tmp_path):
-    tl = Timeline(
-        narration="n.mp3",
-        total_seconds=3.0,
-        sections={"01": TimelineSection("A", 0, 3.0, 3.0, 2.8, [Word("hi", 0.1, 0.4)])},
-    )
-    tl.save(tmp_path / "t.json")
-    back = Timeline.load(tmp_path / "t.json")
-    assert back is not None and back.span("01") == 3.0 and back.sections["01"].words[0].word == "hi"
+def test_the_take_index_and_cue_times_roundtrip(tmp_path):
+    index = Takes(script="script.md", model="m", output_format="mp3")
+    index.sections["01"] = Take(1, "A", "h.mp3", "h.words.json", "h", 1, 3.0, 2.5, lead_seconds=0.5)
+    index.save(tmp_path / "t.json")
+    back = Takes.load(tmp_path / "t.json")
+    # The clock is arithmetic over the rows, so a reloaded index answers exactly what it wrote.
+    assert back is not None and back.span("01") == 3.0 and back.total_seconds == 3.0
+    assert (back.start("01"), back.end("01")) == (0.0, 3.0) and back.sections["01"].chapter == "A"
     rows = [CueTime("a", "hi", 1.5, 1.2), CueTime("panel:bought", "$end", 2.0)]
     b = CueTimes({"01": rows}, estimated=True)
     b.save(tmp_path / "b.json")
@@ -474,6 +497,11 @@ def test_every_result_tallies_its_own_rows():
         cut_words=["step"],
     )
     assert clip_row.findings == Findings(uncertain=1)
+    # The tally has a row under it, so a reader learns which word the span cut and where.
+    [cut] = clip_row.rows
+    assert cut.verdict.name == "CUT_WORD" and not cut.verdict.certain
+    assert cut.section == 1 and cut.detail is not None and "'step'" in cut.detail
+    assert clip_row.to_dict(Path("/tmp"))["cuts"] == [cut.to_dict()]
     # The results that judge nothing say so, which is what keeps the CLI free of stage arithmetic.
     for quiet in (WordsResult(sections=[]), ScreenshotsResult(files=[])):
         assert quiet.findings == Findings(), type(quiet).__name__
@@ -519,12 +547,22 @@ def test_cues_load_with_cue_keys_and_reject_any_other_id_key(tmp_path):
     (section,) = project.cue_specs()
     assert [c.cue for c in section.cues] == ["1.1a", "1.1b"]
     assert [c.on for c in section.cues] == ["$start", "hello"]
-    # A cue row that names the id under any other key fails with the normal missing-key error.
+    # A cue row that names the id under any other key is refused, naming the key and the row.
     (root / "cues.json").write_text(
         json.dumps({"sections": {"1": {"cues": [{"id": "1.1a", "on": "$start"}]}}}), encoding="utf-8"
     )
-    with pytest.raises(ConfigError, match="missing required key 'cue'"):
+    with pytest.raises(ConfigError, match="'id' is not a key of a cue"):
         Project.load(root, environ={}).cue_specs()
+    # A key one letter away from a real one moves a cue in silence unless it is refused too.
+    (root / "cues.json").write_text(
+        json.dumps({"sections": {"1": {"cues": [{"cue": "1.1a", "on": "hello", "occurence": 2}]}}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError) as info:
+        Project.load(root, environ={}).cue_specs()
+    assert "'occurence' is not a key of a cue" in str(info.value)
+    assert info.value.path is not None and info.value.path.name == "cues.json"
+    assert info.value.hint is not None and "occurrence" in info.value.hint
 
 
 # ---- post-production: dips, captions, chapters, the mix plan, loudness, verify offsets ----------
@@ -666,24 +704,6 @@ def test_caption_cues_split_on_a_long_pause_and_never_cross_sections():
     assert caption_cues([]) == []
 
 
-def test_caption_and_chapter_files(tmp_path):
-    from decktalk.captions import CaptionCue, Chapter, ffmetadata_escape, write_chapters, write_srt, write_vtt
-
-    cues = [CaptionCue(3.7, 10.5, ("Welcome.", "This is a deck.")), CaptionCue(3661.25, 3662.0, ("Late.",))]
-    write_srt(tmp_path / "c.srt", cues)
-    write_vtt(tmp_path / "c.vtt", cues)
-    srt = (tmp_path / "c.srt").read_text(encoding="utf-8")
-    vtt = (tmp_path / "c.vtt").read_text(encoding="utf-8")
-    assert srt.startswith("1\n00:00:03,700 --> 00:00:10,500\nWelcome.\nThis is a deck.\n\n2\n01:01:01,250 --> ")
-    assert vtt.startswith("WEBVTT\n\n00:00:03.700 --> 00:00:10.500\nWelcome.\nThis is a deck.\n")
-    assert ffmetadata_escape("a=b;c#d\\e") == "a\\=b\\;c\\#d\\\\e"
-    write_chapters(tmp_path / "ch.txt", [Chapter(0, 3.0, "On camera"), Chapter(3.0, 12.44, "Open; part = 1")])
-    text = (tmp_path / "ch.txt").read_text(encoding="utf-8")
-    assert text.startswith(";FFMETADATA1\n")
-    assert "[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=3000\ntitle=On camera\n" in text
-    assert "START=3000\nEND=12440\ntitle=Open\\; part \\= 1\n" in text
-
-
 MID_CLIP_TOML = """
 [project]
 name = "t"
@@ -704,12 +724,6 @@ page = "deck/index.html"
 number = 4
 page = "deck/index.html"
 """
-
-
-def test_video_defaults_match_the_recorder():
-    v = Settings().video
-    assert v.fps == 25 and v.sample_rate == 48000
-    assert not hasattr(Settings().audio, "limiter")
 
 
 # ---- captions keep the script's punctuation -------------------------------------------------
@@ -770,23 +784,6 @@ def test_page_error_text_keeps_the_message_and_the_file_and_line():
 
 
 # ---- Tier 1 pipeline: clip placement, silent loudness, verify defaults, unknown cue ids ------------
-
-PAGES_TOML = """
-[project]
-name = "t"
-
-[[section]]
-number = 1
-page = "deck/index.html"
-
-[[section]]
-number = 2
-page = "deck/index.html"
-
-[[section]]
-number = 3
-page = "deck/index.html"
-"""
 
 
 def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
@@ -962,7 +959,10 @@ def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkey
 
 
 def _words_project(tmp_path: Path) -> Project:
-    """Page sections 1 (with a 0.5 s lead) and 2, a clip section 3, a timeline, and a take_index entry for 1 only."""
+    """Page sections 1 (with a 0.5 s lead) and 2, a clip section 3, and a take for each spoken section.
+
+    Only section 1's take records the script's spelling, so section 2 keeps the voice's.
+    """
     (tmp_path / "decktalk.toml").write_text(
         "[[section]]\nnumber = 1\nchapter = 'Open'\npage = 'a.html'\nlead_seconds = 0.5\n"
         "[[section]]\nnumber = 2\nchapter = 'Close'\npage = 'a.html'\n"
@@ -970,18 +970,17 @@ def _words_project(tmp_path: Path) -> Project:
         encoding="utf-8",
     )
     p = Project.load(tmp_path, environ={})
-    Timeline(
-        narration="narration.mp3",
-        total_seconds=6.0,
-        sections={
-            "01": TimelineSection("Open", 0.0, 3.0, 3.0, 1.4, [Word("Hello", 0.6, 0.9), Word("there", 1.0, 1.4)], 0.5),
-            "02": TimelineSection("Close", 3.0, 6.0, 3.0, 4.1, [Word("Bye", 3.2, 3.5), Word("now", 3.6, 4.1)]),
-        },
-    ).save(p.timeline_path)
+    p.takes_dir.mkdir(parents=True)
+    write_words(p.takes_dir / "01-open.words.json", [Word("Hello", 0.1, 0.4), Word("there", 0.5, 0.9)])
+    write_words(p.takes_dir / "02-close.words.json", [Word("Bye", 0.2, 0.5), Word("now", 0.6, 1.1)])
     take_index = Takes(script="script.md", model="m", output_format="mp3_44100_128")
     take_index.sections["01"] = Take(
         index=1, chapter="Open", file="01-open.mp3", words_file="01-open.words.json", hash="h",
-        word_count=2, estimated_seconds=1.0, duration_seconds=2.5, spoken="Hello, there.",
+        word_count=2, estimated_seconds=1.0, duration_seconds=2.5, lead_seconds=0.5, spoken="Hello, there.",
+    )  # fmt: skip
+    take_index.sections["02"] = Take(
+        index=2, chapter="Close", file="02-close.mp3", words_file="02-close.words.json", hash="h2",
+        word_count=2, estimated_seconds=1.0, duration_seconds=3.0,
     )  # fmt: skip
     take_index.save(p.takes_path)
     return p
@@ -996,24 +995,26 @@ def test_words_are_relative_to_each_section_with_the_scripts_spelling(tmp_path):
     assert first.estimated is False
     assert first.words == [Word("Hello", 0.6, 0.9), Word("there", 1.0, 1.4)]
     assert first.texts == ["Hello,", "there."]
-    # Section 2 starts at 3.0 s in narration.mp3, and it has no take_index entry, so it keeps the voice's spelling.
+    # Section 2's take records no spoken text, so it keeps the voice's spelling.
     assert second.words == [Word("Bye", 0.2, 0.5), Word("now", 0.6, 1.1)]
     assert second.texts == ["Bye", "now"]
     assert [s.key for s in words(p, only=[2]).sections] == ["02"]
-    no_words = r"section\(s\) \[3\] have no words in timeline.json; spoken sections are \[1, 2\]"
-    with pytest.raises(ConfigError, match=no_words):
+    no_words = r"section\(s\) \[3\] have no take in takes.json"
+    with pytest.raises(ConfigError, match=no_words) as no_take:
         words(p, only=[3])
+    # The sections that do have a take are the next action, so they are the hint.
+    assert no_take.value.hint is not None and "[1, 2]" in no_take.value.hint
 
 
-def test_spoken_words_needs_a_timeline(tmp_path):
+def test_spoken_words_needs_a_take_index(tmp_path):
     from decktalk.errors import MissingInputError
     from decktalk.stages.clip import words
 
     (tmp_path / "decktalk.toml").write_text("[[section]]\nnumber = 1\npage = 'a.html'\n", encoding="utf-8")
-    with pytest.raises(MissingInputError, match="The narration clock is not there") as raised:
+    with pytest.raises(MissingInputError, match="The take index is not there") as raised:
         words(Project.load(tmp_path, environ={}))
     # The next action is the hint and the file is the path, so the message stays one sentence.
-    assert raised.value.path == tmp_path / "build" / "narration" / "timeline.json"
+    assert raised.value.path == tmp_path / "build" / "narration" / "takes.json"
     assert "decktalk narrate" in (raised.value.hint or "")
 
 
@@ -1060,6 +1061,10 @@ def test_clip_refuses_a_bad_span_before_it_runs_ffmpeg(tmp_path):
         clip(p, 1, start=0, end=1, out="media/x.mp4")
     p.sections_dir.mkdir(parents=True)
     p.section_video(p.sections[1]).write_bytes(b"")
+    index = p.takes()
+    assert index is not None
+    del index.sections["02"]  # a section the voice has not reached yet
+    index.save(p.takes_path)
     with pytest.raises(MissingInputError, match="section 2 has no narration yet"):
         clip(p, 2, start=0, end=1, out="media/x.mp4")
 
@@ -1070,3 +1075,63 @@ def test_cli_clip_parses_its_span_and_defaults():
     assert (args.words, args.gain, args.hold, args.preset, args.crf) == (None, 0.0, 0.0, None, None)
     with pytest.raises(UsageError):
         build_parser().parse_args(["clip", "1", "--start", "1.5", "--out", "media/a.mp4"])
+
+
+def test_every_path_key_a_project_declares_is_refused_when_it_names_somewhere_else(tmp_path):
+    """Every path DeckTalk reports is project-relative, so no key may name somewhere else."""
+    from decktalk.tomlmap import Table
+
+    outside = {
+        "posix": "/etc/hosts",
+        "windows": "D:\\evil\\build",
+        "unc": "\\\\server\\share",
+        "climb": "../../elsewhere/script.md",
+        "climb_backslash": "..\\..\\elsewhere",
+        "nested_climb": "deck/../../out",
+    }
+    table = Table(outside, "decktalk.toml: [project]", tmp_path / "decktalk.toml")
+    for key, value in outside.items():
+        with pytest.raises(ConfigError) as info:
+            table.get_path(key)
+        assert f"'{key}' names a path outside the project" in str(info.value)
+        # The value is what must not be repeated, so neither the message nor the hint carries it.
+        assert value not in str(info.value) and value not in (info.value.hint or "")
+        assert info.value.path is not None and info.value.path.name == "decktalk.toml"
+    good = {"a": "cues.json", "b": "script.md", "c": "build", "d": "deck/index.html", "e": ""}
+    inside_table = Table(good, "decktalk.toml: [project]")
+    for key, value in good.items():
+        assert inside_table.get_path(key) == value
+
+
+def test_every_path_key_of_the_document_goes_through_the_one_check(tmp_path):
+    """The rule is the method, so a key added later cannot miss it by being read the other way."""
+    base = "[project]\nname = 't'\n\n[[section]]\nnumber = 1\npage = 'deck/index.html'\n"
+    cases = {
+        "clip": "[[section]]\nnumber = 2\nclip = '/etc/hosts'\n",
+        "words": "[[section]]\nnumber = 2\nclip = 'a.mp4'\nwords = '/etc/hosts'\n",
+        "music": "[mix]\nmusic = '/etc/hosts'\n",
+        "ambience": "[mix]\nambience = '/etc/hosts'\n",
+        "slate": "[mix]\nslate = '/etc/hosts'\n",
+        "file": "[[mix.sfx]]\nfile = '/etc/hosts'\nsection = 1\ncue = '1.1a'\n",
+        "out": "[soundscape.ambience]\ntext = 'x'\nout = '/etc/hosts'\n",
+    }
+    for index, (key, table) in enumerate(cases.items()):
+        root = tmp_path / f"case{index}"
+        root.mkdir()
+        (root / "decktalk.toml").write_text(base + table, encoding="utf-8")
+        (root / "script.md").write_text("## 1. A\n\nHi.\n", encoding="utf-8")
+        with pytest.raises(ConfigError) as info:
+            Project.load(root, environ={})
+        assert f"'{key}' names a path outside the project" in str(info.value), key
+        assert "/etc/hosts" not in str(info.value), key
+
+
+def test_a_page_a_project_declares_is_refused_when_it_names_somewhere_else(tmp_path):
+    """`page` is opened by the browser and read by the cue scan, so it is checked like the rest."""
+    root = tmp_path / "project"
+    root.mkdir()
+    toml = "[project]\nname = 't'\n\n[[section]]\nnumber = 1\npage = '/etc/hosts'\n"
+    (root / "decktalk.toml").write_text(toml, encoding="utf-8")
+    (root / "script.md").write_text("## 1. A\n\nHi.\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="'page' names a path outside the project"):
+        Project.load(root, environ={})

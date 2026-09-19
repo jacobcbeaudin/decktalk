@@ -2,8 +2,8 @@
 
     build/narration/<hash>.mp3         one take, named by the content that produced it
     build/narration/<hash>.words.json  a start and an end for every word in it
-    build/narration/takes.json         the index: which section plays which take, and what it cost
-    build/narration/timeline.json      the takes joined, with each section and word at its own time
+    build/narration/takes.json         the index: which section plays which take, what it cost, and
+                                       where each section lands once the takes are joined
     build/narration/narration.mp3      every take joined, with each section's silence around it
 
 The script is markdown with "## N. Title" sections, parsed by `model/script.py`. The take a
@@ -29,8 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ...artifacts import Take, Takes, Timeline
-from ...errors import ConfigError
+from ...artifacts import Take, Takes
+from ...errors import ConfigError, MissingInputError
 from ...jsonio import as_json, relative
 from ...model import Project
 from ...model.script import Segment
@@ -49,11 +49,10 @@ from .plan import (
 )
 from .script_rules import check_script, symbol_findings
 from .takes import (
-    build_timeline,
-    ensure_tail,
     estimated_words,
     index_cached_take,
-    section_config,
+    join_takes,
+    placed,
     write_silent_take,
     write_voiced_take,
 )
@@ -64,13 +63,12 @@ log = logging.getLogger(__name__)
 __all__ = [
     "NarrateResult",
     "TakePlan",
-    "build_timeline",
-    "ensure_tail",
+    "join_takes",
     "estimated_words",
     "is_cached",
     "narrate",
+    "placed",
     "plan_totals",
-    "section_config",
     "take_name",
     "text_hash",
     "voiced_plan",
@@ -119,7 +117,6 @@ class NarrateResult:
     rows: list[Finding] = field(default_factory=list)
     note: str | None = None  # Why the voice could not be set up, on a dry run that planned without it.
     takes: Takes | None = None  # None on a dry run, which writes nothing.
-    timeline: Timeline | None = None
     synthesized: list[str] = field(default_factory=list)
     cached: list[str] = field(default_factory=list)
 
@@ -177,6 +174,12 @@ def narrate(
     """Voice every targeted section, or plan what a voiced run would do and send nothing."""
     cfg = project.settings.narration
     where = relative(project.script, project.root)
+    if not project.script.exists():
+        raise MissingInputError(
+            f"{where} is not there, so there is nothing to narrate.",
+            hint="Write the script, or point [project] script at the file you meant.",
+            path=project.script,
+        )
     check_script(where, project.script.read_text(encoding="utf-8"))
     spoken = project.script_sections()[1]
     targets = [s for s in spoken if not only or s.index in set(only)]
@@ -225,9 +228,7 @@ def narrate(
         # A run that is not a dry run always has a provider, and so every plan carries a digest.
         assert digest is not None
         if plan.cached:
-            takes.sections[seg.key] = index_cached_take(
-                project, seg, chapter, digest, voiced=not silent, previous=previous
-            )
+            takes.sections[seg.key] = index_cached_take(project, seg, chapter, digest, voiced=not silent)
             result.cached.append(seg.key)
             continue
         if silent:
@@ -239,7 +240,10 @@ def narrate(
         # The index is checkpointed after every call, paid or not, so a killed run loses nothing.
         takes.save(project.takes_path)
     valid = {s.key for s in spoken}
-    takes.sections = {k: v for k, v in takes.sections.items() if k in valid}
+    # A section --only leaves out keeps its take, and is placed by the same rule as every other, so
+    # its lead and tail follow its own settings whichever sections this run touched.
+    touched = {plan.segment.key for plan in result.plans}
+    takes.sections = {k: v if k in touched else placed(project, k, v) for k, v in takes.sections.items() if k in valid}
     estimated = any(not take.voiced for take in takes.sections.values())
     takes.estimate_basis = f"{cfg.silent_words_per_minute} wpm + declared pauses" if estimated else ""
     takes.save(project.takes_path)
@@ -247,5 +251,5 @@ def narrate(
     if missing:
         log.warning("Sections %s have no take yet, so the narration covers the rest alone.", missing)
     result.takes = takes
-    result.timeline = build_timeline(project, takes, spoken)
+    join_takes(project, takes, spoken)
     return result

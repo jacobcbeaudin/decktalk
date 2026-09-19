@@ -20,7 +20,7 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 
-from ...artifacts import CLIP, Cut, Cuts, Timeline, Word, read_words
+from ...artifacts import Cut, Cuts, Takes, Word, read_words
 from ...captions import (
     CaptionCue,
     Chapter,
@@ -38,6 +38,8 @@ from ...media.browser import chromium, open_page, screenshot
 from ...media.encode import iso_639_2
 from ...media.origin import page_url
 from ...model import ClipSection, PageSection, Project
+from ...pipeline import SectionKind
+from ...verdicts import Finding, Verdict
 from .cut import RenderedSection, rendered_starts
 
 log = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ POSTER_SETTLE_MS = 400  # Time the poster page gets to draw itself before the fr
 
 
 def build_captions(
-    timeline: Timeline, t0: float | Mapping[str, float], texts: dict[str, str] | None = None
+    project: Project, takes: Takes, t0: float | Mapping[str, float], texts: dict[str, str] | None = None
 ) -> list[CaptionCue]:
     """Cues for every spoken section, shifted to where its narration sits in the final file.
 
@@ -60,9 +62,9 @@ def build_captions(
     and case.
     """
     cues: list[CaptionCue] = []
-    for key in timeline.keys:
-        shift = t0.get(key, 0.0) if isinstance(t0, Mapping) else t0
-        words = [Word(w.word, round(shift + w.start, 3), round(shift + w.end, 3)) for w in timeline.sections[key].words]
+    for key in takes.keys:
+        shift = (t0.get(key, 0.0) if isinstance(t0, Mapping) else t0) + (takes.start(key) or 0.0)
+        words = project.narration_words(key, takes.sections[key].words_file, at=shift)
         if texts and key in texts:
             words = display_words(words, texts[key])
         cues += caption_cues(words)
@@ -83,7 +85,9 @@ def clip_captions(project: Project, rows: list[RenderedSection]) -> list[Caption
             continue
         path = project.path(sec.words)
         if not path.exists():
-            log.warning("section %s: words file missing: %s; the clip plays without captions", sec.key, sec.words)
+            log.warning(
+                "section %s: the words file %s is missing, so the clip plays without captions", sec.key, sec.words
+            )
             continue
         shift = starts[sec.key]
         words = [
@@ -93,6 +97,29 @@ def clip_captions(project: Project, rows: list[RenderedSection]) -> list[Caption
         ]
         cues += caption_cues(words)
     return cues
+
+
+def uncaptioned_sounds(project: Project) -> list[Finding]:
+    """One row per cued sound that names no caption, which a viewer reading captions never learns about.
+
+    The captions carry the whole soundtrack and not the dialogue alone, so a sound with no caption
+    line is a hole in what a deaf viewer receives. It is uncertain, because a sound may be there to
+    be felt rather than noticed, and `--strict` is how a project says every sound must be written down.
+    """
+    return [
+        Finding(
+            verdict=Verdict.NO_CAPTION,
+            section=sfx.section,
+            cue=sfx.cue,
+            where=sfx.file,
+            detail=(
+                f"the sound {sfx.file} plays at cue {sfx.cue!r} and names no caption, "
+                "so the captions never say it plays."
+            ),
+        )
+        for sfx in project.mix.sfx
+        if not sfx.caption
+    ]
 
 
 def sound_captions(project: Project, starts: dict[str, float]) -> list[CaptionCue]:
@@ -159,15 +186,14 @@ def one_at_a_time(cues: list[CaptionCue]) -> list[CaptionCue]:
     return out
 
 
-def caption_texts(project: Project, timeline: Timeline) -> dict[str, str]:
+def caption_texts(project: Project, takes: Takes) -> dict[str, str]:
     """The spoken text per section key, which lends the captions their punctuation and case.
 
     The take index records the text each section was narrated from, so the captions match the audio
     even when the script has been edited since.
     """
-    takes = project.takes()
-    texts = {k: seg.spoken for k, seg in (takes.sections.items() if takes else ()) if seg.spoken}
-    if any(key not in texts for key in timeline.keys):
+    texts = {k: row.spoken for k, row in takes.sections.items() if row.spoken}
+    if any(key not in texts for key in takes.keys):
         for seg in project.script_sections()[0]:
             texts.setdefault(seg.key, seg.spoken)
     return texts
@@ -240,9 +266,9 @@ def clip_speech(project: Project, key: str) -> str:
 
 def cut_note(cut: Cut) -> str:
     """What plays in a section that spoke nothing, in one sentence, or nothing when it spoke."""
-    if cut.substitute:
-        return f"A placeholder {cut.substitute} frame plays here."
-    return f"A clip plays here: {cut.source}." if cut.kind == CLIP else ""
+    if cut.substitute is not None:
+        return f"A placeholder {cut.substitute.value} frame plays here."
+    return f"A clip plays here: {cut.source}." if cut.kind is SectionKind.CLIP else ""
 
 
 def transcript_sections(project: Project, cuts: Cuts, texts: dict[str, str]) -> list[TranscriptSection]:
@@ -307,7 +333,7 @@ def render_poster(project: Project, out: Path) -> Path | None:
             catalog = page.evaluate("() => (window.__decktalk && window.__decktalk.catalog) || null")
             query = poster_query(catalog, section)
             if query is None:
-                log.warning("no slide to draw the poster from on %s; no poster written", section.page)
+                log.warning("no slide to draw the poster from on %s, so no poster is written", section.page)
                 return None
             screenshot(page, page_url(section.page, query), out, settle_ms=POSTER_SETTLE_MS)
     except Exception as exc:

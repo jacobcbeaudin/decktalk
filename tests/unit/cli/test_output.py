@@ -61,7 +61,7 @@ def test_the_status_table_says_what_is_there_and_whether_a_build_runs(tmp_path):
         cues=tmp_path / "cues.json",
         cues_exists=True,
         sections=[SectionStatus(key="01", kind="page", source="deck/index.html?scene=1", recorded=True, cut=False)],
-        timeline=None,
+        takes=None,
         cue_times_exists=False,
         cue_times_sections={},
         final=tmp_path / "build" / "out" / "deck.mp4",

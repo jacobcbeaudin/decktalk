@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..artifacts import Timeline
+from ..artifacts import Takes
 from ..jsonio import relative
 from ..model.script import Segment
 from ..scaffold import DoctorRow, InitResult
@@ -54,8 +54,8 @@ def narrate_table(result: NarrateResult) -> str:
     ]
     for row in result.rows:
         parts.append(f"! {row.verdict.value} section {row.section}: {row.detail}")
-    if result.timeline is not None:
-        parts += ["", timeline_table(result.timeline)]
+    if result.takes is not None:
+        parts += ["", narration_table(result.takes)]
     return "\n".join(parts)
 
 
@@ -112,14 +112,16 @@ def plan_table(plans: list[TakePlan], cfg: NarrationConfig, rate: float = 0.0, n
     return "\n".join(lines)
 
 
-def timeline_table(timeline: Timeline) -> str:
+def narration_table(takes: Takes) -> str:
+    """Where each section lands once the takes are joined, which the take index says on its own."""
     lines = [f"{'#':>3}  {'section':<22} {'start':>7} {'end':>7} {'length':>7}"]
-    for key, sec in timeline.sections.items():
+    for key in takes.keys:
+        row, span = takes.sections[key], takes.span(key) or 0.0
         lines.append(
-            f"{int(key):>3}  {sec.title[:22]:<22} {mmss(sec.start):>7} {mmss(sec.end):>7} {sec.duration:>7.1f}"
+            f"{int(key):>3}  {row.chapter[:22]:<22} {mmss(takes.start(key)):>7} {mmss(takes.end(key)):>7} {span:>7.1f}"
         )
-    est = "  (estimated: silent placeholders)" if timeline.estimated else ""
-    lines.append(f"     narration total {mmss(timeline.total_seconds)}{est}")
+    est = "  (estimated: silent placeholders)" if takes.estimated else ""
+    lines.append(f"     narration total {mmss(takes.total_seconds)}{est}")
     return "\n".join(lines)
 
 
@@ -269,7 +271,7 @@ def status_table(report: StatusResult) -> str:
     for sec in report.sections:
         what = f"clip {sec.source}" if sec.kind == "clip" else sec.source
         lines.append(f"  {sec.key}  {what:<40} {'rec ' if sec.recorded else '    '}{'cut' if sec.cut else ''}")
-    lines.append(timeline_table(report.timeline) if report.timeline else "timeline  none (run `decktalk narrate`)")
+    lines.append(narration_table(report.takes) if report.takes else "narration  none (run `decktalk narrate`)")
     lines.append(
         f"cue times {len(report.cue_times_sections)} section(s) resolved"
         if report.cue_times_sections

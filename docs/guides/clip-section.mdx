@@ -173,9 +173,10 @@ narration at each clip between page sections.
 - No caption covers a clip section, unless the section sets `words`. [Caption the speech in a clip](#caption-the-speech-in-a-clip) explains it.
 - A clip section gets its own chapter, unless the section before it has the same title.
 
-Example: in `clip-lesson` with the test clip, section 6 starts at 196.70 s in `timeline.json` and at 200.72 s in
-the final mp4. The 4 s clip of section 5 sits between them, with 0.02 s of frame rounding.
-[Build artifacts](/reference/artifacts#time-bases) explains the two time bases.
+Example: with a 4 s clip in section 5, section 6 starts about 4 s later in the final mp4 than it does on the
+narration clock, plus the frame rounding of every cut before it. `decktalk status` prints the narration times
+and `build/out/cuts.json` the final ones. [Build artifacts](/reference/artifacts#time-bases) explains the two
+time bases.
 
 {/* sample: decktalk status in clip-lesson after the steps above, section rows 04 to 06 */}
 ```text

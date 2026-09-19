@@ -22,6 +22,7 @@ def offline(monkeypatch):
     """ffmpeg stubbed out, so a run without voice writes its files and measures nothing."""
     monkeypatch.setattr(audio, "write_clicks", lambda path, *a, **kw: Path(path).write_bytes(b"clicks"))
     monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
+    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 1.8)
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
     monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)
 
@@ -33,13 +34,13 @@ def test_a_run_without_voice_writes_a_take_index_of_placeholders(project, offlin
     assert index is not None and index.estimated and index.voiced_keys == []
     assert [take.voiced for take in index.sections.values()] == [False] * 3
     assert index.estimate_basis.endswith("wpm + declared pauses")
-    assert result.timeline is not None and result.takes == index
+    assert result.takes == index and project.narration_path.exists()
     # The placeholders are cached by content too, so a second run writes nothing new.
     assert narrate(project, silent=True).cached == ["01", "02", "03"]
 
 
 def test_a_voiced_run_indexes_one_take_per_section_and_checkpoints(project, voice, monkeypatch):
-    monkeypatch.setattr(audio, "trailing_silence", lambda path, **kw: 1.0)
+    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 1.0)
     monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
     monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)
@@ -55,7 +56,7 @@ def test_a_voiced_run_indexes_one_take_per_section_and_checkpoints(project, voic
 
 
 def _voiced(project, voice, monkeypatch) -> Takes:
-    monkeypatch.setattr(audio, "trailing_silence", lambda path, **kw: 1.0)
+    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 1.0)
     monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
     monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)
@@ -99,8 +100,8 @@ def test_the_result_carries_the_plan_the_price_and_the_index(project, voice, mon
     assert [row["status"] for row in doc["sections"]] == [TakeStatus.CACHED.value] * 3
     assert doc["totals"]["characters_sent"] == 0 and doc["totals"]["estimated_cost"] == 0.0
     assert [row["voiced"] for row in doc["takes"]["sections"]] == [True] * 3
-    # The narration runs for every take plus every lead, and the first spoken section carries 0.7 s.
-    assert doc["takes"]["estimated"] is False and doc["takes"]["total_seconds"] == 6.7
+    # Every section runs for its 0.5 s lead, its take to its last sound at 1.0 s, and its 0.7 s tail.
+    assert doc["takes"]["estimated"] is False and doc["takes"]["total_seconds"] == 6.6
     assert result.findings.certain == 0 and result.findings.uncertain == 0
 
 
@@ -136,7 +137,7 @@ def test_cli_a_run_without_voice_over_paid_takes_is_an_error_and_not_a_finding(
 
 def test_a_voiced_run_refuses_a_script_that_still_holds_a_placeholder(make_project, base, voice, monkeypatch):
     """The voice would read the word NUMBER aloud and charge for it, so an unfilled placeholder stops the run."""
-    monkeypatch.setattr(audio, "trailing_silence", lambda path, **kw: 1.0)
+    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 1.0)
     monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
     monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)

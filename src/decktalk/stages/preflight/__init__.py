@@ -41,7 +41,7 @@ from typing import Any
 
 from ...artifacts import CueTimes, Word
 from ...jsonio import relative
-from ...media import ffmpeg
+from ...media import audio
 from ...model import Project
 from ...settings import NarrationConfig
 from ...verdicts import Finding, Findings, Verdict
@@ -50,8 +50,8 @@ from ..narrate import (
     TakePlan,
     estimated_words,
     is_cached,
+    placed,
     plan_totals,
-    section_config,
     take_name,
     voiced_plan,
     words_name,
@@ -167,10 +167,14 @@ class PreflightResult:
 
 
 def planned_words(project: Project, plan: TakePlan) -> tuple[list[Word], float, bool]:
-    """(words, length, estimated) a section will have after a voiced run, in seconds after the section starts."""
+    """(words, length, estimated) a section will have after a voiced run, in seconds after the section starts.
+
+    The length is placed by the one rule every take is placed by: the section's lead, the take to
+    where its sound ends, and the section's tail.
+    """
     seg = plan.segment
     key = seg.key
-    lead = project.lead_seconds(key)
+    lead, tail = project.lead_seconds(key), project.tail_seconds(key)
     takes = project.takes()
     row = takes.sections.get(key) if takes is not None else None
     paid = row if row is not None and row.voiced else None
@@ -179,21 +183,16 @@ def planned_words(project: Project, plan: TakePlan) -> tuple[list[Word], float, 
         # A plan can read cached because an earlier section of the same run writes that take, and
         # nothing has written it yet, so the file itself is what is asked rather than the status.
         words = project.section_words(key, words_name(plan.digest))
-        # A section runs for the silence around its take as well, which the row carries when it has one.
-        indexed = paid if paid is not None and paid.hash == plan.digest else None
-        if indexed is not None:
-            length = indexed.duration_seconds + indexed.tail_joined_seconds
-        else:
-            length = ffmpeg.probe_duration(project.takes_dir / take_name(plan.digest))
-        return words, length + lead, False
+        if paid is not None and paid.hash == plan.digest:
+            return words, placed(project, key, paid).span_seconds, False
+        end = audio.sound_end(project.takes_dir / take_name(plan.digest))
+        return words, round(lead + end + tail, 3), False
     if plan.unchecked and paid is not None and paid.spoken == seg.spoken:
         # The voice is not set up, but the take was voiced from this exact text.
-        length = paid.duration_seconds + paid.tail_joined_seconds
-        return project.section_words(key, paid.words_file), length + lead, False
-    cfg = section_config(project, seg)
-    length = seg.silent_seconds(cfg)
-    words = [Word(w.word, round(w.start + lead, 3), round(w.end + lead, 3)) for w in estimated_words(seg, length, cfg)]
-    return words, length + lead, True
+        return project.section_words(key, paid.words_file), placed(project, key, paid).span_seconds, False
+    length = seg.silent_seconds(project.settings.narration)
+    words = [Word(w.word, round(w.start + lead, 3), round(w.end + lead, 3)) for w in estimated_words(seg, length)]
+    return words, round(lead + length + tail, 3), True
 
 
 def preflight(

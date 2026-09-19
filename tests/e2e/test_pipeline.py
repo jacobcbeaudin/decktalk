@@ -35,7 +35,7 @@ from decktalk.cli import main
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.model import Project
 from decktalk.speech import SpeechRequest, VoiceContext, get_provider
-from decktalk.stages.narrate import build_timeline, take_name, text_hash, words_name
+from decktalk.stages.narrate import join_takes, take_name, text_hash, words_name
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 
 # An advisory lock on the output directory, where the platform has one.
@@ -226,7 +226,7 @@ def voiced_copy(built: Built, name: str, monkeypatch: pytest.MonkeyPatch) -> Pat
     assert take_index is not None and take_index.estimated
     take_index.model = model
     for seg in project.script_sections()[1]:
-        request = SpeechRequest(seg.tts_text(cfg), model, voice_settings=settings, output_format=cfg.output_format)
+        request = SpeechRequest(seg.tts_text, model, voice_settings=settings, output_format=cfg.output_format)
         row = take_index.sections[seg.key]
         digest = text_hash(seg, cfg, provider.cache_key(request), settings)
         for old, new in ((row.file, take_name(digest)), (row.words_file, words_name(digest))):
@@ -538,7 +538,7 @@ def test_status_lists_every_output(built: Built) -> None:
     assert all(o["exists"] for o in s["outputs"].values()) and set(s["outputs"]) == {"srt", "vtt", "chapters"}
     assert all(sec["cut"] for sec in s["sections"])
     assert [sec["key"] for sec in s["sections"] if sec["recorded"]] == list(SPOKEN)
-    assert s["timeline"]["estimated"] and s["cue_times"]["exists"]
+    assert s["narration"]["estimated"] and s["cue_times"]["exists"]
 
 
 # ---- what a voiced run would spend, with no key and no call --------------------------------------
@@ -598,8 +598,8 @@ def test_cues_resolve_on_uneven_word_timestamps(built: Built, monkeypatch: pytes
         Word(w, start, round((UNEVEN[i + 1][1] if i + 1 < len(UNEVEN) else start + 0.4) - 0.05, 3))
         for i, (w, start) in enumerate(UNEVEN)
     ]
-    write_words(project.narration_dir / entry.words_file, words)
-    build_timeline(project, take_index, project.script_sections()[1])
+    write_words(project.takes_dir / entry.words_file, words)
+    join_takes(project, take_index, project.script_sections()[1])
     # Section 1's cues alone are rewritten, so every other section's elements stay cued.
     cues = json.loads((root / "cues.json").read_text(encoding="utf-8"))
     cues["sections"]["1"]["cues"] = [

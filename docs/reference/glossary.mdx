@@ -15,7 +15,7 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 | preflight | `decktalk preflight`. Plans the takes, resolves the cues, and estimates each reveal from frozen frames, with no credits and no recording. | [CLI](/reference/cli#decktalk-preflight) |
 | build without voice | A build with `--no-voice`. Uses estimated word times, writes a click track, and needs no account. | [How it works](/concepts/how-it-works) |
 | voiced build | A build without `--no-voice`. The speech provider voices the script. | [How it works](/concepts/how-it-works) |
-| stage | One of `narrate`, `align`, `record`, `measure`, `check`, `assemble`, `verify`, always in that order. | [How it works](/concepts/how-it-works) |
+| stage | One of `narrate`, `align`, `record`, `assemble`, `verify`, always in that order. | [How it works](/concepts/how-it-works) |
 | project file | `decktalk.toml`. | [decktalk.toml](/reference/decktalk-toml) |
 | input files | The four files you write, in this order: `script.md`, `decktalk.toml`, `cues.json`, and the page. | [How it works](/concepts/how-it-works) |
 | scaffold | The project that `decktalk init` writes. | [Quickstart](/quickstart) |
@@ -73,7 +73,7 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 | words file | `build/narration/<hash>.words.json`. | [Build artifacts](/reference/artifacts) |
 | word times | The start and end of each spoken word. | [Build artifacts](/reference/artifacts) |
 | spoken words | The words in the words file. Matching and `?words=` use them. | [Cues](/concepts/cues) |
-| timeline | `build/narration/timeline.json`. Section and word times in `narration.mp3`. | [Build artifacts](/reference/artifacts) |
+| take index | `build/narration/takes.json`. Which take each section plays, and where each section sits in `narration.mp3`. | [Build artifacts](/reference/artifacts) |
 | generate | Make soundscape audio with `decktalk soundscape`. | [Sound](/concepts/sound) |
 | music | The music under the whole video (`[mix] music`). | [Sound](/concepts/sound) |
 | ambience bed | The `[mix] ambience` audio. | [Sound](/concepts/sound) |
@@ -96,7 +96,7 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 | trim | Remove the frames before t=0. | [How it works](/concepts/how-it-works) |
 | cut (noun) | The boundary between two sections in the final video. | [How it works](/concepts/how-it-works) |
 | cut (verb) | `assemble` cutting a recording to its section span. | [How it works](/concepts/how-it-works) |
-| section span | A section's `start` to `end` in `timeline.json`, including the silence after its last word. | [Verify](/reference/verify) |
+| section span | A section's start to its end on the narration clock, including the silence joined either side of its take. | [Verify](/reference/verify) |
 | spoken span | A section's `start` to its speech end. | [Sound](/concepts/sound) |
 | speech end | The end of a section's last spoken word, in seconds after the section start. | [Verify](/reference/verify) |
 | verify stage | The `verify` stage inside `build`. Checks section starts, cuts, and cut continuity only. | [Verify](/reference/verify) |

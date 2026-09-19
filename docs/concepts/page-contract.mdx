@@ -150,9 +150,9 @@ finds its elements with `slide.querySelector` and needs no global variable.
 ## Build artifacts a page can read
 
 A page gets its cue times as `?cues=`, from `build/cue-times.json`. It gets the section's spoken
-words as `?words=`, and the words of the section before it as `?prevwords=`, both from
-`build/narration/timeline.json`. A tool of your own can read those files too.
-[Build artifacts](/reference/artifacts) has the shape of each file.
+words as `?words=`, and the words of the section before it as `?prevwords=`, both from the words file
+of the take that section plays, which `build/narration/takes.json` names. A tool of your own can read
+those files too. [Build artifacts](/reference/artifacts) has the shape of each file.
 
 ## Terms
 

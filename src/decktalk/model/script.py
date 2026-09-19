@@ -85,16 +85,14 @@ class Segment:
         return round(self.word_count / cfg.words_per_minute * 60, 1)
 
     def silent_seconds(self, cfg: NarrationConfig) -> float:
-        """How long a placeholder take of this section runs, which is speech and pauses and no lead.
+        """How long a placeholder take of this section runs, which is speech and pauses and no silence around them.
 
-        Silence before the first word belongs to the section rather than to the take, so it is
-        joined in with the takes and is not counted here.
+        The lead before the first word and the tail after the last belong to the section rather than
+        to the take, so they are placed when the takes are joined and are not counted here.
         """
         breaks = sum(float(t) for t in BREAK_RE.findall(self.text))
         beat_seconds = self.text.count(" —") * cfg.silent_beat_seconds
-        return round(
-            self.word_count / cfg.silent_words_per_minute * 60 + breaks + beat_seconds + cfg.min_tail_seconds, 3
-        )
+        return round(self.word_count / cfg.silent_words_per_minute * 60 + breaks + beat_seconds, 3)
 
 
 def _mmss(value: str) -> int:

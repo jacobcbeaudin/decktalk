@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from decktalk.artifacts import CueTime, CueTimes, RecordingLog, Timeline, TimelineSection, Word
+from decktalk.artifacts import CueTime, CueTimes, RecordingLog, Take, Takes, Word, write_words
 from decktalk.errors import ConfigError
 from decktalk.media.origin import ORIGIN
 from decktalk.model import PageSection, Project
@@ -56,47 +56,46 @@ def project(tmp_path) -> Project:
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text(PAGE, encoding="utf-8")
     p = Project.load(tmp_path, environ={})
-    Timeline(
-        narration="n.mp3",
-        total_seconds=6.0,
-        sections={
-            "01": TimelineSection("A", 0.0, 3.0, 3.0, 2.5, [Word("one,", 0.7, 1.0), Word("two", 1.5, 1.8)]),
-            "02": TimelineSection("B", 3.0, 6.0, 3.0, 5.5, [Word("three", 3.4, 3.8)]),
-        },
-    ).save(p.timeline_path)
+    p.takes_dir.mkdir(parents=True)
+    write_words(p.takes_dir / "h1.words.json", [Word("one,", 0.7, 1.0), Word("two", 1.5, 1.8)])
+    write_words(p.takes_dir / "h2.words.json", [Word("three", 0.4, 0.8)])
+    takes = Takes(script="script.md", model="m", output_format="mp3")
+    takes.sections["01"] = Take(1, "A", "h1.mp3", "h1.words.json", "h1", 2, 3.0, 3.0, speech_end_seconds=2.5)
+    takes.sections["02"] = Take(2, "B", "h2.mp3", "h2.words.json", "h2", 1, 3.0, 3.0, speech_end_seconds=2.5)
+    takes.save(p.takes_path)
     return p
 
 
 def test_the_words_of_a_section_count_from_where_that_section_starts():
-    sec = TimelineSection("B", 3.0, 6.0, 3.0, 5.5, [Word("three", 3.4, 3.8)])
-    assert words_param(sec) == "three@0.40"
-    assert words_param(TimelineSection("B", 3.0, 6.0, 3.0, 5.5, [])) is None
+    assert words_param([Word("three", 0.4, 0.8)]) == "three@0.40"
+    assert words_param([]) is None
 
 
 def test_a_section_is_opened_on_the_local_origin_with_its_words_and_the_previous_sections(project):
-    first, second = PageSection(1, "deck/index.html", "1"), PageSection(2, "deck/index.html", "2")
+    """Only a seamless section opens on the picture before it, so only it is given those words."""
+    first = PageSection(1, "deck/index.html", "1")
+    second = PageSection(2, "deck/index.html", "2", seamless=True)
     assert prev_words_query(project, first) is None
-    assert prev_words_query(project, second) == words_query(project, first) == "one@0.70,two@1.50"
+    # Each word counts from the section start, which is 0.5 s of lead before the take's own times.
+    assert prev_words_query(project, second) == words_query(project, first) == "one@1.20,two@2.00"
     url = scene_url(project, second, {})
     assert url.startswith(f"{ORIGIN}/deck/index.html?")
     query = parse_qs(urlsplit(url).query)
-    assert query["words"] == ["three@0.40"] and query["prevwords"] == ["one@0.70,two@1.50"]
+    assert query["words"] == ["three@0.90"] and query["prevwords"] == ["one@1.20,two@2.00"]
     assert query["scene"] == ["2"] and query["t0"] == ["signal"]
     assert "prevwords" not in parse_qs(urlsplit(scene_url(project, first, {})).query)
+
+
+def test_a_section_that_opens_on_its_own_picture_carries_none_of_the_previous_sections_words(project):
+    """Those words are in the recorded URL, so a section that reads none of them must not be keyed on them."""
+    plain = PageSection(2, "deck/index.html", "2")
+    assert prev_words_query(project, plain) is None
+    assert "prevwords" not in parse_qs(urlsplit(scene_url(project, plain, {})).query)
 
 
 def test_a_missing_page_names_the_section_and_the_file(project):
     with pytest.raises(ConfigError, match="section 1: page not found"):
         scene_url(project, PageSection(1, "deck/gone.html", "1"), {})
-
-
-def test_the_resolved_cues_ride_along_unless_the_section_sets_them_itself():
-    section = PageSection(1, "deck/index.html", "1")
-    cue_times = CueTimes(sections={"01": [CueTime(cue="1.1a", on="a", at=1.5)]})
-    assert scene_params(section, cue_times) == {"cues": "1.1a@1.5"}
-    assert scene_params(section, None) == {}
-    own = PageSection(1, "deck/index.html", "1", params={"cues": "mine@0"})
-    assert scene_params(own, cue_times) == {"cues": "mine@0"}
 
 
 def test_a_job_names_the_files_the_section_will_be_written_to(project):

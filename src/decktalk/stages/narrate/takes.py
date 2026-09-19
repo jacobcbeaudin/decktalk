@@ -1,16 +1,19 @@
-"""Writing one take, and joining every take into one narration track.
+"""Writing one take, placing it, and joining every take into one narration track.
 
-A take is the voice's own bytes and nothing else. Silence before the first word is joined in when
-the takes are joined, so it is never part of a take and never part of its content hash, which is
-what lets one file serve a section wherever the section is numbered. A take in this project's own
-build directory carries its tail inside it: `min_tail_seconds` is padded onto the file, measured
-first, so raising the key pads every cached take and sends no request. A take in a shared
-`[narration] cache_dir` belongs to every project that reads it and is never rewritten, so its tail
-is joined in after it instead, exactly as its lead is joined in before it.
+A take is the voice's own bytes and nothing else, and no stage ever rewrites it. Where a take lands
+is placement, and placement is a pure function of the take and its own section's settings: its
+lead is the section's `lead_seconds` or `[narration] lead_seconds`, the take plays to where its
+sound ends, measured from its own bytes, and its tail is the section's `tail_seconds` or
+`[narration] min_tail_seconds` after that. The join puts the lead before the take and cuts or pads
+the take to its tail, so the silence across every cut is one tail plus one lead. Nothing about a
+neighbour, and nothing about whether this run voiced the take or found it cached, reaches those
+numbers, which is what lets a change to one sentence rebuild one section and no other. None of them
+is part of the content hash either, so changing a lead or a tail voices nothing.
 
 A run without voice writes a click track of the length the words and the declared pauses come to,
 with evenly spaced estimated words, so cues resolve to plausible times and the whole pipeline runs
-with no API key.
+with no API key. It clicks at every word's start and once where the last word ends, then closes on
+a moment of silence, so its sound ends where its words do and is placed exactly as a voice is.
 """
 
 from __future__ import annotations
@@ -19,88 +22,54 @@ import logging
 from dataclasses import replace
 from pathlib import Path
 
-from ...artifacts import Take, Takes, Timeline, TimelineSection, Word, read_words, write_words
+from ...artifacts import Take, Takes, Word, read_words, write_words
 from ...media import audio, ffmpeg
-from ...model import PageSection, Project
+from ...model import Project
 from ...model.script import PUNCT, Segment
-from ...settings import NarrationConfig
 from ...speech import SpeechProvider, SpeechRequest
 from .plan import take_name, words_name
 
 log = logging.getLogger(__name__)
 
-
-def section_config(project: Project, seg: Segment) -> NarrationConfig:
-    """The narration settings for one section: its own `tail_seconds`, when it sets one, replaces min_tail_seconds."""
-    cfg = project.settings.narration
-    sec = project.section(seg.index)
-    tail = sec.tail_seconds if isinstance(sec, PageSection) else None
-    return cfg if tail is None else replace(cfg, min_tail_seconds=tail)
+PLACEHOLDER_CLOSE_SECONDS = 0.1  # Silence a click track ends on, long enough that where its sound ends is measured.
 
 
-def tail_shortfall(path: Path, cfg: NarrationConfig, *, tolerance: float = 0.0) -> float:
-    """The silence this file still needs after its last word, which is zero when it has enough already.
+def placed(project: Project, key: str, row: Take) -> Take:
+    """The row with its placement filled in: the lead before the take, where its sound ends, and the tail after.
 
-    A tail within `tolerance` of min_tail_seconds counts as long enough.
+    It reads the take's own bytes and the section's own settings and nothing else, so the same take
+    under the same settings lands the same way on every run, whichever path wrote the row. The sound
+    end is measured once, and a row that carries it already keeps it, because the file its hash
+    names holds the same bytes it was measured on.
     """
-    tail = audio.trailing_silence(path)
-    if tail >= cfg.min_tail_seconds - tolerance:
-        return 0.0
-    return round(cfg.min_tail_seconds - tail + cfg.tail_slack_seconds, 3)
+    end = row.sound_end_seconds
+    path = project.takes_dir / row.file
+    if end is None and path.exists():
+        end = audio.sound_end(path)
+    return replace(
+        row,
+        sound_end_seconds=end,
+        lead_seconds=project.lead_seconds(key),
+        tail_seconds=project.tail_seconds(key),
+    )
 
 
-def ensure_tail(path: Path, cfg: NarrationConfig, *, tolerance: float = 0.0) -> float:
-    """Pad with silence so speech ends at least min_tail_seconds before the file ends. Returns seconds added.
-
-    A tail within `tolerance` of min_tail_seconds counts as long enough.
-    """
-    add = tail_shortfall(path, cfg, tolerance=tolerance)
-    if add:
-        audio.pad_tail(path, add, bitrate=cfg.mp3_bitrate)
-    return add
-
-
-def add_tail(project: Project, path: Path, cfg: NarrationConfig, *, tolerance: float = 0.0) -> tuple[float, float]:
-    """(seconds padded into the file, seconds to join after it) for one take's tail.
-
-    A take in this project's own build directory is padded in place, which is what lets a raised
-    `min_tail_seconds` cost no request. A take in a shared `[narration] cache_dir` belongs to every
-    project that reads it, and `min_tail_seconds` is not part of the content hash, so the file is
-    never rewritten there and the silence is joined in after it instead, exactly as a lead is
-    joined in before it.
-    """
-    if project.takes_dir == project.narration_dir:
-        return ensure_tail(path, cfg, tolerance=tolerance), 0.0
-    return 0.0, tail_shortfall(path, cfg, tolerance=tolerance)
-
-
-def estimated_words(segment: Segment, duration: float, cfg: NarrationConfig) -> list[Word]:
+def estimated_words(segment: Segment, duration: float) -> list[Word]:
     """Evenly spaced words for runs without voice, so cues resolve to plausible times."""
     tokens = segment.spoken.split()
     if not tokens:
         return []
-    span = max(0.1, duration - cfg.min_tail_seconds)
-    per = span / len(tokens)
+    per = max(0.1, duration) / len(tokens)
     return [
         Word(word=t.strip(PUNCT), start=round(i * per, 3), end=round((i + 1) * per - 0.02, 3))
         for i, t in enumerate(tokens)
     ]
 
 
-def _row(
-    project: Project,
-    seg: Segment,
-    chapter: str,
-    digest: str,
-    *,
-    voiced: bool = True,
-    duration_seconds: float,
-    speech_end_seconds: float | None,
-    tail_padded_seconds: float = 0.0,
-    tail_joined_seconds: float = 0.0,
-) -> Take:
-    """The take index row for one section, with the fields every kind of take shares."""
-    return Take(
+def _row(project: Project, seg: Segment, chapter: str, digest: str, *, voiced: bool = True) -> Take:
+    """The take index row for one section, placed, with the fields every kind of take shares."""
+    words = read_words(project.takes_dir / words_name(digest))
+    row = Take(
         index=seg.index,
         chapter=chapter,
         file=take_name(digest),
@@ -108,146 +77,79 @@ def _row(
         hash=digest,
         word_count=seg.word_count,
         estimated_seconds=seg.estimated_seconds(project.settings.narration),
-        duration_seconds=duration_seconds,
+        duration_seconds=ffmpeg.probe_duration(project.takes_dir / take_name(digest)),
         voiced=voiced,
         target_seconds=seg.target_seconds,
-        speech_end_seconds=speech_end_seconds,
-        tail_padded_seconds=tail_padded_seconds,
-        tail_joined_seconds=tail_joined_seconds,
-        lead_seconds=project.lead_seconds(seg.key),
+        speech_end_seconds=words[-1].end if words else None,
         spoken=seg.spoken,
     )
+    return placed(project, seg.key, row)
+
+
+def _placement(row: Take) -> str:
+    return f"sound ends {row.sound_end_seconds}, lead {row.lead_seconds:g}s, tail {row.tail_seconds:g}s"
 
 
 def write_silent_take(project: Project, seg: Segment, chapter: str, digest: str) -> Take:
     """Write one click track and its estimated words, and return the row that indexes them."""
-    cfg = section_config(project, seg)
+    cfg = project.settings.narration
     out = project.takes_dir / take_name(digest)
     duration = seg.silent_seconds(cfg)
-    words = estimated_words(seg, duration, cfg)
+    words = estimated_words(seg, duration)
+    clicks = [w.start for w in words] + ([words[-1].end] if words else [])
     audio.write_clicks(
         out,
-        duration,
-        [w.start for w in words],
+        duration + PLACEHOLDER_CLOSE_SECONDS,
+        clicks,
         sample_rate=project.settings.video.sample_rate,
         bitrate=cfg.mp3_bitrate,
     )
-    duration = ffmpeg.probe_duration(out)
     write_words(project.takes_dir / words_name(digest), words)
-    log.info("[sil ] %s  %d words -> %.2fs (estimated words)", seg.key, seg.word_count, duration)
-    return _row(
-        project,
-        seg,
-        chapter,
-        digest,
-        voiced=False,
-        duration_seconds=duration,
-        speech_end_seconds=words[-1].end if words else None,
-    )
+    row = _row(project, seg, chapter, digest, voiced=False)
+    log.info("[sil ] %s  %d words -> %.2fs (estimated words, %s)", seg.key, seg.word_count, row.duration_seconds,
+             _placement(row))  # fmt: skip
+    return row
 
 
 def write_voiced_take(
     project: Project, provider: SpeechProvider, seg: Segment, chapter: str, digest: str, request: SpeechRequest
 ) -> Take:
-    """Send one request, write the mp3 and its words, pad the tail, and return the row that indexes them."""
-    cfg = section_config(project, seg)
+    """Send one request, write the mp3 and its words as they came, and return the row that indexes them."""
+    cfg = project.settings.narration
     out = project.takes_dir / take_name(digest)
     log.info("[tts ] %s  %d words, est %.1fs ...", seg.key, seg.word_count, seg.estimated_seconds(cfg))
     mp3, words = provider.speak(request)
     out.write_bytes(mp3)
     write_words(project.takes_dir / words_name(digest), words)
-    added, joined = add_tail(project, out, cfg)
-    duration = ffmpeg.probe_duration(out)
-    speech_end = words[-1].end if words else None
-    log.info(
-        "       %s  %.2fs (%d words, speech ends %s%s)",
-        seg.key,
-        duration,
-        len(words),
-        speech_end,
-        f", tail +{added}s" if added else "",
-    )
-    return _row(
-        project, seg, chapter, digest, duration_seconds=duration, speech_end_seconds=speech_end,
-        tail_padded_seconds=added, tail_joined_seconds=joined,
-    )  # fmt: skip
+    row = _row(project, seg, chapter, digest)
+    log.info("       %s  %.2fs (%d words, %s)", seg.key, row.duration_seconds, len(words), _placement(row))
+    return row
 
 
-def index_cached_take(
-    project: Project, seg: Segment, chapter: str, digest: str, *, voiced: bool, previous: Takes | None
-) -> Take:
-    """The row for a take already on disk, padded to this section's tail if the key has been raised since.
-
-    The tail is measured before it is padded, so a take that already has enough is left alone, and a
-    take this stage padded before keeps its tail when the measurement lands within one mp3 frame of
-    min_tail_seconds, so a second run never pads it again. That earlier padding is looked up by the
-    digest rather than by the section number, because a take belongs to its content and two sections
-    of the same words share one file.
-    """
-    cfg = section_config(project, seg)
-    out = project.takes_dir / take_name(digest)
-    rows = previous.sections.values() if previous is not None else ()
-    padded = next((row.tail_padded_seconds for row in rows if row.hash == digest), 0.0)
-    tolerance = audio.SILENCE_END_TOLERANCE_SECONDS if padded else 0.0
-    added, joined = add_tail(project, out, cfg, tolerance=tolerance) if voiced else (0.0, 0.0)
-    duration = ffmpeg.probe_duration(out)
-    words = read_words(project.takes_dir / words_name(digest))
-    log.info("[skip] %s  unchanged (%.2fs%s)", seg.key, duration, f", tail +{added}s" if added else "")
-    return _row(
-        project,
-        seg,
-        chapter,
-        digest,
-        voiced=voiced,
-        duration_seconds=duration,
-        speech_end_seconds=words[-1].end if words else None,
-        tail_padded_seconds=round(padded + added, 3),
-        tail_joined_seconds=joined,
-    )
+def index_cached_take(project: Project, seg: Segment, chapter: str, digest: str, *, voiced: bool) -> Take:
+    """The row for a take already on disk, placed by the same rule as a take this run wrote."""
+    row = _row(project, seg, chapter, digest, voiced=voiced)
+    log.info("[skip] %s  unchanged (%.2fs, %s)", seg.key, row.duration_seconds, _placement(row))
+    return row
 
 
-def build_timeline(project: Project, takes: Takes, order: list[Segment]) -> Timeline:
-    """Join the takes into one narration track, and record where each section and each word lands in it.
+def join_takes(project: Project, takes: Takes, order: list[Segment]) -> Path:
+    """Join the takes into one narration track, in the order the sections play, and give back its path.
 
-    Each section's `lead_seconds` is silence joined in before its take, which is what keeps the
-    take itself free of the project's own silence and therefore free to serve any section number.
-    `tail_joined_seconds` is the same for the tail of a take that sits in a shared cache, which no
-    project may rewrite.
+    Each take follows its row's lead of silence and runs to its speech end plus its tail, cut there
+    when the file runs longer and padded with silence when it runs shorter, so the track is exactly
+    the arithmetic `Takes` does over the rows and nothing here writes a second file for a reader to
+    disagree with.
     """
     cfg = project.settings.narration
-    keys = [s.key for s in order if s.key in takes.sections]
-    files = [project.takes_dir / takes.sections[k].file for k in keys]
-    leads = [project.lead_seconds(k) for k in keys]
-    tails = [takes.sections[k].tail_joined_seconds for k in keys]
-    narration = project.narration_dir / "narration.mp3"
+    rows = [takes.sections[s.key] for s in order if s.key in takes.sections]
+    narration = project.narration_path
     audio.concat_audio(
-        files,
+        [project.takes_dir / row.file for row in rows],
         narration,
         bitrate=cfg.mp3_bitrate,
         sample_rate=project.settings.video.sample_rate,
-        leads=leads,
-        tails=tails,
+        leads=[row.lead_seconds for row in rows],
+        lengths=[row.span_seconds - row.lead_seconds for row in rows],
     )
-    at = 0.0
-    sections: dict[str, TimelineSection] = {}
-    for key, file, lead, tail in zip(keys, files, leads, tails, strict=True):
-        span = lead + tail + ffmpeg.decoded_duration(file, sample_rate=project.settings.video.sample_rate)
-        words = project.section_words(key, takes.sections[key].words_file)
-        sections[key] = TimelineSection(
-            title=takes.sections[key].chapter,
-            start=round(at, 3),
-            end=round(at + span, 3),
-            duration=round(span, 3),
-            speech_end=round(at + words[-1].end, 3) if words else None,
-            words=[Word(w.word, round(at + w.start, 3), round(at + w.end, 3)) for w in words],
-            lead_seconds=lead,
-        )
-        at += span
-    timeline = Timeline(
-        narration=narration.name,
-        estimated=takes.estimated,
-        total_seconds=ffmpeg.decoded_duration(narration, sample_rate=project.settings.video.sample_rate),
-        sections=sections,
-    )
-    timeline.save(project.timeline_path)
-    return timeline
+    return narration

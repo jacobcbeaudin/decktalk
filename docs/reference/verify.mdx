@@ -100,7 +100,7 @@ sec   cut at  before cut  result
 window before it.
 
 ```text
-cut at         = section start + section duration in timeline.json
+cut at         = section start + its span on the narration clock
 window         = min(cut_window_seconds, section duration)            # 0.15 s
 SPEECH AT CUT  when  RMS of narration.mp3 over the window > cut_max_db  # -40 dBFS
 ```
