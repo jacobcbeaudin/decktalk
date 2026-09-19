@@ -7,7 +7,7 @@ command's result class is exported beside the function that returns it.
     project:   Project, Section, ClipSection, PageSection, Voice, Mix, Soundscape, Transition
     tuning:    Settings, load_settings
     errors:    DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
-    artifacts: Takes, CueTimes, RecordingLog, Word
+    artifacts: Takes, CueTimes, RecordingLog, Cuts, Word
     stages:    narrate, align, record, assemble, verify
     commands:  preflight, screenshots, words, clip, status, soundscape, build
     results:   NarrateResult, AlignResult, RecordResult, AssembleResult, VerifyResult,
@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .artifacts import CueTimes, RecordingLog, Takes, Word
+from .artifacts import CueTimes, Cuts, RecordingLog, Takes, Word
 from .errors import ConfigError, DeckTalkError, MissingInputError, ProviderError, ToolError
 from .model import ClipSection, Mix, PageSection, Project, Section, Soundscape, Transition, Voice
 from .settings import Settings, load_settings
@@ -68,6 +68,7 @@ __all__ = [
     "ClipSection",
     "ConfigError",
     "CueTimes",
+    "Cuts",
     "DeckTalkError",
     "MissingInputError",
     "Mix",

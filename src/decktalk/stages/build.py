@@ -130,15 +130,9 @@ class BuildResult:
 
     @property
     def ran(self) -> tuple[tuple[str, Any], ...]:
-        """Each stage this run executed, with the result it returned, in order."""
-        by_name = {
-            "narrate": self.narration,
-            "align": self.align,
-            "record": self.recordings,
-            "assemble": self.assembly,
-            "verify": self.verification,
-        }
-        return tuple((name, by_name[name]) for name in STAGES)
+        """Each stage and the result it returned, in the order the stages run."""
+        results = (self.narration, self.align, self.recordings, self.assembly, self.verification)
+        return tuple(zip(STAGES, results, strict=True))
 
     @property
     def ok(self) -> bool:
