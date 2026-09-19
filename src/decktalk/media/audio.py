@@ -119,43 +119,57 @@ def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int = 480
     return list(a)
 
 
-def concat_audio(
-    files: list[Path],
-    out: Path,
-    *,
-    bitrate: str,
-    sample_rate: int,
-    leads: list[float] | None = None,
-    lengths: list[float] | None = None,
-) -> None:
-    """Join audio files back to back.
+CUT_FADE_SECONDS = 0.01  # A file cut short fades out over its last this long, so the cut never clicks.
 
-    `leads` gives each file seconds of silence before it, in whole milliseconds. `lengths` gives
-    each file the seconds it runs for after its lead, to the sample: a longer file is cut there and a
-    shorter one is followed by silence up to it, so where every file lands is arithmetic over the
-    two lists and never depends on the files around it.
+
+@dataclass(frozen=True)
+class Placement:
+    """One file in a join: the silence before it, how much of it plays, and the silence after that."""
+
+    path: Path
+    lead: float = 0.0  # Seconds of silence before the file, in whole milliseconds.
+    play: float | None = None  # Seconds of the file that play, to the sample. None plays all of it.
+    tail: float = 0.0  # Seconds of silence after what plays, to the sample, and never the file's own bytes.
+
+
+def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate: int) -> None:
+    """Join audio files back to back, each placed by its `Placement`.
+
+    A file plays for its `play` seconds and is cut there, fading out over its last
+    CUT_FADE_SECONDS, and a file shorter than that is followed by silence up to it. Its tail is
+    silence after that, whatever the file holds past the cut. Where every file lands, and what sounds
+    there, is therefore arithmetic over the placements and never depends on the files around it.
     """
     inputs: list[str] = []
-    for f in files:
-        inputs += ["-i", str(f)]
-    delays = [int(round(x * 1000)) for x in (leads or [])] + [0] * len(files)
-    samples = [int(round(x * sample_rate)) for x in (lengths or [])] + [None] * len(files)
+    for part in parts:
+        inputs += ["-i", str(part.path)]
     steps, shaped = [], set()
-    for i in range(len(files)):
+    for i, part in enumerate(parts):
         chain = []
-        if samples[i] is not None:
-            chain += [f"aresample={sample_rate}", f"atrim=end_sample={samples[i]}", f"apad=whole_len={samples[i]}"]
-        if delays[i] > 0:
-            chain.append(f"adelay=delays={delays[i]}:all=1")
+        if part.play is not None:
+            keep = int(round(part.play * sample_rate))
+            fade = min(keep, int(round(CUT_FADE_SECONDS * sample_rate)))
+            whole = int(round((part.play + part.tail) * sample_rate))
+            chain += [
+                f"aresample={sample_rate}",
+                f"atrim=end_sample={keep}",
+                f"afade=t=out:ss={keep - fade}:ns={fade}",
+                f"apad=whole_len={whole}",
+            ]
+        elif part.tail > 0:
+            chain += [f"aresample={sample_rate}", f"apad=pad_len={int(round(part.tail * sample_rate))}"]
+        delay = int(round(part.lead * 1000))
+        if delay > 0:
+            chain.append(f"adelay=delays={delay}:all=1")
         if chain:
             steps.append(f"[{i}:a]{','.join(chain)}[l{i}];")
             shaped.add(i)
     pads = "".join(steps)
-    labels = "".join(f"[l{i}]" if i in shaped else f"[{i}:a]" for i in range(len(files)))
+    labels = "".join(f"[l{i}]" if i in shaped else f"[{i}:a]" for i in range(len(parts)))
     ffmpeg.run(
         *inputs,
         "-filter_complex",
-        f"{pads}{labels}concat=n={len(files)}:v=0:a=1[a]",
+        f"{pads}{labels}concat=n={len(parts)}:v=0:a=1[a]",
         "-map",
         "[a]",
         "-c:a",

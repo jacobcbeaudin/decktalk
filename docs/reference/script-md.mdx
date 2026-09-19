@@ -116,8 +116,8 @@ A page section in `decktalk.toml` can set its own.
 ffmpeg places this silence when it joins the takes into `narration.mp3`. The speech provider does not
 receive it, and a take never holds it: each mp3 stays exactly as the voice returned it, which is what lets
 one take serve whatever section number it ends up under. `narrate` measures where the sound of each take
-ends, puts the lead before the take, and cuts or pads the take so that exactly the tail follows that sound,
-whatever pause the voice left after its last word. The lead and the tail depend on the take and on the
+ends, puts the lead before the take, cuts the take there, and places exactly the tail after that sound, so a
+pause or a breath the voice left after its last sound never plays. The lead and the tail depend on the take and on the
 section's own keys and on nothing else, so a section lands the same way whether this run voiced its take or
 reused it, and an edit to one section never moves another.
 

@@ -566,6 +566,66 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     assert Takes.load(takes_path).sections["02"] == tailed
 
 
+def _narrated(tmp_path: Path, name: str, take, narration: str):
+    """Narrate a two-section project whose voice returns the file `take` writes, and give back the project."""
+    from decktalk.artifacts import Word
+    from decktalk.model import Project
+    from decktalk.speech import register_speech_provider
+    from decktalk.stages.narrate import narrate
+
+    class FileVoice:
+        def speak(self, request):
+            src = tmp_path / "voice.mp3"
+            take(src)
+            return src.read_bytes(), [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)]
+
+        def cache_key(self, request):
+            return name
+
+    FileVoice.name = name
+    register_speech_provider(name, lambda context: FileVoice())
+    (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
+    (tmp_path / "decktalk.toml").write_text(
+        f"[narration]\n{narration}\n[voice]\nprovider = '{name}'\n"
+        "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\npage = 'a.html'\n",
+        encoding="utf-8",
+    )
+    p = Project.load(tmp_path, environ={})
+    narrate(p)
+    return p
+
+
+def _take_with_a_breath_at_its_end(path: Path) -> None:
+    """One second of tone, 0.62 s of silence, then 0.02 s of breath that ends the file.
+
+    The silence ends within the tolerance of the file end, so the sound is measured to end with the tone
+    and the breath lies past it, the shape of the take that ended Halfway's section 2.
+    """
+    ffmpeg.run(
+        "-f", "lavfi", "-i",
+        "aevalsrc='if(lt(t,1),0.25*sin(2*PI*440*t),if(gte(t,1.62),0.2*(2*random(0)-1),0))':s=44100:d=1.64",
+        "-c:a", "libmp3lame", "-b:a", "128k", str(path),
+    )  # fmt: skip
+
+
+def test_a_breath_past_a_take_sound_end_never_reaches_its_tail_or_the_cut(tmp_path):
+    """The tail is silence placed after the sound end, so what a take holds past it never plays before a cut."""
+    from decktalk.stages.verify.seams import cut_checks
+
+    p = _narrated(tmp_path, "breath-voice", _take_with_a_breath_at_its_end, "min_tail_seconds = 0.7\nlead_seconds = 0")
+    takes = p.takes()
+    assert takes is not None
+    entry = takes.sections["02"]
+    take = p.takes_dir / entry.file
+    assert entry.sound_end_seconds == pytest.approx(1.0, abs=0.03)
+    assert audio.rms_db(take, 1.6, 0.05) > -40, "the take holds no breath past its sound end"
+    # The breath would land 0.62 s into the 0.7 s tail, inside the window the cut check measures.
+    rows = cut_checks(p, takes, takes.starts)
+    assert [(r.key, r.verdict) for r in rows] == [("01", Verdict.QUIET), ("02", Verdict.QUIET)]
+    end = takes.end("02")
+    assert end is not None and audio.rms_db(p.narration_path, end - 0.7, 0.7) < -80, "the tail is not silent"
+
+
 def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
     """The picture, the take over the same span after the section's lead, the gain, the hold, and the words file."""
     from decktalk.artifacts import Take, Takes, Word, read_words, write_words

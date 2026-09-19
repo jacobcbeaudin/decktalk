@@ -158,7 +158,7 @@ times, and `decktalk words` prints each section's words against its own start.
 | `sections.NN.speech_end_seconds` | number or null | End of the last spoken word. |
 | `sections.NN.sound_end_seconds` | number or null | Where the take's sound ends, measured from the mp3's own bytes: the start of the silence that runs to its end. |
 | `sections.NN.lead_seconds` | number | Silence placed before this take when the takes are joined: the section's `lead_seconds`, else `[narration] lead_seconds`. It is not in the mp3. |
-| `sections.NN.tail_seconds` | number | Silence placed after `sound_end_seconds`: the section's `tail_seconds`, else `[narration] min_tail_seconds`. The join cuts or pads the take to it, and the mp3 is not changed. |
+| `sections.NN.tail_seconds` | number | Silence placed after `sound_end_seconds`: the section's `tail_seconds`, else `[narration] min_tail_seconds`. The join cuts the take at `sound_end_seconds` and places this silence after it, and the mp3 is not changed. |
 | `sections.NN.spoken` | string | The words sent to the voice, with the script's punctuation and case, and without break tags. |
 | `total_seconds` | number | Every section's lead, take to its sound end, and tail, which is the length of `narration.mp3`. |
 
