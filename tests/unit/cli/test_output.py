@@ -5,8 +5,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from decktalk.artifacts import CueTimes
-from decktalk.cli.output import align_table, lead, mmss, verify_table
+from decktalk.cli.output import align_table, lead, mmss, status_table, verify_table
 from decktalk.stages.align import AlignResult, SectionCueTimes
+from decktalk.status import RunStatus, SectionStatus, StatusResult
 from decktalk.verdicts import Findings, Verdict
 
 
@@ -49,3 +50,28 @@ def test_the_verify_table_leads_with_each_section_start_and_totals_the_film():
     assert lines[0].split() == ["sec", "start", "probe", "YAVG", "YMAX", "result"]
     assert lines[1].split() == ["01", "0.00", "0.40", "52", "201", "ok"]
     assert lines[-1] == "total 41.25s, 0 black section start(s)"
+
+
+def test_the_status_table_says_what_is_there_and_whether_a_build_runs(tmp_path):
+    report = StatusResult(
+        root=tmp_path,
+        name="deck",
+        script=tmp_path / "script.md",
+        script_exists=True,
+        cues=tmp_path / "cues.json",
+        cues_exists=True,
+        sections=[SectionStatus(key="01", kind="page", source="deck/index.html?scene=1", recorded=True, cut=False)],
+        timeline=None,
+        cue_times_exists=False,
+        cue_times_sections={},
+        final=tmp_path / "build" / "out" / "deck.mp4",
+        final_exists=False,
+        final_duration=None,
+        run=RunStatus(pid=7, started="2026-09-18T20:32:53.581Z", stage="record",
+                      sections_done=2, sections_total=None, alive=True),
+    )  # fmt: skip
+    lines = status_table(report).splitlines()
+    assert lines[0].startswith(f"project   {tmp_path}") and "(name: deck)" in lines[0]
+    assert lines[1].split()[:3] == ["script", "script.md", "ok"]
+    assert "final     not built" in lines
+    assert lines[-1] == "build     running at record (started 2026-09-18T20:32:53.581Z)"

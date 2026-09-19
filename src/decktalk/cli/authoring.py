@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 
+from ..errors import ConfigError
 from ..jsonio import relative
 from ..media.origin import open_server, reachable_warning, served_urls
 from ..stages.clip import clip as cut_span
@@ -17,21 +19,65 @@ from ..stages.clip import words as read_words
 from ..stages.preflight import preflight as rehearse
 from ..stages.screenshots import screenshots as capture_pngs
 from ..stages.soundscape import soundscape as generate
+from ..status import StatusResult, read_run, unreadable
 from ..status import status as read_status
+from ..verdicts import Finding, Verdict
 from . import options as opt
 from . import output
 from .envelope import Outcome, of, wrote
-from .options import load_project
+from .options import load_project, project_root
 
 log = logging.getLogger(__name__)
 
 
 def status(opts: opt.StatusOptions) -> Outcome:
-    project = load_project(opts)
+    try:
+        project = load_project(opts)
+    except ConfigError as err:
+        # `decktalk.toml` is one of the files this command reports on, so a file that will not parse
+        # is its subject and not its obstacle, and it is the one command that says so rather than
+        # stopping. Every other command needs the project and raises.
+        return _no_project(opts, err)
     result = read_status(project)
     cut = sum(1 for section in result.sections if section.cut)
     summary = {"sections": len(result.sections), "cut": cut, "final": result.final_exists}
     return of(result, project.root, summary, [], output.status_table(result))
+
+
+def _no_project(opts: opt.StatusOptions, err: ConfigError) -> Outcome:
+    """What `status` can still say when `decktalk.toml` is not there or will not parse."""
+    root = project_root(opts) or Path.cwd()
+    missing = err.path is not None and not err.path.exists()
+    row = (
+        Finding(detail=str(err), verdict=Verdict.MISSING, where=relative(err.path or root / "decktalk.toml", root))
+        if missing
+        else unreadable(err, root / "decktalk.toml", root)
+    )
+    empty = StatusResult(
+        problems=[row],
+        root=root,
+        name=root.name,
+        script=root / "script.md",
+        script_exists=(root / "script.md").exists(),
+        cues=root / "cues.json",
+        cues_exists=(root / "cues.json").exists(),
+        sections=[],
+        timeline=None,
+        cue_times_exists=False,
+        cue_times_sections={},
+        final=root / "build" / "out" / f"{root.name}.mp4",
+        final_exists=False,
+        final_duration=None,
+        run=read_run(root / "build" / "progress.jsonl"),
+    )
+    # The same payload keys whatever happened, so a caller reading `run` never meets a missing key,
+    # and the one row this reports sits in that payload like every other row this command judges.
+    return Outcome(
+        payload=empty.to_dict(root),
+        summary={"sections": 0},
+        findings=empty.findings,
+        text=f"{row.verdict.value}  {row.where}: {row.detail}",
+    )
 
 
 # ---- before a build --------------------------------------------------------------------

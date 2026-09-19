@@ -20,8 +20,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from ..pipeline import Stage
 from ..scaffold import listed_names
-from ..stages.build import STAGES
 from .options import (
     AlignOptions,
     AssembleOptions,
@@ -91,6 +91,18 @@ def sections(text: str) -> list[int]:
             raise argparse.ArgumentTypeError(f"{part!r} counts backwards")
         out += range(lo, hi + 1)
     return out
+
+
+STAGE_WORDS = ", ".join(member.value for member in Stage)
+"""The five stages in run order, as `--help` and a refusal print them."""
+
+
+def stage(text: str) -> Stage:
+    """The stage a word names, for `--from` and `--to`, refusing a word that names none."""
+    try:
+        return Stage(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a stage: {STAGE_WORDS}") from None
 
 
 class Sections(argparse.Action):
@@ -184,6 +196,7 @@ def screenshots_flags(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--page", action="append", help="page file (default: every page in decktalk.toml)")
     sp.add_argument("--slide", action="append", metavar="ID", help="only these slide ids")
     sp.add_argument("--after", action="append", metavar="ID", help="freeze the one --slide at this cue id (repeats)")
+    sp.add_argument("--before", action="append", metavar="ID", help="freeze the one --slide just before this cue id")
     sp.add_argument("--section", type=int, help="play this section with its resolved cues")
     sp.add_argument("--at", type=float, action="append", help="seconds after narration t=0 (with --section)")
 
@@ -208,9 +221,9 @@ def build_flags(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--allow-unresolved-cues", action="store_true", help="build even if a cue phrase was not found")
     sp.add_argument("--allow-unknown-cues", action="store_true", help=ALLOW_UNKNOWN_HELP)
     sp.add_argument("--progress", metavar="PATH", help="the progress log (default: build/progress.jsonl)")
-    sp.add_argument("--from", dest="from_stage", choices=STAGES, metavar="STAGE",
-                    help=f"start at this stage, inclusive: {', '.join(STAGES)}")  # fmt: skip
-    sp.add_argument("--to", dest="to_stage", choices=STAGES, metavar="STAGE",
+    sp.add_argument("--from", dest="from_stage", type=stage, metavar="STAGE",
+                    help=f"start at this stage, inclusive: {STAGE_WORDS}")  # fmt: skip
+    sp.add_argument("--to", dest="to_stage", type=stage, metavar="STAGE",
                     help="stop after this stage, inclusive")  # fmt: skip
     sp.add_argument("--dry-run", action="store_true", help="print the stages the run would execute, and stop")
     encode_flags(sp)
@@ -245,8 +258,9 @@ COMMANDS: tuple[Command, ...] = (
             InstallOptions, group="one machine", project=False),
     Command("doctor", "report what is installed and which build a run would use",
             DoctorOptions, doctor_flags, group="one machine", project=False, exit_zero=True),
-    Command("status", "report what the input files say and what is built",
-            StatusOptions, group="before a build"),
+    Command("status",
+            "report what the four input files say, what is built, what disagrees and whether a build runs",
+            StatusOptions, group="before a build", exit_zero=True),
     Command("preflight", "estimate the takes, resolve the cues and freeze every reveal, spending nothing",
             PreflightOptions, preflight_flags, group="before a build", strict=True, exit_zero=True),
     Command("words", "print each spoken section's words, in seconds after the section starts",
@@ -259,15 +273,16 @@ COMMANDS: tuple[Command, ...] = (
             ClipOptions, clip_flags, group="before a build", strict=True, exit_zero=True),
     Command("serve", "serve the project on the local origin, so a page loads over http",
             ServeOptions, serve_flags, group="before a build"),
-    Command("narrate", "turn script.md into one take per section with its word timestamps",
+    Command(Stage.NARRATE.value, "turn script.md into one take per section with its word timestamps",
             NarrateOptions, narrate_flags),
-    Command("align", "resolve each cue phrase in cues.json to a second on its section clock",
+    Command(Stage.ALIGN.value, "resolve each cue phrase in cues.json to a second on its section clock",
             AlignOptions, align_flags, strict=True, exit_zero=True),
-    Command("record", "record each page section with headless Chromium, find narration t=0 and check the frames",
+    Command(Stage.RECORD.value,
+            "record each page section with headless Chromium, find narration t=0 and check the frames",
             RecordOptions, record_flags, strict=True, exit_zero=True),
-    Command("assemble", "cut, mix and normalize the sections into the final mp4 and its captions",
+    Command(Stage.ASSEMBLE.value, "cut, mix and normalize the sections into the final mp4 and its captions",
             AssembleOptions, assemble_flags, strict=True, exit_zero=True),
-    Command("verify", "read the final mp4 and report every section start, cut, seam and cue landing",
+    Command(Stage.VERIFY.value, "read the final mp4 and report every section start, cut, seam and cue landing",
             VerifyOptions, verify_flags, strict=True, exit_zero=True),
     Command("build", "run every stage in order, writing progress as it goes",
             BuildOptions, build_flags, group="the whole run", strict=True, exit_zero=True),
@@ -342,10 +357,17 @@ def command_parsers() -> dict[str, argparse.ArgumentParser]:
 
 def validate(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     """The argument rules a single flag cannot state, checked here so `--help` and a test can see them."""
-    if args.cmd == "screenshots" and args.after:
+    if args.cmd == "build" and args.from_stage and args.to_stage:
+        # A backwards pair is a command line the caller can fix, so it is a usage error rather than
+        # an error that tells the caller to stop.
+        if not Stage.span(args.from_stage, args.to_stage):
+            first, last = args.from_stage.value, args.to_stage.value
+            parser.error(f"the stage {first} comes after the stage {last}, so this run is empty")
+    if args.cmd == "screenshots" and (args.after or args.before):
         # A cue freezes one slide at the moment that cue fires, so it needs exactly one slide.
+        named = "--after" if args.after else "--before"
         if not args.slide or len(args.slide) != 1 or args.section is not None:
-            parser.error("--after needs exactly one --slide, and it does not combine with --section")
+            parser.error(f"{named} needs exactly one --slide, and it does not combine with --section")
 
 
 def parse(argv: Sequence[str] | None, version: str = "") -> argparse.Namespace:

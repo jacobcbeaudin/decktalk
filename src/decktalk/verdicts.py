@@ -4,7 +4,10 @@ Every row a command reports carries one of these, and a row that judges nothing 
 so a reader dispatches on a code and never on the absence of one.
 
 A certain verdict names something that is wrong for sure, such as a page that threw or a
-recording that stopped early, so the read-only commands exit 1 on it. An uncertain verdict
+recording that stopped early, so the read-only commands exit 1 on it. `MISSING`, `UNREADABLE` and
+`INCONSISTENT` are kept apart, because a file that is not there is written, a file that will not
+parse is repaired, and a file that parses and contradicts another is reconciled with it. A reader
+that confused the first with either of the others would overwrite the author's work. An uncertain verdict
 ends in a question mark and names something that is probably wrong, such as a dark frame
 that may be a dark slide, so those commands exit 1 on it only with `--strict`. Every judgement a
 command counts has a verdict here, so a reader dispatches on a code for all of them and never reads
@@ -40,15 +43,23 @@ class Verdict(StrEnum):
     UNRESOLVED = "UNRESOLVED"
     UNKNOWN_CUE = "UNKNOWN CUE"
     UNCUED_ELEMENT = "UNCUED ELEMENT"
+    OFF_STAGE = "OFF STAGE"
+    CDN_ASSET = "CDN ASSET"
     MISSING = "MISSING"
     KATEX_ERROR = "KATEX ERROR"
     KATEX_NOT_LOADED = "KATEX NOT LOADED"
+    UNREADABLE = "UNREADABLE"
+    INCONSISTENT = "INCONSISTENT"
 
     # Uncertain: something is probably wrong, and the label ends in a question mark.
     SLATE = "SLATE?"
     BLACK_UNSURE = "BLACK?"
     SPOKEN_SYMBOL = "SPOKEN SYMBOL?"
     THIN_CHANGE = "THIN CHANGE?"
+    NO_CAPTION = "NO CAPTION?"
+    CUT_WORD = "CUT WORD?"
+    CUES_OVERLAP = "CUES OVERLAP?"
+    IN_CAPTION_BAND = "IN CAPTION BAND?"
 
     # Passing: the row was measured and nothing is wrong. These are never findings.
     CHANGED = "changed"
@@ -86,9 +97,13 @@ _CERTAIN = frozenset(
         Verdict.UNRESOLVED,
         Verdict.UNKNOWN_CUE,
         Verdict.UNCUED_ELEMENT,
+        Verdict.OFF_STAGE,
+        Verdict.CDN_ASSET,
         Verdict.MISSING,
         Verdict.KATEX_ERROR,
         Verdict.KATEX_NOT_LOADED,
+        Verdict.UNREADABLE,
+        Verdict.INCONSISTENT,
     }
 )
 _PASSING = frozenset({Verdict.CHANGED, Verdict.QUIET, Verdict.OK, Verdict.SKIPPED, Verdict.NOTE})
@@ -105,7 +120,6 @@ class SkipReason(StrEnum):
     # preflight
     AT_SECTION_START = "AT_SECTION_START"
     NO_SLIDE = "NO_SLIDE"
-    NOT_IN_SLIDE_CUES = "NOT_IN_SLIDE_CUES"
     NO_CATALOG = "NO_CATALOG"
     NO_CUES = "NO_CUES"
     CLIP = "CLIP"

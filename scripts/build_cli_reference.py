@@ -111,7 +111,7 @@ Every command prints exactly one object on stdout under `--json`, and an error p
 
 | Key | Type | Meaning |
 |---|---|---|
-| `code` | string | The verdict code, such as `OFF_CUE`. Match on this. |
+| `code` | string | The verdict code, such as `OFF_CUE`. Match on this. `MISSING` is a file that is not there and `UNREADABLE` is a file that is there and does not parse. |
 | `label` | string | The printed label, such as `OFF CUE`. Nothing parses it. |
 | `certain` | boolean | True when the finding is certain. |
 | `section` | integer or null | The section number. |
@@ -127,6 +127,7 @@ Every command prints exactly one object on stdout under `--json`, and an error p
 | Key | Type | Meaning |
 |---|---|---|
 | `ts` | string | The event time, as an ISO 8601 timestamp. |
+| `pid` | integer | The process running the build, which is how `status` answers `alive`. |
 | `stage` | string | A stage this run executes, named as `build` runs it. |
 | `stage_index` | integer | The stage's place in this run, counting from 1. |
 | `stage_count` | integer | How many stages this run will execute. |
@@ -134,6 +135,18 @@ Every command prints exactly one object on stdout under `--json`, and an error p
 | `event` | string | `start`, `done`, `skip` or `fail`. |
 | `detail` | string or null | One sentence of detail. |
 
+`decktalk status --json` reads `build/progress.jsonl` and reports `run`, so a caller polls one
+command instead of tailing a log. It is null when no build has written a log there, which is also
+what a build started with `--progress PATH` leaves behind.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `pid` | integer or null | The process that wrote the log. |
+| `started` | string or null | When the run began. |
+| `stage` | string or null | The stage the last event named. |
+| `sections_done` | integer or null | Sections finished, and null until a stage reports per section. |
+| `sections_total` | integer or null | Sections the run will do, and null for the same reason. |
+| `alive` | boolean | True while the run is unfinished and its process is still on this machine. |
 """
 
 FOOTER = """

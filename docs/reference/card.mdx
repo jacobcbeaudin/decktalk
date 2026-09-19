@@ -156,7 +156,7 @@ decktalk screenshots --slide 2.1 --after 2.1aloud             # slide 2.1 frozen
 decktalk screenshots --section 9 --at 12.5  # a frame 12.5 s after narration t=0 in section 9
 decktalk words --only 1                     # section 1's words, in seconds after the section starts
 decktalk clip 1 --start 2.3 --end 8.4 --out media/count.mp4   # that span of section 1 as a clip and a words file
-decktalk status [--json]                    # what the input files say and what is built
+decktalk status [--json]                    # what the four input files say, and what disagrees
 decktalk narrate --dry-run                  # the text, and which sections a voiced run voices. Sends nothing.
 decktalk narrate --dry-run --json           # the same take plan as one JSON object
 decktalk preflight                          # takes, cues, and frozen reveals before a voiced build
@@ -177,7 +177,7 @@ findings can reach.
 |---|---|---|
 | `--json` | every command | One envelope on stdout, and nothing else there. An error prints it too. |
 | `--strict` | `align`, `preflight`, `check`, `assemble`, `verify`, `clip`, `build` | Also exits 1 on an uncertain finding. |
-| `--exit-zero` | the same commands and `doctor` | Exits 0 on findings. An error still exits 3. |
+| `--exit-zero` | the same commands, plus `doctor` and `status` | Exits 0 on findings. An error still exits 3. |
 
 | Exit | Meaning |
 |---|---|

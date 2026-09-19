@@ -260,7 +260,8 @@ def verify_table(result: VerifyResult) -> str:
 def status_table(report: StatusResult) -> str:
     """The text of `decktalk status`, read from the same report its --json output prints."""
     root = report.root
-    lines = [
+    lines = [f"{row.verdict.value}  {row.where}: {row.detail}" for row in report.problems]
+    lines += [
         f"project   {root}  (name: {report.name})",
         f"script    {relative(report.script, root)}  {'ok' if report.script_exists else 'MISSING'}",
         f"cues      {relative(report.cues, root)}  {'ok' if report.cues_exists else 'none'}",
@@ -280,6 +281,10 @@ def status_table(report: StatusResult) -> str:
         lines.append("final     not built")
     for out in report.outputs:
         lines.append(f"{out.label:<9} {relative(out.path, root)}  {'ok' if out.exists else 'not built'}")
+    run = report.run
+    if run is not None:
+        state = "running" if run.alive else "last run"
+        lines.append(f"build     {state} at {run.stage} (started {run.started})")
     return "\n".join(lines)
 
 
