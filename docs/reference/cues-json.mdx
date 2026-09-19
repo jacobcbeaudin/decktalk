@@ -4,36 +4,37 @@ description: Look up the shape and every key of the cue file, which names the sp
 ---
 
 `cues.json` is the cue file. It names the spoken phrase for each cue id, section by section. It is
-optional. A project without it plays every page with the page's own preview timing. This page
-lists every key.
+optional. A project without it plays every page with the page's own preview timing. This page lists
+every key.
 
-{/* excerpt copied from template/cues.json */}
+{/* input: src/decktalk/template/starter/cues.json, sections 1 and 2 */}
 ```json cues.json
 {
   "sections": {
-    "8": {
+    "1": {
       "cues": [
-        { "cue": "7.1box", "on": "box" },
-        { "cue": "7.1moved", "on": "moved" },
-        { "cue": "7.1checked", "on": "checked" },
-        { "cue": "7.1back", "on": "step back" }
+        { "cue": "1.1title", "on": "This is DeckTalk", "occurrence": 1 },
+        { "cue": "1.1script", "on": "what you will say", "occurrence": 1 },
+        { "cue": "1.1deck", "on": "the slides", "occurrence": 1 },
+        { "cue": "1.1word", "on": "its own word", "occurrence": 1 }
       ]
     },
-    "9": {
+    "2": {
       "cues": [
-        { "cue": "5.1clear", "on": "video" },
-        { "cue": "5.1made", "on": "DeckTalk" },
-        { "cue": "5.1cap", "on": "Open source" },
-        { "cue": "5.1url", "on": "decktalk dot AI" }
+        { "cue": "2.1average", "on": "the average", "occurrence": 1 },
+        { "cue": "2.1formula", "on": "the formula", "occurrence": 1 },
+        { "cue": "2.1code", "on": "in code", "occurrence": 1 },
+        { "cue": "2.1waited", "on": "waited", "occurrence": 1 }
       ]
     }
   }
 }
 ```
 
-Section 8 of the scaffold plays scene 7 of its page, so its cue ids start with `7.1`. Section 9 plays
-scene 5, so its cue ids start with `5.1`. The block below is a shape, not the scaffold's values. It
-shows the optional keys.
+Section 1 of the starter plays scene 1 of its page, and the scene holds one slide with the id `1.1`,
+so every cue id of that section starts with `1.1`. A section can play a scene with another number,
+and the cue ids follow the slide rather than the section. The block below is a shape, not the
+starter's values. It shows the optional keys.
 
 ```json cues.json
 {
@@ -55,54 +56,56 @@ The file is one object with a `sections` key. The load ignores every other top-l
 `[[section]]` in `decktalk.toml`. Each section is an object with an optional `min_seconds` and a
 `cues` list.
 
-Every cue id must appear in its page as a quoted literal, such as `data-cue="1.1bowl"` or a key of
-a slide's `preview` object. [Cue mismatches](/concepts/cues#cue-mismatches) says what happens when an id
-is missing.
+Every cue id must appear in its page as a quoted literal, such as `data-cue="1.1title"` or a key of
+a slide's `preview` object. [Cue mismatches](/concepts/cues#cue-mismatches) says what happens when an
+id is missing.
 
 ## Section keys
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `cues` | array | `[]` | The cues of the section. |
-| `min_seconds` | number | none | Seconds of speech that the visuals need. Shorter speech is an uncertain finding. |
+| `cues` | array | `[]` | These are the cues of the section. |
+| `min_seconds` | number | none | This is how many seconds of speech the visuals need. Shorter speech is an uncertain finding. |
 
-Note: For short speech, `decktalk align` prints the note
+Note: for short speech, `decktalk align` prints the note
 `speech <S>s is <D>s shorter than the visuals need`. `align --strict` exits 1 on it.
 
 ## Cue keys
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `cue` | string | required | The cue id. |
-| `on` | string | required | A word or short phrase from the section's script, `$start`, or `$end`. |
-| `offset` | number | `0` | The offset key. Seconds added to the match. Can be negative. |
-| `occurrence` | integer | `1` | Which match of the phrase to use. When the phrase occurs more than once and this key is not set, `align` warns. |
-| `case_sensitive` | boolean | `false` | Matches case as written. |
+| `cue` | string | required | This is the cue id. |
+| `on` | string | required | This is a word or a short phrase from the section's script, `$start`, or `$end`. |
+| `offset` | number | `0` | This is the offset key. It adds seconds to the match, and it can be negative. |
+| `occurrence` | integer | `1` | This picks which match of the phrase to use. When the phrase occurs more than once and this key is not set, `align` warns. |
+| `case_sensitive` | boolean | `false` | The match reads case as written when this is true. |
 | `verify` | boolean | `true` | `false` leaves the cue out of a plain `decktalk verify`, which shows the row as `skipped` with `OPTED_OUT`. |
 
-Note: A cue id must not contain a comma, because commas separate the pairs in `?cues=`. DeckTalk
+Note: a cue id must not contain a comma, because commas separate the pairs in `?cues=`. DeckTalk
 does not check this. An `@` in an id still works, because the page splits each pair at its last `@`.
 Avoid `@` anyway, so ids stay easy to read.
 
 Note: `decktalk verify` still checks a `"verify": false` cue that you name as `SECTION:CUE`.
 
+Note: a key that no cue reads is ignored in silence, so check a spelling here against this table.
+
 ## Anchors
 
 | Anchor | Cue time |
 |---|---|
-| `$start` | 0.0 s after the section start, plus the offset key. A negative result stays negative, and the page fires it at t=0. |
-| `$end` | The end of the section's last spoken word, plus the offset key. Not the end of the section's audio file. |
+| `$start` | The cue time is 0.0 s after the section start, plus the offset key. A negative result stays negative, and the page fires the cue at t=0. |
+| `$end` | The cue time is the end of the section's last spoken word, plus the offset key. It is not the end of the section's audio file. |
 
 Note: `decktalk verify` skips a `$start` cue with no offset key, as `REFERENCE_CLAMPED`.
 
-Note: A section's `lead_seconds` moves every word, and so every phrase cue and `$end`, that much later. `$start` stays at 0.
-[Skipped rows](/reference/verify#skipped-rows) explains why.
+Note: a section's `lead_seconds` moves every word, and so every phrase cue and `$end`, that much
+later. `$start` stays at 0. [Skipped rows](/reference/verify#skipped-rows) explains why.
 
 ## Output files
 
 `decktalk align` writes `build/cue-times.json`, with one row per resolved cue: the cue id, the
 phrase it matched, its cue time, and the word start before the offset key.
-[Build artifacts](/reference/artifacts) has the shape of the file.
+[Build artifacts](/reference/artifacts#build-cue-times-json) has the shape of the file.
 
 ## Related
 
