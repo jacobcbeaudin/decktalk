@@ -20,11 +20,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, str]]:
-    """The scaffold with a fake provider and a part-voiced take index: 01, 02 and 09 on disk, 03 stale.
+    """The starter with a fake provider and a part-voiced take index: 01 and 03 on disk, 02 stale.
 
     A take is named by its content hash, so a section whose digest is on disk is cached however it
-    is numbered, and 09's take is the one written from 09's own words. Returns the project and the
-    path of every file the plan must leave alone, with its bytes' hash.
+    is numbered. Returns the project and the path of every file the plan must leave alone, with its
+    bytes' hash.
     """
     import hashlib
 
@@ -48,7 +48,7 @@ def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, s
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     monkeypatch.delenv("ELEVENLABS_VOICE_ID", raising=False)
-    root = init(tmp_path / "proj", name="proj")
+    root = init(tmp_path / "proj", name="proj").root
     toml = root / "decktalk.toml"
     toml.write_text(toml.read_text(encoding="utf-8").replace("[voice]\n", "[voice]\nprovider = 'plan-voice'\n", 1))
     p = Project.load(root, environ={})
@@ -57,9 +57,9 @@ def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, s
     spoken = {s.key: s for s in p.script_sections()[1]}
     p.narration_dir.mkdir(parents=True)
     take_index = Takes(script="script.md", model=cfg.model, output_format=cfg.output_format)
-    # 01, 02 and 09 carry the take of their own words. 03's row names a digest nothing wrote, so the
+    # 01 and 03 carry the take of their own words. 02's row names a digest nothing wrote, so the
     # text it indexes is stale and the plan sends it again.
-    for key, kind in [("01", "real"), ("02", "real"), ("03", "stale"), ("09", "real")]:
+    for key, kind in [("01", "real"), ("02", "stale"), ("03", "real")]:
         seg = spoken[key]
         digest = text_hash(seg, cfg, "plan-voice", settings) if kind == "real" else "0123456789abcdef"
         tokens = [t.strip(PUNCT) for t in seg.spoken.split()]

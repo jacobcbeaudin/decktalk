@@ -321,33 +321,6 @@ def test_user_settings_file_warns_about_unknown_keys(tmp_path, caplog):
     ]
 
 
-def test_scaffold_loads_without_warnings_and_has_nine_sections(tmp_path, monkeypatch, caplog):
-    from decktalk.scaffold import init
-
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
-    root = init(tmp_path / "proj", name="proj")
-    caplog.clear()
-    with caplog.at_level("WARNING", logger="decktalk"):
-        p = Project.load(root, environ={})
-    assert [r.getMessage() for r in caplog.records] == []
-    # Seven page sections. A page keeps its scene numbers, so sections 8 and 9 play scenes 7 and 5.
-    pages = [(1, "1"), (2, "2"), (3, "3"), (4, "4"), (6, "6"), (8, "7"), (9, "5")]
-    assert [(s.number, s.scene) for s in p.page_sections] == pages
-    # Two clip sections that ship no file. Both are optional, so a fresh scaffold passes `build --strict` on
-    # their slates, and each names the words file its clip's captions will read.
-    clips = [(s.number, s.clip, s.words, s.optional) for s in p.clip_sections]
-    assert clips == [
-        (5, "media/edit-before.mov", "media/edit-before.words.json", True),
-        (7, "media/edit-after.mov", "media/edit-after.words.json", True),
-    ]
-    # Sections 4 to 8 head "The edit" in the script and set no `chapter`, so the default groups them
-    # into one chapter with no repeated line in decktalk.toml.
-    chapters = ["Open", "How it works", "How AI learns", *["The edit"] * 5, "Close"]
-    assert [s.chapter for s in p.sections] == ["Open", "How it works", "How AI learns", "", "", "", "", "", "Close"]
-    assert list(p.chapters().values()) == chapters
-
-
 # ---- artifacts -----------------------------------------------------------------------------
 
 
@@ -604,55 +577,6 @@ def test_cues_load_with_cue_keys_and_reject_any_other_id_key(tmp_path):
     )
     with pytest.raises(ConfigError, match="missing required key 'cue'"):
         Project.load(root, environ={}).cue_specs()
-
-
-def test_init_copies_every_file_of_the_template_deck(tmp_path, monkeypatch):
-    """Every page and asset under the template's deck/ arrives, with placeholders filled only in HTML."""
-    from decktalk.scaffold import init
-    from decktalk.toolchain.assets import RUNTIME_FILE, package_file, runtime_path
-
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    root = init(tmp_path / "proj", name="proj")
-    src = package_file("template/deck")
-    wanted = {f.relative_to(src) for f in src.rglob("*") if f.is_file() and not f.name.startswith(".")}
-    assert Path("index.html") in wanted
-    got = {f.relative_to(root / "deck") for f in (root / "deck").rglob("*") if f.is_file()}
-    assert wanted <= got
-    assert (root / "deck" / RUNTIME_FILE).read_bytes() == runtime_path().read_bytes()
-    # Beside the template's own files arrive the runtime and the packaged KaTeX, and nothing else.
-    assert {p if p.parts[0] != "katex" else Path("katex") for p in got - wanted} == {
-        Path("decktalk-runtime.js"),
-        Path("katex"),
-    }
-    for rel in wanted:
-        if rel.suffix == ".html":
-            html = (root / "deck" / rel).read_text(encoding="utf-8")
-            assert "__NAME__" not in html, rel
-        else:
-            assert (root / "deck" / rel).read_bytes() == (src / rel).read_bytes(), rel
-    assert not (root / "deck" / "vendor").exists()
-
-
-def test_template_ids_agree_across_page_cues_and_script(tmp_path, monkeypatch):
-    """Every cue id in cues.json is named in the page, every data-cue is cued, and every phrase is spoken."""
-    from decktalk.model.cues import find_phrase
-    from decktalk.scaffold import init
-    from decktalk.stages.align import uncued_elements, unknown_cue_ids
-
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    root = init(tmp_path / "proj", name="proj")
-    project = Project.load(root, environ={})
-    specs = project.cue_specs()
-    assert unknown_cue_ids(project, specs) == []
-    assert uncued_elements(project, specs) == []
-    segments = {s.index: s for s in parse_script((root / "script.md").read_text(encoding="utf-8"))}
-    for section in specs:
-        words = [Word(w, i, i + 1) for i, w in enumerate(segments[section.number].spoken.split())]
-        for cue in section.cues:
-            if not cue.on.startswith("$"):
-                assert find_phrase(words, cue.on) is not None, (
-                    f"cue {cue.id}: {cue.on!r} is not in section {section.number}"
-                )
 
 
 # ---- post-production: dips, captions, chapters, the mix plan, loudness, verify offsets ----------

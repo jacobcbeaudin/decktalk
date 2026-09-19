@@ -113,10 +113,9 @@ Note: `after` and `before` belong to `decktalk-probe.js`, so a page opened by ha
 shows every reveal and ignores both. With `after` or `before`, only the cues that fire run their handlers. An `after` or `before` id
 that is not one of the slide's cues adds the warning `cue "<id>" is not one of slide <slide>'s cues`,
 the whole slide freezes, and every cue fires. `enter` still gets `ctx.frozen` as true, so a figure
-that `enter` draws in its end state shows that state at every cue. In the scaffold,
-`?slide=2.1&after=2.1aloud` shows the script card and the waveform with its word times. It hides the
-outlines that join the cue word to its drawing, which wait for `2.1word`, and the arrow to the slide
-card, which waits for `2.1follows`. `decktalk screenshots --slide 2.1 --after 2.1aloud` opens that URL.
+that `enter` draws in its end state shows that state at every cue. In the starter,
+`?slide=2.1&after=2.1formula` shows the heading and the typeset equation and hides the code beside
+it, which waits for `2.1code`. `decktalk screenshots --slide 2.1 --after 2.1formula` opens that URL.
 
 ## `DeckTalk.scene(id, definition)`
 
@@ -383,7 +382,7 @@ and starts the clock anyway.
 A page adds a condition of its own with `DeckTalk.waitFor`, which takes a promise and returns
 `DeckTalk`. Two scripts can each add one, and neither can clobber the other's.
 
-```js deck/lesson.html
+```js deck/index.html
 const faces = ['600 64px "Inter Tight"', '500 30px Inter'];
 DeckTalk.waitFor(
   Promise.all(faces.map((f) => document.fonts.load(f))).then(
@@ -418,7 +417,7 @@ whichever order the two stylesheets are in. Its names all start with `dt-`.
 | `--dt-scene-dur` | The camera push's length, which the runtime sets on `#dt-camera` for each played scene. |
 | `#dt-measure` | The hidden layer `decktalk-probe.js` measures the catalog in, in index mode. It carries its own style and is removed before any frame is drawn. |
 
-Note: A page can supply its own `#dt-stage`, as the scaffold's `deck/lesson.html` does. The runtime
+Note: A page can supply its own `#dt-stage`, as the lesson example's `deck/lesson.html` does. The runtime
 adds `#dt-camera` after the page's content, so the slides draw on top of it.
 
 Note: The first slide of a played scene is mounted before the clock starts, and it enters with no
@@ -443,7 +442,7 @@ the prefix `decktalk: `. In the messages below, `<id>`, `<slide>`, and `<n>` sta
 | `slide "<slide>" has both a render function and a &lt;template data-slide&gt;, so the template is unused` | A scene registered in script gives the slide a `render`, and a template names the same slide id. | Delete one of the two. |
 | `data-text="spoken" on an element without data-cue or data-delay never reveals, so add data-delay="0"` | An element has `data-text="spoken"`, `data-text="count"`, or `data-text="type"` but no trigger. The message names the attribute. | Add `data-cue`, or add `data-delay="0"`. |
 | `data-text="spoken" text not found in the spoken words: "…"` | The element's text matches no run of the `words` list. The slide and the script usually differ by a word. The element appeared whole. | Make the text match the script, word for word. |
-| `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page needs KaTeX, and `window.katex` never appeared. `record` reports `KATEX NOT LOADED`, and `verify` reports it again. | Make sure the page loads KaTeX. `decktalk init` adds the KaTeX tags to the scaffold's `deck/index.html`. |
+| `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page needs KaTeX, and `window.katex` never appeared. `record` reports `KATEX NOT LOADED`, and `verify` reports it again. | Make sure the page loads KaTeX before the runtime, as the starter's `deck/index.html` does. |
 | `data-tex could not be parsed: "…"` | KaTeX showed a `data-tex` value in red. `record` reports `KATEX ERROR`. | Fix the TeX. Inside a `render` template literal, write every backslash twice; inside a `<template data-slide>`, write it once. |
 | `slide "<slide>" fires "<id>" at <n> s but holds <n> s, so it fires on the next slide` | In preview, a time in the slide's `preview` object is at or past its `hold`. | Raise `hold`, or lower the cue's seconds. |
 | `cue "<id>" is not one of slide <slide>'s cues` | The `after` or `before` parameter names an id the frozen slide does not have. The whole slide freezes. | Fix the parameter, or add the id to the slide's markup. |

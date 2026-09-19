@@ -1,13 +1,17 @@
-"""What ships inside the wheel: the page runtime, the pinned KaTeX release, and the starter project.
+"""What ships inside the wheel: the page runtime, the pinned KaTeX release, and the projects.
 
     decktalk/runtime/decktalk-runtime.js  the page contract every deck loads
     decktalk/runtime/decktalk-probe.js    the instrumentation a command injects, never in a deck
     decktalk/katex/                       the pinned KaTeX release with its licence and fonts
-    decktalk/template/                    the starter project `decktalk init` writes
+    decktalk/template/starter/            the starter project `decktalk init` writes
+    decktalk/template/examples/           one directory per `decktalk init --example NAME`
+    decktalk/template/AGENTS.md           written into a project that has none
+    decktalk/skills/                      the six skills a project keeps in .agents/skills/
 
 `decktalk init` copies the runtime and KaTeX beside a project's pages, so a project renders
 equations with no network and no CDN tag. The probe is never copied, because a command injects it
-into the page it opens.
+into the page it opens. `scaffold/` decides what a project is made of, and this module only says
+where each packaged thing lives.
 """
 
 from __future__ import annotations
@@ -17,24 +21,12 @@ import shutil
 from importlib import resources
 from pathlib import Path
 
-TEMPLATE_FILES = [
-    ("decktalk.toml", "decktalk.toml"),
-    ("script.md", "script.md"),
-    ("cues.json", "cues.json"),
-    ("media/markers.json", "media/markers.json"),
-    ("gitignore", ".gitignore"),
-    ("env.example", ".env.example"),
-]
-# The deck directory is copied whole, so every page and every asset beside it arrives. Each HTML
-# page gets the project name filled in, and every other file, such as the bundled fonts, is
-# copied byte for byte.
-TEMPLATE_DECK = "deck"
 RUNTIME_FILE = "decktalk-runtime.js"
 PROBE_FILE = "decktalk-probe.js"
 
 # KaTeX typesets the [data-tex] elements. The pinned release ships inside the wheel under
 # decktalk/katex with its licence, and `decktalk init` copies it into deck/katex/, so a project
-# renders equations with no network and no CDN tag. The template's pages load it from there.
+# renders equations with no network and no CDN tag. Every packaged page loads it from there.
 KATEX_VERSION = "0.18.7"
 KATEX_DIR = "katex"
 KATEX_FILES = ("katex.min.js", "katex.min.css", "LICENSE")

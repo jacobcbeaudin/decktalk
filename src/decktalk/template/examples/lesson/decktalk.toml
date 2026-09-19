@@ -1,0 +1,34 @@
+# The lesson example: one section, one page and one long scene, drawn in code.
+# `decktalk init --example lesson DIR` writes it. Full reference:
+# https://docs.decktalk.ai/reference/decktalk-toml
+
+[project]
+name = "__NAME__"
+script = "script.md"
+cues = "cues.json"
+build = "build"
+
+[[section]]
+number = 1
+chapter = "How AI learns"
+page = "deck/lesson.html"
+scene = 1
+record_margin_seconds = 0.3   # recorded past the narration, so the cut never lands on a frame that was never drawn
+hold_seconds = 1.5
+
+[narration]
+min_tail_seconds = 1.3
+
+[voice]
+price_per_1000_characters = 0.30   # what your plan charges, which is what `narrate --dry-run` prices the run at
+stability = 0.55
+similarity_boost = 0.75
+speed = 1.0
+
+[transition]
+dips = []
+dip_seconds = 0.15
+
+[mix.loudness]
+target_lufs = -16
+true_peak_db = -1.5

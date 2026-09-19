@@ -609,7 +609,7 @@ certain findings, and `verify` reports them again from the recording log.
 <script src="./katex/katex.min.js"></script>
 ```
 
-Only `deck/index.html` has KaTeX tags in the scaffold. `deck/lesson.html` does not load KaTeX.
+The starter's `deck/index.html` loads KaTeX before the runtime, which is the order a page needs.
 
 **More.** [Build in CI and offline](/guides/ci-and-offline)
 
@@ -643,7 +643,7 @@ the same amount.
 {/* sample: decktalk assemble --strict in clip-lesson from Add a clip section, a fresh scaffold with no clip files */}
 
 ```text
-section 05: media/edit-before.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
+section 04: media/intro.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
 ```
 
 **Cause.** The file that `clip` names does not exist, so a titled slate plays for `slate_seconds`.
@@ -661,10 +661,10 @@ The section in the sample sets `optional = true`, so its warning ends with
 
 ### `clip missing` or `recording missing` in assemble
 
-{/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true from section 5, with no media/edit-before.mov, error line */}
+{/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true from section 4, with no media/intro.mov, error line */}
 
 ```text
-error: section 5: clip missing: ~/clip-lesson/media/edit-before.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
+error: section 4: clip missing: ~/clip-lesson/media/intro.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
 ```
 
 **Cause.** `--strict` turns a missing recording into an error. It does the same for a missing clip,

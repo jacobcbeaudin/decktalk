@@ -15,7 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 IGNORE_FILES = {
     "repo": ROOT / ".gitignore",
-    "template": ROOT / "src" / "decktalk" / "template" / "gitignore",
+    "starter": ROOT / "src" / "decktalk" / "template" / "starter" / "gitignore",
 }
 SECRET_NAMES = [".env", ".env.local", ".env.production", ".env.test", ".env.backup", ".env.2026"]
 KEPT_NAMES = [".env.example"]
@@ -45,6 +45,6 @@ def test_the_repository_tracks_its_env_example():
     if shutil.which("git") is None:
         pytest.skip("git is not on PATH")
     proc = subprocess.run(
-        ["git", "ls-files", "src/decktalk/template/env.example"], cwd=ROOT, capture_output=True, text=True
+        ["git", "ls-files", "src/decktalk/template/starter/env.example"], cwd=ROOT, capture_output=True, text=True
     )
-    assert proc.stdout.strip() == "src/decktalk/template/env.example"
+    assert proc.stdout.strip() == "src/decktalk/template/starter/env.example"

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import shutil
-from pathlib import Path
 
 from decktalk import scaffold
 from decktalk.scaffold import init
@@ -39,7 +38,7 @@ def test_the_packaged_copy_is_the_pinned_version():
 
 
 def test_init_copies_the_packaged_copy_and_the_page_loads_it_locally(tmp_path):
-    root = init(tmp_path / "proj", name="proj")
+    root = init(tmp_path / "proj", name="proj").root
     deck = root / "deck"
     assert katex_missing(deck / "katex") == []
     packaged = sorted(p.relative_to(katex_dir()) for p in katex_dir().rglob("*") if p.is_file())
@@ -66,10 +65,9 @@ def test_katex_missing_names_each_absent_file(tmp_path, monkeypatch):
     row = {r.name: r for r in scaffold.doctor()}["katex"]
     assert row.ok is False
     assert row.detail.endswith("lacks LICENSE, fonts/KaTeX_Main-Regular.woff2  -> reinstall decktalk")
-    assert isinstance(row.detail, str) and str(copy) in row.detail
+    assert str(copy) in row.detail
 
 
 def test_doctor_reports_the_packaged_version_when_it_is_complete():
     row = {r.name: r for r in scaffold.doctor()}["katex"]
     assert row.ok is True and row.detail == f"{KATEX_VERSION} in the wheel ({katex_dir()})"
-    assert isinstance(katex_dir(), Path)

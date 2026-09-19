@@ -128,28 +128,42 @@ katex     ok      0.18.7 in the wheel (~/.local/share/uv/tools/decktalk/lib/pyth
 
 ### `decktalk init`
 
-Writes the scaffold into a new directory.
+Writes a project into a new directory: the starter by default, or a packaged example.
 
 ```text
-decktalk init [-h] [-v] [-q] [--name NAME] [--force] dir
+decktalk init [-h] [-v] [-q] [--name NAME] [--force] [--example NAME] [--no-skills] dir
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
 | `dir` | required | Directory to write. It can exist if it is empty. |
 | `--name NAME` | the directory name | Project name. Starts with a letter or digit, then letters, digits, dots, dashes, or underscores. |
-| `--force` | off | Writes into a directory that is not empty. Overwrites files that the scaffold also has. |
+| `--force` | off | Writes into a directory that is not empty. Overwrites files that the project also has. |
+| `--example NAME` | the starter | Writes a packaged example project instead. See [the examples](#the-examples). |
+| `--no-skills` | off | Leaves `.agents/skills/` and its `.claude/skills` link out. |
 
-**Reads** the packaged template and the packaged KaTeX. **Writes** `decktalk.toml`, `script.md`,
-`cues.json`, `.gitignore`, `.env.example`, `media/markers.json`, and `deck/`. `deck/` holds
-`index.html`, `lesson.html`, the fonts, `decktalk-runtime.js`, and `katex/`.
+**Reads** the packaged project, the packaged KaTeX and the packaged skills. **Writes**
+`decktalk.toml`, `script.md`, `cues.json`, `.gitignore`, `.env.example`, `deck/`, `AGENTS.md` when
+the directory has none, and `.agents/skills/` with a `.claude/skills` link to it. `deck/` holds the
+pages, `decktalk-runtime.js`, and `katex/`.
 
-A project keeps the runtime and the KaTeX copy it was created with. Nothing refreshes them later.
+A project keeps the runtime, the KaTeX copy and the skills it was created with. Nothing refreshes
+them later: a project that wants a newer runtime is created again.
+
+On a system that refuses a symbolic link, such as Windows without developer mode, `.claude/skills`
+is written as a copy of `.agents/skills/` instead of a link.
 
 | Exit | When |
 |---|---|
-| 0 | The scaffold is written. |
-| 1 | The name is not valid, or the directory is not empty and `--force` is off. |
+| 0 | The project is written. |
+| 1 | The name is not valid, the directory is not empty and `--force` is off, or `--example` names an example that is reserved or unknown. |
+
+### The examples
+
+| Name | What it is |
+|---|---|
+| `lesson` | A two-minute lesson on how a model learns: one section, one page, and a figure drawn in code and moved on every cue. |
+| `product` | Reserved. It is the film that shows DeckTalk itself, and it ships with that film. |
 
 {/* sample: decktalk init my-lesson (A-qs-01) */}
 
@@ -158,10 +172,11 @@ created ~/my-lesson
   decktalk.toml  the project file: sections -> pages or clips, voice, mix, soundscape
   script.md      the narration (## N. sections)
   cues.json      which spoken phrase each visual lands on
-  deck/          index.html, lesson.html, decktalk-runtime.js (open a page for its scene index)
-  media/         your clips, b-roll, markers.json
-next: cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID), then `decktalk build`
-      or `decktalk build --no-voice` to render with placeholder narration and no API key
+  deck/          the pages, decktalk-runtime.js and katex/ (open a page for its scene index)
+  AGENTS.md      the rules an agent working in this project follows
+  .agents/skills the six DeckTalk skills, linked from .claude/skills
+next: `decktalk build --no-voice` renders with placeholder narration, no API key and no spend
+      then cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID) and `decktalk build`
 ```
 
 ## `decktalk preflight`
@@ -698,10 +713,9 @@ named `<name>-YYYYMMDD-HHMM.mp4` when `[output] timestamped_copy` is on.
 [cut ] 02  recordings/02.webm (lead 1.44s trimmed) -> sections/02.mp4  (20.800s)
 [cut ] 03  recordings/03.webm (lead 1.44s trimmed) -> sections/03.mp4  (142.520s)
 [cut ] 04  recordings/04.webm (lead 1.44s trimmed) -> sections/04.mp4  (15.600s)
-section 05: media/edit-before.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
+section 04: media/intro.mov missing; slate for 4.00s (drop your clip at that path; the section is optional, so --strict allows the slate)
 [cut ] 05  slate -> sections/05.mp4  (4.360s)
 [cut ] 06  recordings/06.webm (lead 1.44s trimmed) -> sections/06.mp4  (22.160s)
-section 07: media/edit-after.mov missing; slate for 5.04s (drop your clip at that path; the section is optional, so --strict allows the slate)
 [cut ] 07  slate -> sections/07.mp4  (5.040s)
 [cut ] 08  recordings/08.webm (lead 1.44s trimmed) -> sections/08.mp4  (14.240s)
 [cut ] 09  recordings/09.webm (lead 1.44s trimmed) -> sections/09.mp4  (15.200s)
@@ -983,11 +997,9 @@ script    script.md  ok
 cues      cues.json  ok
   01  deck/index.html?scene=1                  rec cut
   02  deck/index.html?scene=2                  rec cut
-  03  deck/lesson.html?scene=3                 rec cut
+  03  deck/index.html?scene=3                 rec cut
   04  deck/index.html?scene=4                  rec cut
-  05  clip media/edit-before.mov                   cut
   06  deck/index.html?scene=6                  rec cut
-  07  clip media/edit-after.mov                    cut
   08  deck/index.html?scene=7                  rec cut
   09  deck/index.html?scene=5                  rec cut
   #  section                  start     end  length

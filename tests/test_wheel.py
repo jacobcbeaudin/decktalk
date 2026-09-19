@@ -1,6 +1,6 @@
-"""The wheel's manifest: it holds exactly the files the package means to ship, and nothing rides along.
+"""The wheel's file list: it holds exactly the files the package means to ship, and nothing rides along.
 
-`uv build` reads the working tree, so a Finder sidecar or a stale cache next to the template
+`uv build` reads the working tree, so a Finder metadata file or a stale cache next to the template
 would ship in a wheel cut from a laptop. This builds the wheel and compares its contents with the
 files git tracks under src/decktalk. It needs uv and git on PATH and a checkout to run in, and
 skips otherwise.
@@ -15,6 +15,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
+
+from decktalk.scaffold import SKILL_NAMES
 
 ROOT = Path(__file__).resolve().parent.parent
 DIST_INFO = re.compile(r"^decktalk-[^/]+\.dist-info/(.+)$")
@@ -88,4 +90,7 @@ def test_the_package_ships_what_the_scaffold_and_the_stages_need(entries):
     assert "decktalk/runtime/decktalk-probe.js" in package
     assert {"decktalk/katex/katex.min.js", "decktalk/katex/katex.min.css", "decktalk/katex/LICENSE"} <= package
     assert len([n for n in package if n.startswith("decktalk/katex/fonts/")]) == 20
-    assert "decktalk/template/deck/index.html" in package and "decktalk/template/decktalk.toml" in package
+    assert {"decktalk/template/starter/deck/index.html", "decktalk/template/starter/decktalk.toml"} <= package
+    assert "decktalk/template/examples/lesson/deck/lesson.html" in package
+    assert "decktalk/template/AGENTS.md" in package
+    assert {f"decktalk/skills/{name}/SKILL.md" for name in SKILL_NAMES} <= package

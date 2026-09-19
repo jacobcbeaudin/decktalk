@@ -178,7 +178,7 @@ def test_status_json_on_scaffold(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
     from decktalk.scaffold import init
 
-    root = init(tmp_path / "lesson", name="lesson")
+    root = init(tmp_path / "lesson", name="lesson").root
     assert main(["status", "-p", str(root), "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
     assert doc["command"] == "status" and doc["ok"] is True
@@ -187,8 +187,8 @@ def test_status_json_on_scaffold(tmp_path, monkeypatch, capsys):
     assert st["project"]["name"] == "lesson"
     assert st["project"]["script"] == "script.md" and st["project"]["script_exists"] is True
     assert st["sections"] and not any(s["recorded"] or s["cut"] for s in st["sections"])
-    # The scaffold has seven page sections and two clip sections, the edit's BEFORE and AFTER.
-    assert [s["kind"] for s in st["sections"]] == ["page"] * 4 + ["clip", "page", "clip", "page", "page"]
+    # The starter is three page sections and no clip, so a first build needs no file of the author's.
+    assert [s["kind"] for s in st["sections"]] == ["page"] * 3
     assert st["sections"][0]["key"] == "01" and st["sections"][0]["source"].startswith("deck/index.html?scene=")
     assert st["timeline"] == {"exists": False, "estimated": False, "total_seconds": None, "sections": []}
     assert st["cue_times"] == {"exists": False, "sections": []}

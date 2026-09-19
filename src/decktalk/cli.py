@@ -41,6 +41,7 @@ from . import __version__, report
 from .errors import DeckTalkError
 from .jsonio import dumps, relative
 from .model import Project
+from .scaffold import listed_names
 from .stages.build import STAGES
 from .verdicts import Findings, StageResult
 
@@ -133,15 +134,25 @@ def _report_quietly(args: argparse.Namespace, project: Project, result: StageRes
 def cmd_init(args: argparse.Namespace) -> int:
     from .scaffold import init
 
-    target = init(Path(args.dir), name=args.name, force=args.force)
-    print(f"created {target}")
+    result = init(
+        Path(args.dir),
+        name=args.name,
+        force=args.force,
+        example_name=args.example,
+        skills=not args.no_skills,
+    )
+    print(f"created {result.root}")
     print("  decktalk.toml  the project file: sections -> pages or clips, voice, mix, soundscape")
     print("  script.md      the narration (## N. sections)")
     print("  cues.json      which spoken phrase each visual lands on")
-    print("  deck/          index.html, lesson.html, decktalk-runtime.js (open a page for its scene index)")
-    print("  media/         your clips, b-roll, markers.json")
-    print("next: cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID), then `decktalk build`")
-    print("      or `decktalk build --no-voice` to render with placeholder narration and no API key")
+    print("  deck/          the pages, decktalk-runtime.js and katex/ (open a page for its scene index)")
+    # An AGENTS.md the author already wrote is never replaced, so it is listed only when it was written.
+    if result.root / "AGENTS.md" in result.written:
+        print("  AGENTS.md      the rules an agent working in this project follows")
+    if result.skills:
+        print("  .agents/skills the six DeckTalk skills, linked from .claude/skills")
+    print("next: `decktalk build --no-voice` renders with placeholder narration, no API key and no spend")
+    print("      then cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID) and `decktalk build`")
     return 0
 
 
@@ -449,9 +460,15 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--crf", type=int, help="x264 quality for this run")
 
     s = common(sub.add_parser("init", help="scaffold a project directory"))
-    s.add_argument("dir", help="the directory to create, with a working example deck")
+    s.add_argument("dir", help="the directory to create, with a small working deck")
     s.add_argument("--name", help="project name (default: directory name)")
     s.add_argument("--force", action="store_true", help="write into a non-empty directory")
+    s.add_argument(
+        "--example",
+        metavar="NAME",
+        help="write a packaged example project instead of the starter: " + listed_names(),
+    )
+    s.add_argument("--no-skills", action="store_true", help="do not write the DeckTalk skills into the project")
     s.set_defaults(fn=cmd_init)
 
     common(sub.add_parser("install", help="fetch headless Chromium and ffmpeg once per machine")).set_defaults(

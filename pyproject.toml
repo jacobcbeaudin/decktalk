@@ -95,7 +95,7 @@ markers = [
     "browser: needs headless Chromium (run `decktalk install` first)",
     "media: runs the ffmpeg that `decktalk install` fetches",
     "e2e: builds the pipeline fixture in tests/e2e with Chromium and ffmpeg, about a minute",
-    "scaffold: builds the whole scaffold project, about twenty minutes",
+    "scaffold: records and verifies every packaged project without a voice, about five minutes",
 ]
 # A bare `pytest` runs the unit suite alone. Pass -m to pick the slower suites, as scripts/check.py does.
 addopts = "-m 'not browser and not media and not e2e and not scaffold' --strict-markers --import-mode=importlib"

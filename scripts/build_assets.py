@@ -1101,7 +1101,7 @@ def cue_offset(pal: dict[str, str], background: bool) -> str:
 
 # ---- rebuild lanes ----------------------------------------------------------------------------
 
-EDITED_SECTION = 1  # the scaffold's own edit: section 6 adds a fourth count to the Open, section 1
+EDITED_SECTION = 1  # the starter's own edit: one word changes in section 1
 LANES = (
     # lane, the page sections that run in it, the text on those, the text on the other page sections
     ("narrate", {EDITED_SECTION}, "voiced", "cached"),
@@ -1110,18 +1110,18 @@ LANES = (
 )
 
 
-def scaffold_sections() -> list[tuple[int, str, bool]]:
-    """(number, chapter, is a clip) for each [[section]] of the scaffold that `decktalk init` writes.
+def starter_sections() -> list[tuple[int, str, bool]]:
+    """(number, chapter, is a clip) for each [[section]] of the starter that `decktalk init` writes.
 
     A section that sets no `chapter` takes the script's own "## N." heading, as DeckTalk does.
     """
     import tomllib
 
-    template = ROOT / "src" / "decktalk" / "template"
-    doc = tomllib.loads((template / "decktalk.toml").read_text(encoding="utf-8"))
+    starter = ROOT / "src" / "decktalk" / "template" / "starter"
+    doc = tomllib.loads((starter / "decktalk.toml").read_text(encoding="utf-8"))
     headings = {
         int(m.group(1)): m.group(2).strip()
-        for m in re.finditer(r"^##\s+(\d+)\.\s+(.+)$", (template / "script.md").read_text(encoding="utf-8"), re.M)
+        for m in re.finditer(r"^##\s+(\d+)\.\s+(.+)$", (starter / "script.md").read_text(encoding="utf-8"), re.M)
     }
     return [(s["number"], s.get("chapter") or headings[s["number"]], "clip" in s) for s in doc["section"]]
 
@@ -1136,7 +1136,7 @@ def hatch(pal: dict[str, str], pid: str = "hatch") -> str:
 
 def rebuild_lanes(pal: dict[str, str], background: bool) -> str:
     """What runs again after section 1 is edited, in narration and in the two kinds of build."""
-    sections = scaffold_sections()
+    sections = starter_sections()
     w, h = 1200, 332
     left, col0, gap = 60, 244, 10
     col_w = (w - left - col0 + gap) / len(sections)
@@ -1187,11 +1187,12 @@ def rebuild_lanes(pal: dict[str, str], background: bool) -> str:
     clips = [n for n, _t, clip in sections if clip]
     others = ", ".join(str(n) for n in pages if n != EDITED_SECTION)
     names = [str(n) for n in clips]
-    clip_text = (
-        f"Section {names[0]} is a clip"
-        if len(names) == 1
-        else f"Sections {', '.join(names[:-1])} and {names[-1]} are clips"
-    )
+    if not names:
+        clip_text = "Every section is a page section"
+    elif len(names) == 1:
+        clip_text = f"Section {names[0]} is a clip"
+    else:
+        clip_text = f"Sections {', '.join(names[:-1])} and {names[-1]} are clips"
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
   <title id="t">What runs again after an edit to section {EDITED_SECTION}</title>
   <desc id="d">{len(sections)} section columns and three lanes. {clip_text} in every lane. In the narrate lane, section {EDITED_SECTION} is voiced, and sections {others} are cached. A plain build records every page section. A build with --only {EDITED_SECTION} records section {EDITED_SECTION} and keeps the other recordings. The assemble bar spans every section.</desc>
@@ -1585,7 +1586,6 @@ def build() -> dict[Path, str]:
         out[docs / "images" / f"duck-lane-{variant}.svg"] = duck_lane(pal, background=True)
         out[docs / "images" / f"cue-offset-{variant}.svg"] = cue_offset(pal, background=True)
         out[docs / "images" / f"rebuild-lanes-{variant}.svg"] = rebuild_lanes(pal, background=True)
-        out[ASSETS / f"mark-{variant}.svg"] = mark(pal)
         out[docs / "logo" / f"{variant}.svg"] = wordmark(pal, name)
     out[docs / "favicon.svg"] = mark(LIGHT, size=32, background=True)
     out[ASSETS / "og.svg"] = og(LIGHT, hero_xs, h_widths)

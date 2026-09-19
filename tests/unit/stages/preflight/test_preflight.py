@@ -22,23 +22,21 @@ from decktalk.verdicts import Findings, SkipReason, Verdict
 
 
 def template_cues(root: Path, scene: str) -> list[str]:
-    """The cue ids the scaffold's cues.json lists for one scene, in order."""
+    """The cue ids a project's cues.json lists for one scene, in order."""
     data = json.loads((root / "cues.json").read_text(encoding="utf-8"))
     return [c["cue"] for s in data["sections"].values() for c in s["cues"] if c["cue"].split(".")[0] == scene]
 
 
 @pytest.mark.browser
 @pytest.mark.media
-def test_preflight_estimates_each_reveal_and_the_seam_from_frozen_frames(tmp_path, monkeypatch):
-    """Sections 1 and 2 of the scaffold, with section 2 set to open on the Open's last picture."""
+def test_preflight_estimates_each_reveal_from_frozen_frames(tmp_path, monkeypatch):
+    """Sections 1 and 2 of the starter: every reveal is measured between two frozen frames."""
     from decktalk.model import Project
     from decktalk.stages.narrate import narrate
     from decktalk.stages.preflight import preflight
 
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
-    root = init(tmp_path / "p", name="p")
-    toml = root / "decktalk.toml"
-    toml.write_text(toml.read_text(encoding="utf-8").replace("scene = 2\n", "scene = 2\nseamless = true\n", 1))
+    root = init(tmp_path / "p", name="p").root
     narrate(Project.load(root, environ={}), silent=True)  # the timeline gives the pages their words
     p = Project.load(root, environ={})
     result = preflight(p, only=[1, 2])
@@ -46,38 +44,34 @@ def test_preflight_estimates_each_reveal_and_the_seam_from_frozen_frames(tmp_pat
     rows = {c.check: c for c in result.cues}
     assert list(rows) == [f"1:{c}" for c in template_cues(root, "1")] + [f"2:{c}" for c in template_cues(root, "2")]
     for c in result.cues:
-        assert c.verdict in (Verdict.CHANGED, Verdict.THIN_CHANGE), (c.check, c.changed_percent, c.verdict, c.reason)
+        # Every reveal the starter ships clears the floor with room to spare, which is what makes it
+        # a page an author can copy: CHANGED and never THIN CHANGE?.
+        assert c.verdict is Verdict.CHANGED, (c.check, c.changed_percent, c.verdict, c.reason)
         assert c.before is not None and c.after is not None and c.before.exists() and c.after.exists()
-    assert rows["2:2.1lesson"].changed_percent > 5  # the push into the lesson moves most of the frame
+    assert rows["2:2.1code"].changed_percent > 5  # the code card fills a quarter of the frame
     # The first cue of each section freezes its slide just before the cue, and each later cue after the one before.
-    assert rows["1:1.1bowl"].before.name == "slide-1.1-before-1.1bowl.png"
-    assert rows["1:1.1ball"].before == rows["1:1.1bowl"].after
-    # Scene 2 opens on the Open's last picture, so the seam does not show.
-    [seam] = result.seams
-    assert (seam.key, seam.verdict) == ("02", "ok") and seam.changed_percent == 0.0
-    assert seam.last == rows["1:1.1word"].after and seam.first == rows["2:2.1mark"].before
+    assert rows["1:1.1title"].before.name == "slide-1.1-before-1.1title.png"
+    assert rows["1:1.1script"].before == rows["1:1.1title"].after
+    # No section of the starter continues the picture of the one before, so there is no seam to check.
+    assert result.seams == []
 
 
 @pytest.mark.browser
 @pytest.mark.media
 def test_preflight_only_checks_the_cut_into_a_seamless_section_it_names(tmp_path, monkeypatch):
-    """`--only 2` on a seamless section after section 1 still resolves section 1, but reports only section 2."""
+    """`--only 3` on a seamless section after section 2 still resolves section 2, but reports only section 3."""
     from decktalk.model import Project
-    from decktalk.stages.narrate import narrate
     from decktalk.stages.preflight import preflight
 
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
-    root = init(tmp_path / "p", name="p")
-    toml = root / "decktalk.toml"
-    toml.write_text(toml.read_text(encoding="utf-8").replace("scene = 2\n", "scene = 2\nseamless = true\n", 1))
-    narrate(Project.load(root, environ={}), silent=True)
-    result = preflight(Project.load(root, environ={}), only=[2])
+    root = synth_project(tmp_path)
+    result = preflight(Project.load(root, environ={}), only=[3])
     [seam] = result.seams
-    assert (seam.key, seam.verdict) == ("02", Verdict.OK), (seam.verdict, seam.reason, seam.detail)
+    assert (seam.key, seam.verdict) == ("03", Verdict.OK), (seam.verdict, seam.reason, seam.detail)
     assert seam.changed_percent == 0.0 and seam.last is not None and seam.first is not None
-    assert [t.segment.key for t in result.takes] == ["02"]
-    assert {c.check.split(":")[0] for c in result.cues} == {"2"}
-    assert set(result.align.cue_times.sections) == {"02"}
+    assert [t.segment.key for t in result.takes] == ["03"]
+    assert {c.check.split(":")[0] for c in result.cues} == {"3"}
+    assert set(result.align.cue_times.sections) == {"03"}
 
 
 SYNTH_PAGE = """
@@ -93,14 +87,8 @@ DeckTalk.scene(3, { slides: [{ id: '3.1', preview: { '3.1go': 1 },
 """
 
 
-@pytest.mark.browser
-@pytest.mark.media
-def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatch):
-    """A big reveal, a thin one, a dot, a cue at the start, a cut that pops, and a seamless cut."""
-    from decktalk.model import Project
-    from decktalk.stages.preflight import preflight
-
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
+def synth_project(tmp_path: Path) -> Path:
+    """A three-section project on one synthetic page, where sections 2 and 3 are seamless."""
     root = tmp_path / "synth"
     root.mkdir()
     shutil.copyfile(runtime_path(), root / RUNTIME_FILE)
@@ -126,7 +114,18 @@ def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatc
     }
     doc = {"sections": {k: {"cues": [{"cue": c, "on": on} for c, on in v]} for k, v in cues.items()}}
     (root / "cues.json").write_text(json.dumps(doc), encoding="utf-8")
-    result = preflight(Project.load(root, environ={}))
+    return root
+
+
+@pytest.mark.browser
+@pytest.mark.media
+def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatch):
+    """A big reveal, a thin one, a dot, a cue at the start, a cut that pops, and a seamless cut."""
+    from decktalk.model import Project
+    from decktalk.stages.preflight import preflight
+
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
+    result = preflight(Project.load(synth_project(tmp_path), environ={}))
     got = {c.check: (c.verdict, c.reason) for c in result.cues}
     assert got == {
         "1:1.1in": (Verdict.SKIPPED, SkipReason.AT_SECTION_START),
@@ -154,10 +153,11 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(
     p, files = planned_scaffold(tmp_path, monkeypatch)
     result = preflight(p, frames=False)
     assert {t.segment.key: t.status for t in result.takes} == {
-        "01": "cached", "02": "cached", "03": "synthesize", "04": "synthesize",
-        "06": "synthesize", "08": "synthesize", "09": "cached",
-    }  # fmt: skip
-    assert result.estimated == ["03", "04", "06", "08"]
+        "01": "cached",
+        "02": "synthesize",
+        "03": "cached",
+    }
+    assert result.estimated == ["02"]
     assert result.align.unresolved == 0 and result.align.unknown == 0
     resolved = {s.key: {r.cue: r.at for r in s.resolved} for s in result.align.sections}
     # A cached take resolves on its own words, which the fixture spaced 0.4 s apart, after the
@@ -165,12 +165,13 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(
     takes = p.takes()
     open_words = read_words(p.takes_dir / takes.sections["01"].words_file)
     lead = p.lead_seconds("01")
-    assert resolved["01"]["1.1bowl"] == round(open_words[find_phrase(open_words, "bowl")].start + lead, 3) == 1.1
-    close_words = read_words(p.takes_dir / takes.sections["09"].words_file)
-    close_at = close_words[find_phrase(close_words, "decktalk dot AI")].start + p.lead_seconds("09")
-    assert resolved["09"]["5.1url"] == round(close_at, 2)
+    at = round(open_words[find_phrase(open_words, "This is DeckTalk")].start + lead, 3)
+    assert resolved["01"]["1.1title"] == at == lead
+    close_words = read_words(p.takes_dir / takes.sections["03"].words_file)
+    close_at = close_words[find_phrase(close_words, "Make your own")].start + p.lead_seconds("03")
+    assert resolved["03"]["3.1make"] == round(close_at, 2)
     # A section that would be voiced resolves on estimated words, inside its estimated length.
-    assert all(0 < t < 60 for t in resolved["04"].values()) and len(resolved["04"]) == 5
+    assert all(0 < t < 60 for t in resolved["02"].values()) and len(resolved["02"]) == 4
     assert result.cues == [] and result.seams == [] and result.frames is None
     assert unchanged(p, files) and not p.cue_times_path.exists() and not p.preflight_dir.exists()
 
@@ -181,15 +182,13 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(
     assert set(payload) == {
         "voice", "note", "placeholders", "takes", "totals", "cue_times", "cues", "seams", "warnings", "frames",
     }  # fmt: skip
-    assert (
-        payload["cue_times"]["estimated_sections"] == ["03", "04", "06", "08"] and payload["totals"]["synthesize"] == 4
-    )
+    assert payload["cue_times"]["estimated_sections"] == ["02"] and payload["totals"]["synthesize"] == 1
     assert [t["hash"] for t in payload["takes"] if t["status"] == "cached"] == [
-        takes.sections[key].hash for key in ("01", "02", "09")
+        takes.sections[key].hash for key in ("01", "03")
     ]
     assert main(["preflight", "--no-frames", "-p", str(p.root)]) == 0
     out = capsys.readouterr().out
-    assert "3 cached." in out and "frames skipped (--no-frames)" in out
+    assert "2 cached." in out and "frames skipped (--no-frames)" in out
 
     # A phrase that is not in the script, under an id the page never names, is two certain findings.
     cues_path = p.root / "cues.json"
@@ -197,7 +196,7 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(
     cues["sections"]["1"]["cues"].append({"cue": "1.1nope", "on": "not in the script"})
     cues_path.write_text(json.dumps(cues), encoding="utf-8")
     script = p.root / "script.md"
-    script.write_text(script.read_text(encoding="utf-8").replace("## 9. Close\n", "## 9. Close\n\n[CLIENT_NAME]\n", 1))
+    script.write_text(script.read_text(encoding="utf-8").replace("## 3. Close\n", "## 3. Close\n\n[CLIENT_NAME]\n", 1))
     assert main(["preflight", "--no-frames", "--json", "-p", str(p.root)]) == 1
     doc = json.loads(capsys.readouterr().out)
     assert doc["findings"] == {"certain": 3, "uncertain": 0} and doc["preflight"]["placeholders"] == ["CLIENT_NAME"]
