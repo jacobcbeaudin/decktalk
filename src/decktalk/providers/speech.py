@@ -17,7 +17,7 @@ from typing import Any, Protocol
 
 from ..artifacts import Word
 from ..errors import ConfigError
-from ..project import Project
+from ..model import Project
 
 
 @dataclass(frozen=True)

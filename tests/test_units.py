@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -22,10 +23,11 @@ from decktalk.artifacts import (
     gap_time,
 )
 from decktalk.cli import build_parser, main
+from decktalk.model.script import parse_script, strip_markdown
 from decktalk.settings import Settings
 from decktalk.stages.align import Cue, find_phrase, resolve_cue
 from decktalk.stages.assemble import cut_summary, fade_flags, timeline_targets
-from decktalk.stages.narrate import estimated_words, parse_script, strip_markdown
+from decktalk.stages.narrate import estimated_words
 from decktalk.verdicts import Findings, Verdict
 
 MINIMAL_TOML = """
@@ -146,8 +148,8 @@ def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch
     root = write_project(tmp_path)
     (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nELEVENLABS_VOICE_ID='abc' # comment\n", encoding="utf-8")
     p = Project.load(root, environ={})
-    assert p.env("ELEVENLABS_API_KEY") == ""
-    assert p.env("ELEVENLABS_VOICE_ID") == "abc"
+    assert p.env.get("ELEVENLABS_API_KEY") == ""
+    assert p.env.get("ELEVENLABS_VOICE_ID") == "abc"
     with pytest.raises(ConfigError, match="ELEVENLABS_API_KEY"):
         p.require_env("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
 
@@ -441,7 +443,7 @@ def test_cli_unexpected_exception_is_reported_and_reraised_with_verbose(tmp_path
 
 
 def test_pause_direction_yields_a_timed_break():
-    from decktalk.stages.narrate import BREAK_RE
+    from decktalk.model.script import BREAK_RE
 
     seg = parse_script("## 1. A\n\nThink about it.\n\n[pause 3]\n\nOnly two x is left. [beat] Done.")[0]
     assert BREAK_RE.findall(seg.text) == ["3"]  # only a timed pause becomes a break tag
@@ -461,7 +463,6 @@ def test_pause_direction_accepts_decimals_and_case():
 
 
 def test_cues_load_with_cue_keys_and_reject_any_other_id_key(tmp_path):
-    from decktalk.stages.align import load_cues
 
     root = write_project(tmp_path)
     (root / "cues.json").write_text(
@@ -469,15 +470,15 @@ def test_cues_load_with_cue_keys_and_reject_any_other_id_key(tmp_path):
         encoding="utf-8",
     )
     project = Project.load(root, environ={})
-    (section,) = load_cues(project)
+    (section,) = project.cue_specs()
     assert [c.cue for c in section.cues] == ["1.1a", "1.1b"]
     assert [c.on for c in section.cues] == ["$start", "hello"]
     # A cue row that names the id under any other key fails with the normal missing-key error.
     (root / "cues.json").write_text(
         json.dumps({"sections": {"1": {"cues": [{"id": "1.1a", "on": "$start"}]}}}), encoding="utf-8"
     )
-    with pytest.raises(ConfigError, match="needs a non-empty 'cue'"):
-        load_cues(Project.load(root, environ={}))
+    with pytest.raises(ConfigError, match="missing required key 'cue'"):
+        Project.load(root, environ={}).cue_specs()
 
 
 def test_recording_log_warnings_default_and_roundtrip(tmp_path):
@@ -526,12 +527,12 @@ def test_init_copies_every_file_of_the_template_deck(tmp_path, monkeypatch):
 def test_template_ids_agree_across_page_cues_and_script(tmp_path, monkeypatch):
     """Every cue id in cues.json is named in the page, and every phrase is in its section."""
     from decktalk.scaffold import init
-    from decktalk.stages.align import load_cues, unknown_cue_ids
+    from decktalk.stages.align import unknown_cue_ids
 
     monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
     root = init(tmp_path / "proj", name="proj")
     project = Project.load(root, environ={})
-    specs = load_cues(project)
+    specs = project.cue_specs()
     assert unknown_cue_ids(project, specs) == []
     segments = {s.index: s for s in parse_script((root / "script.md").read_text(encoding="utf-8"))}
     for section in specs:
@@ -706,7 +707,7 @@ def test_caption_and_chapter_files(tmp_path):
 
 
 def test_plan_mix_delays_clip_audio_and_drops_the_limiter(tmp_path):
-    from decktalk.stages.assemble import RenderedSection, build_chapters, mix_input_args, output_paths, plan_mix
+    from decktalk.stages.assemble import RenderedSection, build_chapters, mix_input_args, plan_mix
 
     p = Project.load(write_project(tmp_path), environ={})
     tl = Timeline(
@@ -737,7 +738,7 @@ def test_plan_mix_delays_clip_audio_and_drops_the_limiter(tmp_path):
         (3.0, 5.0, "Section 1"),
         (5.0, 8.5, "Section 2"),
     ]
-    paths = output_paths(p)
+    paths = p.workspace.output_paths()
     assert paths["srt"].name == "t.srt" and paths["vtt"].name == "t.vtt" and paths["chapters"].name == "t.chapters.txt"
 
 
@@ -825,7 +826,7 @@ def test_plan_mix_places_each_narration_run_at_its_section_start(tmp_path):
     # The music ducks under each section where it plays, and under the clip.
     music = tmp_path / "music.mp3"
     music.write_bytes(b"x")
-    p.mix = type(p.mix)(music=str(music))
+    p.document = replace(p.document, mix=type(p.mix)(music=str(music)))
     ducked = plan_mix(p, rows, tl, soundscape=True).filter
     for a, b in [(0.0, 1.6), (5.0, 7.1), (7.5, 8.8), (2.0, 5.0)]:
         assert f"(t-{a:.3f})" in ducked and f"({b:.3f}-t)" in ducked, (a, b)
@@ -1130,20 +1131,19 @@ def test_verify_skips_clamped_start_cue(tmp_path, monkeypatch):
 
 
 def test_verify_opted_out_cue_is_skipped(tmp_path, monkeypatch):
-    from decktalk.stages.align import load_cues
     from decktalk.stages.verify import verify
 
     cues = {"1": {"cues": [{"cue": "a", "on": "hello", "verify": False}, {"cue": "b", "on": "there"}]}}
     p = _verify_project(tmp_path, monkeypatch, {"01": "a@1.0,b@2.0"}, cues=cues)
-    assert [c.verify for c in load_cues(p)[0].cues] == [False, True]
+    assert [c.verify for c in p.cue_specs()[0].cues] == [False, True]
     a, b = verify(p).cues
     assert (a.verdict, a.reason) == ("skipped", "OPTED_OUT") and b.verdict == "NO CHANGE"
     (named,) = verify(p, checks=["1:a"]).cues  # A cue named on purpose is measured anyway.
     assert named.verdict == "NO CHANGE" and named.reason is None
     bad = {"sections": {"1": {"cues": [{"cue": "a", "on": "x", "verify": 0}]}}}
     (p.root / "cues.json").write_text(json.dumps(bad), encoding="utf-8")
-    with pytest.raises(ConfigError, match="'verify' must be true or false"):
-        load_cues(p)
+    with pytest.raises(ConfigError, match="'verify' must be bool, got int"):
+        p.cue_specs()
 
 
 def test_verify_marks_a_thin_change_as_uncertain(tmp_path, monkeypatch, capsys):
@@ -1318,14 +1318,14 @@ def _align_project(tmp_path, html: str, cues: dict) -> Project:
 
 
 def test_align_reports_a_cue_id_missing_from_the_page(tmp_path):
-    from decktalk.stages.align import UnknownCueError, align, load_cues, unknown_cue_ids
+    from decktalk.stages.align import UnknownCueError, align, unknown_cue_ids
 
     cues = {
         "0": {"cues": [{"cue": "0.clip", "on": "$start"}]},
         "1": {"cues": [{"cue": "1.1a", "on": "hello"}, {"cue": "4.1answer", "on": "there"}]},
     }
     p = _align_project(tmp_path, '<b data-cue="1.1a"></b>', cues)
-    assert unknown_cue_ids(p, load_cues(p)) == [("01", "4.1answer", "deck/index.html")]
+    assert unknown_cue_ids(p, p.cue_specs()) == [("01", "4.1answer", "deck/index.html")]
     with pytest.raises(UnknownCueError) as caught:
         align(p)
     assert str(caught.value).startswith(
@@ -1441,7 +1441,7 @@ def test_build_captions_uses_the_take_index_spoken_text(tmp_path):
 
 
 def test_scene_params_adds_cues_unless_the_section_sets_them(tmp_path):
-    from decktalk.project import PageSection
+    from decktalk.model import PageSection
     from decktalk.stages.record import scene_params
     from decktalk.stages.screenshots import screenshot_slides
 
@@ -1460,7 +1460,7 @@ def test_scene_params_adds_cues_unless_the_section_sets_them(tmp_path):
 def test_scene_url_passes_the_previous_sections_words(tmp_path):
     from urllib.parse import parse_qs, urlsplit
 
-    from decktalk.project import PageSection
+    from decktalk.model import PageSection
     from decktalk.stages.record import prev_words_query, scene_url, words_query
 
     p = Project.load(write_project(tmp_path, PAGES_TOML), environ={})
@@ -1691,7 +1691,8 @@ def test_consecutive_sections_with_the_same_title_share_one_chapter(tmp_path):
 
 
 def test_a_renumbered_take_is_found_by_its_hash_and_moves_without_clobbering(tmp_path):
-    from decktalk.stages.narrate import Segment, is_cached, reusable_entry, reuse_takes
+    from decktalk.model.script import Segment
+    from decktalk.stages.narrate import is_cached, reusable_entry, reuse_takes
 
     audio = tmp_path
     for name, body in [("01-open.mp3", "open"), ("01-open.words.json", "[]"), ("05-x.mp3", "five"),
@@ -2000,9 +2001,10 @@ def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkey
 def test_timeline_joins_each_section_lead_before_its_take(tmp_path, monkeypatch):
     """lead_seconds is silence in narration.mp3 before the take. The words and cues move, and the take does not."""
     from decktalk.media import audio, ffmpeg
+    from decktalk.model.markers import Marker
     from decktalk.stages.align import align
     from decktalk.stages.assemble import resolve_marker_time
-    from decktalk.stages.narrate import build_timeline, script_segments
+    from decktalk.stages.narrate import build_timeline
 
     p, take_index = _two_takes(tmp_path, "lead_seconds = 1.25\n")
     joined: dict = {}
@@ -2012,7 +2014,7 @@ def test_timeline_joins_each_section_lead_before_its_take(tmp_path, monkeypatch)
     monkeypatch.setattr(
         ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 7.25 if path.name == "narration.mp3" else 3.0
     )
-    tl = build_timeline(p, take_index, script_segments(p)[1])
+    tl = build_timeline(p, take_index, p.script_sections()[1])
     assert joined == {"files": ["01-open.mp3", "02-close.mp3"], "leads": [0.0, 1.25]}
     one, two = tl.sections["01"], tl.sections["02"]
     assert (one.start, one.end, one.duration, one.lead_seconds) == (0.0, 3.0, 3.0, 0.0)
@@ -2028,14 +2030,14 @@ def test_timeline_joins_each_section_lead_before_its_take(tmp_path, monkeypatch)
     result = align(p)
     assert result.cue_times.times("02") == {"2.0": 0.0, "2.1": 2.25, "2.2": 2.85}
     assert result.sections[0].speech_end == 2.85
-    marker = {"section": 2, "on": "b"}
+    marker = Marker(name="turn", section=2, on="b")
     assert resolve_marker_time(marker, {"02": 10.0}, take_index, p.narration_dir, {"02": 1.25}) == pytest.approx(12.25)
     assert resolve_marker_time(marker, {"02": 10.0}, take_index, p.narration_dir) == pytest.approx(11.0)
 
 
 def test_a_section_tail_seconds_replaces_min_tail_seconds(tmp_path, monkeypatch):
     from decktalk.media import audio, ffmpeg
-    from decktalk.stages.narrate import ensure_tail, narrate, script_segments, section_config
+    from decktalk.stages.narrate import ensure_tail, narrate, section_config
 
     root = write_project(
         tmp_path,
@@ -2063,7 +2065,7 @@ def test_a_section_tail_seconds_replaces_min_tail_seconds(tmp_path, monkeypatch)
     padded: list[tuple[str, float]] = []
     monkeypatch.setattr(audio, "trailing_silence", lambda path: 1.0)
     monkeypatch.setattr(audio, "pad_tail", lambda path, seconds, bitrate: padded.append((Path(path).name, seconds)))
-    for seg in script_segments(p)[1]:
+    for seg in p.script_sections()[1]:
         ensure_tail(p.narration_dir / seg.filename, section_config(p, seg))
     assert padded == [("02-two.mp3", 1.55)]  # a 1.0 s tail passes 0.7 but not 2.5, which it reaches plus the slack
 
@@ -2126,9 +2128,10 @@ def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, s
     import hashlib
 
     from decktalk.artifacts import write_words
+    from decktalk.model.script import PUNCT
     from decktalk.providers.speech import register_speech_provider
     from decktalk.scaffold import init
-    from decktalk.stages.narrate import PUNCT, script_segments, text_hash
+    from decktalk.stages.narrate import text_hash
 
     class PlanVoice:
         name = "plan-voice"
@@ -2150,7 +2153,7 @@ def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, s
     p = Project.load(root, environ={})
     cfg = p.settings.narration
     settings = p.voice.api_settings()
-    spoken = {s.key: s for s in script_segments(p)[1]}
+    spoken = {s.key: s for s in p.script_sections()[1]}
     p.narration_dir.mkdir(parents=True)
     take_index = Takes(script="script.md", model=cfg.model, output_format=cfg.output_format)
     takes = {"01": ("01", "real"), "02": ("02", "real"), "03": ("03", "stale"), "07": ("09", "real")}
@@ -2183,7 +2186,6 @@ def _unchanged(p: Project, files: dict[str, str]) -> bool:
 
 
 def test_narrate_dry_run_json_lists_each_take_with_its_characters_and_moves(tmp_path, monkeypatch, capsys):
-    from decktalk.stages.narrate import script_segments
 
     p, files = _planned_scaffold(tmp_path, monkeypatch)
     cfg = p.settings.narration
@@ -2205,7 +2207,7 @@ def test_narrate_dry_run_json_lists_each_take_with_its_characters_and_moves(tmp_
     assert rows["03"]["reason"] == "the text, voice, model, or voice settings changed"
     assert rows["04"]["reason"] == "no take yet"
     assert rows["09"]["reason"] == "the same text as section 7"
-    segs = {s.key: s for s in script_segments(p)[1]}
+    segs = {s.key: s for s in p.script_sections()[1]}
     for key, row in rows.items():
         assert row["characters_sent"] == len(segs[key].tts_text(cfg)) == len(row["text"])
         assert row["characters_spoken"] == len(segs[key].spoken)

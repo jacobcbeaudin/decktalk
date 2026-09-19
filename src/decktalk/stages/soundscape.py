@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from ..media import audio, ffmpeg
-from ..project import MusicSpec, Project, SoundSpec
+from ..model import MusicSpec, Project, SoundSpec
 from ..providers.elevenlabs import ElevenLabs
 from ..settings import ElevenLabsConfig
 

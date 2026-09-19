@@ -24,94 +24,18 @@ would ever reveal it, and align raises UnknownCueError unless allow_unknown_cues
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ..artifacts import CueTime, CueTimes, Word
 from ..errors import ConfigError, MissingInputError
-from ..project import PageSection, Project
+from ..model import PageSection, Project
+from ..model.cues import Cue, SectionCues, find_phrase, page_mentions, phrase_matches
 from ..verdicts import Finding, Verdict
 
 log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class Cue:
-    cue: str
-    on: str
-    occurrence: int = 1
-    case_sensitive: bool = False
-    offset: float = 0.0
-    verify: bool = True  # False leaves the cue out of a plain `decktalk verify`.
-    occurrence_set: bool = False  # cues.json names the occurrence, so a repeated phrase is not ambiguous.
-
-
-@dataclass(frozen=True)
-class SectionCues:
-    number: int
-    cues: tuple[Cue, ...]
-    min_seconds: float | None = None
-
-
-def load_cues(project: Project) -> list[SectionCues]:
-    """Parsed and validated cues.json; [] when the file does not exist."""
-    if not project.cues.exists():
-        return []
-    try:
-        data = json.loads(project.cues.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ConfigError(f"{project.cues}: {exc}") from exc
-    sections_raw = data.get("sections") if isinstance(data, dict) else None
-    if not isinstance(sections_raw, dict):
-        raise ConfigError(f"{project.cues}: expected a top-level 'sections' object")
-    known = {s.number for s in project.sections}
-    out: list[SectionCues] = []
-    for num_raw, spec in sections_raw.items():
-        try:
-            number = int(num_raw)
-        except ValueError as exc:
-            raise ConfigError(f"{project.cues}: section key {num_raw!r} is not a number") from exc
-        if number not in known:
-            raise ConfigError(f"{project.cues}: section {number} is not in decktalk.toml")
-        if not isinstance(spec, dict):
-            raise ConfigError(f"{project.cues}: section {number} must be an object")
-        cues: list[Cue] = []
-        for i, raw in enumerate(spec.get("cues", [])):
-            where = f"{project.cues}: section {number}, cue #{i + 1}"
-            if not isinstance(raw, dict):
-                raise ConfigError(f"{where}: must be an object")
-            cue_id = raw.get("cue")
-            on = raw.get("on")
-            if not isinstance(cue_id, str) or not cue_id:
-                raise ConfigError(f"{where}: needs a non-empty 'cue' (the cue id)")
-            if not isinstance(on, str) or not on:
-                raise ConfigError(f"{where}: needs a non-empty 'on' (a spoken phrase, $start or $end)")
-            check = raw.get("verify", True)
-            if not isinstance(check, bool):
-                raise ConfigError(f"{where}: 'verify' must be true or false")
-            cues.append(
-                Cue(
-                    cue=cue_id,
-                    on=on,
-                    occurrence=int(raw.get("occurrence", 1)),
-                    case_sensitive=bool(raw.get("case_sensitive", False)),
-                    offset=float(raw.get("offset", 0.0)),
-                    verify=check,
-                    occurrence_set="occurrence" in raw,
-                )
-            )
-        need = spec.get("min_seconds")
-        out.append(SectionCues(number=number, cues=tuple(cues), min_seconds=None if need is None else float(need)))
-    return sorted(out, key=lambda s: s.number)
-
-
-def page_mentions(html: str, cue_id: str) -> bool:
-    """Whether the page names the cue id as a quoted literal, as in data-cue="ID", a cues key, or a handler key."""
-    return re.search(r"([\"'`])" + re.escape(cue_id) + r"\1", html) is not None
 
 
 def unknown_cue_ids(project: Project, specs: list[SectionCues]) -> list[tuple[str, str, str]]:
@@ -134,26 +58,6 @@ def unknown_cue_ids(project: Project, specs: list[SectionCues]) -> list[tuple[st
         html = pages[section.page]
         out += [(section.key, cue.cue, section.page) for cue in spec.cues if not page_mentions(html, cue.cue)]
     return out
-
-
-def norm(token: str, case_sensitive: bool = False) -> str:
-    token = re.sub(r"[^0-9A-Za-z']", "", token)
-    return token if case_sensitive else token.lower()
-
-
-def phrase_matches(words: list[Word], phrase: str, case_sensitive: bool = False) -> list[int]:
-    """Index of the first word of every occurrence of phrase, in order."""
-    target = [t for t in (norm(t, case_sensitive) for t in phrase.split()) if t]
-    if not target:
-        return []
-    normalized = [norm(w.word, case_sensitive) for w in words]
-    return [i for i in range(len(normalized) - len(target) + 1) if normalized[i : i + len(target)] == target]
-
-
-def find_phrase(words: list[Word], phrase: str, occurrence: int = 1, case_sensitive: bool = False) -> int | None:
-    """Index of the first word of the n-th occurrence of phrase, or None."""
-    matches = phrase_matches(words, phrase, case_sensitive)
-    return matches[occurrence - 1] if 1 <= occurrence <= len(matches) else None
 
 
 def ambiguity_note(cue: Cue, words: list[Word]) -> str | None:
@@ -279,7 +183,7 @@ def align(project: Project, *, allow_unknown_cues: bool = False) -> AlignResult:
         raise MissingInputError(
             f"{project.takes_path} not found. Run `decktalk narrate` (or `decktalk narrate --no-voice`) first."
         )
-    specs = load_cues(project)
+    specs = project.cue_specs()
     if not specs:
         log.info("no cues file at %s; pages will run their built-in timing", project.cues)
     unknown_ids = unknown_cue_ids(project, specs)

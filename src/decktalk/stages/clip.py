@@ -21,7 +21,7 @@ from ..captions import display_words
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
 from ..media.encode import Encoder
-from ..project import PageSection, Project
+from ..model import PageSection, Project
 
 log = logging.getLogger(__name__)
 

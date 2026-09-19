@@ -15,7 +15,7 @@ import os
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, fields, is_dataclass
 from types import UnionType
-from typing import Any, Union, cast, get_args, get_origin, get_type_hints, overload
+from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints, overload
 
 from .errors import ConfigError
 
@@ -73,6 +73,10 @@ class Table:
             raise ConfigError(f"{self.where}: '{key}' must be {names}, got {type(value).__name__}")
         return value
 
+    # A key with a default, and a required key, always have a value. Only an optional key with no
+    # default can be None, so a caller never has to narrow a type the mapping already guarantees.
+    @overload
+    def get_str(self, key: str, default: None = None, *, required: Literal[True]) -> str: ...
     @overload
     def get_str(self, key: str, default: str, *, required: bool = False) -> str: ...
     @overload
@@ -82,6 +86,8 @@ class Table:
         return cast("str | None", self._get(key, str, default, required))
 
     @overload
+    def get_num(self, key: str, default: None = None, *, required: Literal[True]) -> float: ...
+    @overload
     def get_num(self, key: str, default: float, *, required: bool = False) -> float: ...
     @overload
     def get_num(self, key: str, default: None = None, *, required: bool = False) -> float | None: ...
@@ -90,6 +96,8 @@ class Table:
         value = self._get(key, (int, float), default, required)
         return None if value is None else float(value)
 
+    @overload
+    def get_int(self, key: str, default: None = None, *, required: Literal[True]) -> int: ...
     @overload
     def get_int(self, key: str, default: int, *, required: bool = False) -> int: ...
     @overload

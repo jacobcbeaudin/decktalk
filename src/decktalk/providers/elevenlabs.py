@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 from ..artifacts import Word
 from ..errors import ConfigError
-from ..project import Project
+from ..model import Project
 from ..settings import ElevenLabsConfig
 from ._http import post_bytes, post_json
 from .speech import SpeechRequest, register_speech_provider

@@ -41,7 +41,8 @@ from typing import Any
 
 from . import __version__, _report
 from .errors import DeckTalkError
-from .project import Project
+from .jsonio import relative
+from .model import Project
 from .verdicts import Findings, Verdict
 
 log = logging.getLogger("decktalk")
@@ -162,14 +163,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_narrate(args: argparse.Namespace) -> int:
-    from .stages.narrate import narrate, narration_plan, plan_totals, script_segments
+    from .stages.narrate import narrate, narration_plan, plan_totals
 
     if args.json and not args.dry_run:
         args.parser.error("--json needs --dry-run")
     project = _project(args)
     cfg = project.settings.narration
     if args.dry_run:
-        _all, spoken = script_segments(project)
+        _all, spoken = project.script_sections()
         targets = [s for s in spoken if not args.only or s.index in set(args.only)]
         model = args.model or project.voice.model or cfg.model
         plans, note = narration_plan(project, targets, model=model, force=args.force)
@@ -324,7 +325,6 @@ def cmd_words(args: argparse.Namespace) -> int:
 
 def cmd_clip(args: argparse.Namespace) -> int:
     from .stages.clip import clip
-    from .status import relpath
 
     project = _project(args)
     result = clip(
@@ -337,7 +337,7 @@ def cmd_clip(args: argparse.Namespace) -> int:
         gain_db=args.gain,
         hold_seconds=args.hold,
     )
-    video, words = (relpath(p, project.root) for p in (result.video, result.words_file))
+    video, words = (relative(p, project.root) for p in (result.video, result.words_file))
     source = f"sections/{args.section:02d}.mp4"
     print(
         f"wrote {video}  ({result.duration:.2f}s: frames {result.first_frame} to {result.last_frame} of {source}, "

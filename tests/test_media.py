@@ -224,7 +224,7 @@ def _synthetic_section(out: Path, panel_x: int, fade_out: bool) -> None:
 
 
 def test_verify_finds_a_pop_between_synthetic_sections_outside_the_dip(tmp_path):
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.stages.verify import verify
 
     toml = '[project]\nname = "t"\n' + "".join(
@@ -260,7 +260,7 @@ def test_verify_finds_a_pop_between_synthetic_sections_outside_the_dip(tmp_path)
 def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     """Pages 1 and 3 around a clip at 2, where section 3's words resume after the clip's own sound."""
     from decktalk.artifacts import Timeline, TimelineSection
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.stages.assemble import RenderedSection, mix_input_args, plan_mix
     from decktalk.stages.verify import click_offset_ms
 
@@ -303,9 +303,9 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
 def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_again(tmp_path):
     """A take voiced under a short tail keeps its hash when min_tail_seconds grows, so narrate pads it in place."""
     from decktalk.artifacts import Take, Takes, Word, write_words
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.providers.speech import register_speech_provider
-    from decktalk.stages.narrate import narrate, script_segments, text_hash
+    from decktalk.stages.narrate import narrate, text_hash
 
     class NeverSpeaks:
         name = "never"
@@ -332,7 +332,7 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
         "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(take),
     )  # fmt: skip
     write_words(p.narration_dir / "01-open.words.json", [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)])
-    _all, spoken = script_segments(p)
+    _all, spoken = p.script_sections()
     seg = spoken[0]
     settings = p.voice.api_settings()
     digest = text_hash(seg, cfg, "never-voice", settings)
@@ -365,9 +365,9 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
 def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path):
     """A close that moves from section 2 to section 3 keeps its take under its new file names."""
     from decktalk.artifacts import Take, Takes, Word, write_words
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.providers.speech import register_speech_provider
-    from decktalk.stages.narrate import narrate, script_segments, text_hash
+    from decktalk.stages.narrate import narrate, text_hash
 
     class NeverSpeaks:
         name = "never-renumbered"
@@ -388,7 +388,7 @@ def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path)
     p = Project.load(tmp_path, environ={})
     cfg = p.settings.narration
     p.narration_dir.mkdir(parents=True)
-    _all, spoken = script_segments(p)
+    _all, spoken = p.script_sections()
     settings = p.voice.api_settings()
     take_index = Takes(script="script.md", model="m", output_format=cfg.output_format)
     for old_key, seg, freq in [("01", spoken[0], 440), ("02", spoken[1], 660)]:
@@ -440,7 +440,7 @@ def test_trailing_silence_counts_a_silence_that_ends_in_the_encoder_padding(tmp_
 def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
     """A take that meets min_tail_seconds, padded or not, keeps its hash, bytes, and duration on the next run."""
     from decktalk.artifacts import Takes, Word
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.providers.speech import register_speech_provider
     from decktalk.stages.narrate import narrate
 
@@ -484,7 +484,7 @@ def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
 def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     """A section's lead joins silence into narration.mp3 and its tail pads the take, and neither voices it again."""
     from decktalk.artifacts import Takes, Word
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.providers.speech import register_speech_provider
     from decktalk.stages.narrate import narrate
 
@@ -548,7 +548,7 @@ def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
     """The picture, the take over the same span after the section's lead, the gain, the hold, and the words file."""
     from decktalk.artifacts import Take, Takes, Timeline, TimelineSection, Word, read_words
     from decktalk.cli import main
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.stages.clip import clip
 
     (tmp_path / "decktalk.toml").write_text(

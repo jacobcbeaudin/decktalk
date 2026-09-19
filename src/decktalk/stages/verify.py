@@ -75,8 +75,9 @@ from typing import Any
 
 from ..artifacts import CueTimes
 from ..errors import ConfigError, MissingInputError
+from ..jsonio import relative
 from ..media import audio, ffmpeg, frames
-from ..project import Project
+from ..model import Project
 from ..settings import VerifyConfig
 from ..verdicts import SkipReason, Verdict
 
@@ -94,11 +95,6 @@ def section_starts(project: Project) -> tuple[dict[str, float], float]:
         starts[sec.key] = t
         t += ffmpeg.probe_duration(f)
     return starts, t
-
-
-def _rel(path: Path, root: Path) -> str:
-    """A path relative to the project root with forward slashes, or the absolute path when it lies outside."""
-    return path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
 
 
 def _num(value: float | None, digits: int) -> float | None:
@@ -264,7 +260,7 @@ class VerifyResult:
     def to_dict(self, root: Path) -> dict[str, Any]:
         """The result as JSON-ready data: numbers as numbers, and paths relative to the project root."""
         return {
-            "final": None if self.final is None else _rel(self.final, root),
+            "final": None if self.final is None else relative(self.final, root),
             "total_seconds": round(self.total_seconds, 3),
             "silent": self.silent,
             "starts": [s.to_dict() for s in self.starts],
@@ -410,9 +406,7 @@ def default_checks(cue_times: CueTimes, only: list[int] | None = None) -> list[s
 
 def opted_out(project: Project) -> set[tuple[str, str]]:
     """(section key, cue id) for every cue that cues.json marks "verify": false."""
-    from .align import load_cues
-
-    return {(f"{spec.number:02d}", cue.cue) for spec in load_cues(project) for cue in spec.cues if not cue.verify}
+    return {(f"{spec.number:02d}", cue.cue) for spec in project.cue_specs() for cue in spec.cues if not cue.verify}
 
 
 def verify(project: Project, checks: list[str] | None = None, only: list[int] | None = None) -> VerifyResult:

@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 from ..artifacts import CueTimes, RecordingLog, TimelineSection
 from ..errors import ConfigError, MissingInputError
 from ..media.browser import chromium, record_page
-from ..project import PageSection, Project
+from ..model import PageSection, Project
 
 log = logging.getLogger(__name__)
 

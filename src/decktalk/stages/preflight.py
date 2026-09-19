@@ -46,12 +46,13 @@ from typing import Any
 from urllib.parse import urlencode
 
 from ..artifacts import CueTimes, Word
+from ..jsonio import relative
 from ..media import frames
 from ..media.browser import await_ready, chromium, page_error_text, screenshot
-from ..project import PageSection, Project
+from ..model import PageSection, Project
 from ..settings import NarrationConfig, VerifyConfig
 from ..verdicts import Findings, SkipReason, Verdict
-from .align import AlignResult, load_cues, resolve_sections, unknown_cue_ids
+from .align import AlignResult, resolve_sections, unknown_cue_ids
 from .narrate import (
     CACHED,
     MOVED,
@@ -60,7 +61,6 @@ from .narrate import (
     estimated_words,
     narration_plan,
     plan_totals,
-    script_segments,
     section_config,
 )
 from .record import prev_words_query, words_query
@@ -232,9 +232,8 @@ def first_state(slides: Slides, cue_times: dict[str, float], fps: int) -> Freeze
 
 
 def _rel(path: Path | None, root: Path) -> str | None:
-    if path is None:
-        return None
-    return path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
+    """One optional path relative to the project root, which the frozen-frame rows carry."""
+    return None if path is None else relative(path, root)
 
 
 def cue_verdict(share: float, cfg: VerifyConfig) -> Verdict:
@@ -384,7 +383,7 @@ def preflight(
     Otherwise the frozen frames go to build/preflight, which is emptied first. Nothing else is written.
     """
     cfg = project.settings.narration
-    _all, spoken = script_segments(project)
+    _all, spoken = project.script_sections()
     wanted = set(only or ())
 
     def named(number: int) -> bool:
@@ -406,7 +405,7 @@ def preflight(
         take_words[plan.segment.key] = (words, length)
         if guessed and named(plan.segment.index):
             estimated.append(plan.segment.key)
-    all_specs = load_cues(project)
+    all_specs = project.cue_specs()
     specs = [s for s in all_specs if named(s.number)]
     unknown_ids = unknown_cue_ids(project, specs)
     cue_times, rows, unresolved = resolve_sections(specs, take_words, unknown_ids=unknown_ids, estimated=True)

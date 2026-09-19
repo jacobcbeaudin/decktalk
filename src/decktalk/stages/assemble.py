@@ -26,24 +26,24 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import shutil
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from ..artifacts import CueTimes, RecordingLog, Takes, Timeline, Word, read_words
 from ..captions import CaptionCue, Chapter, caption_cues, display_words, write_chapters, write_srt, write_vtt
-from ..errors import ConfigError, MissingInputError, ToolError
+from ..errors import MissingInputError, ToolError
+from ..jsonio import relative
 from ..media import audio, ffmpeg
 from ..media.browser import render_slate
 from ..media.encode import Encoder
-from ..project import ClipSection, PageSection, Project, Section
+from ..model import ClipSection, PageSection, Project, Section
+from ..model.cues import find_phrase
+from ..model.markers import Marker
 from ..settings import AudioConfig
-from .align import find_phrase
 from .measure import stale_measure
 
 log = logging.getLogger(__name__)
@@ -151,12 +151,13 @@ def section_slate(project: Project, sec: ClipSection) -> Path | None:
     try:
         return render_slate(
             out,
-            title=sec.chapter or f"Section {sec.number}",
+            title=project.chapters()[sec.number],
             sub="Your clip goes here",
             eyebrow=f"section {sec.number} · slate",
             foot=f"drop it at {sec.clip} and run `decktalk assemble`",
             width=project.settings.video.width,
             height=project.settings.video.height,
+            browser_path=project.settings.record.browser_path,
         )
     except ToolError as exc:
         log.warning("could not render a slate (%s); using a plain frame", exc)
@@ -286,7 +287,7 @@ def stray_warnings(project: Project, command: str) -> list[str]:
     """
     messages = []
     for f in project.stray_section_videos():
-        name = f.relative_to(project.root).as_posix() if f.is_relative_to(project.root) else f.as_posix()
+        name = relative(f, project.root)
         message = (
             f"{name} is not a section in decktalk.toml, so {command} ignores it. "
             "Delete the file if an earlier build left it."
@@ -356,29 +357,30 @@ class MixPlan:
 
 
 def resolve_marker_time(
-    marker: dict[str, Any],
+    marker: Marker,
     starts: dict[str, float],
     takes: Takes,
     narration_dir: Path,
     leads: Mapping[str, float] | None = None,
 ) -> float | None:
-    """Where a markers.json entry falls in the final file. `leads` gives each section's lead_seconds."""
-    key = f"{int(marker['section']):02d}"
-    if key not in starts:
+    """Where a marker falls in the final file, or None when its phrase is not in the narration.
+
+    `starts` gives each section's start in the final file and `leads` each section's lead_seconds,
+    which the marker's words already sit after.
+    """
+    if marker.key not in starts:
         return None
-    on = str(marker.get("on", "$start"))
-    offset = float(marker.get("offset", 0))
-    if on == "$start":
-        return starts[key] + offset
-    entry = takes.sections.get(key)
+    if marker.on == "$start":
+        return starts[marker.key] + marker.offset
+    entry = takes.sections.get(marker.key)
     if entry is None:
         return None
-    lead = (leads or {}).get(key, 0.0)
+    lead = (leads or {}).get(marker.key, 0.0)
     words = [Word(w.word, w.start + lead, w.end + lead) for w in read_words(narration_dir / entry.words_file)]
-    if on == "$end":
-        return starts[key] + words[-1].end + offset if words else None
-    idx = find_phrase(words, on, int(marker.get("occurrence", 1)), bool(marker.get("case_sensitive", False)))
-    return None if idx is None else starts[key] + words[idx].start + offset
+    if marker.on == "$end":
+        return starts[marker.key] + words[-1].end + marker.offset if words else None
+    idx = find_phrase(words, marker.on, marker.occurrence, marker.case_sensitive)
+    return None if idx is None else starts[marker.key] + words[idx].start + marker.offset
 
 
 def narration_offset(rows: list[RenderedSection], timeline: Timeline, starts: dict[str, float]) -> float:
@@ -524,31 +526,27 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
         factors = [f"(1-{1 - duck:.5f}*{max_expr([ramp_expr(a, b, audio.duck_ramp_seconds) for a, b in speech])})"]
         if mix.music_markers:
             mpath = project.path(mix.music_markers)
-            if mpath.exists():
-                try:
-                    mspec = json.loads(mpath.read_text(encoding="utf-8"))
-                except json.JSONDecodeError as exc:
-                    raise ConfigError(f"{mpath}: {exc}") from exc
-                boost = db(float(mspec.get("boost_db", 3))) - 1
-                boost_len = float(mspec.get("boost_seconds", 2))
+            spec = project.markers()
+            if spec is None:
+                plan.warnings.append(f"markers file missing ({mpath}); music without structure")
+            else:
+                boost = db(spec.boost_db) - 1
                 boosts: list[str] = []
                 mutes: list[str] = []
-                for marker in mspec.get("markers", []):
-                    leads = {r.section.key: project.lead_seconds(r.section.key) for r in rows}
+                leads = {r.section.key: project.lead_seconds(r.section.key) for r in rows}
+                for marker in spec.markers:
                     mt = resolve_marker_time(marker, starts, takes, project.narration_dir, leads)
                     if mt is None:
-                        plan.warnings.append(f"marker {marker.get('name')!r} unresolved; skipped")
+                        plan.warnings.append(f"marker {marker.name!r} unresolved; skipped")
                         continue
-                    mute = float(marker.get("mute_seconds", 0))
-                    if mute > 0:
-                        mutes.append(ramp_expr(mt, mt + mute, audio.marker_mute_ramp_seconds))
-                    boosts.append(ramp_expr(mt + mute, mt + mute + boost_len, audio.marker_boost_ramp_seconds))
+                    if marker.mute_seconds > 0:
+                        mutes.append(ramp_expr(mt, mt + marker.mute_seconds, audio.marker_mute_ramp_seconds))
+                    swell_at = mt + marker.mute_seconds
+                    boosts.append(ramp_expr(swell_at, swell_at + spec.boost_seconds, audio.marker_boost_ramp_seconds))
                 if boosts:
                     factors.append(f"(1+{boost:.5f}*{max_expr(boosts)})")
                 if mutes:
                     factors.append(f"(1-{max_expr(mutes)})")
-            else:
-                plan.warnings.append(f"markers file missing ({mpath}); music without structure")
         vol = f"{base:.5f}*" + "*".join(factors)
         chain.append(
             f"[{idx}:a]{fmt},atrim=duration={plan.total:.3f},asetpts=PTS-STARTPTS,volume='{vol}':eval=frame,"
@@ -656,17 +654,6 @@ def loudness_problems(project: Project, after: audio.Loudness) -> list[str]:
 # ---- stage 5: captions and chapters --------------------------------------------------------
 
 
-def output_paths(project: Project) -> dict[str, Path]:
-    """The files assemble writes next to the final mp4, keyed final, srt, vtt and chapters."""
-    out, name = project.out_dir, project.name
-    return {
-        "final": project.final,
-        "srt": out / f"{name}.srt",
-        "vtt": out / f"{name}.vtt",
-        "chapters": out / f"{name}.chapters.txt",
-    }
-
-
 def build_captions(
     timeline: Timeline, t0: float | Mapping[str, float], texts: dict[str, str] | None = None
 ) -> list[CaptionCue]:
@@ -723,20 +710,18 @@ def caption_texts(project: Project, timeline: Timeline) -> dict[str, str]:
     takes = project.takes()
     texts = {k: seg.spoken for k, seg in (takes.sections.items() if takes else ()) if seg.spoken}
     if any(key not in texts for key in timeline.keys):
-        from .narrate import script_segments
-
-        for seg in script_segments(project)[0]:
+        for seg in project.script_sections()[0]:
             texts.setdefault(seg.key, seg.spoken)
     return texts
 
 
-def build_chapters(rows: list[RenderedSection]) -> list[Chapter]:
+def build_chapters(rows: list[RenderedSection], titles: dict[int, str]) -> list[Chapter]:
     """One chapter per section, where consecutive sections with the same chapter share one chapter marker."""
     starts = section_starts(rows)
     chapters: list[Chapter] = []
     for r in rows:
         start = starts[r.section.key]
-        title = r.section.chapter or f"Section {r.section.number}"
+        title = titles[r.section.number]
         if chapters and chapters[-1].title == title:
             chapters[-1] = Chapter(start=chapters[-1].start, end=start + r.duration, title=title)
         else:
@@ -776,7 +761,7 @@ def assemble(
     if timeline is None:
         raise MissingInputError(f"{project.timeline_path} not found; run `decktalk narrate` first")
     out_dir = project.out_dir
-    paths = output_paths(project)
+    paths = project.workspace.output_paths()
     strays = stray_warnings(project, "assemble")
     rows = render_sections(project, timeline, strict=strict)
 
@@ -832,7 +817,7 @@ def assemble(
     starts = section_starts(rows)
     cues = build_captions(timeline, narration_offsets(rows, timeline, starts), caption_texts(project, timeline))
     cues = sorted(cues + clip_captions(project, rows), key=lambda c: c.start)
-    chapters = build_chapters(rows)
+    chapters = build_chapters(rows, project.chapters())
     write_srt(paths["srt"], cues)
     write_vtt(paths["vtt"], cues)
     write_chapters(paths["chapters"], chapters)

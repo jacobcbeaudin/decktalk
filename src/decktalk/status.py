@@ -11,15 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import Timeline
-from .project import ClipSection, Project
-
-
-def relpath(path: Path, root: Path) -> str:
-    """The path relative to the project root with forward slashes, or the whole path when it lies outside."""
-    try:
-        return path.relative_to(root).as_posix()
-    except ValueError:
-        return path.as_posix()
+from .jsonio import relative
+from .media.ffmpeg import probe_duration
+from .model import ClipSection, Project
 
 
 @dataclass
@@ -70,9 +64,9 @@ class StatusResult:
             "project": {
                 "root": self.root.as_posix(),
                 "name": self.name,
-                "script": relpath(self.script, root),
+                "script": relative(self.script, root),
                 "script_exists": self.script_exists,
-                "cues": relpath(self.cues, root),
+                "cues": relative(self.cues, root),
                 "cues_exists": self.cues_exists,
             },
             "sections": [
@@ -93,18 +87,16 @@ class StatusResult:
                 "sections": [{"key": key, "cues": dict(cues)} for key, cues in self.cue_times_sections.items()],
             },
             "final": {
-                "path": relpath(self.final, root),
+                "path": relative(self.final, root),
                 "exists": self.final_exists,
                 "duration": self.final_duration,
             },
-            "outputs": {o.key: {"path": relpath(o.path, root), "exists": o.exists} for o in self.outputs},
+            "outputs": {o.key: {"path": relative(o.path, root), "exists": o.exists} for o in self.outputs},
         }
 
 
 def status(project: Project) -> StatusResult:
     """Read what exists for the project. Nothing is written, and only the final mp4 is probed."""
-    from .stages.assemble import output_paths
-
     sections = []
     for sec in project.sections:
         if isinstance(sec, ClipSection):
@@ -120,12 +112,8 @@ def status(project: Project) -> StatusResult:
                 cut=project.section_video(sec).exists(),
             )
         )
-    duration = None
-    if project.final.exists():
-        from .media.ffmpeg import probe_duration
-
-        duration = probe_duration(project.final)
-    paths = output_paths(project)
+    duration = probe_duration(project.final) if project.final.exists() else None
+    paths = project.workspace.output_paths()
     outputs = [
         OutputStatus(label, key, paths[key], paths[key].exists())
         for label, key in (("captions", "srt"), ("captions", "vtt"), ("chapters", "chapters"))

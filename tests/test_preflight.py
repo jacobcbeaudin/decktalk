@@ -28,7 +28,7 @@ def template_cues(root: Path, scene: str) -> list[str]:
 
 def test_preflight_estimates_each_reveal_and_the_seam_from_frozen_frames(tmp_path, monkeypatch):
     """Sections 1 and 2 of the scaffold, with section 2 set to open on the Open's last picture."""
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.stages.narrate import narrate
     from decktalk.stages.preflight import preflight
 
@@ -57,7 +57,7 @@ def test_preflight_estimates_each_reveal_and_the_seam_from_frozen_frames(tmp_pat
 
 def test_preflight_only_checks_the_cut_into_a_seamless_section_it_names(tmp_path, monkeypatch):
     """`--only 2` on a seamless section after section 1 still resolves section 1, but reports only section 2."""
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.stages.narrate import narrate
     from decktalk.stages.preflight import preflight
 
@@ -90,7 +90,7 @@ DeckTalk.scene(3, { slides: [{ id: '3.1', preview: { '3.1go': 1 },
 
 def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatch):
     """A big reveal, a thin one, a dot, a cue at the start, a cut that pops, and a seamless cut."""
-    from decktalk.project import Project
+    from decktalk.model import Project
     from decktalk.stages.preflight import preflight
 
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))

@@ -103,7 +103,7 @@ src/decktalk/
   captions/      caption layout, and the srt, vtt and chapter files
   media/         ffmpeg, audio, frames, the encoder and Chromium (internal)
   speech/        the speech protocol, the provider registry, and ElevenLabs (internal)
-  project.py     the decktalk.toml document, validated at load
+  model/         one project: the decktalk.toml document, the build paths, .env, the script and cues
   cli.py         the command line: its tables, --json output, and exit codes
   scaffold.py    install, doctor, and init: the downloads and the template copy
   status.py      what a project has built, read from disk for `decktalk status`

@@ -29,9 +29,9 @@ import pytest
 from decktalk.artifacts import Takes, Word, write_words
 from decktalk.cli import main
 from decktalk.media import audio, ffmpeg, frames
-from decktalk.project import Project
+from decktalk.model import Project
 from decktalk.providers.speech import SpeechRequest, get_provider
-from decktalk.stages.narrate import build_timeline, script_segments, text_hash
+from decktalk.stages.narrate import build_timeline, text_hash
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(180)]
@@ -192,7 +192,7 @@ def voiced_copy(built: Built, name: str, monkeypatch: pytest.MonkeyPatch) -> Pat
     assert take_index is not None and take_index.estimated
     take_index.estimated = False
     take_index.model = model
-    for seg in script_segments(project)[1]:
+    for seg in project.script_sections()[1]:
         request = SpeechRequest(seg.tts_text(cfg), model, voice_settings=settings, output_format=cfg.output_format)
         take_index.sections[seg.key].hash = text_hash(seg, cfg, provider.cache_key(request), settings)
     take_index.save(project.takes_path)
@@ -428,7 +428,7 @@ def test_cues_resolve_on_uneven_word_timestamps(built: Built, monkeypatch: pytes
         for i, (w, start) in enumerate(UNEVEN)
     ]
     write_words(project.narration_dir / entry.words_file, words)
-    build_timeline(project, take_index, script_segments(project)[1])
+    build_timeline(project, take_index, project.script_sections()[1])
     (root / "cues.json").write_text(
         json.dumps(
             {

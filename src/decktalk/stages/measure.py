@@ -28,8 +28,9 @@ from typing import Any
 
 from ..artifacts import RecordingLog
 from ..errors import MissingInputError
+from ..jsonio import relative
 from ..media import ffmpeg, frames
-from ..project import Project
+from ..model import Project
 from ..settings import RecordConfig
 from ..verdicts import Verdict
 
@@ -94,7 +95,7 @@ def stale_measure(webm: Path, recording_log: RecordingLog | None, root: Path | N
     `record` writes a recording log with no measurement, and `measure` fills it in with the hash of
     the webm it read.
     """
-    name = webm.relative_to(root).as_posix() if root is not None and webm.is_relative_to(root) else webm.name
+    name = relative(webm, root) if root is not None else webm.name
     if recording_log is None:
         return f"{name} has no recording log, so `measure` never found its narration t=0"
     if recording_log.t0_seconds is None:
@@ -169,7 +170,7 @@ class RecordingCheck:
         """The row as JSON-ready data, with the verdict codes as a list and the stall length as its own number."""
         file = None
         if self.file is not None:
-            file = self.file.relative_to(root).as_posix() if self.file.is_relative_to(root) else self.file.as_posix()
+            file = relative(self.file, root)
         return {
             "key": self.key,
             "file": file,

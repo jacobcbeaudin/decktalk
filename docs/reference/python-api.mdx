@@ -63,7 +63,7 @@ the table and the field.
 | `voice`, `transition`, `mix`, `soundscape` | field | The project tables, as frozen dataclasses with the keys of [decktalk.toml](/reference/decktalk-toml). |
 | `settings` | field | The tuning tree, a `Settings`. [Configuration](/reference/configuration) lists every field. |
 | `narration_dir`, `recordings_dir`, `out_dir`, `screenshots_dir` | property | The `build/` subdirectories. |
-| `takes_path`, `timeline_path`, `cue_times_path`, `final`, `env_file` | property | Paths of the take index, timeline, cue times file, final mp4, and `.env`. |
+| `takes_path`, `timeline_path`, `cue_times_path`, `final` | property | Paths of the take index, the narration clock, the cue times file, and the final mp4. |
 | `takes()`, `timeline()`, `cue_times()` | method | Loads the artifact. `takes()` and `timeline()` return `None` when the file does not exist. |
 | `section(number)` | method | Returns the section with that number, or `None`. |
 | `page_sections`, `clip_sections`, `clip_numbers`, `page_files` | property | The page sections, the clip sections, the clip numbers, and the page files in first-use order. |

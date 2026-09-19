@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..errors import ConfigError
-from ..project import Project
+from ..model import Project
 from .align import AlignResult, UnknownCueError, align
 from .assemble import AssembleResult, assemble
 from .measure import LeadMeasurement, RecordingCheck, check, measure

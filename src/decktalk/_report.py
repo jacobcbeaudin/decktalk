@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .artifacts import Timeline
+from .jsonio import relative
 from .settings import NarrationConfig
 from .stages.align import AlignResult
 from .stages.clip import SectionWords
@@ -11,7 +12,7 @@ from .stages.narrate import NarrateResult, Segment, TakePlan, plan_totals
 from .stages.preflight import PreflightResult
 from .stages.soundscape import SoundscapeItem
 from .stages.verify import VerifyResult
-from .status import StatusResult, relpath
+from .status import StatusResult
 from .verdicts import Verdict
 
 
@@ -122,7 +123,7 @@ def preflight_table(result: PreflightResult) -> str:
     judged = (Verdict.CHANGED, Verdict.THIN_CHANGE, Verdict.NO_CHANGE, Verdict.SKIPPED)
     tally = {v: sum(c.verdict == v for c in result.cues) for v in judged}
     counts = ", ".join(f"{n} {v}" for v, n in tally.items() if n) or "none"
-    where = relpath(result.frames, root) if root is not None else result.frames
+    where = relative(result.frames, root) if root is not None else result.frames
     lines.append(f"{len(result.cues)} cue(s): {counts}. Frozen frames in {where}")
     if result.seams:
         lines.append("")
@@ -200,8 +201,8 @@ def status_table(report: StatusResult) -> str:
     root = report.root
     lines = [
         f"project   {root}  (name: {report.name})",
-        f"script    {relpath(report.script, root)}  {'ok' if report.script_exists else 'MISSING'}",
-        f"cues      {relpath(report.cues, root)}  {'ok' if report.cues_exists else 'none'}",
+        f"script    {relative(report.script, root)}  {'ok' if report.script_exists else 'MISSING'}",
+        f"cues      {relative(report.cues, root)}  {'ok' if report.cues_exists else 'none'}",
     ]
     for sec in report.sections:
         what = f"clip {sec.source}" if sec.kind == "clip" else sec.source
@@ -213,11 +214,11 @@ def status_table(report: StatusResult) -> str:
         else "cue times none (run `decktalk align`)"
     )
     if report.final_exists:
-        lines.append(f"final     {relpath(report.final, root)}  {mmss(report.final_duration)}")
+        lines.append(f"final     {relative(report.final, root)}  {mmss(report.final_duration)}")
     else:
         lines.append("final     not built")
     for out in report.outputs:
-        lines.append(f"{out.label:<9} {relpath(out.path, root)}  {'ok' if out.exists else 'not built'}")
+        lines.append(f"{out.label:<9} {relative(out.path, root)}  {'ok' if out.exists else 'not built'}")
     return "\n".join(lines)
 
 

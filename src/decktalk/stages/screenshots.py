@@ -16,7 +16,7 @@ from urllib.parse import quote
 
 from ..errors import ConfigError
 from ..media.browser import START_JS, await_ready, chromium, screenshot
-from ..project import PageSection, Project
+from ..model import PageSection, Project
 from .record import scene_params, scene_url
 
 log = logging.getLogger(__name__)

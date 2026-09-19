@@ -1,6 +1,6 @@
 """Tool tuning: one dataclass per concern, composed into Settings.
 
-Every key DeckTalk tunes is a field below, with its type, its default and the comment the
+Every key DeckTalk tunes is a field below with its type, its default and the sentence the
 generated reference prints, so a key is written once and read from here by the loader, by the
 unknown-key warning and by `scripts/build_settings_reference.py`. Four layers set a key here, lowest to
 highest: the default below, the same table in the user's own decktalk.toml (see
