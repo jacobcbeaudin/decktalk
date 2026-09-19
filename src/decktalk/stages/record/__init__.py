@@ -20,6 +20,7 @@ take again without editing anything.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -176,11 +177,15 @@ def record(
     only: list[int] | None = None,
     seconds: float | None = None,
     use_cues: bool = True,
+    opening: Callable[[PageSection], None] | None = None,
+    report: Callable[[SectionRecording], None] | None = None,
 ) -> RecordResult:
     """Record every page section, measure narration t=0 on each webm, and check what came out.
 
     Each section's log is written as soon as that section is finished, so the measurement can never
-    belong to another take and an agent can read the run as it goes.
+    belong to another take and an agent can read the run as it goes. `opening(section)` is called
+    before every section, whether it is recorded or kept, and `report(row)` the moment that section
+    is finished, which together are how `build` reports a stage that takes minutes per section.
     """
     cfg = project.settings.record
     named = set(only or ())
@@ -192,16 +197,23 @@ def record(
     for job in planned:
         if job not in fresh:
             assert job.previous is not None
+            if opening:
+                opening(job.section)
             log.info(
                 "[rec ] section %s  kept: its scene, the page around it, its assets, words and cues are unchanged",
                 job.section.key,
             )
-            result.sections.append(SectionRecording(job.section, job.out, job.previous, kept=True))
+            kept = SectionRecording(job.section, job.out, job.previous, kept=True)
+            result.sections.append(kept)
+            if report:
+                report(kept)
     if not fresh:
         return result
     with chromium(cfg.browser_path) as browser:
         for job in fresh:
             section = job.section
+            if opening:
+                opening(section)
             log.info(
                 "[rec ] section %s (%s?scene=%s)  %.1fs ...", section.key, section.page, section.scene, job.seconds
             )
@@ -213,6 +225,8 @@ def record(
             recording_log.save(job.log_path)
             row = SectionRecording(section=section, path=job.out, log=recording_log)
             result.sections.append(row)
+            if report:
+                report(row)
             if start.guessed:
                 log.warning("       no magenta cover found; narration t=0 is a guess (%s)", start.method)
             log.info("       %s  (t=0 at %.3fs, %s)", relative(job.out, project.root), start.seconds, row.label)

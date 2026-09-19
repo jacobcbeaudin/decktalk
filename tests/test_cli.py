@@ -321,3 +321,63 @@ def test_screenshots_after_needs_exactly_one_slide(fake_project, monkeypatch):
         assert exc.value.code == 2
     assert main(["screenshots", "--slide", "3.1", "--after", "3.1eq", "--after", "3.1p1"]) == 0
     assert calls == [(None, ["3.1"], ["3.1eq", "3.1p1"])]
+
+
+def fake_build_project(monkeypatch, tmp_path):
+    """A project with the one setting `cmd_build` reads before it calls the stage."""
+    project = SimpleNamespace(root=tmp_path, settings=SimpleNamespace(narration=SimpleNamespace(words_per_minute=150)))
+    monkeypatch.setattr(cli, "_project", lambda args: project)
+    return project
+
+
+def test_build_json_prints_one_envelope_and_nothing_else(monkeypatch, tmp_path, capsys):
+    """`build` is the long command an agent runs in the background, so its stdout has to parse."""
+    from decktalk.stages.build import BuildResult
+
+    fake_build_project(monkeypatch, tmp_path)
+    result = BuildResult(stages=("verify",))
+    monkeypatch.setattr(stage("build"), "build", lambda project, **kw: result)
+    assert main(["build", "--no-voice", "--json", "--from", "verify"]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["command"] == "build" and doc["findings"] == {"certain": 0, "uncertain": 0}
+    assert doc["build"]["stages"] == ["verify"] and doc["build"]["narrate"] is None
+
+
+def test_build_hands_the_stage_reporter_nothing_to_print_with_under_json(monkeypatch, tmp_path, capsys):
+    """The tables are for a person, so one JSON object is the whole of stdout."""
+    from decktalk.stages.build import BuildResult
+
+    fake_build_project(monkeypatch, tmp_path)
+    seen = {}
+
+    def fake_build(project, **kw):
+        seen["report"] = kw["report"]
+        return BuildResult(stages=("verify",))
+
+    monkeypatch.setattr(stage("build"), "build", fake_build)
+    assert main(["build", "--json"]) == 0
+    assert seen["report"] is None
+    capsys.readouterr()
+    assert main(["build"]) == 0
+    assert callable(seen["report"])
+
+
+def test_build_dry_run_says_which_artifact_a_plan_is_missing(fake_project, monkeypatch, capsys):
+    """The dry run is the call a caller makes to learn whether the real one will start."""
+    monkeypatch.setattr(
+        stage("build"), "required_inputs", lambda project, plan: [fake_project.root / "build" / "x.json"]
+    )
+    assert main(["build", "--dry-run", "--json", "--from", "record"]) == 1
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["ok"] is False and doc["build"]["stages"] == ["record", "assemble", "verify"]
+    assert doc["build"]["missing"] == ["build/x.json"]
+    monkeypatch.setattr(stage("build"), "required_inputs", lambda project, plan: [])
+    assert main(["build", "--dry-run", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+
+
+def test_an_unknown_stage_name_is_refused_by_the_parser(capsys):
+    """argparse names the five and exits 2, rather than letting the stage plan raise at run time."""
+    with pytest.raises(SystemExit) as err:
+        build_parser().parse_args(["build", "--from", "bogus"])
+    assert err.value.code == 2

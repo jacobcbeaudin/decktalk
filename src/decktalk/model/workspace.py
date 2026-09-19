@@ -7,6 +7,8 @@
     build/screenshots/ the PNGs `decktalk screenshots` writes
     build/out/         the deliverables: the final mp4, its captions, chapters, cut list,
                        transcript page and poster
+    build/preflight/   the frozen frames `decktalk preflight` compares
+    build/progress.jsonl  what a running `decktalk build` is doing, one JSON line per event
 
 A new artifact gets a property here and nowhere else, so a reader who wants to know what a build
 leaves behind opens one module, and no stage ever spells a build path by hand.
@@ -66,6 +68,14 @@ class Workspace:
     @property
     def cue_times_path(self) -> Path:
         return self.build / "cue-times.json"
+
+    @property
+    def preflight_dir(self) -> Path:
+        return self.build / "preflight"
+
+    @property
+    def progress_path(self) -> Path:
+        return self.build / "progress.jsonl"
 
     @property
     def final(self) -> Path:

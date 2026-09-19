@@ -201,6 +201,14 @@ class Project:
         return self.workspace.cuts_path
 
     @property
+    def preflight_dir(self) -> Path:
+        return self.workspace.preflight_dir
+
+    @property
+    def progress_path(self) -> Path:
+        return self.workspace.progress_path
+
+    @property
     def final(self) -> Path:
         return self.workspace.final
 

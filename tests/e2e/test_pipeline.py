@@ -3,7 +3,9 @@
     uv run pytest -m e2e
 
 The build is silent, so it needs no API key and spends nothing, and it runs with the network blocked. The
-fixture is copied to tests/out/e2e/pipeline, which CI uploads when a test fails. Every test is one property
+fixture is copied to tests/out/e2e/pipeline, which CI uploads when a test fails. That directory is one
+per machine, so a session takes a lock on it and skips rather than deleting another session's build,
+and DECKTALK_E2E_OUT names another directory for a second session. Every test is one property
 of the finished build, so a failure names what broke. The cue timing gate fails on OFF CUE on Linux and, on
 macOS and Windows, only reports it while asserting the wider limits of four offset frames and five a/v frames,
 because the hosted runners there present frames late. Pass --gate-timing to gate everywhere.
@@ -11,6 +13,8 @@ because the hosted runners there present frames late. Pass --gate-timing to gate
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import io
 import json
 import os
@@ -22,7 +26,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import pytest
 
@@ -34,11 +38,17 @@ from decktalk.speech import SpeechRequest, VoiceContext, get_provider
 from decktalk.stages.narrate import build_timeline, take_name, text_hash, words_name
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 
+# An advisory lock on the output directory, where the platform has one.
+fcntl = importlib.util.find_spec("fcntl") and importlib.import_module("fcntl")
+
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(180)]
 
 FIXTURE = Path(__file__).parent / "fixture"
-OUT = Path(__file__).parent.parent / "out" / "e2e"
+# One directory, so CI uploads it from a path it knows. DECKTALK_E2E_OUT moves it for a second
+# session on one machine, and the lock below refuses to share it rather than corrupting it.
+OUT = Path(os.environ.get("DECKTALK_E2E_OUT") or Path(__file__).parent.parent / "out") / "e2e"
 FPS = 25
+STAGE_ORDER = ("narrate", "align", "record", "assemble", "verify")
 SPOKEN = ("01", "02", "04")  # the page sections, because 03 is a clip and 05 a slate
 CUES = ("1:1.1first", "1:1.1second", "1:1.1third", "2:2.1fourth", "2:2.1fifth", "4:3.1eq", "4:3.1bar")
 
@@ -126,6 +136,23 @@ def generate_media(root: Path) -> None:
     ffmpeg.run("-f", "lavfi", "-i", "sine=f=1000:r=44100", "-t", "0.1", str(media / "tick.mp3"))
 
 
+def hold(path: Path) -> IO[str] | None:
+    """The lock file held for this session, or None when another session already holds it.
+
+    The whole point is that two sessions never share one output directory, because the build deletes
+    it and writes it again. Where no advisory lock exists, one session at a time is the rule instead.
+    """
+    handle = path.open("w", encoding="utf-8")
+    if fcntl is None:  # Windows has no advisory lock, and its runner builds one session at a time.
+        return handle
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
 @pytest.fixture(scope="session")
 def built() -> Iterator[Built]:
     """Copy the fixture, add the runtime and KaTeX, generate the media, and build it without voice offline."""
@@ -135,6 +162,10 @@ def built() -> Iterator[Built]:
         pytest.skip("Chromium is missing: run `decktalk install` first")
     assert not katex_missing(), "the packaged KaTeX copy is incomplete"
     root = OUT / "pipeline"
+    OUT.mkdir(parents=True, exist_ok=True)
+    lock = hold(OUT / "pipeline.lock")
+    if lock is None:
+        pytest.skip(f"another session is building {root}: set DECKTALK_E2E_OUT to build somewhere else")
     shutil.rmtree(root, ignore_errors=True)
     shutil.copytree(FIXTURE, root)
     shutil.copyfile(runtime_path(), root / "deck" / RUNTIME_FILE)
@@ -167,6 +198,7 @@ def built() -> Iterator[Built]:
             os.environ.pop(k, None)
             if v is not None:
                 os.environ[k] = v
+        lock.close()
 
 
 def voiced_copy(built: Built, name: str, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -237,9 +269,45 @@ def srt_times(stamp: str) -> tuple[float, float]:
 
 
 def test_build_exits_zero_with_the_network_blocked(built: Built) -> None:
-    assert built.exit_code == 0, built.stdout
+    """The build's last stage is the real verify, so exit 0 means every reveal landed on its word.
+
+    A hosted runner off Linux presents frames late, which is the one failure this row tolerates, and
+    `test_cue_timing_gate` measures how late. Every other fault still fails here, on every platform.
+    """
+    if built.exit_code != 0:
+        v = built.verify["verify"]
+        rows = [*v["cues"], *v["starts"], *v["cuts"], *v["seams"]]
+        late = [r for r in rows if r["verdict"] == "OFF CUE"]
+        others = [r for r in rows if r["verdict"] not in ("OFF CUE", "changed", "skipped", "ok", "quiet")]
+        judged = [r for r in v["recordings"] if r["verdicts"]]
+        assert sys.platform != "linux", built.stdout
+        assert late and not others and not judged, built.stdout
     assert built.network_attempts == []
     assert (built.out / "pipeline.mp4").exists()
+
+
+def test_the_build_writes_a_progress_log_an_agent_can_read(built: Built) -> None:
+    lines = (built.root / "build" / "progress.jsonl").read_text(encoding="utf-8").splitlines()
+    rows = [json.loads(line) for line in lines]
+    assert {r["stage"] for r in rows} == {"narrate", "align", "record", "assemble", "verify"}
+    assert all(r["stage_count"] == 5 for r in rows)
+    stages = list(STAGE_ORDER)
+    assert [r["stage"] for r in rows if r["event"] == "start" and r["section"] is None] == stages
+    # Every stage closes its own row, so a log whose last stage says start alone is a run that died.
+    assert [r["stage"] for r in rows if r["event"] == "done" and r["section"] is None] == stages
+    # Every section opens and closes a row of its own, so a reader of a long run sees it go.
+    opened = [r["section"] for r in rows if r["stage"] == "record" and r["event"] == "start" and r["section"]]
+    closed = {r["section"] for r in rows if r["stage"] == "record" and r["event"] in ("done", "skip") and r["section"]}
+    assert set(opened) == closed == {int(k) for k in SPOKEN}
+    assert all(r["ts"].endswith("Z") and r["pid"] == os.getpid() for r in rows)
+    assert all(r["detail"] and r["detail"].endswith(".") for r in rows), "a detail is one sentence"
+
+
+def test_build_dry_run_prints_the_stage_plan(built: Built) -> None:
+    doc = built.json("build", "--dry-run", "--json")
+    assert doc["build"]["stages"] == list(STAGE_ORDER) and doc["build"]["missing"] == [] and doc["ok"]
+    doc = built.json("build", "--dry-run", "--json", "--from", "record", "--to", "assemble")
+    assert doc["build"]["stages"] == ["record", "assemble"]
 
 
 def test_the_missing_optional_clip_plays_its_slate(built: Built) -> None:

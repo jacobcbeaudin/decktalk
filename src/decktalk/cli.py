@@ -16,7 +16,7 @@
     decktalk words [--json]           each spoken section's words, in seconds after the section starts
     decktalk clip N --start S --end E --out FILE
                                       a span of a built section and its narration -> a clip and its words file
-    decktalk build [--no-voice]       narrate -> align -> record -> assemble -> verify
+    decktalk build [--no-voice]       narrate -> align -> record -> assemble -> verify, with a progress log
     decktalk status                   timeline and what is built
 
 Every project command takes --project/-p DIR (default: DECKTALK_PROJECT, else the current
@@ -41,6 +41,7 @@ from . import __version__, report
 from .errors import DeckTalkError
 from .jsonio import dumps, relative
 from .model import Project
+from .stages.build import STAGES
 from .verdicts import Findings, StageResult
 
 log = logging.getLogger("decktalk")
@@ -340,9 +341,17 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_build(args: argparse.Namespace) -> int:
-    from .stages.build import build
+    from .stages.build import build, required_inputs, stage_plan
 
     project = _project(args)
+    if args.dry_run:
+        plan = stage_plan(args.from_stage, args.to_stage)
+        missing = [relative(path, project.root) for path in required_inputs(project, plan)]
+        # A plan that needs a file no earlier stage in it writes is a plan that cannot run, and the
+        # dry run is the call a caller makes to learn exactly that.
+        payload = {"stages": list(plan), "missing": missing}
+        table = " -> ".join(plan) + (f"\nmissing: {', '.join(missing)}" if missing else "")
+        return _finish(args, Findings(certain=len(missing)), payload, lambda: table)
 
     def show(stage: str, result: Any) -> None:
         if stage == "narrate":
@@ -364,11 +373,15 @@ def cmd_build(args: argparse.Namespace) -> int:
         strict=args.strict,
         allow_unresolved_cues=args.allow_unresolved_cues,
         allow_unknown_cues=args.allow_unknown_cues,
-        report=show,
+        from_stage=args.from_stage,
+        to_stage=args.to_stage,
+        progress_path=Path(args.progress) if args.progress else None,
+        report=None if args.json else show,
     )
-    if result.assembly:
-        print(f"\nbuilt {result.assembly.final}")
-    return 0 if result.ok else 1
+    # One envelope under --json, the stage tables as they finish otherwise. The exit rule is every
+    # other command's: a certain finding fails, an uncertain one only under --strict.
+    built = f"\nbuilt {result.assembly.final}" if result.assembly else ""
+    return _finish(args, result.findings, result.to_dict(project.root), lambda: built)
 
 
 # ---- parser -------------------------------------------------------------------------
@@ -553,6 +566,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--strict", action="store_true", help=BUILD_STRICT_HELP)
     s.add_argument("--allow-unresolved-cues", action="store_true", help="build even if some cue phrases were not found")
     s.add_argument("--allow-unknown-cues", action="store_true", help=ALLOW_UNKNOWN_HELP)
+    s.add_argument("--from", dest="from_stage", choices=STAGES, metavar="STAGE", help="start at this stage")
+    s.add_argument("--to", dest="to_stage", choices=STAGES, metavar="STAGE", help="stop after this stage")
+    s.add_argument("--progress", metavar="PATH", help="where to write the progress log (default: build/progress.jsonl)")
+    s.add_argument("--dry-run", action="store_true", help="print the stages this run would execute and change nothing")
+    s.add_argument("--exit-zero", action="store_true", help=EXIT_ZERO_HELP)
+    s.add_argument("--json", action="store_true", help=JSON_HELP)
     encoding(s)
     s.set_defaults(fn=cmd_build)
     return p

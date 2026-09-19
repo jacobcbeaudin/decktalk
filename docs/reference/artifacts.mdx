@@ -405,6 +405,27 @@ END=17800
 title=Open
 ```
 
+## `build/progress.jsonl`
+
+`decktalk build` truncates this file when a run starts and appends one JSON object per line as it
+goes, so a reader that opens it mid-run sees everything that has happened and nothing else.
+`--progress PATH` writes it somewhere else.
+
+```json
+{"ts": "2026-09-18T11:04:02.311Z", "pid": 4821, "stage": "record", "stage_index": 3, "stage_count": 5, "section": 4, "event": "done", "detail": "Recorded the section: ok."}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ts` | string | The event time, ISO 8601 in UTC. |
+| `pid` | integer | The process that wrote the row, which is how a reader tells a live run from a dead one. |
+| `stage` | string | One of `narrate`, `align`, `record`, `assemble` and `verify`. |
+| `stage_index` | integer | The stage's place in this run, counting from 1. |
+| `stage_count` | integer | How many stages this run executes, which `--from` and `--to` decide. |
+| `section` | integer or null | The section the event is about, or null for a whole-stage event. |
+| `event` | string | `start`, `done`, `skip` or `fail`. A section `record` kept unchanged is a `skip`. Every stage and every section writes a `start` row and a closing row, so a log whose last row is a `start` is a run that is still working or one whose process died. |
+| `detail` | string | One sentence, such as how many sections a stage will work through or what a section's recording was judged to be. |
+
 ## `build/screenshots/`
 
 `decktalk screenshots` writes screenshots here. With two or more pages, it writes one folder per page, named after the

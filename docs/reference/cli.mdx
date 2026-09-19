@@ -280,8 +280,9 @@ Runs all five stages in order and prints each stage's table.
 ```text
 decktalk build [-h] [--project PROJECT] [-v] [-q] [--no-voice] [--force]
                [--only N] [--no-soundscape] [--no-loudness] [--strict]
-               [--allow-unresolved-cues] [--allow-unknown-cues] [--preset PRESET]
-               [--crf CRF]
+               [--allow-unresolved-cues] [--allow-unknown-cues]
+               [--from STAGE] [--to STAGE] [--progress PATH] [--dry-run]
+               [--exit-zero] [--json] [--preset PRESET] [--crf CRF]
 ```
 
 | Option | Default | Meaning |
@@ -294,8 +295,31 @@ decktalk build [-h] [--project PROJECT] [-v] [-q] [--no-voice] [--force]
 | `--strict` | off | Fails on a missing recording, or a missing clip without `optional = true`. In a voiced build, also fails on a loudness miss. |
 | `--no-soundscape` | off | Mixes narration and clip audio only. |
 | `--no-loudness` | off | Skips the loudness pass. |
+| `--from STAGE` | `narrate` | Starts at this stage. The values are `narrate`, `align`, `record`, `assemble` and `verify`. |
+| `--to STAGE` | `verify` | Stops after this stage. Both ends are inclusive. |
+| `--progress PATH` | `build/progress.jsonl` | Where to write the progress log. |
+| `--dry-run` | off | Prints the stages this run would execute, and every artifact the plan needs and does not have, and changes nothing. |
+| `--exit-zero`, `--json` | off | See [Output and exit flags](#output-and-exit-flags). |
 | `--preset PRESET` | `[video] preset` | x264 preset for this run. |
 | `--crf CRF` | `[video] crf` | x264 quality for this run. |
+
+The fifth stage is the real `verify`, cues and all, so a build that exits 0 has measured every reveal
+against its word. The build writes one JSON line per event to `build/progress.jsonl` as it goes,
+which an agent reads instead of tailing a log. [`build/progress.jsonl`](/reference/artifacts#build-progress-jsonl)
+gives the fields.
+
+A stage that `--from` skips leaves its artifact to the run before it. When that artifact is missing,
+the build stops and names the file rather than assembling stale work.
+
+With `--json` the whole run prints one envelope on stdout, the same shape every other command
+prints, and the stage tables are left out. A `--dry-run` that names a missing artifact is a certain
+finding, so the exit code says the real run cannot start.
+
+```console
+decktalk build --from record          # keep the narration and the cue times, record and finish
+decktalk build --to align             # plan and resolve, and record nothing
+decktalk build --dry-run --json       # the stage plan and what it is missing, and nothing else
+```
 
 Note: with `--only`, `narrate` still runs on every section and `assemble` still uses every section.
 Recordings of other sections stay as they are. A build without voice stops when the project has voiced
@@ -310,13 +334,15 @@ explains.
 | `align` | A cue phrase is not found. The build stops after the align table. | `--allow-unresolved-cues` |
 | `align` | A cue id is not in its page. The build stops after the align table. | `--allow-unknown-cues` |
 | `record` | A page threw an error or has no catalog (`PAGE ERROR`). The build stops after the record table. | none |
+| `verify` | A cue did not land within its offset limit (`OFF CUE`), or the picture did not change (`NO CHANGE`). | none |
 | `assemble` | With `--strict`, a recording is missing, or a clip is missing from a section without `optional = true`. A substituted slate or black section is an uncertain `SLATE?` finding. | Set `optional = true`, or leave out `--strict`. |
 | `verify` | A section starts black (`BLACK`), speech is still sounding at a cut (`SPEECH AT CUT`), or the picture jumps at the cut into a section with `seamless` (`POP AT CUT`). | none |
 | any | A stage raises an error. | none |
 
-`build` does not measure cues. It exits 0 on `TRUNCATED`, `STALLED`, `NO COVER`, and `BLACK?`. To
-gate a script on the whole video, run `verify` after the build, as
-[Build in CI and offline](/guides/ci-and-offline) shows.
+`build` follows the same exit rule as every other command: a certain finding exits 1, and an
+uncertain one, such as the `SLATE?` of a clip the project does not have, exits 1 only with
+`--strict`. It measures the cues itself, so `decktalk verify` after a build repeats the same
+measurements rather than adding new ones.
 
 These are the last lines of a build without voice of the scaffold.
 
