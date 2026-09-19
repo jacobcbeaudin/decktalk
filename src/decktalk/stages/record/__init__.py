@@ -6,6 +6,12 @@ narration t=0 sits under the magenta cover, checks the frames and what the page 
 all of that to `build/recordings/NN.json` before it moves on to the next section. The measurement
 therefore belongs to the recording beside it, and a long run can be read while it runs.
 
+A section whose scene, the page around it, its loaded assets, words and cues have not moved is kept
+rather than recorded again, because the run would produce the same pixels. The key is cut per scene,
+so an edit to one slide records the sections that play that scene and leaves the rest of the page's
+sections alone. A section named by `--only` is always recorded, which is how an author asks for a
+take again without editing anything.
+
     capture.py   the page URL, and driving Chromium with its retries
     start.py     where narration t=0 sits in one recording
     checks.py    duration, luma, KaTeX and page-error verdicts
@@ -35,6 +41,7 @@ __all__ = [
     "RecordResult",
     "SectionRecording",
     "capture_section",
+    "stale_recording",
     "plan_job",
     "prev_words_query",
     "record",
@@ -51,6 +58,7 @@ class SectionRecording:
     section: PageSection
     path: Path
     log: RecordingLog
+    kept: bool = False  # The recording was already made from these inputs, so this run left it alone.
 
     @property
     def key(self) -> str:
@@ -75,6 +83,7 @@ class SectionRecording:
         return {
             "key": self.key,
             "file": relative(self.path, root),
+            "kept": self.kept,
             "seconds": round(self.log.requested_seconds, 3),
             "t0_seconds": self.log.t0_seconds,
             "t0_method": self.log.t0_method,
@@ -94,6 +103,11 @@ class RecordResult:
     """Every section one `record` run touched, in the order it touched them."""
 
     sections: list[SectionRecording] = field(default_factory=list)
+
+    @property
+    def kept_sections(self) -> list[SectionRecording]:
+        """The sections this run left alone because nothing they are recorded from had moved."""
+        return [row for row in self.sections if row.kept]
 
     @property
     def page_errors(self) -> list[SectionRecording]:
@@ -131,6 +145,31 @@ def jobs(project: Project, only: list[int] | None, seconds: float | None, *, use
     return planned
 
 
+def stale_recording(project: Project, section: PageSection) -> str | None:
+    """Why the recording on disk for this section no longer matches the project, or None when it does.
+
+    This is the one rule that decides whether a recording still stands, so what `record` skips and
+    what any other reader calls stale are the same question answered once, and neither compares file
+    times.
+    """
+    timeline = project.timeline()
+    span = timeline.span(section.key) if timeline else None
+    if not span:
+        return f"section {section.key} has no narration span yet"
+    cue_times = project.cue_times() if project.cue_times_path.exists() else None
+    job = plan_job(project, section, cue_times, span + section.record_margin_seconds)
+    if job.unchanged:
+        return None
+    if not job.out.exists():
+        return f"section {section.key} has no recording"
+    if job.previous is None or not job.previous.input_hash:
+        return f"section {section.key} was recorded before this project could tell what it was recorded from"
+    return (
+        f"section {section.key}: its scene, the page around it, its assets, its words or its cues "
+        "changed since it was recorded"
+    )
+
+
 def record(
     project: Project,
     *,
@@ -144,9 +183,24 @@ def record(
     belong to another take and an agent can read the run as it goes.
     """
     cfg = project.settings.record
+    named = set(only or ())
     result = RecordResult()
+    planned = jobs(project, only, seconds, use_cues=use_cues)
+    # A section named by --only is recorded whatever its inputs say, because that is how an author
+    # asks for another take of a page that has not changed.
+    fresh = [job for job in planned if not job.unchanged or job.section.number in named]
+    for job in planned:
+        if job not in fresh:
+            assert job.previous is not None
+            log.info(
+                "[rec ] section %s  kept: its scene, the page around it, its assets, words and cues are unchanged",
+                job.section.key,
+            )
+            result.sections.append(SectionRecording(job.section, job.out, job.previous, kept=True))
+    if not fresh:
+        return result
     with chromium(cfg.browser_path) as browser:
-        for job in jobs(project, only, seconds, use_cues=use_cues):
+        for job in fresh:
             section = job.section
             log.info(
                 "[rec ] section %s (%s?scene=%s)  %.1fs ...", section.key, section.page, section.scene, job.seconds
@@ -164,4 +218,5 @@ def record(
             log.info("       %s  (t=0 at %.3fs, %s)", relative(job.out, project.root), start.seconds, row.label)
             for message in recording_log.page_errors:
                 log.warning("       page error: %s", message)
+    result.sections.sort(key=lambda row: row.key)
     return result

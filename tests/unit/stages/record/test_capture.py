@@ -15,11 +15,14 @@ from decktalk.model import PageSection, Project
 from decktalk.settings import RecordConfig
 from decktalk.stages.record import capture as capture_module
 from decktalk.stages.record.capture import (
+    PageParts,
     capture_section,
+    page_parts,
     plan_job,
     prev_words_query,
     scene_params,
     scene_url,
+    section_hash,
     words_param,
     words_query,
 )
@@ -39,11 +42,19 @@ scene = "2"
 """
 
 
+PAGE = """<!doctype html><html><head><meta charset="utf-8"><style>body{background:#fff}</style></head>
+<body>
+<div data-scene="1" data-name="Open"><template data-slide="1.1"><p data-cue="1.1a">one</p></template></div>
+<div data-scene="2"><template data-slide="2.1"><p data-cue="2.1a">two</p></template></div>
+<script src="decktalk-runtime.js"></script>
+</body></html>"""
+
+
 @pytest.fixture
 def project(tmp_path) -> Project:
     (tmp_path / "decktalk.toml").write_text(TOML, encoding="utf-8")
     (tmp_path / "deck").mkdir()
-    (tmp_path / "deck" / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (tmp_path / "deck" / "index.html").write_text(PAGE, encoding="utf-8")
     p = Project.load(tmp_path, environ={})
     Timeline(
         narration="n.mp3",
@@ -136,6 +147,104 @@ def test_the_capture_opens_the_project_root_so_the_page_can_load_its_own_files(p
     monkeypatch.setattr(capture_module, "record_page", record_page)
     capture_section(project, object(), plan_job(project, project.page_sections[0], None, 1.0))
     assert seen["root"] == project.root
+
+
+def test_a_job_is_keyed_on_the_url_its_length_and_the_files_the_page_loaded(project):
+    section = project.page_sections[0]
+    picture = project.root / "deck" / "panel.png"
+    picture.write_bytes(b"first picture")
+    url = scene_url(project, section, {})
+    base = section_hash(project, section, url, 4.0, ["deck/panel.png"])
+
+    assert section_hash(project, section, url, 4.0, ["deck/panel.png"]) == base
+    assert section_hash(project, section, url, 4.5, ["deck/panel.png"]) != base  # a longer section
+    assert section_hash(project, section, "other", 4.0, ["deck/panel.png"]) != base  # other cues or words
+    assert section_hash(project, section, url, 4.0, []) != base  # the picture is no longer loaded
+
+    # The page is untouched and only the file beside it changes, which no hash of markup would catch.
+    picture.write_bytes(b"second picture")
+    assert section_hash(project, section, url, 4.0, ["deck/panel.png"]) != base
+
+
+def test_a_page_is_cut_into_the_scene_a_section_plays_and_the_part_every_scene_shares():
+    """The slice is the [data-scene] element as the file spells it, which is what the runtime mounts."""
+    one = page_parts(PAGE, "1")
+    assert one.scene.startswith('<div data-scene="1" data-name="Open">') and one.scene.endswith("</div>")
+    assert "one" in one.scene and "two" not in one.scene
+    assert "one" not in one.shared and "two" not in one.shared
+    assert "<style>body{background:#fff}</style>" in one.shared and "decktalk-runtime.js" in one.shared
+    two = page_parts(PAGE, "2")
+    assert "two" in two.scene and two.shared == one.shared
+
+
+def test_a_page_whose_scenes_cannot_be_sliced_is_shared_whole():
+    """A page in script, a scene that never closes and a scene that is not there all key on the file."""
+    in_script = "<!doctype html><body><script>DeckTalk.scene(1, { slides: [] });</script></body>"
+    assert page_parts(in_script, "1") == PageParts(scene="", shared=in_script)
+    unclosed = '<body><div data-scene="1"><div>never closed</div></body>'
+    assert page_parts(unclosed, "1") == PageParts(scene="", shared=unclosed)
+    assert page_parts(PAGE, "9") == PageParts(scene="", shared=PAGE)
+
+
+def test_markup_inside_a_script_is_not_mistaken_for_a_scene():
+    """A render string holds the same attribute, and only the element the browser builds counts."""
+    page = '<body><script>const s = `<div data-scene="9">x</div>`;</script><div data-scene="1">A</div></body>'
+    assert page_parts(page, "9") == PageParts(scene="", shared=page)
+    assert page_parts(page, "1").scene == '<div data-scene="1">A</div>'
+
+
+def test_the_key_moves_for_the_scene_a_section_plays_and_for_what_every_scene_shares(project):
+    """One page holds every scene of a film, so a slide edit must reach one section and no more."""
+    page = project.root / "deck" / "index.html"
+    first, second = project.page_sections
+
+    def keys() -> list[str]:
+        return [section_hash(project, s, "u", 4.0, ["deck/index.html"]) for s in (first, second)]
+
+    before = keys()
+    page.write_text(PAGE.replace("two", "TWO"), encoding="utf-8")
+    scene = keys()
+    assert scene[0] == before[0] and scene[1] != before[1]
+
+    page.write_text(PAGE.replace("two", "TWO").replace("#fff", "#eee"), encoding="utf-8")
+    shared = keys()
+    assert shared[0] != scene[0] and shared[1] != scene[1]
+
+
+def test_the_frame_geometry_and_the_colour_scheme_are_part_of_the_key(project):
+    section = project.page_sections[0]
+    url = scene_url(project, section, {})
+    base = section_hash(project, section, url, 4.0, [])
+    wider = replace(project, settings=replace(project.settings, video=replace(project.settings.video, width=1280)))
+    assert section_hash(wider, section, url, 4.0, []) != base
+    dark = replace(project, settings=replace(project.settings, record=RecordConfig(color_scheme="dark")))
+    assert section_hash(dark, section, url, 4.0, []) != base
+
+
+def test_a_job_is_unchanged_only_when_the_recording_is_there_finished_and_keyed(project):
+    section = project.page_sections[0]
+    assert not plan_job(project, section, None, 4.0).unchanged  # nothing recorded yet
+
+    project.recordings_dir.mkdir(parents=True, exist_ok=True)
+    project.recording(section).write_bytes(b"a recording")
+    url = scene_url(project, section, {})
+    recorded = RecordingLog(url=url, requested_seconds=4.0, settle_seconds=0, load_seconds=0, clock_start_seconds=0)
+    recorded.assets = ["deck/index.html"]
+    recorded.t0_seconds = 0.44
+    recorded.input_hash = section_hash(project, section, url, 4.0, recorded.assets)
+    recorded.save(project.recording_log(section))
+    assert plan_job(project, section, None, 4.0).unchanged
+
+    # A log from a run that never wrote a key is never taken for a match.
+    recorded.input_hash = ""
+    recorded.save(project.recording_log(section))
+    assert not plan_job(project, section, None, 4.0).unchanged
+
+    # Nor is a recording that was never measured, which is a run that stopped half way.
+    recorded.input_hash = section_hash(project, section, url, 4.0, recorded.assets)
+    recorded.t0_seconds = None
+    recorded.save(project.recording_log(section))
+    assert not plan_job(project, section, None, 4.0).unchanged
 
 
 def test_scene_params_adds_cues_unless_the_section_sets_them():

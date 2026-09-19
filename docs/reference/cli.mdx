@@ -539,7 +539,7 @@ decktalk record [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--only N` | every page section | Records only these sections. Repeatable. |
+| `--only N` | every page section | Records only these sections, and records them whether or not they changed. Repeatable. |
 | `--seconds SECONDS` | section span plus `record_margin_seconds` | Records every section for this long. Works with no timeline. |
 | `--settle SETTLE` | `[record] settle_seconds` (0.5) | Least seconds after the page is ready before narration t=0. The recorder also waits for `[record] min_cover_seconds`. |
 | `--no-cues` | off | Plays the page in preview instead of passing `?cues=`. |
@@ -551,6 +551,13 @@ decktalk record [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
 One command records, measures and checks each section, and writes that section's whole log before it
 opens the next page. The measurement therefore always belongs to the recording beside it, and a long
 run can be read while it is still running.
+
+`record` keeps a section whose recording was made from the same inputs, and its row reads `kept`. The
+inputs are the page URL with its scene, its resolved cues and its spoken words, the frame geometry
+and colour scheme, and the content of the page and of every project file the page loaded, which the
+recording log names under `assets`. Replacing a picture the page loads therefore records the section
+again, although no line of HTML changed. A section named by `--only` is always recorded, which is how
+you ask for another take of a page you have not edited.
 
 Each row describes one recording.
 
@@ -609,6 +616,14 @@ sec  webm_s   want_s   t0_s    Y10    Y50    Y90    MAX50   result
 01   20.4     18.1     1.360   235    230    227    255     ok
 02   23.5     21.1     1.440   227    228    234    243     ok
 03   145.2    142.8    1.440   228    212    223    240     ok
+```
+
+A second run of the same project records nothing.
+
+```text
+[rec ] section 01  kept: its page, assets, words and cues are unchanged
+[rec ] section 02  kept: its page, assets, words and cues are unchanged
+[rec ] section 03  kept: its page, assets, words and cues are unchanged
 ```
 
 ### `decktalk assemble`
@@ -1118,7 +1133,7 @@ This shape shows the JSON envelope. The values are types, not a sample.
 | `doctor` | `components`: a list of `{name, ok, detail}`, one per row. |
 | `status` | The shape under [`decktalk status`](#decktalk-status). |
 | `align` | `estimated`, `cue_times_file`, `unresolved`, `unknown`, and `sections`. |
-| `record` | `recordings`: a list of `{key, file, seconds, t0_seconds, t0_method, t0_guessed, duration, wanted, luma, verdicts, stall_ms, page_errors, assets}`. |
+| `record` | `recordings`: a list of `{key, file, kept, seconds, t0_seconds, t0_method, t0_guessed, duration, wanted, luma, verdicts, stall_ms, page_errors, assets}`. |
 | `verify` | `final`, `total_seconds`, `silent`, `starts`, `cuts`, `seams`, and `cues`. |
 | `preflight` | `voice`, `note`, `placeholders`, `takes`, `totals`, `cue_times`, `cues`, `seams`, and `frames`. |
 | `narrate --dry-run --json` | `voice`, `note`, `sections`, and `totals`, as [the take plan](#the-take-plan) gives. `ok` is always true. |

@@ -42,9 +42,11 @@ def record_result(*verdicts: Verdict) -> SimpleNamespace:
         ok=not verdicts,
         log=SimpleNamespace(page_errors=[], checks=None, trim_seconds=0.0, t0_method="cover", t0_guessed=False),
         to_dict=lambda root: {"key": "01", "verdicts": [v.name for v in verdicts]},
+        kept=False,
     )
     return SimpleNamespace(
         sections=[row],
+        kept_sections=[],
         page_errors=[],
         findings=Findings.of(verdicts),
         to_dict=lambda root: {"recordings": [row.to_dict(root)]},

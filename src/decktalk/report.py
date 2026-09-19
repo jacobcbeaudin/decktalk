@@ -165,6 +165,7 @@ def record_table(result: RecordResult) -> str:
     """One row per section: how long it ran, where narration t=0 landed, how bright it is, and its verdicts."""
     head = f"{'sec':<4} {'webm_s':<8} {'want_s':<8} {'t0_s':<7} {'Y10':<6} {'Y50':<6} {'Y90':<6} {'MAX50':<6}  result"
     lines = [head]
+    kept = [row.key for row in result.kept_sections]
     for row in result.sections:
         checks = row.log.checks
         luma = checks.luma if checks else None
@@ -174,6 +175,8 @@ def record_table(result: RecordResult) -> str:
             f"{luma.y10 if luma else 0:<6.0f} {luma.y50 if luma else 0:<6.0f} {luma.y90 if luma else 0:<6.0f} "
             f"{luma.max50 if luma else 0:<6.0f}  {row.label}"
         )
+    if kept:
+        lines.append(f"kept {len(kept)} unchanged section(s): {', '.join(kept)}")
     for row in result.sections:
         for message in row.log.page_errors:
             lines.append(f"{row.key:<4} page error: {message}")

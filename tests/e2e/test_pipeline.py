@@ -253,6 +253,17 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
     assert "deck/index.html" in rows["01"]["assets"] and "deck/decktalk-runtime.js" in rows["01"]["assets"]
 
 
+def test_a_second_record_run_keeps_every_section(built: Built) -> None:
+    """Nothing the pages are recorded from has moved, so the run opens no browser and keeps every webm."""
+    before = {k: (built.root / "build" / "recordings" / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
+    doc = built.json("record", "--json")
+    assert doc["ok"], doc["findings"]
+    rows = {r["key"]: r for r in doc["record"]["recordings"]}
+    assert set(rows) == set(SPOKEN) and all(r["kept"] for r in rows.values())
+    after = {k: (built.root / "build" / "recordings" / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
+    assert after == before
+
+
 def test_verify_strict_finds_nothing_but_timing(built: Built) -> None:
     """Every start is on screen, every cut is quiet, and every one of the seven cues changed the picture."""
     v = built.verify["verify"]

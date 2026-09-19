@@ -111,9 +111,17 @@ pauses for a clip between two page sections.
 ## Caching
 
 `narrate` keeps each section's audio and a hash of its text in `build/narration/takes.json`. After an edit,
-`decktalk build` voices again only the sections whose text changed. A plain build still records every page
-section, and `decktalk build --only N` records only section N. A recording stays valid when a neighbor section
-changes length, because cue times count from the start of their own section.
+`decktalk build` voices again only the sections whose text changed.
+
+`record` keeps each section's recording the same way. The recording log holds `input_hash`, the digest of the
+page URL with its cues and its spoken words, the frame geometry, the markup of the one scene the section plays,
+the rest of that page, which every scene shares, and the content of every project file the page loaded, which
+the log lists under `assets`. A section whose hash has not moved is kept. So an edit inside one scene records
+the sections that play it and leaves the other sections of that page alone, while an edit to the page's head,
+its styles or its scripts records every section of it. Replacing a picture the page loads records that section
+again, although no line of HTML changed.
+`decktalk build --only N` records section N whether it changed or not. A recording stays valid when a neighbor
+section changes length, because cue times count from the start of their own section.
 [Rebuild one section](/guides/rebuild-one-section) says what each edit runs again.
 
 ## What verify checks

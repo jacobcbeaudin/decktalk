@@ -105,15 +105,16 @@ decktalk build --only 3
 decktalk build --only 3 --only 6
 ```
 
-The flag limits `record` to the sections you name. The other stages still work on
+The flag limits `record` to the sections you name, and records them whether or not they changed. Without it, `record` keeps every section whose scene, shared page, loaded files, words and cues are unchanged. The other stages still work on
 every section:
 
 - `narrate` voices any section whose text changed, even a section you did not name.
 - `assemble` cuts and joins every section, because the final mp4 needs all of them.
 - The verify stage checks every section start and every cut.
 
-Name every section whose text or scene changed. A section you leave out keeps its old recording, even if
-its words moved. `--only` needs a page section, because a clip section has no recording.
+Name every section whose text or scene changed, and every section of a page whose head, styles or
+scripts you changed. A section you leave out keeps its old recording, even if its words moved.
+`--only` needs a page section, because a clip section has no recording.
 
 ## Record one section again
 

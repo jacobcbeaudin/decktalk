@@ -302,7 +302,7 @@ measurement always belongs to the recording beside it and a long run can be read
 | `load_seconds` | number | Wall-clock seconds from the recorder's start to the page's `load` event. |
 | `clock_start_seconds` | number | Wall-clock seconds from the recorder's start to narration t=0. Not the same as `[verify] reference_lead_seconds`. |
 | `assets` | array of strings | Every project file the page loaded, project-relative, in the order the page asked for it. |
-| `input_hash` | string | The digest of the page URL, the frame geometry and the content of the page and of every file in `assets`. `record` skips a section whose hash has not moved. |
+| `input_hash` | string | The digest of the page URL, the frame geometry, the markup of the one `[data-scene]` element this section plays, the rest of that page file, which every scene shares, and the content of every file in `assets`. `record` skips a section whose hash has not moved, so an edit inside one scene records the sections that play it and no others. |
 | `t0_seconds` | number or null | Time of the first frame after the magenta cover, in the webm. `record` writes it, and `assemble` trims there. |
 | `t0_method` | string or null | One sentence naming how `record` found `t0_seconds`, for a reader of the log. |
 | `t0_guessed` | boolean | True when no magenta cover was found, so `t0_seconds` is an estimate and the section carries the `NO COVER` verdict. |

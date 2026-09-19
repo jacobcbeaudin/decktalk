@@ -9,19 +9,53 @@ writes all of it, so the measurement always belongs to the recording beside it a
 long run sees each section's log as soon as that section is done.
 
 `input_hash` is what the section was recorded from: the page URL with its cues and words, the frame
-geometry, and the content of the page and of every file the page loaded. A section whose hash is
-unchanged is recorded again for nothing, so `record` skips it.
+geometry, the markup of the one scene the section plays, the rest of its page, which every scene
+shares, and the content of every file the page loaded. A section whose hash is unchanged would be
+recorded again for nothing, so `record` skips it, and the same hash is how a reader of the project
+tells a recording that is still good from one that is stale.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Self
 
 from ..jsonio import read_json, write_json
 from ..verdicts import Verdict
+
+HASH_DIGITS = 16  # Enough of a sha256 that two different recordings never collide in one project.
+GONE = "gone"  # What a file the page asked for and the project no longer has hashes to.
+
+
+def file_digest(path: Path) -> str:
+    """The first hex digits of a file's sha256, or `gone` when the project no longer has it."""
+    if not path.is_file():
+        return GONE
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()[:HASH_DIGITS]
+
+
+def text_digest(text: str) -> str:
+    """The first hex digits of a string's sha256, which is how a slice of a page joins a key."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:HASH_DIGITS]
+
+
+def input_hash(parts: Sequence[str], files: Mapping[str, Path]) -> str:
+    """The digest of what a section is recorded from: these strings, and the content of these files.
+
+    `files` maps each project-relative name to the file on disk, so a page that swaps one picture for
+    another moves the hash although no line of HTML changed. The names are sorted, so the order the
+    page happened to ask for them in is not part of the key.
+    """
+    lines = [*parts, *(f"{name}:{file_digest(files[name])}" for name in sorted(files))]
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:HASH_DIGITS]
 
 
 def gap_time(value: Any) -> float | None:
@@ -59,12 +93,12 @@ class RecordingChecks:
         return not self.verdicts
 
     def to_json(self) -> dict[str, Any]:
-        """The checks as the log stores them, with each verdict as its code."""
+        """The checks as the log stores them, with each verdict as the object every payload carries."""
         return {
             "duration_seconds": round(self.duration_seconds, 3),
             "wanted_seconds": round(self.wanted_seconds, 3),
             "luma": {k: round(v, 2) for k, v in asdict(self.luma).items()},
-            "verdicts": [v.name for v in self.verdicts],
+            "verdicts": [v.to_dict() for v in self.verdicts],
         }
 
     @classmethod
@@ -73,7 +107,7 @@ class RecordingChecks:
             duration_seconds=float(data["duration_seconds"]),
             wanted_seconds=float(data["wanted_seconds"]),
             luma=Luma(**{k: float(v) for k, v in data["luma"].items()}),
-            verdicts=tuple(Verdict[name] for name in data.get("verdicts", ())),
+            verdicts=tuple(Verdict.from_dict(v) for v in data.get("verdicts", ())),
         )
 
 
@@ -87,6 +121,7 @@ class RecordingLog:
     load_seconds: float
     clock_start_seconds: float  # wall-clock seconds from the recorder's start to t=0, the recorder's own estimate
     assets: list[str] = field(default_factory=list)  # every project file the page loaded, project-relative
+    external: list[str] = field(default_factory=list)  # every other origin the page reached for while recording
     input_hash: str = ""  # the page, its assets, its words and its cues, which is what a skip is keyed on
     t0_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
     t0_method: str | None = None  # one sentence naming how t=0 was found, for a reader of the log

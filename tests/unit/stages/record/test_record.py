@@ -33,11 +33,21 @@ record_margin_seconds = 0.5
 """
 
 
+# One page, two scenes, which is the shape `decktalk init` writes and the shape a per-scene key is
+# for: an edit inside one <div data-scene> must reach the section that plays it and no other.
+PAGE = """<!doctype html><html><head><meta charset="utf-8"><style>body{background:#fff}</style></head>
+<body>
+<div data-scene="1"><template data-slide="1.1"><p data-cue="1.1a">one</p></template></div>
+<div data-scene="2"><template data-slide="2.1"><p data-cue="2.1a">two</p></template></div>
+<script src="decktalk-runtime.js"></script>
+</body></html>"""
+
+
 @pytest.fixture
 def project(tmp_path) -> Project:
     (tmp_path / "decktalk.toml").write_text(TOML, encoding="utf-8")
     (tmp_path / "deck").mkdir()
-    (tmp_path / "deck" / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (tmp_path / "deck" / "index.html").write_text(PAGE, encoding="utf-8")
     p = Project.load(tmp_path, environ={})
     Timeline(
         narration="n.mp3",
@@ -65,7 +75,16 @@ def drive(monkeypatch, project, logs: dict[str, RecordingLog]) -> None:
     from decktalk.stages.record import start as start_module
 
     monkeypatch.setattr(record_stage, "chromium", lambda path: _NoBrowser())
-    monkeypatch.setattr(record_stage, "capture_section", lambda p, b, job: logs[job.section.key])
+
+    def capture_section(p, b, job):
+        recorded = logs[job.section.key]
+        recorded.assets = [job.section.page]
+        recorded.input_hash = job.input_hash
+        job.out.parent.mkdir(parents=True, exist_ok=True)
+        job.out.write_bytes(b"a recording")
+        return recorded
+
+    monkeypatch.setattr(record_stage, "capture_section", capture_section)
     monkeypatch.setattr(
         record_stage, "find_start", lambda webm, settle, cfg: start_module.Start(0.44, "cover (11 magenta frames)")
     )
@@ -153,3 +172,189 @@ def test_the_result_tallies_every_verdict_and_names_the_pages_that_threw(project
     assert [row.key for row in result.page_errors] == ["02"]
     assert [r["key"] for r in result.to_dict(project.root)["recordings"]] == ["01", "02"]
     assert RecordResult().findings == Findings()
+
+
+def test_a_section_whose_inputs_are_unchanged_is_kept(project, monkeypatch, caplog):
+    drive(monkeypatch, project, {"01": a_log(), "02": a_log()})
+    first = record(project)
+    assert [row.kept for row in first.sections] == [False, False]
+
+    def refuse(p, browser, job):
+        raise AssertionError(f"section {job.section.key} was recorded again")
+
+    monkeypatch.setattr(record_stage, "capture_section", refuse)
+    with caplog.at_level("INFO", logger="decktalk"):
+        again = record(project)
+    assert [(row.key, row.kept) for row in again.sections] == [("01", True), ("02", True)]
+    assert again.kept_sections == again.sections and again.findings == Findings()
+    kept_line = "kept: its scene, the page around it, its assets, words and cues are unchanged"
+    assert any(kept_line in r.getMessage() for r in caplog.records)
+
+
+def test_a_section_named_by_only_is_recorded_however_unchanged_it_is(project, monkeypatch):
+    drive(monkeypatch, project, {"01": a_log(), "02": a_log()})
+    record(project)
+    recorded: list[str] = []
+    real = record_stage.capture_section
+    monkeypatch.setattr(
+        record_stage, "capture_section", lambda p, b, job: (recorded.append(job.section.key), real(p, b, job))[1]
+    )
+    result = record(project, only=[2])
+    assert recorded == ["02"]
+    assert [(row.key, row.kept) for row in result.sections] == [("02", False)]
+
+
+def test_an_edit_to_one_scene_records_that_section_and_keeps_its_neighbour(project, monkeypatch):
+    """Both sections play the same file, so only a key cut per scene can leave section 01 alone."""
+    drive(monkeypatch, project, {"01": a_log(), "02": a_log()})
+    record(project)
+    page = project.root / "deck" / "index.html"
+    page.write_text(PAGE.replace("two", "TWO"), encoding="utf-8")
+    recorded: list[str] = []
+    real = record_stage.capture_section
+    monkeypatch.setattr(
+        record_stage, "capture_section", lambda p, b, job: (recorded.append(job.section.key), real(p, b, job))[1]
+    )
+    result = record(project)
+    assert recorded == ["02"]
+    assert [(row.key, row.kept) for row in result.sections] == [("01", True), ("02", False)]
+
+    # The head is outside every scene and reaches all of them, so an edit there records both.
+    page.write_text(PAGE.replace("two", "TWO").replace("#fff", "#eee"), encoding="utf-8")
+    recorded.clear()
+    again = record(project)
+    assert recorded == ["01", "02"]
+    assert [(row.key, row.kept) for row in again.sections] == [("01", False), ("02", False)]
+
+
+def test_the_stale_reason_names_what_moved(project, monkeypatch):
+    section = project.page_sections[0]
+    assert record_stage.stale_recording(project, section) == "section 01 has no recording"
+    drive(monkeypatch, project, {"01": a_log(), "02": a_log()})
+    record(project)
+    assert record_stage.stale_recording(project, section) is None
+    (project.root / "deck" / "index.html").write_text(PAGE.replace("one", "ONE"), encoding="utf-8")
+    assert record_stage.stale_recording(project, section) == (
+        "section 01: its scene, the page around it, its assets, its words or its cues changed since it was recorded"
+    )
+    Timeline(narration="n.mp3", total_seconds=0.0, sections={}).save(project.timeline_path)
+    assert record_stage.stale_recording(project, section) == "section 01 has no narration span yet"
+
+
+# The scenes are markup rather than script, because a real page holds every scene of a film and the
+# browser tests below are what prove one scene's edit records one section.
+BROWSER_PAGE = """<!doctype html><html><head><meta charset="utf-8"></head><body style="background:#fff">
+<img src="panel.png" style="position:absolute;left:0;top:0;width:640px;height:360px">
+<script src="decktalk-runtime.js"></script>
+<div data-scene="1"><template data-slide="1.1"><p data-cue="1.1a">a</p></template></div>
+<div data-scene="2"><template data-slide="2.1"><p data-cue="2.1a">b</p></template></div>
+</body></html>"""
+
+BROWSER_TOML = """
+[project]
+name = "skip"
+
+[video]
+width = 640
+height = 360
+
+[[section]]
+number = 1
+page = "deck/index.html"
+scene = "1"
+
+[[section]]
+number = 2
+page = "deck/index.html"
+scene = "2"
+"""
+
+
+def panel(root, colour: bytes) -> None:
+    """A one-pixel PNG of one colour, which the page loads beside itself."""
+    from decktalk.media import ffmpeg
+
+    ffmpeg.run("-y", "-f", "lavfi", "-i", f"color=c=0x{colour.decode()}:s=64x64", "-frames:v", "1", str(root))
+
+
+@pytest.fixture
+def recorded_project(tmp_path):
+    """A two-section project on one page that loads a picture beside it, narrated without voice."""
+    import shutil
+
+    from decktalk.stages.narrate import narrate
+    from decktalk.toolchain.assets import RUNTIME_FILE, runtime_path
+
+    (tmp_path / "decktalk.toml").write_text(BROWSER_TOML, encoding="utf-8")
+    (tmp_path / "script.md").write_text("## 1. A\n\nOne two three.\n\n## 2. B\n\nFour five six.\n", encoding="utf-8")
+    (tmp_path / "cues.json").write_text("{}", encoding="utf-8")
+    deck = tmp_path / "deck"
+    deck.mkdir()
+    (deck / "index.html").write_text(BROWSER_PAGE, encoding="utf-8")
+    shutil.copyfile(runtime_path(), deck / RUNTIME_FILE)
+    panel(deck / "panel.png", b"00ff00")
+    project = Project.load(tmp_path, environ={})
+    narrate(project, silent=True)
+    return Project.load(tmp_path, environ={})
+
+
+@pytest.mark.browser
+@pytest.mark.media
+def test_a_run_keeps_a_section_whose_picture_did_not_change_and_records_one_whose_did(recorded_project):
+    """The page file never changes here, so only the asset list can tell the two runs apart."""
+    project = recorded_project
+    first = record(project)
+    assert [row.kept for row in first.sections] == [False, False]
+    logs = {row.key: row.log for row in first.sections}
+    assert "deck/panel.png" in logs["01"].assets and logs["01"].input_hash
+    keys = {row.key: project.recording(row.section).stat().st_mtime_ns for row in first.sections}
+
+    kept = record(project)
+    assert [(row.key, row.kept) for row in kept.sections] == [("01", True), ("02", True)]
+    assert {row.key: project.recording(row.section).stat().st_mtime_ns for row in kept.sections} == keys
+
+    panel(project.root / "deck" / "panel.png", b"0000ff")
+    again = record(project)
+    assert [(row.key, row.kept) for row in again.sections] == [("01", False), ("02", False)]
+    assert again.sections[0].log.input_hash != logs["01"].input_hash
+
+
+@pytest.mark.browser
+@pytest.mark.media
+def test_an_edit_to_one_scene_records_that_section_and_keeps_the_other(recorded_project):
+    """Both sections play one page, so a slide edit must cost one recording and not the whole film."""
+    project = recorded_project
+    first = record(project)
+    assert [row.kept for row in first.sections] == [False, False]
+    before = {row.key: row.log.input_hash for row in first.sections}
+    page = project.root / "deck" / "index.html"
+
+    page.write_text(BROWSER_PAGE.replace(">b<", ">B<"), encoding="utf-8")
+    again = record(project)
+    assert [(row.key, row.kept) for row in again.sections] == [("01", True), ("02", False)]
+    assert again.sections[0].log.input_hash == before["01"]
+    assert again.sections[1].log.input_hash != before["02"]
+
+    # The body's own style sits outside both scenes and paints behind both, so it records both.
+    page.write_text(BROWSER_PAGE.replace(">b<", ">B<").replace("#fff", "#eee"), encoding="utf-8")
+    shared = record(project)
+    assert [(row.key, row.kept) for row in shared.sections] == [("01", False), ("02", False)]
+
+
+@pytest.mark.browser
+@pytest.mark.media
+def test_each_section_log_is_on_disk_before_the_next_section_is_opened(recorded_project, monkeypatch):
+    project = recorded_project
+    seen: list[tuple[str, list[str]]] = []
+    real = record_stage.capture_section
+
+    def capture_section(p, browser, job):
+        seen.append((job.section.key, sorted(f.name for f in project.recordings_dir.glob("*.json"))))
+        return real(p, browser, job)
+
+    monkeypatch.setattr(record_stage, "capture_section", capture_section)
+    record(project)
+    # Section 01's whole log, measurement and checks included, is readable while 02 is still recording.
+    assert seen == [("01", []), ("02", ["01.json"])]
+    finished = json.loads((project.recordings_dir / "01.json").read_text(encoding="utf-8"))
+    assert finished["t0_seconds"] is not None and finished["checks"]["verdicts"] == []

@@ -6,7 +6,15 @@ import json
 
 import pytest
 
-from decktalk.artifacts import Luma, RecordingChecks, RecordingLog, gap_time
+from decktalk.artifacts import (
+    Luma,
+    RecordingChecks,
+    RecordingLog,
+    file_digest,
+    gap_time,
+    input_hash,
+    text_digest,
+)
 from decktalk.verdicts import Verdict
 
 
@@ -36,7 +44,7 @@ def test_a_log_written_by_record_round_trips_with_its_checks(tmp_path):
         "duration_seconds": 10.041,
         "wanted_seconds": 10.3,
         "luma": {"y10": 50.0, "y50": 60.0, "y90": 70.0, "max50": 80.0},
-        "verdicts": ["NO_COVER", "STALLED"],
+        "verdicts": [Verdict.NO_COVER.to_dict(), Verdict.STALLED.to_dict()],
     }
     again = RecordingLog.load(path)
     assert again is not None and again.checks is not None
@@ -91,3 +99,36 @@ def test_gap_time_turns_the_page_value_for_a_gap_before_the_clock_into_none():
     assert gap_time(None) is None
     assert gap_time(0.4) == 0.4
     assert gap_time(0) == 0
+
+
+def test_a_file_hashes_to_its_content_and_a_missing_one_says_so(tmp_path):
+    page = tmp_path / "index.html"
+    page.write_text("<p>one</p>", encoding="utf-8")
+    first = file_digest(page)
+    assert len(first) == 16
+    page.write_text("<p>two</p>", encoding="utf-8")
+    assert file_digest(page) != first
+    assert file_digest(tmp_path / "nothing.png") == "gone"
+
+
+def test_a_slice_of_a_page_hashes_to_its_text(tmp_path):
+    """One scene's markup joins the key as a digest, because the key is a line of strings."""
+    assert len(text_digest('<div data-scene="1">one</div>')) == 16
+    assert text_digest("one") != text_digest("two")
+    assert text_digest("") == text_digest("")
+
+
+def test_the_input_hash_moves_when_an_asset_changes_and_not_when_the_order_does(tmp_path):
+    page = tmp_path / "index.html"
+    picture = tmp_path / "panel.png"
+    page.write_text("<img src=panel.png>", encoding="utf-8")
+    picture.write_bytes(b"first picture")
+    files = {"index.html": page, "panel.png": picture}
+    base = input_hash(["url"], files)
+    assert base == input_hash(["url"], {"panel.png": picture, "index.html": page})
+    assert base != input_hash(["other url"], files)
+    assert base != input_hash(["url"], {"index.html": page})
+
+    # The founder's own case: the page is untouched and only the picture beside it is replaced.
+    picture.write_bytes(b"second picture")
+    assert input_hash(["url"], files) != base
