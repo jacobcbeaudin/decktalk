@@ -187,7 +187,17 @@ def record_table(result: RecordResult) -> str:
 
 
 def verify_table(result: VerifyResult) -> str:
-    lines = [f"{'sec':>3} {'start':>8} {'probe':>8} {'YAVG':>6} {'YMAX':>6}  result"]
+    lines: list[str] = []
+    if result.recordings:
+        lines.append(f"{'sec':>3}  recording")
+        for r in result.recordings:
+            label = " ".join(v.value for v in r.verdicts) or str(Verdict.OK)
+            lines.append(f"{r.key:>3}  {label}")
+        for r in result.recordings:
+            for message in r.page_errors:
+                lines.append(f"{r.key:>3}  page error: {message}")
+        lines.append("")
+    lines.append(f"{'sec':>3} {'start':>8} {'probe':>8} {'YAVG':>6} {'YMAX':>6}  result")
     for s in result.starts:
         lines.append(f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {s.verdict}")
     lines.append(f"total {result.total_seconds:.2f}s; {result.black_starts} black section start(s)")

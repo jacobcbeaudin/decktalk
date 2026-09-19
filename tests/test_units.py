@@ -1007,24 +1007,6 @@ def test_captions_and_chapters_skip_over_a_clip_between_page_sections(tmp_path):
     ]
 
 
-def test_click_search_stays_inside_the_section(monkeypatch):
-    from decktalk.media import audio as audio_module
-    from decktalk.stages.verify import click_offset_ms
-
-    calls: list[tuple[float, float]] = []
-
-    def fake_span(path, start, seconds, *, sample_rate=48000):
-        calls.append((round(start, 3), round(seconds, 3)))
-        return [0] * 100 + [2000] + [0] * 100
-
-    monkeypatch.setattr(audio_module, "pcm_span", fake_span)
-    assert click_offset_ms(Path("f.mp4"), 10.0, 0.25) is not None
-    assert click_offset_ms(Path("f.mp4"), 5.1, 0.25, floor=5.0, ceiling=9.0) is not None
-    assert click_offset_ms(Path("f.mp4"), 8.9, 0.25, floor=5.0, ceiling=9.0) is not None
-    assert click_offset_ms(Path("f.mp4"), 9.5, 0.25, floor=5.0, ceiling=9.0) is None
-    assert calls == [(9.75, 0.5), (5.0, 0.35), (8.65, 0.35)]
-
-
 def test_loudness_problems_report_peaks_and_missed_targets(tmp_path):
     from decktalk.media.audio import Loudness
     from decktalk.stages.assemble import loudness_problems
@@ -1033,35 +1015,6 @@ def test_loudness_problems_report_peaks_and_missed_targets(tmp_path):
     assert loudness_problems(p, Loudness(i=-16.4, tp=-1.6, lra=5, thresh=-27, offset=0)) == []
     over = loudness_problems(p, Loudness(i=-25.2, tp=-1.0, lra=5, thresh=-27, offset=0))
     assert len(over) == 2 and "true peak -1.0 dBTP" in over[0] and "9.2 LU" in over[1]
-
-
-def test_onset_offset_finds_the_jump_and_falls_back_to_the_floor():
-    from decktalk.stages.verify import onset_offset_ms
-
-    # A fade of a small element, as measured on the scaffold: change begins 60 ms after the cue
-    # but only crosses a tenth of the picture 220 ms after it.
-    fade = [(9.2, 0.0), (9.24, 0.0), (9.28, 0.0), (9.32, 0.0), (9.36, 0.018), (9.4, 0.038), (9.52, 0.103)]
-    assert onset_offset_ms(fade, before=9.2, cue_at=9.3, onset=0.01) == 60
-    assert onset_offset_ms(fade, before=9.2, cue_at=9.3, onset=0.1) == 220
-    # A camera push is a slope: the share grows a little every frame and never jumps, so
-    # the onset is the first real jump, even though the slope crosses the threshold earlier.
-    push = [(9.2, 0.0), (9.24, 0.006), (9.28, 0.012), (9.32, 0.018), (9.36, 0.06), (9.4, 0.07)]
-    assert onset_offset_ms(push, before=9.2, cue_at=9.3, onset=0.02) == 60
-    # A reveal that lands a frame early reports a negative offset rather than being hidden.
-    early = [(9.2, 0.0), (9.24, 0.0), (9.28, 0.3), (9.32, 0.3), (9.36, 0.3)]
-    assert onset_offset_ms(early, before=9.2, cue_at=9.3, onset=0.02) == -20
-    assert onset_offset_ms([(9.2, 0.0), (9.24, 0.0)], before=9.2, cue_at=9.3, onset=0.01) is None
-    # When the reference time falls between frames, the series starts on the frame after it,
-    # which is the reference itself, and a reveal on the very next frame is still the onset.
-    off_grid = [(9.24, 0.0), (9.28, 0.23), (9.32, 0.26), (9.36, 0.26)]
-    assert onset_offset_ms(off_grid, before=9.21, cue_at=9.31, onset=0.002) == -30
-    # Encoder ringing, as measured on the scaffold's 3:3.1again: two frames before the reveal change
-    # a few pixels, but no block changes, so the onset is the reveal itself, not 100 ms early.
-    ringing = [(9.16, 0.0), (9.2, 0.1065), (9.24, 0.0455), (9.28, 1.6088), (9.32, 2.2168)]
-    blocks = {9.16: 0.0, 9.2: 0.0, 9.24: 0.0, 9.28: 1.926, 9.32: 2.793}
-    assert onset_offset_ms(ringing, before=9.16, cue_at=9.3, onset=0.01) == -100
-    assert onset_offset_ms(ringing, before=9.16, cue_at=9.3, onset=0.01, blocks=blocks) == -20
-    assert Settings().verify.max_offset_frames == 2 and Settings().verify.onset_percent == 0.01
 
 
 def test_video_defaults_match_the_recorder():
@@ -1189,141 +1142,6 @@ def test_assemble_skips_loudness_on_an_estimated_timeline(tmp_path, monkeypatch,
     )
 
 
-def test_reference_time_skips_the_fade_and_keeps_the_lead():
-    from decktalk.settings import VerifyConfig
-    from decktalk.stages.verify import reference_time
-
-    cfg = VerifyConfig()  # lead_seconds 0.1
-    # The lead clears a reveal that lands max_offset_frames (2) early: (2 + 1.5) / 25 = 0.14 s.
-    assert reference_time(10.0, 2.0, False, 0.16, cfg, 25) == 11.86
-    assert reference_time(10.0, 0.05, False, 0.16, cfg, 25) == 10.0  # the section's first frame, a frame early
-    assert reference_time(10.0, 0.2, True, 0.16, cfg, 25) == 10.16  # the first frame after the fade-in
-    assert reference_time(10.0, 0.15, True, 0.16, cfg, 25) is None  # the cue sits inside the fade-in
-    assert reference_time(10.0, 0.0, False, 0.16, cfg, 25) is None  # a $start cue has no frame before it
-
-
-def _cue_row(item: str) -> dict[str, object]:
-    """One cue-times row from the shorthand "cue@seconds" the verify tests are written in."""
-    cue, _, at = item.rpartition("@")
-    return {"cue": cue, "on": cue, "at": float(at), "word_at": float(at)}
-
-
-def _verify_project(
-    tmp_path,
-    monkeypatch,
-    cue_times: dict[str, str],
-    cues: dict | None = None,
-    change: float = 0.0,
-    toml: str = PAGES_TOML,
-):
-    """A project with sections 01 and 02 assembled and every ffmpeg measurement replaced."""
-    from decktalk.media import ffmpeg as ffmpeg_module
-    from decktalk.media import frames as frames_module
-
-    root = write_project(tmp_path, toml)
-    p = Project.load(root, environ={})
-    p.out_dir.mkdir(parents=True)
-    p.sections_dir.mkdir(parents=True)
-    for key in ("01", "02"):
-        (p.sections_dir / f"{key}.mp4").write_bytes(b"x")
-    p.final.write_bytes(b"x")
-    p.narration_dir.mkdir(parents=True)
-    sections = {k: [_cue_row(item) for item in v.split(",") if item] for k, v in cue_times.items()}
-    p.cue_times_path.write_text(json.dumps({"sections": sections}), encoding="utf-8")
-    if cues is not None:
-        (root / "cues.json").write_text(json.dumps({"sections": cues}), encoding="utf-8")
-    monkeypatch.setattr(ffmpeg_module, "probe_duration", lambda path: 5.0)
-    monkeypatch.setattr(frames_module, "luma_at", lambda path, t, crop=None: (100.0, 200.0))
-    monkeypatch.setattr(frames_module, "changed_pixels_percent", lambda path, t1, t2, **kw: change)
-    monkeypatch.setattr(frames_module, "changed_series", lambda *a, **kw: [])
-    return p
-
-
-def test_verify_default_checks_come_from_cue_times_json(tmp_path, monkeypatch):
-    from decktalk.stages.verify import verify
-
-    p = _verify_project(tmp_path, monkeypatch, {"02": "c@2.0", "01": "b@3.0,a@1.0"})
-    result = verify(p)
-    assert [c.check for c in result.cues] == ["1:a", "1:b", "2:c"]  # section order, then cue time
-    assert all(c.verdict == Verdict.NO_CHANGE for c in result.cues) and not result.ok
-    assert [c.check for c in verify(p, only=[2]).cues] == ["2:c"]
-    assert verify(p, checks=[]).cues == [] and verify(p, checks=[]).ok
-    assert [c.check for c in verify(p, checks=["1:b", "2:c"], only=[1]).cues] == ["1:b"]
-    missing = verify(p, checks=["1:nope"]).cues[0]
-    assert missing.verdict == Verdict.UNRESOLVED and not missing.ok and missing.cue_seconds is None
-
-
-def test_verify_skips_clamped_start_cue(tmp_path, monkeypatch):
-    from decktalk.stages.verify import verify
-
-    p = _verify_project(tmp_path, monkeypatch, {"01": "start@0.0", "03": "later@1.0"}, change=5.0)
-    result = verify(p)
-    start, later = result.cues
-    assert (start.verdict, start.reason) == (Verdict.SKIPPED, SkipReason.REFERENCE_CLAMPED)
-    assert start.cue_seconds is None and start.note.startswith("skipped REFERENCE_CLAMPED")
-    assert (later.verdict, later.reason) == (Verdict.SKIPPED, SkipReason.SECTION_NOT_ASSEMBLED)
-    assert result.ok  # Skipped rows never fail.
-
-
-def test_verify_opted_out_cue_is_skipped(tmp_path, monkeypatch):
-    from decktalk.stages.verify import verify
-
-    cues = {"1": {"cues": [{"cue": "a", "on": "hello", "verify": False}, {"cue": "b", "on": "there"}]}}
-    p = _verify_project(tmp_path, monkeypatch, {"01": "a@1.0,b@2.0"}, cues=cues)
-    assert [c.verify for c in p.cue_specs()[0].cues] == [False, True]
-    a, b = verify(p).cues
-    assert (a.verdict, a.reason) == (Verdict.SKIPPED, SkipReason.OPTED_OUT) and b.verdict == Verdict.NO_CHANGE
-    (named,) = verify(p, checks=["1:a"]).cues  # A cue named on purpose is measured anyway.
-    assert named.verdict == Verdict.NO_CHANGE and named.reason is None
-    bad = {"sections": {"1": {"cues": [{"cue": "a", "on": "x", "verify": 0}]}}}
-    (p.root / "cues.json").write_text(json.dumps(bad), encoding="utf-8")
-    with pytest.raises(ConfigError, match="'verify' must be bool, got int"):
-        p.cue_specs()
-
-
-def test_verify_marks_a_thin_change_as_uncertain(tmp_path, monkeypatch, capsys):
-    import dataclasses
-    import importlib
-
-    from decktalk.stages.verify import thin_change, verify
-
-    verify_module = importlib.import_module("decktalk.stages.verify")
-
-    cfg = Settings().verify
-    assert cfg.thin_change_factor == 3.0
-    assert thin_change(0.11, 0.11, cfg) and thin_change(0.29, 5.0, cfg) and thin_change(5.0, 0.29, cfg)
-    assert not thin_change(0.3, 0.3, cfg) and not thin_change(6.56, 6.56, cfg)
-    assert not thin_change(0.11, 0.11, dataclasses.replace(cfg, thin_change_factor=1.0))
-
-    p = _verify_project(tmp_path, monkeypatch, {"01": "a@1.0"}, change=0.11)
-    (row,) = verify(p).cues
-    assert (row.verdict, row.ok, row.reason) == (Verdict.THIN_CHANGE, True, None)
-    assert verify(p).ok and row.to_dict()["verdict"] == Verdict.THIN_CHANGE.value
-    # The onset branch keeps the thin verdict when on time, and OFF CUE still wins when late.
-    monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: 0)
-    assert [c.verdict for c in verify(p).cues] == [Verdict.THIN_CHANGE]
-    monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: 400)
-    assert [c.verdict for c in verify(p).cues] == [Verdict.OFF_CUE]
-    monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: None)
-
-    # An uncertain finding: exit 0, and 1 only with --strict. The table and the JSON both show it.
-    assert main(["-p", str(p.root), "verify"]) == 0
-    assert Verdict.THIN_CHANGE.value in capsys.readouterr().out
-    assert main(["-p", str(p.root), "verify", "--strict"]) == 1
-    capsys.readouterr()
-    assert main(["-p", str(p.root), "verify", "--json"]) == 0
-    doc = json.loads(capsys.readouterr().out)
-    assert doc["findings"] == {"certain": 0, "uncertain": 1}
-    assert doc["verify"]["cues"][0]["verdict"] == Verdict.THIN_CHANGE.value
-
-    # A clear change reads changed, and the factor can turn the warning off.
-    monkeypatch.setattr("decktalk.media.frames.changed_pixels_percent", lambda path, t1, t2, **kw: 0.5)
-    assert [c.verdict for c in verify(p).cues] == [Verdict.CHANGED]
-    monkeypatch.setattr("decktalk.media.frames.changed_pixels_percent", lambda path, t1, t2, **kw: 0.11)
-    monkeypatch.setenv("DECKTALK_VERIFY_THIN_CHANGE_FACTOR", "1")
-    assert [c.verdict for c in verify(Project.load(p.root)).cues] == [Verdict.CHANGED]
-
-
 def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
     toml = (
         "[[section]]\nnumber = 1\npage = 'a.html'\n"
@@ -1338,77 +1156,6 @@ def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
         Project.load(write_project(tmp_path, first), environ={})
     with pytest.raises(ConfigError, match="'seamless' must be bool"):
         Project.load(write_project(tmp_path, toml.replace("seamless = true", "seamless = 1")), environ={})
-
-
-def test_verify_flags_a_pop_at_the_cut_into_a_seamless_section(tmp_path, monkeypatch, capsys):
-    from decktalk.media import frames as frames_module
-    from decktalk.stages.verify import verify
-
-    seamless_toml = PAGES_TOML.replace(
-        'number = 2\npage = "deck/index.html"\n', 'number = 2\npage = "deck/index.html"\nseamless = true\n'
-    )
-    seamless_toml = seamless_toml.replace(
-        'number = 3\npage = "deck/index.html"\n', 'number = 3\npage = "deck/index.html"\nseamless = true\n'
-    )
-    p = _verify_project(tmp_path, monkeypatch, {}, toml=seamless_toml)
-    calls: list[tuple[float, float, dict]] = []
-    share = [0.05]
-
-    def changed(path, t1, t2, **kw):
-        calls.append((round(t1, 3), round(t2, 3), kw))
-        return share[0]
-
-    monkeypatch.setattr(frames_module, "changed_pixels_percent", changed)
-    result = verify(p)
-    # Section 1 dips out over 0.16 s, so the last frame compared sits before the dip. Section 3 is not assembled.
-    assert calls == [(4.78, 5.0, {"level": 40, "width": 480, "height": 270})]
-    (row,) = result.seams
-    assert (row.key, row.cut_at, row.verdict, row.ok) == ("02", 5.0, "ok", True) and result.ok
-
-    share[0] = 0.5
-    result = verify(p)
-    assert [c.verdict for c in result.seams] == ["POP AT CUT"] and not result.ok
-    assert result.to_dict(p.root)["seams"] == [
-        {"key": "02", "cut_at": 5.0, "last_at": 4.78, "first_at": 5.0, "changed_percent": 0.5, "verdict": "POP AT CUT"}
-    ]
-    assert main(["-p", str(p.root), "verify"]) == 1
-    assert "POP AT CUT" in capsys.readouterr().out
-    assert main(["-p", str(p.root), "verify", "--json"]) == 1
-    doc = json.loads(capsys.readouterr().out)
-    assert doc["findings"] == {"certain": 1, "uncertain": 0} and doc["verify"]["seams"][0]["verdict"] == "POP AT CUT"
-
-    # A straight cut compares the frame just before the cut, and a section without the key gets no row.
-    calls.clear()
-    (p.root / "decktalk.toml").write_text(seamless_toml + "\n[transition]\ndips = []\n", encoding="utf-8")
-    assert [c.last_at for c in verify(Project.load(p.root, environ={})).seams] == [4.94]
-    (p.root / "decktalk.toml").write_text(PAGES_TOML, encoding="utf-8")
-    assert verify(Project.load(p.root, environ={})).seams == []
-
-
-def test_verify_to_dict_is_json_serialisable_and_relative(tmp_path, monkeypatch):
-    from decktalk.stages.verify import CueCheck, verify
-
-    p = _verify_project(tmp_path, monkeypatch, {"01": "start@0.0,a@1.23456"})
-    d = json.loads(json.dumps(verify(p).to_dict(p.root)))
-    assert d["final"] == "build/out/t.mp4" and d["total_seconds"] == 10.0 and d["silent"] is False
-    first = {"key": "01", "start": 0.0, "probe_at": 0.2, "yavg": 100.0, "ymax": 200.0, "verdict": "ok"}
-    assert d["starts"][0] == first and d["cuts"] == []
-    start, a = d["cues"]
-    assert start["section"] == 1 and start["cue"] == "start" and start["reason"] == "REFERENCE_CLAMPED"
-    assert a["cue_seconds"] == 1.235 and a["verdict"] == "NO CHANGE" and a["reason"] is None
-    row = CueCheck("3:3.1eq", 15.6612, 72.38123, 0.29444, 0.0, True, "", -20, -5).to_dict()
-    assert row == {
-        "section": 3,
-        "cue": "3.1eq",
-        "cue_seconds": 15.661,
-        "final_seconds": 72.381,
-        "changed_percent": 0.29,
-        "control_percent": 0.0,
-        "offset_ms": -20,
-        "av_ms": -5,
-        "verdict": "changed",
-        "reason": None,
-    }
 
 
 def test_build_captions_uses_the_take_index_spoken_text(tmp_path):
@@ -1467,53 +1214,6 @@ def test_provider_errors_never_show_the_voice_id(monkeypatch):
         _http.get_json(f"https://api.elevenlabs.io/v1/voices/{voice_id}", {"xi-api-key": api_key}, timeout=1)
     assert voice_id not in str(info.value) and api_key not in str(info.value)
     assert "voices/<voice id>" in str(info.value)
-
-
-def test_probe_plan_fits_the_gap_between_close_cues_and_keeps_well_spaced_cues():
-    from decktalk.stages.verify import probe_plan, reference_time
-
-    cfg = Settings().verify
-    fps = 25
-    # The demo's section 1: 1.1four fires 0.56 s after 1.1three, in a run of counting cues.
-    cues = {"bowl": 0.86, "ball": 1.76, "count": 3.58, "one": 4.42, "two": 5.11, "three": 5.62, "four": 6.18}
-    cues["word"] = 10.52
-
-    def plan(cue: str, end: float = 30.0) -> tuple[list[float], bool]:
-        before = reference_time(0.0, cues[cue], False, 0.0, cfg, fps)
-        assert before is not None
-        others = [t for c, t in cues.items() if c != cue]
-        return probe_plan(cues[cue], before, 0.0, end, others, cfg, fps)
-
-    # Both control spans of 1.1four's probes hold an earlier count, so its probe and control fit after 1.1three.
-    assert plan("four") == ([0.14], True)
-    # The later probe of 1.1count would reach 1.1one's reveal, so it stops where that reveal can begin.
-    assert plan("count") == ([0.7], True)
-    # A well-spaced cue keeps probe_delays exactly, and so does every cue with no neighbor.
-    assert plan("word") == ([0.7, 1.5], False)
-    assert plan("word", end=11.5) == ([0.7], False)
-    assert probe_plan(6.18, 6.04, 0.0, 30.0, [], cfg, fps) == ([0.7, 1.5], False)
-    # A cue within the reference lead is the same reveal, and a gap too short for any probe keeps probe_delays.
-    assert probe_plan(6.18, 6.04, 0.0, 30.0, [6.1, 6.3], cfg, fps) == ([0.7, 1.5], False)
-    assert probe_plan(6.18, 6.04, 0.0, 30.0, [6.4], cfg, fps) == ([0.7, 1.5], False)
-
-
-def test_reference_sits_before_an_early_reveal_the_offset_limit_allows():
-    import dataclasses
-
-    from decktalk.stages.verify import reference_time
-
-    cfg = Settings().verify
-    fps = 25
-    # A reveal may land max_offset_frames early, so the reference must sit before that window.
-    earliest_allowed = 10.0 - cfg.max_offset_frames / fps
-    ref = reference_time(0.0, 10.0, False, 0.0, cfg, fps)
-    assert ref is not None and ref <= earliest_allowed - 1.0 / fps
-    # A wider limit pushes the reference further back.
-    wide = dataclasses.replace(cfg, max_offset_frames=4)
-    ref_wide = reference_time(0.0, 10.0, False, 0.0, wide, fps)
-    assert ref_wide is not None and ref_wide <= 10.0 - 4 / fps - 1.0 / fps
-    # A cue close to the section start still clamps to one frame before the cue.
-    assert reference_time(0.0, 0.08, False, 0.0, cfg, fps) is not None
 
 
 TITLED_CLIP_TOML = """
@@ -1633,44 +1333,6 @@ def test_a_padded_take_within_a_frame_of_min_tail_is_not_padded_again(monkeypatc
     assert padded == []
     assert ensure_tail(Path("a.mp3"), cfg) == 0.09  # a take never padded before gets the full tail
     assert padded == [0.09]
-
-
-def test_verify_and_assemble_ignore_a_leftover_section_video(tmp_path, monkeypatch, caplog):
-    """A sections/04.mp4 left after sections were renumbered is not counted as a section."""
-    import importlib
-
-    from decktalk.stages.verify import verify
-
-    asm = importlib.import_module("decktalk.stages.assemble")
-    p = _verify_project(tmp_path, monkeypatch, {"01": "a@1.0"})
-    (p.sections_dir / "04.mp4").write_bytes(b"x")
-    (p.out_dir / "t-20260101-0000.mp4").write_bytes(b"x")  # files outside build/sections are not section videos
-    assert p.stray_section_videos() == [p.sections_dir / "04.mp4"]
-
-    with caplog.at_level("WARNING", logger="decktalk"):
-        result = verify(p, checks=[])
-    assert [s.key for s in result.starts] == ["01", "02"] and result.total_seconds == 10.0
-    assert [r.getMessage() for r in caplog.records] == [
-        "build/sections/04.mp4 is not a section in decktalk.toml, so verify ignores it. "
-        "Delete the file if an earlier build left it."
-    ]
-
-    (p.root / "script.md").write_text("## 1. A\n\nHi.\n\n## 2. B\n\nYes.\n\n## 3. C\n\nNo.\n", encoding="utf-8")
-    Timeline(
-        narration="narration.mp3",
-        total_seconds=5.0,
-        sections={"01": TimelineSection("A", 0, 5.0, 5.0, 1.0, [Word("Hi", 0.7, 1.0)])},
-        estimated=True,
-    ).save(p.timeline_path)
-    rows = [asm.RenderedSection(p.sections[0], p.sections_dir / "01.mp4", 5.0, "page")]
-    monkeypatch.setattr(asm, "render_sections", lambda project, timeline, strict: rows)
-    monkeypatch.setattr(asm, "concat", lambda files, out: out.write_bytes(b"x"))
-    monkeypatch.setattr(asm, "mux_chapters", lambda src, chapters, dst: dst.write_bytes(b"x"))
-    monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"x"))
-    assert asm.assemble(p, soundscape=False).warnings == [
-        "build/sections/04.mp4 is not a section in decktalk.toml, so assemble ignores it. "
-        "Delete the file if an earlier build left it."
-    ]
 
 
 # ---- section silence -----------------------------------------------------------------------
@@ -1838,7 +1500,6 @@ def test_plan_frames_follows_cue_mode_and_freezes_just_before_each_reveal():
         owner_slide,
         plan_frames,
     )
-    from decktalk.verdicts import SkipReason
 
     slides = {"1.1": ["1.1in", "1.1a", "1.1b"], "1.2": ["1.2a", "1.2b"]}
     cue_times = {"1.1in": 0.0, "1.1a": 1.0, "1.1b": 2.0, "1.2a": 3.0, "1.2b": 4.0, "1.1zz": 4.5, "9x": 5.0}

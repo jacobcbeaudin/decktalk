@@ -87,6 +87,8 @@ python-version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Two modules of the tree are named plan.py, so their mirrored test files share a basename.
+consider_namespace_packages = true
 markers = [
     "browser: needs headless Chromium (run `decktalk install` first)",
     "media: runs the ffmpeg that `decktalk install` fetches",
@@ -94,7 +96,7 @@ markers = [
     "scaffold: builds the whole scaffold project, about twenty minutes",
 ]
 # A bare `pytest` runs the unit suite alone. Pass -m to pick the slower suites, as scripts/check.py does.
-addopts = "-m 'not browser and not media and not e2e and not scaffold' --strict-markers"
+addopts = "-m 'not browser and not media and not e2e and not scaffold' --strict-markers --import-mode=importlib"
 filterwarnings = ["error"]
 
 [tool.coverage.run]

@@ -58,6 +58,7 @@ def verify_result(*cues: SimpleNamespace) -> SimpleNamespace:
     cut = SimpleNamespace(key="01", cut_at=10.0, rms_db=-120.0, ok=True, verdict=Verdict.QUIET)
     return SimpleNamespace(
         total_seconds=10.0,
+        recordings=[],
         starts=[start],
         cuts=[cut],
         cues=list(cues),

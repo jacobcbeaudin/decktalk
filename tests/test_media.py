@@ -20,7 +20,8 @@ import pytest
 
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.settings import Settings
-from decktalk.stages.verify import best_probe, first_change_offset, probe_plan, reference_time
+from decktalk.stages.verify.measure import best_probe, first_change_offset
+from decktalk.stages.verify.plan import probe_plan, reference_time
 
 pytestmark = pytest.mark.media
 
@@ -263,7 +264,7 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     from decktalk.artifacts import Timeline, TimelineSection
     from decktalk.model import Project
     from decktalk.stages.assemble import RenderedSection, mix_input_args, plan_mix
-    from decktalk.stages.verify import click_offset_ms
+    from decktalk.stages.verify.measure import click_offset_ms
 
     (tmp_path / "decktalk.toml").write_text(
         "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\nclip = 'broll.m4a'\n"

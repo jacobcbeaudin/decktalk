@@ -3,7 +3,8 @@ title: Verify
 description: Look up how decktalk verify measures section starts, cuts, cut continuity, and cues, and what each result means.
 ---
 
-`decktalk verify` checks the final mp4 in three ways: section starts, cuts, and cues. A section that sets
+`decktalk verify` is the one read-only checker after a build. It repeats what each recording log judged,
+and then checks the final mp4 in three ways: section starts, cuts, and cues. A section that sets
 `seamless` adds a fourth check, cut continuity. This page defines each measurement, limit, and result,
 in the order that `verify` computes them.
 
@@ -20,19 +21,27 @@ unless the page names another table. The defaults assume 25 fps, so one frame la
 
 ## Which checks run
 
-The verify stage inside `decktalk build` checks section starts, cuts, and cut continuity, and no cue.
-`decktalk verify` checks all four.
+The verify stage inside `decktalk build` checks the recordings, section starts, cuts, and cut continuity,
+and no cue. `decktalk verify` checks all five.
 
 - With no cue named, `verify` checks every cue in `cue-times.json`, in section order and then cue time.
 - With no cue named, `verify` skips a cue that `cues.json` marks `"verify": false`.
 - Named cues run in the order given.
 - A named cue runs even when `cues.json` marks it `"verify": false`.
 - `--only N` keeps only the cues of section `N`, named cues included. A named cue outside `--only` gets no row.
-- Section starts, cuts, and cut continuity are always checked, whatever `--only` names.
+- Section starts, cuts, and cut continuity are always checked, whatever `--only` names. `--only` does keep the recordings table to the sections it names.
 
 A named cue has the form `SECTION:CUE`, such as `8:7.1checked`. `SECTION` is the section number, not the scene
 number. Section 8 of the scaffold plays scene 7. A name that does not start with a section number is an error (`malformed check`), and the command
 exits 1.
+
+## Recordings
+
+Each page section's recording log holds the verdicts `record` reached when it made the recording, and
+`verify` reports them again, so a page that threw or an equation that was never typeset is still a
+finding long after the build. The row is `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`, `BLACK?` or
+`KATEX?`, exactly as [`decktalk record`](/reference/cli#decktalk-record) defines them, or `ok`. A
+section with no recording log gets no row.
 
 ## Section starts
 
@@ -493,6 +502,7 @@ Mark such a cue `"verify": false`, and check it by eye with `decktalk screenshot
 | `verify.final` | string | Path of the final mp4, relative to the project. |
 | `verify.total_seconds` | number | Length of the video, the sum of the `sections/NN.mp4` of every section in `decktalk.toml`. |
 | `verify.silent` | boolean | True after a build without voice. Only then can `av_ms` hold a value. |
+| `verify.recordings[]` | array | One object per recorded page section, with `key`, `where` (its recording log), `t0_method`, `verdicts` (verdict codes) and `page_errors`. |
 | `verify.starts[]` | array | One object per section start, with `key`, `start`, `probe_at`, `yavg`, `ymax`, and `verdict`. |
 | `verify.cuts[]` | array | One object per cut, with `key`, `cut_at`, `rms_db`, and `verdict`. |
 | `verify.seams[]` | array | One object per section that sets `seamless`, with `key`, `cut_at`, `last_at`, `first_at`, `changed_percent`, and `verdict` (`ok` or `POP AT CUT`). |
