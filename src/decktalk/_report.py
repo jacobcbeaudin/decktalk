@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .artifacts import Timeline
-from .config import NarrationConfig
+from .settings import NarrationConfig
 from .stages.align import AlignResult
 from .stages.clip import SectionWords
 from .stages.measure import LeadMeasurement, RecordingCheck

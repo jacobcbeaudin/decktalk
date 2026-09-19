@@ -156,7 +156,7 @@ These functions run one stage each, or read the project.
 | `record(project, *, only=None, seconds=None, use_cues=True)` | A list of `RecordResult`, each with `section`, `path`, `log`, and `seconds` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `measure(project, only=None)` | A list of `LeadMeasurement`, each with `key`, `t0_seconds`, `wallclock_seconds`, and `method` | `MissingInputError` |
 | `check(project, only=None)` | A list of `RecordingCheck`, each with `key`, `duration`, `wanted`, `y10`, `y50`, `y90`, `max50`, `verdict`, `page_errors`, `file`, `ok`, and `to_dict(root)` | `MissingInputError` |
-| `assemble(project, *, soundscape=True, loudness=True, strict=False)` | `AssembleResult` with `final`, `stamped`, `duration`, `sections`, `warnings`, `loudness`, `captions_srt`, `captions_vtt`, and `chapters` | `ConfigError`, `MissingInputError`, `ToolError` |
+| `assemble(project, *, soundscape=True, loudness=True, strict=False)` | `AssembleResult` with `final`, `stamped` (`None` unless `[output] timestamped_copy` is on), `duration`, `sections`, `warnings`, `loudness`, `captions_srt`, `captions_vtt`, and `chapters` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `screenshots(project, *, pages=None, slides=None, section=None, at=None, cues=None)` | A list of screenshot paths | `ConfigError` |
 | `soundscape(project, *, only=None, force=False, dry_run=False)` | A list of `SoundscapeItem`, each with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds` | `ConfigError`, `ProviderError` |
 | `status(project)` | `StatusResult`, which reads what exists and runs nothing | none |

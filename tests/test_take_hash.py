@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.config import ElevenLabsConfig, NarrationConfig
 from decktalk.project import Voice
 from decktalk.providers.elevenlabs import ElevenLabs
 from decktalk.providers.speech import SpeechRequest
+from decktalk.settings import ElevenLabsConfig, NarrationConfig
 from decktalk.stages.narrate import Segment, parse_script, text_hash
 
 GOLDEN = json.loads((Path(__file__).parent / "data" / "take_hash.json").read_text(encoding="utf-8"))

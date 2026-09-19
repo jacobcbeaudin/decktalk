@@ -23,10 +23,10 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 from .artifacts import CueTimes, RecordingLog, Takes, Timeline, Word
-from .config import Settings, load_settings
 from .errors import ConfigError, DeckTalkError, MissingInputError, ProviderError, ToolError
 from .project import ClipSection, Mix, PageSection, Project, Section, Soundscape, Transition, Voice
 from .providers.speech import SpeechProvider, SpeechRequest, register_speech_provider
+from .settings import Settings, load_settings
 from .stages import (
     AlignResult,
     AssembleResult,

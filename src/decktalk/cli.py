@@ -35,6 +35,7 @@ import json
 import logging
 import sys
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -57,15 +58,20 @@ BUILD_STRICT_HELP = (
 
 
 def _project(args: argparse.Namespace) -> Project:
+    """The project this run works on, with the four flags that override a tuning key applied.
+
+    The settings are frozen, so a flag rebuilds the table it belongs to rather than assigning into
+    one that another caller may already hold.
+    """
     project = Project.load(getattr(args, "project", None))
-    s = project.settings
+    video, record = project.settings.video, project.settings.record
     if getattr(args, "preset", None):
-        s.video.preset = args.preset
+        video = replace(video, preset=args.preset)
     if getattr(args, "crf", None) is not None:
-        s.video.crf = args.crf
+        video = replace(video, crf=args.crf)
     if getattr(args, "settle", None) is not None:
-        s.record.settle_seconds = args.settle
-    return project
+        record = replace(record, settle_seconds=args.settle)
+    return replace(project, settings=replace(project.settings, video=video, record=record))
 
 
 def _only(values: list[int] | None) -> list[int] | None:

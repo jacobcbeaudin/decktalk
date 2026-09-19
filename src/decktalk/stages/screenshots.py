@@ -37,7 +37,7 @@ def screenshot_slides(
     if not pages:
         raise ConfigError("no HTML pages in decktalk.toml")
     written: list[Path] = []
-    with chromium() as browser:
+    with chromium(project.settings.record.browser_path) as browser:
         page = browser.new_page(viewport={"width": video.width, "height": video.height})
         page.on("pageerror", lambda e: log.warning("page error: %s", e))
         for rel in pages:
@@ -79,7 +79,7 @@ def screenshot_frames(project: Project, section: int, at: list[float]) -> list[P
     url = scene_url(project, sec, scene_params(sec, project.cue_times()))
     project.screenshots_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    with chromium() as browser:
+    with chromium(project.settings.record.browser_path) as browser:
         page = browser.new_page(viewport={"width": video.width, "height": video.height})
         page.goto(url, wait_until="load")
         await_ready(page)

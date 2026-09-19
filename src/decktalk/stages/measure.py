@@ -27,10 +27,10 @@ from pathlib import Path
 from typing import Any
 
 from ..artifacts import RecordingLog
-from ..config import RecordConfig
 from ..errors import MissingInputError
 from ..media import ffmpeg
 from ..project import Project
+from ..settings import RecordConfig
 from ..verdicts import Verdict
 
 log = logging.getLogger(__name__)

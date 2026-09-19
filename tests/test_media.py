@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.config import Settings
 from decktalk.media import ffmpeg
+from decktalk.settings import Settings
 from decktalk.stages.verify import best_probe, first_change_offset, probe_plan, reference_time
 
 pytestmark = pytest.mark.media

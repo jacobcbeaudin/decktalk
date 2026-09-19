@@ -680,8 +680,8 @@ decktalk assemble [-h] [--project PROJECT] [-v] [-q] [--no-soundscape]
 
 **Reads** `timeline.json`, `takes.json`, `cue-times.json`, the recordings and recording logs, the clips, the
 markers file, the music, the ambience bed, and the sound effects. **Writes**
-`build/sections/NN.mp4`, `<name>.mp4`, a copy named `<name>-YYYYMMDD-HHMM.mp4`, `<name>.srt`,
-`<name>.vtt`, `<name>.chapters.txt`, and `build/out/slates/`.
+`build/sections/NN.mp4`, `<name>.mp4`, `<name>.srt`, `<name>.vtt`, `<name>.chapters.txt`, and
+`build/out/slates/`, plus a copy named `<name>-YYYYMMDD-HHMM.mp4` when `[output] timestamped_copy` is on.
 
 - Without `--strict`, a missing clip plays a titled slate for `slate_seconds`, and a missing recording plays black.
 - `assemble` trims each recording at the `t0_seconds` that `measure` wrote. If `measure` has not read the

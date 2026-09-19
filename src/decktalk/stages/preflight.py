@@ -46,10 +46,10 @@ from typing import Any
 from urllib.parse import urlencode
 
 from ..artifacts import CueTimes, Word
-from ..config import NarrationConfig, VerifyConfig
 from ..media import ffmpeg
 from ..media.browser import await_ready, chromium, page_error_text, screenshot
 from ..project import PageSection, Project
+from ..settings import NarrationConfig, VerifyConfig
 from ..verdicts import Findings, SkipReason, Verdict
 from .align import AlignResult, load_cues, resolve_sections, unknown_cue_ids
 from .narrate import (
@@ -463,7 +463,7 @@ def frame_estimates(
     wanted = [s for s in project.sections if not only or s.number in set(only)]
     cues: list[CueEstimate] = []
     seams: list[SeamEstimate] = []
-    with chromium() as browser:
+    with chromium(project.settings.record.browser_path) as browser:
         page = browser.new_page(viewport={"width": video.width, "height": video.height})
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(page_error_text(e)))

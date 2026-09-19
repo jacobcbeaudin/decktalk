@@ -46,7 +46,7 @@ uv run pytest -q -m "browser or media"           # the runtime in Chromium, fram
 uv run pytest -q -m e2e                          # the pipeline test: an offline build of tests/e2e/fixture
 uv run --with "fonttools[woff]>=4.50" python scripts/build_assets.py --check
                                                  # fails if assets/*.svg or docs/images are out of date
-uv run scripts/build_config_reference.py --check # fails if docs/reference/configuration.mdx is out of date
+uv run scripts/build_settings_reference.py --check # fails if docs/reference/configuration.mdx is out of date
 uv run scripts/build_changelog.py --check        # fails if docs/changelog.mdx is out of date
 ```
 
@@ -94,7 +94,7 @@ trusted publisher, so neither may be renamed.
 ```text
 src/decktalk/
   cli.py         the command line: its tables, --json output, and exit codes
-  config.py      tuning settings: defaults, machine file, decktalk.toml, DECKTALK_* env, flags
+  settings.py    tuning settings: defaults, machine file, decktalk.toml, DECKTALK_* env, flags
   project.py     the decktalk.toml document, validated at load
   artifacts.py   typed build artifacts (takes, timeline, cue times, recording log)
   scaffold.py    install, doctor, and init: the downloads and the template copy
@@ -121,7 +121,7 @@ scripts/
   check.py                    every check a pull request must pass, in one command
   build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon
   build_changelog.py          generates docs/changelog.mdx from CHANGELOG.md
-  build_config_reference.py   generates docs/reference/configuration.mdx from config.py
+  build_settings_reference.py generates docs/reference/configuration.mdx from settings.py
 docs/                          the Mintlify site at docs.decktalk.app
 site/                          the landing page at decktalk.app
 ```
@@ -160,7 +160,7 @@ Two pages are generated. Do not edit them by hand.
 
 | Page | Source | Command |
 |---|---|---|
-| `docs/reference/configuration.mdx` | The comments in `src/decktalk/config.py` | `uv run scripts/build_config_reference.py` |
+| `docs/reference/configuration.mdx` | The tuning fields in `src/decktalk/settings.py` | `uv run scripts/build_settings_reference.py` |
 | `docs/changelog.mdx` | `CHANGELOG.md` | `uv run scripts/build_changelog.py` |
 
 ## Commits and releases

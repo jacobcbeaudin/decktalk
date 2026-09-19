@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..config import ElevenLabsConfig
 from ..media import ffmpeg
 from ..project import MusicSpec, Project, SoundSpec
 from ..providers.elevenlabs import ElevenLabs
+from ..settings import ElevenLabsConfig
 
 log = logging.getLogger(__name__)
 

@@ -74,10 +74,10 @@ from pathlib import Path
 from typing import Any
 
 from ..artifacts import CueTimes
-from ..config import VerifyConfig
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
 from ..project import Project
+from ..settings import VerifyConfig
 from ..verdicts import SkipReason, Verdict
 
 log = logging.getLogger(__name__)

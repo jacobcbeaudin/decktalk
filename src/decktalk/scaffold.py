@@ -201,7 +201,7 @@ def doctor() -> list[DoctorRow]:
         rows.append(DoctorRow("ffprobe", True, found[1]))
     else:
         rows.append(DoctorRow("ffmpeg", False, "not fetched yet and none on PATH  -> run `decktalk install`"))
-    from .config import user_config_path
+    from .settings import user_config_path
 
     cfg_path = user_config_path()
     rows.append(DoctorRow("config", True, str(cfg_path) if cfg_path.exists() else f"none (optional, at {cfg_path})"))

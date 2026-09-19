@@ -22,7 +22,7 @@ from decktalk.artifacts import (
     parse_cue_times,
 )
 from decktalk.cli import build_parser, main
-from decktalk.config import Settings
+from decktalk.settings import Settings
 from decktalk.stages.align import Cue, find_phrase, resolve_cue
 from decktalk.stages.assemble import cut_summary, fade_flags, timeline_targets
 from decktalk.stages.narrate import estimated_words, parse_script, strip_markdown
@@ -180,7 +180,7 @@ def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, mon
 
 
 def test_user_settings_file_warns_about_unknown_keys(tmp_path, caplog):
-    from decktalk.config import read_user_toml
+    from decktalk.settings import read_user_toml
 
     path = tmp_path / "decktalk.toml"
     path.write_text("[record]\nsettle_second = 0.8\n", encoding="utf-8")
@@ -920,7 +920,7 @@ def test_display_words_restores_punctuation_and_case():
 
 
 def test_user_settings_sit_between_defaults_and_the_project(tmp_path, monkeypatch):
-    from decktalk.config import load_settings, read_user_toml, user_config_path
+    from decktalk.settings import load_settings, read_user_toml, user_config_path
 
     user_file = tmp_path / "decktalk.toml"
     user_file.write_text('[video]\npreset = "veryfast"\ncrf = 22\n[record]\nsettle_seconds = 0.9\n', encoding="utf-8")
@@ -959,7 +959,7 @@ def test_page_error_text_keeps_the_message_and_the_file_and_line():
 
 def test_recording_log_verdicts_flag_page_errors_and_bad_tex(tmp_path):
     from decktalk.artifacts import RecordingLog
-    from decktalk.config import RecordConfig
+    from decktalk.settings import RecordConfig
     from decktalk.stages.measure import log_verdicts
 
     recording_log = RecordingLog(url="x", requested_seconds=1, settle_seconds=0, load_seconds=0, clock_start_seconds=0)
@@ -1043,7 +1043,7 @@ def test_assemble_skips_loudness_on_an_estimated_timeline(tmp_path, monkeypatch,
 
 
 def test_reference_time_skips_the_fade_and_keeps_the_lead():
-    from decktalk.config import VerifyConfig
+    from decktalk.settings import VerifyConfig
     from decktalk.stages.verify import reference_time
 
     cfg = VerifyConfig()  # lead_seconds 0.1
@@ -1723,8 +1723,8 @@ def test_trailing_silence_counts_a_silence_ending_0_0502_s_before_the_end(monkey
 
 
 def test_a_padded_take_within_a_frame_of_min_tail_is_not_padded_again(monkeypatch):
-    from decktalk.config import NarrationConfig
     from decktalk.media import ffmpeg
+    from decktalk.settings import NarrationConfig
     from decktalk.stages.narrate import ensure_tail
 
     padded: list[float] = []

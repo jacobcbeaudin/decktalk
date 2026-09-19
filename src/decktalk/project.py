@@ -1,7 +1,7 @@
 """A DeckTalk project: a directory with decktalk.toml, a script, cues, HTML pages and media.
 
     my-lesson/
-      decktalk.toml      the document (below) plus optional tuning tables (config.py)
+      decktalk.toml      the document (below) plus optional tuning tables (settings.py)
       script.md          narration; "## N. Title" sections, [bracketed directions] unspoken
       cues.json          which spoken phrase each visual lands on
       deck/index.html    HTML scenes; decktalk-runtime.js gives them the ?cues= contract
@@ -33,16 +33,9 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import CueTimes, Takes, Timeline, Word, read_words
-from .config import (
-    PROJECT_FILE,
-    Settings,
-    load_settings,
-    read_project_toml,
-    settings_key_warnings,
-    unknown_key_message,
-    unknown_key_warnings,
-)
 from .errors import ConfigError
+from .settings import PROJECT_FILE, Settings, load_settings, read_project_toml, settings_key_warnings
+from .tomlmap import unknown_key_message, unknown_key_warnings
 
 log = logging.getLogger(__name__)
 

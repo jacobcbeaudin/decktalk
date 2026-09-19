@@ -86,13 +86,17 @@ font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;overflow:hidden}}
 
 
 @contextmanager
-def chromium() -> Iterator[Any]:
-    """A launched headless Chromium, closed on exit. ToolError with the fix when unavailable."""
+def chromium(browser_path: str = "") -> Iterator[Any]:
+    """A launched headless Chromium, closed on exit. ToolError with the fix when unavailable.
+
+    `browser_path` is `[record] browser_path`, the executable a machine that manages its own
+    Chromium names. It is empty for the build that `decktalk install` fetched.
+    """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as pw:
         try:
-            browser = pw.chromium.launch()
+            browser = pw.chromium.launch(executable_path=browser_path or None)
         except Exception as exc:
             raise ToolError(f"could not launch Chromium ({str(exc).splitlines()[0]}). Run `decktalk install`.") from exc
         try:
@@ -271,6 +275,7 @@ def render_slate(
     width: int,
     height: int,
     background: str = "#0e1116",
+    browser_path: str = "",
 ) -> Path:
     """A titled placeholder frame, for a section whose clip is missing."""
     doc = SLATE_HTML.format(
@@ -283,7 +288,7 @@ def render_slate(
         foot=html.escape(foot),
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    with chromium() as browser:
+    with chromium(browser_path) as browser:
         page = browser.new_page(viewport={"width": width, "height": height})
         page.set_content(doc)
         await_ready(page)

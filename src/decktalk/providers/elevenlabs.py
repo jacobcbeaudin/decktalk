@@ -10,9 +10,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from ..artifacts import Word
-from ..config import ElevenLabsConfig
 from ..errors import ConfigError
 from ..project import Project
+from ..settings import ElevenLabsConfig
 from ._http import post_bytes, post_json
 from .speech import SpeechRequest, register_speech_provider
 

@@ -10,11 +10,11 @@ from dataclasses import asdict, fields
 
 import pytest
 
-from decktalk.config import ElevenLabsConfig, Settings
 from decktalk.errors import ConfigError
 from decktalk.project import Project
 from decktalk.providers import _http
 from decktalk.providers.elevenlabs import ALLOW_ANY_API_BASE, ElevenLabs, check_api_base
+from decktalk.settings import ElevenLabsConfig, Settings
 
 SENTINEL = "sk_sentinel_key_that_must_never_print"
 

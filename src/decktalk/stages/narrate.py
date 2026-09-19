@@ -35,12 +35,12 @@ from pathlib import Path
 from typing import Any
 
 from ..artifacts import Take, Takes, Timeline, TimelineSection, Word, write_words
-from ..config import NarrationConfig
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
 from ..project import PageSection, Project
 from ..providers import elevenlabs as _elevenlabs  # noqa: F401  (registers the default provider)
 from ..providers.speech import SpeechProvider, SpeechRequest, get_provider
+from ..settings import NarrationConfig
 
 log = logging.getLogger(__name__)
 

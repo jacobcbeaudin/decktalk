@@ -21,7 +21,7 @@
    section that names one, and chapter markers from the section chapters are muxed into the
    mp4. Consecutive sections with the same chapter share one chapter marker.
 6. Atomic publish: work file, then one rename to build/out/<name>.mp4, plus a
-   timestamped copy.
+   timestamped copy when [output] timestamped_copy is on.
 """
 
 from __future__ import annotations
@@ -50,11 +50,11 @@ from ..artifacts import (
     write_srt,
     write_vtt,
 )
-from ..config import AudioConfig, VideoConfig
 from ..errors import ConfigError, MissingInputError, ToolError
 from ..media import ffmpeg
 from ..media.browser import render_slate
 from ..project import ClipSection, PageSection, Project, Section
+from ..settings import AudioConfig, VideoConfig
 from .align import find_phrase
 from .measure import stale_measure
 
@@ -820,7 +820,7 @@ def mux_chapters(src: Path, chapters: Path, dst: Path) -> None:
 @dataclass
 class AssembleResult:
     final: Path
-    stamped: Path
+    stamped: Path | None  # The timestamped copy, when [output] timestamped_copy is on.
     duration: float
     sections: list[RenderedSection]
     warnings: list[str]
@@ -905,11 +905,13 @@ def assemble(
 
     if not work.exists() or work.stat().st_size == 0:
         raise ToolError("render produced no output")
-    stamped = out_dir / f"{project.name}-{time.strftime('%Y%m%d-%H%M')}.mp4"
     work.replace(project.final)  # atomic: a viewer never opens a half-written file
-    shutil.copyfile(project.final, stamped)
+    stamped = None
+    if project.settings.output.timestamped_copy:
+        stamped = out_dir / f"{project.name}-{time.strftime('%Y%m%d-%H%M')}.mp4"
+        shutil.copyfile(project.final, stamped)
     duration = ffmpeg.probe_duration(project.final)
-    log.info("done: %s  (%.2fs)  copy: %s", project.final, duration, stamped.name)
+    log.info("done: %s  (%.2fs)%s", project.final, duration, f"  copy: {stamped.name}" if stamped else "")
     return AssembleResult(
         final=project.final,
         stamped=stamped,

@@ -118,7 +118,7 @@ def record(
         raise ConfigError("nothing to record: no page sections matched")
 
     results: list[RecordResult] = []
-    with chromium() as browser:
+    with chromium(project.settings.record.browser_path) as browser:
         for section, url, length, out in jobs:
             log.info("[rec ] section %s (%s?scene=%s)  %.1fs ...", section.key, section.page, section.scene, length)
             for attempt in range(1, cfg.retries + 2):

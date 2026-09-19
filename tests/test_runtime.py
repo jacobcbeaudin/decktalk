@@ -576,8 +576,8 @@ def test_freeze_before_one_cue_stops_just_before_it(page, deck):
 
 def test_record_page_stores_page_errors_in_the_recording_log(page, tmp_path):
     """A page that throws, and a page without the runtime, both leave page_errors that check turns into PAGE ERROR."""
-    from decktalk.config import RecordConfig
     from decktalk.media.browser import NO_CATALOG, record_page
+    from decktalk.settings import RecordConfig
     from decktalk.stages.measure import log_verdicts
 
     runtime = runtime_path().resolve().as_uri()
@@ -618,9 +618,9 @@ def test_recorder_keeps_frames_flowing_so_reveals_on_a_still_page_land_on_schedu
     When the motion stopped with the cover, every reveal here read -40 ms. The keep-alive is also
     invisible to verify: nothing changes at its onset diff level before the first reveal.
     """
-    from decktalk.config import RecordConfig, VerifyConfig
     from decktalk.media import ffmpeg
     from decktalk.media.browser import record_page
+    from decktalk.settings import RecordConfig, VerifyConfig
     from decktalk.stages.measure import measure_lead
 
     at = [0.8, 1.6, 2.4]
