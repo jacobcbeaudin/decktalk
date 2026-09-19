@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import CueTimes, Word
+from ..artifacts import CueTime, CueTimes, Word
 from ..errors import ConfigError, MissingInputError
 from ..project import PageSection, Project
 from ..verdicts import Finding, Verdict
@@ -185,21 +185,12 @@ def anchor_time(cue: Cue, words: list[Word]) -> float | None:
     return None if idx is None else words[idx].start
 
 
-def write_anchors(path: Path, anchors: dict[str, dict[str, float]]) -> None:
-    """Where each cue's word starts, without the cue's offset. verify uses it to find the word's click."""
-    path.write_text(json.dumps(anchors, indent=1) + "\n", encoding="utf-8")
-
-
-def read_anchors(path: Path) -> dict[str, dict[str, float]]:
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-
-
 @dataclass
 class SectionCueTimes:
     key: str
     speech_end: float
     min_seconds: float | None
-    resolved: dict[str, float]
+    resolved: list[CueTime]
     notes: list[str] = field(default_factory=list)
     skipped: str | None = None  # why nothing was resolved (no narration)
     findings: list[Finding] = field(default_factory=list)  # The notes, structured, in the same order.
@@ -216,7 +207,7 @@ class SectionCueTimes:
             "speech_end": round(self.speech_end, 3),
             "min_seconds": self.min_seconds,
             "skipped": self.skipped,
-            "cues": dict(self.resolved),
+            "cues": {r.cue: r.at for r in self.resolved},
             "notes": [{"cue": n.cue, "verdict": n.verdict, "detail": n.message} for n in self.findings],
         }
 
@@ -302,11 +293,10 @@ def align(project: Project, *, allow_unknown_cues: bool = False) -> AlignResult:
                 project.section_words(key, entry.words_file),
                 entry.duration_seconds + project.lead_seconds(key),
             )
-    cue_times, anchors, rows, unresolved = resolve_sections(
+    cue_times, rows, unresolved = resolve_sections(
         specs, take_words, unknown_ids=unknown_ids, estimated=takes.estimated
     )
     cue_times.save(project.cue_times_path)
-    write_anchors(project.cue_times_anchors_path, anchors)
     log.info(
         "wrote %s (%d sections with cues; %d unresolved, %d unknown)",
         project.cue_times_path,
@@ -333,15 +323,14 @@ def resolve_sections(
     *,
     unknown_ids: list[tuple[str, str, str]],
     estimated: bool,
-) -> tuple[CueTimes, dict[str, dict[str, float]], list[SectionCueTimes], int]:
-    """(cue_times, anchors, one row per section, unresolved count) for cues against each section's take.
+) -> tuple[CueTimes, list[SectionCueTimes], int]:
+    """(cue_times, one row per section, unresolved count) for cues against each section's take.
 
     `take_words` maps a section key to its words and its length, both in seconds after the section
     starts. A section with no take is skipped. `estimated` names the take index kind in a no-words note.
     Nothing is written.
     """
-    cue_times = CueTimes()
-    anchors: dict[str, dict[str, float]] = {}
+    cue_times = CueTimes(estimated=estimated)
     rows: list[SectionCueTimes] = []
     unresolved = 0
     for spec in specs:
@@ -353,7 +342,7 @@ def resolve_sections(
                     key=key,
                     speech_end=0.0,
                     min_seconds=spec.min_seconds,
-                    resolved={},
+                    resolved=[],
                     skipped="no narration (clip section, or not rendered)",
                 )
             )
@@ -363,7 +352,7 @@ def resolve_sections(
             continue
         words, length = take
         speech_end = words[-1].end if words else length
-        row = SectionCueTimes(key=key, speech_end=speech_end, min_seconds=spec.min_seconds, resolved={})
+        row = SectionCueTimes(key=key, speech_end=speech_end, min_seconds=spec.min_seconds, resolved=[])
         for cue in spec.cues:
             if not words and cue.on != "$start":
                 row.note(
@@ -380,13 +369,12 @@ def resolve_sections(
                 continue
             if t > length:
                 row.note(cue.cue, None, f"{t}s is past the end of the audio ({round(length, 3)}s)")
-            row.resolved[cue.cue] = t
+            anchor = anchor_time(cue, words)
+            word_at = None if anchor is None else round(anchor, 2)
+            row.resolved.append(CueTime(cue=cue.cue, on=cue.on, at=t, word_at=word_at))
             ambiguous = ambiguity_note(cue, words)
             if ambiguous:
                 row.note(cue.cue, None, ambiguous)
-            anchor = anchor_time(cue, words)
-            if anchor is not None:
-                anchors.setdefault(key, {})[cue.cue] = round(anchor, 2)
         if spec.min_seconds is not None and speech_end < spec.min_seconds:
             short = spec.min_seconds - speech_end
             row.note(None, None, f"speech {speech_end:.1f}s is {short:.1f}s shorter than the visuals need")
@@ -396,4 +384,4 @@ def resolve_sections(
         if row.resolved:
             cue_times.sections[key] = row.resolved
         rows.append(row)
-    return cue_times, anchors, rows, unresolved
+    return cue_times, rows, unresolved

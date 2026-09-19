@@ -100,9 +100,9 @@ Note: A section's `lead_seconds` moves every word, and so every phrase cue and `
 
 ## Output files
 
-`decktalk align` writes `build/cue-times.json`, with each section's cue times as its `?cues=`
-string. It also writes `build/cue-times.anchors.json`, with each cue's word start before the offset
-key. [Build artifacts](/reference/artifacts) has the shape of both files.
+`decktalk align` writes `build/cue-times.json`, with one row per resolved cue: the cue id, the
+phrase it matched, its cue time, and the word start before the offset key.
+[Build artifacts](/reference/artifacts) has the shape of the file.
 
 ## Related
 

@@ -476,8 +476,8 @@ decktalk align [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
 | `--allow-unknown-cues` | off | Does not count a cue id that is missing from its page. The table still notes it. |
 | `--json`, `--strict`, `--exit-zero` | off | See [Output and exit flags](#output-and-exit-flags). |
 
-**Reads** `takes.json`, the words files, `cues.json`, and each page. **Writes** `cue-times.json` and
-`cue-times.anchors.json`, even when it exits 1.
+**Reads** `takes.json`, the words files, `cues.json`, and each page. **Writes** `cue-times.json`, even
+when it exits 1.
 
 `align` looks for each cue id in its page as a quoted literal, in single quotes, double quotes, or
 backticks. A `data-cue` value, a key of a slide's `preview` object, and a handler key all count.
@@ -736,7 +736,7 @@ decktalk verify [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
 | `--json`, `--strict`, `--exit-zero` | off | See [Output and exit flags](#output-and-exit-flags). |
 
 **Reads** `build/sections/NN.mp4`, `build/out/<name>.mp4`, `narration.mp3`, `timeline.json`,
-`cue-times.json`, `cue-times.anchors.json`, `takes.json`, and `cues.json`. **Writes** nothing.
+`cue-times.json`, `takes.json`, and `cues.json`. **Writes** nothing.
 
 | Check | Passes when | Keys in `[verify]` |
 |---|---|---|

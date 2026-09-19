@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import Timeline, Word, display_words, write_words
+from ..artifacts import Timeline, Word, write_words
+from ..captions import display_words
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
 from ..project import PageSection, Project

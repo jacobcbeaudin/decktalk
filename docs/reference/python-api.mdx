@@ -193,7 +193,7 @@ These classes read and write the files under `build/`. [Build artifacts](/refere
 | `Word` | `word`, `start`, `end` |
 | `Takes` | The narration cache. `load(path)` returns `None` when the file does not exist. `save(path)`. |
 | `Timeline` | Section and word times in `narration.mp3`. `load(path)`, `save(path)`, `span(key)`, and `keys`. |
-| `CueTimes` | Cue times per section. `load(path)`, `save(path)`, `query(key)` for the `?cues=` string, and `get(key, cue)`. |
+| `CueTimes` | The resolved cues per section, as `CueTime` rows. `load(path)`, `save(path)`, `query(key)` for the `?cues=` string, `times(key)`, `get(key, cue)`, and `word_at(key, cue)`. |
 | `RecordingLog` | What the recorder did for one section. `load(path)`, `save(path)`, `trim_seconds`, and `worst_stall_ms`. |
 
 ## Errors and logging

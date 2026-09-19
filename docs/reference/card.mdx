@@ -222,8 +222,7 @@ order.
 | `build/narration/NN-slug.mp3`, `NN-slug.words.json` | `narrate` | One section's audio and its `[{word, start, end}]` list. |
 | `build/narration/takes.json` | `narrate` | One entry per section, with its text hash and lengths. |
 | `build/narration/narration.mp3`, `timeline.json` | `narrate` | Spoken sections back to back, with each section's span and words. |
-| `build/cue-times.json` | `align` | `{"NN": "cue@seconds,…"}`, in seconds after the section start. |
-| `build/cue-times.anchors.json` | `align` | Each cue's word start without its offset key. `verify` uses it to find the click. |
+| `build/cue-times.json` | `align` | One row per cue with `cue`, `on`, `at` and `word_at`, in seconds after the section start. |
 | `build/recordings/NN.webm`, `recordings/NN.json` | `record`, `measure` | The recording and its recording log: t=0, warnings, page errors, and frame gaps. |
 | `build/sections/NN.mp4` | `assemble` | One section cut to its span, video only. |
 | `build/out/<name>.mp4` | `assemble` | The video with chapters, plus a copy with a timestamp in its name. |

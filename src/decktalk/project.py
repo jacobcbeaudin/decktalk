@@ -593,10 +593,6 @@ class Project:
         return self.build / "cue-times.json"
 
     @property
-    def cue_times_anchors_path(self) -> Path:
-        return self.build / "cue-times.anchors.json"
-
-    @property
     def final(self) -> Path:
         return self.out_dir / f"{self.name}.mp4"
 

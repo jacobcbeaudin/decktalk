@@ -173,7 +173,7 @@ at        = section start in the final mp4 + cue time
 ```
 
 - `$start` has a word start of 0.0 s. `$end` has the end of the section's last spoken word.
-- `build/cue-times.anchors.json` keeps each word start without the offset key, also rounded to hundredths.
+- Each row of `build/cue-times.json` keeps its word start in `word_at`, without the offset key, also rounded to hundredths.
 - A `$start` cue with a negative offset key keeps its negative cue time.
 
 Example: section 8 starts at 228.28 s, and `8:7.1checked` has a cue time of 10.03 s. Its `at` is 238.31 s.
@@ -376,7 +376,7 @@ a/v             = offset column - click distance
                 = (onset - click) - offset key                     # milliseconds
 ```
 
-- The word start comes from `cue-times.anchors.json`, so the offset key does not add to `a/v`. An `a/v` of 0 means
+- The word start comes from the row's `word_at`, so the offset key does not add to `a/v`. An `a/v` of 0 means
   the picture changes one offset key after the click.
 - The offset column compares the picture with the cue time in `cue-times.json`. The `a/v` value compares the
   picture with the audio in the final file.

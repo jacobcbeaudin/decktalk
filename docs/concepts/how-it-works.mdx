@@ -43,7 +43,7 @@ flowchart TB
 | Stage | One job | Writes |
 |---|---|---|
 | `narrate` | `narrate` voices each section and gets a time for every word. | `build/narration/NN-slug.mp3`, `NN-slug.words.json`, `takes.json`, `narration.mp3`, `timeline.json` |
-| `align` | `align` turns each cue phrase into a cue time. | `build/cue-times.json`, `cue-times.anchors.json` |
+| `align` | `align` turns each cue phrase into a cue time. | `build/cue-times.json` |
 | `record` | `record` records each page section in headless Chromium. | `build/recordings/NN.webm`, `recordings/NN.json` |
 | `measure` | `measure` finds narration t=0 in each recording. | `t0_seconds` in each recording log |
 | `check` | `check` flags a recording that is black, short, stalled, or uncovered. | nothing |

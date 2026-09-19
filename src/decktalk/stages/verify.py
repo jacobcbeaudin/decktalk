@@ -403,7 +403,7 @@ def default_checks(cue_times: CueTimes, only: list[int] | None = None) -> list[s
     for key in sorted(cue_times.sections):
         if only and int(key) not in only:
             continue
-        for cue, _t in sorted(cue_times.sections[key].items(), key=lambda item: item[1]):
+        for cue, _t in sorted(cue_times.times(key).items(), key=lambda item: item[1]):
             checks.append(f"{int(key)}:{cue}")
     return checks
 
@@ -467,9 +467,6 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
         checks = [c for c in checks if not only or int(c.split(":", 1)[0]) in only]
     if not checks:
         return result
-    from .align import read_anchors
-
-    anchors = read_anchors(project.cue_times_anchors_path) if clicks else {}
     for check in checks:
         sec, cue = check.split(":", 1)
         key = f"{int(sec):02d}"
@@ -512,7 +509,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
             )
             continue
         # Another cue close by would spoil a probe or its control, so the probes fit the gap instead.
-        neighbors = [sec_start + t for c, t in cue_times.sections.get(key, {}).items() if c != cue]
+        neighbors = [sec_start + t for c, t in cue_times.times(key).items() if c != cue]
         delays, fitted = probe_plan(sec_start + cue_t, before, floor, sec_end, neighbors, cfg, fps)
         if fitted:
             log.info(
@@ -543,7 +540,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
         if clicks:
             # A build without voice carries a click at every word start, so the finished file's audio
             # can be measured against its picture: the click nearest the cue is the word.
-            word_t = anchors.get(key, {}).get(cue, cue_t)
+            word_t = cue_times.word_at(key, cue) or cue_t
             click_ms = click_offset_ms(
                 final, sec_start + word_t, cfg.click_search_seconds, floor=sec_start, ceiling=sec_end
             )

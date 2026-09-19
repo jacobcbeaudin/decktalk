@@ -35,21 +35,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import (
-    CaptionCue,
-    Chapter,
-    CueTimes,
-    RecordingLog,
-    Takes,
-    Timeline,
-    Word,
-    caption_cues,
-    display_words,
-    read_words,
-    write_chapters,
-    write_srt,
-    write_vtt,
-)
+from ..artifacts import CueTimes, RecordingLog, Takes, Timeline, Word, read_words
+from ..captions import CaptionCue, Chapter, caption_cues, display_words, write_chapters, write_srt, write_vtt
 from ..errors import ConfigError, MissingInputError, ToolError
 from ..media import ffmpeg
 from ..media.browser import render_slate

@@ -86,7 +86,7 @@ def align_table(result: AlignResult) -> str:
         if s.skipped:
             lines.append(f"{s.key:>3}  {'--':>6}  {s.min_seconds or '-':>5}  ({s.skipped})")
             continue
-        cues = ",".join(f"{k}@{v}" for k, v in s.resolved.items()) or "-"
+        cues = ",".join(f"{r.cue}@{r.at}" for r in s.resolved) or "-"
         lines.append(f"{s.key:>3}  {s.speech_end:>6.1f}  {str(s.min_seconds or '-'):>5}  {cues}")
         for note in s.notes:
             lines.append(f"{'':>3}  {'':>6}  {'':>5}  ! {note}")

@@ -12,7 +12,7 @@ stable surface that the [changelog](/changelog) tracks.
 ```text
 build/
   audio/   NN-slug.mp3, NN-slug.words.json, takes.json, narration.mp3, timeline.json,
-           cue-times.json, cue-times.anchors.json
+           cue-times.json
   rec/     recordings/NN.webm, recordings/NN.json
   out/     sections/NN.mp4, <name>.mp4, <name>.srt, <name>.vtt,
            <name>.chapters.txt, slates/NN-slate.png
@@ -33,7 +33,7 @@ compare times from two files.
 |---|---|
 | `NN-slug.words.json` `start` and `end` | The start of that section's mp3. The first spoken section includes `opening_silence_seconds`. |
 | `timeline.json` section and word times | The start of `narration.mp3`, which holds the spoken sections back to back. |
-| `cue-times.json`, `cue-times.anchors.json`, `?cues=`, `?words=`, `decktalk words`, `decktalk clip --start` and `--end` | The section's own start, which is narration t=0 of its recording. |
+| `cue-times.json`, `?cues=`, `?words=`, `decktalk words`, `decktalk clip --start` and `--end` | The section's own start, which is narration t=0 of its recording. |
 | A words file that `decktalk clip` writes | The start of that clip. |
 | RecordingLog `t0_seconds` | The start of the webm. |
 | RecordingLog `frame_gaps` seconds | Narration t=0 of that recording, or `null` for a gap that ended before t=0. |
@@ -176,46 +176,39 @@ Note: The section span runs from `start` to `end`. The spoken span runs from `st
 
 ## `build/cue-times.json`
 
-The cue times file holds the cue times of each section, as the string the page receives in `?cues=`. A section with
-no resolved cue is not in the file.
+The cue times file holds every resolved cue of each section as an object. A section with no resolved cue is not in
+the file.
 
-{/* sample: build/cue-times.json, build without voice of a fresh scaffold */}
+{/* sample: build/cue-times.json, build without voice of a fresh scaffold, first section */}
 ```json
 {
-  "01": "1.1bowl@1.25,1.1ball@2.33,1.1count@6.15,1.1one@6.69,1.1two@7.24,1.1three@7.78,1.1word@15.41",
-  "02": "2.1mark@1.46,2.1script@2.92,2.1aloud@5.85,2.1word@9.26,2.1follows@14.62,2.1lesson@17.06",
-  "03": "3.1examples@2.48,3.1rules@3.47,3.1ml@7.43,3.1box@11.39,3.1guess@13.38,3.1wrong@15.85,3.1turn@19.82,3.1right@23.29,3.1lower@25.76,3.1next@27.75,3.1fix@29.73,3.1again@31.71,3.2way@35.67,3.2one@41.62,3.2billions@44.59,3.2instead@47.56,3.2all@52.02,3.3two@54.5,3.3floor@55.98,3.3height@59.95,3.3bowl@64.41,3.4ball@65.4,3.4see@70.85,3.4steps@77.29,3.4again@78.28,3.4name@84.72,3.5setting@90.17,3.5long@93.64,3.5short@97.6,3.6zoom@101.07,3.6low@107.02,3.6lowest@109.99,3.7ai@110.48,3.7inside@114.94,3.7num@117.91,3.7tensor@118.91,3.8gpu@120.39,3.8row@122.87,3.8once@124.36,3.8calc@129.31,3.8llm@134.26,3.8split@137.73",
-  "04": "4.1out@2.65,4.1video@7.42,4.1parts@9.0,4.1script@11.12,4.1start@12.71",
-  "06": "6.1step@2.61,6.1four@5.22,6.1box@7.32,6.1build@10.97,6.1aloud@14.11,6.1kept@16.2,6.1new@19.86",
-  "08": "7.1box@2.39,7.1moved@5.26,7.1checked@10.03,7.1back@11.47",
-  "09": "5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03"
+  "estimated": true,
+  "sections": {
+    "01": [
+      { "cue": "1.1bowl", "on": "bowl", "at": 1.25, "word_at": 1.25 },
+      { "cue": "1.1ball", "on": "ball", "at": 2.33, "word_at": 2.33 },
+      { "cue": "1.1count", "on": "count", "at": 6.15, "word_at": 6.15 },
+      { "cue": "1.1word", "on": "$end", "at": 15.41, "word_at": 15.41 }
+    ]
+  }
 }
 ```
 
-Each item is `cue id@cue time`, and a comma separates the items. Section `08` plays scene 7, so its cue ids start
-with `7.`. The page parser splits each item at the last `@`.
+| Field | Type | Meaning |
+|---|---|---|
+| `estimated` | boolean | True when the times come from the estimated words of a build without voice. |
+| `sections` | table | One array per spoken section, keyed by `NN`, in the order `align` resolved the cues. |
+| `sections.NN[].cue` | string | The cue id the page understands, as `cues.json` writes it. |
+| `sections.NN[].on` | string | The phrase the cue was matched against, `$start` or `$end`. |
+| `sections.NN[].at` | number | The cue time in seconds after the section starts, which is the `@` value of `?cues=`. |
+| `sections.NN[].word_at` | number or null | Where the matched word begins, before the cue's `offset` key. |
 
-## `build/cue-times.anchors.json`
+The recorder joins the rows of one section into the `?cues=` value, as `cue id@at` items separated by commas, and
+the page parser splits each item at the last `@`. Section `08` plays scene 7, so its cue ids start with `7.`.
 
-The anchors file holds the start of each cued word without its offset key, per section. `verify` uses it after a
-build without voice to find the click at the cued word.
-
-{/* sample: build/cue-times.anchors.json, build without voice of the scaffold (R2), first section */}
-```json
-{
- "01": {
-  "1.1bowl": 1.25,
-  "1.1ball": 2.33,
-  "1.1count": 6.15,
-  "1.1one": 6.69,
-  "1.1two": 7.24,
-  "1.1three": 7.78,
-  "1.1word": 15.41
- },
-```
-
-Note: A cue with no offset key has the same time in both files.
-[The a/v value](/reference/verify#the-a/v-value) explains why the anchor matters.
+Note: A cue with no `offset` key has the same `at` and `word_at`. `verify` uses `word_at` after a build without
+voice to find the click at the cued word, which
+[the a/v value](/reference/verify#the-a/v-value) explains.
 
 ## `build/recordings/NN.json`
 

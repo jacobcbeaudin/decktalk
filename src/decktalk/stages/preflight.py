@@ -409,7 +409,7 @@ def preflight(
     all_specs = load_cues(project)
     specs = [s for s in all_specs if named(s.number)]
     unknown_ids = unknown_cue_ids(project, specs)
-    cue_times, _anchors, rows, unresolved = resolve_sections(specs, take_words, unknown_ids=unknown_ids, estimated=True)
+    cue_times, rows, unresolved = resolve_sections(specs, take_words, unknown_ids=unknown_ids, estimated=True)
     result = PreflightResult(
         voice={"provider": project.voice.provider, "model": model, "settings": project.voice.api_settings()},
         narration=cfg,
@@ -430,7 +430,9 @@ def preflight(
         extra = [s for s in all_specs if s.number in behind]
         if extra:
             extra_ids = unknown_cue_ids(project, extra)
-            behind_cue_times, _a, _r, _u = resolve_sections(extra, take_words, unknown_ids=extra_ids, estimated=True)
+            behind_cue_times, _rows, _unresolved = resolve_sections(
+                extra, take_words, unknown_ids=extra_ids, estimated=True
+            )
             carried = CueTimes({**behind_cue_times.sections, **cue_times.sections})
         result.cues, result.seams = frame_estimates(project, carried, only=only)
         result.frames = project.build / "preflight"
@@ -495,7 +497,7 @@ def frame_estimates(
         for sec in wanted:
             if not isinstance(sec, PageSection) or not cue_times.sections.get(sec.key):
                 continue
-            section_cue_times = cue_times.sections[sec.key]
+            section_cue_times = cue_times.times(sec.key)
             slides, reason, detail = scene_slides(sec)
             if slides is None:
                 for cue, t in sorted(section_cue_times.items(), key=lambda item: item[1]):
@@ -532,8 +534,8 @@ def frame_estimates(
                 continue
             prev_slides, _r1, _d1 = scene_slides(prev)
             slides, _r2, _d2 = scene_slides(sec)
-            last = last_state(prev_slides, cue_times.sections.get(prev.key, {})) if prev_slides else None
-            first = first_state(slides, cue_times.sections.get(sec.key, {}), video.fps) if slides else None
+            last = last_state(prev_slides, cue_times.times(prev.key)) if prev_slides else None
+            first = first_state(slides, cue_times.times(sec.key), video.fps) if slides else None
             if last is None or first is None:
                 detail = "a side of the cut has no resolved cue, or its page has no catalog"
                 seams.append(SeamEstimate(sec.key, None, Verdict.SKIPPED, SkipReason.NO_CUES, detail))

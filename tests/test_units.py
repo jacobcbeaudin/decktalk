@@ -11,6 +11,7 @@ import pytest
 import decktalk
 from decktalk import ConfigError, Project, load_settings
 from decktalk.artifacts import (
+    CueTime,
     CueTimes,
     RecordingLog,
     Take,
@@ -19,7 +20,6 @@ from decktalk.artifacts import (
     TimelineSection,
     Word,
     gap_time,
-    parse_cue_times,
 )
 from decktalk.cli import build_parser, main
 from decktalk.settings import Settings
@@ -278,11 +278,20 @@ def test_timeline_and_cue_times_roundtrip(tmp_path):
     tl.save(tmp_path / "t.json")
     back = Timeline.load(tmp_path / "t.json")
     assert back is not None and back.span("01") == 3.0 and back.sections["01"].words[0].word == "hi"
-    b = CueTimes({"01": {"a": 1.5, "panel:bought": 2.0}})
+    rows = [CueTime("a", "hi", 1.5, 1.2), CueTime("panel:bought", "$end", 2.0)]
+    b = CueTimes({"01": rows}, estimated=True)
     b.save(tmp_path / "b.json")
-    assert json.loads((tmp_path / "b.json").read_text(encoding="utf-8")) == {"01": "a@1.5,panel:bought@2.0"}
-    assert CueTimes.load(tmp_path / "b.json").get("01", "panel:bought") == 2.0
-    assert parse_cue_times("a@1.5,bad,x@y") == {"a": 1.5}
+    assert json.loads((tmp_path / "b.json").read_text(encoding="utf-8")) == {
+        "estimated": True,
+        "sections": {"01": [
+            {"cue": "a", "on": "hi", "at": 1.5, "word_at": 1.2},
+            {"cue": "panel:bought", "on": "$end", "at": 2.0, "word_at": None},
+        ]},
+    }  # fmt: skip
+    back = CueTimes.load(tmp_path / "b.json")
+    assert back.estimated and back.get("01", "panel:bought") == 2.0 and back.word_at("01", "a") == 1.2
+    assert back.query("01") == "a@1.5,panel:bought@2.0" and back.times("01") == {"a": 1.5, "panel:bought": 2.0}
+    assert back.get("01", "nope") is None and back.query("99") is None
 
 
 def test_recording_log_trim_prefers_measured(tmp_path):
@@ -563,7 +572,7 @@ def _film(*words: tuple[str, float, float]) -> list[Word]:
 
 
 def test_caption_cues_group_whole_sentences_and_keep_lines_short():
-    from decktalk.artifacts import CAPTION_MAX_CHARS, caption_cues
+    from decktalk.captions import CAPTION_MAX_CHARS, caption_cues
 
     text = (
         "Welcome. This is a narrated deck, cut to the word. Every visual you see lands on the word "
@@ -586,7 +595,7 @@ def test_caption_cues_group_whole_sentences_and_keep_lines_short():
 
 def test_caption_cues_do_not_strand_step_at_a_line_start():
     """The demo film's words. A break here would strand "step." at the start of a line after "for every"."""
-    from decktalk.artifacts import caption_cues
+    from decktalk.captions import caption_cues
 
     words = _film(
         ("For", 127.312, 127.463), ("a", 127.51, 127.533), ("big", 127.58, 127.742), ("model,", 127.8, 128.125),
@@ -605,7 +614,7 @@ def test_caption_cues_do_not_strand_step_at_a_line_start():
 
 def test_caption_cues_do_not_strand_of_chips_on_a_cue_of_its_own():
     """The demo film's words. A break here would leave "of chips." as a cue of its own."""
-    from decktalk.artifacts import caption_cues
+    from decktalk.captions import caption_cues
 
     words = _film(
         ("The", 133.164, 133.268), ("large", 133.338, 133.593), ("language", 133.652, 134.035),
@@ -623,7 +632,7 @@ def test_caption_cues_do_not_strand_of_chips_on_a_cue_of_its_own():
 
 
 def test_caption_cues_edge_cases():
-    from decktalk.artifacts import CAPTION_MAX_CHARS, caption_cues
+    from decktalk.captions import CAPTION_MAX_CHARS, caption_cues
 
     # A one-word sentence joins a neighbour, and alone in its section it is a cue of its own.
     cues = caption_cues(_spoken("Update your video the way you update a doc. DeckTalk. Open source, and free."))
@@ -658,7 +667,7 @@ def test_caption_cues_edge_cases():
 
 
 def test_caption_cues_split_on_a_long_pause_and_never_cross_sections():
-    from decktalk.artifacts import caption_cues
+    from decktalk.captions import caption_cues
     from decktalk.stages.assemble import build_captions
 
     cues = caption_cues(_spoken("one two three four five six", gap_after="three"))
@@ -678,7 +687,7 @@ def test_caption_cues_split_on_a_long_pause_and_never_cross_sections():
 
 
 def test_caption_and_chapter_files(tmp_path):
-    from decktalk.artifacts import CaptionCue, Chapter, ffmetadata_escape, write_chapters, write_srt, write_vtt
+    from decktalk.captions import CaptionCue, Chapter, ffmetadata_escape, write_chapters, write_srt, write_vtt
 
     cues = [CaptionCue(3.7, 10.5, ("Welcome.", "This is a deck.")), CaptionCue(3661.25, 3662.0, ("Late.",))]
     write_srt(tmp_path / "c.srt", cues)
@@ -905,7 +914,8 @@ def test_video_defaults_match_the_recorder():
 
 
 def test_display_words_restores_punctuation_and_case():
-    from decktalk.artifacts import Word, display_words
+    from decktalk.artifacts import Word
+    from decktalk.captions import display_words
 
     words = [Word("welcome", 0, 1), Word("this", 1, 2), Word("is", 2, 3), Word("two", 3, 4), Word("x", 4, 5)]
     text = "Welcome. This is two x."
@@ -1055,6 +1065,12 @@ def test_reference_time_skips_the_fade_and_keeps_the_lead():
     assert reference_time(10.0, 0.0, False, 0.16, cfg, 25) is None  # a $start cue has no frame before it
 
 
+def _cue_row(item: str) -> dict[str, object]:
+    """One cue-times row from the shorthand "cue@seconds" the verify tests are written in."""
+    cue, _, at = item.rpartition("@")
+    return {"cue": cue, "on": cue, "at": float(at), "word_at": float(at)}
+
+
 def _verify_project(
     tmp_path,
     monkeypatch,
@@ -1074,7 +1090,8 @@ def _verify_project(
         (p.sections_dir / f"{key}.mp4").write_bytes(b"x")
     p.final.write_bytes(b"x")
     p.narration_dir.mkdir(parents=True)
-    p.cue_times_path.write_text(json.dumps(cue_times), encoding="utf-8")
+    sections = {k: [_cue_row(item) for item in v.split(",") if item] for k, v in cue_times.items()}
+    p.cue_times_path.write_text(json.dumps({"sections": sections}), encoding="utf-8")
     if cues is not None:
         (root / "cues.json").write_text(json.dumps({"sections": cues}), encoding="utf-8")
     monkeypatch.setattr(ffmpeg_module, "probe_duration", lambda path: 5.0)
@@ -1316,7 +1333,13 @@ def test_align_reports_a_cue_id_missing_from_the_page(tmp_path):
     )
     assert isinstance(caught.value, ConfigError) and caught.value.result.unknown == 1
     assert json.loads(p.cue_times_path.read_text(encoding="utf-8")) == {
-        "01": "1.1a@0.5,4.1answer@1.0"
+        "estimated": False,
+        "sections": {
+            "01": [
+                {"cue": "1.1a", "on": "hello", "at": 0.5, "word_at": 0.5},
+                {"cue": "4.1answer", "on": "there", "at": 1.0, "word_at": 1.0},
+            ]
+        },
     }  # written before the stop
     result = align(p, allow_unknown_cues=True)
     assert result.unknown == 1 and result.unresolved == 0
@@ -1387,7 +1410,7 @@ def test_align_warns_about_a_repeated_phrase_unless_the_cue_names_its_occurrence
     )
     # Only the cue that names no occurrence is ambiguous. A case-sensitive phrase counts only its own case.
     assert [(n.cue, n.verdict, n.message) for n in section.findings] == [("1.1step", None, detail)]
-    assert section.resolved["1.1step"] == 0.5 and result.unresolved == 0
+    assert section.resolved[0].cue == "1.1step" and section.resolved[0].at == 0.5 and result.unresolved == 0
     assert main(["-p", str(p.root), "align", "--strict"]) == 0  # A warning, not a finding.
     assert f"! 1.1step: {detail}" in capsys.readouterr().out
 
@@ -1420,7 +1443,7 @@ def test_scene_params_adds_cues_unless_the_section_sets_them(tmp_path):
     from decktalk.stages.record import scene_params
     from decktalk.stages.screenshots import screenshot_slides
 
-    cue_times = CueTimes({"01": {"a": 1.5, "b": 2.0}})
+    cue_times = CueTimes({"01": [CueTime("a", "x", 1.5), CueTime("b", "y", 2.0)]})
     own = PageSection(1, "deck/index.html", "1", params={"theme": "dark"})
     assert scene_params(own, cue_times) == {"theme": "dark", "cues": "a@1.5,b@2.0"}
     assert scene_params(own, None) == {"theme": "dark"}
@@ -2001,7 +2024,7 @@ def test_timeline_joins_each_section_lead_before_its_take(tmp_path, monkeypatch)
     cues = [{"cue": "2.0", "on": "$start"}, {"cue": "2.1", "on": "b"}, {"cue": "2.2", "on": "$end"}]
     (p.root / "cues.json").write_text(json.dumps({"sections": {"2": {"cues": cues}}}), encoding="utf-8")
     result = align(p)
-    assert result.cue_times.sections["02"] == {"2.0": 0.0, "2.1": 2.25, "2.2": 2.85}
+    assert result.cue_times.times("02") == {"2.0": 0.0, "2.1": 2.25, "2.2": 2.85}
     assert result.sections[0].speech_end == 2.85
     marker = {"section": 2, "on": "b"}
     assert resolve_marker_time(marker, {"02": 10.0}, take_index, p.narration_dir, {"02": 1.25}) == pytest.approx(12.25)
@@ -2328,7 +2351,7 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(tmp_path, m
     }  # fmt: skip
     assert result.estimated == ["03", "04", "06", "08"]
     assert result.align.unresolved == 0 and result.align.unknown == 0
-    resolved = {s.key: s.resolved for s in result.align.sections}
+    resolved = {s.key: {r.cue: r.at for r in s.resolved} for s in result.align.sections}
     # A cached take and a moved take resolve on their own words, which the fixture spaced 0.4 s apart.
     open_words = read_words(p.narration_dir / "01-open.words.json")
     assert resolved["01"]["1.1bowl"] == open_words[find_phrase(open_words, "bowl")].start == 0.4

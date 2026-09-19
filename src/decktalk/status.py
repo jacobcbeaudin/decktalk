@@ -141,7 +141,7 @@ def status(project: Project) -> StatusResult:
         sections=sections,
         timeline=project.timeline(),
         cue_times_exists=project.cue_times_path.exists(),
-        cue_times_sections={k: v for k, v in cue_times.sections.items() if v},
+        cue_times_sections={k: cue_times.times(k) for k in cue_times.sections if cue_times.sections[k]},
         final=project.final,
         final_exists=project.final.exists(),
         final_duration=duration,
