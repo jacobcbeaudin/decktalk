@@ -20,6 +20,10 @@ Entry template. Group entries under the H2 of the command that prints them, in p
 This page lists each message, verdict, and warning that DeckTalk prints, with its cause and its fix.
 Search the page for the text you see.
 
+A line that starts `error[CODE]:` is an error, and the command exits 3 without finishing its work. A
+verdict or a note is a finding, and the command finishes and exits 1, or 0 when the finding is
+uncertain and `--strict` was not passed. [Exit codes](/reference/cli#exit-codes) has the whole set.
+
 If the project has no voiced build yet, run `decktalk build --no-voice` first. It spends no credits,
 and it shows if the problem is in the cues, the pages, or the assembly. If the project has a voiced
 build, rehearse in a copy of the project. A build without voice stops on voiced takes, because it would empty the narration cache, as
@@ -37,16 +41,16 @@ explains.
 | `not set` | `narrate`, `build`, `soundscape` | [Entry](#not-set-in-narrate) |
 | `HTTP 401`, `HTTP 402` | `narrate`, `build`, `soundscape` | [Entry](#http-401-or-http-402-in-narrate) |
 | `could not reach` | `narrate`, `build`, `soundscape` | [Entry](#could-not-reach-in-narrate) |
-| `decktalk.toml not found` | every project command | [Entry](#decktalk-toml-not-found-in-any-command) |
+| `decktalk.toml is not there` | every project command | [Entry](#decktalk-toml-is-not-there-in-any-command) |
 | `unknown table(s)` | every project command | [Entry](#unknown-tables-in-decktalk-toml) |
 | `ignoring unknown key` | every project command | [Entry](#ignoring-unknown-key-in-decktalk-toml) |
-| `must be int, got float` | every project command | [Entry](#must-be-in-decktalk-toml) |
+| `must be int, got float`, `UNREADABLE` | every project command | [Entry](#must-be-in-decktalk-toml) |
 | `invalid tuning value` | every project command | [Entry](#invalid-tuning-value-in-decktalk-toml) |
 | `unfilled placeholders` | `narrate`, `build` | [Entry](#unfilled-placeholders-in-narrate) |
 | `no spoken section matches` | `narrate` | [Entry](#no-spoken-section-matches-in-narrate) |
 | `have no [[section]] in decktalk.toml` | `narrate`, `build` | [Entry](#have-no-section-in-decktalk-toml-in-narrate) |
 | `have no take yet` | `narrate` | [Entry](#have-no-take-yet-in-narrate) |
-| `holds voiced takes` | `narrate --no-voice`, `build --no-voice` | [Entry](#holds-voiced-takes-in-narrate) |
+| `holds paid takes` | `narrate --no-voice`, `build --no-voice` | [Entry](#holds-paid-takes-in-narrate) |
 | `phrase not found` | `align`, `build` | [Entry](#phrase-not-found-in-align) |
 | `could not be matched to the narration` | `build` | [Entry](#phrase-not-found-in-align) |
 | `not in deck/index.html` | `align`, `build` | [Entry](#not-in-its-page-in-align) |
@@ -83,7 +87,7 @@ explains.
 | `NO_CLICK` | `verify --json` | [Entry](#no_click-in-verify) |
 | `skipped` | `verify` | [Entry](#skipped-in-verify) |
 | `malformed check` | `verify` | [Entry](#malformed-check-in-verify) |
-| `need build/sections/NN.mp4 files` | `verify` | [Entry](#need-build/out/nn-section-mp4-files-in-verify) |
+| `need build/sections/NN.mp4 files` | `verify` | [Entry](#need-build-sections-nn-mp4-files-in-verify) |
 | `is not a section in decktalk.toml` | `assemble`, `verify` | [Entry](#is-not-a-section-in-decktalk-toml-in-assemble-or-verify) |
 | `The take index is not there` | `words`, `clip` | [Entry](#the-take-index-is-not-there-in-words-or-clip) |
 | `has no section video` | `clip` | [Entry](#has-no-section-video-in-clip) |
@@ -126,19 +130,19 @@ the error shows the reason.
 
 ### `is not empty` in init
 
-`init` prints `<dir> is not empty (pass force to write into it anyway)`.
+`init` prints `error[CONFIG]: <dir> is not empty (pass force to write into it anyway)` and exits 3.
 
 **Cause.** The target directory already has files.
 
 **Fix.**
 1. If you want a new project, pass an empty or new directory.
-2. If you want to write into this directory, add `--force`. `--force` overwrites files that the scaffold also has.
+2. If you want to write into this directory, add `--force`. `--force` overwrites every file the starter also writes.
 
 **More.** [`decktalk init`](/reference/cli#decktalk-init)
 
 ### `must be letters` in init
 
-`init` prints `project name '<name>' must be letters, digits, dots, dashes or underscores`.
+`init` prints `error[CONFIG]: project name '<name>' must be letters, digits, dots, dashes or underscores` and exits 3.
 
 **Cause.** The project name starts with a character that is not a letter or digit, or has another
 character. The default name is the directory name.
@@ -191,7 +195,12 @@ The error reads `HTTP <code> from https://api.elevenlabs.io/v1/text-to-speech/<v
 
 ## Project files
 
-### `decktalk.toml not found` in any command
+### `decktalk.toml is not there` in any command
+
+```text
+error[CONFIG]: decktalk.toml is not there.
+  hint: Run from a project directory, pass --project DIR, or create one with `decktalk init DIR`.
+```
 
 **Cause.** The command did not run in a project directory, and `--project` was not given.
 
@@ -199,13 +208,19 @@ The error reads `HTTP <code> from https://api.elevenlabs.io/v1/text-to-speech/<v
 1. Run `cd` into the project directory.
 2. If there is no project yet, run `decktalk init DIR`.
 
-If you run from elsewhere, pass `-p DIR` instead.
+If you run from elsewhere, pass `-p DIR` instead. `decktalk status` is the one command that reports
+this rather than raising it. It prints a `MISSING` row and exits 1, because reading the four input
+files is its whole job.
 
 **More.** [Global options](/reference/cli#global-options)
 
 ### `unknown table(s)` in decktalk.toml
 
-The error reads `decktalk.toml: unknown table(s) ['<name>']; known: [...]`.
+{/* sample: decktalk align in a starter with a [mixx] table added */}
+
+```text
+error[CONFIG]: decktalk.toml: unknown table(s) ['mixx']. The known tables are ['audio', 'elevenlabs', 'mix', 'narration', 'output', 'project', 'record', 'section', 'soundscape', 'transition', 'verify', 'video', 'voice'].
+```
 
 **Cause.** A top-level table name has a typo, or it is not a DeckTalk table.
 
@@ -220,10 +235,10 @@ An unknown key inside a table prints a warning instead. See
 
 ### `ignoring unknown key` in decktalk.toml
 
-{/* sample: decktalk status in a scaffold with stability misspelled under [voice] */}
+{/* sample: decktalk status in a starter with stability misspelled under [voice] */}
 
 ```text
-decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?)
+decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?). docs/reference/renames.mdx lists every name DeckTalk renamed.
 ```
 
 **Cause.** A key inside a table has a typo, or it belongs to another table or section kind. DeckTalk
@@ -240,13 +255,15 @@ The per-machine settings file gets the same warning, with its own path first.
 
 ### `must be` in decktalk.toml
 
-{/* sample: Project.from_toml on a file with seconds = 120.5 under [soundscape.music] */}
+{/* sample: decktalk status in a starter with seconds = 120.5 under [soundscape.music] */}
 
 ```text
-decktalk.toml: [soundscape.music]: 'seconds' must be int, got float
+sections 0 | 1 certain, 0 uncertain finding(s)
+UNREADABLE  decktalk.toml: decktalk.toml: [soundscape.music]: 'seconds' must be int, got float
 ```
 
-**Cause.** A value has the wrong type. The error names the table, the key, and both types.
+**Cause.** A value has the wrong type. The error names the table, the key, and both types. `status`
+reports it as an `UNREADABLE` row and exits 1. Every other command raises it and exits 3.
 
 **Fix.**
 1. Look up the key's type in [decktalk.toml](/reference/decktalk-toml).
@@ -282,10 +299,10 @@ The error reads `unfilled placeholders ['<NAME>'] in the script; fill them or pa
 
 ### `no spoken section matches` in narrate
 
-{/* sample: decktalk narrate --no-voice --only 5 on a fresh scaffold */}
+{/* sample: decktalk narrate --no-voice --only 5 on a fresh starter */}
 
 ```text
-error: no spoken section matches [5]. The spoken sections are [1, 2, 3, 4, 6, 8, 9].
+error[CONFIG]: no spoken section matches [5]. The spoken sections are [1, 2, 3].
 ```
 
 **Cause.** `--only` names a clip section or a number with no script heading.
@@ -315,19 +332,25 @@ narration then covers only the sections that have a take.
 
 **More.** [Rebuild one section](/guides/rebuild-one-section)
 
-### `holds voiced takes` in narrate
+### `holds paid takes` in narrate
 
 ```text
-error: build/narration/takes.json holds voiced takes for sections 01. A build without voice writes click tracks over those mp3 files and replaces the take index, so the next voiced build voices every section again and spends credits on all of them. Rehearse the build without voice in a copy of the project, or pass --force to replace the voiced takes.
+error[CONFIG]: build/narration/takes.json holds paid takes for section(s) 01, and a run without voice would replace them in the take index, so the next voiced build would voice them again and spend credits on all of them.
+  hint: Rehearse the sections nobody has paid for: --only 2 --only 3.
 ```
 
-**Cause.** You ran `decktalk narrate --no-voice` or `decktalk build --no-voice` in a project with voiced takes. A silent
-run would write click tracks over the voiced mp3 files and replace the take index. The next voiced build would then
-spend credits on every section.
+**Cause.** You ran `decktalk narrate --no-voice` or `decktalk build --no-voice` over a section that already holds a
+paid take. The run would replace that row of the take index with a placeholder, and the next voiced build would pay
+for the section again. The paid mp3 files themselves are never touched, because a placeholder take is named
+`silent-<hash>.mp3` and a paid take is named by its own digest.
 
 **Fix.**
-1. If you want to rehearse, copy the project and run the build without voice in the copy.
-2. If you want to drop the voiced takes, run the same command with `--force`.
+1. Rehearse the sections the hint names, with `--only`.
+2. If you want to rehearse the whole project, copy it and run the build without voice in the copy.
+3. If you want to drop the paid takes, run the same command with `--force`.
+
+The refusal covers only the sections the run was asked to write, so a film you have already paid for still rehearses
+a new section for nothing.
 
 **More.** [A build without voice and a voiced build](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build)
 
@@ -347,18 +370,22 @@ first word plays as the section's first frame appears.
 
 ### `phrase not found` in align
 
-{/* sample: decktalk build --no-voice on a fresh scaffold with the 3.4name phrase changed to "gradient decent", last lines */}
+{/* sample: decktalk build --no-voice on a fresh starter with the 2.1formula phrase typed "the formular", last lines */}
 
 ```text
-                    ! 3.4name: phrase not found: 'gradient decent'
- 04    14.3      -  4.1out@2.65,4.1video@7.42,4.1parts@9.0,4.1script@11.12,4.1start@12.71
- 06    20.9      -  6.1step@2.61,6.1four@5.22,6.1box@7.32,6.1build@10.97,6.1aloud@14.11,6.1kept@16.2,6.1new@19.86
- 08    12.9      -  7.1box@2.39,7.1moved@5.26,7.1checked@10.03,7.1back@11.47
- 09    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
-7 sections with cues; 1 unresolved  (estimated words: times are placeholders)
-error: 1 cue(s) could not be matched to the narration; a slide whose cues are unresolved never appears. Fix the phrases in cues.json (see the notes above) or pass allow_unresolved_cues=True / --allow-unresolved-cues:
-  section 03: 3.4name: phrase not found: 'gradient decent'
+sec  speech   need  cues
+ 01    13.2      -  1.1title@0.7,1.1script@3.1,1.1deck@6.47,1.1word@11.76
+ 02    14.1      -  2.1average@0.94,2.1code@8.93,2.1waited@10.81
+                    ! 2.1formula: phrase not found: 'the formular'
+ 03    11.4      -  3.1idea@0.91,3.1again@7.3,3.1make@8.21
+3 sections with cues, 1 unresolved  (estimated words: times are placeholders)
+error[CONFIG]: 1 cue(s) could not be matched to the narration, and a slide whose cues are unresolved never appears.
+  hint: Fix these phrases in cues.json, or pass --allow-unresolved-cues:
+  section 02: 2.1formula: phrase not found: 'the formular'
 ```
+
+`decktalk align` on its own prints the same table, reports the row as an `UNRESOLVED` finding and exits 1.
+`build` raises instead, so it exits 3 and records nothing.
 
 **Cause.** The cue phrase is not in the section's spoken words. The usual reasons, most common first:
 - The phrase has a typo.
@@ -373,21 +400,26 @@ error: 1 cue(s) could not be matched to the narration; a slide whose cues are un
 3. Copy those words into the cue's `on` value in `cues.json`.
 4. Run `decktalk align`.
 
-If you want to build without the cue, pass `--allow-unresolved-cues`. A slide whose cues are all
+If you want to build without the cue, pass `build --allow-unresolved-cues`. A slide whose cues are all
 unresolved never mounts.
 
 **More.** [Matching rules](/concepts/cues#matching-rules)
 
 ### `not in` its page in align
 
-{/* sample: decktalk build --no-voice on a fresh scaffold with every mention of 5.1cap removed from deck/index.html, last lines */}
+{/* sample: decktalk build --no-voice on a fresh starter with data-cue="2.1code" renamed 2.1codex, last lines */}
 
 ```text
-                    ! 5.1cap: not in deck/index.html
-7 sections with cues; 0 unresolved  (estimated words: times are placeholders)
-error: 1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal them. Add data-cue="5.1cap" to the slide in deck/index.html, fix the id in cues.json, or pass --allow-unknown-cues:
-  section 09: 5.1cap: not in deck/index.html
+ 02    14.1      -  2.1average@0.94,2.1formula@5.17,2.1code@8.93,2.1waited@10.81
+                    ! 2.1code: not in deck/index.html
+                    ! 2.1codex: data-cue="2.1codex" in deck/index.html has no entry in cues.json
+3 sections with cues, 0 unresolved  (estimated words: times are placeholders)
+error[UNKNOWN_CUE]: 1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal them. Add data-cue="2.1code" to the slide in deck/index.html, fix the id in cues.json, or pass --allow-unknown-cues:
+  section 02: 2.1code: not in deck/index.html
 ```
+
+A rename usually prints both lines, because the id `cues.json` names is now missing from the page and the id
+the page carries is missing from `cues.json`. The second line is the `UNCUED ELEMENT` finding.
 
 **Cause.** `align` looks for each cue id in its page in quotes or backticks, and did not find this
 one. Either the id in `cues.json` has a typo, or no slide uses the cue.
@@ -397,7 +429,8 @@ one. Either the id in `cues.json` has a typo, or no slide uses the cue.
 2. If no slide uses the cue, add `data-cue="<id>"` to the element in the page.
 3. If the page builds its cue ids at run time, pass `--allow-unknown-cues`.
 
-A key of a slide's `preview` object also counts as a mention.
+A key of a slide's `preview` object in a `DeckTalk.scene` call also counts as a mention, because it is a quoted
+literal. A `data-preview="2.1code@8"` attribute does not, because the id there is part of a longer string.
 
 **More.** [Cue mismatches](/concepts/cues#cue-mismatches)
 
@@ -507,8 +540,8 @@ is likely to read the same on the final mp4.
 
 ### `PAGE ERROR` in record
 
-`record` logs `[page] NN-scene  page error: <text>`. `build` stops after the check table with
-`<N> section(s) hit a page error while recording.` A page with no catalog logs
+`record` logs `[page] NN  page error: <text>`, where `NN` is the section number. `build` stops after
+the record table. A page with no catalog logs
 `no window.__decktalk.catalog (is decktalk-runtime.js included, and does the page register a scene?)`.
 
 **Cause.** The page threw an uncaught error, or it has no runtime catalog. The usual reasons, most
@@ -518,7 +551,7 @@ common first:
 - The page does not load `decktalk-runtime.js`.
 
 **Fix.**
-1. Open the page in a browser with `?scene=N&hud=1`.
+1. Run `decktalk serve` and open the page from the URL it prints, with `?scene=N&hud=1`.
 2. Read the error in the browser console.
 3. Fix the page.
 4. Record the section again.
@@ -584,7 +617,7 @@ reports `cover`, and every reveal is late. If you raise `min_cover_seconds` near
 (40). Usually the page threw before it drew anything, or the slide is dark on purpose.
 
 **Fix.**
-1. Open the page in a browser with `?scene=N&hud=1`.
+1. Run `decktalk serve` and open the page from the URL it prints, with `?scene=N&hud=1`.
 2. If the page is blank, read the browser console and fix the error.
 3. If the slide is dark on purpose, do nothing. `BLACK?` exits 1 only with `--strict`.
 
@@ -598,7 +631,8 @@ certain findings, and `verify` reports them again from the recording log.
 - `KATEX NOT LOADED` follows `KaTeX did not load within 5 s, so [data-tex] elements stay plain text`. The page's KaTeX tags point nowhere.
 
 **Fix.**
-1. If a value did not parse, write every backslash twice inside the `render` backticks.
+1. If a value did not parse, write every backslash twice inside the `render` backticks. In a
+   `<template data-slide>` a backslash is written once, which is why the starter's equation is markup.
 2. If KaTeX did not load, check that `deck/katex/` holds `katex.min.js`, `katex.min.css`, and `fonts/`.
 3. Run `decktalk doctor` and check that the `katex` row is `ok`.
 4. In `deck/index.html`, use the two local tags below.
@@ -640,10 +674,10 @@ the same amount.
 
 ### `missing; slate for` in assemble
 
-{/* sample: decktalk assemble --strict in clip-lesson from Add a clip section, a fresh scaffold with no clip files */}
+{/* sample: decktalk assemble --strict in clip-lesson from Add a clip section, the starter with one clip section and no clip file */}
 
 ```text
-section 04: media/intro.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
+section 04: media/intro.mov missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
 ```
 
 **Cause.** The file that `clip` names does not exist, so a titled slate plays for `slate_seconds`.
@@ -664,11 +698,11 @@ The section in the sample sets `optional = true`, so its warning ends with
 {/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true from section 4, with no media/intro.mov, error line */}
 
 ```text
-error: section 4: clip missing: ~/clip-lesson/media/intro.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
+error[MISSING_INPUT]: section 4: clip missing: ~/clip-lesson/media/intro.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
 ```
 
 **Cause.** `--strict` turns a missing recording into an error. It does the same for a missing clip,
-unless the clip section sets `optional = true`.
+unless the clip section sets `optional = true`. Either way the command exits 3 and writes no video.
 
 **Fix.**
 1. If a clip is missing, put the video at the path in `clip`.
@@ -699,14 +733,14 @@ script has no heading for it, or `narrate` has not run since you added it.
 
 ### `music missing` in assemble
 
-{/* sample: decktalk assemble after a build without voice of the scaffold, with music uncommented under [mix] */}
+{/* sample: decktalk assemble after a build without voice of the starter, with music added under [mix] */}
 
 ```text
 music missing (~/my-lesson/build/music/music.mp3); no music (`decktalk soundscape`)
 ```
 
 **Cause.** `[mix]` names a music or ambience file that does not exist. The video plays without
-it. The scaffold keeps both keys in comments, and `decktalk soundscape` generates both files.
+it. The starter has no `[mix]` sound keys at all, so this only follows a key you added.
 
 **Fix.**
 1. If you want the sound, run `decktalk soundscape` or put your own file at the path.
@@ -729,10 +763,10 @@ it. The scaffold keeps both keys in comments, and `decktalk soundscape` generate
 
 ### `[loud] skipped` in assemble
 
-{/* sample: assemble stage of decktalk build --no-voice on a fresh scaffold */}
+{/* sample: the assemble stage of decktalk build --no-voice on a fresh starter */}
 
 ```text
-[loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, and the clicks stay at -24 dBFS for the a/v check
+[loud] skipped: the narration is a silent placeholder, so the soundtrack is encoded as it was mixed
 ```
 
 **Cause.** A build without voice has a click track, not speech, so `assemble` skips the loudness pass. The
@@ -835,11 +869,11 @@ smaller reveal, or a little more motion elsewhere, would read `NO CHANGE`. This 
 
 This example shows the format of an `OFF CUE` row.
 
-{/* sample: decktalk verify after decktalk build --no-voice on the R2 scaffold, before later template edits, header and one row. An example of the format, not current scaffold output. */}
+The row keeps the shape of every other cue row, with `OFF CUE` in place of `changed`.
 
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.2way            22.17    58.65    1.00    0.00    -90ms  -118ms  OFF CUE
+3:3.1make            8.21    38.13   10.84    0.00    -90ms  -118ms  OFF CUE
 ```
 
 **Cause.** The picture changed, but the offset column is past 80 ms or the `a/v` column is past 120 ms.
@@ -908,10 +942,10 @@ The error reads `malformed check '<text>'; want SECTION:CUE, e.g. 3:3.1draw`.
 
 ### `need build/sections/NN.mp4 files` in verify
 
-{/* sample: decktalk verify 1:1.1bowl on a scaffold with no build */}
+{/* sample: decktalk verify on a starter with no build */}
 
 ```text
-error: need build/sections/NN.mp4 files and the final mp4; run `decktalk assemble` first
+error[MISSING_INPUT]: need build/sections/NN.mp4 files and the final mp4; run `decktalk assemble` first
 ```
 
 **Cause.** The project has no assembled video yet.
@@ -924,11 +958,13 @@ error: need build/sections/NN.mp4 files and the final mp4; run `decktalk assembl
 
 ### `is not a section in decktalk.toml` in assemble or verify
 
+{/* sample: decktalk verify on a starter with a stray build/sections/09.mp4 */}
+
 ```text
-build/sections/04.mp4 is not a section in decktalk.toml, so verify ignores it. Delete the file if an earlier build left it.
+build/sections/09.mp4 is not a section in decktalk.toml, so verify ignores it. Delete the file if an earlier build left it.
 ```
 
-**Cause.** `build/out` holds a section video whose number is not a section in `decktalk.toml`. An earlier build
+**Cause.** `build/sections/` holds a section video whose number is not a section in `decktalk.toml`. An earlier build
 usually left it before you renumbered or removed sections. `assemble` and `verify` read only the sections in
 `decktalk.toml`, so the file changes nothing.
 
@@ -959,6 +995,8 @@ error[MISSING_INPUT]: The take index is not there, so no section has a start to 
   hint: Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.
 ```
 
+The command exits 3.
+
 **Cause.** The project has no narration yet, so no section has word times.
 
 **Fix.**
@@ -969,10 +1007,10 @@ error[MISSING_INPUT]: The take index is not there, so no section has a start to 
 
 ### `has no section video` in clip
 
-{/* sample: decktalk clip 1 --start 2 --end 8 --out media/count.mp4 on a fresh scaffold with no build */}
+{/* sample: decktalk clip 1 --start 2 --end 8 --out media/count.mp4 on a fresh starter with no build */}
 
 ```text
-error: section 1 has no section video at ~/my-lesson/build/sections/01.mp4. Run `decktalk assemble` first.
+error[MISSING_INPUT]: section 1 has no section video at ~/my-lesson/build/sections/01.mp4. Run `decktalk assemble` first.
 ```
 
 **Cause.** `clip` cuts from the section video that `assemble` writes, and the section has none.
@@ -985,10 +1023,10 @@ error: section 1 has no section video at ~/my-lesson/build/sections/01.mp4. Run 
 
 ### `is a clip section` in clip
 
-{/* sample: decktalk clip 5 --start 0 --end 1 --out media/x.mp4 on a fresh scaffold */}
+{/* sample: decktalk clip 4 --start 0 --end 1 --out media/x.mp4 in clip-lesson from Add a clip section */}
 
 ```text
-error: section 5 is a clip section; cut a clip from a page section
+error[CONFIG]: section 4 is a clip section; cut a clip from a page section
 ```
 
 **Cause.** The section number names a clip section. A clip section has no narration, so `clip` has no mp3 to cut.
@@ -1001,14 +1039,17 @@ error: section 5 is a clip section; cut a clip from a page section
 
 ### `cuts the word` in clip
 
-{/* sample: decktalk clip 1 --start 2.5 --end 8.32 --out media/cut.mp4 after decktalk build --no-voice on a fresh scaffold */}
+{/* sample: decktalk clip 1 --start 0.9 --end 2.0 --out media/cut.mp4 after decktalk build --no-voice on a fresh starter */}
 
 ```text
-section 01: the span cuts the word 'ball.' in two, so the words file leaves it out
+section 01: the span cuts the word 'This' in two, so the words file leaves it out
+section 01: the span cuts the word 'DeckTalk.' in two, so the words file leaves it out
+seconds 1.12, words 1 | 0 certain, 2 uncertain finding(s)
 ```
 
 **Cause.** `--start` or `--end` falls inside a spoken word. The clip keeps the part of the word inside the span, but the
-words file has no entry for the word, so no caption shows it.
+words file has no entry for the word, so no caption shows it. It is an uncertain finding, so `clip` exits 1 only with
+`--strict`.
 
 **Fix.**
 1. Run `decktalk words --only N` for the section.
@@ -1020,7 +1061,8 @@ words file has no entry for the word, so no caption shows it.
 ## Pages in a browser
 
 The page writes each warning to the browser console with the prefix `decktalk:`. During a recording,
-`record` logs it as `[page] NN-scene  <warning>` and writes it to the recording log.
+`record` logs it as `[page] NN  <warning>`, where `NN` is the section number, and writes it to the
+recording log under `warnings`.
 
 ### `data-text="spoken" text not found in the spoken words` in a page
 
@@ -1035,15 +1077,16 @@ element appears whole. Usually the slide writes a number as digits and the scrip
 
 ### `matches no element, handler, or slide` in a page
 
-{/* sample: decktalk record --only 9 on a scaffold copy with data-cue="5.1cap" removed from deck/index.html */}
+{/* sample: decktalk record --only 2 on a starter copy with data-cue="2.1code" dropped and the id left in data-preview */}
 
 ```text
-[page] 09  cue "5.1cap" matches no element, handler, or slide
+[page] 02  cue "2.1code" matches no element, handler, or slide
 ```
 
 **Cause.** The cue fired, but no element has that `data-cue`, no handler is registered for it, and no
-slide has that id. `align` did not catch it, because the id still appears in quotes in the page, such as
-a key of a slide's `preview` object.
+slide has that id. `align` catches this only when the id has left the page file entirely. An id that is
+still a quoted literal somewhere in the page, such as a key of a slide's `preview` object, passes `align`
+and warns here instead.
 
 **Fix.**
 1. Add `data-cue="<id>"` to the element that should appear.
@@ -1082,7 +1125,7 @@ tag comes after the `DeckTalk.scene` calls.
 
 **Fix.**
 1. Load `decktalk-runtime.js` before any `DeckTalk.scene` call.
-2. Open the page in a browser to check the scene index.
+2. Run `decktalk serve` and open the page from the URL it prints, to check the scene index.
 
 **More.** [Page contract](/concepts/page-contract)
 
@@ -1098,17 +1141,17 @@ time.
 2. For drafts, set `DECKTALK_VIDEO_PRESET=veryfast`, or `preset = "veryfast"` under `[video]`.
 3. For the final video, go back to the default preset.
 
-A build without voice of the scaffold took 276 s for its 257.72 s video. The machine was a MacBook Pro
+A build without voice of the starter took 64 s for its 44.12 s video. The machine was a MacBook Pro
 with an Apple M5 Pro and 64 GB of memory.
 
 **More.** [Rebuild one section](/guides/rebuild-one-section)
 
 ### `TimeoutError` in screenshots
 
-{/* sample: decktalk screenshots --section 1 --at 31 after decktalk build --no-voice */}
+{/* sample: decktalk screenshots --section 1 --at 31 after decktalk build --no-voice on a fresh starter */}
 
 ```text
-error: TimeoutError: Page.wait_for_function: Timeout 30000ms exceeded. (add -v for the traceback)
+error[INTERNAL]: Page.wait_for_function: Timeout 30000ms exceeded.
 ```
 
 **Cause.** An `--at` value past 30 s waits longer than the browser's 30 s limit.
