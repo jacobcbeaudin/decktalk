@@ -33,7 +33,7 @@ The package exports these names. Every other name is internal.
 | Speech | `SpeechProvider`, `SpeechRequest`, `register_speech_provider` |
 | Version | `__version__` |
 
-Note: Everything under `decktalk.media` is internal. So is everything under `decktalk.providers` except the three
+Note: Everything under `decktalk.media` is internal. So is everything under `decktalk.speech` except the three
 speech names, and every name that starts with music.
 
 ## `Project`
@@ -219,10 +219,10 @@ A speech provider returns audio and a start and end time for every word. ElevenL
 |---|---|
 | `SpeechProvider` | A protocol with `name`, `speak(request)`, and `cache_key(request)`. `speak` returns the audio bytes and a list of `Word`. `cache_key` returns everything except the text that changes the audio. |
 | `SpeechRequest` | A frozen dataclass with `text`, `model`, `voice_settings`, `output_format`, `previous_text`, and `next_text`. `text` holds break tags. |
-| `register_speech_provider(name, factory)` | Makes a provider selectable as `[voice] provider = "name"`. The factory receives the loaded `Project` and returns a provider. |
+| `register_speech_provider(name, factory)` | Makes a provider selectable as `[voice] provider = "name"`. The factory receives a `VoiceContext`, which carries the settings and the project's secrets, and returns a provider. |
 
 Registering a name again replaces the earlier factory. DeckTalk loads no plugins. For a provider that the command
-line can use, open a pull request that adds a module under `src/decktalk/providers/` and registers it.
+line can use, open a pull request that adds a module under `src/decktalk/speech/` and names it in the registry.
 
 ## Stability
 

@@ -40,6 +40,7 @@ decktalk [-h] [--version] [--project PROJECT] [-v] [-q] <command> ...
 | `DECKTALK_CACHE_DIR` | per platform, below | ffmpeg cache. Playwright keeps Chromium in its own cache. |
 | `DECKTALK_FFMPEG`, `DECKTALK_FFPROBE` | none | Paths to your own binaries. Set both. They win over the pinned build and `PATH`. |
 | `DECKTALK_<TABLE>_<FIELD>` | none | One tuning field, such as `DECKTALK_VIDEO_PRESET=veryfast`. |
+| `DECKTALK_ALLOW_ANY_API_BASE` | unset | Lets `[elevenlabs] api_base` name any host, for a local mock of the API. It is a switch and never a secret, and without it the key goes only to an https ElevenLabs host. |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | none | Speech provider secrets. Also read from `.env`. |
 
 | Default path | Linux | macOS | Windows |
@@ -48,7 +49,7 @@ decktalk [-h] [--version] [--project PROJECT] [-v] [-q] <command> ...
 | `DECKTALK_CACHE_DIR` | `$XDG_CACHE_HOME/decktalk`, else `~/.cache/decktalk` | `~/Library/Caches/decktalk` | `%LOCALAPPDATA%\decktalk` |
 
 Note: a key value that starts with `<` counts as unset, so the placeholders in `.env.example` never
-reach the provider. [Configuration](/reference/configuration) lists every tuning field.
+reach the provider. No value of any variable on this page is printed, logged or put in a payload. [Configuration](/reference/configuration) lists every tuning field.
 
 ## Install commands
 

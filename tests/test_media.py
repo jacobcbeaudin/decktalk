@@ -304,7 +304,7 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
     """A take voiced under a short tail keeps its hash when min_tail_seconds grows, so narrate pads it in place."""
     from decktalk.artifacts import Take, Takes, Word, write_words
     from decktalk.model import Project
-    from decktalk.providers.speech import register_speech_provider
+    from decktalk.speech import register_speech_provider
     from decktalk.stages.narrate import narrate, text_hash
 
     class NeverSpeaks:
@@ -316,7 +316,7 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
         def cache_key(self, request):
             return "never-voice"
 
-    register_speech_provider("never", lambda project: NeverSpeaks())
+    register_speech_provider("never", lambda context: NeverSpeaks())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text(
         "[narration]\nmin_tail_seconds = 0.9\n[voice]\nprovider = 'never'\n[[section]]\nnumber = 1\npage = 'a.html'\n",
@@ -366,7 +366,7 @@ def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path)
     """A close that moves from section 2 to section 3 keeps its take under its new file names."""
     from decktalk.artifacts import Take, Takes, Word, write_words
     from decktalk.model import Project
-    from decktalk.providers.speech import register_speech_provider
+    from decktalk.speech import register_speech_provider
     from decktalk.stages.narrate import narrate, text_hash
 
     class NeverSpeaks:
@@ -378,7 +378,7 @@ def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path)
         def cache_key(self, request):
             return "never-voice"
 
-    register_speech_provider("never-renumbered", lambda project: NeverSpeaks())
+    register_speech_provider("never-renumbered", lambda context: NeverSpeaks())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 3. Close\n\nGoodbye now.\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text(
         "[narration]\nmin_tail_seconds = 0.5\n[voice]\nprovider = 'never-renumbered'\n"
@@ -441,7 +441,7 @@ def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
     """A take that meets min_tail_seconds, padded or not, keeps its hash, bytes, and duration on the next run."""
     from decktalk.artifacts import Takes, Word
     from decktalk.model import Project
-    from decktalk.providers.speech import register_speech_provider
+    from decktalk.speech import register_speech_provider
     from decktalk.stages.narrate import narrate
 
     class ToneVoice:
@@ -457,7 +457,7 @@ def test_narrate_twice_leaves_a_voiced_take_untouched(tmp_path, tail):
         def cache_key(self, request):
             return f"tone-voice-{tail}"
 
-    register_speech_provider(ToneVoice.name, lambda project: ToneVoice())
+    register_speech_provider(ToneVoice.name, lambda context: ToneVoice())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text(
         f"[narration]\nmin_tail_seconds = 1.3\nopening_silence_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"
@@ -485,7 +485,7 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     """A section's lead joins silence into narration.mp3 and its tail pads the take, and neither voices it again."""
     from decktalk.artifacts import Takes, Word
     from decktalk.model import Project
-    from decktalk.providers.speech import register_speech_provider
+    from decktalk.speech import register_speech_provider
     from decktalk.stages.narrate import narrate
 
     class ToneVoice:
@@ -501,7 +501,7 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
         def cache_key(self, request):
             return "tone-lead-voice"
 
-    register_speech_provider(ToneVoice.name, lambda project: ToneVoice())
+    register_speech_provider(ToneVoice.name, lambda context: ToneVoice())
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
     base = (
         f"[narration]\nmin_tail_seconds = 0.7\nopening_silence_seconds = 0\n[voice]\nprovider = '{ToneVoice.name}'\n"

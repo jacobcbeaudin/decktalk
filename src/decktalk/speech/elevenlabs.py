@@ -1,4 +1,12 @@
-"""ElevenLabs: text to speech with word timestamps, sound effects, and music."""
+"""ElevenLabs, the default speech provider: text read aloud with a time for every word.
+
+The `/text-to-speech` endpoint returns the audio and a start and an end time per character, which
+`words_from_alignment` groups into words, and that is the whole reason DeckTalk can cut on a word.
+The same key buys the sound effects and the music that `decktalk soundscape` generates.
+
+The key travels in a header to whatever host `[elevenlabs] api_base` names, so the base is checked
+once when the provider is built, and the key is a `Secret` that only the header builder reveals.
+"""
 
 from __future__ import annotations
 
@@ -11,21 +19,21 @@ from urllib.parse import urlsplit
 
 from ..artifacts import Word
 from ..errors import ConfigError
-from ..model import Project
+from ..secret import Secret
 from ..settings import ElevenLabsConfig
-from ._http import post_bytes, post_json
-from .speech import SpeechRequest, register_speech_provider
+from . import SpeechRequest, VoiceContext
+from .http import post_bytes, post_json
 
 PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 ELEVENLABS_DOMAIN = "elevenlabs.io"
-# Set to 1 to let `[elevenlabs] api_base` name any host, for a local mock of the API. The
+# Set this to let `[elevenlabs] api_base` name any host, for a local mock of the API. The
 # environment is the user's own machine and a project file is not, so the file alone can never
-# redirect the key. The value is read the way _env.py reads a bool.
+# redirect the key. Any value but an empty string, `0`, `no` or `false` turns the check off.
 ALLOW_ANY_API_BASE = "DECKTALK_ALLOW_ANY_API_BASE"
 
 
 def check_api_base(api_base: str, environ: Mapping[str, str] | None = None) -> str:
-    """`api_base` when it is an https URL on an ElevenLabs host, or the override is set; else a ConfigError.
+    """`api_base` when it is an https URL on an ElevenLabs host or the override is set, and otherwise an error.
 
     The key travels in a header to whatever host `api_base` names, so the value is checked here,
     before the first request, wherever it came from.
@@ -44,7 +52,7 @@ def check_api_base(api_base: str, environ: Mapping[str, str] | None = None) -> s
 
 
 def words_from_alignment(chars: list[str], starts: list[float], ends: list[float]) -> list[Word]:
-    """Group the character alignment into words; <break .../> tags are skipped."""
+    """Group the character alignment into words. A <break .../> tag is skipped rather than spoken."""
     words: list[Word] = []
     current: list[tuple[str, float, float]] = []
     in_tag = False
@@ -78,39 +86,45 @@ def words_from_alignment(chars: list[str], starts: list[float], ends: list[float
 class ElevenLabs:
     """Speech with word timestamps, sound effects and music. The default SpeechProvider.
 
-    The key is kept out of repr, so no log line, error or JSON payload that shows the provider
-    shows it. The base URL is checked once, when the provider is built.
+    Both values this provider reads from `.env` are `Secret`s, so no log line, error, `repr` or
+    JSON payload that reaches the provider can print the key or the voice id, and `http.redact`
+    takes the voice id out of every URL and every message besides. The base URL is checked once,
+    when the provider is built.
     """
 
-    api_key: str = field(repr=False)
+    api_key: Secret
     cfg: ElevenLabsConfig
-    voice_id: str = ""
+    voice: Secret = field(default_factory=lambda: Secret("", "ELEVENLABS_VOICE_ID"))
     context_chars: int = 1500
     timeout: int = 180
     name: str = "elevenlabs"
+    api_base: str = field(init=False)
 
     def __post_init__(self) -> None:
-        check_api_base(self.cfg.api_base)
+        # Every URL is built from the base that passed the check, and never from the table again.
+        object.__setattr__(self, "api_base", check_api_base(self.cfg.api_base).rstrip("/"))
 
     @classmethod
-    def for_project(cls, project: Project) -> ElevenLabs:
-        api_key, voice_id = project.require_env("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
-        n = project.settings.narration
+    def for_context(cls, context: VoiceContext) -> ElevenLabs:
+        """The provider one project asks for: its key, its voice and its narration settings."""
+        api_key, voice = context.secrets.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
+        narration = context.settings.narration
         return cls(
             api_key,
-            project.settings.elevenlabs,
-            voice_id=voice_id,
-            context_chars=n.context_chars,
-            timeout=n.timeout_seconds,
+            context.settings.elevenlabs,
+            voice=voice,
+            context_chars=narration.context_chars,
+            timeout=narration.timeout_seconds,
         )
 
     def cache_key(self, request: SpeechRequest) -> str:
-        return f"{self.name}\n{self.voice_id}\n{request.model}\n{request.output_format}"
+        """Everything but the text that changes the audio. The voice id is part of the take hash."""
+        return f"{self.name}\n{self.voice.reveal()}\n{request.model}\n{request.output_format}"
 
     def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
         return self.synthesize(
             request.text,
-            voice_id=self.voice_id,
+            voice_id=self.voice.reveal(),
             model=request.model,
             voice_settings=request.voice_settings,
             output_format=request.output_format,
@@ -121,7 +135,8 @@ class ElevenLabs:
         )
 
     def _headers(self) -> dict[str, str]:
-        return {"xi-api-key": self.api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"}
+        """The one place the key is revealed, which is the request that is allowed to carry it."""
+        return {"xi-api-key": self.api_key.reveal(), "Content-Type": "application/json", "Accept": "audio/mpeg"}
 
     def synthesize(
         self,
@@ -136,8 +151,8 @@ class ElevenLabs:
         context_chars: int = 1500,
         timeout: int = 180,
     ) -> tuple[bytes, list[Word]]:
-        """Synthesize text; returns (mp3 bytes, word timings)."""
-        url = f"{self.cfg.api_base}/text-to-speech/{voice_id}/with-timestamps?output_format={output_format}"
+        """One section read aloud, returned as the mp3 bytes and a start and an end time per word."""
+        url = f"{self.api_base}/text-to-speech/{voice_id}/with-timestamps?output_format={output_format}"
         payload: dict[str, Any] = {"text": text, "model_id": model, "voice_settings": voice_settings}
         if previous_text:
             payload["previous_text"] = previous_text[-context_chars:]
@@ -154,18 +169,9 @@ class ElevenLabs:
         return audio, words
 
     def sound_effect(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.cfg.api_base}/sound-generation?output_format={output_format}"
+        url = f"{self.api_base}/sound-generation?output_format={output_format}"
         return post_bytes(url, body, self._headers(), timeout=self.cfg.timeout_seconds)
 
     def music(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.cfg.api_base}/music?output_format={output_format}"
+        url = f"{self.api_base}/music?output_format={output_format}"
         return post_bytes(url, body, self._headers(), timeout=self.cfg.timeout_seconds)
-
-    def sound_endpoint(self, output_format: str) -> str:
-        return f"{self.cfg.api_base}/sound-generation?output_format={output_format}"
-
-    def music_endpoint(self, output_format: str) -> str:
-        return f"{self.cfg.api_base}/music?output_format={output_format}"
-
-
-register_speech_provider("elevenlabs", ElevenLabs.for_project)

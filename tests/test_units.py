@@ -1535,7 +1535,7 @@ def test_provider_errors_never_show_the_voice_id(monkeypatch):
     import urllib.request
 
     from decktalk.errors import ProviderError
-    from decktalk.providers import _http
+    from decktalk.speech import http as _http
 
     voice_id = "Xb7hH8MSUJpSbSDYk0k2"
     api_key = "sk_test_key_that_must_not_print"
@@ -2129,8 +2129,8 @@ def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, s
 
     from decktalk.artifacts import write_words
     from decktalk.model.script import PUNCT
-    from decktalk.providers.speech import register_speech_provider
     from decktalk.scaffold import init
+    from decktalk.speech import register_speech_provider
     from decktalk.stages.narrate import text_hash
 
     class PlanVoice:
@@ -2142,7 +2142,7 @@ def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, s
         def cache_key(self, request):
             return "plan-voice"
 
-    register_speech_provider("plan-voice", lambda project: PlanVoice())
+    register_speech_provider("plan-voice", lambda context: PlanVoice())
     monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)

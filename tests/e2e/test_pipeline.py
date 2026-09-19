@@ -30,7 +30,7 @@ from decktalk.artifacts import Takes, Word, write_words
 from decktalk.cli import main
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.model import Project
-from decktalk.providers.speech import SpeechRequest, get_provider
+from decktalk.speech import SpeechRequest, VoiceContext, get_provider
 from decktalk.stages.narrate import build_timeline, text_hash
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 
@@ -187,7 +187,7 @@ def voiced_copy(built: Built, name: str, monkeypatch: pytest.MonkeyPatch) -> Pat
     cfg = project.settings.narration
     model = project.voice.model or cfg.model
     settings = project.voice.api_settings()
-    provider = get_provider(project)
+    provider = get_provider(project.voice.provider, VoiceContext(settings=project.settings, secrets=project.env))
     take_index = Takes.load(project.takes_path)
     assert take_index is not None and take_index.estimated
     take_index.estimated = False

@@ -18,9 +18,10 @@ import pytest
 
 from decktalk.model import Voice
 from decktalk.model.script import Segment, parse_script
-from decktalk.providers.elevenlabs import ElevenLabs
-from decktalk.providers.speech import SpeechRequest
+from decktalk.secret import Secret
 from decktalk.settings import ElevenLabsConfig, NarrationConfig
+from decktalk.speech import SpeechRequest
+from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages.narrate import text_hash
 
 GOLDEN = json.loads((Path(__file__).parent / "data" / "take_hash.json").read_text(encoding="utf-8"))
@@ -38,7 +39,7 @@ def _voice_id() -> str:
 
 def provider_key() -> str:
     """The provider part of the payload, built the way `narrate` builds it."""
-    provider = ElevenLabs(api_key="", cfg=ElevenLabsConfig(), voice_id=GOLDEN["voice_id"])
+    provider = ElevenLabs(api_key=Secret(""), cfg=ElevenLabsConfig(), voice=Secret(_voice_id()))
     request = SpeechRequest(
         text="",
         model=GOLDEN["model"],

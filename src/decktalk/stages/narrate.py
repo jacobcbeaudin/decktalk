@@ -38,9 +38,8 @@ from ..errors import ConfigError
 from ..media import audio, ffmpeg
 from ..model import PageSection, Project
 from ..model.script import PUNCT, Segment
-from ..providers import elevenlabs as _elevenlabs  # noqa: F401  (registers the default provider)
-from ..providers.speech import SpeechProvider, SpeechRequest, get_provider
 from ..settings import NarrationConfig
+from ..speech import SpeechProvider, SpeechRequest, VoiceContext, get_provider
 
 log = logging.getLogger(__name__)
 
@@ -249,12 +248,17 @@ def plan_takes(
     return plans
 
 
+def speech_provider(project: Project) -> SpeechProvider:
+    """The provider this project's `[voice] provider` names, built from its settings and its .env."""
+    return get_provider(project.voice.provider, VoiceContext(settings=project.settings, secrets=project.env))
+
+
 def narration_plan(
     project: Project, targets: list[Segment], *, model: str, force: bool = False
 ) -> tuple[list[TakePlan], str | None]:
     """(the take plan, why the provider could not be set up or None), for a dry run that needs no key."""
     try:
-        provider: SpeechProvider | None = get_provider(project)
+        provider: SpeechProvider | None = speech_provider(project)
     except ConfigError as exc:
         provider, note = None, str(exc)
     else:
@@ -349,7 +353,7 @@ def narrate(
         unfilled = sorted({p for s in targets for p in s.placeholders})
         if unfilled and not allow_placeholders:
             raise ConfigError(f"unfilled placeholders {unfilled} in the script; fill them or pass allow_placeholders")
-        provider = get_provider(project)
+        provider = speech_provider(project)
         # A renumbered section keeps its take. Its files are copied to the new names before any
         # section is voiced, so a new take never replaces a file that a move still needs.
         moves: list[tuple[Take, Segment]] = []

@@ -16,10 +16,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..jsonio import read_json, write_json
 from ..media import audio, ffmpeg
 from ..model import MusicSpec, Project, SoundSpec
-from ..providers.elevenlabs import ElevenLabs
 from ..settings import ElevenLabsConfig
+from ..speech.elevenlabs import ElevenLabs, check_api_base
 
 log = logging.getLogger(__name__)
 
@@ -39,17 +40,18 @@ def request_hash(endpoint: str, body: Any) -> str:
 
 
 def _load(path: Path) -> dict[str, Any]:
+    """The ledger of what this project already bought, or {} when there is none to read."""
     if path.exists():
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            return read_json(path)
         except json.JSONDecodeError:
             pass
     return {}
 
 
 def _save(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    """The ledger, written atomically, because a half-written one buys the same audio twice."""
+    write_json(path, data)
 
 
 def sound_body(spec: SoundSpec, cfg: ElevenLabsConfig, *, loop: bool) -> dict[str, Any]:
@@ -93,11 +95,12 @@ def _sound(
     cfg: ElevenLabsConfig,
     fmt: str,
     *,
+    base: str,
     loop: bool,
     force: bool,
 ) -> SoundscapeItem:
     body = sound_body(spec, cfg, loop=loop)
-    endpoint = f"{cfg.api_base}/sound-generation"
+    endpoint = f"{base}/sound-generation"
     item = SoundscapeItem(name=name, out=out, endpoint=endpoint, requests=[body], status="planned")
     if client is None:
         return item
@@ -117,10 +120,17 @@ def _sound(
 
 
 def _music(
-    spec: MusicSpec, out: Path, client: ElevenLabs | None, cfg: ElevenLabsConfig, fmt: str, *, force: bool
+    spec: MusicSpec,
+    out: Path,
+    client: ElevenLabs | None,
+    cfg: ElevenLabsConfig,
+    fmt: str,
+    *,
+    base: str,
+    force: bool,
 ) -> SoundscapeItem:
     chunks = music_chunks(spec, cfg)
-    endpoint = f"{cfg.api_base}/music"
+    endpoint = f"{base}/music"
     item = SoundscapeItem(name="music", out=out, endpoint=endpoint, requests=chunks, status="planned")
     if client is None:
         return item
@@ -156,10 +166,13 @@ def soundscape(
 ) -> list[SoundscapeItem]:
     spec = project.soundscape
     if spec.empty:
-        log.info("no [soundscape] in decktalk.toml; nothing to generate")
+        log.info("no [soundscape] in decktalk.toml, so there is nothing to generate")
         return []
     cfg = project.settings.elevenlabs
     fmt = project.settings.narration.output_format
+    # The base is checked whatever the run does, and the plan names the URL a real run would call,
+    # because the ledger and the request hash are keyed by it.
+    base = check_api_base(cfg.api_base).rstrip("/")
     client = None if dry_run else ElevenLabs(project.require_env("ELEVENLABS_API_KEY")[0], cfg)
     wanted = set(only or [])
 
@@ -169,15 +182,23 @@ def soundscape(
     items: list[SoundscapeItem] = []
     if spec.ambience and want("ambience"):
         out = project.path(spec.ambience.out or project.mix.ambience or "build/sfx/ambience.mp3")
-        items.append(_sound("ambience", spec.ambience, out, client, cfg, fmt, loop=True, force=force))
+        items.append(_sound("ambience", spec.ambience, out, client, cfg, fmt, base=base, loop=True, force=force))
     for name, s in spec.sfx.items():
         if want(name):
             items.append(
                 _sound(
-                    name, s, project.path(s.out or f"build/sfx/{name}.mp3"), client, cfg, fmt, loop=False, force=force
+                    name,
+                    s,
+                    project.path(s.out or f"build/sfx/{name}.mp3"),
+                    client,
+                    cfg,
+                    fmt,
+                    base=base,
+                    loop=False,
+                    force=force,
                 )
             )
     if spec.music and want("music"):
         out = project.path(spec.music.out or project.mix.music or "build/music/music.mp3")
-        items.append(_music(spec.music, out, client, cfg, fmt, force=force))
+        items.append(_music(spec.music, out, client, cfg, fmt, base=base, force=force))
     return items

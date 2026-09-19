@@ -14,7 +14,7 @@ breaking change once the project leaves the 0.x series.
              AssembleResult, VerifyResult, SoundscapeItem, BuildResult, StatusResult, ClipResult, SectionWords
     speech: SpeechProvider, SpeechRequest, register_speech_provider
 
-Everything under decktalk.media, everything under decktalk.providers other than the
+Everything under decktalk.media, everything under decktalk.speech other than the
 three speech names above, and every name starting with an underscore is internal.
 """
 
@@ -25,8 +25,8 @@ from importlib.metadata import PackageNotFoundError, version
 from .artifacts import CueTimes, RecordingLog, Takes, Timeline, Word
 from .errors import ConfigError, DeckTalkError, MissingInputError, ProviderError, ToolError
 from .model import ClipSection, Mix, PageSection, Project, Section, Soundscape, Transition, Voice
-from .providers.speech import SpeechProvider, SpeechRequest, register_speech_provider
 from .settings import Settings, load_settings
+from .speech import SpeechProvider, SpeechRequest, register_speech_provider
 from .stages import (
     AlignResult,
     AssembleResult,
