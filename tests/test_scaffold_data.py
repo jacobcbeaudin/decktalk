@@ -19,8 +19,9 @@ from decktalk.model import Project
 from decktalk.model.script import parse_script
 from decktalk.scaffold import EXAMPLES, SKILL_NAMES, example, init
 from decktalk.scaffold.examples import STARTER
-from decktalk.scaffold.skills import LINK_DIR, SKILLS_DIR
+from decktalk.scaffold.skills import LINK_DIR, SKILLS_DIR, skills_dir
 from decktalk.toolchain.assets import RUNTIME_FILE, package_file, runtime_path
+from decktalk.verdicts import Verdict
 
 SHIPPED = [None, *[e.name for e in EXAMPLES if e.shipped]]
 """Every project `init` can write: the starter, then each example that has a project behind it."""
@@ -167,15 +168,49 @@ def test_an_unknown_example_names_the_ones_there_are(tmp_path, offline):
 # ---- the skills and AGENTS.md ---------------------------------------------------------
 
 
+def test_every_docs_link_the_scaffold_ships_names_a_page_that_exists():
+    """A project is written once, so a link it carries is wrong for good if it is wrong at all."""
+    import re
+
+    repo = Path(__file__).resolve().parent.parent
+    pages = {p.stem for p in (repo / "docs" / "reference").glob("*.mdx")}
+    if not pages:
+        pytest.skip("the docs are not in this checkout")
+    packaged = repo / "src" / "decktalk"
+    linked: dict[str, list[str]] = {}
+    for path in [*(packaged / "template").rglob("*"), *(packaged / "skills").rglob("*")]:
+        if not path.is_file() or path.suffix not in (".md", ".toml", ".html", ".json"):
+            continue
+        for page in re.findall(r"docs\.decktalk\.ai/reference/([a-z0-9-]+)", path.read_text(encoding="utf-8")):
+            linked.setdefault(page, []).append(str(path.relative_to(repo)))
+    assert linked, "no reference link was found, so this test is measuring nothing"
+    missing = {page: where for page, where in linked.items() if page not in pages}
+    assert missing == {}, f"these links name no page under docs/reference: {missing}"
+
+
+def test_the_agents_file_an_author_receives_says_what_is_true_of_every_command():
+    """`--json` is global, so an AGENTS.md that lists the commands taking it teaches a smaller tool."""
+    text = (Path(__file__).resolve().parent.parent / "src" / "decktalk" / "template" / "AGENTS.md").read_text()
+    assert "Every command takes `--json`" in text
+    assert "narrate --dry-run` take `--json`" not in text
+
+
 def test_init_installs_the_six_skills_with_the_claude_code_link(tmp_path, offline):
     root = write(tmp_path)
     installed = sorted(p.name for p in (root / SKILLS_DIR).iterdir())
     assert installed == sorted(SKILL_NAMES)
     for name in SKILL_NAMES:
-        body = (root / SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
+        packaged = skills_dir() / name
+        written = root / SKILLS_DIR / name
+        body = (written / "SKILL.md").read_text(encoding="utf-8")
         assert body.startswith("---\n") and f"name: {name}" in body
-        assert "no body yet" not in body
-        assert "AGENTS.md" in body and "--no-voice" in body
+        # The project gets the packaged skill whole, references and all, because the wheel is the
+        # only source there is and a skill that lost half of itself would still look installed.
+        assert sorted(p.relative_to(written) for p in written.rglob("*")) == sorted(
+            p.relative_to(packaged) for p in packaged.rglob("*")
+        )
+        for file in packaged.rglob("*.md"):
+            assert (written / file.relative_to(packaged)).read_bytes() == file.read_bytes()
     link = root / LINK_DIR
     assert (link / "decktalk-build" / "SKILL.md").is_file()
     # One folder of skills, linked rather than copied. A filesystem that refuses a link gets a copy,
@@ -322,3 +357,27 @@ def test_the_starter_typesets_its_one_equation_from_the_copy_beside_it(tmp_path,
     assert page.evaluate("() => !document.querySelector('.katex-error')")
     assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
+
+
+@pytest.mark.browser
+def test_the_starter_raises_no_static_page_finding(tmp_path, offline, browser_page):
+    """The packaged starter is what an author copies, so the scan it ships under has to be clean."""
+    from decktalk.pagescan import slide_findings
+
+    page = browser_page
+    root = write(tmp_path)
+    path, _ = pages_of(root)[0]
+    page.goto(path.as_uri())
+    page.evaluate("() => window.__decktalk.ready")
+    catalog = page.evaluate("() => window.__decktalk.catalog")
+    cues = json.loads((root / "cues.json").read_text(encoding="utf-8"))["sections"]
+    found = []
+    for entry in catalog:
+        rows = [r for slide in entry["elements"].values() for r in slide]
+        section = next(
+            (k for k, v in cues.items() if any(c["cue"].startswith(f"{entry['scene']}.") for c in v["cues"])), None
+        )
+        times = dict.fromkeys((c["cue"] for c in cues.get(section, {}).get("cues", [])), 0.0) if section else {}
+        found += slide_findings(rows, times, width=1920, height=1080, page="deck/index.html", section=None)
+    off = [f for f in found if f.verdict in (Verdict.OFF_STAGE, Verdict.IN_CAPTION_BAND)]
+    assert off == [], [f.detail for f in off]
