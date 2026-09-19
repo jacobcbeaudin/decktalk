@@ -76,14 +76,14 @@ default. The alignment never depends on wall-clock time.
 
 A build without voice replaces the voice with a click track, so it needs no account and no API key.
 
-{/* sample: decktalk build --no-voice, build without voice of the scaffold, first narrate lines */}
+{/* sample: decktalk build --no-voice, build without voice of the starter, the narrate lines */}
 ```text
-[sil ] 01  29 words -> 17.10s (estimated words)
-[sil ] 02  40 words -> 20.80s (estimated words)
-[sil ] 03  285 words -> 142.50s (estimated words)
+[sil ] 01  26 words -> 12.60s (estimated words, sound ends 12.487, lead 0.5s, tail 1.3s)
+[sil ] 02  30 words -> 14.20s (estimated words, sound ends 14.087, lead 0.5s, tail 1.3s)
+[sil ] 03  25 words -> 11.50s (estimated words, sound ends 11.387, lead 0.5s, tail 1.3s)
 ```
 
-- The click track has a soft click at the start of every estimated word, at -24 dBFS.
+- The click track has a soft click at the start of every estimated word, and one where the last word ends, at -24 dBFS.
 - `narrate` spaces the estimated words evenly at `silent_words_per_minute`, 150 by default. It adds each pause,
   beat, and tail. [script.md](/reference/script-md) gives the length rule.
 - Every other stage runs as usual. A build without voice therefore tests the cues, the pages, the recording, the cut, and
@@ -143,7 +143,7 @@ The verify stage inside `decktalk build` checks section starts and cuts, and cut
 | [Stage](/reference/glossary) | One of `narrate`, `align`, `record`, `assemble`, and `verify`, in that order. |
 | [Build without voice](/reference/glossary) | A build with `--no-voice`. It uses estimated word times and writes a click track. |
 | [Voiced build](/reference/glossary) | A build without `--no-voice`. The speech provider voices the script. |
-| [Click track](/reference/glossary) | The audio of a build without voice, with a soft click at every estimated word start. |
+| [Click track](/reference/glossary) | The audio of a build without voice, with a soft click at every estimated word start and at the end of the last word. |
 | [Narration t=0](/reference/glossary) | The first frame after the magenta cover, where the page clock starts. |
 | [Recording](/reference/glossary) | The webm that `record` writes for a page section. |
 | [Cut](/reference/glossary) | The boundary between two sections in the final video. |
