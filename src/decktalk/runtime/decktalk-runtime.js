@@ -254,12 +254,23 @@
       }
     }).observe({ type: "long-animation-frame" });
   }
+  // What the reveals of one cue describe themselves as, joined into one sentence, or null.
+  // The transcript reads it, so a reveal a viewer cannot see is written down in its author's words.
+  function describeOf(id) {
+    const said = [];
+    for (const el of pan.querySelectorAll(`.dt-slide:not(.dt-leave) [data-cue="${cssEscape(id)}"]`)) {
+      const text = (el.dataset.describe || "").trim();
+      if (text && !said.includes(text)) said.push(text);
+    }
+    return said.length ? said.join(" ") : null;
+  }
   function logCue(id, due) {
     const entry = {
       id,
       due: +due.toFixed(3),
       ran: +now().toFixed(3),
       frame: clockAt(state.frameAt),
+      describe: describeOf(id),
       next: null,
       after: null,
     };

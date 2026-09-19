@@ -101,9 +101,9 @@ recorder records the index with no `PAGE ERROR`.
 Note: The runtime sorts the `cues` pairs by time and splits each pair at its last `@`. It skips a
 pair whose seconds are not a number. Write every pair as `id@seconds`.
 
-Note: The recorder builds `words` from `build/narration/timeline.json`, in seconds after the section
-start. It removes commas and `@` from each word. It builds `prevwords` the same way from the section
-before, and leaves it out for the first section or when the section before has no words.
+Note: The recorder builds `words` from the words file of the take that section plays, in seconds after
+the section start. It removes commas and `@` from each word. It builds `prevwords` the same way from the
+section before, and leaves it out for the first section or when the section before has no words.
 
 Note: In freeze mode, the slide's cues fire in preview order: the cues of the `preview` object by
 their seconds, then the cues of the markup in document order and the cues of `owns`. Animations take no time. A count-up shows its final value, a
@@ -307,7 +307,7 @@ the element is still plain text, the page warns.
 | `now()` | function | Seconds since the clock started, or `-Infinity` before it starts. |
 | `frameGaps` | array | One `{ at, ms }` object for each gap over 100 ms between two animation frames. Cue mode only. |
 | `spokenLog` | array | One `{ text, cueAt, runAt, n, firstOn }` object for each `data-text="spoken"` element that matched. |
-| `cueLog` | array | One `{ id, due, ran, frame, next, after }` object for each cue that fired from `cues`. Cue mode only. |
+| `cueLog` | array | One `{ id, due, ran, frame, describe, next, after }` object for each cue that fired from `cues`. Cue mode only. |
 | `longFrames` | array | One `{ start, ms, render, presented }` object for each animation frame over 50 ms after t=0. Cue mode only. |
 
 Note: After a recording, the recorder reads `catalog`, `warnings`, `frameGaps`, `spokenLog`, `cueLog`, and `longFrames`. A
@@ -356,7 +356,9 @@ Note: In `cueLog`, every time is in seconds on the narration clock. `due` is the
 is when the runtime fired it. `frame` is the start of the animation frame that fired it, and `next`
 and `after` are the starts of the two frames after it. A cue with `ran` well past `due` was held up
 before its frame. A cue that ran on time but whose `next` frame started late was held up while its
-frame was drawn. The recording log field is `cue_log`.
+frame was drawn, and `describe` is the `data-describe` of the reveals that cue fired, joined into one
+sentence, or null when none of them carries it. The transcript page is what reads it. The recording
+log field is `cue_log`.
 
 Note: In `longFrames`, `start`, `render`, and `presented` are seconds on the narration clock, and `ms`
 is the frame's length. `presented` is when Chromium showed the frame, or `null` when the browser does
@@ -448,7 +450,7 @@ the prefix `decktalk: `. In the messages below, `<id>`, `<slide>`, and `<n>` sta
 | `cue "<id>" is not one of slide <slide>'s cues` | The `after` or `before` parameter names an id the frozen slide does not have. The whole slide freezes. | Fix the parameter, or add the id to the slide's markup. |
 
 An `enter` function or a handler that throws goes to `console.error`, and the scene goes on. A
-`render` function that throws is an uncaught page error. The recorder logs it, and `check` reports
+`render` function that throws is an uncaught page error. The recorder logs it, and `record` reports
 `PAGE ERROR`.
 
 ## Related

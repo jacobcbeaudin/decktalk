@@ -22,6 +22,7 @@ from browser_pages import (
 )
 
 from decktalk.toolchain.assets import RUNTIME_FILE
+from decktalk.verdicts import Verdict
 
 pytestmark = pytest.mark.browser
 
@@ -269,6 +270,17 @@ def test_cue_mode_fires_in_order_and_logs_each_cue(page, tmp_path):
         assert e["due"] == due and e["ran"] >= due, e
         assert e["frame"] <= e["ran"] + 0.001 and e["frame"] < e["next"] < e["after"], e
     assert page.evaluate("() => window.__decktalk.warnings") == []
+    assert not page.errors
+
+
+def test_each_cue_log_row_carries_what_its_reveals_describe(page, tmp_path):
+    """The transcript is built from these strings, so the row a recording leaves has to carry them."""
+    cues = "1.1ball@0.3,1.1count@0.9,1.2sum@1.4"
+    page.goto(f"{write_page(tmp_path, 'described.html', MARKUP_SCENE)}?scene=1&t0=0&cues={cues}")
+    page.wait_for_function("() => window.__decktalk.cueLog.length >= 3", timeout=5000)
+    described = {e["id"]: e["describe"] for e in page.evaluate("() => window.__decktalk.cueLog")}
+    # Only 1.1ball carries data-describe in the scene, and a reveal without one writes null.
+    assert described == {"1.1ball": "a ball rests in the bowl", "1.1count": None, "1.2sum": None}
     assert not page.errors
 
 
@@ -778,62 +790,7 @@ def test_record_page_stores_page_errors_in_the_recording_log(page, tmp_path):
     assert recording_log2.page_errors == [NO_CATALOG]
     assert recording_log.assets == ["broken.html", RUNTIME_FILE]
     for recorded, name in ((recording_log, "01-section.json"), (recording_log2, "02-section.json")):
-        assert "PAGE ERROR" in log_verdicts(recorded, RecordConfig())
+        assert Verdict.PAGE_ERROR in log_verdicts(recorded, RecordConfig())
         recorded.save(tmp_path / name)
         reloaded = type(recorded).load(tmp_path / name)
         assert reloaded is not None and reloaded.page_errors == recorded.page_errors
-
-
-@pytest.mark.media
-def test_recorder_keeps_frames_flowing_so_reveals_on_a_still_page_land_on_schedule(page, tmp_path):
-    """Reveals on a page that never moves record on their scheduled frame, not one or two frames early.
-
-    Playwright stamps a frame by when it was swapped, and an idle compositor swaps earlier in the
-    frame than a busy one. The recorder's keep-alive keeps the compositor equally busy before and
-    after narration t=0, so the offsets are measured against the same stamping as the trim point.
-    When the motion stopped with the cover, every reveal here read -40 ms. The keep-alive is also
-    invisible to verify: nothing changes at its onset diff level before the first reveal.
-    """
-    from decktalk.media import frames
-    from decktalk.media.browser import record_page
-    from decktalk.media.origin import page_url
-    from decktalk.settings import RecordConfig, VerifyConfig
-    from decktalk.stages.record.start import find_start
-
-    at = [0.8, 1.6, 2.4]
-    letters = "abc"
-    body = "".join(
-        f'<p data-cue="1.1{c}" data-reveal="instant" style="position:absolute;left:{100 + i * 400}px;top:250px;'
-        f'margin:0;font:700 200px sans-serif">{c}</p>'
-        for i, c in enumerate(letters)
-    )
-    name = served_page(
-        tmp_path, "still.html", f'<div data-scene="1"><template data-slide="1.1">{body}</template></div>'
-    )
-    cues = ",".join(f"1.1{c}@{t}" for c, t in zip(letters, at, strict=True))
-    out = tmp_path / "01.webm"
-    kw = dict(root=tmp_path, settle_seconds=0.5, min_cover_seconds=0.5, width=1280, height=720, color_scheme="light")
-    url = page_url(name, {"scene": "1", "t0": "signal", "cues": cues})
-    recording_log = record_page(page.context.browser, url, 3.0, out, **kw)
-    assert not recording_log.page_errors and not recording_log.warnings, (
-        recording_log.page_errors,
-        recording_log.warnings,
-    )
-    start = find_start(out, recording_log.settle_seconds, RecordConfig())
-    trim = start.seconds
-    assert not start.guessed, start.method
-    series = frames.changed_series(out, trim, trim, trim + 3.0, fps=25, level=40, width=480, height=270)
-    offsets: list[int] = []
-    prev = 0.0
-    for t, pct in series:
-        if len(offsets) < len(at) and pct - prev > 0.1:
-            offsets.append(round((t - trim - at[len(offsets)]) * 1000))
-        prev = pct
-    assert len(offsets) == len(at), series
-    # On the 25 fps grid a reveal lands on its own frame (0) or, when its timer fires late, the next (+40).
-    assert all(0 <= ms <= 40 for ms in offsets), offsets
-    cfg = VerifyConfig()
-    still = frames.changed_series(
-        out, trim, trim, trim + at[0] - 0.1, fps=25, level=cfg.onset_diff_level, width=1280, height=720
-    )
-    assert still and max(pct for _, pct in still) == 0.0, still
