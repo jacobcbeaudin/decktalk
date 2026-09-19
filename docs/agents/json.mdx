@@ -81,3 +81,14 @@ non-zero for reasons that are not the project's fault.
 Poll `decktalk status --json` rather than tailing that file. Its `run` object is null when no build
 is running, and otherwise carries `pid`, `started`, `stage`, `sections_done`, `sections_total` and
 `alive`.
+
+## Reading what a project has
+
+`status.narration` is the narration clock that `build/narration/takes.json` gives: `exists`,
+`estimated`, `total_seconds`, and one `sections[]` row per spoken section with `key`, `title`,
+`start`, `end` and `duration`. `estimated` is true while the takes are placeholders a run without
+voice wrote.
+
+Each `status.sections[]` row carries `key`, `kind`, `source`, `recorded`, `cut` and `stale`. `stale`
+is null while the recording on disk still matches the project, and otherwise one sentence saying why
+it does not, which is the same rule `record` uses to decide what to record again.

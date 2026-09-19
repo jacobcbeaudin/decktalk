@@ -8,6 +8,7 @@ command's result class is exported beside the function that returns it.
                SoundSpec, MusicSpec, Transition
     tuning:    Settings, load_settings
     errors:    DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
+    enums:     Stage, Verdict, Certainty, SkipReason, ErrorCode
     artifacts: Takes, CueTimes, RecordingLog, Cuts, Word
     stages:    narrate, align, record, assemble, verify
     commands:  preflight, screenshots, words, clip, status, soundscape, build
@@ -26,7 +27,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 from .artifacts import CueTimes, Cuts, RecordingLog, Takes, Word
-from .errors import ConfigError, DeckTalkError, MissingInputError, ProviderError, ToolError
+from .errors import ConfigError, DeckTalkError, ErrorCode, MissingInputError, ProviderError, ToolError
 from .model import (
     ClipSection,
     Loudness,
@@ -41,6 +42,7 @@ from .model import (
     Transition,
     Voice,
 )
+from .pipeline import Stage
 from .settings import Settings, load_settings
 from .speech import SpeechProvider, SpeechRequest, register_speech_provider
 from .stages import (
@@ -53,6 +55,7 @@ from .stages import (
     RecordResult,
     ScreenshotsResult,
     SoundscapeResult,
+    StatusResult,
     VerifyResult,
     WordsResult,
     align,
@@ -64,10 +67,11 @@ from .stages import (
     record,
     screenshots,
     soundscape,
+    status,
     verify,
     words,
 )
-from .status import StatusResult, status
+from .verdicts import Certainty, SkipReason, Verdict
 
 try:
     __version__ = version("decktalk")
@@ -78,12 +82,14 @@ __all__ = [
     "AlignResult",
     "AssembleResult",
     "BuildResult",
+    "Certainty",
     "ClipResult",
     "ClipSection",
     "ConfigError",
     "CueTimes",
     "Cuts",
     "DeckTalkError",
+    "ErrorCode",
     "Loudness",
     "MissingInputError",
     "Mix",
@@ -99,15 +105,18 @@ __all__ = [
     "Section",
     "Settings",
     "Sfx",
+    "SkipReason",
     "SoundSpec",
     "Soundscape",
     "SoundscapeResult",
     "SpeechProvider",
     "SpeechRequest",
+    "Stage",
     "StatusResult",
     "Takes",
     "ToolError",
     "Transition",
+    "Verdict",
     "VerifyResult",
     "Voice",
     "Word",

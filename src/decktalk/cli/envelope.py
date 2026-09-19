@@ -1,4 +1,4 @@
-"""The one `--json` envelope, the exit policy behind it, and the progress log of a long run.
+"""The one `--json` envelope, and the exit policy behind it.
 
 Every command prints exactly one object on stdout under `--json`, and an error prints it too, so a
 caller parses the same shape whatever happened. `schema` is that shape's version and is bumped only
@@ -10,32 +10,27 @@ of the payload rather than written a second time by hand, and a command that gro
 the envelope without the envelope knowing anything about that command. The failing rows lead.
 
 Nothing here imports a stage or knows a result's shape. A result satisfies `StageResult`, which is a
-tally and JSON-ready data, and this module turns the pair into an exit code and one object.
+tally and JSON-ready data, and this module turns the pair into an exit code and one object. The
+payload is printed exactly as the result wrote it, so a stage's `to_dict` and the CLI's JSON are the
+same data and never two spellings of it.
 """
 
 from __future__ import annotations
 
-import json
-import os
-import re
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from enum import Enum
 from pathlib import Path, PurePath
 from typing import Any
 
-from ..errors import DeckTalkError
+from ..errors import DeckTalkError, ErrorCode
 from ..jsonio import dumps, relative
-from ..verdicts import Finding, Findings, StageResult, Verdict
+from ..verdicts import FINDING_KEYS, VERDICT_KEYS, Finding, Findings, StageResult, Verdict
 
 SCHEMA = 1
 """The envelope's shape version. It is not the product version, and it moves only with the shape."""
-
-VERDICT_KEYS = ("code", "label", "certain")
-USAGE = "USAGE"
-INTERNAL = "INTERNAL"
+WHERE_KEYS = ("where", "page", "file", "path", "after", "before")
+"""The keys a payload row may name its file under, in the order a findings row takes its `where` from."""
 
 
 @dataclass(frozen=True)
@@ -103,12 +98,14 @@ def exit_for(findings: Findings, strict: bool, exit_zero: bool) -> int:
     return 0
 
 
-def error_code(exc: BaseException) -> str:
-    """The code of an error, drawn from its class name. Anything unplanned is `INTERNAL`."""
-    if isinstance(exc, DeckTalkError) and type(exc) is not DeckTalkError:
-        name = type(exc).__name__.removesuffix("Error")
-        return re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper()
-    return INTERNAL
+def error_code(exc: BaseException) -> ErrorCode:
+    """The code of an error, which the error class it is a kind of carries.
+
+    The codes are a closed list, so a stage that subclasses one of them to carry a result with its
+    refusal reports the code of the class it inherits rather than minting a seventh name that no
+    caller can dispatch on. Anything unplanned is `INTERNAL`.
+    """
+    return exc.code if isinstance(exc, DeckTalkError) else ErrorCode.INTERNAL
 
 
 def error_of(exc: BaseException, root: Path | None = None) -> dict[str, Any]:
@@ -121,7 +118,7 @@ def error_of(exc: BaseException, root: Path | None = None) -> dict[str, Any]:
     if isinstance(path, PurePath):
         path = relative(Path(path), root) if root is not None else Path(path).as_posix()
     return {
-        "code": error_code(exc),
+        "code": error_code(exc).value,
         "message": str(exc) or type(exc).__name__,
         "hint": getattr(exc, "hint", None),
         "path": path,
@@ -131,29 +128,11 @@ def error_of(exc: BaseException, root: Path | None = None) -> dict[str, Any]:
 
 def usage_error(message: str) -> dict[str, Any]:
     """The error slot of a command line the parser refused."""
-    return {"code": USAGE, "message": message, "hint": "run `decktalk <command> --help`", "path": None, "line": None}
+    hint = "run `decktalk <command> --help`"
+    return {"code": ErrorCode.USAGE.value, "message": message, "hint": hint, "path": None, "line": None}
 
 
 # ---- the rows every command shares -----------------------------------------------------
-
-
-def expand(value: Any) -> Any:
-    """JSON-ready data in which a verdict is the `{code, label, certain}` object, never a label.
-
-    A verdict is a string enum, so `json.dumps` would write it as its label, and a reader would be
-    left parsing labels in every payload at once. Opening it out here is the one place that happens.
-    """
-    if isinstance(value, Verdict):
-        return value.to_dict()
-    if isinstance(value, Enum):
-        return expand(value.value)
-    if isinstance(value, PurePath):
-        return value.as_posix()
-    if isinstance(value, dict):
-        return {str(k): expand(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [expand(v) for v in value]
-    return value
 
 
 def _is_verdict(value: Any) -> bool:
@@ -165,12 +144,13 @@ def _is_finding(value: Any) -> bool:
     return _is_verdict(value) and "detail" in value
 
 
-def _judged(code: Any) -> bool:
-    """Whether a code names a finding. A passing verdict and a bare note are neither kind."""
-    try:
-        return not Verdict[str(code)].passing
-    except KeyError:
-        return True
+def _judged(row: dict[str, Any]) -> bool:
+    """Whether a row names a finding. A passing verdict and a bare note are neither kind.
+
+    The verdict is read back from its object, so a row whose code names no verdict, or whose label
+    or certainty is not its code's, is a payload this package wrote wrong and stops the command.
+    """
+    return not Verdict.from_dict({key: row[key] for key in VERDICT_KEYS}).passing
 
 
 def _section(node: dict[str, Any], inherited: int | None) -> int | None:
@@ -188,15 +168,19 @@ def _first(node: dict[str, Any], *keys: str) -> Any:
 
 
 def _row(node: dict[str, Any], verdict: dict[str, Any], section: int | None) -> dict[str, Any]:
-    """One payload row as the uniform findings row, taking what the row happens to name."""
+    """One payload row as the uniform findings row, taking what the row happens to name.
+
+    The file a row is about may sit under the name its own table gives it, and the sentence is always
+    under `detail`, because a producer fills it on every judged row.
+    """
     return {
         "code": verdict["code"],
         "label": verdict["label"],
         "certain": verdict["certain"],
         "section": _section(node, section),
-        "cue": _first(node, "cue", "check"),
-        "where": _first(node, "where", "page", "file", "path", "after", "before"),
-        "detail": _first(node, "detail", "note", "reason"),
+        "cue": _first(node, "cue"),
+        "where": _first(node, *WHERE_KEYS),
+        "detail": _first(node, "detail"),
     }
 
 
@@ -217,7 +201,7 @@ def _walk(node: Any, out: list[dict[str, Any]], section: int | None) -> None:
     if not isinstance(node, dict):
         return
     if _is_finding(node):
-        out.append({k: node.get(k) for k in (*VERDICT_KEYS, "section", "cue", "where", "detail")})
+        out.append({key: node.get(key) for key in FINDING_KEYS})
         return
     here = _section(node, section)
     out += [_row(node, verdict, here) for verdict in _verdicts_in(node)]
@@ -233,7 +217,7 @@ def finding_rows(payload: Any, extra: Iterable[Finding] = ()) -> list[dict[str, 
     """
     rows: list[dict[str, Any]] = [f.to_dict() for f in extra]
     _walk(payload, rows, None)
-    judged = [r for r in rows if _judged(r.get("code"))]
+    judged = [r for r in rows if _judged(r)]
     return [r for r in judged if r.get("certain")] + [r for r in judged if not r.get("certain")]
 
 
@@ -270,51 +254,8 @@ def envelope_of(
 
 
 def emit(doc: dict[str, Any]) -> None:
-    """Print the envelope, and nothing else, on stdout."""
-    print(dumps(expand(doc)))
-
-
-# ---- the progress log ------------------------------------------------------------------
-
-
-@dataclass
-class ProgressLog:
-    """JSON Lines of what a long run is doing, so a caller polls a file instead of tailing a log.
-
-    The file is truncated when the run starts and appended to as it goes, one object per event, so
-    a reader that arrives late reads this run and never the one before it. `stages` is the sequence
-    the run will execute, so the index and the count it writes are the ones a caller can count on.
-
-    Every row carries the process id of the run, which is how `status` answers whether a build that
-    left no closing event is still going or died.
-    """
-
-    path: Path
-    stages: tuple[str, ...] = ()
-    pid: int = field(default_factory=os.getpid)
-
-    def __post_init__(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text("", encoding="utf-8")
-
-    def event(self, stage: str, event: str, *, section: int | None = None, detail: str | None = None) -> None:
-        """Append one event. A stage the run did not announce takes the last index, so a reader takes
-        its `done` event for the end of the run."""
-        index = self.stages.index(stage) + 1 if stage in self.stages else len(self.stages)
-        row = {
-            "ts": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-            "pid": self.pid,
-            "stage": stage,
-            "stage_index": index,
-            "stage_count": len(self.stages),
-            "section": section,
-            "event": event,
-            "detail": detail,
-        }
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row) + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
+    """Print the envelope, and nothing else, on stdout. A value JSON cannot hold is a bug, and refused."""
+    print(dumps(doc))
 
 
 def line_buffer_stdout() -> None:

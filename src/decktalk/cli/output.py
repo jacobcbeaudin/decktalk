@@ -8,13 +8,16 @@ the failing rows lead the machine output for the same reason. Internal: nothing 
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from ..artifacts import Takes
 from ..jsonio import relative
 from ..model.script import Segment
+from ..pipeline import SectionKind, Stage, TakeStatus
 from ..scaffold import DoctorRow, InitResult
 from ..settings import NarrationConfig
+from ..stages import StatusResult
 from ..stages.align import AlignResult
 from ..stages.clip import ClipResult, SectionWords
 from ..stages.narrate import NarrateResult, TakePlan, plan_totals
@@ -22,8 +25,7 @@ from ..stages.preflight import PreflightResult
 from ..stages.record import RecordResult
 from ..stages.soundscape import SoundscapeItem
 from ..stages.verify import VerifyResult
-from ..status import StatusResult
-from ..verdicts import Findings, Verdict
+from ..verdicts import Findings, SkipReason, Verdict
 
 
 def lead(summary: dict[str, object], findings: Findings) -> str:
@@ -35,6 +37,12 @@ def lead(summary: dict[str, object], findings: Findings) -> str:
     counts = ", ".join(f"{key.replace('_', ' ')} {value}" for key, value in summary.items() if value is not None)
     found = f"{findings.certain} certain, {findings.uncertain} uncertain finding(s)"
     return " | ".join(part for part in (counts, found if findings.certain or findings.uncertain else "") if part)
+
+
+def _verdict_text(verdict: Verdict | None, reason: SkipReason | None) -> str:
+    """A row's verdict as a table prints it: the label, then the reason code a skipped row carries."""
+    parts = (None if verdict is None else verdict.label, None if reason is None else reason.value)
+    return " ".join(part for part in parts if part)
 
 
 def mmss(seconds: float | None) -> str:
@@ -53,7 +61,7 @@ def narrate_table(result: NarrateResult) -> str:
         plan_table(result.plans, result.narration, result.rate, result.note),
     ]
     for row in result.rows:
-        parts.append(f"! {row.verdict.value} section {row.section}: {row.detail}")
+        parts.append(f"! {row.verdict.label} section {row.section}: {row.detail}")
     if result.takes is not None:
         parts += ["", narration_table(result.takes)]
     return "\n".join(parts)
@@ -91,21 +99,22 @@ def plan_table(plans: list[TakePlan], cfg: NarrationConfig, rate: float = 0.0, n
     for p in plans:
         seg = p.segment
         lines.append(
-            f"{seg.index:>2}  {seg.slug[:22]:<22} {p.status:<10} {p.characters_sent:>6} "
+            f"{seg.index:>2}  {seg.slug[:22]:<22} {p.status.value:<10} {p.characters_sent:>6} "
             f"{len(seg.spoken):>6}  {p.reason or '-'}"
         )
     t = plan_totals(plans, cfg, rate)
+    voiced, cached, unchecked = (t[s.value] for s in (TakeStatus.SYNTHESIZE, TakeStatus.CACHED, TakeStatus.UNKNOWN))
     lines.append("-" * len(lines[0]))
-    unknown = f", {t['unknown']} unknown" if t["unknown"] else ""
+    unknown = f", {unchecked} unknown" if unchecked else ""
     cost = ""
     if rate:
         cost = f" About ${t['estimated_cost']:.2f} at ${rate:.2f} per 1,000."
         if t["most_it_can_cost"] != t["estimated_cost"]:
-            cost += f" Up to ${t['most_it_can_cost']:.2f} if the {t['unknown']} unknown section(s) are voiced too."
+            cost += f" Up to ${t['most_it_can_cost']:.2f} if the {unchecked} unknown section(s) are voiced too."
     lines.append(
-        f"voice {t['synthesize']} section(s): {t['characters_sent']} characters sent, "
+        f"voice {voiced} section(s): {t['characters_sent']} characters sent, "
         f"{t['characters_spoken']} spoken, {t['characters_with_context']} with context. "
-        f"{t['cached']} cached{unknown}.{cost}"
+        f"{cached} cached{unknown}.{cost}"
     )
     if note:
         lines.append(f"note: {note}")
@@ -132,7 +141,7 @@ def align_table(result: AlignResult) -> str:
             lines.append(f"{s.key:>3}  {'--':>6}  {s.min_seconds or '-':>5}  ({s.skipped})")
             continue
         cues = ",".join(f"{r.cue}@{r.at}" for r in s.resolved) or "-"
-        lines.append(f"{s.key:>3}  {s.speech_end:>6.1f}  {str(s.min_seconds or '-'):>5}  {cues}")
+        lines.append(f"{s.key:>3}  {s.speech_end_seconds:>6.1f}  {str(s.min_seconds or '-'):>5}  {cues}")
         for note in s.notes:
             lines.append(f"{'':>3}  {'':>6}  {'':>5}  ! {note}")
     tail = f"{len(result.cue_times.sections)} sections with cues, {result.unresolved} unresolved"
@@ -148,8 +157,9 @@ def preflight_table(result: PreflightResult) -> str:
     voice = result.voice
     lines = [f"voice: provider={voice['provider']} model={voice['model']}"]
     lines.append(plan_table(result.takes, result.narration, result.rate, result.note))
-    if result.placeholders:
-        lines.append(f"a voiced run refuses the unfilled placeholders {result.placeholders}")
+    unfilled = sorted({name for plan in result.takes for name in plan.segment.placeholders})
+    if unfilled:
+        lines.append(f"a voiced run refuses the unfilled placeholders {unfilled}")
     lines += ["", align_table(result.align)]
     if result.estimated:
         lines.append(f"estimated words in sections {', '.join(result.estimated)}, which a voiced run will voice")
@@ -160,13 +170,13 @@ def preflight_table(result: PreflightResult) -> str:
     lines.append(f"{'check':<18} {'slide':<8} {'cue':>6} {'chg %':>7}  result")
     for c in result.cues:
         chg = f"{c.changed_percent:>7.2f}" if c.changed_percent is not None else f"{'-':>7}"
-        label = " ".join(part for part in (c.verdict, c.reason) if part)
+        label = _verdict_text(c.verdict, c.reason)
         label += f": {c.detail}" if c.detail else ""
         label += f" ({c.note})" if c.note else ""
         lines.append(f"{c.check:<18} {c.slide or '-':<8} {c.cue_seconds:>6.2f} {chg}  {label}")
     judged = (Verdict.CHANGED, Verdict.THIN_CHANGE, Verdict.NO_CHANGE, Verdict.SKIPPED)
-    tally = {v: sum(c.verdict == v for c in result.cues) for v in judged}
-    counts = ", ".join(f"{n} {v}" for v, n in tally.items() if n) or "none"
+    tally = {v: sum(c.verdict is v for c in result.cues) for v in judged}
+    counts = ", ".join(f"{n} {v.label}" for v, n in tally.items() if n) or "none"
     where = relative(result.frames, root) if root is not None else result.frames
     lines.append(f"{len(result.cues)} cue(s): {counts}. Frozen frames in {where}")
     if result.seams:
@@ -174,7 +184,7 @@ def preflight_table(result: PreflightResult) -> str:
         lines.append(f"{'sec':>3} {'chg %':>7}  result")
         for k in result.seams:
             chg = f"{k.changed_percent:>7.2f}" if k.changed_percent is not None else f"{'-':>7}"
-            label = " ".join(part for part in (k.verdict, k.reason) if part) + (f": {k.detail}" if k.detail else "")
+            label = _verdict_text(k.verdict, k.reason) + (f": {k.detail}" if k.detail else "")
             lines.append(f"{k.key:>3} {chg}  {label}")
     return "\n".join(lines)
 
@@ -209,7 +219,7 @@ def verify_table(result: VerifyResult) -> str:
     if result.recordings:
         lines.append(f"{'sec':>3}  recording")
         for r in result.recordings:
-            label = " ".join(v.value for v in r.verdicts) or str(Verdict.OK)
+            label = " ".join(v.label for v in r.verdicts) or Verdict.OK.label
             lines.append(f"{r.key:>3}  {label}")
         for r in result.recordings:
             for message in r.page_errors:
@@ -217,32 +227,32 @@ def verify_table(result: VerifyResult) -> str:
         lines.append("")
     lines.append(f"{'sec':>3} {'start':>8} {'probe':>8} {'YAVG':>6} {'YMAX':>6}  result")
     for s in result.starts:
-        lines.append(f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {s.verdict}")
+        lines.append(f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {s.verdict.label}")
     lines.append(f"total {result.total_seconds:.2f}s, {result.black_starts} black section start(s)")
     if result.cuts:
         lines.append("")
         lines.append(f"{'sec':>3} {'cut at':>8} {'before cut':>11}  result")
         for c in result.cuts:
-            lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {c.verdict}")
+            lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {c.verdict.label}")
     if result.seams:
         lines.append("")
         lines.append(f"{'sec':>3} {'cut at':>8} {'chg %':>7}  result")
         for k in result.seams:
-            lines.append(f"{k.key:>3} {k.cut_at:>8.2f} {k.changed_percent:>7.2f}  {k.verdict}")
+            lines.append(f"{k.key:>3} {k.cut_at:>8.2f} {k.changed_percent:>7.2f}  {k.verdict.label}")
     if result.cues:
         lines.append("")
         av = any(c.av_ms is not None for c in result.cues)
         head = f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7} {'offset':>8}"
         lines.append(head + (f" {'a/v':>7}" if av else "") + "  result")
         for c in result.cues:
-            if c.changed_percent is None or c.verdict == Verdict.SKIPPED:
+            if c.changed_percent is None or c.verdict is Verdict.SKIPPED:
                 # A row that was never measured shows its verdict, its reason code, and its note.
                 cue = f"{c.cue_seconds:>6.2f}" if c.cue_seconds is not None else f"{'-':>6}"
                 # A skipped row's note already starts with its verdict and reason, so print it alone.
-                if c.note and c.verdict is not None and c.note.startswith(c.verdict):
+                if c.note and c.verdict is not None and c.note.startswith(c.verdict.label):
                     label = c.note
                 else:
-                    label = " ".join(part for part in (c.verdict, c.reason, c.note) if part)
+                    label = " ".join(part for part in (_verdict_text(c.verdict, c.reason), c.note) if part)
                 lines.append(
                     f"{c.check:<18} {cue} {'-':>8} {'-':>7} {'-':>7} {'-':>8}"
                     + (f" {'-':>7}" if av else "")
@@ -254,23 +264,26 @@ def verify_table(result: VerifyResult) -> str:
                 f"{c.check:<18} {c.cue_seconds:>6.2f} {c.final_seconds or 0:>8.2f} {c.changed_percent or 0:>7.2f} "
                 f"{c.control_percent or 0:>7.2f} {offset:>8}"
                 + (f" {(f'{c.av_ms:+d}ms' if c.av_ms is not None else '-'):>7}" if av else "")
-                + f"  {c.verdict}"
+                + f"  {_verdict_text(c.verdict, None)}"
             )
     return "\n".join(lines)
 
 
 def status_table(report: StatusResult) -> str:
     """The text of `decktalk status`, read from the same report its --json output prints."""
-    root = report.root
-    lines = [f"{row.verdict.value}  {row.where}: {row.detail}" for row in report.problems]
+    root, ok = report.root, Verdict.OK.label
+    lines = [f"{row.verdict.label}  {row.where}: {row.detail}" for row in report.problems]
     lines += [
         f"project   {root}  (name: {report.name})",
-        f"script    {relative(report.script, root)}  {'ok' if report.script_exists else 'MISSING'}",
-        f"cues      {relative(report.cues, root)}  {'ok' if report.cues_exists else 'none'}",
+        f"script    {relative(report.script, root)}  {ok if report.script_exists else Verdict.MISSING.label}",
+        f"cues      {relative(report.cues, root)}  {ok if report.cues_exists else 'none'}",
     ]
     for sec in report.sections:
-        what = f"clip {sec.source}" if sec.kind == "clip" else sec.source
-        lines.append(f"  {sec.key}  {what:<40} {'rec ' if sec.recorded else '    '}{'cut' if sec.cut else ''}")
+        what = f"clip {sec.source}" if sec.kind is SectionKind.CLIP else sec.source
+        made = "rec " if sec.recorded else "    "
+        lines.append(f"  {sec.key}  {what:<40} {made}{'cut' if sec.cut else ''}")
+        if sec.stale:
+            lines.append(f"      stale: {sec.stale}")
     lines.append(narration_table(report.takes) if report.takes else "narration  none (run `decktalk narrate`)")
     lines.append(
         f"cue times {len(report.cue_times_sections)} section(s) resolved"
@@ -282,11 +295,12 @@ def status_table(report: StatusResult) -> str:
     else:
         lines.append("final     not built")
     for out in report.outputs:
-        lines.append(f"{out.label:<9} {relative(out.path, root)}  {'ok' if out.exists else 'not built'}")
+        lines.append(f"{out.label:<9} {relative(out.path, root)}  {ok if out.exists else 'not built'}")
     run = report.run
     if run is not None:
         state = "running" if run.alive else "last run"
-        lines.append(f"build     {state} at {run.stage} (started {run.started})")
+        stage = "an unknown stage" if run.stage is None else run.stage.value
+        lines.append(f"build     {state} at {stage} (started {run.started})")
     return "\n".join(lines)
 
 
@@ -311,7 +325,7 @@ def soundscape_table(items: list[SoundscapeItem]) -> str:
     lines = []
     for it in items:
         dur = f" ({it.duration_seconds}s)" if it.duration_seconds else ""
-        lines.append(f"== {it.name} -> {it.out}  [{it.status}{dur}]")
+        lines.append(f"== {it.name} -> {it.out}  [{it.status.value}{dur}]")
         lines.append(f"   POST {it.endpoint}")
         for r in it.requests:
             lines.append(f"   {r}")
@@ -345,7 +359,7 @@ def starter_note(result: InitResult) -> str:
 
 def doctor_table(rows: list[DoctorRow]) -> str:
     """One line per component: what it is, whether it is there, and which build a run would use."""
-    return "\n".join(f"{r.name:<9} {'ok     ' if r.ok else 'MISSING'} {r.detail}" for r in rows)
+    return "\n".join(f"{r.name:<9} {Verdict.OK.label if r.ok else Verdict.MISSING.label:<7} {r.detail}" for r in rows)
 
 
 def file_list(written: list[str]) -> str:
@@ -371,7 +385,7 @@ def plan_report(result: NarrateResult) -> str:
     """What the next run would send, section by section, with nothing sent."""
     cfg = result.narration
     targets = [plan.segment for plan in result.plans]
-    lines = [f"=== {s.key} {s.title}\n{s.tts_text(cfg)}\n" for s in targets]
+    lines = [f"=== {s.key} {s.title}\n{s.tts_text}\n" for s in targets]
     voiced = result.voice.get("provider") is not None
     lines.append(f"voice: {result.voice}" if voiced else "voice: none (--no-voice)")
     lines.append(segments_table(targets, cfg.words_per_minute))
@@ -383,8 +397,16 @@ def plan_report(result: NarrateResult) -> str:
     return "\n".join(lines)
 
 
-def stage_table(stage: str, result: Any) -> str:
+STAGE_TABLES: dict[Stage, Callable[[Any], str]] = {
+    Stage.NARRATE: narrate_table,
+    Stage.ALIGN: align_table,
+    Stage.RECORD: record_table,
+    Stage.VERIFY: verify_table,
+}
+"""The table each stage of a build prints as it finishes. `assemble` prints the film's path instead."""
+
+
+def stage_table(stage: Stage, result: Any) -> str:
     """The table one stage of a build prints as it finishes, or nothing when it prints none."""
-    tables = {"narrate": narrate_table, "align": align_table, "record": record_table, "verify": verify_table}
-    builder = tables.get(stage)
+    builder = STAGE_TABLES.get(stage)
     return builder(result) if builder else ""

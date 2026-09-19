@@ -28,9 +28,11 @@ SRC = Path(__file__).resolve().parent.parent / "src" / "decktalk"
 # A module may import a name from a strictly lower rank, or from inside its own package.
 LAYERS: dict[str, tuple[str, int]] = {
     "errors": ("vocabulary", 0),
+    "pipeline": ("vocabulary", 0),
     "secret": ("vocabulary", 0),
     "verdicts": ("vocabulary", 0),
     "jsonio": ("leaves", 1),
+    "pagescan": ("leaves", 1),
     "tomlmap": ("leaves", 1),
     "toolchain": ("leaves", 1),
     "settings": ("leaves", 2),
@@ -40,7 +42,6 @@ LAYERS: dict[str, tuple[str, int]] = {
     "speech": ("leaves", 4),
     "model": ("model", 5),
     "stages": ("stages", 6),
-    "status": ("stages", 6),
     "scaffold": ("stages", 6),
     "cli": ("CLI", 7),
     "__init__": ("CLI", 8),
@@ -65,6 +66,9 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     # open the same page, so both read that one URL rather than spelling it a second time.
     ("stages.preflight", "stages.record"): "the page URL the recorder owns",
     ("stages.screenshots", "stages.record"): "the page URL the recorder owns",
+    # One rule decides whether a recording still matches the project, and the report that names a
+    # stale one asks the stage that wrote it rather than comparing file times of its own.
+    ("stages.status", "stages.record"): "the rule that decides a recording is stale",
 }
 
 

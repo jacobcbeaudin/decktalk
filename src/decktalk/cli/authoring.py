@@ -14,13 +14,16 @@ from pathlib import Path
 from ..errors import ConfigError
 from ..jsonio import relative
 from ..media.origin import open_server, reachable_warning, served_urls
+from ..model import Workspace
+from ..pipeline import SoundscapeStatus
+from ..stages import StatusResult
 from ..stages.clip import clip as cut_span
 from ..stages.clip import words as read_words
 from ..stages.preflight import preflight as rehearse
 from ..stages.screenshots import screenshots as capture_pngs
 from ..stages.soundscape import soundscape as generate
-from ..status import StatusResult, read_run, unreadable
-from ..status import status as read_status
+from ..stages.status import read_run, unreadable
+from ..stages.status import status as read_status
 from ..verdicts import Finding, Verdict
 from . import options as opt
 from . import output
@@ -47,6 +50,9 @@ def status(opts: opt.StatusOptions) -> Outcome:
 def _no_project(opts: opt.StatusOptions, err: ConfigError) -> Outcome:
     """What `status` can still say when `decktalk.toml` is not there or will not parse."""
     root = project_root(opts) or Path.cwd()
+    # No stage spells a build path by hand, which holds when the project file will not parse too,
+    # so the default build directory is asked for its paths rather than written out here.
+    workspace = Workspace(root / "build", root.name)
     missing = err.path is not None and not err.path.exists()
     row = (
         Finding(detail=str(err), verdict=Verdict.MISSING, where=relative(err.path or root / "decktalk.toml", root))
@@ -65,10 +71,10 @@ def _no_project(opts: opt.StatusOptions, err: ConfigError) -> Outcome:
         takes=None,
         cue_times_exists=False,
         cue_times_sections={},
-        final=root / "build" / "out" / f"{root.name}.mp4",
+        final=workspace.final,
         final_exists=False,
         final_duration=None,
-        run=read_run(root / "build" / "progress.jsonl"),
+        run=read_run(workspace.progress_path),
     )
     # The same payload keys whatever happened, so a caller reading `run` never meets a missing key,
     # and the one row this reports sits in that payload like every other row this command judges.
@@ -76,7 +82,7 @@ def _no_project(opts: opt.StatusOptions, err: ConfigError) -> Outcome:
         payload=empty.to_dict(root),
         summary={"sections": 0},
         findings=empty.findings,
-        text=f"{row.verdict.value}  {row.where}: {row.detail}",
+        text=f"{row.verdict.label}  {row.where}: {row.detail}",
     )
 
 
@@ -116,6 +122,7 @@ def screenshots(opts: opt.ScreenshotsOptions) -> Outcome:
         section=opts.section,
         at=opts.at or None,
         cues=opts.after or None,
+        before=opts.before or None,
     )
     written = wrote(project.root, *result.paths)
     return of(result, project.root, {"files": len(result.files)}, written, output.file_list(written))
@@ -124,7 +131,7 @@ def screenshots(opts: opt.ScreenshotsOptions) -> Outcome:
 def soundscape(opts: opt.SoundscapeOptions) -> Outcome:
     project = load_project(opts)
     result = generate(project, only=opts.names or None, force=opts.force, dry_run=opts.dry_run)
-    made = [item for item in result.items if item.status == "generated"]
+    made = [item for item in result.items if item.status is SoundscapeStatus.GENERATED]
     summary = {"items": len(result.items), "generated": len(made)}
     written = wrote(project.root, *(item.out for item in made))
     return of(result, project.root, summary, written, output.soundscape_table(result.items))
@@ -165,8 +172,8 @@ def serve(opts: opt.ServeOptions) -> Outcome:
     def hold() -> None:
         if opts.open:
             webbrowser.open(urls[0])
-        log.info("serving %s; press Ctrl-C to stop", project.root)
+        log.info("serving %s, and Ctrl-C stops it", project.root)
         with server:
             server.serve_forever()
 
-    return Outcome(payload={"urls": urls}, summary={"urls": len(urls)}, text="\n".join(urls), after=hold)
+    return Outcome(payload={"urls": urls}, summary={}, text="\n".join(urls), after=hold)

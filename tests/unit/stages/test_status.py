@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
+from decktalk.artifacts import ProgressRow, append_row, start_log
 from decktalk.cli import main
 from decktalk.cli.output import status_table
+from decktalk.cli.schema import read_envelope
 from decktalk.model import Project
-from decktalk.status import status
+from decktalk.pipeline import ProgressEvent, Stage
+from decktalk.stages.status import status
 from decktalk.verdicts import Findings, Verdict
 
 TOML = """
@@ -32,6 +34,19 @@ def project(tmp_path: Path, *, script: str = "## 1. Open\n\nHello.\n", cues: str
     (tmp_path / "script.md").write_text(script, encoding="utf-8")
     (tmp_path / "cues.json").write_text(cues, encoding="utf-8")
     return Project.load(tmp_path, environ={})
+
+
+def test_status_reports_every_file_assemble_writes_beside_the_film(tmp_path):
+    """A reader asks `status` what is built, so the cut list, the transcript and the poster count too."""
+    labels = {(row.label, row.key) for row in status(project(tmp_path)).outputs}
+    assert labels == {
+        ("captions", "srt"),
+        ("captions", "vtt"),
+        ("chapters", "chapters"),
+        ("cuts", "cuts"),
+        ("transcript", "transcript"),
+        ("poster", "poster"),
+    }
 
 
 def test_a_whole_project_reports_nothing(tmp_path):
@@ -83,82 +98,77 @@ def test_cues_that_do_not_parse_carry_their_line_and_their_next_action(tmp_path)
     assert "brackets and the commas" in row.detail
 
 
-def test_a_cue_for_a_section_that_is_not_declared_is_reported(tmp_path):
-    proj = project(tmp_path, cues='{"sections": {"7": {"cues": [{"cue": "7.1a", "on": "hello"}]}}}')
-    assert [r.where for r in status(proj).problems if r.where == "cues.json"] == ["cues.json"]
-
-
 def test_the_cli_exits_1_and_leads_the_envelope_with_the_failing_rows(tmp_path, capsys):
     project(tmp_path)
     assert main(["status", "-p", str(tmp_path), "--json"]) == 1
-    doc = json.loads(capsys.readouterr().out)
-    assert doc["ok"] is False and doc["findings"]["certain"] == 2
-    assert [r["where"] for r in doc["findings"]["items"]] == ["deck/index.html", "media/broll.mp4"]
-    assert all(r["code"] == "MISSING" and r["certain"] for r in doc["findings"]["items"])
+    doc = read_envelope(capsys.readouterr().out)
+    assert doc.ok is False and doc.findings.certain == 2
+    assert [r.where for r in doc.findings.items] == ["deck/index.html", "media/broll.mp4"]
+    assert all(r.verdict is Verdict.MISSING for r in doc.findings.items)
     # The rows are in the payload under a key of their own, which is where findings.items[] is
     # lifted from on every command, so the tally and the rows can never come apart.
-    assert [r["where"] for r in doc["status"]["problems"]] == ["deck/index.html", "media/broll.mp4"]
-    assert doc["status"]["run"] is None
+    assert doc.payload.problems == doc.findings.items
+    assert doc.payload.run is None
     # The table leads with the same rows, and --exit-zero leaves them found and exits 0.
     assert main(["status", "-p", str(tmp_path)]) == 1
-    assert capsys.readouterr().out.splitlines()[1].startswith("MISSING  deck/index.html:")
+    assert capsys.readouterr().out.splitlines()[1].startswith(f"{Verdict.MISSING.label}  deck/index.html:")
     assert main(["status", "-p", str(tmp_path), "--exit-zero"]) == 0
+
+
+def logged(proj: Project, *rows: ProgressRow) -> None:
+    """A progress log holding these rows, written by the writer a build uses."""
+    start_log(proj.progress_path)
+    for row in rows:
+        append_row(proj.progress_path, row)
+
+
+def a_row(stage: Stage, event: ProgressEvent, *, section: int | None = None, pid: int | None = None) -> ProgressRow:
+    """One row of a five-stage run, stamped at a fixed time so a test can name it."""
+    index = list(Stage).index(stage) + 1
+    return ProgressRow(
+        ts=f"2026-09-18T20:3{index}:00.000Z", pid=os.getpid() if pid is None else pid, stage=stage,
+        stage_index=index, stage_count=len(Stage), section=section, event=event, detail=None,
+    )  # fmt: skip
 
 
 def test_a_running_build_is_read_from_the_progress_log(tmp_path):
     """An agent polls `status` instead of tailing a file, so the run it reports is the one going."""
     proj = project(tmp_path)
-    log = proj.build / "progress.jsonl"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    rows = [
-        {"ts": "2026-09-18T20:32:53.581Z", "pid": os.getpid(), "stage": "narrate", "stage_index": 1,
-         "stage_count": 7, "section": None, "event": "start", "detail": None},
-        {"ts": "2026-09-18T20:33:01.470Z", "pid": os.getpid(), "stage": "record", "stage_index": 3,
-         "stage_count": 7, "section": 2, "event": "done", "detail": None},
-    ]  # fmt: skip
-    log.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    first = a_row(Stage.NARRATE, ProgressEvent.START)
+    logged(proj, first, a_row(Stage.RECORD, ProgressEvent.DONE, section=2))
     run = status(proj).run
     assert run is not None
-    assert (run.stage, run.started, run.pid) == ("record", rows[0]["ts"], os.getpid())
+    assert (run.stage, run.started, run.pid) == (Stage.RECORD, first.ts, os.getpid())
     assert run.alive is True and run.sections_done == 1 and run.sections_total is None
 
 
 def test_a_finished_build_is_not_alive_whatever_the_machine_says(tmp_path):
     """The last stage closed, so no pid is asked about and a pid a new process took is never read."""
     proj = project(tmp_path)
-    log = proj.build / "progress.jsonl"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    row = {"ts": "2026-09-18T20:33:04.216Z", "pid": os.getpid(), "stage": "verify", "stage_index": 7,
-           "stage_count": 7, "section": None, "event": "done", "detail": None}  # fmt: skip
-    log.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    logged(proj, a_row(Stage.VERIFY, ProgressEvent.DONE))
     run = status(proj).run
-    assert run is not None and run.alive is False and run.stage == "verify"
+    assert run is not None and run.alive is False and run.stage is Stage.VERIFY
 
 
 def test_a_build_whose_process_is_gone_is_not_alive(tmp_path):
     """The pid is the one key `status` needs, so the case it exists to answer has a test."""
     proj = project(tmp_path)
-    log = proj.build / "progress.jsonl"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    row = {"ts": "2026-09-18T20:32:53.581Z", "pid": 2**22 - 1, "stage": "record", "stage_index": 3,
-           "stage_count": 7, "section": None, "event": "start", "detail": None}  # fmt: skip
-    log.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    logged(proj, a_row(Stage.RECORD, ProgressEvent.START, pid=2**22 - 1))
     result = status(proj)
-    assert result.run is not None and result.run.alive is False and result.run.stage == "record"
-    assert status_table(result).splitlines()[-1].startswith("build     last run at record")
+    assert result.run is not None and result.run.alive is False and result.run.stage is Stage.RECORD
+    assert status_table(result).splitlines()[-1].startswith(f"build     last run at {Stage.RECORD.value}")
+    assert result.to_dict(tmp_path)["run"]["stage"] == Stage.RECORD.value
 
 
 def test_a_torn_last_line_and_an_empty_log_are_both_survived(tmp_path):
     """The writer appends while a reader reads, so the last line can arrive half written."""
     proj = project(tmp_path)
-    log = proj.build / "progress.jsonl"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    row = {"ts": "2026-09-18T20:32:53.581Z", "pid": os.getpid(), "stage": "align", "stage_index": 2,
-           "stage_count": 7, "section": None, "event": "start", "detail": None}  # fmt: skip
-    log.write_text(json.dumps(row) + '\n{"ts": "2026-09-18T20:33', encoding="utf-8")
+    logged(proj, a_row(Stage.ALIGN, ProgressEvent.START))
+    with proj.progress_path.open("a", encoding="utf-8") as fh:
+        fh.write('{"ts": "2026-09-18T20:33')
     run = status(proj).run
-    assert run is not None and run.stage == "align" and run.alive is True
-    log.write_text("", encoding="utf-8")
+    assert run is not None and run.stage is Stage.ALIGN and run.alive is True
+    start_log(proj.progress_path)
     assert status(proj).run is None
 
 

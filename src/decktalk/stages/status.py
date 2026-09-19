@@ -25,12 +25,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .artifacts import Takes
-from .errors import DeckTalkError
-from .jsonio import relative
-from .media.ffmpeg import probe_duration
-from .model import ClipSection, PageSection, Project, Section
-from .verdicts import Finding, Findings, Verdict
+from ..artifacts import Takes, read_rows
+from ..errors import DeckTalkError
+from ..jsonio import relative
+from ..media.ffmpeg import probe_duration
+from ..model import ClipSection, PageSection, Project, Section
+from ..pipeline import ProgressEvent, SectionKind, Stage
+from ..verdicts import Finding, Findings, Verdict
+from .record import stale_recording
 
 
 @dataclass
@@ -38,10 +40,11 @@ class SectionStatus:
     """One section: whether it is a page or a clip, where it comes from, and what exists for it."""
 
     key: str
-    kind: str  # "page" or "clip"
+    kind: SectionKind
     source: str  # "deck/index.html?scene=1" for a page, the clip's path for a clip
     recorded: bool
     cut: bool
+    stale: str | None = None  # Why the recording no longer matches the project, or None when it does.
 
 
 @dataclass
@@ -60,7 +63,7 @@ class RunStatus:
 
     pid: int | None
     started: str | None
-    stage: str | None
+    stage: Stage | None
     sections_done: int | None
     sections_total: int | None
     alive: bool
@@ -69,17 +72,15 @@ class RunStatus:
         return {
             "pid": self.pid,
             "started": self.started,
-            "stage": self.stage,
+            "stage": None if self.stage is None else self.stage.value,
             "sections_done": self.sections_done,
             "sections_total": self.sections_total,
             "alive": self.alive,
         }
 
 
-def _running(pid: Any) -> bool:
+def _running(pid: int) -> bool:
     """Whether the process that wrote the progress log is still on this machine."""
-    if not isinstance(pid, int):
-        return False
     if sys.platform == "win32":
         import ctypes
 
@@ -102,30 +103,21 @@ def read_run(path: Path) -> RunStatus | None:
     A run is over when its last stage closed or a stage failed, and only an unfinished run asks the
     machine whether its process is still there, so a finished build never depends on a reused pid.
     """
-    if not path.exists():
-        return None
-    rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:  # The writer appends and flushes, so a torn last line is normal.
-            continue
-        if isinstance(row, dict):
-            rows.append(row)
+    rows = read_rows(path)
     if not rows:
         return None
     last = rows[-1]
-    done_sections = {r.get("section") for r in rows if r.get("event") == "done" and r.get("section") is not None}
-    ended = last.get("event") == "fail" or (
-        last.get("event") == "done" and last.get("stage_index", 0) >= last.get("stage_count", 0)
+    done_sections = {r.section for r in rows if r.event is ProgressEvent.DONE and r.section is not None}
+    ended = last.event is ProgressEvent.FAIL or (
+        last.event is ProgressEvent.DONE and last.stage_index >= last.stage_count
     )
     return RunStatus(
-        pid=last.get("pid"),
-        started=rows[0].get("ts"),
-        stage=last.get("stage"),
+        pid=last.pid,
+        started=rows[0].ts,
+        stage=last.stage,
         sections_done=len(done_sections) or None,
         sections_total=None,
-        alive=not ended and _running(last.get("pid")),
+        alive=not ended and _running(last.pid),
     )
 
 
@@ -170,10 +162,11 @@ class StatusResult:
             "sections": [
                 {
                     "key": s.key,
-                    "kind": s.kind,
+                    "kind": s.kind.value,
                     "source": s.source,
                     "recorded": s.recorded,
                     "cut": s.cut,
+                    "stale": s.stale,
                 }
                 for s in self.sections
             ],
@@ -200,10 +193,10 @@ class StatusResult:
         }
 
 
-def _missing(section: Section, path: Path, root: Path, what: str) -> Finding:
+def _missing(section: Section, path: Path, root: Path, kind: SectionKind) -> Finding:
     """One section's file that is not there, named as the row a reader receives."""
     return Finding(
-        detail=f"section {section.key} names a {what} that is not there",
+        detail=f"section {section.key} names a {kind.value} that is not there",
         verdict=Verdict.MISSING,
         section=section.number,
         where=relative(path, root),
@@ -270,9 +263,9 @@ def problems(project: Project) -> list[Finding]:
         if isinstance(section, PageSection):
             page = project.path(section.page)
             if not page.exists():
-                found.append(_missing(section, page, project.root, "page"))
+                found.append(_missing(section, page, project.root, SectionKind.PAGE))
         elif not section.optional and not project.path(section.clip).exists():
-            found.append(_missing(section, project.path(section.clip), project.root, "clip"))
+            found.append(_missing(section, project.path(section.clip), project.root, SectionKind.CLIP))
     return found
 
 
@@ -301,23 +294,35 @@ def status(project: Project) -> StatusResult:
     sections = []
     for sec in project.sections:
         if isinstance(sec, ClipSection):
-            kind, source = "clip", sec.clip
+            kind, source = SectionKind.CLIP, sec.clip
         else:
-            kind, source = "page", f"{sec.page}?scene={sec.scene}"
+            kind, source = SectionKind.PAGE, f"{sec.page}?scene={sec.scene}"
+        recorded = project.recording(sec).exists()
+        # `record` decides what still stands, and this report asks it rather than comparing file
+        # times of its own, so the two can never call the same recording different things.
+        stale = stale_recording(project, sec) if recorded and isinstance(sec, PageSection) else None
         sections.append(
             SectionStatus(
                 key=sec.key,
                 kind=kind,
                 source=source,
-                recorded=project.recording(sec).exists(),
+                recorded=recorded,
                 cut=project.section_video(sec).exists(),
+                stale=stale,
             )
         )
     duration = probe_duration(project.final) if project.final.exists() else None
     paths = project.workspace.output_paths()
     outputs = [
         OutputStatus(label, key, paths[key], paths[key].exists())
-        for label, key in (("captions", "srt"), ("captions", "vtt"), ("chapters", "chapters"))
+        for label, key in (
+            ("captions", "srt"),
+            ("captions", "vtt"),
+            ("chapters", "chapters"),
+            ("cuts", "cuts"),
+            ("transcript", "transcript"),
+            ("poster", "poster"),
+        )
     ]
     found = problems(project)
     # A build artifact a hand edit broke is a row like any other, because reading what is on disk is
@@ -342,5 +347,5 @@ def status(project: Project) -> StatusResult:
         final_duration=duration,
         outputs=outputs,
         problems=found,
-        run=read_run(project.build / "progress.jsonl"),
+        run=read_run(project.progress_path),
     )

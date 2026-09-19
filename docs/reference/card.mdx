@@ -176,7 +176,7 @@ findings can reach.
 | Option | Commands | Meaning |
 |---|---|---|
 | `--json` | every command | One envelope on stdout, and nothing else there. An error prints it too. |
-| `--strict` | `align`, `preflight`, `check`, `assemble`, `verify`, `clip`, `build` | Also exits 1 on an uncertain finding. |
+| `--strict` | `align`, `preflight`, `record`, `assemble`, `verify`, `clip`, `build` | Also exits 1 on an uncertain finding. |
 | `--exit-zero` | the same commands, plus `doctor` and `status` | Exits 0 on findings. An error still exits 3. |
 
 | Exit | Meaning |
@@ -222,16 +222,16 @@ To see the cue times before anything records, run `decktalk narrate --no-voice` 
 
 ## Stages and artifacts
 
-`build` runs `narrate`, `align`, `record`, `measure`, `check`, `assemble`, and `verify`, in that
+`build` runs `narrate`, `align`, `record`, `assemble` and `verify`, in that
 order.
 
 | Artifact | Written by | Holds |
 |---|---|---|
 | `build/narration/<hash>.mp3`, `<hash>.words.json` | `narrate` | One take's audio and its `[{word, start, end}]` list, named by the take's content hash. |
-| `build/narration/takes.json` | `narrate` | One entry per section, with its text hash and lengths. |
-| `build/narration/narration.mp3`, `timeline.json` | `narrate` | Spoken sections back to back, with each section's span and words. |
+| `build/narration/takes.json` | `narrate` | One entry per section, with its text hash and lengths, which is also the narration clock. |
+| `build/narration/narration.mp3` | `narrate` | Spoken sections back to back, with each section's silence joined around its take. |
 | `build/cue-times.json` | `align` | One row per cue with `cue`, `on`, `at` and `word_at`, in seconds after the section start. |
-| `build/recordings/NN.webm`, `recordings/NN.json` | `record`, `measure` | The recording and its recording log: t=0, warnings, page errors, and frame gaps. |
+| `build/recordings/NN.webm`, `recordings/NN.json` | `record` | The recording and its recording log: t=0, its checks, warnings, page errors, and frame gaps. |
 | `build/sections/NN.mp4` | `assemble` | One section cut to its span, video only. |
 | `build/out/<name>.mp4` | `assemble` | The video with chapters, plus a copy with a timestamp in its name. |
 | `build/out/<name>.srt`, `<name>.vtt` | `assemble` | Captions from the word times. |
