@@ -84,7 +84,8 @@ per-machine file, the project's tables, and the environment.
 
 ```python
 decktalk.build(project, *, silent=False, force=False, only=None, soundscape=True, loudness=True,
-               strict=False, allow_unresolved_cues=False, allow_unknown_cues=False, report=None) -> BuildResult
+               strict=False, allow_unresolved_cues=False, allow_unknown_cues=False,
+               from_stage=None, to_stage=None, progress_path=None, report=None) -> BuildResult
 ```
 
 `build` runs the five stages in order: `narrate`, `align`, `record`, `assemble`, and `verify`.
@@ -97,6 +98,8 @@ decktalk.build(project, *, silent=False, force=False, only=None, soundscape=True
 | `soundscape` | `True` | Mixes the music, the ambience bed, and the sound effects. `False` leaves them out. |
 | `loudness` | `True` | Runs the loudness pass. |
 | `strict` | `False` | Raises on a missing clip, a missing recording, or a loudness miss. A clip section with `optional = true` still plays its slate. |
+| `from_stage`, `to_stage` | `None` | The first and last stage to run, both ends inclusive. The values are the five stage names. |
+| `progress_path` | `None` | Where to write the progress log. The default is `build/progress.jsonl`. |
 | `allow_unresolved_cues` | `False` | Continues when a cue phrase is not found. |
 | `allow_unknown_cues` | `False` | Continues when a cue id appears nowhere in its page. |
 | `report` | `None` | A function that `build` calls as `report(stage, result)` after each stage. |
@@ -157,10 +160,10 @@ run judged, and `to_dict(root)`, the same thing as JSON-ready data with every pa
 |---|---|---|
 | `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None, dry_run=False)` | `NarrateResult` with `plans`, `voice`, `rate`, `rows`, `note`, `takes`, `timeline`, `segments`, `synthesized`, and `cached`. With `dry_run`, `takes` and `timeline` are `None` and nothing is written. | `ConfigError`, `MissingInputError`, `ProviderError` |
 | `align(project, *, allow_unknown_cues=False)` | `AlignResult` with `cue_times`, `sections`, `unresolved`, `estimated`, `unknown`, `uncued`, `cue_times_file`, `short`, and `problems` | `ConfigError`, `MissingInputError`, `UnknownCueError` |
-| `preflight(project, *, only=None, frames=True, model=None, allow_unknown_cues=False)` | `PreflightResult` with `takes`, `note`, `align`, `estimated`, `cues`, `seams`, `frames`, `placeholders`, and `short` | `ConfigError`, `MissingInputError`, `ToolError` |
+| `preflight(project, *, only=None, frames=True, model=None, allow_unknown_cues=False)` | `PreflightResult` with `takes`, `note`, `align`, `estimated`, `cues`, `seams`, `frames`, `page_warnings`, `placeholders`, and `short` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `record(project, *, only=None, seconds=None, use_cues=True)` | `RecordResult` with `sections`, each a `SectionRecording` with `section`, `path`, `log`, `key`, `verdicts`, `ok`, and `label`, and `page_errors` | `ConfigError`, `MissingInputError`, `ToolError` |
-| `assemble(project, *, soundscape=True, loudness=True, strict=False)` | `AssembleResult` with `final`, `stamped` (`None` unless `[output] timestamped_copy` is on), `duration`, `sections`, `warnings`, `loudness`, `loudness_problems`, `captions_srt`, `captions_vtt`, and `chapters` | `ConfigError`, `MissingInputError`, `ToolError` |
-| `screenshots(project, *, pages=None, slides=None, section=None, at=None, cues=None)` | `ScreenshotsResult` with `files` | `ConfigError` |
+| `assemble(project, *, soundscape=True, loudness=True, strict=False)` | `AssembleResult` with `final`, `stamped` (`None` unless `[output] timestamped_copy` is on), `duration`, `sections`, `warnings`, `loudness`, `loudness_problems`, `cuts`, `cuts_file`, `captions_srt`, `captions_vtt`, `chapters`, `transcript`, `poster` and `written` | `ConfigError`, `MissingInputError`, `ToolError` |
+| `screenshots(project, *, pages=None, slides=None, section=None, at=None, cues=None)` | `ScreenshotsResult` with `files`, each a `Screenshot` with `path`, `page`, `slide`, `cue`, `section`, `at` and `page_errors`, and `paths` for the written files alone | `ConfigError` |
 | `soundscape(project, *, only=None, force=False, dry_run=False)` | `SoundscapeResult` with `items`, each a `SoundscapeItem` with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds` | `ConfigError`, `ProviderError` |
 | `status(project)` | `StatusResult`, which reads what exists and runs nothing | none |
 | `words(project, only=None)` | `WordsResult` with `sections`, each a `SectionWords` with `key`, `section`, `title`, `lead_seconds`, `duration`, `estimated`, `words` and `texts` | `ConfigError`, `MissingInputError` |

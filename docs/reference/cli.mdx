@@ -207,6 +207,7 @@ measures once the reveal has settled, with a control of 0. The verdicts use the 
 | `THIN CHANGE?` | `chg %` passes both floors, but not `thin_change_factor` times one of them. | uncertain |
 | `NO CHANGE` | `chg %` is below `min_changed_percent` or `min_margin_percent`. | certain |
 | `skipped` | Nothing was compared. The reason follows the verdict. | none |
+| `PAGE ERROR` | The page is missing, or exposes no runtime catalog, so the recorder could not drive it. | certain |
 | `ok` | A seam changes at most `max_pop_percent`. | none |
 | `POP AT CUT` | A seam changes more than `max_pop_percent`. | certain |
 
@@ -215,7 +216,7 @@ measures once the reveal has settled, with a control of 0. The verdicts use the 
 | `AT_SECTION_START` | The cue fires within the first frame, so no frame comes before it. |
 | `NO_SLIDE` | No slide of the scene owns the cue. |
 | `NOT_IN_SLIDE_CUES` | A slide owns the cue by its id prefix, and its `owns` list and `preview` object do not name it. A freeze stops only at a listed cue. |
-| `NO_CATALOG` | The page is missing, or its catalog registers the scene with no slides and cues. |
+| `NO_CATALOG` | The page is missing, or its catalog registers the scene with no slides and cues. The row is a certain `PAGE ERROR`, not a skip. |
 | `OPTED_OUT` | `cues.json` sets `"verify": false` on the cue. |
 | `NO_CUES` | A seam only. A side of the cut has no resolved cue. |
 | `CLIP` | A seam only. A side of the cut is a clip, which `verify` checks after `assemble`. |
@@ -226,11 +227,12 @@ measures once the reveal has settled, with a control of 0. The verdicts use the 
   the frames may differ from the recording.
 - The estimate sees no motion, no camera push, and no close neighbor cue. `verify` measures those on the final mp4.
 - The frames need `catalog[].cues` and `&before=` from [the runtime](/reference/runtime#url-parameters).
+- Every warning the runtime records while the frames are drawn is a finding too, so `KATEX ERROR` and `KATEX NOT LOADED` are caught here, before a single second is voiced. `--json` lists them under `warnings`.
 
 | Exit | When |
 |---|---|
 | 0 | No certain finding, and no uncertain finding with `--strict`. |
-| 1 | An unfilled placeholder, `UNRESOLVED`, `UNKNOWN CUE` without `--allow-unknown-cues`, `NO CHANGE`, or `POP AT CUT`. With `--strict`, also `THIN CHANGE?` or speech shorter than `min_seconds`. An error also exits 1. |
+| 1 | An unfilled placeholder, `UNRESOLVED`, `UNKNOWN CUE` without `--allow-unknown-cues`, `NO CHANGE`, `POP AT CUT`, `PAGE ERROR`, `KATEX ERROR`, or `KATEX NOT LOADED`. With `--strict`, also `THIN CHANGE?` or speech shorter than `min_seconds`. An error also exits 1. |
 
 These are parts of a run on the scaffold after `decktalk narrate --no-voice`, with `seamless = true` on
 section 2.
@@ -853,7 +855,7 @@ Writes one PNG per slide, per cue of one slide, or per requested second of a pla
 
 ```text
 decktalk screenshots [-h] [--project PROJECT] [-v] [-q] [--page PAGE]
-               [--slide ID] [--after ID] [--section SECTION] [--at AT]
+               [--slide ID] [--after ID] [--section SECTION] [--at AT] [--json]
 ```
 
 | Mode | Command | Page opens with | Writes |
@@ -873,6 +875,7 @@ more pages. `--page` with one file writes no folder. Section frames never use on
 | `--after ID` | none | Freezes the one `--slide` at this cue. Repeatable, one PNG per cue. |
 | `--section SECTION` | none | Page section to play with its cue times. |
 | `--at AT` | 0.5 | Seconds after narration t=0, with `--section`. Repeatable. |
+| `--json` | off | Prints one object listing every file with its page, slide, cue, section, second and any page error. |
 
 - `--after` needs exactly one `--slide` and does not combine with `--section`.
 - A frozen slide fires its cues in preview order, up to the named cue. [Runtime](/reference/runtime#modes) describes freeze mode.
@@ -1169,6 +1172,8 @@ This shape shows the JSON envelope. The values are types, not a sample.
 | `status` | The shape under [`decktalk status`](#decktalk-status). |
 | `align` | `estimated`, `cue_times_file`, `unresolved`, `unknown`, and `sections`. |
 | `record` | `recordings`: a list of `{key, file, kept, seconds, t0_seconds, t0_method, t0_guessed, duration, wanted, luma, verdicts, stall_ms, page_errors, assets}`. |
+| `screenshots` | `files`: a list of `{file, page, slide, cue, section, at, page_errors}`, one per PNG written. `ok` is always true. |
+| `build` | One key per stage with that stage's own payload, plus `stages` and `progress`. `build --dry-run --json` gives `stages` alone. |
 | `verify` | `final`, `total_seconds`, `silent`, `recordings`, `starts`, `cuts`, `seams`, and `cues`. |
 | `preflight` | `voice`, `note`, `placeholders`, `takes`, `totals`, `cue_times`, `cues`, `seams`, `warnings`, and `frames`. |
 | `narrate --dry-run --json` | `voice`, `note`, `sections`, and `totals`, as [the take plan](#the-take-plan) gives. `ok` is always true. |

@@ -115,6 +115,18 @@ def _report_result(args: argparse.Namespace, project: Project, result: StageResu
     return _finish(args, result.findings, result.to_dict(project.root), table)
 
 
+def _report_quietly(args: argparse.Namespace, project: Project, result: StageResult) -> int:
+    """Print the envelope of a command that judges nothing, or nothing at all, and exit 0.
+
+    A command that writes files and reaches no verdict has already said what it did on stderr, so
+    text mode prints nothing more and `--json` prints the one object a caller reads.
+    """
+    if args.json:
+        doc = {"command": args.cmd, "version": __version__, "ok": True, "findings": result.findings.to_dict()}
+        print(dumps({**doc, args.cmd: result.to_dict(project.root)}))
+    return 0
+
+
 # ---- commands ------------------------------------------------------------------------
 
 
@@ -255,16 +267,18 @@ def cmd_screenshots(args: argparse.Namespace) -> int:
         # A cue freezes one slide at the moment that cue fires, so it needs exactly one slide.
         if not args.slide or len(args.slide) != 1 or args.section is not None:
             args.parser.error("--after needs exactly one --slide, and it does not combine with --section")
-        from .stages.screenshots import screenshot_slides
+        from .stages.screenshots import ScreenshotsResult, screenshot_slides
 
-        screenshot_slides(_project(args), args.page or None, args.slide, cues=args.after)
-        return 0
+        project = _project(args)
+        frozen = ScreenshotsResult(files=screenshot_slides(project, args.page or None, args.slide, cues=args.after))
+        return _report_quietly(args, project, frozen)
     from .stages.screenshots import screenshots
 
-    screenshots(
-        _project(args), pages=args.page or None, slides=args.slide or None, section=args.section, at=args.at or None
+    project = _project(args)
+    result = screenshots(
+        project, pages=args.page or None, slides=args.slide or None, section=args.section, at=args.at or None
     )
-    return 0
+    return _report_quietly(args, project, result)
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -515,6 +529,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--after", action="append", metavar="ID", help="freeze the one --slide at this cue id (repeat)")
     s.add_argument("--section", type=int, help="play this section with its resolved cues")
     s.add_argument("--at", type=float, action="append", help="seconds after narration t=0 (with --section)")
+    s.add_argument("--json", action="store_true", help=JSON_HELP)
     s.set_defaults(fn=cmd_screenshots, parser=s)
 
     s = proj(sub.add_parser("serve", help="serve the project over http for previewing a page in your own browser"))

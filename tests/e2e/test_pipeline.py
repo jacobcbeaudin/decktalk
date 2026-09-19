@@ -515,9 +515,19 @@ def test_preflight_plans_every_take_and_estimates_each_reveal(built: Built) -> N
 
 
 def test_screenshots_write_a_frame_from_a_playing_section(built: Built) -> None:
-    code, _out = built.cli("screenshots", "--section", "1", "--at", "1")
-    assert code == 0
+    doc = built.json("screenshots", "--json", "--section", "1", "--at", "1")
     assert (built.root / "build" / "screenshots" / "section-01-at-1s.png").stat().st_size > 0
+    [row] = doc["screenshots"]["files"]
+    assert row["file"] == "build/screenshots/section-01-at-1s.png"
+    assert (row["section"], row["at"], row["slide"], row["page_errors"]) == (1, 1.0, None, [])
+
+
+def test_screenshots_json_names_the_slide_and_the_cue_of_every_file(built: Built) -> None:
+    doc = built.json("screenshots", "--json", "--slide", "3.1", "--after", "3.1eq")
+    [row] = doc["screenshots"]["files"]
+    assert row["slide"] == "3.1" and row["cue"] == "3.1eq" and row["page"] == "deck/index.html"
+    assert row["file"] == "build/screenshots/slide-3.1-after-3.1eq.png"
+    assert row["page_errors"] == [] and row["section"] is None
 
 
 def test_status_lists_every_output(built: Built) -> None:
