@@ -3,17 +3,18 @@ title: Verify
 description: Look up how decktalk verify measures section starts, cuts, cut continuity, and cues, and what each result means.
 ---
 
-`decktalk verify` is the one read-only checker after a build. It repeats what each recording log judged,
-and then checks the final mp4 in three ways: section starts, cuts, and cues. A section that sets
-`seamless` adds a fourth check, cut continuity. This page defines each measurement, limit, and result,
-in the order that `verify` computes them.
+`decktalk verify` is the one read-only checker after a build. It repeats what each recording log
+judged, and then checks the final mp4 in three ways: section starts, cuts, and cues. A section that
+sets `seamless` adds a fourth check, cut continuity. This page defines each measurement, limit, and
+result, in the order that `verify` computes them, and lists
+[every verdict](#every-verdict) with its cause and its fix.
 
-{/* sample: decktalk verify 1:1.1bowl 3:3.4name 8:7.1checked, build without voice of the scaffold, cue table only */}
+{/* sample: decktalk verify, build without voice of a fresh starter, three rows of the cue table */}
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
-1:1.1bowl            1.25     1.25    0.93    0.00    +30ms   +31ms  changed
-3:3.4name           84.72   123.32    2.76    0.00     +0ms    -4ms  changed
-8:7.1checked        10.03   238.31    0.83    0.00    +10ms    +3ms  changed
+1:1.1title           0.50     0.50    1.87    0.00    -20ms   -24ms  changed
+2:2.1code            9.43    23.71   10.79    0.00    +10ms    -1ms  changed
+3:3.1make            8.71    38.87   10.85    0.00    +10ms    -6ms  changed
 ```
 
 Every field named on this page is a key under `[verify]` in [Configuration](/reference/configuration#verify),
@@ -21,8 +22,9 @@ unless the page names another table. The defaults assume 25 fps, so one frame la
 
 ## Which checks run
 
-The verify stage inside `decktalk build` checks the recordings, section starts, cuts, and cut continuity,
-and no cue. `decktalk verify` checks all five.
+The verify stage inside `decktalk build` runs the same five checks as the command: the recordings,
+the section starts, the cuts, cut continuity and every cue. It names no cue, so it checks every cue
+in `cue-times.json` that `cues.json` does not opt out.
 
 - With no cue named, `verify` checks every cue in `cue-times.json`, in section order and then cue time.
 - With no cue named, `verify` skips a cue that `cues.json` marks `"verify": false`.
@@ -31,36 +33,40 @@ and no cue. `decktalk verify` checks all five.
 - `--only N` keeps only the cues of section `N`, named cues included. A named cue outside `--only` gets no row.
 - Section starts, cuts, and cut continuity are always checked, whatever `--only` names. `--only` does keep the recordings table to the sections it names.
 
-A named cue has the form `SECTION:CUE`, such as `8:7.1checked`. `SECTION` is the section number, not the scene
-number. Section 8 of the scaffold plays scene 7. A name that does not start with a section number is an error (`malformed check`), and the command
-exits 1.
+A named cue has the form `SECTION:CUE`, such as `2:2.1formula`. `SECTION` is the section number and
+not the scene number, and a section can play a scene with another number. A name that does not start
+with a section number is an error (`malformed check`), and the command exits 1.
 
 ## Recordings
 
 Each page section's recording log holds the verdicts `record` reached when it made the recording, and
 `verify` reports them again, so a page that threw or an equation that was never typeset is still a
-finding long after the build. The row is `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`, `BLACK?` or
-`KATEX ERROR` or `KATEX NOT LOADED`, exactly as [`decktalk record`](/reference/cli#decktalk-record)
-defines them, or `ok`. A
-section with no recording log gets no row.
+finding long after the build.
+
+{/* sample: decktalk verify, build without voice of a fresh starter, recordings table */}
+```text
+sec  recording
+ 01  ok
+ 02  ok
+ 03  ok
+```
+
+A row carries every verdict its recording log holds, and `ok` when it holds none. A section with no
+recording log gets no row, and a clip section never has one. `verify` measures none of this. It
+reads the log that `record` wrote and repeats the judgement, which is why a rebuild of one section
+is the only thing that clears such a row.
 
 ## Section starts
 
 The start check confirms that each section opens on a visible frame.
 
-{/* sample: decktalk verify, build without voice of the scaffold, start table */}
+{/* sample: decktalk verify, build without voice of a fresh starter, start table */}
 ```text
 sec    start    probe   YAVG   YMAX  result
- 01     0.00     0.20    235    241  ok
- 02    17.80    18.00    227    245  ok
- 03    38.60    38.80    234    245  ok
- 04   181.12   181.32    223    244  ok
- 05   196.72   196.92     32    232  ok
- 06   201.08   201.28    229    244  ok
- 07   223.24   223.44     32    232  ok
- 08   228.28   228.48    228    244  ok
- 09   242.52   242.72    235    243  ok
-total 257.72s; 0 black section start(s)
+ 01     0.00     0.20    235    242  ok
+ 02    14.28    14.48    235    242  ok
+ 03    30.16    30.36    235    240  ok
+total 44.88s, 0 black section start(s)
 ```
 
 A section's start is the total length of the `build/sections/NN.mp4` of every earlier section in `decktalk.toml`.
@@ -78,22 +84,18 @@ BLACK  when  YMAX of the probe frame <= visible_ymax        # 60
   reads `BLACK`.
 - The probe sits 0.2 s after the start, whatever the dip length. The default `[transition] dip_seconds` of
   0.15 s rounds to 4 frames, 0.16 s. If you set a longer dip, raise `after_dip_seconds` too.
-- A clip section has a row too. In the sample, sections `05` and `07` are the scaffold's clip sections, which play slates.
+- A clip section has a row too. The starter has no clip section, so every row of the sample above is a page section.
 
 ## Cuts
 
 The cut check confirms that the narration is quiet just before each cut.
 
-{/* sample: decktalk verify, build without voice of the scaffold, cut table */}
+{/* sample: decktalk verify, build without voice of a fresh starter, cut table */}
 ```text
 sec   cut at  before cut  result
- 01    17.80   -123.3 dB  quiet
- 02    38.60   -125.4 dB  quiet
- 03   181.10   -125.4 dB  quiet
- 04   196.72   -125.4 dB  quiet
- 06   223.28   -125.4 dB  quiet
- 08   242.48   -128.4 dB  quiet
- 09   255.22   -120.0 dB  quiet
+ 01    14.29   -120.0 dB  quiet
+ 02    30.17   -120.0 dB  quiet
+ 03    43.35   -120.0 dB  quiet
 ```
 
 `cut at` is where the section's narration ends in the final mp4. The check measures the narration track in the
@@ -107,24 +109,29 @@ SPEECH AT CUT  when  RMS of narration.mp3 over the window > cut_max_db  # -40 dB
 
 - The check reads `narration.mp3` alone. Music or a sound effect at a cut does not count.
 - A level of exactly -40 dBFS passes.
-- A clip section has no row, because it has no narration. In the sample, sections `05` and `07` have none.
-- A page section's `hold_seconds` comes after its `cut at`. In the sample, section `09` holds its last
-  slide from 255.22 s to the end of the video.
+- A clip section has no row, because it has no narration.
+- A page section's `hold_seconds` comes after its `cut at`. In the sample, the starter's section `03`
+  sets `hold_seconds = 1.5`, so it holds its last slide from 43.35 s to the end of the video.
 
 ## Cut continuity
 
 The continuity check confirms that the cut into a section that sets `seamless = true` in
 `decktalk.toml` does not show. It runs only for those sections.
 
-{/* sample: decktalk verify, build without voice of the scaffold with seamless = true added to sections 2 and 9, continuity table only */}
+{/* sample: decktalk verify, build without voice of a fresh starter with seamless = true added to sections 2 and 3, continuity table only */}
 ```text
 sec   cut at   chg %  result
- 02    17.80    0.00  ok
- 09   242.52    0.00  ok
+ 02    14.28   27.60  POP AT CUT
+ 03    30.16   23.59  POP AT CUT
 ```
 
-`cut at` is the section start in the final mp4. `chg %` is the [changed share](#changed-share) of two frames at
-`diff_level`: the previous section's last frame before any dip, and this section's first frame after any dip.
+The starter's three scenes each open on a picture of their own, so setting `seamless` on sections 2
+and 3 is a claim the pages do not keep, and the check says so. A section whose page really does open
+on the previous section's last picture reads `ok` with a changed share near zero.
+
+`cut at` is the section start in the final mp4. `chg %` is the [changed share](#changed-share) of two
+frames at `diff_level`: the previous section's last frame before any dip, and this section's first
+frame after any dip.
 
 ```text
 last frame   = the frame 1 frame before (cut at - the dip, when the previous section fades out)
@@ -142,19 +149,14 @@ POP AT CUT   when  changed share(last frame, first frame) > max_pop_percent     
 
 The cue check confirms that the picture changes on each cue, at the cue time.
 
-<Tabs>
-  <Tab title="Build without voice">
-    {/* sample: decktalk verify 8:7.1checked, build without voice of the scaffold, cue table only */}
-    ```text
-    check                 cue       at   chg %   ctl %   offset     a/v  result
-    8:7.1checked        10.03   238.31    0.83    0.00    +10ms    +3ms  changed
-    ```
-  </Tab>
-  <Tab title="Voiced build">
-    {/* STALE SAMPLE: regenerate from a v11 build. Capture R5 (voiced) is not approved yet. */}
-    A voiced build prints the same columns without `a/v`, because its audio has no clicks.
-  </Tab>
-</Tabs>
+{/* sample: decktalk verify 2:2.1code, build without voice of a fresh starter, cue table only */}
+```text
+check                 cue       at   chg %   ctl %   offset     a/v  result
+2:2.1code            9.43    23.71   10.79    0.00    +10ms    -1ms  changed
+```
+
+A voiced build prints the same columns and leaves `a/v` out, because its audio carries speech rather
+than clicks.
 
 Each column maps to one term. The terms below come in the order that `verify` computes them.
 
@@ -186,7 +188,7 @@ at        = section start in the final mp4 + cue time
 - Each row of `build/cue-times.json` keeps its word start in `word_at`, without the offset key, also rounded to hundredths.
 - A `$start` cue with a negative offset key keeps its negative cue time.
 
-Example: section 8 starts at 228.28 s, and `8:7.1checked` has a cue time of 10.03 s. Its `at` is 238.31 s.
+Example: section 2 starts at 14.28 s, and `2:2.1code` has a cue time of 9.43 s. Its `at` is 23.71 s.
 
 ### Changed share
 
@@ -204,7 +206,7 @@ changed share(a, b, level) = 100 * (pixels where |luma of a - luma of b| > level
   block share at `block_width` by `block_height` (240 by 135). [Onset and offset](#onset-and-offset) says why.
 - A pixel counts only when its difference is strictly greater than the level.
 
-Example: the `chg %` of 0.83 for `8:7.1checked` is about 1,070 of 129,600 pixels.
+Example: the `chg %` of 10.79 for `2:2.1code` is about 13,990 of 129,600 pixels.
 
 ### Reference frame
 
@@ -231,8 +233,8 @@ skipped REFERENCE_CLAMPED  when  max(floor, at - lead) > at - 1 / fps
 - The reference time is at least one frame before the cue. The reference frame can be closer when the cue time
   is off the frame grid.
 
-Example: for `8:7.1checked`, the reference time is 238.31 - 0.14 = 238.17 s. The reference frame is the next frame on
-the 40 ms grid, at 238.20 s. That frame is 110 ms before the cue, as the onset figure shows.
+Example: for `2:2.1code`, the reference time is 23.71 - 0.14 = 23.57 s. The reference frame is the
+next frame on the 40 ms grid, at 23.60 s. That frame is 110 ms before the cue.
 
 ### Probes
 
@@ -317,10 +319,9 @@ thin when       changed share < thin_change_factor * min_changed_percent        
 - The `chg %` and `ctl %` columns show the reported probe, which is not always the probe that changed most.
 - `min_changed_percent` applies to the raw changed share. A camera push raises that share too.
 
-Example: `8:7.1checked` has a changed share of 0.83 and a control share of 0.00. Its margin is 0.83, so it
-passes, and the change is not thin. The next cue, `7.1back`, fires 1.44 s later, so `verify` fits the 1.5 s probe
-to 1.3 s, as [Close cues](#close-cues) describes. Both probes have a margin of 0.83, so `verify` reports the
-earlier 0.7 s probe.
+Example: `2:2.1code` has a changed share of 10.79 and a control share of 0.00. Its margin is 10.79, so
+it passes, and the change is not thin. The next cue, `2.1waited`, fires 1.88 s later, so both probes
+clear it and `verify` reports the probe with the larger margin.
 
 ### Onset and offset
 
@@ -340,8 +341,9 @@ After a cue passes the change test, `verify` finds its onset, the first frame of
   <img className="hidden dark:block" src="/images/verify-onset-dark.svg" alt="Seven frames 40 ms apart around cue 8:7.1checked. The first is the reference frame, 110 ms before the cue. The frames at 70 and 30 ms before the cue changed 0.00%. The frame 10 ms after the cue changed 1.24% and is outlined as the onset. A shaded band spans 80 ms on each side of the cue." />
 </Frame>
 
-The figure's shares use `onset_diff_level` (12), so the onset frame reads 1.24%. The `chg %` column reads 0.83%,
-because the change test uses `diff_level` (40), at the probe 0.7 s after the cue.
+The figure carries the numbers of the cue it draws. Its shares use `onset_diff_level` (12), which is
+why its onset frame reads a larger share than the `chg %` column of the same cue: the change test
+uses `diff_level` (40), at the probe 0.7 s after the cue.
 
 ```text
 series[0]      = 0                                                   # the reference frame itself
@@ -371,12 +373,12 @@ offset column  = round(1000 * (onset time - at))                    # whole ms, 
 - A cue with no onset reads `changed`. Its offset column shows `-`, its `a/v` is blank, and neither limit
   applies. No `NO_CLICK` reason is set.
 
-Example: `8:7.1checked` has an offset column of +10 ms, so its onset frame is at 238.32 s.
+Example: `2:2.1code` has an offset column of +10 ms, so its onset frame is at 23.72 s.
 
 ### The a/v value
 
 After a build without voice, `verify` also compares the picture with the sound in the final mp4. The click track of a
-build without voice has a click at every word start.
+build without voice has a click at every word start, and one where the section's last word ends.
 
 ```text
 click           = the loudest sample within click_search_seconds of the word start, inside the cue's section
@@ -404,7 +406,8 @@ a/v             = offset column - click distance
   word's length.
 - A voiced build has no `a/v`. Its JSON `silent` is `false`, and every `av_ms` is `null`.
 
-Example: `8:7.1checked` has an offset column of +10 ms and an `a/v` of +3 ms, so its click distance is +7 ms.
+Example: `2:2.1code` has an offset column of +10 ms and an `a/v` of -1 ms, so its click distance is
++11 ms.
 
 ### Limits
 
@@ -424,13 +427,15 @@ OFF CUE  when  |offset column| > offset limit + 0.5,  or  |a/v| > a/v limit + 0.
 
 This example shows the format of an `OFF CUE` row.
 
-{/* sample: decktalk verify, build without voice of the R2 scaffold before later template edits, one row of the cue table. An example of the format, not current scaffold output. */}
+{/* sample: decktalk verify 2:2.1formula, build without voice of a fresh starter with offset 0.14 added to that cue, one row of the cue table */}
 ```text
-3:3.2way            22.17    58.65    1.00    0.00    -90ms  -118ms  OFF CUE
+check                 cue       at   chg %   ctl %   offset     a/v  result
+2:2.1formula         5.81    20.09    1.86    0.00    -90ms  -101ms  OFF CUE
 ```
 
-This row is `OFF CUE` because its offset column, -90 ms, is past the 80 ms offset limit. Its `a/v` of -118 ms
-is inside the a/v limit.
+This row is `OFF CUE` because its offset column, -90 ms, is past the 80 ms offset limit. Its `a/v` of
+-101 ms is inside the 120 ms a/v limit. The offset key moved the cue time 0.14 s later than the
+reveal the page already recorded, which is what a cue phrase on the wrong word looks like.
 
 ## Results
 
@@ -451,10 +456,36 @@ Each cue row gets its result from the first rule that matches.
 10. After a build without voice, if the `a/v` is past the a/v limit, the row is `OFF CUE`.
 11. Otherwise, the row is `changed`, or `THIN CHANGE?` when the change is thin.
 
-`OFF CUE`, `NO CHANGE`, `UNRESOLVED`, `UNCUED ELEMENT`, `BLACK`, `SPEECH AT CUT`, and `POP AT CUT` are certain findings, so `decktalk verify`
-exits 1. `THIN CHANGE?` is an uncertain finding, so `verify` exits 1 on it only with `--strict`. A `skipped` row
-never fails. [Exit codes](/reference/cli#exit-codes) lists the codes for every
-command.
+## Every verdict
+
+This is every verdict `decktalk verify` can print, with what makes it and what to do about it. A
+certain verdict exits 1 on its own. An uncertain verdict ends in a question mark and exits 1 only
+with `--strict`. A passing verdict is never a finding. Match a verdict by its code, which is the
+`code` field of the JSON object, and never by its label.
+
+| Verdict | Code | Kind | Table | Cause | Fix |
+|---|---|---|---|---|---|
+| `PAGE ERROR` | `PAGE_ERROR` | certain | recordings | The page threw an uncaught error while it recorded, or it never exposed the runtime catalog. | Open the page in a browser and fix the error. [Warnings](/reference/runtime#warnings) lists what the runtime reports on its own. |
+| `STALLED` | `STALLED` | certain | recordings | Page frames froze for longer than `[record] stall_ms` after narration t=0. | Make the slide cheaper to draw, or do the slow work before t=0, where the cover hides it. |
+| `TRUNCATED` | `TRUNCATED` | certain | recordings | The recording is shorter than the length `record` asked for, by more than `[record] truncated_slack_seconds`. | Record the section again. A repeat usually means the machine could not keep up. |
+| `NO COVER` | `NO_COVER` | certain | recordings | `record` found no magenta cover, so narration t=0 is an estimate and every reveal in the section moves with it. | Record the section again. A page that paints late can raise `[record] cover_scan_seconds`. |
+| `KATEX ERROR` | `KATEX_ERROR` | certain | recordings | KaTeX refused a `data-tex` value, so the slide shows red source. | Fix the TeX. Inside a `render` template literal, write every backslash twice. |
+| `KATEX NOT LOADED` | `KATEX_NOT_LOADED` | certain | recordings | The page asked for KaTeX and it never arrived, so the source stayed plain. | Load KaTeX before the runtime, from the `deck/katex/` directory `decktalk init` wrote. |
+| `BLACK?` | `BLACK_UNSURE` | uncertain | recordings | The brightest luma of the recording's middle frame is below `[record] black_ymax`. | Look at the section. A dark slide on purpose needs no change. |
+| `BLACK` | `BLACK` | certain | starts | The brightest luma of the frame `after_dip_seconds` into the section is at most `[verify] visible_ymax`. | Give the section's first slide something visible at its start, or raise `after_dip_seconds` past a longer dip. |
+| `SPEECH AT CUT` | `SPEECH_AT_CUT` | certain | cuts | The narration is louder than `[verify] cut_max_db` in the `cut_window_seconds` before the cut. | Raise the section's `tail_seconds`, or end the section on a shorter last word. |
+| `POP AT CUT` | `POP_AT_CUT` | certain | seams | A section sets `seamless = true`, and the two frames across its cut differ by more than `[verify] max_pop_percent`. | Make the page open on the previous section's last picture, or drop `seamless`. |
+| `OFF CUE` | `OFF_CUE` | certain | cues | The offset column is past the offset limit, or the `a/v` value is past the a/v limit. | Check the cue phrase against the spoken words. A whole run that is late is a slow machine, and [Build in CI and offline](/guides/ci-and-offline) widens the limits. |
+| `NO CHANGE` | `NO_CHANGE` | certain | cues | The reported probe failed the change test, so nothing measurable happened at the cue. | Make the reveal larger, or mark the cue `"verify": false` and check it by eye. A reveal that changes only color at the same brightness always reads this way. |
+| `THIN CHANGE?` | `THIN_CHANGE` | uncertain | cues | The cue passed the change test by less than `thin_change_factor` times a floor. | Make the reveal larger, or set `thin_change_factor` to 1 to turn the warning off. |
+| `UNRESOLVED` | `UNRESOLVED` | certain | cues | A named cue is not in `build/cue-times.json`. | Run `decktalk align`, or fix the cue phrase that never matched. |
+| `changed` | `CHANGED` | passing | cues | The picture changed on the cue, inside both limits. | Nothing to do. |
+| `quiet` | `QUIET` | passing | cuts | The narration is quiet before the cut. | Nothing to do. |
+| `ok` | `OK` | passing | recordings, starts, seams | The row was measured and nothing is wrong. | Nothing to do. |
+| `skipped` | `SKIPPED` | passing | cues | The row measured nothing, and its `reason` says why. | [Skipped rows](#skipped-rows) gives each reason. |
+
+`decktalk verify` exits 1 on any certain verdict above, and on an uncertain one with `--strict`. A
+`skipped` row never fails. [Exit codes](/reference/cli#exit-codes) lists the codes for every command.
 
 ## Skipped rows
 
@@ -462,7 +493,7 @@ A skipped row measured nothing. The table prints `skipped`, the reason, and a sh
 
 | Reason | Cause | Fix |
 |---|---|---|
-| `OPTED_OUT` | `cues.json` marks the cue `"verify": false`, and the run named no cue. | Name the cue, such as `decktalk verify 8:7.1checked`, to measure it anyway. |
+| `OPTED_OUT` | `cues.json` marks the cue `"verify": false`, and the run named no cue. | Name the cue, such as `decktalk verify 2:2.1formula`, to measure it anyway. |
 | `SECTION_NOT_ASSEMBLED` | The section has no `build/sections/NN.mp4`. | Run `decktalk assemble`. |
 | `REFERENCE_CLAMPED` | No reference frame fits between the floor and one frame before the cue. Usual for a `$start` cue. | Check the reveal by eye with `decktalk screenshots --slide ID --after CUE`. |
 | `TOO_CLOSE_TO_END` | Every probe falls later than 0.05 s before the section end. | Check the reveal by eye with `decktalk screenshots --slide ID --after CUE`. |
@@ -476,20 +507,26 @@ Mark such a cue `"verify": false`, and check it by eye with `decktalk screenshot
 
 `decktalk verify --json` prints one JSON object on stdout. The measurements are under the `verify` key.
 
-{/* sample: decktalk verify 8:7.1checked --json, build without voice of the scaffold, the cues array only */}
+{/* sample: decktalk verify 2:2.1formula --json, build without voice of a fresh starter with offset 0.14 added to that cue, the cues array only */}
 ```json
     "cues": [
       {
-        "section": 8,
-        "cue": "7.1checked",
-        "cue_seconds": 10.03,
-        "final_seconds": 238.31,
-        "changed_percent": 0.83,
+        "section": 2,
+        "cue": "2.1formula",
+        "where": "build/out/my-lesson.mp4",
+        "cue_seconds": 5.81,
+        "final_seconds": 20.09,
+        "changed_percent": 1.86,
         "control_percent": 0.0,
-        "offset_ms": 10,
-        "av_ms": 3,
-        "verdict": "changed",
-        "reason": null
+        "offset_ms": -90,
+        "av_ms": -101,
+        "verdict": {
+          "code": "OFF_CUE",
+          "label": "OFF CUE",
+          "certain": true
+        },
+        "reason": null,
+        "detail": "the reveal at cue '2.1formula' first changed -90 ms from its cue, outside the 80 ms limit."
       }
     ]
 ```
@@ -498,31 +535,33 @@ Mark such a cue `"verify": false`, and check it by eye with `decktalk screenshot
 |---|---|---|
 | `command` | string | Always `"verify"`. |
 | `version` | string | The installed DeckTalk version. |
-| `ok` | boolean | True when the command would exit 0 without `--exit-zero`. |
+| `ok` | boolean | True when the command found nothing and raised nothing. It ignores `--exit-zero`. |
 | `findings.certain`, `findings.uncertain` | integer | Counts of certain and uncertain findings. |
 | `verify.final` | string | Path of the final mp4, relative to the project. |
 | `verify.total_seconds` | number | Length of the video, the sum of the `sections/NN.mp4` of every section in `decktalk.toml`. |
 | `verify.silent` | boolean | True after a build without voice. Only then can `av_ms` hold a value. |
-| `verify.recordings[]` | array | One object per recorded page section, with `key`, `where` (its recording log), `t0_method`, `verdicts` (verdict codes) and `page_errors`. |
+| `verify.recordings[]` | array | One object per recorded page section, with `key`, `where`, which is its recording log, `t0_method`, `verdicts`, which is a list of verdict objects, and `page_errors`. |
 | `verify.starts[]` | array | One object per section start, with `key`, `start`, `probe_at`, `yavg`, `ymax`, and `verdict`. |
 | `verify.cuts[]` | array | One object per cut, with `key`, `cut_at`, `rms_db`, and `verdict`. |
-| `verify.seams[]` | array | One object per section that sets `seamless`, with `key`, `cut_at`, `last_at`, `first_at`, `changed_percent`, and `verdict` (`ok` or `POP AT CUT`). |
+| `verify.seams[]` | array | One object per section that sets `seamless`, with `key`, `cut_at`, `last_at`, `first_at`, `changed_percent`, and `verdict`, whose code is `OK` or `POP_AT_CUT`. |
 | `verify.cues[]` | array | One object per cue row, with the fields of the next table. |
 
 | Cue field | Type | Meaning |
 |---|---|---|
 | `section` | integer | Section number. |
 | `cue` | string | Cue id. |
+| `where` | string | The finished film the row was measured in, relative to the project. |
 | `cue_seconds` | number or null | Cue time, in seconds after the section start. |
 | `final_seconds` | number or null | Cue time in the final mp4. |
 | `changed_percent` | number or null | Changed share of the reported probe. |
 | `control_percent` | number or null | Control share of the reported probe. |
 | `offset_ms` | integer or null | Offset column. Null when the row has no onset. |
 | `av_ms` | integer or null | `a/v` value. Null after a voiced build, with no onset, or with `NO_CLICK`. |
-| `verdict` | string | `changed`, `THIN CHANGE?`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`, or `skipped`. |
+| `verdict` | object | `{code, label, certain}`. The code is `CHANGED`, `THIN_CHANGE`, `OFF_CUE`, `NO_CHANGE`, `UNRESOLVED` or `SKIPPED`. Match on the code and never on the label. |
 | `reason` | string or null | The skip reason, or `NO_CLICK` on a measured row. |
+| `detail` | string or null | One sentence that says what the row found, with the measured number in it. Null on a row that passed. |
 
-Note: Seconds are rounded to three decimals, and shares to two. A skipped row has null measurements.
+Note: Seconds are rounded to three decimals, and shares to two. A skipped row has null measurements. Every row of `starts[]`, `cuts[]` and `seams[]` carries `where` and `detail` too.
 
 ## Related
 
