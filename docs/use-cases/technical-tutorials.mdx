@@ -1,0 +1,81 @@
+---
+title: Technical tutorials
+description: Keep a narrated walkthrough correct when the library it teaches changes, by editing text and rebuilding one section.
+---
+
+A viewer watches a walkthrough whose commands and screenshots match the version she just installed.
+
+This is the use case DeckTalk is built around. A tutorial goes stale the week the API it teaches
+changes, and re-recording it costs a day, so most authors stop making them. In DeckTalk the whole
+video is text and code, so a change to the library is a change to a few lines, and only the sections
+whose words changed are voiced again.
+
+## What a viewer gets
+
+- Every reveal starts on the word that names it, so a command appears as the voice says it and
+  nothing is read ahead.
+- The commands and the screenshots on screen are the ones the project rendered on the day it was
+  built, not the ones an author remembered while recording.
+- Captions, chapters and a transcript page come out of the same build, so a viewer can read the
+  walkthrough instead of watching it.
+- A section that shows a terminal or an editor can be a screen recording instead of a page, cut and
+  mixed with the same narration.
+
+## What the author writes
+
+Four files hold the whole tutorial.
+
+| File | What it holds |
+|---|---|
+| `script.md` | One heading per section and the words the voice says, with a time budget per section. |
+| `decktalk.toml` | The project, the voice, the sections and their pages. |
+| `cues.json` | One entry per cue, naming the phrase the reveal starts on. |
+| The deck page | The slides, as HTML with `data-slide`, `data-cue` and `data-reveal` attributes. |
+
+A code slide is markup. An equation is a `data-tex` attribute typeset by the KaTeX files the wheel
+carries. A screenshot is a file the page loads, and `decktalk screenshots` writes one PNG per slide
+so the author can read what the recorder will see.
+
+## The workflow
+
+<Steps>
+  <Step title="Start a tutorial project">
+    `decktalk init --example tutorial` writes the four files, the runtime and the skills. Add
+    `--no-skills` to leave the skills out.
+  </Step>
+  <Step title="Build it without voice">
+    `decktalk build --no-voice` runs the five stages, which are `narrate`, `align`, `record`,
+    `assemble` and `verify`. It writes placeholder narration, so it spends nothing and needs no key.
+  </Step>
+  <Step title="Place the cues">
+    `decktalk align` resolves each cue phrase to a second on its section clock, and `decktalk verify`
+    reports every reveal that landed late, early or not at all.
+  </Step>
+  <Step title="Plan the spend, then voice it">
+    `decktalk preflight` freezes every reveal and estimates the takes without spending a credit, and
+    `decktalk narrate --dry-run` prints the characters and the dollars a voiced run would cost.
+  </Step>
+  <Step title="Rebuild one section when the library changes">
+    Edit the sentence, the slide or the cue, then run `decktalk build --only 4`. A section whose
+    words did not change keeps its take, so it is never voiced twice.
+  </Step>
+</Steps>
+
+Read [Quickstart](/quickstart) for the first build, [Your first deck](/guides/first-deck) for one
+section written end to end, and [Slide recipes](/guides/slide-recipes) for the slides a tutorial
+needs most.
+
+## On a locked-down machine
+
+A tutorial author inside a company meets two real conditions. A cloud speech service receives the
+script, and the first run downloads a browser and a media tool.
+[What leaves your machine](/reference/what-leaves-your-machine) names every host and every request
+body, and [Requirements and costs](/requirements) covers the package index mirror, the browser path
+and the cache directory that a managed machine needs. A build with `--no-voice` contacts no service
+at all, so a finished video can exist before any approval does.
+
+## Also fits
+
+Internal presentations, estimation and interview prep run the same pipeline, and none of them has a
+shipped example yet. The two use cases with worked examples beside this one are
+[product demos](/use-cases/product-demos) and [lessons](/use-cases/lessons).
