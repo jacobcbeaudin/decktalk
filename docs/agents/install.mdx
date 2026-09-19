@@ -1,0 +1,71 @@
+---
+title: Install the skills
+description: Where the skills land, which folders each coding agent reads, and what DeckTalk has actually tested.
+---
+
+`decktalk init` installs the six skills into a new project by default. Pass `--no-skills` to leave
+them out.
+
+```console
+decktalk init my-video
+```
+
+## The folders
+
+The skills are written once, into one generic folder, and a second folder points at it.
+
+| Path | What it is |
+|---|---|
+| `.agents/skills/decktalk-<name>/SKILL.md` | The skills themselves, in the folder the Agent Skills format names for sharing between clients. |
+| `.claude/skills` | A link to `.agents/skills`, because Claude Code reads its own folder and not the generic one. |
+
+On a machine where a link cannot be made, which is usually Windows without the privilege for one,
+`init` writes a copy instead of a link. The copy holds the same files, and it has to be written
+again when the skills change.
+
+Do not commit a second copy of a skill under another name. Several harnesses read both folders, and
+two copies of one skill is the case where a harness has to guess.
+
+## Which harness reads which folder
+
+Every harness below loads a `SKILL.md` natively. The folders are the ones each harness documents for
+a project.
+
+| Harness | Project folders it reads |
+|---|---|
+| Claude Code | `.claude/skills/` |
+| OpenAI Codex | `.agents/skills/` |
+| Cursor | `.agents/skills/`, `.cursor/skills/`, `.claude/skills/` |
+| GitHub Copilot and VS Code | `.github/skills/`, `.claude/skills/`, `.agents/skills/` |
+| Gemini CLI | `.gemini/skills/`, `.agents/skills/` |
+| Windsurf | `.windsurf/skills/`, `.agents/skills/` |
+| opencode | `.opencode/skills/`, `.claude/skills/`, `.agents/skills/` |
+| Amp | `.agents/skills/`, `.claude/skills/` |
+| Goose | `.agents/skills/`, `.goose/skills/`, `.claude/skills/` |
+
+The two folders that `init` writes reach every harness in that table. `.agents/skills/` reaches
+eight of them, and `.claude/skills` reaches Claude Code, which is the one harness that does not read
+the generic folder.
+
+<Warning>
+  DeckTalk tests its skills on Claude Code alone. The release test is a trigger run over Claude Code
+  and a build made from the skills alone. Every other harness in the table is supported through the
+  generic folder and is untested, because the founder does not run it. A skill that misfires on
+  another harness is worth a GitHub Discussions post, and it is not a case DeckTalk can reproduce.
+</Warning>
+
+## Why the skills use no harness-specific fields
+
+DeckTalk skills use only the fields the open format defines, which are `name`, `description`,
+`license`, `compatibility` and `metadata`. Several harnesses add fields of their own, and a field
+that one harness honours and another ignores gives one skill two behaviours. Some services also
+reject a skill whose front matter carries a key they do not know.
+
+The cost of that choice is that no front-matter field can mark a skill as user-only, so the guards
+against spending live in the skill text and in the CLI. [Agent skills](/agents/skills) lists them.
+
+## Install the skills without installing DeckTalk
+
+The repository carries a `skills` folder at its root that points at the same files, so a generic
+skill installer can read the skills straight from the repository before DeckTalk is on the machine.
+The skills drive a CLI, so they are only useful once that CLI exists.
