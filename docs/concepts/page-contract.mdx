@@ -147,6 +147,35 @@ finds its elements with `slide.querySelector` and needs no global variable.
 [Handler context](/reference/runtime#handler-context) describes the fields. An element with
 `data-text="spoken"` starts to show its words one at a time when it appears.
 
+## A seamless cut
+
+`seamless = true` on a `[[section]]` says that the section opens on the picture the section before it
+ended on, so the cut between them should not show. It is a claim the page keeps, not an effect: the
+runtime carries nothing across the cut, and a scene always starts on its own first slide. The key does
+three things.
+
+- The recorder gives the section's page the previous section's spoken words as `?prevwords=`. Only a
+  seamless section gets them.
+- `decktalk verify` compares the previous section's last frame with this section's first frame in the
+  finished video, and a changed share above `[verify] max_pop_percent` reads `POP AT CUT`, a certain
+  finding. `decktalk preflight` estimates the same comparison from the two frozen states before
+  anything is recorded.
+- `decktalk.toml` refuses it on the first section, which has no picture before it.
+
+To make a scene open on the previous scene's last picture, rebuild that picture in the new scene's
+first state:
+
+1. Copy the markup of the previous scene's last slide into the new scene's first slide.
+2. Remove `data-cue` and `data-delay` from the copied elements, so they are there from the first frame
+   instead of appearing on a cue. The first slide of a played scene enters with no animation.
+3. Give the copies the same classes and styles, so they draw in the same place at the same size.
+4. Add the new elements with their own `data-cue`, so they appear on their words.
+
+A value the previous scene built from its words, such as a `data-text="spoken"` line, can be rebuilt
+from `?prevwords=`. Keep the camera push off both scenes, because a pushed-in last frame cannot match an
+unpushed first one, and leave the pair out of `[transition] dips`, because a dip fades through black.
+[Cut continuity](/reference/verify#cut-continuity) defines the check.
+
 ## Build artifacts a page can read
 
 A page gets its cue times as `?cues=`, from `build/cue-times.json`. It gets the section's spoken
