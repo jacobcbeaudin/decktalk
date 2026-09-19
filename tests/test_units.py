@@ -233,7 +233,7 @@ def test_strict_fails_on_a_missing_clip_unless_the_section_is_optional(tmp_path,
     ran = []
     monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: ran.append(args))
     monkeypatch.setattr(asm, "section_slate", lambda project, sec: None)
-    enc = asm._Encoder(p.settings.video)
+    enc = asm.Encoder(p.settings.video)
     out = tmp_path / "out.mp4"
 
     with pytest.raises(MissingInputError) as err:
@@ -498,7 +498,8 @@ def test_recording_log_warnings_default_and_roundtrip(tmp_path):
 
 def test_init_copies_every_file_of_the_template_deck(tmp_path, monkeypatch):
     """Every page and asset under the template's deck/ arrives, with placeholders filled only in HTML."""
-    from decktalk.scaffold import RUNTIME_FILE, init, package_file, runtime_path
+    from decktalk.scaffold import init
+    from decktalk.toolchain.assets import RUNTIME_FILE, package_file, runtime_path
 
     monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
     root = init(tmp_path / "proj", name="proj")
@@ -848,7 +849,7 @@ def test_captions_and_chapters_skip_over_a_clip_between_page_sections(tmp_path):
 
 
 def test_click_search_stays_inside_the_section(monkeypatch):
-    from decktalk.media import ffmpeg as ffmpeg_module
+    from decktalk.media import audio as audio_module
     from decktalk.stages.verify import click_offset_ms
 
     calls: list[tuple[float, float]] = []
@@ -857,7 +858,7 @@ def test_click_search_stays_inside_the_section(monkeypatch):
         calls.append((round(start, 3), round(seconds, 3)))
         return [0] * 100 + [2000] + [0] * 100
 
-    monkeypatch.setattr(ffmpeg_module, "pcm_span", fake_span)
+    monkeypatch.setattr(audio_module, "pcm_span", fake_span)
     assert click_offset_ms(Path("f.mp4"), 10.0, 0.25) is not None
     assert click_offset_ms(Path("f.mp4"), 5.1, 0.25, floor=5.0, ceiling=9.0) is not None
     assert click_offset_ms(Path("f.mp4"), 8.9, 0.25, floor=5.0, ceiling=9.0) is not None
@@ -866,7 +867,7 @@ def test_click_search_stays_inside_the_section(monkeypatch):
 
 
 def test_loudness_problems_report_peaks_and_missed_targets(tmp_path):
-    from decktalk.media.ffmpeg import Loudness
+    from decktalk.media.audio import Loudness
     from decktalk.stages.assemble import loudness_problems
 
     p = Project.load(write_project(tmp_path), environ={})
@@ -1081,6 +1082,7 @@ def _verify_project(
 ):
     """A project with sections 01 and 02 assembled and every ffmpeg measurement replaced."""
     from decktalk.media import ffmpeg as ffmpeg_module
+    from decktalk.media import frames as frames_module
 
     root = write_project(tmp_path, toml)
     p = Project.load(root, environ={})
@@ -1095,9 +1097,9 @@ def _verify_project(
     if cues is not None:
         (root / "cues.json").write_text(json.dumps({"sections": cues}), encoding="utf-8")
     monkeypatch.setattr(ffmpeg_module, "probe_duration", lambda path: 5.0)
-    monkeypatch.setattr(ffmpeg_module, "luma_at", lambda path, t, crop=None: (100.0, 200.0))
-    monkeypatch.setattr(ffmpeg_module, "changed_pixels_percent", lambda path, t1, t2, **kw: change)
-    monkeypatch.setattr(ffmpeg_module, "changed_series", lambda *a, **kw: [])
+    monkeypatch.setattr(frames_module, "luma_at", lambda path, t, crop=None: (100.0, 200.0))
+    monkeypatch.setattr(frames_module, "changed_pixels_percent", lambda path, t1, t2, **kw: change)
+    monkeypatch.setattr(frames_module, "changed_series", lambda *a, **kw: [])
     return p
 
 
@@ -1179,9 +1181,9 @@ def test_verify_marks_a_thin_change_as_uncertain(tmp_path, monkeypatch, capsys):
     assert doc["findings"] == {"certain": 0, "uncertain": 1} and doc["verify"]["cues"][0]["verdict"] == "THIN CHANGE?"
 
     # A clear change reads changed, and the factor can turn the warning off.
-    monkeypatch.setattr("decktalk.media.ffmpeg.changed_pixels_percent", lambda path, t1, t2, **kw: 0.5)
+    monkeypatch.setattr("decktalk.media.frames.changed_pixels_percent", lambda path, t1, t2, **kw: 0.5)
     assert [c.verdict for c in verify(p).cues] == ["changed"]
-    monkeypatch.setattr("decktalk.media.ffmpeg.changed_pixels_percent", lambda path, t1, t2, **kw: 0.11)
+    monkeypatch.setattr("decktalk.media.frames.changed_pixels_percent", lambda path, t1, t2, **kw: 0.11)
     monkeypatch.setenv("DECKTALK_VERIFY_THIN_CHANGE_FACTOR", "1")
     assert [c.verdict for c in verify(Project.load(p.root)).cues] == ["changed"]
 
@@ -1203,7 +1205,7 @@ def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
 
 
 def test_verify_flags_a_pop_at_the_cut_into_a_seamless_section(tmp_path, monkeypatch, capsys):
-    from decktalk.media import ffmpeg as ffmpeg_module
+    from decktalk.media import frames as frames_module
     from decktalk.stages.verify import verify
 
     seamless_toml = PAGES_TOML.replace(
@@ -1220,7 +1222,7 @@ def test_verify_flags_a_pop_at_the_cut_into_a_seamless_section(tmp_path, monkeyp
         calls.append((round(t1, 3), round(t2, 3), kw))
         return share[0]
 
-    monkeypatch.setattr(ffmpeg_module, "changed_pixels_percent", changed)
+    monkeypatch.setattr(frames_module, "changed_pixels_percent", changed)
     result = verify(p)
     # Section 1 dips out over 0.16 s, so the last frame compared sits before the dip. Section 3 is not assembled.
     assert calls == [(4.78, 5.0, {"level": 40, "width": 480, "height": 270})]
@@ -1725,7 +1727,7 @@ def test_a_renumbered_take_is_found_by_its_hash_and_moves_without_clobbering(tmp
 
 def test_trailing_silence_counts_a_silence_ending_0_0502_s_before_the_end(monkeypatch):
     """The numbers of the demo's 08-the-edit.mp3: every narrate run padded it again by 1.35 s."""
-    from decktalk.media import ffmpeg
+    from decktalk.media import audio, ffmpeg
 
     detect = (
         "  Stream #0:0: Audio: mp3 (mp3float), 44100 Hz, mono, fltp, 128 kb/s\n"
@@ -1736,25 +1738,25 @@ def test_trailing_silence_counts_a_silence_ending_0_0502_s_before_the_end(monkey
     )
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 15.752)
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: detect.format(end=15.701814))
-    assert ffmpeg.trailing_silence(Path("08-the-edit.mp3")) == 1.371
+    assert audio.trailing_silence(Path("08-the-edit.mp3")) == 1.371
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: detect.format(end=15.5))  # speech after the silence
-    assert ffmpeg.trailing_silence(Path("08-the-edit.mp3")) == 0.0
+    assert audio.trailing_silence(Path("08-the-edit.mp3")) == 0.0
     # At 8 kHz one mp3 frame lasts 0.144 s, longer than the fixed tolerance.
     low = detect.replace("44100 Hz", "8000 Hz").format(end=15.62)
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: low)
-    assert ffmpeg.trailing_silence(Path("08-the-edit.mp3")) == 1.371
+    assert audio.trailing_silence(Path("08-the-edit.mp3")) == 1.371
 
 
 def test_a_padded_take_within_a_frame_of_min_tail_is_not_padded_again(monkeypatch):
-    from decktalk.media import ffmpeg
+    from decktalk.media import audio
     from decktalk.settings import NarrationConfig
     from decktalk.stages.narrate import ensure_tail
 
     padded: list[float] = []
-    monkeypatch.setattr(ffmpeg, "pad_tail", lambda path, seconds, bitrate: padded.append(seconds))
-    monkeypatch.setattr(ffmpeg, "trailing_silence", lambda path: 1.26)
+    monkeypatch.setattr(audio, "pad_tail", lambda path, seconds, bitrate: padded.append(seconds))
+    monkeypatch.setattr(audio, "trailing_silence", lambda path: 1.26)
     cfg = NarrationConfig(min_tail_seconds=1.3)
-    assert ensure_tail(Path("a.mp3"), cfg, tolerance=ffmpeg.SILENCE_END_TOLERANCE_SECONDS) == 0.0
+    assert ensure_tail(Path("a.mp3"), cfg, tolerance=audio.SILENCE_END_TOLERANCE_SECONDS) == 0.0
     assert padded == []
     assert ensure_tail(Path("a.mp3"), cfg) == 0.09  # a take never padded before gets the full tail
     assert padded == [0.09]
@@ -1778,7 +1780,7 @@ def _recorded(tmp_path: Path) -> tuple[Project, Path]:
 
 
 def test_stale_measure_ties_the_measurement_to_one_recording(tmp_path, monkeypatch):
-    from decktalk.media import ffmpeg
+    from decktalk.media import frames
     from decktalk.stages.measure import measure, recording_hash, stale_measure
 
     p, webm = _recorded(tmp_path)
@@ -1791,7 +1793,7 @@ def test_stale_measure_ties_the_measurement_to_one_recording(tmp_path, monkeypat
         stale_measure(webm, None, p.root) == f"{name} has no recording log, so `measure` never found its narration t=0"
     )
 
-    monkeypatch.setattr(ffmpeg, "frame_stats", lambda path, seconds: [])
+    monkeypatch.setattr(frames, "frame_stats", lambda path, seconds: [])
     (row,) = measure(p)
     recording_log = RecordingLog.load(log_path)
     assert recording_log is not None and recording_log.t0_seconds == row.t0_seconds
@@ -1924,7 +1926,7 @@ VOICED_REFUSAL = (
 
 
 def test_narrate_without_voice_refuses_voiced_takes_unless_forced(tmp_path, monkeypatch):
-    from decktalk.media import ffmpeg
+    from decktalk.media import audio, ffmpeg
     from decktalk.stages.narrate import narrate
 
     p, take, takes_path = _voiced(tmp_path)
@@ -1934,10 +1936,10 @@ def test_narrate_without_voice_refuses_voiced_takes_unless_forced(tmp_path, monk
     assert str(err.value) == VOICED_REFUSAL
     assert take.read_bytes() == b"voiced take" and takes_path.read_bytes() == before
 
-    monkeypatch.setattr(ffmpeg, "write_clicks", lambda path, *a, **kw: Path(path).write_bytes(b"clicks"))
+    monkeypatch.setattr(audio, "write_clicks", lambda path, *a, **kw: Path(path).write_bytes(b"clicks"))
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
     monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)
-    monkeypatch.setattr(ffmpeg, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
+    monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
     result = narrate(p, silent=True, force=True)
     assert result.synthesized == ["01"] and take.read_bytes() == b"clicks"
     take_index = Takes.load(takes_path)
@@ -1997,7 +1999,7 @@ def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkey
 
 def test_timeline_joins_each_section_lead_before_its_take(tmp_path, monkeypatch):
     """lead_seconds is silence in narration.mp3 before the take. The words and cues move, and the take does not."""
-    from decktalk.media import ffmpeg
+    from decktalk.media import audio, ffmpeg
     from decktalk.stages.align import align
     from decktalk.stages.assemble import resolve_marker_time
     from decktalk.stages.narrate import build_timeline, script_segments
@@ -2005,7 +2007,7 @@ def test_timeline_joins_each_section_lead_before_its_take(tmp_path, monkeypatch)
     p, take_index = _two_takes(tmp_path, "lead_seconds = 1.25\n")
     joined: dict = {}
     monkeypatch.setattr(
-        ffmpeg, "concat_audio", lambda files, out, **kw: joined.update(files=[f.name for f in files], leads=kw["leads"])
+        audio, "concat_audio", lambda files, out, **kw: joined.update(files=[f.name for f in files], leads=kw["leads"])
     )
     monkeypatch.setattr(
         ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 7.25 if path.name == "narration.mp3" else 3.0
@@ -2032,7 +2034,7 @@ def test_timeline_joins_each_section_lead_before_its_take(tmp_path, monkeypatch)
 
 
 def test_a_section_tail_seconds_replaces_min_tail_seconds(tmp_path, monkeypatch):
-    from decktalk.media import ffmpeg
+    from decktalk.media import audio, ffmpeg
     from decktalk.stages.narrate import ensure_tail, narrate, script_segments, section_config
 
     root = write_project(
@@ -2050,17 +2052,17 @@ def test_a_section_tail_seconds_replaces_min_tail_seconds(tmp_path, monkeypatch)
         lengths[Path(path).name] = duration
         Path(path).write_bytes(b"clicks")
 
-    monkeypatch.setattr(ffmpeg, "write_clicks", clicks)
+    monkeypatch.setattr(audio, "write_clicks", clicks)
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: lengths[Path(path).name])
     monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: lengths.get(Path(path).name, 0.0))
-    monkeypatch.setattr(ffmpeg, "concat_audio", lambda files, out, **kw: None)
+    monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: None)
     narrate(p, silent=True)
     # The same words take the same time, so the click tracks differ by the tails alone.
     assert lengths["02-two.mp3"] - lengths["01-one.mp3"] == pytest.approx(1.8)
 
     padded: list[tuple[str, float]] = []
-    monkeypatch.setattr(ffmpeg, "trailing_silence", lambda path: 1.0)
-    monkeypatch.setattr(ffmpeg, "pad_tail", lambda path, seconds, bitrate: padded.append((Path(path).name, seconds)))
+    monkeypatch.setattr(audio, "trailing_silence", lambda path: 1.0)
+    monkeypatch.setattr(audio, "pad_tail", lambda path, seconds, bitrate: padded.append((Path(path).name, seconds)))
     for seg in script_segments(p)[1]:
         ensure_tail(p.narration_dir / seg.filename, section_config(p, seg))
     assert padded == [("02-two.mp3", 1.55)]  # a 1.0 s tail passes 0.7 but not 2.5, which it reaches plus the slack

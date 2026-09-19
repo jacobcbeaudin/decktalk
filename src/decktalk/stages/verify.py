@@ -75,7 +75,7 @@ from typing import Any
 
 from ..artifacts import CueTimes
 from ..errors import ConfigError, MissingInputError
-from ..media import ffmpeg
+from ..media import audio, ffmpeg, frames
 from ..project import Project
 from ..settings import VerifyConfig
 from ..verdicts import SkipReason, Verdict
@@ -379,9 +379,9 @@ def best_probe(
     best: tuple[float, float, float, float] | None = None
     for delay in delays:
         after = cue_at + delay
-        chg = ffmpeg.changed_pixels_percent(final, before, after, **size)
+        chg = frames.changed_pixels_percent(final, before, after, **size)
         controls = [
-            ffmpeg.changed_pixels_percent(final, a, b, **size) for a, b in control_spans(before, after - before, floor)
+            frames.changed_pixels_percent(final, a, b, **size) for a, b in control_spans(before, after - before, floor)
         ]
         ctl = min(controls) if controls else 0.0
         margin = chg - ctl
@@ -435,7 +435,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
     result = VerifyResult(total_seconds=total, final=final, silent=clicks)
     for key, t in starts.items():
         probe = t + cfg.after_dip_seconds
-        yavg, ymax = ffmpeg.luma_at(final, probe)
+        yavg, ymax = frames.luma_at(final, probe)
         result.starts.append(
             StartCheck(key=key, start=t, probe_at=probe, yavg=yavg, ymax=ymax, ok=ymax > cfg.visible_ymax)
         )
@@ -448,7 +448,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
             if key not in starts:
                 continue
             window = min(cfg.cut_window_seconds, sec.duration)
-            level = ffmpeg.rms_db(narration, max(0.0, sec.end - window), window)
+            level = audio.rms_db(narration, max(0.0, sec.end - window), window)
             cut = starts[key] + sec.duration
             result.cuts.append(CutCheck(key=key, cut_at=round(cut, 3), rms_db=level, ok=level <= cfg.cut_max_db))
     fps = project.settings.video.fps
@@ -594,7 +594,7 @@ def seam_checks(
         last = cut - (dip if flags.get(prev.key, (False, False))[1] else 0.0) - 1.5 / fps
         first = cut + (dip if flags.get(sec.key, (False, False))[0] else 0.0) - 0.5 / fps
         first = max(first, cut)
-        share = ffmpeg.changed_pixels_percent(
+        share = frames.changed_pixels_percent(
             final, last, first, level=cfg.diff_level, width=cfg.probe_width, height=cfg.probe_height
         )
         rows.append(SeamCheck(sec.key, cut, last, first, share, share <= cfg.max_pop_percent))
@@ -616,7 +616,7 @@ def first_change_offset(
     cancels that zero-mean ringing, so a frame counts only when a block changed there too.
     """
     series, blocks = (
-        ffmpeg.changed_series(final, before, before, after, fps=fps, level=cfg.onset_diff_level, width=w, height=h)
+        frames.changed_series(final, before, before, after, fps=fps, level=cfg.onset_diff_level, width=w, height=h)
         for w, h in ((cfg.probe_width, cfg.probe_height), (cfg.block_width, cfg.block_height))
     )
     return onset_offset_ms(
@@ -643,7 +643,7 @@ def click_offset_ms(
     stop = expected + search if ceiling is None else min(ceiling, expected + search)
     if stop <= start:
         return None
-    samples = ffmpeg.pcm_span(final, start, stop - start, sample_rate=rate)
+    samples = audio.pcm_span(final, start, stop - start, sample_rate=rate)
     if not samples:
         return None
     peak = max(range(len(samples)), key=lambda i: abs(samples[i]))

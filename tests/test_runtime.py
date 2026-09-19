@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.scaffold import init, runtime_path
+from decktalk.scaffold import init
+from decktalk.toolchain.assets import runtime_path
 
 pytestmark = pytest.mark.browser
 
@@ -618,7 +619,7 @@ def test_recorder_keeps_frames_flowing_so_reveals_on_a_still_page_land_on_schedu
     When the motion stopped with the cover, every reveal here read -40 ms. The keep-alive is also
     invisible to verify: nothing changes at its onset diff level before the first reveal.
     """
-    from decktalk.media import ffmpeg
+    from decktalk.media import frames
     from decktalk.media.browser import record_page
     from decktalk.settings import RecordConfig, VerifyConfig
     from decktalk.stages.measure import measure_lead
@@ -643,7 +644,7 @@ def test_recorder_keeps_frames_flowing_so_reveals_on_a_still_page_land_on_schedu
     )
     trim, method = measure_lead(out, recording_log.settle_seconds, RecordConfig())
     assert method.startswith("cover"), method
-    series = ffmpeg.changed_series(out, trim, trim, trim + 3.0, fps=25, level=40, width=480, height=270)
+    series = frames.changed_series(out, trim, trim, trim + 3.0, fps=25, level=40, width=480, height=270)
     offsets: list[int] = []
     prev = 0.0
     for t, pct in series:
@@ -654,7 +655,7 @@ def test_recorder_keeps_frames_flowing_so_reveals_on_a_still_page_land_on_schedu
     # On the 25 fps grid a reveal lands on its own frame (0) or, when its timer fires late, the next (+40).
     assert all(0 <= ms <= 40 for ms in offsets), offsets
     cfg = VerifyConfig()
-    still = ffmpeg.changed_series(
+    still = frames.changed_series(
         out, trim, trim, trim + at[0] - 0.1, fps=25, level=cfg.onset_diff_level, width=1280, height=720
     )
     assert still and max(pct for _, pct in still) == 0.0, still

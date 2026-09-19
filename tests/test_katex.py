@@ -7,7 +7,15 @@ import shutil
 from pathlib import Path
 
 from decktalk import scaffold
-from decktalk.scaffold import KATEX_FILES, KATEX_VERSION, init, katex_dir, katex_fonts, katex_missing
+from decktalk.scaffold import init
+from decktalk.toolchain import assets
+from decktalk.toolchain.assets import (
+    KATEX_FILES,
+    KATEX_VERSION,
+    katex_dir,
+    katex_fonts,
+    katex_missing,
+)
 
 
 def test_the_packaged_copy_is_complete():
@@ -54,7 +62,7 @@ def test_katex_missing_names_each_absent_file(tmp_path, monkeypatch):
     (copy / "fonts" / "KaTeX_Main-Regular.woff2").unlink()
     (copy / "LICENSE").unlink()
     assert katex_missing(copy) == ["LICENSE", "fonts/KaTeX_Main-Regular.woff2"]
-    monkeypatch.setattr(scaffold, "katex_dir", lambda: copy)
+    monkeypatch.setattr(assets, "katex_dir", lambda: copy)
     row = {r.name: r for r in scaffold.doctor()}["katex"]
     assert row.ok is False
     assert row.detail.endswith("lacks LICENSE, fonts/KaTeX_Main-Regular.woff2  -> reinstall decktalk")

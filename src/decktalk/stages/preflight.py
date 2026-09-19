@@ -46,7 +46,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from ..artifacts import CueTimes, Word
-from ..media import ffmpeg
+from ..media import frames
 from ..media.browser import await_ready, chromium, page_error_text, screenshot
 from ..project import PageSection, Project
 from ..settings import NarrationConfig, VerifyConfig
@@ -470,7 +470,7 @@ def frame_estimates(
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(page_error_text(e)))
         catalogs: dict[str, list[dict[str, Any]] | None] = {}
-        frames: dict[str, Path] = {}
+        rendered: dict[str, Path] = {}
 
         def scene_slides(sec: PageSection) -> tuple[Slides | None, SkipReason | None, str]:
             if sec.page not in catalogs:
@@ -488,11 +488,11 @@ def frame_estimates(
 
         def render_frozen(sec: PageSection, freeze: Freeze) -> Path:
             url = freeze_url(project, sec, freeze)
-            if url not in frames:
+            if url not in rendered:
                 target = out_dir / sec.key / f"{freeze.label}.png"
                 screenshot(page, url, target, settle_ms=project.settings.record.screenshot_settle_ms)
-                frames[url] = target
-            return frames[url]
+                rendered[url] = target
+            return rendered[url]
 
         for sec in wanted:
             if not isinstance(sec, PageSection) or not cue_times.sections.get(sec.key):
@@ -519,7 +519,7 @@ def frame_estimates(
                     )
                     continue
                 a, b = render_frozen(sec, pair.before), render_frozen(sec, pair.after)
-                share = ffmpeg.changed_images_percent(a, b, **size)
+                share = frames.changed_images_percent(a, b, **size)
                 verdict = cue_verdict(share, vcfg)
                 cues.append(
                     CueEstimate(check, pair.seconds, pair.slide, share, verdict, note=pair.note, before=a, after=b)
@@ -541,14 +541,14 @@ def frame_estimates(
                 seams.append(SeamEstimate(sec.key, None, Verdict.SKIPPED, SkipReason.NO_CUES, detail))
                 continue
             a, b = render_frozen(prev, last), render_frozen(sec, first)
-            share = ffmpeg.changed_images_percent(a, b, **size)
+            share = frames.changed_images_percent(a, b, **size)
             verdict = Verdict.OK if share <= vcfg.max_pop_percent else Verdict.POP_AT_CUT
             seams.append(SeamEstimate(sec.key, share, verdict, last=a, first=b))
         for e in sorted(set(errors)):
             log.warning("[page] preflight  page error: %s", e)
     log.info(
         "[pre ] %d frozen frame(s) in %s",
-        len(frames),
+        len(rendered),
         out_dir.relative_to(project.root) if out_dir.is_relative_to(project.root) else out_dir,
     )
     return cues, seams

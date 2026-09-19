@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.media import ffmpeg
+from decktalk.media import audio, ffmpeg, frames
 from decktalk.settings import Settings
 from decktalk.stages.verify import best_probe, first_change_offset, probe_plan, reference_time
 
@@ -58,7 +58,7 @@ def _grid(t: float) -> float:
 
 @pytest.mark.parametrize("ref_t", [4.40, 4.41, 4.43, 4.439, 4.44])
 def test_changed_series_reads_zero_on_a_static_colored_card_at_every_grid_phase(card, ref_t):
-    series = ffmpeg.changed_series(card, ref_t, ref_t, ref_t + 0.4, fps=FPS, level=12, width=W, height=H)
+    series = frames.changed_series(card, ref_t, ref_t, ref_t + 0.4, fps=FPS, level=12, width=W, height=H)
     assert series, "ffmpeg returned no frames"
     # The first pair is the reference compared with itself, on the frame at or after ref_t.
     assert series[0][0] == _grid(ref_t)
@@ -67,7 +67,7 @@ def test_changed_series_reads_zero_on_a_static_colored_card_at_every_grid_phase(
 
 
 def test_changed_series_times_are_the_frames_own_positions(card):
-    series = ffmpeg.changed_series(card, 4.93, 4.93, 5.2, fps=FPS, level=12, width=W, height=H)
+    series = frames.changed_series(card, 4.93, 4.93, 5.2, fps=FPS, level=12, width=W, height=H)
     shares = dict(series)
     assert shares[4.96] == 0.0
     assert 0.2 < shares[5.0] < 0.45  # the black square alone, 400 px
@@ -75,9 +75,9 @@ def test_changed_series_times_are_the_frames_own_positions(card):
 
 
 def test_changed_pixels_percent_reads_zero_for_the_same_colored_picture(card):
-    assert ffmpeg.changed_pixels_percent(card, 1.0, 4.0, level=12, width=W, height=H) == 0.0
-    assert ffmpeg.changed_pixels_percent(card, 4.43, 4.44, level=12, width=W, height=H) == 0.0
-    share = ffmpeg.changed_pixels_percent(card, 4.9, 5.5, level=12, width=W, height=H)
+    assert frames.changed_pixels_percent(card, 1.0, 4.0, level=12, width=W, height=H) == 0.0
+    assert frames.changed_pixels_percent(card, 4.43, 4.44, level=12, width=W, height=H) == 0.0
+    share = frames.changed_pixels_percent(card, 4.9, 5.5, level=12, width=W, height=H)
     assert PANEL_PERCENT * 0.9 < share < PANEL_PERCENT * 1.1
 
 
@@ -100,7 +100,7 @@ def moving_card(tmp_path_factory) -> Path:
 @pytest.mark.parametrize("before", [4.88, 4.93, 4.959])
 def test_onset_ignores_a_few_pixels_of_motion_before_the_reveal(moving_card, before):
     cfg = Settings().verify
-    series = ffmpeg.changed_series(moving_card, before, before, 5.2, fps=FPS, level=12, width=W, height=H)
+    series = frames.changed_series(moving_card, before, before, 5.2, fps=FPS, level=12, width=W, height=H)
     motion = max(p for t, p in series if t < FULL_FRAME / FPS)
     # The dot is a real change of a few pixels, and it must stay under the onset threshold.
     assert 0.0 < motion < cfg.onset_percent
@@ -131,7 +131,7 @@ def test_onset_ignores_encoder_ringing_before_the_reveal(ringing_card):
     cfg = Settings().verify
     before = 4.84
     # At the comparison size the ringing is a real change of far more than onset_percent ...
-    series = ffmpeg.changed_series(ringing_card, before, before, 5.2, fps=FPS, level=12, width=W, height=H)
+    series = frames.changed_series(ringing_card, before, before, 5.2, fps=FPS, level=12, width=W, height=H)
     assert max(p for t, p in series if t < REVEAL_FRAME / FPS) > 10 * cfg.onset_percent
     # ... but no 8 by 8 block changes, so the onset scan still finds the panel on its own frame.
     assert first_change_offset(ringing_card, before, 5.7, REVEAL_FRAME / FPS, cfg, FPS) == 0
@@ -254,7 +254,7 @@ def test_verify_finds_a_pop_between_synthetic_sections_outside_the_dip(tmp_path)
     assert pop.changed_percent > 2 * PANEL_PERCENT * 0.9  # the panel left one place and appeared in another
     assert not result.ok
     # Across the dip itself the frame at 1.96 s is still fading to black, which would read as a pop.
-    assert ffmpeg.changed_pixels_percent(p.final, 1.95, 2.0, level=40, width=W, height=H) > 10
+    assert frames.changed_pixels_percent(p.final, 1.95, 2.0, level=40, width=W, height=H) > 10
 
 
 def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
@@ -272,7 +272,7 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     p = Project.load(tmp_path, environ={})
     p.narration_dir.mkdir(parents=True)
     # The track holds section 1 from 0 to 2 s and section 3 from 2 to 4 s, with a click half a second into each.
-    ffmpeg.write_clicks(p.narration_dir / "narration.mp3", 4.0, [0.5, 2.5], sample_rate=48000, bitrate="128k")
+    audio.write_clicks(p.narration_dir / "narration.mp3", 4.0, [0.5, 2.5], sample_rate=48000, bitrate="128k")
     clip = tmp_path / "broll.m4a"
     ffmpeg.run("-f", "lavfi", "-i", "sine=f=660:r=48000:d=2", "-c:a", "aac", str(clip))
     tl = Timeline(
@@ -296,8 +296,8 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     resumed = click_offset_ms(out, 4.0, 0.25, floor=3.5, ceiling=5.5)
     assert first is not None and abs(first) <= 8
     assert resumed is not None and abs(resumed) <= 8, "section 3's word does not sit half a second after the clip"
-    assert ffmpeg.rms_db(out, 2.1, 1.3) > -30, "the clip's own sound is missing from the pause"
-    assert ffmpeg.rms_db(out, 3.55, 0.4) < -50, "something sounds between the clip and section 3's first word"
+    assert audio.rms_db(out, 2.1, 1.3) > -30, "the clip's own sound is missing from the pause"
+    assert audio.rms_db(out, 3.55, 0.4) < -50, "something sounds between the clip and section 3's first word"
 
 
 def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_again(tmp_path):
@@ -343,11 +343,11 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
         word_count=2, estimated_seconds=1.0, duration_seconds=before, speech_end_seconds=1.0, tail_padded_seconds=0.1,
     )  # fmt: skip
     take_index.save(p.takes_path)
-    assert ffmpeg.trailing_silence(take) < 0.5
+    assert audio.trailing_silence(take) < 0.5
 
     first = narrate(p)
     assert first.cached == [seg.key] and first.synthesized == []
-    assert ffmpeg.trailing_silence(take) >= cfg.min_tail_seconds
+    assert audio.trailing_silence(take) >= cfg.min_tail_seconds
     padded = Takes.load(p.takes_path).sections[seg.key]
     assert padded.hash == digest, "padding changed the cache key"
     assert padded.duration_seconds > before + 0.4
@@ -433,7 +433,7 @@ def test_trailing_silence_counts_a_silence_that_ends_in_the_encoder_padding(tmp_
     take = tmp_path / "take.mp3"
     _tone_with_tail(take, tail=1.3)
     gap = ffmpeg.probe_duration(take) - ffmpeg.decoded_duration(take, sample_rate=44100)
-    assert ffmpeg.trailing_silence(take) == pytest.approx(1.3 + max(gap, 0.0), abs=0.03)
+    assert audio.trailing_silence(take) == pytest.approx(1.3 + max(gap, 0.0), abs=0.03)
 
 
 @pytest.mark.parametrize("tail", [1.3, 0.2])
@@ -528,8 +528,8 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     assert [w.start for w in after.words] == [pytest.approx(w.start + 1.5, abs=0.001) for w in before.words]
     narration = p.narration_dir / "narration.mp3"
     assert ffmpeg.decoded_duration(narration) == pytest.approx(first.timeline.total_seconds + 1.5, abs=0.03)
-    assert ffmpeg.rms_db(narration, after.start + 0.1, 1.3) < -60, "the lead is not silent"
-    assert ffmpeg.rms_db(narration, after.start + 1.55, 0.4) > -30, "the take does not follow the lead"
+    assert audio.rms_db(narration, after.start + 0.1, 1.3) < -60, "the lead is not silent"
+    assert audio.rms_db(narration, after.start + 1.55, 0.4) > -30, "the take does not follow the lead"
 
     toml.write_text(base + "lead_seconds = 1.5\ntail_seconds = 2\n", encoding="utf-8")
     p = Project.load(tmp_path, environ={})
@@ -537,7 +537,7 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     assert third.synthesized == [] and third.cached == ["01", "02"] and ToneVoice.calls == 2
     padded = Takes.load(takes_path).sections["02"]
     assert padded.hash == entry.hash and padded.tail_padded_seconds > 1.0
-    assert ffmpeg.trailing_silence(take) >= 2.0
+    assert audio.trailing_silence(take) >= 2.0
     assert Takes.load(takes_path).sections["01"].tail_padded_seconds == 0.0
     fourth = narrate(p)
     assert fourth.synthesized == [] and ToneVoice.calls == 2
@@ -585,13 +585,13 @@ def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
     assert (result.first_frame, result.last_frame, result.start, result.end) == (25, 74, 1.0, 3.0)
     assert (result.hold_seconds, result.duration) == (0.4, 2.4)
     assert ffmpeg.probe_duration(clip_file) == pytest.approx(2.4, abs=0.05)
-    red, blue = ffmpeg.luma_at(clip_file, 0.5)[0], ffmpeg.luma_at(clip_file, 1.5)[0]
+    red, blue = frames.luma_at(clip_file, 0.5)[0], frames.luma_at(clip_file, 1.5)[0]
     assert red > blue + 20, (red, blue)
-    assert ffmpeg.luma_at(clip_file, 2.2)[0] == pytest.approx(blue, abs=3), "the hold does not show the last frame"
-    loud = ffmpeg.rms_db(clip_file, 1.05, 0.4)
+    assert frames.luma_at(clip_file, 2.2)[0] == pytest.approx(blue, abs=3), "the hold does not show the last frame"
+    loud = audio.rms_db(clip_file, 1.05, 0.4)
     assert loud > -40, "the take's tone is not at 1.0 s in the clip"  # The tone is about -24 dB before the -6 dB gain.
-    assert ffmpeg.rms_db(clip_file, 0.1, 0.8) < -50, "sound before the tone"
-    assert ffmpeg.rms_db(clip_file, 1.6, 0.7) < -50, "sound after the tone or in the hold"
+    assert audio.rms_db(clip_file, 0.1, 0.8) < -50, "sound before the tone"
+    assert audio.rms_db(clip_file, 1.6, 0.7) < -50, "sound after the tone or in the hold"
     # Words wholly inside the span keep the script's spelling, shifted to the clip. "go" crosses the start.
     assert result.words == [Word("Watch", 1.0, 1.2), Word("it,", 1.25, 1.5)]
     assert result.cut_words == ["Go."]
@@ -601,7 +601,7 @@ def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "wrote media/y.mp4  (2.00s: frames 25 to 74 of sections/01.mp4, 1.00 to 3.00s, hold 0s, gain +0 dB)" in out
     assert "wrote media/y.words.json  (2 words)" in out
-    assert ffmpeg.rms_db(tmp_path / "media" / "y.mp4", 1.05, 0.4) == pytest.approx(loud + 6, abs=1)
+    assert audio.rms_db(tmp_path / "media" / "y.mp4", 1.05, 0.4) == pytest.approx(loud + 6, abs=1)
 
     # A span inside the lead is silent, and still has its full length.
     early = clip(p, 1, start=0.0, end=0.4, out="media/z.mp4")

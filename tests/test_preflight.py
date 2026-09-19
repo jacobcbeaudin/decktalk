@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.scaffold import init, runtime_path
+from decktalk.scaffold import init
+from decktalk.toolchain.assets import runtime_path
 from decktalk.verdicts import Findings
 
 pytestmark = [pytest.mark.browser, pytest.mark.media]

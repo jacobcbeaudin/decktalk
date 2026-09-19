@@ -38,10 +38,11 @@ from typing import Any
 from ..artifacts import CueTimes, RecordingLog, Takes, Timeline, Word, read_words
 from ..captions import CaptionCue, Chapter, caption_cues, display_words, write_chapters, write_srt, write_vtt
 from ..errors import ConfigError, MissingInputError, ToolError
-from ..media import ffmpeg
+from ..media import audio, ffmpeg
 from ..media.browser import render_slate
+from ..media.encode import Encoder
 from ..project import ClipSection, PageSection, Project, Section
-from ..settings import AudioConfig, VideoConfig
+from ..settings import AudioConfig
 from .align import find_phrase
 from .measure import stale_measure
 
@@ -129,55 +130,6 @@ def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:
     return out
 
 
-class _Encoder:
-    """The x264 and AAC settings every intermediate and the final file share.
-
-    The frame rate comes from the fps filter in `fit`, so the encoder takes no -r of its
-    own. Every output is tagged BT.709 and keyframed every two seconds. The tag is set
-    twice on purpose: the encoder flags cover older ffmpeg builds, and the setparams filter
-    covers ffmpeg 9, which takes the colour properties from the frames rather than from
-    those flags.
-    """
-
-    def __init__(self, video: VideoConfig) -> None:
-        self.v = video
-        self.fit = (
-            f"scale={video.width}:{video.height}:force_original_aspect_ratio=decrease,"
-            f"pad={video.width}:{video.height}:(ow-iw)/2:(oh-ih)/2:color=black,fps={video.fps},format=yuv420p,"
-            "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
-        )
-        gop = str(2 * video.fps)
-        self.venc = [
-            "-c:v", "libx264",
-            "-preset", video.preset,
-            "-crf", str(video.crf),
-            "-pix_fmt", "yuv420p",
-            "-profile:v", "high",
-            "-g", gop,
-            "-keyint_min", gop,
-            "-color_primaries", "bt709",
-            "-color_trc", "bt709",
-            "-colorspace", "bt709",
-        ]  # fmt: skip
-        self.aenc = [
-            "-c:a", "aac",
-            "-b:a", video.audio_bitrate,
-            "-ar", str(video.sample_rate),
-            "-ac", str(video.channels),
-        ]  # fmt: skip
-        self.silence = f"anullsrc=r={video.sample_rate}:cl=stereo"
-
-    def color_source(self, color: str, seconds: float) -> list[str]:
-        return [
-            "-f",
-            "lavfi",
-            "-t",
-            f"{seconds}",
-            "-i",
-            f"color=c={color}:s={self.v.width}x{self.v.height}:r={self.v.fps}",
-        ]
-
-
 # ---- stage 1: sections -----------------------------------------------------------------
 
 
@@ -213,7 +165,7 @@ def section_slate(project: Project, sec: ClipSection) -> Path | None:
 
 def _render_clip(
     project: Project,
-    enc: _Encoder,
+    enc: Encoder,
     sec: ClipSection,
     out: Path,
     fades: tuple[bool, bool],
@@ -267,7 +219,7 @@ def _render_clip(
 
 def _render_page(
     project: Project,
-    enc: _Encoder,
+    enc: Encoder,
     sec: PageSection,
     out: Path,
     fades: tuple[bool, bool],
@@ -345,7 +297,7 @@ def stray_warnings(project: Project, command: str) -> list[str]:
 
 
 def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> list[RenderedSection]:
-    enc = _Encoder(project.settings.video)
+    enc = Encoder(project.settings.video)
     project.out_dir.mkdir(parents=True, exist_ok=True)
     project.sections_dir.mkdir(parents=True, exist_ok=True)
     flags = fade_flags(project)
@@ -664,7 +616,7 @@ def mix_input_args(plan: MixPlan) -> list[str]:
 # ---- stage 4: loudness ------------------------------------------------------------------------
 
 
-def normalize_loudness(project: Project, src: Path, dst: Path) -> tuple[ffmpeg.Loudness, ffmpeg.Loudness]:
+def normalize_loudness(project: Project, src: Path, dst: Path) -> tuple[audio.Loudness, audio.Loudness]:
     """Gain to the integrated target, then a true-peak limiter at the ceiling. Returns (before, after).
 
     A plain gain keeps the mix's dynamics intact, and the limiter only touches peaks that
@@ -672,8 +624,8 @@ def normalize_loudness(project: Project, src: Path, dst: Path) -> tuple[ffmpeg.L
     is what a true-peak ceiling promises.
     """
     ln = project.mix.loudness
-    enc = _Encoder(project.settings.video)
-    before = ffmpeg.measure_loudness(src, i=ln.target_lufs, tp=ln.true_peak_db, lra=ln.range_lu)
+    enc = Encoder(project.settings.video)
+    before = audio.measure_loudness(src, i=ln.target_lufs, tp=ln.true_peak_db, lra=ln.range_lu)
     gain = ln.target_lufs - before.i
     ceiling = db(ln.true_peak_db - LIMITER_HEADROOM_DB)
     ffmpeg.run(
@@ -683,11 +635,11 @@ def normalize_loudness(project: Project, src: Path, dst: Path) -> tuple[ffmpeg.L
         f"alimiter=limit={ceiling:.4f}:attack=5:release=50:level=false,aresample={enc.v.sample_rate}",
         *enc.aenc, "-movflags", "+faststart", str(dst),
     )  # fmt: skip
-    after = ffmpeg.measure_loudness(dst, i=ln.target_lufs, tp=ln.true_peak_db, lra=ln.range_lu)
+    after = audio.measure_loudness(dst, i=ln.target_lufs, tp=ln.true_peak_db, lra=ln.range_lu)
     return before, after
 
 
-def loudness_problems(project: Project, after: ffmpeg.Loudness) -> list[str]:
+def loudness_problems(project: Project, after: audio.Loudness) -> list[str]:
     """What is wrong with the normalized result, if anything: a peak over the ceiling or a missed target."""
     ln = project.mix.loudness
     problems: list[str] = []
@@ -811,7 +763,7 @@ class AssembleResult:
     duration: float
     sections: list[RenderedSection]
     warnings: list[str]
-    loudness: tuple[ffmpeg.Loudness, ffmpeg.Loudness] | None
+    loudness: tuple[audio.Loudness, audio.Loudness] | None
     captions_srt: Path | None = None
     captions_vtt: Path | None = None
     chapters: Path | None = None
@@ -838,7 +790,7 @@ def assemble(
     warnings = strays + [r.warning for r in rows if r.warning] + plan.warnings
     for w in plan.warnings:
         log.warning(w)
-    enc = _Encoder(project.settings.video)
+    enc = Encoder(project.settings.video)
     log.info("[mix ] %d audio input(s) -> %s", len(plan.inputs), project.final.name)
     try:
         ffmpeg.run(

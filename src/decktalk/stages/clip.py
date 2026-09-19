@@ -20,8 +20,8 @@ from ..artifacts import Timeline, Word, write_words
 from ..captions import display_words
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
+from ..media.encode import Encoder
 from ..project import PageSection, Project
-from .assemble import _Encoder
 
 log = logging.getLogger(__name__)
 
@@ -202,7 +202,7 @@ def clip(
     if dst.resolve() == video.resolve():
         raise ConfigError(f"--out names the section video it reads: {video}")
     dst.parent.mkdir(parents=True, exist_ok=True)
-    enc = _Encoder(v)
+    enc = Encoder(v)
     ffmpeg.run(
         "-i", str(video), "-i", str(take),
         "-filter_complex", f"{picture};{audio}",

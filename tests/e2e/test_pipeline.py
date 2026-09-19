@@ -28,11 +28,11 @@ import pytest
 
 from decktalk.artifacts import Takes, Word, write_words
 from decktalk.cli import main
-from decktalk.media import ffmpeg
+from decktalk.media import audio, ffmpeg, frames
 from decktalk.project import Project
 from decktalk.providers.speech import SpeechRequest, get_provider
-from decktalk.scaffold import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 from decktalk.stages.narrate import build_timeline, script_segments, text_hash
+from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(180)]
 
@@ -230,7 +230,7 @@ def test_the_missing_optional_clip_plays_its_slate(built: Built) -> None:
     """Section 5 has no clip file, so a titled slate of slate_seconds plays there. Asserted apart from --strict."""
     assert (built.out / "slates" / "05-slate.png").stat().st_size > 0
     assert ffmpeg.probe_duration(built.root / "build" / "sections" / "05.mp4") == pytest.approx(1.0, abs=1 / FPS)
-    _yavg, ymax = ffmpeg.luma_at(built.out / "pipeline.mp4", built.spans()["05"][0] + 0.5)
+    _yavg, ymax = frames.luma_at(built.out / "pipeline.mp4", built.spans()["05"][0] + 0.5)
     assert ymax > 60, "the slate frame is black"
 
 
@@ -325,7 +325,7 @@ def test_captions_and_chapter_files_are_written(built: Built) -> None:
 def test_the_broll_clip_keeps_its_own_sound(built: Built) -> None:
     clip_at, clip_end = built.spans()["03"]
     assert clip_end - clip_at == pytest.approx(2.5, abs=1 / FPS)
-    assert ffmpeg.rms_db(built.out / "pipeline.mp4", clip_at + 0.5, clip_end - clip_at - 1.0) > -30
+    assert audio.rms_db(built.out / "pipeline.mp4", clip_at + 0.5, clip_end - clip_at - 1.0) > -30
 
 
 def test_the_equation_typesets_offline_and_the_slide_screenshot_shows_it(built: Built) -> None:
@@ -340,7 +340,7 @@ def test_the_equation_typesets_offline_and_the_slide_screenshot_shows_it(built: 
     # The card with the equation is dark on a white page, so the frozen slide is far from blank.
     blank = built.root / "build" / "screenshots" / "blank.png"
     ffmpeg.run("-f", "lavfi", "-i", "color=c=white:s=1920x1080", "-frames:v", "1", str(blank))
-    assert ffmpeg.changed_images_percent(blank, png, level=40, width=480, height=270) > 5
+    assert frames.changed_images_percent(blank, png, level=40, width=480, height=270) > 5
 
 
 def test_preflight_plans_every_take_and_estimates_each_reveal(built: Built) -> None:

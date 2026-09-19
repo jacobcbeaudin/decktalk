@@ -93,18 +93,22 @@ trusted publisher, so neither may be renamed.
 
 ```text
 src/decktalk/
-  cli.py         the command line: its tables, --json output, and exit codes
+  errors.py      DeckTalkError and its subclasses, which library callers catch
+  verdicts.py    the Verdict enum, Finding, Findings, SkipReason and the StageResult protocol
+  jsonio.py      the atomic JSON writer, the dataclass walker, and paths relative to the root
+  tomlmap.py     one mapping loader: located errors, key hints, and dataclass trees
   settings.py    tuning settings: defaults, machine file, decktalk.toml, DECKTALK_* env, flags
+  toolchain/     what ships in the wheel and what is fetched per machine: cache, ffmpeg, assets
+  artifacts/     one module per build artifact: words, takes, timeline, cue times, recording log
+  captions/      caption layout, and the srt, vtt and chapter files
+  media/         ffmpeg, audio, frames, the encoder and Chromium (internal)
+  speech/        the speech protocol, the provider registry, and ElevenLabs (internal)
   project.py     the decktalk.toml document, validated at load
-  artifacts.py   typed build artifacts (takes, timeline, cue times, recording log)
+  cli.py         the command line: its tables, --json output, and exit codes
   scaffold.py    install, doctor, and init: the downloads and the template copy
   status.py      what a project has built, read from disk for `decktalk status`
-  verdicts.py    every verdict string, and which verdicts are certain
-  errors.py      DeckTalkError and its subclasses, which the CLI maps to exit codes
   stages/        narrate, align, preflight, record, measure (with check), assemble, verify, screenshots, clip (with words),
                  soundscape, build
-  media/         ffmpeg and Chromium (internal)
-  providers/     the speech protocol and the ElevenLabs provider (internal)
   runtime/       decktalk-runtime.js, the page contract
   template/      what `decktalk init` writes
 tests/
@@ -131,7 +135,7 @@ Stage functions take a `Project`, log progress to the `decktalk` logger, return 
 You can extend DeckTalk in two places:
 
 - **Pages.** The page contract is in `runtime/decktalk-runtime.js`. [The page contract](https://docs.decktalk.app/concepts/page-contract) documents it.
-- **Voices.** A speech provider implements the two-method protocol in `providers/speech.py`. DeckTalk has no plugin loading, so a new provider comes as a pull request.
+- **Voices.** A speech provider implements the two-method protocol in `speech/__init__.py`. DeckTalk has no plugin loading, so a new provider comes as a pull request.
 
 ## Roadmap
 

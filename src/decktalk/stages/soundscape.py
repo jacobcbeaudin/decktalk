@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..media import ffmpeg
+from ..media import audio, ffmpeg
 from ..project import MusicSpec, Project, SoundSpec
 from ..providers.elevenlabs import ElevenLabs
 from ..settings import ElevenLabsConfig
@@ -143,7 +143,7 @@ def _music(
             cache.setdefault("parts", {})[part.name] = part_hash
             _save(cache_path, cache)
         parts.append(part)
-    ffmpeg.crossfade_join(parts, out, crossfade_seconds=cfg.music_crossfade_seconds, bitrate=cfg.music_bitrate)
+    audio.crossfade_join(parts, out, crossfade_seconds=cfg.music_crossfade_seconds, bitrate=cfg.music_bitrate)
     item.duration_seconds = ffmpeg.probe_duration(out)
     cache.update({"hash": digest, "file": out.name, "duration_seconds": item.duration_seconds, "request": chunks})
     _save(cache_path, cache)

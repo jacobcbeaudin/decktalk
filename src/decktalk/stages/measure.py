@@ -28,7 +28,7 @@ from typing import Any
 
 from ..artifacts import RecordingLog
 from ..errors import MissingInputError
-from ..media import ffmpeg
+from ..media import ffmpeg, frames
 from ..project import Project
 from ..settings import RecordConfig
 from ..verdicts import Verdict
@@ -45,7 +45,7 @@ def recordings(project: Project, only: list[int] | None = None) -> list[Path]:
     return files
 
 
-def is_magenta(f: ffmpeg.FrameStats, cfg: RecordConfig) -> bool:
+def is_magenta(f: frames.FrameStats, cfg: RecordConfig) -> bool:
     return (
         cfg.cover_luma_min < f.yavg < cfg.cover_luma_max
         and f.uavg > cfg.cover_chroma_min
@@ -56,7 +56,7 @@ def is_magenta(f: ffmpeg.FrameStats, cfg: RecordConfig) -> bool:
 def measure_lead(webm: Path, settle: float, cfg: RecordConfig) -> tuple[float, str]:
     """(trim point, method). The page is magenta until the narration clock starts, so the
     first clean frame after the magenta run is narration t=0."""
-    rows = ffmpeg.frame_stats(webm, cfg.cover_scan_seconds)
+    rows = frames.frame_stats(webm, cfg.cover_scan_seconds)
     if not rows:
         return round(cfg.fallback_first_paint_seconds + settle, 3), "no frames read; fallback"
     frame_dt = 0.04
@@ -208,8 +208,8 @@ def check(project: Project, only: list[int] | None = None) -> list[RecordingChec
         recording_log = RecordingLog.load(f.with_suffix(".json"))
         wanted = recording_log.requested_seconds if recording_log else 0.0
         dur = ffmpeg.probe_duration(f)
-        y10, y50, y90 = (ffmpeg.luma_at(f, dur * k)[0] for k in (0.10, 0.50, 0.90))
-        max50 = ffmpeg.luma_at(f, dur * 0.5)[1]
+        y10, y50, y90 = (frames.luma_at(f, dur * k)[0] for k in (0.10, 0.50, 0.90))
+        max50 = frames.luma_at(f, dur * 0.5)[1]
         verdicts: list[Verdict] = []
         if max50 < cfg.black_ymax:
             verdicts.append(Verdict.BLACK_UNSURE)

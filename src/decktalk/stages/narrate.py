@@ -36,7 +36,7 @@ from typing import Any
 
 from ..artifacts import Take, Takes, Timeline, TimelineSection, Word, write_words
 from ..errors import ConfigError, MissingInputError
-from ..media import ffmpeg
+from ..media import audio, ffmpeg
 from ..project import PageSection, Project
 from ..providers import elevenlabs as _elevenlabs  # noqa: F401  (registers the default provider)
 from ..providers.speech import SpeechProvider, SpeechRequest, get_provider
@@ -238,11 +238,11 @@ def ensure_tail(path: Path, cfg: NarrationConfig, *, tolerance: float = 0.0) -> 
 
     A tail within `tolerance` of min_tail_seconds counts as long enough.
     """
-    tail = ffmpeg.trailing_silence(path)
+    tail = audio.trailing_silence(path)
     if tail >= cfg.min_tail_seconds - tolerance:
         return 0.0
     add = round(cfg.min_tail_seconds - tail + cfg.tail_slack_seconds, 3)
-    ffmpeg.pad_tail(path, add, bitrate=cfg.mp3_bitrate)
+    audio.pad_tail(path, add, bitrate=cfg.mp3_bitrate)
     return add
 
 
@@ -447,7 +447,7 @@ def build_timeline(project: Project, takes: Takes, order: list[Segment]) -> Time
     # A section's lead_seconds is silence joined in before its take, so the take and its cache stay as they are.
     leads = [project.lead_seconds(k) for k in keys]
     narration = project.narration_dir / "narration.mp3"
-    ffmpeg.concat_audio(
+    audio.concat_audio(
         files, narration, bitrate=cfg.mp3_bitrate, sample_rate=project.settings.video.sample_rate, leads=leads
     )
     t = 0.0
@@ -557,7 +557,7 @@ def narrate(
         if silent:
             duration = seg.silent_seconds(scfg)
             words = estimated_words(seg, duration, scfg)
-            ffmpeg.write_clicks(
+            audio.write_clicks(
                 out_path,
                 duration,
                 [w.start for w in words],
@@ -597,7 +597,7 @@ def narrate(
             # already has enough is left untouched. A take that narrate already padded keeps
             # its tail when the measurement lands within a frame of min_tail_seconds, so a
             # rounding difference never pads it again on every run.
-            tolerance = ffmpeg.SILENCE_END_TOLERANCE_SECONDS if entry.tail_padded_seconds else 0.0
+            tolerance = audio.SILENCE_END_TOLERANCE_SECONDS if entry.tail_padded_seconds else 0.0
             added = ensure_tail(out_path, scfg, tolerance=tolerance)
             if added:
                 entry.duration_seconds = ffmpeg.probe_duration(out_path)
@@ -622,10 +622,10 @@ def narrate(
             previous_text=prev_seg.spoken if prev_seg else None,
             next_text=next_seg.spoken if next_seg else None,
         )
-        audio, words = provider.speak(request)
-        out_path.write_bytes(audio)
+        mp3, words = provider.speak(request)
+        out_path.write_bytes(mp3)
         if seg.first_spoken and cfg.opening_silence_seconds > 0:
-            ffmpeg.pad_head(out_path, cfg.opening_silence_seconds, bitrate=cfg.mp3_bitrate)
+            audio.pad_head(out_path, cfg.opening_silence_seconds, bitrate=cfg.mp3_bitrate)
             words = [
                 Word(
                     w.word,

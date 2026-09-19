@@ -1,4 +1,9 @@
-"""Headless Chromium (Playwright): recording a page, screenshots, and rendering slates."""
+"""Headless Chromium through Playwright: recording a page, taking screenshots and drawing slates.
+
+This is the only module that launches a browser. It waits for the page to say it is ready, reads
+the catalog the runtime publishes, and collects the warnings the page recorded, so a stage above
+asks for a recording or a frame and never for a browser.
+"""
 
 from __future__ import annotations
 
@@ -163,7 +168,7 @@ def record_page(
     height: int,
     color_scheme: str,
 ) -> RecordingLog:
-    """Record `url` for `seconds` after the narration clock starts; write out and its recording log."""
+    """Record `url` for `seconds` after the narration clock starts, writing the webm and its log."""
     tmp_dir = Path(tempfile.mkdtemp(prefix="decktalk-rec-"))
     context = browser.new_context(
         viewport={"width": width, "height": height},
@@ -182,7 +187,7 @@ def record_page(
     loaded = time.monotonic()
     await_ready(page)
     # Settle after load, and never start the clock before the recorder has certainly begun
-    # capturing (Windows starts its capture late); the cover makes the wait invisible.
+    # capturing, because Windows starts its capture late, and the cover makes the wait invisible.
     wait = max(settle_seconds, min_cover_seconds - (time.monotonic() - created))
     page.wait_for_timeout(wait * 1000)
     page.evaluate(START_JS)
