@@ -14,6 +14,52 @@ A change to a file format or to the page contract raises the minor version. The 
 A project keeps the `deck/decktalk-runtime.js` it was created with. To move a project onto a newer
 runtime, create a new project with the new DeckTalk and copy the deck pages across.
 
+<Update label="0.4.0" description="2026-09-19" tags={["feature"]}>
+
+**⚠ BREAKING CHANGES**
+
+* **verdicts:** give the three counted judgements verdicts of their own
+* **cli:** wire --from and --to, retire measure and check, and report a stale recording
+* **narrate:** fold the narration clock into the take index, with a lead and a tail per take
+* **cli:** make the CLI a package that prints one envelope and one exit code
+* **assemble:** split the stage into cut, mix, loudness and publish, and write what a viewer needs
+* **verdicts:** make an unparsed or missing KaTeX a certain finding
+* **record:** fold measure and check into one record package
+* **narrate:** identify a take by its content and price the plan before it runs
+* **align:** check cues and pages against each other in both directions
+* rename the vocabulary for 0.4.0
+
+* **narrate:** fold the narration clock into the take index, with a lead and a tail per take ([5a6120a](https://github.com/jacobcbeaudin/decktalk/commit/5a6120a213de7d70ab0190bcc20c4afa65e59152))
+* rename the vocabulary for 0.4.0 ([6b2a9fe](https://github.com/jacobcbeaudin/decktalk/commit/6b2a9fe552a88d86fa278d0e2ba073d53fb4c4ce))
+
+**Features**
+
+* **align:** check cues and pages against each other in both directions ([7fd3603](https://github.com/jacobcbeaudin/decktalk/commit/7fd3603adb22b84c7e8423cdabc8598915a01e61))
+* **api:** export the cut list reader ([6b81600](https://github.com/jacobcbeaudin/decktalk/commit/6b81600b635cc23619bb16065436c66d22be12c4))
+* **assemble:** split the stage into cut, mix, loudness and publish, and write what a viewer needs ([5dccf25](https://github.com/jacobcbeaudin/decktalk/commit/5dccf25299eebc633e1b1841f6655a2029a607db))
+* **build:** run the real verify last, and write a progress log an agent can read ([1ad53a9](https://github.com/jacobcbeaudin/decktalk/commit/1ad53a90f7b5362b9745910df0dd3b7b19b79aba))
+* **cli:** make the CLI a package that prints one envelope and one exit code ([ee6bd9b](https://github.com/jacobcbeaudin/decktalk/commit/ee6bd9b4003bf46de2d8399d80a3828fff645110))
+* **cli:** wire --from and --to, retire measure and check, and report a stale recording ([2289630](https://github.com/jacobcbeaudin/decktalk/commit/22896304be59b31a784ad2d679ea177be65d75ea))
+* give every stage one result and enforce the five layers ([f51ba4d](https://github.com/jacobcbeaudin/decktalk/commit/f51ba4dce71bdb75ce55432e44a22b961c4ac3ae))
+* **media:** fetch a pinned, SHA-256 verified ffmpeg build in place of static-ffmpeg ([ba8be62](https://github.com/jacobcbeaudin/decktalk/commit/ba8be627bb2a85d44f34badbb92c3339422cefc7))
+* **media:** serve every page from a local origin, and add decktalk serve ([dc238f5](https://github.com/jacobcbeaudin/decktalk/commit/dc238f54b5b5ec501243073ef94e8a8c9b095f5d))
+* **narrate:** identify a take by its content and price the plan before it runs ([0ac39c4](https://github.com/jacobcbeaudin/decktalk/commit/0ac39c44b11f228d5c90c0db7c20a0a7154c9225))
+* **providers:** keep the ElevenLabs key on an https ElevenLabs host ([5d3b94d](https://github.com/jacobcbeaudin/decktalk/commit/5d3b94ddad1b9e67ec25765936a0fed9fb64dfa6))
+* **record:** fold measure and check into one record package ([b02e56b](https://github.com/jacobcbeaudin/decktalk/commit/b02e56b8d77de9d101f43e8989df59a135bc99c2))
+* **record:** keep a section whose scene, assets, words and cues are unchanged ([bf371fa](https://github.com/jacobcbeaudin/decktalk/commit/bf371fa15cde9ffdebdcf956cf93cfaefc121abf))
+* **runtime:** rebuild the page runtime on markup slides and close the first-frame race ([39aab42](https://github.com/jacobcbeaudin/decktalk/commit/39aab42498a62c711652acb08b2e9bf0d6ac3865))
+* **runtime:** write each reveal's description on the cue log row the transcript reads ([fe107ee](https://github.com/jacobcbeaudin/decktalk/commit/fe107ee4efc76f72bba27d232e83480251ddd489))
+* **scaffold:** make init write a small starter, an example, the skills and AGENTS.md ([fcea3e8](https://github.com/jacobcbeaudin/decktalk/commit/fcea3e83643ae0fc407ef314fc6c5ee02fc2b88e))
+* **scaffold:** ship KaTeX inside the wheel ([cbcad35](https://github.com/jacobcbeaudin/decktalk/commit/cbcad3544d7021393cfbdaf6c507b8681a27b1a7))
+* **screenshots:** give every written PNG a row, and add --json ([93cb221](https://github.com/jacobcbeaudin/decktalk/commit/93cb2212d3844fe0c951a07ff4c2e72327f7974d))
+* **scripts:** check every internal docs link and the navigation ([21c8a63](https://github.com/jacobcbeaudin/decktalk/commit/21c8a631ef39778ad76c37f327fce4d5536f502d))
+* **skills:** ship the six skills an agent works from, and a test that keeps them true ([b237a47](https://github.com/jacobcbeaudin/decktalk/commit/b237a47fdc09438e1c6929219f5d766dc2a88be7))
+* **status:** read the four input files against each other, and report the run ([b8c9298](https://github.com/jacobcbeaudin/decktalk/commit/b8c92985be3f622fe9bd4034cec839c1152648ed))
+* **verdicts:** give the three counted judgements verdicts of their own ([5a7ed81](https://github.com/jacobcbeaudin/decktalk/commit/5a7ed8198bda15d318540ebb1f8bf13ca8c1995a))
+* **verdicts:** make an unparsed or missing KaTeX a certain finding ([7eec66c](https://github.com/jacobcbeaudin/decktalk/commit/7eec66cff8043e3693ef61969b21f7f91274ddb6))
+
+</Update>
+
 <Update label="0.3.0" description="2026-09-15" tags={["feature", "fix"]}>
 
 **Features**
