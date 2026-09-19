@@ -478,11 +478,16 @@ decktalk align [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
 | `--json`, `--strict`, `--exit-zero` | off | See [Output and exit flags](#output-and-exit-flags). |
 
 **Reads** `takes.json`, the words files, `cues.json`, and each page. **Writes** `cue-times.json`, even
-when it exits 1.
+when it exits 1. Each resolved cue is an object with `cue`, `on`, `at`, and `word_at`; see
+[Build artifacts](/reference/artifacts). A section that `cues.json` never mentions still gets a row when
+its page carries an element nobody cued.
 
-`align` looks for each cue id in its page as a quoted literal, in single quotes, double quotes, or
-backticks. A `data-cue` value, a key of a slide's `preview` object, and a handler key all count.
-[Cues](/concepts/cues#matching-rules) gives the phrase matching rules.
+`align` checks `cues.json` and the pages against each other in both directions. It looks for each cue id in
+its page as a quoted literal, in single quotes, double quotes, or backticks, where a `data-cue` value, a key
+of a slide's `preview` object, and a handler key all count. It then reads every `data-cue` attribute in the
+pages and reports each id that `cues.json` never names, because that element would wait for a phrase nobody
+wrote. An id a script builds from a variable, such as `data-cue="${IDS[i]}"`, is left to `preflight`, which
+reads the page's own catalog. [Cues](/concepts/cues#matching-rules) gives the phrase matching rules.
 
 The table columns are `sec`, `speech` (the speech end in seconds), `need` (`min_seconds`), and
 `cues` (each `id@seconds`). A note line starts with `!`.
@@ -492,6 +497,7 @@ The table columns are `sec`, `speech` (the speech end in seconds), `need` (`min_
 | `<cue>: phrase not found: '<phrase>'` | certain, `UNRESOLVED` | 1 |
 | `<cue>: no words (estimated takes)` or `(missing words file)` | certain, `UNRESOLVED` | 1 |
 | `<cue>: not in <page>` | certain, `UNKNOWN CUE`. None with `--allow-unknown-cues`. | 1 |
+| `<cue>: data-cue="<cue>" in <page> has no entry in cues.json` | certain, `UNCUED ELEMENT` | 1 |
 | `speech <S>s is <D>s shorter than the visuals need` | uncertain | 1 with `--strict` |
 | `<cue>: <T>s is past the end of the audio (<D>s)` | none | 0 |
 | `<cue>: '<phrase>' occurs <N> times in this section, at <T>s, <T>s. The cue uses the first. Set "occurrence" to choose one.` | none | 0 |

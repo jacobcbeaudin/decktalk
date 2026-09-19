@@ -26,7 +26,6 @@ from decktalk.artifacts import (
 from decktalk.cli import build_parser, main
 from decktalk.model.script import parse_script, strip_markdown
 from decktalk.settings import Settings
-from decktalk.stages.align import Cue, find_phrase, resolve_cue
 from decktalk.stages.assemble import timeline_targets
 from decktalk.stages.narrate import estimated_words
 from decktalk.tomlmap import RENAMES_PAGE
@@ -484,25 +483,6 @@ def test_estimated_words_span_the_duration():
     assert words[0].start == 0.7 and words[-1].end < 5.0 - 0.35
 
 
-# ---- align ---------------------------------------------------------------------------------
-
-
-def test_find_phrase_and_resolve():
-    words = [
-        Word("Hello", 0.0, 0.3),
-        Word("one", 0.4, 0.6),
-        Word("in", 0.7, 0.8),
-        Word("ten", 0.9, 1.2),
-        Word("one", 1.5, 1.7),
-    ]
-    assert find_phrase(words, "one in ten") == 1
-    assert find_phrase(words, "one", occurrence=2) == 4
-    assert find_phrase(words, "missing") is None
-    assert resolve_cue(Cue("a", "in ten", offset=0.1), words) == 0.8
-    assert resolve_cue(Cue("a", "$end"), words) == 1.7
-    assert resolve_cue(Cue("a", "$start", offset=2), words) == 2.0
-
-
 # ---- assemble ---------------------------------------------------------------------------------
 
 
@@ -734,15 +714,17 @@ def test_init_copies_every_file_of_the_template_deck(tmp_path, monkeypatch):
 
 
 def test_template_ids_agree_across_page_cues_and_script(tmp_path, monkeypatch):
-    """Every cue id in cues.json is named in the page, and every phrase is in its section."""
+    """Every cue id in cues.json is named in the page, every data-cue is cued, and every phrase is spoken."""
+    from decktalk.model.cues import find_phrase
     from decktalk.scaffold import init
-    from decktalk.stages.align import unknown_cue_ids
+    from decktalk.stages.align import uncued_elements, unknown_cue_ids
 
     monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
     root = init(tmp_path / "proj", name="proj")
     project = Project.load(root, environ={})
     specs = project.cue_specs()
     assert unknown_cue_ids(project, specs) == []
+    assert uncued_elements(project, specs) == []
     segments = {s.index: s for s in parse_script((root / "script.md").read_text(encoding="utf-8"))}
     for section in specs:
         words = [Word(w, i, i + 1) for i, w in enumerate(segments[section.number].spoken.split())]
@@ -1496,151 +1478,6 @@ def test_check_row_carries_its_verdict_codes_and_its_stall(tmp_path):
     assert d["verdicts"] == ["NO_COVER", "STALLED"] and d["stall_ms"] == 140 and d["page_errors"] == ["boom"]
     assert row.label == "NO COVER STALLED 140ms" and not row.ok
     assert RecordingCheck("02", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0).label == "ok"
-
-
-def test_page_mentions_finds_quoted_ids_and_data_cue():
-    from decktalk.stages.align import page_mentions
-
-    html = """<div data-cue="4.1answer"></div>
-    <script>DeckTalk.scene({ preview: { "4.1x": 1 }, on: { '4.1y': () => {} }, tpl: `4.1z` });</script>"""
-    for cue in ("4.1answer", "4.1x", "4.1y", "4.1z"):
-        assert page_mentions(html, cue), cue
-    assert not page_mentions(html, "4.1")  # A prefix of a quoted id is not a mention.
-    assert not page_mentions(html, "4.1ans")
-    assert not page_mentions("<p>\"4.1x'</p>", "4.1x")  # The quotes must match.
-
-
-def _align_project(tmp_path, html: str, cues: dict) -> Project:
-    """Sections 0 (a clip) and 1 (a page), with narration words for section 1."""
-    from decktalk.artifacts import write_words
-
-    toml = "[[section]]\nnumber = 0\nclip = 'open.mp4'\n[[section]]\nnumber = 1\npage = 'deck/index.html'\n"
-    root = write_project(tmp_path, toml)
-    (root / "deck").mkdir()
-    (root / "deck" / "index.html").write_text(html, encoding="utf-8")
-    (root / "cues.json").write_text(json.dumps({"sections": cues}), encoding="utf-8")
-    p = Project.load(root, environ={})
-    m = Takes(script="script.md", model="m", output_format="mp3")
-    m.sections["01"] = Take(1, "A", "01-a.mp3", "01-a.words.json", "h", 2, 1.0, 3.0)
-    m.save(p.takes_path)
-    write_words(p.narration_dir / "01-a.words.json", [Word("hello", 0.5, 0.9), Word("there", 1.0, 1.4)])
-    return p
-
-
-def test_align_reports_a_cue_id_missing_from_the_page(tmp_path):
-    from decktalk.stages.align import UnknownCueError, align, unknown_cue_ids
-
-    cues = {
-        "0": {"cues": [{"cue": "0.clip", "on": "$start"}]},
-        "1": {"cues": [{"cue": "1.1a", "on": "hello"}, {"cue": "4.1answer", "on": "there"}]},
-    }
-    p = _align_project(tmp_path, '<b data-cue="1.1a"></b>', cues)
-    assert unknown_cue_ids(p, p.cue_specs()) == [("01", "4.1answer", "deck/index.html")]
-    with pytest.raises(UnknownCueError) as caught:
-        align(p)
-    assert str(caught.value).startswith(
-        "1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal "
-        'them. Add data-cue="4.1answer" to the slide in deck/index.html, fix the id in cues.json, or pass '
-        "--allow-unknown-cues:\n  section 01: 4.1answer: not in deck/index.html"
-    )
-    assert isinstance(caught.value, ConfigError) and caught.value.result.unknown == 1
-    assert json.loads(p.cue_times_path.read_text(encoding="utf-8")) == {
-        "estimated": False,
-        "sections": {
-            "01": [
-                {"cue": "1.1a", "on": "hello", "at": 0.5, "word_at": 0.5},
-                {"cue": "4.1answer", "on": "there", "at": 1.0, "word_at": 1.0},
-            ]
-        },
-    }  # written before the stop
-    result = align(p, allow_unknown_cues=True)
-    assert result.unknown == 1 and result.unresolved == 0
-    assert result.sections[1].notes == ["4.1answer: not in deck/index.html"]
-
-
-def test_cli_align_reports_unknown_cue_ids_as_a_finding(tmp_path, capsys):
-    cues = {"1": {"cues": [{"cue": "1.1a", "on": "hello"}, {"cue": "4.1answer", "on": "there"}]}}
-    p = _align_project(tmp_path, '<b data-cue="1.1a"></b>', cues)
-    # Without --allow-unknown-cues the command still prints its JSON and exits 1, instead of stopping on the error.
-    assert main(["-p", str(p.root), "align", "--json"]) == 1
-    doc = json.loads(capsys.readouterr().out)
-    assert doc["ok"] is False and doc["findings"]["certain"] == 1
-    assert doc["align"]["unknown"] == 1
-    assert main(["-p", str(p.root), "align", "--json", "--allow-unknown-cues"]) == 0
-    assert json.loads(capsys.readouterr().out)["ok"] is True
-
-
-def test_align_to_dict_counts_unresolved(tmp_path):
-    from decktalk.stages.align import align
-
-    cues = {"1": {"min_seconds": 9, "cues": [{"cue": "1.1a", "on": "hello"}, {"cue": "1.1b", "on": "missing phrase"}]}}
-    p = _align_project(tmp_path, "<b data-cue='1.1a'></b><b data-cue='1.1b'></b>", cues)
-    d = json.loads(json.dumps(align(p).to_dict(p.root)))
-    assert d["estimated"] is False and d["cue_times_file"] == "build/cue-times.json"
-    assert d["unresolved"] == 1 and d["unknown"] == 0
-    (section,) = d["sections"]
-    assert section["key"] == "01" and section["speech_end"] == 1.4 and section["min_seconds"] == 9.0
-    assert section["skipped"] is None and section["cues"] == {"1.1a": 0.5}
-    assert section["notes"] == [
-        {
-            "code": Verdict.UNRESOLVED.name,
-            "label": Verdict.UNRESOLVED.value,
-            "certain": True,
-            "section": 1,
-            "cue": "1.1b",
-            "where": None,
-            "detail": "phrase not found: 'missing phrase'",
-        },
-        {
-            "code": Verdict.NOTE.name,
-            "label": Verdict.NOTE.value,
-            "certain": False,
-            "section": 1,
-            "cue": None,
-            "where": None,
-            "detail": "speech 1.4s is 7.6s shorter than the visuals need",
-        },
-    ]
-    assert sum(n["code"] == Verdict.UNRESOLVED.name for s in d["sections"] for n in s["notes"]) == d["unresolved"]
-
-
-def test_align_warns_about_a_repeated_phrase_unless_the_cue_names_its_occurrence(tmp_path, capsys):
-    from decktalk.artifacts import write_words
-    from decktalk.stages.align import align
-
-    cues = {
-        "1": {
-            "cues": [
-                {"cue": "1.1step", "on": "every step"},
-                {"cue": "1.1later", "on": "every step", "occurrence": 1},
-                {"cue": "1.1once", "on": "there"},
-                {"cue": "1.1case", "on": "Every", "case_sensitive": True},
-                {"cue": "1.1end", "on": "$end"},
-            ]
-        }
-    }
-    ids = "".join(f"<b data-cue='{c}'></b>" for c in ("1.1step", "1.1later", "1.1once", "1.1case", "1.1end"))
-    p = _align_project(tmp_path, ids, cues)
-    words = [
-        Word("Every", 0.5, 0.8), Word("step", 0.9, 1.2), Word("there.", 1.3, 1.6),
-        Word("For", 36.0, 36.2), Word("every", 36.3, 36.6), Word("step!", 36.7, 37.1),
-    ]  # fmt: skip
-    write_words(p.narration_dir / "01-a.words.json", words)
-    take_index = p.takes()
-    assert take_index is not None
-    take_index.sections["01"].duration_seconds = 38.0
-    take_index.save(p.takes_path)
-    result = align(p)
-    (section,) = [s for s in result.sections if s.key == "01"]
-    detail = (
-        "'every step' occurs 2 times in this section, at 0.50s, 36.30s. The cue uses the first. "
-        'Set "occurrence" to choose one.'
-    )
-    # Only the cue that names no occurrence is ambiguous. A case-sensitive phrase counts only its own case.
-    assert [(r.cue, r.verdict, r.detail) for r in section.rows] == [("1.1step", Verdict.NOTE, detail)]
-    assert section.resolved[0].cue == "1.1step" and section.resolved[0].at == 0.5 and result.unresolved == 0
-    assert main(["-p", str(p.root), "align", "--strict"]) == 0  # A warning, not a finding.
-    assert f"! 1.1step: {detail}" in capsys.readouterr().out
 
 
 def test_build_captions_uses_the_take_index_spoken_text(tmp_path):

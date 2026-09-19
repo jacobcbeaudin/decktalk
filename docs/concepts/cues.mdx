@@ -116,6 +116,23 @@ sec  speech   need  cues
 To fix an unknown id, add it to the page, or fix the id in `cues.json`. If a page builds its ids at
 run time, pass `--allow-unknown-cues`. The page warnings are then the only check.
 
+## Elements nobody cued
+
+The check runs the other way too, because a cue and the element it reveals are one thing written in two
+files. `align` reads every `data-cue` attribute in the pages and reports each id that `cues.json` never
+names, as `UNCUED ELEMENT`, a certain finding. Such an element sits on the slide waiting for a phrase nobody
+wrote, so the reveal never fires.
+
+```text
+sec  speech   need  cues
+ 09    11.4      -  5.1clear@0.91,5.1made@4.1,5.1url@10.03
+                    ! 5.1cap: data-cue="5.1cap" in deck/index.html has no entry in cues.json
+```
+
+Add the cue to `cues.json`, or drop the attribute from the page. An id that a script builds from a
+variable, such as `data-cue="${IDS[i]}"`, is not a literal that any reader of the file can resolve, so
+`align` leaves it to `decktalk preflight`, which reads the page's own catalog.
+
 ## Unresolved cues
 
 If the `align` stage cannot match a phrase, it notes `phrase not found` and exits 1. These lines come

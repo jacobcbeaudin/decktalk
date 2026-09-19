@@ -441,7 +441,7 @@ Each cue row gets its result from the first rule that matches.
 10. After a build without voice, if the `a/v` is past the a/v limit, the row is `OFF CUE`.
 11. Otherwise, the row is `changed`, or `THIN CHANGE?` when the change is thin.
 
-`OFF CUE`, `NO CHANGE`, `UNRESOLVED`, `BLACK`, `SPEECH AT CUT`, and `POP AT CUT` are certain findings, so `decktalk verify`
+`OFF CUE`, `NO CHANGE`, `UNRESOLVED`, `UNCUED ELEMENT`, `BLACK`, `SPEECH AT CUT`, and `POP AT CUT` are certain findings, so `decktalk verify`
 exits 1. `THIN CHANGE?` is an uncertain finding, so `verify` exits 1 on it only with `--strict`. A `skipped` row
 never fails. [Exit codes](/reference/cli#exit-codes) lists the codes for every
 command.

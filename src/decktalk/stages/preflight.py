@@ -52,7 +52,7 @@ from ..media.browser import await_ready, chromium, page_error_text, screenshot
 from ..model import PageSection, Project
 from ..settings import NarrationConfig, VerifyConfig
 from ..verdicts import Findings, SkipReason, Verdict
-from .align import AlignResult, resolve_sections, unknown_cue_ids
+from .align import AlignResult, resolve_sections, uncued_elements, unknown_cue_ids
 from .narrate import (
     CACHED,
     MOVED,
@@ -410,7 +410,11 @@ def preflight(
     all_specs = project.cue_specs()
     specs = [s for s in all_specs if named(s.number)]
     unknown_ids = unknown_cue_ids(project, specs)
-    cue_times, rows, unresolved = resolve_sections(specs, take_words, unknown_ids=unknown_ids, estimated=True)
+    uncued_ids = [row for row in uncued_elements(project, all_specs) if named(int(row[0]))]
+    clips = {f"{number:02d}" for number in project.clip_numbers}
+    cue_times, rows, unresolved = resolve_sections(
+        specs, take_words, unknown_ids=unknown_ids, uncued_ids=uncued_ids, clips=clips, estimated=True
+    )
     result = PreflightResult(
         voice={"provider": project.voice.provider, "model": model, "settings": project.voice.api_settings()},
         narration=cfg,
@@ -422,6 +426,7 @@ def preflight(
             unresolved=unresolved,
             estimated=bool(estimated),
             unknown=len(unknown_ids),
+            uncued=len(uncued_ids),
         ),
         estimated=estimated,
         root=project.root,
@@ -433,7 +438,7 @@ def preflight(
         if extra:
             extra_ids = unknown_cue_ids(project, extra)
             behind_cue_times, _rows, _unresolved = resolve_sections(
-                extra, take_words, unknown_ids=extra_ids, estimated=True
+                extra, take_words, unknown_ids=extra_ids, uncued_ids=[], clips=clips, estimated=True
             )
             carried = CueTimes({**behind_cue_times.sections, **cue_times.sections})
         result.cues, result.seams = frame_estimates(project, carried, only=only)

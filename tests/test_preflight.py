@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.scaffold import init
+from decktalk.speech import register_speech_provider
 from decktalk.toolchain.assets import runtime_path
 from decktalk.verdicts import Findings, SkipReason, Verdict
 
@@ -134,3 +135,41 @@ def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatc
     assert {k.key: k.verdict for k in result.seams} == {"02": "POP AT CUT", "03": "ok"}
     assert [k.changed_percent for k in result.seams][1] == 0.0
     assert result.findings == Findings(certain=2, uncertain=2)
+
+
+def test_preflight_estimates_a_take_a_later_section_of_the_same_run_would_write(tmp_path: Path) -> None:
+    """Two sections of the same words share one digest, so the second is planned cached before it exists.
+
+    `preflight` spends nothing and writes nothing, so it must read the disk rather than the plan's
+    status and fall back to estimated words when the file is not there yet.
+    """
+    from decktalk.model import Project
+    from decktalk.stages.narrate import voiced_plan
+    from decktalk.stages.preflight import planned_words
+
+    root = tmp_path / "twins"
+    root.mkdir()
+    (root / "decktalk.toml").write_text(
+        "[project]\nname = 't'\n[voice]\nprovider = 'test-voice'\n"
+        "[[section]]\nnumber = 1\npage = 'deck/index.html'\n[[section]]\nnumber = 2\npage = 'deck/index.html'\n",
+        encoding="utf-8",
+    )
+    (root / "script.md").write_text("## 1. Open\n\nThe very same words.\n\n## 2. Two\n\nThe very same words.\n")
+    register_speech_provider("test-voice", lambda context: _Silent())
+    project = Project.load(root, environ={})
+    plans, note = voiced_plan(project, project.script_sections()[1], model="m")
+    assert note is None and [p.status for p in plans] == ["synthesize", "cached"]
+    words, length, estimated = planned_words(project, plans[1])
+    assert estimated is True and length > 0 and words
+
+
+class _Silent:
+    """A provider that is never asked to speak, because preflight sends nothing."""
+
+    name = "test-voice"
+
+    def speak(self, request):  # pragma: no cover - preflight never sends
+        raise AssertionError("preflight must send nothing")
+
+    def cache_key(self, request) -> str:
+        return "test-voice"

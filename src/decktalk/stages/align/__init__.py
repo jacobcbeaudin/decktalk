@@ -17,9 +17,12 @@ cues.json:
     verify  false leaves the cue out of a plain `decktalk verify`, for a reveal too small
             or too slow for a frame difference to measure. The default is true.
 
-Unresolved cues are reported and left out, and the recording still runs. A cue id that
-appears nowhere in its page as a quoted literal is reported as unknown, because no slide
-would ever reveal it, and align raises UnknownCueError unless allow_unknown_cues is set.
+The check runs both ways, because a cue and the element it reveals are one thing written in two
+files. A cue id that appears nowhere in its page as a quoted literal is UNKNOWN CUE, because no
+slide would ever reveal it, and align raises UnknownCueError unless allow_unknown_cues is set. An
+element that carries `data-cue` with no entry in cues.json is UNCUED ELEMENT, because it would sit
+on the slide waiting for a phrase nobody wrote. Both scans live in `pages.py`. Unresolved cues are
+reported and left out, and the recording still runs either way.
 """
 
 from __future__ import annotations
@@ -29,36 +32,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import CueTime, CueTimes, Word
-from ..errors import ConfigError, MissingInputError
-from ..jsonio import relative
-from ..model import PageSection, Project
-from ..model.cues import Cue, SectionCues, find_phrase, page_mentions, phrase_matches
-from ..verdicts import Finding, Findings, Verdict
+from ...artifacts import CueTime, CueTimes, Word
+from ...errors import ConfigError, MissingInputError
+from ...jsonio import relative
+from ...model import Project
+from ...model.cues import Cue, SectionCues, find_phrase, phrase_matches
+from ...verdicts import Finding, Findings, Verdict
+from .pages import uncued_elements, unknown_cue_ids
 
 log = logging.getLogger(__name__)
-
-
-def unknown_cue_ids(project: Project, specs: list[SectionCues]) -> list[tuple[str, str, str]]:
-    """(section key, cue id, page) for every cue id that its page never mentions.
-
-    Clip sections have no page, and a page file that does not exist is reported by the
-    recorder instead, so both are skipped.
-    """
-    pages: dict[str, str] = {}
-    out: list[tuple[str, str, str]] = []
-    for spec in specs:
-        section = project.section(spec.number)
-        if not isinstance(section, PageSection):
-            continue
-        if section.page not in pages:
-            path = project.path(section.page)
-            if not path.exists():
-                continue
-            pages[section.page] = path.read_text(encoding="utf-8")
-        html = pages[section.page]
-        out += [(section.key, cue.cue, section.page) for cue in spec.cues if not page_mentions(html, cue.cue)]
-    return out
 
 
 def ambiguity_note(cue: Cue, words: list[Word]) -> str | None:
@@ -76,6 +58,7 @@ def ambiguity_note(cue: Cue, words: list[Word]) -> str | None:
 
 
 def resolve_cue(cue: Cue, words: list[Word]) -> float | None:
+    """The second this cue fires, which is its anchor plus its offset, or None when the phrase is not in the words."""
     anchor = anchor_time(cue, words)
     return None if anchor is None else round(anchor + cue.offset, 2)
 
@@ -92,11 +75,14 @@ def anchor_time(cue: Cue, words: list[Word]) -> float | None:
 
 @dataclass
 class SectionCueTimes:
+    """What one section's cues did: the times that resolved, and a row for every note."""
+
     key: str
     speech_end: float
     min_seconds: float | None
     resolved: list[CueTime]
-    skipped: str | None = None  # why nothing was resolved (no narration)
+    skipped: str | None = None  # Why nothing was resolved, which is that the section has no narration.
+    cues_file: str = ""  # The cues file every row here is about, unless the row names a page instead.
     rows: list[Finding] = field(default_factory=list)  # What this section's cues did, in order.
 
     @property
@@ -104,9 +90,23 @@ class SectionCueTimes:
         """The same rows as the sentences a table prints, so one row is never stored twice."""
         return [r.text for r in self.rows]
 
-    def note(self, cue: str | None, verdict: Verdict | None, detail: str) -> None:
-        """Record what one cue did, as the row a table and a payload both read."""
-        self.rows.append(Finding(detail=detail, verdict=verdict or Verdict.NOTE, section=int(self.key), cue=cue))
+    def note(self, cue: str | None, verdict: Verdict | None, detail: str, *, where: str = "") -> None:
+        """Record what one cue did, as the row a table and a payload both read.
+
+        `where` is the page or file the row is about, already relative to the project root, so a
+        reader takes it from the row rather than from the sentence. A row that names no other file
+        is about the cues file the section was read from, which is where a cue entry is written, so
+        the default is filled here rather than at each of the six places a row is made.
+        """
+        self.rows.append(
+            Finding(
+                detail=detail,
+                verdict=verdict or Verdict.NOTE,
+                section=int(self.key),
+                cue=cue,
+                where=where or self.cues_file,
+            )
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -128,6 +128,7 @@ class AlignResult:
     unresolved: int
     estimated: bool
     unknown: int = 0  # Cue ids that appear nowhere in the page that plays them.
+    uncued: int = 0  # Elements that carry data-cue with no entry in cues.json.
     cue_times_file: Path | None = None
     allow_unknown_cues: bool = False  # The run was told to carry on past an unknown cue id.
 
@@ -140,9 +141,9 @@ class AlignResult:
 
     @property
     def findings(self) -> Findings:
-        """Certain: an unresolved phrase and an unknown cue id. Uncertain: a section too short for its visuals."""
+        """Certain: an unresolved phrase, an unknown cue id, an uncued element. Uncertain: a section too short."""
         unknown = 0 if self.allow_unknown_cues else self.unknown
-        return Findings(certain=self.unresolved + unknown, uncertain=self.short)
+        return Findings(certain=self.unresolved + unknown + self.uncued, uncertain=self.short)
 
     @property
     def problems(self) -> list[str]:
@@ -160,6 +161,7 @@ class AlignResult:
             "cue_times_file": cue_times_file,
             "unresolved": self.unresolved,
             "unknown": self.unknown,
+            "uncued": self.uncued,
             "sections": [s.to_dict() for s in self.sections],
         }
 
@@ -167,7 +169,7 @@ class AlignResult:
 def unknown_message(result: AlignResult) -> str:
     """Why the build stops on unknown cue ids, with the first one as the example fix."""
     first = next(r for s in result.sections for r in s.rows if r.verdict == Verdict.UNKNOWN_CUE)
-    page = first.detail.removeprefix("not in ")
+    page = first.where
     return (
         f"{result.unknown} cue id(s) in cues.json appear nowhere in the page that plays them, so the page would "
         f'never reveal them. Add data-cue="{first.cue}" to the slide in {page}, fix the id in cues.json, or pass '
@@ -196,8 +198,9 @@ def align(project: Project, *, allow_unknown_cues: bool = False) -> AlignResult:
         )
     specs = project.cue_specs()
     if not specs:
-        log.info("no cues file at %s; pages will run their built-in timing", project.cues)
+        log.info("There is no cues file at %s, so the pages run their own built-in timing.", project.cues)
     unknown_ids = unknown_cue_ids(project, specs)
+    uncued_ids = uncued_elements(project, specs)
     take_words: dict[str, tuple[list[Word], float]] = {}
     for spec in specs:
         key = f"{spec.number:02d}"
@@ -208,23 +211,28 @@ def align(project: Project, *, allow_unknown_cues: bool = False) -> AlignResult:
                 project.section_words(key, entry.words_file),
                 entry.duration_seconds + project.lead_seconds(key),
             )
+    clips = {f"{number:02d}" for number in project.clip_numbers}
     cue_times, rows, unresolved = resolve_sections(
-        specs, take_words, unknown_ids=unknown_ids, estimated=takes.estimated
+        specs,
+        take_words,
+        unknown_ids=unknown_ids,
+        uncued_ids=uncued_ids,
+        clips=clips,
+        estimated=takes.estimated,
+        cues_file=relative(project.cues, project.root),
     )
     cue_times.save(project.cue_times_path)
     log.info(
-        "wrote %s (%d sections with cues; %d unresolved, %d unknown)",
-        project.cue_times_path,
-        len(cue_times.sections),
-        unresolved,
-        len(unknown_ids),
-    )
+        "Wrote %s with %d cued section(s), %d unresolved, %d unknown and %d uncued.",
+        project.cue_times_path, len(cue_times.sections), unresolved, len(unknown_ids), len(uncued_ids),
+    )  # fmt: skip
     result = AlignResult(
         cue_times=cue_times,
         sections=rows,
         unresolved=unresolved,
         estimated=takes.estimated,
         unknown=len(unknown_ids),
+        uncued=len(uncued_ids),
         cue_times_file=project.cue_times_path,
         allow_unknown_cues=allow_unknown_cues,
     )
@@ -238,37 +246,55 @@ def resolve_sections(
     take_words: dict[str, tuple[list[Word], float]],
     *,
     unknown_ids: list[tuple[str, str, str]],
+    uncued_ids: list[tuple[str, str, str]],
+    clips: set[str],
     estimated: bool,
+    cues_file: str = "",
 ) -> tuple[CueTimes, list[SectionCueTimes], int]:
     """(cue_times, one row per section, unresolved count) for cues against each section's take.
 
     `take_words` maps a section key to its words and its length, both in seconds after the section
-    starts. A section with no take is skipped. `estimated` names the take index kind in a no-words note.
-    Nothing is written.
+    starts. `clips` are the sections the voice never reads, whose missing take is the plain skip it
+    should be. A page section with no take resolves nothing, so each of its cues is unresolved
+    rather than silently absent from the file the recorder then plays blind. `estimated` names the
+    take index kind in a no-words note. A section that cues.json never mentions still gets a row
+    when its page carries an element nobody cued, because that is exactly the section whose cues
+    were forgotten. `cues_file` is the project-relative cues file, which is the file every row that
+    names no page is about. Nothing is written.
     """
     cue_times = CueTimes(estimated=estimated)
     rows: list[SectionCueTimes] = []
     unresolved = 0
-    for spec in specs:
-        key = f"{spec.number:02d}"
+    by_key = {f"{spec.number:02d}": spec for spec in specs}
+    for key in sorted(by_key | {k: None for k, _cue, _page in uncued_ids}):
+        spec = by_key.get(key) or SectionCues(number=int(key), cues=())
         take = take_words.get(key)
         if take is None:
-            rows.append(
-                SectionCueTimes(
-                    key=key,
-                    speech_end=0.0,
-                    min_seconds=spec.min_seconds,
-                    resolved=[],
-                    skipped="no narration (clip section, or not rendered)",
-                )
+            reason = "a clip section, which the voice never reads" if key in clips else "no take in the take index"
+            row = SectionCueTimes(
+                key=key,
+                speech_end=0.0,
+                min_seconds=spec.min_seconds,
+                resolved=[],
+                skipped=f"no narration ({reason})",
+                cues_file=cues_file,
             )
-            for k, cue_id, page in unknown_ids:
-                if k == key:
-                    rows[-1].note(cue_id, Verdict.UNKNOWN_CUE, f"not in {page}")
+            if key not in clips:
+                for cue in spec.cues:
+                    row.note(cue.cue, Verdict.UNRESOLVED, "no words (this section has no take yet)")
+                    unresolved += 1
+            rows.append(row)
+            _judge_ids(row, key, unknown_ids, uncued_ids)
             continue
         words, length = take
         speech_end = words[-1].end if words else length
-        row = SectionCueTimes(key=key, speech_end=speech_end, min_seconds=spec.min_seconds, resolved=[])
+        row = SectionCueTimes(
+            key=key,
+            speech_end=speech_end,
+            min_seconds=spec.min_seconds,
+            resolved=[],
+            cues_file=cues_file,
+        )
         for cue in spec.cues:
             if not words and cue.on != "$start":
                 row.note(
@@ -294,10 +320,39 @@ def resolve_sections(
         if spec.min_seconds is not None and speech_end < spec.min_seconds:
             short = spec.min_seconds - speech_end
             row.note(None, None, f"speech {speech_end:.1f}s is {short:.1f}s shorter than the visuals need")
-        for k, cue_id, page in unknown_ids:
-            if k == key:
-                row.note(cue_id, Verdict.UNKNOWN_CUE, f"not in {page}")
+        _judge_ids(row, key, unknown_ids, uncued_ids)
         if row.resolved:
             cue_times.sections[key] = row.resolved
         rows.append(row)
     return cue_times, rows, unresolved
+
+
+def _judge_ids(
+    row: SectionCueTimes, key: str, unknown_ids: list[tuple[str, str, str]], uncued_ids: list[tuple[str, str, str]]
+) -> None:
+    """Add this section's two-way rows: a cue no page reveals, and an element no cue fires."""
+    for section, cue_id, page in unknown_ids:
+        if section == key:
+            row.note(cue_id, Verdict.UNKNOWN_CUE, f"not in {page}", where=page)
+    for section, cue_id, page in uncued_ids:
+        if section == key:
+            row.note(
+                cue_id,
+                Verdict.UNCUED_ELEMENT,
+                f'data-cue="{cue_id}" in {page} has no entry in cues.json',
+                where=page,
+            )
+
+
+__all__ = [
+    "AlignResult",
+    "SectionCueTimes",
+    "UnknownCueError",
+    "align",
+    "anchor_time",
+    "resolve_cue",
+    "resolve_sections",
+    "uncued_elements",
+    "unknown_cue_ids",
+    "unknown_message",
+]

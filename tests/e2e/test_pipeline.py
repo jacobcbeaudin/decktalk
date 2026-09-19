@@ -429,27 +429,19 @@ def test_cues_resolve_on_uneven_word_timestamps(built: Built, monkeypatch: pytes
     ]
     write_words(project.narration_dir / entry.words_file, words)
     build_timeline(project, take_index, project.script_sections()[1])
-    (root / "cues.json").write_text(
-        json.dumps(
-            {
-                "sections": {
-                    "1": {
-                        "cues": [
-                            {"cue": "1.1first", "on": "first"},
-                            {"cue": "1.1second", "on": "a", "occurrence": 3},
-                            {"cue": "1.1third", "on": "third below", "offset": -0.2},
-                        ]
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
+    # Section 1's cues alone are rewritten, so every other section's elements stay cued.
+    cues = json.loads((root / "cues.json").read_text(encoding="utf-8"))
+    cues["sections"]["1"]["cues"] = [
+        {"cue": "1.1first", "on": "first"},
+        {"cue": "1.1second", "on": "a", "occurrence": 3},
+        {"cue": "1.1third", "on": "third below", "offset": -0.2},
+    ]
+    (root / "cues.json").write_text(json.dumps(cues), encoding="utf-8")
     run = Built(root, 0, "", {})
     aligned = run.json("align", "--json")
     assert aligned["ok"], aligned["findings"]
-    [section] = aligned["align"]["sections"]
-    assert section["key"] == "01" and section["notes"] == []
+    [section] = [s for s in aligned["align"]["sections"] if s["key"] == "01"]
+    assert section["notes"] == []
     assert section["cues"] == {"1.1first": 0.81, "1.1second": 4.05, "1.1third": pytest.approx(3.9)}
     # The words file is not part of the take hash, so the take stays cached, and --only keeps section 1 alone.
     plan = run.json("narrate", "--dry-run", "--json", "--only", "1")

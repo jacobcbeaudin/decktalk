@@ -40,6 +40,7 @@ class Verdict(StrEnum):
     NO_CHANGE = "NO CHANGE"
     UNRESOLVED = "UNRESOLVED"
     UNKNOWN_CUE = "UNKNOWN CUE"
+    UNCUED_ELEMENT = "UNCUED ELEMENT"
     MISSING = "MISSING"
 
     # Uncertain: something is probably wrong, and the label ends in a question mark.
@@ -82,6 +83,7 @@ _CERTAIN = frozenset(
         Verdict.NO_CHANGE,
         Verdict.UNRESOLVED,
         Verdict.UNKNOWN_CUE,
+        Verdict.UNCUED_ELEMENT,
         Verdict.MISSING,
     }
 )
