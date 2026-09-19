@@ -1,42 +1,49 @@
-"""The pipeline, one module per stage. Each stage takes a Project, logs progress, and returns a result."""
+"""The pipeline, one module per command.
 
+Each one takes a `Project` and logs its progress to the `decktalk` logger, and each one returns a
+result that satisfies `verdicts.StageResult`, which is what the run judged and the same thing as
+JSON-ready data, so the CLI counts the findings and prints the envelope without knowing any
+result's shape. `tests/test_imports.py` holds the table of every command and the result it returns.
+"""
+
+from .align import AlignResult, align
 from .assemble import AssembleResult, assemble
-from .beats import BeatsResult, resolve_beats
 from .build import BuildResult, build
-from .clip import ClipResult, SectionWords, cut_clip, spoken_words
-from .measure import LeadMeasurement, RecordingCheck, check, measure
-from .narrate import NarrateResult, narrate, script_segments
+from .clip import ClipResult, SectionWords, WordsResult, clip, words
+from .narrate import NarrateResult, narrate
 from .preflight import PreflightResult, preflight
-from .record import Recording, record
-from .shots import shoot
-from .soundscape import SoundscapeItem, soundscape
+from .record import RecordResult, SectionRecording, record
+from .screenshots import ScreenshotsResult, screenshots
+from .soundscape import SoundscapeItem, SoundscapeResult, soundscape
+from .status import StatusResult, status
 from .verify import VerifyResult, verify
 
 __all__ = [
+    "AlignResult",
     "AssembleResult",
-    "BeatsResult",
     "BuildResult",
     "ClipResult",
-    "LeadMeasurement",
     "NarrateResult",
     "PreflightResult",
-    "Recording",
-    "RecordingCheck",
+    "RecordResult",
+    "ScreenshotsResult",
+    "SectionRecording",
     "SectionWords",
     "SoundscapeItem",
+    "SoundscapeResult",
+    "StatusResult",
     "VerifyResult",
+    "WordsResult",
+    "align",
     "assemble",
     "build",
-    "check",
-    "cut_clip",
-    "measure",
+    "clip",
     "narrate",
     "preflight",
     "record",
-    "resolve_beats",
-    "script_segments",
-    "shoot",
+    "screenshots",
     "soundscape",
-    "spoken_words",
+    "status",
     "verify",
+    "words",
 ]

@@ -1,0 +1,66 @@
+---
+title: Lessons
+description: Teach an idea where each part appears as it is spoken, with equations typeset on the page and nothing read ahead.
+---
+
+A viewer follows an explanation in which each idea appears as it is spoken, so nothing is read
+ahead.
+
+A lesson fails when the slide says everything at once. The room reads the whole slide, finishes
+before the teacher does, and stops listening. DeckTalk holds each part of a diagram back until the
+voice reaches the word for it, so attention has nowhere else to go.
+
+## What a viewer gets
+
+- One idea at a time, in the order the explanation needs, because a reveal waits for its word.
+- Equations typeset on the page from a `data-tex` attribute, drawn as the voice says them and never
+  spelled out as symbols.
+- A sentence that appears word by word under the voice, through `data-text="spoken"`, when the
+  wording itself is the point.
+- Chapters a learner can jump between, a transcript page to read afterwards, and captions for a
+  viewer who needs them.
+
+## What the author writes
+
+| File | What it holds |
+|---|---|
+| `script.md` | The explanation, one heading per section, with a time budget that keeps a section to one idea. |
+| `decktalk.toml` | The sections and their chapter names, which default to the script headings. |
+| `cues.json` | The phrase each part of the diagram waits for. |
+| The deck page | The diagram, the equations and the chapter cards. |
+
+KaTeX ships inside the wheel, so an equation needs no download and no content delivery network. A
+diagram is plain HTML and CSS with `data-cue` and `data-reveal` attributes on the parts that appear,
+and `data-describe` gives each of those parts one sentence that the transcript prints.
+
+## The workflow
+
+<Steps>
+  <Step title="Start a lesson project">
+    `decktalk init --example lesson` writes a worked lesson with an equation, which is the fastest
+    way to see the shape of one.
+  </Step>
+  <Step title="Write the explanation, then the diagram">
+    Say the thing, then draw the thing. Every reveal needs a word in `script.md` that names it,
+    which is what [Writing for the ear](/guides/writing-for-the-ear) is about.
+  </Step>
+  <Step title="Build it without voice">
+    `decktalk build --no-voice` paces the whole lesson with placeholder narration, so the timing is
+    settled before a credit is spent.
+  </Step>
+  <Step title="Check every landing">
+    `decktalk verify` reports each reveal that came late, early or not at all, and
+    `decktalk screenshots` writes a PNG per slide so the text contrast and the crowding can be read.
+  </Step>
+  <Step title="Reteach one section">
+    A better sentence is an edit and `decktalk build --only 2`. The rest of the lesson keeps its
+    takes.
+  </Step>
+</Steps>
+
+Read [Quickstart](/quickstart) for the first build, [Design a slide](/guides/design-a-slide) for the
+reveal effects and the camera, and [Accessible video](/guides/accessible-video) for the captions,
+the chapters and the transcript a course platform asks for.
+
+The other two use cases with worked examples are
+[technical tutorials](/use-cases/technical-tutorials) and [product demos](/use-cases/product-demos).

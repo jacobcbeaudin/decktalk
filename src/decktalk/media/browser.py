@@ -1,4 +1,12 @@
-"""Headless Chromium (Playwright): recording a page, screenshots, and rendering slates."""
+"""Headless Chromium through Playwright: recording a page, taking screenshots and drawing slates.
+
+This is the only module that launches a browser. It waits for the page to say it is ready, reads
+the catalog the runtime publishes, and collects the warnings the page recorded, so a stage above
+asks for a recording or a frame and never for a browser.
+
+Every page it opens is served from the local origin in `origin.py`, so a page may fetch a file
+beside it and import a module, and the recorder learns which files the page actually loaded.
+"""
 
 from __future__ import annotations
 
@@ -13,60 +21,24 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import Sidecar, gap_time
+from ..artifacts import RecordingLog, gap_time
 from ..errors import ToolError
+from ..toolchain.assets import probe_path
+from .origin import Assets, route_pages
 
 log = logging.getLogger(__name__)
 
-# The page may expose a Promise the recorder awaits before starting the narration clock.
-READY_JS = "() => (window.__sceneReady instanceof Promise ? window.__sceneReady : null)"
-FONTS_JS = "() => document.fonts.ready"
-# The page is covered in magenta from its first paint until the narration clock starts, so the
-# first clean frame in the recording is t=0 no matter when the recorder began capturing.
-#
-# The init script also adds a keep-alive: a 2 px square in the bottom-right corner that turns
-# for the whole recording. Chromium's screencast only emits a frame when the compositor paints
-# one, and a static cover paints once, so without motion the cover might never be recorded.
-# The keep-alive outlives the cover on purpose. Playwright stamps each frame by when it was
-# swapped, rounded down to its 25 fps grid, and a busy compositor swaps later in the frame than
-# an idle one. If the motion stopped with the cover, the cover-off frame (t=0) would be stamped
-# busy and every later reveal on a still page stamped idle, one or two frames earlier, so
-# reveals would record 30 to 90 ms ahead of their words. It is mid-gray at 3 % opacity, so it
-# moves a pixel's luma by 4 steps at most: under verify's diff levels (12 and 40), and far too
-# small to move the frame averages that cover detection and the black checks read. Shots never
-# run this script, so it never shows in a screenshot.
-COVER_JS = """() => {
-  const add = () => {
-    if (document.getElementById("__t0cover")) return;
-    const parent = document.body || document.documentElement;
-    const d = document.createElement("div");
-    d.id = "__t0cover";
-    d.style.cssText = "position:fixed;inset:0;background:#ff00ff;z-index:2147483647;pointer-events:none";
-    parent.appendChild(d);
-    const k = document.createElement("div");
-    k.id = "__dtkeepalive";
-    k.setAttribute("aria-hidden", "true");
-    k.style.cssText = "position:fixed;right:1px;bottom:1px;width:2px;height:2px;background:#808080;opacity:.03;"
-      + "z-index:2147483647;pointer-events:none;animation:__dtkeepalive .5s linear infinite";
-    const s = document.createElement("style");
-    s.textContent = "@keyframes __dtkeepalive{to{transform:rotate(360deg)}}";
-    k.appendChild(s);
-    parent.appendChild(k);
-  };
-  if (document.documentElement) add(); else document.addEventListener("DOMContentLoaded", add, { once: true });
-}"""
+# decktalk-probe.js is the instrumentation every command needs from a page and no page carries:
+# the magenta cover over the first paint, the helper that says when a page has settled, the
+# measured catalog's boxes and the freeze that stops at one cue. It is added as an init script, so
+# it runs before the page's own scripts and the runtime finds it, and it is never a <script src>
+# in a deck. The cover is drawn only where it is asked for, so a screenshot never shows it.
+PROBE_JS = probe_path().read_text(encoding="utf-8")
+COVER_JS = "() => window.__dtprobe.cover()"
 # Remove the cover, then start the page clock on the next animation frame.
-START_JS = """() => new Promise((resolve) => {
-  const d = document.getElementById("__t0cover");
-  if (d) d.remove();
-  // The frame that shows the cover gone is composited on the next animation frame, and
-  // that frame is the recording's t=0, so the clock starts there rather than now.
-  requestAnimationFrame(() => {
-    if (window.DeckTalk && window.DeckTalk.startClock) window.DeckTalk.startClock();
-    resolve(performance.now());
-  });
-})"""
-# What the runtime could not honor: unknown cue ids, cues no step owns, KaTeX that never loaded.
+START_JS = "() => window.__dtprobe.lift()"
+READY_JS = "() => window.__dtprobe.ready()"
+# What the runtime could not honor: unknown cue ids, cues no slide owns, KaTeX that never loaded.
 WARNINGS_JS = "() => (window.__decktalk && window.__decktalk.warnings) || []"
 # Whether the runtime is present and the page registered at least one scene.
 HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
@@ -86,27 +58,67 @@ font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;overflow:hidden}}
 
 
 @contextmanager
-def chromium() -> Iterator[Any]:
-    """A launched headless Chromium, closed on exit. ToolError with the fix when unavailable."""
+def chromium(browser_path: str = "") -> Iterator[Any]:
+    """A launched headless Chromium, as the machine configures it, closed on exit.
+
+    No proxy argument is passed. Request routing answers the local origin before the network stack
+    reaches it, so no proxy ever sees that host, and every other request a recorded page makes goes
+    the way the machine sends it, through its own proxy and its own logging.
+
+    `browser_path` is `[record] browser_path`, the executable a machine that manages its own
+    Chromium names. It is empty for the build that `decktalk install` fetched. A ToolError names
+    the fix when no browser can be launched.
+    """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as pw:
         try:
-            browser = pw.chromium.launch()
+            browser = pw.chromium.launch(executable_path=browser_path or None)
         except Exception as exc:
-            raise ToolError(f"could not launch Chromium ({str(exc).splitlines()[0]}). Run `decktalk setup`.") from exc
+            raise ToolError(f"could not launch Chromium ({str(exc).splitlines()[0]}). Run `decktalk install`.") from exc
         try:
             yield browser
         finally:
             browser.close()
 
 
+def instrument(page: Any) -> Any:
+    """Add decktalk-probe.js to every page `page` loads from here on. Returns the page.
+
+    A page that a command opened more than once keeps the one copy, because an init script is
+    added to the page and not to a navigation.
+    """
+    if not getattr(page, "_decktalk_probe", False):
+        page.add_init_script(PROBE_JS)
+        page._decktalk_probe = True
+    return page
+
+
+def open_page(
+    browser: Any,
+    root: Path,
+    *,
+    width: int,
+    height: int,
+    color_scheme: str = "no-preference",
+) -> tuple[Any, Assets]:
+    """A page a command drives, and the record of what it loaded.
+
+    Its requests under the local origin are answered from `root`, and it carries the probe, because
+    every page a command opens is a page that command has to be able to freeze and measure.
+    """
+    page = browser.new_page(
+        viewport={"width": width, "height": height}, device_scale_factor=1, color_scheme=color_scheme
+    )
+    instrument(page)
+    return page, route_pages(page, root)
+
+
 def await_ready(page: Any) -> None:
-    for js in (FONTS_JS, READY_JS):
-        try:
-            page.evaluate(js)
-        except Exception:
-            pass
+    try:
+        page.evaluate(READY_JS)
+    except Exception:
+        pass
 
 
 def page_error_text(err: Any) -> str:
@@ -153,13 +165,18 @@ def record_page(
     seconds: float,
     out: Path,
     *,
+    root: Path,
     settle_seconds: float,
-    min_lead_seconds: float,
+    min_cover_seconds: float,
     width: int,
     height: int,
     color_scheme: str,
-) -> Sidecar:
-    """Record `url` for `seconds` after the narration clock starts; write out and its sidecar."""
+) -> RecordingLog:
+    """Record `url` for `seconds` after the narration clock starts, and write the webm beside its log.
+
+    `root` is the project directory the local origin serves, so the page may fetch its own files and
+    the log can name every one of them.
+    """
     tmp_dir = Path(tempfile.mkdtemp(prefix="decktalk-rec-"))
     context = browser.new_context(
         viewport={"width": width, "height": height},
@@ -169,8 +186,10 @@ def record_page(
         record_video_dir=str(tmp_dir),
         record_video_size={"width": width, "height": height},
     )
+    assets = route_pages(context, root)
     created = time.monotonic()
-    context.add_init_script(COVER_JS + "\n;(" + COVER_JS + ")();")
+    context.add_init_script(PROBE_JS)
+    context.add_init_script("(" + COVER_JS + ")()")
     page = context.new_page()
     caught: list[str] = []
     page.on("pageerror", lambda e: caught.append(page_error_text(e)))
@@ -178,8 +197,8 @@ def record_page(
     loaded = time.monotonic()
     await_ready(page)
     # Settle after load, and never start the clock before the recorder has certainly begun
-    # capturing (Windows starts its capture late); the cover makes the wait invisible.
-    wait = max(settle_seconds, min_lead_seconds - (time.monotonic() - created))
+    # capturing, because Windows starts its capture late, and the cover makes the wait invisible.
+    wait = max(settle_seconds, min_cover_seconds - (time.monotonic() - created))
     page.wait_for_timeout(wait * 1000)
     page.evaluate(START_JS)
     started = time.monotonic()
@@ -187,7 +206,7 @@ def record_page(
     warnings = page_warnings(page, out.stem)
     errors = page_errors(page, caught, out.stem)
     gaps = page.evaluate("() => (window.__decktalk && window.__decktalk.frameGaps) || []")
-    sync_log = page.evaluate("() => (window.__decktalk && window.__decktalk.syncLog) || []")
+    spoken_log = page.evaluate("() => (window.__decktalk && window.__decktalk.spokenLog) || []")
     cue_log = page.evaluate("() => (window.__decktalk && window.__decktalk.cueLog) || []")
     long_frames = page.evaluate("() => (window.__decktalk && window.__decktalk.longFrames) || []")
     for entry in cue_log if isinstance(cue_log, list) else []:
@@ -200,9 +219,9 @@ def record_page(
             entry.get("next"),
             entry.get("after"),
         )
-    for entry in sync_log if isinstance(sync_log, list) else []:
+    for entry in spoken_log if isinstance(spoken_log, list) else []:
         log.debug(
-            "[sync] %s  cue %.3f  run %.3f  first word on %s",
+            "[spkn] %s  cue %.3f  run %.3f  first word shown %s",
             entry.get("text"),
             entry.get("cueAt", 0),
             entry.get("runAt", 0),
@@ -226,30 +245,43 @@ def record_page(
         raise ToolError(f"Chromium produced no video for {out.name}")
     shutil.move(str(src), str(out))
     shutil.rmtree(tmp_dir, ignore_errors=True)
-    sidecar = Sidecar(
+    recording_log = RecordingLog(
         url=url,
-        requested_seconds=seconds,
+        assets=list(assets.paths),
+        external=list(assets.external),
+        requested_seconds=round(seconds, 3),
         settle_seconds=round(started - loaded, 3),
         load_seconds=round(loaded - created, 3),
-        lead_seconds=round(started - created, 3),
+        clock_start_seconds=round(started - created, 3),
         warnings=warnings,
         page_errors=errors,
         frame_gaps=frame_gaps,
-        sync_log=[dict(e) for e in sync_log if isinstance(e, dict)],
+        spoken_log=[spoken_entry(e) for e in spoken_log if isinstance(e, dict)],
         cue_log=[dict(e) for e in cue_log if isinstance(e, dict)] if isinstance(cue_log, list) else [],
         long_frames=[dict(e) for e in long_frames if isinstance(e, dict)] if isinstance(long_frames, list) else [],
     )
-    sidecar.save(out.with_suffix(".json"))
-    return sidecar
+    for name in assets.missing:
+        log.warning("[page] %s  the page asked for %s and the project has no such file", out.stem, name)
+    return recording_log
 
 
-def screenshot(page: Any, url: str, out: Path, *, settle_ms: int) -> None:
+# The runtime's own JavaScript stays camelCase, and the recorder is the boundary where an artifact turns snake_case.
+_SPOKEN_KEYS = {"cueAt": "cue_at", "runAt": "run_at", "n": "words", "firstOn": "first_shown"}
+
+
+def spoken_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """One spoken-log row from the page, with the recording log's snake_case keys."""
+    return {_SPOKEN_KEYS.get(k, k): v for k, v in entry.items()}
+
+
+def screenshot(page: Any, url: str, out: Path, *, settle_ms: int) -> list[str]:
+    """Write one PNG of `url`, and give back what the runtime warned about while it was open."""
     page.goto(url)
     await_ready(page)
     page.wait_for_timeout(settle_ms)
     out.parent.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(out))
-    page_warnings(page, out.stem)
+    return page_warnings(page, out.stem)
 
 
 def render_slate(
@@ -257,11 +289,12 @@ def render_slate(
     *,
     title: str,
     sub: str = "",
-    eyebrow: str = "slate",
+    eyebrow: str,
     foot: str = "",
     width: int,
     height: int,
     background: str = "#0e1116",
+    browser_path: str = "",
 ) -> Path:
     """A titled placeholder frame, for a section whose clip is missing."""
     doc = SLATE_HTML.format(
@@ -274,7 +307,7 @@ def render_slate(
         foot=html.escape(foot),
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    with chromium() as browser:
+    with chromium(browser_path) as browser:
         page = browser.new_page(viewport={"width": width, "height": height})
         page.set_content(doc)
         await_ready(page)

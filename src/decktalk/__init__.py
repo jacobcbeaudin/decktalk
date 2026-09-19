@@ -1,60 +1,77 @@
 """DeckTalk: narrated presentation videos, cut to the word.
 
-Public API. The file formats and the page contract are covered by the changelog: a change
-to them bumps the minor version and ships with a migration note. The Python names below may
-still move, and a rename is a breaking change once the project leaves the 0.x series.
+`decktalk.__all__` is the whole supported Python API, and everything else may move without notice.
+One word names the command, the Python call, the type it returns and its `--json` key, so each
+command's result class is exported beside the function that returns it.
 
-    Project, Section types, Settings, load_settings
-    project tables: Voice, Mix, Soundscape, Transition
-    errors: DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
-    artifacts: Manifest, Timeline, Beats, Word, Sidecar
-    stages: narrate, resolve_beats, preflight, record, measure, check, assemble, verify, shoot,
-            soundscape, build, status, cut_clip, spoken_words
-    results: NarrateResult, BeatsResult, PreflightResult, Recording, LeadMeasurement, RecordingCheck,
-             AssembleResult, VerifyResult, SoundscapeItem, BuildResult, StatusReport, ClipResult, SectionWords
-    speech: SpeechProvider, SpeechRequest, register
+    project:   Project, Section, ClipSection, PageSection, Voice, Mix, Loudness, Sfx, Soundscape,
+               SoundSpec, MusicSpec, Transition
+    tuning:    Settings, load_settings
+    errors:    DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
+    enums:     Stage, Verdict, Certainty, SkipReason, ErrorCode
+    artifacts: Takes, CueTimes, RecordingLog, Cuts, Word
+    stages:    narrate, align, record, assemble, verify
+    commands:  preflight, screenshots, words, clip, status, soundscape, build
+    results:   NarrateResult, AlignResult, RecordResult, AssembleResult, VerifyResult,
+               PreflightResult, ScreenshotsResult, WordsResult, ClipResult, StatusResult,
+               SoundscapeResult, BuildResult
+    speech:    SpeechProvider, SpeechRequest, register_speech_provider
 
-Everything under decktalk.media, everything under decktalk.providers other than the
-three speech names above, and every name starting with an underscore is internal.
+The file formats and the page contract are covered by the changelog: a change to them bumps the
+minor version. The Python names may still move, and a rename is a breaking change once the project
+leaves the 0.x series.
 """
 
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .artifacts import Beats, Manifest, Sidecar, Timeline, Word
-from .config import Settings, load_settings
-from .errors import ConfigError, DeckTalkError, MissingInputError, ProviderError, ToolError
-from .project import ClipSection, Mix, PageSection, Project, Section, Soundscape, Transition, Voice
-from .providers.speech import SpeechProvider, SpeechRequest, register
+from .artifacts import CueTimes, Cuts, RecordingLog, Takes, Word
+from .errors import ConfigError, DeckTalkError, ErrorCode, MissingInputError, ProviderError, ToolError
+from .model import (
+    ClipSection,
+    Loudness,
+    Mix,
+    MusicSpec,
+    PageSection,
+    Project,
+    Section,
+    Sfx,
+    Soundscape,
+    SoundSpec,
+    Transition,
+    Voice,
+)
+from .pipeline import Stage
+from .settings import Settings, load_settings
+from .speech import SpeechProvider, SpeechRequest, register_speech_provider
 from .stages import (
+    AlignResult,
     AssembleResult,
-    BeatsResult,
     BuildResult,
     ClipResult,
-    LeadMeasurement,
     NarrateResult,
     PreflightResult,
-    Recording,
-    RecordingCheck,
-    SectionWords,
-    SoundscapeItem,
+    RecordResult,
+    ScreenshotsResult,
+    SoundscapeResult,
+    StatusResult,
     VerifyResult,
+    WordsResult,
+    align,
     assemble,
     build,
-    check,
-    cut_clip,
-    measure,
+    clip,
     narrate,
     preflight,
     record,
-    resolve_beats,
-    shoot,
+    screenshots,
     soundscape,
-    spoken_words,
+    status,
     verify,
+    words,
 )
-from .status import StatusReport, status
+from .verdicts import Certainty, SkipReason, Verdict
 
 try:
     __version__ = version("decktalk")
@@ -62,55 +79,61 @@ except PackageNotFoundError:  # running from a checkout without an install
     __version__ = "0+unknown"
 
 __all__ = [
+    "AlignResult",
     "AssembleResult",
-    "Beats",
-    "BeatsResult",
     "BuildResult",
+    "Certainty",
     "ClipResult",
     "ClipSection",
     "ConfigError",
+    "CueTimes",
+    "Cuts",
     "DeckTalkError",
-    "LeadMeasurement",
-    "Manifest",
+    "ErrorCode",
+    "Loudness",
     "MissingInputError",
     "Mix",
+    "MusicSpec",
     "NarrateResult",
     "PageSection",
     "PreflightResult",
     "Project",
     "ProviderError",
-    "Recording",
-    "RecordingCheck",
+    "RecordResult",
+    "RecordingLog",
+    "ScreenshotsResult",
     "Section",
-    "SectionWords",
     "Settings",
-    "Sidecar",
+    "Sfx",
+    "SkipReason",
+    "SoundSpec",
     "Soundscape",
-    "SoundscapeItem",
+    "SoundscapeResult",
     "SpeechProvider",
     "SpeechRequest",
-    "StatusReport",
-    "Timeline",
+    "Stage",
+    "StatusResult",
+    "Takes",
     "ToolError",
     "Transition",
+    "Verdict",
     "VerifyResult",
     "Voice",
     "Word",
+    "WordsResult",
     "__version__",
+    "align",
     "assemble",
     "build",
-    "check",
-    "cut_clip",
+    "clip",
     "load_settings",
-    "measure",
     "narrate",
     "preflight",
     "record",
-    "register",
-    "resolve_beats",
-    "shoot",
+    "register_speech_provider",
+    "screenshots",
     "soundscape",
-    "spoken_words",
     "status",
     "verify",
+    "words",
 ]

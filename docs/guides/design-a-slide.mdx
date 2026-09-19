@@ -8,51 +8,79 @@ push. Use it when you write or change the scenes of a page.
 
 ## Before you start
 
-You need a page that includes `decktalk-runtime.js`, such as the scaffold's `deck/index.html`.
+You need a page that includes `decktalk-runtime.js`, such as the starter's `deck/index.html`.
 [Your first deck](/guides/first-deck) shows how to add a scene to it.
 
 ## Size the slide
 
 Size every element in CSS pixels, on a frame of 1920 by 1080.
 
-{/* copied from template/deck/index.html */}
+{/* copied from template/starter/deck/index.html */}
 ```css deck/index.html
-.eyebrow { position: absolute; left: 120px; top: 44px; margin: 0; font: 500 22px/28px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
-.wordmark { margin: 0; font: 600 104px/1.1 var(--tight); letter-spacing: -.02em; color: var(--ink); white-space: nowrap; }
+.eyebrow { left: 120px; top: 80px; font: 600 24px/32px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
+.title { left: 120px; width: 1680px; font: 700 96px/1.06 var(--sans); letter-spacing: -.03em; }
 ```
 
 The runtime draws each slide inside the stage element, `#dt-stage`. The stage element is 1920 by
 1080 CSS pixels. The runtime scales it to fit the window and centers it. So a size in your CSS is a
 size on the video frame.
 
-| Element | Suggested size | In the scaffold's `deck/index.html` |
+| Element | Suggested size | In the starter's `deck/index.html` |
 |---|---|---|
-| Side margin | 96 px or more, and 160 px for titles | 120 px |
-| Body text | 36 px or more | 36 px for the scene 1 labels, and 36 px monospace in the script panel of scenes 4 and 6 |
-| Captions | 30 px, in the muted color | 24 px, in `--mute`, for the note under the count times in scene 7 |
-| Headlines | 64 px or more | 104 px for the wordmark, and 64 px for the lesson title in the scene 2 slide card |
-| Eyebrows and labels | 22 px, in the monospace face and the muted color | 22 px JetBrains Mono, in `--mute` |
+| Side margin | 96 px or more, and 120 px for titles | 120 px |
+| Body text | 36 px or more | 44 px for the card values in scene 1 |
+| Headlines | 64 px or more | 96 px for the titles of scenes 1 and 3, and 76 px for the title of scene 2 |
+| Eyebrows and labels | 22 px, in the monospace face and the muted color | 24 px monospace, in `--mute` |
 
 <Note>`[video] width` and `height` change only the browser window and the encoded frame. A frame
 with another aspect ratio letterboxes the stage element, and the slides do not reflow.</Note>
 
-A page can supply its own `<div id="dt-stage">`, and the runtime uses it. The scaffold's
+A page can supply its own `<div id="dt-stage">`, and the runtime uses it. The lesson example's
 `deck/lesson.html` does this to build one figure under all of its slides.
 
 Put one idea on each slide. A slide with more than three or four reveals is hard to follow. If a
-slide is busy, split it into two steps.
+slide is busy, split it into two slides.
+
+## Make each reveal big enough to measure
+
+A reveal has to change about 0.3 percent of the frame to clear `verify`'s warning, and about 0.1
+percent to pass at all. On a 1920 by 1080 frame that is 6,220 pixels for the warning and 2,073 for
+the pass, which is roughly an 80 by 80 solid block and a 46 by 46 one. Design against the larger
+number, because a reveal that only just passes in `preflight` can fail on the recording.
+
+| Changed share of the frame | What `preflight` and `verify` say |
+|---|---|
+| Below 0.1 percent | `NO CHANGE`, a certain finding. The command exits 1. |
+| 0.1 to 0.3 percent | `THIN CHANGE?`, an uncertain finding. It exits 1 only with `--strict`. |
+| Above 0.3 percent | `changed`. |
+
+Both checks compare luma alone, so brightness is what counts and hue is not. A reveal that swaps one
+colour for another of the same lightness changes nothing they can see, and it also disappears for a
+viewer with low vision. Change the lightness as well as the hue, or fill a shape rather than tint
+one.
+
+The starter's own slides are filled cards and bands rather than text on white for this reason. A
+line of 44 px text is a few hundred pixels of ink, well under the floor, so give a small reveal a
+filled container that appears with it.
+
+Keep every cued element out of the bottom 15 percent of the frame, which is 162 px of a 1080 px
+frame. A player draws captions there, so an element that appears in that band can be covered at the
+moment it appears. `preflight` reports one as `IN CAPTION BAND?` from the measured box, which is
+uncertain because a deck may put something there on purpose, so `--strict` is how a project says the
+band is reserved. The starter puts its lowest band at `top: 720px`, which ends about 840 px down,
+clear of the band.
 
 ## Choose a reveal effect
 
-Set `data-fx` on an element to choose the animation it plays when it appears.
+Set `data-reveal` on an element to choose the animation it plays when it appears.
 
 ```html deck/index.html
-<p class="line" data-cue="7.1a">A line of text</p>
-<div class="code" data-cue="7.1b" data-fx="fade">decktalk build</div>
-<p class="answer" data-cue="7.1c" data-fx="pop">2x</p>
+<p class="line" data-cue="2.1average">A line of text</p>
+<div class="code" data-cue="2.1code" data-reveal="fade">decktalk build</div>
+<p class="answer" data-cue="2.1waited" data-reveal="pop">2x</p>
 ```
 
-An element with no `data-fx` uses `rise`. The table shows what each reveal effect does and where it
+An element with no `data-reveal` uses `rise`. The table shows what each reveal effect does and where it
 works well.
 
 | Effect | Motion | Use it for | Avoid it for |
@@ -63,21 +91,49 @@ works well.
 | `drop` | `drop` moves the element down 24 px as it fades in over 0.35 s. | Use it for a tile or a stamp. | Avoid it for body text. The motion is too large for text. |
 | `pop` | `pop` scales the element from 60% past 108% to 100% over 0.5 s. | Use it for the one result that the section builds to. | Avoid it for more than one element per slide. Two pops compete for attention. |
 | `dim` | `dim` starts visible and fades the element to 16% opacity over 1.2 s. | Use it for an element that recedes when its cue fires. | Avoid it for an element that has not been on screen long enough to notice. |
-| `none` | `none` shows the element on the frame of its cue, with no animation. | Use it for a cursor, a highlight, or a part of a figure. | Avoid it for text. A hard cut can look like a glitch. |
+| `instant` | `instant` shows the element on the frame of its cue, with no animation. | Use it for a cursor, a highlight, or a part of a figure. | Avoid it for text. A hard cut can look like a glitch. |
 
-Set `data-dur` in seconds to change the length of an effect. Keep effects short, so each reveal is
+Set `data-duration` in seconds to change the length of an effect. Keep effects short, so each reveal is
 visible on its word and not still moving on the next word. To show math, add
 [`data-tex`](/reference/runtime#data-tex).
 
+A `dim` reveal is the one effect that lowers brightness rather than raising it. The checks read the
+size of the change and not its direction, so a `dim` that drops a large element to 16 percent opacity
+clears the floor as readily as a reveal that appears.
+
+## Check a slide before you record it
+
+`decktalk preflight` freezes each slide before and at each cue and reports the changed share, with no
+recording and no spend. Run it as soon as a slide is drawn.
+
+```console
+decktalk preflight --only 4
+```
+
+{/* sample: decktalk preflight --only 4, the starter with the section from Your first deck */}
+```text
+check              slide       cue   chg %  result
+4:4.1bowl          4.1        7.89    0.49  changed
+4:4.1p0            4.1       12.33    0.11  THIN CHANGE?
+4:4.1rule          4.1       22.68    0.45  changed
+4:4.1over          4.1       39.94    0.73  changed
+```
+
+The frozen PNG files go under `build/preflight/NN/`, one per cue, named for the slide and the cue.
+Open the two frames of any row you want to judge by eye. `decktalk screenshots --slide 4.1 --after
+4.1rule` writes the same frozen state on its own.
+
 ## Add a camera push
 
-Set `camera: "push"` on a scene to zoom the stage element slowly from 100% to 103%.
+Set `data-camera="push"` on a scene wrapper to zoom the stage element slowly from 100% to 103%.
 
-```js deck/index.html
-DeckTalk.scene(1, { name: "Open", camera: "push", steps: [
-  { id: "1.1", hold: 14, render: () => `…` },
-]});
+```html deck/index.html
+<div data-scene="1" data-name="Open" data-camera="push">
+  <template data-slide="1.1" data-hold="14">…</template>
+</div>
 ```
+
+A scene a script declares sets `camera: "push"` in its `DeckTalk.scene` call instead.
 
 The push lasts the whole scene, and at least 4 s. Freeze mode shows no push.
 [Scene fields](/reference/runtime#scene-fields) gives the exact length.

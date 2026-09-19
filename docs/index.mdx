@@ -2,21 +2,9 @@
 title: Narrated presentations, cut to the word
 sidebarTitle: Overview
 description: Make a narrated video from a markdown script and HTML slides, where each reveal starts on its word.
-"og:image": "https://docs.decktalk.app/images/og.png"
+"og:image": "https://docs.decktalk.ai/images/og.png"
 ---
 
-{/*
-  Demo video slot. The demo is not approved yet, so the hero figure stands in for it.
-  When the founder approves the video, replace the two images with:
-
-  <video className="dt-video" controls playsInline preload="none" width="1920" height="1080"
-         poster="/images/demo-poster.png" src="VIDEO_URL" aria-describedby="demo-caption">
-    <track kind="captions" srcLang="en" src="VIDEO_CAPTIONS.vtt" default />
-  </video>
-  <p id="demo-caption" className="dt-caption">DeckTalk built this video from the project that `decktalk init` writes. Turn the sound on, because each reveal waits for its word.</p>
-
-  Confirm the caption against the final video before shipping.
-*/}
 <img className="dt-hero block dark:hidden" src="/images/hero-light.svg" width="1000" height="248" alt="A playhead moves along the narration “A bowl. A ball. One. Two, three.” with a tick under each word. A bowl and a ball appear on the slide on their words. On each count word, the ball steps down the bowl and a box fills with that word's start time: 4.49 s, 5.26 s, and 5.77 s." noZoom />
 <img className="dt-hero hidden dark:block" src="/images/hero-dark.svg" width="1000" height="248" alt="A playhead moves along the narration “A bowl. A ball. One. Two, three.” with a tick under each word. A bowl and a ball appear on the slide on their words. On each count word, the ball steps down the bowl and a box fills with that word's start time: 4.49 s, 5.26 s, and 5.77 s." noZoom />
 
@@ -24,7 +12,7 @@ description: Make a narrated video from a markdown script and HTML slides, where
 
 <div className="dt-start">
 
-[Quickstart](/quickstart)<br />Install DeckTalk, build the scaffold without an API key, and then add your voice.
+[Quickstart](/quickstart)<br />Install DeckTalk, build the starter without an API key, and then add your voice.
 
 [Your first deck](/guides/first-deck)<br />Write one section across `script.md`, `decktalk.toml`, `cues.json`, and a page. Then verify its reveals.
 
@@ -34,13 +22,13 @@ description: Make a narrated video from a markdown script and HTML slides, where
 
 ## Understand the model
 
-- [How it works](/concepts/how-it-works): the seven stages, how DeckTalk finds narration t=0, and what `decktalk verify` checks.
+- [How it works](/concepts/how-it-works): the five stages, how DeckTalk finds narration t=0, and what `decktalk verify` checks.
 - [Cues](/concepts/cues): how a cue such as `1.1bowl` names the phrase a reveal starts on.
 - [Writing for the ear](/guides/writing-for-the-ear): give every reveal a word to start on.
 - [The page contract](/concepts/page-contract): how a slide talks to the recorder. [Design a slide](/guides/design-a-slide) covers slide size, reveal effects, and the camera push.
 
 <div className="dt-note">
 
-Building with an agent? The [reference card](/reference/card) puts every file, command, rule, and exit code in one place, and [`llms.txt`](https://docs.decktalk.app/llms.txt) indexes every page.
+Building with an agent? The [reference card](/reference/card) puts every file, command, rule, and exit code in one place, and [`llms.txt`](https://docs.decktalk.ai/llms.txt) indexes every page.
 
 </div>

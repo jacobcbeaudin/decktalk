@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 node_modules/
 .venv/
 __pycache__/
@@ -12,4 +14,5 @@ tests/out/
 *.webm
 *.wav
 .claude/
-.wrangler/
+.coverage
+coverage.xml

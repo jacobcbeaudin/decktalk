@@ -1,0 +1,120 @@
+"""Every path under `build/`, named once.
+
+    build/narration/   the takes, their words files, the take index and the narration clock
+    build/cue-times.json  every cue resolved against those words
+    build/recordings/  one webm and one recording log per page section
+    build/sections/    one mp4 per section, cut to its span
+    build/screenshots/ the PNGs `decktalk screenshots` writes
+    build/out/         the deliverables: the final mp4, its captions, chapters, cut list,
+                       transcript page and poster
+    build/preflight/   the frozen frames `decktalk preflight` compares
+    build/progress.jsonl  what a running `decktalk build` is doing, one JSON line per event
+
+A new artifact gets a property here and nowhere else, so a reader who wants to know what a build
+leaves behind opens one module, and no stage ever spells a build path by hand.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+SECTION_VIDEO_RE = re.compile(r"\d+\.mp4")
+
+
+@dataclass(frozen=True)
+class Workspace:
+    """Where one project's build output lives."""
+
+    build: Path
+    name: str  # The project name, which the deliverables are named after.
+    takes: Path | None = None  # Where the take files live, when [narration] cache_dir moves them out of build/.
+
+    @property
+    def narration_dir(self) -> Path:
+        """The project's own narration directory, which holds the index and the joined track."""
+        return self.build / "narration"
+
+    @property
+    def takes_dir(self) -> Path:
+        """Where the take mp3 and words files live, which many projects may share because a hash names each one."""
+        return self.takes or self.narration_dir
+
+    @property
+    def recordings_dir(self) -> Path:
+        return self.build / "recordings"
+
+    @property
+    def out_dir(self) -> Path:
+        return self.build / "out"
+
+    @property
+    def sections_dir(self) -> Path:
+        return self.build / "sections"
+
+    @property
+    def screenshots_dir(self) -> Path:
+        return self.build / "screenshots"
+
+    @property
+    def takes_path(self) -> Path:
+        return self.narration_dir / "takes.json"
+
+    @property
+    def narration_path(self) -> Path:
+        """The takes joined into one track, which `assemble` mixes under the picture."""
+        return self.narration_dir / "narration.mp3"
+
+    @property
+    def cue_times_path(self) -> Path:
+        return self.build / "cue-times.json"
+
+    @property
+    def preflight_dir(self) -> Path:
+        return self.build / "preflight"
+
+    @property
+    def progress_path(self) -> Path:
+        return self.build / "progress.jsonl"
+
+    @property
+    def final(self) -> Path:
+        return self.out_dir / f"{self.name}.mp4"
+
+    @property
+    def cuts_path(self) -> Path:
+        return self.out_dir / "cuts.json"
+
+    def output_paths(self) -> dict[str, Path]:
+        """Every file `assemble` writes into build/out, keyed by what it is."""
+        return {
+            "final": self.final,
+            "srt": self.out_dir / f"{self.name}.srt",
+            "vtt": self.out_dir / f"{self.name}.vtt",
+            "chapters": self.out_dir / f"{self.name}.chapters.txt",
+            "cuts": self.cuts_path,
+            "transcript": self.out_dir / f"{self.name}-transcript.html",
+            "poster": self.out_dir / f"{self.name}-poster.png",
+        }
+
+    def recording(self, key: str) -> Path:
+        return self.recordings_dir / f"{key}.webm"
+
+    def recording_log(self, key: str) -> Path:
+        return self.recordings_dir / f"{key}.json"
+
+    def section_video(self, key: str) -> Path:
+        return self.sections_dir / f"{key}.mp4"
+
+    def stray_section_videos(self, keys: list[str]) -> list[Path]:
+        """Files in build/sections named like a section video whose section is not in decktalk.toml.
+
+        A build before sections were renumbered or removed leaves such files behind.
+        """
+        if not self.sections_dir.is_dir():
+            return []
+        listed = {self.section_video(key).name for key in keys}
+        return sorted(
+            f for f in self.sections_dir.iterdir() if SECTION_VIDEO_RE.fullmatch(f.name) and f.name not in listed
+        )

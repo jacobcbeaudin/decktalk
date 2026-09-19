@@ -1,0 +1,94 @@
+---
+title: The JSON contract
+description: The one envelope every command prints under --json, the finding rows inside it, and what each exit code means.
+---
+
+Every DeckTalk command takes `--json`. Under that flag a command prints exactly one object on
+stdout, prints nothing else on stdout, turns colour off and sends every log line to stderr. An
+error prints the envelope too. This page is the short contract an agent needs. The per-command
+payloads are in the [CLI reference](/reference/cli).
+
+## The envelope
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema` | integer | The envelope's shape version, which changes only when the shape changes. It is not the product version. |
+| `version` | string | The installed DeckTalk version. |
+| `command` | string | The command as typed, with a subcommand joined by one space. |
+| `ok` | boolean | True when the command found nothing and raised nothing. It ignores `--exit-zero`. |
+| `exit_code` | integer | The code the process is about to return, so a caller that lost the code can still read it. |
+| `summary` | object | A small object of counts and totals that leads the output. Its keys are the command's own. |
+| `findings` | object | `{"certain": n, "uncertain": n, "items": [...]}`. |
+| `written` | array of strings | Every file the command wrote, as project-relative POSIX paths, in the order written. A read-only command writes an empty array. |
+| `error` | object or null | Null on success and on a finding. On an error it carries `code`, `message`, `hint` and `path`. |
+| `<command>` | object | The command's own payload, under the first word of the command name. |
+
+## A finding row
+
+Every row of `findings.items[]` has the same shape on every command, so an agent can dispatch on the
+rows alone without reading the per-command payload.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `code` | string | The verdict or reason code, such as `SPEECH_AT_CUT`. Dispatch on this. |
+| `label` | string | The human label, such as `SPEECH AT CUT`. Nothing parses it. |
+| `certain` | boolean | True when the finding is certain. |
+| `section` | integer or null | The section number. |
+| `cue` | string or null | The cue id. |
+| `where` | string or null | The file, the page or the artifact the finding is about, as a project-relative path when it is a file. |
+| `detail` | string or null | One sentence of detail, with any measured number in it. |
+
+A row that judges nothing carries the passing code `NOTE`, so `code` and `label` are strings on
+every row and a reader never meets a null code.
+
+## An error
+
+The `error` object is filled by whatever raised the error, so a slot it does not know is null.
+
+| Key | Meaning |
+|---|---|
+| `code` | One of `CONFIG`, `MISSING_INPUT`, `PROVIDER`, `TOOL`, `USAGE` and `INTERNAL`. |
+| `message` | One sentence. It never carries the value of a secret. |
+| `hint` | The smallest next action, or null. |
+| `path` | The project-relative file the error is about, or null. |
+
+In text mode the same error prints as `error[CONFIG]: ...` on stderr, so the code is readable
+without `--json`.
+
+## Exit codes
+
+| Code | Meaning | How to tell |
+|---|---|---|
+| 0 | The command ran and found nothing, or `--exit-zero` was passed. | `ok` is true, or `exit_code` is 0 with findings present. |
+| 1 | The command ran and found something, which is a certain finding or an uncertain one under `--strict`. | `error` is null and `findings.certain` or `findings.uncertain` is above zero. |
+| 2 | A usage error from the parser, such as an unknown command, an unknown flag or a bad value. | `error.code` is `USAGE`. |
+| 3 | DeckTalk itself could not run. | `error` is not null and `error.code` names the error class. |
+| 130 | The run was interrupted. The process was signalled, and no envelope is promised. | There is no envelope to read. |
+
+The rule an agent follows is one line. A non-zero exit with `error` null is a finding, and the agent
+may fix the project and run the command again. A non-null `error` is an error, and the agent stops
+and tells the person.
+
+Write the trigger as `error == null` rather than as "exits 1", because a broken machine can exit
+non-zero for reasons that are not the project's fault.
+
+## Watching a build
+
+`decktalk build` appends one JSON Lines object per event to `build/progress.jsonl`, relocatable with
+`--progress`. Each row carries `ts`, `stage`, `stage_index`, `stage_count`, `section`, `event`,
+`detail` and `pid`, and `event` is one of `start`, `done`, `skip` and `fail`.
+
+Poll `decktalk status --json` rather than tailing that file. Its `run` object is null when no build
+is running, and otherwise carries `pid`, `started`, `stage`, `sections_done`, `sections_total` and
+`alive`.
+
+## Reading what a project has
+
+`status.narration` is the narration clock that `build/narration/takes.json` gives: `exists`,
+`estimated`, `total_seconds`, and one `sections[]` row per spoken section with `key`, `title`,
+`start`, `end` and `duration`. `estimated` is true while the takes are placeholders a run without
+voice wrote.
+
+Each `status.sections[]` row carries `key`, `kind`, `source`, `recorded`, `cut` and `stale`. `stale`
+is null while the recording on disk still matches the project, and otherwise one sentence saying why
+it does not, which is the same rule `record` uses to decide what to record again.

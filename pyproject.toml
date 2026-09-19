@@ -1,7 +1,7 @@
 [project]
 name = "decktalk"
 version = "0.3.0"
-description = "Narrated presentations, cut to the word. A markdown script, an ElevenLabs voice, and HTML slides go in, and one mp4 comes out."
+description = "Every picture lands on its word, and you edit the video like a doc. DeckTalk turns a markdown script, HTML slides, and your voice into one narrated mp4, for technical tutorials, product demos, and lessons."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -38,12 +38,12 @@ classifiers = [
     "Topic :: Multimedia :: Video",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
-dependencies = ["playwright>=1.50", "static-ffmpeg>=2.7"]
+dependencies = ["playwright>=1.50,<2"]
 
 [project.urls]
-Homepage = "https://decktalk.app"
+Homepage = "https://decktalk.ai"
 Repository = "https://github.com/jacobcbeaudin/decktalk"
-Documentation = "https://docs.decktalk.app"
+Documentation = "https://docs.decktalk.ai"
 Issues = "https://github.com/jacobcbeaudin/decktalk/issues"
 Changelog = "https://github.com/jacobcbeaudin/decktalk/blob/main/CHANGELOG.md"
 
@@ -54,8 +54,20 @@ decktalk = "decktalk.cli:main"
 requires = ["uv_build>=0.8.0,<0.13.0"]
 build-backend = "uv_build"
 
+# `uv build` reads the working tree, so a Finder sidecar next to the template would ship in a wheel
+# cut from a laptop. tests/test_wheel.py checks the built wheel against the files git tracks.
+[tool.uv.build-backend]
+source-exclude = ["**/.DS_Store"]
+wheel-exclude = ["**/.DS_Store"]
+
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.11", "ty>=0.0.1"]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=6",
+    "pytest-timeout>=2.3",
+    "ruff>=0.11",
+    "ty>=0.0.1",
+]
 
 [tool.ruff]
 line-length = 120
@@ -75,8 +87,29 @@ python-version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Two modules of the tree are named plan.py, so their mirrored test files share a basename.
+consider_namespace_packages = true
+# tests/ is on the path, so a module that holds pages several test modules share is imported by name.
+pythonpath = ["tests"]
 markers = [
-    "browser: needs headless Chromium (run `decktalk setup` first)",
-    "media: runs the ffmpeg that `decktalk setup` fetches",
+    "browser: needs headless Chromium (run `decktalk install` first)",
+    "media: runs the ffmpeg that `decktalk install` fetches",
+    "e2e: builds the pipeline fixture in tests/e2e with Chromium and ffmpeg, about a minute",
+    "scaffold: records and verifies every packaged project without a voice, about five minutes",
 ]
-addopts = "-m 'not browser and not media'"
+# A bare `pytest` runs the unit suite alone. Pass -m to pick the slower suites, as scripts/check.py does.
+addopts = "-m 'not browser and not media and not e2e and not scaffold' --strict-markers --import-mode=importlib"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["decktalk"]
+# Playwright runs every synchronous call on a greenlet, so without this every line after the first
+# page call inside a browser test reads as dead and the floor below would be blind to the recorder.
+concurrency = ["thread", "greenlet"]
+
+[tool.coverage.report]
+# The floor is the whole suite with `-m 'not scaffold'`, rounded down, with one point of room for the
+# paths a platform takes and no more. Raise it when coverage grows.
+fail_under = 91
+show_missing = false
+skip_empty = true

@@ -1,23 +1,23 @@
 ---
 title: Requirements and costs
-description: What DeckTalk needs, what setup downloads, and which commands spend ElevenLabs credits.
+description: What DeckTalk needs, what install downloads, and which commands spend ElevenLabs credits.
 ---
 
-This page lists what DeckTalk needs, what `decktalk setup` downloads, and which commands spend ElevenLabs credits. Read it before you set up a new machine or a CI runner, and before your first voiced build.
+This page lists what DeckTalk needs, what `decktalk install` downloads, and which commands spend ElevenLabs credits. Read it before you set up a new machine or a CI runner, and before your first voiced build.
 
 ## Software
 
 DeckTalk needs Python 3.12 or later. It runs on Linux, macOS, and Windows.
 
-- DeckTalk has two Python dependencies, Playwright and static-ffmpeg. Your installer adds both.
+- DeckTalk has one Python dependency, Playwright. Your installer adds it.
 - Playwright includes its own browser driver, so you do not need Node.
-- `decktalk setup` downloads Chromium, ffmpeg, and KaTeX. You install nothing else by hand.
+- `decktalk install` downloads Chromium and ffmpeg. KaTeX ships inside the wheel, and you install nothing else by hand.
 
 The [quickstart](/quickstart) installs DeckTalk with uv, pipx, or pip.
 
 ## Accounts
 
-A silent build needs no account and no API key. A voiced build needs two values from ElevenLabs.
+A build without voice needs no account and no API key. A voiced build needs two values from ElevenLabs.
 
 | Variable | Value | Needed by |
 |---|---|---|
@@ -32,15 +32,15 @@ Only two parts of DeckTalk call ElevenLabs. The `narrate` stage calls the text-t
 
 | Command or change | When it spends credits |
 |---|---|
-| `decktalk build` without `--silent` | It voices each section whose text, title, or voice changed since the last voiced build. It voices every section when the narration cache is empty. |
-| `decktalk narrate` without `--silent` | It voices the same sections as a build. `--only` limits it to the sections you name. |
+| `decktalk build` without `--no-voice` | It voices each section whose text, title, or voice changed since the last voiced build. It voices every section when the narration cache is empty. |
+| `decktalk narrate` without `--no-voice` | It voices the same sections as a build. `--only` limits it to the sections you name. |
 | `--force` on `build` or `narrate` | It voices every section again, even if nothing changed. |
 | A new voice id, model, output format, or `[voice]` setting | The next voiced build voices every section again, because the cache key includes all of them. |
 | `decktalk soundscape` | It generates each part whose request changed or whose file is missing. `--force` generates every part again. |
 
 A voiced section costs the characters of its whole text. An edit therefore costs every changed section in full, not only the changed sentences. A ten-minute narration is about 9,000 characters.
 
-A silent build stops when the project has voiced takes. With `--force`, it empties the narration cache, so the next voiced build voices every section again. [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build) explains the cache.
+A build without voice stops when the project has voiced takes. With `--force`, it empties the narration cache, so the next voiced build voices every section again. [A build without voice and a voiced build](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build) explains the cache.
 
 To see a run before it spends credits, use `--dry-run` or `preflight`. None of these commands calls the API:
 
@@ -48,7 +48,7 @@ To see a run before it spends credits, use `--dry-run` or `preflight`. None of t
 - `decktalk preflight` prints the same plan, resolves every cue, and estimates each reveal from frozen frames.
 - `decktalk soundscape --dry-run` prints every request.
 
-These commands never spend credits: a silent build, `setup`, `init`, `doctor`, `preflight`, `beats`, `record`, `measure`, `check`, `assemble`, `verify`, `shots`, `status`, and `runtime`.
+These commands never spend credits: a build without voice, `install`, `init`, `doctor`, `preflight`, `align`, `record`, `assemble`, `verify`, `screenshots`, `words`, `clip`, `serve`, and `status`.
 
 ### ElevenLabs plans
 
@@ -60,15 +60,17 @@ Every ElevenLabs plan can call the API, including the free plan. The free plan h
 
 For a video you publish, start with the Starter plan.
 
-## What setup downloads
+## What install downloads
 
-`decktalk setup` makes three downloads, one time per machine. `decktalk doctor` then reports on each download.
+`decktalk install` makes two downloads, one time per machine. `decktalk doctor` then reports on each download.
 
-| Download | How `setup` gets it |
+| Download | How `install` gets it |
 |---|---|
-| Chromium | `setup` runs `playwright install chromium`. |
-| ffmpeg and ffprobe | static-ffmpeg downloads a static build into its directory in DeckTalk's Python environment. |
-| KaTeX | `setup` downloads the release from GitHub into `katex/<version>` in DeckTalk's cache. |
+| Chromium | `install` runs `playwright install chromium`. |
+| ffmpeg and ffprobe | `install` downloads one pinned GPL build, checks each archive against the SHA-256 DeckTalk records for it, and unpacks it into `ffmpeg/<version>-<platform>` in DeckTalk's cache. |
+
+KaTeX is not downloaded. The pinned release ships inside the wheel, and `decktalk init` copies it into
+`deck/katex/`, so a project typesets its equations with no network and no CDN tag.
 
 | Cache | Linux | macOS | Windows |
 |---|---|---|---|
@@ -79,32 +81,56 @@ To move DeckTalk's cache, set `DECKTALK_CACHE_DIR`.
 
 ### Linux system libraries
 
-On Linux, `setup` passes `--with-deps` to Playwright, and Playwright installs Chromium's system libraries with apt-get.
+On Linux, `install` passes `--with-deps` to Playwright, and Playwright installs Chromium's system libraries with apt-get.
 
 1. Playwright runs apt-get through sudo.
 2. If sudo is missing, it uses `su root -c`.
-3. If `setup` runs as root, it uses neither.
+3. If `install` runs as root, it uses neither.
 
-If the distribution has no apt-get, this download fails. `setup` then stops before it downloads ffmpeg and KaTeX.
+If the distribution has no apt-get, this download fails. `install` then stops before it downloads ffmpeg.
 
 ### If a download is missing
 
-- **KaTeX download failed.** `setup` warns and continues. `decktalk init` then warns that KaTeX is not cached, and the new project's pages load KaTeX from a CDN.
-- **KaTeX is not cached.** `doctor` prints `warning` in the `katex` row and exits 0, because pages load KaTeX from a CDN. With `--strict`, it exits 1.
-- **`setup` never ran.** static-ffmpeg downloads ffmpeg the first time DeckTalk needs it.
-- **static-ffmpeg cannot give ffmpeg.** DeckTalk uses the ffmpeg on your PATH.
+- **The wheel's KaTeX copy is incomplete.** `doctor` prints `MISSING` in the `katex` row and names each absent file. Reinstall DeckTalk.
+- **`install` never ran.** DeckTalk downloads the pinned build the first time it needs ffmpeg.
+- **DeckTalk pins no build for your platform, or the download cannot run.** DeckTalk uses the ffmpeg on your PATH. A download whose digest does not match is discarded and never falls back.
 
 `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE` override every ffmpeg source above.
 
+## Install on a managed machine
+
+A machine with no admin rights, an index mirror, or an intercepting proxy can still record. Five settings cover the cases that come up, and none of them needs a change to the project.
+
+| What the machine blocks | What to set |
+|---|---|
+| The package index | Point your installer at your mirror, the way uv, pipx, or pip already does it. DeckTalk needs one runtime dependency, Playwright. |
+| The Chromium download host | Set `PLAYWRIGHT_DOWNLOAD_HOST` to your mirror before `decktalk install`, as Playwright documents. |
+| A shared browser directory, or a read-only home | Set `PLAYWRIGHT_BROWSERS_PATH` to a directory you can write. Playwright reads it on the download and on every launch, so set it in both places. |
+| The ffmpeg download | Put an approved `ffmpeg` and `ffprobe` on the machine and name them in `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE`. Those two override every other ffmpeg source, so `install` reports them and downloads no build. |
+| A write to the default cache | Set `DECKTALK_CACHE_DIR` to a directory you can write. Everything DeckTalk downloads goes under it. |
+
+If the machine already has an approved Chrome or Chromium, record with it instead of the downloaded build. Name its executable in `[record] browser_path`.
+
+```toml decktalk.toml
+[record]
+browser_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+```
+
+The pinned Playwright build is the reference build, and DeckTalk's timing limits are measured against it. A browser of your own is supported and unverified, so check a first video's reveals with `decktalk verify` before you trust the limits.
+
+A proxy needs no rule of its own. `record`, `screenshots`, and `preflight` open every page at `http://project.localhost/` and answer each request from your project directory through Playwright's request routing, which runs before the network stack. No proxy ever sees that host, and every other request a recorded page makes goes the way the machine sends it. `decktalk serve` binds 127.0.0.1 and picks a free port, and `--host` and `--port` move it.
+
+`decktalk doctor` prints the Chromium revision and the ffmpeg build a run would use, so the machine's owner can read what a recording will launch before it runs.
+
 ## Time
 
-Recording runs in real time, one section after another. A first silent build of the scaffold took about 276 seconds on a MacBook Pro with Apple M5 Pro and 64 GB memory. The video it made is 257.72 seconds long.
+Recording runs in real time, one section after another. A first build without voice of the starter took about 64 seconds on a MacBook Pro with Apple M5 Pro and 64 GB memory. The video it made is 44.88 seconds long, so most of the time is the recording and the encode.
 
 A slower machine takes longer. [Rebuild one section](/guides/rebuild-one-section) shows how to record only the sections that changed.
 
 ## The ffmpeg license
 
-The ffmpeg builds that static-ffmpeg downloads are GPL builds. DeckTalk runs ffmpeg as a separate process and does not link against it. [THIRD_PARTY_NOTICES.md](https://github.com/jacobcbeaudin/decktalk/blob/main/THIRD_PARTY_NOTICES.md) lists the license of each build.
+The ffmpeg builds that `install` downloads are GPL builds. DeckTalk runs ffmpeg as a separate process and does not link against it. [THIRD_PARTY_NOTICES.md](https://github.com/jacobcbeaudin/decktalk/blob/main/THIRD_PARTY_NOTICES.md) lists the license of each build.
 
 To use an ffmpeg build of your own, set `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE` to its two executables.
 

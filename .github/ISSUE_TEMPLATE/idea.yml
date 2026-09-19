@@ -1,0 +1,23 @@
+name: Idea
+description: Something DeckTalk should do, or should do differently.
+labels: [idea]
+body:
+  - type: textarea
+    id: video
+    attributes:
+      label: The video you are trying to make
+      description: Describe the video and the audience. An idea is judged against a video somebody wants.
+    validations:
+      required: true
+  - type: textarea
+    id: stops
+    attributes:
+      label: What stops you today
+      description: What you tried, and where it ran out. Paste the command output if there is any.
+    validations:
+      required: true
+  - type: textarea
+    id: shape
+    attributes:
+      label: The shape you have in mind
+      description: A command, a flag, a key in decktalk.toml, or a page behaviour. A rough sketch is enough.

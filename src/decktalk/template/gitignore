@@ -1,8 +1,0 @@
-.env
-build/
-media/*.mp4
-media/*.mov
-media/*.mp3
-media/*.wav
-!media/markers.json
-.DS_Store

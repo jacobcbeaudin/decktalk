@@ -1,7 +1,7 @@
 {
   "source": {
     "decktalk": "0.2.0",
-    "build": "decktalk build --silent on the scaffold that decktalk init writes",
+    "build": "decktalk build --no-voice on the scaffold that decktalk init writes",
     "estimated_words": true
   },
   "word": "bowl",

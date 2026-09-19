@@ -1,9 +1,9 @@
 ---
 title: Quickstart
-description: Install DeckTalk, build the scaffold video without an account, then add your voice.
+description: Install DeckTalk, build the starter video without an account, then add your voice.
 ---
 
-This quickstart installs DeckTalk and builds the scaffold video, first with no account and then with your voice. Only part 3 needs an ElevenLabs API key.
+This quickstart installs DeckTalk and builds the starter video, first with no account and then with your voice. Only part 3 needs an ElevenLabs API key.
 
 If an agent does these steps for you, give it the [Reference card](/reference/card).
 
@@ -51,24 +51,23 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
     Check that the installer names the `decktalk` executable.
   </Step>
 
-  <Step title="Download Chromium, ffmpeg, and KaTeX" stepNumber={2}>
-    `decktalk setup` downloads the tools that DeckTalk runs. Run it one time per machine.
+  <Step title="Download Chromium and ffmpeg" stepNumber={2}>
+    `decktalk install` downloads the tools that DeckTalk runs. Run it one time per machine.
 
     ```console
-    decktalk setup
+    decktalk install
     ```
 
-    {/* sample: decktalk setup, last lines, uv tool install on macOS */}
+    {/* sample: decktalk install, uv tool install on macOS */}
     ```text
-    == ffmpeg / ffprobe
-       ffmpeg  ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffmpeg
-       ffprobe ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffprobe
-    == KaTeX 0.18.7
-       cached  ~/Library/Caches/decktalk/katex/0.18.7
-    setup complete
+    == Chromium (Playwright)
+    == ffmpeg 8.1.2
+       ffmpeg  ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
+       ffprobe ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
+    install complete
     ```
 
-    Check that the last line is `setup complete`. On Linux, this step asks for sudo. [What setup downloads](/requirements#what-setup-downloads) says where each download goes.
+    Check that the last line is `install complete`. On Linux, this step asks for sudo. [What install downloads](/requirements#what-install-downloads) says where each download goes.
   </Step>
 
   <Step title="Check the tools" stepNumber={3}>
@@ -80,23 +79,25 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
 
     {/* sample: decktalk doctor, uv tool install on macOS */}
     ```text
+    components 6, missing 0
     python    ok      3.13.1 (~/.local/share/uv/tools/decktalk/bin/python)
     chromium  ok      151.0.7922.34
-    ffmpeg    ok      ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffmpeg
-    ffprobe   ok      ~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/static_ffmpeg/bin/darwin_arm64/ffprobe
-    config    ok      none (optional, at ~/Library/Application Support/decktalk/decktalk.toml)
-    katex     ok      ~/Library/Caches/decktalk/katex/0.18.7
+    ffmpeg    ok      ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
+    ffprobe   ok      ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
+    config    ok      none (at ~/Library/Application Support/decktalk/decktalk.toml)
+    katex     ok      0.18.7 in the wheel (~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/decktalk/katex)
     ```
 
-    Check that every row says `ok`. If a row does not, run `decktalk setup` again.
+    Check that the first line reads `missing 0` and that every row says `ok`. If a row does not, run `decktalk install` again. The `config` row is the per-machine settings file, which is optional, so `none` there is a passing row.
   </Step>
 </Steps>
 
-## Part 2: Build the scaffold without an account
+## Part 2: Build the starter without an account
 
 <Steps>
-  <Step title="Create the scaffold" stepNumber={4}>
-    `decktalk init` writes the scaffold, a complete example project.
+  <Step title="Create the starter" stepNumber={4}>
+    `decktalk init` writes the starter: three sections, one page, one equation, and a build that
+    takes about a minute. Nothing in it is a demo you have to delete first.
 
     ```console
     decktalk init my-lesson
@@ -104,17 +105,22 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
 
     {/* sample: decktalk init my-lesson, run in ~ */}
     ```text
+    files 16
     created ~/my-lesson
-      decktalk.toml  the plan: sections -> pages or clips, voice, mix, soundscape
+      decktalk.toml  the project file: sections -> pages or clips, voice, mix, soundscape
       script.md      the narration (## N. sections)
       cues.json      which spoken phrase each visual lands on
-      deck/          index.html, lesson.html, decktalk-runtime.js (open a page for its scene index)
-      media/         your clips, b-roll, markers.json
-    next: cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID), then `decktalk build`
-          or `decktalk build --silent` to render with placeholder narration and no API key
+      deck/          the pages, decktalk-runtime.js and katex/ (open a page for its scene index)
+      AGENTS.md      the rules an agent working in this project follows
+      .agents/skills the six DeckTalk skills, linked from .claude/skills
+    next: `decktalk build --no-voice` renders with placeholder narration, no API key and no spend
+          then cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID) and `decktalk build`
     ```
 
-    If you skipped step 2, run `decktalk setup` now, then run `init` in a new folder. `init` copies the cached KaTeX into the project.
+    If you skipped step 2, run `decktalk install` now. `init` copies the packaged KaTeX into `deck/katex/` either way.
+
+    <Tip>`decktalk init --example lesson my-lesson` writes a finished lesson instead, to read rather than
+    to start from. `--no-skills` leaves the six skills out.</Tip>
   </Step>
 
   <Step title="Go into the project" stepNumber={5}>
@@ -124,47 +130,49 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
   </Step>
 
   <Step title="Open the slides in a browser" stepNumber={6}>
-    Open the scaffold's main page. This takes seconds, and you see the slides before you build.
+    Serve the project and open the page it prints. This takes seconds, and you see the slides before
+    you build. `decktalk serve` answers from your project directory on 127.0.0.1, which is the origin
+    the recorder uses, so what you see is what the recorder will see. Press Ctrl-C to stop it.
 
-    <Tabs>
-      <Tab title="macOS">
-        ```console
-        open deck/index.html
-        ```
-      </Tab>
-      <Tab title="Linux">
-        ```console
-        xdg-open deck/index.html
-        ```
-      </Tab>
-      <Tab title="Windows">
-        ```console
-        start deck\index.html
-        ```
-      </Tab>
-    </Tabs>
+    ```console
+    decktalk serve --open
+    ```
 
-    <Frame caption="The scene index lists each scene of the page with its steps and cue ids.">
-      <img src="/images/quickstart-index.png" alt="The page my-lesson in index mode. It lists scenes 1, 2, 4, 6, 7, and 5, each with a play link. Under each scene, one step shows its hold seconds and cue ids." />
+    {/* sample: decktalk serve, in the starter */}
+    ```text
+    http://127.0.0.1:57962/deck/index.html
+    serving /Users/you/my-lesson, and Ctrl-C stops it
+    ```
+
+    The port is any free one unless you set `--port`.
+
+    <Frame caption="The scene index lists each scene of the page with its slides and cue ids.">
+      <img src="/images/quickstart-index.png" alt="The starter page in index mode, headed My Lesson. A line names the stage as 1920 by 1080 and gives the URL parameters: ?scene=N previews a scene, ?slide=ID freezes a slide, &speed=2, &hud=1, and &cues=id@s with &t0=. Under it are Scene 1 Open, Scene 2 How it works, and Scene 3 Close, each with a play link, and under each one a single slide with its hold seconds and its four cue ids." />
     </Frame>
 
-    Check that the page shows an index of its scenes and steps.
+    Check that the page shows an index of its three scenes, one slide each. Every cue id of a slide is listed beside it.
   </Step>
 
   <Step title="Build the video without an account" stepNumber={7}>
-    A silent build uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took about 276 seconds. Leave it running, and read [What the example video shows](#what-the-example-video-shows).
+    A build without voice uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took about 64 seconds. Read [What the starter shows](#what-the-starter-shows) while it runs.
 
     ```console
-    decktalk build --silent
+    decktalk build --no-voice
     ```
 
-    {/* sample: decktalk build --silent, fresh scaffold on macOS (the last line of the assemble log and the last line) */}
+    {/* sample: decktalk build --no-voice, fresh starter on macOS (the last lines of the assemble stage, then the last two lines) */}
     ```text
-    done: ~/my-lesson/build/out/my-lesson.mp4  (257.72s)  copy: my-lesson-20260914-0003.mp4
-    built ~/my-lesson/build/out/my-lesson.mp4
+    [caps] 9 cue(s) -> my-lesson.srt, my-lesson.vtt
+    [chap] 3 chapter(s) -> my-lesson.chapters.txt
+    done: ~/my-lesson/build/out/my-lesson.mp4  (44.88s)
+    [4/5 assemble] done in 2.5s
+    ===== verify =====
+    ...
+    stages 5, seconds 44.88
+    built build/out/my-lesson.mp4
     ```
 
-    Check that the last line starts with `built`.
+    Check that the last line starts with `built`. Each of the five stages prints a table of its own above it.
   </Step>
 
   <Step title="Play the video" stepNumber={8}>
@@ -186,13 +194,13 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
       </Tab>
     </Tabs>
 
-    The video is 257.72 seconds long, in nine sections, with a soft click on each word. Sections 5 and 7 play titled slates, because the scaffold ships no clip files. [What the example video shows](#what-the-example-video-shows) describes each section.
+    The video is 44.88 seconds long, in three sections, with a soft click on each word. [What the starter shows](#what-the-starter-shows) describes each one.
   </Step>
 </Steps>
 
 ## Part 3: Add your voice and change a sentence
 
-If you have no ElevenLabs account, stop here. The silent video is a complete build.
+If you have no ElevenLabs account, stop here. The video without voice is a complete build.
 
 <Steps>
   <Step title="Copy the example settings file" stepNumber={9}>
@@ -222,77 +230,97 @@ If you have no ElevenLabs account, stop here. The silent video is a complete bui
   </Step>
 
   <Step title="Build the video with your voice" stepNumber={11}>
-    <Warning>`decktalk build` without `--silent` spends ElevenLabs credits. [What spends credits](/requirements#what-spends-credits) lists the cost.</Warning>
+    <Warning>`decktalk build` without `--no-voice` spends ElevenLabs credits. [What spends credits](/requirements#what-spends-credits) lists the cost.</Warning>
 
     ```console
     decktalk build
     ```
 
-    {/* SAMPLE NEEDED (R5, voiced build): the narrate lines, one [tts ] line per spoken section, then the built line */}
+    The `narrate` stage prints one line per section it sends, and the run ends with `built` as before. It
+    voices all three sections, because a click track is never reused as a voice. `decktalk narrate --dry-run`
+    prints what the run will send and what it will cost before you start it.
 
-    This build voices every section, because it never reuses the click track. Check that the last line starts with `built`.
+    ```console
+    decktalk narrate --dry-run
+    ```
+
+    {/* sample: decktalk narrate --dry-run, fresh starter, the take plan and its totals */}
+    ```text
+     #  section                take         sent spoken  reason
+    -----------------------------------------------------------
+     1  open                   synthesize    140    131  no take yet
+     2  how-it-works           synthesize    150    141  no take yet
+     3  close                  synthesize    126    120  no take yet
+    -----------------------------------------------------------
+    voice 3 section(s): 416 characters sent, 392 spoken, 949 with context. 0 cached. About $0.12 at $0.30 per 1,000.
+    ```
+
+    The rate comes from `[voice] price_per_1000_characters` in your own `decktalk.toml`, so the dollars are your plan's.
   </Step>
 
-  <Step title="Add one count" stepNumber={12}>
-    In section 1 of `script.md`, add a fourth count to the Open.
+  <Step title="Change one word" stepNumber={12}>
+    In section 3 of `script.md`, add a word to the last line.
 
     ```diff script.md
-    -A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat] Two, three. [beat]
-    +A bowl. [beat] A ball. [beat] Watch it step down on my count. [beat] One. [beat] Two, three, four. [beat]
+    -[beat] Make your own at decktalk dot AI.
+    +[beat] Make your own today at decktalk dot AI.
     ```
 
-    In section 1 of `cues.json`, add a cue for the new word after the cue for "three".
-
-    ```diff cues.json
-             { "cue": "1.1three", "on": "three" },
-    +        { "cue": "1.1four", "on": "four" },
-    ```
-
-    Scene 1 draws one box and one step for each count word it hears, so the page needs no change.
+    The cue for that line matches the phrase "Make your own", which is still there, so `cues.json`
+    and the page need no change.
   </Step>
 
-  <Step title="Build sections 1 and 2" stepNumber={13}>
+  <Step title="Build again" stepNumber={13}>
     ```console
-    decktalk build --only 1 --only 2
+    decktalk build
     ```
 
-    {/* SAMPLE NEEDED (R5, voiced build): the narrate log after the edit, with [tts ] for section 1 and [skip] for sections 2, 3, 4, 6, 8, and 9 */}
+    DeckTalk voices only section 3 again. Sections 1 and 2 take their narration from the cache, because their text did not change. A take is named by the hash of its text and voice settings, so the two unchanged sections play the files they already have. [Rebuild one section](/guides/rebuild-one-section) says what each kind of edit runs again.
 
-    DeckTalk voices only section 1 again. It records sections 1 and 2 again, because scene 2 opens on the Open's last frame and shows its count times. The other sections take their narration from the cache. [Rebuild one section](/guides/rebuild-one-section) says what each kind of edit runs again.
-
-    <Tip>If you are not sure which sections changed, run `decktalk build`. It voices only the sections whose text changed.</Tip>
+    <Tip>Run `decktalk narrate --dry-run` again after the edit. Sections 1 and 2 read `cached`, section 3 reads `synthesize`, and the totals count only what section 3 costs.</Tip>
   </Step>
 
   <Step title="Check that a reveal starts on its word" stepNumber={14}>
     ```console
-    decktalk verify 1:1.1four
+    decktalk verify 3:3.1make
     ```
 
-    {/* SAMPLE NEEDED (R5, voiced build): the cue row for 1:1.1four */}
+    {/* sample: decktalk verify 3:3.1make after decktalk build --no-voice on a fresh starter (cue table only) */}
+    ```text
+    check                 cue       at   chg %   ctl %   offset     a/v  result
+    3:3.1make            8.71    38.87   10.85    0.00    +10ms    -6ms  changed
+    ```
 
-    Check that the result is `changed`. The offset column is the time from the cue time to the onset of the reveal, in milliseconds. [Verify](/reference/verify#cues) defines every column.
+    Check that the result is `changed`. The offset column is the time from the cue time to the onset of the reveal, in milliseconds. The `a/v` column is filled only after a build without voice, because only a click track has clicks. [Verify](/reference/verify#cues) defines every column.
   </Step>
 </Steps>
 
-## What the example video shows
+## What the starter shows
 
-The scaffold is a short lesson in nine sections. Sections 4 to 8 share the title "The edit", so the video has five chapters. Each page section names its page and its scene, and each clip section names its video file.
+The starter is three sections on one page. Every slide is markup: a `<template data-slide>` inside a
+`[data-scene]` wrapper, with a `data-cue` on each thing that appears. There is no JavaScript to read.
 
 | Section | Plays | What it shows |
 |---|---|---|
-| 1. Open | `deck/index.html`, scene 1 | A bowl and a ball appear on their words. The ball steps down on each count word, and each count word's start time appears. |
-| 2. How it works | `deck/index.html`, scene 2 | A script card and a slide card appear. A waveform runs under one line, and the slide card grows into the lesson. |
-| 3. How AI learns | `deck/lesson.html`, scene 3 | A box of knobs guesses, and a meter shows its [error](/help/faq#what-does-the-lesson-mean-by-error). A nudge to the knobs lowers the error. A ball steps down a bowl, and the lesson ends on chips that do the math. |
-| 4. The edit | `deck/index.html`, scene 4 | The lesson shrinks into a video player. Five chips name the video's parts, and the script opens under them. |
-| 5. The edit | the clip `media/edit-before.mov` | The Open before the edit, inside the player. A titled slate plays until the file exists. |
-| 6. The edit | `deck/index.html`, scene 6 | The script gains one word, "four", and a new box waits for it. The build voices only part one again. |
-| 7. The edit | the clip `media/edit-after.mov` | The Open after the edit, with a fourth count. A titled slate plays until the file exists. |
-| 8. The edit | `deck/index.html`, scene 7 | Before and after stand side by side with their count times and a check. Then the player grows back into the video. |
-| 9. Close | `deck/index.html`, scene 5 | The end card. |
+| 1. Open | `deck/index.html`, scene 1 | The title, then a card for each of the two files you write, then the promise. |
+| 2. How it works | `deck/index.html`, scene 2 | The heading, then one displayed equation typeset by KaTeX, then the same average as two lines of Python, then a closing band. |
+| 3. Close | `deck/index.html`, scene 3 | The idea, the line about rebuilding one part, and the end card. |
 
-Both clip sections set `optional = true`, so `decktalk build --strict` plays their slates and still passes. [Add a clip section](/guides/clip-section) shows how to fill them.
+The equation is the one place the starter shows a trap: `data-tex` holds the TeX and the element's
+own text is the fallback that shows if KaTeX ever fails to load. The comment beside it names all
+three traps. [Design a slide](/guides/design-a-slide) is the next thing to read.
 
-The scaffold's `decktalk.toml` also has a section 0 in comments, which opens the video on a clip of your own. [Add a clip section](/guides/clip-section) shows how to use it.
+### The examples
+
+`decktalk init --example NAME` writes a finished project instead of the starter.
+
+| Name | What it is |
+|---|---|
+| `lesson` | A lesson on how a model learns, with a figure drawn in code and moved on every cue. It is the example of a page that needs more than attributes. |
+| `product` | Reserved. It is the film that shows DeckTalk itself, and it ships with that film. |
+| `tutorial` | Reserved. It is a short technical tutorial with a code slide, a terminal block and a screenshot. |
+
+`decktalk init --example NAME` refuses a reserved name, so `lesson` is the one example to read today.
 
 ## Next
 

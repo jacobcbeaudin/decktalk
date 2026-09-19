@@ -20,61 +20,61 @@ Entry template. Group entries under the H2 of the command that prints them, in p
 This page lists each message, verdict, and warning that DeckTalk prints, with its cause and its fix.
 Search the page for the text you see.
 
-If the project has no voiced build yet, run `decktalk build --silent` first. It spends no credits,
+A line that starts `error[CODE]:` is an error, and the command exits 3 without finishing its work. A
+verdict or a note is a finding, and the command finishes and exits 1, or 0 when the finding is
+uncertain and `--strict` was not passed. [Exit codes](/reference/cli#exit-codes) has the whole set.
+
+If the project has no voiced build yet, run `decktalk build --no-voice` first. It spends no credits,
 and it shows if the problem is in the cues, the pages, or the assembly. If the project has a voiced
-build, rehearse in a copy of the project. A silent build stops on voiced takes, because it would empty the narration cache, as
-[A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build)
+build, rehearse in a copy of the project. A build without voice stops on voiced takes, because it would empty the narration cache, as
+[A build without voice and a voiced build](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build)
 explains.
 
 ## Find your message
 
 | Text you see | Printed by | Entry |
 |---|---|---|
-| `playwright install failed` | `setup` | [Entry](#playwright-install-failed-in-setup) |
-| `KaTeX download failed` | `setup` | [Entry](#katex-download-failed-in-setup) |
-| `MISSING`, `warning` | `doctor` | [Entry](#missing-or-warning-in-doctor) |
-| `KaTeX is not cached` | `init` | [Entry](#katex-is-not-cached-in-init) |
+| `playwright install failed` | `install` | [Entry](#playwright-install-failed-in-install) |
+| `MISSING` | `doctor` | [Entry](#missing-in-doctor) |
 | `is not empty` | `init` | [Entry](#is-not-empty-in-init) |
 | `must be letters` | `init` | [Entry](#must-be-letters-in-init) |
 | `not set` | `narrate`, `build`, `soundscape` | [Entry](#not-set-in-narrate) |
 | `HTTP 401`, `HTTP 402` | `narrate`, `build`, `soundscape` | [Entry](#http-401-or-http-402-in-narrate) |
 | `could not reach` | `narrate`, `build`, `soundscape` | [Entry](#could-not-reach-in-narrate) |
-| `decktalk.toml not found` | every project command | [Entry](#decktalk-toml-not-found-in-any-command) |
-| `unknown table(s)` | every project command | [Entry](#unknown-tables-in-decktalk-toml) |
+| `decktalk.toml is not there` | every project command | [Entry](#decktalk-toml-is-not-there-in-any-command) |
+| `unknown table(s)` | every project command | [Entry](#unknown-table-s-in-decktalk-toml) |
 | `ignoring unknown key` | every project command | [Entry](#ignoring-unknown-key-in-decktalk-toml) |
-| `must be int, got float` | every project command | [Entry](#must-be-in-decktalk-toml) |
+| `must be int, got float`, `UNREADABLE` | every project command | [Entry](#must-be-in-decktalk-toml) |
 | `invalid tuning value` | every project command | [Entry](#invalid-tuning-value-in-decktalk-toml) |
 | `unfilled placeholders` | `narrate`, `build` | [Entry](#unfilled-placeholders-in-narrate) |
-| `no spoken sections match` | `narrate` | [Entry](#no-spoken-sections-match-in-narrate) |
+| `no spoken section matches` | `narrate` | [Entry](#no-spoken-section-matches-in-narrate) |
 | `have no [[section]] in decktalk.toml` | `narrate`, `build` | [Entry](#have-no-section-in-decktalk-toml-in-narrate) |
-| `have no narration yet` | `narrate` | [Entry](#have-no-narration-yet-in-narrate) |
-| `holds voiced takes` | `narrate --silent`, `build --silent` | [Entry](#holds-voiced-takes-in-narrate) |
-| `phrase not found` | `beats`, `build` | [Entry](#phrase-not-found-in-beats) |
-| `could not be matched to the narration` | `build` | [Entry](#phrase-not-found-in-beats) |
-| `not in deck/index.html` | `beats`, `build` | [Entry](#not-in-its-page-in-beats) |
-| `appear nowhere in the page that plays them` | `build` | [Entry](#not-in-its-page-in-beats) |
-| `UNRESOLVED` | `beats --json`, `verify` | [Entry](#unresolved-in-beats-or-verify) |
-| `UNKNOWN` | `beats --json` | [Entry](#unknown-in-beats) |
-| `shorter than the visuals need` | `beats` | [Entry](#shorter-than-the-visuals-need-in-beats) |
-| `is past the end of the audio` | `beats` | [Entry](#is-past-the-end-of-the-audio-in-beats) |
-| `occurs <N> times in this section` | `beats` | [Entry](#occurs-n-times-in-this-section-in-beats) |
-| `no words` | `beats` | [Entry](#no-words-in-beats) |
-| `is not in decktalk.toml` | `beats`, `build` | [Entry](#is-not-in-decktalk-toml-in-beats) |
+| `have no take yet` | `narrate` | [Entry](#have-no-take-yet-in-narrate) |
+| `holds paid takes` | `narrate --no-voice`, `build --no-voice` | [Entry](#holds-paid-takes-in-narrate) |
+| `phrase not found` | `align`, `build` | [Entry](#phrase-not-found-in-align) |
+| `could not be matched to the narration` | `build` | [Entry](#phrase-not-found-in-align) |
+| `not in deck/index.html` | `align`, `build` | [Entry](#not-in-its-page-in-align) |
+| `appear nowhere in the page that plays them` | `build` | [Entry](#not-in-its-page-in-align) |
+| `UNRESOLVED` | `align --json`, `verify` | [Entry](#unresolved-in-align-or-verify) |
+| `UNKNOWN CUE` | `align --json` | [Entry](#unknown-cue-in-align) |
+| `shorter than the visuals need` | `align` | [Entry](#shorter-than-the-visuals-need-in-align) |
+| `is past the end of the audio` | `align` | [Entry](#is-past-the-end-of-the-audio-in-align) |
+| `occurs <N> times in this section` | `align` | [Entry](#occurs-n-times-in-this-section-in-align) |
+| `no words` | `align` | [Entry](#no-words-in-align) |
+| `is not in decktalk.toml` | `align`, `build` | [Entry](#is-not-in-decktalk-toml-in-align) |
 | `NO CHANGE`, `THIN CHANGE?` | `preflight` | [Entry](#no-change-or-thin-change-in-preflight) |
-| `RUNTIME_OUTDATED` | `preflight` | [Entry](#runtime_outdated-in-preflight) |
-| `PAGE ERROR`, `page error` | `check`, `record`, `build` | [Entry](#page-error-in-check) |
-| `STALLED`, `frame stall(s)` | `check`, `record` | [Entry](#stalled-in-check) |
-| `TRUNCATED` | `check` | [Entry](#truncated-in-check) |
-| `NO COVER` | `measure`, `check` | [Entry](#no-cover-in-measure-or-check) |
-| `BLACK?` | `check` | [Entry](#black-in-check) |
-| `KATEX?`, `KaTeX did not load` | `check`, `record` | [Entry](#katex-in-check) |
+| `PAGE ERROR`, `page error` | `record`, `build` | [Entry](#page-error-in-record) |
+| `STALLED`, `frame stall(s)` | `record` | [Entry](#stalled-in-record) |
+| `TRUNCATED` | `record` | [Entry](#truncated-in-record) |
+| `NO COVER` | `record` | [Entry](#no-cover-in-record) |
+| `BLACK?` | `record` | [Entry](#black-in-record) |
+| `KATEX ERROR`, `KATEX NOT LOADED`, `KaTeX did not load` | `record`, `verify`, `preflight` | [Entry](#katex-error-or-katex-not-loaded-in-record) |
 | `no narration span yet` | `record` | [Entry](#no-narration-span-yet-in-record) |
-| `missing; slate for` | `assemble` | [Entry](#missing-slate-for-in-assemble) |
+| `is missing, so a slate plays` | `assemble` | [Entry](#is-missing-so-a-slate-plays-in-assemble) |
 | `clip missing`, `recording missing` | `assemble` with `--strict` | [Entry](#clip-missing-or-recording-missing-in-assemble) |
 | `using black` | `assemble` | [Entry](#using-black-in-assemble) |
-| `STALE MEASUREMENT` | `assemble` | [Entry](#stale-measurement-in-assemble) |
 | `has no span in` | `assemble` | [Entry](#has-no-span-in-in-assemble) |
-| `underscore missing`, `ambience missing` | `assemble` | [Entry](#underscore-missing-in-assemble) |
+| `music missing`, `ambience missing` | `assemble` | [Entry](#music-missing-in-assemble) |
 | `unresolved; skipped` | `assemble` | [Entry](#unresolved-skipped-in-assemble) |
 | `[loud] skipped` | `assemble` | [Entry](#loud-skipped-in-assemble) |
 | `true peak`, `integrated loudness` | `assemble` | [Entry](#true-peak-or-integrated-loudness-in-assemble) |
@@ -87,87 +87,61 @@ explains.
 | `NO_CLICK` | `verify --json` | [Entry](#no_click-in-verify) |
 | `skipped` | `verify` | [Entry](#skipped-in-verify) |
 | `malformed check` | `verify` | [Entry](#malformed-check-in-verify) |
-| `need build/out/NN-section.mp4 files` | `verify` | [Entry](#need-build/out/nn-section-mp4-files-in-verify) |
+| `nothing to verify` | `verify` | [Entry](#nothing-to-verify-in-verify) |
 | `is not a section in decktalk.toml` | `assemble`, `verify` | [Entry](#is-not-a-section-in-decktalk-toml-in-assemble-or-verify) |
-| `timeline.json not found` | `words`, `clip` | [Entry](#timeline-json-not-found-in-words-or-clip) |
+| `The take index is not there` | `words`, `clip` | [Entry](#the-take-index-is-not-there-in-words-or-clip) |
 | `has no section video` | `clip` | [Entry](#has-no-section-video-in-clip) |
 | `is a clip section` | `clip` | [Entry](#is-a-clip-section-in-clip) |
 | `cuts the word` | `clip` | [Entry](#cuts-the-word-in-clip) |
-| `data-sync text not found in the spoken words` | page | [Entry](#data-sync-text-not-found-in-the-spoken-words-in-a-page) |
-| `matches no element, handler, or step` | page | [Entry](#matches-no-element-handler-or-step-in-a-page) |
+| `data-text="spoken" text not found in the spoken words` | page | [Entry](#data-text="spoken"-text-not-found-in-the-spoken-words-in-a-page) |
+| `matches no element, handler, or slide` | page | [Entry](#matches-no-element-handler-or-slide-in-a-page) |
 | `unknown cue id` | page | [Entry](#unknown-cue-id-in-a-page) |
-| `owns no cue in ?beats=` | page | [Entry](#owns-no-cue-in-a-page) |
-| `TimeoutError` | `shots` | [Entry](#timeouterror-in-shots) |
+| `owns no cue in ?cues=` | page | [Entry](#owns-no-cue-in-a-page) |
 
-## setup, doctor, and keys
+## install, doctor, and keys
 
-### `playwright install failed` in setup
+### `playwright install failed` in install
 
 **Cause.** Playwright could not download Chromium or, on Linux, its system libraries. The output above
 the error shows the reason.
 
 **Fix.**
 1. If the output names a network or proxy problem, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
-2. If you are on Linux, run `decktalk setup` as a user who can use sudo.
-3. Run `decktalk setup` again.
+2. If you are on Linux, run `decktalk install` as a user who can use sudo.
+3. Run `decktalk install` again.
 
-**More.** [What setup downloads](/requirements#what-setup-downloads)
+**More.** [What install downloads](/requirements#what-install-downloads)
 
-### `KaTeX download failed` in setup
+### `MISSING` in doctor
 
-`setup` prints `KaTeX download failed (<reason>). Projects will load it from a CDN instead.` and still
-exits 0.
-
-**Cause.** `setup` could not download the KaTeX release. Pages then load KaTeX from a CDN, which fails
-offline.
-
-**Fix.**
-1. When the machine is online, run `decktalk setup` again.
-2. Run `decktalk doctor` and check that the `katex` row is `ok`.
-
-**More.** [What setup downloads](/requirements#what-setup-downloads)
-
-### `MISSING` or `warning` in doctor
-
-**Cause.** A tool is not installed. The detail says which one and tells you to run `decktalk setup`.
+**Cause.** A component is not installed. The detail says which one.
 - If `chromium` shows `MISSING`, Chromium does not launch.
-- If `ffmpeg` shows `MISSING`, no ffmpeg exists in `DECKTALK_FFMPEG`, the `static-ffmpeg` download, or `PATH`.
-- If `katex` shows `warning`, the KaTeX cache is empty. Pages load KaTeX from a CDN until you run `setup`.
+- If `ffmpeg` shows `MISSING`, no ffmpeg exists in `DECKTALK_FFMPEG`, the pinned download, or `PATH`.
+- If `katex` shows `MISSING`, the wheel's KaTeX copy is incomplete. The detail names each absent file.
 
 **Fix.**
-1. Run `decktalk setup`.
+1. Run `decktalk install`, or reinstall DeckTalk when the `katex` row is the one that is `MISSING`.
 2. Run `decktalk doctor` again.
 
-`doctor` exits 1 on a `MISSING` row. A `warning` row exits 1 only with `--strict`.
+`doctor` exits 1 on a `MISSING` row.
 
 **More.** [`decktalk doctor`](/reference/cli#decktalk-doctor)
 
-### `KaTeX is not cached` in init
-
-**Cause.** `init` ran before `setup` cached KaTeX. `init` then writes CDN tags into `deck/index.html`,
-and equations do not render offline.
-
-**Fix.**
-1. Run `decktalk setup`.
-2. Run `decktalk init` again into a new, empty directory.
-
-**More.** [Build in CI and offline](/guides/ci-and-offline)
-
 ### `is not empty` in init
 
-`init` prints `<dir> is not empty (pass force to write into it anyway)`.
+`init` prints `error[CONFIG]: <dir> is not empty (pass force to write into it anyway)` and exits 3.
 
 **Cause.** The target directory already has files.
 
 **Fix.**
 1. If you want a new project, pass an empty or new directory.
-2. If you want to write into this directory, add `--force`. `--force` overwrites files that the scaffold also has.
+2. If you want to write into this directory, add `--force`. `--force` overwrites every file the starter also writes.
 
 **More.** [`decktalk init`](/reference/cli#decktalk-init)
 
 ### `must be letters` in init
 
-`init` prints `project name '<name>' must be letters, digits, dots, dashes or underscores`.
+`init` prints `error[CONFIG]: project name '<name>' must be letters, digits, dots, dashes or underscores` and exits 3.
 
 **Cause.** The project name starts with a character that is not a letter or digit, or has another
 character. The default name is the directory name.
@@ -189,7 +163,7 @@ counts as unset.
 2. Replace both placeholder values in `.env`.
 3. Run the command again.
 
-You can also export both variables. A silent build needs neither.
+You can also export both variables. A build without voice needs neither.
 
 **More.** [Accounts](/requirements#accounts)
 
@@ -214,13 +188,18 @@ The error reads `HTTP <code> from https://api.elevenlabs.io/v1/text-to-speech/<v
 
 **Fix.**
 1. Check the network connection and any proxy.
-2. If you only need a rehearsal, run `decktalk build --silent` in a copy of the project.
+2. If you only need a rehearsal, run `decktalk build --no-voice` in a copy of the project.
 
-**More.** [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build)
+**More.** [A build without voice and a voiced build](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build)
 
 ## Project files
 
-### `decktalk.toml not found` in any command
+### `decktalk.toml is not there` in any command
+
+```text
+error[CONFIG]: decktalk.toml is not there.
+  hint: Run from a project directory, pass --project DIR, or create one with `decktalk init DIR`.
+```
 
 **Cause.** The command did not run in a project directory, and `--project` was not given.
 
@@ -228,13 +207,19 @@ The error reads `HTTP <code> from https://api.elevenlabs.io/v1/text-to-speech/<v
 1. Run `cd` into the project directory.
 2. If there is no project yet, run `decktalk init DIR`.
 
-If you run from elsewhere, pass `-p DIR` instead.
+If you run from elsewhere, pass `-p DIR` instead. `decktalk status` is the one command that reports
+this rather than raising it. It prints a `MISSING` row and exits 1, because reading the four input
+files is its whole job.
 
 **More.** [Global options](/reference/cli#global-options)
 
 ### `unknown table(s)` in decktalk.toml
 
-The error reads `decktalk.toml: unknown table(s) ['<name>']; known: [...]`.
+{/* sample: decktalk align in a starter with a [mixx] table added */}
+
+```text
+error[CONFIG]: decktalk.toml: unknown table(s) ['mixx']. The known tables are ['audio', 'elevenlabs', 'mix', 'narration', 'output', 'project', 'record', 'section', 'soundscape', 'transition', 'verify', 'video', 'voice'].
+```
 
 **Cause.** A top-level table name has a typo, or it is not a DeckTalk table.
 
@@ -249,10 +234,10 @@ An unknown key inside a table prints a warning instead. See
 
 ### `ignoring unknown key` in decktalk.toml
 
-{/* sample: decktalk status in a scaffold with stability misspelled under [voice] */}
+{/* sample: decktalk status in a starter with stability misspelled under [voice] */}
 
 ```text
-decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?)
+decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?).
 ```
 
 **Cause.** A key inside a table has a typo, or it belongs to another table or section kind. DeckTalk
@@ -269,13 +254,15 @@ The per-machine settings file gets the same warning, with its own path first.
 
 ### `must be` in decktalk.toml
 
-{/* sample: Project.from_toml on a file with seconds = 120.5 under [soundscape.music] */}
+{/* sample: decktalk status in a starter with seconds = 120.5 under [soundscape.music] */}
 
 ```text
-decktalk.toml: [soundscape.music]: 'seconds' must be int, got float
+sections 0 | 1 certain, 0 uncertain finding(s)
+UNREADABLE  decktalk.toml: decktalk.toml: [soundscape.music]: 'seconds' must be int, got float
 ```
 
-**Cause.** A value has the wrong type. The error names the table, the key, and both types.
+**Cause.** A value has the wrong type. The error names the table, the key, and both types. `status`
+reports it as an `UNREADABLE` row and exits 1. Every other command raises it and exits 3.
 
 **Fix.**
 1. Look up the key's type in [decktalk.toml](/reference/decktalk-toml).
@@ -309,12 +296,12 @@ The error reads `unfilled placeholders ['<NAME>'] in the script; fill them or pa
 
 **More.** [Directions and placeholders](/reference/script-md#directions-and-placeholders)
 
-### `no spoken sections match` in narrate
+### `no spoken section matches` in narrate
 
-{/* sample: decktalk narrate --silent --only 5 on a fresh scaffold */}
+{/* sample: decktalk narrate --no-voice --only 5 on a fresh starter */}
 
 ```text
-error: no spoken sections match [5]; spoken sections are [1, 2, 3, 4, 6, 8, 9]
+error[CONFIG]: no spoken section matches [5]. The spoken sections are [1, 2, 3].
 ```
 
 **Cause.** `--only` names a clip section or a number with no script heading.
@@ -334,60 +321,71 @@ error: no spoken sections match [5]; spoken sections are [1, 2, 3, 4, 6, 8, 9]
 
 **More.** [Headings](/reference/script-md#headings)
 
-### `have no narration yet` in narrate
+### `have no take yet` in narrate
 
 **Cause.** `narrate --only` voiced some sections, and other spoken sections have no audio yet. The
-timeline then covers only the sections that have audio.
+narration then covers only the sections that have a take.
 
 **Fix.**
 1. Run `decktalk narrate` with no `--only`.
 
 **More.** [Rebuild one section](/guides/rebuild-one-section)
 
-### `holds voiced takes` in narrate
+### `holds paid takes` in narrate
 
 ```text
-error: build/audio/manifest.json holds voiced takes for sections 01. A silent run writes click tracks over those mp3 files and replaces the manifest, so the next voiced build voices every section again and spends credits on all of them. Rehearse the silent build in a copy of the project, or pass --force to replace the voiced takes.
+error[CONFIG]: build/narration/takes.json holds paid takes for section(s) 01, and a run without voice would replace them in the take index, so the next voiced build would voice them again and spend credits on all of them.
+  hint: Rehearse the sections nobody has paid for: --only 2 --only 3.
 ```
 
-**Cause.** You ran `decktalk narrate --silent` or `decktalk build --silent` in a project with voiced takes. A silent
-run would write click tracks over the voiced mp3 files and replace the manifest. The next voiced build would then
-spend credits on every section.
+**Cause.** You ran `decktalk narrate --no-voice` or `decktalk build --no-voice` over a section that already holds a
+paid take. The run would replace that row of the take index with a placeholder, and the next voiced build would pay
+for the section again. The paid mp3 files themselves are never touched, because a placeholder take is named
+`silent-<hash>.mp3` and a paid take is named by its own digest.
 
 **Fix.**
-1. If you want to rehearse, copy the project and run the silent build in the copy.
-2. If you want to drop the voiced takes, run the same command with `--force`.
+1. Rehearse the sections the hint names, with `--only`.
+2. If you want to rehearse the whole project, copy it and run the build without voice in the copy.
+3. If you want to drop the paid takes, run the same command with `--force`.
 
-**More.** [A silent build and a voiced build](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build)
+The refusal covers only the sections the run was asked to write, so a film you have already paid for still rehearses
+a new section for nothing.
+
+**More.** [A build without voice and a voiced build](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build)
 
 ### A section opens on its first word
 
-**Cause.** `narrate` removes a direction before the first words of a section, `[pause N]` included. So the
-first word plays as the section's first frame appears.
+**Cause.** The section's lead is 0, from its own `lead_seconds = 0` or from `[narration] lead_seconds = 0`.
+`narrate` removes a direction before the first words of a section, `[pause N]` included, so a pause in the
+script cannot open it either. The first word plays as the section's first frame appears.
 
 **Fix.**
-1. Set `lead_seconds` on the page section in `decktalk.toml`. `narrate` joins that much silence in before the
-   take and sends no request.
+1. Set `lead_seconds` on the page section in `decktalk.toml`, or raise `[narration] lead_seconds` for every
+   section. `narrate` places that much silence before the take and sends no request.
 2. Run `decktalk build --only N`, so the recording covers the lead.
 
 **More.** [Silence in a section](/reference/decktalk-toml#silence-in-a-section)
 
-## beats
+## align
 
-### `phrase not found` in beats
+### `phrase not found` in align
 
-{/* sample: decktalk build --silent on a fresh scaffold with the 3.4name phrase changed to "gradient decent", last lines */}
+{/* sample: decktalk build --no-voice on a fresh starter with the 2.1formula phrase typed "the formular", last lines */}
 
 ```text
-                    ! 3.4name: phrase not found: 'gradient decent'
- 04    14.3      -  4.1out@2.65,4.1video@7.42,4.1parts@9.0,4.1script@11.12,4.1start@12.71
- 06    20.9      -  6.1step@2.61,6.1four@5.22,6.1box@7.32,6.1build@10.97,6.1aloud@14.11,6.1kept@16.2,6.1new@19.86
- 08    12.9      -  7.1box@2.39,7.1moved@5.26,7.1checked@10.03,7.1back@11.47
- 09    11.4      -  5.1clear@0.91,5.1made@4.1,5.1cap@4.56,5.1url@10.03
-7 sections with cues; 1 unresolved  (estimated words: times are placeholders)
-error: 1 cue(s) could not be matched to the narration; a step whose cues are unresolved never appears. Fix the phrases in cues.json (see the notes above) or pass allow_unresolved=True / --allow-unresolved:
-  section 03: 3.4name: phrase not found: 'gradient decent'
+sec  speech   need  cues
+ 01    13.0      -  1.1title@0.5,1.1script@2.9,1.1deck@6.27,1.1word@11.56
+ 02    14.6      -  2.1average@1.44,2.1code@9.43,2.1waited@11.31
+                    ! 2.1formula: phrase not found: 'the formular'
+ 03    11.9      -  3.1idea@1.41,3.1again@7.8,3.1make@8.71
+3 sections with cues, 1 unresolved  (estimated words: times are placeholders)
+error[CONFIG]: 1 cue(s) could not be matched to the narration, and a slide whose cues are unresolved never appears.
+  hint: Fix these phrases in cues.json, or pass --allow-unresolved-cues:
+  section 02: 2.1formula: phrase not found: 'the formular'
 ```
+
+`decktalk align` on its own prints the same table, reports the row as an `UNRESOLVED` finding and exits 1.
+`build` raises instead, so it exits 3 and records nothing.
 
 **Cause.** The cue phrase is not in the section's spoken words. The usual reasons, most common first:
 - The phrase has a typo.
@@ -397,68 +395,75 @@ error: 1 cue(s) could not be matched to the narration; a step whose cues are unr
 - The phrase has a curly apostrophe. Matching removes it, but the spoken word keeps a straight one.
 
 **Fix.**
-1. Open `build/audio/NN-slug.words.json` for the section.
+1. Open the section's `words_file` from `build/narration/takes.json`.
 2. Find the words as the voice says them.
 3. Copy those words into the cue's `on` value in `cues.json`.
-4. Run `decktalk beats`.
+4. Run `decktalk align`.
 
-If you want to build without the cue, pass `--allow-unresolved`. A step whose cues are all
+If you want to build without the cue, pass `build --allow-unresolved-cues`. A slide whose cues are all
 unresolved never mounts.
 
 **More.** [Matching rules](/concepts/cues#matching-rules)
 
-### `not in` its page in beats
+### `not in` its page in align
 
-{/* sample: decktalk build --silent on a fresh scaffold with every mention of 5.1cap removed from deck/index.html, last lines */}
+{/* sample: decktalk build --no-voice on a fresh starter with data-cue="2.1code" renamed 2.1codex, last lines */}
 
 ```text
-                    ! 5.1cap: not in deck/index.html
-7 sections with cues; 0 unresolved  (estimated words: times are placeholders)
-error: 1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal them. Add data-cue="5.1cap" to the step in deck/index.html, fix the id in cues.json, or pass --allow-unknown:
-  section 09: 5.1cap: not in deck/index.html
+ 02    14.6      -  2.1average@1.44,2.1formula@5.67,2.1code@9.43,2.1waited@11.31
+                    ! 2.1code: not in deck/index.html
+                    ! 2.1codex: data-cue="2.1codex" in deck/index.html has no entry in cues.json
+3 sections with cues, 0 unresolved  (estimated words: times are placeholders)
+error[CONFIG]: 1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal them.
+  hint: Add data-cue="2.1code" to the slide in deck/index.html, fix the id in cues.json, or pass --allow-unknown-cues. The ids are:
+  section 02: 2.1code: not in deck/index.html
 ```
 
-**Cause.** `beats` looks for each cue id in its page in quotes or backticks, and did not find this
-one. Either the id in `cues.json` has a typo, or no step uses the cue.
+A rename usually prints both lines, because the id `cues.json` names is now missing from the page and the id
+the page carries is missing from `cues.json`. The second line is the `UNCUED ELEMENT` finding.
+
+**Cause.** `align` looks for each cue id in its page in quotes or backticks, and did not find this
+one. Either the id in `cues.json` has a typo, or no slide uses the cue.
 
 **Fix.**
 1. If the id has a typo, fix it in `cues.json`.
-2. If no step uses the cue, add `data-cue="<id>"` to the element in the page.
-3. If the page builds its cue ids at run time, pass `--allow-unknown`.
+2. If no slide uses the cue, add `data-cue="<id>"` to the element in the page.
+3. If the page builds its cue ids at run time, pass `--allow-unknown-cues`.
 
-A key of a step's `cues` object also counts as a mention.
+A key of a slide's `preview` object in a `DeckTalk.scene` call also counts as a mention, because it is a quoted
+literal. A `data-preview="2.1code@8"` attribute does not, because the id there is part of a longer string.
 
 **More.** [Cue mismatches](/concepts/cues#cue-mismatches)
 
-### `UNRESOLVED` in beats or verify
+### `UNRESOLVED` in align or verify
 
 **Cause.**
-- In `beats --json`, a note has the verdict `UNRESOLVED` when a phrase is not found or the section has no words.
-- In `verify`, a cue named on the command line is not in `beats.json`. The row reads `UNRESOLVED: the cue is not in beats.json`.
+- In `align --json`, a note has the verdict `UNRESOLVED` when a phrase is not found or the section has no words.
+- In `verify`, a cue named on the command line is not in `cue-times.json`. The row reads `UNRESOLVED: the cue is not in cue-times.json`.
 
 **Fix.**
-1. If `beats` printed it, follow [`phrase not found` in beats](#phrase-not-found-in-beats).
-2. If `verify` printed it, check the `SECTION:CUE` spelling against `build/audio/beats.json`.
-3. If the cue is new, run `decktalk beats` before `verify`.
+1. If `align` printed it, follow [`phrase not found` in align](#phrase-not-found-in-align).
+2. If `verify` printed it, check the `SECTION:CUE` spelling against `build/cue-times.json`.
+3. If the cue is new, run `decktalk align` before `verify`.
 
 **More.** [`decktalk verify`](/reference/cli#decktalk-verify)
 
-### `UNKNOWN` in beats
+### `UNKNOWN CUE` in align
 
-**Cause.** In `beats --json`, a note has the verdict `UNKNOWN` when a cue id is not in its page. The
+**Cause.** In `align --json`, a note has the verdict `UNKNOWN CUE` when a cue id is not in its page. The
 table prints the same note as `<cue>: not in <page>`.
 
 **Fix.**
-1. Follow [`not in` its page in beats](#not-in-its-page-in-beats).
+1. Follow [`not in` its page in align](#not-in-its-page-in-align).
 
-**More.** [`decktalk beats`](/reference/cli#decktalk-beats)
+**More.** [`decktalk align`](/reference/cli#decktalk-align)
 
-### `shorter than the visuals need` in beats
+### `shorter than the visuals need` in align
 
 The note reads `speech <S>s is <D>s shorter than the visuals need`.
 
 **Cause.** The section's speech ends before the `min_seconds` that `cues.json` sets for it. This is an
-uncertain finding, so `beats` exits 1 only with `--strict`.
+uncertain finding, so `align` exits 1 only with `--strict`.
 
 **Fix.**
 1. If the slides need more time, add words or a `[pause N]` to the section in `script.md`.
@@ -466,7 +471,7 @@ uncertain finding, so `beats` exits 1 only with `--strict`.
 
 **More.** [cues.json](/reference/cues-json)
 
-### `is past the end of the audio` in beats
+### `is past the end of the audio` in align
 
 **Cause.** A cue time is later than the section's audio, usually because of a large offset key. This
 note is not a finding.
@@ -476,13 +481,13 @@ note is not a finding.
 
 **More.** [cues.json](/reference/cues-json)
 
-### `occurs N times in this section` in beats
+### `occurs N times in this section` in align
 
 The note reads `'<phrase>' occurs <N> times in this section, at <T>s, <T>s. The cue uses the first. Set "occurrence" to choose one.`
 
 **Cause.** The cue phrase matches more than one run of the section's spoken words, and the cue does not set
-`occurrence`. The cue fires on the first match. If you meant a later one, the step appears early, maybe by
-many seconds. This note is not a finding, so `beats` exits 0, even with `--strict`.
+`occurrence`. The cue fires on the first match. If you meant a later one, the slide appears early, maybe by
+many seconds. This note is not a finding, so `align` exits 0, even with `--strict`.
 
 **Fix.**
 1. Compare the times in the note with the moment the visual should appear.
@@ -492,20 +497,20 @@ many seconds. This note is not a finding, so `beats` exits 0, even with `--stric
 
 **More.** [Matching rules](/concepts/cues#matching-rules)
 
-### `no words` in beats
+### `no words` in align
 
-The note reads `no words (estimated manifest)` or `no words (missing words file)`.
+The note reads `no words (estimated takes)` or `no words (missing words file)`.
 
 **Cause.** The section's words file is empty or missing, so no phrase can resolve. Only `$start`
 resolves.
 
 **Fix.**
-1. Run `decktalk narrate` again. For a rehearsal, run `decktalk narrate --silent` in a copy of the project.
-2. Run `decktalk beats`.
+1. Run `decktalk narrate` again. For a rehearsal, run `decktalk narrate --no-voice` in a copy of the project.
+2. Run `decktalk align`.
 
 **More.** [`decktalk narrate`](/reference/cli#decktalk-narrate)
 
-### `is not in decktalk.toml` in beats
+### `is not in decktalk.toml` in align
 
 The error reads `cues.json: section <N> is not in decktalk.toml`.
 
@@ -532,23 +537,12 @@ is likely to read the same on the final mp4.
 
 **More.** [`decktalk preflight`](/reference/cli#decktalk-preflight), [`THIN CHANGE?` in verify](#thin-change-in-verify)
 
-### `RUNTIME_OUTDATED` in preflight
+## record
 
-**Cause.** The page loads a copy of `decktalk-runtime.js` from before `decktalk preflight`. Its catalog has no
-`cues`, so `preflight` cannot freeze a step just before a cue.
+### `PAGE ERROR` in record
 
-**Fix.**
-1. Run `decktalk runtime` to copy the packaged runtime into the project.
-2. Run `decktalk preflight` again.
-
-**More.** [Runtime](/reference/runtime#url-parameters)
-
-## record, measure, and check
-
-### `PAGE ERROR` in check
-
-`record` logs `[page] NN-scene  page error: <text>`. `build` stops after the check table with
-`<N> section(s) hit a page error while recording.` A page with no catalog logs
+`record` logs `[page] NN  page error: <text>`, where `NN` is the section number. `build` stops after
+the record table. A page with no catalog logs
 `no window.__decktalk.catalog (is decktalk-runtime.js included, and does the page register a scene?)`.
 
 **Cause.** The page threw an uncaught error, or it has no runtime catalog. The usual reasons, most
@@ -558,20 +552,20 @@ common first:
 - The page does not load `decktalk-runtime.js`.
 
 **Fix.**
-1. Open the page in a browser with `?scene=N&hud=1`.
+1. Run `decktalk serve` and open the page from the URL it prints, with `?scene=N&hud=1`.
 2. Read the error in the browser console.
 3. Fix the page.
 4. Record the section again.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
-### `STALLED` in check
+### `STALLED` in record
 
-`check` prints `STALLED <ms>ms`. `record` logs `frame stall(s) after narration t=0` and
+`record` prints `STALLED <ms>ms` and logs `frame stall(s) after narration t=0`, and
 `recording section NN again`.
 
 **Cause.** The machine was too busy to paint, so a reveal was recorded late. After narration t=0, the
-page saw a gap between two frames longer than `[align] stall_ms` (150).
+page saw a gap between two frames longer than `[record] stall_ms` (150).
 
 **Fix.**
 1. Close other work, or use a less busy machine.
@@ -582,82 +576,82 @@ before t=0, is not a stall.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
-### `TRUNCATED` in check
+### `TRUNCATED` in record
 
-**Cause.** The recording is shorter than requested by more than `[align] truncated_slack_seconds`
+**Cause.** The recording is shorter than requested by more than `[record] truncated_slack_seconds`
 (0.5). Chromium was stopped, or the machine stalled.
 
 **Fix.**
 1. Record the section again.
-2. Run `decktalk check`.
+2. Run `decktalk record --only N` again.
 
-`build` exits 0 on `TRUNCATED`, so a script must run `decktalk check` after the build.
+`build` exits 0 on `TRUNCATED`, so a script must read the `record` table or its JSON.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
-### `NO COVER` in measure or check
+### `NO COVER` in record
 
-`measure` logs `no magenta cover found; alignment is a guess`, and its method column starts with
+`record` logs `no magenta cover found; narration t=0 is a guess`, and the log's `t0_method` starts with
 `NO COVER`.
 
-**Cause.** `measure` found no magenta cover in the first `[align] scan_seconds` (4.0) of the recording,
+**Cause.** `record` found no magenta cover in the first `[record] cover_scan_seconds` (4.0) of the recording,
 so t=0 is a guess. The usual reasons:
 - The page removes the cover itself.
 - A page written by hand starts its clock at load instead of at `DeckTalk.startClock()`.
 
 **Fix.**
 1. Make sure that the page loads the packaged `decktalk-runtime.js`.
-2. If you upgraded DeckTalk, run `decktalk runtime`.
-3. If the machine is very slow, raise `[record] min_lead_seconds`.
-4. Record the section again.
+2. If the machine is very slow, raise `[record] min_cover_seconds`.
+3. Record the section again.
 
-Without a cover, `measure` uses the first painted frame plus `settle_seconds`. If no frame is painted,
+Without a cover, `record` uses the first painted frame plus `settle_seconds`. If no frame is painted,
 it uses 1.1 s plus `settle_seconds`.
 
-`measure` scans only the first `[align] scan_seconds`. If narration t=0 comes later, `measure` still
-reports `cover`, and every reveal is late. If you raise `min_lead_seconds` near 4, raise `scan_seconds` too.
+`record` scans only the first `[record] cover_scan_seconds`. If narration t=0 comes later, `record` still
+reports `cover`, and every reveal is late. If you raise `min_cover_seconds` near 4, raise `cover_scan_seconds` too.
 
 **More.** [The handshake](/concepts/page-contract#the-handshake)
 
-### `BLACK?` in check
+### `BLACK?` in record
 
-**Cause.** The brightest luma at the middle of the recording (`MAX50`) is below `[align] black_ymax`
+**Cause.** The brightest luma at the middle of the recording (`MAX50`) is below `[record] black_ymax`
 (40). Usually the page threw before it drew anything, or the slide is dark on purpose.
 
 **Fix.**
-1. Open the page in a browser with `?scene=N&hud=1`.
+1. Run `decktalk serve` and open the page from the URL it prints, with `?scene=N&hud=1`.
 2. If the page is blank, read the browser console and fix the error.
 3. If the slide is dark on purpose, do nothing. `BLACK?` exits 1 only with `--strict`.
 
-**More.** [`decktalk check`](/reference/cli#decktalk-check)
+**More.** [`decktalk record`](/reference/cli#decktalk-record)
 
-### `KATEX?` in check
+### `KATEX ERROR` or `KATEX NOT LOADED` in record
 
-**Cause.** A page warning mentions KaTeX or `data-tex`. One of two warnings, most common first:
-- `data-tex could not be parsed: "<tex>"`. A backslash inside a `render` template is single.
-- `KaTeX did not load within 5 s, so [data-tex] elements stay plain text`. The page loads KaTeX from a CDN, which fails offline.
+**Cause.** The page's equations were never typeset, so the slide shows the source instead. Both are
+certain findings, and `verify` reports them again from the recording log.
+- `KATEX ERROR` follows `data-tex could not be parsed: "<tex>"`. A backslash inside a `render` template is single.
+- `KATEX NOT LOADED` follows `KaTeX did not load within 5 s, so [data-tex] elements stay plain text`. The page's KaTeX tags point nowhere.
 
 **Fix.**
-1. If a value did not parse, write every backslash twice inside the `render` backticks.
-2. If KaTeX did not load, run `decktalk setup`.
+1. If a value did not parse, write every backslash twice inside the `render` backticks. In a
+   `<template data-slide>` a backslash is written once, which is why the starter's equation is markup.
+2. If KaTeX did not load, check that `deck/katex/` holds `katex.min.js`, `katex.min.css`, and `fonts/`.
 3. Run `decktalk doctor` and check that the `katex` row is `ok`.
-4. Copy the cached `katex` directory that `doctor` prints into `deck/katex/`.
-5. In `deck/index.html`, replace the two CDN tags with the local tags below.
-6. Record the section again.
+4. In `deck/index.html`, use the two local tags below.
+5. Record the section again.
 
 ```html
 <link rel="stylesheet" href="./katex/katex.min.css">
 <script src="./katex/katex.min.js"></script>
 ```
 
-Only `deck/index.html` has KaTeX tags in the scaffold. `deck/lesson.html` does not load KaTeX.
+The starter's `deck/index.html` loads KaTeX before the runtime, which is the order a page needs.
 
 **More.** [Build in CI and offline](/guides/ci-and-offline)
 
 ### `no narration span yet` in record
 
-**Cause.** A page section has no span in `timeline.json`. Usually the script has no `## N.` heading for
-that section, or `narrate` has not run since you added it.
+**Cause.** A page section has no take in `build/narration/takes.json`, so it has no length to record.
+Usually the script has no `## N.` heading for that section, or `narrate` has not run since you added it.
 
 **Fix.**
 1. If the heading is missing, add `## N. Title` to `script.md`.
@@ -671,28 +665,27 @@ that section, or `narrate` has not run since you added it.
 the same amount.
 
 **Fix.**
-1. If `assemble` printed `STALE MEASUREMENT`, follow [`STALE MEASUREMENT` in assemble](#stale-measurement-in-assemble).
-2. Open `build/rec/NN-scene.json` and read `lead_method`.
-3. If it starts with `NO COVER`, follow [`NO COVER` in measure or check](#no-cover-in-measure-or-check).
-4. Record the section again.
+1. Open `build/recordings/NN.json` and read `t0_method`.
+2. If it starts with `NO COVER`, follow [`NO COVER` in record](#no-cover-in-record).
+3. Record the section again.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
 ## assemble
 
-### `missing; slate for` in assemble
+### `is missing, so a slate plays` in assemble
 
-{/* sample: decktalk assemble --strict in clip-lesson from Add a clip section, a fresh scaffold with no clip files */}
+{/* sample: decktalk assemble --strict in clip-lesson from Add a clip section, the starter with one clip section and no clip file */}
 
 ```text
-section 05: media/edit-before.mov missing; slate for 4.36s (drop your clip at that path; the section is optional, so --strict allows the slate)
+section 04: media/intro.mov is missing, so a slate plays for 4s. Drop your clip at that path. The section is optional, so --strict allows the slate
 ```
 
 **Cause.** The file that `clip` names does not exist, so a titled slate plays for `slate_seconds`.
 
 The section in the sample sets `optional = true`, so its warning ends with
-`the section is optional, so --strict allows the slate`. A section without `optional` prints only
-`(drop your clip at that path)`.
+`The section is optional, so --strict allows the slate`. A section without `optional` ends at
+`Drop your clip at that path`.
 
 **Fix.**
 1. If you have the video, put it at the path in `clip`.
@@ -703,14 +696,14 @@ The section in the sample sets `optional = true`, so its warning ends with
 
 ### `clip missing` or `recording missing` in assemble
 
-{/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true from section 5, with no media/edit-before.mov, error line */}
+{/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true from section 4, with no media/intro.mov, error line */}
 
 ```text
-error: section 5: clip missing: ~/clip-lesson/media/edit-before.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
+error[MISSING_INPUT]: section 4: clip missing: ~/clip-lesson/media/intro.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
 ```
 
 **Cause.** `--strict` turns a missing recording into an error. It does the same for a missing clip,
-unless the clip section sets `optional = true`.
+unless the clip section sets `optional = true`. Either way the command exits 3 and writes no video.
 
 **Fix.**
 1. If a clip is missing, put the video at the path in `clip`.
@@ -728,26 +721,10 @@ unless the clip section sets `optional = true`.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
-### `STALE MEASUREMENT` in assemble
-
-```text
-section 04: STALE MEASUREMENT: build/rec/04-scene.webm was never measured, so the cut would trim the recorder's wall-clock estimate of 1.506s. Every reveal in the section may play early or late. Run `decktalk measure --only 4`, or pass --strict to stop on this.
-```
-
-**Cause.** `measure` has not read this recording since it was recorded. The sidecar has no `lead_in_seconds`,
-its `lead_in_hash` belongs to another take, or the webm is newer than the sidecar. The cut trims at the wrong
-point, so every reveal in the section is early or late by the same amount. With `--strict`, `assemble` stops.
-
-**Fix.**
-1. Run `decktalk measure --only N` for the section in the message.
-2. Run `decktalk assemble`.
-
-**More.** [`build/rec/NN-scene.json`](/reference/artifacts#build/rec/nn-scene-json)
-
 ### `has no span in` in assemble
 
-**Cause.** A page section has no span in `timeline.json`. The script has no heading for it, or
-`narrate` has not run since you added it.
+**Cause.** A page section has no take in `build/narration/takes.json`, so it has no span to cut to. The
+script has no heading for it, or `narrate` has not run since you added it.
 
 **Fix.**
 1. If the heading is missing, add `## N. Title` to `script.md`.
@@ -755,16 +732,16 @@ point, so every reveal in the section is early or late by the same amount. With 
 
 **More.** [Headings](/reference/script-md#headings)
 
-### `underscore missing` in assemble
+### `music missing` in assemble
 
-{/* sample: decktalk assemble after a silent build of the scaffold, with underscore uncommented under [mix] */}
+{/* sample: decktalk assemble after a build without voice of the starter, with music added under [mix] */}
 
 ```text
-underscore missing (~/my-lesson/build/music/underscore.mp3); no music (`decktalk soundscape`)
+music missing (~/my-lesson/build/music/music.mp3), so there is no music. Run `decktalk soundscape` to make it
 ```
 
-**Cause.** `[mix]` names an underscore or ambience file that does not exist. The video plays without
-it. The scaffold keeps both keys in comments, and `decktalk soundscape` generates both files.
+**Cause.** `[mix]` names a music or ambience file that does not exist. The video plays without
+it. The starter has no `[mix]` sound keys at all, so this only follows a key you added.
 
 **Fix.**
 1. If you want the sound, run `decktalk soundscape` or put your own file at the path.
@@ -780,20 +757,20 @@ it. The scaffold keeps both keys in comments, and `decktalk soundscape` generate
 
 **Fix.**
 1. If a marker is skipped, check its `section` and `on` values in the markers file.
-2. If a sound effect is skipped, check that `beats` resolved its cue in that section.
+2. If a sound effect is skipped, check that `align` resolved its cue in that section.
 3. Run `decktalk assemble`.
 
 **More.** [`markers.json`](/reference/decktalk-toml#markers-json)
 
 ### `[loud] skipped` in assemble
 
-{/* sample: assemble stage of decktalk build --silent on a fresh scaffold */}
+{/* sample: the assemble stage of decktalk build --no-voice on a fresh starter */}
 
 ```text
-[loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, and the clicks stay at -24 dBFS for the a/v check
+[loud] skipped: the narration is a silent placeholder, so the soundtrack is encoded as it was mixed
 ```
 
-**Cause.** A silent build has a click track, not speech, so `assemble` skips the loudness pass. The
+**Cause.** A build without voice has a click track, not speech, so `assemble` skips the loudness pass. The
 clicks keep their level so that `verify` can find them.
 
 **Fix.** None is needed. A voiced build runs the loudness pass.
@@ -805,14 +782,14 @@ clicks keep their level so that `verify` can find them.
 `assemble` logs `[loud] true peak <X> dBTP is above the <Y> dBTP ceiling` or
 `[loud] integrated loudness <X> LUFS is <D> LU from the <Y> LUFS target`.
 
-**Cause.** After the loudness pass, the voiced mix misses a `[mix.loudnorm]` target. With `--strict`,
+**Cause.** After the loudness pass, the voiced mix misses a `[mix.loudness]` target. With `--strict`,
 the miss is an error.
 
 **Fix.**
-1. Lower the underscore, ambience, or sound effect levels in `[mix]`.
+1. Lower the music, ambience, or sound effect levels in `[mix]`.
 2. Run `decktalk assemble`.
 
-**More.** [`[mix.loudnorm]`](/reference/decktalk-toml#mix-loudnorm)
+**More.** [`[mix.loudness]`](/reference/decktalk-toml#mix-loudness)
 
 ## verify
 
@@ -822,7 +799,7 @@ the miss is an error.
 Nothing bright is on screen when the section starts.
 
 **Fix.**
-1. Make sure that the scene's first cued step draws something at t=0.
+1. Make sure that the scene's first cued slide draws something at t=0.
 2. If a dip to black is long on purpose, raise `[verify] after_dip_seconds`.
 
 **More.** [Section starts](/reference/verify#section-starts)
@@ -833,7 +810,8 @@ Nothing bright is on screen when the section starts.
 speaking when the picture cut.
 
 **Fix.**
-1. Raise `[narration] min_tail_seconds` to add more silence after the last word.
+1. Raise the section's `tail_seconds`, or `[narration] min_tail_seconds`, to leave more silence after the last
+   word.
 
 If the section must stay short, end its script sooner instead.
 
@@ -843,17 +821,17 @@ Clip sections carry their own audio and have no cut row.
 
 ### `POP AT CUT` in verify
 
-**Cause.** A section sets `carries_previous = true`, but its first frame differs from the previous section's last
+**Cause.** A section sets `seamless = true`, but its first frame differs from the previous section's last
 frame by more than `[verify] max_pop_percent` (0.1 percent of the pixels). The picture jumps at the cut. The
 usual reasons:
-- The page opens in a different state than the previous page ended in, such as a step that is not shown yet.
+- The page opens in a different state than the previous page ended in, such as a slide that is not shown yet.
 - An element sits at a different position or size in the two pages.
-- The previous section's last step fires after its narration ends, so its recording ends early.
+- The previous section's last slide fires after its narration ends, so its recording ends early.
 
 **Fix.**
-1. Run `decktalk shots --section N --at 0` for this section, and compare it with the last frame of the previous section.
+1. Run `decktalk screenshots --section N --at 0` for this section, and compare it with the last frame of the previous section.
 2. Make the page's opening state match the previous page's final state.
-3. If the jump is intended, remove `carries_previous` from the section.
+3. If the jump is intended, remove `seamless` from the section.
 
 **More.** [Cut continuity](/reference/verify#cut-continuity)
 
@@ -865,7 +843,7 @@ The usual reasons:
 - The reveal changes only color at the same brightness. `verify` compares luma only.
 
 **Fix.**
-1. Run `decktalk shots --section N --at S`, where `S` is just after the value in the `cue` column.
+1. Run `decktalk screenshots --section N --at S`, where `S` is just after the value in the `cue` column.
 2. If the reveal is subtle on purpose, mark the cue `"verify": false` in `cues.json`.
 3. If the reveal is slow, lengthen `[verify] probe_delays`.
 
@@ -882,7 +860,7 @@ smaller reveal, or a little more motion elsewhere, would read `NO CHANGE`. This 
 `verify` exits 1 on it only with `--strict`.
 
 **Fix.**
-1. Run `decktalk shots --section N --at S`, where `S` is just after the value in the `cue` column.
+1. Run `decktalk screenshots --section N --at S`, where `S` is just after the value in the `cue` column.
 2. If the reveal is too small to see, make it larger or give it more contrast in the page.
 3. If the reveal is small on purpose and plainly visible, leave it. Or mark the cue `"verify": false`.
 4. To turn the warning off, set `[verify] thin_change_factor = 1`.
@@ -893,20 +871,20 @@ smaller reveal, or a little more motion elsewhere, would read `NO CHANGE`. This 
 
 This example shows the format of an `OFF CUE` row.
 
-{/* sample: decktalk verify after decktalk build --silent on the R2 scaffold, before later template edits, header and one row. An example of the format, not current scaffold output. */}
+The row keeps the shape of every other cue row, with `OFF CUE` in place of `changed`.
 
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.2way            22.17    58.65    1.00    0.00    -90ms  -118ms  OFF CUE
+3:3.1make            8.71    38.87   10.85    0.00    -90ms  -118ms  OFF CUE
 ```
 
 **Cause.** The picture changed, but the offset column is past 80 ms or the `a/v` column is past 120 ms.
 The table prints no distance, so compare the columns with those limits.
-- A negative offset column means that something moved before the cue. Often an earlier reveal is still animating, or a `data-at` element appeared at the mount.
+- A negative offset column means that something moved before the cue. Often an earlier reveal is still animating, or a `data-delay` element appeared at the mount.
 - A positive offset column of more than a frame or two means that the reveal has its own delay, such as a CSS transition.
 
 **Fix.**
-1. Run `decktalk shots --section N --at S` for times around the value in the `cue` column.
+1. Run `decktalk screenshots --section N --at S` for times around the value in the `cue` column.
 2. Find the early motion or the delay in the frames.
 3. If the delay is intended, raise `[verify] max_offset_frames`.
 
@@ -920,12 +898,12 @@ If only the `a/v` column is past its limit, see [A large `a/v` value in verify](
 or a louder sound effect sits near the cued word.
 
 **Fix.**
-1. Build with `decktalk build --silent --nomix` to rule out the soundscape.
-2. Open `build/rec/NN-scene.json` and check that `lead_method` starts with `cover`.
+1. Build with `decktalk build --no-voice --no-soundscape` to rule out the soundscape.
+2. Open `build/recordings/NN.json` and check that `t0_method` starts with `cover`.
 3. Record the section again.
 4. Check that the offset column alone is small.
 
-A silent build puts a click at every word start, and the `a/v` column compares the picture with that
+A build without voice puts a click at every word start, and the `a/v` column compares the picture with that
 click. The click and the cue come from the same word time. A large value therefore points at the
 recording or the mix.
 
@@ -933,7 +911,7 @@ recording or the mix.
 
 ### `NO_CLICK` in verify
 
-**Cause.** After a silent build, `verify` found no click within `[verify] click_search_seconds` (0.25)
+**Cause.** After a build without voice, `verify` found no click within `[verify] click_search_seconds` (0.25)
 of the cued word's start. The `a/v` column shows `-`, and the JSON reason is `NO_CLICK`.
 
 **Fix.** None is needed. `verify` still judges the cue on its offset column.
@@ -964,88 +942,95 @@ The error reads `malformed check '<text>'; want SECTION:CUE, e.g. 3:3.1draw`.
 
 **More.** [`decktalk verify`](/reference/cli#decktalk-verify)
 
-### `need build/out/NN-section.mp4 files` in verify
+### `nothing to verify` in verify
 
-{/* sample: decktalk verify 1:1.1bowl on a scaffold with no build */}
+{/* sample: decktalk verify on a starter with no build */}
 
 ```text
-error: need build/out/NN-section.mp4 files and the final mp4; run `decktalk assemble` first
+error[MISSING_INPUT]: the section videos and the final mp4 are not both there, so there is nothing to verify.
+  hint: Run `decktalk assemble` first.
 ```
 
 **Cause.** The project has no assembled video yet.
 
 **Fix.**
-1. Run `decktalk build --silent`, or `decktalk assemble` if the recordings exist.
+1. Run `decktalk build --no-voice`, or `decktalk assemble` if the recordings exist.
 2. Run `decktalk verify`.
 
 **More.** [`decktalk build`](/reference/cli#decktalk-build)
 
 ### `is not a section in decktalk.toml` in assemble or verify
 
+{/* sample: decktalk verify on a starter with a stray build/sections/09.mp4 */}
+
 ```text
-build/out/04-section.mp4 is not a section in decktalk.toml, so verify ignores it. Delete the file if an earlier build left it.
+build/sections/09.mp4 is not a section in decktalk.toml, so verify ignores it. Delete the file if an earlier build left it.
 ```
 
-**Cause.** `build/out` holds a section video whose number is not a section in `decktalk.toml`. An earlier build
+**Cause.** `build/sections/` holds a section video whose number is not a section in `decktalk.toml`. An earlier build
 usually left it before you renumbered or removed sections. `assemble` and `verify` read only the sections in
 `decktalk.toml`, so the file changes nothing.
 
 **Fix.**
 1. If you renumbered or removed the section, delete the file.
 
-**More.** [`build/out/`](/reference/artifacts#build/out/)
+**More.** [`build/out/`](/reference/artifacts#build-out)
 
 ### A typewriter reveal fails the cue check
 
-**Cause.** Nothing but `NO CHANGE` is printed. An element with `data-type` or `data-sync` appears a
+**Cause.** Nothing but `NO CHANGE` is printed. An element with `data-text="type"` or `data-text="spoken"` appears a
 little at a time, so the first probe sees too little change.
 
 **Fix.**
-1. Give the element's container a reveal that appears at once on the same cue, such as `data-fx="fade"`.
-2. Keep `data-type` or `data-sync` on the text inside it.
+1. Give the element's container a reveal that appears at once on the same cue, such as `data-reveal="fade"`.
+2. Keep `data-text="type"` or `data-text="spoken"` on the text inside it.
 
 **More.** [Slide recipes](/guides/slide-recipes)
 
 ## words and clip
 
-### `timeline.json not found` in words or clip
+### `The take index is not there` in words or clip
 
-{/* sample: decktalk words on a fresh scaffold with no build */}
+{/* sample: decktalk words on a fresh starter with no build */}
 
 ```text
-error: ~/my-lesson/build/audio/timeline.json not found. Run `decktalk narrate` first.
+error[MISSING_INPUT]: The take index is not there, so no section has a start to cut from.
+  hint: Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.
 ```
+
+The command exits 3.
 
 **Cause.** The project has no narration yet, so no section has word times.
 
 **Fix.**
-1. Run `decktalk narrate`, or `decktalk build --silent`.
+1. Run `decktalk narrate`, or `decktalk build --no-voice`.
 2. Run the command again.
 
 **More.** [`decktalk words`](/reference/cli#decktalk-words)
 
 ### `has no section video` in clip
 
-{/* sample: decktalk clip 1 --from 2 --to 8 --out media/count.mp4 on a fresh scaffold with no build */}
+{/* sample: decktalk clip 1 --start 2 --end 8 --out media/count.mp4 on a fresh starter with no build */}
 
 ```text
-error: section 1 has no section video at ~/my-lesson/build/out/01-section.mp4. Run `decktalk assemble` first.
+error[MISSING_INPUT]: section 1 has no section video at ~/my-lesson/build/sections/01.mp4. Run `decktalk assemble` first.
 ```
 
 **Cause.** `clip` cuts from the section video that `assemble` writes, and the section has none.
 
 **Fix.**
-1. Run `decktalk build --silent`, or `decktalk assemble` if the recordings exist.
+1. Run `decktalk build --no-voice`, or `decktalk assemble` if the recordings exist.
 2. Run `decktalk clip` again.
 
 **More.** [`decktalk clip`](/reference/cli#decktalk-clip)
 
 ### `is a clip section` in clip
 
-{/* sample: decktalk clip 5 --from 0 --to 1 --out media/x.mp4 on a fresh scaffold */}
+{/* sample: decktalk clip 4 --start 0 --end 1 --out media/x.mp4 in clip-lesson from Add a clip section */}
 
 ```text
-error: section 5 is a clip section; cut a clip from a page section
+error[CONFIG]: section 4 is a clip section.
+  hint: Cut a clip from a page section.
 ```
 
 **Cause.** The section number names a clip section. A clip section has no narration, so `clip` has no mp3 to cut.
@@ -1058,18 +1043,21 @@ error: section 5 is a clip section; cut a clip from a page section
 
 ### `cuts the word` in clip
 
-{/* sample: decktalk clip 1 --from 2.5 --to 8.32 --out media/cut.mp4 after decktalk build --silent on a fresh scaffold */}
+{/* sample: decktalk clip 1 --start 0.7 --end 1.8 --out media/cut.mp4 after decktalk build --no-voice on a fresh starter */}
 
 ```text
-section 01: the span cuts the word 'ball.' in two, so the words file leaves it out
+section 01: the span cuts the word 'This' in two, so the words file leaves it out
+section 01: the span cuts the word 'DeckTalk.' in two, so the words file leaves it out
+seconds 1.08, words 1 | 0 certain, 2 uncertain finding(s)
 ```
 
-**Cause.** `--from` or `--to` falls inside a spoken word. The clip keeps the part of the word inside the span, but the
-words file has no entry for the word, so no caption shows it.
+**Cause.** `--start` or `--end` falls inside a spoken word. The clip keeps the part of the word inside the span, but the
+words file has no entry for the word, so no caption shows it. It is an uncertain finding, so `clip` exits 1 only with
+`--strict`.
 
 **Fix.**
 1. Run `decktalk words --only N` for the section.
-2. Move `--from` before the word's start, or `--to` after the word's end, into the silence next to the word.
+2. Move `--start` before the word's start, or `--end` after the word's end, into the silence next to the word.
 3. Run `decktalk clip` again.
 
 **More.** [`decktalk words`](/reference/cli#decktalk-words)
@@ -1077,11 +1065,12 @@ words file has no entry for the word, so no caption shows it.
 ## Pages in a browser
 
 The page writes each warning to the browser console with the prefix `decktalk:`. During a recording,
-`record` logs it as `[page] NN-scene  <warning>` and writes it to the sidecar.
+`record` logs it as `[page] NN  <warning>`, where `NN` is the section number, and writes it to the
+recording log under `warnings`.
 
-### `data-sync text not found in the spoken words` in a page
+### `data-text="spoken" text not found in the spoken words` in a page
 
-**Cause.** The text of a `data-sync` element matches no run of the section's spoken words, so the
+**Cause.** The text of a `data-text="spoken"` element matches no run of the section's spoken words, so the
 element appears whole. Usually the slide writes a number as digits and the script writes it as words.
 
 **Fix.**
@@ -1090,17 +1079,18 @@ element appears whole. Usually the slide writes a number as digits and the scrip
 
 **More.** [Runtime](/reference/runtime)
 
-### `matches no element, handler, or step` in a page
+### `matches no element, handler, or slide` in a page
 
-{/* sample: decktalk record --only 9 on a scaffold copy with data-cue="5.1cap" removed from deck/index.html */}
+{/* sample: decktalk record --only 2 on a starter copy with data-cue="2.1code" dropped and the id left in data-preview */}
 
 ```text
-[page] 09-scene  cue "5.1cap" matches no element, handler, or step
+[page] 02  cue "2.1code" matches no element, handler, or slide
 ```
 
 **Cause.** The cue fired, but no element has that `data-cue`, no handler is registered for it, and no
-step has that id. `beats` did not catch it, because the id still appears in quotes in the page, such as
-a key of a step's `cues` object.
+slide has that id. `align` catches this only when the id has left the page file entirely. An id that is
+still a quoted literal somewhere in the page, such as a key of a slide's `preview` object, passes `align`
+and warns here instead.
 
 **Fix.**
 1. Add `data-cue="<id>"` to the element that should appear.
@@ -1109,26 +1099,26 @@ a key of a step's `cues` object.
 
 ### `unknown cue id` in a page
 
-The warning reads `unknown cue id <id> (no step id or cues list matches it)`.
+The warning reads `unknown cue id <id> (no slide id, owns list or preview object matches it)`.
 
-**Cause.** The page received a cue in `?beats=` that no step in the playing scene owns.
+**Cause.** The page received a cue in `?cues=` that no slide in the playing scene owns.
 
 **Fix.**
-1. Check the id against the step ids and their `cues` lists.
-2. Add the id to the `cues` list of the step that should own it.
+1. Check the id against the slide ids and their `owns` lists.
+2. Add the id to the `owns` list of the slide that should own it.
 
 **More.** [Cue ownership](/concepts/page-contract#cue-ownership)
 
 ### `owns no cue` in a page
 
-The warning reads `step "<id>" owns no cue in ?beats=, so it never appears`.
+The warning reads `slide "<id>" owns no cue in ?cues=, so it never appears`.
 
-**Cause.** In cue mode, a step mounts at its earliest cue. This step owns none of the section's cues.
+**Cause.** In cue mode, a slide mounts at its earliest cue. This slide owns none of the section's cues.
 
 **Fix.**
-1. Add a cue for the step to `cues.json`.
+1. Add a cue for the slide to `cues.json`.
 
-If a cue for the step already exists, list its id in the step's `cues` instead.
+If a cue for the slide already exists, list its id in the slide's `owns` instead.
 
 **More.** [Cue mismatches](/concepts/cues#cue-mismatches)
 
@@ -1139,7 +1129,7 @@ tag comes after the `DeckTalk.scene` calls.
 
 **Fix.**
 1. Load `decktalk-runtime.js` before any `DeckTalk.scene` call.
-2. Open the page in a browser to check the scene index.
+2. Run `decktalk serve` and open the page from the URL it prints, to check the scene index.
 
 **More.** [Page contract](/concepts/page-contract)
 
@@ -1155,26 +1145,10 @@ time.
 2. For drafts, set `DECKTALK_VIDEO_PRESET=veryfast`, or `preset = "veryfast"` under `[video]`.
 3. For the final video, go back to the default preset.
 
-A silent build of the scaffold took 276 s for its 257.72 s video. The machine was a MacBook Pro
+A build without voice of the starter took 64 s for its 44.88 s video. The machine was a MacBook Pro
 with an Apple M5 Pro and 64 GB of memory.
 
 **More.** [Rebuild one section](/guides/rebuild-one-section)
-
-### `TimeoutError` in shots
-
-{/* sample: decktalk shots --section 1 --at 31 after decktalk build --silent */}
-
-```text
-error: TimeoutError: Page.wait_for_function: Timeout 30000ms exceeded. (add -v for the traceback)
-```
-
-**Cause.** An `--at` value past 30 s waits longer than the browser's 30 s limit.
-
-**Fix.**
-1. Use `--at` values of 30 s or less.
-2. For a later moment in a long section, take a frame from the final video instead.
-
-**More.** [`decktalk shots`](/reference/cli#decktalk-shots)
 
 ## Related
 

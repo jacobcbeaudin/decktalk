@@ -26,19 +26,13 @@ repos:
     hooks:
       - id: biome-check
 
-  # Shell scripts, as CI does.
-  - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.11.0.1
-    hooks:
-      - id: shellcheck
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: end-of-file-fixer
-        exclude: ^src/decktalk/template/deck/(fonts|vendor)/
+        exclude: ^src/decktalk/template/examples/[^/]+/deck/fonts/
       - id: trailing-whitespace
-        exclude: ^src/decktalk/template/deck/(fonts|vendor)/
+        exclude: ^src/decktalk/template/examples/[^/]+/deck/fonts/
       - id: check-toml
       - id: check-yaml
 

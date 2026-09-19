@@ -18,8 +18,9 @@ number = 1
 page = "deck/index.html"
 ```
 
-`decktalk init` writes a nine-section file with comments. Sections 5 and 7 are optional clip sections. This fuller
-example adds a clip section, a dip to black, and an underscore.
+`decktalk init` writes a three-section file with comments, and every section of it is a page section.
+`decktalk init --example lesson` writes a one-section file instead. This fuller example adds a clip
+section, a dip to black, and music.
 
 ```toml decktalk.toml
 [project]
@@ -30,12 +31,12 @@ stability = 0.55
 
 [[section]]
 number = 0
-title = "On camera"
+chapter = "On camera"
 clip = "media/open.mp4"
 
 [[section]]
 number = 1
-title = "Open"
+chapter = "Open"
 page = "deck/index.html"
 scene = 1
 
@@ -43,7 +44,7 @@ scene = 1
 dips = [[0, 1]]
 
 [mix]
-underscore = "build/music/underscore.mp3"
+music = "build/music/music.mp3"
 ```
 
 ## Load rules
@@ -56,8 +57,8 @@ Every project command loads `decktalk.toml` first. The load fails in each of the
 - A value has the wrong type. For example, `seconds = 120.5` under `[soundscape.music]` fails.
 - Two sections share a `number`.
 - A section has both `page` and `clip`, or neither.
-- `extra_seconds`, `hold_seconds`, `lead_seconds`, or `tail_seconds` is below 0.
-- `carries_previous` is set on the first section.
+- `record_margin_seconds`, `hold_seconds`, `lead_seconds`, or `tail_seconds` is below 0.
+- `seamless` is set on the first section.
 - A `dips` pair or a `[[mix.sfx]]` table names a section that does not exist.
 
 The error names the table and the key.
@@ -71,10 +72,10 @@ decktalk.toml: [soundscape.music]: 'seconds' must be int, got float
 An unknown key inside a table does not fail the load. DeckTalk prints a warning, ignores the key, and
 continues. The same rule covers the tuning tables and the per-machine file.
 
-{/* sample: decktalk status in a scaffold with stability misspelled under [voice] */}
+{/* sample: decktalk status in a starter project with stability misspelled under [voice] */}
 
 ```text
-decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?)
+decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?).
 ```
 
 A page section key on a clip section, or a clip section key on a page section, gets its own warning.
@@ -96,6 +97,7 @@ The warning names the section kind that the key belongs to.
 | `script` | path | `script.md` | Script file. |
 | `cues` | path | `cues.json` | Cue file. Optional. Without it, pages use their own timing. |
 | `build` | path | `build` | Directory for generated files. |
+| `language` | string | `en` | The BCP 47 tag of the language the film is narrated in. It labels the mp4's two streams and the transcript page, which is what a player names the audio from. |
 
 ## `[voice]`
 
@@ -111,9 +113,10 @@ as `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`, or in the environment.
 | `style` | number | 0.0 | Style exaggeration. 0 is the most stable. |
 | `speaker_boost` | boolean | true | ElevenLabs speaker boost. |
 | `speed` | number | 1.0 | Speaking rate. |
+| `price_per_1000_characters` | number | 0.0 | What your plan charges per 1,000 characters. `narrate --dry-run` prints dollars from it, and leaves the figure out when it is 0. It is not part of any cache key. |
 
-Note: each key is part of every section's cache key. After a change, the next voiced build voices
-every section again. [What spends credits](/requirements#what-spends-credits) lists every change
+Note: every key here but `price_per_1000_characters` is part of every take's content hash. After a change,
+the next voiced build voices every section again. [What spends credits](/requirements#what-spends-credits) lists every change
 that costs credits. An unregistered `provider` fails when `narrate` runs, not at load.
 
 ## `[[section]]`
@@ -126,8 +129,8 @@ Write one `[[section]]` table for each `## N.` section of the script. DeckTalk s
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `number` | integer | required | Matches `## N.` in the script. |
-| `title` | string | empty | Chapter title and slate title. An empty title becomes `Section N`. Consecutive sections with the same title share one chapter. |
-| `carries_previous` | boolean | false | The section opens on the previous section's last picture. `verify` flags a visible jump at the cut as `POP AT CUT`. Not allowed on the first section. |
+| `chapter` | string | the script's `## N.` heading | Chapter title and slate title. A section with neither becomes `Section N`. Consecutive sections with the same chapter share one chapter marker. |
+| `seamless` | boolean | false | The section opens on the previous section's last picture. `verify` flags a visible jump at the cut as `POP AT CUT`. Not allowed on the first section. |
 
 ### Page section keys
 
@@ -135,31 +138,34 @@ Write one `[[section]]` table for each `## N.` section of the script. DeckTalk s
 |---|---|---|---|
 | `page` | path | required | HTML file, such as `deck/index.html`. |
 | `scene` | integer or string | `= number` | Value the page receives as `?scene=`. |
-| `extra_seconds` | number | 0.3 | Seconds the recording runs past the section span. |
+| `record_margin_seconds` | number | 0.3 | Seconds the recording runs past the section span. |
 | `hold_seconds` | number | 0 | Seconds the section's last frame holds after its narration. The narration pauses for the hold. |
-| `lead_seconds` | number | 0 | Seconds of silence before the section's first word. |
-| `tail_seconds` | number | `[narration] min_tail_seconds` | Shortest silence after the section's last word. |
+| `lead_seconds` | number | `[narration] lead_seconds` | Seconds of silence before the section's first word. |
+| `tail_seconds` | number | `[narration] min_tail_seconds` | Seconds of silence after the section's last word. |
 | `ambience` | boolean | false | Plays the ambience bed under this section. |
 | `params` | table | none | Extra query parameters for the page, written as `[section.params]`. |
 
-Note: `params` values become strings. A `beats` key replaces the cue times, a `scene` key replaces
+Note: `params` values become strings. A `cues` key replaces the cue times, a `scene` key replaces
 `scene`, a `words` key replaces the spoken words, and a `prevwords` key replaces the previous section's words. `t0` is always `signal`, whatever `params` says.
 
 ### Silence in a section
 
-Three keys add silence to a page section. None of them is sent to the voice or changes the narration cache,
-so a cached take stays cached.
+Three keys set the silence of a page section. None of them is sent to the voice or changes the narration
+cache, so a cached take stays cached. Every spoken section has a lead and a tail even when it sets neither,
+from `[narration] lead_seconds` and `min_tail_seconds`, so the silence across every cut is one tail and then
+one lead.
 
 | Key | Where the silence goes | How DeckTalk adds it |
 |---|---|---|
-| `lead_seconds` | Before the first word | `narrate` joins it into `narration.mp3` before the take. The take is not changed. |
-| `tail_seconds` | After the last word | `narrate` pads the take, as it does for `min_tail_seconds`. |
+| `lead_seconds` | Before the first word | `narrate` places it in `narration.mp3` before the take. The take is not changed. |
+| `tail_seconds` | After the last word | `narrate` measures where the take's sound ends and cuts or pads the take in `narration.mp3` so that exactly this much silence follows it. The take is not changed. |
 | `hold_seconds` | After the section's narration | `assemble` holds the last frame, and the narration waits. |
 
 - The section starts when its silence starts. So `lead_seconds` moves every word and every word cue of the
   section later, and `$start` stays at 0.
-- The recording covers the lead, because the section span in `timeline.json` includes it.
-- `tail_seconds` is a least value, like `min_tail_seconds`. A take that already has a longer tail keeps it.
+- The recording covers the lead, because the section's span on the narration clock includes it.
+- `tail_seconds` is exact, like `min_tail_seconds`. A pause the voice left after its last word is cut to it or
+  padded to it, so every take of the section ends the same way, voiced in this run or reused.
 - A hold on any page section pauses the narration, as a clip between page sections does. The next section
   starts after the hold, on its own words.
 - A `[pause N]` before a section's first words is removed. Use `lead_seconds` to open a section on silence.
@@ -167,13 +173,13 @@ so a cached take stays cached.
 ```toml decktalk.toml
 [[section]]
 number = 4
-title = "The edit"
+chapter = "The edit"
 page = "deck/index.html"
 lead_seconds = 1.5    # the page shows 1.5 s before the first word
 hold_seconds = 2      # the last frame stays 2 s before section 5
 ```
 
-Set `carries_previous = true` when a section continues the previous section's picture, such as a page that
+Set `seamless = true` when a section continues the previous section's picture, such as a page that
 opens where the last page ended. `verify` compares the two frames at the cut, outside any dip. A dip still
 fades through black, so leave the pair out of `[transition] dips` for a cut that should not show.
 [Cut continuity](/reference/verify#cut-continuity) defines the check.
@@ -215,18 +221,18 @@ Note: leave out `dips` to dip at every cut. Set `dips = []` for no dips. Audio n
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `underscore` | path | none | Music under the whole video. Loops, and ducks under speech and clips. |
-| `underscore_db` | number | -24 | Underscore level in dB. |
-| `underscore_duck_db` | number | -6 | Extra level change in dB under each spoken span and clip. |
-| `underscore_fade_in` | number | 2 | Fade-in seconds. |
-| `underscore_fade_out` | number | 3 | Fade-out seconds. |
-| `markers` | path | none | A markers file. See [`markers.json`](#markers-json). |
+| `music` | path | none | Music under the whole video. Loops, and ducks under speech and clips. |
+| `music_db` | number | -24 | Music level in dB. |
+| `music_duck_db` | number | -6 | Extra level change in dB under each spoken span and clip. |
+| `music_fade_in_seconds` | number | 2 | Fade-in seconds. |
+| `music_fade_out_seconds` | number | 3 | Fade-out seconds. |
+| `music_markers` | path | none | This names a markers file, which swells and mutes the music at spoken phrases. See [`markers.json`](#markers-json). |
 | `ambience` | path | none | Ambience bed for sections that set `ambience = true`. |
 | `ambience_db` | number | -20 | Ambience level in dB. |
 | `slate` | path | a rendered slate | PNG for every missing clip, instead of the rendered titled slate. |
 
-Note: a missing underscore or ambience file does not fail the build. `assemble` logs a warning, such
-as `underscore missing (<path>); no music`, and plays the video without it.
+Note: a missing music or ambience file does not fail the build. `assemble` logs a warning, such
+as `music missing (<path>); no music`, and plays the video without it.
 
 ### `[[mix.sfx]]`
 
@@ -237,36 +243,37 @@ Write one `[[mix.sfx]]` table for each sound effect.
 |---|---|---|---|
 | `file` | path | required | Audio file. |
 | `section` | integer | required | Section whose cue places the sound effect. Must exist. |
-| `cue` | string | required | Cue id that `beats` resolved in that section. |
+| `cue` | string | required | Cue id that `align` resolved in that section. |
 | `db` | number | -16 | Level in dB. |
-| `offset` | number | 0 | Seconds added to the cue time. |
+| `offset` | number | 0 | This adds seconds to the cue time. |
+| `caption` | string | none | This is the caption line a viewer reads when the sound plays, such as `ball bounces`. `assemble` gives it a line of its own in the captions. |
 
 Note: this `offset` belongs to the sound effect, not to the cue. A missing file or an unresolved cue
 does not fail the build. `assemble` logs `skipped` for that sound effect.
 
-### `[mix.loudnorm]`
+### `[mix.loudness]`
 
-`[mix.loudnorm]` sets the targets of the loudness pass. [Loudness](/concepts/sound#loudness) explains
+`[mix.loudness]` sets the targets of the loudness pass. [Loudness](/concepts/sound#loudness) explains
 the pass.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `I` | number | -16 | Integrated loudness target in LUFS. |
-| `TP` | number | -1.5 | True-peak ceiling in dBTP. |
-| `LRA` | number | 11 | Loudness range in LU, passed to the measurement. |
+| `target_lufs` | number | -16 | This is the integrated loudness target, in LUFS. |
+| `true_peak_db` | number | -1.5 | This is the true-peak ceiling, in dBTP. |
+| `range_lu` | number | 11 | This is the loudness range, in LU, and it is passed to the measurement. |
 
-Note: the keys work in upper or lower case. A silent build skips the loudness pass.
+Note: the unit is part of each key name, so no abbreviation has to be looked up. A build without
+voice skips the loudness pass, because a click track has no loudness worth matching.
 
 ### `markers.json`
 
-A markers file swells or mutes the underscore at spoken phrases. `[mix] markers` names it, and the
-scaffold's file is `media/markers.json`.
-
-{/* input: src/decktalk/template/media/markers.json */}
+A markers file swells or mutes the music at spoken phrases. `[mix] music_markers` names it. No
+packaged project writes one, so the block below is a shape that a project adds by hand, and
+`media/markers.json` is the usual place for it.
 
 ```json media/markers.json
 {
-  "_comment": "Underscore structure. Each marker swells the bed by boost_db for boost_seconds at a spoken phrase (or $start/$end of a section); mute_seconds silences it for one beat first.",
+  "_comment": "Music structure. Each marker swells the bed by boost_db for boost_seconds at a spoken phrase (or $start/$end of a section); mute_seconds silences it for one beat first.",
   "boost_db": 3,
   "boost_seconds": 2,
   "markers": [
@@ -277,7 +284,7 @@ scaffold's file is `media/markers.json`.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `boost_db` | number | 3 | dB the underscore rises at each marker. |
+| `boost_db` | number | 3 | dB the music rises at each marker. |
 | `boost_seconds` | number | 2 | Seconds each swell lasts. |
 | `markers` | array of objects | none | The markers. |
 
@@ -289,12 +296,12 @@ scaffold's file is `media/markers.json`.
 | `offset` | number | 0 | Seconds added to the marker time. |
 | `occurrence` | integer | 1 | Which match of the phrase. |
 | `case_sensitive` | boolean | false | Matches case when true. |
-| `mute_seconds` | number | 0 | Seconds the underscore is silent before the swell. |
+| `mute_seconds` | number | 0 | Seconds the music is silent before the swell. |
 
-- Markers apply only when the underscore file exists. `--nomix` turns them off.
+- Markers apply only when the music file exists. `--no-soundscape` turns them off.
 - `$start` works on any section. A phrase or `$end` needs a spoken section.
 - A phrase matches by the same rules as a cue phrase.
-- If the file is missing, `assemble` logs `markers file missing (<path>); underscore without structure`.
+- If the file is missing, `assemble` logs `markers file missing (<path>); music without structure`.
 - If a marker does not resolve, `assemble` logs `marker '<name>' unresolved; skipped`.
 - A file that is not valid JSON fails `assemble` with a `ConfigError`.
 
@@ -304,7 +311,7 @@ scaffold's file is `media/markers.json`.
 Each item writes to a default path unless its `out` key names another.
 
 - `[soundscape.ambience]` writes to `[mix] ambience`, else to `build/sfx/ambience.mp3`.
-- `[soundscape.music]` writes to `[mix] underscore`, else to `build/music/underscore.mp3`.
+- `[soundscape.music]` writes to `[mix] music`, else to `build/music/music.mp3`.
 - `[soundscape.sfx.<name>]` writes to `build/sfx/<name>.mp3`.
 
 ### `[soundscape.ambience]`
@@ -335,10 +342,11 @@ Each item writes to a default path unless its `out` key names another.
 | `seconds` | integer | 360 | Length to request. A decimal such as `120.5` fails the load. |
 | `force_instrumental` | boolean | true | No vocals when true. |
 | `model_id` | string | `= [elevenlabs] music_model` | Music model id. |
-| `out` | path | `= [mix] underscore` | Output file. |
+| `out` | path | `= [mix] music` | Output file. |
 
 Note: a length above `[elevenlabs] max_music_chunk_seconds` (300) is requested in parts, and DeckTalk
-crossfades the parts. The scaffold sets `seconds = 120`.
+crossfades the parts. No packaged project sets a `[soundscape]` table, so a project that wants
+generated sound writes one itself.
 
 ## Tuning tables
 

@@ -1,0 +1,9 @@
+{
+  "_comment": "Music structure: a swell at the start, and a mute then a swell on a spoken word.",
+  "boost_db": 3,
+  "boost_seconds": 2,
+  "markers": [
+    { "name": "open", "section": 1, "on": "$start" },
+    { "name": "fifth", "section": 2, "on": "fifth", "mute_seconds": 0.3 }
+  ]
+}

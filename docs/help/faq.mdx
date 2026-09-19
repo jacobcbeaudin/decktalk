@@ -1,17 +1,17 @@
 ---
 title: FAQ
-description: Answers about cost, lock-in, the voice, other tools, output files, and the scaffold's lesson.
+description: Answers about cost, lock-in, the voice, other tools, output files, and the lesson example.
 ---
 
 This page answers common questions about DeckTalk. For a message that DeckTalk prints, see [Troubleshooting](/help/troubleshooting).
 
 ## What does it cost?
 
-A silent build costs nothing. A voiced build spends ElevenLabs credits for each section whose text changed.
+A build without voice costs nothing. A voiced build spends ElevenLabs credits for each section whose text changed.
 
 - Every ElevenLabs plan can call the API, including the free plan. The free plan has limits for a video you publish.
-- `decktalk soundscape` also spends credits, because it generates an underscore, an ambience bed, and sound effects.
-- A silent build stops when the project has voiced takes, because it would empty the narration cache. [Rebuild one section](/guides/rebuild-one-section#a-silent-build-and-a-voiced-build) explains the cache.
+- `decktalk soundscape` also spends credits, because it generates music, an ambience bed, and sound effects.
+- A build without voice stops when the project has voiced takes, because it would empty the narration cache. [Rebuild one section](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build) explains the cache.
 
 [What spends credits](/requirements#what-spends-credits) lists the plan limits and every command that spends credits.
 
@@ -20,8 +20,8 @@ A silent build costs nothing. A voiced build spends ElevenLabs credits for each 
 No. ElevenLabs is the built-in speech provider, because it returns word times.
 
 - The speech provider is one module behind a two-method protocol. Any service that returns audio and word times can replace it.
-- A local text-to-speech engine with a forced aligner is one such replacement.
-- A silent build needs no speech provider, so the project files do not depend on any service.
+- A local speech provider with word timings is one such replacement.
+- A build without voice needs no speech provider, so the project files do not depend on any service.
 
 [Python API](/reference/python-api) documents the protocol.
 
@@ -81,25 +81,25 @@ Yes. A page can be any HTML that follows the [page contract](/concepts/page-cont
 
 - [Write a page by hand](/guides/page-by-hand) shows the minimum page.
 - The runtime is one file with no dependencies. It adds only the stage element to your markup.
-- KaTeX is optional. If `decktalk setup` cached KaTeX, `decktalk init` copies it into the project.
+- KaTeX is optional. `decktalk init` copies the packaged KaTeX into `deck/katex/`, and a page that needs no equations can drop its two tags.
 
 ## Does it run on Windows?
 
 Yes. DeckTalk runs on Linux, macOS, and Windows.
 
 - Paths in `decktalk.toml` use forward slashes on every platform.
-- `decktalk setup` puts Chromium in `%LOCALAPPDATA%\ms-playwright`. If a corporate proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
+- `decktalk install` puts Chromium in `%LOCALAPPDATA%\ms-playwright`. If a corporate proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
 - CI runs the full build on Windows for a `v*` tag that a person pushes, and on request. [What CI runs](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md#what-ci-runs) lists every platform and trigger.
 
-## What does the lesson mean by error?
+## What does the lesson example mean by error?
 
-The lesson's "error" is what machine learning calls the loss. The lesson uses "error" because the everyday word already says that lower is better.
+The "error" in `decktalk init --example lesson` is what machine learning calls the loss. The lesson uses "error" because the everyday word already says that lower is better.
 
 - **One guess.** A loss function scores one guess. For a category guess, such as seal or otter, the usual loss is cross-entropy. It is large when the model gives the right answer a low probability.
 - **The height of the bowl.** Training lowers the average loss over many examples. Gradient descent moves the knobs down the slope of that average.
 - **Not the error rate.** The error rate is the share of wrong guesses. It changes in jumps, so it has no useful slope to follow.
 
-[What the example video shows](/quickstart#what-the-example-video-shows) lists the lesson's sections.
+[The examples](/quickstart#the-examples) says what each packaged project is.
 
 ## Where does the name come from?
 

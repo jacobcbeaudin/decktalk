@@ -3,48 +3,84 @@ title: Runtime
 description: Look up every mode, URL parameter, function, data attribute, field, and warning of decktalk-runtime.js.
 ---
 
-`decktalk-runtime.js` is the script that plays a DeckTalk page. It mounts the steps of a scene and
+`decktalk-runtime.js` is the script that plays a DeckTalk page. It mounts the slides of a scene and
 makes elements appear on their cues. This page lists its modes, URL parameters, functions, data
 attributes, fields, CSS hooks, and warnings. [The page contract](/concepts/page-contract) explains
 how the parts work together.
 
-Include the runtime before the scene definitions. After you upgrade DeckTalk, run
-`decktalk runtime` to refresh the project's copy.
+A DeckTalk command that opens a page injects a second file, `decktalk-probe.js`, before the page
+loads. It carries what a command needs and a reader does not: the cover over the first paint, the
+helper the command waits on, the boxes of the measured catalog, and the freeze that stops at one
+cue. It is never a `<script>` tag, `decktalk init` never writes it, and the rows below say which of
+the two files each thing belongs to.
 
-{/* copied from template/deck/index.html, scene 4, with most of the markup and three of its handlers cut */}
+Include the runtime in the head of the page. A project keeps the copy that `decktalk init` wrote
+into `deck/`. A scene is markup, and a page that needs no behaviour needs no JavaScript at all.
+
+{/* input: the shape of scene 2 in src/decktalk/template/starter/deck/index.html */}
 ```html deck/index.html
 <script src="decktalk-runtime.js"></script>
+
+<div data-scene="2" data-name="How it works">
+  <template data-slide="2.1" data-hold="16">
+    <p class="eyebrow">How it works</p>
+    <div class="title" data-cue="2.1average" data-describe="the heading, the average of n numbers">
+      <h1>The average of n numbers.</h1>
+    </div>
+    <p data-cue="2.1formula" data-tex="\bar{x}=\frac{1}{n}\sum_{i=1}^{n} x_i" data-tex-display>
+      the mean of n numbers
+    </p>
+  </template>
+</div>
+```
+
+A slide that needs code keeps its markup and adds a handler, or replaces the `<template>` with a
+`render` function.
+
+```html deck/index.html
 <script>
-DeckTalk.scene(4, { name: "The edit", steps: [
-  { id: "4.1", hold: 12.4,
-    cues: { "4.1out": 1.78, "4.1video": 4.88, "4.1parts": 6.66, "4.1script": 8.6, "4.1start": 10.16 },
-    on: {
-      // "one video": the progress line fills to the end of the lesson.
-      "4.1video": (slide) => edAdd(slide, ".ed-prog .fill", "watched"),
-      // "five parts": five chips, the three watched parts filled.
-      "4.1parts": (slide) => edDel(slide, ".ed-chips", "off"),
-    },
-    render: () => `
-    <div class="slide ed">
-      <img class="ed-inside" src="${ED_IMG.lesson}" alt="">
-      <div class="ed-chips off">${edChips(["watched", "watched", "watched"])}</div>
-    </div>` },
-]});
+  DeckTalk.on("2.1formula", (slide) => slide.querySelector(".rule").classList.add("run"));
 </script>
 ```
 
+## Slides in markup
+
+A `[data-scene]` element declares a scene, and every `<template data-slide>` inside it declares one
+slide, in document order. The wrapper never draws, and the runtime clones a template's content each
+time its slide mounts. Markup is not a JavaScript string, so a backslash is written once and `${`
+and a backtick are ordinary characters.
+
+| Attribute | On | Default | Meaning |
+|---|---|---|---|
+| `data-scene` | the wrapper | none | The scene id. |
+| `data-name` | the wrapper | `Scene <id>` | The scene name, shown in the index and the catalog. |
+| `data-camera` | the wrapper | none | `push` runs the camera push. |
+| `data-slide` | a `<template>` | required | The slide id. |
+| `data-hold` | a `<template>` | `8` | Seconds the slide holds in preview. |
+| `data-owns` | a `<template>` | none | Cue ids this slide owns that do not start with its own id, separated by spaces. |
+| `data-preview` | a `<template>` | none | `id@seconds` pairs, separated by spaces: when each cue fires in preview. |
+
+Note: A scene that a script registered keeps its definition, and each of its slides that defines no
+`render` takes the markup of the template with its id. A template whose slide id the script never
+declared joins the end of that scene. A slide that has both a `render` and a template warns, and the
+template is unused.
+
+Note: A scene in markup needs no `preview` object. The cue ids of a `<template>` slide, and their
+order, come from its own `data-cue` attributes in document order. A `render` slide has no markup to
+read before it mounts, so its order comes from `preview` and then `owns`.
+
 ## Modes
 
-The URL picks the mode. In prose these docs write index mode, autoplay, cue mode, and freeze mode.
+The URL picks the mode. In prose these docs write index mode, preview, cue mode, and freeze mode.
 
 | Mode | `mode` value | URL | Clock starts | What mounts | Used by |
 |---|---|---|---|---|---|
-| Index mode | `index` | no `scene`, `beats`, or `step`, or an unknown scene or step | not used | a list of scenes and steps | a person who picks a scene |
-| Autoplay | `autoplay` | `?scene=N` | at `load` | each step in turn, for `hold / speed` seconds | a browser preview |
-| Cue mode | `cues` | `?beats=…`, usually with `scene` | at `load`, or at `startClock()` with `t0=signal` | each step at the earliest cue it owns | `decktalk record`, `decktalk shots --section` |
-| Freeze mode | `frozen` | `?step=ID`, optionally with `&cue=CUE` or `&before=CUE` | at `load`, after the step has mounted | one step, with its reveals in their end state | `decktalk shots`, `decktalk preflight` |
+| Index mode | `index` | no `scene`, `cues`, or `slide`, or an unknown scene or slide | not used | a list of scenes and slides | a person who picks a scene |
+| Preview | `preview` | `?scene=N` | at `load` | each slide in turn, for `hold / speed` seconds | a browser preview |
+| Cue mode | `cue` | `?cues=…`, usually with `scene` | at `load`, or at `startClock()` with `t0=signal` | each slide at the earliest cue it owns | `decktalk record`, `decktalk screenshots --section` |
+| Freeze mode | `freeze` | `?slide=ID`, optionally with `&after=CUE` or `&before=CUE` (the probe reads those two) | at `load`, after the slide has mounted | one slide, with its reveals in their end state | `decktalk screenshots`, `decktalk preflight` |
 
-Note: `step` wins over `scene` and `beats`. With `beats` and no registered `scene`, the scene that
+Note: `slide` wins over `scene` and `cues`. With `cues` and no registered `scene`, the scene that
 owns the earliest cue plays. [Cue ownership](/concepts/page-contract#cue-ownership) gives the
 ownership and mount rules of cue mode.
 
@@ -53,42 +89,84 @@ ownership and mount rules of cue mode.
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `scene` | string | none | Plays this scene. `DeckTalk.scene(3, …)` registers `"3"`. |
-| `beats` | string | none | Turns on cue mode. Comma-separated `id@seconds` pairs, in seconds after narration t=0. |
+| `cues` | string | none | Turns on cue mode. Comma-separated `id@seconds` pairs, in seconds after narration t=0. |
 | `t0` | number or `signal` | `0` | Seconds after `load` at which narration t=0 falls. `signal` waits for `DeckTalk.startClock()`. |
-| `words` | string | none | The section's spoken words, as comma-separated `word@seconds` pairs. `data-sync` uses them. |
+| `words` | string | none | The section's spoken words, as comma-separated `word@seconds` pairs. `data-text="spoken"` uses them. |
 | `prevwords` | string | none | The spoken words of the section just before this one in the narration, in the same form, in seconds after that section starts. The runtime ignores them. A page that opens on the previous section's last frame can read them, so a value it carries across the cut matches. |
-| `step` | string | none | Turns on freeze mode for this step. |
-| `cue` | string | none | With `step`, fires the step's cues up to and including this one. Elements of later cues stay hidden. |
-| `before` | string | none | With `step` and no `cue`, fires the step's cues before this one. Elements of this cue and later cues stay hidden. |
-| `speed` | number | `1` | Divides autoplay time. The minimum is 0.05. Cue mode ignores it. |
-| `hud` | `1` | off | Shows the mode, scene, step, and clock in the top left corner. Never use it in a recording. |
+| `slide` | string | none | Turns on freeze mode for this slide. |
+| `after` | string | none | With `slide`, fires the slide's cues up to and including this one. Elements of later cues stay hidden. |
+| `before` | string | none | With `slide` and no `after`, fires the slide's cues before this one. Elements of this cue and later cues stay hidden. |
+| `speed` | number | `1` | Divides preview time. The minimum is 0.05. Cue mode ignores it. |
+| `hud` | `1` | off | Shows the mode, scene, slide, and clock in the top left corner. Never use it in a recording. |
 
-Note: An unknown `scene` shows the index with the note `unknown scene N`. An unknown `step` shows
-the index with the note `unknown step ID`. Neither adds a warning. The catalog still exists, so the
+Note: An unknown `scene` shows the index with the note `unknown scene N`. An unknown `slide` shows
+the index with the note `unknown slide ID`. Neither adds a warning. The catalog still exists, so the
 recorder records the index with no `PAGE ERROR`.
 
-Note: The runtime sorts the `beats` pairs by time and splits each pair at its last `@`. It skips a
+Note: The runtime sorts the `cues` pairs by time and splits each pair at its last `@`. It skips a
 pair whose seconds are not a number. Write every pair as `id@seconds`.
 
-Note: The recorder builds `words` from `build/audio/timeline.json`, in seconds after the section
-start. It removes commas and `@` from each word. It builds `prevwords` the same way from the section
-before, and leaves it out for the first section or when the section before has no words.
+Note: The recorder builds `words` from the words file of the take that section plays, in seconds after
+the section start. It removes commas and `@` from each word. It builds `prevwords` the same way from the
+section before, and only for a section that sets `seamless = true`. It leaves it out for every other
+section, and when the section before has no words.
 
-Note: In freeze mode, the step's cues fire in autoplay order. A cue in a `cues` list, with no
-seconds, fires after the timed cues. Animations take no time. A count-up shows its final value, a
-typewriter shows its full text, and a `data-sync` element shows whole.
+Note: In freeze mode, the slide's cues fire in preview order: the cues of the `preview` object by
+their seconds, then the cues of the markup in document order and the cues of `owns`. Animations take no time. A count-up shows its final value, a
+typewriter shows its full text, and a `data-text="spoken"` element shows whole.
 
-Note: With `cue` or `before`, only the cues that fire run their handlers. A `cue` or `before` id that is not one of the step's cues adds the warning `cue "ID" is not one of step STEP's cues`, and every cue fires. `enter` still gets `ctx.frozen` as
-true, so a figure that `enter` draws in its end state shows that state at every cue. A `cue` that is
-not one of the step's cues adds a warning, and the whole step freezes. In the scaffold,
-`?step=2.1&cue=2.1aloud` shows the script card and the waveform with its word times. It hides the
-outlines that join the cue word to its drawing, which wait for `2.1word`, and the arrow to the slide
-card, which waits for `2.1follows`. `decktalk shots --step 2.1 --cue 2.1aloud` opens that URL.
+Note: `after` and `before` belong to `decktalk-probe.js`, so a page opened by hand at `?slide=ID`
+shows every reveal and ignores both. With `after` or `before`, only the cues that fire run their handlers. An `after` or `before` id
+that is not one of the slide's cues adds the warning `cue "<id>" is not one of slide <slide>'s cues`,
+the whole slide freezes, and every cue fires. `enter` still gets `ctx.frozen` as true, so a figure
+that `enter` draws in its end state shows that state at every cue. In the starter,
+`?slide=2.1&after=2.1formula` shows the heading and the typeset equation and hides the code beside
+it, which waits for `2.1code`. `decktalk screenshots --slide 2.1 --after 2.1formula` opens that URL.
+
+## Seamless sections
+
+`seamless = true` on a `[[section]]` in `decktalk.toml` changes nothing in the runtime. The scene still
+mounts its own first slide, with no animation, before the clock starts, and nothing of the previous
+scene is carried across the cut. The key changes what the page is given and what is checked:
+
+- The recorder adds `prevwords` to the section's URL, the previous section's spoken words in seconds
+  after that section starts.
+- `decktalk verify` compares the previous section's last frame before any dip with this section's
+  first frame after any dip, and reads `POP AT CUT` when their changed share is above
+  `[verify] max_pop_percent`, 0.1 % by default. `decktalk preflight` compares the previous scene's last
+  frozen state with this scene's first one.
+
+A scene opens on the previous scene's last picture only when its first state draws that picture
+again. Copy the previous scene's last slide into the new scene's first `<template data-slide>`, drop
+`data-cue` and `data-delay` from the copied elements so they show on the first frame, keep their classes
+and styles, then add the new elements with their own `data-cue`:
+
+```html
+<div data-scene="1">
+  <template data-slide="1.1">
+    <div class="box" data-cue="1.1a">One</div>
+    <div class="box right" data-cue="1.1b">Two</div>
+  </template>
+</div>
+<div data-scene="2">
+  <template data-slide="2.1">
+    <div class="box">One</div>
+    <div class="box right">Two</div>
+    <div class="box below" data-cue="2.1c">Three</div>
+  </template>
+</div>
+```
+
+Leave `data-camera="push"` off both scenes, because the previous scene ends pushed in, and leave the
+pair out of `[transition] dips`. In the example, slide 2.1 draws scene 1's last picture again from its first
+frame, and only `Three` waits for its word. [Page contract](/concepts/page-contract#a-seamless-cut) and
+[Cut continuity](/reference/verify#cut-continuity) say more.
 
 ## `DeckTalk.scene(id, definition)`
 
-`DeckTalk.scene` registers a scene and returns `DeckTalk`, so calls chain. The scenes start on
-`DOMContentLoaded` when at least one scene is registered.
+`DeckTalk.scene` registers a scene and returns `DeckTalk`, so calls chain. The runtime starts on
+`DOMContentLoaded`: it reads the scenes in markup, builds the catalog, and starts the mode the URL
+asks for. A page needs `DeckTalk.scene` only for a slide that builds itself in code.
 
 ### Scene fields
 
@@ -96,62 +174,59 @@ card, which waits for `2.1follows`. `decktalk shots --step 2.1 --cue 2.1aloud` o
 |---|---|---|---|
 | `name` | string | `Scene <id>` | Name in the index and the catalog. |
 | `camera` | `"push"` or `null` | `null` | `"push"` zooms the stage element from 100% to 103% over the scene. |
-| `steps` | array | `[]` | The steps, in order, as objects with the step fields below. |
+| `slides` | array | `[]` | The slides, in order, as objects with the slide fields below. |
 
-Note: A push lasts the autoplay total in autoplay, or the last cue time plus 8 s in cue mode. It
+Note: A push lasts the preview total in preview, or the last cue time plus 8 s in cue mode. It
 lasts at least 4 s. Freeze mode shows no push. [Add a camera push](/guides/design-a-slide#add-a-camera-push)
 says when to use one.
 
-### Step fields
+### Slide fields
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `id` | string | `<scene>.<n>` | The step id, which is also a cue id. `n` counts from 1. |
-| `hold` | number | `8` | Seconds before the next step mounts, in autoplay. Cue mode ignores it. |
-| `cues` | array of strings, or object | none | Cue ids that the step owns. An object `{ id: seconds }` also fires each cue that many seconds after the mount, in autoplay. |
-| `render` | function | returns `""` | `({ scene, step, frozen }) => string`. Returns the HTML of the slide. |
-| `enter` | function | none | `(slide, ctx) => void`. Runs after the slide is in the DOM, for setup in code. |
-| `on` | object | `{}` | `{ [cueId]: (slide, ctx) => void }`. Handlers for this step's cues. |
+| `id` | string | `<scene>.<n>` | The slide id, which is also a cue id. `n` counts from 1. |
+| `hold` | number | `8` | Seconds before the next slide mounts, in preview. Cue mode ignores it. |
+| `owns` | array of strings | none | Cue ids the slide owns that do not start with its own id. Rare, because the id prefix is the ownership rule. |
+| `preview` | object | none | `{ id: seconds }`. When each cue fires in preview, in seconds after the mount. It grants no ownership. |
+| `render` | function | none | `({ scene, slide, frozen }) => string`. Returns the HTML of the slide. A slide with no `render` takes the markup of the `<template data-slide>` with its id. |
+| `enter` | function | none | `(slide, ctx) => void`. Runs after the slide is in the DOM, for preparation in code. |
+| `on` | object | `{}` | `{ [cueId]: (slide, ctx) => void }`. Handlers for this slide's cues. |
 
-Note: In autoplay, a `data-cue` element appears at its `data-at` time, or when the `cues` object
-fires its cue, whichever comes first. `data-at` defaults to 0. So a browser preview shows the
-element as soon as its step mounts.
+Note: In preview, a `data-cue` element appears when the slide's `preview` object fires its cue, and
+an element with `data-delay` and no cue appears that many seconds after the mount. A cued element
+with no `preview` entry stays hidden through the preview, which is what a browser preview of a page
+whose timing lives in `cues.json` shows.
 
-Note: In autoplay, a time in `cues` at or past `hold` adds a warning, because that cue fires after
-the next step mounts. The last step of a scene never warns. A seconds value that is not a number
+Note: In preview, a time in `preview` at or past `hold` adds a warning, because that cue fires after
+the next slide mounts. The last slide of a scene never warns. A seconds value that is not a number
 counts as 0.
 
-Note: `render` gets the runtime's own scene and step objects. Inside its template literal, write
-every backslash twice ([`data-tex`](#data-tex)).
+Note: `render` gets the runtime's own scene and slide objects. Inside its template literal, write
+every backslash twice, and write no `${` or backtick that is not meant as one
+([`data-tex`](#data-tex)). Markup in a `<template data-slide>` has none of those traps.
 
-Note: `enter` gets the [handler context](#handler-context) with `id` and `step` set to the step id,
+Note: `enter` gets the [handler context](#handler-context) with `id` and `slideId` set to the slide id,
 and `at` set to the mount time. Keep the state that cue handlers need on the slide element, as in
-`slide.fig = setup(slide, ctx.frozen)`. An exception in `enter` goes to `console.error`, and the
-scene goes on.
+`slide.fig = install(slide, ctx.frozen)`. An `enter` that throws becomes a warning, and the scene
+goes on.
 
 ## Handler context
 
-A step's `enter`, its `on[id]` handlers, and every `DeckTalk.on(id, fn)` handler get two arguments.
-The first is the slide element of the mounted step. The second is a context object with these
+A slide's `enter`, its `on[id]` handlers, and every `DeckTalk.on(id, fn)` handler get two arguments.
+The first is the element of the mounted slide. The second is a context object with these
 fields. A handler that takes no arguments still works.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string | The cue id. For `enter`, the step id. |
-| `at` | number | The value of `now()`, rounded to the millisecond, when the cue fired or the step mounted. `-Infinity` before the clock starts, so in freeze mode. |
+| `id` | string | The cue id. For `enter`, the slide id. |
+| `at` | number | The value of `now()`, rounded to the millisecond, when the cue fired or the slide mounted. `-Infinity` before the clock starts, so in freeze mode. |
 | `frozen` | boolean | `true` in freeze mode. A handler then shows its end state at once. |
-| `step` | string or `null` | The id of the mounted step. |
+| `slideId` | string or `null` | The id of the mounted slide. The first argument is already the slide element, so this field is a string. |
 
-{/* copied from template/deck/index.html, scene 2 */}
 ```js deck/index.html
-{ id: "2.1", hold: 21,
-  cues: { "2.1mark": 1.1, "2.1script": 3.4, "2.1aloud": 5.9, "2.1word": 8.5, "2.1follows": 12.3, "2.1lesson": 14.5 },
-  on: handoffs(["2.1mark", "2.1follows", "2.1lesson"], {
-    "2.1mark": (slide) => slide.querySelector(".s2-mark").classList.add("up"),
-    "2.1follows": (slide) => slide.querySelector(".follow").classList.add("draw"),
-    "2.1lesson": (slide) => settle(slide.querySelector(".s2-push"), 0.55),
-  }),
-  render: () => { … } }
+DeckTalk.on("2.1formula", (slide, ctx) => {
+  slide.querySelector(".rule").classList.toggle("run", !ctx.frozen);
+});
 ```
 
 ## `DeckTalk` methods and properties
@@ -160,47 +235,54 @@ fields. A handler that takes no arguments still works.
 |---|---|---|
 | `scene(id, definition)` | `DeckTalk` | Registers a scene. |
 | `on(id, fn)` | `DeckTalk` | Registers a global handler for cue `id`, called as `fn(slide, ctx)`. Several handlers can share an id. |
-| `start()` | `undefined` | Reads the URL and starts the mode. Runs on `DOMContentLoaded` when a scene exists. A second call does nothing. |
+| `start()` | `undefined` | Reads the scenes in markup, then the URL, and starts the mode. Runs on `DOMContentLoaded`. A second call does nothing. |
 | `startClock()` | `undefined` | Starts the clock now. The recorder calls it one time, when the URL has `t0=signal`. Does nothing after the clock has started. |
 | `reveal(element)` | `undefined` | Makes one element appear now, with its count-up, typewriter, or word sync. Does nothing to an element that has appeared. |
-| `fireCue(id)` | `undefined` | Fires a cue now, as [When a cue fires](/concepts/page-contract#when-a-cue-fires) describes. |
-| `findStep(stepId)` | `{ scene, step }` or `null` | Finds a step id in any scene. Returns the runtime's own objects. |
+| `fire(id)` | `undefined` | Fires a cue now, as [When a cue fires](/concepts/page-contract#when-a-cue-fires) describes. |
+| `findSlide(slideId)` | `{ scene, slide }` or `null` | Finds a slide id in any scene. Returns the runtime's own objects. |
+| `waitFor(promise)` | `DeckTalk` | Adds one more condition to `window.__decktalk.ready`. Call it for every wait of your own instead of replacing the promise. |
+| `version` | string | The version of DeckTalk this runtime file shipped with. |
 | `scenes` | `Map` | Every registered scene, by id. |
 | `params` | `URLSearchParams` | The page's query parameters, including `params` from the `[[section]]` table. |
 
-Note: A handler that `DeckTalk.on` registers also stops the `unknown cue id` warning for its id.
-Call `DeckTalk.start()` yourself only for a scene that you register after `DOMContentLoaded`.
+Note: A handler that `DeckTalk.on` registers also stops the `unknown cue id` warning for its id, as
+long as it is registered before `DOMContentLoaded`. Call `DeckTalk.start()` yourself only for a
+scene you register later.
 
 ## Data attributes
 
-Put these attributes on elements inside the HTML of a step.
+Put these attributes on elements inside the HTML of a slide.
 
 | Attribute | Value | Default | Meaning |
 |---|---|---|---|
-| `data-cue` | cue id | none | Appears when this cue fires, in cue mode. Otherwise appears at its `data-at` time. |
-| `data-at` | seconds | `0` | Appears this many seconds after the step mounts. |
-| `data-fx` | `rise`, `fade`, `draw`, `drop`, `pop`, `dim`, or `none` | `rise` | The reveal effect. See [`data-fx`](#data-fx). |
-| `data-dur` | seconds | the effect's length | Length of the reveal effect and of a count-up. |
-| `data-count` | empty or `first` | off | Counts the last number in the text up from 0. `first` counts the first number. |
-| `data-type` | milliseconds | `40` | Types the text at this many milliseconds per character. |
-| `data-sync` | flag | off | Shows the text one word at a time, as the voice says each word. See [`data-sync`](#data-sync). |
+| `data-cue` | cue id | none | Appears when this cue fires. |
+| `data-delay` | seconds | `0` | Appears this many seconds after the slide mounts. For an element with no cue. |
+| `data-reveal` | `rise`, `fade`, `draw`, `drop`, `pop`, `dim`, or `instant` | `rise` | The reveal effect. See [`data-reveal`](#data-reveal). |
+| `data-duration` | seconds | the effect's length | Length of the reveal effect and of a count-up. |
+| `data-describe` | a sentence | none | What this reveal shows. The transcript output reads it, and it travels in the catalog. |
+| `data-text="count"` | empty or `first` | off | Counts the last number in the text up from 0. `first` counts the first number. |
+| `data-text="type"` | milliseconds | `40` | Types the text at this many milliseconds per character. |
+| `data-text="spoken"` | flag | off | Shows the text one word at a time, as the voice says each word. See [`data-text="spoken"`](#data-text="spoken"). |
 | `data-tex` | TeX | none | Typesets this TeX with KaTeX. See [`data-tex`](#data-tex). |
-| `data-display` | flag | off | With `data-tex`, typesets in display mode. |
+| `data-tex-display` | flag | off | With `data-tex`, typesets in display mode. |
 
-Note: In cue mode, a `data-cue` that `?beats=` does not list adds a warning. That element appears at
-its `data-at` time. In freeze mode, every element appears at once, except elements of cues after the
-`cue` parameter.
+Note: `data-cue` and `data-delay` are two triggers for one element, so an element that carries both
+adds a warning and the delay is ignored.
 
-Note: `data-count`, `data-type`, and `data-sync` run when their element appears. Each one needs
-`data-cue` or `data-at` on the same element. Without either, the effect never runs, and the page
+Note: In cue mode, a `data-cue` that `?cues=` does not list adds a warning, and its element appears
+as soon as the slide mounts rather than staying invisible. In freeze mode every element appears at
+once, except the elements of cues after the `after` or `before` parameter.
+
+Note: `data-text="count"`, `data-text="type"`, and `data-text="spoken"` run when their element appears. Each one needs
+`data-cue` or `data-delay` on the same element. Without either, the effect never runs, and the page
 warns.
 
-Note: `data-count` keeps the decimal places and thousands commas of the number, so `1,250.5`
+Note: `data-text="count"` keeps the decimal places and thousands commas of the number, so `1,250.5`
 counts with one decimal and a comma. The rest of the text stays in place. The count eases out over
-`data-dur`, or 0.9 s. `data-type` keeps the element at the size of its finished text, so nothing
+`data-duration`, or 0.9 s. `data-text="type"` keeps the element at the size of its finished text, so nothing
 around it moves.
 
-### `data-fx`
+### `data-reveal`
 
 | Effect | Length | Animation |
 |---|---|---|
@@ -210,23 +292,23 @@ around it moves.
 | `drop` | 0.35 s | Fades in and moves down 24 px. |
 | `pop` | 0.5 s | Fades in and scales from 60% past 108% to 100%. |
 | `dim` | 1.2 s | Starts visible and fades to 16% opacity. |
-| `none` | none | Appears on the frame of its cue. |
+| `instant` | none | Appears on the frame of its cue. |
 
 [Choose a reveal effect](/guides/design-a-slide#choose-a-reveal-effect) says where each effect works
 well.
 
-### `data-sync`
+### `data-text="spoken"`
 
-An element with `data-sync` shows its words one at a time, each at the moment the voice says it.
+An element with `data-text="spoken"` shows its words one at a time, each at the moment the voice says it.
 These rules apply:
 
-1. The element also needs `data-cue` or `data-at`. Without either, the words never sync, and the page warns.
+1. The element also needs `data-cue` or `data-delay`. Without either, the words never sync, and the page warns.
 2. The text must match the spoken words, word for word. Matching ignores case and every character except a to z and 0 to 9.
-3. Apostrophes do not count in this match. The `beats` stage keeps apostrophes when it matches a cue phrase.
+3. Apostrophes do not count in this match. The `align` stage keeps apostrophes when it matches a cue phrase.
 4. If the text occurs more than once, the runtime uses the first match that starts at most 1.5 s before the element appears. If every match starts earlier, it uses the last match.
 5. If nothing matches, the element appears whole, and the page warns.
 6. Each word appears 20 ms before its start time, with a 0.12 s fade.
-7. The element gets `data-fx="none"` unless it sets its own `data-fx`. A reveal effect on the whole element would hide the timing of the words.
+7. The element gets `data-reveal="instant"` unless it sets its own `data-reveal`. A reveal effect on the whole element would hide the timing of the words.
 8. Without a `words` parameter, as in a browser preview, the element appears whole. It also appears whole in freeze mode.
 
 ### `data-tex`
@@ -235,140 +317,196 @@ The runtime typesets the value of `data-tex` with KaTeX when `window.katex` exis
 replaces the element's text. Without KaTeX, the text stays, so write it as a readable fallback.
 KaTeX shows a TeX string that it cannot parse in red, and the page warns.
 
-Inside a `render` template literal, write every backslash twice. JavaScript reads `\f`, `\t`, `\u`,
-and `\x` as escapes. For example, `\frac` becomes a form feed, and `\theta` becomes a tab.
-`\underbrace` and `\xrightarrow` become syntax errors, and a syntax error blanks the page.
+Inside a `<template data-slide>` the value is markup, so every backslash is written once.
 
-```js deck/index.html
-render: () => `<p data-tex="\\frac{d}{dx}\\,x^2 = 2x" data-display>d/dx x^2 = 2x</p>`
+```html deck/index.html
+<p data-tex="\frac{d}{dx}\,x^2 = 2x" data-tex-display>d/dx x^2 = 2x</p>
 ```
 
-If a step mounts a `data-tex` element and KaTeX is missing, the runtime checks again 5 s later. If
+Inside a `render` template literal, write every backslash twice. JavaScript reads `\f`, `\t`, `\u`,
+and `\x` as escapes. For example, `\frac` becomes a form feed, and `\theta` becomes a tab.
+`\underbrace` and `\xrightarrow` become syntax errors, and a syntax error blanks the page. This is
+the reason to write an equation as markup.
+
+```js deck/index.html
+render: () => `<p data-tex="\\frac{d}{dx}\\,x^2 = 2x" data-tex-display>d/dx x^2 = 2x</p>`
+```
+
+If a slide mounts a `data-tex` element and KaTeX is missing, the runtime checks again 5 s later. If
 the element is still plain text, the page warns.
 
 ## `window.__decktalk`
 
-`window.__decktalk` holds read-only state for the recorder, `decktalk shots`, and your own tools.
+`window.__decktalk` holds read-only state for the recorder, `decktalk screenshots`, and your own tools.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `mode` | string | `index`, `autoplay`, `cues`, or `frozen`. |
+| `version` | string | The version of DeckTalk this runtime file shipped with. |
+| `mode` | string | `index`, `preview`, `cue`, or `freeze`. `live`, the playback mode that follows an audio element, is a reserved name and is not implemented. |
 | `scene` | string or `null` | The id of the playing scene. |
-| `step` | string or `null` | The id of the mounted step. |
-| `cues` | array | The parsed `beats` pairs, as `{ id, t }` objects in time order. |
-| `fired` | array of strings | Cue ids fired so far, in order. `decktalk shots --section` logs it with each frame. |
-| `catalog` | array | One `{ scene, name, steps, cues }` object per scene. `steps` lists the step ids. `cues` maps each step id to its cue ids in autoplay order. |
+| `slide` | string or `null` | The id of the mounted slide. |
+| `cues` | array | The parsed `cues` pairs, as `{ id, t }` objects in time order. |
+| `fired` | array of strings | Cue ids fired so far, in order. `decktalk screenshots --section` logs it with each frame. |
+| `catalog` | array | One `{ scene, name, camera, slides, cues }` object per scene, plus `elements` in index mode when the probe is there. `slides` lists the slide ids. `cues` maps each slide id to its cue ids in preview order. See [the catalog](#the-catalog). |
 | `warnings` | array of strings | Everything the runtime could not do, each listed one time. |
 | `now()` | function | Seconds since the clock started, or `-Infinity` before it starts. |
 | `frameGaps` | array | One `{ at, ms }` object for each gap over 100 ms between two animation frames. Cue mode only. |
-| `syncLog` | array | One `{ text, cueAt, runAt, n, firstOn }` object for each `data-sync` element that matched. |
-| `cueLog` | array | One `{ id, due, ran, frame, next, after }` object for each cue that fired from `beats`. Cue mode only. |
+| `spokenLog` | array | One `{ text, cueAt, runAt, n, firstOn }` object for each `data-text="spoken"` element that matched. |
+| `cueLog` | array | One `{ id, due, ran, frame, describe, next, after }` object for each cue that fired from `cues`. Cue mode only. |
 | `longFrames` | array | One `{ start, ms, render, presented }` object for each animation frame over 50 ms after t=0. Cue mode only. |
 
-Note: After a recording, the recorder reads `catalog`, `warnings`, `frameGaps`, `syncLog`, `cueLog`, and `longFrames`. A
-missing or empty `catalog` is a page error. `decktalk shots` reads `catalog` to find every step.
+Note: After a recording, the recorder reads `catalog`, `warnings`, `frameGaps`, `spokenLog`, `cueLog`, and `longFrames`. A
+missing or empty `catalog` is a page error. `decktalk screenshots` reads `catalog` to find every slide.
+
+### The catalog
+
+In index mode, and in index mode alone, `decktalk-probe.js` lays every slide out once in a hidden
+layer of the stage, measures it, and throws it away. Each catalog entry then carries `elements`,
+which maps a slide id to one row per element, so a check that cannot look at a picture still knows
+where every reveal sits. A page opened without a command driving it carries no `elements` at all.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `cue` | string or `null` | The element's `data-cue`. `null` for an element that is on screen from the mount. |
+| `delay` | number or `null` | The element's `data-delay` in seconds, or `null`. |
+| `reveal` | string or `null` | The element's `data-reveal`. |
+| `describe` | string or `null` | The element's `data-describe`. |
+| `tex` | string or `null` | The element's `data-tex`. |
+| `text` | string | The element's text, collapsed and cut to 80 characters. |
+| `box` | object | `{ x, y, w, h }` in stage pixels, where the stage is 1920 by 1080. |
+
+Note: Every element with `data-cue` or `data-delay` gets a row, in document order, and so does every
+direct child of the slide that has neither and holds neither. A row with no `cue` and no `delay` is
+content that is on screen from the mount, before any word. `preflight` reads these rows and raises
+three findings from them, with no picture: `OFF STAGE` for a cued box that is not wholly inside the
+stage, `IN CAPTION BAND?` for one that reaches into the bottom fifteen percent, and `CUES OVERLAP?`
+for two cues of a section closer together than a reveal plays for. They arrive in
+`preflight`'s `page_scan` and in `findings.items[]` like any other row.
+
+Note: Measuring mounts every slide, so it never runs in a mode a recording can be made in. In cue
+mode, preview, and freeze mode the catalog carries no `elements`, and neither does any mode of a
+page that no command injected the probe into.
 
 Note: With a numeric `t0`, the clock starts at `load`, so narration t=0 is where `now()` equals
 `t0`. With `t0=signal`, `now()` counts from narration t=0.
 
 Note: In `frameGaps`, `at` is the value of `now()` when the gap ended. A gap under the cover has
-`at` equal to `-Infinity`, and the sidecar field `frame_gaps` writes it as `null`. Only the part of
-a gap after t=0 counts toward `STALLED` ([decktalk check](/reference/cli#decktalk-check)). So a page
+`at` equal to `-Infinity`, and the recording log field `frame_gaps` writes it as `null`. Only the part of
+a gap after t=0 counts toward `STALLED` ([decktalk record](/reference/cli#decktalk-record)). So a page
 can do slow first work before t=0, such as drawing a canvas figure or a large SVG.
 
-Note: In `syncLog`, `text` is the first 24 characters of the text. `cueAt` is the time the element
+Note: In `spokenLog`, `text` is the first 24 characters of the text. `cueAt` is the time the element
 appeared, and `runAt` is the start of its first matched word. `n` is the number of words, and
-`firstOn` is the time the first word appeared. The sidecar field is `sync_log`.
+`firstOn` is the time the first word appeared. The recording log field is `spoken_log`.
 
 Note: In `cueLog`, every time is in seconds on the narration clock. `due` is the cue's time, and `ran`
 is when the runtime fired it. `frame` is the start of the animation frame that fired it, and `next`
 and `after` are the starts of the two frames after it. A cue with `ran` well past `due` was held up
 before its frame. A cue that ran on time but whose `next` frame started late was held up while its
-frame was drawn. The sidecar field is `cue_log`.
+frame was drawn, and `describe` is the `data-describe` of the reveals that cue fired, joined into one
+sentence, or null when none of them carries it. The transcript page is what reads it. The recording
+log field is `cue_log`.
 
 Note: In `longFrames`, `start`, `render`, and `presented` are seconds on the narration clock, and `ms`
 is the frame's length. `presented` is when Chromium showed the frame, or `null` when the browser does
-not report it. The sidecar field is `long_frames`.
+not report it. The recording log field is `long_frames`.
 
-The runtime also sets `document.body.dataset.done` to `"1"` when the last step has mounted.
+The runtime also sets `document.body.dataset.done` to `"1"` when the last slide of a played scene has
+mounted, or when a freeze has fired its cues.
 
-## `window.__sceneReady`
+## `window.__decktalk.ready`
 
-`window.__sceneReady` is a Promise. The recorder awaits it before it starts the clock. If the page
-has not set it, the runtime sets it when the mode starts. The default Promise waits for two things,
-in order:
+`window.__decktalk.ready` is a Promise, and the runtime owns it. The recorder awaits it before it
+starts the clock. It waits for these things, in order:
 
 1. `document.fonts.ready`.
 2. KaTeX, when the document has a `[data-tex]` element or a `<script>` whose `src` contains `katex`. The runtime checks for `window.katex` every 100 ms, for up to 5 s. Then it typesets the mounted slide. If KaTeX never loads, the page warns, and the elements keep their text.
+3. Every promise the page handed to `DeckTalk.waitFor`.
+4. In index mode, the catalog the probe measures, when a command injected it.
 
-In freeze mode, the step has mounted before the wait starts. In cue mode and autoplay, no step has
-mounted yet, because steps mount on the clock. The recorder waits with no time limit. It ignores a
-rejected Promise and starts the clock anyway.
+The first slide of a played scene is mounted before the clock starts, so in every mode a slide is on
+the stage before the wait ends. The recorder waits with no time limit. It ignores a rejected Promise
+and starts the clock anyway.
 
-To add work to the default wait, extend the Promise in a `DOMContentLoaded` listener. Register the
-listener after the runtime's `<script>` tag. The runtime sets its Promise in its own listener, which
-runs first. The scaffold's `deck/lesson.html` waits this way for its fonts and three animation
-frames, so its figure has painted before t=0.
+A page adds a condition of its own with `DeckTalk.waitFor`, which takes a promise and returns
+`DeckTalk`. Two scripts can each add one, and neither can clobber the other's.
 
-{/* copied from template/deck/lesson.html */}
-```js deck/lesson.html
-document.addEventListener("DOMContentLoaded", () => {
-  const faces = ['600 64px "Inter Tight"', '600 60px "Inter Tight"', '500 30px Inter', '500 44px Inter', '500 30px "JetBrains Mono"', '400 24px "JetBrains Mono"'];
-  const painted = Promise.all(faces.map((f) => document.fonts.load(f))).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))));
-  window.__sceneReady = Promise.all([window.__sceneReady, painted]).then(([ready]) => ready);
-});
+```js deck/index.html
+const faces = ['600 64px "Inter Tight"', '500 30px Inter'];
+DeckTalk.waitFor(
+  Promise.all(faces.map((f) => document.fonts.load(f))).then(
+    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+  ),
+);
 ```
 
-To replace the default wait, set `window.__sceneReady` in a script that runs before
-`DOMContentLoaded`. A replacement removes the KaTeX wait. If the page uses `data-tex`, wait for
-`window.katex` yourself. [Wait for a screenshot to load](/guides/slide-recipes#wait-for-a-screenshot-to-load)
-shows how to extend the wait for an image.
+[Wait for a screenshot to load](/guides/slide-recipes#wait-for-a-screenshot-to-load) shows the same
+call for an image.
 
 ## CSS hooks
 
-The runtime adds a `<style id="dt-style">` element. Its rules use only names that start with `dt-`.
+The runtime prepends a `<style id="dt-style">` element to `<head>`, and every selector in it sits
+inside `:where()`. Its rules therefore carry no specificity and lose to any rule the page writes,
+whichever order the two stylesheets are in. Its names all start with `dt-`.
 
 | Hook | Meaning |
 |---|---|
 | `#dt-stage` | The stage element. 1920 by 1080 CSS pixels, scaled to fit the window and centered. The runtime creates it if the page has none. |
-| `#dt-cam`, `#dt-pan` | Layers that the runtime adds inside the stage element. Each slide is a `.dt-slide` child of `#dt-pan`. |
-| `--dt-xfade` | Crossfade length between slides. The default is 0.35 s. |
-| `--dt-scene-dur` | Length of the camera push. The runtime sets it for each scene. |
-| `.dt-slide`, `.dt-enter`, `.dt-first`, `.dt-leave` | A slide, a slide that enters, the first slide, and a slide that leaves. The runtime removes a leaving slide after 400 ms. |
-| `.dt-reveal`, `.dt-on` | An element with `data-cue` or `data-at`, and an element that has appeared. |
-| `.dt-w` | One word of a `data-sync` element. It gains `.dt-on` when the voice says the word. |
-| `.dt-push` | Set on `#dt-cam` during the camera push. |
+| `#dt-camera`, `#dt-pan` | Layers that the runtime adds inside the stage element. Each slide is a `.dt-slide` child of `#dt-pan`. |
+| `.dt-slide`, `.dt-enter`, `.dt-leave` | A slide, a slide that crossfades in, and a slide that leaves. The runtime removes a leaving slide after 400 ms. |
+| `.dt-reveal`, `.dt-shown` | An element with `data-cue` or `data-delay`, and an element that has appeared. |
+| `.dt-word` | One word of a `data-text="spoken"` element. It gains `.dt-shown` when the voice says the word. |
+| `.dt-push` | Set on `#dt-camera` during the camera push. |
 | `.dt-frozen` | Set on `<html>` in freeze mode. Every animation takes no time. |
-| `#dt-hud`, `#dt-index`, `.dt-steps` | The overlay and the index. |
+| `#dt-hud`, `#dt-index`, `.dt-slides` | The overlay and the index. |
+| `#dt-style` | The runtime's own stylesheet, prepended to `<head>` so a page rule of equal weight wins on order. |
+| `--dt-xfade` | The crossfade length between two slides, which a page may set. The default is 0.35 s. |
+| `--dt-scene-dur` | The camera push's length, which the runtime sets on `#dt-camera` for each played scene. |
+| `#dt-measure` | The hidden layer `decktalk-probe.js` measures the catalog in, in index mode. It carries its own style and is removed before any frame is drawn. |
 
-Note: A page can supply its own `#dt-stage`, as the scaffold's `deck/lesson.html` does. The runtime
-adds `#dt-cam` after the page's content, so the slides draw on top of it.
+Note: A page can supply its own `#dt-stage`, as the lesson example's `deck/lesson.html` does. The runtime
+adds `#dt-camera` after the page's content, so the slides draw on top of it.
 
-Note: The first slide moves in 24 px from the right as it fades in over 0.3 s. The scaffold turns
-this off with `#dt-pan > .dt-slide.dt-first { animation: none; }`, so a section opens on a full frame.
+Note: The first slide of a played scene is mounted before the clock starts, and it enters with no
+animation. The recorder covers the page until narration t=0, so a first slide that mounted on the
+clock, or faded in, would give the recording one frame of empty stage. Every later slide crossfades
+over `--dt-xfade`.
 
 ## Warnings
 
 The runtime lists each warning one time in `window.__decktalk.warnings`. The console prints it with
-the prefix `decktalk: `. In the messages below, `<id>`, `<step>`, and `<n>` stand for real values.
+the prefix `decktalk: `. In the messages below, `<id>`, `<slide>`, and `<n>` stand for real values.
 
 | Message | Cause | Fix |
 |---|---|---|
-| `unknown cue id <id> (no step id or cues list matches it)` | No step of the playing scene owns a cue in `beats`, and no `DeckTalk.on` handler exists for it. | Fix the id in `cues.json`, or name the id in a step's `cues`. |
-| `no step owns any listed cue, so nothing will mount` | No cue in `beats` has an owner. The recording shows an empty stage element. | Check that the section's `scene` names the scene whose steps own the cues. |
-| `step "<step>" owns no cue in ?beats=, so it never appears` | A step of the playing scene owns none of the cues in `beats`. | Add a cue for the step to `cues.json`, or remove the step. |
-| `cue "<id>" matches no element, handler, or step` | A cue fired, but no `data-cue` element on the mounted slide, handler, or step id matches it. | Make the id the same in `cues.json`, the step's `cues`, and `data-cue`. |
-| `data-cue "<id>" is not in ?beats=, so it reveals at its data-at time after the mount` | In cue mode, an element waits for a cue that `beats` does not list. The cue is missing from `cues.json`, or `--allow-unresolved` left it out. | Add the cue to `cues.json`, or fix its phrase. |
-| `data-sync on an element without data-cue or data-at never reveals, so add data-at="0"` | An element has `data-sync`, `data-count`, or `data-type` but no trigger. The message names the attribute. | Add `data-cue`, or add `data-at="0"`. |
-| `data-sync text not found in the spoken words: "…"` | The element's text matches no run of the `words` list. The slide and the script usually differ by a word. The element appeared whole. | Make the text match the script, word for word. |
-| `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page needs KaTeX, and `window.katex` never appeared. `check` reports `KATEX?`. | Make sure the page loads KaTeX. `decktalk init` adds the KaTeX tags to the scaffold's `deck/index.html`. |
-| `data-tex could not be parsed: "…" (write \\ for every backslash inside a template literal)` | KaTeX showed a `data-tex` value in red. | Write every backslash twice inside the template literal. |
-| `step "<step>" fires "<id>" at <n> s but holds <n> s, so it fires on the next step` | In autoplay, a time in the step's `cues` object is at or past its `hold`. | Raise `hold`, or lower the cue's seconds. |
-| `cue "<id>" is not one of step <step>'s cues` | The `cue` parameter names an id that the frozen step's `cues` does not list. The whole step freezes. | Add the id to the step's `cues`, or fix the `cue` parameter. |
+| `unknown cue id <id> (no slide id or owns list matches it)` | No slide of the playing scene owns a cue in `cues`, and no `DeckTalk.on` handler exists for it. | Give the cue its slide's id as a prefix in `cues.json`, or name the id in that slide's `owns`. |
+| `no slide owns any listed cue, so nothing will mount` | No cue in `cues` has an owner. The recording shows an empty stage element. | Check that the section's `scene` names the scene whose slides own the cues. |
+| `slide "<slide>" owns no cue in ?cues=, so it never appears` | A slide of the playing scene owns none of the cues in `cues`. | Add a cue for the slide to `cues.json`, or remove the slide. |
+| `cue "<id>" matches no element, handler, or slide` | A cue fired, but no `data-cue` element on the mounted slide, handler, or slide id matches it. | Make the id the same in `cues.json`, the slide's `owns`, and `data-cue`. |
+| `data-cue "<id>" is not in ?cues=, so it shows as soon as the slide mounts` | In cue mode, an element waits for a cue that `cues` does not list. The cue is missing from `cues.json`, or `--allow-unresolved-cues` left it out. | Add the cue to `cues.json`, or fix its phrase. |
+| `data-cue "<id>" is on an element that also sets data-delay, so the delay is ignored` | One element carries both triggers. | Keep `data-cue` for a reveal that waits for a word, and `data-delay` for one that does not. |
+| `scene "<id>" holds no &lt;template data-slide&gt; element` | A `[data-scene]` wrapper declares a scene with no slides in it. | Put one `<template data-slide="<id>.1">` inside the wrapper. |
+| `slide "<slide>" has both a render function and a &lt;template data-slide&gt;, so the template is unused` | A scene registered in script gives the slide a `render`, and a template names the same slide id. | Delete one of the two. |
+| `data-text="spoken" on an element without data-cue or data-delay never reveals, so add data-delay="0"` | An element has `data-text="spoken"`, `data-text="count"`, or `data-text="type"` but no trigger. The message names the attribute. | Add `data-cue`, or add `data-delay="0"`. |
+| `data-text="spoken" text not found in the spoken words: "…"` | The element's text matches no run of the `words` list. The slide and the script usually differ by a word. The element appeared whole. | Make the text match the script, word for word. |
+| `KaTeX did not load within 5 s, so [data-tex] elements stay plain text` | The page needs KaTeX, and `window.katex` never appeared. `record` reports `KATEX NOT LOADED`, and `verify` reports it again. | Make sure the page loads KaTeX before the runtime, as the starter's `deck/index.html` does. |
+| `data-tex could not be parsed: "…"` | KaTeX showed a `data-tex` value in red. `record` reports `KATEX ERROR`. | Fix the TeX. Inside a `render` template literal, write every backslash twice, and inside a `<template data-slide>`, write it once. |
+| `slide "<slide>" fires "<id>" at <n> s but holds <n> s, so it fires on the next slide` | In preview, a time in the slide's `preview` object is at or past its `hold`. | Raise `hold`, or lower the cue's seconds. |
+| `cue "<id>" is not one of slide <slide>'s cues` | The `after` or `before` parameter names an id the frozen slide does not have. The whole slide freezes. | Fix the parameter, or add the id to the slide's markup. |
+| `scene "<id>" holds a &lt;template data-slide&gt; with no id, so it is ignored` | A `<template>` inside a `[data-scene]` wrapper has no `data-slide` value. | Give the template a slide id, as in `<template data-slide="3.1">`. |
+| `slide "<slide>" is declared in script, so its template's hold, owns and preview are ignored` | A script registered the slide, and its `<template data-slide>` also sets `data-hold`, `data-owns` or `data-preview`. Only the markup is taken from the template. | Move those values into the `DeckTalk.scene` call, or drop them from the template. |
+| `slide "<slide>" has a render function that threw: <error>` | The slide's `render` raised. The slide mounts with whatever HTML was set before the throw. | Fix the `render` function. Inside its template literal, write every backslash twice. |
+| `slide "<slide>" has an enter function that threw: <error>` | The slide's `enter` raised after the slide was in the DOM. | Fix the `enter` function. |
+| `cue "<id>" has a slide handler that threw: <error>` | The slide's own `on[id]` handler raised when the cue fired. | Fix that handler. |
+| `cue "<id>" has a handler that threw: <error>` | A handler registered with `DeckTalk.on(id, fn)` raised when the cue fired. | Fix that handler. |
+| `a DeckTalk.waitFor promise rejected: <error>` | A promise the page handed to `DeckTalk.waitFor` rejected. Readiness treats it as settled. | Fix the promise, or resolve it on failure. |
+| `a DeckTalk.waitFor promise did not settle within 5 s` | A promise the page handed to `DeckTalk.waitFor` neither resolved nor rejected in five seconds. Readiness gives up and the page is drawn. | Settle the promise, or drop the wait. |
 
-An `enter` function or a handler that throws goes to `console.error`, and the scene goes on. A
-`render` function that throws is an uncaught page error. The recorder logs it, and `check` reports
-`PAGE ERROR`.
+A slide's `render`, its `enter` and every cue handler are page callbacks, so what one of them throws
+becomes a warning in the table above rather than an uncaught error. Nothing a page's own code does
+reaches the console alone, because a recording log that says a page ran clean has to mean it. An
+uncaught error outside those callbacks is still a page error, which the recorder logs and `record`
+reports as `PAGE ERROR`.
 
 ## Related
 

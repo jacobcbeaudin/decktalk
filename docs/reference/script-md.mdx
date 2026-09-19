@@ -7,19 +7,22 @@ description: Look up the rules for DeckTalk's narration script, from section hea
 its heading rules, its stage directions, and how DeckTalk cleans the text before the voice
 receives it.
 
-{/* input: the start of section 3 in src/decktalk/template/script.md */}
+{/* input: sections 1 and 2 of src/decktalk/template/starter/script.md */}
 
 ```md script.md
-## 3. How AI learns
+## 1. Open
 
-[Lesson page scene 3. A box of knobs learns from examples, a ball steps down a bowl, and the lesson ends on chips that do the math.]
+[Scene 1. The title, then a card for each of the two files, then the promise.]
 
-How does AI learn? [beat] From examples, not rules people write. [beat] Learning from examples is called machine learning. [beat]
-An AI model is like a box of knobs. [beat] It guesses, [beat] and a meter shows its error, how wrong the guess was. [beat]
-Learning nudges the knobs. [beat] It guesses again, and now it's right, with a lower error. [beat]
-Then a new example, [beat] and a smaller nudge fixes it. [beat]
-Example after example, the model gets better.
-[pause 1] But which way should each knob turn? [beat]
+This is DeckTalk. [beat] You write what you will say, [beat] and you write the slides that go with it.
+[beat] Then every picture waits for its own word.
+
+## 2. How it works
+
+[Scene 2. The heading, then the formula, then the same thing in code, then the closing line.]
+
+Here is the average of a list of numbers. [beat] This is the formula, [beat] and this is the same
+thing in code. [beat] Each one waited for the words I just said.
 ```
 
 ## Headings
@@ -28,11 +31,11 @@ A numbered heading starts a section. Any other heading ends it.
 
 | Line | Effect |
 |---|---|
-| `## N. Title` | Starts section `N`. The title names the audio file `NN-slug.mp3` and appears in the tables. |
-| `## N. Title — 0:40 to 1:10` | Starts section `N` with a time budget. The dash can be an em dash, an en dash, or hyphens. |
-| `## Title` with no number | Ends the section. Text after it is not spoken. |
-| `# Title` | Ends the section. |
-| `---` on its own line | Ends the section. |
+| `## N. Title` | This starts section `N`. The title names the chapter and appears in the tables. A take is named by its content hash, so retitling a section voices nothing. |
+| `## N. Title — 0:40 to 1:10` | This starts section `N` with a time budget. The dash can be an em dash, an en dash, or hyphens. |
+| `## Title` with no number | This ends the section, and the text after it is not spoken. |
+| `# Title` | This ends the section. |
+| `---` on its own line | This ends the section. |
 
 Note: the times in a budget are `M:SS`. The budget's length is the `target` column of the narrate
 table. A `###` heading inside a section does not end it. `narrate` removes the `###` marks and the
@@ -47,7 +50,7 @@ The script and `decktalk.toml` must agree on section numbers.
   fails.
 - A clip section does not need a heading. `narrate` never voices a clip section, so its body can
   describe what plays.
-- Text before the first numbered heading is never spoken. The scaffold keeps its notes there,
+- Text before the first numbered heading is never spoken. The starter keeps its notes there,
   above a `---` line.
 
 ## Directions and placeholders
@@ -56,11 +59,11 @@ Text in square brackets is not spoken.
 
 | Text | Spoken | Effect |
 |---|---|---|
-| `[Deck scene 3. A ball steps down the bowl.]` | no | Stage direction. Makes a beat. |
-| `[beat]` | no | Makes a beat. |
-| `[pause 3]` or `[pause 2.5]` | no | Timed pause. Sends `<break time="3s" />`. |
-| `[NUMBER]`, `[CLIENT_NAME]` | refused | Placeholder. Matches `[A-Z][A-Z0-9_]*`, so it starts with a capital letter. |
-| `<break time="1.0s" />` | no | Break tag. Sent as written. |
+| `[Scene 1. The title, then the two cards.]` | no | This is a stage direction on a line of its own, and it makes a beat. |
+| `[beat]` | no | This makes a beat. |
+| `[pause 3]` or `[pause 2.5]` | no | This is a timed pause, and it sends `<break time="3s" />`. |
+| `[NUMBER]`, `[CLIENT_NAME]` | refused | This is a placeholder. It matches `[A-Z][A-Z0-9_]*`, so it starts with a capital letter. |
+| `<break time="1.0s" />` | no | This is a break tag, and it is sent as written. |
 
 A direction splits the text at its place. A beat adds a dash to the text before it, and the voice
 pauses at the dash. A timed pause adds a break tag instead. `[pause N]` is the only direction that
@@ -69,39 +72,58 @@ sends a break tag. [Writing for the ear](/guides/writing-for-the-ear) explains w
 `narrate` refuses a section that still has a placeholder. Pass `--allow-placeholders` to voice it
 anyway. `decktalk narrate --dry-run` lists every placeholder.
 
+### What a script may not hold
+
+A stage direction goes on a line of its own. Inside a paragraph only `[beat]`, `[pause N]`, a `[CAPS]`
+placeholder, and a markdown link are bracketed text, and `narrate` refuses anything else in brackets,
+because it would silently become a pause you never asked for. It also refuses an HTML comment and a brace,
+because the voice reads both out. Each refusal names the line.
+
+```text
+script.md has 2 thing(s) the voice must not receive:
+  line 12: an HTML comment, which the voice reads out
+  line 14: [maybe cut this] inside a paragraph, which becomes a pause nobody asked for
+A stage direction goes on a line of its own. Inside a paragraph, write [beat] or [pause N] and nothing else.
+```
+
 ### How directions combine
 
 | Directions | Result |
 |---|---|
-| Before the first prose of a section | Removed. No pause. Set `lead_seconds` on the section instead. |
-| After the last prose of a section | Removed. No pause. |
-| Two or more in a row | One pause, the longest. |
-| A beat next to `[pause N]` | The timed pause. |
+| Before the first prose of a section | The direction is removed and makes no pause. Set `lead_seconds` on the section instead. |
+| After the last prose of a section | The direction is removed and makes no pause. |
+| Two or more in a row | They make one pause, which is the longest of them. |
+| A beat next to `[pause N]` | The timed pause wins. |
 
 ### Silence that DeckTalk adds
 
+Every spoken section opens on a lead of silence and closes on a tail of silence, so the silence across every
+cut is one section's tail and then the next one's lead, and the picture always changes before the voice
+speaks.
+
 | Where | Key in `[narration]` | Default |
 |---|---|---|
-| Before the first spoken section | `lead_break_seconds` | 0.7 |
-| After each section's last word, at least | `min_tail_seconds` | 0.7 (the scaffold sets 1.3) |
-| Extra padding when the tail is too short | `tail_slack_seconds` | 0.05 |
+| Before each section's first word | `lead_seconds` | 0.5 |
+| After each section's last word | `min_tail_seconds` | 0.7, and the starter sets 1.3 |
 
-A page section in `decktalk.toml` can add its own silence.
+A page section in `decktalk.toml` can set its own.
 
 | Where | Key in `[[section]]` | Default |
 |---|---|---|
-| Before the section's first word | `lead_seconds` | 0 |
-| After the section's last word, at least | `tail_seconds` | `min_tail_seconds` |
+| Before the section's first word | `lead_seconds` | `[narration] lead_seconds` |
+| After the section's last word | `tail_seconds` | `min_tail_seconds` |
 
-ffmpeg adds this silence to the audio. The speech provider does not receive it. `lead_seconds` goes into
-`narration.mp3` before the section's mp3, which stays as the voice returned it.
-The tail is not part of the narration cache. If you raise `min_tail_seconds`, the next `narrate` pads each cached mp3
-and sends no request.
+ffmpeg places this silence when it joins the takes into `narration.mp3`. The speech provider does not
+receive it, and a take never holds it: each mp3 stays exactly as the voice returned it, which is what lets
+one take serve whatever section number it ends up under. `narrate` measures where the sound of each take
+ends, puts the lead before the take, and cuts or pads the take so that exactly the tail follows that sound,
+whatever pause the voice left after its last word. The lead and the tail depend on the take and on the
+section's own keys and on nothing else, so a section lands the same way whether this run voiced its take or
+reused it, and an edit to one section never moves another.
 
-`narrate` measures the tail before it pads. A silence that ends within 0.06 s or one mp3 frame of the end of the
-file counts as the tail, because the mp3 encoder adds up to 50 ms of padding there. A cached mp3 that `narrate`
-already padded is not padded again when its tail is within 0.06 s of `min_tail_seconds`. So a second run leaves
-each cached mp3 and its duration unchanged.
+Neither is part of the narration cache. If you change a lead or a tail, the next `narrate` places each
+cached take again and sends no request. A silence that ends within 0.06 s or one mp3 frame of the end of
+the file counts as running to the end, because the mp3 encoder adds up to 50 ms of padding there.
 [Configuration](/reference/configuration) lists every `[narration]` key.
 
 ## Markdown stripping
@@ -121,33 +143,36 @@ matching and captions use the spoken words, so write each cue phrase with plain 
 
 ## Length
 
-The narrate table and a silent build estimate each section's length with these formulas.
+The narrate table and a build without voice estimate each section's length with these formulas.
 
 ```text
 est column            = words / words_per_minute * 60
 silent section length = words / silent_words_per_minute * 60
                       + timed pause seconds
-                      + beats * direction_break_seconds
-                      + lead_break_seconds      (first spoken section only)
-                      + min_tail_seconds        (tail_seconds when the section sets it)
-section span          = section length + lead_seconds
+                      + beat_directions * silent_beat_seconds
+section span          = lead + section length + tail
 ```
 
 `words` is the number of spoken words. Timed pause seconds add up every `[pause N]` and every
-written break tag. The defaults are 140 for `words_per_minute` and 150 for
-`silent_words_per_minute`. `direction_break_seconds`, `lead_break_seconds`, and `min_tail_seconds`
-are each 0.7 by default.
+written break tag. The lead is the section's `lead_seconds`, or `[narration] lead_seconds`, and the
+tail is its `tail_seconds`, or `min_tail_seconds`. The defaults are 140 for `words_per_minute`, 150
+for `silent_words_per_minute`, 0.7 for `silent_beat_seconds` and `min_tail_seconds`, and 0.5 for
+`lead_seconds`.
 
 Note: an em dash with a space before it counts as a beat, even when you type it in the prose. A
-voiced section lasts as long as the audio that the speech provider returns, plus the added silence.
+voiced section lasts for its lead, the audio that the speech provider returns up to where its sound
+ends, and its tail.
 
 ## Numbers and symbols
 
 Write numbers and symbols the way the voice should say them. Cue phrases in `cues.json` match
-spoken words, so the script and the cue must use the same words.
+spoken words, so the script and the cue must use the same words. `narrate` reports a section whose spoken
+words hold a digit or a symbol as `SPOKEN SYMBOL?`, an uncertain finding that names the first few
+words it found. It is a note rather than a refusal, because "41" may be exactly what you want the
+voice to try.
 
-The scaffold writes "decktalk dot app" in the script and shows decktalk.app on the slide. A cue on
-"decktalk dot app" resolves. A cue on "decktalk.app" matches nothing, because matching removes the
+The starter writes "decktalk dot AI" in the script and shows decktalk.ai on the slide. A cue on
+"decktalk dot AI" resolves. A cue on "decktalk.ai" matches nothing, because matching removes the
 dot and leaves one token.
 
 ## Related

@@ -1,7 +1,7 @@
 {
   "source": {
     "decktalk": "0.2.0",
-    "build": "decktalk build --silent on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
+    "build": "decktalk build --no-voice on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
     "estimated_words": true
   },
   "narration_seconds": 245.8,
@@ -10,7 +10,7 @@
     {
       "number": 1,
       "key": "01",
-      "title": "Open",
+      "chapter": "Open",
       "clip": false,
       "video_start": 0.0,
       "video_end": 17.8,
@@ -22,7 +22,7 @@
     {
       "number": 2,
       "key": "02",
-      "title": "How it works",
+      "chapter": "How it works",
       "clip": false,
       "video_start": 17.8,
       "video_end": 38.6,
@@ -34,7 +34,7 @@
     {
       "number": 3,
       "key": "03",
-      "title": "How AI learns",
+      "chapter": "How AI learns",
       "clip": false,
       "video_start": 38.6,
       "video_end": 181.12,
@@ -46,7 +46,7 @@
     {
       "number": 4,
       "key": "04",
-      "title": "The edit",
+      "chapter": "The edit",
       "clip": false,
       "video_start": 181.12,
       "video_end": 196.72,
@@ -58,7 +58,7 @@
     {
       "number": 5,
       "key": "05",
-      "title": "The edit",
+      "chapter": "The edit",
       "clip": true,
       "video_start": 196.72,
       "video_end": 200.72,
@@ -69,7 +69,7 @@
     {
       "number": 6,
       "key": "06",
-      "title": "The edit",
+      "chapter": "The edit",
       "clip": false,
       "video_start": 200.72,
       "video_end": 222.88,
@@ -81,7 +81,7 @@
     {
       "number": 7,
       "key": "07",
-      "title": "The edit",
+      "chapter": "The edit",
       "clip": true,
       "video_start": 222.88,
       "video_end": 227.92,
@@ -92,7 +92,7 @@
     {
       "number": 8,
       "key": "08",
-      "title": "The edit",
+      "chapter": "The edit",
       "clip": false,
       "video_start": 227.92,
       "video_end": 242.16,
@@ -104,7 +104,7 @@
     {
       "number": 9,
       "key": "09",
-      "title": "Close",
+      "chapter": "Close",
       "clip": false,
       "video_start": 242.16,
       "video_end": 257.36,

@@ -1,0 +1,40 @@
+---
+title: AGENTS.md
+description: The short file that tells any coding agent it is standing in a DeckTalk project.
+---
+
+`AGENTS.md` is a plain Markdown file that a coding agent loads at the start of every session. It is
+stewarded by the Agentic AI Foundation, and Codex, Cursor, Copilot, VS Code, Zed, Aider and many
+others read it. It is the one agent surface that costs context in every session, so it stays short.
+
+`decktalk init` writes a ten-line `AGENTS.md` when the project has none. It never overwrites one
+that is already there, so a project with its own `AGENTS.md` keeps it.
+
+## What DeckTalk writes
+
+The generated file says four things and stops.
+
+- This folder is a DeckTalk project.
+- The four input files are `script.md`, `decktalk.toml`, `cues.json` and the deck page.
+- `decktalk status --json` is the first command to run, because it reports what the four files say,
+  what is built and what is stale.
+- The skills are in `.agents/skills/`, and they hold the procedures.
+
+Procedures do not belong in `AGENTS.md`. A procedure that is loaded in every session is paid for in
+every session, and the skills exist so that an agent loads a procedure only when it needs one. Keep
+`AGENTS.md` to orientation, and put the steps in a skill.
+
+## Adding DeckTalk to an AGENTS.md you already have
+
+Add the same four lines to your own file under a heading of their own, and leave the rest alone. The
+file is read as plain Markdown, so a heading and a short list are enough.
+
+## Harnesses that read a different file
+
+Claude Code reads `CLAUDE.md` rather than `AGENTS.md`. The usual arrangement is a `CLAUDE.md` whose
+whole content is a reference to `AGENTS.md`, so one file stays the source. Gemini CLI reads
+`GEMINI.md` by default and reads `AGENTS.md` when its context file setting names it.
+
+`AGENTS.md` also serves a harness that reads no skills at all. For that harness it is the only
+DeckTalk instruction in the session, which is why it names `decktalk status --json` rather than
+describing the pipeline.

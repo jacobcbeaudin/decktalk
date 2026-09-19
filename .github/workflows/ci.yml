@@ -3,15 +3,12 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
-    inputs:
-      platforms:
-        description: "Which platforms run the browser tests and the smoke build"
-        type: choice
-        default: all
-        options: [all, ubuntu, macos, windows]
+
+# Every workflow reads the repository and nothing more. A job that needs a write grants it itself.
+permissions:
+  contents: read
 
 jobs:
   checks:
@@ -22,103 +19,103 @@ jobs:
         python-version: ["3.12", "3.13", "3.14"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+      - run: uv lock --check
       - run: uv sync --locked --group dev
-      - run: uv run ruff check src tests
-      - run: uv run ruff format --check src tests
+      - run: uv run ruff check src tests scripts
+      - run: uv run ruff format --check src tests scripts
       - run: uv run ty check src
       - run: uv run pytest -q
-      - run: uv run scripts/build_config_reference.py --check
+
+  docs:
+    # Every generated page, and every link between the pages. A page whose source moved on without
+    # it fails here, so no pull request can leave the docs describing code that is gone.
+    name: docs (generated pages and links)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group dev
+      - run: uv run scripts/build_cli_reference.py --check
+      - run: uv run scripts/build_settings_reference.py --check
+      - run: uv run scripts/build_outbound_reference.py --check
+      - run: uv run scripts/build_skills_list.py --check
+      - run: uv run scripts/build_contributing.py --check
+      - run: uv run scripts/build_changelog.py --check
+      - run: uv run scripts/check_docs_links.py --check
 
   lint:
-    name: lint (JavaScript and shell)
+    name: lint (JavaScript)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
-      # The same versions as .pre-commit-config.yaml. The runner's own shellcheck is older, so the
-      # pinned build comes from shellcheck-py.
-      - run: npx --yes @biomejs/biome@2.5.13 ci .
-      - run: git ls-files -z '*.sh' | xargs -0 uvx --from shellcheck-py==0.11.0.1 shellcheck
-
-  worker:
-    name: media worker
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: workers/media
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: lts/*
-          cache: npm
-          cache-dependency-path: workers/media/package-lock.json
-      - run: npm ci
-      - run: npm test
+          persist-credentials: false
+      # The same version as .pre-commit-config.yaml and biome.json.
+      - run: npx --yes @biomejs/biome@2.5.13 ci .
 
-  build:
-    name: build (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        # Linux is the canary on every push and pull request. Tags run every platform, and
-        # the Actions tab can run any platform on demand, so the macOS and Windows minutes
-        # are spent only when a release is cut or someone asks.
-        os: ${{ startsWith(github.ref, 'refs/tags/') && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || (github.event_name == 'workflow_dispatch' && inputs.platforms == 'all') && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || (github.event_name == 'workflow_dispatch' && inputs.platforms == 'macos') && fromJSON('["macos-latest"]') || (github.event_name == 'workflow_dispatch' && inputs.platforms == 'windows') && fromJSON('["windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash
+  e2e:
+    # The browser, media and pipeline suites on Linux, with coverage over the whole suite. The pipeline test
+    # builds tests/e2e/fixture silently in about a minute here and gates cue timing on this platform. macOS and
+    # Windows run the same suites in cross-platform.yml, on pushes to main and before a release is published.
+    name: e2e (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
       - name: Cache Chromium and ffmpeg
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/ms-playwright
-            ~/AppData/Local/ms-playwright
-            ~/Library/Caches/ms-playwright
-            .venv/lib/*/site-packages/static_ffmpeg/bin
-          key: browsers-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-      - run: uv run decktalk setup
+            ~/.cache/decktalk
+          key: tools-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+      - run: uv run decktalk install
       - run: uv run decktalk doctor
-      - run: uv run pytest -q -m "browser or media"
-      # Headless Chromium draws the page in software, and the hosted macOS and Windows runners do it
-      # more slowly than a laptop, so a reveal on the demo's busiest scenes can land two or three
-      # frames late there. Those runners measure with a wider window. smoke.sh reports the scaffold's
-      # OFF CUE rows without failing, because a runner presents frames late while a large layer moves.
-      - name: Widen the sync tolerance on the slower runners
-        if: runner.os != 'Linux'
-        run: |
-          echo "DECKTALK_VERIFY_MAX_OFFSET_FRAMES=4" >> "$GITHUB_ENV"
-          echo "DECKTALK_VERIFY_MAX_AV_FRAMES=5" >> "$GITHUB_ENV"
-          echo "DECKTALK_ALIGN_STALL_MS=400" >> "$GITHUB_ENV"
-      # A small deck of still pages whose reveals snap in. Any verify finding fails it, OFF CUE included.
-      # It gates the job on Linux. The slower runners run it with the wider window and only report.
-      - name: Cue timing gate
-        continue-on-error: ${{ runner.os != 'Linux' }}
-        run: bash tests/timing.sh
-      - run: bash tests/smoke.sh
-      - uses: actions/upload-artifact@v7
+      - name: Unit, browser, media and pipeline tests with coverage
+        run: uv run pytest -q -m "not scaffold" --cov --cov-report=term --cov-report=xml --durations=10 | tee pytest.log
+      - name: Coverage in the job summary
         if: always()
+        run: |
+          {
+            echo '## Coverage'
+            echo '```'
+            sed -n '/^---------- coverage/,$p' pytest.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
         with:
-          name: smoke-${{ matrix.os }}
+          name: e2e-ubuntu
           path: |
-            tests/out/smoke/build/out/smoke.mp4
-            tests/out/smoke/build/shots/
-            tests/out/smoke/build/rec/*.json
-            tests/out/smoke/build/audio/beats.json
-            tests/out/smoke/build/audio/timeline.json
-            tests/out/timing/build/out/timing.mp4
-            tests/out/timing/build/rec/*.json
-            tests/out/timing/verify.json
+            tests/out/e2e/pipeline/verify.json
+            tests/out/e2e/pipeline/build/recordings/*.json
+            tests/out/e2e/pipeline/build/narration/*.json
+            tests/out/e2e/pipeline/build/screenshots/
+            tests/out/e2e/pipeline/build/preflight/
+            tests/out/e2e/pipeline/build/out/*.mp4
+            tests/out/e2e/pipeline/build/out/*.srt
+            pytest.log
           if-no-files-found: ignore
+
+  cross-platform:
+    # A regression on macOS or Windows should land on one commit, not on the release, so the job runs on every
+    # push to main. Pull requests stay on Linux, which keeps them to about five minutes.
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/cross-platform.yml

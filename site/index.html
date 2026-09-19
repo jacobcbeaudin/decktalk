@@ -3,28 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DeckTalk: narrated slide videos from a markdown script, cut to the word</title>
-<meta name="description" content="DeckTalk turns a markdown script, plain HTML slides, and your voice into one narrated mp4. Every reveal lands on the word that introduces it, and when you change a sentence, only that section is voiced again. Open source, Python, Apache-2.0.">
-<link rel="canonical" href="https://decktalk.app/">
+<title>DeckTalk: every picture lands on its word, and you edit the video like a doc</title>
+<meta name="description" content="Every picture lands on its word, and you edit the video like a doc. DeckTalk turns a markdown script, plain HTML slides, and your voice into one narrated mp4, for technical tutorials, product demos, and lessons. Change a sentence, and only that section is voiced again. Open source, Python, Apache-2.0.">
+<link rel="canonical" href="https://decktalk.ai/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DeckTalk">
-<meta property="og:title" content="DeckTalk: narrated slide videos from a markdown script">
-<meta property="og:description" content="A markdown script and HTML slides in. One mp4 out, with every reveal cut to the spoken word. Change a sentence, and only that section is voiced again.">
-<meta property="og:url" content="https://decktalk.app">
-<meta property="og:image" content="https://decktalk.app/og.png">
+<meta property="og:title" content="DeckTalk: every picture lands on its word, and you edit the video like a doc">
+<meta property="og:description" content="DeckTalk turns a markdown script and HTML slides into one narrated mp4 in which every reveal is cut to the spoken word. Change a sentence, and only that section is voiced again.">
+<meta property="og:url" content="https://decktalk.ai">
+<meta property="og:image" content="https://decktalk.ai/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://decktalk.app/og.png">
+<meta name="twitter:image" content="https://decktalk.ai/og.png">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"DeckTalk","applicationCategory":"MultimediaApplication","operatingSystem":"Linux, macOS, Windows","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://www.apache.org/licenses/LICENSE-2.0","codeRepository":"https://github.com/jacobcbeaudin/decktalk","url":"https://decktalk.app","description":"DeckTalk turns a markdown script, plain HTML slides, and your voice into one narrated mp4 in which every reveal lands on the word that introduces it."}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"DeckTalk","applicationCategory":"MultimediaApplication","operatingSystem":"Linux, macOS, Windows","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://www.apache.org/licenses/LICENSE-2.0","codeRepository":"https://github.com/jacobcbeaudin/decktalk","url":"https://decktalk.ai","description":"DeckTalk turns a markdown script, plain HTML slides, and your voice into one narrated mp4 in which every reveal lands on the word that introduces it."}
 </script>
 <meta name="theme-color" content="#ffffff">
 <meta name="color-scheme" content="light">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23ffffff'/%3E%3Cg stroke-width='2.25' stroke-linecap='round'%3E%3Cline x1='4' y1='12' x2='4' y2='20' stroke='%23d4d4d8'/%3E%3Cline x1='9.5' y1='8' x2='9.5' y2='20' stroke='%232c1fea'/%3E%3Cline x1='15' y1='12' x2='15' y2='20' stroke='%23d4d4d8'/%3E%3Cline x1='20.5' y1='12' x2='20.5' y2='20' stroke='%23d4d4d8'/%3E%3C/g%3E%3Ccircle cx='9.5' cy='3.75' r='2.25' fill='%232c1fea'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preconnect" href="https://media.decktalk.app" crossorigin>
+<link rel="preconnect" href="https://media.decktalk.ai" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -59,7 +59,7 @@
 
   /* hero */
   .hero { padding: 72px 0 40px; }
-  h1 { font-size: clamp(44px, 7vw, 88px); line-height: .98; letter-spacing: -.035em; font-weight: 600; margin: 0 0 24px; max-width: 14ch; }
+  h1 { font-size: clamp(44px, 7vw, 88px); line-height: .98; letter-spacing: -.035em; font-weight: 600; margin: 0 0 24px; max-width: 19ch; text-wrap: balance; }
   .lede { font-size: clamp(18px, 2vw, 22px); color: var(--mute); max-width: 56ch; margin: 0 0 36px; }
   .install { display: inline-flex; align-items: center; gap: 14px; background: var(--code); border: 1px solid var(--hair); border-radius: 12px; padding: 12px 14px 12px 18px; font-family: var(--mono); font-size: 15px; }
   .install .p { color: var(--mute); }
@@ -137,31 +137,28 @@
     <div class="links">
       <a href="https://github.com/jacobcbeaudin/decktalk"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>GitHub</a>
       <a href="https://pypi.org/project/decktalk/"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.25.18l.9.2.73.26.59.3.45.32.34.34.25.34.16.33.1.3.04.26.02.2-.01.13V8.5l-.05.63-.13.55-.21.46-.26.38-.3.31-.33.25-.35.19-.35.14-.33.1-.3.07-.26.04-.21.02H8.77l-.69.05-.59.14-.5.22-.41.27-.33.32-.27.35-.2.36-.15.37-.1.35-.07.32-.04.27-.02.21v3.06H3.17l-.21-.03-.28-.07-.32-.12-.35-.18-.36-.26-.36-.36-.35-.46-.32-.59-.28-.73-.21-.88-.14-1.05-.05-1.23.06-1.22.16-1.04.24-.87.32-.71.36-.57.4-.44.42-.33.42-.24.4-.16.36-.1.32-.05.24-.01h.16l.06.01h8.16v-.83H6.18l-.01-2.75-.02-.37.05-.34.11-.31.17-.28.25-.26.31-.23.38-.2.44-.18.51-.15.58-.12.64-.1.71-.06.77-.04.84-.02 1.27.05zm-6.3 1.98l-.23.33-.08.41.08.41.23.34.33.22.41.09.41-.09.33-.22.23-.34.08-.41-.08-.41-.23-.33-.33-.22-.41-.09-.41.09zm13.09 3.95l.28.06.32.12.35.18.36.27.36.35.35.47.32.59.28.73.21.88.14 1.04.05 1.23-.06 1.23-.16 1.04-.24.86-.32.71-.36.57-.4.45-.42.33-.42.24-.4.16-.36.09-.32.05-.24.02-.16-.01h-8.22v.82h5.84l.01 2.76.02.36-.05.34-.11.31-.17.29-.25.25-.31.24-.38.2-.44.17-.51.15-.58.13-.64.09-.71.07-.77.04-.84.01-1.27-.04-1.07-.14-.9-.2-.73-.25-.59-.3-.45-.33-.34-.34-.25-.34-.16-.33-.1-.3-.04-.25-.02-.2.01-.13v-5.34l.05-.64.13-.54.21-.46.26-.38.3-.32.33-.24.35-.2.35-.14.33-.1.3-.06.26-.04.21-.02.13-.01h5.84l.69-.05.59-.14.5-.21.41-.28.33-.32.27-.35.2-.36.15-.36.1-.35.07-.32.04-.28.02-.21V6.07h2.09l.14.01zm-6.47 14.25l-.23.33-.08.41.08.41.23.33.33.23.41.08.41-.08.33-.23.23-.33.08-.41-.08-.41-.23-.33-.33-.23-.41-.08-.41.08z"/></svg>PyPI</a>
-      <a class="cta" href="https://docs.decktalk.app">Docs</a>
+      <a class="cta" href="https://docs.decktalk.ai">Docs</a>
     </div>
   </nav>
 
   <header class="hero">
     <span class="lab">Open source · Apache-2.0</span>
-    <h1>Narrated presentations, cut to the word.</h1>
-    <p class="lede">You write a markdown script and plain HTML slides. Your cloned voice reads the script. DeckTalk produces one mp4 in which every reveal lands on the word that introduces it. Change a sentence, and only that section is voiced again.</p>
+    <h1>Every picture lands on its word, and you edit the video like a doc.</h1>
+    <p class="lede">Before this, one wrong word meant editing, rendering and recording the whole thing again. DeckTalk builds one mp4 from a markdown script, plain HTML slides, and your cloned voice, so a video stays as correct as the text behind it. Change a sentence, and only that section is voiced again.</p>
     <div class="ctas">
       <div class="install"><span class="p">$</span><span id="cmd">uv tool install decktalk</span><button id="copy" type="button">Copy</button></div>
-      <a class="btn primary" href="https://docs.decktalk.app/quickstart">Read the quickstart</a>
+      <a class="btn primary" href="https://docs.decktalk.ai/quickstart">Read the quickstart</a>
     </div>
 
     <div class="watch" id="watch">
       <span class="lab">Watch the demo · 4:01 · sound on</span>
       <figure class="player">
-        <!-- The film lives only here: the poster, the data-media key, and the captions track below.
-             The mp4 is in the private decktalk-media R2 bucket. The script at the end of this page asks
-             media.decktalk.app (workers/media) for a signed link to that key and plays it.
-             scripts/publish_demo.sh uploads a new cut and prints its key. Change the key, the poster,
-             and the captions in the same commit. -->
-        <video id="demo-video" controls preload="none" playsinline width="1920" height="1080" poster="media/decktalk-demo-poster.jpg" data-media="decktalk-demo-20260915T011021Z-48f10d882c26.mp4">
+        <!-- The film lives only here: its address on the media host, the poster, and the captions
+             track below. The mp4 is not in git. Change all three in the same commit. -->
+        <video id="demo-video" controls preload="none" playsinline width="1920" height="1080" poster="media/decktalk-demo-poster.jpg" src="https://media.decktalk.ai/decktalk-demo-20260915T011021Z-48f10d882c26.mp4">
           <track kind="captions" src="media/decktalk-demo.vtt" srclang="en" label="English">
         </video>
-        <figcaption><span><b>Made with DeckTalk.</b> A markdown script and HTML slides, narrated and cut to the word.</span><span>Captions available in the player.</span></figcaption>
+        <figcaption><span><b>DeckTalk built this film from text files.</b> A markdown script, a project file, a cue list, and HTML slides went in, and every reveal starts on its word.</span><span>Captions available in the player.</span></figcaption>
       </figure>
     </div>
   </header>
@@ -181,7 +178,7 @@ count. [beat] <span class="k">One.</span> [beat]
 Two, three. [beat]</pre>
         <h3>A script in markdown</h3><p>One heading starts one section. Bracketed directions are not spoken.</p></div>
       <div class="step"><div class="n">02 NARRATE</div>
-        <pre><span class="c">build/audio/01-open.words.json</span>
+        <pre><span class="c">build/narration/01-open.words.json</span>
 { "word": <span class="k">"One"</span>,
   "start": <span class="k">4.485</span> }
 <span class="c">cues.json</span>
@@ -191,46 +188,60 @@ Two, three. [beat]</pre>
       <div class="step"><div class="n">03 RECORD</div>
         <pre><span class="c">deck/index.html</span>
 &lt;g <span class="k">data-cue="1.1one"</span>
-   data-fx="none"&gt;
+   data-reveal="instant"&gt;
   &lt;rect class="box full"/&gt;
   &lt;text&gt;one&lt;/text&gt;
 &lt;/g&gt;</pre>
-        <h3>Slides reveal on cue</h3><p>Chromium records the plain HTML, and the page runtime shows each step when its word is spoken.</p></div>
+        <h3>Slides reveal on cue</h3><p>Chromium records the plain HTML, and the page runtime shows each slide when its word is spoken.</p></div>
       <div class="step"><div class="n">04 ASSEMBLE</div>
         <pre><span class="c">$ decktalk build</span>
-[cut ] 01 -&gt; 01-section.mp4
+[cut ] 01 -&gt; sections/01.mp4
 [caps] 35 cue(s) -&gt; srt, vtt
 <span class="c">$ decktalk verify</span>
 <span class="c">cue         at  offset</span>
 <span class="k">1:1.1one</span>  4.49  <span class="k">-10ms</span></pre>
-        <h3>Cut to the frame</h3><p>ffmpeg cuts every section to the frame, so the box fills at 4.49 s, mixes the sound, and verify measures each reveal against its word.</p></div>
+        <h3>Cut to the frame</h3><p>ffmpeg cuts every section to the frame, so the box fills at 4.49 s, and mixes the sound. Then verify measures each reveal against its word, and in a build of the scaffold every measured reveal landed within one frame of it.</p></div>
     </div>
   </section>
 
   <section id="what">
     <span class="lab">What you get</span>
     <h2>Built for the tenth edit, not the first take.</h2>
+    <p class="sub">Every reveal is cut to the spoken word, and a build of the scaffold measured each one within one frame of its word. A changed sentence voices only its own section again. The whole video is text you keep in a repository, so you and your agent update it the way you update code. Six skills install with the project, so the agent already knows how.</p>
     <div class="feats">
-      <div class="feat"><span class="proof">[lead] 01  trim 1.440s</span><h3>Frame-exact cuts</h3><p>Each recording opens on a magenta cover until narration starts. The cut is measured from the frames, not from a timer.</p></div>
-      <div class="feat"><span class="proof">[skip] 01-open.mp3 unchanged</span><h3>Cached narration</h3><p>Each section's narration is cached by a hash of its text, voice, model, and settings. An edit synthesizes only the sections that changed, so you pay per change, not per build.</p></div>
-      <div class="feat"><span class="proof">[mix ] 3 audio input(s)</span><h3>A soundscape</h3><p>An underscore ducks under speech, ambience beds and effects land on cues, and the mix meets streaming loudness. Every part is optional.</p></div>
-      <div class="feat"><span class="proof">1:1.1one  -10ms  changed</span><h3>Verified output</h3><p>Black or truncated recordings stop before assembly. A cue that cannot be found stops the build. A check proves each cue moved pixels.</p></div>
+      <div class="feat"><span class="proof">[lead] 01  trim 1.440s</span><h3>The cut is measured, not timed.</h3><p>Each recording opens on a magenta cover until narration starts. The cut is measured from the frames, not from a timer.</p></div>
+      <div class="feat"><span class="proof">[skip] 01-open.mp3 unchanged</span><h3>An edit voices only what changed.</h3><p>Each section's narration is cached by a hash of its text, voice, model, and settings. An edit synthesizes only the sections that changed, so you pay per change, not per build.</p></div>
+      <div class="feat"><span class="proof">[mix ] 3 audio input(s)</span><h3>The soundscape is optional.</h3><p>Music ducks under speech, ambience beds and effects land on cues, and the mix meets streaming loudness. Every part is optional.</p></div>
+      <div class="feat"><span class="proof">1:1.1one  -10ms  changed</span><h3>Every reveal is checked.</h3><p>Black or truncated recordings stop before assembly. A cue that cannot be found stops the build. A check proves each cue moved pixels.</p></div>
+      <div class="feat"><span class="proof">.agents/skills/decktalk-cues</span><h3>Your coding agent already knows it.</h3><p>Six skills install with every project, one each for the script, the slides, the cues, the build, the fixes and a revision. Every command prints one JSON envelope an agent reads.</p></div>
+    </div>
+  </section>
+
+  <section id="who">
+    <span class="lab">Who it is for</span>
+    <h2>Videos that must stay correct when their source changes.</h2>
+    <p class="sub">DeckTalk is not a video editor, a slide designer, or an avatar. You write the slides as HTML, DeckTalk draws none of the pictures, and the video it makes is an ordinary mp4 you can upload anywhere.</p>
+    <div class="feats">
+      <div class="feat"><span class="proof">a developer educator</span><h3>Technical tutorials</h3><p>A viewer watches a walkthrough whose commands and screenshots match the version she just installed. When the library changes, you change the sentence and build again.</p></div>
+      <div class="feat"><span class="proof">a founder</span><h3>Product demos</h3><p>A viewer sees the feature narrated over the screen it runs on, with every callout landing on the word that names it.</p></div>
+      <div class="feat"><span class="proof">a teacher</span><h3>Lessons</h3><p>A viewer follows an explanation in which each idea appears as it is spoken, so nothing is read ahead.</p></div>
+      <div class="feat"><span class="proof">a team</span><h3>Also fits</h3><p>Internal presentations and estimation walkthroughs run the same pipeline. Neither has a shipped example yet.</p></div>
     </div>
   </section>
 
   <section id="start">
     <div class="cmds">
-      <div><h2>From install to a first video.</h2><p>The scaffold is the demo. A silent build takes a few minutes, because recording runs in real time. Build it silently first, and add your voice when you are ready.</p></div>
-      <pre>$ uv tool install decktalk &amp;&amp; <span class="nb">decktalk setup</span>
+      <div><h2>From install to a first video.</h2><p>You need Python 3.12 or later. A build without voice is free, needs no account, and takes about a minute for the starter, because recording runs in real time. A voiced build needs an ElevenLabs API key and a voice id, and a full build of the starter spends about 400 characters of voice. Build it without voice first, and add your voice when you are ready.</p></div>
+      <pre>$ uv tool install decktalk &amp;&amp; <span class="nb">decktalk install</span>
 $ decktalk init my-lesson &amp;&amp; <span class="nb">cd my-lesson</span>
-$ decktalk build --silent   <span class="c nb"># no key needed</span>
+$ decktalk build --no-voice   <span class="c nb"># no key needed</span>
 $ decktalk build            <span class="c nb"># your voice</span></pre>
     </div>
   </section>
 
   <footer>
     <div class="made"><svg viewBox="0 0 24 24" aria-hidden="true"><g stroke-width="2.25" stroke-linecap="round"><line x1="4" y1="12" x2="4" y2="20" stroke="var(--mark-bar)"/><line x1="9.5" y1="8" x2="9.5" y2="20" stroke="var(--blue)"/><line x1="15" y1="12" x2="15" y2="20" stroke="var(--mark-bar)"/><line x1="20.5" y1="12" x2="20.5" y2="20" stroke="var(--mark-bar)"/></g><circle cx="9.5" cy="3.75" r="2.25" fill="var(--blue)"/></svg><span>DeckTalk · Apache-2.0 · Made by <a href="https://github.com/jacobcbeaudin" style="color:var(--ink)">Jacob Beaudin</a></span></div>
-    <div class="links"><a href="https://docs.decktalk.app">Docs</a><a href="https://github.com/jacobcbeaudin/decktalk">GitHub</a><a href="https://pypi.org/project/decktalk/">Latest release on PyPI</a></div>
+    <div class="links"><a href="https://docs.decktalk.ai">Docs</a><a href="https://github.com/jacobcbeaudin/decktalk">GitHub</a><a href="https://github.com/jacobcbeaudin/decktalk/discussions">Discussions</a><a href="https://pypi.org/project/decktalk/">Latest release on PyPI</a></div>
   </footer>
 </div>
 
@@ -240,89 +251,6 @@ $ decktalk build            <span class="c nb"># your voice</span></pre>
     try { await navigator.clipboard.writeText(document.getElementById("cmd").textContent); e.target.textContent = "Copied"; setTimeout(() => e.target.textContent = "Copy", 1400); } catch (_) {}
   });
 
-  // The film plays through a signed link from media.decktalk.app that lasts a few hours. The page asks
-  // for a link when it loads, and retries a request that fails on the network or the server. It asks for
-  // a fresh link when the current one is about to expire or stops working, and keeps the film's place.
-  // Add ?debug to the page's address to log each step to the console.
-  const video = document.getElementById("demo-video");
-  const debug = new URLSearchParams(location.search).has("debug");
-  const say = (...args) => { if (debug) console.debug("[film]", ...args); };
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  let expires = 0;         // when the current link stops working, in seconds since 1970
-  let pending = null;      // the link request in flight, which every caller shares
-  let wantsPlay = false;   // someone pressed play while the link was on its way
-  let playing = false;     // the visitor pressed play and has not paused since
-  let failures = 0;        // fresh links in a row that failed before the film loaded
-
-  async function requestLink() {
-    for (let attempt = 1; ; attempt++) {
-      let response = null;
-      try {
-        response = await fetch(`https://media.decktalk.app/sign/${video.dataset.media}`);
-      } catch (err) {
-        say("link request failed", { attempt, error: String(err) });
-      }
-      if (response?.ok) {
-        const body = await response.json();
-        expires = body.expires;
-        say("link", { attempt, expires: new Date(expires * 1000).toISOString() });
-        return body.url;
-      }
-      if (response) say("link refused", { attempt, status: response.status });
-      // A refusal stays a refusal. A network failure, a server error, or a rate limit may pass.
-      const retryable = !response || response.status >= 500 || response.status === 429;
-      if (!retryable || attempt === 3) throw new Error(response ? `HTTP ${response.status}` : "network error");
-      await sleep(attempt * 1000);
-    }
-  }
-
-  // Put a fresh link in the player. The place and the play state are read when the link arrives, so
-  // they include anything the visitor did while waiting.
-  function reload(reason, play = false) {
-    wantsPlay ||= play;
-    if (pending) return pending;
-    say("reload", { reason });
-    pending = requestLink()
-      .then((url) => {
-        const at = video.currentTime, resume = wantsPlay || !video.paused;
-        if (at > 0) video.addEventListener("loadedmetadata", () => { video.currentTime = at; }, { once: true });
-        video.src = url;
-        say("new link in place", { at, resume });
-        if (resume) video.play().catch((err) => say("play refused", String(err)));
-      })
-      .catch((err) => say("no link", String(err)))
-      .finally(() => { pending = null; wantsPlay = false; });
-    return pending;
-  }
-
-  reload("page load");
-  // When a download fails, Chrome marks the player paused before it fires error, and fires pause after
-  // it. So whether the visitor meant to watch is tracked here, and a pause that an error caused is ignored.
-  video.addEventListener("pause", () => { if (!video.error) playing = false; });
-  video.addEventListener("play", () => {
-    playing = true;
-    if (!video.getAttribute("src")) reload("play without a link", true);
-    else if (Date.now() / 1000 > expires - 30) reload("link about to expire", true);
-  });
-  video.addEventListener("loadedmetadata", () => { failures = 0; });
-  video.addEventListener("error", () => {
-    const code = video.error?.code;
-    // A fresh link fixes a download that failed, not a file the browser cannot decode.
-    if (code !== MediaError.MEDIA_ERR_NETWORK && code !== MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-      say("film error, not retried", { code });
-      return;
-    }
-    if (failures++ >= 1) {
-      // Chrome refuses play() on a player whose download failed, without even a play event, so the
-      // player goes back to its poster. The next press of play then asks for a link from scratch.
-      say("the fresh link failed too; press play to try again", { code });
-      playing = false;
-      video.removeAttribute("src");
-      video.load();
-      return;
-    }
-    reload(`film error ${code}`, playing);
-  });
 })();
 </script>
 </body>

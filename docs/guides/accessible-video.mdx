@@ -1,0 +1,116 @@
+---
+title: Accessible video
+description: What a DeckTalk build gives you for free, what you still owe a viewer, and how to check both.
+---
+
+Course platforms, company intranets and public sector sites often require captions and a transcript
+by law. A DeckTalk build writes most of what that takes without being asked, because it already
+knows the spoken words, where each one falls and what appeared on which second. Use this guide to
+see what arrives free, what is yours to write and how to check the result.
+
+## What every build writes
+
+| File | What it is |
+|---|---|
+| `build/out/<name>.srt` and `build/out/<name>.vtt` | The captions, cut from the words the voice actually said, keeping the script's punctuation and case. |
+| `build/out/<name>.chapters.txt` | One chapter per section, named by the section's `chapter` value, which defaults to its script heading. |
+| `build/out/<name>-transcript.html` | The transcript page, with one heading per chapter, the section's span in the video, the spoken text, and a list of the reveals with their seconds. |
+
+Set `language` in the `[project]` table to the language tag of the narration, such as `en`, which is
+the default. The transcript page takes it as its `lang` attribute, and the mp4's audio and video
+streams are tagged with its three-letter form, so a player names the audio from the project's own
+key. One value reaches everything a viewer picks from, and the tag cannot disagree with itself.
+
+## Captions that carry the sound, not only the speech
+
+Captions owe the audio and not only the dialogue. A viewer who cannot hear the ball bounce needs to
+be told that it bounced.
+
+Give each cued sound a `caption` string, and the build merges it into the captions as a cue of its
+own.
+
+```toml decktalk.toml
+[[mix.sfx]]
+file = "build/sfx/bounce.mp3"
+section = 2
+cue = "2.1ball"
+caption = "ball bounces"
+```
+
+A sound with no `caption` string is left out of the captions, and `assemble` reports it as
+`NO CAPTION?` on every run. It is uncertain, so it costs exit 1 only under `--strict`, and the row
+names the cue, which is how to find the `[[mix.sfx]]` table to give a line to.
+
+A caption stays on screen for at least one second, except where a longer stay would overlap the cue
+after it, so a one-word caption never flashes past. Two captions are never on screen at once,
+because a sound that lands inside a speech cue joins that caption as a line of its own.
+
+## The transcript, and the describe attribute
+
+The transcript page is the media alternative for a viewer who cannot see the video. Out of the box
+it carries the spoken text of every section, under one heading per chapter, with the section's span
+in the finished video.
+
+What it cannot carry is what a reveal meant, because nothing but you knows. Write that yourself, one
+sentence per reveal, in a `data-describe` attribute beside the cue. Every reveal that has one gets a
+line under its section, with the second it fired.
+
+```html
+<figure data-cue="3.2error" data-reveal="draw"
+        data-describe="The error curve falls steeply for the first ten steps and then flattens.">
+```
+
+The transcript prints those sentences in cue order under their section, so a reader gets the
+diagram as prose. A described audio track can voice the same strings later, which is the second
+reason to write them as full sentences rather than as labels. The starter writes one on every cued
+element, so a first project's transcript already reads end to end.
+
+Describe the reveals that carry meaning. A decorative flourish needs no sentence, and a description
+of one only makes the transcript harder to read.
+
+## What the author still owes
+
+- **Keep cued elements out of the caption band.** A player draws captions across the bottom of the
+  frame, so anything in the bottom fifteen percent, which is 162 px of a 1080 px frame, can be
+  covered at the moment it appears. `preflight` reads the measured boxes and reports one as
+  `IN CAPTION BAND?`, which is uncertain because a deck may put something there on purpose, so
+  `--strict` is how a project says the band is reserved.
+  [Design a slide](/guides/design-a-slide#make-each-reveal-big-enough-to-measure) gives the numbers.
+- **Change lightness, not only hue.** `decktalk verify` compares luma alone, so a reveal that
+  changes colour without changing lightness fails the check and also fails a viewer with low vision.
+- **Give an image its alt text.** A slide image is ordinary HTML, and nothing writes its `alt`
+  attribute for you.
+- **Read the contrast.** `decktalk screenshots` writes one PNG per slide, which is what to read for
+  small text over a busy background.
+- **Say the thing you show.** A reveal that the narration never names has no word to start on and no
+  place in the transcript, which is the same rule
+  [Writing for the ear](/guides/writing-for-the-ear) gives for a different reason.
+
+## How to check it
+
+<Steps>
+  <Step title="Run the checker">
+    `decktalk verify` reads the final video and reports every recording, section start, cut, seam
+    and cue landing. A reveal that did not land on its word is a reveal a caption reader will meet
+    at the wrong moment.
+  </Step>
+  <Step title="Fail on the uncertain findings too">
+    `decktalk preflight --strict` and `decktalk verify --strict` turn an uncertain finding, such as a
+    reveal too thin to measure, into a failure rather than a note. A thin reveal is one a viewer with
+    low vision is likeliest to miss.
+  </Step>
+  <Step title="Read the transcript page">
+    Open `build/out/<name>-transcript.html` and read it with the video closed. A section whose list of
+    reveals is short or missing is a section whose page needs `data-describe` sentences.
+  </Step>
+  <Step title="Watch it with the sound off">
+    Play the video with the captions on and the sound off. Anything you learn only from the audio is
+    a caption line that is missing.
+  </Step>
+</Steps>
+
+## Publishing
+
+Serve the video from a plain `<video>` element with a `<track>` for the captions, so the captions
+and the chapters stay under your control rather than a third-party player's. Link the transcript
+page next to the video, and give the link text that says what it is rather than "transcript".

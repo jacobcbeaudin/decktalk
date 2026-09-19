@@ -1,0 +1,60 @@
+# Every host DeckTalk contacts, and what each request carries.
+#
+# This file is the whole source of docs/reference/what-leaves-your-machine.mdx. Add a host here,
+# then run `uv run scripts/build_outbound_reference.py`. A host that is not in this file is a host
+# DeckTalk does not contact, and a reviewer reads the generated page as the complete list.
+#
+# `[[service]]` rows are requests that carry the project's own content to a service.
+# `[[download]]` rows are one-time fetches of a tool, and they carry nothing of the project.
+
+[[service]]
+host = "api.elevenlabs.io"
+name = "Narration"
+sent_by = "`decktalk narrate`, and `decktalk build` on a voiced run"
+body = "The section's spoken text, the voice id, the model name and the audio format, together with up to `context_chars` characters of the previous section and up to `context_chars` of the next section as speaking context. The default for `context_chars` is 1500 characters, and `context_chars = 0` keeps the neighbouring sections on your machine."
+credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header."
+note = "Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-voice` sends nothing at all."
+
+[[service]]
+host = "api.elevenlabs.io"
+name = "Sound effects and ambience"
+sent_by = "`decktalk soundscape`"
+body = "The prompt string written in a `[soundscape.ambience]` or `[soundscape.sfx.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent."
+credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header."
+note = "The prompt is text you wrote in `decktalk.toml`, so you decide what it describes."
+
+[[service]]
+host = "api.elevenlabs.io"
+name = "Music"
+sent_by = "`decktalk soundscape`"
+body = "The prompt string written in the `[soundscape.music]` table, the length you asked for and the audio format. No part of `script.md` is sent."
+credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header."
+note = "The music file is generated once and then reused from `build/`."
+
+[[download]]
+host = "cdn.playwright.dev"
+name = "Headless Chromium"
+sent_by = "`decktalk install`"
+body = "A download request for the pinned browser build, and nothing else."
+note = "This is Playwright's own download host. `PLAYWRIGHT_DOWNLOAD_HOST` points it at a mirror, and `[record] browser_path` skips the download by recording with a browser the machine already has."
+
+[[download]]
+host = "github.com"
+name = "ffmpeg and ffprobe on Linux and on Windows"
+sent_by = "`decktalk install`"
+body = "A download request for one pinned release archive, and nothing else."
+note = "GitHub answers a release download with a redirect to its asset host, so a proxy rule needs both. The archive is checked against a pinned SHA-256 digest and discarded when the digest does not match."
+
+[[download]]
+host = "evermeet.cx"
+name = "ffmpeg and ffprobe on an Intel Mac"
+sent_by = "`decktalk install`"
+body = "A download request for two pinned archives, and nothing else."
+note = "The archives are checked against pinned SHA-256 digests and discarded when a digest does not match."
+
+[[download]]
+host = "ffmpeg.martin-riedl.de"
+name = "ffmpeg and ffprobe on an Apple silicon Mac"
+sent_by = "`decktalk install`"
+body = "A download request for two pinned archives, and nothing else."
+note = "The archives are checked against pinned SHA-256 digests and discarded when a digest does not match."

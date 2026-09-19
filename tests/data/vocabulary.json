@@ -1,0 +1,238 @@
+{
+  "_comment": "The wire vocabulary the contract fixes, as a reader of the JSON meets it. The enums are held to it, so a code or a label that moves fails a test here rather than every reader of the envelope.",
+  "verdicts": [
+    {
+      "code": "PAGE_ERROR",
+      "label": "PAGE ERROR",
+      "certain": true
+    },
+    {
+      "code": "STALLED",
+      "label": "STALLED",
+      "certain": true
+    },
+    {
+      "code": "TRUNCATED",
+      "label": "TRUNCATED",
+      "certain": true
+    },
+    {
+      "code": "NO_COVER",
+      "label": "NO COVER",
+      "certain": true
+    },
+    {
+      "code": "BLACK",
+      "label": "BLACK",
+      "certain": true
+    },
+    {
+      "code": "SPEECH_AT_CUT",
+      "label": "SPEECH AT CUT",
+      "certain": true
+    },
+    {
+      "code": "POP_AT_CUT",
+      "label": "POP AT CUT",
+      "certain": true
+    },
+    {
+      "code": "OFF_CUE",
+      "label": "OFF CUE",
+      "certain": true
+    },
+    {
+      "code": "NO_CHANGE",
+      "label": "NO CHANGE",
+      "certain": true
+    },
+    {
+      "code": "UNRESOLVED",
+      "label": "UNRESOLVED",
+      "certain": true
+    },
+    {
+      "code": "UNKNOWN_CUE",
+      "label": "UNKNOWN CUE",
+      "certain": true
+    },
+    {
+      "code": "UNCUED_ELEMENT",
+      "label": "UNCUED ELEMENT",
+      "certain": true
+    },
+    {
+      "code": "OFF_STAGE",
+      "label": "OFF STAGE",
+      "certain": true
+    },
+    {
+      "code": "CDN_ASSET",
+      "label": "CDN ASSET",
+      "certain": true
+    },
+    {
+      "code": "MISSING",
+      "label": "MISSING",
+      "certain": true
+    },
+    {
+      "code": "KATEX_ERROR",
+      "label": "KATEX ERROR",
+      "certain": true
+    },
+    {
+      "code": "KATEX_NOT_LOADED",
+      "label": "KATEX NOT LOADED",
+      "certain": true
+    },
+    {
+      "code": "UNREADABLE",
+      "label": "UNREADABLE",
+      "certain": true
+    },
+    {
+      "code": "INCONSISTENT",
+      "label": "INCONSISTENT",
+      "certain": true
+    },
+    {
+      "code": "PLACEHOLDER",
+      "label": "PLACEHOLDER",
+      "certain": true
+    },
+    {
+      "code": "SLATE",
+      "label": "SLATE?",
+      "certain": false
+    },
+    {
+      "code": "BLACK_UNSURE",
+      "label": "BLACK?",
+      "certain": false
+    },
+    {
+      "code": "SPOKEN_SYMBOL",
+      "label": "SPOKEN SYMBOL?",
+      "certain": false
+    },
+    {
+      "code": "THIN_CHANGE",
+      "label": "THIN CHANGE?",
+      "certain": false
+    },
+    {
+      "code": "NO_CAPTION",
+      "label": "NO CAPTION?",
+      "certain": false
+    },
+    {
+      "code": "CUT_WORD",
+      "label": "CUT WORD?",
+      "certain": false
+    },
+    {
+      "code": "CUES_OVERLAP",
+      "label": "CUES OVERLAP?",
+      "certain": false
+    },
+    {
+      "code": "IN_CAPTION_BAND",
+      "label": "IN CAPTION BAND?",
+      "certain": false
+    },
+    {
+      "code": "SHORT_SECTION",
+      "label": "SHORT SECTION?",
+      "certain": false
+    },
+    {
+      "code": "LOUDNESS_MISS",
+      "label": "LOUDNESS MISS?",
+      "certain": false
+    },
+    {
+      "code": "CHANGED",
+      "label": "changed",
+      "certain": false
+    },
+    {
+      "code": "QUIET",
+      "label": "quiet",
+      "certain": false
+    },
+    {
+      "code": "OK",
+      "label": "ok",
+      "certain": false
+    },
+    {
+      "code": "SKIPPED",
+      "label": "skipped",
+      "certain": false
+    },
+    {
+      "code": "NOTE",
+      "label": "note",
+      "certain": false
+    }
+  ],
+  "passing": [
+    "CHANGED",
+    "QUIET",
+    "OK",
+    "SKIPPED",
+    "NOTE"
+  ],
+  "skip_reasons": [
+    "REFERENCE_CLAMPED",
+    "SECTION_NOT_ASSEMBLED",
+    "TOO_CLOSE_TO_END",
+    "NO_CLICK",
+    "AT_SECTION_START",
+    "NO_SLIDE",
+    "NO_CATALOG",
+    "NO_CUES",
+    "CLIP",
+    "OPTED_OUT"
+  ],
+  "error_codes": [
+    "CONFIG",
+    "MISSING_INPUT",
+    "PROVIDER",
+    "TOOL",
+    "USAGE",
+    "INTERNAL"
+  ],
+  "stages": [
+    "narrate",
+    "align",
+    "record",
+    "assemble",
+    "verify"
+  ],
+  "progress_events": [
+    "start",
+    "done",
+    "skip",
+    "fail"
+  ],
+  "take_statuses": [
+    "synthesize",
+    "cached",
+    "unknown"
+  ],
+  "soundscape_statuses": [
+    "planned",
+    "unchanged",
+    "generated"
+  ],
+  "section_kinds": [
+    "page",
+    "clip"
+  ],
+  "substitutes": [
+    "slate",
+    "black"
+  ]
+}

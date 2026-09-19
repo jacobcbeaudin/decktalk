@@ -31,10 +31,11 @@ mode: "center"
 
 This page lists every DeckTalk release, newest first. DeckTalk follows semantic versioning.
 
-A change to a file format or to the page contract raises the minor version. It comes with a
-migration note. The file formats are `decktalk.toml`, `cues.json`, and the build artifacts.
+A change to a file format or to the page contract raises the minor version. The file formats are
+`decktalk.toml`, `cues.json`, and the build artifacts.
 
-After an upgrade, run `decktalk runtime` to update `deck/decktalk-runtime.js`.
+A project keeps the `deck/decktalk-runtime.js` it was created with. To move a project onto a newer
+runtime, create a new project with the new DeckTalk and copy the deck pages across.
 """
 
 RELEASE_RE = re.compile(r"^## \[?(?P<version>\d+\.\d+\.\d+)\]?(?:\([^)]*\))? \((?P<date>\d{4}-\d{2}-\d{2})\)\s*$")

@@ -14,9 +14,9 @@ Check which kind of build the project had last, because you run the same kind ag
 decktalk status
 ```
 
-After a [silent build](/concepts/how-it-works#the-silent-build), the timeline line ends in
+After a [build without voice](/concepts/how-it-works#the-build-without-voice), the narration total ends in
 `(estimated: silent placeholders)`. After a voiced build, it does not. If you run the other kind, read
-[A silent build and a voiced build](#a-silent-build-and-a-voiced-build) first.
+[A build without voice and a voiced build](#a-build-without-voice-and-a-voiced-build) first.
 
 ## Find the command for your edit
 
@@ -27,25 +27,26 @@ Find your edit in the first column. `N` is the number of the section you changed
 | A sentence in section N of `script.md` | `decktalk build --only N` |
 | The title in the heading of section N | `decktalk build --only N` |
 | A cue of section N in `cues.json` | `decktalk build --only N` |
-| A slide in a page | `decktalk build` with one `--only N` for each section that plays the changed scene, such as `decktalk build --only 1 --only 9` |
-| `extra_seconds` on section N | `decktalk build --only N` |
+| A slide in the scene that section N plays | `decktalk build --only N`, with one `--only` for each section that plays that scene |
+| The head, a style, a script or the runtime file of a page | `decktalk build` with one `--only N` for each section that plays that page, such as `decktalk build --only 1 --only 9`, because those parts sit outside every scene and reach all of them |
+| `record_margin_seconds` on section N | `decktalk build --only N` |
 | `lead_seconds` or `tail_seconds` on section N | `decktalk build --only N` |
 | The voice id, the model, the output format, or a `[voice]` setting | `decktalk build` |
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | `decktalk assemble`, then `decktalk verify` |
 
-After a silent build, add `--silent` to each `decktalk build` command.
+After a build without voice, add `--no-voice` to each `decktalk build` command.
 
 A page can show the words of the section before it, which it reads from
-[`prevwords`](/reference/runtime#url-parameters). The scaffold's scene 2 opens on the Open's last frame with
-the Open's count times. So after an edit to section 1, record section 2 as well.
+[`prevwords`](/reference/runtime#url-parameters). The starter's pages do not, but a page of yours that opens on
+the previous section's last frame does. After an edit to section 1, record such a section 2 as well.
 
 ```console
-decktalk build --only 1 --only 2
+decktalk build --only 1,2
 ```
 
 <Frame caption="After an edit to section 1, only section 1 is voiced again, and --only 1 records only section 1.">
-  <img className="block dark:hidden" src="/images/rebuild-lanes-light.svg" alt="Nine section columns cross three lanes above an assemble bar. Sections 5 and 7 are clips in every lane. In the narrate lane, section 1 reads voiced and the other page sections read cached. A plain build records every page section. With --only 1, section 1 reads recorded and the other page sections read kept. The assemble bar spans all nine sections." />
-  <img className="hidden dark:block" src="/images/rebuild-lanes-dark.svg" alt="Nine section columns cross three lanes above an assemble bar. Sections 5 and 7 are clips in every lane. In the narrate lane, section 1 reads voiced and the other page sections read cached. A plain build records every page section. With --only 1, section 1 reads recorded and the other page sections read kept. The assemble bar spans all nine sections." />
+  <img className="block dark:hidden" src="/images/rebuild-lanes-light.svg" alt="Three section columns cross three lanes above an assemble bar. Every section is a page section. In the narrate lane, section 1 reads voiced and the other page sections read cached. A plain build records every page section. With --only 1, section 1 reads recorded and the other page sections read kept. The assemble bar spans all three sections." />
+  <img className="hidden dark:block" src="/images/rebuild-lanes-dark.svg" alt="Three section columns cross three lanes above an assemble bar. Every section is a page section. In the narrate lane, section 1 reads voiced and the other page sections read cached. A plain build records every page section. With --only 1, section 1 reads recorded and the other page sections read kept. The assemble bar spans all three sections." />
 </Frame>
 
 ## What each edit runs again
@@ -55,11 +56,12 @@ The next table gives the reason for each row of the first table.
 | You changed | Voiced again | Recorded again | Why |
 |---|---|---|---|
 | A sentence in section N | section N | section N | The cache key includes the exact text of the section. |
-| The heading title of section N | section N | section N | The audio file name comes from the section number and title. |
+| The heading title of section N | none | none | A take is named by its content hash, so the heading is display only. |
 | A cue of section N | none | section N | The page receives its cue times when `record` opens it. |
-| A slide | none | each section that plays the scene | A recording captures the page as it was. |
-| `extra_seconds` on section N | none | section N | The recording length changes. |
-| `lead_seconds` or `tail_seconds` on section N | none | section N | The section span changes. `narrate` adds the silence without a request. |
+| A slide in the scene that section N plays | none | section N | The hash covers that one scene's markup, so no other section of the page moves. |
+| The head, a style, a script or the runtime file of a page | none | each section that plays the page | Those parts are shared by every scene, so the hash of every section of that page moves. |
+| `record_margin_seconds` on section N | none | section N | The recording length changes. |
+| `lead_seconds` or `tail_seconds` on section N | none | section N | The section span changes. `narrate` places the silence without a request. |
 | The voice id, model, output format, or a `[voice]` setting | every section | every section | The cache key includes each of them, so every word time moves. |
 | A clip file, `hold_seconds`, `[transition]`, or `[mix]` | none | none | Only `assemble` reads them. |
 
@@ -69,57 +71,92 @@ exception. It shows the words of the section before it, so record it again after
 
 ## The narration cache
 
-The narration cache is `build/audio/manifest.json`. It holds one hash per section, made from these values:
+The narration cache is the narration directory itself. A take is named by its content hash, made from these
+values:
 
 - the speech provider's name and the voice id
 - the model and the output format
 - the voice settings
 - the exact text sent for the section
 
-The `narrate` stage skips a section when all four of these are true:
+The `narrate` stage sends nothing for a section when the mp3 and the words file of its hash are both on
+disk. `build/narration/takes.json` then says which section plays which take.
 
-- The hash matches.
-- The audio file name is unchanged.
-- The mp3 exists.
-- The words file exists.
+The hash leaves out the text of the neighbor sections, so an edit never voices a neighbor again.
 
-The hash leaves out the text of the neighbor
-sections, so an edit never voices a neighbor again.
+The hash also leaves out the section number and the heading. Inserting a section, renumbering one, or
+retitling one moves no file and voices nothing, and two sections with the same words share one take. No
+silence DeckTalk adds is inside a take: every section's lead and tail are placed when the takes are joined,
+from the take and that section's own keys alone, so a take is free to move and a section reused beside an
+edited one lands exactly where it did.
 
-The hash also leaves out the section number. If you renumber a section and its text is unchanged, `narrate` copies
-its take from the old file names to the new ones and prints a `[move]` line. The first spoken section is the
-exception, because only its take starts with the lead-in silence. A take never moves into or out of that place.
+Set [`[narration] cache_dir`](/reference/configuration#narration) to keep the take files outside `build/`,
+where a fresh clone and a second worktree find them again. A hash names each one, so several projects may
+share one such directory. The take index and `narration.mp3` stay under `build/narration/`, because they
+belong to one project.
 
 A section that is voiced again costs the characters of its whole text, not only the changed sentence.
-[Requirements](/requirements#what-spends-credits) lists every command that spends credits. The `record`
-stage has no cache, so `--only` is the way to keep a recording.
+[Requirements](/requirements#what-spends-credits) lists every command that spends credits.
+
+## The recording cache
+
+`record` has a cache of its own, and it needs no flag. The recording log of each section carries
+`input_hash`, the digest of the markup of the one scene the section plays, the rest of its page file,
+its cues, its spoken words, the frame geometry and every local file the page loaded, which the log
+lists under `assets`. A section whose hash has not moved keeps its webm and is not recorded again.
+
+The scene is the `[data-scene]` element the section plays, read from the page source as you wrote it,
+so no browser has to open for a run to know which recordings still stand. A page that builds its
+scenes in script instead, with `DeckTalk.scene(N, …)`, has no such element to cut out, so every
+section of that page is keyed on the whole file. A section you leave out of `--only` whose scene or
+whose shared page did move is reported as `INCONSISTENT`, and the film keeps the recording made
+before the edit.
+
+{/* sample: decktalk record on a starter that was just built */}
+```text
+[rec ] section 01  kept: its scene, the page around it, its assets, words and cues are unchanged
+[rec ] section 02  kept: its scene, the page around it, its assets, words and cues are unchanged
+[rec ] section 03  kept: its scene, the page around it, its assets, words and cues are unchanged
+sections 3, recorded 0, kept 3
+```
+
+So a plain `decktalk build` records only what changed. `--only` is for the other direction: it records
+the sections you name whether they changed or not, which is how you take a bad recording again.
 
 ## Limit a build to some sections
 
-Pass `--only` with a section number. Repeat the flag for more sections, because it does not take commas.
+Pass `--only` with a section number. It also takes a comma list and a range, and the flag repeats, so these four
+lines name the same kind of thing.
 
 ```console
 decktalk build --only 3
+decktalk build --only 3,6
+decktalk build --only 7-9
 decktalk build --only 3 --only 6
 ```
 
-The flag limits `record`, `measure`, and `check` to the sections you name. The other stages still work on
+`--only` means the same on every command that works per section, which is `build`, `narrate`, `record`,
+`preflight`, `verify` and `words`.
+
+The flag limits `record` to the sections you name, and records them whether or not they changed. Without it, `record` keeps every section whose scene, shared page, loaded files, words and cues are unchanged. The other stages still work on
 every section:
 
 - `narrate` voices any section whose text changed, even a section you did not name.
 - `assemble` cuts and joins every section, because the final mp4 needs all of them.
 - The verify stage checks every section start and every cut.
 
-Name every section whose text or scene changed. A section you leave out keeps its old recording, even if
-its words moved. `--only` needs a page section, because a clip section has no recording.
+Name every section whose text or scene changed, and every section of a page whose head, styles or
+scripts you changed. A section you leave out keeps its old recording, even if its words moved.
+`--only` needs a page section, because a clip section has no recording.
 
 ## Record one section again
 
 Use these steps when a recording of section `N` is bad, for example after `STALLED` or `TRUNCATED`. The
 steps voice nothing when the text is unchanged, and they keep every other recording.
 
-<Warning>Run `decktalk build --silent` only if the last build was silent. In a voiced project, it stops with an
-error. With `--force`, it empties the narration cache, and the next voiced build spends credits on every section.</Warning>
+<Warning>`decktalk build --no-voice` stops when a section it would write already holds a paid take, and names
+the sections that are free to rehearse. Use `--only` with those, which is how you rehearse a new section of a
+film you have already paid for.</Warning>
 
 <Steps>
   <Step title="Build the section again">
@@ -129,7 +166,7 @@ error. With `--force`, it empties the narration cache, and the next voiced build
     decktalk build --only N
     ```
 
-    If the last build was silent, run `decktalk build --silent --only N` instead.
+    If the last build had no voice, run `decktalk build --no-voice --only N` instead.
   </Step>
   <Step title="Measure the cues of the section">
     The build checks section starts, cuts, and cut continuity, but not cues. Run `decktalk verify` for the cues.
@@ -148,20 +185,18 @@ error. With `--force`, it empties the narration cache, and the next voiced build
 Each stage is also a command. These are the commands that `decktalk build --only 3` runs, plus a cue check.
 
 ```console
-decktalk narrate                   # add --silent if the last build was silent
-decktalk beats
+decktalk narrate                   # add --no-voice if the last build had no voice
+decktalk align
 decktalk record --only 3
-decktalk measure --only 3
-decktalk check --only 3
 decktalk assemble
-decktalk verify 3:3.3height
+decktalk verify --only 3
 ```
 
 Some edits need fewer commands.
 
 | After this edit | Run |
 |---|---|
-| A slide changed, and the script did not | `decktalk record --only N`, `decktalk measure --only N`, `decktalk check --only N`, `decktalk assemble`, `decktalk verify --only N` |
+| A slide changed, and the script did not | `decktalk record --only N`, `decktalk assemble`, `decktalk verify --only N` |
 | A clip file changed | `decktalk assemble`, `decktalk verify` |
 
 ## Voice every section again
@@ -175,34 +210,37 @@ decktalk build --force
 ```
 
 `decktalk narrate --dry-run` makes no API call. It prints the text that each section would send, and a take
-plan that says which sections a voiced run would voice, keep cached, or move. So you can count the characters
-first. `decktalk narrate --dry-run --json` gives the same plan as JSON. `decktalk preflight` adds the cue check and
+plan that says which sections a voiced run would voice and which it already holds, with what the run costs.
+So you can count the characters first. `decktalk narrate --dry-run --json` gives the same plan as JSON. `decktalk preflight` adds the cue check and
 an estimate of each reveal from frozen frames, so you can fix a small reveal before you pay for the takes.
 
-## A silent build and a voiced build
+## A build without voice and a voiced build
 
-A silent build after a voiced build would empty the narration cache. The next voiced build would then voice
-every section again and spend credits on all of them. So a silent `narrate` or `build` stops when
-`build/audio/manifest.json` holds voiced takes, and it writes nothing.
+A build without voice writes its own placeholder takes and replaces the rows of the take index. The next voiced
+build would then voice those sections again and spend credits on them. So a `narrate` or `build` without voice
+stops when a section it was asked to write already holds a paid take, and it writes nothing.
 
 ```text
-error: build/audio/manifest.json holds voiced takes for sections 01. A silent run writes click tracks over those mp3 files and replaces the manifest, so the next voiced build voices every section again and spends credits on all of them. Rehearse the silent build in a copy of the project, or pass --force to replace the voiced takes.
+error[CONFIG]: build/narration/takes.json holds paid takes for section(s) 01, and a run without voice would replace them in the take index, so the next voiced build would voice them again and spend credits on all of them.
+  hint: Rehearse the sections nobody has paid for: --only 2 --only 3.
 ```
 
-The cache would be lost for three reasons:
+The refusal is scoped to the sections the run was asked to write, so a film you have already paid for still
+rehearses its new section for nothing. The paid mp3 files themselves are never touched, because a placeholder
+take is named `silent-<hash>.mp3` and a voiced take is named by its own digest. What the run would replace is
+the index:
 
-1. The manifest notes whether its entries came from a silent build.
-2. `narrate` reuses the previous manifest only when it is the same kind of build.
-3. A silent build writes a [click track](/concepts/how-it-works#the-silent-build) over the voiced mp3 of
-   the same name, and it replaces the manifest.
+1. The take index says, per row, whether that row is a paid take or a placeholder.
+2. `assemble` cuts to the times the index carries, and a placeholder's times are estimates.
+3. A row replaced by a placeholder is a row the next voiced build pays for again.
 
-In a project that has never been voiced, a silent build loses nothing. The first voiced build voices every
+In a project that has never been voiced, a build without voice loses nothing. The first voiced build voices every
 section anyway.
 
-After a project has been voiced, rehearse with a silent build in a copy of the project. To replace the voiced
-takes on purpose, pass `--force`, as in `decktalk build --silent --force`. Neither kind of
-build replaces the final mp4 until it finishes. A timestamped copy of each finished video stays next to
-`build/out/<name>.mp4`.
+After a project has been voiced, rehearse with a build without voice in a copy of the project. To replace the voiced
+takes on purpose, pass `--force`, as in `decktalk build --no-voice --force`. Neither kind of
+build replaces the final mp4 until it finishes. Set `[output] timestamped_copy = true` to keep a dated copy
+of each finished video next to `build/out/<name>.mp4`.
 
 ## Next
 
