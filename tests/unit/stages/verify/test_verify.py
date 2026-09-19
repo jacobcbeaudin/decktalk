@@ -216,6 +216,8 @@ def test_verify_and_assemble_ignore_a_leftover_section_video(verify_project, tmp
     from decktalk.artifacts import Timeline, TimelineSection, Word
 
     asm = importlib.import_module("decktalk.stages.assemble")
+    cut_module = importlib.import_module("decktalk.stages.assemble.cut")
+    publish_module = importlib.import_module("decktalk.stages.assemble.publish")
     p = verify_project({"01": "a@1.0"})
     (p.sections_dir / "04.mp4").write_bytes(b"x")
     (p.out_dir / "t-20260101-0000.mp4").write_bytes(b"x")  # files outside build/sections are not section videos
@@ -236,11 +238,13 @@ def test_verify_and_assemble_ignore_a_leftover_section_video(verify_project, tmp
         sections={"01": TimelineSection("A", 0, 5.0, 5.0, 1.0, [Word("Hi", 0.7, 1.0)])},
         estimated=True,
     ).save(p.timeline_path)
-    rows = [asm.RenderedSection(p.sections[0], p.sections_dir / "01.mp4", 5.0, "page")]
+    rows = [cut_module.RenderedSection(p.sections[0], p.sections_dir / "01.mp4", 5.0, "page")]
     monkeypatch.setattr(asm, "render_sections", lambda project, timeline, strict: rows)
     monkeypatch.setattr(asm, "concat", lambda files, out: out.write_bytes(b"x"))
-    monkeypatch.setattr(asm, "mux_chapters", lambda src, chapters, dst: dst.write_bytes(b"x"))
-    monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"x"))
+    monkeypatch.setattr(publish_module, "mux_chapters", lambda src, chapters, dst, language: dst.write_bytes(b"x"))
+    monkeypatch.setattr(publish_module, "render_poster", lambda project, out: None)
+    for module in (asm, cut_module, publish_module):
+        monkeypatch.setattr(module.ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"x"))
     assert asm.assemble(p, soundscape=False).warnings == [
         "build/sections/04.mp4 is not a section in decktalk.toml, so assemble ignores it. "
         "Delete the file if an earlier build left it."

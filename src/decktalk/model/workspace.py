@@ -5,7 +5,8 @@
     build/recordings/  one webm and one recording log per page section
     build/sections/    one mp4 per section, cut to its span
     build/screenshots/ the PNGs `decktalk screenshots` writes
-    build/out/         the deliverables: the final mp4, its captions and its chapters
+    build/out/         the deliverables: the final mp4, its captions, chapters, cut list,
+                       transcript page and poster
 
 A new artifact gets a property here and nowhere else, so a reader who wants to know what a build
 leaves behind opens one module, and no stage ever spells a build path by hand.
@@ -70,13 +71,20 @@ class Workspace:
     def final(self) -> Path:
         return self.out_dir / f"{self.name}.mp4"
 
+    @property
+    def cuts_path(self) -> Path:
+        return self.out_dir / "cuts.json"
+
     def output_paths(self) -> dict[str, Path]:
-        """The files `assemble` writes next to the final mp4, keyed final, srt, vtt and chapters."""
+        """Every file `assemble` writes into build/out, keyed by what it is."""
         return {
             "final": self.final,
             "srt": self.out_dir / f"{self.name}.srt",
             "vtt": self.out_dir / f"{self.name}.vtt",
             "chapters": self.out_dir / f"{self.name}.chapters.txt",
+            "cuts": self.cuts_path,
+            "transcript": self.out_dir / f"{self.name}-transcript.html",
+            "poster": self.out_dir / f"{self.name}-poster.png",
         }
 
     def recording(self, key: str) -> Path:

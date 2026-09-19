@@ -46,6 +46,7 @@ class Verdict(StrEnum):
     KATEX_NOT_LOADED = "KATEX NOT LOADED"
 
     # Uncertain: something is probably wrong, and the label ends in a question mark.
+    SLATE = "SLATE?"
     BLACK_UNSURE = "BLACK?"
     SPOKEN_SYMBOL = "SPOKEN SYMBOL?"
     THIN_CHANGE = "THIN CHANGE?"

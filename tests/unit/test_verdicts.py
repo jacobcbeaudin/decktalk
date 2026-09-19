@@ -15,7 +15,17 @@ def test_every_verdict_is_certain_uncertain_or_passing():
         groups = [verdict.certain, verdict.passing]
         assert groups.count(True) <= 1, verdict
     uncertain = [v for v in Verdict if not v.certain and not v.passing]
-    assert {v.name for v in uncertain} == {"BLACK_UNSURE", "SPOKEN_SYMBOL", "THIN_CHANGE"}
+    assert {v.name for v in uncertain} == {
+        "BLACK_UNSURE",
+        "CUES_OVERLAP",
+        "CUT_WORD",
+        "IN_CAPTION_BAND",
+        "LOUDNESS_MISS",
+        "NO_CAPTION",
+        "SLATE",
+        "SPOKEN_SYMBOL",
+        "THIN_CHANGE",
+    }
 
 
 def test_an_uncertain_label_ends_in_a_question_mark_and_a_certain_one_does_not():

@@ -23,7 +23,6 @@ from decktalk.artifacts import (
 from decktalk.cli import build_parser, main
 from decktalk.model.script import parse_script, strip_markdown
 from decktalk.settings import Settings
-from decktalk.stages.assemble import timeline_targets
 from decktalk.tomlmap import RENAMES_PAGE
 from decktalk.verdicts import Findings, SkipReason, Verdict
 
@@ -349,45 +348,6 @@ def test_scaffold_loads_without_warnings_and_has_nine_sections(tmp_path, monkeyp
     assert list(p.chapters().values()) == chapters
 
 
-def test_strict_fails_on_a_missing_clip_unless_the_section_is_optional(tmp_path, monkeypatch, caplog):
-    import importlib
-
-    from decktalk.errors import MissingInputError
-
-    asm = importlib.import_module("decktalk.stages.assemble")
-    toml = (
-        "[[section]]\nnumber = 1\npage = 'a.html'\n"
-        "[[section]]\nnumber = 2\nclip = 'media/real.mp4'\n"
-        "[[section]]\nnumber = 3\nclip = 'media/slot.mp4'\nslate_seconds = 4\noptional = true\n"
-    )
-    p = Project.load(write_project(tmp_path, toml), environ={})
-    real, slot = p.clip_sections
-    assert (real.optional, slot.optional) == (False, True)
-    ran = []
-    monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: ran.append(args))
-    monkeypatch.setattr(asm, "section_slate", lambda project, sec: None)
-    enc = asm.Encoder(p.settings.video)
-    out = tmp_path / "out.mp4"
-
-    with pytest.raises(MissingInputError) as err:
-        asm._render_clip(p, enc, real, out, (False, False), 0.0, strict=True)
-    assert str(err.value) == (
-        f"section 2: clip missing: {p.root / 'media' / 'real.mp4'}. Put your clip at that path, "
-        "or set optional = true on the section to play its slate under --strict."
-    )
-    assert ran == []
-
-    with caplog.at_level("WARNING", logger="decktalk"):
-        assert asm._render_clip(p, enc, slot, out, (False, False), 0.0, strict=True) == ("slate", None)
-        assert asm._render_clip(p, enc, real, out, (False, False), 0.0, strict=False) == ("slate", None)
-    assert len(ran) == 2
-    assert [r.getMessage() for r in caplog.records] == [
-        "section 03: media/slot.mp4 missing; slate for 4s (drop your clip at that path; the section is optional, "
-        "so --strict allows the slate)",
-        "section 02: media/real.mp4 missing; slate for 5s (drop your clip at that path)",
-    ]
-
-
 # ---- artifacts -----------------------------------------------------------------------------
 
 
@@ -466,17 +426,7 @@ def test_strip_markdown_keeps_placeholders():
     assert "[VENUE]" in strip_markdown("At [VENUE] tonight. [not spoken]")
 
 
-# ---- assemble ---------------------------------------------------------------------------------
-
-
-def test_timeline_targets_are_frame_exact():
-    tl = Timeline(
-        narration="n",
-        total_seconds=2.5,
-        sections={"01": TimelineSection("a", 0, 1.02, 1.02, None), "02": TimelineSection("b", 1.02, 2.5, 1.48, None)},
-    )
-    t = timeline_targets(tl, 30)
-    assert abs(t["01"] - 1.0333) < 1e-3 and abs(t["02"] - 1.4667) < 1e-3
+# ---- the cuts a document describes ---------------------------------------------------------
 
 
 def test_fade_flags_follow_dips_and_page_fade_in(tmp_path):
@@ -536,7 +486,7 @@ def test_every_result_tallies_its_own_rows():
     assert [s.verdict for s in starts] == [Verdict.BLACK]
     assert verification.findings == Findings(certain=1, uncertain=1)
 
-    # The results that judge a count rather than a verdict.
+    # A loudness miss is a row of its own, and a clip that cuts a word in two is still a count.
     assembly = AssembleResult(
         final=Path("f.mp4"),
         stamped=None,
@@ -544,7 +494,10 @@ def test_every_result_tallies_its_own_rows():
         sections=[],
         warnings=[],
         loudness=None,
-        loudness_problems=["quiet", "loud"],
+        loudness_problems=[
+            Finding(detail="quiet", verdict=Verdict.LOUDNESS_MISS, where="build/out/demo.mp4"),
+            Finding(detail="loud", verdict=Verdict.LOUDNESS_MISS, where="build/out/demo.mp4"),
+        ],
     )
     assert assembly.findings == Findings(uncertain=2)
     clip_row = ClipResult(
@@ -793,6 +746,7 @@ def test_caption_cues_do_not_strand_of_chips_on_a_cue_of_its_own():
 
 def test_caption_cues_edge_cases():
     from decktalk.captions import CAPTION_MAX_CHARS, caption_cues
+    from decktalk.captions.layout import CAPTION_MIN_SECONDS
 
     # A one-word sentence joins a neighbour, and alone in its section it is a cue of its own.
     cues = caption_cues(_spoken("Update your video the way you update a doc. DeckTalk. Open source, and free."))
@@ -821,28 +775,22 @@ def test_caption_cues_edge_cases():
     assert [c.text for c in caption_cues(joined)] == ["It guesses, and waits."]
     split = _film(("It", 0.0, 0.3), ("guesses,", 0.4, 0.7), ("and", 1.7, 1.9), ("waits.", 2.0, 2.4))
     assert [(c.start, c.end, c.text) for c in caption_cues(split)] == [
-        (0.0, 0.9, "It guesses,"),
-        (1.7, 2.6, "and waits."),
+        (0.0, 1.0, "It guesses,"),
+        (1.7, 2.7, "and waits."),
     ]
+
+    # No cue is on screen for under a second, unless the next cue begins before that.
+    short = _film(("Yes.", 0.0, 0.2), ("No.", 3.0, 3.2))
+    assert [(c.start, c.end) for c in caption_cues(short)] == [(0.0, 1.0), (3.0, 4.0)]
+    crowded = _film(("Yes.", 0.0, 0.2), ("No.", 0.5, 0.7))
+    assert caption_cues(crowded)[0].end - caption_cues(crowded)[0].start >= CAPTION_MIN_SECONDS
 
 
 def test_caption_cues_split_on_a_long_pause_and_never_cross_sections():
     from decktalk.captions import caption_cues
-    from decktalk.stages.assemble import build_captions
 
     cues = caption_cues(_spoken("one two three four five six", gap_after="three"))
     assert len(cues) == 2 and cues[0].text == "one two three" and cues[1].text == "four five six"
-    tl = Timeline(
-        narration="n",
-        total_seconds=4.0,
-        sections={
-            "01": TimelineSection("a", 0, 2.0, 2.0, None, _spoken("alpha beta", 0.1)),
-            "02": TimelineSection("b", 2.0, 4.0, 2.0, None, _spoken("gamma delta", 2.1)),
-        },
-    )
-    shifted = build_captions(tl, 3.0)  # narration starts three seconds into the final file
-    assert [c.text for c in shifted] == ["alpha beta", "gamma delta"]
-    assert shifted[0].start == 3.1 and shifted[1].start == 5.1
     assert caption_cues([]) == []
 
 
@@ -862,42 +810,6 @@ def test_caption_and_chapter_files(tmp_path):
     assert text.startswith(";FFMETADATA1\n")
     assert "[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=3000\ntitle=On camera\n" in text
     assert "START=3000\nEND=12440\ntitle=Open\\; part \\= 1\n" in text
-
-
-def test_plan_mix_delays_clip_audio_and_drops_the_limiter(tmp_path):
-    from decktalk.stages.assemble import RenderedSection, build_chapters, mix_input_args, plan_mix
-
-    p = Project.load(write_project(tmp_path), environ={})
-    tl = Timeline(
-        narration="narration.mp3",
-        total_seconds=4.0,
-        sections={
-            "01": TimelineSection("Open", 0, 2.0, 2.0, 1.8),
-            "02": TimelineSection("Close", 2.0, 4.0, 2.0, 3.8),
-        },
-    )
-    rows = [
-        RenderedSection(p.sections[0], tmp_path / "00.mp4", 3.0, "clip", audio=tmp_path / "open.mp4"),
-        RenderedSection(p.sections[1], tmp_path / "01.mp4", 2.0, "page"),
-        RenderedSection(p.sections[2], tmp_path / "02.mp4", 3.5, "page"),
-    ]
-    plan = plan_mix(p, rows, tl, soundscape=False)
-    assert plan.total == 8.5
-    assert plan.inputs[0] == ("lavfi", "anullsrc=r=48000:cl=stereo")
-    assert mix_input_args(plan)[:5] == ["-f", "lavfi", "-t", "8.500", "-i"]
-    assert "alimiter" not in plan.filter
-    assert "adelay=3000:all=1[narr]" in plan.filter  # narration starts with the first page section
-    assert "atrim=duration=3.000" in plan.filter and "afade=t=in:d=0.02,afade=t=out:st=2.980:d=0.02" in plan.filter
-    assert "adelay=0:all=1[clip00]" in plan.filter
-    assert plan.filter.endswith("[anchor][narr][clip00]amix=inputs=3:duration=first:normalize=0[a]")
-    chapters = build_chapters(rows, p.chapters())
-    assert [(c.start, c.end, c.title) for c in chapters] == [
-        (0.0, 3.0, "Section 0"),
-        (3.0, 5.0, "Section 1"),
-        (5.0, 8.5, "Section 2"),
-    ]
-    paths = p.workspace.output_paths()
-    assert paths["srt"].name == "t.srt" and paths["vtt"].name == "t.vtt" and paths["chapters"].name == "t.chapters.txt"
 
 
 MID_CLIP_TOML = """
@@ -920,101 +832,6 @@ page = "deck/index.html"
 number = 4
 page = "deck/index.html"
 """
-
-
-def _mid_clip_plan(tmp_path):
-    """Pages 1, 3 and 4 around a 3-second clip at 2, with the rows and timeline assemble would build."""
-    from decktalk.stages.assemble import RenderedSection
-
-    p = Project.load(write_project(tmp_path, MID_CLIP_TOML), environ={})
-    tl = Timeline(
-        narration="narration.mp3",
-        total_seconds=6.0,
-        sections={
-            "01": TimelineSection("A", 0.0, 2.0, 2.0, 1.6, _spoken("alpha beta", 0.7)),
-            "03": TimelineSection("C", 2.0, 4.5, 2.5, 4.1, _spoken("gamma delta", 2.1)),
-            "04": TimelineSection("D", 4.5, 6.0, 1.5, 5.8, _spoken("epsilon", 4.6)),
-        },
-    )
-    rows = [
-        RenderedSection(p.sections[0], tmp_path / "01.mp4", 2.0, "page"),
-        RenderedSection(p.sections[1], tmp_path / "02.mp4", 3.0, "clip", audio=tmp_path / "broll.mp4"),
-        RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.52, "page"),
-        RenderedSection(p.sections[3], tmp_path / "04.mp4", 1.48, "page"),
-    ]
-    return p, tl, rows
-
-
-def test_narration_runs_pause_for_a_clip_between_page_sections(tmp_path):
-    from decktalk.stages.assemble import NarrationRun, narration_offsets, narration_runs, section_starts
-
-    p, tl, rows = _mid_clip_plan(tmp_path)
-    starts = section_starts(rows)
-    assert starts == {"01": 0.0, "02": 2.0, "03": 5.0, "04": 7.52}
-    assert narration_runs(rows, tl, starts) == [
-        NarrationRun(keys=("01",), at=0.0, start=0.0, end=2.0),
-        NarrationRun(keys=("03", "04"), at=5.0, start=2.0, end=None),
-    ]
-    # Every section after the clip hears its words one clip later than the track holds them.
-    assert narration_offsets(rows, tl, starts) == {"01": 0.0, "03": 3.0, "04": 3.0}
-    # Without a clip between page sections there is one run, and every section shares its offset.
-    edge = [rows[1], rows[0], rows[2], rows[3]]
-    edge_starts = section_starts(edge)
-    assert len(narration_runs(edge, tl, edge_starts)) == 1
-    assert narration_offsets(edge, tl, edge_starts) == {"01": 3.0, "03": 3.0, "04": 3.0}
-
-
-def test_plan_mix_places_each_narration_run_at_its_section_start(tmp_path):
-    from decktalk.stages.assemble import plan_mix
-
-    p, tl, rows = _mid_clip_plan(tmp_path)
-    plan = plan_mix(p, rows, tl, soundscape=False)
-    assert plan.total == 9.0
-    narration = str(p.narration_dir / "narration.mp3")
-    assert [path for mode, path in plan.inputs] == [
-        "anullsrc=r=48000:cl=stereo",
-        narration,
-        narration,
-        str(rows[1].audio),
-    ]
-    assert "atrim=start=0.000:end=2.000,asetpts=PTS-STARTPTS,adelay=0:all=1[narr0]" in plan.filter
-    assert "atrim=start=2.000,asetpts=PTS-STARTPTS,adelay=5000:all=1[narr1]" in plan.filter
-    assert "adelay=2000:all=1[clip02]" in plan.filter
-    assert plan.filter.endswith("[anchor][narr0][narr1][clip02]amix=inputs=4:duration=first:normalize=0[a]")
-    # The music ducks under each section where it plays, and under the clip.
-    music = tmp_path / "music.mp3"
-    music.write_bytes(b"x")
-    p.document = replace(p.document, mix=type(p.mix)(music=str(music)))
-    ducked = plan_mix(p, rows, tl, soundscape=True).filter
-    for a, b in [(0.0, 1.6), (5.0, 7.1), (7.5, 8.8), (2.0, 5.0)]:
-        assert f"(t-{a:.3f})" in ducked and f"({b:.3f}-t)" in ducked, (a, b)
-
-
-def test_captions_and_chapters_skip_over_a_clip_between_page_sections(tmp_path):
-    from decktalk.stages.assemble import build_captions, build_chapters, narration_offsets, section_starts
-
-    p, tl, rows = _mid_clip_plan(tmp_path)
-    cues = build_captions(tl, narration_offsets(rows, tl, section_starts(rows)))
-    assert [(c.text, c.start) for c in cues] == [("alpha beta", 0.7), ("gamma delta", 5.1), ("epsilon", 7.6)]
-    assert all(c.end <= 2.0 or c.start >= 5.0 for c in cues)  # nothing is captioned over the clip
-    assert cues[0].end <= 2.0
-    chapters = build_chapters(rows, p.chapters())
-    assert [(c.start, c.end, c.title) for c in chapters] == [
-        (0.0, 2.0, "Section 1"),
-        (2.0, 5.0, "Section 2"),
-        (5.0, 7.52, "Section 3"),
-        (7.52, 9.0, "Section 4"),
-    ]
-
-
-def test_loudness_problems_report_peaks_and_missed_targets(tmp_path):
-    from decktalk.media.audio import Loudness
-    from decktalk.stages.assemble import loudness_problems
-
-    p = Project.load(write_project(tmp_path), environ={})
-    assert loudness_problems(p, Loudness(i=-16.4, tp=-1.6, lra=5, thresh=-27, offset=0)) == []
-    over = loudness_problems(p, Loudness(i=-25.2, tp=-1.0, lra=5, thresh=-27, offset=0))
-    assert len(over) == 2 and "true peak -1.0 dBTP" in over[0] and "9.2 LU" in over[1]
 
 
 def test_video_defaults_match_the_recorder():
@@ -1100,48 +917,6 @@ page = "deck/index.html"
 """
 
 
-def test_assemble_skips_loudness_on_an_estimated_timeline(tmp_path, monkeypatch, caplog):
-    import importlib
-
-    # decktalk.stages exports a function named assemble, so the module is imported by its full name.
-    asm = importlib.import_module("decktalk.stages.assemble")
-
-    root = write_project(tmp_path, PAGES_TOML)
-    (root / "script.md").write_text("## 1. A\n\nHi.\n\n## 2. B\n\nYes.\n\n## 3. C\n\nNo.\n", encoding="utf-8")
-    p = Project.load(root, environ={})
-    tl = Timeline(
-        narration="narration.mp3",
-        total_seconds=2.0,
-        sections={"01": TimelineSection("A", 0, 2.0, 2.0, 1.0, [Word("Hi", 0.7, 1.0)])},
-        estimated=True,
-    )
-    tl.save(p.timeline_path)
-    p.out_dir.mkdir(parents=True)
-    p.sections_dir.mkdir(parents=True)
-    rows = [asm.RenderedSection(p.sections[0], p.sections_dir / "01.mp4", 2.0, "page")]
-
-    def write_last(*args):
-        Path(args[-1]).write_bytes(b"x")
-
-    def no_loudness(*args):
-        raise AssertionError("a build without voice must not be normalized")
-
-    monkeypatch.setattr(asm, "render_sections", lambda project, timeline, strict: rows)
-    monkeypatch.setattr(asm, "concat", lambda files, out: out.write_bytes(b"x"))
-    monkeypatch.setattr(asm, "mux_chapters", lambda src, chapters, dst: dst.write_bytes(b"x"))
-    monkeypatch.setattr(asm, "normalize_loudness", no_loudness)
-    monkeypatch.setattr(asm.ffmpeg, "run", write_last)
-    monkeypatch.setattr(asm.ffmpeg, "probe_duration", lambda path: 2.0)
-    with caplog.at_level("INFO", logger="decktalk.stages.assemble"):
-        result = asm.assemble(p, soundscape=False)
-    assert result.loudness is None and result.warnings == []
-    assert any(
-        r.getMessage() == "[loud] skipped: the narration is a silent placeholder, so there is no speech to normalize, "
-        "and the clicks stay at -24 dBFS for the a/v check"
-        for r in caplog.records
-    )
-
-
 def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
     toml = (
         "[[section]]\nnumber = 1\npage = 'a.html'\n"
@@ -1156,29 +931,6 @@ def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
         Project.load(write_project(tmp_path, first), environ={})
     with pytest.raises(ConfigError, match="'seamless' must be bool"):
         Project.load(write_project(tmp_path, toml.replace("seamless = true", "seamless = 1")), environ={})
-
-
-def test_build_captions_uses_the_take_index_spoken_text(tmp_path):
-    from decktalk.stages.assemble import build_captions, caption_texts
-
-    root = write_project(tmp_path, PAGES_TOML)
-    p = Project.load(root, environ={})
-    words = [Word("hello", 0.5, 0.9), Word("there", 1.0, 1.4)]
-    tl = Timeline(narration="n.mp3", total_seconds=2.0, sections={"01": TimelineSection("A", 0, 2.0, 2.0, 1.4, words)})
-    m = Takes(script="script.md", model="m", output_format="mp3")
-    m.sections["01"] = Take(1, "A", "01-a.mp3", "01-a.words.json", "h", 2, 1.0, 2.0, spoken="Hello, there.")
-    m.save(p.takes_path)
-    # No script.md exists, so the text can only come from the take_index.
-    assert caption_texts(p, tl) == {"01": "Hello, there."}
-    assert [c.text for c in build_captions(tl, 0.0, caption_texts(p, tl))] == ["Hello, there."]
-    # A take_index written before the field existed falls back to the script.
-    raw = json.loads(p.takes_path.read_text(encoding="utf-8"))
-    del raw["sections"]["01"]["spoken"]
-    p.takes_path.write_text(json.dumps(raw), encoding="utf-8")
-    (root / "script.md").write_text(
-        "## 1. A\n\nHello there!\n\n## 2. B\n\nTwo.\n\n## 3. C\n\nThree.\n", encoding="utf-8"
-    )
-    assert caption_texts(p, tl)["01"] == "Hello there!"
 
 
 def test_provider_errors_never_show_the_voice_id(monkeypatch):
@@ -1243,56 +995,11 @@ page = "deck/index.html"
 """
 
 
-def _titled_clip_rows(tmp_path, *, clip_audio: bool = True):
-    from decktalk.stages.assemble import RenderedSection
-
-    p = Project.load(write_project(tmp_path, TITLED_CLIP_TOML), environ={})
-    audio = tmp_path / "media" / "before.mov" if clip_audio else None
-    rows = [
-        RenderedSection(p.sections[0], tmp_path / "01.mp4", 2.0, "page"),
-        RenderedSection(p.sections[1], tmp_path / "02.mp4", 3.0, "clip", audio=audio),
-        RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.52, "page"),
-        RenderedSection(p.sections[3], tmp_path / "04.mp4", 1.48, "page"),
-    ]
-    return p, rows
-
-
 def test_a_clip_section_reads_its_words_key(tmp_path):
-    p, _rows = _titled_clip_rows(tmp_path)
+    p = Project.load(write_project(tmp_path, TITLED_CLIP_TOML), environ={})
     assert p.sections[1].is_clip and p.sections[1].words == "media/before.words.json"
     plain = Project.load(write_project(tmp_path, MID_CLIP_TOML), environ={})
     assert plain.sections[1].words is None
-
-
-def test_clip_captions_place_the_clip_speech_at_the_clip_start(tmp_path, caplog):
-    from decktalk.artifacts import write_words
-    from decktalk.stages.assemble import clip_captions
-
-    p, rows = _titled_clip_rows(tmp_path)
-    (tmp_path / "media").mkdir()
-    words = [Word("Watch", 0.2, 0.5), Word("it.", 0.6, 0.9), Word("One.", 1.4, 1.7), Word("Late.", 3.1, 3.4)]
-    write_words(tmp_path / "media" / "before.words.json", words)
-    cues = clip_captions(p, rows)
-    assert [(c.text, c.start) for c in cues] == [("Watch it. One.", 2.2)]  # the word after the picture ends is dropped
-    assert cues[0].end <= 5.0
-    # A slate plays no speech, so it gets no captions.
-    _p, slate_rows = _titled_clip_rows(tmp_path, clip_audio=False)
-    assert clip_captions(p, slate_rows) == []
-    # A missing words file warns and captions nothing.
-    (tmp_path / "media" / "before.words.json").unlink()
-    assert clip_captions(p, rows) == []
-    assert "words file missing" in caplog.text
-
-
-def test_consecutive_sections_with_the_same_title_share_one_chapter(tmp_path):
-    from decktalk.stages.assemble import build_chapters
-
-    p, rows = _titled_clip_rows(tmp_path)
-    assert [(c.start, c.end, c.title) for c in build_chapters(rows, p.chapters())] == [
-        (0.0, 2.0, "Open"),
-        (2.0, 7.52, "The edit"),
-        (7.52, 9.0, "Close"),
-    ]
 
 
 # ---- narration tail -------------------------------------------------------------------------
@@ -1374,53 +1081,6 @@ def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkey
     assert p.lead_seconds("01") == 1.5 and p.lead_seconds("02") == 0.0
     assert "ignoring 'lead_seconds', which applies only to a page section" in caplog.text
     assert Project.load(write_project(tmp_path, MINIMAL_TOML), environ={}).page_sections[0].tail_seconds is None
-
-
-def test_a_hold_between_page_sections_pauses_the_narration(tmp_path):
-    from decktalk.stages.assemble import (
-        NarrationRun,
-        RenderedSection,
-        build_captions,
-        narration_offsets,
-        narration_runs,
-        plan_mix,
-        section_starts,
-    )
-
-    toml = (
-        "[[section]]\nnumber = 1\npage = 'a.html'\nhold_seconds = 2\n[[section]]\nnumber = 2\npage = 'a.html'\n"
-        "[[section]]\nnumber = 3\npage = 'a.html'\nhold_seconds = 1\n"
-    )
-    p = Project.load(write_project(tmp_path, toml), environ={})
-    tl = Timeline(
-        narration="narration.mp3",
-        total_seconds=6.0,
-        sections={
-            "01": TimelineSection("A", 0.0, 2.0, 2.0, 1.6, _spoken("alpha beta", 0.7)),
-            "02": TimelineSection("B", 2.0, 4.5, 2.5, 4.1, _spoken("gamma delta", 2.1)),
-            "03": TimelineSection("C", 4.5, 6.0, 1.5, 5.8, _spoken("epsilon", 4.6)),
-        },
-    )
-    rows = [
-        RenderedSection(p.sections[0], tmp_path / "01.mp4", 4.0, "page"),  # 2 s of narration and a 2 s hold
-        RenderedSection(p.sections[1], tmp_path / "02.mp4", 2.52, "page"),
-        RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.48, "page"),
-    ]
-    starts = section_starts(rows)
-    assert narration_runs(rows, tl, starts) == [
-        NarrationRun(keys=("01",), at=0.0, start=0.0, end=2.0),
-        NarrationRun(keys=("02", "03"), at=4.0, start=2.0, end=None),
-    ]
-    offsets = narration_offsets(rows, tl, starts)
-    assert offsets == {"01": 0.0, "02": 2.0, "03": 2.0}
-    plan = plan_mix(p, rows, tl, soundscape=False)
-    assert "atrim=start=0.000:end=2.000,asetpts=PTS-STARTPTS,adelay=0:all=1[narr0]" in plan.filter
-    assert "atrim=start=2.000,asetpts=PTS-STARTPTS,adelay=4000:all=1[narr1]" in plan.filter
-    assert [(c.text, c.start) for c in build_captions(tl, offsets)] == [
-        ("alpha beta", 0.7),
-        ("gamma delta", 4.1),
-        ("epsilon", 6.6),
-    ]
 
 
 # ---- the take plan and preflight ---------------------------------------------------------

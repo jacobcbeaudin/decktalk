@@ -209,18 +209,28 @@ def statuses(doc: dict[str, Any]) -> dict[str, str]:
     return {s["key"]: s["status"] for s in doc["narrate"]["sections"]}
 
 
-def srt_spans(path: Path) -> list[tuple[float, float]]:
-    def seconds(stamp: str) -> float:
-        hms, ms = stamp.split(",")
+def srt_cues(path: Path) -> list[tuple[float, float, str]]:
+    """Every caption of an SRT file as (start, end, text), in the order it plays."""
+    rows: list[tuple[float, float, str]] = []
+    blocks = path.read_text(encoding="utf-8").strip().split("\n\n")
+    for block in blocks:
+        lines = block.splitlines()
+        [stamp] = [line for line in lines if " --> " in line]
+        a, b = srt_times(stamp)
+        rows.append((a, b, "\n".join(lines[lines.index(stamp) + 1 :])))
+    return rows
+
+
+def srt_times(stamp: str) -> tuple[float, float]:
+    """The two times of one SRT timestamp line, in seconds."""
+
+    def seconds(value: str) -> float:
+        hms, ms = value.split(",")
         h, m, s = hms.split(":")
         return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
 
-    spans: list[tuple[float, float]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if " --> " in line:
-            a, b = line.split(" --> ")
-            spans.append((seconds(a), seconds(b)))
-    return spans
+    a, b = stamp.split(" --> ")
+    return seconds(a), seconds(b)
 
 
 # ---- the build ---------------------------------------------------------------------------------
@@ -335,12 +345,73 @@ def test_captions_and_chapter_files_are_written(built: Built) -> None:
         assert (built.out / name).stat().st_size > 0, name
     spans = built.spans()
     clip_at, clip_end = spans["03"]
-    captions = srt_spans(built.out / "pipeline.srt")
+    captions = [(a, b) for a, b, _text in srt_cues(built.out / "pipeline.srt")]
     assert captions
     over = [c for c in captions if c[0] < clip_end - 1e-3 and c[1] > clip_at + 1e-3]
     assert not over, f"captions over the clip at {clip_at:.2f}-{clip_end:.2f}: {over}"
     assert any(clip_end <= c[0] < spans["04"][1] for c in captions), "section 4 has no captions after the clip"
     assert "WEBVTT" in (built.out / "pipeline.vtt").read_text(encoding="utf-8")[:6]
+
+
+def test_the_cut_list_records_where_every_section_plays(built: Built) -> None:
+    cuts = json.loads((built.out / "cuts.json").read_text(encoding="utf-8"))
+    spans = built.spans()
+    assert cuts["fps"] == FPS and abs(cuts["total_seconds"] - spans["05"][1]) < 0.05
+    rows = {f"{r['section']:02d}": r for r in cuts["sections"]}
+    assert set(rows) == set(spans)
+    for key, (start, end) in spans.items():
+        assert (rows[key]["start"], rows[key]["end"]) == pytest.approx((start, end), abs=1e-3)
+    assert rows["03"]["kind"] == "clip" and rows["03"]["source"] == "media/broll.mp4"
+    assert rows["01"]["source"] == "build/recordings/01.webm"
+    # Section 5's clip is missing on purpose, so the row says a slate stands in for it.
+    assert rows["05"]["substitute"] == "slate" and [r for r in cuts["sections"] if r["substitute"]] == [rows["05"]]
+
+
+def test_the_transcript_page_and_the_poster_are_written(built: Built) -> None:
+    """The transcript is the media alternative, and the poster is a lossless PNG from the page."""
+    page = (built.out / "pipeline-transcript.html").read_text(encoding="utf-8")
+    assert page.startswith("<!doctype html>") and "<script" not in page
+    for chapter in ("Blocks", "B-roll", "Equation", "Missing"):
+        assert f"<h2>{chapter}</h2>" in page, chapter
+    assert "A first block, a second beside it, a third below." in page
+    assert "A clip plays here: media/broll.mp4." in page and "A placeholder slate frame plays here." in page
+
+    # A player names the audio from this tag, and the container takes the three-letter code alone.
+    streams = built.probe("-show_entries", "stream=codec_type:stream_tags=language")["streams"]
+    tagged = {s["codec_type"]: s.get("tags", {}).get("language") for s in streams}
+    assert tagged["video"] == "eng" and tagged["audio"] == "eng"
+
+    poster = built.out / "pipeline-poster.png"
+    assert poster.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "the poster is a lossless PNG"
+    probe = built.probe("-show_entries", "stream=width,height,codec_name", path=poster)["streams"][0]
+    assert (probe["codec_name"], probe["width"], probe["height"]) == ("png", 1920, 1080)
+    # Drawn by the page with its reveals fired, so it is not the film's first frame with nothing on it.
+    first = built.root / "build" / "first-frame.png"
+    ffmpeg.run("-ss", "0.5", "-i", str(built.out / "pipeline.mp4"), "-frames:v", "1", "-y", str(first))
+    assert frames.changed_images_percent(first, poster, level=40, width=480, height=270) > 1.0, (
+        "the poster is drawn by the page, not taken from the mp4"
+    )
+
+
+def test_the_cued_sound_reaches_the_captions(built: Built) -> None:
+    """A sound a viewer is meant to notice is written down where it plays, in both caption files."""
+    srt = (built.out / "pipeline.srt").read_text(encoding="utf-8")
+    vtt = (built.out / "pipeline.vtt").read_text(encoding="utf-8")
+    assert "[a tick lands]" in srt and "[a tick lands]" in vtt
+    spans = built.spans()
+    cues = srt_cues(built.out / "pipeline.srt")
+    [(at, end, text)] = [row for row in cues if "[a tick lands]" in row[2]]
+    assert spans["01"][0] <= at < spans["01"][1], "the sound caption sits in the section that cues it"
+    assert text.splitlines()[-1] == "[a tick lands]", "the sound is a line of its own"
+    assert end - at >= 1.0, "no caption is on screen for under a second"
+
+
+def test_no_two_captions_are_on_screen_at_once(built: Built) -> None:
+    """Two overlapping cues are drawn twice or dropped, so a sound under speech joins the speech cue."""
+    spans = [(a, b) for a, b, _text in srt_cues(built.out / "pipeline.srt")]
+    assert spans == sorted(spans)
+    assert all(b <= next_a for (_a, b), (next_a, _b) in zip(spans, spans[1:], strict=False))
+    assert all(b - a >= 1.0 - 1e-3 for a, b in spans), "no caption is on screen for under a second"
 
 
 def test_the_broll_clip_keeps_its_own_sound(built: Built) -> None:

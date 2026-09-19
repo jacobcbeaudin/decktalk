@@ -319,20 +319,59 @@ Note: `record` reports `PAGE ERROR` for any entry in `page_errors`, and `decktal
 
 ## `build/out/`
 
-The out directory holds each cut section, the final video, its captions, and its chapters.
+The out directory holds each cut section and everything a viewer receives: the final video, its
+captions, its chapters, its cut list, its transcript page and its poster.
 
 | File | Meaning |
 |---|---|
 | `sections/NN.mp4` | One section cut to its span, at the project's frame size, with no audio. `assemble` and `verify` read only the files of sections in `decktalk.toml`, and warn about any other file with this name. |
-| `<name>.mp4` | The final video, with one chapter per section. Consecutive sections with the same title share a chapter. |
+| `<name>.mp4` | The final video, with one chapter per section, and both streams tagged with `[project] language`. Consecutive sections with the same title share a chapter. |
 | `<name>-YYYYMMDD-HHMM.mp4` | A timestamped copy of the final video, written when `[output] timestamped_copy` is on. |
-| `<name>.srt`, `<name>.vtt` | Captions from the word times, in final mp4 time, with the script's punctuation and case. |
+| `<name>.srt`, `<name>.vtt` | Captions from the word times, in final mp4 time, with the script's punctuation and case. A cue stays on screen for at least one second unless the next cue begins before that, no cue runs into the cue after it, and a cued sound that names a caption joins the cue it lands in, or the cue it has no second of room before, as a line of its own. |
 | `<name>.chapters.txt` | An ffmetadata file with one `[CHAPTER]` per section, titled from `decktalk.toml`. Consecutive sections with the same title share one `[CHAPTER]`. |
+| `<name>-transcript.html` | The whole video as one plain page: one heading per chapter, one paragraph per section under it in the order those sections play, and each reveal the page described. A clip that names a words file carries what is spoken inside it, and a section that spoke nothing carries a line saying what plays there instead. It is the media alternative for a viewer who cannot see or cannot hear the video. |
+| `<name>-poster.png` | A lossless PNG of the video's opening slide with every one of its reveals fired, drawn by the page in freeze mode and never taken from the mp4. |
+| `cuts.json` | The cut list: where every section plays, what it was cut from, and what stands in for it. |
 | `slates/NN-slate.png` | The slate image of a clip section whose file is missing. |
+
+### `cuts.json`
+
+```json
+{
+  "fps": 25,
+  "total_seconds": 22.36,
+  "sections": [
+    {
+      "section": 3,
+      "kind": "clip",
+      "start": 12.88,
+      "end": 15.4,
+      "source": "media/broll.mp4",
+      "substitute": null,
+      "chapter": "B-roll",
+      "dip_in": true,
+      "dip_out": true
+    }
+  ]
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `fps` | integer | Frames per second of the final video, from `[video] fps`. |
+| `total_seconds` | number | Length of the final video, the sum of every row. |
+| `sections[].section` | integer | The section number, as `decktalk.toml` writes it. |
+| `sections[].kind` | string | `page` or `clip`. |
+| `sections[].start`, `end` | number | Where the section plays in the final video. |
+| `sections[].source` | string | The recording or the clip this section was cut from, relative to the project. |
+| `sections[].substitute` | string or null | `slate` when a missing clip played its slate, `black` when a missing recording played black, null otherwise. |
+| `sections[].chapter` | string | The chapter title of the section. |
+| `sections[].dip_in`, `dip_out` | boolean | Whether the section fades in from, or out to, the transition dip. |
 
 Captions break at sentence ends.
 
 - A caption never spans two sections.
+- A cued sound that sets `caption` under `[[mix.sfx]]` gets its own one-second cue, such as `[ball bounces]`, because captions carry the whole soundtrack and not only the dialogue.
 - No caption covers a clip section, unless the section sets `words`. Those captions come from the clip's words file.
 - A caption also ends before any silence of 1 s or more.
 - Whole sentences share a caption when they fit. A sentence too long for one caption splits at the comma

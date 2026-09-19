@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import CueTimes, Takes, Timeline, Word, read_words
+from ..artifacts import CueTimes, Cuts, RecordingLog, Takes, Timeline, Word, read_words
 from ..errors import ConfigError, DeckTalkError
 from ..jsonio import relative
 from ..secret import Secret
@@ -197,6 +197,10 @@ class Project:
         return self.workspace.cue_times_path
 
     @property
+    def cuts_path(self) -> Path:
+        return self.workspace.cuts_path
+
+    @property
     def final(self) -> Path:
         return self.workspace.final
 
@@ -304,3 +308,10 @@ class Project:
 
     def cue_times(self) -> CueTimes:
         return CueTimes.load(self.cue_times_path)
+
+    def cuts(self) -> Cuts | None:
+        return Cuts.load(self.cuts_path)
+
+    def recording_log_of(self, key: str) -> RecordingLog | None:
+        """One section's recording log by its two-digit key, or None when that section was never recorded."""
+        return RecordingLog.load(self.workspace.recording_log(key))

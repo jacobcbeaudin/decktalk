@@ -3,7 +3,8 @@
     build/out/<name>.srt   the cues as SubRip
     build/out/<name>.vtt   the same cues as WebVTT
 
-A cue never spans a section boundary, so a caption is always the speech of one section.
+A cue never spans a section boundary, so a caption is always the speech of one section. A cue stays
+on screen for at least `CAPTION_MIN_SECONDS`, unless the next cue begins before that.
 """
 
 from __future__ import annotations
@@ -17,6 +18,9 @@ from ..artifacts.words import Word
 CAPTION_MAX_CHARS = 42  # The longest line a cue may carry, in characters. A cue has at most two lines.
 CAPTION_MIN_SILENCE = 1.0  # A silence at least this long between two words always ends the cue.
 CAPTION_TAIL = 0.2  # Seconds a cue lingers after its last word, unless the next cue begins first.
+# The shortest a cue may stay on screen, unless the next cue needs the room. A caption held for less
+# than a second cannot be read, which is what WCAG success criterion 1.2.2 asks captions to be.
+CAPTION_MIN_SECONDS = 1.0
 CAPTION_MAX_UNITS = 8  # The most sentences one cue is ever considered to hold.
 
 # Short words a line should not end on and a split should not touch, so "billions of billions" stays whole.
@@ -176,7 +180,7 @@ def caption_cues(
     for i, group in enumerate(groups):
         wrapped = _wrap(group, max_chars, several=True)
         lines = wrapped[0] if wrapped else [_join(group)]
-        end = group[-1].end + CAPTION_TAIL
+        end = max(group[-1].end + CAPTION_TAIL, group[0].start + CAPTION_MIN_SECONDS)
         if i + 1 < len(groups):  # a cue lingers briefly after its last word, but never into the next cue
             end = min(end, groups[i + 1][0].start)
         cues.append(CaptionCue(round(group[0].start, 3), round(max(end, group[-1].end), 3), tuple(lines)))

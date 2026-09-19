@@ -53,6 +53,10 @@ class ClipSection:
         return True
 
 
+# The query keys DeckTalk's own runtime sets on a still, which a section's params may not name.
+FREEZE_QUERY_KEYS = ("cues", "t0", "slide", "after", "before")
+
+
 @dataclass(frozen=True)
 class PageSection:
     """A section recorded from an HTML page, cut to the narration.
@@ -85,6 +89,15 @@ class PageSection:
     @property
     def is_clip(self) -> bool:
         return False
+
+    @property
+    def freeze_params(self) -> dict[str, str]:
+        """The params a still of this section carries, which is every one the runtime does not set itself.
+
+        A frozen frame and the poster both ask the page for a state rather than for the film, so they
+        set `slide`, `after` and `before` themselves and pass the author's own params through.
+        """
+        return {k: v for k, v in self.params.items() if k not in FREEZE_QUERY_KEYS}
 
 
 Section = ClipSection | PageSection
@@ -220,9 +233,9 @@ class Document:
         numbers = {s.number for s in sections}
         return cls(
             name=project.get_str("name", default_name),
-            script=project.get_str("script", "script.md"),
-            cues=project.get_str("cues", "cues.json"),
-            build=project.get_str("build", "build"),
+            script=project.get_path("script", "script.md"),
+            cues=project.get_path("cues", "cues.json"),
+            build=project.get_path("build", "build"),
             language=project.get_str("language", "en"),
             sections=sections,
             voice=parse_voice(doc),
@@ -303,11 +316,11 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
         warn_section_keys(t, clip=True)
         return ClipSection(
             number=number,
-            clip=t.get_str("clip", ""),
+            clip=t.get_path("clip", ""),
             chapter=chapter,
             slate_seconds=t.get_num("slate_seconds", 5.0),
             optional=t.get_bool("optional"),
-            words=t.get_str("words"),
+            words=t.get_path("words"),
             seamless=t.get_bool("seamless"),
         )
     if "page" not in raw:
@@ -323,7 +336,7 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
             raise ConfigError(f"{t.where}: '{key}' must be 0 or more, got {value:g}")
     return PageSection(
         number=number,
-        page=t.get_str("page", ""),
+        page=t.get_path("page", ""),
         scene=str(scene),
         chapter=chapter,
         record_margin_seconds=t.get_num("record_margin_seconds", 0.3),
@@ -413,7 +426,7 @@ def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
             raise ConfigError(f"{s.where}: section {section} does not exist")
         sfx.append(
             Sfx(
-                file=s.get_str("file", required=True),
+                file=s.get_path("file", required=True),
                 section=section,
                 cue=s.get_str("cue", required=True),
                 db=s.get_num("db", -16.0),
@@ -422,15 +435,15 @@ def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
             )
         )
     return Mix(
-        music=t.get_str("music"),
+        music=t.get_path("music"),
         music_db=t.get_num("music_db", -24.0),
         music_duck_db=t.get_num("music_duck_db", -6.0),
         music_fade_in_seconds=t.get_num("music_fade_in_seconds", 2.0),
         music_fade_out_seconds=t.get_num("music_fade_out_seconds", 3.0),
-        music_markers=t.get_str("music_markers"),
-        ambience=t.get_str("ambience"),
+        music_markers=t.get_path("music_markers"),
+        ambience=t.get_path("ambience"),
         ambience_db=t.get_num("ambience_db", -20.0),
-        slate=t.get_str("slate"),
+        slate=t.get_path("slate"),
         sfx=tuple(sfx),
         loudness=Loudness(
             target_lufs=ln.get_num("target_lufs", -16.0),
@@ -445,7 +458,7 @@ def parse_sound(raw: dict[str, Any], where: str) -> SoundSpec:
     t.warn_unknown(SoundSpec.__dataclass_fields__)
     return SoundSpec(
         text=t.get_str("text", required=True),
-        out=t.get_str("out"),
+        out=t.get_path("out"),
         duration_seconds=t.get_num("duration_seconds"),
         prompt_influence=t.get_num("prompt_influence"),
         model_id=t.get_str("model_id"),
@@ -473,7 +486,7 @@ def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
             prompt=m.get_str("prompt", required=True),
             seconds=m.get_int("seconds", 360),
             force_instrumental=m.get_bool("force_instrumental", True),
-            out=m.get_str("out"),
+            out=m.get_path("out"),
             model_id=m.get_str("model_id"),
         )
     return Soundscape(

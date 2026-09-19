@@ -58,3 +58,4 @@ section = 1
 cue = "1.1second"
 db = -30
 offset = 0.4                  # outside the click search window of the cued word
+caption = "a tick lands"      # the caption files carry the whole soundtrack, not only the speech

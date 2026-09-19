@@ -310,7 +310,7 @@ explains.
 | `align` | A cue phrase is not found. The build stops after the align table. | `--allow-unresolved-cues` |
 | `align` | A cue id is not in its page. The build stops after the align table. | `--allow-unknown-cues` |
 | `record` | A page threw an error or has no catalog (`PAGE ERROR`). The build stops after the record table. | none |
-| `assemble` | With `--strict`, a recording is missing, or a clip is missing from a section without `optional = true`. | Set `optional = true`, or leave out `--strict`. |
+| `assemble` | With `--strict`, a recording is missing, or a clip is missing from a section without `optional = true`. A substituted slate or black section is an uncertain `SLATE?` finding. | Set `optional = true`, or leave out `--strict`. |
 | `verify` | A section starts black (`BLACK`), speech is still sounding at a cut (`SPEECH AT CUT`), or the picture jumps at the cut into a section with `seamless` (`POP AT CUT`). | none |
 | any | A stage raises an error. | none |
 
@@ -647,12 +647,13 @@ decktalk assemble [-h] [--project PROJECT] [-v] [-q] [--no-soundscape]
 
 **Reads** `timeline.json`, `takes.json`, `cue-times.json`, the recordings and recording logs, the clips, the
 markers file, the music, the ambience bed, and the sound effects. **Writes**
-`build/sections/NN.mp4`, `<name>.mp4`, `<name>.srt`, `<name>.vtt`, `<name>.chapters.txt`, and
-`build/out/slates/`, plus a copy named `<name>-YYYYMMDD-HHMM.mp4` when `[output] timestamped_copy` is on.
+`build/sections/NN.mp4`, `<name>.mp4`, `<name>.srt`, `<name>.vtt`, `<name>.chapters.txt`,
+`cuts.json`, `<name>-transcript.html`, `<name>-poster.png` and `build/out/slates/`, plus a copy
+named `<name>-YYYYMMDD-HHMM.mp4` when `[output] timestamped_copy` is on.
 
-- Without `--strict`, a missing clip plays a titled slate for `slate_seconds`, and a missing recording plays black.
+- Without `--strict`, a missing clip plays a titled slate for `slate_seconds`, and a missing recording plays black. Either way the section is an uncertain `SLATE?` finding, and `cuts.json` records which.
 - `assemble` trims each recording at the `t0_seconds` that `record` wrote into its log beside it.
-  Without `--strict`, `assemble` warns and continues. With `--strict`, it stops.
+- The poster is drawn by the page in freeze mode, so it is the film's opening slide with every one of its reveals fired, as a lossless PNG and never a frame re-encoded from the mp4.
 - A missing music file, ambience bed, markers file, or sound effect logs a warning and plays without it.
 - A build without voice skips the loudness pass, so `--strict` has no loudness to fail on.
 - `assemble` prints the final path and length on stdout.
@@ -683,6 +684,13 @@ section 07: media/edit-after.mov missing; slate for 5.04s (drop your clip at tha
 [chap] 5 chapter(s) -> my-lesson.chapters.txt
 done: ~/my-lesson/build/out/my-lesson.mp4  (257.72s)  copy: my-lesson-20260914-0003.mp4
 ~/my-lesson/build/out/my-lesson.mp4  (257.72s)
+  build/out/my-lesson.srt
+  build/out/my-lesson.vtt
+  build/out/my-lesson.chapters.txt
+  build/out/cuts.json
+  build/out/my-lesson-transcript.html
+  build/out/my-lesson-poster.png
+  build/out/my-lesson-20260914-0003.mp4
 ```
 
 ### `decktalk verify`

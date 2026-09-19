@@ -232,10 +232,12 @@ def cmd_record(args: argparse.Namespace) -> int:
 def cmd_assemble(args: argparse.Namespace) -> int:
     from .stages.assemble import assemble
 
-    result = assemble(
-        _project(args), soundscape=not args.no_soundscape, loudness=not args.no_loudness, strict=args.strict
-    )
+    project = _project(args)
+    result = assemble(project, soundscape=not args.no_soundscape, loudness=not args.no_loudness, strict=args.strict)
     print(f"{result.final}  ({result.duration:.2f}s)")
+    for path in result.written:
+        if path != result.final:
+            print(f"  {relative(path, project.root)}")
     return 0
 
 

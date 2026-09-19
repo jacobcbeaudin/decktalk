@@ -9,19 +9,27 @@ module here owns each file.
     build/narration/timeline.json       timeline.py    section and word times in narration.mp3
     build/cue-times.json                cue_times.py   every cue resolved against the words
     build/recordings/NN.json            recordings.py  what `record` did, judged and measured
+    build/out/cuts.json                 cuts.py        where every section sits in the finished film
 """
 
 from __future__ import annotations
 
 from .cue_times import CueTime, CueTimes
+from .cuts import BLACK, CLIP, PAGE, SLATE, Cut, Cuts
 from .recordings import Luma, RecordingChecks, RecordingLog, file_digest, gap_time, input_hash, text_digest
 from .takes import Take, Takes
 from .timeline import Timeline, TimelineSection
 from .words import Word, read_words, write_words
 
 __all__ = [
+    "BLACK",
+    "CLIP",
+    "PAGE",
+    "SLATE",
     "CueTime",
     "CueTimes",
+    "Cut",
+    "Cuts",
     "Luma",
     "RecordingChecks",
     "RecordingLog",

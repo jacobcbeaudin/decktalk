@@ -263,7 +263,8 @@ def test_mix_pauses_the_narration_for_a_clip_between_page_sections(tmp_path):
     """Pages 1 and 3 around a clip at 2, where section 3's words resume after the clip's own sound."""
     from decktalk.artifacts import Timeline, TimelineSection
     from decktalk.model import Project
-    from decktalk.stages.assemble import RenderedSection, mix_input_args, plan_mix
+    from decktalk.stages.assemble.cut import RenderedSection
+    from decktalk.stages.assemble.mix import mix_input_args, plan_mix
     from decktalk.stages.verify.measure import click_offset_ms
 
     (tmp_path / "decktalk.toml").write_text(
