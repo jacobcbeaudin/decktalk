@@ -48,7 +48,7 @@ To see a run before it spends credits, use `--dry-run` or `preflight`. None of t
 - `decktalk preflight` prints the same plan, resolves every cue, and estimates each reveal from frozen frames.
 - `decktalk soundscape --dry-run` prints every request.
 
-These commands never spend credits: a build without voice, `install`, `init`, `doctor`, `preflight`, `align`, `record`, `assemble`, `verify`, `screenshots`, `words`, `clip`, and `status`.
+These commands never spend credits: a build without voice, `install`, `init`, `doctor`, `preflight`, `align`, `record`, `assemble`, `verify`, `screenshots`, `words`, `clip`, `serve`, and `status`.
 
 ### ElevenLabs plans
 
@@ -97,9 +97,34 @@ If the distribution has no apt-get, this download fails. `install` then stops be
 
 `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE` override every ffmpeg source above.
 
+## Install on a managed machine
+
+A machine with no admin rights, an index mirror, or an intercepting proxy can still record. Five settings cover the cases that come up, and none of them needs a change to the project.
+
+| What the machine blocks | What to set |
+|---|---|
+| The package index | Point your installer at your mirror, the way uv, pipx, or pip already does it. DeckTalk needs one runtime dependency, Playwright. |
+| The Chromium download host | Set `PLAYWRIGHT_DOWNLOAD_HOST` to your mirror before `decktalk install`, as Playwright documents. |
+| A shared browser directory, or a read-only home | Set `PLAYWRIGHT_BROWSERS_PATH` to a directory you can write. Playwright reads it on the download and on every launch, so set it in both places. |
+| The ffmpeg download | Put an approved `ffmpeg` and `ffprobe` on the machine and name them in `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE`. Those two override every other ffmpeg source, so `install` reports them and downloads no build. |
+| A write to the default cache | Set `DECKTALK_CACHE_DIR` to a directory you can write. Everything DeckTalk downloads goes under it. |
+
+If the machine already has an approved Chrome or Chromium, record with it instead of the downloaded build. Name its executable in `[record] browser_path`.
+
+```toml decktalk.toml
+[record]
+browser_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+```
+
+The pinned Playwright build is the reference build, and DeckTalk's timing limits are measured against it. A browser of your own is supported and unverified, so check a first video's reveals with `decktalk verify` before you trust the limits.
+
+A proxy needs no rule of its own. `record`, `screenshots`, and `preflight` open every page at `http://project.localhost/` and answer each request from your project directory through Playwright's request routing, which runs before the network stack. No proxy ever sees that host, and every other request a recorded page makes goes the way the machine sends it. `decktalk serve` binds 127.0.0.1 and picks a free port, and `--host` and `--port` move it.
+
+`decktalk doctor` prints the Chromium revision and the ffmpeg build a run would use, so the machine's owner can read what a recording will launch before it runs.
+
 ## Time
 
-Recording runs in real time, one section after another. A first build without voice of the scaffold took about 276 seconds on a MacBook Pro with Apple M5 Pro and 64 GB memory. The video it made is 257.72 seconds long.
+Recording runs in real time, one section after another. A first build without voice of the starter took about 64 seconds on a MacBook Pro with Apple M5 Pro and 64 GB memory. The video it made is 44.88 seconds long, so most of the time is the recording and the encode.
 
 A slower machine takes longer. [Rebuild one section](/guides/rebuild-one-section) shows how to record only the sections that changed.
 
