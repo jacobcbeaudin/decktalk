@@ -13,13 +13,17 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 |---|---|---|
 | build | One run of `decktalk build` through all five stages. A *plain build* has no `--only`. | [How it works](/concepts/how-it-works) |
 | preflight | `decktalk preflight`. Plans the takes, resolves the cues, and estimates each reveal from frozen frames, with no credits and no recording. | [CLI](/reference/cli#decktalk-preflight) |
-| build without voice | A build with `--no-voice`. Uses estimated word times, writes a click track, and needs no account. | [How it works](/concepts/how-it-works) |
-| voiced build | A build without `--no-voice`. The speech provider voices the script. | [How it works](/concepts/how-it-works) |
+| build without voice | A build with `--no-voice`. It uses estimated word times, writes a click track, and needs no account. | [How it works](/concepts/how-it-works) |
+| voiced build | A build without `--no-voice`. The speech provider voices the script and the run spends. | [How it works](/concepts/how-it-works) |
 | stage | One of `narrate`, `align`, `record`, `assemble`, `verify`, always in that order. | [How it works](/concepts/how-it-works) |
 | project file | `decktalk.toml`. | [decktalk.toml](/reference/decktalk-toml) |
 | input files | The four files you write, in this order: `script.md`, `decktalk.toml`, `cues.json`, and the page. | [How it works](/concepts/how-it-works) |
-| scaffold | The project that `decktalk init` writes. | [Quickstart](/quickstart) |
-| demo video | The published video that DeckTalk built from the scaffold. | [Quickstart](/quickstart) |
+| starter | The three-section project that `decktalk init` writes by default. | [Quickstart](/quickstart) |
+| example | A whole project packaged in the wheel, which `decktalk init --example NAME` writes instead of the starter. | [CLI](/reference/cli#decktalk-init) |
+| install | `decktalk install`. Fetches headless Chromium and ffmpeg, once per machine. | [CLI](/reference/cli#decktalk-install) |
+| local origin | The virtual http origin that DeckTalk serves a project's own files from, so a page loads over http instead of `file://`. `decktalk serve` opens the same origin for a browser. | [What leaves your machine](/reference/what-leaves-your-machine) |
+| JSON envelope | The one object that every command prints on stdout with `--json`. | [CLI](/reference/cli#exit-codes) |
+| progress log | `build/progress.jsonl`. One JSON line per stage and section event of a run. | [Build artifacts](/reference/artifacts#build-progress-jsonl) |
 | section | A numbered part of the script (`## N.`) and its `[[section]]` table. Either a *page section* or a *clip section*. | [decktalk.toml](/reference/decktalk-toml) |
 | clip | A video file of your own that a clip section plays, with its own audio. | [Add a clip section](/guides/clip-section) |
 | slate | The titled image that plays for `slate_seconds` when a clip file is missing. | [Add a clip section](/guides/clip-section) |
@@ -38,6 +42,10 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 | own | A slide owns a cue by the three ownership rules. | [The page contract](/concepts/page-contract#cue-ownership) |
 | `hold` / `hold_seconds` | `hold` is the slide key for preview seconds. `hold_seconds` is the section key that holds a page section's last frame after its narration. | [Runtime](/reference/runtime), [decktalk.toml](/reference/decktalk-toml) |
 | handler | A function in a slide's `on` object, or one registered with `DeckTalk.on(id, fn)`. | [Runtime](/reference/runtime) |
+| page contract | What `decktalk-runtime.js` gives a page: its scenes, slides, cues, clock and reveals. | [The page contract](/concepts/page-contract) |
+| recorder probe | `decktalk-probe.js`, which a DeckTalk command injects into a page before it loads. It is never a `<script>` tag and no page references it. | [Runtime](/reference/runtime) |
+| catalog | `window.__decktalk.catalog`. One entry per scene, with its slides and their cue ids. | [Runtime](/reference/runtime#the-catalog) |
+| description string | The `data-describe` value of a reveal, which the transcript page reads. | [Runtime](/reference/runtime) |
 
 ## Cues and timing
 
@@ -73,7 +81,9 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 | words file | `build/narration/<hash>.words.json`. | [Build artifacts](/reference/artifacts) |
 | word times | The start and end of each spoken word. | [Build artifacts](/reference/artifacts) |
 | spoken words | The words in the words file. Matching and `?words=` use them. | [Cues](/concepts/cues) |
-| take index | `build/narration/takes.json`. Which take each section plays, and where each section sits in `narration.mp3`. | [Build artifacts](/reference/artifacts) |
+| take | One section's recorded narration, named by the content hash of everything that changes its audio. Two sections with the same words share one take. | [Build artifacts](/reference/artifacts#build-narration-takes-json) |
+| take index | `build/narration/takes.json`. Which take each section plays, and where each section sits in `narration.mp3`. | [Build artifacts](/reference/artifacts#build-narration-takes-json) |
+| content hash | The digest of everything that changes a take's audio, which names its files and is its identity. | [Build artifacts](/reference/artifacts#build-narration-takes-json) |
 | generate | Make soundscape audio with `decktalk soundscape`. | [Sound](/concepts/sound) |
 | music | The music under the whole video (`[mix] music`). | [Sound](/concepts/sound) |
 | ambience bed | The `[mix] ambience` audio. | [Sound](/concepts/sound) |
@@ -88,7 +98,12 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 | Term | Meaning | Explained in |
 |---|---|---|
 | recording | The webm that `record` writes for a page section. | [How it works](/concepts/how-it-works) |
-| recording log | `build/recordings/NN.json`. | [Build artifacts](/reference/artifacts) |
+| recording log | `build/recordings/NN.json`. What `record` did for one section, and everything it judged about the result. | [Build artifacts](/reference/artifacts#build-recordings-nn-json) |
+| input hash | The digest of a page, its words, its cues and every project file the page loads. `record` skips a section whose input hash has not moved. | [Build artifacts](/reference/artifacts#build-recordings-nn-json) |
+| cut list | `build/out/cuts.json`. Where every section sits in the finished film. | [Build artifacts](/reference/artifacts#cuts-json) |
+| transcript page | `build/out/<name>-transcript.html`. The whole video as one plain page, with a paragraph per section and each reveal the page described. | [Build artifacts](/reference/artifacts) |
+| poster | `build/out/<name>-poster.png`. A lossless PNG of the opening slide with every one of its reveals fired, drawn by the page. | [Build artifacts](/reference/artifacts) |
+| seam | The cut into a section that sets `seamless`, which the continuity check measures. | [Verify](/reference/verify#cut-continuity) |
 | cover | The magenta overlay that hides the page until narration t=0. | [The page contract](/concepts/page-contract#the-handshake) |
 | narration t=0 | The moment `DeckTalk.startClock()` runs. The first frame after the cover. After the first use on a page, write t=0. | [The page contract](/concepts/page-contract#the-handshake) |
 | recorder wait | `max(settle_seconds, min_cover_seconds - elapsed)`. The wait before the recorder removes the cover. | [The page contract](/concepts/page-contract#the-handshake) |
@@ -118,9 +133,9 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 | offset limit, a/v limit | `max_offset_frames` (80 ms at 25 fps) and `max_av_frames` (120 ms at 25 fps). | [Verify](/reference/verify#limits) |
 | verdict | The word or words that a table prints for a row. | [CLI](/reference/cli) |
 | finding | A verdict or note that counts toward the exit code. *Certain* exits 1. *Uncertain* ends in `?` and exits 1 only with `--strict`. | [CLI](/reference/cli#exit-codes) |
-| error | A `DeckTalkError` printed as `error: …`. Exits 1 even with `--exit-zero`. | [CLI](/reference/cli#exit-codes) |
+| error | A `DeckTalkError`, printed as `error[CODE]: …` on stderr. It exits 3 even with `--exit-zero`, and it fills the envelope's `error` slot under `--json`. | [CLI](/reference/cli#exit-codes) |
 
-Note: The scaffold's lesson also says "error", for how wrong a guess is. That word is lesson content, not a DeckTalk term. [What does the lesson mean by error?](/help/faq#what-does-the-lesson-mean-by-error) gives the precise meaning.
+Note: the lesson example also says "error", for how wrong a guess is. That word is lesson content, not a DeckTalk term. [What does the lesson mean by error?](/help/faq#what-does-the-lesson-mean-by-error) gives the precise meaning.
 
 ## Words with one meaning
 

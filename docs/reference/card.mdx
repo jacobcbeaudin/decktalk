@@ -28,9 +28,9 @@ them live in the project directory. [Your first deck](/guides/first-deck) writes
 - `[CAPS_1]` is a placeholder. Its pattern is `[A-Z][A-Z0-9_]*`.
 - `narrate` refuses a placeholder without `--allow-placeholders`.
 - `narrate` removes Markdown formatting before it sends the text.
-- DeckTalk adds `opening_silence_seconds` (0.7) of silence before the first spoken section.
-- DeckTalk pads each section to at least `min_tail_seconds` after its last word.
-- The default `min_tail_seconds` is 0.7. The scaffold sets 1.3.
+- DeckTalk places `lead_seconds` (0.5) of silence before every spoken section's first word.
+- DeckTalk places exactly `min_tail_seconds` of silence after every section's last word.
+- The default `min_tail_seconds` is 0.7. The starter sets 1.3.
 - The `est` column assumes 140 words per minute.
 - A build without voice assumes 150 words per minute plus 0.7 s per beat.
 
@@ -47,7 +47,7 @@ Full rules: [script.md](/reference/script-md).
 - Consecutive sections with the same `chapter` share one chapter.
 - A clip section with `optional = true` plays its slate under `--strict` too.
 - A clip section can sit before, between, or after page sections.
-- A page section can set `lead_seconds`, `tail_seconds`, and `hold_seconds` to add silence. A hold pauses the narration.
+- A page section can set its own `lead_seconds` and `tail_seconds`, and `hold_seconds` to add silence. A hold pauses the narration.
 - `[transition]`, `[mix]`, `[soundscape]`, and the tuning tables are optional.
 - An unknown top-level table fails the load.
 - DeckTalk warns about an unknown key inside a table, then ignores the key.
@@ -82,16 +82,17 @@ Full rules: [cues.json](/reference/cues-json) and [Cues](/concepts/cues).
 ### Pages
 
 - A page is any HTML file that a `[[section]]` names.
-- The starter has one page, `deck/index.html`. A project can have as many as it likes.
+- The starter has one page, `deck/index.html`, with three scenes. A project can have as many pages as it likes.
 - Load `decktalk-runtime.js` before any `DeckTalk.scene` call.
-- `DeckTalk.scene(N, {name, camera?, slides})` defines scene `N`.
+- A `<div data-scene="N">` holding one `<template data-slide="N.1">` per slide declares a scene in markup, and needs no JavaScript.
+- `DeckTalk.scene(N, {name, camera?, slides})` declares the same scene in script, for a slide that builds itself in code.
 - Each slide is `{id, hold?, owns?, preview?, render, enter?, on?}`.
 - `enter`, each `on[id]`, and `DeckTalk.on(id, fn)` receive `(slide, {id, at, frozen, slideId})`.
 - An element appears on its cue with `data-cue="id"`, or at a time with `data-delay="s"`.
 - `data-text="spoken"`, `data-text="count"`, and `data-text="type"` also need `data-cue` or `data-delay`.
 - Inside `render` backticks, write every backslash twice.
 - The runtime creates the stage element `#dt-stage` at 1920 by 1080.
-- A slide owns a cue with its own id, an `owns` or `preview` entry, or the longest id prefix.
+- A slide owns a cue whose id is its own, one its `owns` list names, or one whose longest slide-id prefix it is. A `preview` entry is timing only and grants no ownership.
 
 Full rules: [Runtime](/reference/runtime) and [Page contract](/concepts/page-contract).
 
@@ -105,7 +106,7 @@ Full rules: [Runtime](/reference/runtime) and [Page contract](/concepts/page-con
 ### One number for each section
 
 - The number `N` is the same in the script heading, `[[section]]`, and the `cues.json` key.
-- A section can play a scene with another number. In the scaffold, section 8 plays scene 7.
+- A section can play a scene with another number, and a cue id starts with the id of the slide that owns it rather than with the section number.
 - `align` exits 1 on a cue id that its page never quotes.
 - `build` stops on such an id unless you pass `--allow-unknown-cues`.
 
@@ -143,17 +144,18 @@ background on `html, body` and `#dt-stage`.
 uv tool install decktalk                    # Python 3.12 or later. pipx install decktalk also works.
 decktalk install                            # once per machine: Chromium and ffmpeg
 decktalk doctor                             # each tool and its path. Exit 1 on any MISSING row.
-decktalk init DIR [--name NAME] [--force]   # write the scaffold, with KaTeX in deck/katex/
+decktalk init DIR [--name NAME] [--force]   # write the starter, with KaTeX in deck/katex/
+decktalk init DIR --example lesson          # a packaged example instead. --no-skills leaves the skills out.
 decktalk build --no-voice                   # every stage with a click track. No key.
 decktalk build                              # the voiced video at build/out/<name>.mp4
 decktalk build --only 3 --preset veryfast   # record section 3 again, with a fast encode
 decktalk align                              # the cue time of every cue. Exit 1 on a missing phrase or id.
 decktalk verify                             # section starts, cuts, and every cue in the final video
-decktalk verify 1:1.1bowl 9:5.1cap          # only these two cues
+decktalk verify 1:1.1title 2:2.1code        # only these two cues
 decktalk verify --json                      # the same result as one JSON object on stdout
 decktalk screenshots                        # one PNG per slide
-decktalk screenshots --slide 2.1 --after 2.1aloud             # slide 2.1 frozen at cue 2.1aloud
-decktalk screenshots --section 9 --at 12.5  # a frame 12.5 s after narration t=0 in section 9
+decktalk screenshots --slide 2.1 --after 2.1formula           # slide 2.1 frozen at cue 2.1formula
+decktalk screenshots --section 2 --at 12.5  # a frame 12.5 s after narration t=0 in section 2
 decktalk words --only 1                     # section 1's words, in seconds after the section starts
 decktalk clip 1 --start 2.3 --end 8.4 --out media/count.mp4   # that span of section 1 as a clip and a words file
 decktalk status [--json]                    # what the four input files say, and what disagrees
@@ -161,6 +163,7 @@ decktalk narrate --dry-run                  # the text, and which sections a voi
 decktalk narrate --dry-run --json           # the same take plan as one JSON object
 decktalk preflight                          # takes, cues, and frozen reveals before a voiced build
 decktalk soundscape --dry-run               # every sound request. Sends nothing.
+decktalk serve                              # the project on the local origin, so a page loads over http
 ```
 
 - A project command takes `-p DIR`. The default is `DECKTALK_PROJECT`, then the current directory.
@@ -191,9 +194,9 @@ Every option: [CLI](/reference/cli).
 
 ## Gate a script on the video
 
-- `build` checks section starts, cuts, and cut continuity. It measures no cue.
-- `build` exits 0 on `TRUNCATED`, `STALLED`, and `NO COVER`.
-- To gate on the whole video, run `decktalk build --no-voice && decktalk verify`.
+- `build` ends with the same five checks `decktalk verify` runs, cues included.
+- `build` exits 1 on any certain finding, so `TRUNCATED`, `STALLED` and `NO COVER` each fail a run.
+- To gate a script on the video with no key, run `decktalk build --no-voice`.
 - The offset column must be between -80 ms and +80 ms.
 - After a build without voice, the `a/v` column must be between -120 ms and +120 ms.
 - `OFF CUE` prints no distance. Compare the columns with those limits.
@@ -233,7 +236,7 @@ order.
 | `build/cue-times.json` | `align` | One row per cue with `cue`, `on`, `at` and `word_at`, in seconds after the section start. |
 | `build/recordings/NN.webm`, `recordings/NN.json` | `record` | The recording and its recording log: t=0, its checks, warnings, page errors, and frame gaps. |
 | `build/sections/NN.mp4` | `assemble` | One section cut to its span, video only. |
-| `build/out/<name>.mp4` | `assemble` | The video with chapters, plus a copy with a timestamp in its name. |
+| `build/out/<name>.mp4` | `assemble` | The video with chapters, and both streams tagged with `[project] language`. A second copy named with the date and time is written only when `[output] timestamped_copy` is true. |
 | `build/out/<name>.srt`, `<name>.vtt` | `assemble` | Captions from the word times. |
 | `build/out/<name>.chapters.txt` | `assemble` | One chapter per section, or per run of sections with the same chapter. |
 | `build/screenshots/**/*.png` | `screenshots` | Review screenshots, in one folder per page when there are several pages. |
@@ -252,7 +255,7 @@ Settings come from five layers. Each layer overrides the layer before it.
 4. `DECKTALK_<TABLE>_<FIELD>` environment variables.
 5. The options `--preset`, `--crf`, `--settle`, and `--model`.
 
-The tuning tables are these six.
+The tuning tables are these seven.
 
 - `[video]`
 - `[narration]`
@@ -260,6 +263,7 @@ The tuning tables are these six.
 - `[audio]`
 - `[verify]`
 - `[elevenlabs]`
+- `[output]`
 
 `DECKTALK_CACHE_DIR` moves the ffmpeg cache. `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE` point at your
 own binaries. Set both. [CLI](/reference/cli#environment-variables) gives the default paths, and
@@ -288,7 +292,7 @@ logger. DeckTalk never prints a key.
 
 ## Python
 
-This example builds the scaffold silently and prints the final path.
+This example builds a project silently and prints the final path.
 
 ```python
 import decktalk
