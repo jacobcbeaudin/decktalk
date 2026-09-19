@@ -90,7 +90,7 @@ These keys govern how the script is turned into audio. Environment variables sta
 | `silent_beat_seconds` | `number` | `0.7` | must not be negative | Seconds each beat adds to a section's length in a build without voice. |
 | `min_tail_seconds` | `number` | `0.7` | must not be negative | Shortest silence after the last word of a section, so a cut never falls on speech. |
 | `tail_slack_seconds` | `number` | `0.05` | must not be negative | Extra silence added when `narrate` pads a short tail. |
-| `cache_dir` | `string` | `""` |  | Directory that holds the takes, their words files and the take index. It is empty for `build/narration/` inside the project, and a path here keeps the voiced takes when `build/` is deleted. |
+| `cache_dir` | `string` | `""` |  | Directory that holds the take files and their words files, each named by its content hash. It is empty for `build/narration/` inside the project, and a path here keeps the voiced takes when `build/` is deleted and lets many projects share one cache. The take index and the joined narration stay under `build/narration/`, because they belong to one project. |
 | `context_chars` | `integer` | `1500` | must not be negative | Characters of each neighbor section sent with a request, for continuous prosody. |
 | `timeout_seconds` | `integer` | `180` | must be above zero | Seconds before a speech request times out. |
 

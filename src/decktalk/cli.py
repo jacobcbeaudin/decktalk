@@ -4,7 +4,7 @@
     decktalk install                  fetch headless Chromium and ffmpeg (once per machine)
     decktalk doctor                   report what is installed
     decktalk narrate [--no-voice]     script.md -> build/narration (ElevenLabs, word timestamps, timeline)
-    decktalk narrate --dry-run        what a voiced run would send, cache, or move (--json)
+    decktalk narrate --dry-run        what a voiced run would send and what it would cost (--json)
     decktalk align                    cues.json -> build/cue-times.json
     decktalk preflight                takes, cues and frozen reveals before a voiced build: no credits, no recording
     decktalk soundscape               ambience, sfx, music (ElevenLabs)
@@ -156,39 +156,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_narrate(args: argparse.Namespace) -> int:
-    from .stages.narrate import narrate, narration_plan, plan_totals
+    from .stages.narrate import narrate
 
     if args.json and not args.dry_run:
         args.parser.error("--json needs --dry-run")
     project = _project(args)
-    cfg = project.settings.narration
-    if args.dry_run:
-        _all, spoken = project.script_sections()
-        targets = [s for s in spoken if not args.only or s.index in set(args.only)]
-        model = args.model or project.voice.model or cfg.model
-        plans, note = narration_plan(project, targets, model=model, force=args.force)
-        if args.json:
-            payload = {
-                "voice": {"provider": project.voice.provider, "model": model, "settings": project.voice.api_settings()},
-                "note": note,
-                "sections": [{**p.to_dict(cfg), "text": p.segment.tts_text(cfg)} for p in plans],
-                "totals": plan_totals(plans, cfg),
-            }
-            doc = {"command": args.cmd, "version": __version__, "ok": True, "findings": Findings().to_dict()}
-            print(dumps({**doc, args.cmd: payload}))
-            return 0
-        for seg in targets:
-            print(f"=== {seg.key} {seg.title}  -> {seg.filename}")
-            print(seg.tts_text(cfg))
-            print()
-        print(f"voice: model={model} {project.voice.api_settings()}")
-        print(report.segments_table(targets, cfg.words_per_minute))
-        print()
-        print(report.plan_table(plans, cfg, note))
-        unfilled = sorted({p for s in targets for p in s.placeholders})
-        if unfilled:
-            print(f"\nnote: unfilled placeholders {unfilled}. Fill them before the real run.")
-        return 0
     result = narrate(
         project,
         only=_only(args.only),
@@ -196,11 +168,23 @@ def cmd_narrate(args: argparse.Namespace) -> int:
         allow_placeholders=args.allow_placeholders,
         silent=args.no_voice,
         model=args.model,
+        dry_run=args.dry_run,
     )
-    print()
-    print(report.segments_table(result.segments, cfg.words_per_minute, result))
-    print()
-    print(report.timeline_table(result.timeline))
+    if args.json:
+        doc = {
+            "command": args.cmd,
+            "version": __version__,
+            "ok": True,
+            "findings": result.findings.to_dict(),
+        }
+        print(dumps({**doc, args.cmd: result.to_dict(project.root)}))
+        return 0
+    if args.dry_run:
+        for plan in result.plans:
+            print(f"=== {plan.segment.key} {plan.chapter}  -> {plan.digest or 'unknown'}")
+            print(plan.segment.tts_text(result.narration))
+            print()
+    print(report.narrate_table(result))
     return 0
 
 
@@ -348,12 +332,10 @@ def cmd_build(args: argparse.Namespace) -> int:
     from .stages.build import build
 
     project = _project(args)
-    wpm = project.settings.narration.words_per_minute
 
     def show(stage: str, result: Any) -> None:
         if stage == "narrate":
-            print(report.segments_table(result.segments, wpm, result))
-            print(report.timeline_table(result.timeline))
+            print(report.narrate_table(result))
         elif stage == "align":
             print(report.align_table(result))
         elif stage == "measure":
@@ -444,7 +426,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = proj(sub.add_parser("narrate", help="synthesize narration with word timestamps"))
     s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
     s.add_argument(
-        "--force", action="store_true", help="ignore the text-hash cache, and let --no-voice replace voiced takes"
+        "--force", action="store_true", help="ignore the content-hash cache, and let --no-voice replace paid takes"
     )
     s.add_argument(
         "--allow-placeholders", action="store_true", help="synthesize a section that still has a [CAPITAL] placeholder"
@@ -452,7 +434,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--dry-run",
         action="store_true",
-        help="print each section's text and what a voiced run would voice, cache, or move, without any API call",
+        help="print each section's text, what a voiced run would voice, and what it would cost, sending nothing",
     )
     s.add_argument("--json", action="store_true", help="with --dry-run, print the plan as one JSON object on stdout")
     s.add_argument("--no-voice", action="store_true", help="placeholder narration with no API key and no spend")

@@ -387,7 +387,7 @@ const bowlStill = (() => {
 // cues.json line for 1.1four is the whole edit. A recording of scene 1 reads the counts from the words
 // the recorder passes (?words=), and scene 2, which opens on scene 1's last frame, reads the same counts
 // from the Open's words (?prevwords=). Screenshots with no words fall back to these values, from
-// build/narration/01-open.words.json as voiced.
+// the Open's words file under build/narration/ as voiced.
 const S1_COUNT_TIMES = [4.49, 5.26, 5.77];
 const S1_COUNT_WORDS = ["one", "two", "three", "four", "five"];
 
@@ -458,7 +458,7 @@ scene(1, { name: "Open", slides: [
 
 // ---- Scene 2: how it works --------------------------------------------------------------
 // Real values, in seconds after section 3 starts: the start of each word of "For this lesson it
-// is a bowl." in section 3's words file, build/narration/03-how-ai-learns.words.json, as voiced.
+// is a bowl." in section 3's words file under build/narration/, as voiced.
 const S2_LINE_TIMES = [46.86, 47.05, 47.31, 47.87, 48.06, 48.20, 48.30];
 
 // The script card quotes section 3 of script.md line for line. JetBrains Mono advances 0.6 em,
@@ -557,19 +557,19 @@ scene(2, { name: "How it works", slides: [
 // page 8 (scene 7). Each clip is the page's last frame with the real footage in the player's video area, so
 // each page opens and ends on exactly the frame its clip shares.
 //
-// Real values from the voiced demo video, copied from its build outputs: the start of each count word in its
-// build/narration/01-open.words.json (before), and in a rebuild with ", four" added to the Open (after), that
+// Real values from the voiced demo video, copied from its build outputs: the start of each count word in
+// the Open's words file under build/narration/ (before), and in a rebuild with ", four" added to the Open (after), that
 // rebuild's narrate lines as `decktalk build` printed them (its sections numbered as the five parts, so the
 // file numbers match the chips), and its verify totals. A build of this scaffold makes different values, so
 // set them from your own builds.
 const ED_BEFORE_TIMES = [4.49, 5.26, 5.77];
 const ED_AFTER_TIMES = [4.42, 5.11, 5.62, 6.18];
 const ED_LOG = [
-  "[tts ] 01-open.mp3  30 words, est 12.9s ...",
-  "[skip] 02-how-it-works.mp3  unchanged (15.05s)",
-  "[skip] 03-how-ai-learns.mp3  unchanged (115.07s)",
-  "[skip] 04-the-edit.mp3  unchanged (23.72s)",
-  "[skip] 05-close.mp3  unchanged (10.06s)",
+  "[tts ] 01  30 words, est 12.9s ...",
+  "[skip] 02  unchanged (15.05s)",
+  "[skip] 03  unchanged (115.07s)",
+  "[skip] 04  unchanged (23.72s)",
+  "[skip] 05  unchanged (10.06s)",
 ];
 const ED_VERIFY = { pass: 67, total: 67, maxMs: 50 };
 // The script panel quotes part 1 of script.md without its [beat] directions, and the one cues.json line.

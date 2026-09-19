@@ -55,7 +55,7 @@ The next table gives the reason for each row of the first table.
 | You changed | Voiced again | Recorded again | Why |
 |---|---|---|---|
 | A sentence in section N | section N | section N | The cache key includes the exact text of the section. |
-| The heading title of section N | section N | section N | The audio file name comes from the section number and title. |
+| The heading title of section N | none | none | A take is named by its content hash, so the heading is display only. |
 | A cue of section N | none | section N | The page receives its cue times when `record` opens it. |
 | A slide | none | each section that plays the scene | A recording captures the page as it was. |
 | `record_margin_seconds` on section N | none | section N | The recording length changes. |
@@ -69,26 +69,28 @@ exception. It shows the words of the section before it, so record it again after
 
 ## The narration cache
 
-The narration cache is `build/narration/takes.json`. It holds one hash per section, made from these values:
+The narration cache is the narration directory itself. A take is named by its content hash, made from these
+values:
 
 - the speech provider's name and the voice id
 - the model and the output format
 - the voice settings
 - the exact text sent for the section
 
-The `narrate` stage skips a section when all four of these are true:
+The `narrate` stage sends nothing for a section when the mp3 and the words file of its hash are both on
+disk. `build/narration/takes.json` then says which section plays which take.
 
-- The hash matches.
-- The audio file name is unchanged.
-- The mp3 exists.
-- The words file exists.
+The hash leaves out the text of the neighbor sections, so an edit never voices a neighbor again.
 
-The hash leaves out the text of the neighbor
-sections, so an edit never voices a neighbor again.
+The hash also leaves out the section number and the heading. Inserting a section, renumbering one, or
+retitling one moves no file and voices nothing, and two sections with the same words share one take. No
+silence is inside a take: `lead_seconds` and `opening_silence_seconds` are joined in when the takes are
+joined, so even the first spoken section's take is free to move.
 
-The hash also leaves out the section number. If you renumber a section and its text is unchanged, `narrate` copies
-its take from the old file names to the new ones and prints a `[move]` line. The first spoken section is the
-exception, because only its take starts with the lead-in silence. A take never moves into or out of that place.
+Set [`[narration] cache_dir`](/reference/configuration#narration) to keep the take files outside `build/`,
+where a fresh clone and a second worktree find them again. A hash names each one, so several projects may
+share one such directory. The take index and `narration.mp3` stay under `build/narration/`, because they
+belong to one project.
 
 A section that is voiced again costs the characters of its whole text, not only the changed sentence.
 [Requirements](/requirements#what-spends-credits) lists every command that spends credits. The `record`
@@ -118,8 +120,9 @@ its words moved. `--only` needs a page section, because a clip section has no re
 Use these steps when a recording of section `N` is bad, for example after `STALLED` or `TRUNCATED`. The
 steps voice nothing when the text is unchanged, and they keep every other recording.
 
-<Warning>Run `decktalk build --no-voice` only if the last build had no voice. In a voiced project, it stops with an
-error. With `--force`, it empties the narration cache, and the next voiced build spends credits on every section.</Warning>
+<Warning>`decktalk build --no-voice` stops when a section it would write already holds a paid take, and names
+the sections that are free to rehearse. Use `--only` with those, which is how you rehearse a new section of a
+film you have already paid for.</Warning>
 
 <Steps>
   <Step title="Build the section again">
@@ -175,26 +178,28 @@ decktalk build --force
 ```
 
 `decktalk narrate --dry-run` makes no API call. It prints the text that each section would send, and a take
-plan that says which sections a voiced run would voice, keep cached, or move. So you can count the characters
-first. `decktalk narrate --dry-run --json` gives the same plan as JSON. `decktalk preflight` adds the cue check and
+plan that says which sections a voiced run would voice and which it already holds, with what the run costs.
+So you can count the characters first. `decktalk narrate --dry-run --json` gives the same plan as JSON. `decktalk preflight` adds the cue check and
 an estimate of each reveal from frozen frames, so you can fix a small reveal before you pay for the takes.
 
 ## A build without voice and a voiced build
 
-A build without voice after a voiced build would empty the narration cache. The next voiced build would then voice
-every section again and spend credits on all of them. So a `narrate` or `build` without voice stops when
-`build/narration/takes.json` holds voiced takes, and it writes nothing.
+A build without voice writes its own placeholder takes and replaces the rows of the take index. The next voiced
+build would then voice those sections again and spend credits on them. So a `narrate` or `build` without voice
+stops when a section it was asked to write already holds a paid take, and it writes nothing.
 
 ```text
-error: build/narration/takes.json holds voiced takes for sections 01. A build without voice writes click tracks over those mp3 files and replaces the take index, so the next voiced build voices every section again and spends credits on all of them. Rehearse the build without voice in a copy of the project, or pass --force to replace the voiced takes.
+error: build/narration/takes.json holds paid takes for section(s) 01. A run without voice would replace them in the take index, so the next voiced build would voice them again and spend credits on all of them. Rehearse the sections nobody has paid for: --only 4 --only 6 --only 8 --only 9.
 ```
 
-The cache would be lost for three reasons:
+The refusal is scoped to the sections the run was asked to write, so a film you have already paid for still
+rehearses its new section for nothing. The paid mp3 files themselves are never touched, because a placeholder
+take is named `silent-<hash>.mp3` and a voiced take is named by its own digest. What the run would replace is
+the index:
 
-1. The take index notes whether its entries came from a build without voice.
-2. `narrate` reuses the previous take index only when it is the same kind of build.
-3. A build without voice writes a [click track](/concepts/how-it-works#the-build-without-voice) over the voiced mp3 of
-   the same name, and it replaces the take index.
+1. The take index says, per row, whether that row is a paid take or a placeholder.
+2. `assemble` cuts to the times the index carries, and a placeholder's times are estimates.
+3. A row replaced by a placeholder is a row the next voiced build pays for again.
 
 In a project that has never been voiced, a build without voice loses nothing. The first voiced build voices every
 section anyway.

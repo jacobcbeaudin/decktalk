@@ -43,7 +43,7 @@ explains.
 | `must be int, got float` | every project command | [Entry](#must-be-in-decktalk-toml) |
 | `invalid tuning value` | every project command | [Entry](#invalid-tuning-value-in-decktalk-toml) |
 | `unfilled placeholders` | `narrate`, `build` | [Entry](#unfilled-placeholders-in-narrate) |
-| `no spoken sections match` | `narrate` | [Entry](#no-spoken-sections-match-in-narrate) |
+| `no spoken section matches` | `narrate` | [Entry](#no-spoken-section-matches-in-narrate) |
 | `have no [[section]] in decktalk.toml` | `narrate`, `build` | [Entry](#have-no-section-in-decktalk-toml-in-narrate) |
 | `have no narration yet` | `narrate` | [Entry](#have-no-narration-yet-in-narrate) |
 | `holds voiced takes` | `narrate --no-voice`, `build --no-voice` | [Entry](#holds-voiced-takes-in-narrate) |
@@ -281,12 +281,12 @@ The error reads `unfilled placeholders ['<NAME>'] in the script; fill them or pa
 
 **More.** [Directions and placeholders](/reference/script-md#directions-and-placeholders)
 
-### `no spoken sections match` in narrate
+### `no spoken section matches` in narrate
 
 {/* sample: decktalk narrate --no-voice --only 5 on a fresh scaffold */}
 
 ```text
-error: no spoken sections match [5]; spoken sections are [1, 2, 3, 4, 6, 8, 9]
+error: no spoken section matches [5]. The spoken sections are [1, 2, 3, 4, 6, 8, 9].
 ```
 
 **Cause.** `--only` names a clip section or a number with no script heading.
@@ -369,7 +369,7 @@ error: 1 cue(s) could not be matched to the narration; a slide whose cues are un
 - The phrase has a curly apostrophe. Matching removes it, but the spoken word keeps a straight one.
 
 **Fix.**
-1. Open `build/narration/NN-slug.words.json` for the section.
+1. Open the section's `words_file` from `build/narration/takes.json`.
 2. Find the words as the voice says them.
 3. Copy those words into the cue's `on` value in `cues.json`.
 4. Run `decktalk align`.

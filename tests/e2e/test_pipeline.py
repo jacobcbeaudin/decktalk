@@ -31,7 +31,7 @@ from decktalk.cli import main
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.model import Project
 from decktalk.speech import SpeechRequest, VoiceContext, get_provider
-from decktalk.stages.narrate import build_timeline, text_hash
+from decktalk.stages.narrate import build_timeline, take_name, text_hash, words_name
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(180)]
@@ -170,9 +170,11 @@ def built() -> Iterator[Built]:
 
 
 def voiced_copy(built: Built, name: str, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A copy of the built project whose take index reads as voiced takes with the hash a real run would compute.
+    """A copy of the built project whose takes sit under the content hash a real voiced run would compute.
 
-    The dry run plans against that take index and sends nothing, so a placeholder key is enough for it.
+    A take is found by its content, so the placeholder files are renamed to the digests a voiced run
+    would give them. The dry run then plans against real-looking takes and sends nothing, so a
+    placeholder key is enough for it.
     """
     root = OUT / name
     shutil.rmtree(root, ignore_errors=True)
@@ -190,12 +192,16 @@ def voiced_copy(built: Built, name: str, monkeypatch: pytest.MonkeyPatch) -> Pat
     provider = get_provider(project.voice.provider, VoiceContext(settings=project.settings, secrets=project.env))
     take_index = Takes.load(project.takes_path)
     assert take_index is not None and take_index.estimated
-    take_index.estimated = False
     take_index.model = model
     for seg in project.script_sections()[1]:
         request = SpeechRequest(seg.tts_text(cfg), model, voice_settings=settings, output_format=cfg.output_format)
-        take_index.sections[seg.key].hash = text_hash(seg, cfg, provider.cache_key(request), settings)
+        row = take_index.sections[seg.key]
+        digest = text_hash(seg, cfg, provider.cache_key(request), settings)
+        for old, new in ((row.file, take_name(digest)), (row.words_file, words_name(digest))):
+            (project.narration_dir / old).rename(project.narration_dir / new)
+        row.file, row.words_file, row.hash, row.voiced = take_name(digest), words_name(digest), digest, True
     take_index.save(project.takes_path)
+    assert not take_index.estimated
     return root
 
 
@@ -389,7 +395,7 @@ def test_narrate_dry_run_voices_only_the_changed_section(built: Built, monkeypat
     assert statuses(doc) == {"01": "cached", "02": "cached", "04": "synthesize"}
     [take] = [s for s in doc["narrate"]["sections"] if s["status"] == "synthesize"]
     assert take["reason"] == "the text, voice, model, or voice settings changed"
-    assert doc["narrate"]["totals"]["characters_sent"] == take["characters_sent"] == len(take["text"])
+    assert doc["narrate"]["totals"]["characters_sent"] == take["characters_sent"] == len(take["request"]["text"])
 
 
 def test_narrate_dry_run_plans_one_take_for_an_inserted_section(built: Built, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -442,14 +448,20 @@ def test_cues_resolve_on_uneven_word_timestamps(built: Built, monkeypatch: pytes
     assert aligned["ok"], aligned["findings"]
     [section] = [s for s in aligned["align"]["sections"] if s["key"] == "01"]
     assert section["notes"] == []
-    assert section["cues"] == {"1.1first": 0.81, "1.1second": 4.05, "1.1third": pytest.approx(3.9)}
+    # Times count from the section start, which begins with [narration] opening_silence_seconds.
+    lead = project.settings.narration.opening_silence_seconds
+    assert section["cues"] == {
+        "1.1first": round(0.81 + lead, 2),
+        "1.1second": round(4.05 + lead, 2),
+        "1.1third": pytest.approx(3.9 + lead),
+    }
     # The words file is not part of the take hash, so the take stays cached, and --only keeps section 1 alone.
     plan = run.json("narrate", "--dry-run", "--json", "--only", "1")
     assert statuses(plan) == {"01": "cached"}
     spoken = run.json("words", "--json", "--only", "1")
     [row] = spoken["words"]["sections"]
     assert row["key"] == "01" and not row["estimated"]
-    assert [(w["word"], w["start"]) for w in row["words"]] == UNEVEN
+    assert [(w["word"], w["start"]) for w in row["words"]] == [(w, round(s + lead, 3)) for w, s in UNEVEN]
     assert [w["text"] for w in row["words"]][:3] == ["A", "first", "block,"]
 
 

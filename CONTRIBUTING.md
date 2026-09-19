@@ -111,8 +111,8 @@ src/decktalk/
   report.py      the tables the CLI prints from a stage result (internal)
   scaffold.py    install, doctor, and init: the downloads and the template copy
   status.py      what a project has built, read from disk for `decktalk status`
-  stages/        narrate, align, preflight, record, measure (with check), assemble, verify, screenshots, clip (with words),
-                 soundscape, build
+  stages/        narrate/ (plan, script_rules, takes), align/ (pages), preflight, record, measure (with check), assemble,
+                 verify, screenshots, clip (with words), soundscape, build
   runtime/       decktalk-runtime.js, the page contract
   katex/         the pinned KaTeX release the pages typeset with
   template/      what `decktalk init` writes

@@ -45,8 +45,10 @@ def check_api_base(api_base: str, environ: Mapping[str, str] | None = None) -> s
     host = (parts.hostname or "").lower()
     if parts.scheme == "https" and (host == ELEVENLABS_DOMAIN or host.endswith(f".{ELEVENLABS_DOMAIN}")):
         return api_base
+    # The value is not quoted, because it may be set from the environment and reaches an error
+    # that a --json payload carries, and only the switch that lifts this check may be printed.
     raise ConfigError(
-        f"[elevenlabs] api_base must be an https URL on {ELEVENLABS_DOMAIN}, not {api_base!r}. "
+        f"[elevenlabs] api_base must be an https URL on {ELEVENLABS_DOMAIN}. "
         f"Set {ALLOW_ANY_API_BASE}=1 to send the key to another host on purpose."
     )
 

@@ -200,7 +200,7 @@ def clip(
     entry = takes.sections.get(sec.key) if takes else None
     if tsec is None or entry is None:
         raise MissingInputError(f"section {number} has no narration yet. Run `decktalk narrate` first.")
-    take = project.narration_dir / entry.file
+    take = project.takes_dir / entry.file
     if not take.exists():
         raise MissingInputError(f"section {number}'s take is missing: {take}. Run `decktalk narrate` first.")
 

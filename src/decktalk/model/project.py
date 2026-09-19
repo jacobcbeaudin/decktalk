@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +48,8 @@ class Project:
     workspace: Workspace
     env: Env
     settings: Settings
+    # script.md parsed once, because the chapters, the leads and every take row ask for it.
+    _script_sections: tuple[list[Segment], list[Segment]] | None = field(default=None, repr=False, compare=False)
 
     @classmethod
     def load(cls, where: Path | str | None = None, *, environ: dict[str, str] | None = None) -> Project:
@@ -71,13 +73,26 @@ class Project:
             log.warning(message)
         settings = load_settings(root, toml=doc, environ=environ)
         cache = settings.narration.cache_dir
+        takes = (root / cache).resolve() if cache else None
+        if takes is not None and not takes.is_relative_to(root):
+            # A project file somebody else wrote should not send this machine's takes somewhere
+            # surprising without saying so, and the path is the user's own to allow or change.
+            variable = "DECKTALK_NARRATION_CACHE_DIR"
+            chose = (os.environ if environ is None else environ).get(variable)
+            named_by = variable if chose else "[narration] cache_dir"
+            log.warning(
+                "%s puts the takes at %s, which is outside this project. Takes are named by content "
+                "hash, so several projects may share one such directory.",
+                named_by,
+                takes,
+            )
         return cls(
             root=root,
             document=document,
             workspace=Workspace(
                 build=root / document.build,
                 name=document.name,
-                narration=(root / cache).resolve() if cache else None,
+                takes=takes,
             ),
             env=Env(file=root / ".env", environ=os.environ if environ is None else environ),
             settings=settings,
@@ -150,6 +165,10 @@ class Project:
         return self.workspace.narration_dir
 
     @property
+    def takes_dir(self) -> Path:
+        return self.workspace.takes_dir
+
+    @property
     def recordings_dir(self) -> Path:
         return self.workspace.recordings_dir
 
@@ -209,8 +228,16 @@ class Project:
 
     # ---- the input files ---------------------------------------------------------------
     def script_sections(self) -> tuple[list[Segment], list[Segment]]:
-        """(every section in script.md, the spoken ones in order), checked against decktalk.toml."""
-        return read_script(self.script, declared={s.number for s in self.sections}, clips=self.clip_numbers)
+        """(every section in script.md, the spoken ones in order), checked against decktalk.toml.
+
+        The file is read once per project, as every other file this model owns is, because the
+        chapters, the leads and each take row ask for it once per section.
+        """
+        if self._script_sections is None:
+            self._script_sections = read_script(
+                self.script, declared={s.number for s in self.sections}, clips=self.clip_numbers
+            )
+        return self._script_sections
 
     def chapters(self) -> dict[int, str]:
         """One chapter title per section, which the mp4's chapter markers and a slate carry.
@@ -237,15 +264,33 @@ class Project:
         return load_markers(path) if path.exists() else None
 
     # ---- narration times -------------------------------------------------------------
+    @property
+    def first_spoken_key(self) -> str | None:
+        """The two-digit key of the section the voice reads first, or None when the script cannot be read."""
+        try:
+            spoken = self.script_sections()[1]
+        except DeckTalkError:
+            return None
+        return spoken[0].key if spoken else None
+
     def lead_seconds(self, key: str) -> float:
-        """Silence before the first word of the section with this two-digit key, in whole milliseconds."""
+        """Silence before the first word of the section with this two-digit key, in whole milliseconds.
+
+        It is the section's own `lead_seconds` plus, for the section the voice reads first,
+        `[narration] opening_silence_seconds`. Both are silence rather than speech, so they are
+        joined in when the takes are joined and are never part of a take or of its content hash,
+        which is what lets a take serve whatever section number it ends up under.
+        """
         sec = self.section(int(key))
-        return round(sec.lead_seconds, 3) if isinstance(sec, PageSection) else 0.0
+        lead = sec.lead_seconds if isinstance(sec, PageSection) else 0.0
+        if key == self.first_spoken_key:
+            lead += self.settings.narration.opening_silence_seconds
+        return round(lead, 3)
 
     def section_words(self, key: str, words_file: str) -> list[Word]:
         """A take's words in seconds after its section starts, which is after the section's lead_seconds."""
         lead = self.lead_seconds(key)
-        words = read_words(self.narration_dir / words_file)
+        words = read_words(self.takes_dir / words_file)
         if not lead:
             return words
         return [Word(w.word, round(w.start + lead, 3), round(w.end + lead, 3)) for w in words]

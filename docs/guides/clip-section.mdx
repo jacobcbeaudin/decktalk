@@ -232,7 +232,7 @@ The captions come from the narration's word times, so a clip's own speech has no
 - A slate or a clip with no audio track has no captions.
 - If the words file is missing, `assemble` prints a warning and the clip has no captions.
 
-A `NN-slug.words.json` file from `build/narration` has this format. `decktalk clip` writes the words file of a clip that
+A `<hash>.words.json` file from `build/narration` has this format. `decktalk clip` writes the words file of a clip that
 it cuts from a build. [Cut a clip from a build](#cut-a-clip-from-a-build) shows how.
 
 ## Cut a clip from a build
@@ -311,8 +311,8 @@ These steps use a scaffold after `decktalk build --no-voice`. After a voiced bui
 
 ## Keep one chapter across several sections
 
-Each section starts a chapter. Consecutive sections with the same `title` share one chapter instead. The
-scaffold's sections 4 to 8 all have `title = "The edit"`, so the video shows one chapter that spans the three
+Each section starts a chapter. Consecutive sections with the same `chapter` share one chapter instead. The
+scaffold's sections 4 to 8 all have `chapter = "The edit"`, so the video shows one chapter that spans the three
 pages and both clips.
 
 ## Fill the edit's two clips
@@ -361,9 +361,15 @@ use `bash` variables.
     print(start, end)
     ```
 
+    A take is named by its content hash, so `takes.json` is what tells you which file section 1 plays. Read the
+    name once into a shell variable, and use it for the words file and for the audio.
+
     ```console
-    read B0 B1 < <(python3 clip_words.py build/narration/01-open.words.json media/edit-before.words.json)
-    read A0 A1 < <(python3 clip_words.py ../my-lesson-after/build/narration/01-open.words.json media/edit-after.words.json)
+    take() { python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['sections']['01'][sys.argv[2]])" "$1/build/narration/takes.json" "$2"; }
+    BEFORE_TAKE=$(take . file)
+    AFTER_TAKE=$(take ../my-lesson-after file)
+    read B0 B1 < <(python3 clip_words.py "build/narration/$(take . words_file)" media/edit-before.words.json)
+    read A0 A1 < <(python3 clip_words.py "../my-lesson-after/build/narration/$(take ../my-lesson-after words_file)" media/edit-after.words.json)
     ```
   </Step>
 
@@ -398,9 +404,9 @@ use `bash` variables.
     ffmpeg -sseof -0.1 -i build/sections/04.mp4 -update 1 media/edit-before-bg.png
     ffmpeg -sseof -0.1 -i build/sections/06.mp4 -update 1 media/edit-after-bg.png
     F="[0:v]scale=1152:648,tpad=stop_mode=clone:stop_duration=0.5[ex];[2:v]split[bg][s];[s]crop=1156:16:382:706[strip];[bg][ex]overlay=384:72:shortest=1[t];[t][strip]overlay=382:706,format=yuv420p[v];[1:a]afade=t=in:d=0.01,apad=pad_dur=0.5[a]"
-    ffmpeg -ss $B0 -to $B1 -i build/sections/01.mp4 -ss $B0 -to $B1 -i build/narration/01-open.mp3 -loop 1 -framerate 25 -i media/edit-before-bg.png \
+    ffmpeg -ss $B0 -to $B1 -i build/sections/01.mp4 -ss $B0 -to $B1 -i build/narration/$BEFORE_TAKE -loop 1 -framerate 25 -i media/edit-before-bg.png \
       -filter_complex "$F" -map "[v]" -map "[a]" -shortest -r 25 -c:v libx264 -crf 12 -c:a pcm_s16le media/edit-before.mov
-    ffmpeg -ss $A0 -to $A1 -i $A -ss $A0 -to $A1 -i ../my-lesson-after/build/narration/01-open.mp3 -loop 1 -framerate 25 -i media/edit-after-bg.png \
+    ffmpeg -ss $A0 -to $A1 -i $A -ss $A0 -to $A1 -i ../my-lesson-after/build/narration/$AFTER_TAKE -loop 1 -framerate 25 -i media/edit-after-bg.png \
       -filter_complex "$F" -map "[v]" -map "[a]" -shortest -r 25 -c:v libx264 -crf 12 -c:a pcm_s16le media/edit-after.mov
     ```
   </Step>

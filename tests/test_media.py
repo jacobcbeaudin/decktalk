@@ -13,6 +13,7 @@ way an assembled section's are.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -305,7 +306,7 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
     from decktalk.artifacts import Take, Takes, Word, write_words
     from decktalk.model import Project
     from decktalk.speech import register_speech_provider
-    from decktalk.stages.narrate import narrate, text_hash
+    from decktalk.stages.narrate import narrate, take_name, text_hash, words_name
 
     class NeverSpeaks:
         name = "never"
@@ -325,21 +326,21 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
     p = Project.load(tmp_path, environ={})
     cfg = p.settings.narration
     p.narration_dir.mkdir(parents=True)
-    # One second of tone for the speech, then the 0.4 s tail an earlier min_tail_seconds left.
-    take = p.narration_dir / "01-open.mp3"
-    ffmpeg.run(
-        "-f", "lavfi", "-i", "sine=f=440:r=44100:d=1", "-af", "apad=pad_dur=0.4",
-        "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(take),
-    )  # fmt: skip
-    write_words(p.narration_dir / "01-open.words.json", [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)])
     _all, spoken = p.script_sections()
     seg = spoken[0]
     settings = p.voice.api_settings()
     digest = text_hash(seg, cfg, "never-voice", settings)
+    # One second of tone for the speech, then the 0.4 s tail an earlier min_tail_seconds left.
+    take = p.narration_dir / take_name(digest)
+    ffmpeg.run(
+        "-f", "lavfi", "-i", "sine=f=440:r=44100:d=1", "-af", "apad=pad_dur=0.4",
+        "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(take),
+    )  # fmt: skip
+    write_words(p.narration_dir / words_name(digest), [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)])
     before = ffmpeg.probe_duration(take)
     take_index = Takes(script="script.md", model="m", output_format=cfg.output_format)
     take_index.sections[seg.key] = Take(
-        index=1, chapter="Open", file=seg.filename, words_file=seg.words_filename, hash=digest,
+        index=1, chapter="Open", file=take_name(digest), words_file=words_name(digest), hash=digest,
         word_count=2, estimated_seconds=1.0, duration_seconds=before, speech_end_seconds=1.0, tail_padded_seconds=0.1,
     )  # fmt: skip
     take_index.save(p.takes_path)
@@ -353,7 +354,10 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
     assert padded.duration_seconds > before + 0.4
     assert padded.duration_seconds == pytest.approx(ffmpeg.probe_duration(take), abs=0.001)
     assert padded.tail_padded_seconds > 0.5
-    assert first.timeline.sections[seg.key].duration == pytest.approx(padded.duration_seconds, abs=0.06)
+    # The section's span is the take plus the silence joined in before it, which is the opening silence here.
+    lead = p.lead_seconds(seg.key)
+    assert lead == cfg.opening_silence_seconds
+    assert first.timeline.sections[seg.key].duration == pytest.approx(padded.duration_seconds + lead, abs=0.06)
 
     second = narrate(p)
     assert second.cached == [seg.key] and second.synthesized == []
@@ -363,11 +367,11 @@ def test_a_cached_take_is_padded_to_a_longer_min_tail_once_and_never_voiced_agai
 
 
 def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path):
-    """A close that moves from section 2 to section 3 keeps its take under its new file names."""
+    """A close that moves from section 2 to section 3 plays the same file, because a take is its content."""
     from decktalk.artifacts import Take, Takes, Word, write_words
     from decktalk.model import Project
     from decktalk.speech import register_speech_provider
-    from decktalk.stages.narrate import narrate, text_hash
+    from decktalk.stages.narrate import narrate, take_name, text_hash, words_name
 
     class NeverSpeaks:
         name = "never-renumbered"
@@ -391,17 +395,19 @@ def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path)
     _all, spoken = p.script_sections()
     settings = p.voice.api_settings()
     take_index = Takes(script="script.md", model="m", output_format=cfg.output_format)
+    digests: dict[str, str] = {}
     for old_key, seg, freq in [("01", spoken[0], 440), ("02", spoken[1], 660)]:
-        name = f"{old_key}-{seg.slug}"
+        digest = text_hash(seg, cfg, "never-voice", settings)
+        digests[old_key] = digest
         ffmpeg.run(
             "-f", "lavfi", "-i", f"sine=f={freq}:r=44100:d=1", "-af", "apad=pad_dur=1",
-            "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(p.narration_dir / f"{name}.mp3"),
+            "-c:a", "libmp3lame", "-b:a", cfg.mp3_bitrate, str(p.narration_dir / take_name(digest)),
         )  # fmt: skip
-        write_words(p.narration_dir / f"{name}.words.json", [Word("word", 0.0, 1.0)])
+        write_words(p.narration_dir / words_name(digest), [Word("word", 0.0, 1.0)])
         take_index.sections[old_key] = Take(
-            index=int(old_key), chapter=seg.title, file=f"{name}.mp3", words_file=f"{name}.words.json",
-            hash=text_hash(seg, cfg, "never-voice", settings), word_count=2, estimated_seconds=1.0,
-            duration_seconds=ffmpeg.probe_duration(p.narration_dir / f"{name}.mp3"),
+            index=int(old_key), chapter=seg.title, file=take_name(digest), words_file=words_name(digest),
+            hash=digest, word_count=2, estimated_seconds=1.0,
+            duration_seconds=ffmpeg.probe_duration(p.narration_dir / take_name(digest)),
         )  # fmt: skip
     take_index.save(p.takes_path)
 
@@ -409,8 +415,11 @@ def test_a_renumbered_section_keeps_its_take_and_is_never_voiced_again(tmp_path)
     assert result.synthesized == [] and result.cached == ["01", "03"]
     moved = Takes.load(p.takes_path)
     assert sorted(moved.sections) == ["01", "03"]
-    assert moved.sections["03"].file == "03-close.mp3" and moved.sections["03"].index == 3
-    assert (p.narration_dir / "03-close.mp3").read_bytes() == (p.narration_dir / "02-close.mp3").read_bytes()
+    # The close moved from section 2 to section 3 and plays the very same file, which nothing copied.
+    assert moved.sections["03"].file == take_name(digests["02"]) and moved.sections["03"].index == 3
+    assert sorted(f.name for f in p.narration_dir.glob("*.mp3")) == sorted(
+        [take_name(digests["01"]), take_name(digests["02"]), "narration.mp3"]
+    )
     assert list(result.timeline.sections) == ["01", "03"]
     assert narrate(p).cached == ["01", "03"]
 
@@ -521,7 +530,10 @@ def test_lead_and_tail_seconds_leave_a_voiced_take_cached(tmp_path):
     p = Project.load(tmp_path, environ={})
     second = narrate(p)
     assert second.synthesized == [] and second.cached == ["01", "02"] and ToneVoice.calls == 2
-    assert take.read_bytes() == data and Takes.load(takes_path).sections["02"] == entry
+    # The take is byte-identical and still cached: a lead is silence joined in, so only the row records it.
+    assert take.read_bytes() == data
+    after = Takes.load(takes_path).sections["02"]
+    assert after == replace(entry, lead_seconds=1.5) and after.lead_seconds == 1.5
     after = second.timeline.sections["02"]
     assert after.start == before.start and after.lead_seconds == 1.5
     assert after.duration == pytest.approx(before.duration + 1.5, abs=0.002)

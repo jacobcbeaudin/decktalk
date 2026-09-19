@@ -13,6 +13,7 @@ min_tail_seconds = 1.3    # silence kept after the last word of a section, so a 
 
 [voice]
 # model = "eleven_multilingual_v2"   # the tool's default, which you can override per project here
+price_per_1000_characters = 0.30   # what your plan charges, which is what `narrate --dry-run` prices the run at
 stability = 0.55
 similarity_boost = 0.75
 style = 0.0
@@ -52,8 +53,9 @@ chapter = "How AI learns"
 page = "deck/lesson.html"   # any page in deck/ can hold scenes, and each section names its page
 scene = 3
 
-# The edit steps out of the presentation: a page, the BEFORE clip, a page, the AFTER clip, and a page. Sections
-# 4 to 8 all name the chapter "The edit", so they share one chapter.
+# The edit steps out of the presentation: a page, the BEFORE clip, a page, the AFTER clip, and a page. A section
+# with no `chapter` takes the script's own "## N." heading, and sections 4 to 8 all head "The edit", so the five
+# of them share one chapter with nothing to repeat here.
 #
 # The scaffold ships no clip files, because a clip carries a real voice. Both clip sections are optional, so a
 # fresh build plays a titled slate in each and still passes --strict. The pages around them show stills of the
@@ -64,14 +66,12 @@ scene = 3
 
 [[section]]
 number = 4
-chapter = "The edit"
 page = "deck/index.html"
 scene = 4               # step out: the lesson shrinks into a player, then back to the start
 ambience = false        # true plays the ambience bed under this section
 
 [[section]]
 number = 5
-chapter = "The edit"
 clip = "media/edit-before.mov"          # BEFORE: the Open as first built, inside the player
 words = "media/edit-before.words.json"  # the words spoken inside the clip, for the captions
 slate_seconds = 4.36    # the demo's BEFORE clip is 4.36 s, so the slate keeps its timing
@@ -79,13 +79,11 @@ optional = true         # plays the slate under --strict until the clip is in pl
 
 [[section]]
 number = 6
-chapter = "The edit"
 page = "deck/index.html"
 scene = 6               # one word and one cue line, the build, and the new start
 
 [[section]]
 number = 7
-chapter = "The edit"
 clip = "media/edit-after.mov"           # AFTER: the Open rebuilt with one more count, inside the player
 words = "media/edit-after.words.json"   # the words spoken inside the clip, for the captions
 slate_seconds = 5.04    # the demo's AFTER clip is 5.04 s
@@ -93,7 +91,6 @@ optional = true
 
 [[section]]
 number = 8
-chapter = "The edit"
 page = "deck/index.html"
 scene = 7               # before and after, the check, and the step back in. A scene keeps its number in its page
                         # when the section numbers around it change, so section 8 plays scene 7.

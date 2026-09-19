@@ -25,7 +25,9 @@ def read_dotenv(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.exists():
         return values
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    # An editor that writes a byte-order mark would otherwise hide the first key's name, so the
+    # file is decoded with the mark consumed and a pasted key keeps working.
+    for raw in path.read_text(encoding="utf-8-sig").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -33,7 +35,7 @@ def read_dotenv(path: Path) -> dict[str, str]:
             line = line[len("export ") :]
         key, _, value = line.partition("=")
         value = value.strip()
-        if value[:1] in "\"'" and value.count(value[0]) >= 2:
+        if value[:1] in ('"', "'") and value.count(value[0]) >= 2:
             quote = value[0]
             value = value[1 : value.index(quote, 1)]  # quoted: take the inside, ignore a trailing comment
         else:
@@ -82,7 +84,8 @@ class Env:
         missing = [name for name, value in zip(names, values, strict=True) if not value]
         if missing:
             raise ConfigError(
-                f"{', '.join(missing)} not set. Put them in {self.file} (see .env.example) "
-                "or export them. A value is never printed."
+                f"{', '.join(missing)} is not set.",
+                hint=f"Put it in {self.file.name} beside decktalk.toml, as .env.example shows, or export it.",
+                path=self.file,
             )
         return values

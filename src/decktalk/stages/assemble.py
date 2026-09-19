@@ -317,7 +317,7 @@ def resolve_marker_time(
     marker: Marker,
     starts: dict[str, float],
     takes: Takes,
-    narration_dir: Path,
+    takes_dir: Path,
     leads: Mapping[str, float] | None = None,
 ) -> float | None:
     """Where a marker falls in the final file, or None when its phrase is not in the narration.
@@ -333,7 +333,7 @@ def resolve_marker_time(
     if entry is None:
         return None
     lead = (leads or {}).get(marker.key, 0.0)
-    words = [Word(w.word, w.start + lead, w.end + lead) for w in read_words(narration_dir / entry.words_file)]
+    words = [Word(w.word, w.start + lead, w.end + lead) for w in read_words(takes_dir / entry.words_file)]
     if marker.on == "$end":
         return starts[marker.key] + words[-1].end + marker.offset if words else None
     idx = find_phrase(words, marker.on, marker.occurrence, marker.case_sensitive)
@@ -492,7 +492,7 @@ def plan_mix(project: Project, rows: list[RenderedSection], timeline: Timeline, 
                 mutes: list[str] = []
                 leads = {r.section.key: project.lead_seconds(r.section.key) for r in rows}
                 for marker in spec.markers:
-                    mt = resolve_marker_time(marker, starts, takes, project.narration_dir, leads)
+                    mt = resolve_marker_time(marker, starts, takes, project.takes_dir, leads)
                     if mt is None:
                         plan.warnings.append(f"marker {marker.name!r} unresolved; skipped")
                         continue

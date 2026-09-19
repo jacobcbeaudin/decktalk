@@ -11,8 +11,8 @@ stable surface that the [changelog](/changelog) tracks.
 
 ```text
 build/
-  audio/   NN-slug.mp3, NN-slug.words.json, takes.json, narration.mp3, timeline.json,
-           cue-times.json
+  narration/  <hash>.mp3, <hash>.words.json, takes.json, narration.mp3, timeline.json
+  cue-times.json
   rec/     recordings/NN.webm, recordings/NN.json
   out/     sections/NN.mp4, <name>.mp4, <name>.srt, <name>.vtt,
            <name>.chapters.txt, slates/NN-slate.png
@@ -21,8 +21,9 @@ build/
   music/   music.mp3, its chunk files, and its manifest file
 ```
 
-`NN` is the two-digit section number. `slug` comes from the section title in `script.md`. `<name>` is
-`[project] name` in `decktalk.toml`. A clip section has no mp3, words file, or recording.
+`NN` is the two-digit section number. `<hash>` is the content hash of a take, which is what identifies it:
+`takes.json` says which section plays which take. `<name>` is `[project] name` in `decktalk.toml`. A clip
+section has no take, words file, or recording.
 
 ## Time bases
 
@@ -31,7 +32,7 @@ compare times from two files.
 
 | Value | Counts from |
 |---|---|
-| `NN-slug.words.json` `start` and `end` | The start of that section's mp3. The first spoken section includes `opening_silence_seconds`. |
+| `<hash>.words.json` `start` and `end` | The start of that take's mp3, which holds no silence of its own. |
 | `timeline.json` section and word times | The start of `narration.mp3`, which holds the spoken sections back to back. |
 | `cue-times.json`, `?cues=`, `?words=`, `decktalk words`, `decktalk clip --start` and `--end` | The section's own start, which is narration t=0 of its recording. |
 | A words file that `decktalk clip` writes | The start of that clip. |
@@ -48,22 +49,24 @@ Example: in the build without voice of the scaffold, section 6 starts at 196.70 
 final mp4. The 4.36 s slate of clip section 5 sits between them, and the whole-frame cuts before it add 0.02 s.
 `decktalk status` prints narration times.
 
-## `build/narration/NN-slug.words.json`
+## `build/narration/<hash>.words.json`
 
-A words file lists each spoken word of one section, with its times in that section's mp3.
+A words file lists each spoken word of one take, with its times in that take's mp3. The take carries no
+silence of its own, so the first word can start at 0. Silence before a section is joined in when the takes
+are joined, and [`decktalk words`](/reference/cli#decktalk-words) and `cue-times.json` include it.
 
-{/* sample: build/narration/01-open.words.json, build without voice of the scaffold (R2), first two words */}
+{/* sample: build/narration/<hash>.words.json, build without voice of the scaffold, first two words */}
 ```json
 [
  {
   "word": "A",
-  "start": 0.7,
-  "end": 1.225
+  "start": 0.0,
+  "end": 0.525
  },
  {
   "word": "bowl",
-  "start": 1.245,
-  "end": 1.77
+  "start": 0.545,
+  "end": 1.07
  },
 ```
 
@@ -81,29 +84,40 @@ with the script's punctuation and case.
 
 ## `build/narration/takes.json`
 
-The take index is the narration cache. It holds one entry per spoken section.
+The take index says which take each section plays. A take is identified by the content hash of everything
+that changes its audio, and its mp3 is named by that hash, so inserting a section, renumbering one, or
+retitling one moves no file and voices nothing. Two sections with the same words share one take.
+
+The cache is the narration directory itself: a take whose mp3 and words file are on disk is a hit.
+[`[narration] cache_dir`](/reference/configuration#narration) puts the take files alone outside `build/`,
+where a fresh clone and a second worktree find them again, and where several projects may share them
+because a hash names each one. `takes.json` and `narration.mp3` stay here, because they belong to one
+project.
 
 {/* sample: build/narration/takes.json, build without voice of the scaffold, first lines */}
 ```json
 {
   "script": "script.md",
-  "model": "silent-placeholder",
+  "model": "eleven_multilingual_v2",
   "output_format": "mp3_44100_128",
   "estimated": true,
   "estimate_basis": "150 wpm + declared pauses",
   "sections": {
     "01": {
       "index": 1,
-      "title": "Open",
-      "file": "01-open.mp3",
-      "words_file": "01-open.words.json",
-      "hash": "silent",
-      "words": 29,
+      "chapter": "Open",
+      "file": "silent-5edb44f74f.mp3",
+      "words_file": "silent-5edb44f74f.words.json",
+      "hash": "silent-5edb44f74f",
+      "word_count": 29,
       "estimated_seconds": 12.4,
-      "duration_seconds": 17.832,
+      "duration_seconds": 17.1,
+      "voiced": false,
       "target_seconds": null,
-      "speech_end_seconds": 16.48,
+      "speech_end_seconds": 15.78,
       "tail_padded_seconds": 0.0,
+      "tail_joined_seconds": 0.0,
+      "lead_seconds": 0.7,
       "spoken": "A bowl. A ball. Watch it step down on my count. One. Two, three. I wrote the words and drew the pictures, and each picture waits for its word."
     },
 ```
@@ -111,24 +125,27 @@ The take index is the narration cache. It holds one entry per spoken section.
 | Field | Type | Meaning |
 |---|---|---|
 | `script` | string | Path of the script, relative to the project. |
-| `model` | string | Speech model. `silent-placeholder` after a build without voice. |
+| `model` | string | Speech model the project voices with. |
 | `output_format` | string | Audio format that the speech provider returned. |
-| `estimated` | boolean | True after a build without voice. |
+| `estimated` | boolean | True when any row is a placeholder take, so the times are guesses. |
 | `estimate_basis` | string | Pacing of a build without voice, such as `150 wpm + declared pauses`. Empty after a voiced build. |
 | `sections` | table | One entry per spoken section, keyed by `NN`. |
 | `sections.NN.index` | integer | Section number. |
 | `sections.NN.chapter` | string | The chapter, which is the script heading. |
-| `sections.NN.file` | string | Name of the section's mp3. |
-| `sections.NN.words_file` | string | Name of the section's words file. |
-| `sections.NN.hash` | string | Cache key of the section. `silent` after a build without voice. |
+| `sections.NN.file` | string | Name of the take's mp3, which is its hash. |
+| `sections.NN.words_file` | string | Name of the take's words file, which is its hash. |
+| `sections.NN.hash` | string | The take's content hash, and its identity. A placeholder take's hash starts with `silent-`. |
 | `sections.NN.word_count` | integer | Word count of the spoken text. |
 | `sections.NN.estimated_seconds` | number | Length estimate at `words_per_minute`. |
-| `sections.NN.duration_seconds` | number | Real length of the mp3. |
+| `sections.NN.duration_seconds` | number | Real length of the mp3, without the silence joined in around it. |
+| `sections.NN.voiced` | boolean | False on the placeholder take that `--no-voice` wrote. |
 | `sections.NN.target_seconds` | number or null | Time budget from the time range in the heading, or `null` when the heading has none. |
 | `sections.NN.speech_end_seconds` | number or null | End of the last spoken word. |
-| `sections.NN.tail_padded_seconds` | number | Silence that `narrate` added after the last word. A take with a value above 0 is not padded again while its tail is within 0.06 s of `min_tail_seconds`. |
+| `sections.NN.tail_padded_seconds` | number | Silence that `narrate` added inside the take file after the last word. A take with a value above 0 is not padded again while its tail is within 0.06 s of `min_tail_seconds`. |
+| `sections.NN.tail_joined_seconds` | number | Silence joined in after the take rather than padded into it, which is what a take in a shared [`cache_dir`](/reference/configuration#narration) gets, because no project may rewrite a file the others read. |
+| `sections.NN.lead_seconds` | number | Silence joined in before this take when the takes are joined. It is not in the mp3. |
 | `sections.NN.spoken` | string | The words sent to the voice, with the script's punctuation and case, and without break tags. |
-| `total_seconds` | number | Sum of every `duration_seconds`. |
+| `total_seconds` | number | Every take plus every lead and every joined tail, which is the length of `narration.mp3`. |
 
 Note: Captions take their spelling from `spoken`, so they match the audio even after the script changes. A
 take index without `spoken` falls back to the current script. [Rebuild one section](/guides/rebuild-one-section#the-narration-cache)
@@ -169,7 +186,7 @@ The timeline gives section and word times in `narration.mp3`.
 | `sections.NN.duration` | number | `end` minus `start`. |
 | `sections.NN.speech_end` | number or null | End of the section's last spoken word, in `narration.mp3`. |
 | `sections.NN.words` | array of tables | The words of the section, with `word`, `start`, and `end` in `narration.mp3`. |
-| `sections.NN.lead_seconds` | number | Silence joined in before the section's mp3, from the section's `lead_seconds`. `duration` and the word times include it. |
+| `sections.NN.lead_seconds` | number | Silence joined in before the section's mp3: the section's own `lead_seconds`, plus `opening_silence_seconds` for the first spoken section. `duration` and the word times include it. |
 | `estimated` | boolean | True after a build without voice. |
 
 Note: The section span runs from `start` to `end`. The spoken span runs from `start` to `speech_end`.

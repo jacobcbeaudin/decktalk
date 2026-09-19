@@ -42,7 +42,7 @@ flowchart TB
 
 | Stage | One job | Writes |
 |---|---|---|
-| `narrate` | `narrate` voices each section and gets a time for every word. | `build/narration/NN-slug.mp3`, `NN-slug.words.json`, `takes.json`, `narration.mp3`, `timeline.json` |
+| `narrate` | `narrate` voices each section and gets a time for every word. | `build/narration/<hash>.mp3`, `<hash>.words.json`, `takes.json`, `narration.mp3`, `timeline.json` |
 | `align` | `align` turns each cue phrase into a cue time. | `build/cue-times.json` |
 | `record` | `record` records each page section in headless Chromium. | `build/recordings/NN.webm`, `recordings/NN.json` |
 | `measure` | `measure` finds narration t=0 in each recording. | `t0_seconds` in each recording log |
@@ -82,9 +82,9 @@ A build without voice replaces the voice with a click track, so it needs no acco
 
 {/* sample: decktalk build --no-voice, build without voice of the scaffold, first narrate lines */}
 ```text
-[sil ] 01-open.mp3  29 words -> 17.83s (estimated words)
-[sil ] 02-how-it-works.mp3  40 words -> 20.83s (estimated words)
-[sil ] 03-how-ai-learns.mp3  285 words -> 142.54s (estimated words)
+[sil ] 01  29 words -> 17.10s (estimated words)
+[sil ] 02  40 words -> 20.80s (estimated words)
+[sil ] 03  285 words -> 142.50s (estimated words)
 ```
 
 - The click track has a soft click at the start of every estimated word, at -24 dBFS.

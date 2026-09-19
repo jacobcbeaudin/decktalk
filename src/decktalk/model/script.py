@@ -42,11 +42,10 @@ class Segment:
 
     index: int
     title: str
-    slug: str
+    slug: str  # The heading as a file-name-safe word, which the tables print. A take is named by its hash.
     text: str  # prose with direction pauses as <break/> tags
     start: str | None = None
     end: str | None = None
-    first_spoken: bool = False
 
     @property
     def key(self) -> str:
@@ -68,33 +67,33 @@ class Segment:
         return sorted(set(PLACEHOLDER_RE.findall(self.text)))
 
     @property
-    def filename(self) -> str:
-        return f"{self.key}-{self.slug}.mp3"
-
-    @property
-    def words_filename(self) -> str:
-        return f"{self.key}-{self.slug}.words.json"
-
-    @property
     def target_seconds(self) -> float | None:
         if self.start and self.end:
             return _mmss(self.end) - _mmss(self.start)
         return None
 
-    def tts_text(self, cfg: NarrationConfig) -> str:
-        """The text sent to the voice. Silence before the first section and after every last
-        word is added to the audio afterwards rather than requested with break tags."""
+    @property
+    def tts_text(self) -> str:
+        """The exact text the voice receives, which is what the take's content hash is taken over.
+
+        Silence before the first section and after every last word is joined onto the audio
+        afterwards rather than requested with break tags, so no tuning value reaches this text.
+        """
         return self.text
 
     def estimated_seconds(self, cfg: NarrationConfig) -> float:
         return round(self.word_count / cfg.words_per_minute * 60, 1)
 
     def silent_seconds(self, cfg: NarrationConfig) -> float:
+        """How long a placeholder take of this section runs, which is speech and pauses and no lead.
+
+        Silence before the first word belongs to the section rather than to the take, so it is
+        joined in with the takes and is not counted here.
+        """
         breaks = sum(float(t) for t in BREAK_RE.findall(self.text))
         beat_seconds = self.text.count(" —") * cfg.silent_beat_seconds
-        lead = cfg.opening_silence_seconds if self.first_spoken else 0.0
         return round(
-            self.word_count / cfg.silent_words_per_minute * 60 + breaks + beat_seconds + lead + cfg.min_tail_seconds, 3
+            self.word_count / cfg.silent_words_per_minute * 60 + breaks + beat_seconds + cfg.min_tail_seconds, 3
         )
 
 
@@ -182,20 +181,25 @@ def parse_script(markdown: str) -> list[Segment]:
 
 
 def read_script(path: Path, *, declared: set[int], clips: set[int]) -> tuple[list[Segment], list[Segment]]:
-    """(every section in the script, the spoken ones in order with first_spoken set).
+    """(every section in the script, the spoken ones in order).
 
     `declared` is every section number in `decktalk.toml`, and `clips` are the ones that play a
     clip instead of a page, which the voice never reads.
     """
     if not path.exists():
-        raise MissingInputError(f"script not found: {path}")
+        raise MissingInputError(
+            f"{path.name} is not there.",
+            hint="Write the script, or point [project] script at the file you meant.",
+            path=path,
+        )
     all_segments = parse_script(path.read_text(encoding="utf-8"))
     if not all_segments:
-        raise ConfigError(f"no '## N. Title' sections found in {path}")
+        raise ConfigError(
+            f"{path.name} holds no '## N. Title' section.",
+            hint="Open each spoken section with a heading such as '## 1. Open'.",
+            path=path,
+        )
     undeclared = [s.index for s in all_segments if s.index not in declared]
     if undeclared:
         raise ConfigError(f"script sections {undeclared} have no [[section]] in decktalk.toml")
-    spoken = [s for s in all_segments if s.index not in clips]
-    for i, seg in enumerate(spoken):
-        seg.first_spoken = i == 0
-    return all_segments, spoken
+    return all_segments, [s for s in all_segments if s.index not in clips]

@@ -45,6 +45,7 @@ class Verdict(StrEnum):
 
     # Uncertain: something is probably wrong, and the label ends in a question mark.
     BLACK_UNSURE = "BLACK?"
+    SPOKEN_SYMBOL = "SPOKEN SYMBOL?"
     KATEX_UNSURE = "KATEX?"
     THIN_CHANGE = "THIN CHANGE?"
 

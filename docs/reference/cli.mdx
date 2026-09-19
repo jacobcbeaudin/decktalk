@@ -190,8 +190,8 @@ decktalk preflight [-h] [--project PROJECT] [-v] [-q] [--json]
 `preflight` runs three checks.
 
 1. **Takes.** It prints [the take plan](#the-take-plan) of `narrate --dry-run`. The plan says which sections a
-   voiced run would voice, keep cached, or move, with the characters each section sends.
-2. **Cues.** It resolves every cue phrase as `align` does, with the same notes. A cached or moved take resolves
+   voiced run would voice and which it already holds, with the characters each section sends and what they cost.
+2. **Cues.** It resolves every cue phrase as `align` does, with the same notes. A take already on disk resolves
    on its own words. A section that would be voiced resolves on estimated words at `silent_words_per_minute`, so
    its cue times are placeholders.
 3. **Frames.** For each cue, it freezes the page just before the cue and at the cue, and compares the two frames
@@ -241,16 +241,16 @@ section 2.
 voice: provider=elevenlabs model=eleven_multilingual_v2
  #  section                take         sent spoken  reason
 -----------------------------------------------------------
- 1  open                   synthesize    160    142  only a silent take exists
- 2  how-it-works           synthesize    228    213  only a silent take exists
- 3  how-ai-learns          synthesize   1745   1520  only a silent take exists
- 4  the-edit               synthesize    163    148  only a silent take exists
- 6  the-edit               synthesize    203    182  only a silent take exists
- 8  the-edit               synthesize    141    132  only a silent take exists
- 9  close                  synthesize    148    142  only a silent take exists
+ 1  open                   synthesize    160    142  only a take without voice exists
+ 2  how-it-works           synthesize    228    213  only a take without voice exists
+ 3  how-ai-learns          synthesize   1745   1520  only a take without voice exists
+ 4  the-edit               synthesize    163    148  only a take without voice exists
+ 6  the-edit               synthesize    203    182  only a take without voice exists
+ 8  the-edit               synthesize    141    132  only a take without voice exists
+ 9  close                  synthesize    147    141  only a take without voice exists
 -----------------------------------------------------------
-voice 7 section(s): 2788 characters sent, 2479 spoken. 0 cached, 0 moved.
-note: ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set. Put them in ~/my-lesson/.env (see .env.example) or export them. Keys are never printed.
+voice 7 section(s): 2787 characters sent, 2478 spoken, 7460 with context. 0 cached. About $0.84 at $0.30 per 1,000.
+note: ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set. Put them in .env beside decktalk.toml (see .env.example) or export them. A value is never printed.
 
 check              slide       cue   chg %  result
 1:1.1bowl          1.1        1.25    0.93  changed
@@ -368,19 +368,26 @@ decktalk narrate [-h] [--project PROJECT] [-v] [-q] [--only N]
 | `--only N` | every spoken section | Voices only these sections. Repeatable. |
 | `--force` | off | Ignores the narration cache. Spends credits on every section it voices. With `--no-voice`, replaces voiced takes. |
 | `--allow-placeholders` | off | Voices a section that still has a `[CAPS]` placeholder. |
-| `--dry-run` | off | Prints each section's text, the voice settings, the table, and the take plan. Sends nothing. |
+| `--dry-run` | off | Prints each section's text, the voice settings, the table, and the take plan with its price. Sends nothing. |
 | `--json` | off | With `--dry-run`, prints the take plan as one JSON object on stdout. Without `--dry-run`, exits 2. |
-| `--no-voice` | off | Writes a click track with estimated word times. Needs no key. Stops when `build/narration/takes.json` holds voiced takes, unless `--force` is on. |
+| `--no-voice` | off | Writes a click track with estimated word times. Needs no key. Stops when a **targeted** section already holds a paid take, and names the sections that are free to rehearse. |
 | `--model MODEL` | `[voice] model`, then `[narration] model` | Speech model id for this run. |
 
 **Reads** `script.md`, `decktalk.toml`, and `.env`. `--no-voice` and `--dry-run` need no key.
-**Writes** `build/narration/NN-slug.mp3`, `NN-slug.words.json`, `takes.json`, `narration.mp3`, and
+**Writes** `build/narration/<hash>.mp3`, `<hash>.words.json`, `takes.json`, `narration.mp3`, and
 `timeline.json`. `--dry-run` writes nothing.
 
 - `narrate` never voices a clip section.
-- `narrate` caches each section by provider, voice id, model, output format, voice settings, and text.
+- `narrate` identifies a take by the content hash of provider, voice id, model, output format, voice
+  settings, and text, and names its mp3 by that hash. Inserting, renumbering, or retitling a section moves
+  no file and voices nothing, and two sections with the same words share one take.
+- `narrate` refuses a script that holds an HTML comment, a brace, or a note in square brackets inside a
+  paragraph, naming the line of each. A stage direction goes on a line of its own, and inside a paragraph
+  only `[beat]` and `[pause N]` are directions.
+- `narrate` reports digits and symbols in the spoken text as `SPOKEN SYMBOL?`, an uncertain finding, because
+  a cue phrase matches the spoken words. It does not refuse them.
 - `--only` rebuilds `narration.mp3` and `timeline.json` from every voiced section, not only the named ones.
-- `--only` with no spoken section fails, for example `no spoken sections match [5]; spoken sections are [1, 2, 3, 4, 6, 8, 9]`.
+- `--only` with no spoken section fails, for example `no spoken section matches [5]. The spoken sections are [1, 2, 3, 4, 6, 8, 9].`
 - A placeholder fails a voiced run with `unfilled placeholders [...] in the script`.
 
 The first table gives each section's word count, estimate (`est`), time budget (`target`), and audio
@@ -401,16 +408,16 @@ section gets one take status.
 |---|---|
 | `synthesize` | A voiced run sends the section to the voice and spends its characters. |
 | `cached` | A voiced run uses the section's take as it is. |
-| `moved` | A take of the same text under another section number is copied to this section. No request is sent. |
 | `unknown` | The speech provider could not be set up, so the cache cannot be checked. The `note` line says why. |
 
-A `synthesize` row gives its reason: `no take yet`, `only a silent take exists`,
-`the text, voice, model, or voice settings changed`, `the file name changed from <file>`,
-`the mp3 or the words file is missing`, or `forced`. `sent` counts the characters the voice receives,
-with dashes and break tags. `spoken` counts the spoken words' characters.
+A `synthesize` row gives its reason: `no take yet`, `only a take without voice exists`,
+`the text, voice, model, or voice settings changed`, `the mp3 or the words file is missing`, or `forced`.
+`sent` counts the characters the voice receives, with dashes and break tags. `spoken` counts the spoken
+words' characters. The line under the table adds the characters that the neighbouring sections contribute
+as prosody context, and, when `[voice] price_per_1000_characters` is set, what the run costs.
 
-Without a key, a project with no voiced take plans every section as `synthesize`. A project with voiced
-takes plans them as `unknown`, because the cache key needs the voice id.
+Without a key, a project with no paid take plans every section as `synthesize`. A project with paid takes
+plans them as `unknown`, because the content hash needs the voice id.
 
 {/* sample: decktalk narrate --dry-run on a fresh scaffold with no key, the take plan only */}
 
@@ -423,10 +430,10 @@ takes plans them as `unknown`, because the cache key needs the voice id.
  4  the-edit               synthesize    163    148  no take yet
  6  the-edit               synthesize    203    182  no take yet
  8  the-edit               synthesize    141    132  no take yet
- 9  close                  synthesize    148    142  no take yet
+ 9  close                  synthesize    147    141  no take yet
 -----------------------------------------------------------
-voice 7 section(s): 2788 characters sent, 2479 spoken. 0 cached, 0 moved.
-note: ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set. Put them in ~/my-lesson/.env (see .env.example) or export them. Keys are never printed.
+voice 7 section(s): 2787 characters sent, 2478 spoken, 7460 with context. 0 cached. About $0.84 at $0.30 per 1,000.
+note: ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set. Put them in .env beside decktalk.toml (see .env.example) or export them. A value is never printed.
 ```
 
 With `--json`, the payload under `narrate` has these keys.
@@ -435,8 +442,11 @@ With `--json`, the payload under `narrate` has these keys.
 |---|---|
 | `voice` | `provider`, `model`, and `settings`. |
 | `note` | Why the speech provider could not be set up, or `null`. |
-| `sections` | One row per section: `key`, `title`, `file`, `status`, `reason`, `moved_from`, `characters_sent`, `characters_spoken`, `words`, `estimated_seconds`, `placeholders`, and `text`. |
-| `totals` | The count of each status, and `characters_sent` and `characters_spoken` of the `synthesize` rows. |
+| `sections` | One row per section: `key`, `chapter`, `file`, `hash`, `status`, `reason`, `characters_sent`, `characters_with_context`, `characters_spoken`, `word_count`, `estimated_seconds`, `placeholders`, and `request`, the body a voiced run would post. |
+| `totals` | The count of each status, the characters of the `synthesize` rows with and without context, `characters_unchecked` for the rows whose cache could not be checked, `price_per_1000_characters`, `estimated_cost` in dollars, and `most_it_can_cost`, which prices the unchecked rows as well. The two dollar figures are `null` when the project names no rate. |
+| `notes` | One row per uncertain finding, such as digits or symbols in the spoken text. |
+| `synthesized`, `cached` | The section keys this run voiced and reused. Both are empty on a dry run. |
+| `takes` | The take index this run wrote, or `null` on a dry run. |
 
 {/* sample: narrate stage of decktalk build --no-voice on a fresh scaffold, stdout only */}
 

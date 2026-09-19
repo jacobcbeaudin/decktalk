@@ -157,7 +157,7 @@ run judged, and `to_dict(root)`, the same thing as JSON-ready data with every pa
 
 | Function | Returns | Raises |
 |---|---|---|
-| `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None)` | `NarrateResult` with `takes`, `timeline`, `segments`, `synthesized`, and `cached` | `ConfigError`, `MissingInputError`, `ProviderError` |
+| `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None, dry_run=False)` | `NarrateResult` with `plans`, `voice`, `rate`, `rows`, `note`, `takes`, `timeline`, `segments`, `synthesized`, and `cached`. With `dry_run`, `takes` and `timeline` are `None` and nothing is written. | `ConfigError`, `MissingInputError`, `ProviderError` |
 | `align(project, *, allow_unknown_cues=False)` | `AlignResult` with `cue_times`, `sections`, `unresolved`, `estimated`, `unknown`, `uncued`, `cue_times_file`, `short`, and `problems` | `ConfigError`, `MissingInputError`, `UnknownCueError` |
 | `preflight(project, *, only=None, frames=True, model=None, allow_unknown_cues=False)` | `PreflightResult` with `takes`, `note`, `align`, `estimated`, `cues`, `seams`, `frames`, `placeholders`, and `short` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `record(project, *, only=None, seconds=None, use_cues=True)` | A list of `RecordResult`, each with `section`, `path`, `log`, and `seconds` | `ConfigError`, `MissingInputError`, `ToolError` |

@@ -1,6 +1,6 @@
 """`Word` and its file, the time base everything else shares.
 
-    build/narration/NN-slug.words.json   one row per spoken word, in seconds after the section starts
+    build/narration/<hash>.words.json   one row per spoken word, in seconds after the section starts
 
 Every cut DeckTalk makes is made on a word, so this is the smallest artifact and the one every
 other reads: the cue times resolve against it, the captions are built from it, and the clicks of

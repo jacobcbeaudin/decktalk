@@ -206,10 +206,11 @@ def align(project: Project, *, allow_unknown_cues: bool = False) -> AlignResult:
         key = f"{spec.number:02d}"
         entry = takes.sections.get(key)
         if entry is not None:
-            # Cue times count from the section start, which comes lead_seconds before the take.
+            # A section runs for every silence around its take as well as the take, because a lead
+            # comes before it and a shared take's tail is joined in after it rather than padded in.
             take_words[key] = (
                 project.section_words(key, entry.words_file),
-                entry.duration_seconds + project.lead_seconds(key),
+                entry.duration_seconds + entry.tail_joined_seconds + project.lead_seconds(key),
             )
     clips = {f"{number:02d}" for number in project.clip_numbers}
     cue_times, rows, unresolved = resolve_sections(

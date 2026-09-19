@@ -26,11 +26,17 @@ class Workspace:
 
     build: Path
     name: str  # The project name, which the deliverables are named after.
-    narration: Path | None = None  # Where the takes live, when [narration] cache_dir moves them out of build/.
+    takes: Path | None = None  # Where the take files live, when [narration] cache_dir moves them out of build/.
 
     @property
     def narration_dir(self) -> Path:
-        return self.narration or self.build / "narration"
+        """The project's own narration directory, which holds the index and the joined track."""
+        return self.build / "narration"
+
+    @property
+    def takes_dir(self) -> Path:
+        """Where the take mp3 and words files live, which many projects may share because a hash names each one."""
+        return self.takes or self.narration_dir
 
     @property
     def recordings_dir(self) -> Path:

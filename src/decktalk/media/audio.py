@@ -117,14 +117,6 @@ def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int = 480
     return list(a)
 
 
-def pad_head(path: Path, seconds: float, *, bitrate: str) -> None:
-    """Prepend silence, so the first section does not start on its first syllable."""
-    tmp = path.with_suffix(".pad.mp3")
-    ms = int(round(seconds * 1000))
-    ffmpeg.run("-i", str(path), "-af", f"adelay={ms}:all=1", "-c:a", "libmp3lame", "-b:a", bitrate, str(tmp))
-    tmp.replace(path)
-
-
 def pad_tail(path: Path, seconds: float, *, bitrate: str) -> None:
     tmp = path.with_suffix(".pad.mp3")
     ffmpeg.run("-i", str(path), "-af", f"apad=pad_dur={seconds}", "-c:a", "libmp3lame", "-b:a", bitrate, str(tmp))
@@ -132,15 +124,37 @@ def pad_tail(path: Path, seconds: float, *, bitrate: str) -> None:
 
 
 def concat_audio(
-    files: list[Path], out: Path, *, bitrate: str, sample_rate: int, leads: list[float] | None = None
+    files: list[Path],
+    out: Path,
+    *,
+    bitrate: str,
+    sample_rate: int,
+    leads: list[float] | None = None,
+    tails: list[float] | None = None,
 ) -> None:
-    """Join audio files back to back. `leads` gives each file seconds of silence before it, in whole milliseconds."""
+    """Join audio files back to back.
+
+    `leads` gives each file seconds of silence before it, in whole milliseconds, and `tails` seconds
+    of silence after it, so a file the join never rewrites still lands with the silence its section
+    needs around it.
+    """
     inputs: list[str] = []
     for f in files:
         inputs += ["-i", str(f)]
     delays = [int(round(x * 1000)) for x in (leads or [])] + [0] * len(files)
-    pads = "".join(f"[{i}:a]adelay=delays={delays[i]}:all=1[l{i}];" for i in range(len(files)) if delays[i] > 0)
-    labels = "".join(f"[l{i}]" if delays[i] > 0 else f"[{i}:a]" for i in range(len(files)))
+    after = [round(x, 3) for x in (tails or [])] + [0.0] * len(files)
+    steps, shaped = [], set()
+    for i in range(len(files)):
+        chain = []
+        if delays[i] > 0:
+            chain.append(f"adelay=delays={delays[i]}:all=1")
+        if after[i] > 0:
+            chain.append(f"apad=pad_dur={after[i]}")
+        if chain:
+            steps.append(f"[{i}:a]{','.join(chain)}[l{i}];")
+            shaped.add(i)
+    pads = "".join(steps)
+    labels = "".join(f"[l{i}]" if i in shaped else f"[{i}:a]" for i in range(len(files)))
     ffmpeg.run(
         *inputs,
         "-filter_complex",

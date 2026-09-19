@@ -112,8 +112,10 @@ class NarrationConfig:
     tail_slack_seconds: float = tune(0.05, "Extra silence added when `narrate` pads a short tail.", NOT_NEGATIVE)
     cache_dir: str = tune(
         "",
-        "Directory that holds the takes, their words files and the take index. It is empty for "
-        "`build/narration/` inside the project, and a path here keeps the voiced takes when `build/` is deleted.",
+        "Directory that holds the take files and their words files, each named by its content hash. It is "
+        "empty for `build/narration/` inside the project, and a path here keeps the voiced takes when "
+        "`build/` is deleted and lets many projects share one cache. The take index and the joined "
+        "narration stay under `build/narration/`, because they belong to one project.",
     )
     context_chars: int = tune(
         1500, "Characters of each neighbor section sent with a request, for continuous prosody.", NOT_NEGATIVE

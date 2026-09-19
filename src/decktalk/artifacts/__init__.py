@@ -4,7 +4,7 @@ These file shapes are part of the public contract: the page runtime and users' o
 them. Field names match the JSON keys, every file is written atomically through `jsonio`, and one
 module here owns each file.
 
-    build/narration/NN-slug.words.json  words.py       the time base everything shares
+    build/narration/<hash>.words.json   words.py       the time base everything shares
     build/narration/takes.json          takes.py       the take index and the narration cache
     build/narration/timeline.json       timeline.py    section and word times in narration.mp3
     build/cue-times.json                cue_times.py   every cue resolved against the words

@@ -68,9 +68,15 @@ def test_the_environment_override_allows_any_base():
 
 
 def test_the_provider_refuses_a_foreign_base_before_any_request(monkeypatch):
+    """The refusal names the rule and the switch, and never the value, which may hold a path token."""
     monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
-    with pytest.raises(ConfigError, match="evil.test"):
-        ElevenLabs(api_key=Secret(SENTINEL), cfg=ElevenLabsConfig(api_base="https://evil.test/v1"), voice=Secret("v"))
+    with pytest.raises(ConfigError, match="must be an https URL on elevenlabs.io") as caught:
+        ElevenLabs(
+            api_key=Secret(SENTINEL),
+            cfg=ElevenLabsConfig(api_base="https://evil.test/v1/SUPERSECRETTOKEN"),
+            voice=Secret("v"),
+        )
+    assert "evil.test" not in str(caught.value) and "SUPERSECRETTOKEN" not in str(caught.value)
     monkeypatch.setenv(ALLOW_ANY_API_BASE, "1")
     ElevenLabs(api_key=Secret(SENTINEL), cfg=ElevenLabsConfig(api_base="https://evil.test/v1"), voice=Secret("v"))
 
@@ -85,7 +91,7 @@ def test_a_project_file_cannot_redirect_the_key(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text(f"ELEVENLABS_API_KEY={SENTINEL}\nELEVENLABS_VOICE_ID=v\n", encoding="utf-8")
     project = Project.load(tmp_path, environ={})
     context = VoiceContext(settings=project.settings, secrets=project.env)
-    with pytest.raises(ConfigError, match="evil.test") as info:
+    with pytest.raises(ConfigError, match="must be an https URL on elevenlabs.io") as info:
         ElevenLabs.for_context(context)
     assert SENTINEL not in str(info.value)
 
@@ -208,6 +214,18 @@ def test_a_real_redirect_to_another_host_never_carries_the_key(server):
     assert first["xi-api-key"] == SENTINEL and landed["xi-api-key"] == SENTINEL  # the same host keeps it
 
 
+def test_the_token_after_an_authorization_scheme_is_scrubbed_on_its_own():
+    """A reply quotes the token far more often than it quotes the whole `Bearer x` header value."""
+    token = "tok_0123456789abcdef"
+    text = _http.scrub(f"refused {token}", {"Authorization": f"Bearer {token}"})
+    assert text == f"refused {_http.CREDENTIAL}" and token not in text
+    # The whole header value is taken out too, for a reply that quotes the header as it was sent.
+    whole = _http.scrub(f"sent Bearer {token}", {"Authorization": f"Bearer {token}"})
+    assert token not in whole
+    # A header that is not a credential is left alone, so an ordinary value is not blanked out.
+    assert _http.scrub("accept audio/mpeg", {"Accept": "audio/mpeg"}) == "accept audio/mpeg"
+
+
 def test_a_reply_that_echoes_the_key_never_reaches_the_error(server):
     """The body is written by whatever host `api_base` names, so the quote is scrubbed before it is used."""
     port = server.server_port
@@ -239,7 +257,7 @@ def test_the_key_survives_no_walk_over_the_provider_or_the_environment(tmp_path,
         cfg=ElevenLabsConfig(),
         voice=Secret(VOICE_SENTINEL, "ELEVENLABS_VOICE_ID"),
     )
-    # Both values this provider reads from `.env` are covered, because rule 4 covers every one.
+    # Both values this provider reads from `.env` are covered, because the rule covers every one.
     for shown in (repr(provider), str(provider), f"{provider!r}", repr(provider.api_key), str(provider.voice)):
         assert SENTINEL not in shown and VOICE_SENTINEL not in shown
     # The two walks that a result, an artifact or an envelope would use.
@@ -263,7 +281,7 @@ def test_the_key_survives_no_walk_over_the_provider_or_the_environment(tmp_path,
 
 
 def test_no_file_a_run_writes_can_hold_the_key(tmp_path, monkeypatch):
-    """Contract rule 4: no value read from `.env` reaches a payload, a log line or an error."""
+    """No value read from `.env` reaches a payload, a log line or an error, whatever a run writes."""
     monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
     (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text(

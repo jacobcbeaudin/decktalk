@@ -1,11 +1,11 @@
 """Preflight: what a voiced build would spend and show, with no credits and no recording.
 
-takes    what `narrate` would voice, keep cached, or move, as `narrate --dry-run` plans it, with the
-         characters each section sends and speaks.
-cues     every cue of cues.json resolved against the words each section will have: a cached or
-         moved take's own words, or estimated words at silent_words_per_minute for a section that
-         would be voiced. The notes and findings are those of `decktalk align`, the repeated-phrase
-         warning included. cue-times.json is not written.
+takes    what `narrate` would voice and what it already holds, as `narrate --dry-run` plans it, with
+         the characters each section sends and what they cost.
+cues     every cue of cues.json resolved against the words each section will have: a cached take's
+         own words, or estimated words at silent_words_per_minute for a section that would be
+         voiced. The notes and findings are those of `decktalk align`, the repeated-phrase warning
+         included. cue-times.json is not written.
 frames   for each cue, the page frozen just before the cue fires and frozen at the cue, in
          build/preflight. They are compared as `verify` compares frames: the share of pixels whose
          luma changes by more than diff_level at probe_width by probe_height. A frozen frame shows
@@ -47,21 +47,21 @@ from urllib.parse import urlencode
 
 from ..artifacts import CueTimes, Word
 from ..jsonio import relative
-from ..media import frames
+from ..media import ffmpeg, frames
 from ..media.browser import await_ready, chromium, page_error_text, screenshot
 from ..model import PageSection, Project
 from ..settings import NarrationConfig, VerifyConfig
 from ..verdicts import Findings, SkipReason, Verdict
 from .align import AlignResult, resolve_sections, uncued_elements, unknown_cue_ids
 from .narrate import (
-    CACHED,
-    MOVED,
-    UNKNOWN,
     TakePlan,
     estimated_words,
-    narration_plan,
+    is_cached,
     plan_totals,
     section_config,
+    take_name,
+    voiced_plan,
+    words_name,
 )
 from .record import prev_words_query, words_query
 from .verify import opted_out, thin_change
@@ -299,6 +299,7 @@ class SeamEstimate:
 class PreflightResult:
     voice: dict[str, Any]
     narration: NarrationConfig
+    rate: float  # [voice] price_per_1000_characters, which prices the take plan.
     takes: list[TakePlan]
     note: str | None
     align: AlignResult
@@ -339,7 +340,7 @@ class PreflightResult:
             "note": self.note,
             "placeholders": self.placeholders,
             "takes": [p.to_dict(self.narration) for p in self.takes],
-            "totals": plan_totals(self.takes, self.narration),
+            "totals": plan_totals(self.takes, self.narration, self.rate),
             "cue_times": {**cue_times, "estimated_sections": self.estimated},
             "cues": [c.to_dict(root) for c in self.cues],
             "seams": [k.to_dict(root) for k in self.seams],
@@ -356,14 +357,24 @@ def planned_words(project: Project, plan: TakePlan) -> tuple[list[Word], float, 
     key = seg.key
     lead = project.lead_seconds(key)
     takes = project.takes()
-    entry = takes.sections.get(key) if takes is not None and not takes.estimated else None
-    if plan.status == CACHED and entry is not None:
-        return project.section_words(key, entry.words_file), entry.duration_seconds + lead, False
-    if plan.status == MOVED and plan.source is not None:
-        return project.section_words(key, plan.source.words_file), plan.source.duration_seconds + lead, False
-    if plan.status == UNKNOWN and entry is not None and entry.spoken == seg.spoken:
+    row = takes.sections.get(key) if takes is not None else None
+    paid = row if row is not None and row.voiced else None
+    if plan.cached and plan.digest is not None and is_cached(plan.digest, project.takes_dir):
+        # The take of this exact text is on disk, so the cues land on the words it already carries.
+        # A plan can read cached because an earlier section of the same run writes that take, and
+        # nothing has written it yet, so the file itself is what is asked rather than the status.
+        words = project.section_words(key, words_name(plan.digest))
+        # A section runs for the silence around its take as well, which the row carries when it has one.
+        indexed = paid if paid is not None and paid.hash == plan.digest else None
+        if indexed is not None:
+            length = indexed.duration_seconds + indexed.tail_joined_seconds
+        else:
+            length = ffmpeg.probe_duration(project.takes_dir / take_name(plan.digest))
+        return words, length + lead, False
+    if plan.unchecked and paid is not None and paid.spoken == seg.spoken:
         # The voice is not set up, but the take was voiced from this exact text.
-        return project.section_words(key, entry.words_file), entry.duration_seconds + lead, False
+        length = paid.duration_seconds + paid.tail_joined_seconds
+        return project.section_words(key, paid.words_file), length + lead, False
     cfg = section_config(project, seg)
     length = seg.silent_seconds(cfg)
     words = [Word(w.word, round(w.start + lead, 3), round(w.end + lead, 3)) for w in estimated_words(seg, length, cfg)]
@@ -399,7 +410,8 @@ def preflight(
         if only and sec.seamless and sec.number in wanted and prev.number not in wanted
     }
     model = model or project.voice.model or cfg.model
-    plans, note = narration_plan(project, [s for s in spoken if named(s.index) or s.index in behind], model=model)
+    planned = [s for s in spoken if named(s.index) or s.index in behind]
+    plans, note = voiced_plan(project, planned, model=model)
     take_words: dict[str, tuple[list[Word], float]] = {}
     estimated: list[str] = []
     for plan in plans:
@@ -418,6 +430,7 @@ def preflight(
     result = PreflightResult(
         voice={"provider": project.voice.provider, "model": model, "settings": project.voice.api_settings()},
         narration=cfg,
+        rate=project.voice.price_per_1000_characters,
         takes=[plan for plan in plans if named(plan.segment.index)],
         note=note,
         align=AlignResult(

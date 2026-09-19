@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from .artifacts import Timeline
 from .jsonio import relative
+from .model.script import Segment
 from .settings import NarrationConfig
 from .stages.align import AlignResult
 from .stages.clip import SectionWords
 from .stages.measure import LeadMeasurement, RecordingCheck
-from .stages.narrate import NarrateResult, Segment, TakePlan, plan_totals
+from .stages.narrate import NarrateResult, TakePlan, plan_totals
 from .stages.preflight import PreflightResult
 from .stages.soundscape import SoundscapeItem
 from .stages.verify import VerifyResult
@@ -27,6 +28,21 @@ def mmss(seconds: float | None) -> str:
     return f"{whole // 60}:{whole % 60:02d}"
 
 
+def narrate_table(result: NarrateResult) -> str:
+    """One narrate run: the sections, the plan with its price, and the narration clock it wrote."""
+    wpm = result.narration.words_per_minute
+    parts = [
+        segments_table(result.segments, wpm, result),
+        "",
+        plan_table(result.plans, result.narration, result.rate, result.note),
+    ]
+    for row in result.rows:
+        parts.append(f"! {row.verdict.value} section {row.section}: {row.detail}")
+    if result.timeline is not None:
+        parts += ["", timeline_table(result.timeline)]
+    return "\n".join(parts)
+
+
 def segments_table(segments: list[Segment], wpm: int, result: NarrateResult | None = None) -> str:
     lines = [f"{'#':>2}  {'section':<22} {'words':>5}  {'est':>5}  {'target':>6}  {'actual':>6}  placeholders"]
     lines.append("-" * len(lines[0]))
@@ -36,7 +52,7 @@ def segments_table(segments: list[Segment], wpm: int, result: NarrateResult | No
         total_words += seg.word_count
         total_est += est
         actual = None
-        if result is not None:
+        if result is not None and result.takes is not None:
             entry = result.takes.sections.get(seg.key)
             if entry:
                 actual = entry.duration_seconds
@@ -52,22 +68,28 @@ def segments_table(segments: list[Segment], wpm: int, result: NarrateResult | No
     return "\n".join(lines)
 
 
-def plan_table(plans: list[TakePlan], cfg: NarrationConfig, note: str | None = None) -> str:
-    """What a voiced narrate would do with each section: voice it, use its cached take, or move a take."""
+def plan_table(plans: list[TakePlan], cfg: NarrationConfig, rate: float = 0.0, note: str | None = None) -> str:
+    """What a run would do with each section: voice it, or play the take of that text it already holds."""
     lines = [f"{'#':>2}  {'section':<22} {'take':<10} {'sent':>6} {'spoken':>6}  reason"]
     lines.append("-" * len(lines[0]))
     for p in plans:
         seg = p.segment
         lines.append(
-            f"{seg.index:>2}  {seg.slug[:22]:<22} {p.status:<10} {len(seg.tts_text(cfg)):>6} "
+            f"{seg.index:>2}  {seg.slug[:22]:<22} {p.status:<10} {p.characters_sent:>6} "
             f"{len(seg.spoken):>6}  {p.reason or '-'}"
         )
-    t = plan_totals(plans, cfg)
+    t = plan_totals(plans, cfg, rate)
     lines.append("-" * len(lines[0]))
     unknown = f", {t['unknown']} unknown" if t["unknown"] else ""
+    cost = ""
+    if rate:
+        cost = f" About ${t['estimated_cost']:.2f} at ${rate:.2f} per 1,000."
+        if t["most_it_can_cost"] != t["estimated_cost"]:
+            cost += f" Up to ${t['most_it_can_cost']:.2f} if the {t['unknown']} unknown section(s) are voiced too."
     lines.append(
         f"voice {t['synthesize']} section(s): {t['characters_sent']} characters sent, "
-        f"{t['characters_spoken']} spoken. {t['cached']} cached, {t['moved']} moved{unknown}."
+        f"{t['characters_spoken']} spoken, {t['characters_with_context']} with context. "
+        f"{t['cached']} cached{unknown}.{cost}"
     )
     if note:
         lines.append(f"note: {note}")
@@ -107,7 +129,7 @@ def preflight_table(result: PreflightResult) -> str:
     root = result.root
     voice = result.voice
     lines = [f"voice: provider={voice['provider']} model={voice['model']}"]
-    lines.append(plan_table(result.takes, result.narration, result.note))
+    lines.append(plan_table(result.takes, result.narration, result.rate, result.note))
     if result.placeholders:
         lines.append(f"a voiced run refuses the unfilled placeholders {result.placeholders}")
     lines += ["", align_table(result.align)]

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import re
 import sys
 from pathlib import Path
 
@@ -1110,11 +1111,19 @@ LANES = (
 
 
 def scaffold_sections() -> list[tuple[int, str, bool]]:
-    """(number, chapter, is a clip) for each [[section]] of the scaffold that `decktalk init` writes."""
+    """(number, chapter, is a clip) for each [[section]] of the scaffold that `decktalk init` writes.
+
+    A section that sets no `chapter` takes the script's own "## N." heading, as DeckTalk does.
+    """
     import tomllib
 
-    doc = tomllib.loads((ROOT / "src" / "decktalk" / "template" / "decktalk.toml").read_text(encoding="utf-8"))
-    return [(s["number"], s["chapter"], "clip" in s) for s in doc["section"]]
+    template = ROOT / "src" / "decktalk" / "template"
+    doc = tomllib.loads((template / "decktalk.toml").read_text(encoding="utf-8"))
+    headings = {
+        int(m.group(1)): m.group(2).strip()
+        for m in re.finditer(r"^##\s+(\d+)\.\s+(.+)$", (template / "script.md").read_text(encoding="utf-8"), re.M)
+    }
+    return [(s["number"], s.get("chapter") or headings[s["number"]], "clip" in s) for s in doc["section"]]
 
 
 def hatch(pal: dict[str, str], pid: str = "hatch") -> str:

@@ -70,7 +70,7 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 | voice (verb), voice again | Make a section's narration with the speech provider. | [Rebuild one section](/guides/rebuild-one-section) |
 | click track | The audio that a build without voice writes. A soft click at every estimated word start. Log strings say "silent placeholder". | [How it works](/concepts/how-it-works) |
 | click | One tick in the click track. | [Verify](/reference/verify) |
-| words file | `build/narration/NN-slug.words.json`. | [Build artifacts](/reference/artifacts) |
+| words file | `build/narration/<hash>.words.json`. | [Build artifacts](/reference/artifacts) |
 | word times | The start and end of each spoken word. | [Build artifacts](/reference/artifacts) |
 | spoken words | The words in the words file. Matching and `?words=` use them. | [Cues](/concepts/cues) |
 | timeline | `build/narration/timeline.json`. Section and word times in `narration.mp3`. | [Build artifacts](/reference/artifacts) |

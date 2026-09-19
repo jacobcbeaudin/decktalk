@@ -27,7 +27,6 @@ from decktalk.cli import build_parser, main
 from decktalk.model.script import parse_script, strip_markdown
 from decktalk.settings import Settings
 from decktalk.stages.assemble import timeline_targets
-from decktalk.stages.narrate import estimated_words
 from decktalk.tomlmap import RENAMES_PAGE
 from decktalk.verdicts import Findings, SkipReason, Verdict
 
@@ -346,9 +345,11 @@ def test_scaffold_loads_without_warnings_and_has_nine_sections(tmp_path, monkeyp
         (5, "media/edit-before.mov", "media/edit-before.words.json", True),
         (7, "media/edit-after.mov", "media/edit-after.words.json", True),
     ]
-    # Sections 4 to 8 share the title "The edit", so the video shows them as one chapter.
-    titles = ["Open", "How it works", "How AI learns", *["The edit"] * 5, "Close"]
-    assert [s.chapter for s in p.sections] == titles
+    # Sections 4 to 8 head "The edit" in the script and set no `chapter`, so the default groups them
+    # into one chapter with no repeated line in decktalk.toml.
+    chapters = ["Open", "How it works", "How AI learns", *["The edit"] * 5, "Close"]
+    assert [s.chapter for s in p.sections] == ["Open", "How it works", "How AI learns", "", "", "", "", "", "Close"]
+    assert list(p.chapters().values()) == chapters
 
 
 def test_strict_fails_on_a_missing_clip_unless_the_section_is_optional(tmp_path, monkeypatch, caplog):
@@ -473,14 +474,6 @@ def test_parse_script_sections_and_directions():
 
 def test_strip_markdown_keeps_placeholders():
     assert "[VENUE]" in strip_markdown("At [VENUE] tonight. [not spoken]")
-
-
-def test_estimated_words_span_the_duration():
-    seg = parse_script("## 1. A\n\none two three four five")[0]
-    seg.first_spoken = True
-    words = estimated_words(seg, 5.0, Settings().narration)
-    assert [w.word for w in words] == ["one", "two", "three", "four", "five"]
-    assert words[0].start == 0.7 and words[-1].end < 5.0 - 0.35
 
 
 # ---- assemble ---------------------------------------------------------------------------------
@@ -1753,39 +1746,6 @@ def test_consecutive_sections_with_the_same_title_share_one_chapter(tmp_path):
     ]
 
 
-def test_a_renumbered_take_is_found_by_its_hash_and_moves_without_clobbering(tmp_path):
-    from decktalk.model.script import Segment
-    from decktalk.stages.narrate import is_cached, reusable_entry, reuse_takes
-
-    audio = tmp_path
-    for name, body in [("01-open.mp3", "open"), ("01-open.words.json", "[]"), ("05-x.mp3", "five"),
-                       ("05-x.words.json", "[5]"), ("06-x.mp3", "six"), ("06-x.words.json", "[6]")]:  # fmt: skip
-        (audio / name).write_text(body, encoding="utf-8")
-
-    def entry(index: int, digest: str) -> Take:
-        key = f"{index:02d}"
-        slug = "open" if index == 1 else "x"
-        return Take(index, "X", f"{key}-{slug}.mp3", f"{key}-{slug}.words.json", digest, 1, 1.0, 1.0)
-
-    previous = Takes("s", "m", "mp3")
-    previous.sections = {"01": entry(1, "h1"), "05": entry(5, "h5"), "06": entry(6, "h6")}
-    to_four = Segment(4, "X", "x", "five text")
-    to_five = Segment(5, "X", "x", "six text")
-    assert not is_cached(previous.sections["05"], to_five, "h6", audio)
-    assert reusable_entry(previous, to_four, "h5", audio) == ("05", previous.sections["05"])
-    assert reusable_entry(previous, to_five, "h6", audio) == ("06", previous.sections["06"])
-    assert reusable_entry(previous, to_four, "nope", audio) is None
-    # The first spoken section carries the opening silence, so its take never moves in or out.
-    assert reusable_entry(previous, Segment(2, "X", "x", "t", first_spoken=True), "h5", audio) is None
-    assert reusable_entry(previous, to_four, "h1", audio) is None
-    # 05 moves to 04 while 06 moves onto 05's old name, and each file keeps its own take.
-    reuse_takes([(previous.sections["05"], to_four), (previous.sections["06"], to_five)], audio)
-    assert (audio / "04-x.mp3").read_text(encoding="utf-8") == "five"
-    assert (audio / "05-x.mp3").read_text(encoding="utf-8") == "six"
-    assert (audio / "05-x.words.json").read_text(encoding="utf-8") == "[6]"
-    assert not list(audio.glob(".reuse-*"))
-
-
 # ---- narration tail -------------------------------------------------------------------------
 
 
@@ -1962,65 +1922,6 @@ def test_verify_and_assemble_ignore_a_leftover_section_video(tmp_path, monkeypat
     ]
 
 
-# ---- silent runs over voiced takes ------------------------------------------------------------
-
-
-def _voiced(tmp_path: Path) -> tuple[Project, Path, Path]:
-    """A project whose build/narration holds one voiced take."""
-    root = write_project(tmp_path, "[[section]]\nnumber = 1\npage = 'a.html'\n")
-    (root / "script.md").write_text("## 1. Open\n\nHello there.\n", encoding="utf-8")
-    p = Project.load(root, environ={})
-    p.narration_dir.mkdir(parents=True)
-    take = p.narration_dir / "01-open.mp3"
-    take.write_bytes(b"voiced take")
-    take_index = Takes(script="script.md", model="eleven_v3", output_format="mp3_44100_128")
-    take_index.sections["01"] = Take(
-        index=1, chapter="Open", file=take.name, words_file="01-open.words.json", hash="3f2a9c0d1e2b4a5f",
-        word_count=2, estimated_seconds=1.0, duration_seconds=2.3,
-    )  # fmt: skip
-    take_index.save(p.takes_path)
-    return p, take, p.takes_path
-
-
-VOICED_REFUSAL = (
-    "build/narration/takes.json holds voiced takes for sections 01. A build without voice writes click tracks over "
-    "those mp3 files and replaces the take index, so the next voiced build voices every section again and spends "
-    "credits on all of them. Rehearse the build without voice in a copy of the project, or pass --force to replace "
-    "the voiced takes."
-)
-
-
-def test_narrate_without_voice_refuses_voiced_takes_unless_forced(tmp_path, monkeypatch):
-    from decktalk.media import audio, ffmpeg
-    from decktalk.stages.narrate import narrate
-
-    p, take, takes_path = _voiced(tmp_path)
-    before = takes_path.read_bytes()
-    with pytest.raises(ConfigError) as err:
-        narrate(p, silent=True)
-    assert str(err.value) == VOICED_REFUSAL
-    assert take.read_bytes() == b"voiced take" and takes_path.read_bytes() == before
-
-    monkeypatch.setattr(audio, "write_clicks", lambda path, *a, **kw: Path(path).write_bytes(b"clicks"))
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
-    monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)
-    monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
-    result = narrate(p, silent=True, force=True)
-    assert result.synthesized == ["01"] and take.read_bytes() == b"clicks"
-    take_index = Takes.load(takes_path)
-    assert take_index is not None and take_index.estimated and take_index.sections["01"].hash == "silent"
-    assert narrate(p, silent=True).synthesized == ["01"]  # a silent take index is never refused
-
-
-@pytest.mark.parametrize("command", [["build", "--no-voice"], ["narrate", "--no-voice"]])
-def test_cli_run_without_voice_over_voiced_takes_exits_1_with_the_risk(tmp_path, capsys, command):
-    p, take, _manifest = _voiced(tmp_path)
-    assert main([*command, "-p", str(p.root)]) == 1
-    assert capsys.readouterr().err.strip().splitlines()[-1] == f"error: {VOICED_REFUSAL}"
-    assert take.read_bytes() == b"voiced take"
-    assert build_parser().parse_args(["build", "--no-voice", "--force"]).force
-
-
 # ---- section silence -----------------------------------------------------------------------
 
 
@@ -2060,78 +1961,6 @@ def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkey
     assert p.lead_seconds("01") == 1.5 and p.lead_seconds("02") == 0.0
     assert "ignoring 'lead_seconds', which applies only to a page section" in caplog.text
     assert Project.load(write_project(tmp_path, MINIMAL_TOML), environ={}).page_sections[0].tail_seconds is None
-
-
-def test_timeline_joins_each_section_lead_before_its_take(tmp_path, monkeypatch):
-    """lead_seconds is silence in narration.mp3 before the take. The words and cues move, and the take does not."""
-    from decktalk.media import audio, ffmpeg
-    from decktalk.model.markers import Marker
-    from decktalk.stages.align import align
-    from decktalk.stages.assemble import resolve_marker_time
-    from decktalk.stages.narrate import build_timeline
-
-    p, take_index = _two_takes(tmp_path, "lead_seconds = 1.25\n")
-    joined: dict = {}
-    monkeypatch.setattr(
-        audio, "concat_audio", lambda files, out, **kw: joined.update(files=[f.name for f in files], leads=kw["leads"])
-    )
-    monkeypatch.setattr(
-        ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 7.25 if path.name == "narration.mp3" else 3.0
-    )
-    tl = build_timeline(p, take_index, p.script_sections()[1])
-    assert joined == {"files": ["01-open.mp3", "02-close.mp3"], "leads": [0.0, 1.25]}
-    one, two = tl.sections["01"], tl.sections["02"]
-    assert (one.start, one.end, one.duration, one.lead_seconds) == (0.0, 3.0, 3.0, 0.0)
-    assert (two.start, two.end, two.duration, two.lead_seconds) == (3.0, 7.25, 4.25, 1.25)
-    assert [(w.start, w.end) for w in two.words] == [(4.75, 5.15), (5.25, 5.85)]
-    assert two.speech_end == 5.85 and tl.total_seconds == 7.25
-    saved = Timeline.load(p.timeline_path)
-    assert saved is not None and saved.sections["02"].lead_seconds == 1.25
-
-    # Cue times count from the section start, so the lead moves each word cue, and $start stays at 0.
-    cues = [{"cue": "2.0", "on": "$start"}, {"cue": "2.1", "on": "b"}, {"cue": "2.2", "on": "$end"}]
-    (p.root / "cues.json").write_text(json.dumps({"sections": {"2": {"cues": cues}}}), encoding="utf-8")
-    result = align(p)
-    assert result.cue_times.times("02") == {"2.0": 0.0, "2.1": 2.25, "2.2": 2.85}
-    assert result.sections[0].speech_end == 2.85
-    marker = Marker(name="turn", section=2, on="b")
-    assert resolve_marker_time(marker, {"02": 10.0}, take_index, p.narration_dir, {"02": 1.25}) == pytest.approx(12.25)
-    assert resolve_marker_time(marker, {"02": 10.0}, take_index, p.narration_dir) == pytest.approx(11.0)
-
-
-def test_a_section_tail_seconds_replaces_min_tail_seconds(tmp_path, monkeypatch):
-    from decktalk.media import audio, ffmpeg
-    from decktalk.stages.narrate import ensure_tail, narrate, section_config
-
-    root = write_project(
-        tmp_path,
-        "[narration]\nmin_tail_seconds = 0.7\nopening_silence_seconds = 0\n[[section]]\nnumber = 1\npage = 'a.html'\n"
-        "[[section]]\nnumber = 2\npage = 'a.html'\ntail_seconds = 2.5\n",
-    )
-    (root / "script.md").write_text(
-        "## 1. One\n\nSame words here.\n\n## 2. Two\n\nSame words here.\n", encoding="utf-8"
-    )
-    p = Project.load(root, environ={})
-    lengths: dict[str, float] = {}
-
-    def clicks(path, duration, times, **kw):
-        lengths[Path(path).name] = duration
-        Path(path).write_bytes(b"clicks")
-
-    monkeypatch.setattr(audio, "write_clicks", clicks)
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: lengths[Path(path).name])
-    monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: lengths.get(Path(path).name, 0.0))
-    monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: None)
-    narrate(p, silent=True)
-    # The same words take the same time, so the click tracks differ by the tails alone.
-    assert lengths["02-two.mp3"] - lengths["01-one.mp3"] == pytest.approx(1.8)
-
-    padded: list[tuple[str, float]] = []
-    monkeypatch.setattr(audio, "trailing_silence", lambda path: 1.0)
-    monkeypatch.setattr(audio, "pad_tail", lambda path, seconds, bitrate: padded.append((Path(path).name, seconds)))
-    for seg in p.script_sections()[1]:
-        ensure_tail(p.narration_dir / seg.filename, section_config(p, seg))
-    assert padded == [("02-two.mp3", 1.55)]  # a 1.0 s tail passes 0.7 but not 2.5, which it reaches plus the slack
 
 
 def test_a_hold_between_page_sections_pauses_the_narration(tmp_path):
@@ -2185,7 +2014,7 @@ def test_a_hold_between_page_sections_pauses_the_narration(tmp_path):
 
 
 def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, str]]:
-    """The scaffold voiced by a fake provider: 01 and 02 cached, 03 changed, 09's take under old key 07, the rest new.
+    """The scaffold half voiced by a provider that sends nothing: 01, 02 and 09 on disk, 03 stale, the rest new.
 
     Returns the project and the path of every file the plan must leave alone, with its bytes' hash.
     """
@@ -2195,7 +2024,7 @@ def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, s
     from decktalk.model.script import PUNCT
     from decktalk.scaffold import init
     from decktalk.speech import register_speech_provider
-    from decktalk.stages.narrate import text_hash
+    from decktalk.stages.narrate import take_name, text_hash, words_name
 
     class PlanVoice:
         name = "plan-voice"
@@ -2220,23 +2049,22 @@ def _planned_scaffold(tmp_path: Path, monkeypatch) -> tuple[Project, dict[str, s
     spoken = {s.key: s for s in p.script_sections()[1]}
     p.narration_dir.mkdir(parents=True)
     take_index = Takes(script="script.md", model=cfg.model, output_format=cfg.output_format)
-    takes = {"01": ("01", "real"), "02": ("02", "real"), "03": ("03", "stale"), "07": ("09", "real")}
-    for key, (source, kind) in takes.items():
-        seg = spoken[source]
-        name = f"{key}-{seg.slug}"
-        (p.narration_dir / f"{name}.mp3").write_bytes(f"take {key}".encode())
+    for key, kind in (("01", "real"), ("02", "real"), ("03", "stale"), ("09", "real")):
+        seg = spoken[key]
+        digest = text_hash(seg, cfg, "plan-voice", settings) if kind == "real" else "0123456789abcdef"
+        (p.narration_dir / take_name(digest)).write_bytes(f"take {key}".encode())
         tokens = [t.strip(PUNCT) for t in seg.spoken.split()]
         write_words(
-            p.narration_dir / f"{name}.words.json",
+            p.narration_dir / words_name(digest),
             [Word(t, round(i * 0.4, 3), round(i * 0.4 + 0.3, 3)) for i, t in enumerate(tokens)],
         )
         take_index.sections[key] = Take(
-            index=int(key), chapter=seg.title, file=f"{name}.mp3", words_file=f"{name}.words.json",
-            hash=text_hash(seg, cfg, "plan-voice", settings) if kind == "real" else "0123456789abcdef",
-            word_count=seg.word_count, estimated_seconds=seg.estimated_seconds(cfg),
-            duration_seconds=len(tokens) * 0.4 + 1.3,
-            spoken=seg.spoken,
+            index=int(key), chapter=seg.title, file=take_name(digest), words_file=words_name(digest),
+            hash=digest, word_count=seg.word_count, estimated_seconds=seg.estimated_seconds(cfg),
+            duration_seconds=len(tokens) * 0.4 + 1.3, spoken=seg.spoken,
         )  # fmt: skip
+    # 03's take sits under a digest its text no longer makes, so a voiced run would voice it again.
+    take_index.sections["03"].hash = "0123456789abcdef"
     take_index.save(p.takes_path)
     files = {str(f): hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(p.narration_dir.iterdir())}
     return p, files
@@ -2247,76 +2075,6 @@ def _unchanged(p: Project, files: dict[str, str]) -> bool:
 
     now = {str(f): hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(p.narration_dir.iterdir())}
     return now == files
-
-
-def test_narrate_dry_run_json_lists_each_take_with_its_characters_and_moves(tmp_path, monkeypatch, capsys):
-
-    p, files = _planned_scaffold(tmp_path, monkeypatch)
-    cfg = p.settings.narration
-    assert main(["narrate", "--dry-run", "--json", "-p", str(p.root)]) == 0
-    doc = json.loads(capsys.readouterr().out)
-    assert doc["command"] == "narrate" and doc["ok"] is True and doc["findings"] == {"certain": 0, "uncertain": 0}
-    plan = doc["narrate"]
-    assert plan["voice"]["provider"] == "plan-voice" and plan["note"] is None
-    rows = {r["key"]: r for r in plan["sections"]}
-    assert {k: (r["status"], r["moved_from"]) for k, r in rows.items()} == {
-        "01": ("cached", None),
-        "02": ("cached", None),
-        "03": ("synthesize", None),
-        "04": ("synthesize", None),
-        "06": ("synthesize", None),
-        "08": ("synthesize", None),
-        "09": ("moved", "07"),
-    }
-    assert rows["03"]["reason"] == "the text, voice, model, or voice settings changed"
-    assert rows["04"]["reason"] == "no take yet"
-    assert rows["09"]["reason"] == "the same text as section 7"
-    segs = {s.key: s for s in p.script_sections()[1]}
-    for key, row in rows.items():
-        assert row["characters_sent"] == len(segs[key].tts_text(cfg)) == len(row["text"])
-        assert row["characters_spoken"] == len(segs[key].spoken)
-    voiced = ["03", "04", "06", "08"]
-    assert plan["totals"] == {
-        "synthesize": 4,
-        "cached": 2,
-        "moved": 1,
-        "unknown": 0,
-        "characters_sent": sum(len(segs[k].tts_text(cfg)) for k in voiced),
-        "characters_spoken": sum(len(segs[k].spoken) for k in voiced),
-    }
-    assert _unchanged(p, files), "a dry run wrote to build/narration"
-
-    assert main(["narrate", "--dry-run", "-p", str(p.root)]) == 0
-    out = capsys.readouterr().out
-    assert f"voice 4 section(s): {plan['totals']['characters_sent']} characters sent" in out
-    assert "2 cached, 1 moved." in out
-    with pytest.raises(SystemExit) as exc:
-        main(["narrate", "--json", "-p", str(p.root)])
-    assert exc.value.code == 2
-
-
-def test_narrate_dry_run_without_a_voice_key_still_plans_what_it_can(tmp_path, monkeypatch, capsys):
-    p, _files = _planned_scaffold(tmp_path, monkeypatch)
-    toml = p.root / "decktalk.toml"
-    toml.write_text(toml.read_text(encoding="utf-8").replace("provider = 'plan-voice'\n", ""), encoding="utf-8")
-    assert main(["narrate", "--dry-run", "--json", "-p", str(p.root)]) == 0
-    plan = json.loads(capsys.readouterr().out)["narrate"]
-    assert "ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID not set" in plan["note"]
-    # Without a key, a section with a voiced take cannot be checked, and a section with no take still needs one.
-    voiced = p.takes().sections
-    keys = [r["key"] for r in plan["sections"]]
-    assert any(k in voiced for k in keys) and any(k not in voiced for k in keys), "the scaffold needs both kinds"
-    for r in plan["sections"]:
-        expected = ("unknown",) if r["key"] in voiced else ("synthesize", "no take yet")
-        assert (r["status"], r["reason"])[: len(expected)] == expected, r
-    assert plan["totals"]["synthesize"] == sum(k not in voiced for k in keys)
-    sent = sum(r["characters_sent"] for r in plan["sections"] if r["key"] not in voiced)
-    assert plan["totals"]["characters_sent"] == sent
-    p.takes_path.unlink()
-    assert main(["narrate", "--dry-run", "--json", "-p", str(p.root)]) == 0
-    plan = json.loads(capsys.readouterr().out)["narrate"]
-    assert {(r["status"], r["reason"]) for r in plan["sections"]} == {("synthesize", "no take yet")}
-    assert plan["totals"]["synthesize"] == 7
 
 
 def test_plan_frames_follows_cue_mode_and_freezes_just_before_each_reveal():
@@ -2394,7 +2152,7 @@ def test_preflight_verdicts_and_findings():
         Verdict.CHANGED,
     ]
     result = PreflightResult(
-        voice={}, narration=Settings().narration, takes=[], note=None, estimated=[],
+        voice={}, narration=Settings().narration, rate=0.0, takes=[], note=None, estimated=[],
         align=AlignResult(cue_times=CueTimes(), sections=[], unresolved=1, estimated=True, unknown=2),
         cues=[CueEstimate("1:a", 1.0, "1.1", 0.2, Verdict.THIN_CHANGE),
               CueEstimate("1:b", 2.0, "1.1", 0.0, Verdict.NO_CHANGE),
@@ -2408,22 +2166,26 @@ def test_preflight_verdicts_and_findings():
 
 def test_preflight_resolves_cues_on_the_words_each_section_will_have(tmp_path, monkeypatch, capsys):
     from decktalk.artifacts import read_words
-    from decktalk.stages.align import find_phrase
+    from decktalk.model.cues import find_phrase
     from decktalk.stages.preflight import preflight
 
     p, files = _planned_scaffold(tmp_path, monkeypatch)
     result = preflight(p, frames=False)
     assert {t.segment.key: t.status for t in result.takes} == {
         "01": "cached", "02": "cached", "03": "synthesize", "04": "synthesize",
-        "06": "synthesize", "08": "synthesize", "09": "moved",
+        "06": "synthesize", "08": "synthesize", "09": "cached",
     }  # fmt: skip
     assert result.estimated == ["03", "04", "06", "08"]
     assert result.align.unresolved == 0 and result.align.unknown == 0
     resolved = {s.key: {r.cue: r.at for r in s.resolved} for s in result.align.sections}
-    # A cached take and a moved take resolve on their own words, which the fixture spaced 0.4 s apart.
-    open_words = read_words(p.narration_dir / "01-open.words.json")
-    assert resolved["01"]["1.1bowl"] == open_words[find_phrase(open_words, "bowl")].start == 0.4
-    close_words = read_words(p.narration_dir / "07-close.words.json")
+    # A take that is already on disk resolves on its own words, which the fixture spaced 0.4 s apart,
+    # moved by the section's lead, which for the first spoken section is the opening silence.
+    index = p.takes()
+    assert index is not None
+    open_words = read_words(p.narration_dir / index.sections["01"].words_file)
+    assert open_words[find_phrase(open_words, "bowl")].start == 0.4
+    assert resolved["01"]["1.1bowl"] == round(0.4 + p.settings.narration.opening_silence_seconds, 2)
+    close_words = read_words(p.narration_dir / index.sections["09"].words_file)
     assert resolved["09"]["5.1url"] == round(close_words[find_phrase(close_words, "decktalk dot AI")].start, 2)
     # A section that would be voiced resolves on estimated words, inside its estimated length.
     assert all(0 < t < 60 for t in resolved["04"].values()) and len(resolved["04"]) == 5
@@ -2438,10 +2200,10 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(tmp_path, m
     assert (
         payload["cue_times"]["estimated_sections"] == ["03", "04", "06", "08"] and payload["totals"]["synthesize"] == 4
     )
-    assert [t["moved_from"] for t in payload["takes"] if t["status"] == "moved"] == ["07"]
+    assert {t["key"]: t["hash"] for t in payload["takes"]}["09"] == index.sections["09"].hash
     assert main(["preflight", "--no-frames", "-p", str(p.root)]) == 0
     out = capsys.readouterr().out
-    assert "2 cached, 1 moved." in out and "frames skipped (--no-frames)" in out
+    assert "3 cached." in out and "frames skipped (--no-frames)" in out
 
     # A phrase that is not in the script, under an id the page never names, is two certain findings.
     cues_path = p.root / "cues.json"

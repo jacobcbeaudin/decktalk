@@ -96,6 +96,7 @@ The warning names the section kind that the key belongs to.
 | `script` | path | `script.md` | Script file. |
 | `cues` | path | `cues.json` | Cue file. Optional. Without it, pages use their own timing. |
 | `build` | path | `build` | Directory for generated files. |
+| `language` | string | `en` | BCP 47 language tag of the narration, which the caption files and the video carry. |
 
 ## `[voice]`
 
@@ -111,9 +112,10 @@ as `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`, or in the environment.
 | `style` | number | 0.0 | Style exaggeration. 0 is the most stable. |
 | `speaker_boost` | boolean | true | ElevenLabs speaker boost. |
 | `speed` | number | 1.0 | Speaking rate. |
+| `price_per_1000_characters` | number | 0.0 | What your plan charges per 1,000 characters. `narrate --dry-run` prints dollars from it, and leaves the figure out when it is 0. It is not part of any cache key. |
 
-Note: each key is part of every section's cache key. After a change, the next voiced build voices
-every section again. [What spends credits](/requirements#what-spends-credits) lists every change
+Note: every key here but `price_per_1000_characters` is part of every take's content hash. After a change,
+the next voiced build voices every section again. [What spends credits](/requirements#what-spends-credits) lists every change
 that costs credits. An unregistered `provider` fails when `narrate` runs, not at load.
 
 ## `[[section]]`
@@ -126,7 +128,7 @@ Write one `[[section]]` table for each `## N.` section of the script. DeckTalk s
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `number` | integer | required | Matches `## N.` in the script. |
-| `title` | string | empty | Chapter title and slate title. An empty title becomes `Section N`. Consecutive sections with the same title share one chapter. |
+| `chapter` | string | the script's `## N.` heading | Chapter title and slate title. A section with neither becomes `Section N`. Consecutive sections with the same chapter share one chapter marker. |
 | `seamless` | boolean | false | The section opens on the previous section's last picture. `verify` flags a visible jump at the cut as `POP AT CUT`. Not allowed on the first section. |
 
 ### Page section keys
@@ -153,7 +155,7 @@ so a cached take stays cached.
 | Key | Where the silence goes | How DeckTalk adds it |
 |---|---|---|
 | `lead_seconds` | Before the first word | `narrate` joins it into `narration.mp3` before the take. The take is not changed. |
-| `tail_seconds` | After the last word | `narrate` pads the take, as it does for `min_tail_seconds`. |
+| `tail_seconds` | After the last word | `narrate` pads the take, as it does for `min_tail_seconds`. A take in a shared [`cache_dir`](/reference/configuration#narration) is never rewritten, so its tail is joined into `narration.mp3` after it instead. |
 | `hold_seconds` | After the section's narration | `assemble` holds the last frame, and the narration waits. |
 
 - The section starts when its silence starts. So `lead_seconds` moves every word and every word cue of the
