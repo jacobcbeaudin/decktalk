@@ -59,8 +59,9 @@ class Project:
             root = root.parent
         if not (root / PROJECT_FILE).exists():
             raise ConfigError(
-                f"{root / PROJECT_FILE} not found. Run from a project directory, pass --project DIR, "
-                "or create one with `decktalk init DIR`."
+                f"{PROJECT_FILE} is not there.",
+                hint="Run from a project directory, pass --project DIR, or create one with `decktalk init DIR`.",
+                path=root / PROJECT_FILE,
             )
         return cls.from_toml(root, read_project_toml(root), environ=environ)
 

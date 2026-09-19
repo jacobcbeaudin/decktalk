@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 from ..artifacts import Word
@@ -39,6 +39,11 @@ class Cue:
     offset: float = 0.0
     verify: bool = True  # False leaves the cue out of a plain `decktalk verify`.
     occurrence_set: bool = False  # cues.json names the occurrence, so a repeated phrase is not ambiguous.
+
+
+# Every key a cue row may hold, which is every field of `Cue` but `occurrence_set`, this module's own and
+# never written by an author, and `_comment`, the one key a row may carry that DeckTalk reads nothing from.
+CUE_KEYS = {f.name for f in fields(Cue) if f.name != "occurrence_set"} | {"_comment"}
 
 
 @dataclass(frozen=True)
@@ -61,36 +66,65 @@ def load_cues(path: Path, known: set[int]) -> list[SectionCues]:
     try:
         data = read_json(path)
     except json.JSONDecodeError as exc:
-        raise ConfigError(f"{path}: {exc}") from exc
+        raise ConfigError(
+            f"{path.name} is not valid JSON: {exc.msg}.",
+            hint="Check the brackets and the commas on the line named here.",
+            path=path,
+            line=exc.lineno,
+        ) from exc
     sections_raw = data.get("sections") if isinstance(data, dict) else None
     if not isinstance(sections_raw, dict):
-        raise ConfigError(f"{path}: expected a top-level 'sections' object")
+        raise ConfigError(
+            f"{path.name} has no top-level 'sections' object.",
+            hint='Wrap the sections in {"sections": {...}}.',
+            path=path,
+        )
     out: list[SectionCues] = []
     for num_raw, spec in sections_raw.items():
         try:
             number = int(num_raw)
         except ValueError as exc:
-            raise ConfigError(f"{path}: section key {num_raw!r} is not a number") from exc
+            raise ConfigError(
+                f"{path.name} has the section key {num_raw!r}, which is not a number.",
+                hint='Key each section by its number in decktalk.toml, such as "3".',
+                path=path,
+            ) from exc
         if number not in known:
-            raise ConfigError(f"{path}: section {number} is not in decktalk.toml")
+            raise ConfigError(
+                f"{path.name} names section {number}, which is not in decktalk.toml.",
+                hint="Add a [[section]] with that number, or drop the cues written for it.",
+                path=path,
+            )
         if not isinstance(spec, dict):
-            raise ConfigError(f"{path}: section {number} must be an object")
-        section = Table(spec, f"{path}: section {number}")
+            raise ConfigError(
+                f"{path.name} gives section {number} a value that is not an object.",
+                hint='Write the section as {"cues": [...]}.',
+                path=path,
+            )
+        section = Table(spec, f"{path.name}: section {number}")
         cues = [
-            parse_cue(raw, f"{path}: section {number}, cue #{i + 1}")
+            parse_cue(raw, f"{path.name}: section {number}, cue #{i + 1}", path)
             for i, raw in enumerate(section.get_tables("cues"))
         ]
         out.append(SectionCues(number=number, cues=tuple(cues), min_seconds=section.get_num("min_seconds")))
     return sorted(out, key=lambda s: s.number)
 
 
-def parse_cue(raw: dict[str, object], where: str) -> Cue:
+def parse_cue(raw: dict[str, object], where: str, path: Path | None = None) -> Cue:
+    """One cue row, refusing a key this file does not read so that a typo cannot move a cue in silence."""
+    unknown = sorted(set(raw) - CUE_KEYS)
+    if unknown:
+        raise ConfigError(
+            f"{where}: {unknown[0]!r} is not a key of a cue.",
+            hint=f"The keys of a cue are {', '.join(sorted(CUE_KEYS))}.",
+            path=path,
+        )
     t = Table(raw, where)
     cue_id = t.get_str("cue", required=True)
     on = t.get_str("on", required=True)
     for key, value in (("cue", cue_id), ("on", on)):
         if not value:
-            raise ConfigError(f"{where}: '{key}' must not be empty")
+            raise ConfigError(f"{where}: '{key}' must not be empty", path=path)
     return Cue(
         cue=cue_id,
         on=on,

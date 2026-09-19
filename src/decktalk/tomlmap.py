@@ -14,15 +14,13 @@ import logging
 import os
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, fields, is_dataclass
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import UnionType
 from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints, overload
 
 from .errors import ConfigError
 
 log = logging.getLogger(__name__)
-
-# Where a reader looks up a key that DeckTalk no longer reads.
-RENAMES_PAGE = "docs/reference/renames.mdx"
 
 
 @dataclass(frozen=True)
@@ -44,7 +42,7 @@ def unknown_key_message(key: str, known: Iterable[str], where: str) -> str:
     """The warning for one key that DeckTalk does not read, with the closest known key when one is near."""
     close = difflib.get_close_matches(key, sorted(known), n=1)
     hint = f" (did you mean '{close[0]}'?)" if close else ""
-    return f"{where}: ignoring unknown key '{key}'{hint}. {RENAMES_PAGE} lists every name DeckTalk renamed."
+    return f"{where}: ignoring unknown key '{key}'{hint}."
 
 
 def unknown_key_warnings(table: Mapping[str, Any], known: Iterable[str], where: str) -> list[str]:
@@ -56,21 +54,28 @@ def unknown_key_warnings(table: Mapping[str, Any], known: Iterable[str], where: 
 class Table:
     """Typed access to one mapping, with error messages that name the file and the table."""
 
-    def __init__(self, data: Mapping[str, Any], where: str) -> None:
+    def __init__(self, data: Mapping[str, Any], where: str, path: Path | None = None) -> None:
         self.data = data
         self.where = where
+        # The file this table was read from, so a refusal fills the error's own path slot. A caller
+        # that has no file, such as a table built from an environment, leaves it unset.
+        self.path = path
 
     def _get(self, key: str, kind: type | tuple[type, ...], default: Any, required: bool) -> Any:
         if key not in self.data:
             if required:
-                raise ConfigError(f"{self.where}: missing required key '{key}'")
+                raise ConfigError(
+                    f"{self.where}: '{key}' is required and is not there.",
+                    hint=f"Add '{key}' to this table.",
+                    path=self.path,
+                )
             return default
         value = self.data[key]
         if isinstance(value, bool) and kind in (int, float, (int, float)):
-            raise ConfigError(f"{self.where}: '{key}' must be a number, got a boolean")
+            raise ConfigError(f"{self.where}: '{key}' must be a number, got a boolean", path=self.path)
         if not isinstance(value, kind):
             names = kind.__name__ if isinstance(kind, type) else " or ".join(k.__name__ for k in kind)
-            raise ConfigError(f"{self.where}: '{key}' must be {names}, got {type(value).__name__}")
+            raise ConfigError(f"{self.where}: '{key}' must be {names}, got {type(value).__name__}", path=self.path)
         return value
 
     # A key with a default, and a required key, always have a value. Only an optional key with no
@@ -106,6 +111,37 @@ class Table:
     def get_int(self, key: str, default: int | None = None, *, required: bool = False) -> int | None:
         return cast("int | None", self._get(key, int, default, required))
 
+    @overload
+    def get_path(self, key: str, default: str, *, required: bool = False) -> str: ...
+    @overload
+    def get_path(self, key: str, default: None = None, *, required: Literal[True]) -> str: ...
+    @overload
+    def get_path(self, key: str, default: None = None, *, required: bool = False) -> str | None: ...
+
+    def get_path(self, key: str, default: str | None = None, *, required: bool = False) -> str | None:
+        """One key whose value is a path inside the project, refused when it names somewhere else.
+
+        Every path DeckTalk reports is relative to the project root, so a key that points outside it
+        would put a path from another part of the machine into a payload a reader relays, and would
+        read or write a file the project does not own. A path key is read through this method rather
+        than through `get_str`, so a key added later cannot miss the rule by being spelled the other
+        way. The refusal names the key alone, because the value is what must not be repeated.
+        """
+        value = self._get(key, str, default, required)
+        if value in (None, ""):
+            return cast("str | None", value)
+        text = cast("str", value)
+        # Both flavours are tested, because the value is resolved later by the platform's own Path
+        # and a drive-absolute value is absolute on Windows while a POSIX reader would let it pass.
+        posix, windows = PurePosixPath(text.replace("\\", "/")), PureWindowsPath(text)
+        if posix.is_absolute() or windows.is_absolute() or ".." in posix.parts:
+            raise ConfigError(
+                f"{self.where}: '{key}' names a path outside the project.",
+                hint=f"Write '{key}' as a path inside the project directory.",
+                path=self.path,
+            )
+        return text
+
     def get_bool(self, key: str, default: bool = False) -> bool:
         return bool(self._get(key, bool, default, False))
 
@@ -116,7 +152,7 @@ class Table:
         items = cast("list[Any]", self._get(key, list, [], False))
         for i, item in enumerate(items):
             if not isinstance(item, dict):
-                raise ConfigError(f"{self.where}: [[{key}]] #{i + 1} must be a table")
+                raise ConfigError(f"{self.where}: [[{key}]] #{i + 1} must be a table", path=self.path)
         return cast("list[dict[str, Any]]", items)
 
     def unknown(self, known: Iterable[str]) -> list[str]:

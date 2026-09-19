@@ -1,24 +1,40 @@
-"""The tables the CLI prints from stage results.
+"""The tables and the leading summary the CLI prints, read from the stage results themselves.
 
 Every table reads one result object, so the text output and the `--json` payload can never
-disagree. Internal: nothing here is in `decktalk.__all__`.
+disagree. The summary leads, because a long table's last line is the one a person scrolls for, and
+the failing rows lead the machine output for the same reason. Internal: nothing here is in
+`decktalk.__all__`.
 """
 
 from __future__ import annotations
 
-from .artifacts import Timeline
-from .jsonio import relative
-from .model.script import Segment
-from .settings import NarrationConfig
-from .stages.align import AlignResult
-from .stages.clip import SectionWords
-from .stages.narrate import NarrateResult, TakePlan, plan_totals
-from .stages.preflight import PreflightResult
-from .stages.record import RecordResult
-from .stages.soundscape import SoundscapeItem
-from .stages.verify import VerifyResult
-from .status import StatusResult
-from .verdicts import Verdict
+from typing import Any
+
+from ..artifacts import Timeline
+from ..jsonio import relative
+from ..model.script import Segment
+from ..scaffold import DoctorRow, InitResult
+from ..settings import NarrationConfig
+from ..stages.align import AlignResult
+from ..stages.clip import ClipResult, SectionWords
+from ..stages.narrate import NarrateResult, TakePlan, plan_totals
+from ..stages.preflight import PreflightResult
+from ..stages.record import RecordResult
+from ..stages.soundscape import SoundscapeItem
+from ..stages.verify import VerifyResult
+from ..status import StatusResult
+from ..verdicts import Findings, Verdict
+
+
+def lead(summary: dict[str, object], findings: Findings) -> str:
+    """The one line a command's text output opens with: its own counts, then what it found.
+
+    The keys are the command's own, and they are the keys of the envelope's `summary`, so a person
+    and a program read the same numbers in the same order.
+    """
+    counts = ", ".join(f"{key.replace('_', ' ')} {value}" for key, value in summary.items() if value is not None)
+    found = f"{findings.certain} certain, {findings.uncertain} uncertain finding(s)"
+    return " | ".join(part for part in (counts, found if findings.certain or findings.uncertain else "") if part)
 
 
 def mmss(seconds: float | None) -> str:
@@ -117,7 +133,7 @@ def align_table(result: AlignResult) -> str:
         lines.append(f"{s.key:>3}  {s.speech_end:>6.1f}  {str(s.min_seconds or '-'):>5}  {cues}")
         for note in s.notes:
             lines.append(f"{'':>3}  {'':>6}  {'':>5}  ! {note}")
-    tail = f"{len(result.cue_times.sections)} sections with cues; {result.unresolved} unresolved"
+    tail = f"{len(result.cue_times.sections)} sections with cues, {result.unresolved} unresolved"
     if result.estimated:
         tail += "  (estimated words: times are placeholders)"
     lines.append(tail)
@@ -200,7 +216,7 @@ def verify_table(result: VerifyResult) -> str:
     lines.append(f"{'sec':>3} {'start':>8} {'probe':>8} {'YAVG':>6} {'YMAX':>6}  result")
     for s in result.starts:
         lines.append(f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {s.verdict}")
-    lines.append(f"total {result.total_seconds:.2f}s; {result.black_starts} black section start(s)")
+    lines.append(f"total {result.total_seconds:.2f}s, {result.black_starts} black section start(s)")
     if result.cuts:
         lines.append("")
         lines.append(f"{'sec':>3} {'cut at':>8} {'before cut':>11}  result")
@@ -293,3 +309,75 @@ def soundscape_table(items: list[SoundscapeItem]) -> str:
         for r in it.requests:
             lines.append(f"   {r}")
     return "\n".join(lines) or "nothing to generate"
+
+
+# ---- the text of the commands that write rather than judge -------------------------------------
+
+
+def starter_note(result: InitResult) -> str:
+    """What `init` wrote, and the one next step a first-time reader takes.
+
+    A file the author already had is never replaced, so a line is printed only for a file this run
+    wrote, which is what `written` says.
+    """
+    lines = [
+        f"created {result.root}",
+        "  decktalk.toml  the project file: sections -> pages or clips, voice, mix, soundscape",
+        "  script.md      the narration (## N. sections)",
+        "  cues.json      which spoken phrase each visual lands on",
+        "  deck/          the pages, decktalk-runtime.js and katex/ (open a page for its scene index)",
+    ]
+    if result.root / "AGENTS.md" in result.written:
+        lines.append("  AGENTS.md      the rules an agent working in this project follows")
+    if result.skills:
+        lines.append("  .agents/skills the six DeckTalk skills, linked from .claude/skills")
+    lines.append("next: `decktalk build --no-voice` renders with placeholder narration, no API key and no spend")
+    lines.append("      then cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID) and `decktalk build`")
+    return "\n".join(lines)
+
+
+def doctor_table(rows: list[DoctorRow]) -> str:
+    """One line per component: what it is, whether it is there, and which build a run would use."""
+    return "\n".join(f"{r.name:<9} {'ok     ' if r.ok else 'MISSING'} {r.detail}" for r in rows)
+
+
+def file_list(written: list[str]) -> str:
+    """The files a command wrote, one per line, which is what a person asked for by running it."""
+    return "\n".join(written) or "nothing was written"
+
+
+def clip_note(result: ClipResult, video: str, words_file: str) -> str:
+    """What `clip` cut, and the two lines a clip section needs in decktalk.toml."""
+    source = f"sections/{result.section:02d}.mp4"
+    return "\n".join(
+        [
+            f"wrote {video}  ({result.duration:.2f}s: frames {result.first_frame} to {result.last_frame} "
+            f"of {source}, {result.start:.2f} to {result.end:.2f}s, hold {result.hold_seconds:g}s, "
+            f"gain {result.gain_db:+g} dB)",
+            f"wrote {words_file}  ({len(result.words)} words)",
+            f'use it in a clip section: clip = "{video}" and words = "{words_file}"',
+        ]
+    )
+
+
+def plan_report(result: NarrateResult) -> str:
+    """What the next run would send, section by section, with nothing sent."""
+    cfg = result.narration
+    targets = [plan.segment for plan in result.plans]
+    lines = [f"=== {s.key} {s.title}\n{s.tts_text(cfg)}\n" for s in targets]
+    voiced = result.voice.get("provider") is not None
+    lines.append(f"voice: {result.voice}" if voiced else "voice: none (--no-voice)")
+    lines.append(segments_table(targets, cfg.words_per_minute))
+    lines.append("")
+    lines.append(plan_table(result.plans, cfg, result.rate, result.note))
+    unfilled = sorted({p for s in targets for p in s.placeholders})
+    if unfilled:
+        lines.append(f"\nnote: unfilled placeholders {unfilled}. Fill them before the real run.")
+    return "\n".join(lines)
+
+
+def stage_table(stage: str, result: Any) -> str:
+    """The table one stage of a build prints as it finishes, or nothing when it prints none."""
+    tables = {"narrate": narrate_table, "align": align_table, "record": record_table, "verify": verify_table}
+    builder = tables.get(stage)
+    return builder(result) if builder else ""

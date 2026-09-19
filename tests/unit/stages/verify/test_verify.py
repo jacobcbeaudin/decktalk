@@ -128,8 +128,12 @@ def test_verify_marks_a_thin_change_as_uncertain(verify_project, monkeypatch, ca
     capsys.readouterr()
     assert main(["-p", str(p.root), "verify", "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
-    assert doc["findings"] == {"certain": 0, "uncertain": 1}
-    assert doc["verify"]["cues"][0]["verdict"] == Verdict.THIN_CHANGE.value
+    assert (doc["findings"]["certain"], doc["findings"]["uncertain"]) == (0, 1)
+    assert doc["verify"]["cues"][0]["verdict"] == {
+        "code": "THIN_CHANGE",
+        "label": Verdict.THIN_CHANGE.value,
+        "certain": False,
+    }
 
     # A clear change reads changed, and the factor can turn the warning off.
     monkeypatch.setattr("decktalk.media.frames.changed_pixels_percent", lambda path, t1, t2, **kw: 0.5)

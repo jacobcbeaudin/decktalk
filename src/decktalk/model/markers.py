@@ -51,13 +51,22 @@ def load_markers(path: Path) -> Markers:
     try:
         data = read_json(path)
     except json.JSONDecodeError as exc:
-        raise ConfigError(f"{path}: {exc}") from exc
+        raise ConfigError(
+            f"{path.name} is not valid JSON: {exc.msg}.",
+            hint="Check the brackets and the commas on the line named here.",
+            path=path,
+            line=exc.lineno,
+        ) from exc
     if not isinstance(data, dict):
-        raise ConfigError(f"{path}: expected an object with 'markers'")
-    top = Table(data, str(path))
+        raise ConfigError(
+            f"{path.name} has no top-level 'markers' array.",
+            hint='Wrap the markers in {"markers": [...]}.',
+            path=path,
+        )
+    top = Table(data, path.name, path)
     rows: list[Marker] = []
     for i, raw in enumerate(top.get_tables("markers")):
-        t = Table(raw, f"{path}: markers #{i + 1}")
+        t = Table(raw, f"{path.name}: markers #{i + 1}", path)
         t.warn_unknown(Marker.__dataclass_fields__)
         rows.append(
             Marker(

@@ -9,7 +9,6 @@ import pytest
 from decktalk.errors import ConfigError
 from decktalk.tomlmap import (
     ABOVE_ZERO,
-    RENAMES_PAGE,
     Check,
     Table,
     env_names,
@@ -146,7 +145,7 @@ def test_a_table_names_the_file_and_the_key_in_every_message():
     assert t.get_str("page", required=True) == "a.html"
     assert t.get_int("scene") == 2 and t.get_num("ratio") == 1.5 and t.get_bool("on") is True
     assert t.get_str("missing", "fallback") == "fallback" and t.get_int("missing") is None
-    with pytest.raises(ConfigError, match=r"\[\[section\]\] number=1: missing required key 'gone'"):
+    with pytest.raises(ConfigError, match=r"\[\[section\]\] number=1: 'gone' is required and is not there"):
         t.get_str("gone", required=True)
     with pytest.raises(ConfigError, match="'scene' must be str, got int"):
         t.get_str("scene")
@@ -154,13 +153,10 @@ def test_a_table_names_the_file_and_the_key_in_every_message():
         t.get_num("on")
 
 
-def test_an_unknown_key_is_a_warning_that_names_the_closest_one_and_the_renames_page():
-    """A reader who typed a name DeckTalk no longer reads gets a route to the page that explains it."""
+def test_an_unknown_key_is_a_warning_that_names_the_closest_one_it_knows():
+    """A reader who mistyped a key is given the key DeckTalk does read, and nothing else."""
     message = unknown_key_message("presett", {"preset", "crf"}, "decktalk.toml: [video]")
-    assert message == (
-        f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?). "
-        f"{RENAMES_PAGE} lists every name DeckTalk renamed."
-    )
+    assert message == "decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?)."
     assert "did you mean" not in unknown_key_message("zebra", {"preset"}, "decktalk.toml: [video]")
     assert unknown_key_warnings({"preset": 1, "zebra": 2}, {"preset"}, "x") == [
         unknown_key_message("zebra", {"preset"}, "x")

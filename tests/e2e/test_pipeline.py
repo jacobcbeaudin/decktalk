@@ -346,9 +346,10 @@ def test_verify_strict_finds_nothing_but_timing(built: Built) -> None:
     """Every start is on screen, every cut is quiet, and every one of the seven cues changed the picture."""
     v = built.verify["verify"]
     assert [f"{c['section']}:{c['cue']}" for c in v["cues"]] == list(CUES)
-    assert {s["key"]: s["verdict"] for s in v["starts"]} == {k: "ok" for k in ("01", "02", "03", "04", "05")}
-    assert {c["key"]: c["verdict"] for c in v["cuts"]} == {k: "quiet" for k in SPOKEN}
-    bad = [c for c in v["cues"] if c["verdict"] not in ("changed", "OFF CUE")]
+    # A verdict is matched by its code and never by its label, which the envelope now carries.
+    assert {s["key"]: s["verdict"]["code"] for s in v["starts"]} == {k: "OK" for k in ("01", "02", "03", "04", "05")}
+    assert {c["key"]: c["verdict"]["code"] for c in v["cuts"]} == {k: "QUIET" for k in SPOKEN}
+    bad = [c for c in v["cues"] if c["verdict"]["code"] not in ("CHANGED", "OFF_CUE")]
     assert not bad, bad  # THIN CHANGE?, NO CHANGE, UNRESOLVED and skipped all fail here
     assert all(c["av_ms"] is not None for c in v["cues"]), "a build without voice carries a click at every cued word"
 
@@ -364,7 +365,7 @@ def test_cue_timing_gate(built: Built, request: pytest.FixtureRequest) -> None:
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         Path(summary).open("a", encoding="utf-8").write(f"- pipeline test: {line}\n")
-    off = [c for c in rows if c["verdict"] == "OFF CUE"]
+    off = [c for c in rows if c["verdict"]["code"] == "OFF_CUE"]
     if gate:
         assert not off, off
         assert built.verify["ok"], built.verify["findings"]
@@ -380,7 +381,7 @@ def test_cue_timing_gate(built: Built, request: pytest.FixtureRequest) -> None:
 
 def test_section_2_is_seamless_after_section_1(built: Built) -> None:
     [seam] = built.verify["verify"]["seams"]
-    assert (seam["key"], seam["verdict"]) == ("02", "ok"), seam
+    assert (seam["key"], seam["verdict"]["code"]) == ("02", "OK"), seam
     assert seam["changed_percent"] <= 0.1
 
 
@@ -508,10 +509,10 @@ def test_preflight_plans_every_take_and_estimates_each_reveal(built: Built) -> N
     p = doc["preflight"]
     assert [t["key"] for t in p["takes"]] == list(SPOKEN)
     assert p["totals"]["synthesize"] == len(p["takes"]) == 3, p["totals"]
-    verdicts = {f"{c['section']}:{c['cue']}": c["verdict"] for c in p["cues"]}
+    verdicts = {f"{c['section']}:{c['cue']}": c["verdict"]["code"] for c in p["cues"]}
     assert set(verdicts) == set(CUES)
-    assert set(verdicts.values()) <= {"changed", "THIN CHANGE?", "skipped"}, verdicts
-    assert [(k["key"], k["verdict"]) for k in p["seams"]] == [("02", "ok")]
+    assert set(verdicts.values()) <= {"CHANGED", "THIN_CHANGE", "SKIPPED"}, verdicts
+    assert [(k["key"], k["verdict"]["code"]) for k in p["seams"]] == [("02", "OK")]
 
 
 def test_screenshots_write_a_frame_from_a_playing_section(built: Built) -> None:

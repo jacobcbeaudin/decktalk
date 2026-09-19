@@ -9,7 +9,8 @@ import pytest
 
 from decktalk import ConfigError
 from decktalk.artifacts import Takes
-from decktalk.cli import build_parser, main
+from decktalk.cli import main
+from decktalk.cli.parser import build_parser
 from decktalk.media import audio, ffmpeg
 from decktalk.pipeline import TakeStatus
 from decktalk.stages.narrate import narrate
@@ -72,8 +73,8 @@ def test_a_run_without_voice_refuses_only_the_sections_that_are_paid_for(project
         narrate(project, silent=True)
     message = str(caught.value)
     assert "holds paid takes for section(s) 01, 02, 03" in message
-    assert "Every section of this project is voiced already" in message
-    assert "--force" not in message, "the refusal must not teach --force"
+    assert "Every section of this project is voiced already" in caught.value.hint
+    assert "--force" not in message and "--force" not in caught.value.hint, "the refusal must not teach --force"
     for key, take in index.sections.items():
         assert (project.narration_dir / take.file).read_bytes() == paid[key]
 
@@ -82,7 +83,7 @@ def test_a_run_without_voice_refuses_only_the_sections_that_are_paid_for(project
     index.save(project.takes_path)
     with pytest.raises(ConfigError) as caught:
         narrate(project, silent=True)
-    assert "Rehearse the sections nobody has paid for: --only 3." in str(caught.value)
+    assert caught.value.hint == "Rehearse the sections nobody has paid for: --only 3."
     result = narrate(project, silent=True, only=[3])
     assert result.synthesized == ["03"]
     after = Takes.load(project.takes_path)
@@ -122,10 +123,14 @@ def test_the_stage_refuses_a_script_the_voice_must_not_receive(base, make_projec
 
 
 @pytest.mark.parametrize("command", [["build", "--no-voice"], ["narrate", "--no-voice"]])
-def test_cli_a_run_without_voice_over_paid_takes_exits_1_with_the_risk(project, voice, monkeypatch, command, capsys):
+def test_cli_a_run_without_voice_over_paid_takes_is_an_error_and_not_a_finding(
+    project, voice, monkeypatch, command, capsys
+):
+    """It stops the run before it does anything, which is exit 3, not a finding about the project."""
     _voiced(project, voice, monkeypatch)
-    assert main([*command, "-p", str(project.root)]) == 1
-    assert "holds paid takes for section(s) 01, 02, 03" in capsys.readouterr().err
+    assert main([*command, "-p", str(project.root)]) == 3
+    err = capsys.readouterr().err
+    assert "error[CONFIG]: " in err and "holds paid takes for section(s) 01, 02, 03" in err
     assert build_parser().parse_args([*command, "--force"]).force
 
 
@@ -158,6 +163,6 @@ def test_the_refusal_names_a_command_line_the_parser_accepts(project, voice, mon
     index.save(project.takes_path)
     with pytest.raises(ConfigError) as caught:
         narrate(project, silent=True)
-    advice = str(caught.value).rsplit("paid for: ", 1)[1].rstrip(".")
+    advice = caught.value.hint.rsplit("paid for: ", 1)[1].rstrip(".")
     assert advice == "--only 2 --only 3"
     assert build_parser().parse_args(["narrate", *advice.split()]).only == [2, 3]

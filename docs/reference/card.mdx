@@ -156,7 +156,7 @@ decktalk screenshots --slide 2.1 --after 2.1aloud             # slide 2.1 frozen
 decktalk screenshots --section 9 --at 12.5  # a frame 12.5 s after narration t=0 in section 9
 decktalk words --only 1                     # section 1's words, in seconds after the section starts
 decktalk clip 1 --start 2.3 --end 8.4 --out media/count.mp4   # that span of section 1 as a clip and a words file
-decktalk status [--json]                    # what exists and what is built
+decktalk status [--json]                    # what the input files say and what is built
 decktalk narrate --dry-run                  # the text, and which sections a voiced run voices. Sends nothing.
 decktalk narrate --dry-run --json           # the same take plan as one JSON object
 decktalk preflight                          # takes, cues, and frozen reveals before a voiced build
@@ -166,17 +166,26 @@ decktalk soundscape --dry-run               # every sound request. Sends nothing
 - A project command takes `-p DIR`. The default is `DECKTALK_PROJECT`, then the current directory.
 - `-v` and `-q` go before or after the command name.
 - `-p` goes before the command name, or after it on every command except `init`, `install`, and `doctor`.
-- A repeatable option takes one value each time. Write `--only 3 --only 6`.
-- `--strict` on `assemble` and `build` fails on a missing recording or a missing clip.
+- `--only` takes a number, a list or a range, and repeats: `--only 3`, `--only 3,5`, `--only 7-9`.
+- `--strict` fails on an uncertain finding, and on `assemble` and `build` on a missing recording or clip.
 - A clip section with `optional = true` still plays its slate under `--strict`.
 
-Six read-only commands print JSON, and each takes the exit options its own findings can reach.
+Every command prints one JSON envelope with `--json`, and each takes the exit options its own
+findings can reach.
 
 | Option | Commands | Meaning |
 |---|---|---|
-| `--json` | `status`, `align`, `preflight`, `check`, `verify`, `doctor` | One JSON object on stdout. |
-| `--strict` | `align`, `preflight`, `check`, `verify` | Also exits 1 on an uncertain finding. |
-| `--exit-zero` | `align`, `preflight`, `check`, `verify`, `doctor` | Exits 0 on findings. An error still exits 1. |
+| `--json` | every command | One envelope on stdout, and nothing else there. An error prints it too. |
+| `--strict` | `align`, `preflight`, `check`, `assemble`, `verify`, `clip`, `build` | Also exits 1 on an uncertain finding. |
+| `--exit-zero` | the same commands and `doctor` | Exits 0 on findings. An error still exits 3. |
+
+| Exit | Meaning |
+|---|---|
+| 0 | Nothing found, or `--exit-zero`. |
+| 1 | A finding. `error` is null, and the project is what to fix. |
+| 2 | A usage error. `error.code` is `USAGE`. |
+| 3 | DeckTalk could not run. `error` names the error class. Stop. |
+| 130 | Interrupted. |
 
 Every option: [CLI](/reference/cli).
 
@@ -260,20 +269,22 @@ own binaries. Set both. [CLI](/reference/cli#environment-variables) gives the de
 
 | Code | Meaning |
 |---|---|
-| 0 | Success, or `--exit-zero` on a command with findings. |
-| 1 | An error, or a finding. [Exit codes](/reference/cli#exit-codes) lists the findings of each command. |
-| 2 | A usage error, such as an unknown option or a missing command. |
+| 0 | Nothing found, or `--exit-zero` on a command with findings. |
+| 1 | A finding. `error` is null, and the project is what to fix. [Exit codes](/reference/cli#exit-codes) lists the findings of each command. |
+| 2 | A usage error, such as an unknown option or a missing command. `error.code` is `USAGE`. |
+| 3 | DeckTalk itself could not run. `error` names the error class, so stop. |
 | 130 | Interrupted. |
 
-| Error | Meaning |
-|---|---|
-| `ConfigError` | An input is bad or inconsistent. |
-| `MissingInputError` | An earlier stage has not run. |
-| `ProviderError` | The speech provider refused or failed. |
-| `ToolError` | ffmpeg or Chromium failed. |
+| Error | `error.code` | Meaning |
+|---|---|---|
+| `ConfigError` | `CONFIG` | An input is bad or inconsistent. |
+| `MissingInputError` | `MISSING_INPUT` | An earlier stage has not run. |
+| `ProviderError` | `PROVIDER` | The speech provider refused or failed. |
+| `ToolError` | `TOOL` | ffmpeg or Chromium failed. |
 
-An error prints `error: <message>` on stderr and exits 1, even with `--exit-zero`. Logs go to stderr
-through the `decktalk` logger. DeckTalk never prints a key.
+An error prints `error[CODE]: <message>` on stderr and exits 3, even with `--exit-zero`. Under
+`--json` it fills the envelope's `error` slot instead. Logs go to stderr through the `decktalk`
+logger. DeckTalk never prints a key.
 
 ## Python
 

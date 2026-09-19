@@ -34,7 +34,11 @@ WORD_SLACK_SECONDS = 0.001  # A word that sits this close to an edge of the span
 def _timeline(project: Project) -> Timeline:
     timeline = project.timeline()
     if timeline is None:
-        raise MissingInputError(f"{project.timeline_path} not found. Run `decktalk narrate` first.")
+        raise MissingInputError(
+            "The narration clock is not there, so no section has a start to cut from.",
+            hint="Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.",
+            path=project.timeline_path,
+        )
     return timeline
 
 

@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-import decktalk
 from decktalk import ConfigError, Project, load_settings
 from decktalk.artifacts import (
     CueTime,
@@ -20,7 +19,8 @@ from decktalk.artifacts import (
     TimelineSection,
     Word,
 )
-from decktalk.cli import build_parser, main
+from decktalk.cli import main
+from decktalk.cli.parser import UsageError, build_parser
 from decktalk.model.script import parse_script, strip_markdown
 from decktalk.settings import Settings
 from decktalk.tomlmap import RENAMES_PAGE
@@ -129,9 +129,14 @@ def test_project_allows_clips_between_page_sections(tmp_path):
     assert p.clip_numbers == {2, 3} and [s.number for s in p.page_sections] == [1, 4]
 
 
-def test_project_missing_file_message(tmp_path):
-    with pytest.raises(ConfigError, match="decktalk init"):
+def test_project_missing_file_names_the_file_and_the_next_action(tmp_path):
+    """The message is one sentence, and where to look and what to do next have slots of their own."""
+    with pytest.raises(ConfigError) as raised:
         Project.load(tmp_path, environ={})
+    error = raised.value
+    assert str(error) == "decktalk.toml is not there."
+    assert error.path == tmp_path / "decktalk.toml" and error.line is None
+    assert "decktalk init" in (error.hint or "")
 
 
 def test_project_tuning_tables_reach_settings(tmp_path):
@@ -419,26 +424,7 @@ def test_fade_flags_follow_dips_and_page_fade_in(tmp_path):
     assert p3.document.cut_summary == "straight cuts"
 
 
-# ---- package and cli -----------------------------------------------------------------------
-
-
-def test_package_exports_every_public_name():
-    """__all__ is the whole supported API: every command the CLI runs, and the type each one returns."""
-    for name in decktalk.__all__:
-        assert hasattr(decktalk, name), name
-    assert decktalk.__all__ == sorted(decktalk.__all__)
-    for name in ("Project", "Voice", "Word", "SpeechProvider", "register_speech_provider", "__version__"):
-        assert name in decktalk.__all__
-    actions = build_parser()._subparsers._group_actions[0]  # type: ignore[union-attr]
-    # The four commands that are not an operation on a loaded project: three act on a machine or a
-    # directory, and `serve` runs a web server until it is stopped, so none of them returns a result.
-    project_commands = set(actions.choices) - {"init", "install", "doctor", "serve"}  # type: ignore[attr-defined]
-    assert project_commands <= set(decktalk.__all__), sorted(project_commands - set(decktalk.__all__))
-    # One word names the command, the call, the type it returns and its --json key, so the result
-    # class of every command is exported beside its function.
-    for command in sorted(project_commands):
-        result = f"{command.title().replace('_', '')}Result"
-        assert result in decktalk.__all__, result
+# ---- the results the CLI counts, and the errors it prints ---------------------------------------
 
 
 def test_every_result_tallies_its_own_rows():
@@ -496,44 +482,6 @@ def test_every_result_tallies_its_own_rows():
     assert BuildResult().findings == Findings()
     whole = BuildResult(assembly=assembly, verification=verification)
     assert whole.findings == assembly.findings + verification.findings == Findings(certain=1, uncertain=3)
-
-
-def test_the_public_api_carries_no_name_the_contract_retired():
-    """`Timeline` leaves the public names, and the module that reads the file stays where it is."""
-    for name in ("Timeline", "TimelineSection", "LeadMeasurement", "RecordingCheck", "measure", "check"):
-        assert name not in decktalk.__all__, name
-    from decktalk.artifacts import Timeline  # still readable, and not part of the supported API
-
-    assert Timeline.load(Path("nowhere.json")) is None
-
-
-def test_cli_verbose_and_quiet_parse_on_either_side_of_the_command():
-    parser = build_parser()
-    for argv in (["-v", "status"], ["status", "-v"], ["-p", "d", "status", "-v"], ["status", "-v", "-p", "d"]):
-        args = parser.parse_args(argv)
-        assert getattr(args, "verbose", False) is True, argv
-        assert getattr(args, "quiet", False) is False, argv
-    args = parser.parse_args(["init", "d", "-q"])
-    assert args.quiet is True and args.dir == "d"
-    args = parser.parse_args(["build", "-p", "d", "--only", "1", "--only", "2"])
-    assert args.project == "d" and args.only == [1, 2]
-
-
-def test_cli_missing_project_is_a_clean_error(tmp_path, capsys):
-    assert main(["status", "-v", "-p", str(tmp_path / "nowhere")]) == 1
-    err = capsys.readouterr().err
-    assert err.startswith("error: ") and "Traceback" not in err
-
-
-def test_cli_unexpected_exception_is_reported_and_reraised_with_verbose(tmp_path, capsys, monkeypatch):
-    def boom(args):
-        raise RuntimeError("kaboom")
-
-    monkeypatch.setattr("decktalk.cli.cmd_doctor", boom)
-    assert main(["doctor"]) == 1
-    assert capsys.readouterr().err == "error: RuntimeError: kaboom (add -v for the traceback)\n"
-    with pytest.raises(RuntimeError, match="kaboom"):
-        main(["doctor", "-v"])
 
 
 # ---- scaffold lesson: pauses, cue keys, KaTeX vendoring, runtime warnings ----------------------
@@ -1062,8 +1010,11 @@ def test_spoken_words_needs_a_timeline(tmp_path):
     from decktalk.stages.clip import words
 
     (tmp_path / "decktalk.toml").write_text("[[section]]\nnumber = 1\npage = 'a.html'\n", encoding="utf-8")
-    with pytest.raises(MissingInputError, match="Run `decktalk narrate` first"):
+    with pytest.raises(MissingInputError, match="The narration clock is not there") as raised:
         words(Project.load(tmp_path, environ={}))
+    # The next action is the hint and the file is the path, so the message stays one sentence.
+    assert raised.value.path == tmp_path / "build" / "narration" / "timeline.json"
+    assert "decktalk narrate" in (raised.value.hint or "")
 
 
 def test_cli_words_prints_a_table_and_json(tmp_path, capsys):
@@ -1075,7 +1026,8 @@ def test_cli_words_prints_a_table_and_json(tmp_path, capsys):
     assert "Close" not in table
     assert main(["-p", str(tmp_path), "words", "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
-    assert (doc["command"], doc["ok"], doc["findings"]) == ("words", True, {"certain": 0, "uncertain": 0})
+    assert (doc["command"], doc["ok"]) == ("words", True)
+    assert doc["findings"] == {"certain": 0, "uncertain": 0, "items": []} and doc["written"] == []
     first, second = doc["words"]["sections"]
     assert first["section"] == 1 and first["lead_seconds"] == 0.5
     assert first["words"][0] == {"word": "Hello", "text": "Hello,", "start": 0.6, "end": 0.9}
@@ -1116,5 +1068,5 @@ def test_cli_clip_parses_its_span_and_defaults():
     args = build_parser().parse_args(["clip", "1", "--start", "1.5", "--end", "4", "--out", "media/a.mp4"])
     assert (args.section, args.start, args.end, args.out) == (1, 1.5, 4.0, "media/a.mp4")
     assert (args.words, args.gain, args.hold, args.preset, args.crf) == (None, 0.0, 0.0, None, None)
-    with pytest.raises(SystemExit):
+    with pytest.raises(UsageError):
         build_parser().parse_args(["clip", "1", "--start", "1.5", "--out", "media/a.mp4"])

@@ -45,6 +45,7 @@ uv run pytest -q -m e2e                          # the pipeline test: an offline
 uv run --with "fonttools[woff]>=4.50" python scripts/build_assets.py --check
                                                  # fails if assets/*.svg or docs/images are out of date
 uv run scripts/build_settings_reference.py --check # fails if docs/reference/configuration.mdx is out of date
+uv run scripts/build_cli_reference.py --check    # fails if docs/reference/cli.mdx is out of date
 uv run scripts/build_changelog.py --check        # fails if docs/changelog.mdx is out of date
 ```
 
@@ -74,7 +75,7 @@ needs the network. Do not add a check that calls the API.
 CI runs four jobs from `.github/workflows/ci.yml` on every pull request and push to `main`.
 
 - The `checks` job runs `uv lock --check`, ruff, ty, the unit tests, and the generated-file checks for the
-  configuration reference and the changelog. It runs on Linux with Python 3.12, 3.13, and 3.14.
+  configuration reference, the CLI reference and the changelog. It runs on Linux with Python 3.12, 3.13, and 3.14.
 - The `lint` job runs Biome on JavaScript, once on Linux.
 - The `e2e` job runs `decktalk install`, `decktalk doctor`, and every test suite but the scaffold build with
   coverage, on Linux. Coverage must stay at or above the floor in `pyproject.toml`, and the report goes to the
@@ -107,8 +108,8 @@ src/decktalk/
   media/         ffmpeg, audio, frames, the encoder, Chromium and the local origin (internal)
   speech/        the speech protocol, the provider registry, and ElevenLabs (internal)
   model/         one project: the decktalk.toml document, the build paths, .env, the script and cues
-  cli.py         the command line: its tables, --json output, and exit codes
-  report.py      the tables the CLI prints from a stage result (internal)
+  cli/           the command line: the command table, the typed options, one handler module per
+                 group of it, the --json envelope with its exit policy and progress log, the tables
   scaffold.py    install, doctor, and init: the downloads and the template copy
   status.py      what a project has built, read from disk for `decktalk status`
   stages/        narrate/ (plan, script_rules, takes), align/ (pages), preflight/ (freeze, scan),
@@ -121,7 +122,7 @@ tests/
   test_imports.py    the layers: no import points up or sideways, and every stage returns a result
   unit/              one test file per module, at the path mirroring it under src/decktalk/
   test_units.py      config layering, project validation, script parsing, cue matching
-  test_cli.py        exit codes, --json output, and flags, with stages replaced by fixed results
+  test_api.py        decktalk.__all__: one call per command, and the result type each returns
   test_runtime.py    drives decktalk-runtime.js in a real Chromium (-m browser)
   test_media.py      checks frame analysis against real ffmpeg on a synthetic video (-m media)
   conftest.py        the --gate-timing option
@@ -135,11 +136,12 @@ scripts/
   build_assets.py             generates assets/*.svg, docs/images, docs/logo, the favicon
   build_changelog.py          generates docs/changelog.mdx from CHANGELOG.md
   build_settings_reference.py generates docs/reference/configuration.mdx from settings.py
+  build_cli_reference.py      generates docs/reference/cli.mdx from cli/parser.py
 docs/                          the Mintlify site at docs.decktalk.app
 site/                          the landing page at decktalk.app
 ```
 
-Stage functions take a `Project`, log progress to the `decktalk` logger, return a typed result, and raise `DeckTalkError` subclasses. The CLI prints tables from those results and maps errors to exit codes.
+Stage functions take a `Project`, log progress to the `decktalk` logger, return a typed result, and raise `DeckTalkError` subclasses. The CLI prints one table or one JSON envelope from those results, and maps a finding to exit 1, a refused command line to exit 2 and an error to exit 3.
 
 You can extend DeckTalk in two places:
 
@@ -169,11 +171,12 @@ People and agents read these docs. Write so that neither has to guess.
 - Change generated pages through their sources.
 - Use American spelling.
 
-Two pages are generated. Do not edit them by hand.
+Three pages are generated. Do not edit them by hand.
 
 | Page | Source | Command |
 |---|---|---|
 | `docs/reference/configuration.mdx` | The tuning fields in `src/decktalk/settings.py` | `uv run scripts/build_settings_reference.py` |
+| `docs/reference/cli.mdx` | The command table in `src/decktalk/cli/parser.py` | `uv run scripts/build_cli_reference.py` |
 | `docs/changelog.mdx` | `CHANGELOG.md` | `uv run scripts/build_changelog.py` |
 
 ## Commits and releases

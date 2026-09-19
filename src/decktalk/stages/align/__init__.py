@@ -78,7 +78,7 @@ class SectionCueTimes:
     """What one section's cues did: the times that resolved, and a row for every note."""
 
     key: str
-    speech_end: float
+    speech_end_seconds: float
     min_seconds: float | None
     resolved: list[CueTime]
     skipped: str | None = None  # Why nothing was resolved, which is that the section has no narration.
@@ -111,7 +111,7 @@ class SectionCueTimes:
     def to_dict(self) -> dict[str, Any]:
         return {
             "key": self.key,
-            "speech_end": round(self.speech_end, 3),
+            "speech_end_seconds": round(self.speech_end_seconds, 3),
             "min_seconds": self.min_seconds,
             "skipped": self.skipped,
             "cues": {r.cue: r.at for r in self.resolved},
@@ -136,7 +136,9 @@ class AlignResult:
     def short(self) -> int:
         """Sections whose speech ends before the min_seconds their visuals need."""
         return sum(
-            1 for s in self.sections if not s.skipped and s.min_seconds is not None and s.speech_end < s.min_seconds
+            1
+            for s in self.sections
+            if not s.skipped and s.min_seconds is not None and s.speech_end_seconds < s.min_seconds
         )
 
     @property
@@ -167,13 +169,19 @@ class AlignResult:
 
 
 def unknown_message(result: AlignResult) -> str:
-    """Why the build stops on unknown cue ids, with the first one as the example fix."""
-    first = next(r for s in result.sections for r in s.rows if r.verdict == Verdict.UNKNOWN_CUE)
-    page = first.where
+    """The one sentence the stop prints, which says what is wrong and not what to do about it."""
     return (
-        f"{result.unknown} cue id(s) in cues.json appear nowhere in the page that plays them, so the page would "
-        f'never reveal them. Add data-cue="{first.cue}" to the slide in {page}, fix the id in cues.json, or pass '
-        "--allow-unknown-cues:\n  " + "\n  ".join(result.unknown_problems)
+        f"{result.unknown} cue id(s) in cues.json appear nowhere in the page that plays them, "
+        "so the page would never reveal them."
+    )
+
+
+def unknown_hint(result: AlignResult) -> str:
+    """The next action, with the first offender as the example, which is what the error's hint carries."""
+    first = next(r for s in result.sections for r in s.rows if r.verdict == Verdict.UNKNOWN_CUE)
+    return (
+        f'Add data-cue="{first.cue}" to the slide in {first.where}, fix the id in cues.json, or pass '
+        "--allow-unknown-cues. The ids are:\n  " + "\n  ".join(result.unknown_problems)
     )
 
 
@@ -181,7 +189,7 @@ class UnknownCueError(ConfigError):
     """Cue ids that no page mentions. The result is attached, so a caller can still print its table."""
 
     def __init__(self, result: AlignResult) -> None:
-        super().__init__(unknown_message(result))
+        super().__init__(unknown_message(result), hint=unknown_hint(result))
         self.result = result
 
 
@@ -194,7 +202,9 @@ def align(project: Project, *, allow_unknown_cues: bool = False) -> AlignResult:
     takes = project.takes()
     if takes is None:
         raise MissingInputError(
-            f"{project.takes_path} not found. Run `decktalk narrate` (or `decktalk narrate --no-voice`) first."
+            "The take index is not there, so no section has words to resolve a cue against.",
+            hint="Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.",
+            path=project.takes_path,
         )
     specs = project.cue_specs()
     if not specs:
@@ -274,7 +284,7 @@ def resolve_sections(
             reason = "a clip section, which the voice never reads" if key in clips else "no take in the take index"
             row = SectionCueTimes(
                 key=key,
-                speech_end=0.0,
+                speech_end_seconds=0.0,
                 min_seconds=spec.min_seconds,
                 resolved=[],
                 skipped=f"no narration ({reason})",
@@ -288,10 +298,10 @@ def resolve_sections(
             _judge_ids(row, key, unknown_ids, uncued_ids)
             continue
         words, length = take
-        speech_end = words[-1].end if words else length
+        speech_end_seconds = words[-1].end if words else length
         row = SectionCueTimes(
             key=key,
-            speech_end=speech_end,
+            speech_end_seconds=speech_end_seconds,
             min_seconds=spec.min_seconds,
             resolved=[],
             cues_file=cues_file,
@@ -318,9 +328,9 @@ def resolve_sections(
             ambiguous = ambiguity_note(cue, words)
             if ambiguous:
                 row.note(cue.cue, None, ambiguous)
-        if spec.min_seconds is not None and speech_end < spec.min_seconds:
-            short = spec.min_seconds - speech_end
-            row.note(None, None, f"speech {speech_end:.1f}s is {short:.1f}s shorter than the visuals need")
+        if spec.min_seconds is not None and speech_end_seconds < spec.min_seconds:
+            short = spec.min_seconds - speech_end_seconds
+            row.note(None, None, f"speech {speech_end_seconds:.1f}s is {short:.1f}s shorter than the visuals need")
         _judge_ids(row, key, unknown_ids, uncued_ids)
         if row.resolved:
             cue_times.sections[key] = row.resolved

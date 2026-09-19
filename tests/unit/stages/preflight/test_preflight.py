@@ -199,9 +199,13 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(
     script.write_text(script.read_text(encoding="utf-8").replace("## 3. Close\n", "## 3. Close\n\n[CLIENT_NAME]\n", 1))
     assert main(["preflight", "--no-frames", "--json", "-p", str(p.root)]) == 1
     doc = json.loads(capsys.readouterr().out)
-    assert doc["findings"] == {"certain": 3, "uncertain": 0} and doc["preflight"]["placeholders"] == ["CLIENT_NAME"]
+    assert (doc["findings"]["certain"], doc["findings"]["uncertain"]) == (3, 0)
+    # The two cue faults are judged rows. The placeholder is counted and named in the payload.
+    assert [row["code"] for row in doc["findings"]["items"]] == ["UNRESOLVED", "UNKNOWN_CUE"]
+    assert doc["preflight"]["placeholders"] == ["CLIENT_NAME"]
     assert main(["preflight", "--no-frames", "--json", "--allow-unknown-cues", "-p", str(p.root)]) == 1
-    assert json.loads(capsys.readouterr().out)["findings"] == {"certain": 2, "uncertain": 0}
+    found = json.loads(capsys.readouterr().out)["findings"]
+    assert (found["certain"], found["uncertain"]) == (2, 0)
     assert main(["preflight", "--no-frames", "--exit-zero", "-p", str(p.root)]) == 0
     assert unchanged(p, files)
 

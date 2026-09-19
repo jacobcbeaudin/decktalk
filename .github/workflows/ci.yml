@@ -33,6 +33,7 @@ jobs:
       - run: uv run ty check src
       - run: uv run pytest -q
       - run: uv run scripts/build_settings_reference.py --check
+      - run: uv run scripts/build_cli_reference.py --check
       - run: uv run scripts/build_changelog.py --check
 
   lint:

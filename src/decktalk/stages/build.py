@@ -37,9 +37,11 @@ from .verify import VerifyResult, verify
 log = logging.getLogger(__name__)
 
 Reporter = Callable[[str, Any], None]
+"""`report(stage, None)` opens a stage and `report(stage, result)` closes it with what it produced."""
 
 # The five stages in the only order they run in. Both ends of --from and --to are inclusive.
 STAGES = ("narrate", "align", "record", "assemble", "verify")
+"""Every stage a run executes, in the order it executes them, which is what a progress log counts."""
 
 
 @dataclass
@@ -245,9 +247,10 @@ def build(
             if out.align.unresolved and not allow_unresolved_cues:
                 steps.event("align", "fail", detail=f"{out.align.unresolved} cue phrase(s) were not found.")
                 raise ConfigError(
-                    f"{out.align.unresolved} cue(s) could not be matched to the narration; a slide whose cues are "
-                    "unresolved never appears. Fix the phrases in cues.json (see the notes above) or pass "
-                    "allow_unresolved_cues=True / --allow-unresolved-cues:\n  " + "\n  ".join(out.align.problems)
+                    f"{out.align.unresolved} cue(s) could not be matched to the narration, and a slide whose "
+                    "cues are unresolved never appears.",
+                    hint="Fix these phrases in cues.json, or pass --allow-unresolved-cues:\n  "
+                    + "\n  ".join(out.align.problems),
                 )
         if run("record", f"Recording up to {len(sections)} section(s) with headless Chromium."):
 
@@ -271,9 +274,9 @@ def build(
                 # build stops here rather than delivering a blank section as if it were fine.
                 steps.event("record", "fail", detail=f"{len(broken)} section(s) hit a page error.")
                 raise ConfigError(
-                    f"{len(broken)} section(s) hit a page error while recording. "
-                    "Fix the page and run `decktalk build` again:\n  "
-                    + "\n  ".join(f"section {r.key}: {e}" for r in broken for e in r.log.page_errors)
+                    f"{len(broken)} section(s) hit a page error while recording, so each recorded an empty stage.",
+                    hint="Fix these page errors and run `decktalk build` again:\n  "
+                    + "\n  ".join(f"section {r.key}: {e}" for r in broken for e in r.log.page_errors),
                 )
         if run("assemble", f"Cutting {len(project.sections)} section(s) and mixing the soundtrack."):
             out.assembly = assemble(project, soundscape=soundscape, loudness=loudness, strict=strict)

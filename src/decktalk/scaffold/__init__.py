@@ -11,7 +11,7 @@ What ships in the wheel and where a fetched tool lives is `toolchain/`.
 
 from __future__ import annotations
 
-from .doctor import DoctorRow, doctor
+from .doctor import DoctorRow, doctor, report_block
 from .examples import EXAMPLES, Example, example, listed_names, reserved_message
 from .init import InitResult, init, title_from
 from .install import install
@@ -24,6 +24,7 @@ __all__ = [
     "Example",
     "InitResult",
     "doctor",
+    "report_block",
     "example",
     "init",
     "install",

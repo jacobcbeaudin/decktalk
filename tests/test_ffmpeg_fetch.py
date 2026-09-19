@@ -218,12 +218,25 @@ def test_an_archive_without_the_executable_is_a_tool_error(tmp_path, monkeypatch
 # ---- resolution --------------------------------------------------------------------------------
 
 
-def test_the_environment_override_wins_and_fetches_nothing(monkeypatch):
-    monkeypatch.setenv("DECKTALK_FFMPEG", "/opt/ff/ffmpeg")
-    monkeypatch.setenv("DECKTALK_FFPROBE", "/opt/ff/ffprobe")
+def test_the_environment_override_wins_and_fetches_nothing(tmp_path, monkeypatch):
+    ffmpeg, ffprobe = tmp_path / "ffmpeg", tmp_path / "ffprobe"
+    for tool in (ffmpeg, ffprobe):
+        tool.write_bytes(b"")
+    monkeypatch.setenv("DECKTALK_FFMPEG", str(ffmpeg))
+    monkeypatch.setenv("DECKTALK_FFPROBE", str(ffprobe))
     monkeypatch.setattr(fetch, "fetch_ffmpeg", lambda key=None: pytest.fail("must not fetch"))
-    assert ff.ffmpeg_paths() == ("/opt/ff/ffmpeg", "/opt/ff/ffprobe")
-    assert ff.installed_paths() == ("/opt/ff/ffmpeg", "/opt/ff/ffprobe")
+    assert ff.ffmpeg_paths() == (str(ffmpeg), str(ffprobe))
+    assert ff.installed_paths() == (str(ffmpeg), str(ffprobe))
+
+
+def test_an_override_naming_a_file_that_is_not_there_is_refused_rather_than_resolved(tmp_path, monkeypatch):
+    """A typo in the variable told `doctor` the machine was ready and then died inside the first render."""
+    monkeypatch.setenv("DECKTALK_FFMPEG", str(tmp_path / "nope"))
+    monkeypatch.setenv("DECKTALK_FFPROBE", str(tmp_path / "also-nope"))
+    assert ff.env_missing() == ["DECKTALK_FFMPEG", "DECKTALK_FFPROBE"]
+    assert ff.installed_paths() is None
+    with pytest.raises(ToolError, match="DECKTALK_FFMPEG"):
+        ff.ffmpeg_paths()
 
 
 def test_an_installed_build_is_used_without_a_fetch(tmp_path, monkeypatch):

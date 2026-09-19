@@ -47,7 +47,8 @@ def test_verify_flags_a_pop_at_the_cut_into_a_seamless_section(verify_project, p
     assert "POP AT CUT" in capsys.readouterr().out
     assert main(["-p", str(p.root), "verify", "--json"]) == 1
     doc = json.loads(capsys.readouterr().out)
-    assert doc["findings"] == {"certain": 1, "uncertain": 0} and doc["verify"]["seams"][0]["verdict"] == "POP AT CUT"
+    assert (doc["findings"]["certain"], doc["findings"]["uncertain"]) == (1, 0)
+    assert doc["verify"]["seams"][0]["verdict"]["code"] == "POP_AT_CUT"
 
     # A straight cut compares the frame just before the cut, and a section without the key gets no row.
     calls.clear()

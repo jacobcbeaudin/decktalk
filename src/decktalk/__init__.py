@@ -4,7 +4,8 @@
 One word names the command, the Python call, the type it returns and its `--json` key, so each
 command's result class is exported beside the function that returns it.
 
-    project:   Project, Section, ClipSection, PageSection, Voice, Mix, Soundscape, Transition
+    project:   Project, Section, ClipSection, PageSection, Voice, Mix, Loudness, Sfx, Soundscape,
+               SoundSpec, MusicSpec, Transition
     tuning:    Settings, load_settings
     errors:    DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
     artifacts: Takes, CueTimes, RecordingLog, Cuts, Word
@@ -26,7 +27,20 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .artifacts import CueTimes, Cuts, RecordingLog, Takes, Word
 from .errors import ConfigError, DeckTalkError, MissingInputError, ProviderError, ToolError
-from .model import ClipSection, Mix, PageSection, Project, Section, Soundscape, Transition, Voice
+from .model import (
+    ClipSection,
+    Loudness,
+    Mix,
+    MusicSpec,
+    PageSection,
+    Project,
+    Section,
+    Sfx,
+    Soundscape,
+    SoundSpec,
+    Transition,
+    Voice,
+)
 from .settings import Settings, load_settings
 from .speech import SpeechProvider, SpeechRequest, register_speech_provider
 from .stages import (
@@ -70,8 +84,10 @@ __all__ = [
     "CueTimes",
     "Cuts",
     "DeckTalkError",
+    "Loudness",
     "MissingInputError",
     "Mix",
+    "MusicSpec",
     "NarrateResult",
     "PageSection",
     "PreflightResult",
@@ -82,6 +98,8 @@ __all__ = [
     "ScreenshotsResult",
     "Section",
     "Settings",
+    "Sfx",
+    "SoundSpec",
     "Soundscape",
     "SoundscapeResult",
     "SpeechProvider",

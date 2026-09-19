@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from decktalk.artifacts import Take, Takes, Word, write_words
 from decktalk.cli import main
+from decktalk.cli.schema import NarratePayload, read_envelope
 from decktalk.jsonio import dumps
 from decktalk.model import Project
 from decktalk.model.script import Segment
+from decktalk.pipeline import Stage, TakeStatus
 from decktalk.settings import Settings
 from decktalk.speech import register_speech_provider
 from decktalk.stages.narrate import plan_totals, voiced_plan
 from decktalk.stages.narrate.plan import (
-    CACHED,
-    SYNTHESIZE,
     is_cached,
     silent_hash,
     silent_plan,
@@ -68,23 +67,23 @@ def test_inserting_or_retitling_a_section_plans_no_new_take(make_project, base, 
     toml, script = base
     project = make_project()
     plans, note = voiced_plan(project, project.script_sections()[1], model="m")
-    assert note is None and {p.status for p in plans} == {SYNTHESIZE}
+    assert note is None and {p.status for p in plans} == {TakeStatus.SYNTHESIZE}
     assert narrate(project).synthesized == ["01", "02", "03"]
     grown = script.replace("## 1. Open", "## 1. A brand new opening\n\nWords nobody has voiced.\n\n## 2. Open")
     grown = grown.replace("## 2. Middle", "## 3. Middle").replace("## 3. Close", "## 4. Close")
     moved = make_project(toml=toml + '\n[[section]]\nnumber = 4\npage = "deck/index.html"\n', script=grown)
     after = {p.segment.index: p.status for p in voiced_plan(moved, moved.script_sections()[1], model="m")[0]}
-    assert after == {1: SYNTHESIZE, 2: CACHED, 3: CACHED, 4: CACHED}
+    assert after == {1: TakeStatus.SYNTHESIZE, 2: TakeStatus.CACHED, 3: TakeStatus.CACHED, 4: TakeStatus.CACHED}
     # Retitling alone changes no number and still voices nothing.
     retitled = make_project(toml=toml, script=script.replace("## 2. Middle", "## 2. A better heading"), name="proj")
-    assert {p.status for p in voiced_plan(retitled, retitled.script_sections()[1], model="m")[0]} == {CACHED}
+    assert {p.status for p in voiced_plan(retitled, retitled.script_sections()[1], model="m")[0]} == {TakeStatus.CACHED}
 
 
 def test_a_plan_prices_what_it_would_send(project, voice):
     plans, _note = voiced_plan(project, project.script_sections()[1], model="m")
     totals = plan_totals(plans, project.settings.narration, project.voice.price_per_1000_characters)
     sent = sum(len(p.segment.text) for p in plans)
-    assert totals[SYNTHESIZE] == 3 and totals["characters_sent"] == sent
+    assert totals[TakeStatus.SYNTHESIZE.value] == 3 and totals["characters_sent"] == sent
     # The stitching context travels with the text, so it is counted apart rather than hidden.
     assert totals["characters_with_context"] > sent
     assert totals["price_per_1000_characters"] == 0.30
@@ -96,7 +95,7 @@ def test_a_plan_prices_what_it_would_send(project, voice):
 def test_the_plan_carries_the_request_body_it_would_post(project, voice):
     (plan, *_rest) = voiced_plan(project, project.script_sections()[1], model="eleven_v3")[0]
     body = plan.to_dict(project.settings.narration)["request"]
-    assert body["text"] == plan.segment.tts_text(project.settings.narration)
+    assert body["text"] == plan.segment.tts_text
     assert body["model_id"] == "eleven_v3" and body["previous_text"] is None
     assert set(body) == {"text", "model_id", "voice_settings", "output_format", "previous_text", "next_text"}
 
@@ -111,31 +110,36 @@ def test_a_plan_without_a_voice_reports_what_it_cannot_check(make_project, base)
     index.save(project.takes_path)
     plans, note = voiced_plan(project, project.script_sections()[1], model="m")
     assert note is not None and "not registered" in note
-    assert {p.segment.key: p.status for p in plans} == {"01": "unknown", "02": SYNTHESIZE, "03": SYNTHESIZE}
+    assert {p.segment.key: p.status for p in plans} == {
+        "01": TakeStatus.UNKNOWN,
+        "02": TakeStatus.SYNTHESIZE,
+        "03": TakeStatus.SYNTHESIZE,
+    }
 
 
 def test_a_run_without_voice_caches_its_placeholders_by_content_too(project):
     plans = silent_plan(project, project.script_sections()[1])
-    assert {p.status for p in plans} == {SYNTHESIZE}
+    assert {p.status for p in plans} == {TakeStatus.SYNTHESIZE}
     for plan in plans:
         assert plan.digest is not None and plan.request is None
         _fill(project, plan.digest)
-    assert {p.status for p in silent_plan(project, project.script_sections()[1])} == {CACHED}
+    assert {p.status for p in silent_plan(project, project.script_sections()[1])} == {TakeStatus.CACHED}
 
 
 def test_narrate_dry_run_json_prices_the_run_and_writes_nothing(project, voice, capsys):
     assert main(["narrate", "--dry-run", "--json", "-p", str(project.root)]) == 0
-    doc = json.loads(capsys.readouterr().out)
-    assert doc["command"] == "narrate" and doc["ok"] is True
-    plan = doc["narrate"]
-    assert plan["voice"]["provider"] == "test-voice" and plan["note"] is None and plan["takes"] is None
-    assert [row["status"] for row in plan["sections"]] == [SYNTHESIZE] * 3
-    assert plan["totals"]["estimated_cost"] == round(plan["totals"]["characters_sent"] / 1000 * 0.30, 2)
+    doc = read_envelope(capsys.readouterr().out)
+    assert doc.command == Stage.NARRATE.value and doc.ok is True
+    plan = doc.payload
+    assert isinstance(plan, NarratePayload)
+    assert plan.voice.provider == "test-voice" and plan.note is None and plan.takes is None
+    assert [row.status for row in plan.sections] == [TakeStatus.SYNTHESIZE] * 3
+    assert plan.totals.estimated_cost == round(plan.totals.characters_sent / 1000 * 0.30, 2)
     assert not project.narration_dir.exists(), "a dry run wrote to build/narration"
     assert main(["narrate", "--dry-run", "-p", str(project.root)]) == 0
     out = capsys.readouterr().out
-    assert f"{plan['totals']['characters_sent']} characters sent" in out
-    assert f"About ${plan['totals']['estimated_cost']:.2f} at $0.30 per 1,000." in out
+    assert f"{plan.totals.characters_sent} characters sent" in out
+    assert f"About ${plan.totals.estimated_cost:.2f} at $0.30 per 1,000." in out
 
 
 def test_estimated_seconds_are_the_words_at_the_configured_rate():
@@ -156,7 +160,7 @@ def test_two_sections_with_the_same_words_share_one_take(project, voice, monkeyp
     twin = Project.load(project.root, environ={})
     plans, _note = voiced_plan(twin, twin.script_sections()[1], model="m")
     assert [p.digest for p in plans][0] == [p.digest for p in plans][1]
-    assert [p.status for p in plans] == [SYNTHESIZE, CACHED, SYNTHESIZE]
+    assert [p.status for p in plans] == [TakeStatus.SYNTHESIZE, TakeStatus.CACHED, TakeStatus.SYNTHESIZE]
     from decktalk.stages.narrate import narrate
 
     result = narrate(twin)
@@ -200,14 +204,14 @@ def test_a_plan_without_a_voice_still_prices_what_it_would_send(make_project, ba
     project = make_project(toml=toml.replace('provider = "test-voice"', 'provider = "not-a-voice"'))
     plans, note = voiced_plan(project, project.script_sections()[1], model="m")
     totals = plan_totals(plans, project.settings.narration, project.voice.price_per_1000_characters)
-    assert note is not None and totals[SYNTHESIZE] == 3
+    assert note is not None and totals[TakeStatus.SYNTHESIZE.value] == 3
     assert totals["characters_sent"] > 0 and totals["estimated_cost"] > 0
     assert all(p.request is not None for p in plans)
 
 
 def test_a_section_whose_cache_cannot_be_checked_is_priced_apart_and_never_hidden(make_project, base, voice):
     """A project that has paid before must see what the run can cost, not only what it certainly costs."""
-    from decktalk.report import plan_table
+    from decktalk.cli.output import plan_table
 
     toml, script = base
     paid = make_project()
@@ -225,7 +229,7 @@ def test_a_section_whose_cache_cannot_be_checked_is_priced_apart_and_never_hidde
     blind = make_project(toml=toml.replace('provider = "test-voice"', 'provider = "not-a-voice"'), name="proj")
     plans, note = voiced_plan(blind, blind.script_sections()[1], model="m")
     totals = plan_totals(plans, blind.settings.narration, blind.voice.price_per_1000_characters)
-    assert note is not None and totals["unknown"] == 3 and totals[SYNTHESIZE] == 0
+    assert note is not None and totals[TakeStatus.UNKNOWN.value] == 3 and totals[TakeStatus.SYNTHESIZE.value] == 0
     assert totals["characters_sent"] == 0 and totals["characters_unchecked"] > 0
     assert totals["most_it_can_cost"] > 0
     line = plan_table(plans, blind.settings.narration, blind.voice.price_per_1000_characters)
@@ -255,8 +259,8 @@ def test_an_inserted_section_says_it_has_no_take_rather_than_that_its_text_chang
     after = {
         p.segment.index: (p.status, p.reason) for p in voiced_plan(moved, moved.script_sections()[1], model="m")[0]
     }
-    assert after[2] == (SYNTHESIZE, "no take yet")
-    assert [after[n][0] for n in (1, 3, 4)] == [CACHED] * 3
+    assert after[2] == (TakeStatus.SYNTHESIZE, "no take yet")
+    assert [after[n][0] for n in (1, 3, 4)] == [TakeStatus.CACHED] * 3
 
 
 def test_the_dry_run_payload_carries_no_value_read_from_the_environment(make_project, base):

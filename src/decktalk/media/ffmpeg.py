@@ -25,8 +25,21 @@ log = logging.getLogger(__name__)
 
 
 def _env_paths() -> tuple[str, str] | None:
+    """The pair the environment names, when both variables are set and both name a file that is there."""
     env_ff, env_fp = os.environ.get("DECKTALK_FFMPEG"), os.environ.get("DECKTALK_FFPROBE")
-    return (env_ff, env_fp) if env_ff and env_fp else None
+    if not (env_ff and env_fp):
+        return None
+    return (env_ff, env_fp) if not env_missing() else None
+
+
+def env_missing() -> list[str]:
+    """The variables that name a file which is not there, so a typo is reported and never resolved.
+
+    `doctor` reports this and `ffmpeg_paths` refuses on it, which is the difference between a command
+    whose work is to report what a machine has and one that needs the tool to do anything at all.
+    """
+    named = ("DECKTALK_FFMPEG", "DECKTALK_FFPROBE")
+    return [name for name in named if (value := os.environ.get(name)) and not Path(value).is_file()]
 
 
 def _path_pair() -> tuple[str, str] | None:
@@ -43,6 +56,11 @@ def ffmpeg_paths() -> tuple[str, str]:
     pinned build for this platform or the download cannot run. A download whose digest does not
     match is never used and never falls back, because that is the one failure that must stop a run.
     """
+    if missing := env_missing():
+        raise ToolError(
+            f"{', '.join(missing)} names a file that is not there.",
+            hint="Point the variable at an executable, or unset it to use the pinned build.",
+        )
     if env := _env_paths():
         return env
     if installed := ffmpeg_fetch.installed_pinned():
@@ -65,6 +83,15 @@ def ffmpeg_paths() -> tuple[str, str]:
             f"ffmpeg/ffprobe not found: the pinned build could not be downloaded ({exc}) and none is on PATH. "
             "Run `decktalk install` with network access, or install ffmpeg."
         ) from exc
+
+
+def unnamed_paths() -> tuple[str, str] | None:
+    """The pair a machine has without the environment override, which is what `doctor` falls back to.
+
+    A variable that names a file which is not there tells nothing about the other component, so the
+    row for the component that is fine still reports the build it would really use.
+    """
+    return ffmpeg_fetch.installed_pinned() or _path_pair()
 
 
 def installed_paths() -> tuple[str, str] | None:
@@ -114,7 +141,11 @@ def probe_duration(path: Path | str) -> float:
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0 or not proc.stdout.strip():
-        raise ToolError(f"ffprobe could not read {path}: {proc.stderr.strip()[-200:]}")
+        raise ToolError(
+            f"ffprobe could not read {Path(path).name}.",
+            hint=proc.stderr.strip()[-200:] or None,
+            path=Path(path),
+        )
     return round(float(proc.stdout.strip()), 3)
 
 
@@ -130,7 +161,11 @@ def decoded_duration(path: Path | str, *, sample_rate: int = 48000) -> float:
         capture_output=True,
     )
     if out.returncode != 0:
-        raise ToolError(f"ffmpeg could not decode {path}: {out.stderr.decode(errors='replace').strip()[-200:]}")
+        raise ToolError(
+            f"ffmpeg could not decode {Path(path).name}.",
+            hint=out.stderr.decode(errors="replace").strip()[-200:] or None,
+            path=Path(path),
+        )
     return round(len(out.stdout) / 2 / sample_rate, 4)
 
 

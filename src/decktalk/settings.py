@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import tomllib
 from collections.abc import Mapping
@@ -169,18 +170,18 @@ class RecordConfig:
         A_LUMA,
     )
     black_ymax: float = tune(
-        40, "`check` reports `BLACK?` when the brightest luma of the middle frame is below this.", A_LUMA
+        40, "`record` reports `BLACK?` when the brightest luma of the middle frame is below this.", A_LUMA
     )
     truncated_slack_seconds: float = tune(
         0.5,
-        "Allowed shortfall of a recording against its requested length. A larger shortfall makes `check` "
+        "Allowed shortfall of a recording against its requested length. A larger shortfall makes `record` "
         "report `TRUNCATED`.",
         NOT_NEGATIVE,
     )
     stall_ms: int = tune(
         150,
         "Longest frame gap after narration t=0, in milliseconds. A longer gap makes `record` try again and "
-        "`check` report `STALLED`.",
+        "report `STALLED`.",
         ABOVE_ZERO,
     )
 
@@ -390,11 +391,20 @@ def read_user_toml(path: Path | None = None) -> dict[str, Any]:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: {exc}") from exc
+        raise ConfigError(
+            f"{path.name} is not valid TOML: {exc}.",
+            hint="Fix the line this message names, which is usually a quote or a bracket left open.",
+            path=path,
+            line=toml_line(exc),
+        ) from exc
     allowed = {f.name for f in fields(Settings)}
     unknown = sorted(set(data) - allowed)
     if unknown:
-        raise ConfigError(f"{path}: {unknown} do not belong in a user settings file. Only {sorted(allowed)} do.")
+        raise ConfigError(
+            f"{path.name}: {unknown} do not belong in a user settings file.",
+            hint=f"The tables a user settings file may hold are {sorted(allowed)}.",
+            path=path,
+        )
     for message in settings_key_warnings(data, str(path)):
         log.warning(message)
     return data
@@ -432,8 +442,22 @@ def read_project_toml(root: Path) -> dict[str, Any]:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: {exc}") from exc
+        raise ConfigError(
+            f"{path.name} is not valid TOML: {exc}.",
+            hint="Fix the line this message names, which is usually a quote or a bracket left open.",
+            path=path,
+            line=toml_line(exc),
+        ) from exc
     return data
+
+
+def toml_line(error: tomllib.TOMLDecodeError) -> int | None:
+    """The line a TOML parser refused, read from the attribute it carries or from its own sentence."""
+    numbered = getattr(error, "lineno", None)
+    if isinstance(numbered, int):
+        return numbered
+    named = re.search(r"at line (\d+)", str(error))
+    return int(named.group(1)) if named else None
 
 
 def load_settings(

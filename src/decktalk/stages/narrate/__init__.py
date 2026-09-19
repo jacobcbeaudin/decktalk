@@ -100,9 +100,11 @@ def _refuse_silent_over_voiced(
         else "Every section of this project is voiced already, so rehearse in a copy of it."
     )
     raise ConfigError(
-        f"{relative(project.takes_path, project.root)} holds paid takes for section(s) {', '.join(paid)}. "
-        f"A run without voice would replace them in the take index, so the next voiced build would voice them "
-        f"again and spend credits on all of them. {advice}"
+        f"{relative(project.takes_path, project.root)} holds paid takes for section(s) {', '.join(paid)}, "
+        f"and a run without voice would replace them in the take index, so the next voiced build would voice "
+        f"them again and spend credits on all of them.",
+        hint=advice,
+        path=project.takes_path,
     )
 
 

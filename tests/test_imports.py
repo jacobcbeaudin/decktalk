@@ -42,10 +42,9 @@ LAYERS: dict[str, tuple[str, int]] = {
     "stages": ("stages", 6),
     "status": ("stages", 6),
     "scaffold": ("stages", 6),
-    "report": ("CLI", 7),
-    "cli": ("CLI", 8),
-    "__init__": ("CLI", 9),
-    "__main__": ("CLI", 10),
+    "cli": ("CLI", 7),
+    "__init__": ("CLI", 8),
+    "__main__": ("CLI", 9),
 }
 
 # The imports that point sideways, each with the reason it exists, so every exception is designed
