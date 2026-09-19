@@ -2,7 +2,7 @@
 
 1. Every section becomes a video-only sections/NN.mp4. A page section is cut to its exact
    span in the timeline, rounded on cumulative frame boundaries so the picture never
-   drifts; the recorder lead-in is trimmed off the head and the last frame is cloned to
+   drifts. The recorder lead-in is trimmed off the head and the last frame is cloned to
    fill. A missing clip becomes a titled slate. A missing recording becomes black. No
    intermediate carries audio, so the concatenation cannot reintroduce AAC priming and
    the picture starts at pts 0 like the sound does.
@@ -32,19 +32,21 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from ..artifacts import CueTimes, RecordingLog, Takes, Timeline, Word, read_words
+from ..artifacts import CueTimes, RecordingLog, Takes, Timeline, Word, read_words, stale_measure
 from ..captions import CaptionCue, Chapter, caption_cues, display_words, write_chapters, write_srt, write_vtt
 from ..errors import MissingInputError, ToolError
-from ..jsonio import relative
+from ..jsonio import as_json, relative
 from ..media import audio, ffmpeg
 from ..media.browser import render_slate
 from ..media.encode import Encoder
 from ..model import ClipSection, PageSection, Project, Section
 from ..model.cues import find_phrase
+from ..model.document import frame_dip
 from ..model.markers import Marker
 from ..settings import AudioConfig
-from .measure import stale_measure
+from ..verdicts import Findings
 
 log = logging.getLogger(__name__)
 
@@ -83,42 +85,6 @@ def timeline_targets(timeline: Timeline, fps: int) -> dict[str, float]:
         end_f = round(sec.end * fps)
         targets[key] = (end_f - start_f) / fps
     return targets
-
-
-def frame_dip(dip_seconds: float, fps: int) -> float:
-    """The dip length quantized to whole frames, so a fade never ends part way through one."""
-    if dip_seconds <= 0:
-        return 0.0
-    return round(max(round(dip_seconds * fps), 1) / fps, 4)
-
-
-def fade_flags(project: Project) -> dict[str, tuple[bool, bool]]:
-    """(fade_in, fade_out) per section key from the transition config."""
-    sections = project.sections
-    tr = project.transition
-    pairs = {(a, b) for a, b in tr.dips} if tr.dips is not None else None
-    flags: dict[str, tuple[bool, bool]] = {}
-    for i, sec in enumerate(sections):
-        prev_n = sections[i - 1].number if i > 0 else None
-        next_n = sections[i + 1].number if i + 1 < len(sections) else None
-        if pairs is None:
-            dip_in, dip_out = prev_n is not None, next_n is not None
-        else:
-            dip_in = prev_n is not None and (prev_n, sec.number) in pairs
-            dip_out = next_n is not None and (sec.number, next_n) in pairs
-        fade_in = dip_in and not (not sec.is_clip and tr.page_fades_in)
-        flags[sec.key] = (fade_in, dip_out)
-    return flags
-
-
-def cut_summary(project: Project) -> str:
-    """What happens at the section cuts, for the assemble log: straight cuts, or dips at some or all of them."""
-    dips = sum(1 for _fade_in, fade_out in fade_flags(project).values() if fade_out)
-    if dips == 0:
-        return "straight cuts"
-    if project.transition.dips is None:
-        return "dips at every cut"
-    return f"dips at {dips} cut{'s' if dips != 1 else ''}"
 
 
 def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:
@@ -281,19 +247,10 @@ def measure_warning(project: Project, sec: PageSection, *, strict: bool) -> str 
 
 
 def stray_warnings(project: Project, command: str) -> list[str]:
-    """One logged warning per sections/NN.mp4 in build/sections whose section is not in decktalk.toml.
-
-    `command` names the stage that ignores the file, for the message.
-    """
-    messages = []
-    for f in project.stray_section_videos():
-        name = relative(f, project.root)
-        message = (
-            f"{name} is not a section in decktalk.toml, so {command} ignores it. "
-            "Delete the file if an earlier build left it."
-        )
+    """Warn about every leftover section video, and return what was said."""
+    messages = project.stray_section_warnings(command)
+    for message in messages:
         log.warning(message)
-        messages.append(message)
     return messages
 
 
@@ -301,7 +258,7 @@ def render_sections(project: Project, timeline: Timeline, *, strict: bool) -> li
     enc = Encoder(project.settings.video)
     project.out_dir.mkdir(parents=True, exist_ok=True)
     project.sections_dir.mkdir(parents=True, exist_ok=True)
-    flags = fade_flags(project)
+    flags = project.document.fade_flags
     targets = timeline_targets(timeline, enc.v.fps)
     dip = frame_dip(project.transition.dip_seconds, enc.v.fps)
     rows: list[RenderedSection] = []
@@ -743,6 +700,8 @@ def mux_chapters(src: Path, chapters: Path, dst: Path) -> None:
 
 @dataclass
 class AssembleResult:
+    """The finished video and everything written beside it."""
+
     final: Path
     stamped: Path | None  # The timestamped copy, when [output] timestamped_copy is on.
     duration: float
@@ -752,6 +711,39 @@ class AssembleResult:
     captions_srt: Path | None = None
     captions_vtt: Path | None = None
     chapters: Path | None = None
+    loudness_problems: list[str] = field(default_factory=list)  # A peak over the ceiling, or a missed target.
+
+    @property
+    def findings(self) -> Findings:
+        """Uncertain: a loudness result that missed its target or crossed its ceiling."""
+        return Findings(uncertain=len(self.loudness_problems))
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        """The build as JSON-ready data, with every written path relative to the project root."""
+        before, after = self.loudness if self.loudness else (None, None)
+        return {
+            "final": relative(self.final, root),
+            "duration": round(self.duration, 3),
+            "stamped": None if self.stamped is None else relative(self.stamped, root),
+            "sections": [
+                {
+                    "key": row.section.key,
+                    "source": row.note,
+                    "duration": round(row.duration, 3),
+                    "path": relative(row.path, root),
+                }
+                for row in self.sections
+            ],
+            "captions": {
+                "srt": None if self.captions_srt is None else relative(self.captions_srt, root),
+                "vtt": None if self.captions_vtt is None else relative(self.captions_vtt, root),
+                "chapters": None if self.chapters is None else relative(self.chapters, root),
+            },
+            "loudness": None
+            if after is None or before is None
+            else {"before": as_json(before), "after": as_json(after), "problems": list(self.loudness_problems)},
+            "warnings": list(self.warnings),
+        }
 
 
 def assemble(
@@ -766,7 +758,7 @@ def assemble(
     rows = render_sections(project, timeline, strict=strict)
 
     picture = out_dir / ".picture.mp4"
-    log.info("[cat ] %d sections, %s", len(rows), cut_summary(project))
+    log.info("[cat ] %d sections, %s", len(rows), project.document.cut_summary)
     concat([r.path for r in rows], picture)
 
     work = out_dir / f".{project.name}.tmp.mp4"
@@ -787,6 +779,7 @@ def assemble(
         picture.unlink(missing_ok=True)
 
     measured = None
+    problems: list[str] = []
     if loudness and timeline.estimated:
         # A build without voice carries clicks and silence, and normalizing them would move the clicks
         # the a/v check listens for, so the pass is skipped and the result has no loudness.
@@ -843,6 +836,7 @@ def assemble(
         sections=rows,
         warnings=warnings,
         loudness=measured,
+        loudness_problems=problems,
         captions_srt=paths["srt"],
         captions_vtt=paths["vtt"],
         chapters=paths["chapters"],

@@ -1,6 +1,6 @@
 """Beds and one-shots from ElevenLabs: ambience, sfx, and music, from decktalk.toml [soundscape].
 
-Ambience and sfx use sound generation (billed per second when a duration is set);
+Ambience and sfx use sound generation, billed per second when a duration is set, and
 music is requested in chunks of at most max_music_chunk_seconds and joined with a
 crossfade. Every output has a cache file with the request hash, so unchanged requests
 are skipped. dry_run reports the requests without calling the API.
@@ -12,27 +12,56 @@ import hashlib
 import json
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..jsonio import read_json, write_json
+from ..jsonio import read_json, relative, write_json
 from ..media import audio, ffmpeg
 from ..model import MusicSpec, Project, SoundSpec
+from ..pipeline import SoundscapeStatus
 from ..settings import ElevenLabsConfig
 from ..speech.elevenlabs import ElevenLabs, check_api_base
+from ..verdicts import Findings
 
 log = logging.getLogger(__name__)
 
 
 @dataclass
 class SoundscapeItem:
+    """One generated sound: where it went, what was asked for, and whether it was already there."""
+
     name: str
     out: Path
     endpoint: str
     requests: list[dict[str, Any]]
-    status: str  # "planned" (dry run), "unchanged", "generated"
+    status: SoundscapeStatus
     duration_seconds: float | None = None
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "out": relative(self.out, root),
+            "endpoint": self.endpoint,
+            "status": self.status.value,
+            "duration_seconds": self.duration_seconds,
+            "requests": list(self.requests),
+        }
+
+
+@dataclass
+class SoundscapeResult:
+    """Everything one soundscape run planned or generated."""
+
+    items: list[SoundscapeItem] = field(default_factory=list)
+
+    @property
+    def findings(self) -> Findings:
+        """None. A request that fails raises, so a run that returns has nothing to judge."""
+        return Findings()
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        return {"items": [item.to_dict(root) for item in self.items]}
 
 
 def request_hash(endpoint: str, body: Any) -> str:
@@ -101,21 +130,21 @@ def _sound(
 ) -> SoundscapeItem:
     body = sound_body(spec, cfg, loop=loop)
     endpoint = f"{base}/sound-generation"
-    item = SoundscapeItem(name=name, out=out, endpoint=endpoint, requests=[body], status="planned")
+    item = SoundscapeItem(name=name, out=out, endpoint=endpoint, requests=[body], status=SoundscapeStatus.PLANNED)
     if client is None:
         return item
     cache_path = out.with_suffix(".cache.json")
     digest = request_hash(endpoint, body)
     cache = _load(cache_path)
     if not force and out.exists() and cache.get("hash") == digest:
-        item.status, item.duration_seconds = "unchanged", cache.get("duration_seconds")
+        item.status, item.duration_seconds = SoundscapeStatus.UNCHANGED, cache.get("duration_seconds")
         return item
     out.parent.mkdir(parents=True, exist_ok=True)
     log.info("[gen ] %s -> %s", name, out)
     out.write_bytes(client.sound_effect(body, output_format=fmt))
     item.duration_seconds = ffmpeg.probe_duration(out)
     _save(cache_path, {"hash": digest, "file": out.name, "duration_seconds": item.duration_seconds, "request": body})
-    item.status = "generated"
+    item.status = SoundscapeStatus.GENERATED
     return item
 
 
@@ -131,14 +160,14 @@ def _music(
 ) -> SoundscapeItem:
     chunks = music_chunks(spec, cfg)
     endpoint = f"{base}/music"
-    item = SoundscapeItem(name="music", out=out, endpoint=endpoint, requests=chunks, status="planned")
+    item = SoundscapeItem(name="music", out=out, endpoint=endpoint, requests=chunks, status=SoundscapeStatus.PLANNED)
     if client is None:
         return item
     cache_path = out.with_suffix(".cache.json")
     digest = request_hash(endpoint, {"chunks": chunks, "xfade": cfg.music_crossfade_seconds})
     cache = _load(cache_path)
     if not force and out.exists() and cache.get("hash") == digest:
-        item.status, item.duration_seconds = "unchanged", cache.get("duration_seconds")
+        item.status, item.duration_seconds = SoundscapeStatus.UNCHANGED, cache.get("duration_seconds")
         return item
     out.parent.mkdir(parents=True, exist_ok=True)
     parts: list[Path] = []
@@ -157,17 +186,17 @@ def _music(
     item.duration_seconds = ffmpeg.probe_duration(out)
     cache.update({"hash": digest, "file": out.name, "duration_seconds": item.duration_seconds, "request": chunks})
     _save(cache_path, cache)
-    item.status = "generated"
+    item.status = SoundscapeStatus.GENERATED
     return item
 
 
 def soundscape(
     project: Project, *, only: list[str] | None = None, force: bool = False, dry_run: bool = False
-) -> list[SoundscapeItem]:
+) -> SoundscapeResult:
     spec = project.soundscape
     if spec.empty:
         log.info("no [soundscape] in decktalk.toml, so there is nothing to generate")
-        return []
+        return SoundscapeResult()
     cfg = project.settings.elevenlabs
     fmt = project.settings.narration.output_format
     # The base is checked whatever the run does, and the plan names the URL a real run would call,
@@ -201,4 +230,4 @@ def soundscape(
     if spec.music and want("music"):
         out = project.path(spec.music.out or project.mix.music or "build/music/music.mp3")
         items.append(_music(spec.music, out, client, cfg, fmt, base=base, force=force))
-    return items
+    return SoundscapeResult(items=items)

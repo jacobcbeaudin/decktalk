@@ -1,8 +1,8 @@
 """Stage 4: find narration t=0 in each recording, and sanity-check the recordings.
 
-measure: the last magenta frame plus one frame is where audio t=0 belongs; the
+measure: the last magenta frame plus one frame is where audio t=0 belongs, and the
 assembler trims that much off the head of the video. Without a marker the fallback is
-the first painted frame plus the settle; failing that a fixed guess.
+the first painted frame plus the settle, and failing that a fixed guess.
 
 check: duration against what was requested, and luma at 10/50/90 %, so a black or
 truncated recording is caught before assembly, plus what the recorder saw in the recording log.
@@ -20,13 +20,12 @@ nothing worth assembling.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import RecordingLog
+from ..artifacts import RecordingLog, recording_hash
 from ..errors import MissingInputError
 from ..jsonio import relative
 from ..media import ffmpeg, frames
@@ -78,34 +77,6 @@ class LeadMeasurement:
     t0_seconds: float
     wallclock_seconds: float
     method: str
-
-
-def recording_hash(path: Path) -> str:
-    """The first 16 hex digits of the file's sha256, which ties a measurement to one recording."""
-    digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()[:16]
-
-
-def stale_measure(webm: Path, recording_log: RecordingLog | None, root: Path | None = None) -> str | None:
-    """Why the recording log's narration t=0 does not belong to this recording, or None when it does.
-
-    `record` writes a recording log with no measurement, and `measure` fills it in with the hash of
-    the webm it read.
-    """
-    name = relative(webm, root) if root is not None else webm.name
-    if recording_log is None:
-        return f"{name} has no recording log, so `measure` never found its narration t=0"
-    if recording_log.t0_seconds is None:
-        return (
-            f"{name} was never measured, so the cut would trim the recorder's wall-clock estimate "
-            f"of {recording_log.clock_start_seconds:g}s"
-        )
-    if recording_log.t0_hash != recording_hash(webm):
-        return f"{name} changed after `measure` read it"
-    return None
 
 
 def measure(project: Project, only: list[int] | None = None) -> list[LeadMeasurement]:

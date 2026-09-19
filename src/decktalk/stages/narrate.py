@@ -15,7 +15,7 @@ A page section's lead_seconds joins that much silence in before its take when th
 concatenated, and its tail_seconds replaces min_tail_seconds for it. Neither is part of the
 hash, so neither voices a take again.
 build/narration/timeline.json records each section's absolute start and end and every
-word at absolute time; the recorder and the assembler cut the visuals to it.
+word at absolute time. The recorder and the assembler cut the visuals to it.
 
 silent=True needs no API key: silent placeholders sized at silent_words_per_minute
 plus the declared pauses, with evenly spaced estimated words, so the whole pipeline
@@ -40,6 +40,7 @@ from ..model import PageSection, Project
 from ..model.script import PUNCT, Segment
 from ..settings import NarrationConfig
 from ..speech import SpeechProvider, SpeechRequest, VoiceContext, get_provider
+from ..verdicts import Findings
 
 log = logging.getLogger(__name__)
 
@@ -306,11 +307,38 @@ def build_timeline(project: Project, takes: Takes, order: list[Segment]) -> Time
 
 @dataclass
 class NarrateResult:
+    """What one narrate run produced: the take index, the narration clock, and what it cost."""
+
     takes: Takes
     timeline: Timeline
     segments: list[Segment]  # the sections this run considered
     synthesized: list[str]  # keys that hit the API (or were regenerated silently)
     cached: list[str]
+
+    @property
+    def findings(self) -> Findings:
+        """None. A script narrate cannot voice is an error, so a run that returns has nothing to judge."""
+        return Findings()
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        """The run as JSON-ready data, with the take index and what each section cost."""
+        return {
+            "model": self.takes.model,
+            "estimated": self.takes.estimated,
+            "total_seconds": self.takes.total_seconds,
+            "synthesized": list(self.synthesized),
+            "cached": list(self.cached),
+            "sections": [
+                {
+                    "key": key,
+                    "chapter": take.chapter,
+                    "file": take.file,
+                    "word_count": take.word_count,
+                    "duration_seconds": take.duration_seconds,
+                }
+                for key, take in self.takes.sections.items()
+            ],
+        }
 
 
 def narrate(

@@ -27,7 +27,7 @@ def test_an_uncertain_label_ends_in_a_question_mark_and_a_certain_one_does_not()
 
 
 def test_the_member_name_is_the_code_and_the_value_is_the_label():
-    """Contract rule 9: a verdict is matched by its code and never by its label."""
+    """A verdict is matched by its code and never by its label, so a rename of a label breaks nobody."""
     assert Verdict.SPEECH_AT_CUT.name == "SPEECH_AT_CUT"
     assert Verdict.SPEECH_AT_CUT.value == "SPEECH AT CUT"
     assert Verdict.SPEECH_AT_CUT.to_dict() == {"code": "SPEECH_AT_CUT", "label": "SPEECH AT CUT", "certain": True}

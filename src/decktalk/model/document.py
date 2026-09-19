@@ -247,6 +247,32 @@ class Document:
         return {s.number for s in self.clip_sections}
 
     @property
+    def fade_flags(self) -> dict[str, tuple[bool, bool]]:
+        """(fade_in, fade_out) per section key, from `[transition] dips` and `page_fades_in`."""
+        pairs = {(a, b) for a, b in self.transition.dips} if self.transition.dips is not None else None
+        flags: dict[str, tuple[bool, bool]] = {}
+        for i, sec in enumerate(self.sections):
+            prev_n = self.sections[i - 1].number if i > 0 else None
+            next_n = self.sections[i + 1].number if i + 1 < len(self.sections) else None
+            if pairs is None:
+                dip_in, dip_out = prev_n is not None, next_n is not None
+            else:
+                dip_in = prev_n is not None and (prev_n, sec.number) in pairs
+                dip_out = next_n is not None and (sec.number, next_n) in pairs
+            flags[sec.key] = (dip_in and not (not sec.is_clip and self.transition.page_fades_in), dip_out)
+        return flags
+
+    @property
+    def cut_summary(self) -> str:
+        """What happens at the section cuts: straight cuts, or dips at some or all of them."""
+        dips = sum(1 for _fade_in, fade_out in self.fade_flags.values() if fade_out)
+        if dips == 0:
+            return "straight cuts"
+        if self.transition.dips is None:
+            return "dips at every cut"
+        return f"dips at {dips} cut{'s' if dips != 1 else ''}"
+
+    @property
     def page_files(self) -> list[str]:
         """Each page file once, in section order."""
         seen: list[str] = []
@@ -455,3 +481,10 @@ def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
         sfx=sfx,
         music=music,
     )
+
+
+def frame_dip(dip_seconds: float, fps: int) -> float:
+    """The dip length quantized to whole frames, so a fade never ends part way through one."""
+    if dip_seconds <= 0:
+        return 0.0
+    return round(max(round(dip_seconds * fps), 1) / fps, 4)

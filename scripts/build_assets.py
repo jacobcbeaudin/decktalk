@@ -361,7 +361,7 @@ STAGES = [
     ("04 ASSEMBLE", "Cut to the frame", "ffmpeg cuts, mixes, verifies."),
 ]
 NARRATE_W = 222  # the width the narrate panel's ticks span
-NARRATE_CUES = (1, 3)  # the cue dots sit on "bowl" and "ball"; the timestamp sits on "bowl"
+NARRATE_CUES = (1, 3)  # the cue dots sit on "bowl" and "ball", and the timestamp sits on "bowl"
 
 
 def narrate_ticks(xs: list[float]) -> list[float]:
@@ -1307,7 +1307,7 @@ def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
 
     import decktalk
     from decktalk.media import ffmpeg
-    from decktalk.project import Project
+    from decktalk.model import Project
 
     vmod = importlib.import_module("decktalk.stages.verify")
     amod = importlib.import_module("decktalk.stages.assemble")

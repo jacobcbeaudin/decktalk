@@ -1,4 +1,8 @@
-"""Tables the CLI prints from stage results. Internal."""
+"""The tables the CLI prints from stage results.
+
+Every table reads one result object, so the text output and the `--json` payload can never
+disagree. Internal: nothing here is in `decktalk.__all__`.
+"""
 
 from __future__ import annotations
 

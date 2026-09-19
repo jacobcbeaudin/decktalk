@@ -26,6 +26,7 @@ from typing import Any
 
 from ..artifacts import CueTimes, Takes, Timeline, Word, read_words
 from ..errors import ConfigError, DeckTalkError
+from ..jsonio import relative
 from ..secret import Secret
 from ..settings import PROJECT_FILE, Settings, load_settings, read_project_toml, settings_key_warnings
 from .cues import SectionCues, load_cues
@@ -192,6 +193,14 @@ class Project:
     def stray_section_videos(self) -> list[Path]:
         """Section videos in build/sections whose section is no longer in decktalk.toml."""
         return self.workspace.stray_section_videos([s.key for s in self.sections])
+
+    def stray_section_warnings(self, command: str) -> list[str]:
+        """One sentence per leftover section video, naming the command that ignores it."""
+        return [
+            f"{relative(f, self.root)} is not a section in decktalk.toml, so {command} ignores it. "
+            "Delete the file if an earlier build left it."
+            for f in self.stray_section_videos()
+        ]
 
     # ---- secrets ---------------------------------------------------------------------
     def require_env(self, *keys: str) -> list[Secret]:

@@ -15,7 +15,7 @@ import pytest
 
 from decktalk.scaffold import init
 from decktalk.toolchain.assets import runtime_path
-from decktalk.verdicts import Findings
+from decktalk.verdicts import Findings, SkipReason, Verdict
 
 pytestmark = [pytest.mark.browser, pytest.mark.media]
 
@@ -43,7 +43,7 @@ def test_preflight_estimates_each_reveal_and_the_seam_from_frozen_frames(tmp_pat
     rows = {c.check: c for c in result.cues}
     assert list(rows) == [f"1:{c}" for c in template_cues(root, "1")] + [f"2:{c}" for c in template_cues(root, "2")]
     for c in result.cues:
-        assert c.verdict in ("changed", "THIN CHANGE?"), (c.check, c.changed_percent, c.verdict, c.reason)
+        assert c.verdict in (Verdict.CHANGED, Verdict.THIN_CHANGE), (c.check, c.changed_percent, c.verdict, c.reason)
         assert c.before is not None and c.after is not None and c.before.exists() and c.after.exists()
     assert rows["2:2.1lesson"].changed_percent > 5  # the push into the lesson moves most of the frame
     # The first cue of each section freezes its slide just before the cue, and each later cue after the one before.
@@ -68,7 +68,7 @@ def test_preflight_only_checks_the_cut_into_a_seamless_section_it_names(tmp_path
     narrate(Project.load(root, environ={}), silent=True)
     result = preflight(Project.load(root, environ={}), only=[2])
     [seam] = result.seams
-    assert (seam.key, seam.verdict) == ("02", "ok"), (seam.verdict, seam.reason, seam.detail)
+    assert (seam.key, seam.verdict) == ("02", Verdict.OK), (seam.verdict, seam.reason, seam.detail)
     assert seam.changed_percent == 0.0 and seam.last is not None and seam.first is not None
     assert [t.segment.key for t in result.takes] == ["02"]
     assert {c.check.split(":")[0] for c in result.cues} == {"2"}
@@ -121,16 +121,16 @@ def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatc
     result = preflight(Project.load(root, environ={}))
     got = {c.check: (c.verdict, c.reason) for c in result.cues}
     assert got == {
-        "1:1.1in": ("skipped", "AT_SECTION_START"),
-        "1:1.1big": ("changed", None),
-        "1:1.1mid": ("THIN CHANGE?", None),
-        "1:1.1dot": ("NO CHANGE", None),
-        "2:2.1go": ("THIN CHANGE?", None),
-        "3:3.1go": ("changed", None),
+        "1:1.1in": (Verdict.SKIPPED, SkipReason.AT_SECTION_START),
+        "1:1.1big": (Verdict.CHANGED, None),
+        "1:1.1mid": (Verdict.THIN_CHANGE, None),
+        "1:1.1dot": (Verdict.NO_CHANGE, None),
+        "2:2.1go": (Verdict.THIN_CHANGE, None),
+        "3:3.1go": (Verdict.CHANGED, None),
     }
     shares = {c.check: c.changed_percent for c in result.cues}
     assert shares["1:1.1big"] == pytest.approx(100 * 100 * 100 / (480 * 270), rel=0.05)  # 400 px at 1080p is 100 px
     # Section 1 ends on boxes at 100 and 700, and section 2 opens on one at 1300. Section 3 opens as section 2 ends.
     assert {k.key: k.verdict for k in result.seams} == {"02": "POP AT CUT", "03": "ok"}
     assert [k.changed_percent for k in result.seams][1] == 0.0
-    assert result.findings() == Findings(certain=2, uncertain=2)
+    assert result.findings == Findings(certain=2, uncertain=2)

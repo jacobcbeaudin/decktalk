@@ -26,15 +26,18 @@ The package exports these names. Every other name is internal.
 |---|---|
 | Project | `Project`, `Section`, `PageSection`, `ClipSection`, `Settings`, `load_settings` |
 | Project tables | `Voice`, `Transition`, `Mix`, `Soundscape` |
-| Artifacts | `Takes`, `Timeline`, `CueTimes`, `Word`, `RecordingLog` |
+| Artifacts | `Takes`, `CueTimes`, `Word`, `RecordingLog` |
 | Stages | `narrate`, `align`, `preflight`, `record`, `measure`, `check`, `assemble`, `verify`, `screenshots`, `soundscape`, `build`, `status`, `clip`, `words` |
-| Results | `NarrateResult`, `AlignResult`, `PreflightResult`, `RecordResult`, `LeadMeasurement`, `RecordingCheck`, `AssembleResult`, `VerifyResult`, `SoundscapeItem`, `BuildResult`, `StatusResult`, `ClipResult`, `SectionWords` |
 | Errors | `DeckTalkError`, `ConfigError`, `MissingInputError`, `ProviderError`, `ToolError` |
+| Results | `NarrateResult`, `AlignResult`, `RecordResult`, `AssembleResult`, `VerifyResult`, `PreflightResult`, `ScreenshotsResult`, `WordsResult`, `ClipResult`, `StatusResult`, `SoundscapeResult`, `BuildResult` |
 | Speech | `SpeechProvider`, `SpeechRequest`, `register_speech_provider` |
 | Version | `__version__` |
 
-Note: Everything under `decktalk.media` is internal. So is everything under `decktalk.speech` except the three
-speech names, and every name that starts with music.
+Note: `decktalk.__all__` is the whole supported Python API. One word names the command, the Python call, the type
+it returns and its `--json` key, so each command's result class sits in `__all__` beside the function that returns
+it. Everything under `decktalk.media`, `decktalk.artifacts`, `decktalk.model` and `decktalk.toolchain` is internal,
+so is everything under `decktalk.speech` except the three speech names, and so is every name whose first character
+is `_`.
 
 ## `Project`
 
@@ -58,10 +61,10 @@ the table and the field.
 
 | Member | Kind | Meaning |
 |---|---|---|
-| `root`, `name`, `script`, `cues`, `build` | field | Project directory, project name, and the paths from `[project]`. |
-| `sections` | field | Every `PageSection` and `ClipSection`, in number order. |
-| `voice`, `transition`, `mix`, `soundscape` | field | The project tables, as frozen dataclasses with the keys of [decktalk.toml](/reference/decktalk-toml). |
-| `settings` | field | The tuning tree, a `Settings`. [Configuration](/reference/configuration) lists every field. |
+| `root`, `document`, `workspace`, `env`, `settings` | field | The project directory and the four parts it composes: the parsed `decktalk.toml`, the paths under `build/`, the secrets, and the tuning. |
+| `name`, `script`, `cues`, `build` | property | The project name and the paths from `[project]`, each read from the document. |
+| `sections` | property | Every `PageSection` and `ClipSection`, in number order. |
+| `voice`, `transition`, `mix`, `soundscape` | property | The project tables, as frozen dataclasses with the keys of [decktalk.toml](/reference/decktalk-toml). |
 | `narration_dir`, `recordings_dir`, `out_dir`, `screenshots_dir` | property | The `build/` subdirectories. |
 | `takes_path`, `timeline_path`, `cue_times_path`, `final` | property | Paths of the take index, the narration clock, the cue times file, and the final mp4. |
 | `takes()`, `timeline()`, `cue_times()` | method | Loads the artifact. `takes()` and `timeline()` return `None` when the file does not exist. |
@@ -69,8 +72,10 @@ the table and the field.
 | `page_sections`, `clip_sections`, `clip_numbers`, `page_files` | property | The page sections, the clip sections, the clip numbers, and the page files in first-use order. |
 | `recording(section)`, `section_video(section)` | method | Returns the path of the section's webm or its `sections/NN.mp4`. |
 | `path(rel)` | method | Returns `rel` as an absolute path under `root`. |
-| `env(key)` | method | Returns the value from the environment or `.env`. Returns `""` when the value is unset or starts with `<`. |
-| `require_env(*keys)` | method | Returns the values in order. Raises `ConfigError` that names every missing key. |
+| `chapters()` | method | One chapter title per section: its own `chapter`, its script heading, or its number. |
+| `env.get(key)` | method | Returns the variable as an opaque value that prints as its own name. Call `reveal()` for the string. It is falsy when the value is unset or starts with `<`. |
+| `require_env(*keys)` | method | Returns those same opaque values in order. Raises `ConfigError` that names every missing key and no value. |
+| `script_sections()`, `cue_specs()`, `markers()` | method | Parses `script.md`, `cues.json` and the markers file, each checked against `decktalk.toml`. |
 
 `load_settings(root=None, *, toml=None, environ=None, user=None)` builds a `Settings` from the defaults, the
 per-machine file, the project's tables, and the environment.
@@ -146,21 +151,23 @@ check does not start with a section number.
 
 ## Other stages
 
-These functions run one stage each, or read the project.
+These functions run one stage each, or read the project. Every result carries `findings`, the tally of what the
+run judged, and `to_dict(root)`, the same thing as JSON-ready data with every path relative to the project root.
+`record`, `measure` and `check` each return one row per section rather than one result.
 
 | Function | Returns | Raises |
 |---|---|---|
 | `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None)` | `NarrateResult` with `takes`, `timeline`, `segments`, `synthesized`, and `cached` | `ConfigError`, `MissingInputError`, `ProviderError` |
-| `align(project, *, allow_unknown_cues=False)` | `AlignResult` with `cue_times`, `sections`, `unresolved`, `estimated`, `unknown`, `cue_times_file`, `problems`, and `to_dict(root)` | `ConfigError`, `MissingInputError`, `UnknownCueError` |
-| `preflight(project, *, only=None, frames=True, model=None)` | `PreflightResult` with `takes`, `note`, `align`, `estimated`, `cues`, `seams`, `frames`, `placeholders`, `findings(allow_unknown_cues=False)`, and `to_dict(root)` | `ConfigError`, `MissingInputError`, `ToolError` |
+| `align(project, *, allow_unknown_cues=False)` | `AlignResult` with `cue_times`, `sections`, `unresolved`, `estimated`, `unknown`, `cue_times_file`, `short`, and `problems` | `ConfigError`, `MissingInputError`, `UnknownCueError` |
+| `preflight(project, *, only=None, frames=True, model=None, allow_unknown_cues=False)` | `PreflightResult` with `takes`, `note`, `align`, `estimated`, `cues`, `seams`, `frames`, `placeholders`, and `short` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `record(project, *, only=None, seconds=None, use_cues=True)` | A list of `RecordResult`, each with `section`, `path`, `log`, and `seconds` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `measure(project, only=None)` | A list of `LeadMeasurement`, each with `key`, `t0_seconds`, `wallclock_seconds`, and `method` | `MissingInputError` |
-| `check(project, only=None)` | A list of `RecordingCheck`, each with `key`, `duration`, `wanted`, `y10`, `y50`, `y90`, `max50`, `verdict`, `page_errors`, `file`, `ok`, and `to_dict(root)` | `MissingInputError` |
-| `assemble(project, *, soundscape=True, loudness=True, strict=False)` | `AssembleResult` with `final`, `stamped` (`None` unless `[output] timestamped_copy` is on), `duration`, `sections`, `warnings`, `loudness`, `captions_srt`, `captions_vtt`, and `chapters` | `ConfigError`, `MissingInputError`, `ToolError` |
-| `screenshots(project, *, pages=None, slides=None, section=None, at=None, cues=None)` | A list of screenshot paths | `ConfigError` |
-| `soundscape(project, *, only=None, force=False, dry_run=False)` | A list of `SoundscapeItem`, each with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds` | `ConfigError`, `ProviderError` |
+| `check(project, only=None)` | A list of `RecordingCheck`, each with `key`, `duration`, `wanted`, `y10`, `y50`, `y90`, `max50`, `verdicts`, `stall_ms`, `page_errors`, `file`, `ok`, `label`, and `to_dict(root)` | `MissingInputError` |
+| `assemble(project, *, soundscape=True, loudness=True, strict=False)` | `AssembleResult` with `final`, `stamped` (`None` unless `[output] timestamped_copy` is on), `duration`, `sections`, `warnings`, `loudness`, `loudness_problems`, `captions_srt`, `captions_vtt`, and `chapters` | `ConfigError`, `MissingInputError`, `ToolError` |
+| `screenshots(project, *, pages=None, slides=None, section=None, at=None, cues=None)` | `ScreenshotsResult` with `files` | `ConfigError` |
+| `soundscape(project, *, only=None, force=False, dry_run=False)` | `SoundscapeResult` with `items`, each a `SoundscapeItem` with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds` | `ConfigError`, `ProviderError` |
 | `status(project)` | `StatusResult`, which reads what exists and runs nothing | none |
-| `words(project, only=None)` | A list of `SectionWords`, each with `key`, `section`, `title`, `lead_seconds`, `duration`, `estimated`, `words`, `texts`, and `to_dict()` | `ConfigError`, `MissingInputError` |
+| `words(project, only=None)` | `WordsResult` with `sections`, each a `SectionWords` with `key`, `section`, `title`, `lead_seconds`, `duration`, `estimated`, `words` and `texts` | `ConfigError`, `MissingInputError` |
 | `clip(project, number, *, start, end, out, words_out=None, gain_db=0.0, hold_seconds=0.0)` | `ClipResult` with `section`, `video`, `words_file`, `start`, `end`, `first_frame`, `last_frame`, `hold_seconds`, `duration`, `gain_db`, `estimated`, `words`, and `cut_words` | `ConfigError`, `MissingInputError`, `ToolError` |
 
 - `record` with `seconds` records every section for that long. With `use_cues=False`, the pages play in preview.
@@ -186,13 +193,13 @@ print(json.dumps(result.to_dict(project.root), indent=2))
 
 ## Artifacts
 
-These classes read and write the files under `build/`. [Build artifacts](/reference/artifacts) gives every field.
+These classes read and write the files under `build/`. [Build artifacts](/reference/artifacts) gives every field,
+and names the files that no public class reads.
 
 | Class | Members |
 |---|---|
 | `Word` | `word`, `start`, `end` |
 | `Takes` | The narration cache. `load(path)` returns `None` when the file does not exist. `save(path)`. |
-| `Timeline` | Section and word times in `narration.mp3`. `load(path)`, `save(path)`, `span(key)`, and `keys`. |
 | `CueTimes` | The resolved cues per section, as `CueTime` rows. `load(path)`, `save(path)`, `query(key)` for the `?cues=` string, `times(key)`, `get(key, cue)`, and `word_at(key, cue)`. |
 | `RecordingLog` | What the recorder did for one section. `load(path)`, `save(path)`, `trim_seconds`, and `worst_stall_ms`. |
 

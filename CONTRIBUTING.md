@@ -2,10 +2,8 @@
 
 Issues and pull requests are welcome. One person maintains DeckTalk, so expect a reply within about a week.
 
-- The tree is being rebuilt for 0.4.0, with new names and a new layout. Until that release is out, please open
-  an issue instead of a pull request, so that your change lands on the new tree rather than on code that is
-  about to move.
-- Before a large change, open an issue, so that we agree on the design first.
+- Open an issue before a pull request, so that your change lands where the current design puts it and so
+  that we agree on that design first.
 - If you build something with DeckTalk, share a link in an issue.
 
 ## Setup
@@ -91,9 +89,14 @@ trusted publisher, so neither may be renamed.
 
 ## Layout
 
+The order is the import order, from the vocabulary layer through the leaves, the model, the stages
+and the command line. A module imports from a layer below its own or from inside its own package,
+and `tests/test_imports.py` fails the suite on any other edge.
+
 ```text
 src/decktalk/
   errors.py      DeckTalkError and its subclasses, which library callers catch
+  secret.py      a value that may be used and never shown, such as the key read from .env
   verdicts.py    the Verdict enum, Finding, Findings, SkipReason and the StageResult protocol
   jsonio.py      the atomic JSON writer, the dataclass walker, and paths relative to the root
   tomlmap.py     one mapping loader: located errors, key hints, and dataclass trees
@@ -105,13 +108,17 @@ src/decktalk/
   speech/        the speech protocol, the provider registry, and ElevenLabs (internal)
   model/         one project: the decktalk.toml document, the build paths, .env, the script and cues
   cli.py         the command line: its tables, --json output, and exit codes
+  report.py      the tables the CLI prints from a stage result (internal)
   scaffold.py    install, doctor, and init: the downloads and the template copy
   status.py      what a project has built, read from disk for `decktalk status`
   stages/        narrate, align, preflight, record, measure (with check), assemble, verify, screenshots, clip (with words),
                  soundscape, build
   runtime/       decktalk-runtime.js, the page contract
+  katex/         the pinned KaTeX release the pages typeset with
   template/      what `decktalk init` writes
 tests/
+  test_imports.py    the layers: no import points up or sideways, and every stage returns a result
+  unit/              one test file per module, at the path mirroring it under src/decktalk/
   test_units.py      config layering, project validation, script parsing, cue matching
   test_cli.py        exit codes, --json output, and flags, with stages replaced by fixed results
   test_runtime.py    drives decktalk-runtime.js in a real Chromium (-m browser)

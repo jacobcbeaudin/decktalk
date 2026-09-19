@@ -1,28 +1,30 @@
 """DeckTalk: narrated presentation videos, cut to the word.
 
-Public API. The file formats and the page contract are covered by the changelog: a change
-to them bumps the minor version. The Python names below may still move, and a rename is a
-breaking change once the project leaves the 0.x series.
+`decktalk.__all__` is the whole supported Python API, and everything else may move without notice.
+One word names the command, the Python call, the type it returns and its `--json` key, so each
+command's result class is exported beside the function that returns it.
 
-    Project, Section types, Settings, load_settings
-    project tables: Voice, Mix, Soundscape, Transition
-    errors: DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
-    artifacts: Takes, Timeline, CueTimes, Word, RecordingLog
-    stages: narrate, align, preflight, record, measure, check, assemble, verify, screenshots,
-            soundscape, build, status, clip, words
-    results: NarrateResult, AlignResult, PreflightResult, RecordResult, LeadMeasurement, RecordingCheck,
-             AssembleResult, VerifyResult, SoundscapeItem, BuildResult, StatusResult, ClipResult, SectionWords
-    speech: SpeechProvider, SpeechRequest, register_speech_provider
+    project:   Project, Section, ClipSection, PageSection, Voice, Mix, Soundscape, Transition
+    tuning:    Settings, load_settings
+    errors:    DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
+    artifacts: Takes, CueTimes, RecordingLog, Word
+    stages:    narrate, align, record, measure, check, assemble, verify
+    commands:  preflight, screenshots, words, clip, status, soundscape, build
+    results:   NarrateResult, AlignResult, RecordResult, AssembleResult, VerifyResult,
+               PreflightResult, ScreenshotsResult, WordsResult, ClipResult, StatusResult,
+               SoundscapeResult, BuildResult
+    speech:    SpeechProvider, SpeechRequest, register_speech_provider
 
-Everything under decktalk.media, everything under decktalk.speech other than the
-three speech names above, and every name starting with an underscore is internal.
+The file formats and the page contract are covered by the changelog: a change to them bumps the
+minor version. The Python names may still move, and a rename is a breaking change once the project
+leaves the 0.x series.
 """
 
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .artifacts import CueTimes, RecordingLog, Takes, Timeline, Word
+from .artifacts import CueTimes, RecordingLog, Takes, Word
 from .errors import ConfigError, DeckTalkError, MissingInputError, ProviderError, ToolError
 from .model import ClipSection, Mix, PageSection, Project, Section, Soundscape, Transition, Voice
 from .settings import Settings, load_settings
@@ -32,14 +34,13 @@ from .stages import (
     AssembleResult,
     BuildResult,
     ClipResult,
-    LeadMeasurement,
     NarrateResult,
     PreflightResult,
-    RecordingCheck,
     RecordResult,
-    SectionWords,
-    SoundscapeItem,
+    ScreenshotsResult,
+    SoundscapeResult,
     VerifyResult,
+    WordsResult,
     align,
     assemble,
     build,
@@ -70,7 +71,6 @@ __all__ = [
     "ConfigError",
     "CueTimes",
     "DeckTalkError",
-    "LeadMeasurement",
     "MissingInputError",
     "Mix",
     "NarrateResult",
@@ -79,23 +79,22 @@ __all__ = [
     "Project",
     "ProviderError",
     "RecordResult",
-    "RecordingCheck",
     "RecordingLog",
+    "ScreenshotsResult",
     "Section",
-    "SectionWords",
     "Settings",
     "Soundscape",
-    "SoundscapeItem",
+    "SoundscapeResult",
     "SpeechProvider",
     "SpeechRequest",
     "StatusResult",
     "Takes",
-    "Timeline",
     "ToolError",
     "Transition",
     "VerifyResult",
     "Voice",
     "Word",
+    "WordsResult",
     "__version__",
     "align",
     "assemble",

@@ -5,16 +5,20 @@
 The log is the recorder's own account of the run: what it opened, how long it asked for, every
 page error and frame gap it saw, and what each cue and each spoken reveal did. `measure` fills in
 where narration t=0 landed, and the assembler trims that much off the head of the recording.
+
+The measurement is tied to the recording by `t0_hash`, the digest of the webm it was read from, so
+a recording made again after a measurement is caught rather than cut at the wrong place.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Self
 
-from ..jsonio import read_json, write_json
+from ..jsonio import read_json, relative, write_json
 
 
 def gap_time(value: Any) -> float | None:
@@ -80,3 +84,31 @@ class RecordingLog:
     @property
     def trim_seconds(self) -> float:
         return self.t0_seconds if self.t0_seconds is not None else self.clock_start_seconds
+
+
+def recording_hash(path: Path) -> str:
+    """The first 16 hex digits of the file's sha256, which ties a measurement to one recording."""
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()[:16]
+
+
+def stale_measure(webm: Path, recording_log: RecordingLog | None, root: Path | None = None) -> str | None:
+    """Why the recording log's narration t=0 does not belong to this recording, or None when it does.
+
+    `record` writes a recording log with no measurement, and `measure` fills it in with the hash of
+    the webm it read.
+    """
+    name = relative(webm, root) if root is not None else webm.name
+    if recording_log is None:
+        return f"{name} has no recording log, so `measure` never found its narration t=0"
+    if recording_log.t0_seconds is None:
+        return (
+            f"{name} was never measured, so the cut would trim the recorder's wall-clock estimate "
+            f"of {recording_log.clock_start_seconds:g}s"
+        )
+    if recording_log.t0_hash != recording_hash(webm):
+        return f"{name} changed after `measure` read it"
+    return None

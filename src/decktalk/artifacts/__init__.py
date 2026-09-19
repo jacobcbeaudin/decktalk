@@ -14,7 +14,7 @@ module here owns each file.
 from __future__ import annotations
 
 from .cue_times import CueTime, CueTimes
-from .recordings import RecordingLog, gap_time
+from .recordings import RecordingLog, gap_time, recording_hash, stale_measure
 from .takes import Take, Takes
 from .timeline import Timeline, TimelineSection
 from .words import Word, read_words, write_words
@@ -29,6 +29,8 @@ __all__ = [
     "TimelineSection",
     "Word",
     "gap_time",
+    "recording_hash",
     "read_words",
+    "stale_measure",
     "write_words",
 ]

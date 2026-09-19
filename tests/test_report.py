@@ -1,4 +1,4 @@
-from decktalk._report import mmss
+from decktalk.report import mmss
 
 
 def test_mmss_rounds_before_splitting_minutes():

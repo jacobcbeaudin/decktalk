@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from ..errors import ConfigError
 from ..model import Project
+from ..verdicts import Findings
 from .align import AlignResult, UnknownCueError, align
 from .assemble import AssembleResult, assemble
 from .measure import LeadMeasurement, RecordingCheck, check, measure
@@ -23,6 +25,8 @@ Reporter = Callable[[str, Any], None]
 
 @dataclass
 class BuildResult:
+    """What each stage of one run produced, in the order the run made them."""
+
     narration: NarrateResult | None = None
     align: AlignResult | None = None
     recordings: list[RecordResult] = field(default_factory=list)
@@ -34,6 +38,22 @@ class BuildResult:
     @property
     def ok(self) -> bool:
         return self.assembly is not None and self.verification is not None and self.verification.ok
+
+    @property
+    def findings(self) -> Findings:
+        """Every stage's findings, added. A stage that did not run adds nothing."""
+        stages = (self.narration, self.align, self.assembly, self.verification)
+        total = Findings()
+        for stage in stages:
+            if stage is not None:
+                total += stage.findings
+        return total + Findings.of(v for row in self.checks for v in row.verdicts)
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        """One entry per stage that ran, each the stage's own JSON-ready data."""
+        named = (("narrate", self.narration), ("align", self.align), ("assemble", self.assembly),
+                 ("verify", self.verification))  # fmt: skip
+        return {name: None if stage is None else stage.to_dict(root) for name, stage in named}
 
 
 def build(

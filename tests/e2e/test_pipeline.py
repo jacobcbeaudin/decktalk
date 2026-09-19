@@ -39,7 +39,7 @@ pytestmark = [pytest.mark.e2e, pytest.mark.timeout(180)]
 FIXTURE = Path(__file__).parent / "fixture"
 OUT = Path(__file__).parent.parent / "out" / "e2e"
 FPS = 25
-SPOKEN = ("01", "02", "04")  # the page sections; 03 is a clip and 05 a slate
+SPOKEN = ("01", "02", "04")  # the page sections, because 03 is a clip and 05 a slate
 CUES = ("1:1.1first", "1:1.1second", "1:1.1third", "2:2.1fourth", "2:2.1fifth", "4:3.1eq", "4:3.1bar")
 
 

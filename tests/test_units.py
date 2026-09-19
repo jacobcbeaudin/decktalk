@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
@@ -26,9 +27,10 @@ from decktalk.cli import build_parser, main
 from decktalk.model.script import parse_script, strip_markdown
 from decktalk.settings import Settings
 from decktalk.stages.align import Cue, find_phrase, resolve_cue
-from decktalk.stages.assemble import cut_summary, fade_flags, timeline_targets
+from decktalk.stages.assemble import timeline_targets
 from decktalk.stages.narrate import estimated_words
-from decktalk.verdicts import Findings, Verdict
+from decktalk.tomlmap import RENAMES_PAGE
+from decktalk.verdicts import Findings, SkipReason, Verdict
 
 MINIMAL_TOML = """
 [project]
@@ -148,10 +150,13 @@ def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch
     root = write_project(tmp_path)
     (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nELEVENLABS_VOICE_ID='abc' # comment\n", encoding="utf-8")
     p = Project.load(root, environ={})
-    assert p.env.get("ELEVENLABS_API_KEY") == ""
-    assert p.env.get("ELEVENLABS_VOICE_ID") == "abc"
-    with pytest.raises(ConfigError, match="ELEVENLABS_API_KEY"):
+    assert not p.env.get("ELEVENLABS_API_KEY")  # the placeholder counts as unset
+    assert p.env.get("ELEVENLABS_VOICE_ID").reveal() == "abc"
+    # A secret is named by its variable and never by its value, in a repr as in an error.
+    assert repr(p.env.get("ELEVENLABS_VOICE_ID")) == "<secret ELEVENLABS_VOICE_ID>"
+    with pytest.raises(ConfigError, match="ELEVENLABS_API_KEY") as info:
         p.require_env("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
+    assert "abc" not in str(info.value)
 
 
 def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, monkeypatch, caplog):
@@ -167,18 +172,146 @@ def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, mon
     )
     with caplog.at_level("WARNING", logger="decktalk"):
         p = Project.load(write_project(tmp_path, toml), environ={})
+    page = f". {RENAMES_PAGE} lists every name DeckTalk renamed."
     assert [r.getMessage() for r in caplog.records] == [
-        "decktalk.toml: [project]: ignoring unknown key 'scirpt' (did you mean 'script'?)",
-        "decktalk.toml: [[section]] number=1: ignoring unknown key 'scnee' (did you mean 'scene'?)",
+        f"decktalk.toml: [project]: ignoring unknown key 'scirpt' (did you mean 'script'?){page}",
+        f"decktalk.toml: [[section]] number=1: ignoring unknown key 'scnee' (did you mean 'scene'?){page}",
         "decktalk.toml: [[section]] number=1: ignoring 'slate_seconds', which applies only to a clip section",
-        "decktalk.toml: [[section]] number=2: ignoring unknown key 'zebra'",
-        "decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?)",
-        "decktalk.toml: [mix.loudness]: ignoring unknown key 'range_luu' (did you mean 'range_lu'?)",
-        "decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'seconds'?)",
-        "decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?)",
+        f"decktalk.toml: [[section]] number=2: ignoring unknown key 'zebra'{page}",
+        f"decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?){page}",
+        f"decktalk.toml: [mix.loudness]: ignoring unknown key 'range_luu' (did you mean 'range_lu'?){page}",
+        f"decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'seconds'?){page}",
+        f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",
     ]
     # A warning, not an error: the load succeeds and every misspelled key keeps its default.
     assert p.voice.stability == 0.55 and p.settings.video.preset == "medium" and p.soundscape.music.seconds == 360
+
+
+def test_a_tuning_value_outside_its_range_fails_at_load_naming_its_table_and_key(tmp_path):
+    """A number that would divide by zero or break an encoder is a config error, not a traceback."""
+    for table, key, value, must in [
+        ("video", "fps", 0, "must be above zero"),
+        ("video", "crf", -9, "must be an x264 quality between 0 and 51"),
+        ("video", "width", -4, "must be above zero"),
+        ("record", "retries", -1, "must not be negative"),
+        ("verify", "min_changed_percent", 140.0, "must be a percentage between 0 and 100"),
+        ("record", "black_ymax", 900.0, "must be a luma between 0 and 255"),
+    ]:
+        with pytest.raises(ConfigError) as info:
+            load_settings(toml={table: {key: value}}, environ={}, user={})
+        assert str(info.value) == f"[{table}] {key}: {must}, got {value!r}"
+
+
+def test_a_tuning_value_of_the_wrong_type_names_its_table_and_key(tmp_path):
+    """The located error is what lets a CLI fill the error slot's path and hint."""
+    with pytest.raises(ConfigError) as info:
+        load_settings(toml={"video": {"fps": "high"}}, environ={}, user={})
+    assert str(info.value).startswith("[video] fps: expected int, got 'high'")
+
+
+def test_an_environment_variable_obeys_the_same_range_as_the_table(tmp_path):
+    """Every layer that sets a key goes through the same reader, so every layer is checked."""
+    with pytest.raises(ConfigError) as info:
+        load_settings(toml={}, environ={"DECKTALK_VIDEO_FPS": "0"}, user={})
+    assert str(info.value) == "[video] fps: must be above zero, got 0"
+
+
+def test_the_tuning_tables_are_frozen_so_one_run_never_retunes_another(tmp_path):
+    """A flag rebuilds the table it overrides, which is why the dataclasses hold still."""
+    settings = load_settings(toml={}, environ={}, user={})
+    with pytest.raises(FrozenInstanceError):
+        settings.video.preset = "veryfast"
+    faster = replace(settings, video=replace(settings.video, preset="veryfast"))
+    assert faster.video.preset == "veryfast" and settings.video.preset == "medium"
+
+
+def test_every_tuning_key_carries_the_sentence_the_reference_prints(tmp_path):
+    """The generated page is read from the fields, so a field with no sentence is a blank row."""
+    for table in fields(Settings):
+        cls = fields(getattr(Settings(), table.name))
+        for f in cls:
+            assert f.metadata.get("doc"), f"{table.name}.{f.name}"
+            assert f.metadata["doc"].endswith("."), f"{table.name}.{f.name}"
+
+
+def test_a_table_reads_every_key_its_dataclass_declares(tmp_path, caplog):
+    """Each key is written once, as a field, so a table's reader and its class cannot drift apart."""
+    toml = (
+        "[project]\nname = 't'\nscript = 'script.md'\ncues = 'cues.json'\nbuild = 'build'\nlanguage = 'fr'\n"
+        "[voice]\nprovider = 'elevenlabs'\nmodel = 'm'\nstability = 0.5\nsimilarity_boost = 0.7\n"
+        "style = 0.1\nspeaker_boost = true\nspeed = 1.0\nprice_per_1000_characters = 0.3\n"
+        "[transition]\ndips = [[1, 2]]\ndip_seconds = 0.2\npage_fades_in = true\n"
+        "[[section]]\nnumber = 1\npage = 'a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'b.html'\n"
+        "[mix]\nmusic_db = -20\n"
+        "[mix.loudness]\ntarget_lufs = -16\ntrue_peak_db = -1.5\nrange_lu = 9\n"
+        "[[mix.sfx]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\noffset = 0.1\ncaption = 'a chime'\n"
+        "[soundscape.sfx.tap]\ntext = 'a tap'\nout = 'tap.mp3'\nduration_seconds = 0.5\n"
+        "prompt_influence = 0.4\nmodel_id = 'sound'\n"
+        "[soundscape.music]\nprompt = 'calm'\nseconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
+        "model_id = 'music'\n"
+    )
+    with caplog.at_level("WARNING", logger="decktalk"):
+        p = Project.load(write_project(tmp_path, toml), environ={})
+    assert [r.getMessage() for r in caplog.records] == []
+    assert p.document.language == "fr"
+    assert p.voice.price_per_1000_characters == 0.3
+    assert p.mix.sfx[0].caption == "a chime"
+
+
+def test_the_markers_file_is_parsed_into_rows_and_a_bad_one_names_its_file(tmp_path, caplog):
+    """The music answers to these rows, so a malformed file fails at load with the row named."""
+    from decktalk.model.markers import load_markers
+
+    path = tmp_path / "markers.json"
+    path.write_text(
+        json.dumps(
+            {
+                "boost_db": 4,
+                "boost_seconds": 1.5,
+                "markers": [
+                    {"name": "turn", "section": 3, "on": "$start", "mute_seconds": 0.4},
+                    {"name": "land", "section": 4, "on": "seal", "offset": 0.2, "occurrence": 2, "zebra": 1},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with caplog.at_level("WARNING", logger="decktalk"):
+        markers = load_markers(path)
+    assert (markers.boost_db, markers.boost_seconds) == (4.0, 1.5)
+    assert [(m.name, m.section, m.key, m.on, m.offset, m.occurrence) for m in markers.markers] == [
+        ("turn", 3, "03", "$start", 0.0, 1),
+        ("land", 4, "04", "seal", 0.2, 2),
+    ]
+    assert "ignoring unknown key 'zebra'" in caplog.text
+
+    path.write_text("[]", encoding="utf-8")
+    with pytest.raises(ConfigError, match="expected an object with 'markers'"):
+        load_markers(path)
+
+    path.write_text(json.dumps({"markers": [{"name": "turn"}]}), encoding="utf-8")
+    with pytest.raises(ConfigError, match="missing required key 'section'"):
+        load_markers(path)
+
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ConfigError, match=str(path)):
+        load_markers(path)
+
+
+def test_a_section_with_no_chapter_is_titled_by_its_script_heading(tmp_path):
+    """The author already wrote a heading, so the mp4's chapter carries it rather than a number."""
+    toml = (
+        "[project]\nname = 't'\n"
+        "[[section]]\nnumber = 1\npage = 'a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'b.html'\nchapter = 'Its own'\n"
+    )
+    root = write_project(tmp_path, toml)
+    (root / "script.md").write_text("## 1. What a cue is\n\nOne.\n\n## 2. The edit\n\nTwo.\n", encoding="utf-8")
+    p = Project.load(root, environ={})
+    assert p.chapters() == {1: "What a cue is", 2: "Its own"}
+    (root / "script.md").unlink()
+    assert Project.load(root, environ={}).chapters() == {1: "Section 1", 2: "Its own"}
 
 
 def test_user_settings_file_warns_about_unknown_keys(tmp_path, caplog):
@@ -189,7 +322,8 @@ def test_user_settings_file_warns_about_unknown_keys(tmp_path, caplog):
     with caplog.at_level("WARNING", logger="decktalk"):
         assert read_user_toml(path) == {"record": {"settle_second": 0.8}}
     assert [r.getMessage() for r in caplog.records] == [
-        f"{path}: [record]: ignoring unknown key 'settle_second' (did you mean 'settle_seconds'?)"
+        f"{path}: [record]: ignoring unknown key 'settle_second' (did you mean 'settle_seconds'?). "
+        f"{RENAMES_PAGE} lists every name DeckTalk renamed."
     ]
 
 
@@ -386,27 +520,102 @@ def test_fade_flags_follow_dips_and_page_fade_in(tmp_path):
     p = Project.load(
         write_project(tmp_path, MINIMAL_TOML + "\n[transition]\ndips = [[0, 1]]\npage_fades_in = true\n"), environ={}
     )
-    flags = fade_flags(p)
+    flags = p.document.fade_flags
     assert flags["00"] == (False, True)  # clip fades out into the dip
-    assert flags["01"] == (False, False)  # page fades itself in; no dip after
+    assert flags["01"] == (False, False)  # page fades itself in, with no dip after
     assert flags["02"] == (False, False)
     p2 = Project.load(write_project(tmp_path, MINIMAL_TOML), environ={})  # no dips key: every cut dips
-    assert fade_flags(p2)["01"] == (False, True)
+    assert p2.document.fade_flags["01"] == (False, True)
     # The assemble log names what the cuts do rather than always saying "straight cuts".
-    assert cut_summary(p) == "dips at 1 cut"
-    assert cut_summary(p2) == "dips at every cut"
+    assert p.document.cut_summary == "dips at 1 cut"
+    assert p2.document.cut_summary == "dips at every cut"
     p3 = Project.load(write_project(tmp_path, MINIMAL_TOML + "\n[transition]\ndips = []\n"), environ={})
-    assert cut_summary(p3) == "straight cuts"
+    assert p3.document.cut_summary == "straight cuts"
 
 
 # ---- package and cli -----------------------------------------------------------------------
 
 
 def test_package_exports_every_public_name():
+    """__all__ is the whole supported API: every command the CLI runs, and the type each one returns."""
     for name in decktalk.__all__:
         assert hasattr(decktalk, name), name
-    for name in ("AssembleResult", "BuildResult", "Voice", "SpeechProvider", "register_speech_provider", "__version__"):
+    assert decktalk.__all__ == sorted(decktalk.__all__)
+    for name in ("Project", "Voice", "Word", "SpeechProvider", "register_speech_provider", "__version__"):
         assert name in decktalk.__all__
+    actions = build_parser()._subparsers._group_actions[0]  # type: ignore[union-attr]
+    project_commands = set(actions.choices) - {"init", "install", "doctor"}  # type: ignore[attr-defined]
+    assert project_commands <= set(decktalk.__all__), sorted(project_commands - set(decktalk.__all__))
+    # One word names the command, the call, the type it returns and its --json key, so the result
+    # class of every command that returns one is exported beside its function.
+    for command in sorted(project_commands - {"measure", "check"}):
+        result = f"{command.title().replace('_', '')}Result"
+        assert result in decktalk.__all__, result
+    # `record` returns one row per section, and each row is that same exported type.
+    assert get_type_hints(decktalk.record)["return"].__args__ == (decktalk.RecordResult,)
+
+
+def test_every_result_tallies_its_own_rows():
+    """The CLI's exit code is this arithmetic, so each result is measured against rows it holds."""
+    from decktalk.stages.assemble import AssembleResult
+    from decktalk.stages.build import BuildResult
+    from decktalk.stages.clip import ClipResult, WordsResult
+    from decktalk.stages.screenshots import ScreenshotsResult
+    from decktalk.stages.verify import CueCheck, StartCheck, VerifyResult
+
+    # verify: one certain start, one uncertain cue, one passing cue.
+    starts = [StartCheck(key="01", start=0.0, probe_at=0.2, yavg=2.0, ymax=10.0, ok=False)]
+    cues = [
+        CueCheck("1:1.1", 1.0, 1.0, 0.2, 0.2, True, verdict=Verdict.THIN_CHANGE),
+        CueCheck("1:1.2", 2.0, 2.0, 9.0, 1.0, True, verdict=Verdict.CHANGED),
+    ]
+    verification = VerifyResult(total_seconds=9.0, starts=starts, cues=cues)
+    assert [s.verdict for s in starts] == [Verdict.BLACK]
+    assert verification.findings == Findings(certain=1, uncertain=1)
+
+    # The results that judge a count rather than a verdict.
+    assembly = AssembleResult(
+        final=Path("f.mp4"),
+        stamped=None,
+        duration=9.0,
+        sections=[],
+        warnings=[],
+        loudness=None,
+        loudness_problems=["quiet", "loud"],
+    )
+    assert assembly.findings == Findings(uncertain=2)
+    clip_row = ClipResult(
+        section=1,
+        video=Path("c.mp4"),
+        words_file=Path("c.json"),
+        start=0.0,
+        end=1.0,
+        first_frame=0,
+        last_frame=24,
+        hold_seconds=0.0,
+        duration=1.0,
+        gain_db=0.0,
+        estimated=False,
+        cut_words=["step"],
+    )
+    assert clip_row.findings == Findings(uncertain=1)
+    # The results that judge nothing say so, which is what keeps the CLI free of stage arithmetic.
+    for quiet in (WordsResult(sections=[]), ScreenshotsResult(files=[])):
+        assert quiet.findings == Findings(), type(quiet).__name__
+
+    # build adds what its stages found, and a stage that did not run adds nothing.
+    assert BuildResult().findings == Findings()
+    whole = BuildResult(assembly=assembly, verification=verification)
+    assert whole.findings == assembly.findings + verification.findings == Findings(certain=1, uncertain=3)
+
+
+def test_the_public_api_carries_no_name_the_contract_retired():
+    """`Timeline` leaves the public names, and the module that reads the file stays where it is."""
+    for name in ("Timeline", "TimelineSection", "LeadMeasurement", "RecordingCheck"):
+        assert name not in decktalk.__all__, name
+    from decktalk.artifacts import Timeline  # still readable, and not part of the supported API
+
+    assert Timeline.load(Path("nowhere.json")) is None
 
 
 def test_cli_verbose_and_quiet_parse_on_either_side_of_the_command():
@@ -550,7 +759,7 @@ def test_template_ids_agree_across_page_cues_and_script(tmp_path, monkeypatch):
 
 
 def test_frame_dip_quantizes_to_whole_frames():
-    from decktalk.stages.assemble import frame_dip
+    from decktalk.model.document import frame_dip
 
     assert frame_dip(0.15, 25) == 0.16  # 3.75 frames rounds up to 4
     assert frame_dip(0.15, 30) == 0.1333  # 4.5 frames rounds to the even 4
@@ -732,7 +941,7 @@ def test_plan_mix_delays_clip_audio_and_drops_the_limiter(tmp_path):
     assert "atrim=duration=3.000" in plan.filter and "afade=t=in:d=0.02,afade=t=out:st=2.980:d=0.02" in plan.filter
     assert "adelay=0:all=1[clip00]" in plan.filter
     assert plan.filter.endswith("[anchor][narr][clip00]amix=inputs=3:duration=first:normalize=0[a]")
-    chapters = build_chapters(rows)
+    chapters = build_chapters(rows, p.chapters())
     assert [(c.start, c.end, c.title) for c in chapters] == [
         (0.0, 3.0, "Section 0"),
         (3.0, 5.0, "Section 1"),
@@ -840,7 +1049,7 @@ def test_captions_and_chapters_skip_over_a_clip_between_page_sections(tmp_path):
     assert [(c.text, c.start) for c in cues] == [("alpha beta", 0.7), ("gamma delta", 5.1), ("epsilon", 7.6)]
     assert all(c.end <= 2.0 or c.start >= 5.0 for c in cues)  # nothing is captioned over the clip
     assert cues[0].end <= 2.0
-    chapters = build_chapters(rows)
+    chapters = build_chapters(rows, p.chapters())
     assert [(c.start, c.end, c.title) for c in chapters] == [
         (0.0, 2.0, "Section 1"),
         (2.0, 5.0, "Section 2"),
@@ -1110,12 +1319,12 @@ def test_verify_default_checks_come_from_cue_times_json(tmp_path, monkeypatch):
     p = _verify_project(tmp_path, monkeypatch, {"02": "c@2.0", "01": "b@3.0,a@1.0"})
     result = verify(p)
     assert [c.check for c in result.cues] == ["1:a", "1:b", "2:c"]  # section order, then cue time
-    assert all(c.verdict == "NO CHANGE" for c in result.cues) and not result.ok
+    assert all(c.verdict == Verdict.NO_CHANGE for c in result.cues) and not result.ok
     assert [c.check for c in verify(p, only=[2]).cues] == ["2:c"]
     assert verify(p, checks=[]).cues == [] and verify(p, checks=[]).ok
     assert [c.check for c in verify(p, checks=["1:b", "2:c"], only=[1]).cues] == ["1:b"]
     missing = verify(p, checks=["1:nope"]).cues[0]
-    assert missing.verdict == "UNRESOLVED" and not missing.ok and missing.cue_seconds is None
+    assert missing.verdict == Verdict.UNRESOLVED and not missing.ok and missing.cue_seconds is None
 
 
 def test_verify_skips_clamped_start_cue(tmp_path, monkeypatch):
@@ -1124,9 +1333,9 @@ def test_verify_skips_clamped_start_cue(tmp_path, monkeypatch):
     p = _verify_project(tmp_path, monkeypatch, {"01": "start@0.0", "03": "later@1.0"}, change=5.0)
     result = verify(p)
     start, later = result.cues
-    assert (start.verdict, start.reason) == ("skipped", "REFERENCE_CLAMPED")
+    assert (start.verdict, start.reason) == (Verdict.SKIPPED, SkipReason.REFERENCE_CLAMPED)
     assert start.cue_seconds is None and start.note.startswith("skipped REFERENCE_CLAMPED")
-    assert (later.verdict, later.reason) == ("skipped", "SECTION_NOT_ASSEMBLED")
+    assert (later.verdict, later.reason) == (Verdict.SKIPPED, SkipReason.SECTION_NOT_ASSEMBLED)
     assert result.ok  # Skipped rows never fail.
 
 
@@ -1137,9 +1346,9 @@ def test_verify_opted_out_cue_is_skipped(tmp_path, monkeypatch):
     p = _verify_project(tmp_path, monkeypatch, {"01": "a@1.0,b@2.0"}, cues=cues)
     assert [c.verify for c in p.cue_specs()[0].cues] == [False, True]
     a, b = verify(p).cues
-    assert (a.verdict, a.reason) == ("skipped", "OPTED_OUT") and b.verdict == "NO CHANGE"
+    assert (a.verdict, a.reason) == (Verdict.SKIPPED, SkipReason.OPTED_OUT) and b.verdict == Verdict.NO_CHANGE
     (named,) = verify(p, checks=["1:a"]).cues  # A cue named on purpose is measured anyway.
-    assert named.verdict == "NO CHANGE" and named.reason is None
+    assert named.verdict == Verdict.NO_CHANGE and named.reason is None
     bad = {"sections": {"1": {"cues": [{"cue": "a", "on": "x", "verify": 0}]}}}
     (p.root / "cues.json").write_text(json.dumps(bad), encoding="utf-8")
     with pytest.raises(ConfigError, match="'verify' must be bool, got int"):
@@ -1162,30 +1371,31 @@ def test_verify_marks_a_thin_change_as_uncertain(tmp_path, monkeypatch, capsys):
 
     p = _verify_project(tmp_path, monkeypatch, {"01": "a@1.0"}, change=0.11)
     (row,) = verify(p).cues
-    assert (row.verdict, row.ok, row.reason) == ("THIN CHANGE?", True, None)
-    assert verify(p).ok and row.to_dict()["verdict"] == "THIN CHANGE?"
+    assert (row.verdict, row.ok, row.reason) == (Verdict.THIN_CHANGE, True, None)
+    assert verify(p).ok and row.to_dict()["verdict"] == Verdict.THIN_CHANGE.value
     # The onset branch keeps the thin verdict when on time, and OFF CUE still wins when late.
     monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: 0)
-    assert [c.verdict for c in verify(p).cues] == ["THIN CHANGE?"]
+    assert [c.verdict for c in verify(p).cues] == [Verdict.THIN_CHANGE]
     monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: 400)
-    assert [c.verdict for c in verify(p).cues] == ["OFF CUE"]
+    assert [c.verdict for c in verify(p).cues] == [Verdict.OFF_CUE]
     monkeypatch.setattr(verify_module, "first_change_offset", lambda *a, **kw: None)
 
     # An uncertain finding: exit 0, and 1 only with --strict. The table and the JSON both show it.
     assert main(["-p", str(p.root), "verify"]) == 0
-    assert "THIN CHANGE?" in capsys.readouterr().out
+    assert Verdict.THIN_CHANGE.value in capsys.readouterr().out
     assert main(["-p", str(p.root), "verify", "--strict"]) == 1
     capsys.readouterr()
     assert main(["-p", str(p.root), "verify", "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
-    assert doc["findings"] == {"certain": 0, "uncertain": 1} and doc["verify"]["cues"][0]["verdict"] == "THIN CHANGE?"
+    assert doc["findings"] == {"certain": 0, "uncertain": 1}
+    assert doc["verify"]["cues"][0]["verdict"] == Verdict.THIN_CHANGE.value
 
     # A clear change reads changed, and the factor can turn the warning off.
     monkeypatch.setattr("decktalk.media.frames.changed_pixels_percent", lambda path, t1, t2, **kw: 0.5)
-    assert [c.verdict for c in verify(p).cues] == ["changed"]
+    assert [c.verdict for c in verify(p).cues] == [Verdict.CHANGED]
     monkeypatch.setattr("decktalk.media.frames.changed_pixels_percent", lambda path, t1, t2, **kw: 0.11)
     monkeypatch.setenv("DECKTALK_VERIFY_THIN_CHANGE_FACTOR", "1")
-    assert [c.verdict for c in verify(Project.load(p.root)).cues] == ["changed"]
+    assert [c.verdict for c in verify(Project.load(p.root)).cues] == [Verdict.CHANGED]
 
 
 def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
@@ -1372,10 +1582,26 @@ def test_align_to_dict_counts_unresolved(tmp_path):
     assert section["key"] == "01" and section["speech_end"] == 1.4 and section["min_seconds"] == 9.0
     assert section["skipped"] is None and section["cues"] == {"1.1a": 0.5}
     assert section["notes"] == [
-        {"cue": "1.1b", "verdict": "UNRESOLVED", "detail": "phrase not found: 'missing phrase'"},
-        {"cue": None, "verdict": None, "detail": "speech 1.4s is 7.6s shorter than the visuals need"},
+        {
+            "code": Verdict.UNRESOLVED.name,
+            "label": Verdict.UNRESOLVED.value,
+            "certain": True,
+            "section": 1,
+            "cue": "1.1b",
+            "where": None,
+            "detail": "phrase not found: 'missing phrase'",
+        },
+        {
+            "code": Verdict.NOTE.name,
+            "label": Verdict.NOTE.value,
+            "certain": False,
+            "section": 1,
+            "cue": None,
+            "where": None,
+            "detail": "speech 1.4s is 7.6s shorter than the visuals need",
+        },
     ]
-    assert sum(n["verdict"] == "UNRESOLVED" for s in d["sections"] for n in s["notes"]) == d["unresolved"]
+    assert sum(n["code"] == Verdict.UNRESOLVED.name for s in d["sections"] for n in s["notes"]) == d["unresolved"]
 
 
 def test_align_warns_about_a_repeated_phrase_unless_the_cue_names_its_occurrence(tmp_path, capsys):
@@ -1411,7 +1637,7 @@ def test_align_warns_about_a_repeated_phrase_unless_the_cue_names_its_occurrence
         'Set "occurrence" to choose one.'
     )
     # Only the cue that names no occurrence is ambiguous. A case-sensitive phrase counts only its own case.
-    assert [(n.cue, n.verdict, n.message) for n in section.findings] == [("1.1step", None, detail)]
+    assert [(r.cue, r.verdict, r.detail) for r in section.rows] == [("1.1step", Verdict.NOTE, detail)]
     assert section.resolved[0].cue == "1.1step" and section.resolved[0].at == 0.5 and result.unresolved == 0
     assert main(["-p", str(p.root), "align", "--strict"]) == 0  # A warning, not a finding.
     assert f"! 1.1step: {detail}" in capsys.readouterr().out
@@ -1682,8 +1908,8 @@ def test_clip_captions_place_the_clip_speech_at_the_clip_start(tmp_path, caplog)
 def test_consecutive_sections_with_the_same_title_share_one_chapter(tmp_path):
     from decktalk.stages.assemble import build_chapters
 
-    _p, rows = _titled_clip_rows(tmp_path)
-    assert [(c.start, c.end, c.title) for c in build_chapters(rows)] == [
+    p, rows = _titled_clip_rows(tmp_path)
+    assert [(c.start, c.end, c.title) for c in build_chapters(rows, p.chapters())] == [
         (0.0, 2.0, "Open"),
         (2.0, 7.52, "The edit"),
         (7.52, 9.0, "Close"),
@@ -1781,8 +2007,9 @@ def _recorded(tmp_path: Path) -> tuple[Project, Path]:
 
 
 def test_stale_measure_ties_the_measurement_to_one_recording(tmp_path, monkeypatch):
+    from decktalk.artifacts import recording_hash, stale_measure
     from decktalk.media import frames
-    from decktalk.stages.measure import measure, recording_hash, stale_measure
+    from decktalk.stages.measure import measure
 
     p, webm = _recorded(tmp_path)
     log_path = webm.with_suffix(".json")
@@ -2338,8 +2565,8 @@ def test_preflight_verdicts_and_findings():
               CueEstimate("1:d", 0.0, None, None, Verdict.SKIPPED)],
         seams=[SeamEstimate("02", 3.1, Verdict.POP_AT_CUT), SeamEstimate("03", 0.0, Verdict.OK)],
     )  # fmt: skip
-    assert result.findings() == Findings(certain=5, uncertain=1)
-    assert result.findings(allow_unknown_cues=True) == Findings(certain=3, uncertain=1)
+    assert result.findings == Findings(certain=5, uncertain=1)
+    assert replace(result, allow_unknown_cues=True).findings == Findings(certain=3, uncertain=1)
 
 
 def test_preflight_resolves_cues_on_the_words_each_section_will_have(tmp_path, monkeypatch, capsys):
@@ -2428,7 +2655,7 @@ def test_words_are_relative_to_each_section_with_the_scripts_spelling(tmp_path):
     from decktalk.stages.clip import words
 
     p = _words_project(tmp_path)
-    first, second = words(p)
+    first, second = words(p).sections
     assert (first.key, first.title, first.lead_seconds, first.duration) == ("01", "Open", 0.5, 3.0)
     assert first.estimated is False
     assert first.words == [Word("Hello", 0.6, 0.9), Word("there", 1.0, 1.4)]
@@ -2436,7 +2663,7 @@ def test_words_are_relative_to_each_section_with_the_scripts_spelling(tmp_path):
     # Section 2 starts at 3.0 s in narration.mp3, and it has no take_index entry, so it keeps the voice's spelling.
     assert second.words == [Word("Bye", 0.2, 0.5), Word("now", 0.6, 1.1)]
     assert second.texts == ["Bye", "now"]
-    assert [s.key for s in words(p, only=[2])] == ["02"]
+    assert [s.key for s in words(p, only=[2]).sections] == ["02"]
     no_words = r"section\(s\) \[3\] have no words in timeline.json; spoken sections are \[1, 2\]"
     with pytest.raises(ConfigError, match=no_words):
         words(p, only=[3])

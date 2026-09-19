@@ -14,7 +14,9 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from decktalk import cli
+from decktalk.artifacts import CueTimes
 from decktalk.cli import _exit_for, build_parser, main
+from decktalk.stages.align import AlignResult, SectionCueTimes
 from decktalk.verdicts import Findings, Verdict
 
 
@@ -60,6 +62,7 @@ def verify_result(*cues: SimpleNamespace) -> SimpleNamespace:
         black_starts=0,
         ok=all(c.verdict in (Verdict.CHANGED, Verdict.SKIPPED) for c in cues),
         seams=[],
+        findings=Findings.of([start.verdict, cut.verdict, *(c.verdict for c in cues)]),
         to_dict=lambda root: {"cues": [{"check": c.check, "verdict": c.verdict} for c in cues]},
     )
 
@@ -263,14 +266,24 @@ def test_align_counts_unknown_ids_unless_allowed(fake_project, monkeypatch, caps
     seen = []
 
     def fake_resolve(project, *, allow_unknown_cues=False):
+        # The real result's own arithmetic, so this test proves the CLI and not a number typed here.
         seen.append(allow_unknown_cues)
-        section = SimpleNamespace(key="04", speech_end=20.0, min_seconds=25.0, resolved={}, notes=[], skipped=None)
-        return SimpleNamespace(
-            cue_times=SimpleNamespace(sections={}),
+        section = SectionCueTimes(key="04", speech_end=20.0, min_seconds=25.0, resolved=[])
+        result = AlignResult(
+            cue_times=CueTimes(),
             sections=[section],
             unresolved=0,
-            unknown=1,
             estimated=False,
+            unknown=1,
+            allow_unknown_cues=allow_unknown_cues,
+        )
+        return SimpleNamespace(
+            cue_times=result.cue_times,
+            sections=result.sections,
+            unresolved=result.unresolved,
+            unknown=result.unknown,
+            estimated=result.estimated,
+            findings=result.findings,
             to_dict=lambda root: {"unknown": 1},
         )
 

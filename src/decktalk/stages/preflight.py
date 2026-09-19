@@ -307,6 +307,7 @@ class PreflightResult:
     seams: list[SeamEstimate] = field(default_factory=list)
     frames: Path | None = None  # build/preflight, or None when no frame was rendered.
     root: Path | None = None  # The project root, which the table prints paths against.
+    allow_unknown_cues: bool = False  # The run was told to carry on past an unknown cue id.
 
     @property
     def placeholders(self) -> list[str]:
@@ -320,15 +321,14 @@ class PreflightResult:
             if not s.skipped and s.min_seconds is not None and s.speech_end < s.min_seconds
         )
 
-    def findings(self, *, allow_unknown_cues: bool = False) -> Findings:
+    @property
+    def findings(self) -> Findings:
         """Certain: a placeholder a voiced run refuses, UNRESOLVED, UNKNOWN CUE, NO CHANGE, POP AT CUT.
 
         Uncertain: speech shorter than min_seconds, and THIN CHANGE?.
         """
-        own = Findings(
-            certain=len(self.placeholders) + self.align.unresolved + (0 if allow_unknown_cues else self.align.unknown),
-            uncertain=self.short,
-        )
+        unknown = 0 if self.allow_unknown_cues else self.align.unknown
+        own = Findings(certain=len(self.placeholders) + self.align.unresolved + unknown, uncertain=self.short)
         return own + Findings.of(c.verdict for c in self.cues) + Findings.of(k.verdict for k in self.seams)
 
     def to_dict(self, root: Path) -> dict[str, Any]:
@@ -376,11 +376,13 @@ def preflight(
     only: list[int] | None = None,
     frames: bool = True,
     model: str | None = None,
+    allow_unknown_cues: bool = False,
 ) -> PreflightResult:
     """Plan the takes, resolve the cues, and estimate every reveal and seam from frozen renders.
 
     `only` keeps these section numbers. With `frames` off, no browser starts and no file is written.
     Otherwise the frozen frames go to build/preflight, which is emptied first. Nothing else is written.
+    With `allow_unknown_cues`, a cue id that appears nowhere in its page is not a finding.
     """
     cfg = project.settings.narration
     _all, spoken = project.script_sections()
@@ -423,6 +425,7 @@ def preflight(
         ),
         estimated=estimated,
         root=project.root,
+        allow_unknown_cues=allow_unknown_cues,
     )
     if frames:
         carried = cue_times

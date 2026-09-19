@@ -19,9 +19,11 @@ from typing import Any
 from ..artifacts import Timeline, Word, write_words
 from ..captions import display_words
 from ..errors import ConfigError, MissingInputError
+from ..jsonio import relative
 from ..media import ffmpeg
 from ..media.encode import Encoder
 from ..model import PageSection, Project
+from ..verdicts import Findings
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +69,22 @@ class SectionWords:
         }
 
 
-def words(project: Project, only: list[int] | None = None) -> list[SectionWords]:
+@dataclass
+class WordsResult:
+    """Every spoken section's words, in seconds after the section starts."""
+
+    sections: list[SectionWords] = field(default_factory=list)
+
+    @property
+    def findings(self) -> Findings:
+        """None. `words` reads the narration clock and judges nothing."""
+        return Findings()
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        return {"sections": [s.to_dict() for s in self.sections]}
+
+
+def words(project: Project, only: list[int] | None = None) -> WordsResult:
     """Each spoken section's words from timeline.json, in seconds after the section starts.
 
     These are the times the recorder passes to a page as `?words=`, to three decimals. The script's
@@ -102,7 +119,7 @@ def words(project: Project, only: list[int] | None = None) -> list[SectionWords]
                 texts=[w.word for w in shown],
             )
         )
-    return out
+    return WordsResult(sections=out)
 
 
 @dataclass
@@ -122,6 +139,28 @@ class ClipResult:
     estimated: bool  # True when the words come from a build without voice.
     words: list[Word] = field(default_factory=list)  # in seconds after the clip starts, with the script's spelling
     cut_words: list[str] = field(default_factory=list)  # words the span cuts in two, left out of the words file
+
+    @property
+    def findings(self) -> Findings:
+        """Uncertain: a word the span cuts in two, which the words file leaves out."""
+        return Findings(uncertain=len(self.cut_words))
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        return {
+            "section": self.section,
+            "video": relative(self.video, root),
+            "words_file": relative(self.words_file, root),
+            "start": self.start,
+            "end": self.end,
+            "first_frame": self.first_frame,
+            "last_frame": self.last_frame,
+            "hold_seconds": self.hold_seconds,
+            "duration": self.duration,
+            "gain_db": self.gain_db,
+            "estimated": self.estimated,
+            "word_count": len(self.words),
+            "cut_words": list(self.cut_words),
+        }
 
 
 def clip(
@@ -235,7 +274,7 @@ def clip(
 
 def _clip_words(project: Project, key: str, t0: float, t1: float) -> tuple[list[Word], list[str]]:
     """(the words wholly inside the span, in seconds after t0 with the script's spelling, the words it cuts)."""
-    (section,) = [s for s in words(project, only=[int(key)]) if s.key == key]
+    (section,) = [s for s in words(project, only=[int(key)]).sections if s.key == key]
     inside: list[Word] = []
     cut: list[str] = []
     for w, text in zip(section.words, section.texts, strict=True):

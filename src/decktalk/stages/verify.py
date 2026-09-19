@@ -78,8 +78,9 @@ from ..errors import ConfigError, MissingInputError
 from ..jsonio import relative
 from ..media import audio, ffmpeg, frames
 from ..model import Project
+from ..model.document import frame_dip
 from ..settings import VerifyConfig
-from ..verdicts import SkipReason, Verdict
+from ..verdicts import Findings, SkipReason, Verdict
 
 log = logging.getLogger(__name__)
 
@@ -257,6 +258,18 @@ class VerifyResult:
     def black_starts(self) -> int:
         return sum(not s.ok for s in self.starts)
 
+    @property
+    def findings(self) -> Findings:
+        """Every start, cut, seam and cue verdict, tallied."""
+        return Findings.of(
+            [
+                *(s.verdict for s in self.starts),
+                *(c.verdict for c in self.cuts),
+                *(k.verdict for k in self.seams),
+                *(c.verdict for c in self.cues),
+            ]
+        )
+
     def to_dict(self, root: Path) -> dict[str, Any]:
         """The result as JSON-ready data: numbers as numbers, and paths relative to the project root."""
         return {
@@ -416,11 +429,10 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
     opted out in cues.json, and an empty list checks no cues. `only` keeps the cue checks
     of those section numbers. A cue named explicitly is measured even when it is opted out.
     """
-    from .assemble import fade_flags, frame_dip, stray_warnings
-
     cfg = project.settings.verify
     final = project.final
-    stray_warnings(project, "verify")
+    for message in project.stray_section_warnings("verify"):
+        log.warning(message)
     starts, total = section_starts(project)
     if not starts or not final.exists():
         raise MissingInputError("need build/sections/NN.mp4 files and the final mp4; run `decktalk assemble` first")
@@ -446,7 +458,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
             cut = starts[key] + sec.duration
             result.cuts.append(CutCheck(key=key, cut_at=round(cut, 3), rms_db=level, ok=level <= cfg.cut_max_db))
     fps = project.settings.video.fps
-    flags = fade_flags(project)
+    flags = project.document.fade_flags
     dip = frame_dip(project.transition.dip_seconds, fps)
     result.seams = seam_checks(project, final, starts, flags, dip, fps)
     cue_times = project.cue_times()

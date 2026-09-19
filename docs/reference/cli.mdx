@@ -640,8 +640,8 @@ Each row describes one recording.
 | `BLACK?` | uncertain | `MAX50` is below `[record] black_ymax` (40). |
 | `KATEX?` | uncertain | A page warning contains "katex" or "data-tex", in any case. |
 
-Note: one row can show several verdicts, separated by spaces. The JSON lists them in `verdicts` and
-puts the stall length in `stall_ms`.
+Note: one row can show several verdicts, separated by spaces. The JSON lists their codes in
+`verdicts`, such as `PAGE_ERROR` and `STALLED`, and puts the stall length in `stall_ms`.
 
 | Exit | When |
 |---|---|

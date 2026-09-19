@@ -14,6 +14,7 @@ from .artifacts import Timeline
 from .jsonio import relative
 from .media.ffmpeg import probe_duration
 from .model import ClipSection, Project
+from .verdicts import Findings
 
 
 @dataclass
@@ -56,9 +57,13 @@ class StatusResult:
     final_duration: float | None
     outputs: list[OutputStatus] = field(default_factory=list)
 
-    def to_dict(self, root: Path | None = None) -> dict[str, Any]:
-        """The report as JSON-ready data, with paths relative to the project root."""
-        root = root or self.root
+    @property
+    def findings(self) -> Findings:
+        """None. `status` reads what exists on disk and judges none of it."""
+        return Findings()
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        """The report as JSON-ready data, with every path relative to the project root."""
         tl = self.timeline
         return {
             "project": {

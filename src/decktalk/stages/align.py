@@ -31,9 +31,10 @@ from typing import Any
 
 from ..artifacts import CueTime, CueTimes, Word
 from ..errors import ConfigError, MissingInputError
+from ..jsonio import relative
 from ..model import PageSection, Project
 from ..model.cues import Cue, SectionCues, find_phrase, page_mentions, phrase_matches
-from ..verdicts import Finding, Verdict
+from ..verdicts import Finding, Findings, Verdict
 
 log = logging.getLogger(__name__)
 
@@ -95,15 +96,17 @@ class SectionCueTimes:
     speech_end: float
     min_seconds: float | None
     resolved: list[CueTime]
-    notes: list[str] = field(default_factory=list)
     skipped: str | None = None  # why nothing was resolved (no narration)
-    findings: list[Finding] = field(default_factory=list)  # The notes, structured, in the same order.
+    rows: list[Finding] = field(default_factory=list)  # What this section's cues did, in order.
+
+    @property
+    def notes(self) -> list[str]:
+        """The same rows as the sentences a table prints, so one row is never stored twice."""
+        return [r.text for r in self.rows]
 
     def note(self, cue: str | None, verdict: Verdict | None, detail: str) -> None:
-        """Record a note both as the table's text line and as a structured finding."""
-        finding = Finding(message=detail, verdict=verdict, section=self.key, cue=cue)
-        self.findings.append(finding)
-        self.notes.append(finding.text)
+        """Record what one cue did, as the row a table and a payload both read."""
+        self.rows.append(Finding(detail=detail, verdict=verdict or Verdict.NOTE, section=int(self.key), cue=cue))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -112,18 +115,34 @@ class SectionCueTimes:
             "min_seconds": self.min_seconds,
             "skipped": self.skipped,
             "cues": {r.cue: r.at for r in self.resolved},
-            "notes": [{"cue": n.cue, "verdict": n.verdict, "detail": n.message} for n in self.findings],
+            "notes": [r.to_dict() for r in self.rows],
         }
 
 
 @dataclass
 class AlignResult:
+    """Every cue this run resolved, and every one it could not."""
+
     cue_times: CueTimes
     sections: list[SectionCueTimes]
     unresolved: int
     estimated: bool
     unknown: int = 0  # Cue ids that appear nowhere in the page that plays them.
     cue_times_file: Path | None = None
+    allow_unknown_cues: bool = False  # The run was told to carry on past an unknown cue id.
+
+    @property
+    def short(self) -> int:
+        """Sections whose speech ends before the min_seconds their visuals need."""
+        return sum(
+            1 for s in self.sections if not s.skipped and s.min_seconds is not None and s.speech_end < s.min_seconds
+        )
+
+    @property
+    def findings(self) -> Findings:
+        """Certain: an unresolved phrase and an unknown cue id. Uncertain: a section too short for its visuals."""
+        unknown = 0 if self.allow_unknown_cues else self.unknown
+        return Findings(certain=self.unresolved + unknown, uncertain=self.short)
 
     @property
     def problems(self) -> list[str]:
@@ -131,19 +150,11 @@ class AlignResult:
 
     @property
     def unknown_problems(self) -> list[str]:
-        return [
-            f"section {s.key}: {n.text}" for s in self.sections for n in s.findings if n.verdict == Verdict.UNKNOWN_CUE
-        ]
+        return [f"section {s.key}: {r.text}" for s in self.sections for r in s.rows if r.verdict == Verdict.UNKNOWN_CUE]
 
     def to_dict(self, root: Path) -> dict[str, Any]:
         """The result as JSON-ready data, with the cue times file relative to the project root."""
-        cue_times_file = None
-        if self.cue_times_file is not None:
-            cue_times_file = (
-                self.cue_times_file.relative_to(root).as_posix()
-                if self.cue_times_file.is_relative_to(root)
-                else self.cue_times_file.as_posix()
-            )
+        cue_times_file = relative(self.cue_times_file, root) if self.cue_times_file is not None else None
         return {
             "estimated": self.estimated,
             "cue_times_file": cue_times_file,
@@ -155,8 +166,8 @@ class AlignResult:
 
 def unknown_message(result: AlignResult) -> str:
     """Why the build stops on unknown cue ids, with the first one as the example fix."""
-    first = next(n for s in result.sections for n in s.findings if n.verdict == Verdict.UNKNOWN_CUE)
-    page = first.message.removeprefix("not in ")
+    first = next(r for s in result.sections for r in s.rows if r.verdict == Verdict.UNKNOWN_CUE)
+    page = first.detail.removeprefix("not in ")
     return (
         f"{result.unknown} cue id(s) in cues.json appear nowhere in the page that plays them, so the page would "
         f'never reveal them. Add data-cue="{first.cue}" to the slide in {page}, fix the id in cues.json, or pass '
@@ -215,6 +226,7 @@ def align(project: Project, *, allow_unknown_cues: bool = False) -> AlignResult:
         estimated=takes.estimated,
         unknown=len(unknown_ids),
         cue_times_file=project.cue_times_path,
+        allow_unknown_cues=allow_unknown_cues,
     )
     if result.unknown and not allow_unknown_cues:
         raise UnknownCueError(result)

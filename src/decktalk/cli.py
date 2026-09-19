@@ -31,19 +31,18 @@ and doctor, take --exit-zero, and the four that can end a verdict in ? also take
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from . import __version__, _report
+from . import __version__, report
 from .errors import DeckTalkError
-from .jsonio import relative
+from .jsonio import dumps, relative
 from .model import Project
-from .verdicts import Findings, Verdict
+from .verdicts import Findings, StageResult
 
 log = logging.getLogger("decktalk")
 
@@ -106,21 +105,15 @@ def _finish(args: argparse.Namespace, findings: Findings, payload: dict[str, Any
             "findings": findings.to_dict(),
             args.cmd: payload,
         }
-        print(json.dumps(doc, indent=2))
+        print(dumps(doc))
     else:
         print(table())
     return _exit_for(findings, args.strict, args.exit_zero)
 
 
-def _verify_findings(result: Any) -> Findings:
-    """Every start, cut and cue verdict in a VerifyResult, tallied."""
-    verdicts: Iterable[Verdict | None] = [
-        *(s.verdict for s in result.starts),
-        *(c.verdict for c in result.cuts),
-        *(c.verdict for c in result.seams),
-        *(c.verdict for c in result.cues),
-    ]
-    return Findings.of(verdicts)
+def _report_result(args: argparse.Namespace, project: Project, result: StageResult, table: Callable[[], str]) -> int:
+    """Print one stage result and exit on what it found, without knowing the result's shape."""
+    return _finish(args, result.findings, result.to_dict(project.root), table)
 
 
 # ---- commands ------------------------------------------------------------------------
@@ -182,19 +175,19 @@ def cmd_narrate(args: argparse.Namespace) -> int:
                 "totals": plan_totals(plans, cfg),
             }
             doc = {"command": args.cmd, "version": __version__, "ok": True, "findings": Findings().to_dict()}
-            print(json.dumps({**doc, args.cmd: payload}, indent=2))
+            print(dumps({**doc, args.cmd: payload}))
             return 0
         for seg in targets:
             print(f"=== {seg.key} {seg.title}  -> {seg.filename}")
             print(seg.tts_text(cfg))
             print()
         print(f"voice: model={model} {project.voice.api_settings()}")
-        print(_report.segments_table(targets, cfg.words_per_minute))
+        print(report.segments_table(targets, cfg.words_per_minute))
         print()
-        print(_report.plan_table(plans, cfg, note))
+        print(report.plan_table(plans, cfg, note))
         unfilled = sorted({p for s in targets for p in s.placeholders})
         if unfilled:
-            print(f"\nnote: unfilled placeholders {unfilled}; fill them before the real run.")
+            print(f"\nnote: unfilled placeholders {unfilled}. Fill them before the real run.")
         return 0
     result = narrate(
         project,
@@ -205,9 +198,9 @@ def cmd_narrate(args: argparse.Namespace) -> int:
         model=args.model,
     )
     print()
-    print(_report.segments_table(result.segments, cfg.words_per_minute, result))
+    print(report.segments_table(result.segments, cfg.words_per_minute, result))
     print()
-    print(_report.timeline_table(result.timeline))
+    print(report.timeline_table(result.timeline))
     return 0
 
 
@@ -221,32 +214,28 @@ def cmd_align(args: argparse.Namespace) -> int:
         # cue-times.json is already written, so report the result like any other finding
         # instead of stopping before the table or the JSON is printed.
         result = err.result
-    unknown = 0 if args.allow_unknown_cues else result.unknown
-    # A section whose speech ends before its min_seconds is probably too short for its visuals.
-    short = sum(
-        1 for s in result.sections if not s.skipped and s.min_seconds is not None and s.speech_end < s.min_seconds
-    )
-    findings = Findings(certain=result.unresolved + unknown, uncertain=short)
-    return _finish(args, findings, result.to_dict(project.root), lambda: _report.align_table(result))
+    return _report_result(args, project, result, lambda: report.align_table(result))
 
 
 def cmd_preflight(args: argparse.Namespace) -> int:
     from .stages.preflight import preflight
 
     project = _project(args)
-    result = preflight(project, only=_only(args.only), frames=not args.no_frames, model=args.model)
-    findings = result.findings(allow_unknown_cues=args.allow_unknown_cues)
-    return _finish(args, findings, result.to_dict(project.root), lambda: _report.preflight_table(result))
+    result = preflight(
+        project,
+        only=_only(args.only),
+        frames=not args.no_frames,
+        model=args.model,
+        allow_unknown_cues=args.allow_unknown_cues,
+    )
+    return _report_result(args, project, result, lambda: report.preflight_table(result))
 
 
 def cmd_soundscape(args: argparse.Namespace) -> int:
     from .stages.soundscape import soundscape
 
-    print(
-        _report.soundscape_table(
-            soundscape(_project(args), only=args.names or None, force=args.force, dry_run=args.dry_run)
-        )
-    )
+    result = soundscape(_project(args), only=args.names or None, force=args.force, dry_run=args.dry_run)
+    print(report.soundscape_table(result.items))
     return 0
 
 
@@ -260,7 +249,7 @@ def cmd_record(args: argparse.Namespace) -> int:
 def cmd_measure(args: argparse.Namespace) -> int:
     from .stages.measure import measure
 
-    print(_report.leads_table(measure(_project(args), only=_only(args.only))))
+    print(report.leads_table(measure(_project(args), only=_only(args.only))))
     return 0
 
 
@@ -271,7 +260,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     rows = check(project, only=_only(args.only))
     findings = Findings.of(v for r in rows for v in r.verdicts)
     payload = {"recordings": [r.to_dict(project.root) for r in rows]}
-    return _finish(args, findings, payload, lambda: _report.checks_table(rows))
+    return _finish(args, findings, payload, lambda: report.checks_table(rows))
 
 
 def cmd_assemble(args: argparse.Namespace) -> int:
@@ -289,7 +278,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     project = _project(args)
     result = verify(project, checks=list(args.checks) or None, only=_only(args.only))
-    return _finish(args, _verify_findings(result), result.to_dict(project.root), lambda: _report.verify_table(result))
+    return _report_result(args, project, result, lambda: report.verify_table(result))
 
 
 def cmd_screenshots(args: argparse.Namespace) -> int:
@@ -313,13 +302,12 @@ def cmd_words(args: argparse.Namespace) -> int:
     from .stages.clip import words
 
     project = _project(args)
-    sections = words(project, only=_only(args.only))
+    result = words(project, only=_only(args.only))
     if args.json:
-        payload = {"sections": [s.to_dict() for s in sections]}
-        doc = {"command": args.cmd, "version": __version__, "ok": True, "findings": Findings().to_dict()}
-        print(json.dumps({**doc, args.cmd: payload}, indent=2))
+        doc = {"command": args.cmd, "version": __version__, "ok": True, "findings": result.findings.to_dict()}
+        print(dumps({**doc, args.cmd: result.to_dict(project.root)}))
         return 0
-    print(_report.words_table(sections))
+    print(report.words_table(result.sections))
     return 0
 
 
@@ -352,9 +340,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     from .status import status
 
     project = _project(args)
-    report = status(project)
-    # status reads what exists and judges nothing, so it has no findings of its own.
-    return _finish(args, Findings(), report.to_dict(project.root), lambda: _report.status_table(report))
+    result = status(project)
+    return _report_result(args, project, result, lambda: report.status_table(result))
 
 
 def cmd_build(args: argparse.Namespace) -> int:
@@ -363,18 +350,18 @@ def cmd_build(args: argparse.Namespace) -> int:
     project = _project(args)
     wpm = project.settings.narration.words_per_minute
 
-    def report(stage: str, result: Any) -> None:
+    def show(stage: str, result: Any) -> None:
         if stage == "narrate":
-            print(_report.segments_table(result.segments, wpm, result))
-            print(_report.timeline_table(result.timeline))
+            print(report.segments_table(result.segments, wpm, result))
+            print(report.timeline_table(result.timeline))
         elif stage == "align":
-            print(_report.align_table(result))
+            print(report.align_table(result))
         elif stage == "measure":
-            print(_report.leads_table(result))
+            print(report.leads_table(result))
         elif stage == "check":
-            print(_report.checks_table(result))
+            print(report.checks_table(result))
         elif stage == "verify":
-            print(_report.verify_table(result))
+            print(report.verify_table(result))
 
     result = build(
         project,
@@ -386,7 +373,7 @@ def cmd_build(args: argparse.Namespace) -> int:
         strict=args.strict,
         allow_unresolved_cues=args.allow_unresolved_cues,
         allow_unknown_cues=args.allow_unknown_cues,
-        report=report,
+        report=show,
     )
     if result.assembly:
         print(f"\nbuilt {result.assembly.final}")

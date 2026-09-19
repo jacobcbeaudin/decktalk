@@ -102,6 +102,6 @@ source = ["decktalk"]
 
 [tool.coverage.report]
 # The floor is the whole suite measured on Linux with `-m 'not scaffold'`, rounded down. Raise it when coverage grows.
-fail_under = 82
+fail_under = 86
 show_missing = false
 skip_empty = true

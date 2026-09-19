@@ -11,12 +11,16 @@ given seconds after narration t=0.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 from ..errors import ConfigError
+from ..jsonio import relative
 from ..media.browser import START_JS, await_ready, chromium, screenshot
 from ..model import PageSection, Project
+from ..verdicts import Findings
 from .record import scene_params, scene_url
 
 log = logging.getLogger(__name__)
@@ -96,6 +100,21 @@ def screenshot_frames(project: Project, section: int, at: list[float]) -> list[P
     return written
 
 
+@dataclass
+class ScreenshotsResult:
+    """The PNGs one screenshots run wrote."""
+
+    files: list[Path] = field(default_factory=list)
+
+    @property
+    def findings(self) -> Findings:
+        """None. `screenshots` writes pictures for a person to look at and judges nothing."""
+        return Findings()
+
+    def to_dict(self, root: Path) -> dict[str, Any]:
+        return {"files": [relative(f, root) for f in self.files]}
+
+
 def screenshots(
     project: Project,
     *,
@@ -104,7 +123,8 @@ def screenshots(
     section: int | None = None,
     at: list[float] | None = None,
     cues: list[str] | None = None,
-) -> list[Path]:
+) -> ScreenshotsResult:
+    """One PNG per slide, per cue of one slide, or per second of a playing section."""
     if section is not None:
-        return screenshot_frames(project, section, at or [0.5])
-    return screenshot_slides(project, pages, slides, cues)
+        return ScreenshotsResult(files=screenshot_frames(project, section, at or [0.5]))
+    return ScreenshotsResult(files=screenshot_slides(project, pages, slides, cues))
