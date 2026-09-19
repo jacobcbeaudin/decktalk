@@ -30,8 +30,9 @@ def bright(monkeypatch, duration: float = 10.0) -> None:
 def test_the_page_own_warnings_carry_the_katex_verdict():
     assert katex_verdicts([]) == []
     assert katex_verdicts(["a cue fired twice"]) == []
-    assert katex_verdicts([BAD_TEX]) == [Verdict.KATEX_UNSURE]
-    assert katex_verdicts([NO_KATEX]) == [Verdict.KATEX_UNSURE]
+    assert katex_verdicts([BAD_TEX]) == [Verdict.KATEX_ERROR]
+    assert katex_verdicts([NO_KATEX]) == [Verdict.KATEX_NOT_LOADED]
+    assert katex_verdicts([BAD_TEX, NO_KATEX, BAD_TEX]) == [Verdict.KATEX_ERROR, Verdict.KATEX_NOT_LOADED]
 
 
 def test_the_log_carries_the_verdicts_the_frames_cannot_see():
@@ -44,7 +45,7 @@ def test_the_log_carries_the_verdicts_the_frames_cannot_see():
     assert log_verdicts(recording_log, CFG) == [
         Verdict.NO_COVER,
         Verdict.PAGE_ERROR,
-        Verdict.KATEX_UNSURE,
+        Verdict.KATEX_ERROR,
         Verdict.STALLED,
     ]
 
@@ -83,7 +84,22 @@ def test_the_luma_is_read_at_a_tenth_a_half_and_nine_tenths(monkeypatch):
 
 def test_the_line_a_table_prints_names_every_verdict_and_the_stall_length():
     checks = RecordingChecks(10.0, 10.0, Luma(1, 1, 1, 1), (Verdict.NO_COVER, Verdict.STALLED))
-    assert label(checks, 140) == "NO COVER STALLED 140ms"
-    assert label(checks, 0) == "NO COVER STALLED"
-    assert label(RecordingChecks(1.0, 1.0, Luma(1, 1, 1, 1)), 0) == "ok"
-    assert label(None, 0) == "ok"
+    assert label(checks, 140) == f"{Verdict.NO_COVER.label} {Verdict.STALLED.label} 140ms"
+    assert label(checks, 0) == f"{Verdict.NO_COVER.label} {Verdict.STALLED.label}"
+    assert label(RecordingChecks(1.0, 1.0, Luma(1, 1, 1, 1)), 0) == Verdict.OK.label
+    assert label(None, 0) == Verdict.OK.label
+
+
+def test_a_page_that_fetched_from_another_origin_is_a_certain_finding():
+    """A recording that depends on a host the project does not own cannot be rebuilt from the project."""
+    from decktalk.artifacts import RecordingLog
+    from decktalk.settings import RecordConfig
+    from decktalk.stages.record.checks import log_verdicts
+
+    made = dict(url="http://project.localhost/deck/index.html", requested_seconds=3.0, settle_seconds=0.5,
+                load_seconds=0.2, clock_start_seconds=0.7)  # fmt: skip
+    clean = RecordingLog(**made, t0_guessed=False)
+    assert Verdict.CDN_ASSET not in log_verdicts(clean, RecordConfig())
+    reached = RecordingLog(**made, t0_guessed=False, external=["https://cdn.example.com"])
+    assert Verdict.CDN_ASSET in log_verdicts(reached, RecordConfig())
+    assert Verdict.CDN_ASSET.certain

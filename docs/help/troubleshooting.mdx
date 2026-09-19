@@ -64,7 +64,7 @@ explains.
 | `TRUNCATED` | `record` | [Entry](#truncated-in-record) |
 | `NO COVER` | `record` | [Entry](#no-cover-in-record) |
 | `BLACK?` | `record` | [Entry](#black-in-record) |
-| `KATEX?`, `KaTeX did not load` | `record` | [Entry](#katex-in-record) |
+| `KATEX ERROR`, `KATEX NOT LOADED`, `KaTeX did not load` | `record`, `verify`, `preflight` | [Entry](#katex-error-or-katex-not-loaded-in-record) |
 | `no narration span yet` | `record` | [Entry](#no-narration-span-yet-in-record) |
 | `missing; slate for` | `assemble` | [Entry](#missing-slate-for-in-assemble) |
 | `clip missing`, `recording missing` | `assemble` with `--strict` | [Entry](#clip-missing-or-recording-missing-in-assemble) |
@@ -590,11 +590,12 @@ reports `cover`, and every reveal is late. If you raise `min_cover_seconds` near
 
 **More.** [`decktalk record`](/reference/cli#decktalk-record)
 
-### `KATEX?` in record
+### `KATEX ERROR` or `KATEX NOT LOADED` in record
 
-**Cause.** A page warning mentions KaTeX or `data-tex`. One of two warnings, most common first:
-- `data-tex could not be parsed: "<tex>"`. A backslash inside a `render` template is single.
-- `KaTeX did not load within 5 s, so [data-tex] elements stay plain text`. The page's KaTeX tags point nowhere.
+**Cause.** The page's equations were never typeset, so the slide shows the source instead. Both are
+certain findings, and `verify` reports them again from the recording log.
+- `KATEX ERROR` follows `data-tex could not be parsed: "<tex>"`. A backslash inside a `render` template is single.
+- `KATEX NOT LOADED` follows `KaTeX did not load within 5 s, so [data-tex] elements stay plain text`. The page's KaTeX tags point nowhere.
 
 **Fix.**
 1. If a value did not parse, write every backslash twice inside the `render` backticks.

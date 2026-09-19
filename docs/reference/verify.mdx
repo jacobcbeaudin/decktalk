@@ -40,7 +40,8 @@ exits 1.
 Each page section's recording log holds the verdicts `record` reached when it made the recording, and
 `verify` reports them again, so a page that threw or an equation that was never typeset is still a
 finding long after the build. The row is `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`, `BLACK?` or
-`KATEX?`, exactly as [`decktalk record`](/reference/cli#decktalk-record) defines them, or `ok`. A
+`KATEX ERROR` or `KATEX NOT LOADED`, exactly as [`decktalk record`](/reference/cli#decktalk-record)
+defines them, or `ok`. A
 section with no recording log gets no row.
 
 ## Section starts

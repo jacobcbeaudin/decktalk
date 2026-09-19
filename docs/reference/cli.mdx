@@ -314,8 +314,8 @@ explains.
 | `verify` | A section starts black (`BLACK`), speech is still sounding at a cut (`SPEECH AT CUT`), or the picture jumps at the cut into a section with `seamless` (`POP AT CUT`). | none |
 | any | A stage raises an error. | none |
 
-`build` does not measure cues. It exits 0 on `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, and
-`KATEX?`. To gate a script on the whole video, run `verify` after the build, as
+`build` does not measure cues. It exits 0 on `TRUNCATED`, `STALLED`, `NO COVER`, and `BLACK?`. To
+gate a script on the whole video, run `verify` after the build, as
 [Build in CI and offline](/guides/ci-and-offline) shows.
 
 These are the last lines of a build without voice of the scaffold.
@@ -578,7 +578,8 @@ Each row describes one recording.
 | `TRUNCATED` | certain | Shorter than requested by more than `[record] truncated_slack_seconds` (0.5). |
 | `NO COVER` | certain | No magenta cover was found, so narration t=0 is a guess. |
 | `BLACK?` | uncertain | `MAX50` is below `[record] black_ymax` (40). |
-| `KATEX?` | uncertain | A page warning contains "katex" or "data-tex", in any case. |
+| `KATEX ERROR` | certain | KaTeX refused a `data-tex` value, so the slide shows the source in red. |
+| `KATEX NOT LOADED` | certain | The page asked for KaTeX and it never arrived, so the source stays plain text. |
 
 Note: one row can show several verdicts, separated by spaces. The JSON lists their codes in
 `verdicts`, such as `PAGE_ERROR` and `STALLED`, and puts the stall length in `stall_ms`.
@@ -1135,7 +1136,7 @@ This shape shows the JSON envelope. The values are types, not a sample.
 | `align` | `estimated`, `cue_times_file`, `unresolved`, `unknown`, and `sections`. |
 | `record` | `recordings`: a list of `{key, file, kept, seconds, t0_seconds, t0_method, t0_guessed, duration, wanted, luma, verdicts, stall_ms, page_errors, assets}`. |
 | `verify` | `final`, `total_seconds`, `silent`, `recordings`, `starts`, `cuts`, `seams`, and `cues`. |
-| `preflight` | `voice`, `note`, `placeholders`, `takes`, `totals`, `cue_times`, `cues`, `seams`, and `frames`. |
+| `preflight` | `voice`, `note`, `placeholders`, `takes`, `totals`, `cue_times`, `cues`, `seams`, `warnings`, and `frames`. |
 | `narrate --dry-run --json` | `voice`, `note`, `sections`, and `totals`, as [the take plan](#the-take-plan) gives. `ok` is always true. |
 | `words --json` | `sections`, as [`decktalk words`](#decktalk-words) gives. `ok` is always true. |
 
@@ -1165,9 +1166,9 @@ without `text`, and `cue_times` is the `align` payload without `cue_times_file`,
 |---|---|---|
 | `doctor` | A `MISSING` row. | Never, so `doctor` takes no `--strict`. |
 | `align` | `UNRESOLVED`, and `UNKNOWN CUE` without `--allow-unknown-cues`. | Speech shorter than `min_seconds`. |
-| `record` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`. | `BLACK?`, `KATEX?` |
+| `record` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`, `KATEX ERROR`, `KATEX NOT LOADED`. | `BLACK?` |
 | `verify` | `BLACK`, `SPEECH AT CUT`, `POP AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`. | `THIN CHANGE?` |
-| `preflight` | An unfilled placeholder, `UNRESOLVED`, `UNKNOWN CUE` without `--allow-unknown-cues`, `NO CHANGE`, `POP AT CUT`. | `THIN CHANGE?`, speech shorter than `min_seconds`. |
+| `preflight` | An unfilled placeholder, `UNRESOLVED`, `UNKNOWN CUE` without `--allow-unknown-cues`, `NO CHANGE`, `POP AT CUT`, `PAGE ERROR` for a page with no runtime catalog, `KATEX ERROR`, `KATEX NOT LOADED`. | `THIN CHANGE?`, speech shorter than `min_seconds`. |
 | `status` | Never, so `status` takes neither flag. | Never. |
 | `build` | See [`decktalk build`](#decktalk-build). | Not used. |
 | Every other command | Only an error. | Not used. |

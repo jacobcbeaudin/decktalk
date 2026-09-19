@@ -42,11 +42,12 @@ class Verdict(StrEnum):
     UNKNOWN_CUE = "UNKNOWN CUE"
     UNCUED_ELEMENT = "UNCUED ELEMENT"
     MISSING = "MISSING"
+    KATEX_ERROR = "KATEX ERROR"
+    KATEX_NOT_LOADED = "KATEX NOT LOADED"
 
     # Uncertain: something is probably wrong, and the label ends in a question mark.
     BLACK_UNSURE = "BLACK?"
     SPOKEN_SYMBOL = "SPOKEN SYMBOL?"
-    KATEX_UNSURE = "KATEX?"
     THIN_CHANGE = "THIN CHANGE?"
 
     # Passing: the row was measured and nothing is wrong. These are never findings.
@@ -86,6 +87,8 @@ _CERTAIN = frozenset(
         Verdict.UNKNOWN_CUE,
         Verdict.UNCUED_ELEMENT,
         Verdict.MISSING,
+        Verdict.KATEX_ERROR,
+        Verdict.KATEX_NOT_LOADED,
     }
 )
 _PASSING = frozenset({Verdict.CHANGED, Verdict.QUIET, Verdict.OK, Verdict.SKIPPED, Verdict.NOTE})

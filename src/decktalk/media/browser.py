@@ -293,13 +293,14 @@ def spoken_entry(entry: dict[str, Any]) -> dict[str, Any]:
     return {_SPOKEN_KEYS.get(k, k): v for k, v in entry.items()}
 
 
-def screenshot(page: Any, url: str, out: Path, *, settle_ms: int) -> None:
+def screenshot(page: Any, url: str, out: Path, *, settle_ms: int) -> list[str]:
+    """Write one PNG of `url`, and give back what the runtime warned about while it was open."""
     page.goto(url)
     await_ready(page)
     page.wait_for_timeout(settle_ms)
     out.parent.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(out))
-    page_warnings(page, out.stem)
+    return page_warnings(page, out.stem)
 
 
 def render_slate(

@@ -32,6 +32,11 @@ A skipped cue row carries one of these reasons:
     SkipReason.OPTED_OUT           cues.json sets "verify": false on the cue
 
 A seam row is skipped as SkipReason.NO_CUES when a side has no resolved cue, and as CLIP when a side is a clip.
+
+A page that exposes no runtime catalog is a certain finding rather than a skipped row, because a page
+the recorder cannot drive plays nothing at all, and the page's own error is printed beside it. The
+warnings the runtime records while the frozen frames are drawn are findings too, so a KaTeX value
+that cannot be parsed, or KaTeX that never arrives, is caught before a single second is voiced.
 """
 
 from __future__ import annotations
@@ -64,6 +69,7 @@ from .narrate import (
     words_name,
 )
 from .record import prev_words_query, words_query
+from .record.checks import katex_verdicts
 from .verify import opted_out, thin_change
 
 log = logging.getLogger(__name__)
@@ -307,6 +313,7 @@ class PreflightResult:
     cues: list[CueEstimate] = field(default_factory=list)
     seams: list[SeamEstimate] = field(default_factory=list)
     frames: Path | None = None  # build/preflight, or None when no frame was rendered.
+    page_warnings: list[str] = field(default_factory=list)  # what the runtime could not honour while freezing
     root: Path | None = None  # The project root, which the table prints paths against.
     allow_unknown_cues: bool = False  # The run was told to carry on past an unknown cue id.
 
@@ -326,11 +333,17 @@ class PreflightResult:
     def findings(self) -> Findings:
         """Certain: a placeholder a voiced run refuses, UNRESOLVED, UNKNOWN CUE, NO CHANGE, POP AT CUT.
 
-        Uncertain: speech shorter than min_seconds, and THIN CHANGE?.
+        Uncertain: speech shorter than min_seconds, and THIN CHANGE?. A page that exposes no runtime
+        catalog, a KaTeX value that cannot be parsed and KaTeX that never loads are certain too.
         """
         unknown = 0 if self.allow_unknown_cues else self.align.unknown
         own = Findings(certain=len(self.placeholders) + self.align.unresolved + unknown, uncertain=self.short)
-        return own + Findings.of(c.verdict for c in self.cues) + Findings.of(k.verdict for k in self.seams)
+        return (
+            own
+            + Findings.of(c.verdict for c in self.cues)
+            + Findings.of(k.verdict for k in self.seams)
+            + Findings.of(katex_verdicts(self.page_warnings))
+        )
 
     def to_dict(self, root: Path) -> dict[str, Any]:
         cue_times = self.align.to_dict(root)
@@ -344,6 +357,7 @@ class PreflightResult:
             "cue_times": {**cue_times, "estimated_sections": self.estimated},
             "cues": [c.to_dict(root) for c in self.cues],
             "seams": [k.to_dict(root) for k in self.seams],
+            "warnings": list(self.page_warnings),
             "frames": _rel(self.frames, root),
         }
 
@@ -454,7 +468,7 @@ def preflight(
                 extra, take_words, unknown_ids=extra_ids, uncued_ids=[], clips=clips, estimated=True
             )
             carried = CueTimes({**behind_cue_times.sections, **cue_times.sections})
-        result.cues, result.seams = frame_estimates(project, carried, only=only)
+        result.cues, result.seams, result.page_warnings = frame_estimates(project, carried, only=only)
         result.frames = project.build / "preflight"
     return result
 
@@ -473,8 +487,8 @@ def freeze_url(project: Project, section: PageSection, freeze: Freeze) -> str:
 
 def frame_estimates(
     project: Project, cue_times: CueTimes, *, only: list[int] | None = None
-) -> tuple[list[CueEstimate], list[SeamEstimate]]:
-    """Render the frozen frames into build/preflight and compare them for every cue and every seam."""
+) -> tuple[list[CueEstimate], list[SeamEstimate], list[str]]:
+    """Render the frozen frames into build/preflight, compare them, and collect what the pages warned about."""
     vcfg = project.settings.verify
     video = project.settings.video
     out_dir = project.build / "preflight"
@@ -491,6 +505,7 @@ def frame_estimates(
         page.on("pageerror", lambda e: errors.append(page_error_text(e)))
         catalogs: dict[str, list[dict[str, Any]] | None] = {}
         rendered: dict[str, Path] = {}
+        warnings: list[str] = []
 
         def scene_slides(sec: PageSection) -> tuple[Slides | None, SkipReason | None, str]:
             if sec.page not in catalogs:
@@ -510,7 +525,8 @@ def frame_estimates(
             url = freeze_url(project, sec, freeze)
             if url not in rendered:
                 target = out_dir / sec.key / f"{freeze.label}.png"
-                screenshot(page, url, target, settle_ms=project.settings.record.screenshot_settle_ms)
+                said = screenshot(page, url, target, settle_ms=project.settings.record.screenshot_settle_ms)
+                warnings.extend(w for w in said if w not in warnings)
                 rendered[url] = target
             return rendered[url]
 
@@ -520,8 +536,9 @@ def frame_estimates(
             section_cue_times = cue_times.times(sec.key)
             slides, reason, detail = scene_slides(sec)
             if slides is None:
+                # A page the recorder cannot drive plays nothing, so this is certain rather than skipped.
                 for cue, t in sorted(section_cue_times.items(), key=lambda item: item[1]):
-                    cues.append(CueEstimate(f"{sec.number}:{cue}", t, None, None, Verdict.SKIPPED, reason, detail))
+                    cues.append(CueEstimate(f"{sec.number}:{cue}", t, None, None, Verdict.PAGE_ERROR, reason, detail))
                 continue
             for pair in plan_frames(slides, section_cue_times, video.fps):
                 check = f"{sec.number}:{pair.cue}"
@@ -566,9 +583,10 @@ def frame_estimates(
             seams.append(SeamEstimate(sec.key, share, verdict, last=a, first=b))
         for e in sorted(set(errors)):
             log.warning("[page] preflight  page error: %s", e)
+        warnings.extend(e for e in sorted(set(errors)) if e not in warnings)
     log.info(
         "[pre ] %d frozen frame(s) in %s",
         len(rendered),
         out_dir.relative_to(project.root) if out_dir.is_relative_to(project.root) else out_dir,
     )
-    return cues, seams
+    return cues, seams, warnings

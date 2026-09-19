@@ -103,8 +103,10 @@ After the recording, the recorder reads these values from the page and writes th
 - `window.__decktalk.frameGaps`.
 - `window.__decktalk.spokenLog`.
 
-The `check` stage reports `PAGE ERROR` for a page error. It reports `KATEX?` for a warning that
-mentions KaTeX or `data-tex`. [decktalk record](/reference/cli#decktalk-record) lists every verdict.
+`record` reports `PAGE ERROR` for a page error, `KATEX ERROR` for a `data-tex` value KaTeX refused,
+and `KATEX NOT LOADED` when the page asked for KaTeX and never got it. All three are certain, and
+`verify` reports them again from the recording log. [decktalk record](/reference/cli#decktalk-record)
+lists every verdict.
 
 ## Cue ownership
 

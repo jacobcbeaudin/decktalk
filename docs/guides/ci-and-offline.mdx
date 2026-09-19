@@ -63,8 +63,8 @@ Each command exits 1 on a different set of problems.
 
 | Command | Exits 1 on | Does not catch |
 |---|---|---|
-| `decktalk build` | an error, `PAGE ERROR`, a cue phrase that is not found, an unknown cue id, an uncued element, `BLACK`, `SPEECH AT CUT` | `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, `KATEX?`, `SPOKEN SYMBOL?`, every cue result |
-| `decktalk record` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER` | `BLACK?` and `KATEX?`, unless you pass `--strict` |
+| `decktalk build` | an error, `PAGE ERROR`, a cue phrase that is not found, an unknown cue id, an uncued element, `BLACK`, `SPEECH AT CUT` | `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, `SPOKEN SYMBOL?`, every cue result |
+| `decktalk record` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`, `KATEX ERROR`, `KATEX NOT LOADED` | `BLACK?`, unless you pass `--strict` |
 | `decktalk verify` | `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED` | a `skipped` row, such as a cue marked `"verify": false` |
 | `decktalk doctor` | a missing tool | nothing about the project itself |
 | `decktalk preflight` | an unfilled placeholder, `UNRESOLVED`, `UNKNOWN CUE`, `UNCUED ELEMENT`, `NO CHANGE`, and `POP AT CUT` in frozen frames, before any recording | motion, timing, and every check on the final mp4 |
@@ -89,7 +89,7 @@ a job.
 - An error always exits 1.
 
 ```console
-decktalk record --strict     # also fail on BLACK? and KATEX?
+decktalk record --strict     # also fail on BLACK?
 decktalk verify              # fail on any certain finding
 ```
 
@@ -187,8 +187,8 @@ A build without voice runs with no network after these steps.
 </Steps>
 
 In the scaffold, only `deck/index.html` loads KaTeX, and it loads it from `deck/katex/`. A page of your own
-that points its KaTeX tags anywhere else leaves its equations as plain text offline, and `check` reports
-`KATEX?`. Point the tags at the copy beside the page.
+that points its KaTeX tags anywhere else leaves its equations as plain text offline, and `record` reports
+`KATEX NOT LOADED`, which fails the command. Point the tags at the copy beside the page.
 
 ```html deck/index.html
 <link rel="stylesheet" href="./katex/katex.min.css">

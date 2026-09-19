@@ -1608,7 +1608,9 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(tmp_path, m
     doc = json.loads(capsys.readouterr().out)
     assert doc["command"] == "preflight" and doc["ok"] is True
     payload = doc["preflight"]
-    assert set(payload) == {"voice", "note", "placeholders", "takes", "totals", "cue_times", "cues", "seams", "frames"}
+    assert set(payload) == {
+        "voice", "note", "placeholders", "takes", "totals", "cue_times", "cues", "seams", "warnings", "frames",
+    }  # fmt: skip
     assert (
         payload["cue_times"]["estimated_sections"] == ["03", "04", "06", "08"] and payload["totals"]["synthesize"] == 4
     )

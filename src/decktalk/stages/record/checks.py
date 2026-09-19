@@ -9,8 +9,9 @@ reveal, or equations that were never typeset.
                 STALLED            page frames froze for longer than stall_ms
                 TRUNCATED          the recording is shorter than requested
                 NO COVER           no magenta cover was found, so narration t=0 is a guess
+                KATEX ERROR        KaTeX refused a data-tex value, so the slide shows red source
+                KATEX NOT LOADED   the page asked for KaTeX and it never arrived, so the source is plain
     uncertain   BLACK?             the middle frame is dark, which a dark slide can be on purpose
-                KATEX?             the page's equations may never have been typeset
 
 A plain `decktalk build` stops only on PAGE ERROR, because a page that threw recorded nothing worth
 assembling. Every other verdict is a finding the tables and `--json` carry.
@@ -25,11 +26,21 @@ from ...media import ffmpeg, frames
 from ...settings import RecordConfig
 from ...verdicts import Verdict
 
+# What the page runtime says when KaTeX refused a value and when it never arrived. Both are certain:
+# the slide shows red source or plain source, and either way the equation is not typeset.
+KATEX_ERROR_MARK = "could not be parsed"
+KATEX_MISSING_MARK = "katex did not load"
+
 
 def katex_verdicts(warnings: list[str]) -> list[Verdict]:
     """The KaTeX verdicts a page's own warnings carry, at most one of each."""
     lowered = [w.lower() for w in warnings]
-    return [Verdict.KATEX_UNSURE] if any("katex" in w or "data-tex" in w for w in lowered) else []
+    out: list[Verdict] = []
+    if any(KATEX_ERROR_MARK in w for w in lowered):
+        out.append(Verdict.KATEX_ERROR)
+    if any(KATEX_MISSING_MARK in w for w in lowered):
+        out.append(Verdict.KATEX_NOT_LOADED)
+    return out
 
 
 def log_verdicts(recording_log: RecordingLog, cfg: RecordConfig) -> list[Verdict]:
@@ -39,6 +50,10 @@ def log_verdicts(recording_log: RecordingLog, cfg: RecordConfig) -> list[Verdict
         out.append(Verdict.NO_COVER)
     if recording_log.page_errors:
         out.append(Verdict.PAGE_ERROR)
+    # A page that fetched from another origin while it was recorded depends on a host the project
+    # does not own, so the film cannot be rebuilt from the project alone.
+    if recording_log.external:
+        out.append(Verdict.CDN_ASSET)
     out += katex_verdicts(recording_log.warnings)
     if recording_log.worst_stall_ms > cfg.stall_ms:
         out.append(Verdict.STALLED)
@@ -68,5 +83,5 @@ def check_recording(webm: Path, recording_log: RecordingLog, cfg: RecordConfig) 
 def label(checks: RecordingChecks | None, stall_ms: int) -> str:
     """Every verdict as one line, with the stall length beside STALLED, as the tables print it."""
     verdicts = checks.verdicts if checks else ()
-    parts = [f"{v} {stall_ms}ms" if v is Verdict.STALLED and stall_ms else str(v) for v in verdicts]
-    return " ".join(parts) or str(Verdict.OK)
+    parts = [f"{v.label} {stall_ms}ms" if v is Verdict.STALLED and stall_ms else v.label for v in verdicts]
+    return " ".join(parts) or Verdict.OK.label

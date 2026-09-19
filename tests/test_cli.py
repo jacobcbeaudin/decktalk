@@ -109,10 +109,11 @@ def test_verdicts_carry_a_code_a_label_and_a_certainty():
     assert Verdict.THIN_CHANGE.name == "THIN_CHANGE" and str(Verdict.THIN_CHANGE) == "THIN CHANGE?"
     assert not Verdict.THIN_CHANGE.certain and not Verdict.THIN_CHANGE.passing
     assert Verdict.STALLED.certain and Verdict.NO_COVER.certain and Verdict.MISSING.certain
-    assert not Verdict.BLACK_UNSURE.certain and not Verdict.KATEX_UNSURE.certain
+    assert not Verdict.BLACK_UNSURE.certain and not Verdict.THIN_CHANGE.certain
+    assert Verdict.KATEX_ERROR.certain and Verdict.KATEX_NOT_LOADED.certain
     assert Verdict.CHANGED.passing and Verdict.OK.passing and not Verdict.CHANGED.certain
     assert Findings.of([Verdict.THIN_CHANGE, Verdict.CHANGED]) == Findings(0, 1)
-    assert Findings.of([Verdict.OK, Verdict.BLACK_UNSURE, Verdict.KATEX_UNSURE, Verdict.TRUNCATED, None]) == Findings(
+    assert Findings.of([Verdict.OK, Verdict.BLACK_UNSURE, Verdict.THIN_CHANGE, Verdict.TRUNCATED, None]) == Findings(
         1, 2
     )
     assert Findings(1, 2) + Findings(0, 1) == Findings(1, 3)
@@ -220,7 +221,7 @@ def test_record_exits_1_on_truncated_without_strict(fake_project, monkeypatch, c
 
 def test_record_exits_0_on_uncertain_unless_strict(fake_project, monkeypatch, capsys):
     monkeypatch.setattr(
-        stage("record"), "record", fake_record(record_result(Verdict.BLACK_UNSURE, Verdict.KATEX_UNSURE))
+        stage("record"), "record", fake_record(record_result(Verdict.BLACK_UNSURE, Verdict.THIN_CHANGE))
     )
     assert main(["record"]) == 0
     assert main(["record", "--strict"]) == 1

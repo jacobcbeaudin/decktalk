@@ -14,7 +14,7 @@ from decktalk.errors import ConfigError
 from decktalk.model import Project
 from decktalk.settings import Settings
 from decktalk.stages.verify import verify
-from decktalk.verdicts import SkipReason, Verdict
+from decktalk.verdicts import Findings, SkipReason, Verdict
 
 
 def test_onset_offset_finds_the_jump_and_falls_back_to_the_floor():
@@ -245,3 +245,31 @@ def test_verify_and_assemble_ignore_a_leftover_section_video(verify_project, tmp
         "build/sections/04.mp4 is not a section in decktalk.toml, so assemble ignores it. "
         "Delete the file if an earlier build left it."
     ]
+
+
+def test_the_recordings_table_repeats_what_each_recording_log_judged(verify_project):
+    """A page that never typeset its equations is a certain finding long after the build that recorded it."""
+    from decktalk.artifacts import Luma, RecordingChecks, RecordingLog
+
+    p = verify_project({"01": "a@1.0"})
+    checks = RecordingChecks(5.0, 5.0, Luma(90.0, 90.0, 90.0, 200.0), (Verdict.KATEX_NOT_LOADED,))
+    RecordingLog(
+        url="http://project.localhost/deck/index.html?scene=1",
+        requested_seconds=5.0,
+        settle_seconds=0.5,
+        load_seconds=0.1,
+        clock_start_seconds=1.5,
+        t0_seconds=1.44,
+        t0_method="cover (36 magenta frames)",
+        checks=checks,
+        warnings=["KaTeX did not load within 5 s, so [data-tex] elements stay plain text"],
+    ).save(p.recording_log(p.page_sections[0]))
+
+    result = verify(p, checks=[])
+    [row] = result.recordings
+    assert (row.key, row.verdicts, row.ok) == ("01", (Verdict.KATEX_NOT_LOADED,), False)
+    assert row.where == "build/recordings/01.json" and row.t0_method.startswith("cover")
+    assert result.findings == Findings(certain=1) and not result.ok
+    assert result.to_dict(p.root)["recordings"][0]["verdicts"] == ["KATEX_NOT_LOADED"]
+    # `--only` keeps the table to the sections it names, as it does every other table.
+    assert verify(p, checks=[], only=[2]).recordings == []
