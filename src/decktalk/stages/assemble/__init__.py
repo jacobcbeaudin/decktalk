@@ -25,10 +25,11 @@ from ...jsonio import as_json, relative
 from ...media import audio, ffmpeg
 from ...media.encode import Encoder
 from ...model import Project
+from ...model.timeline import narration_offsets
 from ...verdicts import Finding, Findings, Verdict
 from .cut import RenderedSection, concat, cut_list, render_sections, rendered_starts, stray_warnings
 from .loudness import loudness_problems, normalize_loudness
-from .mix import MixInput, MixPlan, encode_soundtrack, mix_input_args, narration_offsets, plan_mix
+from .mix import MixInput, MixPlan, encode_soundtrack, mix_input_args, plan_mix
 from .publish import (
     build_captions,
     build_chapters,
@@ -235,7 +236,7 @@ def assemble(
 
     starts = rendered_starts(rows)
     texts = caption_texts(project, takes)
-    cues = build_captions(project, takes, narration_offsets(rows, takes, starts), texts)
+    cues = build_captions(project, takes, narration_offsets([r.section for r in rows], takes, starts), texts)
     cues = with_sound_captions(
         sorted(cues + clip_captions(project, rows), key=lambda c: c.start), sound_captions(project, starts)
     )

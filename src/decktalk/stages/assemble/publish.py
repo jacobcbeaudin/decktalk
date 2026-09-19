@@ -57,7 +57,7 @@ def build_captions(
     """Cues for every spoken section, shifted to where its narration sits in the final file.
 
     `t0` is where narration t=0 sits in the final file. It may instead map each section key to its
-    own offset, as `narration_offsets` gives when a clip between page sections pauses the narration.
+    own offset, as `model.timeline.narration_offsets` gives when a clip or a hold pauses the narration.
     `texts` maps a section key to its spoken script text, which lends the captions their punctuation
     and case.
     """

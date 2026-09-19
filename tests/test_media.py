@@ -626,6 +626,23 @@ def test_a_breath_past_a_take_sound_end_never_reaches_its_tail_or_the_cut(tmp_pa
     assert end is not None and audio.rms_db(p.narration_path, end - 0.7, 0.7) < -80, "the tail is not silent"
 
 
+def test_a_take_that_still_sounds_at_its_cut_is_speech_at_the_cut(tmp_path):
+    """A take whose sound runs to its end, with no tail after it, is cut while it speaks, and the check says so."""
+    from decktalk.stages.verify.seams import cut_checks
+
+    def speaks_to_its_end(path: Path) -> None:
+        ffmpeg.run("-f", "lavfi", "-i", "sine=f=440:r=44100:d=1.2", "-c:a", "libmp3lame", "-b:a", "128k", str(path))
+
+    p = _narrated(tmp_path, "speaking-voice", speaks_to_its_end, "min_tail_seconds = 0\nlead_seconds = 0")
+    takes = p.takes()
+    assert takes is not None
+    one, two = cut_checks(p, takes, takes.starts)
+    assert (one.verdict, two.verdict) == (Verdict.SPEECH_AT_CUT, Verdict.SPEECH_AT_CUT)
+    assert one.rms_db > -40 and one.cut_at == takes.end("01")
+    assert one.detail is not None and "just before the cut into section 02" in one.detail
+    assert two.detail is not None and "just before the end of the film" in two.detail
+
+
 def test_clip_cuts_a_section_span_with_its_take_and_its_words(tmp_path, capsys):
     """The picture, the take over the same span after the section's lead, the gain, the hold, and the words file."""
     from decktalk.artifacts import Take, Takes, Word, read_words, write_words

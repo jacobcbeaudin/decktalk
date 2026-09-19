@@ -1,7 +1,7 @@
 """The three checks that read the shape of the film rather than one cue: starts, cuts and seams.
 
 A section start must show a real picture past the dip to black, the narration must be quiet in the
-window before every cut, and a section that sets `seamless` must open on the picture the section
+window before each section's narration ends, and a section that sets `seamless` must open on the picture the section
 before it ended on.
 """
 
@@ -13,8 +13,9 @@ from typing import Any
 
 from ...artifacts import Takes
 from ...media import audio, frames
-from ...model import Project
+from ...model import PageSection, Project
 from ...model.document import frame_dip
+from ...model.timeline import narration_offsets
 from ...verdicts import Verdict
 
 
@@ -56,12 +57,14 @@ class StartCheck:
 
 @dataclass
 class CutCheck:
-    """The audio just before a cut. Speech still sounding there means the cut is early."""
+    """The narration just before a section's narration ends. Sound still there means a word is cut off."""
 
     key: str
-    cut_at: float
+    cut_at: float  # Where the section's narration ends in the final mp4.
     rms_db: float
     ok: bool
+    into: str | None = None  # The section the film cuts to there, or None when the film ends there.
+    held: bool = False  # The section holds its last frame after its narration ends, so the film cuts later.
 
     @property
     def verdict(self) -> Verdict:
@@ -72,9 +75,15 @@ class CutCheck:
         """The one sentence a judged row carries, with the measured number a reader needs in it."""
         if self.ok:
             return None
+        if self.held:
+            boundary = "its hold"
+        elif self.into is not None:
+            boundary = f"the cut into section {self.into}"
+        else:
+            boundary = "the end of the film"
         return (
-            f"the cut into section {self.key} at {self.cut_at:.3f}s still carries sound at "
-            f"{self.rms_db:.1f} dBFS, so a word is cut off."
+            f"section {self.key}'s narration still sounds at {self.rms_db:.1f} dBFS just before {boundary} "
+            f"at {self.cut_at:.3f}s, so a word is cut off."
         )
 
     def to_dict(self, where: str | None = None) -> dict[str, Any]:
@@ -163,7 +172,12 @@ def start_checks(project: Project, final: Path, starts: dict[str, float]) -> lis
 
 
 def cut_checks(project: Project, takes: Takes | None, starts: dict[str, float]) -> list[CutCheck]:
-    """One row per spoken section: the narration is quiet in the window before the cut out of it.
+    """One row per spoken section: the narration is quiet in the window before the section's narration ends.
+
+    The window is the last `cut_window_seconds` of the section's span in narration.mp3, and those are
+    exactly the samples the viewer hears before `cut_at`, because the section's narration run places
+    them there in the final mp4 as the mix does. The picture cuts within half a frame of it, or after
+    the section's hold.
 
     The check listens to the narration track alone, so music or an effect at a boundary does not
     count as speech, and a clip, which carries its own audio, is exempt.
@@ -172,13 +186,24 @@ def cut_checks(project: Project, takes: Takes | None, starts: dict[str, float]) 
     narration = project.narration_path
     if takes is None or not narration.exists():
         return []
+    played = [sec for sec in project.sections if sec.key in starts]
+    offsets = narration_offsets(played, takes, starts)
+    following = {sec.key: nxt.key for sec, nxt in zip(played, played[1:], strict=False)}
     rows: list[CutCheck] = []
-    for key in takes.keys:
-        span, end = takes.span(key), takes.end(key)
-        if key not in starts or span is None or end is None:
+    for sec in played:
+        span, end = takes.span(sec.key), takes.end(sec.key)
+        if span is None or end is None:
             continue
         window = min(cfg.cut_window_seconds, span)
         level = audio.rms_db(narration, max(0.0, end - window), window)
-        cut = starts[key] + span
-        rows.append(CutCheck(key=key, cut_at=round(cut, 3), rms_db=level, ok=level <= cfg.cut_max_db))
+        rows.append(
+            CutCheck(
+                key=sec.key,
+                cut_at=round(offsets[sec.key] + end, 3),
+                rms_db=level,
+                ok=level <= cfg.cut_max_db,
+                into=following.get(sec.key),
+                held=isinstance(sec, PageSection) and sec.hold_seconds > 0,
+            )
+        )
     return rows

@@ -57,23 +57,25 @@ def test_plan_mix_delays_clip_audio_and_drops_the_limiter(tmp_path, write_projec
 
 
 def test_narration_runs_pause_for_a_clip_between_page_sections(tmp_path, mid_clip_plan):
+    from decktalk.model.timeline import NarrationRun, narration_offsets, narration_runs
     from decktalk.stages.assemble.cut import rendered_starts
-    from decktalk.stages.assemble.mix import NarrationRun, narration_offsets, narration_runs
 
     p, takes, rows = mid_clip_plan(tmp_path)
     starts = rendered_starts(rows)
     assert starts == {"01": 0.0, "02": 2.0, "03": 5.0, "04": 7.52}
-    assert narration_runs(rows, takes, starts) == [
+    played = [r.section for r in rows]
+    assert narration_runs(played, takes, starts) == [
         NarrationRun(keys=("01",), at=0.0, start=0.0, end=2.0),
         NarrationRun(keys=("03", "04"), at=5.0, start=2.0, end=None),
     ]
     # Every section after the clip hears its words one clip later than the track holds them.
-    assert narration_offsets(rows, takes, starts) == {"01": 0.0, "03": 3.0, "04": 3.0}
+    assert narration_offsets(played, takes, starts) == {"01": 0.0, "03": 3.0, "04": 3.0}
     # Without a clip between page sections there is one run, and every section shares its offset.
     edge = [rows[1], rows[0], rows[2], rows[3]]
     edge_starts = rendered_starts(edge)
-    assert len(narration_runs(edge, takes, edge_starts)) == 1
-    assert narration_offsets(edge, takes, edge_starts) == {"01": 3.0, "03": 3.0, "04": 3.0}
+    edge_played = [r.section for r in edge]
+    assert len(narration_runs(edge_played, takes, edge_starts)) == 1
+    assert narration_offsets(edge_played, takes, edge_starts) == {"01": 3.0, "03": 3.0, "04": 3.0}
 
 
 def test_plan_mix_places_each_narration_run_at_its_section_start(tmp_path, mid_clip_plan):
@@ -103,8 +105,9 @@ def test_plan_mix_places_each_narration_run_at_its_section_start(tmp_path, mid_c
 
 
 def test_a_hold_between_page_sections_pauses_the_narration(tmp_path, spoken, write_project, take_index):
+    from decktalk.model.timeline import NarrationRun, narration_offsets, narration_runs
     from decktalk.stages.assemble.cut import RenderedSection, rendered_starts
-    from decktalk.stages.assemble.mix import NarrationRun, narration_offsets, narration_runs, plan_mix
+    from decktalk.stages.assemble.mix import plan_mix
     from decktalk.stages.assemble.publish import build_captions
 
     toml = (
@@ -127,11 +130,12 @@ def test_a_hold_between_page_sections_pauses_the_narration(tmp_path, spoken, wri
         RenderedSection(p.sections[2], tmp_path / "03.mp4", 2.48, "03.webm"),
     ]
     starts = rendered_starts(rows)
-    assert narration_runs(rows, takes, starts) == [
+    played = [r.section for r in rows]
+    assert narration_runs(played, takes, starts) == [
         NarrationRun(keys=("01",), at=0.0, start=0.0, end=2.0),
         NarrationRun(keys=("02", "03"), at=4.0, start=2.0, end=None),
     ]
-    offsets = narration_offsets(rows, takes, starts)
+    offsets = narration_offsets(played, takes, starts)
     assert offsets == {"01": 0.0, "02": 2.0, "03": 2.0}
     plan = plan_mix(p, rows, takes, soundscape=False)
     assert "atrim=start=0.000:end=2.000,asetpts=PTS-STARTPTS,adelay=0:all=1[narr0]" in plan.filter

@@ -6,6 +6,7 @@
     script.py      script.md parsed into the sections the voice reads
     cues.py        cues.json parsed, and phrase matching over a take's words
     markers.py     media/markers.json parsed into typed Marker rows
+    timeline.py    where the narration plays in the final film, run by run
     project.py     the thin composer of document, workspace, env and settings
 
 Each loader takes a path, not a project, so a stage can parse one file without loading a whole
