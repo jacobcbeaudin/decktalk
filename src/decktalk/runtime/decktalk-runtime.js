@@ -99,7 +99,7 @@
 (() => {
   // The runtime loads as a classic <script>, not a module, so this directive is what makes it strict.
   "use strict";
-  const VERSION = "0.3.0"; // x-release-please-version
+  const VERSION = "0.4.0"; // x-release-please-version
   // Every selector sits inside :where(), so it carries no specificity and any page rule wins, and
   // the stylesheet is prepended to <head> so a page rule of equal weight wins on order too.
   const CSS = `
