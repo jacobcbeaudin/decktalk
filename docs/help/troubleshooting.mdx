@@ -42,7 +42,7 @@ explains.
 | `HTTP 401`, `HTTP 402` | `narrate`, `build`, `soundscape` | [Entry](#http-401-or-http-402-in-narrate) |
 | `could not reach` | `narrate`, `build`, `soundscape` | [Entry](#could-not-reach-in-narrate) |
 | `decktalk.toml is not there` | every project command | [Entry](#decktalk-toml-is-not-there-in-any-command) |
-| `unknown table(s)` | every project command | [Entry](#unknown-tables-in-decktalk-toml) |
+| `unknown table(s)` | every project command | [Entry](#unknown-table-s-in-decktalk-toml) |
 | `ignoring unknown key` | every project command | [Entry](#ignoring-unknown-key-in-decktalk-toml) |
 | `must be int, got float`, `UNREADABLE` | every project command | [Entry](#must-be-in-decktalk-toml) |
 | `invalid tuning value` | every project command | [Entry](#invalid-tuning-value-in-decktalk-toml) |
@@ -70,7 +70,7 @@ explains.
 | `BLACK?` | `record` | [Entry](#black-in-record) |
 | `KATEX ERROR`, `KATEX NOT LOADED`, `KaTeX did not load` | `record`, `verify`, `preflight` | [Entry](#katex-error-or-katex-not-loaded-in-record) |
 | `no narration span yet` | `record` | [Entry](#no-narration-span-yet-in-record) |
-| `missing; slate for` | `assemble` | [Entry](#missing-slate-for-in-assemble) |
+| `is missing, so a slate plays` | `assemble` | [Entry](#is-missing-so-a-slate-plays-in-assemble) |
 | `clip missing`, `recording missing` | `assemble` with `--strict` | [Entry](#clip-missing-or-recording-missing-in-assemble) |
 | `using black` | `assemble` | [Entry](#using-black-in-assemble) |
 | `has no span in` | `assemble` | [Entry](#has-no-span-in-in-assemble) |
@@ -87,7 +87,7 @@ explains.
 | `NO_CLICK` | `verify --json` | [Entry](#no_click-in-verify) |
 | `skipped` | `verify` | [Entry](#skipped-in-verify) |
 | `malformed check` | `verify` | [Entry](#malformed-check-in-verify) |
-| `need build/sections/NN.mp4 files` | `verify` | [Entry](#need-build-sections-nn-mp4-files-in-verify) |
+| `nothing to verify` | `verify` | [Entry](#nothing-to-verify-in-verify) |
 | `is not a section in decktalk.toml` | `assemble`, `verify` | [Entry](#is-not-a-section-in-decktalk-toml-in-assemble-or-verify) |
 | `The take index is not there` | `words`, `clip` | [Entry](#the-take-index-is-not-there-in-words-or-clip) |
 | `has no section video` | `clip` | [Entry](#has-no-section-video-in-clip) |
@@ -97,7 +97,6 @@ explains.
 | `matches no element, handler, or slide` | page | [Entry](#matches-no-element-handler-or-slide-in-a-page) |
 | `unknown cue id` | page | [Entry](#unknown-cue-id-in-a-page) |
 | `owns no cue in ?cues=` | page | [Entry](#owns-no-cue-in-a-page) |
-| `TimeoutError` | `screenshots` | [Entry](#timeouterror-in-screenshots) |
 
 ## install, doctor, and keys
 
@@ -238,7 +237,7 @@ An unknown key inside a table prints a warning instead. See
 {/* sample: decktalk status in a starter with stability misspelled under [voice] */}
 
 ```text
-decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?). docs/reference/renames.mdx lists every name DeckTalk renamed.
+decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?).
 ```
 
 **Cause.** A key inside a table has a typo, or it belongs to another table or section kind. DeckTalk
@@ -356,12 +355,13 @@ a new section for nothing.
 
 ### A section opens on its first word
 
-**Cause.** `narrate` removes a direction before the first words of a section, `[pause N]` included. So the
-first word plays as the section's first frame appears.
+**Cause.** The section's lead is 0, from its own `lead_seconds = 0` or from `[narration] lead_seconds = 0`.
+`narrate` removes a direction before the first words of a section, `[pause N]` included, so a pause in the
+script cannot open it either. The first word plays as the section's first frame appears.
 
 **Fix.**
-1. Set `lead_seconds` on the page section in `decktalk.toml`. `narrate` joins that much silence in before the
-   take and sends no request.
+1. Set `lead_seconds` on the page section in `decktalk.toml`, or raise `[narration] lead_seconds` for every
+   section. `narrate` places that much silence before the take and sends no request.
 2. Run `decktalk build --only N`, so the recording covers the lead.
 
 **More.** [Silence in a section](/reference/decktalk-toml#silence-in-a-section)
@@ -374,10 +374,10 @@ first word plays as the section's first frame appears.
 
 ```text
 sec  speech   need  cues
- 01    13.2      -  1.1title@0.7,1.1script@3.1,1.1deck@6.47,1.1word@11.76
- 02    14.1      -  2.1average@0.94,2.1code@8.93,2.1waited@10.81
+ 01    13.0      -  1.1title@0.5,1.1script@2.9,1.1deck@6.27,1.1word@11.56
+ 02    14.6      -  2.1average@1.44,2.1code@9.43,2.1waited@11.31
                     ! 2.1formula: phrase not found: 'the formular'
- 03    11.4      -  3.1idea@0.91,3.1again@7.3,3.1make@8.21
+ 03    11.9      -  3.1idea@1.41,3.1again@7.8,3.1make@8.71
 3 sections with cues, 1 unresolved  (estimated words: times are placeholders)
 error[CONFIG]: 1 cue(s) could not be matched to the narration, and a slide whose cues are unresolved never appears.
   hint: Fix these phrases in cues.json, or pass --allow-unresolved-cues:
@@ -410,11 +410,12 @@ unresolved never mounts.
 {/* sample: decktalk build --no-voice on a fresh starter with data-cue="2.1code" renamed 2.1codex, last lines */}
 
 ```text
- 02    14.1      -  2.1average@0.94,2.1formula@5.17,2.1code@8.93,2.1waited@10.81
+ 02    14.6      -  2.1average@1.44,2.1formula@5.67,2.1code@9.43,2.1waited@11.31
                     ! 2.1code: not in deck/index.html
                     ! 2.1codex: data-cue="2.1codex" in deck/index.html has no entry in cues.json
 3 sections with cues, 0 unresolved  (estimated words: times are placeholders)
-error[UNKNOWN_CUE]: 1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal them. Add data-cue="2.1code" to the slide in deck/index.html, fix the id in cues.json, or pass --allow-unknown-cues:
+error[CONFIG]: 1 cue id(s) in cues.json appear nowhere in the page that plays them, so the page would never reveal them.
+  hint: Add data-cue="2.1code" to the slide in deck/index.html, fix the id in cues.json, or pass --allow-unknown-cues. The ids are:
   section 02: 2.1code: not in deck/index.html
 ```
 
@@ -672,19 +673,19 @@ the same amount.
 
 ## assemble
 
-### `missing; slate for` in assemble
+### `is missing, so a slate plays` in assemble
 
 {/* sample: decktalk assemble --strict in clip-lesson from Add a clip section, the starter with one clip section and no clip file */}
 
 ```text
-section 04: media/intro.mov missing; slate for 4s (drop your clip at that path; the section is optional, so --strict allows the slate)
+section 04: media/intro.mov is missing, so a slate plays for 4s. Drop your clip at that path. The section is optional, so --strict allows the slate
 ```
 
 **Cause.** The file that `clip` names does not exist, so a titled slate plays for `slate_seconds`.
 
 The section in the sample sets `optional = true`, so its warning ends with
-`the section is optional, so --strict allows the slate`. A section without `optional` prints only
-`(drop your clip at that path)`.
+`The section is optional, so --strict allows the slate`. A section without `optional` ends at
+`Drop your clip at that path`.
 
 **Fix.**
 1. If you have the video, put it at the path in `clip`.
@@ -736,7 +737,7 @@ script has no heading for it, or `narrate` has not run since you added it.
 {/* sample: decktalk assemble after a build without voice of the starter, with music added under [mix] */}
 
 ```text
-music missing (~/my-lesson/build/music/music.mp3); no music (`decktalk soundscape`)
+music missing (~/my-lesson/build/music/music.mp3), so there is no music. Run `decktalk soundscape` to make it
 ```
 
 **Cause.** `[mix]` names a music or ambience file that does not exist. The video plays without
@@ -809,7 +810,8 @@ Nothing bright is on screen when the section starts.
 speaking when the picture cut.
 
 **Fix.**
-1. Raise `[narration] min_tail_seconds` to add more silence after the last word.
+1. Raise the section's `tail_seconds`, or `[narration] min_tail_seconds`, to leave more silence after the last
+   word.
 
 If the section must stay short, end its script sooner instead.
 
@@ -873,7 +875,7 @@ The row keeps the shape of every other cue row, with `OFF CUE` in place of `chan
 
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
-3:3.1make            8.21    38.13   10.84    0.00    -90ms  -118ms  OFF CUE
+3:3.1make            8.71    38.87   10.85    0.00    -90ms  -118ms  OFF CUE
 ```
 
 **Cause.** The picture changed, but the offset column is past 80 ms or the `a/v` column is past 120 ms.
@@ -940,12 +942,13 @@ The error reads `malformed check '<text>'; want SECTION:CUE, e.g. 3:3.1draw`.
 
 **More.** [`decktalk verify`](/reference/cli#decktalk-verify)
 
-### `need build/sections/NN.mp4 files` in verify
+### `nothing to verify` in verify
 
 {/* sample: decktalk verify on a starter with no build */}
 
 ```text
-error[MISSING_INPUT]: need build/sections/NN.mp4 files and the final mp4; run `decktalk assemble` first
+error[MISSING_INPUT]: the section videos and the final mp4 are not both there, so there is nothing to verify.
+  hint: Run `decktalk assemble` first.
 ```
 
 **Cause.** The project has no assembled video yet.
@@ -1026,7 +1029,8 @@ error[MISSING_INPUT]: section 1 has no section video at ~/my-lesson/build/sectio
 {/* sample: decktalk clip 4 --start 0 --end 1 --out media/x.mp4 in clip-lesson from Add a clip section */}
 
 ```text
-error[CONFIG]: section 4 is a clip section; cut a clip from a page section
+error[CONFIG]: section 4 is a clip section.
+  hint: Cut a clip from a page section.
 ```
 
 **Cause.** The section number names a clip section. A clip section has no narration, so `clip` has no mp3 to cut.
@@ -1039,12 +1043,12 @@ error[CONFIG]: section 4 is a clip section; cut a clip from a page section
 
 ### `cuts the word` in clip
 
-{/* sample: decktalk clip 1 --start 0.9 --end 2.0 --out media/cut.mp4 after decktalk build --no-voice on a fresh starter */}
+{/* sample: decktalk clip 1 --start 0.7 --end 1.8 --out media/cut.mp4 after decktalk build --no-voice on a fresh starter */}
 
 ```text
 section 01: the span cuts the word 'This' in two, so the words file leaves it out
 section 01: the span cuts the word 'DeckTalk.' in two, so the words file leaves it out
-seconds 1.12, words 1 | 0 certain, 2 uncertain finding(s)
+seconds 1.08, words 1 | 0 certain, 2 uncertain finding(s)
 ```
 
 **Cause.** `--start` or `--end` falls inside a spoken word. The clip keeps the part of the word inside the span, but the
@@ -1141,26 +1145,10 @@ time.
 2. For drafts, set `DECKTALK_VIDEO_PRESET=veryfast`, or `preset = "veryfast"` under `[video]`.
 3. For the final video, go back to the default preset.
 
-A build without voice of the starter took 64 s for its 44.12 s video. The machine was a MacBook Pro
+A build without voice of the starter took 64 s for its 44.88 s video. The machine was a MacBook Pro
 with an Apple M5 Pro and 64 GB of memory.
 
 **More.** [Rebuild one section](/guides/rebuild-one-section)
-
-### `TimeoutError` in screenshots
-
-{/* sample: decktalk screenshots --section 1 --at 31 after decktalk build --no-voice on a fresh starter */}
-
-```text
-error[INTERNAL]: Page.wait_for_function: Timeout 30000ms exceeded.
-```
-
-**Cause.** An `--at` value past 30 s waits longer than the browser's 30 s limit.
-
-**Fix.**
-1. Use `--at` values of 30 s or less.
-2. For a later moment in a long section, take a frame from the final video instead.
-
-**More.** [`decktalk screenshots`](/reference/cli#decktalk-screenshots)
 
 ## Related
 
