@@ -35,11 +35,14 @@ FULL: list[list[str]] = [
     [*UV, "decktalk", "install"],
     # Every suite but the scaffold build. The unit tests run here too, so coverage counts the whole net.
     [*UV, "pytest", "-q", "-m", "not scaffold", "--cov", "--cov-report=term", "--durations=10"],
-    [*UV, "scripts/build_settings_reference.py", "--check"],
+    # Every generated page, then the links across all of them.
     [*UV, "scripts/build_cli_reference.py", "--check"],
+    [*UV, "scripts/build_settings_reference.py", "--check"],
     [*UV, "scripts/build_outbound_reference.py", "--check"],
     [*UV, "scripts/build_skills_list.py", "--check"],
+    [*UV, "scripts/build_contributing.py", "--check"],
     [*UV, "scripts/build_changelog.py", "--check"],
+    [*UV, "scripts/check_docs_links.py", "--check"],
     # In the project environment, so the check draws with the Chromium that `decktalk install` installed rather
     # than with whatever playwright the script's own header would resolve.
     [*UV, "--with", "fonttools[woff]>=4.50", "python", "scripts/build_assets.py", "--check"],

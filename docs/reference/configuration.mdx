@@ -86,10 +86,9 @@ These keys govern how the script is turned into audio. Environment variables sta
 | `mp3_bitrate` | `string` | `"128k"` |  | Bitrate of the mp3 files that DeckTalk writes. They include click tracks and `narration.mp3`. |
 | `words_per_minute` | `integer` | `140` | must be above zero | Pacing of the estimated length in the `narrate` table. |
 | `silent_words_per_minute` | `integer` | `150` | must be above zero | Pacing of the click track in a build without voice. |
-| `opening_silence_seconds` | `number` | `0.7` | must not be negative | Silence before the first spoken section. |
+| `lead_seconds` | `number` | `0.5` | must not be negative | Silence before the first word of every spoken section, so the picture changes before the voice speaks. A section's own `lead_seconds` replaces it. |
 | `silent_beat_seconds` | `number` | `0.7` | must not be negative | Seconds each beat adds to a section's length in a build without voice. |
-| `min_tail_seconds` | `number` | `0.7` | must not be negative | Shortest silence after the last word of a section, so a cut never falls on speech. |
-| `tail_slack_seconds` | `number` | `0.05` | must not be negative | Extra silence added when `narrate` pads a short tail. |
+| `min_tail_seconds` | `number` | `0.7` | must not be negative | Silence after the last word of every spoken section, so a cut never falls on speech. The take is placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it. |
 | `cache_dir` | `string` | `""` |  | Directory that holds the take files and their words files, each named by its content hash. It is empty for `build/narration/` inside the project, and a path here keeps the voiced takes when `build/` is deleted and lets many projects share one cache. The take index and the joined narration stay under `build/narration/`, because they belong to one project. |
 | `context_chars` | `integer` | `1500` | must not be negative | Characters of each neighbor section sent with a request, for continuous prosody. |
 | `timeout_seconds` | `integer` | `180` | must be above zero | Seconds before a speech request times out. |
@@ -113,9 +112,9 @@ These keys tune the headless Chromium recording, how narration t=0 is found in i
 | `cover_chroma_min` | `number` | `165` | must be a luma between 0 and 255 | A cover frame has an average U and an average V above this. |
 | `painted_ymax` | `number` | `60` | must be a luma between 0 and 255 | A painted frame has a brightest luma above this. |
 | `painted_yavg_max` | `number` | `120` | must be a luma between 0 and 255 | A painted frame has an average luma below this, so a white flash does not count. |
-| `black_ymax` | `number` | `40` | must be a luma between 0 and 255 | `check` reports `BLACK?` when the brightest luma of the middle frame is below this. |
-| `truncated_slack_seconds` | `number` | `0.5` | must not be negative | Allowed shortfall of a recording against its requested length. A larger shortfall makes `check` report `TRUNCATED`. |
-| `stall_ms` | `integer` | `150` | must be above zero | Longest frame gap after narration t=0, in milliseconds. A longer gap makes `record` try again and `check` report `STALLED`. |
+| `black_ymax` | `number` | `40` | must be a luma between 0 and 255 | `record` reports `BLACK?` when the brightest luma of the middle frame is below this. |
+| `truncated_slack_seconds` | `number` | `0.5` | must not be negative | Allowed shortfall of a recording against its requested length. A larger shortfall makes `record` report `TRUNCATED`. |
+| `stall_ms` | `integer` | `150` | must be above zero | Longest frame gap after narration t=0, in milliseconds. A longer gap makes `record` try again and report `STALLED`. |
 
 ## `[audio]`
 

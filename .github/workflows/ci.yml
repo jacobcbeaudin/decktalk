@@ -32,9 +32,27 @@ jobs:
       - run: uv run ruff format --check src tests scripts
       - run: uv run ty check src
       - run: uv run pytest -q
-      - run: uv run scripts/build_settings_reference.py --check
+
+  docs:
+    # Every generated page, and every link between the pages. A page whose source moved on without
+    # it fails here, so no pull request can leave the docs describing code that is gone.
+    name: docs (generated pages and links)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group dev
       - run: uv run scripts/build_cli_reference.py --check
+      - run: uv run scripts/build_settings_reference.py --check
+      - run: uv run scripts/build_outbound_reference.py --check
+      - run: uv run scripts/build_skills_list.py --check
+      - run: uv run scripts/build_contributing.py --check
       - run: uv run scripts/build_changelog.py --check
+      - run: uv run scripts/check_docs_links.py --check
 
   lint:
     name: lint (JavaScript)

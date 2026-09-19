@@ -210,7 +210,7 @@ It also takes `-p`, `--json`, `-v` and `-q`.
 Write one PNG per slide, per cue of one slide, or per second of a playing section.
 
 ```text
-decktalk screenshots [-h] [--page PAGE] [--slide ID] [--after ID] [--section SECTION] [--at AT] [-v] [-q] [--json] [--project PROJECT]
+decktalk screenshots [-h] [--page PAGE] [--slide ID] [--after ID] [--before ID] [--section SECTION] [--at AT] [-v] [-q] [--json] [--project PROJECT]
 ```
 
 | Option | Default | Meaning |
@@ -218,6 +218,7 @@ decktalk screenshots [-h] [--page PAGE] [--slide ID] [--after ID] [--section SEC
 | `--page` |  | page file (default: every page in decktalk.toml) |
 | `--slide` |  | only these slide ids |
 | `--after` |  | freeze the one --slide at this cue id (repeats) |
+| `--before` |  | freeze the one --slide just before this cue id |
 | `--section` |  | play this section with its resolved cues |
 | `--at` |  | seconds after narration t=0 (with --section) |
 
