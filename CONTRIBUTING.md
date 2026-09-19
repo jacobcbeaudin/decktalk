@@ -104,15 +104,15 @@ src/decktalk/
   toolchain/     what ships in the wheel and what is fetched per machine: cache, ffmpeg, assets
   artifacts/     one module per build artifact: words, takes, timeline, cue times, recording log
   captions/      caption layout, and the srt, vtt and chapter files
-  media/         ffmpeg, audio, frames, the encoder and Chromium (internal)
+  media/         ffmpeg, audio, frames, the encoder, Chromium and the local origin (internal)
   speech/        the speech protocol, the provider registry, and ElevenLabs (internal)
   model/         one project: the decktalk.toml document, the build paths, .env, the script and cues
   cli.py         the command line: its tables, --json output, and exit codes
   report.py      the tables the CLI prints from a stage result (internal)
   scaffold.py    install, doctor, and init: the downloads and the template copy
   status.py      what a project has built, read from disk for `decktalk status`
-  stages/        narrate/ (plan, script_rules, takes), align/ (pages), preflight, record, measure (with check), assemble,
-                 verify, screenshots, clip (with words), soundscape, build
+  stages/        narrate/ (plan, script_rules, takes), align/ (pages), preflight, record/ (capture, start, checks),
+                 assemble, verify, screenshots, clip (with words), soundscape, build
   runtime/       decktalk-runtime.js, the page contract
   katex/         the pinned KaTeX release the pages typeset with
   template/      what `decktalk init` writes

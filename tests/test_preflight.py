@@ -9,13 +9,14 @@ fixture keeps a Playwright session open.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
 
 from decktalk.scaffold import init
 from decktalk.speech import register_speech_provider
-from decktalk.toolchain.assets import runtime_path
+from decktalk.toolchain.assets import RUNTIME_FILE, runtime_path
 from decktalk.verdicts import Findings, SkipReason, Verdict
 
 pytestmark = [pytest.mark.browser, pytest.mark.media]
@@ -97,9 +98,10 @@ def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatc
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
     root = tmp_path / "synth"
     root.mkdir()
+    shutil.copyfile(runtime_path(), root / RUNTIME_FILE)
     (root / "page.html").write_text(
         '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#fff}</style></head><body>'
-        f'<script src="{runtime_path().resolve().as_uri()}"></script><script>{SYNTH_PAGE}</script></body></html>',
+        f'<script src="{RUNTIME_FILE}"></script><script>{SYNTH_PAGE}</script></body></html>',
         encoding="utf-8",
     )
     (root / "decktalk.toml").write_text(

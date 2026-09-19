@@ -8,9 +8,7 @@
     decktalk align                    cues.json -> build/cue-times.json
     decktalk preflight                takes, cues and frozen reveals before a voiced build: no credits, no recording
     decktalk soundscape               ambience, sfx, music (ElevenLabs)
-    decktalk record                   pages -> build/recordings/NN.webm (Chromium)
-    decktalk measure                  find narration t=0 in each recording
-    decktalk check                    recording sanity (black / truncated)
+    decktalk record                   pages -> build/recordings/NN.webm, measured and checked (Chromium)
     decktalk assemble                 ffmpeg -> build/out/<name>.mp4
     decktalk verify [SECTION:CUE ...] section starts, cuts, and every cue landing on the final mp4
     decktalk screenshots              one PNG per slide, per cue of one slide, or per second of a playing section
@@ -18,13 +16,13 @@
     decktalk words [--json]           each spoken section's words, in seconds after the section starts
     decktalk clip N --start S --end E --out FILE
                                       a span of a built section and its narration -> a clip and its words file
-    decktalk build [--no-voice]       narrate -> align -> record -> measure -> check -> assemble -> verify
+    decktalk build [--no-voice]       narrate -> align -> record -> assemble -> verify
     decktalk status                   timeline and what is built
 
 Every project command takes --project/-p DIR (default: DECKTALK_PROJECT, else the current
 directory). The -v and -q flags go before or after the command name.
 Tuning flags such as --preset override decktalk.toml and DECKTALK_* env for one run.
-Six read-only commands print JSON with --json. The five that judge, align, preflight, check, verify
+Six read-only commands print JSON with --json. The five that judge, align, preflight, record, verify
 and doctor, take --exit-zero, and the four that can end a verdict in ? also take --strict. They exit
 1 on a certain finding, and on an uncertain one only with --strict.
 """
@@ -53,8 +51,7 @@ JSON_HELP = "print the result as one JSON object on stdout instead of the tables
 ALLOW_UNKNOWN_HELP = "continue when a cue id in cues.json appears nowhere in the page that plays it"
 BUILD_STRICT_HELP = (
     "fail on a missing clip or recording instead of substituting a slate "
-    "(a clip section with optional = true still plays its slate), "
-    "and on a recording that measure has not read since it was recorded"
+    "(a clip section with optional = true still plays its slate)"
 )
 
 
@@ -227,25 +224,9 @@ def cmd_soundscape(args: argparse.Namespace) -> int:
 def cmd_record(args: argparse.Namespace) -> int:
     from .stages.record import record
 
-    record(_project(args), only=_only(args.only), seconds=args.seconds, use_cues=not args.no_cues)
-    return 0
-
-
-def cmd_measure(args: argparse.Namespace) -> int:
-    from .stages.measure import measure
-
-    print(report.leads_table(measure(_project(args), only=_only(args.only))))
-    return 0
-
-
-def cmd_check(args: argparse.Namespace) -> int:
-    from .stages.measure import check
-
     project = _project(args)
-    rows = check(project, only=_only(args.only))
-    findings = Findings.of(v for r in rows for v in r.verdicts)
-    payload = {"recordings": [r.to_dict(project.root) for r in rows]}
-    return _finish(args, findings, payload, lambda: report.checks_table(rows))
+    result = record(project, only=_only(args.only), seconds=args.seconds, use_cues=not args.no_cues)
+    return _report_result(args, project, result, lambda: report.record_table(result))
 
 
 def cmd_assemble(args: argparse.Namespace) -> int:
@@ -366,10 +347,8 @@ def cmd_build(args: argparse.Namespace) -> int:
             print(report.narrate_table(result))
         elif stage == "align":
             print(report.align_table(result))
-        elif stage == "measure":
-            print(report.leads_table(result))
-        elif stage == "check":
-            print(report.checks_table(result))
+        elif stage == "record":
+            print(report.record_table(result))
         elif stage == "verify":
             print(report.verify_table(result))
 
@@ -490,20 +469,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--dry-run", action="store_true", help="print every request without sending it")
     s.set_defaults(fn=cmd_soundscape)
 
-    s = proj(sub.add_parser("record", help="record the pages with headless Chromium"))
+    s = policy(proj(sub.add_parser("record", help="record the pages, find narration t=0, and check the frames")))
     s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
-    s.add_argument("--seconds", type=float, help="override every duration (smoke tests)")
-    s.add_argument("--settle", type=float, help="seconds after load before the clock starts")
-    s.add_argument("--no-cues", action="store_true", help="preview timing instead of ?cues=")
+    s.add_argument("--seconds", type=float, help="override the recording length of every section")
+    s.add_argument("--settle", type=float, help="seconds to wait after load before the narration clock starts")
+    s.add_argument("--no-cues", action="store_true", help="record without the ?cues= parameter")
     s.set_defaults(fn=cmd_record)
-
-    s = proj(sub.add_parser("measure", help="find narration t=0 in each recording"))
-    s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
-    s.set_defaults(fn=cmd_measure)
-
-    s = policy(proj(sub.add_parser("check", help="recording sanity: duration and luma")))
-    s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)
-    s.set_defaults(fn=cmd_check)
 
     s = proj(sub.add_parser("assemble", help="cut, mix and normalize the final mp4"))
     s.add_argument("--no-soundscape", action="store_true", help="narration only: no music, no ambience, no effects")

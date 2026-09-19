@@ -27,7 +27,7 @@ The package exports these names. Every other name is internal.
 | Project | `Project`, `Section`, `PageSection`, `ClipSection`, `Settings`, `load_settings` |
 | Project tables | `Voice`, `Transition`, `Mix`, `Soundscape` |
 | Artifacts | `Takes`, `CueTimes`, `Word`, `RecordingLog` |
-| Stages | `narrate`, `align`, `preflight`, `record`, `measure`, `check`, `assemble`, `verify`, `screenshots`, `soundscape`, `build`, `status`, `clip`, `words` |
+| Stages | `narrate`, `align`, `preflight`, `record`, `assemble`, `verify`, `screenshots`, `soundscape`, `build`, `status`, `clip`, `words` |
 | Errors | `DeckTalkError`, `ConfigError`, `MissingInputError`, `ProviderError`, `ToolError` |
 | Results | `NarrateResult`, `AlignResult`, `RecordResult`, `AssembleResult`, `VerifyResult`, `PreflightResult`, `ScreenshotsResult`, `WordsResult`, `ClipResult`, `StatusResult`, `SoundscapeResult`, `BuildResult` |
 | Speech | `SpeechProvider`, `SpeechRequest`, `register_speech_provider` |
@@ -87,14 +87,13 @@ decktalk.build(project, *, silent=False, force=False, only=None, soundscape=True
                strict=False, allow_unresolved_cues=False, allow_unknown_cues=False, report=None) -> BuildResult
 ```
 
-`build` runs the seven stages in order: `narrate`, `align`, `record`, `measure`, `check`, `assemble`, and
-`verify`.
+`build` runs the five stages in order: `narrate`, `align`, `record`, `assemble`, and `verify`.
 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `silent` | `False` | Uses a click track and estimated word times. Needs no API key. Raises `ConfigError` when `build/narration/takes.json` holds voiced takes, unless `force` is set. |
 | `force` | `False` | Voices every section again, and ignores the narration cache. With `silent`, replaces voiced takes. |
-| `only` | `None` | Section numbers for `record`, `measure`, and `check`. The other stages still use every section. |
+| `only` | `None` | Section numbers for `record`. The other stages still use every section. |
 | `soundscape` | `True` | Mixes the music, the ambience bed, and the sound effects. `False` leaves them out. |
 | `loudness` | `True` | Runs the loudness pass. |
 | `strict` | `False` | Raises on a missing clip, a missing recording, or a loudness miss. A clip section with `optional = true` still plays its slate. |
@@ -153,16 +152,13 @@ check does not start with a section number.
 
 These functions run one stage each, or read the project. Every result carries `findings`, the tally of what the
 run judged, and `to_dict(root)`, the same thing as JSON-ready data with every path relative to the project root.
-`record`, `measure` and `check` each return one row per section rather than one result.
 
 | Function | Returns | Raises |
 |---|---|---|
 | `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None, dry_run=False)` | `NarrateResult` with `plans`, `voice`, `rate`, `rows`, `note`, `takes`, `timeline`, `segments`, `synthesized`, and `cached`. With `dry_run`, `takes` and `timeline` are `None` and nothing is written. | `ConfigError`, `MissingInputError`, `ProviderError` |
 | `align(project, *, allow_unknown_cues=False)` | `AlignResult` with `cue_times`, `sections`, `unresolved`, `estimated`, `unknown`, `uncued`, `cue_times_file`, `short`, and `problems` | `ConfigError`, `MissingInputError`, `UnknownCueError` |
 | `preflight(project, *, only=None, frames=True, model=None, allow_unknown_cues=False)` | `PreflightResult` with `takes`, `note`, `align`, `estimated`, `cues`, `seams`, `frames`, `placeholders`, and `short` | `ConfigError`, `MissingInputError`, `ToolError` |
-| `record(project, *, only=None, seconds=None, use_cues=True)` | A list of `RecordResult`, each with `section`, `path`, `log`, and `seconds` | `ConfigError`, `MissingInputError`, `ToolError` |
-| `measure(project, only=None)` | A list of `LeadMeasurement`, each with `key`, `t0_seconds`, `wallclock_seconds`, and `method` | `MissingInputError` |
-| `check(project, only=None)` | A list of `RecordingCheck`, each with `key`, `duration`, `wanted`, `y10`, `y50`, `y90`, `max50`, `verdicts`, `stall_ms`, `page_errors`, `file`, `ok`, `label`, and `to_dict(root)` | `MissingInputError` |
+| `record(project, *, only=None, seconds=None, use_cues=True)` | `RecordResult` with `sections`, each a `SectionRecording` with `section`, `path`, `log`, `key`, `verdicts`, `ok`, and `label`, and `page_errors` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `assemble(project, *, soundscape=True, loudness=True, strict=False)` | `AssembleResult` with `final`, `stamped` (`None` unless `[output] timestamped_copy` is on), `duration`, `sections`, `warnings`, `loudness`, `loudness_problems`, `captions_srt`, `captions_vtt`, and `chapters` | `ConfigError`, `MissingInputError`, `ToolError` |
 | `screenshots(project, *, pages=None, slides=None, section=None, at=None, cues=None)` | `ScreenshotsResult` with `files` | `ConfigError` |
 | `soundscape(project, *, only=None, force=False, dry_run=False)` | `SoundscapeResult` with `items`, each a `SoundscapeItem` with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds` | `ConfigError`, `ProviderError` |
@@ -170,7 +166,7 @@ run judged, and `to_dict(root)`, the same thing as JSON-ready data with every pa
 | `words(project, only=None)` | `WordsResult` with `sections`, each a `SectionWords` with `key`, `section`, `title`, `lead_seconds`, `duration`, `estimated`, `words` and `texts` | `ConfigError`, `MissingInputError` |
 | `clip(project, number, *, start, end, out, words_out=None, gain_db=0.0, hold_seconds=0.0)` | `ClipResult` with `section`, `video`, `words_file`, `start`, `end`, `first_frame`, `last_frame`, `hold_seconds`, `duration`, `gain_db`, `estimated`, `words`, and `cut_words` | `ConfigError`, `MissingInputError`, `ToolError` |
 
-- `record` with `seconds` records every section for that long. With `use_cues=False`, the pages play in preview.
+- `record` with `seconds` records every section for that long. With `use_cues=False`, the pages play in preview. One call records, measures and checks each section, and writes its whole log before it opens the next page.
 - `screenshots` with `section` takes frames from a playing section at each time in `at`, 0.5 s by default.
 - `screenshots` with `cues` needs exactly one slide in `slides`.
 - `words` gives each word in seconds after its section starts. `words` keeps the voice's spelling, and `texts`
@@ -178,7 +174,7 @@ run judged, and `to_dict(root)`, the same thing as JSON-ready data with every pa
 - `clip` resolves a relative `out` or `words_out` against the project. `words_out` defaults to `out` with
   `.words.json`. [`decktalk clip`](/reference/cli#decktalk-clip) describes the cut.
 
-`AlignResult`, `PreflightResult`, `RecordingCheck`, `VerifyResult`, and `StatusResult` each have `to_dict(root)`. It returns the data
+`AlignResult`, `PreflightResult`, `RecordResult`, `VerifyResult`, and `StatusResult` each have `to_dict(root)`. It returns the data
 that the command line prints under `--json`. Numbers stay numbers, and paths are relative to `root` with forward
 slashes. Pass `project.root`.
 

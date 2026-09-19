@@ -1,24 +1,27 @@
-"""`RecordingLog`, what the recorder did for one section and where narration t=0 sits in its webm.
+"""`RecordingLog`, everything `record` did for one section and everything it judged about the result.
 
-    build/recordings/NN.json   one log per recorded section, written once by the recorder
+    build/recordings/NN.json   one log per recorded section, written when that section is finished
 
-The log is the recorder's own account of the run: what it opened, how long it asked for, every
-page error and frame gap it saw, and what each cue and each spoken reveal did. `measure` fills in
-where narration t=0 landed, and the assembler trims that much off the head of the recording.
+The log is the recorder's whole account of one section: what it opened, which project files the page
+loaded, how long it asked for, every page error and frame gap it saw, what each cue and each spoken
+reveal did, where narration t=0 landed in the webm, and the checks against the frames. One command
+writes all of it, so the measurement always belongs to the recording beside it and a reader of a
+long run sees each section's log as soon as that section is done.
 
-The measurement is tied to the recording by `t0_hash`, the digest of the webm it was read from, so
-a recording made again after a measurement is caught rather than cut at the wrong place.
+`input_hash` is what the section was recorded from: the page URL with its cues and words, the frame
+geometry, and the content of the page and of every file the page loaded. A section whose hash is
+unchanged is recorded again for nothing, so `record` skips it.
 """
 
 from __future__ import annotations
 
-import hashlib
 import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Self
 
-from ..jsonio import read_json, relative, write_json
+from ..jsonio import read_json, write_json
+from ..verdicts import Verdict
 
 
 def gap_time(value: Any) -> float | None:
@@ -32,9 +35,51 @@ def gap_time(value: Any) -> float | None:
     return at if math.isfinite(at) else None
 
 
+@dataclass(frozen=True)
+class Luma:
+    """How bright a recording is at a tenth, a half and nine tenths of its length."""
+
+    y10: float
+    y50: float
+    y90: float
+    max50: float  # The brightest pixel at the half-way frame, which a dark slide still has.
+
+
+@dataclass(frozen=True)
+class RecordingChecks:
+    """What the frames of one recording were judged on, and every verdict against them."""
+
+    duration_seconds: float
+    wanted_seconds: float
+    luma: Luma
+    verdicts: tuple[Verdict, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return not self.verdicts
+
+    def to_json(self) -> dict[str, Any]:
+        """The checks as the log stores them, with each verdict as its code."""
+        return {
+            "duration_seconds": round(self.duration_seconds, 3),
+            "wanted_seconds": round(self.wanted_seconds, 3),
+            "luma": {k: round(v, 2) for k, v in asdict(self.luma).items()},
+            "verdicts": [v.name for v in self.verdicts],
+        }
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> Self:
+        return cls(
+            duration_seconds=float(data["duration_seconds"]),
+            wanted_seconds=float(data["wanted_seconds"]),
+            luma=Luma(**{k: float(v) for k, v in data["luma"].items()}),
+            verdicts=tuple(Verdict[name] for name in data.get("verdicts", ())),
+        )
+
+
 @dataclass
 class RecordingLog:
-    """What the recorder did for one section, and where narration t=0 sits in the webm."""
+    """What `record` did for one section, where narration t=0 sits in the webm, and how it checked out."""
 
     url: str
     requested_seconds: float
@@ -42,9 +87,11 @@ class RecordingLog:
     load_seconds: float
     clock_start_seconds: float  # wall-clock seconds from the recorder's start to t=0, the recorder's own estimate
     assets: list[str] = field(default_factory=list)  # every project file the page loaded, project-relative
+    input_hash: str = ""  # the page, its assets, its words and its cues, which is what a skip is keyed on
     t0_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
-    t0_method: str | None = None
-    t0_hash: str | None = None  # the sha256 prefix of the webm that measure read, so a stale measure shows
+    t0_method: str | None = None  # one sentence naming how t=0 was found, for a reader of the log
+    t0_guessed: bool = False  # no cover was found, so t=0 is an estimate and every reveal in the section moves
+    checks: RecordingChecks | None = None  # the frame checks, written with the rest of the log
     warnings: list[str] = field(default_factory=list)
     page_errors: list[str] = field(default_factory=list)  # uncaught exceptions, or no runtime catalog at all
     # (seconds, ms) where the page stalled. The time is None for a gap that ended before narration t=0.
@@ -74,42 +121,18 @@ class RecordingLog:
         d = read_json(path)
         recording_log = cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
         recording_log.frame_gaps = [(at, int(ms)) for at, ms in recording_log.frame_gaps]
+        if isinstance(recording_log.checks, dict):
+            recording_log.checks = RecordingChecks.from_json(recording_log.checks)
         return recording_log
 
     def save(self, path: Path) -> None:
         """Write standard JSON, with null for a gap time that is not a finite number."""
         d = asdict(self)
         d["frame_gaps"] = [[gap_time(at), ms] for at, ms in self.frame_gaps]
+        d["checks"] = None if self.checks is None else self.checks.to_json()
         write_json(path, d)
 
     @property
     def trim_seconds(self) -> float:
+        """Where the assembler cuts the head off this recording, which is narration t=0 in the webm."""
         return self.t0_seconds if self.t0_seconds is not None else self.clock_start_seconds
-
-
-def recording_hash(path: Path) -> str:
-    """The first 16 hex digits of the file's sha256, which ties a measurement to one recording."""
-    digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()[:16]
-
-
-def stale_measure(webm: Path, recording_log: RecordingLog | None, root: Path | None = None) -> str | None:
-    """Why the recording log's narration t=0 does not belong to this recording, or None when it does.
-
-    `record` writes a recording log with no measurement, and `measure` fills it in with the hash of
-    the webm it read.
-    """
-    name = relative(webm, root) if root is not None else webm.name
-    if recording_log is None:
-        return f"{name} has no recording log, so `measure` never found its narration t=0"
-    if recording_log.t0_seconds is None:
-        return (
-            f"{name} was never measured, so the cut would trim the recorder's wall-clock estimate "
-            f"of {recording_log.clock_start_seconds:g}s"
-        )
-    if recording_log.t0_hash != recording_hash(webm):
-        return f"{name} changed after `measure` read it"
-    return None

@@ -240,13 +240,17 @@ def test_the_missing_optional_clip_plays_its_slate(built: Built) -> None:
     assert ymax > 60, "the slate frame is black"
 
 
-def test_check_strict_reports_no_findings(built: Built) -> None:
-    doc = built.json("check", "--json", "--strict", "--only", "1", "--only", "2", "--only", "4")
-    assert doc["ok"], doc["findings"]
-    rows = {r["key"]: r for r in doc["check"]["recordings"]}
-    assert set(rows) == set(SPOKEN)
-    assert {k: r["verdicts"] for k, r in rows.items()} == {k: [] for k in SPOKEN}
+def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: Built) -> None:
+    """`record` writes one log per section with its own measurement and its own verdicts."""
+    rows = {}
+    for key in SPOKEN:
+        rows[key] = json.loads((built.root / "build" / "recordings" / f"{key}.json").read_text(encoding="utf-8"))
+    assert {k: r["checks"]["verdicts"] for k, r in rows.items()} == {k: [] for k in SPOKEN}
     assert all(r["page_errors"] == [] for r in rows.values())
+    assert all(r["t0_seconds"] is not None and r["t0_method"].startswith("cover") for r in rows.values())
+    assert all(r["url"].startswith("http://project.localhost/") for r in rows.values())
+    # Every project file the page loaded is named, which is what the next run keys its skip on.
+    assert "deck/index.html" in rows["01"]["assets"] and "deck/decktalk-runtime.js" in rows["01"]["assets"]
 
 
 def test_verify_strict_finds_nothing_but_timing(built: Built) -> None:

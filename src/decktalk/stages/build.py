@@ -1,10 +1,10 @@
-"""The whole pipeline in order: narrate, align, record, measure, check, assemble, verify."""
+"""The whole pipeline in order: narrate, align, record, assemble, verify."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +13,6 @@ from ..model import Project
 from ..verdicts import Findings
 from .align import AlignResult, UnknownCueError, align
 from .assemble import AssembleResult, assemble
-from .measure import LeadMeasurement, RecordingCheck, check, measure
 from .narrate import NarrateResult, narrate
 from .record import RecordResult, record
 from .verify import VerifyResult, verify
@@ -29,9 +28,7 @@ class BuildResult:
 
     narration: NarrateResult | None = None
     align: AlignResult | None = None
-    recordings: list[RecordResult] = field(default_factory=list)
-    leads: list[LeadMeasurement] = field(default_factory=list)
-    checks: list[RecordingCheck] = field(default_factory=list)
+    recordings: RecordResult | None = None
     assembly: AssembleResult | None = None
     verification: VerifyResult | None = None
 
@@ -42,17 +39,17 @@ class BuildResult:
     @property
     def findings(self) -> Findings:
         """Every stage's findings, added. A stage that did not run adds nothing."""
-        stages = (self.narration, self.align, self.assembly, self.verification)
+        stages = (self.narration, self.align, self.recordings, self.assembly, self.verification)
         total = Findings()
         for stage in stages:
             if stage is not None:
                 total += stage.findings
-        return total + Findings.of(v for row in self.checks for v in row.verdicts)
+        return total
 
     def to_dict(self, root: Path) -> dict[str, Any]:
         """One entry per stage that ran, each the stage's own JSON-ready data."""
-        named = (("narrate", self.narration), ("align", self.align), ("assemble", self.assembly),
-                 ("verify", self.verification))  # fmt: skip
+        named = (("narrate", self.narration), ("align", self.align), ("record", self.recordings),
+                 ("assemble", self.assembly), ("verify", self.verification))  # fmt: skip
         return {name: None if stage is None else stage.to_dict(root) for name, stage in named}
 
 
@@ -102,20 +99,14 @@ def build(
     log.info("===== record =====")
     out.recordings = record(project, only=only)
     emit("record", out.recordings)
-    log.info("===== measure =====")
-    out.leads = measure(project, only=only)
-    emit("measure", out.leads)
-    log.info("===== check =====")
-    out.checks = check(project, only=only)
-    emit("check", out.checks)
-    broken = [r for r in out.checks if r.page_errors]
+    broken = out.recordings.page_errors
     if broken:
         # A page that threw recorded whatever was left on the stage, usually nothing, so the
         # build stops here rather than delivering a blank section as if it were fine.
         raise ConfigError(
             f"{len(broken)} section(s) hit a page error while recording. "
             "Fix the page and run `decktalk build` again:\n  "
-            + "\n  ".join(f"section {r.key}: {e}" for r in broken for e in r.page_errors)
+            + "\n  ".join(f"section {r.key}: {e}" for r in broken for e in r.log.page_errors)
         )
     log.info("===== assemble =====")
     out.assembly = assemble(project, soundscape=soundscape, loudness=loudness, strict=strict)

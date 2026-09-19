@@ -56,7 +56,6 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.build", "stages.narrate"): "by design",
     ("stages.build", "stages.align"): "by design",
     ("stages.build", "stages.record"): "by design",
-    ("stages.build", "stages.measure"): "by design",
     ("stages.build", "stages.assemble"): "by design",
     ("stages.build", "stages.verify"): "by design",
     # preflight rehearses narrate and align and freezes what verify would measure.
@@ -215,10 +214,11 @@ def test_no_module_imports_a_private_name_from_another_module():
     assert not bad, "\n".join(bad)
 
 
-# Every command, and the result its function returns.
+# Every command, and the result its function returns. Each of the twelve satisfies `StageResult`.
 STAGE_RESULTS = {
     "narrate": "NarrateResult",
     "align": "AlignResult",
+    "record": "RecordResult",
     "assemble": "AssembleResult",
     "verify": "VerifyResult",
     "preflight": "PreflightResult",
@@ -229,9 +229,6 @@ STAGE_RESULTS = {
     "build": "BuildResult",
     "status": "StatusResult",
 }
-# These three return one row per section rather than one result, so they satisfy no protocol and
-# are checked against that shape instead.
-ROW_COMMANDS = frozenset({"record", "measure", "check"})
 
 
 @pytest.mark.parametrize("command", sorted(STAGE_RESULTS))
@@ -247,9 +244,7 @@ def test_every_stage_returns_a_stage_result(command):
     assert get_origin(hints["return"]) is dict, f"{command}: to_dict must give a dict"
 
 
-@pytest.mark.parametrize("command", sorted(ROW_COMMANDS))
-def test_a_row_command_returns_a_list(command):
-    """When one of these returns a result, it moves to STAGE_RESULTS above and this test says so."""
-    returned = get_type_hints(getattr(decktalk, command))["return"]
-    assert get_origin(returned) is list, f"{command} returns a result now: give it a row in STAGE_RESULTS"
-    assert command not in STAGE_RESULTS
+def test_every_command_of_the_public_api_is_in_the_result_table():
+    """A command that stops returning a result, or a new one that returns none, fails here."""
+    commands = {name for name in decktalk.__all__ if callable(getattr(decktalk, name)) and name[0].islower()}
+    assert commands - {"load_settings", "register_speech_provider"} == set(STAGE_RESULTS)

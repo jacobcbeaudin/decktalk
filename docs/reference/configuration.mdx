@@ -106,8 +106,8 @@ These keys tune the headless Chromium recording, how narration t=0 is found in i
 | `color_scheme` | `string` | `"light"` | must be one of light, dark, no-preference | Color scheme that Chromium reports to the page. |
 | `retries` | `integer` | `2` | must not be negative | How many more times `record` records a section whose frames stalled. |
 | `screenshot_settle_ms` | `integer` | `400` | must not be negative | Milliseconds that `decktalk screenshots` waits before each slide screenshot. |
-| `cover_scan_seconds` | `number` | `4.0` | must not be negative | Seconds at the start of each recording that `measure` scans for the magenta cover. |
-| `fallback_first_paint_seconds` | `number` | `1.1` | must not be negative | Guessed first paint if `measure` finds no cover and no painted frame. `measure` adds `settle_seconds` to it. |
+| `cover_scan_seconds` | `number` | `4.0` | must not be negative | Seconds at the start of each recording that `record` scans for the magenta cover. |
+| `fallback_first_paint_seconds` | `number` | `1.1` | must not be negative | Guessed first paint if `record` finds no cover and no painted frame. `record` adds `settle_seconds` to it. |
 | `cover_luma_min` | `number` | `70` | must be a luma between 0 and 255 | A cover frame has an average luma above this. |
 | `cover_luma_max` | `number` | `140` | must be a luma between 0 and 255 | A cover frame has an average luma below this. |
 | `cover_chroma_min` | `number` | `165` | must be a luma between 0 and 255 | A cover frame has an average U and an average V above this. |

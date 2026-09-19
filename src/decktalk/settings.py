@@ -151,12 +151,12 @@ class RecordConfig:
     )
     cover_scan_seconds: float = tune(
         4.0,
-        "Seconds at the start of each recording that `measure` scans for the magenta cover.",
+        "Seconds at the start of each recording that `record` scans for the magenta cover.",
         NOT_NEGATIVE,
     )
     fallback_first_paint_seconds: float = tune(
         1.1,
-        "Guessed first paint if `measure` finds no cover and no painted frame. `measure` adds `settle_seconds` to it.",
+        "Guessed first paint if `record` finds no cover and no painted frame. `record` adds `settle_seconds` to it.",
         NOT_NEGATIVE,
     )
     cover_luma_min: float = tune(70, "A cover frame has an average luma above this.", A_LUMA)

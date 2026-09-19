@@ -90,7 +90,7 @@ first frame after the cover is narration t=0.
 From the first paint until the recording stops, the recorder keeps a 2 px square turning in the
 bottom-right corner at 3 % opacity. The square keeps the browser drawing frames at the same pace
 before and after t=0. A still page then records each reveal on its scheduled frame, not a frame or
-two early. The square is too faint for `verify` or `check` to measure, and `decktalk screenshots` never
+two early. The square is too faint for `verify` or `record` to measure, and `decktalk screenshots` never
 shows it. A page needs no motion of its own for timing.
 
 A page that starts its own clock at `load` fires every cue early, by the whole time from `load` to
@@ -104,7 +104,7 @@ After the recording, the recorder reads these values from the page and writes th
 - `window.__decktalk.spokenLog`.
 
 The `check` stage reports `PAGE ERROR` for a page error. It reports `KATEX?` for a warning that
-mentions KaTeX or `data-tex`. [decktalk check](/reference/cli#decktalk-check) lists every verdict.
+mentions KaTeX or `data-tex`. [decktalk record](/reference/cli#decktalk-record) lists every verdict.
 
 ## Cue ownership
 

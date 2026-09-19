@@ -484,13 +484,13 @@ def stage_svg(i: int, pal: dict[str, str], x: int, y: int, ticks: list[float]) -
 
 
 # The pipeline stages each panel runs, in their fixed order. Writing the script runs none.
-STAGE_COMMANDS = ((), ("narrate", "align"), ("record", "measure", "check"), ("assemble", "verify"))
+STAGE_COMMANDS = ((), ("narrate", "align"), ("record",), ("assemble", "verify"))
 CMD_ROW = 22  # the height the command row adds under each panel label
 
 
 def how_it_works(pal: dict[str, str], stacked: bool, background: bool, ticks: list[float]) -> str:
     css = hiw_css(pal, ticks) + f"\n.cmd{{font:500 13px {MONO};fill:{pal['ink']}}}"
-    title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The seven stages are narrate, align, record, measure, check, assemble, and verify."
+    title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The five stages are narrate, align, record, assemble, and verify."
     if not stacked:
         w, h = 1200, 240 + CMD_ROW
         stages = "\n".join(stage_svg(i, pal, 60 + 280 * i, -40, ticks) for i in range(4))

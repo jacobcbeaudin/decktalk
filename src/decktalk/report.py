@@ -12,9 +12,9 @@ from .model.script import Segment
 from .settings import NarrationConfig
 from .stages.align import AlignResult
 from .stages.clip import SectionWords
-from .stages.measure import LeadMeasurement, RecordingCheck
 from .stages.narrate import NarrateResult, TakePlan, plan_totals
 from .stages.preflight import PreflightResult
+from .stages.record import RecordResult
 from .stages.soundscape import SoundscapeItem
 from .stages.verify import VerifyResult
 from .status import StatusResult
@@ -161,19 +161,25 @@ def preflight_table(result: PreflightResult) -> str:
     return "\n".join(lines)
 
 
-def leads_table(rows: list[LeadMeasurement]) -> str:
-    lines = [f"{'sec':>3} {'trim':>7} {'wall':>7}  method"]
-    lines += [f"{r.key:>3} {r.t0_seconds:>7.3f} {r.wallclock_seconds:>7.3f}  {r.method}" for r in rows]
-    return "\n".join(lines)
-
-
-def checks_table(rows: list[RecordingCheck]) -> str:
-    lines = [f"{'sec':<4} {'webm_s':<8} {'want_s':<8} {'Y10':<6} {'Y50':<6} {'Y90':<6} {'MAX50':<6}  verdict"]
-    for r in rows:
+def record_table(result: RecordResult) -> str:
+    """One row per section: how long it ran, where narration t=0 landed, how bright it is, and its verdicts."""
+    head = f"{'sec':<4} {'webm_s':<8} {'want_s':<8} {'t0_s':<7} {'Y10':<6} {'Y50':<6} {'Y90':<6} {'MAX50':<6}  result"
+    lines = [head]
+    for row in result.sections:
+        checks = row.log.checks
+        luma = checks.luma if checks else None
         lines.append(
-            f"{r.key:<4} {r.duration:<8.1f} {r.wanted:<8.1f} {r.y10:<6.0f} {r.y50:<6.0f} {r.y90:<6.0f} "
-            f"{r.max50:<6.0f}  {r.label}"
+            f"{row.key:<4} {checks.duration_seconds if checks else 0:<8.1f} "
+            f"{checks.wanted_seconds if checks else 0:<8.1f} {row.log.trim_seconds:<7.3f} "
+            f"{luma.y10 if luma else 0:<6.0f} {luma.y50 if luma else 0:<6.0f} {luma.y90 if luma else 0:<6.0f} "
+            f"{luma.max50 if luma else 0:<6.0f}  {row.label}"
         )
+    for row in result.sections:
+        for message in row.log.page_errors:
+            lines.append(f"{row.key:<4} page error: {message}")
+    guessed = [row.key for row in result.sections if row.log.t0_guessed]
+    if guessed:
+        lines.append(f"narration t=0 is a guess in section(s) {', '.join(guessed)}")
     return "\n".join(lines)
 
 

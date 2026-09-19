@@ -3,17 +3,17 @@ title: How it works
 description: Understand how DeckTalk turns a script and HTML pages into one mp4, and why each reveal starts on its word.
 ---
 
-`decktalk build` turns your script and pages into one mp4 in seven stages. To build your first video, follow the
+`decktalk build` turns your script and pages into one mp4 in five stages. To build your first video, follow the
 [Quickstart](/quickstart).
 
 <Frame caption="Each panel names the pipeline stages it runs, in order.">
   <picture className="block dark:hidden">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-light-stacked.svg" />
-    <img src="/images/how-it-works-light.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
+    <img src="/images/how-it-works-light.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
   </picture>
   <picture className="hidden dark:block">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-dark-stacked.svg" />
-    <img src="/images/how-it-works-dark.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
+    <img src="/images/how-it-works-dark.svg" alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." />
   </picture>
 </Frame>
 
@@ -25,7 +25,7 @@ description: Understand how DeckTalk turns a script and HTML pages into one mp4,
 
 ## Stages
 
-The seven stages always run in this order. Each stage reads files that the stages before it wrote.
+The five stages always run in this order. Each stage reads files that the stages before it wrote.
 
 ```mermaid
 flowchart TB
@@ -34,9 +34,7 @@ flowchart TB
   C["cues.json"] --> align
   align -- "cue-times.json" --> record
   P["deck pages"] --> record
-  record -- "webm and recording log" --> measure
-  measure -- "t0_seconds" --> check
-  check --> assemble
+  record -- "webm and recording log" --> assemble
   assemble -- "name.mp4, captions, chapters" --> verify
 ```
 
@@ -44,9 +42,7 @@ flowchart TB
 |---|---|---|
 | `narrate` | `narrate` voices each section and gets a time for every word. | `build/narration/<hash>.mp3`, `<hash>.words.json`, `takes.json`, `narration.mp3`, `timeline.json` |
 | `align` | `align` turns each cue phrase into a cue time. | `build/cue-times.json` |
-| `record` | `record` records each page section in headless Chromium. | `build/recordings/NN.webm`, `recordings/NN.json` |
-| `measure` | `measure` finds narration t=0 in each recording. | `t0_seconds` in each recording log |
-| `check` | `check` flags a recording that is black, short, stalled, or uncovered. | nothing |
+| `record` | `record` records each page section in headless Chromium, finds narration t=0 in the webm, and flags a recording that is black, short, stalled, or uncovered. | `build/recordings/NN.webm`, `recordings/NN.json` |
 | `assemble` | `assemble` cuts, joins, and mixes the sections into one mp4. | `build/sections/NN.mp4`, `<name>.mp4`, captions, chapters |
 | `verify` | `verify` checks section starts, cuts, and cut continuity in the final mp4. | nothing |
 
@@ -65,7 +61,7 @@ Each reveal starts on its word because DeckTalk finds narration t=0 inside every
 
 | Risk | What DeckTalk does |
 |---|---|
-| A browser starts to record at an unknown moment. Chromium on Windows starts later than on Linux. | The recorder covers the page in magenta. `measure` takes the first frame after the cover as narration t=0. |
+| A browser starts to record at an unknown moment. Chromium on Windows starts later than on Linux. | The recorder covers the page in magenta and takes the first frame after the cover as narration t=0. |
 | Chromium sends a frame only when the page paints. | The cover holds an element that always moves, so frames keep coming while the page is covered. |
 | t=0 is known only to the nearest frame. | The video runs at 25 fps, the rate that Chromium records at. t=0 is exact to one frame, 40 ms. |
 | Section lengths add up to fractions of a frame. | `assemble` rounds each section span to whole frames counted from the start of the narration. |
@@ -73,7 +69,7 @@ Each reveal starts on its word because DeckTalk finds narration t=0 inside every
 | Joined audio adds a short delay at each join. | Each `sections/NN.mp4` has no audio. `assemble` mixes the sound once, from zero. |
 
 The recorder removes the cover only when the page is ready. [The handshake](/concepts/page-contract#the-handshake)
-shows each wait. `measure` looks for the cover only in the first `[record] cover_scan_seconds` of each recording, 4 s by
+shows each wait. `record` looks for the cover only in the first `[record] cover_scan_seconds` of each recording, 4 s by
 default. The alignment never depends on wall-clock time.
 
 ## The build without voice
@@ -102,7 +98,7 @@ A build without voice stops when the project has voiced takes, because it would 
 
 ## Clips and the narration
 
-A clip section plays a video with its own audio. `narrate`, `record`, and `measure` skip it, and the narration
+A clip section plays a video with its own audio. `narrate` and `record` skip it, and the narration
 pauses for a clip between two page sections.
 
 <Frame caption="The narration pauses for each clip and resumes with the next page section.">
@@ -136,7 +132,7 @@ The verify stage inside `decktalk build` checks section starts and cuts, and cut
 
 | Term | Meaning |
 |---|---|
-| [Stage](/reference/glossary) | One of `narrate`, `align`, `record`, `measure`, `check`, `assemble`, and `verify`, in that order. |
+| [Stage](/reference/glossary) | One of `narrate`, `align`, `record`, `assemble`, and `verify`, in that order. |
 | [Build without voice](/reference/glossary) | A build with `--no-voice`. It uses estimated word times and writes a click track. |
 | [Voiced build](/reference/glossary) | A build without `--no-voice`. The speech provider voices the script. |
 | [Click track](/reference/glossary) | The audio of a build without voice, with a soft click at every estimated word start. |

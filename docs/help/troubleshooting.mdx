@@ -59,17 +59,16 @@ explains.
 | `no words` | `align` | [Entry](#no-words-in-align) |
 | `is not in decktalk.toml` | `align`, `build` | [Entry](#is-not-in-decktalk-toml-in-align) |
 | `NO CHANGE`, `THIN CHANGE?` | `preflight` | [Entry](#no-change-or-thin-change-in-preflight) |
-| `PAGE ERROR`, `page error` | `check`, `record`, `build` | [Entry](#page-error-in-check) |
-| `STALLED`, `frame stall(s)` | `check`, `record` | [Entry](#stalled-in-check) |
-| `TRUNCATED` | `check` | [Entry](#truncated-in-check) |
-| `NO COVER` | `measure`, `check` | [Entry](#no-cover-in-measure-or-check) |
-| `BLACK?` | `check` | [Entry](#black-in-check) |
-| `KATEX?`, `KaTeX did not load` | `check`, `record` | [Entry](#katex-in-check) |
+| `PAGE ERROR`, `page error` | `record`, `build` | [Entry](#page-error-in-record) |
+| `STALLED`, `frame stall(s)` | `record` | [Entry](#stalled-in-record) |
+| `TRUNCATED` | `record` | [Entry](#truncated-in-record) |
+| `NO COVER` | `record` | [Entry](#no-cover-in-record) |
+| `BLACK?` | `record` | [Entry](#black-in-record) |
+| `KATEX?`, `KaTeX did not load` | `record` | [Entry](#katex-in-record) |
 | `no narration span yet` | `record` | [Entry](#no-narration-span-yet-in-record) |
 | `missing; slate for` | `assemble` | [Entry](#missing-slate-for-in-assemble) |
 | `clip missing`, `recording missing` | `assemble` with `--strict` | [Entry](#clip-missing-or-recording-missing-in-assemble) |
 | `using black` | `assemble` | [Entry](#using-black-in-assemble) |
-| `STALE MEASUREMENT` | `assemble` | [Entry](#stale-measurement-in-assemble) |
 | `has no span in` | `assemble` | [Entry](#has-no-span-in-in-assemble) |
 | `music missing`, `ambience missing` | `assemble` | [Entry](#music-missing-in-assemble) |
 | `unresolved; skipped` | `assemble` | [Entry](#unresolved-skipped-in-assemble) |
@@ -504,9 +503,9 @@ is likely to read the same on the final mp4.
 
 **More.** [`decktalk preflight`](/reference/cli#decktalk-preflight), [`THIN CHANGE?` in verify](#thin-change-in-verify)
 
-## record, measure, and check
+## record
 
-### `PAGE ERROR` in check
+### `PAGE ERROR` in record
 
 `record` logs `[page] NN-scene  page error: <text>`. `build` stops after the check table with
 `<N> section(s) hit a page error while recording.` A page with no catalog logs
@@ -526,7 +525,7 @@ common first:
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
-### `STALLED` in check
+### `STALLED` in record
 
 `check` prints `STALLED <ms>ms`. `record` logs `frame stall(s) after narration t=0` and
 `recording section NN again`.
@@ -543,25 +542,25 @@ before t=0, is not a stall.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
-### `TRUNCATED` in check
+### `TRUNCATED` in record
 
 **Cause.** The recording is shorter than requested by more than `[record] truncated_slack_seconds`
 (0.5). Chromium was stopped, or the machine stalled.
 
 **Fix.**
 1. Record the section again.
-2. Run `decktalk check`.
+2. Run `decktalk record --only N` again.
 
-`build` exits 0 on `TRUNCATED`, so a script must run `decktalk check` after the build.
+`build` exits 0 on `TRUNCATED`, so a script must read the `record` table or its JSON.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
-### `NO COVER` in measure or check
+### `NO COVER` in record
 
-`measure` logs `no magenta cover found; alignment is a guess`, and its method column starts with
+`record` logs `no magenta cover found; narration t=0 is a guess`, and the log's `t0_method` starts with
 `NO COVER`.
 
-**Cause.** `measure` found no magenta cover in the first `[record] cover_scan_seconds` (4.0) of the recording,
+**Cause.** `record` found no magenta cover in the first `[record] cover_scan_seconds` (4.0) of the recording,
 so t=0 is a guess. The usual reasons:
 - The page removes the cover itself.
 - A page written by hand starts its clock at load instead of at `DeckTalk.startClock()`.
@@ -571,15 +570,15 @@ so t=0 is a guess. The usual reasons:
 2. If the machine is very slow, raise `[record] min_cover_seconds`.
 3. Record the section again.
 
-Without a cover, `measure` uses the first painted frame plus `settle_seconds`. If no frame is painted,
+Without a cover, `record` uses the first painted frame plus `settle_seconds`. If no frame is painted,
 it uses 1.1 s plus `settle_seconds`.
 
-`measure` scans only the first `[record] cover_scan_seconds`. If narration t=0 comes later, `measure` still
+`record` scans only the first `[record] cover_scan_seconds`. If narration t=0 comes later, `record` still
 reports `cover`, and every reveal is late. If you raise `min_cover_seconds` near 4, raise `cover_scan_seconds` too.
 
 **More.** [The handshake](/concepts/page-contract#the-handshake)
 
-### `BLACK?` in check
+### `BLACK?` in record
 
 **Cause.** The brightest luma at the middle of the recording (`MAX50`) is below `[record] black_ymax`
 (40). Usually the page threw before it drew anything, or the slide is dark on purpose.
@@ -589,9 +588,9 @@ reports `cover`, and every reveal is late. If you raise `min_cover_seconds` near
 2. If the page is blank, read the browser console and fix the error.
 3. If the slide is dark on purpose, do nothing. `BLACK?` exits 1 only with `--strict`.
 
-**More.** [`decktalk check`](/reference/cli#decktalk-check)
+**More.** [`decktalk record`](/reference/cli#decktalk-record)
 
-### `KATEX?` in check
+### `KATEX?` in record
 
 **Cause.** A page warning mentions KaTeX or `data-tex`. One of two warnings, most common first:
 - `data-tex could not be parsed: "<tex>"`. A backslash inside a `render` template is single.
@@ -630,10 +629,9 @@ that section, or `narrate` has not run since you added it.
 the same amount.
 
 **Fix.**
-1. If `assemble` printed `STALE MEASUREMENT`, follow [`STALE MEASUREMENT` in assemble](#stale-measurement-in-assemble).
-2. Open `build/recordings/NN.json` and read `t0_method`.
-3. If it starts with `NO COVER`, follow [`NO COVER` in measure or check](#no-cover-in-measure-or-check).
-4. Record the section again.
+1. Open `build/recordings/NN.json` and read `t0_method`.
+2. If it starts with `NO COVER`, follow [`NO COVER` in record](#no-cover-in-record).
+3. Record the section again.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
 
@@ -686,22 +684,6 @@ unless the clip section sets `optional = true`.
 1. Record the section again.
 
 **More.** [Record one section again](/guides/rebuild-one-section#record-one-section-again)
-
-### `STALE MEASUREMENT` in assemble
-
-```text
-section 04: STALE MEASUREMENT: build/recordings/04.webm was never measured, so the cut would trim the recorder's wall-clock estimate of 1.506s. Every reveal in the section may play early or late. Run `decktalk measure --only 4`, or pass --strict to stop on this.
-```
-
-**Cause.** `measure` has not read this recording since it was recorded. The recording log has no `t0_seconds`,
-its `t0_hash` belongs to another take, or the webm is newer than the recording log. The cut trims at the wrong
-point, so every reveal in the section is early or late by the same amount. With `--strict`, `assemble` stops.
-
-**Fix.**
-1. Run `decktalk measure --only N` for the section in the message.
-2. Run `decktalk assemble`.
-
-**More.** [`build/recordings/NN.json`](/reference/artifacts#build-recordings-nn-json)
 
 ### `has no span in` in assemble
 

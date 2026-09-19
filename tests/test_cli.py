@@ -33,21 +33,21 @@ def fake_project(monkeypatch, tmp_path):
     return project
 
 
-def recording_row(*verdicts: Verdict) -> SimpleNamespace:
-    return SimpleNamespace(
+def record_result(*verdicts: Verdict) -> SimpleNamespace:
+    """One recorded section with these verdicts, in the shape the CLI reads off a RecordResult."""
+    row = SimpleNamespace(
         key="01",
-        duration=9.0,
-        wanted=10.5,
-        y10=100.0,
-        y50=100.0,
-        y90=100.0,
-        max50=200.0,
         verdicts=verdicts,
-        stall_ms=None,
         label=" ".join(verdicts) or "ok",
-        page_errors=[],
         ok=not verdicts,
+        log=SimpleNamespace(page_errors=[], checks=None, trim_seconds=0.0, t0_method="cover", t0_guessed=False),
         to_dict=lambda root: {"key": "01", "verdicts": [v.name for v in verdicts]},
+    )
+    return SimpleNamespace(
+        sections=[row],
+        page_errors=[],
+        findings=Findings.of(verdicts),
+        to_dict=lambda root: {"recordings": [row.to_dict(root)]},
     )
 
 
@@ -196,31 +196,36 @@ def test_status_json_on_scaffold(tmp_path, monkeypatch, capsys):
     assert "final     not built" in out and "captions  build/out/lesson.srt  not built" in out
 
 
-def test_check_exits_1_on_truncated_without_strict(fake_project, monkeypatch, capsys):
-    monkeypatch.setattr(stage("measure"), "check", lambda project, only=None: [recording_row(Verdict.TRUNCATED)])
-    assert main(["check"]) == 1
+def fake_record(result: SimpleNamespace):
+    def run(project, *, only=None, seconds=None, use_cues=True):
+        return result
+
+    return run
+
+
+def test_record_exits_1_on_truncated_without_strict(fake_project, monkeypatch, capsys):
+    monkeypatch.setattr(stage("record"), "record", fake_record(record_result(Verdict.TRUNCATED)))
+    assert main(["record"]) == 1
     assert "TRUNCATED" in capsys.readouterr().out
-    assert main(["check", "--exit-zero"]) == 0
+    assert main(["record", "--exit-zero"]) == 0
     capsys.readouterr()
-    assert main(["check", "--json"]) == 1
+    assert main(["record", "--json"]) == 1
     doc = json.loads(capsys.readouterr().out)
     assert doc["ok"] is False and doc["findings"] == {"certain": 1, "uncertain": 0}
-    assert doc["check"]["recordings"] == [{"key": "01", "verdicts": ["TRUNCATED"]}]
+    assert doc["record"]["recordings"] == [{"key": "01", "verdicts": ["TRUNCATED"]}]
 
 
-def test_check_exits_0_on_uncertain_unless_strict(fake_project, monkeypatch, capsys):
+def test_record_exits_0_on_uncertain_unless_strict(fake_project, monkeypatch, capsys):
     monkeypatch.setattr(
-        stage("measure"),
-        "check",
-        lambda project, only=None: [recording_row(Verdict.BLACK_UNSURE, Verdict.KATEX_UNSURE)],
+        stage("record"), "record", fake_record(record_result(Verdict.BLACK_UNSURE, Verdict.KATEX_UNSURE))
     )
-    assert main(["check"]) == 0
-    assert main(["check", "--strict"]) == 1
+    assert main(["record"]) == 0
+    assert main(["record", "--strict"]) == 1
     capsys.readouterr()
-    assert main(["check", "--json"]) == 0
+    assert main(["record", "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
     assert doc["ok"] is True and doc["findings"] == {"certain": 0, "uncertain": 2}
-    assert main(["check", "--json", "--strict"]) == 1
+    assert main(["record", "--json", "--strict"]) == 1
     assert json.loads(capsys.readouterr().out)["ok"] is False
 
 

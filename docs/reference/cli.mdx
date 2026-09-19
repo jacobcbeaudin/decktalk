@@ -3,7 +3,7 @@ title: CLI
 description: Look up every decktalk command, option, output table, and exit code.
 ---
 
-The `decktalk` command runs each build stage on its own, or all seven stages with `decktalk build`.
+The `decktalk` command runs each build stage on its own, or all five stages with `decktalk build`.
 This page lists every command with its options, the files it reads and writes, its output, and its
 exit codes.
 
@@ -275,7 +275,7 @@ sec   chg %  result
 
 ## `decktalk build`
 
-Runs all seven stages in order and prints each stage's table.
+Runs all five stages in order and prints each stage's table.
 
 ```text
 decktalk build [-h] [--project PROJECT] [-v] [-q] [--no-voice] [--force]
@@ -288,10 +288,10 @@ decktalk build [-h] [--project PROJECT] [-v] [-q] [--no-voice] [--force]
 |---|---|---|
 | `--no-voice` | off | Uses estimated word times and writes a click track. Needs no key. Stops when `build/narration/takes.json` holds voiced takes, unless `--force` is on. |
 | `--force` | off | Voices every section again. Spends credits on every section. With `--no-voice`, replaces the voiced takes with click tracks. |
-| `--only N` | every section | Records, measures, and checks only these sections. Repeatable. |
+| `--only N` | every section | Records only these sections. Repeatable. |
 | `--allow-unresolved-cues` | off | Continues when a cue phrase is not found. |
 | `--allow-unknown-cues` | off | Continues when a cue id is not in its page. |
-| `--strict` | off | Fails on a missing recording, a missing clip without `optional = true`, or a recording that `measure` has not read since it was recorded. In a voiced build, also fails on a loudness miss. |
+| `--strict` | off | Fails on a missing recording, or a missing clip without `optional = true`. In a voiced build, also fails on a loudness miss. |
 | `--no-soundscape` | off | Mixes narration and clip audio only. |
 | `--no-loudness` | off | Skips the loudness pass. |
 | `--preset PRESET` | `[video] preset` | x264 preset for this run. |
@@ -309,14 +309,13 @@ explains.
 | `narrate` | With `--no-voice`, `build/narration/takes.json` holds voiced takes. The build stops before it writes anything. | `--force`, or build in a copy of the project |
 | `align` | A cue phrase is not found. The build stops after the align table. | `--allow-unresolved-cues` |
 | `align` | A cue id is not in its page. The build stops after the align table. | `--allow-unknown-cues` |
-| `check` | A page threw an error or has no catalog (`PAGE ERROR`). The build stops after the check table. | none |
+| `record` | A page threw an error or has no catalog (`PAGE ERROR`). The build stops after the record table. | none |
 | `assemble` | With `--strict`, a recording is missing, or a clip is missing from a section without `optional = true`. | Set `optional = true`, or leave out `--strict`. |
-| `assemble` | With `--strict`, a recording has no measurement that matches it (`STALE MEASUREMENT`). | Run `decktalk measure --only N`, or leave out `--strict`. |
 | `verify` | A section starts black (`BLACK`), speech is still sounding at a cut (`SPEECH AT CUT`), or the picture jumps at the cut into a section with `seamless` (`POP AT CUT`). | none |
 | any | A stage raises an error. | none |
 
 `build` does not measure cues. It exits 0 on `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, and
-`KATEX?`. To gate a script on the whole video, run `check` and `verify` after the build, as
+`KATEX?`. To gate a script on the whole video, run `verify` after the build, as
 [Build in CI and offline](/guides/ci-and-offline) shows.
 
 These are the last lines of a build without voice of the scaffold.
@@ -531,11 +530,11 @@ sec  speech   need  cues
 
 ### `decktalk record`
 
-Records each page section in headless Chromium to a webm.
+Records each page section in headless Chromium, finds narration t=0 in the recording, and checks it.
 
 ```text
-decktalk record [-h] [--project PROJECT] [-v] [-q] [--only N]
-                [--seconds SECONDS] [--settle SETTLE] [--no-cues]
+decktalk record [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
+                [--exit-zero] [--only N] [--seconds SECONDS] [--settle SETTLE] [--no-cues]
 ```
 
 | Option | Default | Meaning |
@@ -544,97 +543,14 @@ decktalk record [-h] [--project PROJECT] [-v] [-q] [--only N]
 | `--seconds SECONDS` | section span plus `record_margin_seconds` | Records every section for this long. Works with no timeline. |
 | `--settle SETTLE` | `[record] settle_seconds` (0.5) | Least seconds after the page is ready before narration t=0. The recorder also waits for `[record] min_cover_seconds`. |
 | `--no-cues` | off | Plays the page in preview instead of passing `?cues=`. |
+| `--json`, `--strict`, `--exit-zero` | off | See [Output and exit flags](#output-and-exit-flags). |
 
 **Reads** `timeline.json` (not with `--seconds`), `cue-times.json` (not with `--no-cues`), and the pages.
 **Writes** `build/recordings/NN.webm` and its recording log `recordings/NN.json`.
 
-- `record` prints no table. It logs one `[rec ]` line per section and every page warning as `[page]`.
-- `record` skips a page section that has no span and logs `no narration span yet; skipped`.
-- If the page stalls after narration t=0 for longer than `[record] stall_ms` (150), `record` records the section again.
-- `record` tries again up to `[record] retries` (2) times.
-
-| Exit | When |
-|---|---|
-| 0 | Every matched section is recorded. |
-| 1 | No timeline and no `--seconds`, a page file is missing, or no page section matches. |
-
-{/* sample: record stage of decktalk build --no-voice on a fresh scaffold */}
-
-```text
-[rec ] section 01 (deck/index.html?scene=1)  18.1s ...
-       build/recordings/01.webm  (lead 1.51s)
-[rec ] section 02 (deck/index.html?scene=2)  21.1s ...
-       build/recordings/02.webm  (lead 1.50s)
-[rec ] section 03 (deck/lesson.html?scene=3)  142.8s ...
-       build/recordings/03.webm  (lead 1.51s)
-[rec ] section 04 (deck/index.html?scene=4)  15.9s ...
-       build/recordings/04.webm  (lead 1.51s)
-[rec ] section 06 (deck/index.html?scene=6)  22.5s ...
-       build/recordings/06.webm  (lead 1.51s)
-[rec ] section 08 (deck/index.html?scene=7)  14.5s ...
-       build/recordings/08.webm  (lead 1.50s)
-[rec ] section 09 (deck/index.html?scene=5)  14.7s ...
-       build/recordings/09.webm  (lead 1.50s)
-```
-
-### `decktalk measure`
-
-Finds narration t=0 in each recording and writes it to the recording log.
-
-```text
-decktalk measure [-h] [--project PROJECT] [-v] [-q] [--only N]
-```
-
-| Option | Default | Meaning |
-|---|---|---|
-| `--only N` | every recording | Measures only these sections. Repeatable. |
-
-**Reads** each webm and its recording log. **Writes** `t0_seconds` and `t0_method` into the recording log.
-
-`measure` scans the first `[record] cover_scan_seconds` (4.0) of the recording and finds the last magenta
-frame. Narration t=0 is one frame after it. The table columns are `trim` (t=0 in the webm),
-`wall` (the recorder's own clock estimate), and `method`.
-
-| Method | Meaning |
-|---|---|
-| `cover (N magenta frames)` | Found the cover. |
-| `NO COVER: first paint + settle` | No cover. The first painted frame plus `settle_seconds`. |
-| `NO COVER: fallback guess + settle` | No painted frame. `fallback_first_paint_seconds` (1.1) plus `settle_seconds`. |
-| `no frames read; fallback` | ffmpeg read no frames. The same fallback. |
-
-| Exit | When |
-|---|---|
-| 0 | Every recording is measured. |
-| 1 | No recordings exist. |
-
-{/* sample: measure stage of decktalk build --no-voice on a fresh scaffold, stdout only */}
-
-```text
-sec    trim    wall  method
- 01   1.360   1.509  cover (34 magenta frames)
- 02   1.440   1.503  cover (36 magenta frames)
- 03   1.440   1.508  cover (34 magenta frames)
- 04   1.440   1.507  cover (36 magenta frames)
- 06   1.440   1.508  cover (36 magenta frames)
- 08   1.440   1.502  cover (36 magenta frames)
- 09   1.440   1.501  cover (36 magenta frames)
-```
-
-### `decktalk check`
-
-Checks each recording's length, brightness, and recorder warnings.
-
-```text
-decktalk check [-h] [--project PROJECT] [-v] [-q] [--json] [--strict]
-               [--exit-zero] [--only N]
-```
-
-| Option | Default | Meaning |
-|---|---|---|
-| `--only N` | every recording | Checks only these sections. Repeatable. |
-| `--json`, `--strict`, `--exit-zero` | off | See [Output and exit flags](#output-and-exit-flags). |
-
-**Reads** each webm and its recording log. **Writes** nothing.
+One command records, measures and checks each section, and writes that section's whole log before it
+opens the next page. The measurement therefore always belongs to the recording beside it, and a long
+run can be read while it is still running.
 
 Each row describes one recording.
 
@@ -642,9 +558,10 @@ Each row describes one recording.
 |---|---|
 | `webm_s` | Recorded seconds. |
 | `want_s` | Requested seconds. |
+| `t0_s` | Narration t=0 in the webm, which is where `assemble` trims. |
 | `Y10`, `Y50`, `Y90` | Average luma at 10, 50, and 90 percent of the recording. |
 | `MAX50` | Brightest luma at the middle of the recording. |
-| `verdict` | One or more verdicts from the table below. |
+| `result` | One or more verdicts from the table below. |
 
 | Verdict | Finding | Meaning |
 |---|---|---|
@@ -652,29 +569,46 @@ Each row describes one recording.
 | `PAGE ERROR` | certain | The page threw an uncaught error, or has no `window.__decktalk.catalog`. `build` stops. |
 | `STALLED <ms>ms` | certain | A frame gap after narration t=0 exceeded `[record] stall_ms` (150) on the last try. |
 | `TRUNCATED` | certain | Shorter than requested by more than `[record] truncated_slack_seconds` (0.5). |
-| `NO COVER` | certain | `measure` found no cover. The trim is a guess. |
+| `NO COVER` | certain | No magenta cover was found, so narration t=0 is a guess. |
 | `BLACK?` | uncertain | `MAX50` is below `[record] black_ymax` (40). |
 | `KATEX?` | uncertain | A page warning contains "katex" or "data-tex", in any case. |
 
 Note: one row can show several verdicts, separated by spaces. The JSON lists their codes in
 `verdicts`, such as `PAGE_ERROR` and `STALLED`, and puts the stall length in `stall_ms`.
 
+Narration t=0 is found from the magenta cover the recorder paints over the page. `record` scans the
+first `[record] cover_scan_seconds` (4.0) of the recording for the last magenta frame, and narration
+t=0 is one frame after it. `t0_method` in the recording log says how it was found.
+
+| Method | Meaning |
+|---|---|
+| `cover (N magenta frames)` | Found the cover. |
+| `NO COVER: first paint + settle` | No cover. The first painted frame plus `settle_seconds`. |
+| `NO COVER: fallback guess + settle` | No painted frame. `fallback_first_paint_seconds` (1.1) plus `settle_seconds`. |
+| `NO COVER: no frames read` | ffmpeg read no frames. The same fallback. |
+
+- `record` skips a page section that has no span and logs `no narration span yet; skipped`.
+- If the page stalls after narration t=0 for longer than `[record] stall_ms` (150), `record` records the section again, up to `[record] retries` (2) times.
+
 | Exit | When |
 |---|---|
 | 0 | No certain verdict, and no uncertain verdict with `--strict`. |
-| 1 | A certain verdict, an uncertain verdict with `--strict`, or no recordings. |
+| 1 | A certain verdict, an uncertain verdict with `--strict`, no timeline and no `--seconds`, a missing page file, or no page section matching. |
 
-{/* sample: decktalk check after decktalk build --no-voice on a fresh scaffold */}
+{/* sample: record stage of decktalk build --no-voice on a fresh scaffold */}
 
 ```text
-sec  webm_s   want_s   Y10    Y50    Y90    MAX50   verdict
-01   20.4     18.1     235    230    227    255     ok
-02   23.5     21.1     227    228    234    243     ok
-03   145.2    142.8    228    212    223    240     ok
-04   18.3     15.9     223    229    231    248     ok
-06   24.9     22.5     229    231    230    243     ok
-08   16.9     14.5     228    228    235    244     ok
-09   17.1     14.7     235    230    227    245     ok
+[rec ] section 01 (deck/index.html?scene=1)  18.1s ...
+       build/recordings/01.webm  (t=0 at 1.360s, ok)
+[rec ] section 02 (deck/index.html?scene=2)  21.1s ...
+       build/recordings/02.webm  (t=0 at 1.440s, ok)
+[rec ] section 03 (deck/lesson.html?scene=3)  142.8s ...
+       build/recordings/03.webm  (t=0 at 1.440s, ok)
+
+sec  webm_s   want_s   t0_s    Y10    Y50    Y90    MAX50   result
+01   20.4     18.1     1.360   235    230    227    255     ok
+02   23.5     21.1     1.440   227    228    234    243     ok
+03   145.2    142.8    1.440   228    212    223    240     ok
 ```
 
 ### `decktalk assemble`
@@ -691,7 +625,7 @@ decktalk assemble [-h] [--project PROJECT] [-v] [-q] [--no-soundscape]
 |---|---|---|
 | `--no-soundscape` | off | Mixes narration and clip audio only. No music, ambience bed, or sound effects. |
 | `--no-loudness` | off | Skips the loudness pass. |
-| `--strict` | off | Fails on a missing recording, a missing clip without `optional = true`, or a recording that `measure` has not read since it was recorded. In a voiced build, also fails on a loudness miss. |
+| `--strict` | off | Fails on a missing recording, or a missing clip without `optional = true`. In a voiced build, also fails on a loudness miss. |
 | `--preset PRESET` | `[video] preset` | x264 preset for this run. `veryfast` is for drafts. |
 | `--crf CRF` | `[video] crf` | x264 quality for this run. |
 
@@ -701,8 +635,7 @@ markers file, the music, the ambience bed, and the sound effects. **Writes**
 `build/out/slates/`, plus a copy named `<name>-YYYYMMDD-HHMM.mp4` when `[output] timestamped_copy` is on.
 
 - Without `--strict`, a missing clip plays a titled slate for `slate_seconds`, and a missing recording plays black.
-- `assemble` trims each recording at the `t0_seconds` that `measure` wrote. If `measure` has not read the
-  recording since it was recorded, `assemble` prints `STALE MEASUREMENT`. The section may then play early or late.
+- `assemble` trims each recording at the `t0_seconds` that `record` wrote into its log beside it.
   Without `--strict`, `assemble` warns and continues. With `--strict`, it stops.
 - A missing music file, ambience bed, markers file, or sound effect logs a warning and plays without it.
 - A build without voice skips the loudness pass, so `--strict` has no loudness to fail on.
@@ -1153,7 +1086,7 @@ certain, takes `--json` and `--exit-zero`.
 | Option | Default | Meaning |
 |---|---|---|
 | `--json` | off | Prints one JSON object on stdout instead of the tables. Logs still go to stderr. |
-| `--strict` | off | Also exits 1 on an uncertain finding. `align`, `preflight`, `check` and `verify` take it. |
+| `--strict` | off | Also exits 1 on an uncertain finding. `align`, `preflight`, `record` and `verify` take it. |
 | `--exit-zero` | off | Exits 0 on findings. An error still exits 1. Every command but `status` takes it. |
 
 An uncertain finding is a verdict that ends in `?`. In `align` and `preflight`, speech shorter than `min_seconds` is
@@ -1185,7 +1118,7 @@ This shape shows the JSON envelope. The values are types, not a sample.
 | `doctor` | `components`: a list of `{name, ok, detail}`, one per row. |
 | `status` | The shape under [`decktalk status`](#decktalk-status). |
 | `align` | `estimated`, `cue_times_file`, `unresolved`, `unknown`, and `sections`. |
-| `check` | `recordings`: a list of `{key, file, duration, wanted, y10, y50, y90, max50, verdicts, stall_ms, page_errors}`. |
+| `record` | `recordings`: a list of `{key, file, seconds, t0_seconds, t0_method, t0_guessed, duration, wanted, luma, verdicts, stall_ms, page_errors, assets}`. |
 | `verify` | `final`, `total_seconds`, `silent`, `starts`, `cuts`, `seams`, and `cues`. |
 | `preflight` | `voice`, `note`, `placeholders`, `takes`, `totals`, `cue_times`, `cues`, `seams`, and `frames`. |
 | `narrate --dry-run --json` | `voice`, `note`, `sections`, and `totals`, as [the take plan](#the-take-plan) gives. `ok` is always true. |
@@ -1217,14 +1150,14 @@ without `text`, and `cue_times` is the `align` payload without `cue_times_file`,
 |---|---|---|
 | `doctor` | A `MISSING` row. | Never, so `doctor` takes no `--strict`. |
 | `align` | `UNRESOLVED`, and `UNKNOWN CUE` without `--allow-unknown-cues`. | Speech shorter than `min_seconds`. |
-| `check` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`. | `BLACK?`, `KATEX?` |
+| `record` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`. | `BLACK?`, `KATEX?` |
 | `verify` | `BLACK`, `SPEECH AT CUT`, `POP AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED`. | `THIN CHANGE?` |
 | `preflight` | An unfilled placeholder, `UNRESOLVED`, `UNKNOWN CUE` without `--allow-unknown-cues`, `NO CHANGE`, `POP AT CUT`. | `THIN CHANGE?`, speech shorter than `min_seconds`. |
 | `status` | Never, so `status` takes neither flag. | Never. |
 | `build` | See [`decktalk build`](#decktalk-build). | Not used. |
 | Every other command | Only an error. | Not used. |
 
-- `--exit-zero` makes `doctor`, `align`, `preflight`, `check`, and `verify` exit 0 on findings.
+- `--exit-zero` makes `doctor`, `align`, `preflight`, `record`, and `verify` exit 0 on findings.
 - With `--exit-zero`, the JSON `ok` key still says if the command passed.
 - An error is not a finding. A `DeckTalkError` exits 1, even with `--exit-zero`.
 - An unexpected exception prints `error: <type>: <message> (add -v for the traceback)` and exits 1.

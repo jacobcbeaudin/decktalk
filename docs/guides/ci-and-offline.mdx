@@ -6,11 +6,11 @@ description: Build and check a DeckTalk video on every push, or on a machine wit
 A build without voice needs no API key, and after `decktalk install` it needs no network. Use this guide to build and
 check the video on every push, or on a machine that is offline.
 
-`decktalk build` can pass when `decktalk check` or `decktalk verify` fails. To gate a job on the video, run all
-three commands.
+`decktalk build` can pass when `decktalk verify` fails, because the build's own verify stage does not
+measure the cues. To gate a job on the video, run both commands.
 
 ```console
-decktalk build --no-voice && decktalk check && decktalk verify
+decktalk build --no-voice && decktalk verify
 ```
 
 ## Add a GitHub Actions job
@@ -37,7 +37,6 @@ jobs:
       - run: decktalk build --no-voice
         env:
           DECKTALK_VIDEO_PRESET: veryfast
-      - run: decktalk check
       - run: decktalk verify --json > verify.json
       - uses: actions/upload-artifact@v7
         if: always()
@@ -65,7 +64,7 @@ Each command exits 1 on a different set of problems.
 | Command | Exits 1 on | Does not catch |
 |---|---|---|
 | `decktalk build` | an error, `PAGE ERROR`, a cue phrase that is not found, an unknown cue id, an uncued element, `BLACK`, `SPEECH AT CUT` | `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, `KATEX?`, `SPOKEN SYMBOL?`, every cue result |
-| `decktalk check` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER` | `BLACK?` and `KATEX?`, unless you pass `--strict` |
+| `decktalk record` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER` | `BLACK?` and `KATEX?`, unless you pass `--strict` |
 | `decktalk verify` | `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED` | a `skipped` row, such as a cue marked `"verify": false` |
 | `decktalk doctor` | a missing tool | nothing about the project itself |
 | `decktalk preflight` | an unfilled placeholder, `UNRESOLVED`, `UNKNOWN CUE`, `UNCUED ELEMENT`, `NO CHANGE`, and `POP AT CUT` in frozen frames, before any recording | motion, timing, and every check on the final mp4 |
@@ -80,7 +79,7 @@ cannot fail on loudness, because a build without voice skips the loudness pass.
 
 ## Fail the job on a bad video
 
-`status`, `align`, `check`, `verify`, and `doctor` share one exit rule. Use their exit codes as the assertions of
+`status`, `align`, `record`, `verify`, and `doctor` share one exit rule. Use their exit codes as the assertions of
 a job.
 
 - A certain finding, such as `OFF CUE` or `TRUNCATED`, exits 1.
@@ -90,7 +89,7 @@ a job.
 - An error always exits 1.
 
 ```console
-decktalk check --strict      # also fail on BLACK? and KATEX?
+decktalk record --strict     # also fail on BLACK? and KATEX?
 decktalk verify              # fail on any certain finding
 ```
 

@@ -63,7 +63,7 @@ The [quickstart](https://docs.decktalk.ai/quickstart) shows the output of each s
   <source media="(prefers-color-scheme: dark) and (max-width: 640px)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-dark-stacked.svg">
   <source media="(max-width: 640px)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-light-stacked.svg">
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-dark.svg">
-  <img alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, measure, and check, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-light.svg" width="100%">
+  <img alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-light.svg" width="100%">
 </picture>
 
 You write four files. One cue id per reveal, such as `1.1bowl`, ties the script, the cues, and the page together.
@@ -123,7 +123,7 @@ The [FAQ](https://docs.decktalk.ai/help/faq#how-is-this-different-from-the-other
 - **Captions and chapters.** Every build writes SRT, VTT, and chapters.
 - **A soundscape.** Add [music, an ambience bed, and sound effects](https://docs.decktalk.ai/concepts/sound).
 - **Loudness.** DeckTalk normalizes the mix to -16 LUFS.
-- **Checked output.** `check` and `verify` catch bad recordings and late reveals.
+- **Checked output.** `record` and `verify` catch bad recordings and late reveals.
 
 ## Status and support
 

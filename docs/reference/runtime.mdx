@@ -275,7 +275,7 @@ Note: With a numeric `t0`, the clock starts at `load`, so narration t=0 is where
 
 Note: In `frameGaps`, `at` is the value of `now()` when the gap ended. A gap under the cover has
 `at` equal to `-Infinity`, and the recording log field `frame_gaps` writes it as `null`. Only the part of
-a gap after t=0 counts toward `STALLED` ([decktalk check](/reference/cli#decktalk-check)). So a page
+a gap after t=0 counts toward `STALLED` ([decktalk record](/reference/cli#decktalk-record)). So a page
 can do slow first work before t=0, such as drawing a canvas figure or a large SVG.
 
 Note: In `spokenLog`, `text` is the first 24 characters of the text. `cueAt` is the time the element

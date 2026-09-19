@@ -6,13 +6,14 @@ uv run pytest -m browser
 from __future__ import annotations
 
 import json
+import shutil
 import tomllib
 from pathlib import Path
 
 import pytest
 
 from decktalk.scaffold import init
-from decktalk.toolchain.assets import runtime_path
+from decktalk.toolchain.assets import RUNTIME_FILE, runtime_path
 
 pytestmark = pytest.mark.browser
 
@@ -74,6 +75,17 @@ def custom_page(tmp_path: Path, name: str, script: str) -> str:
         encoding="utf-8",
     )
     return html.resolve().as_uri()
+
+
+def served_page(root: Path, name: str, body: str) -> str:
+    """A page beside its own copy of the runtime, as the recorder opens it on the local origin."""
+    shutil.copyfile(runtime_path(), root / RUNTIME_FILE)
+    (root / name).write_text(
+        '<!doctype html><html><head><meta charset="utf-8"></head><body>\n'
+        f'<script src="{RUNTIME_FILE}"></script>\n{body}\n</body></html>',
+        encoding="utf-8",
+    )
+    return name
 
 
 # Two slides whose handlers record what they receive. Slide 1.2 also keeps a zero-argument handler.
@@ -576,37 +588,37 @@ def test_freeze_before_one_cue_stops_just_before_it(page, deck):
 
 
 def test_record_page_stores_page_errors_in_the_recording_log(page, tmp_path):
-    """A page that throws, and a page without the runtime, both leave page_errors that check turns into PAGE ERROR."""
+    """A page that throws, and a page without the runtime, both leave page_errors that record turns into PAGE ERROR."""
     from decktalk.media.browser import NO_CATALOG, record_page
+    from decktalk.media.origin import page_url
     from decktalk.settings import RecordConfig
-    from decktalk.stages.measure import log_verdicts
+    from decktalk.stages.record.checks import log_verdicts
 
-    runtime = runtime_path().resolve().as_uri()
-    broken = tmp_path / "broken.html"
-    broken.write_text(
-        '<!doctype html><html><head><meta charset="utf-8"></head><body>\n'
-        f'<script src="{runtime}"></script>\n'
+    broken = served_page(
+        tmp_path,
+        "broken.html",
         "<script>DeckTalk.scene(1, { slides: [ { id: '1.1', render: () => `<p>hi</p>` } ] });</script>\n"
-        "<script>\nnotDefinedAnywhere();\n</script>\n"
-        "</body></html>",
-        encoding="utf-8",
+        "<script>\nnotDefinedAnywhere();\n</script>",
     )
     bare = tmp_path / "bare.html"
     bare.write_text("<!doctype html><html><body><p>no runtime here</p></body></html>", encoding="utf-8")
-    kw = dict(settle_seconds=0.1, min_cover_seconds=0.1, width=640, height=360, color_scheme="light")
+    kw = dict(root=tmp_path, settle_seconds=0.1, min_cover_seconds=0.1, width=640, height=360, color_scheme="light")
     browser = page.context.browser  # the module's Playwright already owns this thread's sync loop
-    recording_log = record_page(browser, f"{broken.as_uri()}?slide=1.1", 0.5, tmp_path / "01-section.webm", **kw)
-    recording_log2 = record_page(browser, bare.as_uri(), 0.5, tmp_path / "02-section.webm", **kw)
+    url = page_url(broken, {"slide": "1.1"})
+    recording_log = record_page(browser, url, 0.5, tmp_path / "01-section.webm", **kw)
+    recording_log2 = record_page(browser, page_url("bare.html"), 0.5, tmp_path / "02-section.webm", **kw)
     assert len(recording_log.page_errors) == 1, recording_log.page_errors
     assert recording_log.page_errors[0].startswith("ReferenceError: notDefinedAnywhere is not defined"), (
         recording_log.page_errors
     )
     assert "(broken.html:5)" in recording_log.page_errors[0], recording_log.page_errors
     assert recording_log2.page_errors == [NO_CATALOG]
-    for s, name in ((recording_log, "01-section.json"), (recording_log2, "02-section.json")):
-        assert "PAGE ERROR" in log_verdicts(s, RecordConfig())
-        reloaded = type(s).load(tmp_path / name)
-        assert reloaded is not None and reloaded.page_errors == s.page_errors
+    assert recording_log.assets == ["broken.html", RUNTIME_FILE]
+    for recorded, name in ((recording_log, "01-section.json"), (recording_log2, "02-section.json")):
+        assert "PAGE ERROR" in log_verdicts(recorded, RecordConfig())
+        recorded.save(tmp_path / name)
+        reloaded = type(recorded).load(tmp_path / name)
+        assert reloaded is not None and reloaded.page_errors == recorded.page_errors
 
 
 @pytest.mark.media
@@ -621,8 +633,9 @@ def test_recorder_keeps_frames_flowing_so_reveals_on_a_still_page_land_on_schedu
     """
     from decktalk.media import frames
     from decktalk.media.browser import record_page
+    from decktalk.media.origin import page_url
     from decktalk.settings import RecordConfig, VerifyConfig
-    from decktalk.stages.measure import measure_lead
+    from decktalk.stages.record.start import find_start
 
     at = [0.8, 1.6, 2.4]
     letters = "abc"
@@ -633,17 +646,19 @@ def test_recorder_keeps_frames_flowing_so_reveals_on_a_still_page_land_on_schedu
     )
     cues = ",".join(f"'1.1{c}'" for c in letters)
     script = f"DeckTalk.scene(1, {{ slides: [ {{ id: '1.1', owns: [{cues}], render: () => `{body}` }} ] }});"
-    url = custom_page(tmp_path, "still.html", script)
+    name = served_page(tmp_path, "still.html", f"<script>{script}</script>")
     cues = ",".join(f"1.1{c}@{t}" for c, t in zip(letters, at, strict=True))
     out = tmp_path / "01.webm"
-    kw = dict(settle_seconds=0.5, min_cover_seconds=0.5, width=1280, height=720, color_scheme="light")
-    recording_log = record_page(page.context.browser, f"{url}?scene=1&t0=signal&cues={cues}", 3.0, out, **kw)
+    kw = dict(root=tmp_path, settle_seconds=0.5, min_cover_seconds=0.5, width=1280, height=720, color_scheme="light")
+    url = page_url(name, {"scene": "1", "t0": "signal", "cues": cues})
+    recording_log = record_page(page.context.browser, url, 3.0, out, **kw)
     assert not recording_log.page_errors and not recording_log.warnings, (
         recording_log.page_errors,
         recording_log.warnings,
     )
-    trim, method = measure_lead(out, recording_log.settle_seconds, RecordConfig())
-    assert method.startswith("cover"), method
+    start = find_start(out, recording_log.settle_seconds, RecordConfig())
+    trim = start.seconds
+    assert not start.guessed, start.method
     series = frames.changed_series(out, trim, trim, trim + 3.0, fps=25, level=40, width=480, height=270)
     offsets: list[int] = []
     prev = 0.0

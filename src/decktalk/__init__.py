@@ -8,7 +8,7 @@ command's result class is exported beside the function that returns it.
     tuning:    Settings, load_settings
     errors:    DeckTalkError, ConfigError, MissingInputError, ProviderError, ToolError
     artifacts: Takes, CueTimes, RecordingLog, Word
-    stages:    narrate, align, record, measure, check, assemble, verify
+    stages:    narrate, align, record, assemble, verify
     commands:  preflight, screenshots, words, clip, status, soundscape, build
     results:   NarrateResult, AlignResult, RecordResult, AssembleResult, VerifyResult,
                PreflightResult, ScreenshotsResult, WordsResult, ClipResult, StatusResult,
@@ -44,9 +44,7 @@ from .stages import (
     align,
     assemble,
     build,
-    check,
     clip,
-    measure,
     narrate,
     preflight,
     record,
@@ -99,10 +97,8 @@ __all__ = [
     "align",
     "assemble",
     "build",
-    "check",
     "clip",
     "load_settings",
-    "measure",
     "narrate",
     "preflight",
     "record",

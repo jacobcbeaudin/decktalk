@@ -1,22 +1,21 @@
 """The pipeline, one module per command.
 
-Each one takes a `Project` and logs its progress to the `decktalk` logger. Eleven of them return a
+Each one takes a `Project` and logs its progress to the `decktalk` logger, and each one returns a
 result that satisfies `verdicts.StageResult`, which is what the run judged and the same thing as
 JSON-ready data, so the CLI counts the findings and prints the envelope without knowing any
-result's shape. `record`, `measure` and `check` return one row per section instead, and
-`tests/test_imports.py` holds the table of which does which.
+result's shape. `tests/test_imports.py` holds the table of every command and the result it returns.
 """
 
 from .align import AlignResult, align
 from .assemble import AssembleResult, assemble
 from .build import BuildResult, build
 from .clip import ClipResult, SectionWords, WordsResult, clip, words
-from .measure import LeadMeasurement, RecordingCheck, check, measure
 from .narrate import NarrateResult, narrate
 from .preflight import PreflightResult, preflight
-from .record import RecordResult, record
+from .record import RecordResult, SectionRecording, record
 from .screenshots import ScreenshotsResult, screenshots
 from .soundscape import SoundscapeItem, SoundscapeResult, soundscape
+from .status import StatusResult, status
 from .verify import VerifyResult, verify
 
 __all__ = [
@@ -24,28 +23,27 @@ __all__ = [
     "AssembleResult",
     "BuildResult",
     "ClipResult",
-    "LeadMeasurement",
     "NarrateResult",
     "PreflightResult",
     "RecordResult",
-    "RecordingCheck",
     "ScreenshotsResult",
+    "SectionRecording",
     "SectionWords",
     "SoundscapeItem",
     "SoundscapeResult",
+    "StatusResult",
     "VerifyResult",
     "WordsResult",
     "align",
     "assemble",
     "build",
-    "check",
     "clip",
-    "measure",
     "narrate",
     "preflight",
     "record",
     "screenshots",
     "soundscape",
+    "status",
     "verify",
     "words",
 ]

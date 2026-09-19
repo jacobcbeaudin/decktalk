@@ -6,7 +6,6 @@ import json
 import re
 from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
-from typing import get_type_hints
 
 import pytest
 
@@ -15,13 +14,11 @@ from decktalk import ConfigError, Project, load_settings
 from decktalk.artifacts import (
     CueTime,
     CueTimes,
-    RecordingLog,
     Take,
     Takes,
     Timeline,
     TimelineSection,
     Word,
-    gap_time,
 )
 from decktalk.cli import build_parser, main
 from decktalk.model.script import parse_script, strip_markdown
@@ -430,13 +427,6 @@ def test_timeline_and_cue_times_roundtrip(tmp_path):
     assert back.get("01", "nope") is None and back.query("99") is None
 
 
-def test_recording_log_trim_prefers_measured(tmp_path):
-    s = RecordingLog(url="u", requested_seconds=5, settle_seconds=0.5, load_seconds=0.1, clock_start_seconds=0.7)
-    assert s.trim_seconds == 0.7
-    s.t0_seconds = 0.2
-    assert s.trim_seconds == 0.2
-
-
 # ---- narrate -------------------------------------------------------------------------------
 
 SCRIPT = """# Title
@@ -522,12 +512,10 @@ def test_package_exports_every_public_name():
     project_commands = set(actions.choices) - {"init", "install", "doctor", "serve"}  # type: ignore[attr-defined]
     assert project_commands <= set(decktalk.__all__), sorted(project_commands - set(decktalk.__all__))
     # One word names the command, the call, the type it returns and its --json key, so the result
-    # class of every command that returns one is exported beside its function.
-    for command in sorted(project_commands - {"measure", "check"}):
+    # class of every command is exported beside its function.
+    for command in sorted(project_commands):
         result = f"{command.title().replace('_', '')}Result"
         assert result in decktalk.__all__, result
-    # `record` returns one row per section, and each row is that same exported type.
-    assert get_type_hints(decktalk.record)["return"].__args__ == (decktalk.RecordResult,)
 
 
 def test_every_result_tallies_its_own_rows():
@@ -586,7 +574,7 @@ def test_every_result_tallies_its_own_rows():
 
 def test_the_public_api_carries_no_name_the_contract_retired():
     """`Timeline` leaves the public names, and the module that reads the file stays where it is."""
-    for name in ("Timeline", "TimelineSection", "LeadMeasurement", "RecordingCheck"):
+    for name in ("Timeline", "TimelineSection", "LeadMeasurement", "RecordingCheck", "measure", "check"):
         assert name not in decktalk.__all__, name
     from decktalk.artifacts import Timeline  # still readable, and not part of the supported API
 
@@ -663,22 +651,6 @@ def test_cues_load_with_cue_keys_and_reject_any_other_id_key(tmp_path):
     )
     with pytest.raises(ConfigError, match="missing required key 'cue'"):
         Project.load(root, environ={}).cue_specs()
-
-
-def test_recording_log_warnings_default_and_roundtrip(tmp_path):
-    p = tmp_path / "s.json"
-    p.write_text(
-        json.dumps(
-            {"url": "u", "requested_seconds": 1, "settle_seconds": 0, "load_seconds": 0, "clock_start_seconds": 0}
-        ),
-        encoding="utf-8",
-    )
-    old = RecordingLog.load(p)
-    assert old is not None and old.warnings == []
-    old.warnings = ["KaTeX did not load within 5 s, so [data-tex] elements stay plain text"]
-    old.save(p)
-    again = RecordingLog.load(p)
-    assert again is not None and again.warnings == old.warnings
 
 
 def test_init_copies_every_file_of_the_template_deck(tmp_path, monkeypatch):
@@ -1155,29 +1127,6 @@ def test_page_error_text_keeps_the_message_and_the_file_and_line():
     assert page_error_text(Bare()) == "boom"
 
 
-def test_recording_log_verdicts_flag_page_errors_and_bad_tex(tmp_path):
-    from decktalk.artifacts import RecordingLog
-    from decktalk.settings import RecordConfig
-    from decktalk.stages.measure import log_verdicts
-
-    recording_log = RecordingLog(url="x", requested_seconds=1, settle_seconds=0, load_seconds=0, clock_start_seconds=0)
-    assert log_verdicts(recording_log, RecordConfig()) == []
-    assert log_verdicts(None, RecordConfig()) == []
-    recording_log.page_errors = ["ReferenceError: nope is not defined (index.html:5)"]
-    recording_log.warnings = [
-        'data-tex could not be parsed: "\\frac{1}" (write \\\\ for every backslash inside a template literal)'
-    ]
-    recording_log.frame_gaps = [(1.0, 400)]
-    assert log_verdicts(recording_log, RecordConfig()) == [
-        Verdict.PAGE_ERROR,
-        Verdict.KATEX_UNSURE,
-        Verdict.STALLED,
-    ]
-    recording_log.save(tmp_path / "s.json")
-    again = RecordingLog.load(tmp_path / "s.json")
-    assert again is not None and again.page_errors == recording_log.page_errors
-
-
 # ---- Tier 1 pipeline: clip placement, silent loudness, verify defaults, unknown cue ids ------------
 
 PAGES_TOML = """
@@ -1462,19 +1411,6 @@ def test_verify_to_dict_is_json_serialisable_and_relative(tmp_path, monkeypatch)
     }
 
 
-def test_check_row_carries_its_verdict_codes_and_its_stall(tmp_path):
-    from decktalk.stages.measure import RecordingCheck
-
-    file = tmp_path / "build" / "recordings" / "01.webm"
-    verdicts = (Verdict.NO_COVER, Verdict.STALLED)
-    row = RecordingCheck("01", 10.04, 10.3, 50.0, 60.0, 70.0, 80.0, verdicts, 140, ["boom"], file=file)
-    d = json.loads(json.dumps(row.to_dict(tmp_path)))
-    assert d["file"] == "build/recordings/01.webm" and d["duration"] == 10.04 and d["max50"] == 80.0
-    assert d["verdicts"] == ["NO_COVER", "STALLED"] and d["stall_ms"] == 140 and d["page_errors"] == ["boom"]
-    assert row.label == "NO COVER STALLED 140ms" and not row.ok
-    assert RecordingCheck("02", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0).label == "ok"
-
-
 def test_build_captions_uses_the_take_index_spoken_text(tmp_path):
     from decktalk.stages.assemble import build_captions, caption_texts
 
@@ -1496,95 +1432,6 @@ def test_build_captions_uses_the_take_index_spoken_text(tmp_path):
         "## 1. A\n\nHello there!\n\n## 2. B\n\nTwo.\n\n## 3. C\n\nThree.\n", encoding="utf-8"
     )
     assert caption_texts(p, tl)["01"] == "Hello there!"
-
-
-def test_scene_params_adds_cues_unless_the_section_sets_them(tmp_path):
-    from decktalk.model import PageSection
-    from decktalk.stages.record import scene_params
-    from decktalk.stages.screenshots import screenshot_slides
-
-    cue_times = CueTimes({"01": [CueTime("a", "x", 1.5), CueTime("b", "y", 2.0)]})
-    own = PageSection(1, "deck/index.html", "1", params={"theme": "dark"})
-    assert scene_params(own, cue_times) == {"theme": "dark", "cues": "a@1.5,b@2.0"}
-    assert scene_params(own, None) == {"theme": "dark"}
-    fixed = PageSection(1, "deck/index.html", "1", params={"cues": "x@1"})
-    assert scene_params(fixed, cue_times) == {"cues": "x@1"}
-    assert scene_params(PageSection(2, "deck/index.html", "2"), cue_times) == {}
-    p = Project.load(write_project(tmp_path, PAGES_TOML), environ={})
-    with pytest.raises(ConfigError, match="exactly one slide"):
-        screenshot_slides(p, slides=["1.1", "2.1"], cues=["1.1a"])
-
-
-def test_scene_url_passes_the_previous_sections_words(tmp_path):
-    from urllib.parse import parse_qs, urlsplit
-
-    from decktalk.model import PageSection
-    from decktalk.stages.record import prev_words_query, scene_url, words_query
-
-    p = Project.load(write_project(tmp_path, PAGES_TOML), environ={})
-    (p.root / "deck").mkdir(exist_ok=True)
-    (p.root / "deck" / "index.html").write_text("<!doctype html>", encoding="utf-8")
-    tl = Timeline(
-        narration="n.mp3",
-        total_seconds=6.0,
-        sections={
-            "01": TimelineSection("A", 0.0, 3.0, 3.0, 2.5, [Word("one,", 0.7, 1.0), Word("two", 1.5, 1.8)]),
-            "02": TimelineSection("B", 3.0, 6.0, 3.0, 5.5, [Word("three", 3.4, 3.8)]),
-        },
-    )
-    tl.save(p.timeline_path)
-    first, second = PageSection(1, "deck/index.html", "1"), PageSection(2, "deck/index.html", "2")
-    assert prev_words_query(p, first) is None
-    assert prev_words_query(p, second) == words_query(p, first) == "one@0.70,two@1.50"
-    query = parse_qs(urlsplit(scene_url(p, second, {})).query)
-    assert query["words"] == ["three@0.40"] and query["prevwords"] == ["one@0.70,two@1.50"]
-    assert "prevwords" not in parse_qs(urlsplit(scene_url(p, first, {})).query)
-
-
-def test_worst_stall_counts_only_what_a_viewer_sees():
-    from decktalk.artifacts import RecordingLog
-
-    recording_log = RecordingLog.__new__(RecordingLog)
-    recording_log.frame_gaps = [(None, 900), (0.05, 216), (0.4, 120), (12.8, 132)]
-    # The first gap ended under the cover. The second began there and shows for 50 ms.
-    assert recording_log.worst_stall_ms == 132
-    recording_log.frame_gaps = [(None, 900), (0.05, 216)]
-    assert recording_log.worst_stall_ms == 50
-    recording_log.frame_gaps = []
-    assert recording_log.worst_stall_ms == 0
-
-
-def test_recording_log_writes_null_for_a_gap_before_the_clock(tmp_path):
-    p = tmp_path / "s.json"
-    recording_log = RecordingLog(url="u", requested_seconds=1, settle_seconds=0, load_seconds=0, clock_start_seconds=0)
-    recording_log.frame_gaps = [(float("-inf"), 900), (None, 400), (0.05, 216)]
-    recording_log.save(p)
-    text = p.read_text(encoding="utf-8")
-    assert "Infinity" not in text and "NaN" not in text
-    # Standard JSON parsers such as JSON.parse and jq reject the -Infinity token.
-    data = json.loads(text, parse_constant=lambda token: pytest.fail(f"non-standard JSON token {token}"))
-    assert data["frame_gaps"] == [[None, 900], [None, 400], [0.05, 216]]
-    again = RecordingLog.load(p)
-    assert again is not None and again.frame_gaps == [(None, 900), (None, 400), (0.05, 216)]
-    assert again.worst_stall_ms == 50
-
-
-def test_gap_time_turns_the_page_value_for_a_gap_before_the_clock_into_none():
-    # The page reports a gap that ended before narration t=0 at negative infinity, and the recorder
-    # is the boundary where that becomes None.
-    assert gap_time(float("-inf")) is None
-    assert gap_time(float("nan")) is None
-    assert gap_time(None) is None
-    assert gap_time(0.4) == 0.4
-    assert gap_time(0) == 0
-
-
-def test_worst_stall_treats_a_null_time_as_a_gap_under_the_cover():
-    recording_log = RecordingLog(url="u", requested_seconds=1, settle_seconds=0, load_seconds=0, clock_start_seconds=0)
-    recording_log.frame_gaps = [(None, 900)]
-    assert recording_log.worst_stall_ms == 0
-    recording_log.frame_gaps = [(None, 900), (0.05, 216), (12.8, 132)]
-    assert recording_log.worst_stall_ms == 132
 
 
 def test_provider_errors_never_show_the_voice_id(monkeypatch):
@@ -1786,104 +1633,6 @@ def test_a_padded_take_within_a_frame_of_min_tail_is_not_padded_again(monkeypatc
     assert padded == []
     assert ensure_tail(Path("a.mp3"), cfg) == 0.09  # a take never padded before gets the full tail
     assert padded == [0.09]
-
-
-# ---- stale measurement ------------------------------------------------------------------------
-
-
-def _recorded(tmp_path: Path) -> tuple[Project, Path]:
-    """A one-page project with a recording and the recording log that `record` writes, not yet measured."""
-    root = write_project(tmp_path, "[[section]]\nnumber = 1\npage = 'a.html'\n")
-    (root / "script.md").write_text("## 1. A\n\nHi.\n", encoding="utf-8")
-    p = Project.load(root, environ={})
-    p.recordings_dir.mkdir(parents=True)
-    webm = p.recordings_dir / "01.webm"
-    webm.write_bytes(b"take one")
-    RecordingLog(url="u", requested_seconds=2, settle_seconds=0.5, load_seconds=0.1, clock_start_seconds=1.506).save(
-        webm.with_suffix(".json")
-    )
-    return p, webm
-
-
-def test_stale_measure_ties_the_measurement_to_one_recording(tmp_path, monkeypatch):
-    from decktalk.artifacts import recording_hash, stale_measure
-    from decktalk.media import frames
-    from decktalk.stages.measure import measure
-
-    p, webm = _recorded(tmp_path)
-    log_path = webm.with_suffix(".json")
-    name = "build/recordings/01.webm"
-    assert stale_measure(webm, RecordingLog.load(log_path), p.root) == (
-        f"{name} was never measured, so the cut would trim the recorder's wall-clock estimate of 1.506s"
-    )
-    assert (
-        stale_measure(webm, None, p.root) == f"{name} has no recording log, so `measure` never found its narration t=0"
-    )
-
-    monkeypatch.setattr(frames, "frame_stats", lambda path, seconds: [])
-    (row,) = measure(p)
-    recording_log = RecordingLog.load(log_path)
-    assert recording_log is not None and recording_log.t0_seconds == row.t0_seconds
-    assert recording_log.t0_hash == recording_hash(webm) and len(recording_log.t0_hash) == 16
-    assert stale_measure(webm, recording_log, p.root) is None
-
-    webm.write_bytes(b"take two")  # a new take over the measured one
-    assert stale_measure(webm, recording_log, p.root) == f"{name} changed after `measure` read it"
-
-
-def test_assemble_refuses_a_stale_measurement_with_strict_and_warns_without(tmp_path, monkeypatch, caplog):
-    import importlib
-
-    from decktalk.errors import MissingInputError
-    from decktalk.stages.measure import recording_hash
-
-    asm = importlib.import_module("decktalk.stages.assemble")
-    p, webm = _recorded(tmp_path)
-    Timeline(
-        narration="narration.mp3",
-        total_seconds=2.0,
-        sections={"01": TimelineSection("A", 0, 2.0, 2.0, 1.0, [Word("Hi", 0.7, 1.0)])},
-        estimated=True,
-    ).save(p.timeline_path)
-    timeline = p.timeline()
-    assert timeline is not None
-    render = asm.render_sections
-    ran: list[tuple] = []
-    monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: ran.append(args))
-    monkeypatch.setattr(asm.ffmpeg, "probe_duration", lambda path: 2.0)
-
-    with pytest.raises(MissingInputError) as err:
-        asm.render_sections(p, timeline, strict=True)
-    assert str(err.value) == (
-        "section 1: STALE MEASUREMENT: build/recordings/01.webm was never measured, so the cut would trim the "
-        "recorder's wall-clock estimate of 1.506s. Run `decktalk measure --only 1`, then `decktalk assemble` again."
-    )
-    assert ran == []
-
-    expected = (
-        "section 01: STALE MEASUREMENT: build/recordings/01.webm was never measured, so the cut would trim the "
-        "recorder's wall-clock estimate of 1.506s. Every reveal in the section may play early or late. "
-        "Run `decktalk measure --only 1`, or pass --strict to stop on this."
-    )
-    with caplog.at_level("WARNING", logger="decktalk"):
-        (row,) = asm.render_sections(p, timeline, strict=False)
-    assert row.warning == expected
-    assert [r.getMessage() for r in caplog.records] == [expected]
-
-    # The warning reaches the result, next to the mix warnings.
-    monkeypatch.setattr(asm, "render_sections", lambda project, timeline, strict: [row])
-    monkeypatch.setattr(asm, "concat", lambda files, out: out.write_bytes(b"x"))
-    monkeypatch.setattr(asm, "mux_chapters", lambda src, chapters, dst: dst.write_bytes(b"x"))
-    monkeypatch.setattr(asm.ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"x"))
-    assert asm.assemble(p, soundscape=False).warnings == [expected]
-
-    log_path = webm.with_suffix(".json")
-    recording_log = RecordingLog.load(log_path)
-    assert recording_log is not None
-    recording_log.t0_seconds, recording_log.t0_hash = 1.44, recording_hash(webm)
-    recording_log.save(log_path)
-    (measured,) = render(p, timeline, strict=True)
-    assert measured.warning is None and "t0 1.44s trimmed" in measured.note
 
 
 def test_verify_and_assemble_ignore_a_leftover_section_video(tmp_path, monkeypatch, caplog):

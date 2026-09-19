@@ -105,7 +105,7 @@ decktalk build --only 3
 decktalk build --only 3 --only 6
 ```
 
-The flag limits `record`, `measure`, and `check` to the sections you name. The other stages still work on
+The flag limits `record` to the sections you name. The other stages still work on
 every section:
 
 - `narrate` voices any section whose text changed, even a section you did not name.
@@ -154,8 +154,6 @@ Each stage is also a command. These are the commands that `decktalk build --only
 decktalk narrate                   # add --no-voice if the last build had no voice
 decktalk align
 decktalk record --only 3
-decktalk measure --only 3
-decktalk check --only 3
 decktalk assemble
 decktalk verify 3:3.3height
 ```
@@ -164,7 +162,7 @@ Some edits need fewer commands.
 
 | After this edit | Run |
 |---|---|
-| A slide changed, and the script did not | `decktalk record --only N`, `decktalk measure --only N`, `decktalk check --only N`, `decktalk assemble`, `decktalk verify --only N` |
+| A slide changed, and the script did not | `decktalk record --only N`, `decktalk assemble`, `decktalk verify --only N` |
 | A clip file changed | `decktalk assemble`, `decktalk verify` |
 
 ## Voice every section again

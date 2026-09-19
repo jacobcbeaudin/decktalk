@@ -229,7 +229,9 @@ voice to find the click at the cued word, which
 
 ## `build/recordings/NN.json`
 
-The recording log lists what the recorder did for one page section, and where narration t=0 sits in the webm.
+The recording log lists what `record` did for one page section, where narration t=0 sits in the webm, and how
+the recording checked out. `record` writes the whole file once, when that section is finished, so the
+measurement always belongs to the recording beside it and a long run can be read while it runs.
 
 {/* sample: build/recordings/08.json, build without voice of a fresh scaffold */}
 ```json
@@ -238,9 +240,18 @@ The recording log lists what the recorder did for one page section, and where na
   "requested_seconds": 14.49999999999999,
   "settle_seconds": 1.452,
   "load_seconds": 0.05,
-  "lead_seconds": 1.502,
+  "clock_start_seconds": 1.502,
+  "assets": ["deck/index.html", "deck/decktalk-runtime.js", "deck/katex/katex.min.css"],
+  "input_hash": "6f1d0a2b7c934e58",
   "t0_seconds": 1.44,
   "t0_method": "cover (36 magenta frames)",
+  "t0_guessed": false,
+  "checks": {
+    "duration_seconds": 16.94,
+    "wanted_seconds": 14.5,
+    "luma": { "y10": 228.0, "y50": 228.0, "y90": 235.0, "max50": 244.0 },
+    "verdicts": []
+  },
   "warnings": [],
   "page_errors": [],
   "frame_gaps": [],
@@ -291,9 +302,11 @@ The recording log lists what the recorder did for one page section, and where na
 | `load_seconds` | number | Wall-clock seconds from the recorder's start to the page's `load` event. |
 | `clock_start_seconds` | number | Wall-clock seconds from the recorder's start to narration t=0. Not the same as `[verify] reference_lead_seconds`. |
 | `assets` | array of strings | Every project file the page loaded, project-relative, in the order the page asked for it. |
-| `t0_seconds` | number or null | Time of the first frame after the magenta cover, in the webm. `measure` writes it, and `assemble` trims there. |
-| `t0_method` | string or null | How `measure` found `t0_seconds`. A value that starts with `NO COVER` is a guess. |
-| `t0_hash` | string or null | The first 16 hex digits of the sha256 of the webm that `measure` read. A recording log from an older `measure` has none. |
+| `input_hash` | string | The digest of the page URL, the frame geometry and the content of the page and of every file in `assets`. `record` skips a section whose hash has not moved. |
+| `t0_seconds` | number or null | Time of the first frame after the magenta cover, in the webm. `record` writes it, and `assemble` trims there. |
+| `t0_method` | string or null | One sentence naming how `record` found `t0_seconds`, for a reader of the log. |
+| `t0_guessed` | boolean | True when no magenta cover was found, so `t0_seconds` is an estimate and the section carries the `NO COVER` verdict. |
+| `checks` | table or null | `{duration_seconds, wanted_seconds, luma, verdicts}`, what the frames were judged on. Each verdict is its code, such as `TRUNCATED`. |
 | `warnings` | array of strings | `window.__decktalk.warnings`, read after the recording, such as an unknown cue id. |
 | `page_errors` | array of strings | One line per uncaught exception, plus one line when the page has no runtime catalog. |
 | `frame_gaps` | array | `[seconds, ms]` pairs from `window.__decktalk.frameGaps`, one per long gap between two page frames. |
@@ -301,10 +314,8 @@ The recording log lists what the recorder did for one page section, and where na
 | `cue_log` | array of tables | One `{ id, due, ran, frame, next, after }` table per cue, from `window.__decktalk.cueLog`. Times are seconds after narration t=0. |
 | `long_frames` | array of tables | One `{ start, ms, render, presented }` table per page frame over 50 ms after t=0, from `window.__decktalk.longFrames`. |
 
-Note: `check` reports `PAGE ERROR` for any entry in `page_errors`, and `decktalk build` stops. `check` reports
-`STALLED` when the part of a frame gap after t=0 is longer than `[record] stall_ms`. `record` sets `t0_seconds`
-to `null`, and `measure` fills it. `assemble` prints `STALE MEASUREMENT` when `t0_seconds` is `null`, when
-`t0_hash` does not match the webm, or, with no `t0_hash`, when the webm is newer than the recording log.
+Note: `record` reports `PAGE ERROR` for any entry in `page_errors`, and `decktalk build` stops. It reports
+`STALLED` when the part of a frame gap after t=0 is longer than `[record] stall_ms`.
 
 ## `build/out/`
 

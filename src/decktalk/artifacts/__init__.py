@@ -8,13 +8,13 @@ module here owns each file.
     build/narration/takes.json          takes.py       the take index and the narration cache
     build/narration/timeline.json       timeline.py    section and word times in narration.mp3
     build/cue-times.json                cue_times.py   every cue resolved against the words
-    build/recordings/NN.json            recordings.py  what the recorder did, and narration t=0
+    build/recordings/NN.json            recordings.py  what `record` did, judged and measured
 """
 
 from __future__ import annotations
 
 from .cue_times import CueTime, CueTimes
-from .recordings import RecordingLog, gap_time, recording_hash, stale_measure
+from .recordings import Luma, RecordingChecks, RecordingLog, gap_time
 from .takes import Take, Takes
 from .timeline import Timeline, TimelineSection
 from .words import Word, read_words, write_words
@@ -22,6 +22,8 @@ from .words import Word, read_words, write_words
 __all__ = [
     "CueTime",
     "CueTimes",
+    "Luma",
+    "RecordingChecks",
     "RecordingLog",
     "Take",
     "Takes",
@@ -29,8 +31,6 @@ __all__ = [
     "TimelineSection",
     "Word",
     "gap_time",
-    "recording_hash",
     "read_words",
-    "stale_measure",
     "write_words",
 ]
