@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -32,6 +31,7 @@ from ..config import RecordConfig
 from ..errors import MissingInputError
 from ..media import ffmpeg
 from ..project import Project
+from ..verdicts import Verdict
 
 log = logging.getLogger(__name__)
 
@@ -67,8 +67,8 @@ def measure_lead(webm: Path, settle: float, cfg: RecordConfig) -> tuple[float, s
         return round(magenta[-1] + frame_dt, 3), f"cover ({len(magenta)} magenta frames)"
     painted = [f.pts for f in rows if f.ymax > cfg.painted_ymax and f.yavg < cfg.painted_yavg_max]
     if painted:
-        return round(painted[0] + settle, 3), "NO COVER: first paint + settle"
-    return round(cfg.fallback_first_paint_seconds + settle, 3), "NO COVER: fallback guess + settle"
+        return round(painted[0] + settle, 3), f"{Verdict.NO_COVER}: first paint + settle"
+    return round(cfg.fallback_first_paint_seconds + settle, 3), f"{Verdict.NO_COVER}: fallback guess + settle"
 
 
 @dataclass
@@ -132,7 +132,7 @@ def measure(project: Project, only: list[int] | None = None) -> list[LeadMeasure
                 method=method,
             )
         )
-        if method.startswith("NO COVER"):
+        if method.startswith(Verdict.NO_COVER):
             log.warning("[lead] %s  no magenta cover found; alignment is a guess (%s)", webm.name[:2], method)
         else:
             log.info("[lead] %s  trim %.3fs  (%s)", webm.name[:2], lead_in, method)
@@ -141,6 +141,8 @@ def measure(project: Project, only: list[int] | None = None) -> list[LeadMeasure
 
 @dataclass
 class RecordingCheck:
+    """One recording judged: how long it ran, how bright it is, and every verdict against it."""
+
     key: str
     duration: float
     wanted: float
@@ -148,19 +150,23 @@ class RecordingCheck:
     y50: float
     y90: float
     max50: float
-    verdict: (
-        str  # "ok", or any of "NO COVER", "BLACK?", "TRUNCATED", "KATEX?", "STALLED", "PAGE ERROR" joined by spaces
-    )
+    verdicts: tuple[Verdict, ...] = ()
+    stall_ms: int | None = None  # How long the longest visible stall lasted, with STALLED.
     page_errors: list[str] = field(default_factory=list)  # from the recording log, one line each
     file: Path | None = None  # The recording that was checked.
 
     @property
     def ok(self) -> bool:
-        return self.verdict == "ok"
+        return not self.verdicts
+
+    @property
+    def label(self) -> str:
+        """The verdicts as one line, with the stall length beside STALLED, as the table prints them."""
+        parts = [f"{v} {self.stall_ms}ms" if v is Verdict.STALLED and self.stall_ms else str(v) for v in self.verdicts]
+        return " ".join(parts) or str(Verdict.OK)
 
     def to_dict(self, root: Path) -> dict[str, Any]:
         """The row as JSON-ready data, with the verdict codes as a list and the stall length as its own number."""
-        codes, stall_ms = split_verdicts(self.verdict)
         file = None
         if self.file is not None:
             file = self.file.relative_to(root).as_posix() if self.file.is_relative_to(root) else self.file.as_posix()
@@ -173,41 +179,25 @@ class RecordingCheck:
             "y50": round(self.y50, 2),
             "y90": round(self.y90, 2),
             "max50": round(self.max50, 2),
-            "verdicts": codes,
-            "stall_ms": stall_ms,
+            "verdicts": [v.name for v in self.verdicts],
+            "stall_ms": self.stall_ms,
             "page_errors": list(self.page_errors),
         }
 
 
-_VERDICT_RE = re.compile(r"PAGE ERROR|NO COVER|TRUNCATED|STALLED(?: (?P<ms>\d+)ms)?|BLACK\?|KATEX\?")
-
-
-def split_verdicts(verdict: str) -> tuple[list[str], int | None]:
-    """The joined verdict as codes with the stall split out: "NO COVER STALLED 140ms" gives two codes and 140."""
-    codes: list[str] = []
-    stall_ms: int | None = None
-    for m in _VERDICT_RE.finditer(verdict):
-        code = m.group(0)
-        if code.startswith("STALLED"):
-            code = "STALLED"
-            stall_ms = int(m.group("ms")) if m.group("ms") else None
-        codes.append(code)
-    return codes, stall_ms
-
-
-def log_verdicts(recording_log: RecordingLog | None, cfg: RecordConfig) -> list[str]:
+def log_verdicts(recording_log: RecordingLog | None, cfg: RecordConfig) -> list[Verdict]:
     """The verdicts that come from what the recorder saw rather than from the frames."""
     if recording_log is None:
         return []
-    out: list[str] = []
-    if recording_log.t0_method and recording_log.t0_method.startswith("NO COVER"):
-        out.append("NO COVER")
+    out: list[Verdict] = []
+    if recording_log.t0_method and recording_log.t0_method.startswith(Verdict.NO_COVER):
+        out.append(Verdict.NO_COVER)
     if recording_log.page_errors:
-        out.append("PAGE ERROR")
+        out.append(Verdict.PAGE_ERROR)
     if any("katex" in w.lower() or "data-tex" in w.lower() for w in recording_log.warnings):
-        out.append("KATEX?")
+        out.append(Verdict.KATEX_UNSURE)
     if recording_log.worst_stall_ms > cfg.stall_ms:
-        out.append(f"STALLED {recording_log.worst_stall_ms}ms")
+        out.append(Verdict.STALLED)
     return out
 
 
@@ -220,16 +210,19 @@ def check(project: Project, only: list[int] | None = None) -> list[RecordingChec
         dur = ffmpeg.probe_duration(f)
         y10, y50, y90 = (ffmpeg.luma_at(f, dur * k)[0] for k in (0.10, 0.50, 0.90))
         max50 = ffmpeg.luma_at(f, dur * 0.5)[1]
-        verdicts = []
+        verdicts: list[Verdict] = []
         if max50 < cfg.black_ymax:
-            verdicts.append("BLACK?")
+            verdicts.append(Verdict.BLACK_UNSURE)
         if wanted and dur < wanted - cfg.truncated_slack_seconds:
-            verdicts.append("TRUNCATED")
+            verdicts.append(Verdict.TRUNCATED)
         verdicts += log_verdicts(recording_log, cfg)
+        stall = recording_log.worst_stall_ms if recording_log else 0
         errors = list(recording_log.page_errors) if recording_log else []
-        row = RecordingCheck(f.name[:2], dur, wanted, y10, y50, y90, max50, " ".join(verdicts) or "ok", errors, file=f)
+        row = RecordingCheck(
+            f.name[:2], dur, wanted, y10, y50, y90, max50, tuple(verdicts), stall or None, errors, file=f
+        )
         if not row.ok:
-            log.warning("[chk ] %s  %s", row.key, row.verdict)
+            log.warning("[chk ] %s  %s", row.key, row.label)
         for e in errors:
             log.warning("[chk ] %s  page error: %s", row.key, e)
         out.append(row)

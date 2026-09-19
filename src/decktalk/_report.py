@@ -12,7 +12,7 @@ from .stages.preflight import PreflightResult
 from .stages.soundscape import SoundscapeItem
 from .stages.verify import VerifyResult
 from .status import StatusResult, relpath
-from .verdicts import BLACK, CHANGED, NO_CHANGE, OK, QUIET, SKIPPED, SPEECH_AT_CUT, THIN_CHANGE
+from .verdicts import Verdict
 
 
 def mmss(seconds: float | None) -> str:
@@ -119,7 +119,8 @@ def preflight_table(result: PreflightResult) -> str:
         label += f": {c.detail}" if c.detail else ""
         label += f" ({c.note})" if c.note else ""
         lines.append(f"{c.check:<18} {c.slide or '-':<8} {c.cue_seconds:>6.2f} {chg}  {label}")
-    tally = {v: sum(c.verdict == v for c in result.cues) for v in (CHANGED, THIN_CHANGE, NO_CHANGE, SKIPPED)}
+    judged = (Verdict.CHANGED, Verdict.THIN_CHANGE, Verdict.NO_CHANGE, Verdict.SKIPPED)
+    tally = {v: sum(c.verdict == v for c in result.cues) for v in judged}
     counts = ", ".join(f"{n} {v}" for v, n in tally.items() if n) or "none"
     where = relpath(result.frames, root) if root is not None else result.frames
     lines.append(f"{len(result.cues)} cue(s): {counts}. Frozen frames in {where}")
@@ -144,7 +145,7 @@ def checks_table(rows: list[RecordingCheck]) -> str:
     for r in rows:
         lines.append(
             f"{r.key:<4} {r.duration:<8.1f} {r.wanted:<8.1f} {r.y10:<6.0f} {r.y50:<6.0f} {r.y90:<6.0f} "
-            f"{r.max50:<6.0f}  {r.verdict}"
+            f"{r.max50:<6.0f}  {r.label}"
         )
     return "\n".join(lines)
 
@@ -152,15 +153,13 @@ def checks_table(rows: list[RecordingCheck]) -> str:
 def verify_table(result: VerifyResult) -> str:
     lines = [f"{'sec':>3} {'start':>8} {'probe':>8} {'YAVG':>6} {'YMAX':>6}  result"]
     for s in result.starts:
-        lines.append(
-            f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {OK if s.ok else BLACK}"
-        )
+        lines.append(f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {s.verdict}")
     lines.append(f"total {result.total_seconds:.2f}s; {result.black_starts} black section start(s)")
     if result.cuts:
         lines.append("")
         lines.append(f"{'sec':>3} {'cut at':>8} {'before cut':>11}  result")
         for c in result.cuts:
-            lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {QUIET if c.ok else SPEECH_AT_CUT}")
+            lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {c.verdict}")
     if result.seams:
         lines.append("")
         lines.append(f"{'sec':>3} {'cut at':>8} {'chg %':>7}  result")
@@ -172,11 +171,11 @@ def verify_table(result: VerifyResult) -> str:
         head = f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7} {'offset':>8}"
         lines.append(head + (f" {'a/v':>7}" if av else "") + "  result")
         for c in result.cues:
-            if c.changed_percent is None or c.verdict == SKIPPED:
+            if c.changed_percent is None or c.verdict == Verdict.SKIPPED:
                 # A row that was never measured shows its verdict, its reason code, and its note.
                 cue = f"{c.cue_seconds:>6.2f}" if c.cue_seconds is not None else f"{'-':>6}"
                 # A skipped row's note already starts with its verdict and reason, so print it alone.
-                if c.note and c.note.startswith(c.verdict):
+                if c.note and c.verdict is not None and c.note.startswith(c.verdict):
                     label = c.note
                 else:
                     label = " ".join(part for part in (c.verdict, c.reason, c.note) if part)

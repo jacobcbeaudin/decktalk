@@ -26,6 +26,7 @@ from decktalk.config import Settings
 from decktalk.stages.align import Cue, find_phrase, resolve_cue
 from decktalk.stages.assemble import cut_summary, fade_flags, timeline_targets
 from decktalk.stages.narrate import estimated_words, parse_script, strip_markdown
+from decktalk.verdicts import Findings, Verdict
 
 MINIMAL_TOML = """
 [project]
@@ -969,7 +970,11 @@ def test_recording_log_verdicts_flag_page_errors_and_bad_tex(tmp_path):
         'data-tex could not be parsed: "\\frac{1}" (write \\\\ for every backslash inside a template literal)'
     ]
     recording_log.frame_gaps = [(1.0, 400)]
-    assert log_verdicts(recording_log, RecordConfig()) == ["PAGE ERROR", "KATEX?", "STALLED 400ms"]
+    assert log_verdicts(recording_log, RecordConfig()) == [
+        Verdict.PAGE_ERROR,
+        Verdict.KATEX_UNSURE,
+        Verdict.STALLED,
+    ]
     recording_log.save(tmp_path / "s.json")
     again = RecordingLog.load(tmp_path / "s.json")
     assert again is not None and again.page_errors == recording_log.page_errors
@@ -1251,17 +1256,17 @@ def test_verify_to_dict_is_json_serialisable_and_relative(tmp_path, monkeypatch)
     }
 
 
-def test_check_to_dict_splits_verdicts(tmp_path):
-    from decktalk.stages.measure import RecordingCheck, split_verdicts
+def test_check_row_carries_its_verdict_codes_and_its_stall(tmp_path):
+    from decktalk.stages.measure import RecordingCheck
 
     file = tmp_path / "build" / "recordings" / "01.webm"
-    row = RecordingCheck("01", 10.04, 10.3, 50.0, 60.0, 70.0, 80.0, "NO COVER STALLED 140ms", ["boom"], file=file)
+    verdicts = (Verdict.NO_COVER, Verdict.STALLED)
+    row = RecordingCheck("01", 10.04, 10.3, 50.0, 60.0, 70.0, 80.0, verdicts, 140, ["boom"], file=file)
     d = json.loads(json.dumps(row.to_dict(tmp_path)))
     assert d["file"] == "build/recordings/01.webm" and d["duration"] == 10.04 and d["max50"] == 80.0
-    assert d["verdicts"] == ["NO COVER", "STALLED"] and d["stall_ms"] == 140 and d["page_errors"] == ["boom"]
-    assert split_verdicts("ok") == ([], None)
-    codes = ["BLACK?", "TRUNCATED", "PAGE ERROR", "KATEX?"]
-    assert split_verdicts(" ".join(codes)) == (codes, None)
+    assert d["verdicts"] == ["NO_COVER", "STALLED"] and d["stall_ms"] == 140 and d["page_errors"] == ["boom"]
+    assert row.label == "NO COVER STALLED 140ms" and not row.ok
+    assert RecordingCheck("02", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0).label == "ok"
 
 
 def test_page_mentions_finds_quoted_ids_and_data_cue():
@@ -1381,7 +1386,7 @@ def test_align_warns_about_a_repeated_phrase_unless_the_cue_names_its_occurrence
         'Set "occurrence" to choose one.'
     )
     # Only the cue that names no occurrence is ambiguous. A case-sensitive phrase counts only its own case.
-    assert [(n.cue, n.verdict, n.detail) for n in section.findings] == [("1.1step", None, detail)]
+    assert [(n.cue, n.verdict, n.message) for n in section.findings] == [("1.1step", None, detail)]
     assert section.resolved["1.1step"] == 0.5 and result.unresolved == 0
     assert main(["-p", str(p.root), "align", "--strict"]) == 0  # A warning, not a finding.
     assert f"! 1.1step: {detail}" in capsys.readouterr().out
@@ -2225,9 +2230,6 @@ def test_narrate_dry_run_without_a_voice_key_still_plans_what_it_can(tmp_path, m
 
 def test_plan_frames_follows_cue_mode_and_freezes_just_before_each_reveal():
     from decktalk.stages.preflight import (
-        AT_SECTION_START,
-        NO_SLIDE,
-        NOT_IN_SLIDE_CUES,
         ORDER_NOTE,
         Freeze,
         first_state,
@@ -2236,6 +2238,7 @@ def test_plan_frames_follows_cue_mode_and_freezes_just_before_each_reveal():
         owner_slide,
         plan_frames,
     )
+    from decktalk.verdicts import SkipReason
 
     slides = {"1.1": ["1.1in", "1.1a", "1.1b"], "1.2": ["1.2a", "1.2b"]}
     cue_times = {"1.1in": 0.0, "1.1a": 1.0, "1.1b": 2.0, "1.2a": 3.0, "1.2b": 4.0, "1.1zz": 4.5, "9x": 5.0}
@@ -2243,14 +2246,14 @@ def test_plan_frames_follows_cue_mode_and_freezes_just_before_each_reveal():
     assert mounts(slides, cue_times) == [("1.1", 0.0), ("1.2", 3.0)]
     plan = [(p.cue, p.before, p.after, p.reason, p.note) for p in plan_frames(slides, cue_times, 25)]
     assert plan == [
-        ("1.1in", None, None, AT_SECTION_START, ""),
+        ("1.1in", None, None, SkipReason.AT_SECTION_START, ""),
         ("1.1a", Freeze("1.1", cue="1.1in"), Freeze("1.1", cue="1.1a"), None, ""),
         ("1.1b", Freeze("1.1", cue="1.1a"), Freeze("1.1", cue="1.1b"), None, ""),
         # 1.2a mounts slide 1.2, so the frame before it is slide 1.1 with every cue it fired.
         ("1.2a", Freeze("1.1", cue="1.1b"), Freeze("1.2", cue="1.2a"), None, ""),
         ("1.2b", Freeze("1.2", cue="1.2a"), Freeze("1.2", cue="1.2b"), None, ""),
-        ("1.1zz", None, None, NOT_IN_SLIDE_CUES, ""),
-        ("9x", None, None, NO_SLIDE, ""),
+        ("1.1zz", None, None, SkipReason.NOT_IN_SLIDE_CUES, ""),
+        ("9x", None, None, SkipReason.NO_SLIDE, ""),
     ]
     assert last_state(slides, cue_times) == Freeze("1.2", cue="1.2b")
     assert first_state(slides, cue_times, 25) == Freeze("1.1", cue="1.1in")
@@ -2292,16 +2295,21 @@ def test_slide_cues_reads_a_catalog_scene_and_names_the_reason_when_it_cannot():
 def test_preflight_verdicts_and_findings():
     from decktalk.stages.align import AlignResult
     from decktalk.stages.preflight import CueEstimate, PreflightResult, SeamEstimate, cue_verdict
-    from decktalk.verdicts import Findings
 
     cfg = Settings().verify
-    assert [cue_verdict(x, cfg) for x in (0.05, 0.2, 0.5)] == ["NO CHANGE", "THIN CHANGE?", "changed"]
+    assert [cue_verdict(x, cfg) for x in (0.05, 0.2, 0.5)] == [
+        Verdict.NO_CHANGE,
+        Verdict.THIN_CHANGE,
+        Verdict.CHANGED,
+    ]
     result = PreflightResult(
         voice={}, narration=Settings().narration, takes=[], note=None, estimated=[],
         align=AlignResult(cue_times=CueTimes(), sections=[], unresolved=1, estimated=True, unknown=2),
-        cues=[CueEstimate("1:a", 1.0, "1.1", 0.2, "THIN CHANGE?"), CueEstimate("1:b", 2.0, "1.1", 0.0, "NO CHANGE"),
-              CueEstimate("1:c", 3.0, "1.1", 4.0, "changed"), CueEstimate("1:d", 0.0, None, None, "skipped")],
-        seams=[SeamEstimate("02", 3.1, "POP AT CUT"), SeamEstimate("03", 0.0, "ok")],
+        cues=[CueEstimate("1:a", 1.0, "1.1", 0.2, Verdict.THIN_CHANGE),
+              CueEstimate("1:b", 2.0, "1.1", 0.0, Verdict.NO_CHANGE),
+              CueEstimate("1:c", 3.0, "1.1", 4.0, Verdict.CHANGED),
+              CueEstimate("1:d", 0.0, None, None, Verdict.SKIPPED)],
+        seams=[SeamEstimate("02", 3.1, Verdict.POP_AT_CUT), SeamEstimate("03", 0.0, Verdict.OK)],
     )  # fmt: skip
     assert result.findings() == Findings(certain=5, uncertain=1)
     assert result.findings(allow_unknown_cues=True) == Findings(certain=3, uncertain=1)

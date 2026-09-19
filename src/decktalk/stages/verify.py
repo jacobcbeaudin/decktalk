@@ -78,15 +78,9 @@ from ..config import VerifyConfig
 from ..errors import ConfigError, MissingInputError
 from ..media import ffmpeg
 from ..project import Project
-from ..verdicts import CHANGED, OK, POP_AT_CUT, THIN_CHANGE
+from ..verdicts import SkipReason, Verdict
 
 log = logging.getLogger(__name__)
-
-REFERENCE_CLAMPED = "REFERENCE_CLAMPED"
-SECTION_NOT_ASSEMBLED = "SECTION_NOT_ASSEMBLED"
-TOO_CLOSE_TO_END = "TOO_CLOSE_TO_END"
-OPTED_OUT = "OPTED_OUT"
-NO_CLICK = "NO_CLICK"
 
 
 def section_starts(project: Project) -> tuple[dict[str, float], float]:
@@ -121,8 +115,8 @@ class StartCheck:
     ok: bool
 
     @property
-    def verdict(self) -> str:
-        return "ok" if self.ok else "BLACK"
+    def verdict(self) -> Verdict:
+        return Verdict.OK if self.ok else Verdict.BLACK
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -145,8 +139,8 @@ class CutCheck:
     ok: bool
 
     @property
-    def verdict(self) -> str:
-        return "quiet" if self.ok else "SPEECH AT CUT"
+    def verdict(self) -> Verdict:
+        return Verdict.QUIET if self.ok else Verdict.SPEECH_AT_CUT
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -169,8 +163,8 @@ class SeamCheck:
     ok: bool
 
     @property
-    def verdict(self) -> str:
-        return OK if self.ok else POP_AT_CUT
+    def verdict(self) -> Verdict:
+        return Verdict.OK if self.ok else Verdict.POP_AT_CUT
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -194,12 +188,13 @@ class CueCheck:
     note: str = ""
     offset_ms: int | None = None  # Where the first changed frame sits relative to the cue.
     av_ms: int | None = None  # The offset minus the click's distance from the cued word's start, with no voice.
-    verdict: str = ""  # changed, THIN CHANGE?, OFF CUE, NO CHANGE, UNRESOLVED, or skipped. Derived from ok when empty.
-    reason: str | None = None  # Why a row was skipped, or NO_CLICK on a measured row with no a/v value.
+    verdict: Verdict | None = None  # Derived from ok when it is not given.
+    reason: SkipReason | None = None  # Why a row was skipped, or NO_CLICK on a measured row with no a/v value.
 
     def __post_init__(self) -> None:
-        if not self.verdict:
-            self.verdict = "changed" if self.ok else ("OFF CUE" if self.offset_ms is not None else "NO CHANGE")
+        if self.verdict is None:
+            missed = Verdict.OFF_CUE if self.offset_ms is not None else Verdict.NO_CHANGE
+            self.verdict = Verdict.CHANGED if self.ok else missed
 
     @property
     def section(self) -> int:
@@ -211,7 +206,7 @@ class CueCheck:
 
     @property
     def skipped(self) -> bool:
-        return self.verdict == "skipped"
+        return self.verdict == Verdict.SKIPPED
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -228,10 +223,18 @@ class CueCheck:
         }
 
 
-def skipped(check: str, reason: str, detail: str) -> CueCheck:
+def skipped(check: str, reason: SkipReason, detail: str) -> CueCheck:
     """A row that measured nothing. The table prints its note, so the note leads with the verdict and reason."""
     return CueCheck(
-        check, None, None, None, None, True, f"skipped {reason}: {detail}", verdict="skipped", reason=reason
+        check,
+        None,
+        None,
+        None,
+        None,
+        True,
+        f"{Verdict.SKIPPED} {reason}: {detail}",
+        verdict=Verdict.SKIPPED,
+        reason=reason,
     )
 
 
@@ -472,7 +475,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
         key = f"{int(sec):02d}"
         cue_t = cue_times.get(key, cue)
         if (key, cue) in opt_out:
-            result.cues.append(skipped(check, OPTED_OUT, 'cues.json sets "verify": false'))
+            result.cues.append(skipped(check, SkipReason.OPTED_OUT, 'cues.json sets "verify": false'))
             continue
         if cue_t is None:
             result.cues.append(
@@ -484,12 +487,12 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
                     None,
                     False,
                     "UNRESOLVED: the cue is not in cue-times.json",
-                    verdict="UNRESOLVED",
+                    verdict=Verdict.UNRESOLVED,
                 )
             )
             continue
         if key not in starts:
-            result.cues.append(skipped(check, SECTION_NOT_ASSEMBLED, f"no sections/{key}.mp4"))
+            result.cues.append(skipped(check, SkipReason.SECTION_NOT_ASSEMBLED, f"no sections/{key}.mp4"))
             continue
         sec_start = starts[key]
         sec_end = next((t for k, t in starts.items() if k > key), total)
@@ -501,7 +504,11 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
         before = reference_time(sec_start, cue_t, fade_in, dip, cfg, fps)
         if before is None:
             result.cues.append(
-                skipped(check, REFERENCE_CLAMPED, f"the cue at {cue_t:.2f}s leaves no frame before it past the fade-in")
+                skipped(
+                    check,
+                    SkipReason.REFERENCE_CLAMPED,
+                    f"the cue at {cue_t:.2f}s leaves no frame before it past the fade-in",
+                )
             )
             continue
         # Another cue close by would spoil a probe or its control, so the probes fit the gap instead.
@@ -515,15 +522,15 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
             )
         best = best_probe(final, before, floor, sec_start + cue_t, delays, cfg)
         if best is None:
-            result.cues.append(skipped(check, TOO_CLOSE_TO_END, "every probe falls past the section end"))
+            result.cues.append(skipped(check, SkipReason.TOO_CLOSE_TO_END, "every probe falls past the section end"))
             continue
         margin, chg, ctl, after = best
         landed = chg >= cfg.min_changed_percent and margin >= cfg.min_margin_percent
         if not landed:
-            result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, False, verdict="NO CHANGE"))
+            result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, False, verdict=Verdict.NO_CHANGE))
             continue
         # A pass by a thin margin is still a pass, but a slightly smaller reveal would fail.
-        passed = THIN_CHANGE if thin_change(chg, margin, cfg) else CHANGED
+        passed = Verdict.THIN_CHANGE if thin_change(chg, margin, cfg) else Verdict.CHANGED
         offset_ms = first_change_offset(final, before, after, sec_start + cue_t, cfg, fps)
         if offset_ms is None:
             result.cues.append(CueCheck(check, cue_t, sec_start + cue_t, chg, ctl, True, verdict=passed))
@@ -541,7 +548,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
                 final, sec_start + word_t, cfg.click_search_seconds, floor=sec_start, ceiling=sec_end
             )
             if click_ms is None:
-                reason = NO_CLICK
+                reason = SkipReason.NO_CLICK
             else:
                 # The picture's offset is measured from the cue and the click's from the cued
                 # word, so the difference already allows for the cue's own offset.
@@ -561,7 +568,7 @@ def verify(project: Project, checks: list[str] | None = None, only: list[int] | 
                 note,
                 offset_ms,
                 av_ms,
-                verdict=passed if on_time else "OFF CUE",
+                verdict=passed if on_time else Verdict.OFF_CUE,
                 reason=reason,
             )
         )

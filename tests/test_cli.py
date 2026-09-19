@@ -15,7 +15,7 @@ import pytest
 
 from decktalk import cli
 from decktalk.cli import _exit_for, build_parser, main
-from decktalk.verdicts import CERTAIN, Findings, count, is_certain, split
+from decktalk.verdicts import Findings, Verdict
 
 
 def stage(name: str) -> ModuleType:
@@ -31,7 +31,7 @@ def fake_project(monkeypatch, tmp_path):
     return project
 
 
-def recording_row(verdict: str) -> SimpleNamespace:
+def recording_row(*verdicts: Verdict) -> SimpleNamespace:
     return SimpleNamespace(
         key="01",
         duration=9.0,
@@ -40,36 +40,38 @@ def recording_row(verdict: str) -> SimpleNamespace:
         y50=100.0,
         y90=100.0,
         max50=200.0,
-        verdict=verdict,
+        verdicts=verdicts,
+        stall_ms=None,
+        label=" ".join(verdicts) or "ok",
         page_errors=[],
-        ok=verdict == "ok",
-        to_dict=lambda root: {"key": "01", "verdict": verdict},
+        ok=not verdicts,
+        to_dict=lambda root: {"key": "01", "verdicts": [v.name for v in verdicts]},
     )
 
 
 def verify_result(*cues: SimpleNamespace) -> SimpleNamespace:
-    start = SimpleNamespace(key="01", start=0.0, probe_at=0.5, yavg=50.0, ymax=200.0, ok=True)
-    cut = SimpleNamespace(key="01", cut_at=10.0, rms_db=-120.0, ok=True)
+    start = SimpleNamespace(key="01", start=0.0, probe_at=0.5, yavg=50.0, ymax=200.0, ok=True, verdict=Verdict.OK)
+    cut = SimpleNamespace(key="01", cut_at=10.0, rms_db=-120.0, ok=True, verdict=Verdict.QUIET)
     return SimpleNamespace(
         total_seconds=10.0,
         starts=[start],
         cuts=[cut],
         cues=list(cues),
         black_starts=0,
-        ok=all(c.verdict in ("changed", "skipped") for c in cues),
+        ok=all(c.verdict in (Verdict.CHANGED, Verdict.SKIPPED) for c in cues),
         seams=[],
         to_dict=lambda root: {"cues": [{"check": c.check, "verdict": c.verdict} for c in cues]},
     )
 
 
-def cue_row(check: str, verdict: str, **fields) -> SimpleNamespace:
+def cue_row(check: str, verdict: Verdict, **fields) -> SimpleNamespace:
     row = dict(
         check=check,
         cue_seconds=1.0,
         final_seconds=1.0,
         changed_percent=1.0,
         control_percent=0.0,
-        ok=verdict == "changed",
+        ok=verdict == Verdict.CHANGED,
         note="",
         offset_ms=0,
         av_ms=None,
@@ -97,15 +99,17 @@ def test_exit_policy_table(certain, uncertain, strict, exit_zero, code):
     assert _exit_for(Findings(certain, uncertain), strict, exit_zero) == code
 
 
-def test_verdicts_split_and_certainty():
-    assert split("THIN CHANGE?") == ["THIN CHANGE?"] and not is_certain("THIN CHANGE?")
-    assert count(["THIN CHANGE?", "changed"]) == Findings(0, 1)
-    assert split("BLACK? TRUNCATED STALLED 1840ms PAGE ERROR") == ["BLACK?", "TRUNCATED", "STALLED", "PAGE ERROR"]
-    assert split("ok") == ["ok"]
-    assert is_certain("STALLED 1840ms") and is_certain("NO COVER")
-    assert not is_certain("BLACK?") and not is_certain("KATEX?") and not is_certain("changed")
-    assert "MISSING" in CERTAIN and "UNKNOWN CUE" in CERTAIN
-    assert count(["ok", "BLACK? KATEX?", "TRUNCATED", "skipped", "SOMETHING NEW"]) == Findings(1, 4)
+def test_verdicts_carry_a_code_a_label_and_a_certainty():
+    assert Verdict.THIN_CHANGE.name == "THIN_CHANGE" and str(Verdict.THIN_CHANGE) == "THIN CHANGE?"
+    assert not Verdict.THIN_CHANGE.certain and not Verdict.THIN_CHANGE.passing
+    assert Verdict.STALLED.certain and Verdict.NO_COVER.certain and Verdict.MISSING.certain
+    assert not Verdict.BLACK_UNSURE.certain and not Verdict.KATEX_UNSURE.certain
+    assert Verdict.CHANGED.passing and Verdict.OK.passing and not Verdict.CHANGED.certain
+    assert Findings.of([Verdict.THIN_CHANGE, Verdict.CHANGED]) == Findings(0, 1)
+    assert Findings.of([Verdict.OK, Verdict.BLACK_UNSURE, Verdict.KATEX_UNSURE, Verdict.TRUNCATED, None]) == Findings(
+        1, 2
+    )
+    assert Findings(1, 2) + Findings(0, 1) == Findings(1, 3)
 
 
 def test_doctor_json_stdout_is_pure_json(tmp_path, monkeypatch, capsys):
@@ -190,7 +194,7 @@ def test_status_json_on_scaffold(tmp_path, monkeypatch, capsys):
 
 
 def test_check_exits_1_on_truncated_without_strict(fake_project, monkeypatch, capsys):
-    monkeypatch.setattr(stage("measure"), "check", lambda project, only=None: [recording_row("TRUNCATED")])
+    monkeypatch.setattr(stage("measure"), "check", lambda project, only=None: [recording_row(Verdict.TRUNCATED)])
     assert main(["check"]) == 1
     assert "TRUNCATED" in capsys.readouterr().out
     assert main(["check", "--exit-zero"]) == 0
@@ -198,11 +202,15 @@ def test_check_exits_1_on_truncated_without_strict(fake_project, monkeypatch, ca
     assert main(["check", "--json"]) == 1
     doc = json.loads(capsys.readouterr().out)
     assert doc["ok"] is False and doc["findings"] == {"certain": 1, "uncertain": 0}
-    assert doc["check"]["recordings"] == [{"key": "01", "verdict": "TRUNCATED"}]
+    assert doc["check"]["recordings"] == [{"key": "01", "verdicts": ["TRUNCATED"]}]
 
 
 def test_check_exits_0_on_uncertain_unless_strict(fake_project, monkeypatch, capsys):
-    monkeypatch.setattr(stage("measure"), "check", lambda project, only=None: [recording_row("BLACK? KATEX?")])
+    monkeypatch.setattr(
+        stage("measure"),
+        "check",
+        lambda project, only=None: [recording_row(Verdict.BLACK_UNSURE, Verdict.KATEX_UNSURE)],
+    )
     assert main(["check"]) == 0
     assert main(["check", "--strict"]) == 1
     capsys.readouterr()
@@ -215,8 +223,8 @@ def test_check_exits_0_on_uncertain_unless_strict(fake_project, monkeypatch, cap
 
 def test_verify_exit_zero_returns_0_on_off_cue(fake_project, monkeypatch, capsys):
     result = verify_result(
-        cue_row("1:1.1a", "OFF CUE", offset_ms=200, note="first change +200 ms from the cue, limit 67 ms"),
-        cue_row("1:1.1b", "skipped", changed_percent=None, final_seconds=None, reason="OPTED_OUT"),
+        cue_row("1:1.1a", Verdict.OFF_CUE, offset_ms=200, note="first change +200 ms from the cue, limit 67 ms"),
+        cue_row("1:1.1b", Verdict.SKIPPED, changed_percent=None, final_seconds=None, reason="OPTED_OUT"),
     )
     monkeypatch.setattr(stage("verify"), "verify", lambda project, checks=None, only=None: result)
     assert main(["verify"]) == 1
@@ -235,7 +243,7 @@ def test_cli_verify_takes_its_cues_as_positionals_only(fake_project, monkeypatch
 
     def fake_verify(project, checks=None, only=None):
         calls.append((checks, only))
-        return verify_result(cue_row("1:1.1a", "changed"))
+        return verify_result(cue_row("1:1.1a", Verdict.CHANGED))
 
     monkeypatch.setattr(stage("verify"), "verify", fake_verify)
     assert main(["verify", "1:1.1a", "2:2.1b", "3:3.1c", "--only", "2", "--only", "3"]) == 0

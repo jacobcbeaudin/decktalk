@@ -25,13 +25,13 @@ preview order, so a slide whose cue times run in another order gets a note. The 
 
 A skipped cue row carries one of these reasons:
 
-    AT_SECTION_START    the cue fires within the first frame, so no frame comes before it
-    NO_SLIDE            no slide of the scene owns the cue
-    NOT_IN_SLIDE_CUES   the slide owns the cue by its id prefix, and a freeze can stop only at a listed cue
-    NO_CATALOG          the page is missing, or its catalog registers the scene with no slides and cues
-    OPTED_OUT           cues.json sets "verify": false on the cue
+    SkipReason.AT_SECTION_START    the cue fires within the first frame, so no frame comes before it
+    SkipReason.NO_SLIDE            no slide of the scene owns the cue
+    SkipReason.NOT_IN_SLIDE_CUES   the slide owns the cue by its id prefix, and a freeze can stop only at a listed cue
+    SkipReason.NO_CATALOG          the page is missing, or its catalog registers the scene with no slides and cues
+    SkipReason.OPTED_OUT           cues.json sets "verify": false on the cue
 
-A seam row is skipped as NO_CUES when a side has no resolved cue, and as CLIP when a side is a clip.
+A seam row is skipped as SkipReason.NO_CUES when a side has no resolved cue, and as CLIP when a side is a clip.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ from ..config import NarrationConfig, VerifyConfig
 from ..media import ffmpeg
 from ..media.browser import await_ready, chromium, page_error_text, screenshot
 from ..project import PageSection, Project
-from ..verdicts import CHANGED, NO_CHANGE, OK, POP_AT_CUT, SKIPPED, THIN_CHANGE, Findings, count
+from ..verdicts import Findings, SkipReason, Verdict
 from .align import AlignResult, load_cues, resolve_sections, unknown_cue_ids
 from .narrate import (
     CACHED,
@@ -67,14 +67,6 @@ from .record import prev_words_query, words_query
 from .verify import opted_out, thin_change
 
 log = logging.getLogger(__name__)
-
-AT_SECTION_START = "AT_SECTION_START"
-NO_SLIDE = "NO_SLIDE"
-NOT_IN_SLIDE_CUES = "NOT_IN_SLIDE_CUES"
-NO_CATALOG = "NO_CATALOG"
-OPTED_OUT = "OPTED_OUT"
-NO_CUES = "NO_CUES"
-CLIP = "CLIP"
 
 ORDER_NOTE = "the slide's cues fire in another order when frozen, so these frames may differ from the recording"
 
@@ -115,7 +107,7 @@ class FramePair:
     slide: str | None
     before: Freeze | None = None
     after: Freeze | None = None
-    reason: str | None = None
+    reason: SkipReason | None = None
     detail: str = ""
     note: str = ""
 
@@ -181,16 +173,17 @@ def plan_frames(slides: Slides, cue_times: dict[str, float], fps: int) -> list[F
     for cue, t in sorted(cue_times.items(), key=lambda item: item[1]):
         sid = owner_slide(cue, slides)
         if sid is None:
-            pairs.append(FramePair(cue, t, None, reason=NO_SLIDE, detail="no slide of the scene owns the cue"))
+            detail = "no slide of the scene owns the cue"
+            pairs.append(FramePair(cue, t, None, reason=SkipReason.NO_SLIDE, detail=detail))
             continue
         order = slides[sid]
         if cue not in order:
             detail = f"slide {sid} owns the cue by its id, and its preview list does not name it"
-            pairs.append(FramePair(cue, t, sid, reason=NOT_IN_SLIDE_CUES, detail=detail))
+            pairs.append(FramePair(cue, t, sid, reason=SkipReason.NOT_IN_SLIDE_CUES, detail=detail))
             continue
         if t * fps < 1:
             detail = "the cue fires within the first frame, so no frame comes before it"
-            pairs.append(FramePair(cue, t, sid, reason=AT_SECTION_START, detail=detail))
+            pairs.append(FramePair(cue, t, sid, reason=SkipReason.AT_SECTION_START, detail=detail))
             continue
         k = order.index(cue)
         earlier = [(s, m) for s, m in seq if m < t - 1e-9 and s != sid]
@@ -244,11 +237,11 @@ def _rel(path: Path | None, root: Path) -> str | None:
     return path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
 
 
-def cue_verdict(share: float, cfg: VerifyConfig) -> str:
+def cue_verdict(share: float, cfg: VerifyConfig) -> Verdict:
     """NO CHANGE, THIN CHANGE?, or changed for a frozen share, whose control is 0 so its margin is the share."""
     if share < cfg.min_changed_percent or share < cfg.min_margin_percent:
-        return NO_CHANGE
-    return THIN_CHANGE if thin_change(share, share, cfg) else CHANGED
+        return Verdict.NO_CHANGE
+    return Verdict.THIN_CHANGE if thin_change(share, share, cfg) else Verdict.CHANGED
 
 
 @dataclass
@@ -257,8 +250,8 @@ class CueEstimate:
     cue_seconds: float
     slide: str | None
     changed_percent: float | None
-    verdict: str
-    reason: str | None = None
+    verdict: Verdict
+    reason: SkipReason | None = None
     detail: str = ""
     note: str = ""
     before: Path | None = None
@@ -285,8 +278,8 @@ class CueEstimate:
 class SeamEstimate:
     key: str
     changed_percent: float | None
-    verdict: str
-    reason: str | None = None
+    verdict: Verdict
+    reason: SkipReason | None = None
     detail: str = ""
     last: Path | None = None
     first: Path | None = None
@@ -337,7 +330,7 @@ class PreflightResult:
             certain=len(self.placeholders) + self.align.unresolved + (0 if allow_unknown_cues else self.align.unknown),
             uncertain=self.short,
         )
-        return own + count(c.verdict for c in self.cues) + count(k.verdict for k in self.seams)
+        return own + Findings.of(c.verdict for c in self.cues) + Findings.of(k.verdict for k in self.seams)
 
     def to_dict(self, root: Path) -> dict[str, Any]:
         cue_times = self.align.to_dict(root)
@@ -477,7 +470,7 @@ def frame_estimates(
         catalogs: dict[str, list[dict[str, Any]] | None] = {}
         frames: dict[str, Path] = {}
 
-        def scene_slides(sec: PageSection) -> tuple[Slides | None, str | None, str]:
+        def scene_slides(sec: PageSection) -> tuple[Slides | None, SkipReason | None, str]:
             if sec.page not in catalogs:
                 html = project.path(sec.page)
                 if not html.exists():
@@ -488,7 +481,7 @@ def frame_estimates(
                     catalogs[sec.page] = page.evaluate("() => (window.__decktalk && window.__decktalk.catalog) || null")
             slides, why = slide_cues(catalogs[sec.page], sec.scene)
             if slides is None:
-                return None, NO_CATALOG, f"{sec.page} {why}"
+                return None, SkipReason.NO_CATALOG, f"{sec.page} {why}"
             return slides, None, ""
 
         def render_frozen(sec: PageSection, freeze: Freeze) -> Path:
@@ -506,16 +499,22 @@ def frame_estimates(
             slides, reason, detail = scene_slides(sec)
             if slides is None:
                 for cue, t in sorted(section_cue_times.items(), key=lambda item: item[1]):
-                    cues.append(CueEstimate(f"{sec.number}:{cue}", t, None, None, SKIPPED, reason, detail))
+                    cues.append(CueEstimate(f"{sec.number}:{cue}", t, None, None, Verdict.SKIPPED, reason, detail))
                 continue
             for pair in plan_frames(slides, section_cue_times, video.fps):
                 check = f"{sec.number}:{pair.cue}"
                 if (sec.key, pair.cue) in skip:
                     detail = 'cues.json sets "verify": false'
-                    cues.append(CueEstimate(check, pair.seconds, pair.slide, None, SKIPPED, OPTED_OUT, detail))
+                    cues.append(
+                        CueEstimate(
+                            check, pair.seconds, pair.slide, None, Verdict.SKIPPED, SkipReason.OPTED_OUT, detail
+                        )
+                    )
                     continue
                 if pair.reason is not None or pair.before is None or pair.after is None:
-                    cues.append(CueEstimate(check, pair.seconds, pair.slide, None, SKIPPED, pair.reason, pair.detail))
+                    cues.append(
+                        CueEstimate(check, pair.seconds, pair.slide, None, Verdict.SKIPPED, pair.reason, pair.detail)
+                    )
                     continue
                 a, b = render_frozen(sec, pair.before), render_frozen(sec, pair.after)
                 share = ffmpeg.changed_images_percent(a, b, **size)
@@ -529,7 +528,7 @@ def frame_estimates(
                 continue
             if not isinstance(sec, PageSection) or not isinstance(prev, PageSection):
                 detail = "a clip has no frozen frame. `decktalk verify` checks this seam after assemble"
-                seams.append(SeamEstimate(sec.key, None, SKIPPED, CLIP, detail))
+                seams.append(SeamEstimate(sec.key, None, Verdict.SKIPPED, SkipReason.CLIP, detail))
                 continue
             prev_slides, _r1, _d1 = scene_slides(prev)
             slides, _r2, _d2 = scene_slides(sec)
@@ -537,11 +536,11 @@ def frame_estimates(
             first = first_state(slides, cue_times.sections.get(sec.key, {}), video.fps) if slides else None
             if last is None or first is None:
                 detail = "a side of the cut has no resolved cue, or its page has no catalog"
-                seams.append(SeamEstimate(sec.key, None, SKIPPED, NO_CUES, detail))
+                seams.append(SeamEstimate(sec.key, None, Verdict.SKIPPED, SkipReason.NO_CUES, detail))
                 continue
             a, b = render_frozen(prev, last), render_frozen(sec, first)
             share = ffmpeg.changed_images_percent(a, b, **size)
-            verdict = OK if share <= vcfg.max_pop_percent else POP_AT_CUT
+            verdict = Verdict.OK if share <= vcfg.max_pop_percent else Verdict.POP_AT_CUT
             seams.append(SeamEstimate(sec.key, share, verdict, last=a, first=b))
         for e in sorted(set(errors)):
             log.warning("[page] preflight  page error: %s", e)

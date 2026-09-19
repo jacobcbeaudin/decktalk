@@ -34,7 +34,7 @@ from typing import Any
 from ..artifacts import CueTimes, Word
 from ..errors import ConfigError, MissingInputError
 from ..project import PageSection, Project
-from ..verdicts import UNKNOWN_CUE
+from ..verdicts import Finding, Verdict
 
 log = logging.getLogger(__name__)
 
@@ -194,19 +194,6 @@ def read_anchors(path: Path) -> dict[str, dict[str, float]]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
-@dataclass(frozen=True)
-class AlignNote:
-    """One structured note. The verdict is UNRESOLVED or UNKNOWN CUE, or None for a warning without a verdict code."""
-
-    cue: str | None
-    verdict: str | None
-    detail: str
-
-    @property
-    def text(self) -> str:
-        return f"{self.cue}: {self.detail}" if self.cue else self.detail
-
-
 @dataclass
 class SectionCueTimes:
     key: str
@@ -215,11 +202,11 @@ class SectionCueTimes:
     resolved: dict[str, float]
     notes: list[str] = field(default_factory=list)
     skipped: str | None = None  # why nothing was resolved (no narration)
-    findings: list[AlignNote] = field(default_factory=list)  # The notes, structured, in the same order.
+    findings: list[Finding] = field(default_factory=list)  # The notes, structured, in the same order.
 
-    def note(self, cue: str | None, verdict: str | None, detail: str) -> None:
+    def note(self, cue: str | None, verdict: Verdict | None, detail: str) -> None:
         """Record a note both as the table's text line and as a structured finding."""
-        finding = AlignNote(cue, verdict, detail)
+        finding = Finding(message=detail, verdict=verdict, section=self.key, cue=cue)
         self.findings.append(finding)
         self.notes.append(finding.text)
 
@@ -230,7 +217,7 @@ class SectionCueTimes:
             "min_seconds": self.min_seconds,
             "skipped": self.skipped,
             "cues": dict(self.resolved),
-            "notes": [{"cue": n.cue, "verdict": n.verdict, "detail": n.detail} for n in self.findings],
+            "notes": [{"cue": n.cue, "verdict": n.verdict, "detail": n.message} for n in self.findings],
         }
 
 
@@ -249,7 +236,9 @@ class AlignResult:
 
     @property
     def unknown_problems(self) -> list[str]:
-        return [f"section {s.key}: {n.text}" for s in self.sections for n in s.findings if n.verdict == UNKNOWN_CUE]
+        return [
+            f"section {s.key}: {n.text}" for s in self.sections for n in s.findings if n.verdict == Verdict.UNKNOWN_CUE
+        ]
 
     def to_dict(self, root: Path) -> dict[str, Any]:
         """The result as JSON-ready data, with the cue times file relative to the project root."""
@@ -271,8 +260,8 @@ class AlignResult:
 
 def unknown_message(result: AlignResult) -> str:
     """Why the build stops on unknown cue ids, with the first one as the example fix."""
-    first = next(n for s in result.sections for n in s.findings if n.verdict == UNKNOWN_CUE)
-    page = first.detail.removeprefix("not in ")
+    first = next(n for s in result.sections for n in s.findings if n.verdict == Verdict.UNKNOWN_CUE)
+    page = first.message.removeprefix("not in ")
     return (
         f"{result.unknown} cue id(s) in cues.json appear nowhere in the page that plays them, so the page would "
         f'never reveal them. Add data-cue="{first.cue}" to the slide in {page}, fix the id in cues.json, or pass '
@@ -370,7 +359,7 @@ def resolve_sections(
             )
             for k, cue_id, page in unknown_ids:
                 if k == key:
-                    rows[-1].note(cue_id, UNKNOWN_CUE, f"not in {page}")
+                    rows[-1].note(cue_id, Verdict.UNKNOWN_CUE, f"not in {page}")
             continue
         words, length = take
         speech_end = words[-1].end if words else length
@@ -379,14 +368,14 @@ def resolve_sections(
             if not words and cue.on != "$start":
                 row.note(
                     cue.cue,
-                    "UNRESOLVED",
+                    Verdict.UNRESOLVED,
                     f"no words ({'estimated takes' if estimated else 'missing words file'})",
                 )
                 unresolved += 1
                 continue
             t = resolve_cue(cue, words)
             if t is None:
-                row.note(cue.cue, "UNRESOLVED", f"phrase not found: {cue.on!r}")
+                row.note(cue.cue, Verdict.UNRESOLVED, f"phrase not found: {cue.on!r}")
                 unresolved += 1
                 continue
             if t > length:
@@ -403,7 +392,7 @@ def resolve_sections(
             row.note(None, None, f"speech {speech_end:.1f}s is {short:.1f}s shorter than the visuals need")
         for k, cue_id, page in unknown_ids:
             if k == key:
-                row.note(cue_id, UNKNOWN_CUE, f"not in {page}")
+                row.note(cue_id, Verdict.UNKNOWN_CUE, f"not in {page}")
         if row.resolved:
             cue_times.sections[key] = row.resolved
         rows.append(row)

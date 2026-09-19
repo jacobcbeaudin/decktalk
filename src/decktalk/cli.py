@@ -41,7 +41,7 @@ from typing import Any
 from . import __version__, _report
 from .errors import DeckTalkError
 from .project import Project
-from .verdicts import BLACK, OK, QUIET, SPEECH_AT_CUT, Findings, count
+from .verdicts import Findings, Verdict
 
 log = logging.getLogger("decktalk")
 
@@ -107,13 +107,13 @@ def _finish(args: argparse.Namespace, findings: Findings, payload: dict[str, Any
 
 def _verify_findings(result: Any) -> Findings:
     """Every start, cut and cue verdict in a VerifyResult, tallied."""
-    verdicts: Iterable[str] = [
-        *(OK if s.ok else BLACK for s in result.starts),
-        *(QUIET if c.ok else SPEECH_AT_CUT for c in result.cuts),
+    verdicts: Iterable[Verdict | None] = [
+        *(s.verdict for s in result.starts),
+        *(c.verdict for c in result.cuts),
         *(c.verdict for c in result.seams),
         *(c.verdict for c in result.cues),
     ]
-    return count(verdicts)
+    return Findings.of(verdicts)
 
 
 # ---- commands ------------------------------------------------------------------------
@@ -262,7 +262,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     project = _project(args)
     rows = check(project, only=_only(args.only))
-    findings = count(r.verdict for r in rows)
+    findings = Findings.of(v for r in rows for v in r.verdicts)
     payload = {"recordings": [r.to_dict(project.root) for r in rows]}
     return _finish(args, findings, payload, lambda: _report.checks_table(rows))
 

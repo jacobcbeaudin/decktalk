@@ -1,4 +1,9 @@
-"""Exceptions raised by DeckTalk. The CLI turns them into exit codes; library callers catch them."""
+"""The exceptions DeckTalk raises on purpose. Library callers catch them, and the CLI prints them.
+
+Each subclass names what went wrong, so a caller can tell a bad project file from a provider
+that refused a request without reading a message. Anything DeckTalk did not mean to raise is
+a bug and reaches the caller as it is.
+"""
 
 from __future__ import annotations
 
