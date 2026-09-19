@@ -51,11 +51,11 @@ decktalk init my-lesson && cd my-lesson
 decktalk build --no-voice
 ```
 
-`decktalk install` downloads Chromium and ffmpeg one time per machine, and on Linux it asks for sudo. `decktalk init` writes the scaffold, a complete example project. The build without voice needs no account, ends with `built`, and prints the path of `build/out/my-lesson.mp4`. Recording runs in real time, so the build takes a few minutes.
+`decktalk install` downloads Chromium and ffmpeg one time per machine, and on Linux it asks for sudo. `decktalk init` writes the starter, a working three-section project with one equation, and nothing in it has to be deleted first. The build without voice needs no account, ends with `built`, and prints the path of `build/out/my-lesson.mp4`. Recording runs in real time, so the build takes about a minute and makes a 44 second video.
 
-To hear it in your own voice, copy `.env.example` to `.env`, set your ElevenLabs API key and voice id, and run `decktalk build`. DeckTalk never prints the key. A voiced build of the scaffold spends about 2,800 characters of voice for a video of just over four minutes, and it writes the mp4, SRT and VTT captions, and one chapter per section. [What spends credits](https://docs.decktalk.ai/requirements#what-spends-credits) lists the cost of every command.
+To hear it in your own voice, copy `.env.example` to `.env`, set your ElevenLabs API key and voice id, and run `decktalk build`. DeckTalk never prints the key. A voiced build of the starter sends about 420 characters, and `decktalk narrate --dry-run` prices that run before it starts. Every build writes the mp4, SRT and VTT captions, a chapter per section and a transcript page. [What spends credits](https://docs.decktalk.ai/requirements#what-spends-credits) lists the cost of every command.
 
-The [quickstart](https://docs.decktalk.ai/quickstart) shows the output of each step and [what the example video shows](https://docs.decktalk.ai/quickstart#what-the-example-video-shows). If you try DeckTalk on one section of something you teach, tell me in [Issues](https://github.com/jacobcbeaudin/decktalk/issues) what stopped you.
+The [quickstart](https://docs.decktalk.ai/quickstart) shows the output of each step and [what the starter shows](https://docs.decktalk.ai/quickstart#what-the-starter-shows). If you try DeckTalk on one section of something you teach, tell me in [Issues](https://github.com/jacobcbeaudin/decktalk/issues) what stopped you.
 
 ## What you write
 
@@ -66,7 +66,7 @@ The [quickstart](https://docs.decktalk.ai/quickstart) shows the output of each s
   <img alt="Four panels. Write shows a markdown script. Narrate runs narrate and align, and shows a tick for every word of &quot;A bowl. A ball. One. Two, three.&quot; with 1.25 over &quot;bowl&quot;. Record runs record, and shows a slide where a bowl draws on and a ball steps down it. Assemble runs assemble and verify, and shows one mp4." src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/how-it-works-light.svg" width="100%">
 </picture>
 
-You write four files. One cue id per reveal, such as `1.1bowl`, ties the script, the cues, and the page together.
+You write four files. One cue id per reveal, such as `1.1script`, ties the script, the cues, and the page together.
 
 | File | What it holds |
 |---|---|
@@ -86,14 +86,14 @@ The `narrate` stage writes a words file with the start and end of every spoken w
 
 A browser does not start recording at a known time, so DeckTalk does not use a timer. The recorder covers the page in magenta until the narration starts. The first frame without magenta is narration t=0, on Linux, macOS, and Windows.
 
-`decktalk verify` then measures every reveal in the finished video. This sample comes from a build without voice of the scaffold, and one frame lasts 40 ms.
+`decktalk verify` then measures every reveal in the finished video. This sample comes from a build without voice of the starter, and one frame lasts 40 ms.
 
-<!-- sample: decktalk verify 1:1.1bowl 3:3.4name 8:7.1checked, build without voice of the scaffold (cue table only) -->
+<!-- sample: decktalk verify 1:1.1title 2:2.1code 3:3.1make, build without voice of the starter (cue table only) -->
 ```text
 check                 cue       at   chg %   ctl %   offset     a/v  result
-1:1.1bowl            1.25     1.25    0.93    0.00    +30ms   +31ms  changed
-3:3.4name           84.72   123.32    2.76    0.00     +0ms    -4ms  changed
-8:7.1checked        10.03   238.31    0.83    0.00    +10ms    +3ms  changed
+1:1.1title           0.70     0.70    1.87    0.00    +20ms   +16ms  changed
+2:2.1code            8.93    23.41   10.79    0.00    -10ms   -34ms  changed
+3:3.1make            8.21    38.13   10.85    0.00    -10ms    +8ms  changed
 ```
 
 The offset column is the time from the cue time to the onset of the reveal, in milliseconds. [Verify](https://docs.decktalk.ai/reference/verify) defines every column and limit.
@@ -119,8 +119,8 @@ The offset column is the time from the cue time to the onset of the reveal, in m
 The [FAQ](https://docs.decktalk.ai/help/faq#how-is-this-different-from-the-other-tools) has the full comparison. Every build also gives you these parts:
 
 - **A free build without voice.** Every stage runs with no key, and a click marks each word.
-- **Cached narration.** DeckTalk voices a section again only when it changes.
-- **Captions and chapters.** Every build writes SRT, VTT, and chapters.
+- **Cached narration.** DeckTalk voices a section again only when it changes, and keeps a recording whose page, words and cues have not moved.
+- **Captions, chapters and a transcript.** Every build writes SRT, VTT, chapters and a transcript page.
 - **A soundscape.** Add [music, an ambience bed, and sound effects](https://docs.decktalk.ai/concepts/sound).
 - **Loudness.** DeckTalk normalizes the mix to -16 LUFS.
 - **Checked output.** `record` and `verify` catch bad recordings and late reveals.
