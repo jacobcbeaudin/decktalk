@@ -922,6 +922,43 @@ wrote build/screenshots/lesson/slide-3.7.png
 wrote build/screenshots/lesson/slide-3.8.png
 ```
 
+### `decktalk serve`
+
+Serves the project directory over http, so a page you open in your own browser can fetch the files
+beside it exactly as it does under the recorder.
+
+```text
+decktalk serve [-h] [--project PROJECT] [-v] [-q] [--port PORT] [--host HOST] [--open] [--json]
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--port PORT` | `8000` | Port to listen on. |
+| `--host HOST` | `127.0.0.1` | Address to bind. The default is reachable from this machine alone. |
+| `--open` | off | Opens the first page in your browser. |
+
+One line per page in `decktalk.toml` is printed, the first of them first, and each names the address
+the server is actually bound to. The server runs until you press Ctrl-C. It reads the project
+directory and writes nothing.
+
+The server answers a file under the project directory whose path holds no name beginning with a dot,
+and nothing else. The rule is about the file a request opens, so a link and a directory's
+`index.html` are each judged by what they point at. A dotfile such as `.env`, a path that resolves
+outside the project, and a directory with no `index.html` are all refused, because that server holds
+the key your project narrates with.
+A `--host` that is not a loopback address makes the project readable from your whole network, and the
+command prints one line saying so.
+
+| Exit | When |
+|---|---|
+| 0 | The server was stopped with Ctrl-C. |
+| 1 | The port is already in use. |
+
+```text
+http://127.0.0.1:8000/deck/index.html
+http://127.0.0.1:8000/deck/lesson.html
+```
+
 ### `decktalk status`
 
 Prints what the project has and what is built.

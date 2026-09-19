@@ -1,7 +1,8 @@
 """Stage 3: record each page section with headless Chromium, driven by the resolved cues.
 
-The page is opened as file:///<project>/<page>?scene=<scene>&<params>&t0=<settle>&cues=<id@t,...>
-and recorded for its span in the timeline plus record_margin_seconds. The page is covered in
+The page is opened as http://project.localhost/<page>?scene=<scene>&<params>&cues=<id@t,...>,
+served from the project directory by the recorder's own request routing, and recorded for its span
+in the timeline plus record_margin_seconds. The page is covered in
 magenta from its first paint until the recorder starts the narration clock, which it does
 only after `settle` seconds past load and at least `min_cover` seconds after the recorder
 was created. The first clean frame in the recording is therefore narration t=0, and
@@ -13,11 +14,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlencode
 
 from ..artifacts import CueTimes, RecordingLog, TimelineSection
 from ..errors import ConfigError, MissingInputError
 from ..media.browser import chromium, record_page
+from ..media.origin import page_url
 from ..model import PageSection, Project
 
 log = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def scene_params(section: PageSection, cue_times: CueTimes | None) -> dict[str, 
 
 
 def scene_url(project: Project, section: PageSection, params: dict[str, str]) -> str:
-    """The file URL the recorder and the frame screenshots open for a page section."""
+    """The local origin URL the recorder and the frame screenshots open for a page section."""
     page = project.path(section.page)
     if not page.exists():
         raise ConfigError(f"section {section.number}: page not found: {page}")
@@ -46,7 +47,7 @@ def scene_url(project: Project, section: PageSection, params: dict[str, str]) ->
     if prev and "prevwords" not in query:
         query["prevwords"] = prev
     query["t0"] = "signal"
-    return page.resolve().as_uri() + "?" + urlencode(query)
+    return page_url(section.page, query)
 
 
 def _words_param(sec: TimelineSection) -> str | None:
@@ -127,12 +128,14 @@ def record(
                     url,
                     length,
                     out,
+                    root=project.root,
                     settle_seconds=cfg.settle_seconds,
                     min_cover_seconds=cfg.min_cover_seconds,
                     width=video.width,
                     height=video.height,
                     color_scheme=cfg.color_scheme,
                 )
+                recording_log.save(project.recording_log(section))
                 stall = recording_log.worst_stall_ms
                 if stall <= cfg.stall_ms or attempt > cfg.retries:
                     break

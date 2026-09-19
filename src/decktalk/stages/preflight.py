@@ -43,12 +43,12 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
 
 from ..artifacts import CueTimes, Word
 from ..jsonio import relative
 from ..media import ffmpeg, frames
-from ..media.browser import await_ready, chromium, page_error_text, screenshot
+from ..media.browser import await_ready, chromium, open_page, page_error_text, screenshot
+from ..media.origin import page_url
 from ..model import PageSection, Project
 from ..settings import NarrationConfig, VerifyConfig
 from ..verdicts import Findings, SkipReason, Verdict
@@ -468,7 +468,7 @@ def freeze_url(project: Project, section: PageSection, freeze: Freeze) -> str:
     prev = prev_words_query(project, section)
     if prev and "prevwords" not in params:
         params["prevwords"] = prev
-    return project.path(section.page).resolve().as_uri() + "?" + urlencode({**freeze.query(), **params})
+    return page_url(section.page, {**freeze.query(), **params})
 
 
 def frame_estimates(
@@ -486,7 +486,7 @@ def frame_estimates(
     cues: list[CueEstimate] = []
     seams: list[SeamEstimate] = []
     with chromium(project.settings.record.browser_path) as browser:
-        page = browser.new_page(viewport={"width": video.width, "height": video.height})
+        page, _assets = open_page(browser, project.root, width=video.width, height=video.height)
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(page_error_text(e)))
         catalogs: dict[str, list[dict[str, Any]] | None] = {}
@@ -498,7 +498,7 @@ def frame_estimates(
                 if not html.exists():
                     catalogs[sec.page] = None
                 else:
-                    page.goto(html.resolve().as_uri())
+                    page.goto(page_url(sec.page))
                     await_ready(page)
                     catalogs[sec.page] = page.evaluate("() => (window.__decktalk && window.__decktalk.catalog) || null")
             slides, why = slide_cues(catalogs[sec.page], sec.scene)

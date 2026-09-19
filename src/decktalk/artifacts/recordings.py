@@ -41,6 +41,7 @@ class RecordingLog:
     settle_seconds: float
     load_seconds: float
     clock_start_seconds: float  # wall-clock seconds from the recorder's start to t=0, the recorder's own estimate
+    assets: list[str] = field(default_factory=list)  # every project file the page loaded, project-relative
     t0_seconds: float | None = None  # first clean frame after the magenta cover: narration t=0
     t0_method: str | None = None
     t0_hash: str | None = None  # the sha256 prefix of the webm that measure read, so a stale measure shows

@@ -517,7 +517,9 @@ def test_package_exports_every_public_name():
     for name in ("Project", "Voice", "Word", "SpeechProvider", "register_speech_provider", "__version__"):
         assert name in decktalk.__all__
     actions = build_parser()._subparsers._group_actions[0]  # type: ignore[union-attr]
-    project_commands = set(actions.choices) - {"init", "install", "doctor"}  # type: ignore[attr-defined]
+    # The four commands that are not an operation on a loaded project: three act on a machine or a
+    # directory, and `serve` runs a web server until it is stopped, so none of them returns a result.
+    project_commands = set(actions.choices) - {"init", "install", "doctor", "serve"}  # type: ignore[attr-defined]
     assert project_commands <= set(decktalk.__all__), sorted(project_commands - set(decktalk.__all__))
     # One word names the command, the call, the type it returns and its --json key, so the result
     # class of every command that returns one is exported beside its function.

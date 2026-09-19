@@ -18,7 +18,8 @@ from urllib.parse import quote
 
 from ..errors import ConfigError
 from ..jsonio import relative
-from ..media.browser import START_JS, await_ready, chromium, screenshot
+from ..media.browser import START_JS, await_ready, chromium, open_page, screenshot
+from ..media.origin import page_url
 from ..model import PageSection, Project
 from ..verdicts import Findings
 from .record import scene_params, scene_url
@@ -42,14 +43,14 @@ def screenshot_slides(
         raise ConfigError("no HTML pages in decktalk.toml")
     written: list[Path] = []
     with chromium(project.settings.record.browser_path) as browser:
-        page = browser.new_page(viewport={"width": video.width, "height": video.height})
+        page, _assets = open_page(browser, project.root, width=video.width, height=video.height)
         page.on("pageerror", lambda e: log.warning("page error: %s", e))
         for rel in pages:
             html = project.path(rel)
             if not html.exists():
                 log.warning("%s: not found; skipped", rel)
                 continue
-            base = html.resolve().as_uri()
+            base = page_url(rel)
             page.goto(base)
             catalog = page.evaluate("() => (window.__decktalk && window.__decktalk.catalog) || null")
             if not catalog:
@@ -84,7 +85,7 @@ def screenshot_frames(project: Project, section: int, at: list[float]) -> list[P
     project.screenshots_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     with chromium(project.settings.record.browser_path) as browser:
-        page = browser.new_page(viewport={"width": video.width, "height": video.height})
+        page, _assets = open_page(browser, project.root, width=video.width, height=video.height)
         page.goto(url, wait_until="load")
         await_ready(page)
         page.wait_for_timeout(cfg.settle_seconds * 1000)

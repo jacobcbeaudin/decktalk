@@ -234,7 +234,7 @@ The recording log lists what the recorder did for one page section, and where na
 {/* sample: build/recordings/08.json, build without voice of a fresh scaffold */}
 ```json
 {
-  "url": "file://~/my-lesson/deck/index.html?scene=7&cues=7.1box%402.39%2C7.1moved%405.26%2C7.1checked%4010.03%2C7.1back%4011.47&words=One%400.00%2Cmore%400.48%2Ccount%400.96%2Cone%401.43%2Cmore%401.91%2Cbox%402.39%2CEvery%402.87%2Cpicture%403.34%2Cin%403.82%2Cthe%404.30%2Cstart%404.78%2Cmoved%405.26%2Cto%405.73%2Cstay%406.21%2Con%406.69%2Cits%407.17%2Cword%407.64%2Cand%408.12%2Ceach%408.60%2Cone%409.08%2Cis%409.56%2Cchecked%4010.03%2CNow%4010.51%2Clet%27s%4010.99%2Cstep%4011.47%2Cback%4011.94%2Cin%4012.42&prevwords=Say%400.00%2CI%400.52%2Cwant%401.05%2Cone%401.57%2Cmore%402.09%2Cstep%402.61%2CI%403.14%2Cadd%403.66%2Cone%404.18%2Cword%404.70%2Cfour%405.23%2Cand%405.75%2Ctell%406.27%2Ca%406.79%2Cnew%407.31%2Cbox%407.84%2Cto%408.36%2Cwait%408.88%2Cfor%409.41%2Cit%409.93%2CI%4010.45%2Cpress%4010.97%2Cbuild%4011.50%2COnly%4012.02%2Cpart%4012.54%2Cone%4013.06%2Cis%4013.59%2Cread%4014.11%2Caloud%4014.63%2Cagain%4015.15%2CThe%4015.68%2Crest%4016.20%2Ckeep%4016.72%2Ctheir%4017.24%2Cvoice%4017.77%2CHere%4018.29%2Cis%4018.81%2Cthe%4019.33%2Cnew%4019.86%2Cstart%4020.38&t0=signal",
+  "url": "http://project.localhost/deck/index.html?scene=7&cues=7.1box%402.39%2C7.1moved%405.26%2C7.1checked%4010.03%2C7.1back%4011.47&words=One%400.00%2Cmore%400.48%2Ccount%400.96%2Cone%401.43%2Cmore%401.91%2Cbox%402.39%2CEvery%402.87%2Cpicture%403.34%2Cin%403.82%2Cthe%404.30%2Cstart%404.78%2Cmoved%405.26%2Cto%405.73%2Cstay%406.21%2Con%406.69%2Cits%407.17%2Cword%407.64%2Cand%408.12%2Ceach%408.60%2Cone%409.08%2Cis%409.56%2Cchecked%4010.03%2CNow%4010.51%2Clet%27s%4010.99%2Cstep%4011.47%2Cback%4011.94%2Cin%4012.42&prevwords=Say%400.00%2CI%400.52%2Cwant%401.05%2Cone%401.57%2Cmore%402.09%2Cstep%402.61%2CI%403.14%2Cadd%403.66%2Cone%404.18%2Cword%404.70%2Cfour%405.23%2Cand%405.75%2Ctell%406.27%2Ca%406.79%2Cnew%407.31%2Cbox%407.84%2Cto%408.36%2Cwait%408.88%2Cfor%409.41%2Cit%409.93%2CI%4010.45%2Cpress%4010.97%2Cbuild%4011.50%2COnly%4012.02%2Cpart%4012.54%2Cone%4013.06%2Cis%4013.59%2Cread%4014.11%2Caloud%4014.63%2Cagain%4015.15%2CThe%4015.68%2Crest%4016.20%2Ckeep%4016.72%2Ctheir%4017.24%2Cvoice%4017.77%2CHere%4018.29%2Cis%4018.81%2Cthe%4019.33%2Cnew%4019.86%2Cstart%4020.38&t0=signal",
   "requested_seconds": 14.49999999999999,
   "settle_seconds": 1.452,
   "load_seconds": 0.05,
@@ -285,11 +285,12 @@ The recording log lists what the recorder did for one page section, and where na
 
 | Field | Type | Meaning |
 |---|---|---|
-| `url` | string | Page URL that the recorder opened, with `scene`, `cues`, `words`, `prevwords`, `t0=signal`, and any section `params`. |
+| `url` | string | Page URL that the recorder opened on the local origin, with `scene`, `cues`, `words`, `prevwords`, `t0=signal`, and any section `params`. |
 | `requested_seconds` | number | Recording length after narration t=0: the section span plus `record_margin_seconds`. |
 | `settle_seconds` | number | Wall-clock seconds from the page's `load` event to narration t=0. |
 | `load_seconds` | number | Wall-clock seconds from the recorder's start to the page's `load` event. |
 | `clock_start_seconds` | number | Wall-clock seconds from the recorder's start to narration t=0. Not the same as `[verify] reference_lead_seconds`. |
+| `assets` | array of strings | Every project file the page loaded, project-relative, in the order the page asked for it. |
 | `t0_seconds` | number or null | Time of the first frame after the magenta cover, in the webm. `measure` writes it, and `assemble` trims there. |
 | `t0_method` | string or null | How `measure` found `t0_seconds`. A value that starts with `NO COVER` is a guess. |
 | `t0_hash` | string or null | The first 16 hex digits of the sha256 of the webm that `measure` read. A recording log from an older `measure` has none. |

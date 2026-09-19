@@ -14,6 +14,7 @@
     decktalk assemble                 ffmpeg -> build/out/<name>.mp4
     decktalk verify [SECTION:CUE ...] section starts, cuts, and every cue landing on the final mp4
     decktalk screenshots              one PNG per slide, per cue of one slide, or per second of a playing section
+    decktalk serve                    serve the project over http so a page loads its own files in your browser
     decktalk words [--json]           each spoken section's words, in seconds after the section starts
     decktalk clip N --start S --end E --out FILE
                                       a span of a built section and its narration -> a clip and its words file
@@ -282,6 +283,33 @@ def cmd_screenshots(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Serve the project directory over http and block until the author stops it."""
+    import webbrowser
+
+    from .media.origin import open_server, reachable_warning, served_urls
+
+    project = _project(args)
+    server = open_server(project.root, args.host, args.port)
+    pages = project.page_files or ["index.html"]
+    urls = served_urls(server, pages)
+    warning = reachable_warning(server)
+    if warning:
+        print(f"warning: {warning}", file=sys.stderr)
+    if args.json:
+        print(dumps({"command": args.cmd, "version": __version__, "ok": True, args.cmd: {"urls": urls}}))
+    else:
+        print(urls[0])
+        for url in urls[1:]:
+            print(url)
+    if args.open:
+        webbrowser.open(urls[0])
+    log.info("serving %s; press Ctrl-C to stop", project.root)
+    with server:
+        server.serve_forever()
+    return 0
+
+
 def cmd_words(args: argparse.Namespace) -> int:
     from .stages.clip import words
 
@@ -502,6 +530,18 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--section", type=int, help="play this section with its resolved cues")
     s.add_argument("--at", type=float, action="append", help="seconds after narration t=0 (with --section)")
     s.set_defaults(fn=cmd_screenshots, parser=s)
+
+    s = proj(sub.add_parser("serve", help="serve the project over http for previewing a page in your own browser"))
+    s.add_argument("--port", type=int, default=8000, help="the port to listen on (default: 8000)")
+    s.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="the address to bind; anything but a loopback address lets the network read the project "
+        "directory (default: 127.0.0.1)",
+    )
+    s.add_argument("--open", action="store_true", help="open the first page in your browser")
+    s.add_argument("--json", action="store_true", help=JSON_HELP)
+    s.set_defaults(fn=cmd_serve)
 
     s = proj(sub.add_parser("words", help="each spoken section's words, in seconds after the section starts"))
     s.add_argument("--only", type=int, action="append", metavar="N", help=only_help)

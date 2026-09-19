@@ -99,9 +99,13 @@ filterwarnings = ["error"]
 
 [tool.coverage.run]
 source = ["decktalk"]
+# Playwright runs every synchronous call on a greenlet, so without this every line after the first
+# page call inside a browser test reads as dead and the floor below would be blind to the recorder.
+concurrency = ["thread", "greenlet"]
 
 [tool.coverage.report]
-# The floor is the whole suite measured on Linux with `-m 'not scaffold'`, rounded down. Raise it when coverage grows.
-fail_under = 86
+# The floor is the whole suite with `-m 'not scaffold'`, rounded down, with one point of room for the
+# paths a platform takes and no more. Raise it when coverage grows.
+fail_under = 91
 show_missing = false
 skip_empty = true

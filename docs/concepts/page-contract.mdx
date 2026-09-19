@@ -43,6 +43,15 @@ cue mode. This table shows which values matter in each.
 `data-delay` defaults to 0. So a browser preview shows a `data-cue` element with no `data-delay` as soon
 as its slide mounts, before its cue.
 
+### Where a page is served from
+
+`record`, `screenshots` and `preflight` open every page at `http://project.localhost/`, and answer
+each request under that origin from your project directory. A page may therefore `fetch()` a file
+beside it and load an ES module, neither of which works from a `file://` URL, and a relative URL
+resolves exactly as it would from a file on disk. Nothing is downloaded and no port is opened.
+
+To open a page in your own browser the same way, run `decktalk serve` and follow the URL it prints.
+
 ## The handshake
 
 ```mermaid

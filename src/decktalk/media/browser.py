@@ -3,6 +3,9 @@
 This is the only module that launches a browser. It waits for the page to say it is ready, reads
 the catalog the runtime publishes, and collects the warnings the page recorded, so a stage above
 asks for a recording or a frame and never for a browser.
+
+Every page it opens is served from the local origin in `origin.py`, so a page may fetch a file
+beside it and import a module, and the recorder learns which files the page actually loaded.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from typing import Any
 
 from ..artifacts import RecordingLog, gap_time
 from ..errors import ToolError
+from .origin import Assets, route_pages
 
 log = logging.getLogger(__name__)
 
@@ -92,10 +96,15 @@ font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;overflow:hidden}}
 
 @contextmanager
 def chromium(browser_path: str = "") -> Iterator[Any]:
-    """A launched headless Chromium, closed on exit. ToolError with the fix when unavailable.
+    """A launched headless Chromium, as the machine configures it, closed on exit.
+
+    No proxy argument is passed. Request routing answers the local origin before the network stack
+    reaches it, so no proxy ever sees that host, and every other request a recorded page makes goes
+    the way the machine sends it, through its own proxy and its own logging.
 
     `browser_path` is `[record] browser_path`, the executable a machine that manages its own
-    Chromium names. It is empty for the build that `decktalk install` fetched.
+    Chromium names. It is empty for the build that `decktalk install` fetched. A ToolError names
+    the fix when no browser can be launched.
     """
     from playwright.sync_api import sync_playwright
 
@@ -108,6 +117,21 @@ def chromium(browser_path: str = "") -> Iterator[Any]:
             yield browser
         finally:
             browser.close()
+
+
+def open_page(
+    browser: Any,
+    root: Path,
+    *,
+    width: int,
+    height: int,
+    color_scheme: str = "no-preference",
+) -> tuple[Any, Assets]:
+    """A page whose requests under the local origin are answered from `root`, and the record of what it loaded."""
+    page = browser.new_page(
+        viewport={"width": width, "height": height}, device_scale_factor=1, color_scheme=color_scheme
+    )
+    return page, route_pages(page, root)
 
 
 def await_ready(page: Any) -> None:
@@ -162,13 +186,18 @@ def record_page(
     seconds: float,
     out: Path,
     *,
+    root: Path,
     settle_seconds: float,
     min_cover_seconds: float,
     width: int,
     height: int,
     color_scheme: str,
 ) -> RecordingLog:
-    """Record `url` for `seconds` after the narration clock starts, writing the webm and its log."""
+    """Record `url` for `seconds` after the narration clock starts, and write the webm beside its log.
+
+    `root` is the project directory the local origin serves, so the page may fetch its own files and
+    the log can name every one of them.
+    """
     tmp_dir = Path(tempfile.mkdtemp(prefix="decktalk-rec-"))
     context = browser.new_context(
         viewport={"width": width, "height": height},
@@ -178,6 +207,7 @@ def record_page(
         record_video_dir=str(tmp_dir),
         record_video_size={"width": width, "height": height},
     )
+    assets = route_pages(context, root)
     created = time.monotonic()
     context.add_init_script(COVER_JS + "\n;(" + COVER_JS + ")();")
     page = context.new_page()
@@ -237,6 +267,7 @@ def record_page(
     shutil.rmtree(tmp_dir, ignore_errors=True)
     recording_log = RecordingLog(
         url=url,
+        assets=list(assets.paths),
         requested_seconds=seconds,
         settle_seconds=round(started - loaded, 3),
         load_seconds=round(loaded - created, 3),
@@ -248,7 +279,8 @@ def record_page(
         cue_log=[dict(e) for e in cue_log if isinstance(e, dict)] if isinstance(cue_log, list) else [],
         long_frames=[dict(e) for e in long_frames if isinstance(e, dict)] if isinstance(long_frames, list) else [],
     )
-    recording_log.save(out.with_suffix(".json"))
+    for name in assets.missing:
+        log.warning("[page] %s  the page asked for %s and the project has no such file", out.stem, name)
     return recording_log
 
 
