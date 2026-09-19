@@ -143,6 +143,7 @@ The docs are at **[docs.decktalk.ai](https://docs.decktalk.ai)**.
 - **Install and build a first video:** [Quickstart](https://docs.decktalk.ai/quickstart)
 - **Write your own section:** [Your first deck](https://docs.decktalk.ai/guides/first-deck)
 - **Give an agent the whole contract:** [Reference card for agents](https://docs.decktalk.ai/reference/card)
+- **Understand how it is built:** [ARCHITECTURE.md](https://github.com/jacobcbeaudin/decktalk/blob/main/ARCHITECTURE.md) and the [decision notes](https://github.com/jacobcbeaudin/decktalk/tree/main/docs/decisions)
 
 ## Contributing
 

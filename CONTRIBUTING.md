@@ -141,11 +141,12 @@ read here is what the suite enforces.
 ```text
 src/decktalk/
   vocabulary             the words every layer above shares
-    errors.py            The exceptions DeckTalk raises on purpose.
+    errors.py            The exceptions DeckTalk raises on purpose, and the closed list of codes the CLI reports them by.
+    pipeline.py          The vocabulary of a run: the five stages in the order they run, the events a run records, and the closed values its files carry.
     secret.py            A value that may be used and never shown: an API key, and every other value read from `.env`.
     verdicts.py          The shared vocabulary of judgement: verdicts, findings, skip reasons, and the stage result protocol.
   leaves                 one job each, and no knowledge of a project
-    jsonio.py            Reading and writing the JSON files DeckTalk owns, and the one walker that makes a dataclass JSON.
+    jsonio.py            Reading and writing the JSON files DeckTalk owns, and the one walker each way between JSON and a dataclass.
     pagescan.py          The static page scan: what the measured catalog says about a slide, without looking at a picture.
     tomlmap.py           One loader from a mapping to typed values, with located errors and "did you mean" hints.
     toolchain/           What DeckTalk fetches or ships for one machine, and where it keeps it.
@@ -156,6 +157,7 @@ src/decktalk/
     artifacts/           The typed build artifacts and their JSON files under `build/`.
       cue_times.py       `CueTimes` and `CueTime`, every resolved cue as an object.
       cuts.py            `Cuts` and `Cut`, the cut list: where every section sits in the finished film.
+      progress.py        `ProgressRow`, one line of the log a build keeps of itself.
       recordings.py      `RecordingLog`, everything `record` did for one section and everything it judged about the result.
       takes.py           `Takes` and `Take`, the index of what the voice recorded, and the narration clock it makes.
       words.py           `Word` and its file, the time base everything else shares.
@@ -204,7 +206,7 @@ src/decktalk/
       narrate/           Stage 1: `script.md` becomes one take per section, indexed by content hash.
         plan.py          The take plan: what a run would voice, what it already has, and what it would cost.
         script_rules.py  The rules a script must obey before any of it is paid for.
-        takes.py         Writing one take, and joining every take into one narration track.
+        takes.py         Writing one take, placing it, and joining every take into one narration track.
       preflight/         Preflight: what a voiced build would spend and show, with no credits and no recording.
         freeze.py        Which frozen states of a page each cue is measured between, with no browser and no file.
         scan.py          Rendering the frozen frames into build/preflight and comparing them.
@@ -225,6 +227,7 @@ src/decktalk/
       options.py         One typed options dataclass per command, read from the parsed arguments by field name.
       output.py          The tables and the leading summary the CLI prints, read from the stage results themselves.
       parser.py          The command table, the shared flag groups, and the parser both are built into.
+      schema.py          The `--json` envelope as types: one frozen dataclass per payload and per row, and the reader.
       video.py           The commands that make the video: the stages in order, and `build`, which runs them all.
     __init__.py          DeckTalk: narrated presentation videos, cut to the word.
     __main__.py          `python -m decktalk` runs the CLI.
@@ -244,12 +247,17 @@ and maps a finding to exit 1, a refused command line to exit 2 and an error to e
 The rest of the repository:
 
 ```text
-tests/          one test file per module, mirroring src/decktalk under tests/unit/
-scripts/        check.py, the page generators and the asset generator
-docs/           the Mintlify site at docs.decktalk.ai
-site/           the landing page at decktalk.ai
-assets/         the generated graphics the README and the site use
+tests/            one test file per module, mirroring src/decktalk under tests/unit/
+scripts/          check.py, the page generators and the asset generator
+docs/             the Mintlify site at docs.decktalk.ai
+docs/decisions/   one note per choice the code cannot explain, for readers of the tree
+site/             the landing page at decktalk.ai
+assets/           the generated graphics the README and the site use
 ```
+
+`docs/decisions/` holds plain Markdown and sits outside `docs/docs.json`, so it is read on GitHub
+and never published to the site. [ARCHITECTURE.md](ARCHITECTURE.md) is the overview those notes hang
+from, and it is where to start if you are changing the shape of the package rather than one module.
 
 The test for `src/decktalk/stages/verify/plan.py` is `tests/unit/stages/verify/test_plan.py`. The
 suites that need a browser, ffmpeg or the whole pipeline sit at the top of `tests/` instead, one
