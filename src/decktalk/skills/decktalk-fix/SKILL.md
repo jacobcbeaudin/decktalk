@@ -2,6 +2,8 @@
 name: decktalk-fix
 description: Read a DeckTalk finding and make the smallest change that removes its cause. Use when preflight, align, record, verify or build exits non-zero with error set to null, when a cue is unresolved or unknown, when a reveal lands off cue or shows no change, when a recording stalls or starts black, or when preflight skips every cue. It maps each findings.items[] code to its cause and its smallest fix, changes the page or the phrase before the script, and reruns only the command that failed. Do not use it to plan a rewrite, which belongs to decktalk-revise.
 compatibility: Requires the decktalk command on PATH and the same tools the failing command needed. Most fixes are decided from JSON, and a few ask for a look at a PNG, which a model that cannot read an image should pass to the user.
+metadata:
+  ends_with: The smallest edit that clears the finding, and the failing command run again with `--only`.
 ---
 
 # Fix the finding
@@ -22,7 +24,7 @@ envelope and never the printed table.
    by `code`. Each row carries `certain`, `section`, `cue`, `where` and `detail`. Fix every certain
    row. Show every uncertain row to the user and ask.
 3. **Look for the rows that do not fail.** A preflight row whose `reason` is `NO_CATALOG`,
-   `NO_SLIDE`, `NOT_IN_SLIDE_CUES`, `NO_CUES` or `OPTED_OUT` is skipped rather than failed, so it can
+   `NO_SLIDE`, `NO_CUES` or `OPTED_OUT` is skipped rather than failed, so it can
    leave a command at exit code 0 with nothing measured. Read `preflight.cues[]` yourself and treat a
    skipped row as a stop. `NO_CATALOG` on every row means the page did not run at all.
 4. **Find the cause.** Read `references/verdicts.md` for each code, its usual cause and its smallest

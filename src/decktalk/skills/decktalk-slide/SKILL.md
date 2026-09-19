@@ -2,6 +2,8 @@
 name: decktalk-slide
 description: Write or change a DeckTalk deck page, a slide, an equation, a code sample or a screenshot so that every reveal is visible, cued and legible. Use when a narrated video needs a new slide or scene, when maths or code has to appear on screen, when a picture must be added to an existing section, or when a reveal is too small, overlapping or off frame. It covers the markup scene wrapper, data-cue, data-reveal, data-describe and data-tex, the KaTeX tags, the reveal budget, and reading the PNG files that screenshots writes. Do not use it for what the voice says, which belongs to decktalk-script.
 compatibility: Requires the decktalk command on PATH and a browser installed by decktalk install. Steps 8 and 9 read PNG files, so a model that cannot read an image should ask the user to look at the frames instead.
+metadata:
+  ends_with: Markup that obeys the page contract, checked against the PNGs that `decktalk screenshots` writes.
 ---
 
 # Write the slide
@@ -35,7 +37,7 @@ stop and tell the user what `error.message` says.
    written from those sentences. Keep a slide to four reveals, start a new slide for the next part of
    a derivation, and choose the reveal effect from `references/slide-patterns.md`.
 6. **Load KaTeX before the runtime** on any page that uses `data-tex`, by copying the two local tags
-   from the deck page the project was created with. In markup a backslash is written once; inside a
+   from the deck page the project was created with. In markup a backslash is written once, and inside a
    `render` template literal it is written twice. Write a plain-text fallback that is correct
    mathematics with its own brackets, because it is what shows if KaTeX never loads.
 7. **Keep the picture inside the frame.** The stage is 1920 by 1080. Keep body text at 36 pixels or
@@ -65,7 +67,7 @@ stop and tell the user what `error.message` says.
 ## Gotchas
 
 - A broken page makes every preflight row skip with `NO_CATALOG` rather than fail, so read
-  `preflight.cues[]` yourself. In markup there is nothing to escape; a backtick, a `${` or a single
+  `preflight.cues[]` yourself. In markup there is nothing to escape. A backtick, a `${` or a single
   backslash only breaks a page inside a `render` template literal.
 - A code line must sit on one physical line, because the element's own indentation is shown.
 - A typewriter effect on a code line reads as no change to the checker. Fade a whole container in on

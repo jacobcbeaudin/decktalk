@@ -2,6 +2,8 @@
 name: decktalk-script
 description: Plan and write script.md for a DeckTalk narrated video, in an empty directory or in an existing project. Use when someone asks for a new narrated video, explainer, tutorial, product demo or lesson, adds a section, or changes what the voice says. It creates the project, writes the outline before the script, writes numbers and math the way the voice must say them, holds every unconfirmed claim as a placeholder, and fits each section to its time budget with narrate --dry-run. Do not use it for slide markup, which belongs to decktalk-slide, or for cue phrases, which belong to decktalk-cues.
 compatibility: Requires the decktalk command on PATH and a writable project directory. Every check in this skill is text and JSON, so a model that cannot read an image can follow all of it.
+metadata:
+  ends_with: `script.md` written to a time budget, with a table of every spoken phrase and the symbols it stands for.
 ---
 
 # Write the script
@@ -71,8 +73,9 @@ stop and tell the user what `error.message` says.
   "version two point three". Write the words.
 - The voice says what is written, so a respelled word such as "kubectl" becomes the spoken word, the
   cue phrase and the caption together.
-- The first spoken section is the one place a take never moves. Adding a new first section re-voices
-  the old one.
+- A take never moves for its position. It is named by its own text, and every spoken section gets
+  the same lead and tail around its take, so adding a new first section voices only the new one and
+  the old opening keeps its take.
 - `decktalk narrate --dry-run --json` prices the run at `[voice] price_per_1000_characters`. When
   that key is unset the cost keys are null, so quote characters instead and let the user price them.
 - A digit or a symbol left in a spoken sentence is reported as `SPOKEN SYMBOL?`, because the voice

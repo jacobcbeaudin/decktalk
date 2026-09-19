@@ -2,6 +2,8 @@
 name: decktalk-revise
 description: Update an existing DeckTalk video after the product, a library, a number or a fact changed, re-voicing as few sections as possible. Use when someone says a demo, tutorial, explainer or lesson is out of date, asks for this week's update, or names a release that changed what the video claims. It lists the stale claims, maps each change to the sentences, cues, slides and screenshots it touches, proves with narrate --dry-run that only the changed sections are voiced, and builds with --only after approval. Do not use it for a first video, which belongs to decktalk-script.
 compatibility: Requires the decktalk command on PATH and an existing project with a built video. Step 6 compares screenshots, so a model that cannot read an image should ask the user to compare the old and new pictures.
+metadata:
+  ends_with: The fewest edits, a build of the changed sections alone, and a change note with the sections and the dollars.
 ---
 
 # Revise the video
@@ -64,8 +66,8 @@ stop and tell the user what `error.message` says.
 - Never pass `--force`, `--exit-zero` or any `--allow-` flag.
 - Never change the voice id, the model or a `[voice]` key, because each of those re-voices the whole
   video.
-- Never renumber a section, and never insert a new first section without telling the user that the
-  old first section will be voiced again.
+- Never renumber a section or insert one without telling the user that every renumbered section is
+  recorded again. No take is voiced again for its position, so only the new section's words are paid for.
 - Never run a command with `--no-voice` in a project that holds real takes.
 - Never leave a claim in the video that the ledger cannot source.
 
@@ -77,8 +79,8 @@ stop and tell the user what `error.message` says.
   `synthesize`. Work in the checkout that holds the build, or tell the user what a full re-voice
   costs.
 - `--only` limits the sections that are recorded, not the sections that are voiced.
-- Renumbering keeps a take, because a take is keyed by its text, with the first spoken section as the
-  one exception, which carries the opening silence.
+- Renumbering keeps a take, because a take is keyed by its text alone. Every section's lead and tail
+  are placed around its take, so a renumbered or reused take lands the same way.
 - `decktalk build --from record --json` reruns the picture without touching the narration, which is
   what a change that replaced only a screenshot needs.
 

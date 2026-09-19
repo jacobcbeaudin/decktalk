@@ -2,6 +2,8 @@
 name: decktalk-build
 description: Render, rebuild, verify or preview a DeckTalk video, and stop for the author's approval before any narration is paid for. Use when someone asks to build, render, export, preview or check a narrated video, an explainer, a tutorial or a lesson, or after any edit to script.md, cues.json, decktalk.toml or a deck page. It rehearses without voice, reports which sections a voiced run would send and what they cost, waits for approval, follows the long run through status, and finishes with verify and frames. Do not use it to repair a finding, which belongs to decktalk-fix.
 compatibility: Requires the decktalk command on PATH, a browser and ffmpeg installed by decktalk install, and network access with a speech key for a voiced run. Step 10 reads PNG files, so a model that cannot read an image should ask the user to look at the frames instead.
+metadata:
+  ends_with: A verified build, with the frames shown to you before the work is called done.
 ---
 
 # Build and verify
