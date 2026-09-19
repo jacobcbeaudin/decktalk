@@ -56,16 +56,11 @@
         ]
       },
       {
-        "group": "Guides",
+        "group": "Use cases",
         "pages": [
-          "guides/writing-for-the-ear",
-          "guides/design-a-slide",
-          "guides/slide-recipes",
-          "guides/rebuild-one-section",
-          "guides/clip-section",
-          "guides/sfx-on-a-cue",
-          "guides/ci-and-offline",
-          "guides/page-by-hand"
+          "use-cases/technical-tutorials",
+          "use-cases/product-demos",
+          "use-cases/lessons"
         ]
       },
       {
@@ -78,9 +73,22 @@
         ]
       },
       {
+        "group": "Guides",
+        "pages": [
+          "guides/writing-for-the-ear",
+          "guides/design-a-slide",
+          "guides/slide-recipes",
+          "guides/rebuild-one-section",
+          "guides/clip-section",
+          "guides/sfx-on-a-cue",
+          "guides/accessible-video",
+          "guides/ci-and-offline",
+          "guides/page-by-hand"
+        ]
+      },
+      {
         "group": "Reference",
         "pages": [
-          "reference/card",
           "reference/cli",
           "reference/verify",
           "reference/script-md",
@@ -89,8 +97,19 @@
           "reference/runtime",
           "reference/configuration",
           "reference/artifacts",
+          "reference/what-leaves-your-machine",
           "reference/python-api",
           "reference/glossary"
+        ]
+      },
+      {
+        "group": "Agents",
+        "pages": [
+          "agents/skills",
+          "agents/install",
+          "agents/agents-md",
+          "agents/json",
+          "reference/card"
         ]
       },
       {
