@@ -102,8 +102,8 @@ src/decktalk/
   tomlmap.py     one mapping loader: located errors, key hints, and dataclass trees
   settings.py    tuning settings: defaults, machine file, decktalk.toml, DECKTALK_* env, flags
   toolchain/     what ships in the wheel and what is fetched per machine: cache, ffmpeg, assets
-  artifacts/     one module per build artifact: words, takes, timeline, cue times, recording log
-  captions/      caption layout, and the srt, vtt and chapter files
+  artifacts/     one module per build artifact: words, takes, timeline, cue times, recording log, cut list
+  captions/      caption layout, and the srt, vtt, chapter and transcript files
   media/         ffmpeg, audio, frames, the encoder, Chromium and the local origin (internal)
   speech/        the speech protocol, the provider registry, and ElevenLabs (internal)
   model/         one project: the decktalk.toml document, the build paths, .env, the script and cues
@@ -111,8 +111,9 @@ src/decktalk/
   report.py      the tables the CLI prints from a stage result (internal)
   scaffold.py    install, doctor, and init: the downloads and the template copy
   status.py      what a project has built, read from disk for `decktalk status`
-  stages/        narrate/ (plan, script_rules, takes), align/ (pages), preflight, record/ (capture, start, checks),
-                 assemble, verify, screenshots, clip (with words), soundscape, build
+  stages/        narrate/ (plan, script_rules, takes), align/ (pages), preflight/ (freeze, scan),
+                 record/ (capture, start, checks), assemble/ (cut, mix, loudness, publish),
+                 verify/ (plan, measure, seams), screenshots, clip (with words), soundscape, build
   runtime/       decktalk-runtime.js, the page contract
   katex/         the pinned KaTeX release the pages typeset with
   template/      what `decktalk init` writes
@@ -123,9 +124,10 @@ tests/
   test_cli.py        exit codes, --json output, and flags, with stages replaced by fixed results
   test_runtime.py    drives decktalk-runtime.js in a real Chromium (-m browser)
   test_media.py      checks frame analysis against real ffmpeg on a synthetic video (-m media)
-  test_preflight.py  preflight's frozen frames on the scaffold and on a synthetic page (-m browser, -m media)
   conftest.py        the --gate-timing option
-  e2e/test_pipeline.py  an offline build of tests/e2e/fixture, checked property by property (-m e2e)
+  e2e/test_pipeline.py  an offline build of tests/e2e/fixture, checked property by property (-m e2e).
+                     It builds into tests/out/e2e, one session at a time, and DECKTALK_E2E_OUT
+                     moves that directory for a second session on the same machine.
   e2e/fixture/       the five-section still deck: a shared chapter, a seam, a B-roll clip, a held
                      page with an equation, and a missing optional clip
 scripts/

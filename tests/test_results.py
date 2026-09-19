@@ -7,10 +7,12 @@ Both are invisible at the result that makes them and obvious here, which is why 
 over every result rather than a rule a reader applies at one site at a time.
 
 Each result the package returns is driven through its real stage, arranged to judge something, and
-read back three ways: every judged row the result holds reaches the payload, each names the file it
-is about, and each carries its sentence. The toolchain is replaced where a stage would shell out,
-because what is under test is the wiring from a judgement to a payload and not the pixels. A result
-class added later fails `test_every_stage_result_is_driven_here` until it is driven here as well.
+read back four ways: every judged row the result holds reaches the payload, each names the file it
+is about, each carries its sentence, and the payload is exactly the shape `cli/schema.py` declares
+for its command, read back into enum members by the same reader a caller uses. The toolchain is
+replaced where a stage would shell out, because what is under test is the wiring from a judgement to
+a payload and not the pixels. A result class added later fails `test_every_stage_result_is_driven_here`
+until it is driven here as well.
 """
 
 from __future__ import annotations
@@ -27,9 +29,12 @@ import pytest
 
 import decktalk
 from decktalk.artifacts import Luma, RecordingChecks, RecordingLog, Take, Takes, Word, write_words
-from decktalk.cli.envelope import expand, finding_rows
+from decktalk.cli.envelope import finding_rows
+from decktalk.cli.schema import PAYLOADS
+from decktalk.jsonio import dumps, read_as
 from decktalk.model import Project
-from decktalk.verdicts import Findings, StageResult, Verdict
+from decktalk.pipeline import Stage, Substitute
+from decktalk.verdicts import Finding, Findings, StageResult, Verdict
 
 # ---- every result the package returns ---------------------------------------------------
 
@@ -84,8 +89,10 @@ scene = "2"
 """
 
 
-def _page_project(tmp_path: Path, html: str = "<!doctype html>", toml: str = PAGE_TOML) -> Project:
-    """Two page sections on one page, with a take and a words file for each."""
+def _page_project(
+    tmp_path: Path, html: str = "<!doctype html>", toml: str = PAGE_TOML, voiced: bool = False
+) -> Project:
+    """Two page sections on one page, with a take and a words file for each, voiced or not."""
     (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
     (tmp_path / "script.md").write_text("## 1. A\n\nHello there.\n\n## 2. B\n\nBye now.\n", encoding="utf-8")
     (tmp_path / "deck").mkdir(exist_ok=True)
@@ -99,7 +106,7 @@ def _page_project(tmp_path: Path, html: str = "<!doctype html>", toml: str = PAG
         index.sections[key] = Take(
             index=int(key), chapter=key, file=f"{key}.mp3", words_file=f"{key}.words.json", hash=f"h{key}",
             word_count=len(words), estimated_seconds=2.0, duration_seconds=3.0, speech_end_seconds=2.5,
-            voiced=False,
+            voiced=voiced,
         )  # fmt: skip
     index.total_seconds = 6.0
     index.save(project.takes_path)
@@ -155,11 +162,14 @@ def drive_narrate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResul
 
 
 def drive_preflight(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """The rehearsal with no frames, over a project whose cue phrase is not in the narration."""
+    """The rehearsal with no frames: a cue phrase nobody says, and a placeholder nobody filled."""
     from decktalk.stages.preflight import preflight
 
     project = _page_project(tmp_path, '<b data-cue="1.1a"></b>')
     _cues(project, {"1": {"cues": [{"cue": "1.1a", "on": "a phrase nobody says"}]}})
+    (project.root / "script.md").write_text(
+        "## 1. A\n\nHello there.\n\n## 2. B\n\nBye now, [CLIENT_NAME].\n", encoding="utf-8"
+    )
     return preflight(project, frames=False)
 
 
@@ -206,7 +216,7 @@ def drive_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult
 
 
 def drive_assemble(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """A cued sound with no caption, a section standing in as a slate, and a loudness target missed."""
+    """A cued sound with no caption, a section playing black for its missing recording, and a loud film."""
     from decktalk.media.audio import Loudness
     from decktalk.stages.assemble.cut import RenderedSection
 
@@ -216,11 +226,19 @@ def drive_assemble(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResu
     loudness_module = importlib.import_module("decktalk.stages.assemble.loudness")
 
     sfx = "\n[[mix.sfx]]\nfile = 'media/hum.mp3'\nsection = 1\ncue = '1.1a'\n"
-    project = _page_project(tmp_path, toml=PAGE_TOML + sfx)
+    # Voiced takes, because a build without voice skips the loudness pass and would miss nothing.
+    project = _page_project(tmp_path, toml=PAGE_TOML + sfx, voiced=True)
     _assembled(project)
     rows = [
-        RenderedSection(project.sections[0], project.sections_dir / "01.mp4", 3.0, "page"),
-        RenderedSection(project.sections[1], project.sections_dir / "02.mp4", 3.0, "slate", substitute="SLATE"),
+        RenderedSection(project.sections[0], project.sections_dir / "01.mp4", 3.0, "01.webm"),
+        RenderedSection(
+            project.sections[1],
+            project.sections_dir / "02.mp4",
+            3.0,
+            Substitute.BLACK.value,
+            "build/recordings/02.webm",
+            Substitute.BLACK,
+        ),
     ]
     # The film is measured louder than the ceiling allows, so the pass reports a miss it cannot fix.
     measured = Loudness(i=-11.0, tp=0.5, lra=5, thresh=-27, offset=0)
@@ -318,7 +336,7 @@ def drive_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
 
     project = _page_project(tmp_path, '<b data-cue="1.1a"></b><i data-cue="1.2forgotten"></i>')
     _cues(project, {"1": {"cues": [{"cue": "1.1a", "on": "hello"}]}})
-    return build(project, from_stage="align", to_stage="align")
+    return build(project, from_stage=Stage.ALIGN, to_stage=Stage.ALIGN)
 
 
 DRIVERS: dict[str, Callable[[Path, pytest.MonkeyPatch], StageResult]] = {
@@ -360,8 +378,8 @@ def _own(value: Any) -> bool:
     return type(value).__module__.startswith(f"{decktalk.__name__}.")
 
 
-def judged_codes(obj: Any, seen: set[int] | None = None) -> list[str]:
-    """Every non-passing verdict this result holds, as codes, wherever in its own rows it sits.
+def judged(obj: Any, seen: set[int] | None = None) -> list[Verdict]:
+    """Every non-passing verdict this result holds, wherever in its own rows it sits.
 
     A row is anything of the package's own that carries a `verdict` or a `verdicts`, so the walk
     finds the rows a result keeps in a list, in a property, and inside another result it holds.
@@ -370,17 +388,17 @@ def judged_codes(obj: Any, seen: set[int] | None = None) -> list[str]:
     # A verdict is a singleton of its enum, so it is read every time it is met and never memoised:
     # two rows that judge the same way are two findings.
     if isinstance(obj, Verdict):
-        return [obj.name] if not obj.passing else []
+        return [obj] if not obj.passing else []
     if id(obj) in seen:
         return []
     seen.add(id(obj))
     if isinstance(obj, (str, bytes, Path)) or not _own(obj) and not isinstance(obj, (list, tuple, dict)):
         return []
     if isinstance(obj, dict):
-        return [code for value in obj.values() for code in judged_codes(value, seen)]
+        return [verdict for value in obj.values() for verdict in judged(value, seen)]
     if isinstance(obj, (list, tuple)):
-        return [code for item in obj for code in judged_codes(item, seen)]
-    return [code for value in _fields_and_properties(obj) for code in judged_codes(value, seen)]
+        return [verdict for item in obj for verdict in judged(item, seen)]
+    return [verdict for value in _fields_and_properties(obj) for verdict in judged(value, seen)]
 
 
 # ---- the mechanism ----------------------------------------------------------------------
@@ -406,8 +424,9 @@ def test_a_result_serialises_every_row_it_judges(name, tmp_path, monkeypatch):
     """
     result = DRIVERS[name](tmp_path, monkeypatch)
     assert isinstance(result, stage_results()[name])
-    held = sorted(judged_codes(result))
-    rows = finding_rows(expand(result.to_dict(tmp_path)))
+    held = sorted(judged(result), key=lambda verdict: verdict.name)
+    rows = [Finding.from_dict(row) for row in finding_rows(result.to_dict(tmp_path))]
+    lifted = sorted((row.verdict for row in rows), key=lambda verdict: verdict.name)
 
     if name in JUDGES_NOTHING:
         assert result.findings == Findings() and held == [] and rows == [], f"{name} judges nothing and reports nothing"
@@ -415,11 +434,28 @@ def test_a_result_serialises_every_row_it_judges(name, tmp_path, monkeypatch):
 
     assert held, f"{name} is driven here without judging anything, so this test proves nothing"
     assert result.findings != Findings(), f"{name} holds judged rows its tally does not count"
-    assert sorted(row["code"] for row in rows) == held, (
-        f"{name} holds the judged rows {held} and its payload serialises "
-        f"{sorted(row['code'] for row in rows)}. A row a result tallies but does not write under a "
-        f"key of its own is a finding no reader of findings.items[] can dispatch on."
+    assert lifted == held, (
+        f"{name} holds the judged rows {held} and its payload serialises {lifted}. A row a result "
+        f"tallies but does not write under a key of its own is a finding no reader of findings.items[] "
+        f"can dispatch on."
     )
+    # The tally is the rows, so `findings.certain` and `findings.uncertain` count what `items` lists.
+    assert Findings.of(lifted) == result.findings, f"{name} tallies {result.findings} over rows {lifted}"
     for row in rows:
-        assert row["where"], f"{name} row {row['code']} names no file, page or artifact: {row}"
-        assert row["detail"], f"{name} row {row['code']} carries no sentence: {row}"
+        assert row.where, f"{name} row {row.verdict!r} names no file, page or artifact: {row}"
+        assert row.detail, f"{name} row {row.verdict!r} carries no sentence: {row}"
+
+
+@pytest.mark.parametrize("name", sorted(DRIVERS))
+def test_a_result_writes_exactly_the_payload_its_command_declares(name, tmp_path, monkeypatch):
+    """The payload is JSON as it is, and it reads back as its command's type with every enum a member.
+
+    `json.dumps` refuses an enum member or a path, so a result that left one in its data fails here
+    rather than as an internal error on a caller's machine. The strict reader refuses a key the type
+    does not declare and a declared key the result forgot, so the schema a caller reads by and the
+    data a result writes cannot drift apart, and a verdict that is not its code's own object fails.
+    """
+    result = DRIVERS[name](tmp_path, monkeypatch)
+    command = name.removesuffix("Result").lower()
+    payload = read_as(PAYLOADS[command], json.loads(dumps(result.to_dict(tmp_path))), f"$.{command}")
+    assert type(payload).__name__.startswith(command.title()), f"{name} read back as {type(payload).__name__}"

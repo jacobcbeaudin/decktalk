@@ -6,11 +6,10 @@ so a reader dispatches on a code and never on the absence of one.
 A certain verdict names something that is wrong for sure, such as a page that threw or a
 recording that stopped early, so the read-only commands exit 1 on it. An uncertain verdict
 ends in a question mark and names something that is probably wrong, such as a dark frame
-that may be a dark slide, so those commands exit 1 on it only with `--strict`. A shortfall
-against `min_seconds` in align, a loudness miss in assemble, and a missing component in
-doctor are uncertain or certain in the same way, although some of them carry no verdict of
-their own. The passing verdicts are never findings, and neither are the warnings the
-runtime records in the page.
+that may be a dark slide, so those commands exit 1 on it only with `--strict`. Every judgement a
+command counts has a verdict here, so a reader dispatches on a code for all of them and never reads
+one judgement out of a row and another out of a number. The passing verdicts are never findings,
+and neither are the warnings the runtime records in the page.
 
 A verdict is matched by its code, which is the member name, and printed by its label, which
 is the member value. Nothing parses a label.

@@ -1,9 +1,9 @@
-"""decktalk preflight's frozen frames, in a real headless Chromium with the ffmpeg that `decktalk install` fetches.
+"""The preflight stage: what it plans from the words each section will have, and its frozen frames.
 
-uv run pytest -m browser
-
-These tests start their own Chromium, so they live apart from test_runtime.py, whose module-wide page
-fixture keeps a Playwright session open.
+The frame tests drive a real headless Chromium with the ffmpeg that `decktalk install` fetches, so
+each carries the browser and media markers and `uv run pytest -m browser` selects them. They start
+their own Chromium, so they live apart from test_runtime.py, whose module-wide page fixture keeps a
+Playwright session open. The first test needs neither, and runs in the default suite.
 """
 
 from __future__ import annotations
@@ -14,12 +14,11 @@ from pathlib import Path
 
 import pytest
 
+from decktalk.cli import main
 from decktalk.scaffold import init
 from decktalk.speech import register_speech_provider
 from decktalk.toolchain.assets import RUNTIME_FILE, runtime_path
 from decktalk.verdicts import Findings, SkipReason, Verdict
-
-pytestmark = [pytest.mark.browser, pytest.mark.media]
 
 
 def template_cues(root: Path, scene: str) -> list[str]:
@@ -28,6 +27,8 @@ def template_cues(root: Path, scene: str) -> list[str]:
     return [c["cue"] for s in data["sections"].values() for c in s["cues"] if c["cue"].split(".")[0] == scene]
 
 
+@pytest.mark.browser
+@pytest.mark.media
 def test_preflight_estimates_each_reveal_and_the_seam_from_frozen_frames(tmp_path, monkeypatch):
     """Sections 1 and 2 of the scaffold, with section 2 set to open on the Open's last picture."""
     from decktalk.model import Project
@@ -57,6 +58,8 @@ def test_preflight_estimates_each_reveal_and_the_seam_from_frozen_frames(tmp_pat
     assert seam.last == rows["1:1.1word"].after and seam.first == rows["2:2.1mark"].before
 
 
+@pytest.mark.browser
+@pytest.mark.media
 def test_preflight_only_checks_the_cut_into_a_seamless_section_it_names(tmp_path, monkeypatch):
     """`--only 2` on a seamless section after section 1 still resolves section 1, but reports only section 2."""
     from decktalk.model import Project
@@ -90,6 +93,8 @@ DeckTalk.scene(3, { slides: [{ id: '3.1', preview: { '3.1go': 1 },
 """
 
 
+@pytest.mark.browser
+@pytest.mark.media
 def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatch):
     """A big reveal, a thin one, a dot, a cue at the start, a cut that pops, and a seamless cut."""
     from decktalk.model import Project
@@ -137,6 +142,69 @@ def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatc
     assert {k.key: k.verdict for k in result.seams} == {"02": "POP AT CUT", "03": "ok"}
     assert [k.changed_percent for k in result.seams][1] == 0.0
     assert result.findings == Findings(certain=2, uncertain=2)
+
+
+def test_preflight_resolves_cues_on_the_words_each_section_will_have(
+    tmp_path, monkeypatch, capsys, planned_scaffold, unchanged
+):
+    from decktalk.artifacts import read_words
+    from decktalk.stages.align import find_phrase
+    from decktalk.stages.preflight import preflight
+
+    p, files = planned_scaffold(tmp_path, monkeypatch)
+    result = preflight(p, frames=False)
+    assert {t.segment.key: t.status for t in result.takes} == {
+        "01": "cached", "02": "cached", "03": "synthesize", "04": "synthesize",
+        "06": "synthesize", "08": "synthesize", "09": "cached",
+    }  # fmt: skip
+    assert result.estimated == ["03", "04", "06", "08"]
+    assert result.align.unresolved == 0 and result.align.unknown == 0
+    resolved = {s.key: {r.cue: r.at for r in s.resolved} for s in result.align.sections}
+    # A cached take resolves on its own words, which the fixture spaced 0.4 s apart, after the
+    # silence the section leads with, because no silence lives inside a take.
+    takes = p.takes()
+    open_words = read_words(p.takes_dir / takes.sections["01"].words_file)
+    lead = p.lead_seconds("01")
+    assert resolved["01"]["1.1bowl"] == round(open_words[find_phrase(open_words, "bowl")].start + lead, 3) == 1.1
+    close_words = read_words(p.takes_dir / takes.sections["09"].words_file)
+    close_at = close_words[find_phrase(close_words, "decktalk dot AI")].start + p.lead_seconds("09")
+    assert resolved["09"]["5.1url"] == round(close_at, 2)
+    # A section that would be voiced resolves on estimated words, inside its estimated length.
+    assert all(0 < t < 60 for t in resolved["04"].values()) and len(resolved["04"]) == 5
+    assert result.cues == [] and result.seams == [] and result.frames is None
+    assert unchanged(p, files) and not p.cue_times_path.exists() and not p.preflight_dir.exists()
+
+    assert main(["preflight", "--no-frames", "--json", "-p", str(p.root)]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["command"] == "preflight" and doc["ok"] is True
+    payload = doc["preflight"]
+    assert set(payload) == {
+        "voice", "note", "placeholders", "takes", "totals", "cue_times", "cues", "seams", "warnings", "frames",
+    }  # fmt: skip
+    assert (
+        payload["cue_times"]["estimated_sections"] == ["03", "04", "06", "08"] and payload["totals"]["synthesize"] == 4
+    )
+    assert [t["hash"] for t in payload["takes"] if t["status"] == "cached"] == [
+        takes.sections[key].hash for key in ("01", "02", "09")
+    ]
+    assert main(["preflight", "--no-frames", "-p", str(p.root)]) == 0
+    out = capsys.readouterr().out
+    assert "3 cached." in out and "frames skipped (--no-frames)" in out
+
+    # A phrase that is not in the script, under an id the page never names, is two certain findings.
+    cues_path = p.root / "cues.json"
+    cues = json.loads(cues_path.read_text(encoding="utf-8"))
+    cues["sections"]["1"]["cues"].append({"cue": "1.1nope", "on": "not in the script"})
+    cues_path.write_text(json.dumps(cues), encoding="utf-8")
+    script = p.root / "script.md"
+    script.write_text(script.read_text(encoding="utf-8").replace("## 9. Close\n", "## 9. Close\n\n[CLIENT_NAME]\n", 1))
+    assert main(["preflight", "--no-frames", "--json", "-p", str(p.root)]) == 1
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["findings"] == {"certain": 3, "uncertain": 0} and doc["preflight"]["placeholders"] == ["CLIENT_NAME"]
+    assert main(["preflight", "--no-frames", "--json", "--allow-unknown-cues", "-p", str(p.root)]) == 1
+    assert json.loads(capsys.readouterr().out)["findings"] == {"certain": 2, "uncertain": 0}
+    assert main(["preflight", "--no-frames", "--exit-zero", "-p", str(p.root)]) == 0
+    assert unchanged(p, files)
 
 
 def test_preflight_estimates_a_take_a_later_section_of_the_same_run_would_write(tmp_path: Path) -> None:
