@@ -6,51 +6,73 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.verdicts import Finding, Findings, SkipReason, StageResult, Verdict
+import pytest
+
+from decktalk.verdicts import Certainty, Finding, Findings, SkipReason, StageResult, Verdict
+
+WIRE = json.loads((Path(__file__).resolve().parents[1] / "data" / "vocabulary.json").read_text(encoding="utf-8"))
+"""The codes, labels and certainties the contract fixes, as a reader of the JSON meets them."""
+
+
+def test_every_verdict_writes_the_object_the_contract_fixes_in_the_order_it_lists_them():
+    """The wire form is the contract, so a code, a label or a certainty that moves fails here."""
+    assert [verdict.to_dict() for verdict in Verdict] == WIRE["verdicts"]
+    assert [verdict.name for verdict in Verdict if verdict.passing] == WIRE["passing"]
+
+
+def test_every_verdict_reads_back_from_its_own_object():
+    for written in WIRE["verdicts"]:
+        verdict = Verdict.from_dict(written)
+        assert (verdict.name, verdict.label, verdict.certain) == (written["code"], written["label"], written["certain"])
+
+
+def test_a_raw_string_never_compares_equal_to_a_verdict():
+    """A plain enum, so code that holds a code or a label where it meant a verdict fails where it is written."""
+    for verdict in Verdict:
+        written = verdict.to_dict()
+        assert verdict != written["code"] and verdict != written["label"] and verdict != written
 
 
 def test_every_verdict_is_certain_uncertain_or_passing():
     """A verdict the tables print has to fall in exactly one of the three groups."""
     for verdict in Verdict:
-        groups = [verdict.certain, verdict.passing]
-        assert groups.count(True) <= 1, verdict
-    uncertain = [v for v in Verdict if not v.certain and not v.passing]
-    assert {v.name for v in uncertain} == {
-        "BLACK_UNSURE",
-        "CUES_OVERLAP",
-        "CUT_WORD",
-        "IN_CAPTION_BAND",
-        "LOUDNESS_MISS",
-        "NO_CAPTION",
-        "SLATE",
-        "SPOKEN_SYMBOL",
-        "THIN_CHANGE",
-    }
+        assert [verdict.certain, verdict.passing].count(True) <= 1, verdict
+        assert verdict.certain is (verdict.certainty is Certainty.CERTAIN)
+        assert verdict.passing is (verdict.certainty is Certainty.PASSING)
 
 
 def test_an_uncertain_label_ends_in_a_question_mark_and_a_certain_one_does_not():
     """The label carries the certainty to a reader, and the property carries it to the code."""
     for verdict in Verdict:
-        if verdict.passing:
-            continue
-        assert verdict.value.endswith("?") is not verdict.certain, verdict
+        if not verdict.passing:
+            assert verdict.label.endswith("?") is not verdict.certain, verdict
 
 
-def test_the_member_name_is_the_code_and_the_value_is_the_label():
-    """A verdict is matched by its code and never by its label, so a rename of a label breaks nobody."""
-    assert Verdict.SPEECH_AT_CUT.name == "SPEECH_AT_CUT"
-    assert Verdict.SPEECH_AT_CUT.value == "SPEECH AT CUT"
-    assert Verdict.SPEECH_AT_CUT.to_dict() == {"code": "SPEECH_AT_CUT", "label": "SPEECH AT CUT", "certain": True}
-    assert Verdict.THIN_CHANGE.to_dict() == {"code": "THIN_CHANGE", "label": "THIN CHANGE?", "certain": False}
+@pytest.mark.parametrize(
+    ("written", "refusal"),
+    [
+        ({"code": "NOPE", "label": "NOPE", "certain": True}, "is not a verdict code"),
+        ({**Verdict.OFF_CUE.to_dict(), "label": Verdict.OFF_STAGE.label}, "is not what the verdict"),
+        ({**Verdict.OFF_CUE.to_dict(), "certain": False}, "is not what the verdict"),
+        ({"code": Verdict.OFF_CUE.name, "label": Verdict.OFF_CUE.label}, "exactly code, label, certain"),
+        ({**Verdict.OFF_CUE.to_dict(), "detail": "x"}, "exactly code, label, certain"),
+        (Verdict.OFF_CUE.name, "exactly code, label, certain"),
+    ],
+)
+def test_an_object_that_is_not_a_verdicts_own_is_refused(written, refusal):
+    """A reader that took a wrong object for a verdict would dispatch on something no writer meant."""
+    with pytest.raises(ValueError, match=refusal):
+        Verdict.from_dict(written)
 
 
-def test_a_skip_reason_names_itself():
-    """`verify` and `preflight` name the shared reasons identically, so the code is the value."""
+def test_a_skip_reason_is_its_code_and_is_no_string():
+    """`verify` and `preflight` name the shared reasons alike, so the value is the code."""
+    assert [reason.value for reason in SkipReason] == WIRE["skip_reasons"]
     for reason in SkipReason:
-        assert reason.name == reason.value
+        assert reason.name == reason.value and reason != reason.value
 
 
-def test_a_finding_carries_the_verdict_opened_out():
+def test_a_finding_carries_the_verdict_opened_out_and_reads_back():
     """The row a command reports is the row a reader receives, with no second spelling."""
     finding = Finding(
         detail="the picture landed 0.40s after its word",
@@ -60,16 +82,30 @@ def test_a_finding_carries_the_verdict_opened_out():
         where="build/out/lesson.mp4",
     )
     assert finding.to_dict() == {
-        "code": "OFF_CUE",
-        "label": "OFF CUE",
-        "certain": True,
+        **Verdict.OFF_CUE.to_dict(),
         "section": 3,
         "cue": "3.2",
         "where": "build/out/lesson.mp4",
         "detail": "the picture landed 0.40s after its word",
     }
     assert finding.text == "3.2: the picture landed 0.40s after its word"
-    assert json.loads(json.dumps(finding.to_dict()))["code"] == "OFF_CUE"
+    assert Finding.from_dict(json.loads(json.dumps(finding.to_dict()))) == finding
+
+
+@pytest.mark.parametrize(
+    ("change", "refusal"),
+    [
+        ({"detail": None}, "carries no sentence"),
+        ({"section": "3"}, "not a section number"),
+        ({"section": True}, "not a section number"),
+        ({"where": 3}, "not a string"),
+        ({"extra": 1}, "exactly code"),
+    ],
+)
+def test_a_row_that_is_not_the_envelopes_row_is_refused(change, refusal):
+    row = {**Finding(detail="d", verdict=Verdict.BLACK, section=3).to_dict(), **change}
+    with pytest.raises(ValueError, match=refusal):
+        Finding.from_dict(row)
 
 
 def test_an_advisory_note_still_carries_a_code_a_reader_can_dispatch_on():
@@ -77,9 +113,7 @@ def test_an_advisory_note_still_carries_a_code_a_reader_can_dispatch_on():
     note = Finding(detail="the phrase occurs twice, and the cue uses the first")
     assert note.verdict is Verdict.NOTE and Verdict.NOTE.passing
     assert note.to_dict() == {
-        "code": "NOTE",
-        "label": "note",
-        "certain": False,
+        **Verdict.NOTE.to_dict(),
         "section": None,
         "cue": None,
         "where": None,
@@ -123,7 +157,7 @@ def test_the_protocol_accepts_a_result_and_refuses_one_that_is_missing_a_half():
             return Findings.of(self.rows)
 
         def to_dict(self, root: Path) -> dict[str, object]:
-            return {"rows": [r.name for r in self.rows]}
+            return {"rows": [r.to_dict() for r in self.rows]}
 
     @dataclass
     class Half:
@@ -134,5 +168,5 @@ def test_the_protocol_accepts_a_result_and_refuses_one_that_is_missing_a_half():
     whole = Whole([Verdict.BLACK, Verdict.OK])
     assert isinstance(whole, StageResult)
     assert whole.findings == Findings(certain=1)
-    assert whole.to_dict(Path("/project")) == {"rows": ["BLACK", "OK"]}
+    assert [Verdict.from_dict(row) for row in whole.to_dict(Path("/project"))["rows"]] == whole.rows
     assert not isinstance(Half(), StageResult)

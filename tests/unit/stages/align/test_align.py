@@ -10,6 +10,7 @@ import pytest
 from decktalk import ConfigError, Project
 from decktalk.artifacts import Take, Takes, Word, write_words
 from decktalk.cli import main
+from decktalk.cli.schema import read_envelope
 from decktalk.model.cues import Cue, find_phrase
 from decktalk.stages.align import UnknownCueError, align, resolve_cue, unknown_hint, unknown_message
 from decktalk.verdicts import Verdict
@@ -49,11 +50,12 @@ def test_a_cue_time_is_an_object_with_the_word_behind_it(tmp_path):
     project = _project(tmp_path, "<b data-cue='1.1a'></b>", cues)
     result = align(project)
     (row,) = result.cue_times.sections["01"]
-    assert (row.cue, row.on, row.at, row.word_at) == ("1.1a", "there", 1.25, 1.0)
-    assert result.cue_times.query("01") == "1.1a@1.25"
+    # "there" starts 1.0 s into the take, which is 1.5 s into the section after its 0.5 s lead.
+    assert (row.cue, row.on, row.at, row.word_at) == ("1.1a", "there", 1.75, 1.5)
+    assert result.cue_times.query("01") == "1.1a@1.75"
     assert json.loads(project.cue_times_path.read_text(encoding="utf-8")) == {
         "estimated": False,
-        "sections": {"01": [{"cue": "1.1a", "on": "there", "at": 1.25, "word_at": 1.0}]},
+        "sections": {"01": [{"cue": "1.1a", "on": "there", "at": 1.75, "word_at": 1.5}]},
     }
 
 
@@ -105,11 +107,13 @@ def test_an_unresolved_phrase_and_a_short_section_are_counted_apart(tmp_path):
     assert (doc["unresolved"], doc["unknown"], doc["uncued"]) == (1, 0, 0)
     assert result.findings.certain == 1 and result.findings.uncertain == 1
     (section,) = doc["sections"]
-    assert section["speech_end_seconds"] == 1.4 and section["min_seconds"] == 9.0 and section["cues"] == {"1.1a": 0.5}
+    assert section["speech_end_seconds"] == 1.9 and section["min_seconds"] == 9.0 and section["cues"] == {"1.1a": 1.0}
     assert [(n["code"], n["cue"], n["detail"]) for n in section["notes"]] == [
         (Verdict.UNRESOLVED.name, "1.1b", "phrase not found: 'missing phrase'"),
-        (Verdict.NOTE.name, None, "speech 1.4s is 7.6s shorter than the visuals need"),
+        (Verdict.SHORT_SECTION.name, None, "speech 1.9s is 7.1s shorter than the visuals need"),
     ]
+    short = next(n for n in section["notes"] if n["code"] == Verdict.SHORT_SECTION.name)
+    assert short["certain"] is False and short["where"] == "cues.json"
 
 
 def test_a_repeated_phrase_warns_unless_the_cue_names_its_occurrence(tmp_path, capsys):
@@ -135,12 +139,12 @@ def test_a_repeated_phrase_warns_unless_the_cue_names_its_occurrence(tmp_path, c
     result = align(project)
     (section,) = result.sections
     detail = (
-        "'every step' occurs 2 times in this section, at 0.50s, 36.30s. The cue uses the first. "
+        "'every step' occurs 2 times in this section, at 1.00s, 36.80s. The cue uses the first. "
         'Set "occurrence" to choose one.'
     )
     # Only the cue that names no occurrence is ambiguous, and a case-sensitive phrase counts its own case alone.
     assert [(r.cue, r.verdict, r.detail) for r in section.rows] == [("1.1step", Verdict.NOTE, detail)]
-    assert section.resolved[0].at == 0.5 and section.resolved[1].at == 36.3 and result.unresolved == 0
+    assert section.resolved[0].at == 1.0 and section.resolved[1].at == 36.8 and result.unresolved == 0
     assert main(["-p", str(project.root), "align", "--strict"]) == 0  # A warning, not a finding.
     assert f"! 1.1step: {detail}" in capsys.readouterr().out
 
@@ -150,11 +154,12 @@ def test_cli_align_reports_both_directions_as_findings(tmp_path, capsys):
     project = _project(tmp_path, '<b data-cue="1.1a"></b><b data-cue="1.9alone"></b>', cues)
     # Without --allow-unknown-cues the command still prints its JSON and exits 1.
     assert main(["-p", str(project.root), "align", "--json"]) == 1
-    doc = json.loads(capsys.readouterr().out)
-    assert doc["ok"] is False and doc["findings"]["certain"] == 2
-    assert doc["align"]["unknown"] == 1 and doc["align"]["uncued"] == 1
+    doc = read_envelope(capsys.readouterr().out)
+    assert doc.ok is False and doc.findings.certain == 2
+    assert doc.payload.unknown == 1 and doc.payload.uncued == 1
+    assert {row.verdict for row in doc.findings.items} == {Verdict.UNKNOWN_CUE, Verdict.UNCUED_ELEMENT}
     assert main(["-p", str(project.root), "align", "--json", "--allow-unknown-cues"]) == 1
-    assert json.loads(capsys.readouterr().out)["findings"]["certain"] == 1
+    assert read_envelope(capsys.readouterr().out).findings.certain == 1
 
 
 def test_a_deck_with_no_cues_file_runs_its_own_timing_and_is_not_faulted(tmp_path):

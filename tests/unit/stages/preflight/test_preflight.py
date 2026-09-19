@@ -15,10 +15,12 @@ from pathlib import Path
 import pytest
 
 from decktalk.cli import main
+from decktalk.cli.schema import PreflightPayload, read_envelope
+from decktalk.pipeline import TakeStatus
 from decktalk.scaffold import init
 from decktalk.speech import register_speech_provider
 from decktalk.toolchain.assets import RUNTIME_FILE, runtime_path
-from decktalk.verdicts import Findings, SkipReason, Verdict
+from decktalk.verdicts import Finding, Findings, SkipReason, Verdict
 
 
 def template_cues(root: Path, scene: str) -> list[str]:
@@ -138,7 +140,7 @@ def test_preflight_reads_each_verdict_from_a_synthetic_page(tmp_path, monkeypatc
     shares = {c.check: c.changed_percent for c in result.cues}
     assert shares["1:1.1big"] == pytest.approx(100 * 100 * 100 / (480 * 270), rel=0.05)  # 400 px at 1080p is 100 px
     # Section 1 ends on boxes at 100 and 700, and section 2 opens on one at 1300. Section 3 opens as section 2 ends.
-    assert {k.key: k.verdict for k in result.seams} == {"02": "POP AT CUT", "03": "ok"}
+    assert {k.key: k.verdict for k in result.seams} == {"02": Verdict.POP_AT_CUT, "03": Verdict.OK}
     assert [k.changed_percent for k in result.seams][1] == 0.0
     assert result.findings == Findings(certain=2, uncertain=2)
 
@@ -153,9 +155,9 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(
     p, files = planned_scaffold(tmp_path, monkeypatch)
     result = preflight(p, frames=False)
     assert {t.segment.key: t.status for t in result.takes} == {
-        "01": "cached",
-        "02": "synthesize",
-        "03": "cached",
+        "01": TakeStatus.CACHED,
+        "02": TakeStatus.SYNTHESIZE,
+        "03": TakeStatus.CACHED,
     }
     assert result.estimated == ["02"]
     assert result.align.unresolved == 0 and result.align.unknown == 0
@@ -176,15 +178,12 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(
     assert unchanged(p, files) and not p.cue_times_path.exists() and not p.preflight_dir.exists()
 
     assert main(["preflight", "--no-frames", "--json", "-p", str(p.root)]) == 0
-    doc = json.loads(capsys.readouterr().out)
-    assert doc["command"] == "preflight" and doc["ok"] is True
-    payload = doc["preflight"]
-    assert set(payload) == {
-        "voice", "note", "placeholders", "takes", "totals", "cue_times", "cues", "seams", "warnings",
-        "page_errors", "page_scan", "frames",
-    }  # fmt: skip
-    assert payload["cue_times"]["estimated_sections"] == ["02"] and payload["totals"]["synthesize"] == 1
-    assert [t["hash"] for t in payload["takes"] if t["status"] == "cached"] == [
+    doc = read_envelope(capsys.readouterr().out)
+    assert doc.command == "preflight" and doc.ok is True
+    payload = doc.payload
+    assert isinstance(payload, PreflightPayload)
+    assert payload.cue_times.estimated_sections == ["02"] and payload.totals.synthesize == 1
+    assert [t.hash for t in payload.takes if t.status is TakeStatus.CACHED] == [
         takes.sections[key].hash for key in ("01", "03")
     ]
     assert main(["preflight", "--no-frames", "-p", str(p.root)]) == 0
@@ -199,15 +198,23 @@ def test_preflight_resolves_cues_on_the_words_each_section_will_have(
     script = p.root / "script.md"
     script.write_text(script.read_text(encoding="utf-8").replace("## 3. Close\n", "## 3. Close\n\n[CLIENT_NAME]\n", 1))
     assert main(["preflight", "--no-frames", "--json", "-p", str(p.root)]) == 1
-    doc = json.loads(capsys.readouterr().out)
-    assert (doc["findings"]["certain"], doc["findings"]["uncertain"]) == (3, 0)
-    # The two cue faults are judged rows. The placeholder is counted and named in the payload.
-    assert [row["code"] for row in doc["findings"]["items"]] == ["UNRESOLVED", "UNKNOWN_CUE"]
-    assert doc["preflight"]["placeholders"] == ["CLIENT_NAME"]
+    doc = read_envelope(capsys.readouterr().out)
+    assert (doc.findings.certain, doc.findings.uncertain) == (3, 0)
+    # All three are judged rows, so a reader dispatches on the placeholder as it does on the cues.
+    assert {row.verdict for row in doc.findings.items} == {Verdict.PLACEHOLDER, Verdict.UNKNOWN_CUE, Verdict.UNRESOLVED}
+    (placeholder,) = doc.payload.placeholders
+    assert placeholder == Finding(
+        detail="[CLIENT_NAME] is still open, so a voiced run would read it out",
+        verdict=Verdict.PLACEHOLDER,
+        section=3,
+        where="script.md",
+    )
     assert main(["preflight", "--no-frames", "--json", "--allow-unknown-cues", "-p", str(p.root)]) == 1
-    found = json.loads(capsys.readouterr().out)["findings"]
-    assert (found["certain"], found["uncertain"]) == (2, 0)
+    found = read_envelope(capsys.readouterr().out).findings
+    assert (found.certain, found.uncertain) == (2, 0)
     assert main(["preflight", "--no-frames", "--exit-zero", "-p", str(p.root)]) == 0
+    # The table names the placeholder a person has to fill, and never prints a row object.
+    assert "a voiced run refuses the unfilled placeholders ['CLIENT_NAME']" in capsys.readouterr().out
     assert unchanged(p, files)
 
 
@@ -232,7 +239,7 @@ def test_preflight_estimates_a_take_a_later_section_of_the_same_run_would_write(
     register_speech_provider("test-voice", lambda context: _Silent())
     project = Project.load(root, environ={})
     plans, note = voiced_plan(project, project.script_sections()[1], model="m")
-    assert note is None and [p.status for p in plans] == ["synthesize", "cached"]
+    assert note is None and [p.status for p in plans] == [TakeStatus.SYNTHESIZE, TakeStatus.CACHED]
     words, length, estimated = planned_words(project, plans[1])
     assert estimated is True and length > 0 and words
 

@@ -216,12 +216,8 @@ def align(project: Project, *, allow_unknown_cues: bool = False) -> AlignResult:
         key = f"{spec.number:02d}"
         entry = takes.sections.get(key)
         if entry is not None:
-            # A section runs for every silence around its take as well as the take, because a lead
-            # comes before it and a shared take's tail is joined in after it rather than padded in.
-            take_words[key] = (
-                project.section_words(key, entry.words_file),
-                entry.duration_seconds + entry.tail_joined_seconds + project.lead_seconds(key),
-            )
+            # A section runs for its lead, its take to its last sound and its tail, which the row carries.
+            take_words[key] = (project.section_words(key, entry.words_file), entry.span_seconds)
     clips = {f"{number:02d}" for number in project.clip_numbers}
     cue_times, rows, unresolved = resolve_sections(
         specs,
@@ -330,7 +326,11 @@ def resolve_sections(
                 row.note(cue.cue, None, ambiguous)
         if spec.min_seconds is not None and speech_end_seconds < spec.min_seconds:
             short = spec.min_seconds - speech_end_seconds
-            row.note(None, None, f"speech {speech_end_seconds:.1f}s is {short:.1f}s shorter than the visuals need")
+            row.note(
+                None,
+                Verdict.SHORT_SECTION,
+                f"speech {speech_end_seconds:.1f}s is {short:.1f}s shorter than the visuals need",
+            )
         _judge_ids(row, key, unknown_ids, uncued_ids)
         if row.resolved:
             cue_times.sections[key] = row.resolved

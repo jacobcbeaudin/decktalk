@@ -14,103 +14,125 @@ command counts has a verdict here, so a reader dispatches on a code for all of t
 one judgement out of a row and another out of a number. The passing verdicts are never findings,
 and neither are the warnings the runtime records in the page.
 
-A verdict is matched by its code, which is the member name, and printed by its label, which
-is the member value. Nothing parses a label.
+A verdict is matched by its code, which is the member name, and printed by its label, which it
+carries beside its certainty. Nothing parses a label. `Verdict` is a plain enum and not a string
+one, so a raw string never compares equal to a verdict: code that holds a code, a label or a JSON
+object where it meant a verdict fails where it is written rather than comparing false. JSON meets a
+verdict as the one `{code, label, certain}` object, which `Verdict.to_dict` writes and
+`Verdict.from_dict` reads back, refusing a code that names no verdict and an object that disagrees
+with its own code. `SkipReason` is a plain enum for the same reason, and its value is its code.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+VERDICT_KEYS = ("code", "label", "certain")
+"""The keys of the one object every verdict is written as."""
+FINDING_KEYS = (*VERDICT_KEYS, "section", "cue", "where", "detail")
+"""The keys of the one row every command reports, in the order a reader meets them."""
 
-class Verdict(StrEnum):
-    """One judgement a command can print. `name` is the code, `value` is the label."""
+
+class Certainty(Enum):
+    """How sure a verdict is. A certain and an uncertain verdict are findings, and a passing one is not."""
+
+    CERTAIN = "certain"
+    UNCERTAIN = "uncertain"
+    PASSING = "passing"
+
+
+class Verdict(Enum):
+    """One judgement a command can print. `name` is the code, and `label` is what a table prints."""
+
+    label: str
+    certainty: Certainty
+
+    def __init__(self, label: str, certainty: Certainty) -> None:
+        self.label = label
+        self.certainty = certainty
 
     # Certain: something is wrong for sure.
-    PAGE_ERROR = "PAGE ERROR"
-    STALLED = "STALLED"
-    TRUNCATED = "TRUNCATED"
-    NO_COVER = "NO COVER"
-    BLACK = "BLACK"
-    SPEECH_AT_CUT = "SPEECH AT CUT"
-    POP_AT_CUT = "POP AT CUT"
-    OFF_CUE = "OFF CUE"
-    NO_CHANGE = "NO CHANGE"
-    UNRESOLVED = "UNRESOLVED"
-    UNKNOWN_CUE = "UNKNOWN CUE"
-    UNCUED_ELEMENT = "UNCUED ELEMENT"
-    OFF_STAGE = "OFF STAGE"
-    CDN_ASSET = "CDN ASSET"
-    MISSING = "MISSING"
-    KATEX_ERROR = "KATEX ERROR"
-    KATEX_NOT_LOADED = "KATEX NOT LOADED"
-    UNREADABLE = "UNREADABLE"
-    INCONSISTENT = "INCONSISTENT"
+    PAGE_ERROR = "PAGE ERROR", Certainty.CERTAIN
+    STALLED = "STALLED", Certainty.CERTAIN
+    TRUNCATED = "TRUNCATED", Certainty.CERTAIN
+    NO_COVER = "NO COVER", Certainty.CERTAIN
+    BLACK = "BLACK", Certainty.CERTAIN
+    SPEECH_AT_CUT = "SPEECH AT CUT", Certainty.CERTAIN
+    POP_AT_CUT = "POP AT CUT", Certainty.CERTAIN
+    OFF_CUE = "OFF CUE", Certainty.CERTAIN
+    NO_CHANGE = "NO CHANGE", Certainty.CERTAIN
+    UNRESOLVED = "UNRESOLVED", Certainty.CERTAIN
+    UNKNOWN_CUE = "UNKNOWN CUE", Certainty.CERTAIN
+    UNCUED_ELEMENT = "UNCUED ELEMENT", Certainty.CERTAIN
+    OFF_STAGE = "OFF STAGE", Certainty.CERTAIN
+    CDN_ASSET = "CDN ASSET", Certainty.CERTAIN
+    MISSING = "MISSING", Certainty.CERTAIN
+    KATEX_ERROR = "KATEX ERROR", Certainty.CERTAIN
+    KATEX_NOT_LOADED = "KATEX NOT LOADED", Certainty.CERTAIN
+    UNREADABLE = "UNREADABLE", Certainty.CERTAIN
+    INCONSISTENT = "INCONSISTENT", Certainty.CERTAIN
+    PLACEHOLDER = "PLACEHOLDER", Certainty.CERTAIN
 
     # Uncertain: something is probably wrong, and the label ends in a question mark.
-    SLATE = "SLATE?"
-    BLACK_UNSURE = "BLACK?"
-    SPOKEN_SYMBOL = "SPOKEN SYMBOL?"
-    THIN_CHANGE = "THIN CHANGE?"
-    NO_CAPTION = "NO CAPTION?"
-    CUT_WORD = "CUT WORD?"
-    CUES_OVERLAP = "CUES OVERLAP?"
-    IN_CAPTION_BAND = "IN CAPTION BAND?"
+    SLATE = "SLATE?", Certainty.UNCERTAIN
+    BLACK_UNSURE = "BLACK?", Certainty.UNCERTAIN
+    SPOKEN_SYMBOL = "SPOKEN SYMBOL?", Certainty.UNCERTAIN
+    THIN_CHANGE = "THIN CHANGE?", Certainty.UNCERTAIN
+    NO_CAPTION = "NO CAPTION?", Certainty.UNCERTAIN
+    CUT_WORD = "CUT WORD?", Certainty.UNCERTAIN
+    CUES_OVERLAP = "CUES OVERLAP?", Certainty.UNCERTAIN
+    IN_CAPTION_BAND = "IN CAPTION BAND?", Certainty.UNCERTAIN
+    SHORT_SECTION = "SHORT SECTION?", Certainty.UNCERTAIN
+    LOUDNESS_MISS = "LOUDNESS MISS?", Certainty.UNCERTAIN
 
     # Passing: the row was measured and nothing is wrong. These are never findings.
-    CHANGED = "changed"
-    QUIET = "quiet"
-    OK = "ok"
-    SKIPPED = "skipped"
-    NOTE = "note"
+    CHANGED = "changed", Certainty.PASSING
+    QUIET = "quiet", Certainty.PASSING
+    OK = "ok", Certainty.PASSING
+    SKIPPED = "skipped", Certainty.PASSING
+    NOTE = "note", Certainty.PASSING
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}.{self.name}"
 
     @property
     def certain(self) -> bool:
         """True when the verdict names something that is wrong for sure."""
-        return self in _CERTAIN
+        return self.certainty is Certainty.CERTAIN
 
     @property
     def passing(self) -> bool:
         """True when the verdict is not a finding at all."""
-        return self in _PASSING
+        return self.certainty is Certainty.PASSING
 
     def to_dict(self) -> dict[str, Any]:
         """The verdict as a reader receives it: its code, its label and whether it is certain."""
-        return {"code": self.name, "label": self.value, "certain": self.certain}
+        return {"code": self.name, "label": self.label, "certain": self.certain}
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Verdict:
+        """The verdict a `{code, label, certain}` object names.
+
+        An object that is missing a key, carries another, names no verdict, or whose label or
+        certainty is not its code's is refused, because each of those is a writer that is wrong.
+        """
+        if not isinstance(data, Mapping) or sorted(data) != sorted(VERDICT_KEYS):
+            raise ValueError(f"a verdict is an object of exactly {', '.join(VERDICT_KEYS)}, not {data!r}")
+        code = data["code"]
+        verdict = cls.__members__.get(code) if isinstance(code, str) else None
+        if verdict is None:
+            raise ValueError(f"{code!r} is not a verdict code")
+        if data["label"] != verdict.label or data["certain"] is not verdict.certain:
+            raise ValueError(f"{dict(data)!r} is not what the verdict {code} writes, which is {verdict.to_dict()!r}")
+        return verdict
 
 
-_CERTAIN = frozenset(
-    {
-        Verdict.PAGE_ERROR,
-        Verdict.STALLED,
-        Verdict.TRUNCATED,
-        Verdict.NO_COVER,
-        Verdict.BLACK,
-        Verdict.SPEECH_AT_CUT,
-        Verdict.POP_AT_CUT,
-        Verdict.OFF_CUE,
-        Verdict.NO_CHANGE,
-        Verdict.UNRESOLVED,
-        Verdict.UNKNOWN_CUE,
-        Verdict.UNCUED_ELEMENT,
-        Verdict.OFF_STAGE,
-        Verdict.CDN_ASSET,
-        Verdict.MISSING,
-        Verdict.KATEX_ERROR,
-        Verdict.KATEX_NOT_LOADED,
-        Verdict.UNREADABLE,
-        Verdict.INCONSISTENT,
-    }
-)
-_PASSING = frozenset({Verdict.CHANGED, Verdict.QUIET, Verdict.OK, Verdict.SKIPPED, Verdict.NOTE})
-
-
-class SkipReason(StrEnum):
-    """Why a row measured nothing. `verify` and `preflight` name the shared ones identically."""
+class SkipReason(Enum):
+    """Why a row measured nothing. `verify` and `preflight` name the shared ones alike, and the value is the code."""
 
     # verify
     REFERENCE_CLAMPED = "REFERENCE_CLAMPED"
@@ -159,6 +181,26 @@ class Finding:
             "detail": self.detail,
         }
 
+    @classmethod
+    def from_dict(cls, data: Any) -> Finding:
+        """The row a reader received, refusing one that is missing a key, carries another or says nothing.
+
+        A judged row always carries its sentence, so a row whose `detail` is not a string is refused
+        rather than read as an empty one.
+        """
+        if not isinstance(data, Mapping) or sorted(data) != sorted(FINDING_KEYS):
+            raise ValueError(f"a finding row is an object of exactly {', '.join(FINDING_KEYS)}, not {data!r}")
+        verdict = Verdict.from_dict({key: data[key] for key in VERDICT_KEYS})
+        section, cue, where, detail = data["section"], data["cue"], data["where"], data["detail"]
+        if not isinstance(detail, str):
+            raise ValueError(f"the {verdict.name} row carries no sentence: {dict(data)!r}")
+        if section is not None and (isinstance(section, bool) or not isinstance(section, int)):
+            raise ValueError(f"the {verdict.name} row's section is {section!r}, not a section number")
+        for key, value in (("cue", cue), ("where", where)):
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"the {verdict.name} row's {key} is {value!r}, not a string")
+        return cls(detail=detail, verdict=verdict, section=section, cue=cue, where=where)
+
 
 @dataclass(frozen=True)
 class Findings:
@@ -198,6 +240,8 @@ class StageResult(Protocol):
 
     The CLI counts findings, chooses an exit code and prints one envelope without importing
     any stage or knowing any result's shape, and `build` tallies a whole run the same way.
+    `to_dict` gives data `json.dumps` writes as it is, with every verdict already the
+    `{code, label, certain}` object, so the payload a caller parses is the one the result wrote.
     """
 
     @property

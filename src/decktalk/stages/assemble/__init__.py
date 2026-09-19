@@ -74,13 +74,27 @@ class AssembleResult:
     cuts_file: Path | None = None
     transcript: Path | None = None
     poster: Path | None = None
-    loudness_problems: list[str] = field(default_factory=list)  # A peak over the ceiling, or a missed target.
+    loudness_problems: list[Finding] = field(default_factory=list)  # A peak over the ceiling, or a missed target.
     rows: list[Finding] = field(default_factory=list)  # A cued sound that names no caption line.
 
     @property
     def substituted(self) -> list[RenderedSection]:
         """The sections that played a slate or a black frame instead of the real thing."""
         return [row for row in self.sections if row.substitute is not None]
+
+    @property
+    def substitutions(self) -> list[Finding]:
+        """One `SLATE` row per section a slate or a black frame stood in for, naming the file that is missing."""
+        return [
+            Finding(
+                detail=f"section {row.section.key} plays {row.substitute.value} because {row.source} is not there",
+                verdict=Verdict.SLATE,
+                section=row.section.number,
+                where=row.source,
+            )
+            for row in self.sections
+            if row.substitute is not None
+        ]
 
     @property
     def written(self) -> list[Path]:
@@ -92,8 +106,8 @@ class AssembleResult:
     def findings(self) -> Findings:
         """Uncertain: a slate or black section, a loudness miss, and a cued sound with no caption."""
         return (
-            Findings(uncertain=len(self.loudness_problems))
-            + Findings.of(Verdict.SLATE for _ in self.substituted)
+            Findings.of(row.verdict for row in self.loudness_problems)
+            + Findings.of(row.verdict for row in self.substitutions)
             + Findings.of(row.verdict for row in self.rows)
         )
 
@@ -108,7 +122,7 @@ class AssembleResult:
                 {
                     "key": row.section.key,
                     "source": row.note,
-                    "substitute": row.substitute,
+                    "substitute": None if row.substitute is None else row.substitute.value,
                     "duration": round(row.duration, 3),
                     "path": relative(row.path, root),
                 }
@@ -131,6 +145,7 @@ class AssembleResult:
             },
             "warnings": list(self.warnings),
             "uncaptioned": [row.to_dict() for row in self.rows],
+            "substituted": [row.to_dict() for row in self.substitutions],
         }
 
 
@@ -164,7 +179,7 @@ def mix_soundtrack(
 
 def deliver(
     project: Project, mixed: Path, work: Path, takes: Takes, *, loudness: bool, strict: bool
-) -> tuple[tuple[audio.Loudness, audio.Loudness] | None, list[str]]:
+) -> tuple[tuple[audio.Loudness, audio.Loudness] | None, list[Finding]]:
     """Encode the mixed soundtrack to its delivery codec, normalized when there is speech to normalize.
 
     Returns (the loudness before and after, the problems). The encode happens exactly once, here or
@@ -204,7 +219,7 @@ def assemble(
             path=project.takes_path,
         )
     paths = project.workspace.output_paths()
-    warnings = stray_warnings(project, "assemble")
+    warnings = stray_warnings(project)
     rows = render_sections(project, takes, strict=strict)
 
     work = project.out_dir / f".{project.name}.tmp.mp4"

@@ -20,9 +20,11 @@ from decktalk.artifacts import (
 )
 from decktalk.cli import main
 from decktalk.cli.parser import UsageError, build_parser
+from decktalk.cli.schema import SpokenWord, read_envelope
 from decktalk.model.script import parse_script, strip_markdown
+from decktalk.pipeline import Stage
 from decktalk.settings import Settings
-from decktalk.verdicts import Findings, Verdict
+from decktalk.verdicts import Finding, Findings, Verdict
 
 MINIMAL_TOML = """
 [project]
@@ -190,9 +192,10 @@ def test_a_tuning_value_outside_its_range_fails_at_load_naming_its_table_and_key
         ("video", "fps", 0, "must be above zero"),
         ("video", "crf", -9, "must be an x264 quality between 0 and 51"),
         ("video", "width", -4, "must be above zero"),
-        ("record", "retries", -1, "must not be negative"),
-        ("verify", "min_changed_percent", 140.0, "must be a percentage between 0 and 100"),
-        ("record", "black_ymax", 900.0, "must be a luma between 0 and 255"),
+        # The tuning table of a stage is named after the stage it tunes.
+        (Stage.RECORD.value, "retries", -1, "must not be negative"),
+        (Stage.VERIFY.value, "min_changed_percent", 140.0, "must be a percentage between 0 and 100"),
+        (Stage.RECORD.value, "black_ymax", 900.0, "must be a luma between 0 and 255"),
     ]:
         with pytest.raises(ConfigError) as info:
             load_settings(toml={table: {key: value}}, environ={}, user={})
@@ -477,8 +480,8 @@ def test_every_result_tallies_its_own_rows():
         warnings=[],
         loudness=None,
         loudness_problems=[
-            Finding(detail="quiet", verdict=Verdict.LOUDNESS_MISS, where="build/out/demo.mp4"),
-            Finding(detail="loud", verdict=Verdict.LOUDNESS_MISS, where="build/out/demo.mp4"),
+            Finding(detail="too quiet", verdict=Verdict.LOUDNESS_MISS, where="build/out/demo.mp4"),
+            Finding(detail="too loud", verdict=Verdict.LOUDNESS_MISS, where="build/out/demo.mp4"),
         ],
     )
     assert assembly.findings == Findings(uncertain=2)
@@ -499,7 +502,7 @@ def test_every_result_tallies_its_own_rows():
     assert clip_row.findings == Findings(uncertain=1)
     # The tally has a row under it, so a reader learns which word the span cut and where.
     [cut] = clip_row.rows
-    assert cut.verdict.name == "CUT_WORD" and not cut.verdict.certain
+    assert cut.verdict is Verdict.CUT_WORD and not cut.verdict.certain
     assert cut.section == 1 and cut.detail is not None and "'step'" in cut.detail
     assert clip_row.to_dict(Path("/tmp"))["cuts"] == [cut.to_dict()]
     # The results that judge nothing say so, which is what keeps the CLI free of stage arithmetic.
@@ -871,11 +874,11 @@ def test_a_clip_section_reads_its_words_key(tmp_path):
     assert plain.sections[1].words is None
 
 
-# ---- narration tail -------------------------------------------------------------------------
+# ---- narration sound end -------------------------------------------------------------------
 
 
-def test_trailing_silence_counts_a_silence_ending_0_0502_s_before_the_end(monkeypatch):
-    """The numbers of the demo's 08-the-edit.mp3: every narrate run padded it again by 1.35 s."""
+def test_sound_end_counts_a_silence_ending_0_0502_s_before_the_end_as_running_to_it(monkeypatch):
+    """The numbers of the demo's 08-the-edit.mp3, whose last silence ends in the encoder padding."""
     from decktalk.media import audio, ffmpeg
 
     detect = (
@@ -887,28 +890,18 @@ def test_trailing_silence_counts_a_silence_ending_0_0502_s_before_the_end(monkey
     )
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 15.752)
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: detect.format(end=15.701814))
-    assert audio.trailing_silence(Path("08-the-edit.mp3")) == 1.371
-    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: detect.format(end=15.5))  # speech after the silence
-    assert audio.trailing_silence(Path("08-the-edit.mp3")) == 0.0
+    assert audio.sound_end(Path("08-the-edit.mp3")) == 14.381
+    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: detect.format(end=15.5))  # sound after the silence
+    assert audio.sound_end(Path("08-the-edit.mp3")) == 15.752
     # At 8 kHz one mp3 frame lasts 0.144 s, longer than the fixed tolerance.
     low = detect.replace("44100 Hz", "8000 Hz").format(end=15.62)
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: low)
-    assert audio.trailing_silence(Path("08-the-edit.mp3")) == 1.371
-
-
-def test_a_padded_take_within_a_frame_of_min_tail_is_not_padded_again(monkeypatch):
-    from decktalk.media import audio
-    from decktalk.settings import NarrationConfig
-    from decktalk.stages.narrate import ensure_tail
-
-    padded: list[float] = []
-    monkeypatch.setattr(audio, "pad_tail", lambda path, seconds, bitrate: padded.append(seconds))
-    monkeypatch.setattr(audio, "trailing_silence", lambda path: 1.26)
-    cfg = NarrationConfig(min_tail_seconds=1.3)
-    assert ensure_tail(Path("a.mp3"), cfg, tolerance=audio.SILENCE_END_TOLERANCE_SECONDS) == 0.0
-    assert padded == []
-    assert ensure_tail(Path("a.mp3"), cfg) == 0.09  # a take never padded before gets the full tail
-    assert padded == [0.09]
+    assert audio.sound_end(Path("08-the-edit.mp3")) == 14.381
+    # A silence silencedetect never closed runs to the end, and a file with no silence sounds to its end.
+    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: "Audio: mp3, 44100 Hz\nsilence_start: 15.629\n")
+    assert audio.sound_end(Path("a.mp3")) == 15.629
+    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: "Audio: mp3, 44100 Hz\n")
+    assert audio.sound_end(Path("a.mp3")) == 15.752
 
 
 # ---- section silence -----------------------------------------------------------------------
@@ -959,13 +952,13 @@ def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkey
 
 
 def _words_project(tmp_path: Path) -> Project:
-    """Page sections 1 (with a 0.5 s lead) and 2, a clip section 3, and a take for each spoken section.
+    """Page sections 1 (with a 0.5 s lead) and 2 (with none), a clip section 3, and a take for each spoken section.
 
     Only section 1's take records the script's spelling, so section 2 keeps the voice's.
     """
     (tmp_path / "decktalk.toml").write_text(
         "[[section]]\nnumber = 1\nchapter = 'Open'\npage = 'a.html'\nlead_seconds = 0.5\n"
-        "[[section]]\nnumber = 2\nchapter = 'Close'\npage = 'a.html'\n"
+        "[[section]]\nnumber = 2\nchapter = 'Close'\npage = 'a.html'\nlead_seconds = 0\n"
         "[[section]]\nnumber = 3\nclip = 'media/c.mp4'\n",
         encoding="utf-8",
     )
@@ -1026,13 +1019,13 @@ def test_cli_words_prints_a_table_and_json(tmp_path, capsys):
     assert "  0.600   0.900  Hello," in table
     assert "Close" not in table
     assert main(["-p", str(tmp_path), "words", "--json"]) == 0
-    doc = json.loads(capsys.readouterr().out)
-    assert (doc["command"], doc["ok"]) == ("words", True)
-    assert doc["findings"] == {"certain": 0, "uncertain": 0, "items": []} and doc["written"] == []
-    first, second = doc["words"]["sections"]
-    assert first["section"] == 1 and first["lead_seconds"] == 0.5
-    assert first["words"][0] == {"word": "Hello", "text": "Hello,", "start": 0.6, "end": 0.9}
-    assert second["words"][1] == {"word": "now", "text": "now", "start": 0.6, "end": 1.1}
+    doc = read_envelope(capsys.readouterr().out)
+    assert (doc.command, doc.ok) == ("words", True)
+    assert (doc.findings.certain, doc.findings.uncertain, doc.findings.items) == (0, 0, []) and doc.written == []
+    first, second = doc.payload.sections
+    assert first.section == 1 and first.lead_seconds == 0.5
+    assert first.words[0] == SpokenWord(word="Hello", text="Hello,", start=0.6, end=0.9)
+    assert second.words[1] == SpokenWord(word="now", text="now", start=0.6, end=1.1)
 
 
 def test_clip_words_keep_only_whole_words_shifted_to_the_clip(tmp_path):
