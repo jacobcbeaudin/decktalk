@@ -77,6 +77,13 @@ You write four files. One cue id per reveal, such as `1.1script`, ties the scrip
 
 The `narrate` stage writes a words file with the start and end of every spoken word. If a cue phrase is not in the spoken words, the build stops and names the cue. [Your first deck](https://docs.decktalk.ai/guides/first-deck) writes one section in all four files.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/pipeline-dark.svg">
+  <img alt="Five stations from left to right: Script, script.md, markdown with one heading a section. Voice, a take and its words file, where your voice reads it and every word gets a time. Cues, cues.json, where you name the phrase and the picture starts on it, with the example &quot;This is DeckTalk&quot; for the cue 1.1title. Slides, deck/index.html, plain HTML with one scene a section. Video, build/out/name.mp4, recorded in real time with every reveal measured. A line from the slides joins the cues. Under the stations: change one sentence, and only that section is voiced and recorded again." src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/pipeline-light.svg" width="100%">
+</picture>
+
+The script comes first, the voice gives every word a time, and the cues are where a named phrase meets its picture. Change one sentence, and only that section is voiced and recorded again.
+
 ## Why the cuts are exact
 
 <picture>

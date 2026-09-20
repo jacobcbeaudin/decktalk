@@ -3,23 +3,28 @@
 # dependencies = ["playwright>=1.50", "fonttools[woff]>=4.50"]
 # ///
 """Generate every graphic from one source. The graphics are the hero, how-it-works (wide and
-stacked), alignment, the verify probes and onset, the rebuild lanes, the narration split, the duck
-lane, the cue offset, the mark, the wordmark, and the favicon. Every number a figure prints comes
-from scripts/figure-data/*.json, which `--capture` measures from a built scaffold.
-The README reads assets/, and the docs site reads docs/images/ and docs/logo/.
+stacked), the pipeline, alignment, the verify probes and onset, the rebuild lanes, the narration
+split, the duck lane, the cue offset, the mark and its lockups, the favicon set, the social card
+and the brand's CSS tokens. Every number a figure prints comes from scripts/figure-data/*.json, which `--capture`
+measures from a built scaffold. The README reads assets/, the docs site reads docs/images/ and
+docs/logo/, and the homepage reads site/tokens.css and site/favicon.svg.
 
-    uv run scripts/build_assets.py            # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, docs/favicon.svg
+    uv run scripts/build_assets.py            # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, the favicons, site/tokens.css
     uv run scripts/build_assets.py --check    # exit 1 if the committed files would change
     uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson --clip-project path/to/clip-lesson
                                               # re-measure figure data
 
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
-they cannot drift. The copies in assets/ have a transparent background so they sit on whatever
-ground GitHub and PyPI paint. The copies in docs/images/ carry their own background rect. Inter
-Tight and JetBrains Mono subsets (OFL, assets/fonts/) are embedded as base64 in the diagrams so
-GitHub and PyPI render the intended faces. Word positions in the hero are measured in Chromium
-with that exact font, so the tick under each word is under the word. The wordmark instead carries
-the letters as outline paths traced with fontTools, so each logo is a few kilobytes.
+they cannot drift. The palette is the brand's: a warm near-black or warm paper as the ground, one
+tungsten gold for the voice that marks only the word being spoken, a cue and a live tick, and paper for
+every picture. The copies in assets/ have a transparent background so they sit on whatever ground
+GitHub and PyPI paint. The copies in docs/images/ carry their own background rect. Instrument Sans
+and IBM Plex Mono subsets (OFL, assets/fonts/) are embedded as base64 in the diagrams so GitHub
+and PyPI render the intended faces, and the two diagrams that carry a headline add Instrument Serif,
+the face the headings are set in.
+Word positions in the hero are measured in Chromium with that exact font, so the tick under each
+word is under the word. The wordmark instead carries the letters as outline paths traced with
+fontTools, so each logo is a few kilobytes.
 
 Motion rules (from the design review): base styles are the END state, keyframes carry the start
 values, so `prefers-reduced-motion: reduce` shows the finished frame. Loops dissolve back to the
@@ -38,40 +43,56 @@ ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
 FONTS = ASSETS / "fonts"
 
+# The brand palette, direction B "the voice". Ratios are WCAG 2.x contrast against `bg`.
+# `accent` is the voice, tungsten gold: it marks a spoken word, a cue, a live tick, and nothing that is a picture.
 LIGHT = {
-    "bg": "#ffffff",
-    "ink": "#0a0a0a",
-    "dim": "#a3a3ad",  # unspoken words, 2.5:1 on white
-    "mute": "#71717a",  # labels, captions
-    "block": "#f4f4f5",
-    "hair": "#e4e4e7",
-    "bar": "#d4d4d8",
-    "tick": "#c4c4c8",
-    "accent": "#2c1fea",
-    "on_accent": "#ffffff",
-    "mark_bar": "#d4d4d8",  # the unlit ticks of the mark
-    "cover": "#fad3f3",  # the alignment diagram's cover frames
+    "bg": "#fbf7f1",  # warm paper
+    "ink": "#1b1511",  # 16.9:1
+    "dim": "#a99d8f",  # unspoken words, 2.6:1, decorative by design
+    "mute": "#6f655b",  # labels, captions, 5.3:1
+    "block": "#f2ece3",  # a second shelf
+    "hair": "#e1d8cc",  # hairlines
+    "bar": "#d3c9bc",
+    "tick": "#c4b9ab",
+    "accent": "#7a5000",  # the voice, deepened for paper, 6.6:1 (the gold itself is 1.7:1 on paper)
+    "on_accent": "#ffffff",  # 7.1:1 on the accent
+    "paper": "#ffffff",  # a picture's ground
+    "text2": "#5b524a",  # 7.2:1
+    "focus": "#8f8374",  # focus ring, 3.5:1
+    "voice_ink": "#ffffff",
+    "voice_soft": "#fbeac4",  # ink 15.2:1 on it
+    "ok": "#1f7a44",
+    "warn": "#8a5a00",
+    "cover": "#fad3f3",  # the alignment diagram's cover frames, DeckTalk's magenta cover
     "cover_edge": "#fd62f9",
 }
 DARK = {
-    "bg": "#0e0e0f",
-    "ink": "#f4f4f5",
-    "dim": "#52525b",
-    "mute": "#8b8b94",
-    "block": "#19191c",
-    "hair": "#27272a",
-    "bar": "#3f3f46",
-    "tick": "#3f3f46",
-    "accent": "#7c8cff",  # electric hue kept, 6.5:1 on the dark ground
-    "on_accent": "#0e0e0f",
-    "mark_bar": "#4f4f57",
+    "bg": "#15110e",  # warm near-black, a little brown in it, never blue
+    "ink": "#f5eee4",  # 16.3:1
+    "dim": "#6a5f54",  # unspoken words, 3.1:1, decorative by design
+    "mute": "#9a8e80",  # 5.9:1
+    "block": "#1f1915",
+    "hair": "#3b322c",
+    "bar": "#4a3f37",
+    "tick": "#4a3f37",
+    "accent": "#f2b441",  # the voice, tungsten gold, 10.2:1
+    "on_accent": "#1a0e07",  # 10.3:1 on the accent
+    "paper": "#fbf6ee",
+    "text2": "#c3b7a8",  # 9.5:1
+    "focus": "#8a7c6e",  # 4.6:1
+    "voice_ink": "#1a0e07",
+    "voice_soft": "#3d2e12",  # text 11.4:1 on it
+    "ok": "#8fd4a0",
+    "warn": "#f2c66d",
     "cover": "#33083a",
     "cover_edge": "#a20da8",
 }
 
-SANS = "'DT Sans', 'Inter Tight', 'Inter', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
-MONO = "'DT Mono', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
-CAP_HEIGHT = 0.73  # Inter Tight's cap height as a fraction of the font size.
+SANS = "'DT Sans', 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
+MONO = "'DT Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+TITLE = "'DT Title', 'Instrument Serif', Georgia, 'Times New Roman', serif"
+DISPLAY = "'DT Display', 'Bricolage Grotesque', 'Avenir Next', 'Helvetica Neue', system-ui, sans-serif"
+CAP_HEIGHT = 0.72  # Instrument Sans's cap height as a fraction of the font size.
 MEASURE_PX = 32  # The size the words are measured at. Every diagram scales the positions from it.
 HERO_W, HERO_H, HERO_PAD = 1000, 248, 48
 HERO_PX = 30  # the line's size in the hero, so it clears the card at this width
@@ -121,15 +142,20 @@ class Bowl:
 
 
 FACES = (
-    # family, file, weight range: variable fonts subset to the glyphs the diagrams use
-    ("DT Sans", "InterTight.woff2", "100 900"),
-    ("DT Mono", "JetBrainsMono.woff2", "100 800"),
+    # family, file, weight range: fonts subset to the glyphs the diagrams use
+    ("DT Sans", "InstrumentSans.woff2", "400 700"),
+    ("DT Mono", "PlexMono.woff2", "400 500"),
 )
+TITLE_FACE = ("DT Title", "InstrumentSerif.woff2", "400")
+# The logo lockups trace their letters from this one instead of embedding it; the social card sets the
+# wordmark as live text, so that one card embeds it.
+DISPLAY_FACE = ("DT Display", "BricolageGrotesque.woff2", "500")
 
 
-def font_face() -> str:
+def font_face(title: bool = False, display: bool = False) -> str:
+    extra = [f for f, want in ((TITLE_FACE, title), (DISPLAY_FACE, display)) if want]
     rules = []
-    for family, name, weights in FACES:
+    for family, name, weights in (*FACES, *extra):
         path = FONTS / name
         if not path.exists():
             sys.exit(f"{path} is missing. See assets/fonts/LICENSE.txt for how it was made.")
@@ -176,18 +202,17 @@ def measure_words(words: list[str], font: str, letter_spacing: str) -> tuple[lis
     return [float(w) for w in widths], float(space)
 
 
-def glyph_outlines(text: str, size: float, weight: int, tracking: float) -> tuple[str, float]:
+def glyph_outlines(text: str, size: float, tracking: float) -> tuple[str, float]:
     """The text as one SVG path in a y-down px space with the baseline at y=0, plus its width.
 
-    The variable font is instanced at the requested weight and each glyph is placed by its own
+    The display face (a static instance at the wordmark's weight) places each glyph by its own
     advance width, with `tracking` (in em) added between letters.
     """
     from fontTools.pens.svgPathPen import SVGPathPen
     from fontTools.pens.transformPen import TransformPen
     from fontTools.ttLib import TTFont
-    from fontTools.varLib import instancer
 
-    font = instancer.instantiateVariableFont(TTFont(FONTS / "InterTight.woff2"), {"wght": weight})
+    font = TTFont(FONTS / DISPLAY_FACE[1])
     scale = size / font["head"].unitsPerEm
     cmap = font.getBestCmap()
     glyphs = font.getGlyphSet()
@@ -247,7 +272,7 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
     )
     css.append(f".dot{{fill:{pal['accent']}}}")
     css.append(f".bowl{{stroke:{pal['ink']};stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round}}")
-    css.append(f".ball{{fill:{pal['accent']};stroke:{pal['block']};stroke-width:2.5}}.mark{{fill:{pal['ink']}}}")
+    css.append(f".ball{{fill:{pal['ink']};stroke:{pal['block']};stroke-width:2.5}}.mark{{fill:{pal['mute']}}}")
     css.append(
         f".box{{fill:{pal['bg']};stroke:{pal['ink']};stroke-width:1.5}}.box.full{{fill:{pal['accent']};stroke:{pal['accent']}}}"
     )
@@ -426,7 +451,7 @@ def hiw_css(pal: dict[str, str], ticks: list[float], total: float = 10.0) -> str
         )
     css.append(
         f".mbowl{{stroke:{pal['ink']};stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}}"
-        f".ball{{fill:{pal['accent']};stroke:{pal['block']};stroke-width:2}}.mark{{fill:{pal['ink']}}}"
+        f".ball{{fill:{pal['ink']};stroke:{pal['block']};stroke-width:2}}.mark{{fill:{pal['mute']}}}"
     )
     # 04: frames wait faintly, brighten in turn, then merge into one bar that carries the output's name to the
     # loop's end. They rest at a low opacity rather than zero, so the panel never stands empty.
@@ -506,25 +531,172 @@ def how_it_works(pal: dict[str, str], stacked: bool, background: bool, ticks: li
 """
 
 
+# ---- pipeline ---------------------------------------------------------------------------------
+
+# The five stations from a script to one film, each with the file it is, and what the docs call it.
+# The cues station is the join, where a named phrase meets its picture, and it is the only one in colour.
+STATIONS = (
+    ("Script", "script.md", ("Markdown, one heading", "a section. It comes first.")),
+    ("Voice", "<hash>.mp3 · words.json", ("Your voice reads it, and", "every word gets a time.")),
+    ("Cues", "cues.json", ("You name the phrase, and", "the picture starts on it.")),
+    ("Slides", "deck/index.html", ("Plain HTML, one scene", "a section, in any theme.")),
+    ("Video", "build/out/<name>.mp4", ("Recorded in real time, and", "every reveal is measured.")),
+)
+CUE_STATION = 2
+# The cue on the cues station: the starter's first cue, from src/decktalk/template/starter/cues.json.
+STATION_CUE = ("This is DeckTalk", "1.1title")
+PIPELINE_HEADLINE = "A script becomes one film, and every picture lands on its word."
+PIPELINE_NOTE = "Only that section is voiced and recorded again. The others keep their takes and their recordings."
+
+
+def station_icon(i: int) -> str:
+    """The glyph on station i, in a 48 by 40 box: a page, a waveform, the join, a stack of slides, a frame."""
+    if i == 0:
+        return (
+            '<path class="ink" d="M 0 0 h 22 l 8 8 v 30 h -30 z M 22 0 v 8 h 8"/>'
+            '<g class="dim"><line x1="6" y1="16" x2="22" y2="16"/><line x1="6" y1="22" x2="24" y2="22"/><line x1="6" y1="28" x2="18" y2="28"/></g>'
+        )
+    if i == 1:
+        return (
+            '<g class="ink">'
+            + "".join(
+                f'<line x1="{x}" y1="{19 - h / 2}" x2="{x}" y2="{19 + h / 2}"/>'
+                for x, h in ((2, 6), (8, 18), (14, 30), (20, 14), (26, 24), (32, 10), (38, 4))
+            )
+            + "</g>"
+        )
+    if i == 2:
+        # The picture on top, the word beneath it, and the cue line that joins them.
+        return (
+            '<rect class="ink" x="0" y="0" width="40" height="22" rx="2"/>'
+            '<rect class="lamp" x="0" y="30" width="26" height="6" rx="3"/>'
+            '<line class="lampline" x1="0.75" y1="22" x2="0.75" y2="30"/>'
+        )
+    if i == 3:
+        return (
+            '<rect class="film" x="8" y="8" width="40" height="22" rx="2" opacity="0.35"/>'
+            '<rect class="film" x="4" y="4" width="40" height="22" rx="2" opacity="0.6"/>'
+            '<rect class="film" x="0" y="0" width="40" height="22" rx="2"/>'
+            '<g class="filmink"><line x1="6" y1="8" x2="22" y2="8"/><line x1="6" y1="14" x2="30" y2="14"/></g>'
+        )
+    holes = "".join(
+        f'<rect class="fill" x="{x}" y="{y}" width="3" height="3"/>' for x in (4, 37) for y in (4, 13.5, 23)
+    )
+    return f'<rect class="ink" x="0" y="0" width="44" height="30" rx="3"/>{holes}<path class="fill" d="M 18 9 l 12 6 l -12 6 z"/>'
+
+
+def pipeline(pal: dict[str, str], background: bool) -> str:
+    """How DeckTalk makes a film: five stations from the script to the video, the file each one is, and
+    the note that a changed sentence voices and records only its own section again."""
+    w, h = 1200, 470
+    left, card_w, card_h, gap, top = 60, 196, 116, 25, 148
+    pitch = card_w + gap
+    css = [font_face(title=True)]
+    css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}.lab.acc{{fill:{pal['accent']}}}")
+    css.append(f".h{{font:400 34px {TITLE};letter-spacing:-.01em;fill:{pal['ink']}}}")
+    css.append(f".name{{font:600 17px {SANS};letter-spacing:-.01em;fill:{pal['ink']}}}")
+    css.append(f".file{{font:500 12px {MONO};fill:{pal['mute']}}}")
+    css.append(f".desc{{font:400 14px {SANS};fill:{pal['mute']}}}")
+    css.append(
+        f".cue{{font:500 13px {MONO};fill:{pal['mute']}}}.cue.acc{{fill:{pal['accent']}}}.cue.ink{{fill:{pal['ink']}}}"
+    )
+    css.append(
+        f".panel{{fill:{pal['block']};stroke:{pal['hair']};stroke-width:1}}.panel.on{{stroke:{pal['accent']};stroke-width:1.5}}"
+    )
+    css.append(f".hair{{stroke:{pal['hair']};stroke-width:1.5;fill:none}}.arrow{{fill:{pal['bar']}}}")
+    css.append(f".ink{{stroke:{pal['ink']};fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}}")
+    css.append(
+        f".dim{{stroke:{pal['mute']};fill:none;stroke-width:1.5;stroke-linecap:round}}.fill{{fill:{pal['ink']}}}"
+    )
+    css.append(f".lamp{{fill:{pal['accent']}}}.lampline{{stroke:{pal['accent']};stroke-width:1.5}}")
+    css.append(
+        f".film{{fill:{pal['paper']};stroke:{pal['bar']};stroke-width:1}}.filmink{{stroke:{pal['on_accent']};stroke-width:1.5;stroke-linecap:round}}"
+    )
+    parts: list[str] = [
+        f'<text class="lab" x="{left}" y="52">THE PIPELINE</text>',
+        f'<text class="h" x="{left}" y="102">{PIPELINE_HEADLINE}</text>',
+    ]
+    mid = top + card_h / 2
+    for i in range(len(STATIONS) - 1):
+        xa, xb = left + i * pitch + card_w, left + (i + 1) * pitch
+        parts.append(f'<line class="hair" x1="{xa}" y1="{mid}" x2="{xb - 6}" y2="{mid}"/>')
+        parts.append(f'<path class="arrow" d="M {xb - 7} {mid - 4} l 7 4 l -7 4 z"/>')
+    # The slides feed the cues too: the picture side of the join.
+    sx, cx = left + 3 * pitch + card_w / 2, left + CUE_STATION * pitch + card_w / 2 + 24
+    parts.append(f'<path class="hair" d="M {sx} {top} C {sx} {top - 40}, {cx} {top - 40}, {cx} {top - 8}"/>')
+    parts.append(f'<path class="arrow" d="M {cx - 4} {top - 9} l 4 7 l 4 -7 z"/>')
+    for i, (name, file, desc) in enumerate(STATIONS):
+        x = left + i * pitch
+        on = i == CUE_STATION
+        parts.append(f'<g transform="translate({x} {top})">')
+        parts.append(f'<rect class="panel{" on" if on else ""}" width="{card_w}" height="{card_h}" rx="8"/>')
+        parts.append(f'<g transform="translate(22 20)">{station_icon(i)}</g>')
+        parts.append(f'<text class="name" x="22" y="86">{name}</text>')
+        parts.append(f'<text class="file" x="22" y="104">{file.replace("<", "&lt;").replace(">", "&gt;")}</text>')
+        parts.append(f'<text class="lab{" acc" if on else ""}" x="0" y="{card_h + 34}">0{i + 1}</text>')
+        parts.append(f'<text class="desc" x="0" y="{card_h + 60}">{desc[0]}</text>')
+        parts.append(f'<text class="desc" x="0" y="{card_h + 80}">{desc[1]}</text>')
+        if on:
+            phrase, cue = STATION_CUE
+            parts.append(
+                f'<text class="cue" x="0" y="{card_h + 110}"><tspan class="ink">"{phrase}"</tspan> → <tspan class="acc">{cue}</tspan></text>'
+            )
+        parts.append("</g>")
+    note_y = h - 46
+    parts.append(f'<line class="hair" x1="{left}" y1="{note_y - 28}" x2="{w - left}" y2="{note_y - 28}"/>')
+    parts.append(f'<text class="lab" x="{left}" y="{note_y}">CHANGE ONE SENTENCE</text>')
+    parts.append(f'<text class="desc" x="{left + 210}" y="{note_y}">{PIPELINE_NOTE}</text>')
+    desc = (
+        "Five stations from left to right: the script, the voice, the cues, the slides and the video, each with its file. "
+        f"The script is script.md, one heading a section. The voice reads it and every word gets a time, in a take and its words file. "
+        f"The cues are cues.json, where you name the phrase and the picture starts on it, such as the phrase {STATION_CUE[0]} for the cue {STATION_CUE[1]}. "
+        "The slides are plain HTML in deck/index.html, one scene a section. The video is recorded in real time, and every reveal is measured. "
+        f"A line from the slides joins the cues. Under the stations: change one sentence, and {PIPELINE_NOTE[0].lower()}{PIPELINE_NOTE[1:]}"
+    )
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
+  <title id="t">How DeckTalk makes a film</title>
+  <desc id="d">{desc}</desc>
+  <defs><style>{chr(10).join(css)}</style></defs>
+  {bg_rect(pal, w, h, background)}
+  {"".join(parts)}
+</svg>
+"""
+
+
 # ---- mark -------------------------------------------------------------------------------------
 
 
-def mark_glyph(pal: dict[str, str], dot_cy: float = 3.75) -> str:
-    """Four ticks with the second one lit under a cue dot, in a 24-unit square."""
-    return f"""<g stroke-width="2.25" stroke-linecap="round">
-    <line x1="4" y1="12" x2="4" y2="20" stroke="{pal["mark_bar"]}"/>
-    <line x1="9.5" y1="8" x2="9.5" y2="20" stroke="{pal["accent"]}"/>
-    <line x1="15" y1="12" x2="15" y2="20" stroke="{pal["mark_bar"]}"/>
-    <line x1="20.5" y1="12" x2="20.5" y2="20" stroke="{pal["mark_bar"]}"/>
-  </g><circle cx="9.5" cy="{dot_cy}" r="2.25" fill="{pal["accent"]}"/>"""
+# The mark: a lit screen with the spoken word beneath it, left edges aligned, in a 32-unit square. That is the
+# product's claim in two shapes: the picture sits on its word. The screen is paper on the dark stage and ink on
+# the light one, the word is the voice, and the favicon adds the stage tile because a browser tab's ground is unknown.
+MARK_UNIT = 32
+MARK_SCREEN = (6, 7.5, 20, 11.25, 1.25)  # x, y, width, height, corner radius
+MARK_WORD = (6, 21.5, 9, 3, 1.5)
+MARK_TILE_R = 7
 
 
-def mark(pal: dict[str, str], size: int = 24, background: bool = False) -> str:
-    """The cue glyph from the hero: a word's tick lit under its dot, among its neighbours."""
-    s = size / 24
-    bg = f'<rect width="{size}" height="{size}" rx="{5 * s:.1f}" fill="{pal["bg"]}"/>' if background else ""
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" role="img" aria-label="DeckTalk">
-  {bg}{mark_glyph(pal)}
+def mark_glyph(pal: dict[str, str], voice: str | None = None, picture: str | None = None) -> str:
+    """The screen and the word beneath it. Colours default to the palette's picture and voice."""
+    voice = voice or pal["accent"]
+    picture = picture or pal["paper" if pal is DARK else "ink"]
+    sx, sy, sw, sh, sr = MARK_SCREEN
+    wx, wy, ww, wh, wr = MARK_WORD
+    return (
+        f'<rect x="{sx}" y="{sy}" width="{sw}" height="{sh}" rx="{sr}" fill="{picture}"/>'
+        f'<rect x="{wx}" y="{wy}" width="{ww}" height="{wh}" rx="{wr}" fill="{voice}"/>'
+    )
+
+
+def mark(pal: dict[str, str], size: int = 32, background: bool = False, mono: bool = False) -> str:
+    """The mark alone. With `background`, on a rounded square of the palette's ground, for a favicon.
+    With `mono`, in one colour inherited from the page, for print and single-ink uses."""
+    glyph = mark_glyph(pal, "currentColor", "currentColor") if mono else mark_glyph(pal)
+    u = MARK_UNIT
+    # The tile is drawn in the mark's own space, so it scales with the mark at any size, and the mark keeps its
+    # six-unit margin inside it, the way a home-screen icon holds its glyph.
+    tile = f'\n  <rect width="{u}" height="{u}" rx="{MARK_TILE_R}" fill="{pal["bg"]}"/>' if background else ""
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {u} {u}" role="img" aria-label="DeckTalk">{tile}
+  {glyph}
 </svg>
 """
 
@@ -564,7 +736,7 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
     css.append(f".t0{{stroke:{pal['ink']};stroke-width:2}}")
     css.append(f".lead{{stroke:{pal['accent']};stroke-width:1.5;stroke-dasharray:3 4}}")
     css.append(f".bowl{{stroke:{pal['ink']};stroke-width:2;fill:none;stroke-linejoin:round}}")
-    css.append(f".ball{{fill:{pal['accent']}}}")
+    css.append(f".ball{{fill:{pal['ink']}}}")
     css.append(f".brace{{stroke:{pal['mute']};stroke-width:1.5;fill:none}}")
 
     def frame_at(cue_x: float) -> int:
@@ -1206,14 +1378,21 @@ def rebuild_lanes(pal: dict[str, str], background: bool) -> str:
 # ---- wordmark ---------------------------------------------------------------------------------
 
 
-def wordmark(pal: dict[str, str], name: tuple[str, float]) -> str:
-    """The mark and the name, for the docs navbar. The name is outline paths, so no font ships."""
+LOCKUP_H = 32  # the lockup is drawn 32 units tall, the mark 24 of them, and scaled to the height asked for
+
+
+def wordmark(pal: dict[str, str], name: tuple[str, float], height: int = LOCKUP_H, mono: bool = False) -> str:
+    """The mark and the name, for the docs navbar and the lockups. The name is outline paths, so no font ships.
+    The mark stands 24 units tall with its screen at the left edge, and the name starts 11 units after it."""
     d, width = name
-    text_x = 34
-    w = round(text_x + width)
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="32" viewBox="0 0 {w} 32" role="img" aria-label="DeckTalk">
-  <g transform="translate(0 5)">{mark_glyph(pal)}</g>
-  <path transform="translate({text_x} 24)" fill="{pal["ink"]}" d="{d}"/>
+    scale = 24 / MARK_UNIT
+    text_x = MARK_SCREEN[2] * scale + 11
+    w, s = text_x + width, height / LOCKUP_H
+    glyph = mark_glyph(pal, "currentColor", "currentColor") if mono else mark_glyph(pal)
+    ink = "currentColor" if mono else pal["ink"]
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w * s:.2f}" height="{height}" viewBox="0 0 {w:.2f} {LOCKUP_H}" role="img" aria-label="DeckTalk">
+  <g transform="translate({-MARK_SCREEN[0] * scale} 4) scale({scale})">{glyph}</g>
+  <path transform="translate({text_x} 24)" fill="{ink}" d="{d}"/>
 </svg>
 """
 
@@ -1221,51 +1400,137 @@ def wordmark(pal: dict[str, str], name: tuple[str, float]) -> str:
 # ---- social card -------------------------------------------------------------------------------
 
 
+OG_HEADLINE = ("Every picture", "lands on its word.")
+OG_KICKER = "Narrated video from a script, in your own voice."
+# The card's line is the one the homepage follows through how-it-works, from Halfway's section 2. Each
+# cue phrase is set in the voice colour, with a dot on the word its picture lands on.
+OG_WORDS = ["Twenty", "minutes", "for", "her.", "Twenty", "minutes", "for", "you."]
+OG_CUES = {0, 1, 2, 3, 4, 5, 6, 7}  # both phrases are cue phrases, 2.1her and 2.1you
+OG_DOTS = {0, 4}  # the pictures land on the first word of each phrase
+# The frame in the card's right third: Halfway's scene 2 once both routes are drawn, the picture the
+# card's line lands on. Rendered losslessly from the deck by `decktalk screenshots --section 2 --at 15`
+# in the Halfway project, then scaled to 640 by 360 as lossless WebP. Never a frame of the mp4.
+OG_FRAME = ASSETS / "halfway-frame.webp"
+OG_FRAME_BOX = (780, 196, 340, 191)  # x, y, width, height: beside the headline, on the site's right margin
+
+
 def og(pal: dict[str, str], xs: list[float], widths: list[float]) -> str:
-    """The 1200 by 630 card that link previews show: the opening line, the bowl slide, and the wordmark."""
+    """The 1200 by 630 card that link previews show: the wordmark, the site's name, the headline, a frame of Halfway
+    beside it, and the Halfway line the homepage follows, with a tick under each word and the cue phrases in the
+    voice colour."""
     w, h = 1200, 630
-    css = [font_face()]
+    if not OG_FRAME.exists():
+        sys.exit(f"{OG_FRAME} is missing. See the comment above OG_FRAME for how it was made.")
+    frame = base64.b64encode(OG_FRAME.read_bytes()).decode()
+    fx, fy, fw, fh = OG_FRAME_BOX
+    css = [font_face(title=True, display=True)]
+    css.append(f".shot{{fill:none;stroke:{pal['tick']};stroke-width:2}}")
     css.append(f".bg{{fill:{pal['bg']}}}")
     css.append(f".lab{{font:500 13px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
-    css.append(f".w{{font:600 44px {SANS};letter-spacing:-.01em;fill:{pal['ink']}}}.cue{{fill:{pal['accent']}}}")
+    css.append(f".w{{font:600 40px {SANS};letter-spacing:-.01em;fill:{pal['text2']}}}.cue{{fill:{pal['accent']}}}")
     css.append(f".tick{{stroke:{pal['tick']};stroke-width:3;stroke-linecap:round}}.tick.on{{stroke:{pal['accent']}}}")
     css.append(f".dot{{fill:{pal['accent']}}}.head{{fill:{pal['ink']}}}")
-    css.append(f".title{{font:600 30px {SANS};letter-spacing:-.02em;fill:{pal['ink']}}}")
-    css.append(f".tag{{font:400 26px {SANS};fill:{pal['mute']}}}")
-    css.append(f".block{{fill:{pal['block']}}}")
-    css.append(f".bowl{{stroke:{pal['ink']};stroke-width:4;fill:none;stroke-linecap:round;stroke-linejoin:round}}")
-    css.append(f".ball{{fill:{pal['accent']};stroke:{pal['block']};stroke-width:3}}.mark{{fill:{pal['ink']}}}")
-    scale = 44 / MEASURE_PX
+    css.append(f".title{{font:500 30px {DISPLAY};letter-spacing:-.01em;fill:{pal['ink']}}}")
+    css.append(f".h{{font:400 92px {TITLE};letter-spacing:-.01em;fill:{pal['ink']}}}")
+    css.append(f".tag{{font:400 28px {SANS};fill:{pal['text2']}}}")
+    css.append(f".site{{font:400 22px {MONO};fill:{pal['text2']}}}")
+    scale = 40 / MEASURE_PX
     words = "".join(
-        f'<tspan class="w {"cue" if i in HERO_CUES else ""}" x="{x * scale:.1f}">{t}</tspan>'
-        for i, (t, x) in enumerate(zip(HERO_WORDS, xs, strict=True))
+        f'<tspan class="w {"cue" if i in OG_CUES else ""}" x="{x * scale:.1f}">{t}</tspan>'
+        for i, (t, x) in enumerate(zip(OG_WORDS, xs, strict=True))
     )
     ticks = "".join(
-        f'<line class="tick {"on" if i in HERO_CUES else ""}" x1="{x * scale + 1:.1f}" y1="0" x2="{x * scale + 1:.1f}" y2="22"/>'
+        f'<line class="tick {"on" if i in OG_DOTS else ""}" x1="{x * scale + 1:.1f}" y1="0" x2="{x * scale + 1:.1f}" y2="22"/>'
         for i, x in enumerate(xs)
     )
-    dots = "".join(f'<circle class="dot" cx="{xs[i] * scale + 1:.1f}" cy="-8" r="5"/>' for i in sorted(HERO_CUES))
-    head_x = xs[-1] * scale + widths[-1] * scale + 2
-    bowl = Bowl(150, 108, 116, 78)
+    dots = "".join(f'<circle class="dot" cx="{xs[i] * scale + 1:.1f}" cy="-8" r="5"/>' for i in sorted(OG_DOTS))
+    # The playhead sits on the last tick: the card is the frame where the last picture lands, and gold means now.
+    head_x = xs[-1] * scale + 1 - 1.5
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label="DeckTalk">
   <defs><style>{chr(10).join(css)}</style></defs>
   <rect class="bg" width="{w}" height="{h}"/>
-  <g transform="translate(80 84) scale(1.4)">{mark_glyph(pal)}</g>
-  <text class="title" x="130" y="112">DeckTalk</text>
-  <text class="lab" x="80" y="230">NARRATION</text>
-  <g transform="translate(80 300)">
+  <g transform="translate(76 72) scale(1.125)">{mark_glyph(pal)}</g>
+  <text class="title" x="130" y="107">DeckTalk</text>
+  <text class="site" x="{w - 80}" y="107" text-anchor="end">decktalk.ai</text>
+  <text class="h" x="76" y="270">{OG_HEADLINE[0]}</text>
+  <text class="h" x="76" y="368">{OG_HEADLINE[1]}</text>
+  <text class="tag" x="80" y="436">{OG_KICKER}</text>
+  <clipPath id="shot"><rect x="{fx}" y="{fy}" width="{fw}" height="{fh}" rx="10"/></clipPath>
+  <image x="{fx}" y="{fy}" width="{fw}" height="{fh}" clip-path="url(#shot)" preserveAspectRatio="xMidYMid slice" href="data:image/webp;base64,{frame}"/>
+  <rect class="shot" x="{fx + 1}" y="{fy + 1}" width="{fw - 2}" height="{fh - 2}" rx="9"/>
+  <g transform="translate(80 540)">
     <text y="0">{words}</text>
-    <g transform="translate(0 34)">{ticks}{dots}<rect class="head" x="{head_x:.1f}" y="-16" width="3" height="52"/></g>
+    <g transform="translate(0 30)">{ticks}{dots}<rect class="head" x="{head_x:.1f}" y="-16" width="3" height="46"/></g>
   </g>
-  <g transform="translate(80 420)">
-    <rect class="block" width="300" height="130" rx="14"/>
-    <path class="bowl" d="{bowl.path()}"/>
-    {bowl.art(ball_r=13, ball_off=14, mark_r=5, mark_off=5.5)}
-  </g>
-  <text class="tag" x="420" y="470">Narrated presentations, cut to the word.</text>
-  <text class="tag" x="420" y="510">A markdown script and HTML slides in.</text>
-  <text class="tag" x="420" y="550">One mp4 out, every reveal on its word.</text>
 </svg>
+"""
+
+
+# ---- tokens ------------------------------------------------------------------------------------
+
+TYPE_TOKENS = """\
+  --dt-font-title: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --dt-font-display: "Bricolage Grotesque", "Avenir Next", "Helvetica Neue", system-ui, sans-serif;
+  --dt-font-text: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --dt-font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* A 1.25 scale from 16, rounded to whole pixels. */
+  --dt-size-xs: 12px;
+  --dt-size-sm: 14px;
+  --dt-size-md: 16px;
+  --dt-size-lg: 18px;
+  --dt-size-xl: 22px;
+  --dt-size-2xl: 28px;
+  --dt-size-3xl: 40px;
+  --dt-size-4xl: 56px;
+  --dt-size-5xl: 80px;
+  --dt-leading-tight: 1;
+  --dt-leading-snug: 1.15;
+  --dt-leading-body: 1.5;
+  --dt-tracking-title: -0.01em;
+  --dt-tracking-display: -0.025em;
+  --dt-tracking-eyebrow: 0.08em;
+  /* Motion: the runtime's own reveal, a 10 px rise over 0.3 s, and a plain fade. */
+  --dt-ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dt-release: 300ms;
+  --dt-rise: 10px;
+"""
+
+
+def colour_tokens(pal: dict[str, str]) -> str:
+    """The palette as custom properties. Gold is the voice: it marks the word being spoken, a waveform
+    while sound plays, a live cue and the section being rebuilt, and never a button or a picture."""
+    rows = (
+        ("bg", pal["bg"]),
+        ("surface", pal["block"]),
+        ("surface-2", pal["bar"] if pal is LIGHT else "#2a2320"),
+        ("border", pal["hair"]),
+        ("focus", pal["focus"]),
+        ("text", pal["ink"]),
+        ("text-2", pal["text2"]),
+        ("text-3", pal["mute"]),
+        ("text-dim", pal["dim"]),
+        ("voice", pal["accent"]),
+        ("voice-ink", pal["voice_ink"]),
+        ("voice-soft", pal["voice_soft"]),
+        ("paper", pal["paper"]),
+        ("paper-ink", "#1b1511"),
+        ("mark-picture", pal["paper"] if pal is DARK else pal["ink"]),
+        ("ok", pal["ok"]),
+        ("warn", pal["warn"]),
+    )
+    return "".join(f"  --dt-{name}: {value};\n" for name, value in rows)
+
+
+def tokens_css() -> str:
+    """site/tokens.css: the brand's colour, type and motion tokens. Dark is the default and, at launch,
+    the only theme; the paper theme is written so it can ship later under data-theme="light"."""
+    return f"""/* DeckTalk brand tokens. Generated by scripts/build_assets.py from its palette maps; edit there. */
+:root {{
+{colour_tokens(DARK)}{TYPE_TOKENS}  color-scheme: dark;
+}}
+:root[data-theme="light"] {{
+{colour_tokens(LIGHT)}  color-scheme: light;
+}}
 """
 
 
@@ -1561,10 +1826,17 @@ def build() -> dict[Path, str]:
     for i, w in enumerate(a_widths):
         align_xs.append(round(x, 1))
         x += w + a_space * (1.6 if ALIGN_WORDS[i].endswith((",", ".")) else 1.0)
+    o_widths, o_space = measure_words(OG_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
+    og_xs: list[float] = []
+    x = 0.0
+    for i, w in enumerate(o_widths):
+        og_xs.append(round(x, 1))
+        x += w + o_space * (1.6 if OG_WORDS[i].endswith((",", ".")) else 1.0)
     ticks = narrate_ticks(hero_xs)
-    name = glyph_outlines("DeckTalk", size=22, weight=600, tracking=-0.02)
+    name = glyph_outlines("DeckTalk", size=22, tracking=-0.01)
     out: dict[Path, str] = {}
     docs = ROOT / "docs"
+    site = ROOT / "site"
     for variant, pal in (("light", LIGHT), ("dark", DARK)):
         for background, folder in ((False, ASSETS), (True, docs / "images")):
             out[folder / f"hero-{variant}.svg"] = hero(pal, [x * HERO_PX / MEASURE_PX for x in hero_xs], background)
@@ -1587,8 +1859,23 @@ def build() -> dict[Path, str]:
         out[docs / "images" / f"cue-offset-{variant}.svg"] = cue_offset(pal, background=True)
         out[docs / "images" / f"rebuild-lanes-{variant}.svg"] = rebuild_lanes(pal, background=True)
         out[docs / "logo" / f"{variant}.svg"] = wordmark(pal, name)
-    out[docs / "favicon.svg"] = mark(LIGHT, size=32, background=True)
-    out[ASSETS / "og.svg"] = og(LIGHT, hero_xs, h_widths)
+        for background, folder in ((False, ASSETS), (True, docs / "images")):
+            out[folder / f"pipeline-{variant}.svg"] = pipeline(pal, background)
+    # The mark set: the mark alone at 32, the nav lockup at 24 and the hero lockup at 96, each for the dark
+    # stage, for paper (-light) and in one inherited colour (-mono).
+    marks = ASSETS / "mark"
+    out[marks / "mark-32.svg"] = mark(DARK, size=32)
+    out[marks / "mark-32-light.svg"] = mark(LIGHT, size=32)
+    out[marks / "mark-32-mono.svg"] = mark(DARK, size=32, mono=True)
+    for label, height in (("nav", 24), ("hero", 96)):
+        out[marks / f"lockup-{label}-{height}.svg"] = wordmark(DARK, name, height)
+        out[marks / f"lockup-{label}-{height}-light.svg"] = wordmark(LIGHT, name, height)
+        out[marks / f"lockup-{label}-{height}-mono.svg"] = wordmark(DARK, name, height, mono=True)
+    # The favicon sits on the dark ground in both themes, so the gold beats read on any tab.
+    for target in (docs / "favicon.svg", site / "favicon.svg"):
+        out[target] = mark(DARK, size=32, background=True)
+    out[ASSETS / "og.svg"] = og(DARK, og_xs, o_widths)
+    out[site / "tokens.css"] = tokens_css()
     return {k: _clean(v) for k, v in out.items()}
 
 
@@ -1620,12 +1907,17 @@ def main() -> int:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(s, encoding="utf-8")
         print(f"wrote {p.relative_to(ROOT)}  ({len(s) // 1024} KB)")
-    # The social card is also needed as a PNG. It is not part of --check because raster bytes
-    # vary between Chromium builds, so it is only refreshed when the SVG source was rewritten.
+    # The social card and the favicons are also needed as PNGs. They are not part of --check because
+    # raster bytes vary between Chromium builds, so they are only refreshed when their SVG source was rewritten.
     if ASSETS / "og.svg" in changed or not (ROOT / "site" / "og.png").exists():
         for target in (ROOT / "site" / "og.png", ROOT / "docs" / "images" / "og.png"):
             render_png(files[ASSETS / "og.svg"], target, 1200, 630)
             print(f"wrote {target.relative_to(ROOT)}")
+    favicon = ROOT / "site" / "favicon.svg"
+    if favicon in changed or not (ROOT / "site" / "apple-touch-icon.png").exists():
+        for name, size in (("favicon-32.png", 32), ("favicon-192.png", 192), ("apple-touch-icon.png", 180)):
+            render_png(mark(DARK, size=size, background=True), ROOT / "site" / name, size, size)
+            print(f"wrote site/{name}")
     return 0
 
 
