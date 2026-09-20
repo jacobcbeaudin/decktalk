@@ -108,7 +108,7 @@ def plan_table(plans: list[TakePlan], cfg: NarrationConfig, rate: float = 0.0, n
     unknown = f", {unchecked} unknown" if unchecked else ""
     cost = ""
     if rate:
-        cost = f" About ${t['estimated_cost']:.2f} at ${rate:.2f} per 1,000."
+        cost = f" About ${t['estimated_cost']:.2f} at ${rate:.2f} per 1,000 characters."
         if t["most_it_can_cost"] != t["estimated_cost"]:
             cost += f" Up to ${t['most_it_can_cost']:.2f} if the {unchecked} unknown section(s) are voiced too."
     lines.append(
