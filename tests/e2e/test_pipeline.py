@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import IO, Any
 
 import pytest
+from timing_policy import assert_build_finished, gates_timing
 
 from decktalk.artifacts import RecordingLog, Takes, Word, read_rows, write_words
 from decktalk.cli import main
@@ -285,20 +286,16 @@ def srt_times(stamp: str) -> tuple[float, float]:
 # ---- the build ---------------------------------------------------------------------------------
 
 
-def test_build_exits_zero_with_the_network_blocked(built: Built) -> None:
+def test_build_exits_zero_with_the_network_blocked(built: Built, request: pytest.FixtureRequest) -> None:
     """The build's last stage is the real verify, so exit 0 means every reveal landed on its word.
 
     A hosted runner off Linux presents frames late, which is the one failure this row tolerates, and
     `test_cue_timing_gate` measures how late. Every other fault still fails here, on every platform.
     """
-    if built.exit_code != 0:
-        v = built.verified
-        rows = [*v.cues, *v.starts, *v.cuts, *v.seams]
-        late = [r for r in rows if r.verdict is Verdict.OFF_CUE]
-        others = [r for r in rows if r.verdict is not Verdict.OFF_CUE and not r.verdict.passing]
-        judged = [r for r in v.recordings if r.verdicts]
-        assert sys.platform != "linux", built.stdout
-        assert late and not others and not judged, built.stdout
+    v = built.verified
+    verdicts = [r.verdict for r in (*v.cues, *v.starts, *v.cuts, *v.seams)]
+    verdicts += [verdict for r in v.recordings for verdict in r.verdicts]
+    assert_build_finished(built.exit_code, verdicts, built.stdout, request)
     assert built.network_attempts == []
     assert (built.out / "pipeline.mp4").exists()
 
@@ -373,11 +370,6 @@ def test_verify_strict_finds_nothing_but_timing(built: Built) -> None:
     bad = [c for c in v.cues if c.verdict not in (Verdict.CHANGED, Verdict.OFF_CUE)]
     assert not bad, bad  # THIN CHANGE?, NO CHANGE, UNRESOLVED and skipped all fail here
     assert all(c.av_ms is not None for c in v.cues), "a build without voice carries a click at every cued word"
-
-
-def gates_timing(request: pytest.FixtureRequest) -> bool:
-    """Timing gates on Linux, where the hosted runner renders on time, and reports on macOS and Windows."""
-    return sys.platform == "linux" or bool(request.config.getoption("--gate-timing"))
 
 
 def test_a_reveal_on_a_page_with_nothing_moving_still_lands_on_its_frame(
@@ -811,13 +803,15 @@ def test_the_silence_across_every_cut_is_one_tail_then_one_lead(built: Built) ->
 # ---- the rebuild of one section, last because it writes into the built project -------------------
 
 
-def test_build_only_rerecords_section_4(built: Built) -> None:
+def test_build_only_rerecords_section_4(built: Built, request: pytest.FixtureRequest) -> None:
     rec = built.root / "build" / "recordings"
     before = {k: (rec / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
     length = ffmpeg.probe_duration(built.out / "pipeline.mp4")
     with offline(built.network_attempts):
-        code, out = built.cli("build", "--no-voice", "--only", "4")
-    assert code == 0, out
+        doc = built.envelope("build", "--no-voice", "--only", "4", "--json")
+    # This row is about which sections were recorded again, so it reads the build the way
+    # `test_build_exits_zero_with_the_network_blocked` does rather than gating on a bare exit code.
+    assert_build_finished(doc.exit_code, [f.verdict for f in doc.findings.items], str(doc.findings.items), request)
     after = {k: (rec / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
     assert after["01"] == before["01"] and after["02"] == before["02"], "only section 4 should be recorded again"
     assert after["04"] > before["04"]
