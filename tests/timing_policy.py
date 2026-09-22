@@ -39,7 +39,9 @@ def tolerated(code: int, verdicts: Iterable[Verdict], gate: bool) -> str | None:
     """
     if code == 0:
         return None
-    faults = [v for v in verdicts if not v.passing]
+    # Only a certain verdict exits a build that is not strict, so an uncertain one rides along and
+    # says nothing about why this build exited. The fixture's own section 5 carries SLATE for good.
+    faults = [v for v in verdicts if v.certain]
     if gate:
         return f"the build exited {code} and timing is gated here: {[v.name for v in faults] or 'no finding row'}"
     if others := [v for v in faults if v not in LATE_FRAME]:
