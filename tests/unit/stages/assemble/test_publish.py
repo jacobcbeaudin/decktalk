@@ -9,12 +9,12 @@ from decktalk.model import Project
 
 
 def test_captions_and_chapters_skip_over_a_clip_between_page_sections(tmp_path, mid_clip_plan):
+    from decktalk.model.timeline import narration_offsets
     from decktalk.stages.assemble.cut import rendered_starts
-    from decktalk.stages.assemble.mix import narration_offsets
     from decktalk.stages.assemble.publish import build_captions, build_chapters
 
     p, takes, rows = mid_clip_plan(tmp_path)
-    cues = build_captions(p, takes, narration_offsets(rows, takes, rendered_starts(rows)))
+    cues = build_captions(p, takes, narration_offsets([r.section for r in rows], takes, rendered_starts(rows)))
     assert [(c.text, c.start) for c in cues] == [("alpha beta", 0.7), ("gamma delta", 5.1), ("epsilon", 7.6)]
     assert all(c.end <= 2.0 or c.start >= 5.0 for c in cues)  # nothing is captioned over the clip
     assert cues[0].end <= 2.0

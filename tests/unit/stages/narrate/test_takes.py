@@ -112,7 +112,9 @@ def test_the_join_puts_each_sections_silence_before_its_take(project, monkeypatc
     index.save(p.takes_path)
     joined: dict = {}
     monkeypatch.setattr(
-        audio, "concat_audio", lambda files, out, **kw: joined.update(files=[f.name for f in files], leads=kw["leads"])
+        audio,
+        "concat_audio",
+        lambda parts, out, **kw: joined.update(files=[p.path.name for p in parts], leads=[p.lead for p in parts]),
     )
     join_takes(p, index, p.script_sections()[1])
     # Every section carries [narration] lead_seconds, and section 2 its own lead_seconds in its place.
@@ -170,7 +172,7 @@ def test_a_take_in_a_shared_cache_is_placed_like_any_other_and_never_rewritten(
 
 
 def test_the_tail_reaches_the_join_the_clock_and_the_total(make_project, base, monkeypatch):
-    """The tail is silence after the take's last sound, so every reader counts it and the join cuts to it."""
+    """The tail is silence after the take's last sound, so every reader counts it and the join ends the take there."""
     toml, script = base
     project = make_project(toml=toml, name="tailed")
     project.narration_dir.mkdir(parents=True)
@@ -181,11 +183,10 @@ def test_the_tail_reaches_the_join_the_clock_and_the_total(make_project, base, m
     # Every take sounds for 2.5 s of its 3.0 s, after a 0.5 s lead and before a 0.7 s tail.
     assert index.total_seconds == pytest.approx(3 * 3.7)
     joined: dict = {}
-    monkeypatch.setattr(
-        audio, "concat_audio", lambda files, out, **kw: joined.update(leads=kw["leads"], lengths=kw["lengths"])
-    )
+    monkeypatch.setattr(audio, "concat_audio", lambda parts, out, **kw: joined.update(parts=parts))
     join_takes(project, index, project.script_sections()[1])
-    assert joined == {"leads": [0.5, 0.5, 0.5], "lengths": [pytest.approx(3.2)] * 3}
+    # Each take plays to its sound end and no further, and its tail is silence placed after that.
+    assert [(p.lead, p.play, p.tail) for p in joined["parts"]] == [(0.5, 2.5, 0.7)] * 3
     assert (index.start("01"), index.end("01")) == (0.0, 3.7)
     assert (index.start("02"), index.end("02")) == (3.7, 7.4)
 
@@ -203,6 +204,7 @@ def test_the_join_cuts_or_pads_each_take_to_its_length(tmp_path):
     for path in (one, two):
         audio.write_clicks(path, 1.0, [0.1], sample_rate=48000, bitrate="128k")
     out = tmp_path / "joined.mp3"
-    # The first take is padded from 1.0 s to 1.25 s and the second is cut from 1.0 s to 0.6 s.
-    audio.concat_audio([one, two], out, bitrate="128k", sample_rate=48000, leads=[0.5, 0.25], lengths=[1.25, 0.6])
+    # The first take plays all of its 1.0 s and gets 0.25 s of tail, and the second is cut at 0.6 s.
+    parts = [audio.Placement(one, lead=0.5, play=1.0, tail=0.25), audio.Placement(two, lead=0.25, play=0.6)]
+    audio.concat_audio(parts, out, bitrate="128k", sample_rate=48000)
     assert real_ffmpeg.decoded_duration(out, sample_rate=48000) == pytest.approx(2.6, abs=0.03)

@@ -3,9 +3,9 @@
 A silent anchor of the picture's length fixes the duration, the narration plays under the page
 sections, each clip's own audio lands at its section start, the music is ducked under speech and
 shaped by `markers.json`, an ambience bed sits under the sections that ask for one, and each sound
-effect lands on its resolved cue. A clip between two page sections pauses the narration, so the
-track is split into runs of consecutive page sections and each run starts where its first section
-starts.
+effect lands on its resolved cue. A clip between two page sections, or a hold, pauses the
+narration, so the track plays in the runs `model.timeline` splits it into, each from where its first
+section starts.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from ...media.encode import Encoder
 from ...model import PageSection, Project
 from ...model.cues import find_phrase
 from ...model.markers import Marker
+from ...model.timeline import narration_offsets, narration_runs
 from ...settings import AudioConfig
 from .cut import RenderedSection, rendered_starts
 
@@ -118,77 +119,6 @@ def resolve_marker_time(
     return None if idx is None else starts[marker.key] + words[idx].start + marker.offset
 
 
-@dataclass(frozen=True)
-class NarrationRun:
-    """Consecutive page sections with no clip between them, which play one unbroken stretch of the narration.
-
-    `at` is where the run begins in the final file. `start` and `end` bound its stretch of
-    narration.mp3, and the last run has no end, so it plays to the end of the track.
-    """
-
-    keys: tuple[str, ...]
-    at: float
-    start: float
-    end: float | None
-
-    @property
-    def offset(self) -> float:
-        """What to add to a time in narration.mp3 to place it in the final file."""
-        return self.at - self.start
-
-
-def narration_runs(rows: list[RenderedSection], takes: Takes, starts: dict[str, float]) -> list[NarrationRun]:
-    """The narration split at every clip that sits between page sections, and after every held page section.
-
-    The track holds the spoken sections with no gaps, so a clip between two page sections
-    pauses it, and the next page section resumes it on its own first frame. A page section's
-    hold_seconds pauses it the same way. A project with no clip or hold between page sections
-    has one run.
-    """
-    groups: list[list[str]] = []
-    open_run = False
-    for row in rows:
-        key = row.section.key
-        if row.section.is_clip:
-            open_run = False
-        elif key in takes.sections:
-            if not open_run:
-                groups.append([])
-                open_run = True
-            groups[-1].append(key)
-            if isinstance(row.section, PageSection) and row.section.hold_seconds > 0:
-                open_run = False
-    return [
-        NarrationRun(
-            keys=tuple(keys),
-            at=starts[keys[0]],
-            start=takes.start(keys[0]) or 0.0,
-            end=None if i == len(groups) - 1 else takes.end(keys[-1]),
-        )
-        for i, keys in enumerate(groups)
-    ]
-
-
-def narration_offset(rows: list[RenderedSection], takes: Takes, starts: dict[str, float]) -> float:
-    """Where narration t=0 sits in the final file: the start of the first page section."""
-    first = next((r.section.key for r in rows if r.section.key in takes.sections), None)
-    return starts[first] if first else 0.0
-
-
-def narration_offsets(rows: list[RenderedSection], takes: Takes, starts: dict[str, float]) -> dict[str, float]:
-    """What to add to a time in narration.mp3 to place it in the final file, per spoken section key.
-
-    With one run every section shares the offset of the first page section. A section in
-    the take index that has no rendered row takes the offset of the first run.
-    """
-    runs = narration_runs(rows, takes, starts)
-    if len(runs) <= 1:
-        t0 = narration_offset(rows, takes, starts)
-        return {key: t0 for key in takes.sections}
-    offsets = {key: run.offset for run in runs for key in run.keys}
-    return {key: offsets.get(key, runs[0].offset) for key in takes.sections}
-
-
 def plan_mix(project: Project, rows: list[RenderedSection], takes: Takes, *, soundscape: bool) -> MixPlan:
     mix = project.mix
     audio: AudioConfig = project.settings.audio
@@ -214,9 +144,10 @@ def plan_mix(project: Project, rows: list[RenderedSection], takes: Takes, *, sou
 
     # narration under the picture from the first page section
     narration = project.narration_path
-    runs = narration_runs(rows, takes, starts)
+    played = [r.section for r in rows]
+    runs = narration_runs(played, takes, starts)
     if len(runs) <= 1:
-        t0 = narration_offset(rows, takes, starts)
+        t0 = runs[0].at if runs else 0.0
         idx = add_input(ONCE, str(narration))
         chain.append(f"[{idx}:a]{fmt},adelay={int(round(t0 * 1000))}:all=1[narr]")
         labels.append("[narr]")
@@ -230,7 +161,7 @@ def plan_mix(project: Project, rows: list[RenderedSection], takes: Takes, *, sou
                 f"[{idx}:a]{fmt},{trim},asetpts=PTS-STARTPTS,adelay={int(round(run.at * 1000))}:all=1[narr{n}]"
             )
             labels.append(f"[narr{n}]")
-    offsets = narration_offsets(rows, takes, starts)
+    offsets = narration_offsets(played, takes, starts)
     # A section is speaking from its start until its last word, or until it ends when it says nothing.
     speech: list[tuple[float, float]] = []
     for key in takes.keys:

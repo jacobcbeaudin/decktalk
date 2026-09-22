@@ -182,6 +182,7 @@ src/decktalk/
       markers.py         `media/markers.json` parsed into typed `Marker` rows, which shape the music under the video.
       project.py         A DeckTalk project, which is a directory holding decktalk.toml, a script, cues, pages and media.
       script.py          `script.md` parsed into the sections the voice reads.
+      timeline.py        Where the narration plays in the final film: the narration clock placed on the film's clock.
       workspace.py       Every path under `build/`, named once.
   stages                 one module per command, and the scaffold beside them
     scaffold/            Writing a project, installing the machine's tools, and reporting on both.

@@ -158,14 +158,14 @@ one lead.
 | Key | Where the silence goes | How DeckTalk adds it |
 |---|---|---|
 | `lead_seconds` | Before the first word | `narrate` places it in `narration.mp3` before the take. The take is not changed. |
-| `tail_seconds` | After the last word | `narrate` measures where the take's sound ends and cuts or pads the take in `narration.mp3` so that exactly this much silence follows it. The take is not changed. |
+| `tail_seconds` | After the last word | `narrate` measures where the take's sound ends, cuts the take there in `narration.mp3`, and places exactly this much silence after it. The take is not changed. |
 | `hold_seconds` | After the section's narration | `assemble` holds the last frame, and the narration waits. |
 
 - The section starts when its silence starts. So `lead_seconds` moves every word and every word cue of the
   section later, and `$start` stays at 0.
 - The recording covers the lead, because the section's span on the narration clock includes it.
-- `tail_seconds` is exact, like `min_tail_seconds`. A pause the voice left after its last word is cut to it or
-  padded to it, so every take of the section ends the same way, voiced in this run or reused.
+- `tail_seconds` is exact, like `min_tail_seconds`. Whatever the voice left after its last sound, a pause or a
+  breath, is cut, so every take of the section ends on the same silence, voiced in this run or reused.
 - A hold on any page section pauses the narration, as a clip between page sections does. The next section
   starts after the hold, on its own words.
 - A `[pause N]` before a section's first words is removed. Use `lead_seconds` to open a section on silence.

@@ -10,7 +10,8 @@ name one take. `voiced` is false on a placeholder take that a run without voice 
 is cutting to are guesses.
 
 The index is also the time base. A section runs for its lead, then its take up to where the take's
-sound ends, then its tail, and the sections run in key order, so where each one sits in the joined
+sound ends, then its tail, which is silence and never the take's own bytes, and the sections run in
+key order, so where each one sits in the joined
 narration is arithmetic over the rows rather than a second file that can disagree with them. Every
 one of those three numbers is a pure function of the take's own bytes and its own section's
 settings, so a section lands the same way whether the run voiced its take or found it cached, and
@@ -47,10 +48,14 @@ class Take:
     spoken: str = ""  # The words the voice says, with the script's punctuation, which captions borrow.
 
     @property
+    def sound_seconds(self) -> float:
+        """How much of the take plays: up to where its sound ends, or all of it when that was never measured."""
+        return self.duration_seconds if self.sound_end_seconds is None else self.sound_end_seconds
+
+    @property
     def span_seconds(self) -> float:
         """How long the section runs in the joined narration: its lead, its take to its last sound, and its tail."""
-        end = self.duration_seconds if self.sound_end_seconds is None else self.sound_end_seconds
-        return round(self.lead_seconds + end + self.tail_seconds, 3)
+        return round(self.lead_seconds + self.sound_seconds + self.tail_seconds, 3)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Self:

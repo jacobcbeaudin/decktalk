@@ -133,6 +133,12 @@ files. `align` reads every `data-cue` attribute in the pages and reports each id
 names, as `UNCUED ELEMENT`, a certain finding. Such an element sits on the slide waiting for a phrase nobody
 wrote, so the reveal never fires. It is the second line of the sample above, the one that names `2.1codex`.
 
+An element inside a `data-scene` wrapper belongs to that scene, because the runtime mounts it only when the
+scene plays. `align` reports it against the section that plays the scene, whatever prefix its id has, and
+not at all when no section plays the scene, so one page can hold an alternate scene that another project
+plays. An element outside every wrapper, such as one a script writes, is reported against the section its
+id's prefix names.
+
 Add the cue to `cues.json`, or drop the attribute from the page. An id that a script builds from a
 variable, such as `data-cue="${IDS[i]}"`, is not a literal that any reader of the file can resolve, so
 `align` leaves it to `decktalk preflight`, which reads the page's own catalog.

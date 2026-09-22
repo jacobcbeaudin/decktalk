@@ -95,23 +95,29 @@ The cut check confirms that the narration is quiet just before each cut.
 sec   cut at  before cut  result
  01    14.29   -120.0 dB  quiet
  02    30.17   -120.0 dB  quiet
- 03    43.35   -120.0 dB  quiet
+ 03    43.36   -120.0 dB  quiet
 ```
 
-`cut at` is where the section's narration ends in the final mp4. The check measures the narration track in the
-window before it.
+`cut at` is where the section's narration ends in the final mp4. The check measures the last samples of the
+section's span in the narration track, which are exactly the samples the viewer hears before `cut at`.
 
 ```text
-cut at         = section start + its span on the narration clock
+cut at         = end of the section's span on the narration clock + its run's offset
 window         = min(cut_window_seconds, section duration)            # 0.15 s
 SPEECH AT CUT  when  RMS of narration.mp3 over the window > cut_max_db  # -40 dBFS
 ```
+
+A clip between page sections, or a page section's `hold_seconds`, pauses the narration. The page sections
+between two pauses make one run, and the run plays from where its first section starts in the final mp4. A
+run's offset is that start minus the run's start on the narration clock, and the mix places the narration
+with the same offsets. Each section's picture is cut on a whole frame, so the picture cuts within half a frame
+of `cut at`, or after the section's hold.
 
 - The check reads `narration.mp3` alone. Music or a sound effect at a cut does not count.
 - A level of exactly -40 dBFS passes.
 - A clip section has no row, because it has no narration.
 - A page section's `hold_seconds` comes after its `cut at`. In the sample, the starter's section `03`
-  sets `hold_seconds = 1.5`, so it holds its last slide from 43.35 s to the end of the video.
+  sets `hold_seconds = 1.5`, so it holds its last slide from 43.36 s to the end of the video.
 
 ## Cut continuity
 

@@ -45,6 +45,28 @@ def test_an_element_no_cue_names_is_reported_against_the_section_its_prefix_owns
     assert uncued_elements(project, project.cue_specs()) == [("01", "1.2forgotten", "deck/index.html")]
 
 
+def test_an_element_in_a_scene_no_section_plays_waits_for_nothing(tmp_path):
+    """The runtime mounts a scene's elements only when that scene plays, so an unplayed one is never uncued.
+
+    An element in a played scene is reported against the section that plays the scene, whatever its id
+    says, because `data-owns` lets a slide own an id with any prefix.
+    """
+    html = """<div data-scene="1">
+      <template data-slide="1.1" data-owns="close"><b data-cue="1.1a"></b><i data-cue="close"></i></template>
+    </div>
+    <div data-scene="hero" data-name="The short cut's close">
+      <template data-slide="4.2" data-owns="tag"><svg><path data-cue="4.2mark"/></svg><p data-cue="tag">x</p></template>
+    </div>
+    <script>DeckTalk.scene(7, { slides: [{ id: "7.1", render: () => `<i data-cue="1.9late"></i>` }] });</script>"""
+    project = _project(tmp_path, html, {"1": {"cues": [{"cue": "1.1a", "on": "hello"}]}})
+    # The hero scene is an alternate that no section plays, so its two ids are not reported. The id a script
+    # writes sits in no scene wrapper, so its prefix names the section that owns it.
+    assert uncued_elements(project, project.cue_specs()) == [
+        ("01", "1.9late", "deck/index.html"),
+        ("01", "close", "deck/index.html"),
+    ]
+
+
 def test_a_project_with_no_cues_file_has_no_uncued_element_at_all(tmp_path):
     """A page that keeps its own built-in timing cues nothing, so no element on it waits for a phrase.
 

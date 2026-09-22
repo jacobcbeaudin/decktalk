@@ -74,20 +74,61 @@ def test_a_section_that_opens_on_black_is_a_certain_finding(verify_project, monk
     assert rows[0].to_dict()["ymax"] == 2.0
 
 
+def _two_takes() -> Takes:
+    """Section 01 sounds to the end of its 5.0 s take, and section 02 for 4.5 s with a 0.3 s tail."""
+    takes = Takes(script="script.md", model="m", output_format="mp3")
+    takes.sections["01"] = Take(1, "A", "h1.mp3", "h1.words.json", "h1", 1, 5.0, 5.0, speech_end_seconds=4.5)
+    takes.sections["02"] = Take(
+        2, "B", "h2.mp3", "h2.words.json", "h2", 1, 5.0, 5.0, speech_end_seconds=4.5, sound_end_seconds=4.5,
+        tail_seconds=0.3,
+    )  # fmt: skip
+    return takes
+
+
 def test_a_cut_is_quiet_when_the_narration_has_stopped(verify_project, monkeypatch):
     project = verify_project({"01": "a@1.0"})
     project.narration_path.write_bytes(b"x")
     write_words(project.takes_dir / "h1.words.json", [Word("Hi", 0.7, 1.0)])
-    takes = Takes(script="script.md", model="m", output_format="mp3")
-    takes.sections["01"] = Take(1, "A", "h1.mp3", "h1.words.json", "h1", 1, 5.0, 5.0, speech_end_seconds=4.5)
-    monkeypatch.setattr(audio, "rms_db", lambda path, start, length: -60.0)
-    [quiet] = cut_checks(project, takes, {"01": 0.0})
-    assert (quiet.key, quiet.verdict, quiet.ok) == ("01", Verdict.QUIET, True)
-    monkeypatch.setattr(audio, "rms_db", lambda path, start, length: -3.0)
-    [loud] = cut_checks(project, takes, {"01": 0.0})
-    assert (loud.verdict, loud.ok) == (Verdict.SPEECH_AT_CUT, False)
+    takes = _two_takes()
+    windows: list[tuple[float, float]] = []
+
+    def rms(level):
+        return lambda path, start, length: windows.append((round(start, 3), round(length, 3))) or level
+
+    monkeypatch.setattr(audio, "rms_db", rms(-60.0))
+    # The picture of section 02 starts on a whole frame at 5.04 s, and its narration still plays from 5.0 s on.
+    quiet = cut_checks(project, takes, {"01": 0.0, "02": 5.04})
+    assert [(r.key, r.cut_at, r.verdict, r.ok) for r in quiet] == [
+        ("01", 5.0, Verdict.QUIET, True),
+        ("02", 9.8, Verdict.QUIET, True),
+    ]
+    # Each window is the last 0.15 s of the section's span, the samples that play just before its cut_at.
+    assert windows == [(4.85, 0.15), (9.65, 0.15)]
+    monkeypatch.setattr(audio, "rms_db", rms(-3.0))
+    one, two = cut_checks(project, takes, {"01": 0.0, "02": 5.04})
+    assert (one.verdict, one.ok, two.verdict) == (Verdict.SPEECH_AT_CUT, False, Verdict.SPEECH_AT_CUT)
+    # The sentence names the cut out of the section, into the section that follows or the end of the film.
+    assert one.detail == (
+        "section 01's narration still sounds at -3.0 dBFS just before the cut into section 02 at 5.000s, "
+        "so a word is cut off."
+    )
+    assert two.detail is not None and "just before the end of the film at 9.800s" in two.detail
     # With no narration track there is nothing to listen to, so there are no rows at all.
     assert cut_checks(project, None, {"01": 0.0}) == []
+
+
+def test_a_hold_moves_the_narration_after_it_and_is_named_at_the_cut_before_it(verify_project, pages_toml, monkeypatch):
+    """A hold pauses the narration, so the cut after it is placed on the next run and the one before it is the hold."""
+    held = pages_toml.replace(
+        'number = 1\npage = "deck/index.html"\n', 'number = 1\npage = "deck/index.html"\nhold_seconds = 1\n'
+    )
+    project = verify_project({"01": "a@1.0"}, toml=held)
+    project.narration_path.write_bytes(b"x")
+    monkeypatch.setattr(audio, "rms_db", lambda path, start, length: -3.0)
+    one, two = cut_checks(project, _two_takes(), {"01": 0.0, "02": 6.0})
+    # Section 02's narration resumes at 6.0 s on its own first frame, one second after the track holds it.
+    assert (one.cut_at, one.held, two.cut_at, two.held) == (5.0, True, 10.8, False)
+    assert one.detail is not None and "just before its hold at 5.000s" in one.detail
 
 
 def test_a_section_that_sets_no_seamless_key_has_no_seam_row(verify_project):

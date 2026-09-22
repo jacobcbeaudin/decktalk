@@ -4,8 +4,9 @@ A take is the voice's own bytes and nothing else, and no stage ever rewrites it.
 is placement, and placement is a pure function of the take and its own section's settings: its
 lead is the section's `lead_seconds` or `[narration] lead_seconds`, the take plays to where its
 sound ends, measured from its own bytes, and its tail is the section's `tail_seconds` or
-`[narration] min_tail_seconds` after that. The join puts the lead before the take and cuts or pads
-the take to its tail, so the silence across every cut is one tail plus one lead. Nothing about a
+`[narration] min_tail_seconds` after that. The join puts the lead before the take, cuts the take at
+its sound end and puts the tail after it, so whatever the take holds past its sound end, such as a
+breath after its last word, never plays, and the silence across every cut is one tail plus one lead. Nothing about a
 neighbour, and nothing about whether this run voiced the take or found it cached, reaches those
 numbers, which is what lets a change to one sentence rebuild one section and no other. None of them
 is part of the content hash either, so changing a lead or a tail voices nothing.
@@ -136,20 +137,23 @@ def index_cached_take(project: Project, seg: Segment, chapter: str, digest: str,
 def join_takes(project: Project, takes: Takes, order: list[Segment]) -> Path:
     """Join the takes into one narration track, in the order the sections play, and give back its path.
 
-    Each take follows its row's lead of silence and runs to its speech end plus its tail, cut there
-    when the file runs longer and padded with silence when it runs shorter, so the track is exactly
-    the arithmetic `Takes` does over the rows and nothing here writes a second file for a reader to
-    disagree with.
+    Each take follows its row's lead of silence, plays to its sound end and is cut there, and is
+    followed by its tail of silence, so the track is exactly the arithmetic `Takes` does over the
+    rows, the tail is as silent as the clock says, and nothing here writes a second file for a reader
+    to disagree with.
     """
     cfg = project.settings.narration
     rows = [takes.sections[s.key] for s in order if s.key in takes.sections]
     narration = project.narration_path
     audio.concat_audio(
-        [project.takes_dir / row.file for row in rows],
+        [
+            audio.Placement(
+                project.takes_dir / row.file, lead=row.lead_seconds, play=row.sound_seconds, tail=row.tail_seconds
+            )
+            for row in rows
+        ],
         narration,
         bitrate=cfg.mp3_bitrate,
         sample_rate=project.settings.video.sample_rate,
-        leads=[row.lead_seconds for row in rows],
-        lengths=[row.span_seconds - row.lead_seconds for row in rows],
     )
     return narration

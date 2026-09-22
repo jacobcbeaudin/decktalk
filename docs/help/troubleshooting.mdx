@@ -806,8 +806,9 @@ Nothing bright is on screen when the section starts.
 
 ### `SPEECH AT CUT` in verify
 
-**Cause.** The narration in the last 0.15 s before a cut is louder than -40 dBFS. The voice was still
-speaking when the picture cut.
+**Cause.** The narration in the last 0.15 s of a section's span is louder than -40 dBFS. The voice was still
+speaking when the section's narration ended. The finding names the cut into the next section, its hold, or
+the end of the film, and the time where the narration ends.
 
 **Fix.**
 1. Raise the section's `tail_seconds`, or `[narration] min_tail_seconds`, to leave more silence after the last
