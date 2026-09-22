@@ -41,6 +41,13 @@ def test_any_other_fault_fails_even_where_timing_is_not_gated(other: Verdict) ->
     assert why is not None and other.name in why
 
 
+def test_an_uncertain_finding_riding_along_is_not_a_fault() -> None:
+    """Only a certain verdict exits a build that is not strict. The e2e fixture's section 5 carries
+    SLATE on purpose, because its media file is deliberately missing, and it said nothing about why
+    a build that also reported a late reveal exited."""
+    assert tolerated(1, [Verdict.OFF_CUE, Verdict.SLATE], gate=False) is None
+
+
 def test_a_non_zero_exit_with_nothing_to_explain_it_fails() -> None:
     """An exit code with no finding row is a bug in the command, not a slow runner."""
     why = tolerated(1, [Verdict.CHANGED], gate=False)
