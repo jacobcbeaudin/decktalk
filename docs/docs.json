@@ -4,14 +4,14 @@
   "name": "DeckTalk",
   "description": "Narrated presentations, cut to the word.",
   "colors": {
-    "primary": "#2c1fea",
-    "light": "#7c8cff",
-    "dark": "#5b50f5"
+    "primary": "#7a5000",
+    "light": "#f2b441",
+    "dark": "#7a5000"
   },
   "background": {
     "color": {
-      "light": "#ffffff",
-      "dark": "#0e0e0f"
+      "light": "#fbf7f1",
+      "dark": "#15110e"
     }
   },
   "logo": {
@@ -22,11 +22,11 @@
   "favicon": "/favicon.svg",
   "fonts": {
     "heading": {
-      "family": "Inter",
-      "weight": 600
+      "family": "Instrument Serif",
+      "weight": 400
     },
     "body": {
-      "family": "Inter"
+      "family": "Instrument Sans"
     }
   },
   "appearance": {

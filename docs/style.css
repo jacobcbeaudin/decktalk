@@ -3,14 +3,14 @@
    (https://www.mintlify.com/docs/customize/custom-scripts). Dark mode is html.dark. */
 
 :root {
-  --dt-hair: #e4e4e7;
-  --dt-surface: #f4f4f5;
-  --dt-muted: #5f5f68;   /* 6.3:1 on white, 5.9:1 on the surface */
+  --dt-hair: #e1d8cc;
+  --dt-surface: #f2ece3;
+  --dt-muted: #6f655b;   /* 5.3:1 on the paper ground, 4.9:1 on the surface */
 }
 html.dark {
-  --dt-hair: #27272a;
-  --dt-surface: #19191c;
-  --dt-muted: #a1a1aa;   /* 7.6:1 on #0e0e0f, 7.0:1 on the surface */
+  --dt-hair: #3b322c;
+  --dt-surface: #1f1915;
+  --dt-muted: #c3b7a8;   /* 9.5:1 on #15110e, 8.8:1 on the surface */
 }
 
 /* The hero SVG draws its own card, so no frame around it. */

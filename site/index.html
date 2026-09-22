@@ -1,257 +1,235 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DeckTalk: every picture lands on its word, and you edit the video like a doc</title>
-<meta name="description" content="Every picture lands on its word, and you edit the video like a doc. DeckTalk turns a markdown script, plain HTML slides, and your voice into one narrated mp4, for technical tutorials, product demos, and lessons. Change a sentence, and only that section is voiced again. Open source, Python, Apache-2.0.">
+<title>DeckTalk: narrated video from a script, in your own voice</title>
+<meta name="description" content="Narrated video from a markdown script, plain HTML slides and your own voice. Change a sentence, and only that section is voiced again. Open source, Apache-2.0.">
 <link rel="canonical" href="https://decktalk.ai/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DeckTalk">
-<meta property="og:title" content="DeckTalk: every picture lands on its word, and you edit the video like a doc">
-<meta property="og:description" content="DeckTalk turns a markdown script and HTML slides into one narrated mp4 in which every reveal is cut to the spoken word. Change a sentence, and only that section is voiced again.">
+<meta property="og:title" content="DeckTalk: every picture lands on its word">
+<meta property="og:description" content="Narrated video from a script, in your own voice. Change a sentence, and only that section is voiced again.">
 <meta property="og:url" content="https://decktalk.ai">
 <meta property="og:image" content="https://decktalk.ai/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://decktalk.ai/og.png">
-<script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"DeckTalk","applicationCategory":"MultimediaApplication","operatingSystem":"Linux, macOS, Windows","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://www.apache.org/licenses/LICENSE-2.0","codeRepository":"https://github.com/jacobcbeaudin/decktalk","url":"https://decktalk.ai","description":"DeckTalk turns a markdown script, plain HTML slides, and your voice into one narrated mp4 in which every reveal lands on the word that introduces it."}
-</script>
-<meta name="theme-color" content="#ffffff">
-<meta name="color-scheme" content="light">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23ffffff'/%3E%3Cg stroke-width='2.25' stroke-linecap='round'%3E%3Cline x1='4' y1='12' x2='4' y2='20' stroke='%23d4d4d8'/%3E%3Cline x1='9.5' y1='8' x2='9.5' y2='20' stroke='%232c1fea'/%3E%3Cline x1='15' y1='12' x2='15' y2='20' stroke='%23d4d4d8'/%3E%3Cline x1='20.5' y1='12' x2='20.5' y2='20' stroke='%23d4d4d8'/%3E%3C/g%3E%3Ccircle cx='9.5' cy='3.75' r='2.25' fill='%232c1fea'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<meta name="theme-color" content="#15110e">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preload" href="fonts/bricolage-grotesque-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preconnect" href="https://media.decktalk.ai" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root {
-    /* --mute-2 is the gray for text on the gray cards (5.3:1 on --block). --tick is the unlit word tick (3.3:1 on --bg). */
-    --bg: #ffffff; --ink: #0a0a0a; --dim: #a3a3ad; --mute: #71717a; --mute-2: #65656d; --block: #f4f4f5; --hair: #e4e4e7;
-    --bar: #d4d4d8; --tick: #8e8e96; --blue: #2c1fea; --on-blue: #ffffff; --code: #f7f7f8;
-    --mark-bar: #d4d4d8; /* the unlit ticks of the mark, kept equal to assets/mark-*.svg */
-    --sans: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-    --tight: "Inter Tight", "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  }
-  :root { color-scheme: light; }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 17px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
-  a { color: inherit; text-decoration: none; }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
-  .lab { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
-  code, .mono { font-family: var(--mono); }
-  h1, h2, h3, .brand, .sentence { font-family: var(--tight); }
-  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-
-  /* nav */
-  nav { display: flex; align-items: center; justify-content: space-between; height: 72px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; letter-spacing: -.01em; }
-  .brand svg { width: 22px; height: 22px; }
-  .links { display: flex; gap: 28px; font-size: 15px; color: var(--mute); }
-  .links a { display: inline-flex; align-items: center; gap: 6px; }
-  .links .ico { width: 16px; height: 16px; flex: none; }
-  .links a:hover { color: var(--ink); }
-  .links .cta { color: var(--ink); font-weight: 600; }
-
-  /* hero */
-  .hero { padding: 72px 0 40px; }
-  h1 { font-size: clamp(44px, 7vw, 88px); line-height: .98; letter-spacing: -.035em; font-weight: 600; margin: 0 0 24px; max-width: 19ch; text-wrap: balance; }
-  .lede { font-size: clamp(18px, 2vw, 22px); color: var(--mute); max-width: 56ch; margin: 0 0 36px; }
-  .install { display: inline-flex; align-items: center; gap: 14px; background: var(--code); border: 1px solid var(--hair); border-radius: 12px; padding: 12px 14px 12px 18px; font-family: var(--mono); font-size: 15px; }
-  .install .p { color: var(--mute); }
-  .install button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 0; background: var(--ink); color: var(--bg); cursor: pointer; }
-  .install button:active { transform: scale(.98); }
-  .ctas { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
-  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 20px; border-radius: 12px; font-weight: 600; font-size: 15px; border: 1px solid var(--hair); }
-  .btn.primary { background: var(--blue); color: var(--on-blue); border-color: transparent; }
-  .btn:hover { border-color: var(--ink); }
-  .btn.primary:hover { filter: brightness(1.08); }
-
-
-  /* the demo video */
-  .watch { margin-top: 56px; }
-  .watch .lab { display: block; margin-bottom: 14px; }
-  .player { margin: 0; }
-  .player video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 20px; background: var(--block); border: 1px solid var(--hair); }
-  .player figcaption { display: flex; justify-content: space-between; gap: 8px 24px; flex-wrap: wrap; margin-top: 14px; font-size: 15px; color: var(--mute); }
-  .player figcaption b { color: var(--ink); font-weight: 600; }
-
-  /* sections */
-  section { padding: 96px 0 0; }
-  h2 { font-size: clamp(30px, 4vw, 44px); letter-spacing: -.03em; line-height: 1.05; margin: 8px 0 18px; font-weight: 600; }
-  .sub { color: var(--mute); max-width: 60ch; font-size: 18px; margin: 0 0 40px; }
-  .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; }
-  .step .n { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; color: var(--mute); margin-bottom: 14px; }
-  .step h3 { font-size: 19px; letter-spacing: -.01em; margin: 0 0 8px; font-weight: 600; }
-  .step p { margin: 0; color: var(--mute); font-size: 15px; }
-  .step pre { margin: 0 0 18px; min-height: 160px; background: var(--code); border: 1px solid var(--hair); border-radius: 12px; padding: 14px; font-family: var(--mono); font-size: 12px; line-height: 1.55; overflow: auto; color: var(--ink); }
-  .step pre .c { color: var(--mute-2); } .step pre .k { color: var(--blue); }
-  .feats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
-  .feat { background: var(--block); border-radius: 16px; padding: 24px; min-width: 0; }
-  .feat h3 { font-size: 17px; margin: 0 0 8px; letter-spacing: -.01em; font-weight: 600; }
-  .feat p { margin: 0; color: var(--mute-2); font-size: 15px; }
-  .feat .proof { display: block; font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--blue); margin-bottom: 18px; white-space: pre-wrap; }
-  .cmds { background: var(--ink); color: var(--bg); border-radius: 20px; padding: 40px 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
-  .cmds > div { min-width: 0; }
-  .cmds pre { margin: 0; font-family: var(--mono); font-size: 14px; line-height: 1.8; overflow: auto; }
-  .cmds .c { opacity: .55; }
-  .cmds h2 { color: var(--bg); margin: 0 0 12px; }
-  .cmds p { color: var(--bg); opacity: .7; margin: 0; }
-  footer { padding: 80px 0 40px; display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; color: var(--mute); font-size: 14px; }
-  footer .made { display: flex; align-items: center; gap: 10px; }
-  footer .made svg { width: 18px; height: 18px; }
-  footer .links a { font-size: 14px; }
-
-  @media (max-width: 880px) {
-    .steps, .feats { grid-template-columns: 1fr 1fr; }
-    .cmds { grid-template-columns: 1fr; padding: 30px 26px; }
-  }
-  @media (max-width: 560px) {
-    .links { gap: 18px; } nav .links a:not(.cta) { display: none; }
-    .steps, .feats { grid-template-columns: 1fr; }
-    section { padding-top: 72px; }
-    .watch { margin-top: 40px; }
-    .install { width: 100%; justify-content: space-between; font-size: 13px; padding: 10px 10px 10px 14px; gap: 8px; }
-    .install .p { display: none; }
-    .cmds pre { font-size: 12.5px; }
-    /* Each long command breaks at a fixed point, with its tail indented under the command. The break
-       and the indent are generated content, so a copied command has no extra characters. */
-    .cmds .nb::before { content: "\A  "; }
-    .player video { border-radius: 14px; }
-    .step pre { min-height: 0; }
-  }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } html { scroll-behavior: auto; } }
-</style>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="styles.css">
+<script>document.documentElement.classList.replace("no-js", "js");</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"DeckTalk","applicationCategory":"MultimediaApplication","operatingSystem":"Linux, macOS, Windows","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://www.apache.org/licenses/LICENSE-2.0","codeRepository":"https://github.com/jacobcbeaudin/decktalk","url":"https://decktalk.ai","description":"DeckTalk turns a markdown script, plain HTML slides and your voice into one narrated mp4 in which every picture lands on the word that introduces it."}
+</script>
 </head>
 <body>
-<div class="wrap">
-  <nav>
-    <a class="brand" href="/">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><g stroke-width="2.25" stroke-linecap="round"><line x1="4" y1="12" x2="4" y2="20" stroke="var(--mark-bar)"/><line x1="9.5" y1="8" x2="9.5" y2="20" stroke="var(--blue)"/><line x1="15" y1="12" x2="15" y2="20" stroke="var(--mark-bar)"/><line x1="20.5" y1="12" x2="20.5" y2="20" stroke="var(--mark-bar)"/></g><circle cx="9.5" cy="3.75" r="2.25" fill="var(--blue)"/></svg>
-      DeckTalk
-    </a>
-    <div class="links">
-      <a href="https://github.com/jacobcbeaudin/decktalk"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>GitHub</a>
-      <a href="https://pypi.org/project/decktalk/"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.25.18l.9.2.73.26.59.3.45.32.34.34.25.34.16.33.1.3.04.26.02.2-.01.13V8.5l-.05.63-.13.55-.21.46-.26.38-.3.31-.33.25-.35.19-.35.14-.33.1-.3.07-.26.04-.21.02H8.77l-.69.05-.59.14-.5.22-.41.27-.33.32-.27.35-.2.36-.15.37-.1.35-.07.32-.04.27-.02.21v3.06H3.17l-.21-.03-.28-.07-.32-.12-.35-.18-.36-.26-.36-.36-.35-.46-.32-.59-.28-.73-.21-.88-.14-1.05-.05-1.23.06-1.22.16-1.04.24-.87.32-.71.36-.57.4-.44.42-.33.42-.24.4-.16.36-.1.32-.05.24-.01h.16l.06.01h8.16v-.83H6.18l-.01-2.75-.02-.37.05-.34.11-.31.17-.28.25-.26.31-.23.38-.2.44-.18.51-.15.58-.12.64-.1.71-.06.77-.04.84-.02 1.27.05zm-6.3 1.98l-.23.33-.08.41.08.41.23.34.33.22.41.09.41-.09.33-.22.23-.34.08-.41-.08-.41-.23-.33-.33-.22-.41-.09-.41.09zm13.09 3.95l.28.06.32.12.35.18.36.27.36.35.35.47.32.59.28.73.21.88.14 1.04.05 1.23-.06 1.23-.16 1.04-.24.86-.32.71-.36.57-.4.45-.42.33-.42.24-.4.16-.36.09-.32.05-.24.02-.16-.01h-8.22v.82h5.84l.01 2.76.02.36-.05.34-.11.31-.17.29-.25.25-.31.24-.38.2-.44.17-.51.15-.58.13-.64.09-.71.07-.77.04-.84.01-1.27-.04-1.07-.14-.9-.2-.73-.25-.59-.3-.45-.33-.34-.34-.25-.34-.16-.33-.1-.3-.04-.25-.02-.2.01-.13v-5.34l.05-.64.13-.54.21-.46.26-.38.3-.32.33-.24.35-.2.35-.14.33-.1.3-.06.26-.04.21-.02.13-.01h5.84l.69-.05.59-.14.5-.21.41-.28.33-.32.27-.35.2-.36.15-.36.1-.35.07-.32.04-.28.02-.21V6.07h2.09l.14.01zm-6.47 14.25l-.23.33-.08.41.08.41.23.33.33.23.41.08.41-.08.33-.23.23-.33.08-.41-.08-.41-.23-.33-.33-.23-.41-.08-.41.08z"/></svg>PyPI</a>
-      <a class="cta" href="https://docs.decktalk.ai">Docs</a>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 32 32">
+    <rect x="6" y="7.5" width="20" height="11.25" rx="1.25" fill="var(--dt-mark-picture)"/>
+    <rect x="6" y="21.5" width="9" height="3" rx="1.5" fill="var(--dt-voice)"/>
+  </symbol>
+  <symbol id="i-play" viewBox="0 0 16 16"><path d="M4.5 2.8v10.4L13 8z" fill="currentColor"/></symbol>
+</svg>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="DeckTalk, home"><svg aria-hidden="true"><use href="#mark"/></svg>DeckTalk</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="#gallery">Gallery</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="https://docs.decktalk.ai">Docs</a></li>
+        <li><a href="https://github.com/jacobcbeaudin/decktalk">GitHub<small>Open source</small></a></li>
+      </ul>
+    </nav>
+    <a class="btn solid install" href="#install">Install</a>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero" id="top" aria-labelledby="hero-h">
+  <div class="wrap">
+    <p class="kicker">Narrated video from a script, in your own voice.</p>
+    <h1 id="hero-h">Every picture lands on its word.</h1>
+    <p class="sub">Change a sentence, and only that section is voiced again.</p>
+    <button type="button" class="btn solid cta" data-sound aria-pressed="false" aria-label="Play with sound">
+      <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span>
+      <span class="lbl"><span data-sound-label>Play with sound · <span data-total>0:35</span></span><span data-sound-label-on hidden>Sound on · <span data-total>0:35</span></span></span>
+    </button>
+    <div class="pill" role="group" aria-label="Install command">
+      <code><span class="p" aria-hidden="true">$</span> <span id="cmd">uv tool install decktalk</span></code>
+      <button type="button" data-copy="cmd" aria-label="Copy the install command">Copy</button>
     </div>
-  </nav>
+    <p class="caption">Made with DeckTalk from <a href="films/halfway.html">this script</a> · a fictional pitch</p>
 
-  <header class="hero">
-    <span class="lab">Open source · Apache-2.0</span>
-    <h1>Every picture lands on its word, and you edit the video like a doc.</h1>
-    <p class="lede">Before this, one wrong word meant editing, rendering and recording the whole thing again. DeckTalk builds one mp4 from a markdown script, plain HTML slides, and your cloned voice, so a video stays as correct as the text behind it. Change a sentence, and only that section is voiced again.</p>
-    <div class="ctas">
-      <div class="install"><span class="p">$</span><span id="cmd">uv tool install decktalk</span><button id="copy" type="button">Copy</button></div>
-      <a class="btn primary" href="https://docs.decktalk.ai/quickstart">Read the quickstart</a>
+    <figure class="stage" id="hero" aria-label="Halfway, a 35-second fictional pitch made with DeckTalk, replayed from its slides and its recorded voice">
+      <div class="frame" aria-hidden="true"><div class="stage-deck" data-stage></div></div>
+      <div class="band" aria-hidden="true"><p class="prev" data-prev></p><p class="cur" data-cur></p></div>
+      <div class="transport">
+        <button type="button" class="ctl" data-pause data-state="playing" aria-label="Pause">
+          <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3h2.2v10H4.5zM9.3 3h2.2v10H9.3z" fill="currentColor"/></svg>
+          <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-play"/></svg>
+          <svg class="i-replay" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a5 5 0 1 1-4.6 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M2.6 2.4v3.8h3.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <input class="scrub" type="range" min="0" max="35.8" step="0.25" value="0" data-scrub aria-label="Position in the film" aria-valuetext="0 seconds">
+        <span class="tc" aria-hidden="true"><span data-tc>0:00</span> / <span data-total>0:35</span></span>
+        <button type="button" class="btn sound" data-sound aria-pressed="false" aria-label="Play with sound">
+          <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span>
+          <span class="lbl"><span data-sound-label>Sound</span><span data-sound-label-on hidden>Sound on</span></span>
+        </button>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<section class="block gallery" id="gallery" aria-labelledby="gallery-h">
+  <div class="wrap">
+    <p class="kicker cut">Now showing</p>
+    <h2 id="gallery-h" class="cut">Made with DeckTalk.</h2>
+    <ul class="reel cut">
+      <li><a class="card" href="films/uv-tutorial.html">
+        <img src="media/uv-tutorial-poster.webp" width="960" height="540" loading="lazy" alt="">
+        <b>uv, end to end</b><span class="lbl">Technical tutorial</span><span class="dur">3:16</span><span class="from">Film and script</span>
+      </a></li>
+      <li><a class="card" href="films/halfway.html">
+        <img src="media/halfway-poster.webp" width="960" height="540" loading="lazy" alt="">
+        <b>Halfway</b><span class="lbl">Product pitch, fictional · full film</span><span class="dur">0:38</span><span class="from">Film and script</span>
+      </a></li>
+    </ul>
+  </div>
+</section>
+
+<section class="block how" id="how" aria-labelledby="how-h">
+  <div class="wrap">
+    <p class="kicker cut">How it works</p>
+    <h2 id="how-h" class="cut">One line, from the script to the film.</h2>
+    <p class="lead cut">Twenty minutes for her. Twenty minutes for you.</p>
+    <div class="grid">
+      <div class="chapters" data-chapters>
+        <div class="chapter" data-chapter="1">
+          <p class="n">1 of 5</p>
+          <h3>You write the script.</h3>
+          <figure class="panel" data-panel="script"></figure>
+        </div>
+        <div class="chapter" data-chapter="2">
+          <p class="n">2 of 5</p>
+          <h3>Your voice reads it, with a time for every word.</h3>
+          <figure class="panel" data-panel="words"></figure>
+        </div>
+        <div class="chapter" data-chapter="3">
+          <p class="n">3 of 5</p>
+          <h3>A cue names the word each picture waits for.</h3>
+          <figure class="panel" data-panel="cues"></figure>
+        </div>
+        <div class="chapter" data-chapter="4">
+          <p class="n">4 of 5</p>
+          <h3>The slide is plain HTML, and each picture carries its cue.</h3>
+          <figure class="panel" data-panel="slide"></figure>
+        </div>
+        <div class="chapter" data-chapter="5">
+          <p class="n">5 of 5</p>
+          <h3>A browser films the slide, and every landing is measured.</h3>
+          <figure class="panel" data-panel="verify"></figure>
+        </div>
+      </div>
+
+      <div class="pinned" id="catchup">
+        <div class="frame" aria-hidden="true"><div class="stage-deck" data-stage></div></div>
+        <p class="verify" data-verify aria-live="off"></p>
+        <div class="catchup">
+          <div class="picker" role="radiogroup" aria-label="Section of script.md" data-picker>
+            <span>script.md · section <span data-picked>2</span> of 4</span>
+          </div>
+          <div class="transcript" role="group" data-transcript aria-label="Transcript of the film above. Click a word to move the stage to it. The cue times are links."></div>
+          <div class="row">
+            <button type="button" class="btn" data-hiw-play data-state="paused" aria-label="Play from here">
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-play"/></svg><span>Play from here</span>
+            </button>
+            <button type="button" class="btn" data-speed aria-pressed="false" aria-label="Slow, 0.75 times speed, pitch preserved">0.75×</button>
+            <span class="tc mono" aria-hidden="true"><span data-tc>0:00</span></span>
+          </div>
+          <p class="help">Underlined phrases are cues. The small number is how many seconds into this section the picture appears. Click a word to move the stage there. Tab in, use the arrow keys, and press Enter to play from a word.</p>
+          <p class="help">This is the 35-second film above. The full 0:38 film is in the gallery.</p>
+        </div>
+      </div>
     </div>
+  </div>
+</section>
 
-    <div class="watch" id="watch">
-      <span class="lab">Watch the demo · 4:01 · sound on</span>
-      <figure class="player">
-        <!-- The film lives only here: its address on the media host, the poster, and the captions
-             track below. The mp4 is not in git. Change all three in the same commit. -->
-        <video id="demo-video" controls preload="none" playsinline width="1920" height="1080" poster="media/decktalk-demo-poster.jpg" src="https://media.decktalk.ai/decktalk-demo-20260915T011021Z-48f10d882c26.mp4">
-          <track kind="captions" src="media/decktalk-demo.vtt" srclang="en" label="English">
-        </video>
-        <figcaption><span><b>DeckTalk built this film from text files.</b> A markdown script, a project file, a cue list, and HTML slides went in, and every reveal starts on its word.</span><span>Captions available in the player.</span></figcaption>
-      </figure>
+<section class="block edit" id="edit" aria-labelledby="edit-h">
+  <div class="wrap">
+    <p class="kicker cut">Change a sentence</p>
+    <h2 id="edit-h" class="cut">One number changed. One section was voiced again.</h2>
+    <p class="fine cut" style="margin-top:10px">Section 3 of Halfway, the fictional pitch above.</p>
+    <div class="takes cut">
+      <div class="take before">
+        <button type="button" class="btn" data-take="before" aria-pressed="false" aria-label="Play the take before the edit">
+          <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span><span>Before</span>
+        </button>
+        <p class="line">Last month, <mark>eleven thousand</mark> people met in the middle. <span class="rest">Coffee. Lunch. One first date that became a second.</span></p>
+        <span class="hash" data-hash="before"></span>
+      </div>
+      <div class="take after">
+        <button type="button" class="btn" data-take="after" aria-pressed="false" aria-label="Play the take after the edit">
+          <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span><span>After</span>
+        </button>
+        <p class="line">Last month, <mark>fourteen thousand</mark> people met in the middle. <span class="rest">Coffee. Lunch. One first date that became a second.</span></p>
+        <span class="hash" data-hash="after"></span>
+      </div>
     </div>
-  </header>
+    <div class="lanes cut" data-lanes aria-label="What the build did to each section after the edit" role="img"></div>
+    <pre class="log cut" data-log aria-label="The captured build log"></pre>
+    <p class="after-line cut">Every landing is measured against its word<span data-verify-sum>.</span></p>
+  </div>
+</section>
 
+<section class="block" id="install" aria-labelledby="install-h">
+  <div class="wrap">
+    <p class="kicker cut">Install</p>
+    <h2 id="install-h" class="cut">Four commands to a first film.</h2>
+    <p class="lead cut">Needs Python 3.12 or later. Chromium and ffmpeg come with <code>decktalk install</code>, and the first build needs no key. Your own voice needs an ElevenLabs key and a voice id. Any ElevenLabs voice works, including a clone of your own.</p>
+    <ol class="steps cut">
+      <li><code><span class="p" aria-hidden="true">$</span> uv tool install decktalk</code><span>Installs the command.</span></li>
+      <li><code><span class="p" aria-hidden="true">$</span> decktalk install</code><span>Fetches Chromium and ffmpeg, once per machine. On Linux it asks for sudo once, for Chromium's system libraries.</span></li>
+      <li><code><span class="p" aria-hidden="true">$</span> decktalk init my-pitch</code><span>Writes a starter script, cues, a slide page, <code>decktalk.toml</code> and <code>.env.example</code>.</span></li>
+      <li><code><span class="p" aria-hidden="true">$</span> cd my-pitch &amp;&amp; <span class="nb">decktalk build --no-voice</span></code><span>Builds the film with placeholder narration and no key. Copy <code>.env.example</code> to <code>.env</code>, add your ElevenLabs key and voice id, and build again for your voice.</span></li>
+    </ol>
+    <p class="install-note cut">Every project ships with six skill files that teach a coding agent DeckTalk. <a href="https://docs.decktalk.ai/quickstart">Start with the quickstart.</a></p>
+  </div>
+</section>
 
-  <section id="how">
-    <span class="lab">How it works</span>
-    <h2>Update your video the way you update a doc.</h2>
-    <p class="sub">Narration comes back with a time for every word, so a reveal follows a phrase rather than a second. DeckTalk builds the video from text you keep, so a changed sentence changes the video. Change a sentence, and only that section is voiced again. Follow one cue from the script to the frame.</p>
-    <div class="steps">
-      <div class="step"><div class="n">01 WRITE</div>
-        <pre><span class="c">script.md</span>
-## 1. Open
-A bowl. [beat] A ball. [beat]
-Watch it step down on my
-count. [beat] <span class="k">One.</span> [beat]
-Two, three. [beat]</pre>
-        <h3>A script in markdown</h3><p>One heading starts one section. Bracketed directions are not spoken.</p></div>
-      <div class="step"><div class="n">02 NARRATE</div>
-        <pre><span class="c">build/narration/01-open.words.json</span>
-{ "word": <span class="k">"One"</span>,
-  "start": <span class="k">4.485</span> }
-<span class="c">cues.json</span>
-{ "cue": <span class="k">"1.1one"</span>,
-  "on": <span class="k">"One"</span> }</pre>
-        <h3>Your voice reads it</h3><p>The voice comes back with the audio and a timestamp for every word. A cue names a spoken phrase, and DeckTalk resolves it to the second the word starts.</p></div>
-      <div class="step"><div class="n">03 RECORD</div>
-        <pre><span class="c">deck/index.html</span>
-&lt;g <span class="k">data-cue="1.1one"</span>
-   data-reveal="instant"&gt;
-  &lt;rect class="box full"/&gt;
-  &lt;text&gt;one&lt;/text&gt;
-&lt;/g&gt;</pre>
-        <h3>Slides reveal on cue</h3><p>Chromium records the plain HTML, and the page runtime shows each slide when its word is spoken.</p></div>
-      <div class="step"><div class="n">04 ASSEMBLE</div>
-        <pre><span class="c">$ decktalk build</span>
-[cut ] 01 -&gt; sections/01.mp4
-[caps] 35 cue(s) -&gt; srt, vtt
-<span class="c">$ decktalk verify</span>
-<span class="c">cue         at  offset</span>
-<span class="k">1:1.1one</span>  4.49  <span class="k">-10ms</span></pre>
-        <h3>Cut to the frame</h3><p>ffmpeg cuts every section to the frame, so the box fills at 4.49 s, and mixes the sound. Then verify measures each reveal against its word, and in a build of the scaffold every measured reveal landed within one frame of it.</p></div>
-    </div>
-  </section>
+</main>
 
-  <section id="what">
-    <span class="lab">What you get</span>
-    <h2>Built for the tenth edit, not the first take.</h2>
-    <p class="sub">Every reveal is cut to the spoken word, and a build of the scaffold measured each one within one frame of its word. A changed sentence voices only its own section again. The whole video is text you keep in a repository, so you and your agent update it the way you update code. Six skills install with the project, so the agent already knows how.</p>
-    <div class="feats">
-      <div class="feat"><span class="proof">[lead] 01  trim 1.440s</span><h3>The cut is measured, not timed.</h3><p>Each recording opens on a magenta cover until narration starts. The cut is measured from the frames, not from a timer.</p></div>
-      <div class="feat"><span class="proof">[skip] 01-open.mp3 unchanged</span><h3>An edit voices only what changed.</h3><p>Each section's narration is cached by a hash of its text, voice, model, and settings. An edit synthesizes only the sections that changed, so you pay per change, not per build.</p></div>
-      <div class="feat"><span class="proof">[mix ] 3 audio input(s)</span><h3>The soundscape is optional.</h3><p>Music ducks under speech, ambience beds and effects land on cues, and the mix meets streaming loudness. Every part is optional.</p></div>
-      <div class="feat"><span class="proof">1:1.1one  -10ms  changed</span><h3>Every reveal is checked.</h3><p>Black or truncated recordings stop before assembly. A cue that cannot be found stops the build. A check proves each cue moved pixels.</p></div>
-      <div class="feat"><span class="proof">.agents/skills/decktalk-cues</span><h3>Your coding agent already knows it.</h3><p>Six skills install with every project, one each for the script, the slides, the cues, the build, the fixes and a revision. Every command prints one JSON envelope an agent reads.</p></div>
-    </div>
-  </section>
+<footer class="foot">
+  <div class="wrap">
+    <span class="brand"><svg aria-hidden="true"><use href="#mark"/></svg>DeckTalk</span>
+    <span>Made by Jacob Beaudin</span>
+    <span class="links">
+      <a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE">Apache-2.0</a>
+      <a href="https://pypi.org/project/decktalk/">PyPI 0.4.0</a>
+      <a href="https://github.com/jacobcbeaudin/decktalk">GitHub · Open source</a>
+      <a href="https://docs.decktalk.ai/changelog">Changelog</a>
+      <a href="https://docs.decktalk.ai">Docs</a>
+    </span>
+  </div>
+</footer>
 
-  <section id="who">
-    <span class="lab">Who it is for</span>
-    <h2>Videos that must stay correct when their source changes.</h2>
-    <p class="sub">DeckTalk is not a video editor, a slide designer, or an avatar. You write the slides as HTML, DeckTalk draws none of the pictures, and the video it makes is an ordinary mp4 you can upload anywhere.</p>
-    <div class="feats">
-      <div class="feat"><span class="proof">a developer educator</span><h3>Technical tutorials</h3><p>A viewer watches a walkthrough whose commands and screenshots match the version she just installed. When the library changes, you change the sentence and build again.</p></div>
-      <div class="feat"><span class="proof">a founder</span><h3>Product demos</h3><p>A viewer sees the feature narrated over the screen it runs on, with every callout landing on the word that names it.</p></div>
-      <div class="feat"><span class="proof">a teacher</span><h3>Lessons</h3><p>A viewer follows an explanation in which each idea appears as it is spoken, so nothing is read ahead.</p></div>
-      <div class="feat"><span class="proof">a team</span><h3>Also fits</h3><p>Internal presentations and estimation walkthroughs run the same pipeline. Neither has a shipped example yet.</p></div>
-    </div>
-  </section>
+<div class="sr" aria-live="polite" data-live></div>
 
-  <section id="start">
-    <div class="cmds">
-      <div><h2>From install to a first video.</h2><p>You need Python 3.12 or later. A build without voice is free, needs no account, and takes about a minute for the starter, because recording runs in real time. A voiced build needs an ElevenLabs API key and a voice id, and a full build of the starter spends about 400 characters of voice. Build it without voice first, and add your voice when you are ready.</p></div>
-      <pre>$ uv tool install decktalk &amp;&amp; <span class="nb">decktalk install</span>
-$ decktalk init my-lesson &amp;&amp; <span class="nb">cd my-lesson</span>
-$ decktalk build --no-voice   <span class="c nb"># no key needed</span>
-$ decktalk build            <span class="c nb"># your voice</span></pre>
-    </div>
-  </section>
-
-  <footer>
-    <div class="made"><svg viewBox="0 0 24 24" aria-hidden="true"><g stroke-width="2.25" stroke-linecap="round"><line x1="4" y1="12" x2="4" y2="20" stroke="var(--mark-bar)"/><line x1="9.5" y1="8" x2="9.5" y2="20" stroke="var(--blue)"/><line x1="15" y1="12" x2="15" y2="20" stroke="var(--mark-bar)"/><line x1="20.5" y1="12" x2="20.5" y2="20" stroke="var(--mark-bar)"/></g><circle cx="9.5" cy="3.75" r="2.25" fill="var(--blue)"/></svg><span>DeckTalk · Apache-2.0 · Made by <a href="https://github.com/jacobcbeaudin" style="color:var(--ink)">Jacob Beaudin</a></span></div>
-    <div class="links"><a href="https://docs.decktalk.ai">Docs</a><a href="https://github.com/jacobcbeaudin/decktalk">GitHub</a><a href="https://github.com/jacobcbeaudin/decktalk/discussions">Discussions</a><a href="https://pypi.org/project/decktalk/">Latest release on PyPI</a></div>
-  </footer>
-</div>
-
-<script>
-(() => {
-  document.getElementById("copy").addEventListener("click", async (e) => {
-    try { await navigator.clipboard.writeText(document.getElementById("cmd").textContent); e.target.textContent = "Copied"; setTimeout(() => e.target.textContent = "Copy", 1400); } catch (_) {}
-  });
-
-})();
-</script>
+<script src="data.js"></script>
+<script src="stage.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

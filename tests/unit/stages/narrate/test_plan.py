@@ -144,7 +144,7 @@ def test_narrate_dry_run_json_prices_the_run_and_writes_nothing(project, voice, 
     assert main(["narrate", "--dry-run", "-p", str(project.root)]) == 0
     out = capsys.readouterr().out
     assert f"{plan.totals.characters_sent} characters sent" in out
-    assert f"About ${plan.totals.estimated_cost:.2f} at $0.30 per 1,000." in out
+    assert f"About ${plan.totals.estimated_cost:.2f} at $0.30 per 1,000 characters." in out
 
 
 def test_estimated_seconds_are_the_words_at_the_configured_rate():

@@ -1,7 +1,18 @@
-Inter Tight, by Rasmus Andersson, Copyright 2020 The Inter Project Authors.
+Instrument Sans, Copyright 2022 The Instrument Sans Project Authors.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
-InterTight.woff2 is the variable font (weight axis 100-900) subset to the glyphs the README graphics use, fetched from Google Fonts and cut with pyftsubset; scripts/build_assets.py embeds it.
+InstrumentSans.woff2 is the variable font (weight axis 400-700) cut to the printable ASCII range plus a few punctuation marks with fontTools' subsetter; scripts/build_assets.py embeds it in the diagrams.
 
-JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors.
+IBM Plex Mono, Copyright 2017 IBM Corp.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
-JetBrainsMono.woff2 is the variable font (weight axis 100-800) cut from src/decktalk/template/deck/fonts/JetBrainsMono-latin.woff2 to U+0020-005A (space, punctuation, digits, and capitals, which is all the labels use) with pyftsubset; scripts/build_assets.py embeds it.
+PlexMono.woff2 is the Medium (500) face cut the same way; scripts/build_assets.py embeds it in the diagrams.
+
+Instrument Serif, Copyright 2022 The Instrument Serif Project Authors.
+Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
+InstrumentSerif.woff2 is the regular face cut the same way; scripts/build_assets.py embeds it in the
+two diagrams that carry a headline, and site/fonts/instrument-serif.woff2 is the same cut for the page.
+
+Bricolage Grotesque, Copyright 2023 The Bricolage Grotesque Project Authors.
+Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
+BricolageGrotesque.woff2 is a static instance (optical size 96, weight 500) cut the same way; scripts/build_assets.py traces the wordmark's letters from it, so it is never embedded as a face.
+
+All four were fetched from Google Fonts as latin subsets and cut with fontTools' subsetter (pyftsubset).

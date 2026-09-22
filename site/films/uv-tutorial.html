@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>uv, end to end, a tutorial made with DeckTalk</title>
+<meta name="description" content="A seven-section technical tutorial on uv, the Python package manager, made with DeckTalk: the film and its script.">
+<link rel="canonical" href="https://decktalk.ai/films/uv-tutorial.html">
+<meta property="og:title" content="uv, end to end, a tutorial made with DeckTalk">
+<meta property="og:description" content="A seven-section technical tutorial on uv, made with DeckTalk, with its script.">
+<meta property="og:image" content="https://decktalk.ai/og.png">
+<meta name="theme-color" content="#15110e">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  .film-page { padding: 24px 0 64px; display: grid; gap: 28px; }
+  .film-page video { width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: var(--dt-surface); box-shadow: 0 0 0 1px rgba(251, 246, 238, 0.15); }
+  .film-page .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
+  .script { display: grid; gap: 24px; max-width: 64ch; }
+  .script h2 { font-size: var(--dt-size-xl); display: flex; gap: 12px; align-items: baseline; }
+  .script h2 .t { font-family: var(--font-mono); font-size: 13px; font-weight: 400; color: var(--dt-text-3); letter-spacing: 0; }
+  .script p { font-family: var(--font-display); font-size: 19px; line-height: 1.6; letter-spacing: -0.01em; color: var(--dt-text-2); }
+  .script p .beat { color: var(--dt-text-3); font-family: var(--font-mono); font-size: 12px; margin: 0 4px; }
+  .note { color: var(--dt-text-2); max-width: 64ch; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="../" aria-label="DeckTalk, home"><svg aria-hidden="true" viewBox="0 0 24 24"><g fill="var(--dt-voice)"><rect x="1.75" y="14" width="2.5" height="4" rx="1.25"/><rect x="6.25" y="12.5" width="2.5" height="7" rx="1.25"/><rect x="10.75" y="11" width="2.5" height="10" rx="1.25"/><rect x="15.25" y="12.5" width="2.5" height="7" rx="1.25"/><rect x="19.75" y="14" width="2.5" height="4" rx="1.25"/></g><rect x="6.5" y="3" width="11" height="7" rx="1.5" fill="none" stroke="var(--dt-mark-picture)" stroke-width="1.75"/></svg>DeckTalk</a>
+    <nav aria-label="Primary"><ul><li><a href="../#gallery">Gallery</a></li><li><a href="https://docs.decktalk.ai">Docs</a></li></ul></nav>
+  </div>
+</header>
+<main id="main" class="wrap film-page">
+  <div>
+    <p class="kicker">Now showing · a technical tutorial</p>
+    <h1 style="font-size:clamp(32px,4vw,48px)">uv, end to end</h1>
+    <p class="sub" style="margin-top:8px">Install uv, start a project, add and remove packages, lock and sync, run tools and scripts. Seven sections, made with DeckTalk from the script below.</p>
+  </div>
+  <video controls preload="metadata" playsinline width="1920" height="1080" poster="../media/uv-tutorial-poster.webp"
+         src="https://media.decktalk.ai/decktalk-uv-tutorial-f2407eccdfd4.mp4" aria-label="uv, end to end, the film">
+    <track kind="captions" src="../media/uv-tutorial.vtt" srclang="en" label="English" default>
+  </video>
+  <p class="meta"><span>3:16</span><span>7 sections</span><span>1920 × 1080, 25 fps</span><span>voice, words and cue times from one build</span></p>
+
+  <section class="script" aria-labelledby="script-h">
+    <h2 id="script-h" style="font-size:var(--dt-size-2xl)">script.md</h2>
+    <p class="note" style="font-family:var(--font-text);font-size:16px">Each <code>## N.</code> heading is one cut of the film. A <code>[beat]</code> is a short pause and is not spoken. Numbers and symbols are written the way the voice says them.</p>
+    <article>
+      <h2>1. What uv is <span class="t">0:00</span></h2>
+      <p>uv is one program that replaces a whole shelf of Python tools. <span class="beat">[beat]</span> It installs packages, it builds virtual environments, it resolves a lockfile, and it installs Python itself. <span class="beat">[beat]</span> It is written in Rust, and it keeps one cache for your whole machine, so a wheel you have already downloaded is linked into a new project rather than fetched twice. <span class="beat">[beat]</span> That is why a cold install finishes in seconds.</p>
+    </article>
+    <article>
+      <h2>2. Install uv <span class="t">0:26</span></h2>
+      <p>Before any of that, uv has to be on your machine. <span class="beat">[beat]</span> Install it with the standalone installer, which needs no Python on the machine first. <span class="beat">[beat]</span> On macOS and Linux, pipe the script from astral dot sh into your shell. <span class="beat">[beat]</span> On Windows, run the same script through powershell. <span class="beat">[beat]</span> Homebrew and pip ex both carry uv as well, and either one is fine. <span class="beat">[beat]</span> From then on, uv self update moves you to the newest release.</p>
+    </article>
+    <article>
+      <h2>3. Start a project <span class="t">0:52</span></h2>
+      <p>With uv installed, the next step is a project. <span class="beat">[beat]</span> Run uv init and give your project a name. <span class="beat">[beat]</span> uv writes four files: a pyproject dot toml that declares the project, a read me, a starter module, and a dot python dash version file that pins the interpreter this project wants. <span class="beat">[beat]</span> Nothing is installed yet, and there is no virtual environment yet either. <span class="beat">[beat]</span> uv builds one for you the first time you ask it to run something.</p>
+    </article>
+    <article>
+      <h2>4. Add and remove dependencies <span class="t">1:24</span></h2>
+      <p>An empty project needs packages, so add your first one. <span class="beat">[beat]</span> uv add httpx is how a package joins your project. <span class="beat">[beat]</span> It resolves the dependency, writes it into pyproject dot toml, updates the lockfile, and installs it into the environment, all in one step. <span class="beat">[beat]</span> For a package you need only while developing, name the group, so uv add dash dash group dev pytest records pytest under the dependency groups table. <span class="beat">[beat]</span> uv remove takes a package back out, and the lockfile and the environment both follow it.</p>
+    </article>
+    <article>
+      <h2>5. Lock and sync <span class="t">1:57</span></h2>
+      <p>Every one of those steps touched the lockfile. <span class="beat">[beat]</span> uv lock writes a lockfile that pins every package, for every platform your project claims to support. <span class="beat">[beat]</span> uv sync then makes your environment match that lockfile exactly, installing what is missing and removing whatever does not belong. <span class="beat">[beat]</span> Commit the lockfile, because it is what makes the install reproducible for everybody else. <span class="beat">[beat]</span> In continuous integration, pass the frozen flag, so uv installs straight from the lockfile and never resolves it again.</p>
+    </article>
+    <article>
+      <h2>6. Run tools and scripts <span class="t">2:29</span></h2>
+      <p>With everything in sync, it is time to run something. <span class="beat">[beat]</span> uv run runs a command inside your project's environment, and it syncs before it starts, so what runs is always what the lockfile says. <span class="beat">[beat]</span> uvx runs a tool once without installing it anywhere at all. <span class="beat">[beat]</span> uv tool install keeps a tool on your path for good. <span class="beat">[beat]</span> And a single file script can declare its own dependencies in a comment header at the top, so running it builds an environment just for that file and throws it away afterwards.</p>
+    </article>
+    <article>
+      <h2>7. The whole workflow <span class="t">2:58</span></h2>
+      <p>So that is uv, and your project fits on one card. <span class="beat">[beat]</span> uv init starts it, uv add grows it, uv lock pins it, uv sync matches it, and uv run uses it. <span class="beat">[beat]</span> Five commands, one tool. <span class="beat">[beat]</span> Go clear the shelf.</p>
+    </article>
+  </section>
+</main>
+<footer class="foot"><div class="wrap"><a href="../">decktalk.ai</a><span class="links"><a href="https://docs.decktalk.ai">Docs</a><a href="https://github.com/jacobcbeaudin/decktalk">GitHub · Open source</a></span></div></footer>
+</body>
+</html>

@@ -27,16 +27,10 @@ description: Understand how DeckTalk turns a script and HTML pages into one mp4,
 
 The five stages always run in this order. Each stage reads files that the stages before it wrote.
 
-```mermaid
-flowchart TB
-  S["script.md"] --> narrate
-  narrate -- "words files, takes.json" --> align
-  C["cues.json"] --> align
-  align -- "cue-times.json" --> record
-  P["deck pages"] --> record
-  record -- "webm and recording log" --> assemble
-  assemble -- "name.mp4, captions, chapters" --> verify
-```
+<Frame caption="The script, the voice, the cues, the slides and the video, and the file each one is. The cues are the join.">
+  <img className="block dark:hidden" src="/images/pipeline-light.svg" alt="Five stations from left to right: Script, script.md, markdown with one heading a section. Voice, a take and its words file, where your voice reads it and every word gets a time. Cues, cues.json, where you name the phrase and the picture starts on it, with the example &quot;This is DeckTalk&quot; for the cue 1.1title. Slides, deck/index.html, plain HTML with one scene a section. Video, build/out/name.mp4, recorded in real time with every reveal measured. A line from the slides joins the cues. Under the stations: change one sentence, and only that section is voiced and recorded again." />
+  <img className="hidden dark:block" src="/images/pipeline-dark.svg" alt="Five stations from left to right: Script, script.md, markdown with one heading a section. Voice, a take and its words file, where your voice reads it and every word gets a time. Cues, cues.json, where you name the phrase and the picture starts on it, with the example &quot;This is DeckTalk&quot; for the cue 1.1title. Slides, deck/index.html, plain HTML with one scene a section. Video, build/out/name.mp4, recorded in real time with every reveal measured. A line from the slides joins the cues. Under the stations: change one sentence, and only that section is voiced and recorded again." />
+</Frame>
 
 | Stage | One job | Writes |
 |---|---|---|
