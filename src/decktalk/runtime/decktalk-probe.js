@@ -28,7 +28,7 @@
 (() => {
   // The probe loads as an init script, not a module, so this directive is what makes it strict.
   "use strict";
-  const VERSION = "0.4.0"; // x-release-please-version
+  const VERSION = "0.4.1"; // x-release-please-version
   const COVER_ID = "__t0cover";
   const KEEPALIVE_ID = "__dtkeepalive";
 

@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.4.1](https://github.com/jacobcbeaudin/decktalk/compare/v0.4.0...v0.4.1) (2026-09-23)
+
+
+### Features
+
+* **brand:** apply the voice identity to the mark, the graphics and the tokens ([27b40bd](https://github.com/jacobcbeaudin/decktalk/commit/27b40bd8bbc80ec867d905dc897f52f247b877c2))
+* **site:** a one-line installer, and what four containers said about it ([3f4633d](https://github.com/jacobcbeaudin/decktalk/commit/3f4633d68be3d030998a546964bd14bb2c387ef8))
+* **site:** group the install steps, and pin every copy of the command together ([bf6c0b2](https://github.com/jacobcbeaudin/decktalk/commit/bf6c0b2ecda325029bb5b1cf41f7c0f9a43656ba))
+* **site:** name every place the edited number lives ([c13b3e3](https://github.com/jacobcbeaudin/decktalk/commit/c13b3e3b66bd79e7f65758609c52c2fc0d841081))
+* **site:** one install command, and a copy button on every one of them ([b7e899e](https://github.com/jacobcbeaudin/decktalk/commit/b7e899ed5d6c0fd3085f408dc3f71a92268f5132))
+* **site:** serve the installer as text, so a browser shows it ([7ecb1d9](https://github.com/jacobcbeaudin/decktalk/commit/7ecb1d9f4a344b38a20524aff45da2cac33bb1e4))
+* **site:** the install moves to the header, and a section scrolled past still reveals ([ec2d858](https://github.com/jacobcbeaudin/decktalk/commit/ec2d85855ad118bdd9c2658eb311320ff3cf6db9))
+* **site:** the screening-room homepage, built from the Halfway film ([9e35b38](https://github.com/jacobcbeaudin/decktalk/commit/9e35b3825c24b001af6977d08e913ed62151693d))
+* the screening-room homepage, the brand it is built from, and the docs theme ([6a8fb64](https://github.com/jacobcbeaudin/decktalk/commit/6a8fb64ebea6cfef17d93aa947f58d0440cc1cb7))
+
+
+### Bug Fixes
+
+* **align:** read a data-cue element as part of the scene that holds it ([3113fc2](https://github.com/jacobcbeaudin/decktalk/commit/3113fc2f0e205883e58a6b1f08a68a3b0bed8731))
+* **brand:** retire the last of the old electric blue ([aaad7d7](https://github.com/jacobcbeaudin/decktalk/commit/aaad7d7075ef4f15159a906d384634757746e4f2))
+* **cli:** name the unit in the narrate cost line ([baaddf8](https://github.com/jacobcbeaudin/decktalk/commit/baaddf8e2933eb8c6a9d0b157a3e278d8e697036))
+* cut each take at its sound end, and measure the cut where it plays ([82d584c](https://github.com/jacobcbeaudin/decktalk/commit/82d584cfac404dbafa5fe3dc0f52c1ece3242f8c))
+* **narrate:** cut each take at its sound end so its tail is silence ([46a1633](https://github.com/jacobcbeaudin/decktalk/commit/46a1633c97a7139afcc0b1a5defe12ff3e9957c1))
+* **readme:** the hero image and three links that go nowhere ([5406f75](https://github.com/jacobcbeaudin/decktalk/commit/5406f7517a9d36e858bc04024672c18e1053cdd2))
+* **site:** call it Films, the same word the URLs already use ([4295258](https://github.com/jacobcbeaudin/decktalk/commit/42952588d85e54b637238c5b9fae814a1d2a0d21))
+* **site:** link the extensionless path, so no internal click costs a redirect ([90e663e](https://github.com/jacobcbeaudin/decktalk/commit/90e663ee728bd2664b5258cf7a2ca8a3b222bc74))
+* **site:** one sound control, and the install line keeps the weight ([b7542a1](https://github.com/jacobcbeaudin/decktalk/commit/b7542a15cf6675dc4bafad2dd3682a0a3ba172c2))
+* **site:** one voice at a time, across the page ([ade79dc](https://github.com/jacobcbeaudin/decktalk/commit/ade79dcada4a3b7218c749ea96f24521313eb2bf))
+* **site:** put the install line above the film on a phone, not below it ([1c428b5](https://github.com/jacobcbeaudin/decktalk/commit/1c428b5e31dff9d4e24784b2c113b2fc881f4dab))
+* **site:** show the page even when the page's own script fails ([7f49b46](https://github.com/jacobcbeaudin/decktalk/commit/7f49b46c06de58b61173371d0cb815e5e40d486e))
+* **site:** the film is the unmute control, and the hero has one left edge ([8667dd2](https://github.com/jacobcbeaudin/decktalk/commit/8667dd25382cee0d90968a9d545245c825283782))
+* **site:** the film pages kept a nav from before the site had four pages ([13a8e27](https://github.com/jacobcbeaudin/decktalk/commit/13a8e27c399f88e3b5177730cdb00440fa2c4915))
+* **tests:** busybox takes the shell as an argument, not a flag ([9d5ca87](https://github.com/jacobcbeaudin/decktalk/commit/9d5ca87a7f3b652806f28d056004ccd01c4f3f6e))
+* **tests:** do not import pty at module scope, so Windows can collect ([3031095](https://github.com/jacobcbeaudin/decktalk/commit/3031095f74bd84965448254c09feb7f56bf4962c))
+* **tests:** judge a build by the verdicts that exited it, not every verdict it reported ([2ead632](https://github.com/jacobcbeaudin/decktalk/commit/2ead63255893bec701a8831de792ab71ac3be80a))
+* **tests:** put the late-frame rule in one place instead of in each test ([dacf801](https://github.com/jacobcbeaudin/decktalk/commit/dacf801117a2ba8e8949b9e4c47bc5faf7170e58))
+* **tests:** read released versions from the changelog, not from git tags ([5496b37](https://github.com/jacobcbeaudin/decktalk/commit/5496b37177eca3ccb622ce82d7b59405ce638183))
+* **tests:** wait for the reveal, refuse the voice clip, and say what went wrong ([6c60bb0](https://github.com/jacobcbeaudin/decktalk/commit/6c60bb02fe2c6ca2c61cad020e8699af4477d232))
+* **verify:** place the cut check on the mix's timeline and name the cut it judges ([d665991](https://github.com/jacobcbeaudin/decktalk/commit/d665991a8037250103e30da3f9dc55731ec4ed47))
+
 ## [0.4.0](https://github.com/jacobcbeaudin/decktalk/compare/v0.3.0...v0.4.0) (2026-09-19)
 
 
