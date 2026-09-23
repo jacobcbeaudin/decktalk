@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import pty
 import select
 import shutil
 import signal
@@ -24,6 +23,12 @@ import time
 from pathlib import Path
 
 import pytest
+
+# install.sh is a POSIX shell script, so every test here needs /bin/sh, and the terminal ones need
+# a pty. Neither exists on Windows. Skipping at module scope rather than importing `pty` at the top:
+# `pty` imports `termios`, which Windows does not have, so the import failed during collection and
+# took the whole run down with it on a file whose tests were all deselected on that platform.
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="install.sh needs a POSIX shell and a pty")
 
 SCRIPT = Path(__file__).resolve().parent.parent / "site" / "install.sh"
 SHELLS = [sh for sh in ("/bin/sh", "/bin/dash", "/bin/busybox") if Path(sh).exists()]
@@ -292,6 +297,8 @@ def run_pty(
     timeout: float = 30.0,
 ) -> tuple[int, str]:
     """Run install.sh under a pty. Returns (exit status, everything it wrote)."""
+    import pty  # noqa: PLC0415 - imports termios, which Windows has not got; see pytestmark
+
     pid, fd = pty.fork()
     if pid == 0:  # pragma: no cover - the child execs or dies
         try:
