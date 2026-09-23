@@ -172,26 +172,37 @@
   <div class="wrap">
     <p class="kicker cut">Change one number</p>
     <h2 id="edit-h" class="cut">One number lives in three files. Only its section was voiced again.</h2>
-    <p class="fine cut" style="margin-top:10px">Section 3 of Halfway, the fictional pitch above. A number the film says and shows lives in the script, in the cue that binds the picture to those words, and in the slide that draws it.</p>
-    <ul class="diff cut" data-diff aria-label="The four places the edit changed, file by file"></ul>
+    <p class="fine cut" style="margin-top:10px">Section 3 of Halfway, the fictional pitch above. Press both: the same cloned voice, before the edit and after it.</p>
     <div class="takes cut">
       <div class="take before">
         <button type="button" class="btn" data-take="before" aria-pressed="false" aria-label="Play the take before the edit">
           <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span><span>Before</span>
         </button>
         <p class="line">Last month, <mark>eleven thousand</mark> people met in the middle. <span class="rest">Coffee. Lunch. One first date that became a second.</span></p>
-        <span class="hash" data-hash="before"></span>
+        <span class="hash">cache key <b data-hash="before"></b></span>
       </div>
       <div class="take after">
         <button type="button" class="btn" data-take="after" aria-pressed="false" aria-label="Play the take after the edit">
           <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span><span>After</span>
         </button>
         <p class="line">Last month, <mark>fourteen thousand</mark> people met in the middle. <span class="rest">Coffee. Lunch. One first date that became a second.</span></p>
-        <span class="hash" data-hash="after"></span>
+        <span class="hash">cache key <b data-hash="after"></b></span>
       </div>
     </div>
+    <p class="fine cut files-note">One number, but the film says it and shows it, so it lives in three files: the script, the cue that binds the picture to those words, and the slide that draws it, twice.</p>
+    <!-- Both disclosures are plain <details>: they open with no JavaScript, and .cut stays on the
+         <details> rather than on what it holds, because a closed one is never in the viewport and
+         the observer that reveals .cut would never reach it. -->
+    <details class="drop cut">
+      <summary>The four changes, file by file</summary>
+      <ul class="diff" data-diff aria-label="The four places the edit changed, file by file"></ul>
+    </details>
     <div class="lanes cut" data-lanes aria-label="What the build did to each section after the edit" role="img"></div>
-    <pre class="log cut" data-log tabindex="0" role="region" aria-label="The captured build log, scrollable"></pre>
+    <p class="cost-line cut" data-cost></p>
+    <details class="drop cut">
+      <summary>The build log</summary>
+      <pre class="log" data-log tabindex="0" role="region" aria-label="The captured build log"></pre>
+    </details>
     <p class="after-line cut">Every landing is measured against its word<span data-verify-sum>.</span></p>
   </div>
 </section>

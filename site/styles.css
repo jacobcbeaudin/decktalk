@@ -327,10 +327,22 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .take .line .rest { color: var(--dt-text-3); }
 .take .line mark { background: none; color: var(--dt-text); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 4px; }
 .take.after .line mark { color: var(--dt-voice); text-decoration-color: var(--dt-voice); }
+/* The hash is the take's cache key, so it says so: it is the reason the lanes below read "cached". */
 .take .hash { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--dt-text-3); }
+.take .hash b { font-weight: 400; color: var(--dt-text-2); }
+.edit .files-note { margin-top: 16px; max-width: 92ch; }
+/* The two disclosures: the diff and the build log. Native <details>, so they open with the script
+   dead, and the marker is the only thing the summary borrows from the button style. */
+.drop { margin-top: 10px; }
+.drop > summary { display: flex; align-items: center; gap: 8px; width: max-content; max-width: 100%; padding: 6px 2px; font-size: var(--dt-size-sm); color: var(--dt-text-3); cursor: pointer; list-style: none; }
+.drop > summary::-webkit-details-marker { display: none; }
+.drop > summary::before { content: ""; width: 7px; height: 7px; flex: none; border-right: 1.5px solid currentcolor; border-bottom: 1.5px solid currentcolor; transform: rotate(-45deg); transition: transform var(--cut) linear; }
+.drop[open] > summary::before { transform: rotate(45deg); }
+.drop > summary:hover { color: var(--dt-text); }
+.drop[open] > summary { color: var(--dt-text-2); }
 /* The edit, file by file: the words that changed, with the words either side of them dimmed.
    The file name is a column on a wide screen and a line of its own on a phone. */
-.diff { margin-top: 22px; display: grid; gap: 10px; list-style: none; padding: 0; }
+.diff { margin-top: 14px; display: grid; gap: 10px; list-style: none; padding: 0; }
 .diff .file { display: grid; grid-template-columns: 148px 1fr; gap: 10px 14px; align-items: baseline; }
 .diff .fn { font-family: var(--font-mono); font-size: 12px; color: var(--dt-text-3); }
 .diff .rows { display: grid; gap: 6px; min-width: 0; list-style: none; padding: 0; margin: 0; }
@@ -353,13 +365,18 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .lanes .cell.span { grid-column: 2 / -1; }
 .js .lanes .cell { opacity: 0; }
 .js .lanes.in .cell { opacity: 1; transition: opacity var(--cut) linear; transition-delay: calc(var(--k) * var(--stagger)); }
-/* The log is wider than a phone, so it has to say so: a focus ring for the tab stop it now carries,
-   and a fade at the right edge while there is more line to the right of it. */
+/* The rebuild's price, out of the log and onto the page: it is the claim, not a build artifact. */
+.cost-line { margin-top: 22px; font-size: var(--dt-size-md); color: var(--dt-text-2); max-width: 78ch; }
+.cost-line b { font-weight: 500; color: var(--dt-text); }
+.cost-line code { font-family: var(--font-mono); font-size: 14px; color: var(--dt-text-3); }
+/* A log line can be longer than the box that holds it, so each line is a block that wraps under a
+   hanging indent. Nothing runs off the right edge of a phone, at any width, and the tab stop and
+   its name stay for the case where something unbreakable still scrolls. */
 .log:focus-visible { outline: 2px solid var(--dt-focus); outline-offset: 3px; }
-.log { margin: 24px 0 0; padding: 16px 18px; border: 1px solid var(--dt-border); border-radius: 10px; background: var(--dt-surface); font-size: 12.5px; line-height: 1.55; color: var(--dt-text-2); overflow: auto; }
+.log { margin: 14px 0 0; padding: 16px 18px; border: 1px solid var(--dt-border); border-radius: 10px; background: var(--dt-surface); font-size: 12.5px; line-height: 1.55; color: var(--dt-text-2); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log .ln { display: block; padding-left: 4.5ch; text-indent: -4.5ch; }
 .log .p { color: var(--dt-text-3); }
-.log .cost { display: block; margin-top: 10px; color: var(--dt-text); white-space: normal; }
-.log .cost.gloss { margin-top: 4px; color: var(--dt-text-3); }
+.log .ln.gloss { margin-top: 10px; padding-left: 0; text-indent: 0; color: var(--dt-text-3); }
 .log .live { color: var(--dt-voice); }
 .edit .after-line { margin-top: 24px; font-family: var(--font-display); font-size: var(--dt-size-xl); letter-spacing: -0.015em; }
 
