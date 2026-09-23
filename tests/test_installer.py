@@ -20,7 +20,6 @@ import select
 import shutil
 import signal
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -110,11 +109,19 @@ def test_it_parses_under_every_posix_shell_here(shell: str) -> None:
 def test_it_never_asks_for_root(tmp_path: Path, source: str) -> None:
     """The one-liner must not need root, and a grep for "sudo" cannot tell an invocation from the
     sentence that tells you `decktalk install` will ask for one. So run it with a sudo on PATH that
-    records being called, and require that it never is."""
+    records being called, and require that it never is.
+
+    `decktalk install` is checked in the same breath, because it is the one command this script
+    could plausibly run that reaches sudo of its own accord: on Linux it runs
+    `playwright install chromium --with-deps`, and Playwright uses sudo for the system libraries.
+    The installer briefly did run it, behind a prompt, and this is the assertion that says it does
+    not any more rather than that it asks nicely."""
     marker = tmp_path / "called"
     run([], env=fake_path(tmp_path, marker), script=source)
     assert marker.exists(), "the run did nothing, so it proves nothing"
-    assert "sudo" not in marker.read_text(), marker.read_text()
+    called = marker.read_text()
+    assert "sudo" not in called, called
+    assert "decktalk install" not in called, f"the installer ran the step that can reach sudo: {called}"
 
 
 def test_everything_runs_from_the_last_line(source: str) -> None:
@@ -246,32 +253,6 @@ def test_keep_log_keeps_it(tmp_path: Path, source: str) -> None:
 # ---- the one step that can reach sudo -----------------------------------------------------------
 
 
-def test_without_a_terminal_the_browser_step_is_skipped(tmp_path: Path, source: str) -> None:
-    """`decktalk install` reaches `playwright install --with-deps`, which uses sudo on Linux. With
-    no terminal there is nobody to answer a password prompt, so a Dockerfile or a CI job must not
-    be left hanging on one, and must be told the command to run instead."""
-    marker = tmp_path / "called"
-    done = run([], env=fake_path(tmp_path, marker), script=source)
-    assert done.returncode == 0, done.stderr
-    assert "decktalk install" not in marker.read_text(), marker.read_text()
-    assert "decktalk install" in done.stdout, "it skipped the step without saying what to run"
-
-
-def test_yes_runs_the_browser_step_without_a_terminal(tmp_path: Path, source: str) -> None:
-    """The opt-in has to work where the prompt cannot: that is the whole point of having it."""
-    marker = tmp_path / "called"
-    done = run(["-y"], env=fake_path(tmp_path, marker), script=source)
-    assert done.returncode == 0, done.stderr
-    assert "decktalk install" in marker.read_text(), marker.read_text()
-
-
-def test_no_browser_declines_it(tmp_path: Path, source: str) -> None:
-    marker = tmp_path / "called"
-    done = run(["--no-browser"], env=fake_path(tmp_path, marker), script=source)
-    assert done.returncode == 0, done.stderr
-    assert "decktalk install" not in marker.read_text(), marker.read_text()
-
-
 def test_it_reports_the_version_that_is_actually_on_disk(tmp_path: Path, source: str) -> None:
     """ "Installed" was a claim about the command that had just run, not about the one the reader is
     about to type. It is now read back from the binary."""
@@ -298,8 +279,8 @@ def test_the_plain_path_still_names_every_step(tmp_path: Path, source: str) -> N
 
 # ---- what needs a real terminal -----------------------------------------------------------------
 #
-# `[ -t 1 ]` and `/dev/tty` are the two things the script branches on that a pipe cannot reproduce,
-# and they guard the only step that can reach sudo. A pty is the only way to test them: pty.fork
+# `[ -t 1 ]` is what the script branches on for colour and the spinner, and a pipe cannot
+# reproduce it. A pty is the only way to test that branch: pty.fork
 # makes the pty the child's controlling terminal, which is what /dev/tty then opens. Popen with a
 # pty on stdout would leave the child's controlling terminal pointing at pytest's own.
 
@@ -307,7 +288,6 @@ def test_the_plain_path_still_names_every_step(tmp_path: Path, source: str) -> N
 def run_pty(
     args: list[str],
     env: dict[str, str],
-    feed: str | None = None,
     interrupt_after: float | None = None,
     timeout: float = 30.0,
 ) -> tuple[int, str]:
@@ -319,7 +299,6 @@ def run_pty(
         finally:
             os._exit(127)
     out = b""
-    fed = False
     reaped = False
     status = 0
     started = time.monotonic()
@@ -343,9 +322,6 @@ def run_pty(
                 if not chunk:
                     break
                 out += chunk
-                if feed is not None and not fed and b"Fetch them now?" in out:
-                    os.write(fd, feed.encode())
-                    fed = True
                 continue
             done, got = os.waitpid(pid, os.WNOHANG)
             if done:
@@ -364,54 +340,9 @@ def run_pty(
                 os.waitpid(pid, 0)
 
 
-def test_on_a_terminal_it_asks_before_the_step_that_can_reach_sudo(tmp_path: Path, source: str) -> None:
-    del source
-    marker = tmp_path / "called"
-    code, out = run_pty([], fake_path(tmp_path, marker), feed="n\n")
-    assert code == 0, out
-    assert "Fetch them now?" in out, out
-    assert "megabytes" in out, "the question never says what it is about to download"
-    if sys.platform.startswith("linux"):
-        # Only Linux reaches `playwright install --with-deps`, and so only Linux can reach sudo.
-        # Asserting it everywhere would demand the script lie to macOS about what it is doing.
-        assert "sudo" in out, "on Linux the question must name the sudo it is asking permission for"
-    else:
-        assert "sudo" not in out, f"macOS never needs sudo here, so nothing should mention it:\n{out}"
-    assert "decktalk install" not in marker.read_text(), marker.read_text()
-
-
-@pytest.mark.parametrize("answer", ["y\n", "\n", "YES\n"])
-def test_accepting_the_question_runs_it(tmp_path: Path, source: str, answer: str) -> None:
-    """A bare Enter is the default and has to mean yes, or the fast path costs a keystroke."""
-    del source
-    marker = tmp_path / "called"
-    code, out = run_pty([], fake_path(tmp_path, marker), feed=answer)
-    assert code == 0, out
-    assert "decktalk install" in marker.read_text(), f"{answer!r} did not run it:\n{out}"
-
-
-def test_eof_at_the_question_declines_rather_than_defaulting(tmp_path: Path, source: str) -> None:
-    """The second bug this file exists to prevent.
-
-    The prompt was `read -r answer </dev/tty || answer=""`, and the case arm treated "" as yes so
-    that a bare Enter would be the default. That made EOF mean yes as well. EOF is not a person
-    pressing Enter: it is the terminal handing the script nothing, and it must not silently
-    authorise the one command here that can reach sudo.
-
-    Ctrl-D is how a person produces that EOF at a prompt, and it is the only way to produce one
-    here: while this test holds the pty's master end open, a plain wait would simply block.
-    """
-    del source
-    marker = tmp_path / "called"
-    code, out = run_pty([], fake_path(tmp_path, marker), feed="\x04", timeout=20)
-    assert code == 0, out
-    assert "Fetch them now?" in out, out
-    assert "decktalk install" not in marker.read_text(), f"EOF was taken as consent:\n{out}"
-
-
 def test_a_terminal_gets_the_spinner_and_a_tick(tmp_path: Path, source: str) -> None:
     del source
-    code, out = run_pty([], fake_path(tmp_path, tmp_path / "called"), feed="n\n")
+    code, out = run_pty([], fake_path(tmp_path, tmp_path / "called"))
     assert code == 0, out
     assert "\033[" in out, "a terminal got no colour at all"
     assert "✓" in out, out
@@ -421,7 +352,7 @@ def test_no_color_is_honoured_on_a_terminal(tmp_path: Path, source: str) -> None
     """NO_COLOR is set by people who mean it, and a terminal is exactly where it has to be obeyed."""
     del source
     env = fake_path(tmp_path, tmp_path / "called") | {"NO_COLOR": "1"}
-    code, out = run_pty([], env, feed="n\n")
+    code, out = run_pty([], env)
     assert code == 0, out
     assert "\033[" not in out, repr(out)
 
@@ -432,7 +363,7 @@ def test_an_interrupt_puts_the_cursor_back_and_keeps_the_log(tmp_path: Path, sou
     del source
     log = tmp_path / "install.log"
     env = fake_path(tmp_path, tmp_path / "called", slow=("uv",)) | {"DECKTALK_INSTALL_LOG": str(log)}
-    code, out = run_pty(["-y"], env, interrupt_after=1.5, timeout=30)
+    code, out = run_pty([], env, interrupt_after=1.5, timeout=30)
     assert code == 130, f"an interrupt should exit 130, got {code}:\n{out}"
     assert "\033[?25h" in out, "the cursor was left hidden"
     assert log.exists(), "the log of an interrupted run was thrown away"
