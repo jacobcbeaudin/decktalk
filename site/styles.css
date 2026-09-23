@@ -274,6 +274,7 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .panel .t { color: var(--dt-text-3); }
 .panel .ok { color: var(--dt-ok); }
 .pinned { position: sticky; top: 24px; display: grid; gap: 16px; }
+.stagepin { display: contents; }
 .pinned .frame { max-width: 100%; }
 .pinned .verify { font-family: var(--font-mono); font-size: 13px; color: var(--dt-text-2); min-height: 20px; }
 .pinned .verify b { font-weight: 500; color: var(--dt-text); }
@@ -424,12 +425,25 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
   .transport .sound { width: 40px; min-width: 0; padding: 0; }
   .transport .sound > span:not(.wave) { display: none; }
   .reel { grid-template-columns: repeat(2, 1fr); gap: 14px; }
-  .how .grid { grid-template-columns: 1fr; gap: 24px; }
-  /* Nothing is pinned here, so neither the screen-height chapters nor the run-out under them buys anything. */
-  .how { --chapter-tail: 0px; }
-  .chapter, .chapter:first-child { min-height: 0; padding: 18px 0; }
-  .pinned { position: static; order: -1; }
-  .pinned .verify { display: none; }
+  .how .grid { grid-template-columns: 1fr; gap: 16px; }
+  /* The stage is pinned here too, at the top instead of beside. It used to be `position: static`
+     above the chapters, so on a phone it scrolled away before the first chapter was read and the
+     five frames it now draws all changed off screen: the whole reason for the mechanic, spent
+     where nobody could see it. Chapters keep a screen-ish height so each one holds the stage long
+     enough to be looked at, and the run-out still frees the panel after the last. */
+  .how { --chapter-tail: 160px; }
+  .chapter, .chapter:first-child { min-height: 58vh; padding: 18px 0; }
+  /* Only the frame and its measurement pin. The catch-up widget is 350 px of transcript and
+     controls, and pinning that too left a phone about 240 px in which to read the chapter the
+     stage is illustrating. It goes after the chapters instead, where it reads as the invitation
+     it is rather than as part of the explanation. */
+  .pinned { display: contents; }
+  .stagepin {
+    display: grid; gap: 8px; order: -1; position: sticky; top: 8px; z-index: 1;
+    background: var(--dt-bg); padding-bottom: 10px;
+  }
+  .catchup { order: 1; }
+  .pinned .verify { font-size: 11.5px; }
   .lanes { grid-template-columns: 64px repeat(4, 1fr); font-size: 11px; }
   .steps li { grid-template-columns: 1fr; }
   section.block { padding: 48px 0; }
