@@ -172,11 +172,21 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .hero h1 { grid-area: h1; margin-top: 8px; }
 .hero .sub { grid-area: sub; margin-top: 10px; font-size: var(--dt-size-lg); max-width: 44ch; }
 .hero .cta { grid-area: cta; margin-top: 18px; }
+/* ---- the command component. One pill holds every command the site shows: the hero's, the four in
+   the install section, and the film pages'. It wraps rather than clips, because the one line is
+   44 characters and a phone is 358 px wide. The prompt is written so a reader sees a shell, and is
+   not selectable, so a hand-selection yields `curl …` and not `$ curl …`, which no shell runs.
+   The copy button is appended by app.js into .copy, so a page with no script shows the command and
+   no button that cannot do what its label says. */
 .pill {
-  grid-area: pill; margin-top: 18px; display: inline-flex; align-items: center; gap: 12px; height: 44px; padding: 0 6px 0 16px;
+  margin-top: 18px; display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  min-height: 44px; padding: 5px 6px 5px 16px; max-width: 100%;
   border: 1px solid var(--dt-border); border-radius: 12px; background: var(--dt-surface); font-family: var(--font-mono); font-size: 14px;
 }
-.pill .p { color: var(--dt-text-3); }
+.hero .pill { grid-area: pill; }
+.pill code { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.pill .p { color: var(--dt-text-3); user-select: none; -webkit-user-select: none; }
+.pill .copy:empty { display: none; }
 .pill button { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--dt-surface-2); color: var(--dt-text); font-size: 13px; font-weight: 500; cursor: pointer; }
 .pill button:hover { background: var(--dt-border); }
 .hero .caption { grid-area: caption; justify-self: center; width: 100%; max-width: var(--stage-w); margin-top: 14px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
@@ -385,14 +395,17 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .edit .after-line { margin-top: 24px; font-family: var(--font-display); font-size: var(--dt-size-xl); letter-spacing: -0.015em; }
 
 /* ---- install */
-.steps { display: grid; gap: 10px; margin: 28px 0 0; padding: 0; list-style: none; counter-reset: step; }
-.steps li { display: grid; grid-template-columns: minmax(0, 400px) 1fr; gap: 6px 24px; align-items: baseline; }
-.steps code { font-size: 15px; color: var(--dt-text); }
-.steps code .p { color: var(--dt-text-3); }
+/* Each step is the command component and the sentence that says what it does. The column is wide
+   enough for the longest of the four with its copy button beside it, so none of them wraps here. */
+.steps { display: grid; gap: 14px; margin: 28px 0 0; padding: 0; list-style: none; counter-reset: step; }
+.steps li { display: grid; grid-template-columns: minmax(0, 520px) 1fr; gap: 6px 24px; align-items: center; }
+.steps .pill { margin-top: 0; justify-self: start; }
+.steps code { color: var(--dt-text); }
 .nb { white-space: nowrap; }
-.steps span { color: var(--dt-text-2); }
+/* The step's sentence, and only that: the spans inside the command component keep the component's own colours. */
+.steps li > span { color: var(--dt-text-2); }
+.steps li > span a, .install-note a { color: var(--dt-text); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
 .install-note { margin-top: 24px; color: var(--dt-text-2); }
-.install-note a { color: var(--dt-text); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
 
 /* ---- footer */
 .foot { border-top: 1px solid var(--dt-border); padding: 28px 0 40px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
@@ -419,7 +432,7 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
   .hero .cta { margin-top: 12px; height: 40px; }
   .hero .caption { margin-top: 8px; font-size: 13px; }
   .stage { margin-top: 8px; }
-  .pill { margin-top: 20px; justify-self: stretch; }
+  .hero .pill { margin-top: 20px; justify-self: stretch; }
   /* The band holds one dimmed line and up to two current lines, so the transport never moves. */
   .band { font-size: 17px; min-height: 72px; }
   .band .prev { min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -448,7 +461,9 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
   .catchup { order: 1; }
   .pinned .verify { font-size: 11.5px; }
   .lanes { grid-template-columns: 64px repeat(4, 1fr); font-size: 11px; }
-  .steps li { grid-template-columns: 1fr; }
+  .steps { gap: 20px; }
+  .steps li { grid-template-columns: 1fr; align-items: start; }
+  .steps .pill { justify-self: stretch; }
   section.block { padding: 48px 0; }
   .foot .links { display: grid; grid-template-columns: repeat(3, max-content); justify-content: start; gap: 10px 18px; margin-left: 0; }
 }

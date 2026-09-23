@@ -53,7 +53,11 @@
         <li><a href="https://github.com/jacobcbeaudin/decktalk">GitHub<small>Open source</small></a></li>
       </ul>
     </nav>
-    <a class="btn solid install" href="#install">Install</a>
+    <!-- A nav link to the install section, and styled as one. It used to be the page's only filled
+         button, which made the loudest element on the page the one that performed no action: it
+         moved the viewport 5,000 px and installed nothing. The command itself is in the hero, one
+         screen below, where the copy button is. -->
+    <a class="btn install" href="#install">Install</a>
   </div>
 </header>
 
@@ -68,9 +72,13 @@
       <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span>
       <span class="lbl"><span data-sound-label>Play with sound · <span data-total>0:35</span></span><span data-sound-label-on hidden>Sound on · <span data-total>0:35</span></span></span>
     </button>
+    <!-- One command, one component, and the same line the install section and the film pages carry.
+         The copy button is not written here: app.js makes it, so a page with no script shows a
+         command and no control that lies about what it does. The prompt is not selectable, so a
+         hand-selection is a line that runs. -->
     <div class="pill" role="group" aria-label="Install command">
-      <code><span class="p" aria-hidden="true">$</span> <span id="cmd">uv tool install decktalk</span></code>
-      <button type="button" data-copy="cmd" aria-label="Copy the install command">Copy</button>
+      <code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code>
+      <span class="copy"></span>
     </div>
     <p class="caption">Made with DeckTalk from <a href="films/halfway.html">this script</a> · a fictional pitch</p>
 
@@ -129,12 +137,28 @@
   <div class="wrap">
     <p class="kicker cut">Install</p>
     <h2 id="install-h" class="cut">Four commands to a first film.</h2>
-    <p class="lead cut">Needs Python 3.12 or later. Chromium and ffmpeg come with <code>decktalk install</code>, and the first build needs no key. Your own voice needs an ElevenLabs key and a voice id. Any ElevenLabs voice works, including a clone of your own.</p>
-    <ol class="steps cut">
-      <li><code><span class="p" aria-hidden="true">$</span> uv tool install decktalk</code><span>Installs the command.</span></li>
-      <li><code><span class="p" aria-hidden="true">$</span> decktalk install</code><span>Fetches Chromium and ffmpeg, once per machine. On Linux it asks for sudo once, for Chromium's system libraries.</span></li>
-      <li><code><span class="p" aria-hidden="true">$</span> decktalk init my-pitch</code><span>Writes a starter script, cues, a slide page, <code>decktalk.toml</code> and <code>.env.example</code>.</span></li>
-      <li><code><span class="p" aria-hidden="true">$</span> cd my-pitch &amp;&amp; <span class="nb">decktalk build --no-voice</span></code><span>Builds the film with placeholder narration and no key. Copy <code>.env.example</code> to <code>.env</code>, add your ElevenLabs key and voice id, and build again for your voice.</span></li>
+    <p class="lead cut">The first line brings its own Python, so there is nothing to install before it. Chromium and ffmpeg come with <code>decktalk install</code>, and the first build needs no key. Your own voice needs an ElevenLabs key and a voice id. Any ElevenLabs voice works, including a clone of your own.</p>
+    <!-- The steps carry no .cut. Every .cut on the page starts at opacity 0 and is revealed by
+         app.js, and 03d27fc is what that costs when a script throws: a page with no way to install
+         anywhere on it. These four lines are the only reason a stranger scrolled this far, so like
+         the how-more button they are never a thing a script can take away. -->
+    <ol class="steps">
+      <li>
+        <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code><span class="copy"></span></div>
+        <span>Installs uv, then DeckTalk. <a href="install.sh">Read the script first</a> — that is why it is served from a URL. If you already have uv, <code>uv tool install decktalk</code> does the same thing.</span>
+      </li>
+      <li>
+        <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk install</span></code><span class="copy"></span></div>
+        <span>Fetches Chromium and ffmpeg, once per machine. On Linux it asks for sudo once, for Chromium's system libraries.</span>
+      </li>
+      <li>
+        <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk init my-pitch</span></code><span class="copy"></span></div>
+        <span>Writes a starter script, cues, a slide page, <code>decktalk.toml</code> and <code>.env.example</code>.</span>
+      </li>
+      <li>
+        <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>cd my-pitch &amp;&amp; <span class="nb">decktalk build --no-voice</span></span></code><span class="copy"></span></div>
+        <span>Builds the film with placeholder narration and no key. Copy <code>.env.example</code> to <code>.env</code>, add your ElevenLabs key and voice id, and build again for your voice.</span>
+      </li>
     </ol>
     <p class="install-note cut">Every project ships with six skill files that teach a coding agent DeckTalk. <a href="https://docs.decktalk.ai/quickstart">Start with the quickstart.</a></p>
   </div>

@@ -33,6 +33,9 @@ SECTIONS = {
 # landing page, and on how.html the explanation that is the whole reason the page exists.
 ESSENTIAL = {"index.html": "install", "how.html": "how"}
 PAGES = list(SECTIONS)
+# The one line the whole site tells a stranger to run. It is one string in one component, and the
+# tests below are the reason it can never be a string a script is allowed to hide or to mangle.
+COMMAND = "curl -LsSf https://decktalk.ai/install.sh | sh"
 
 
 @pytest.fixture(scope="module")
@@ -176,6 +179,72 @@ def test_the_page_survives_a_script_that_throws(page: object, name: str) -> None
     walk(page, name)
     seen = visible_sections(page, name)
     assert seen[ESSENTIAL[name]], f"{ESSENTIAL[name]} unreachable on {name} :: {diagnosis(page, name)}"
+
+
+def read_command(pg: object) -> dict[str, object]:
+    """What a visitor can see, select and press at the install section's first command."""
+    return pg.evaluate(  # type: ignore[attr-defined]
+        """() => {
+            const pill = document.querySelector("#install .pill");
+            if (!pill) return {};
+            const code = pill.querySelector("code");
+            getSelection().selectAllChildren(code);
+            const selected = getSelection().toString();
+            getSelection().removeAllRanges();
+            return {
+                opacity: parseFloat(getComputedStyle(pill).opacity),
+                command: pill.querySelector("[data-cmd]").textContent,
+                selected,
+                buttons: document.querySelectorAll(".pill button").length,
+            };
+        }"""
+    )
+
+
+def test_the_install_command_survives_a_script_that_throws(page: object) -> None:
+    """The command is the page's whole purpose, so it carries no `.cut` and its copy button is wired
+    before anything in `site/app.js` can throw. A visitor on a broken page still has the line."""
+    page.add_init_script("window.addEventListener('DOMContentLoaded', () => { null.boom; });")  # type: ignore[attr-defined]
+    page.goto(f"{page.origin}/index.html", wait_until="networkidle")  # type: ignore[attr-defined]
+    page.wait_for_timeout(600)  # type: ignore[attr-defined]
+    seen = read_command(page)
+    assert seen["opacity"] > 0, seen
+    assert seen["command"] == COMMAND, seen
+    assert seen["buttons"], f"the copy buttons went down with the script: {seen}"
+
+
+def test_the_install_command_is_readable_and_selectable_with_no_script(origin: str) -> None:
+    """No script at all: no copy button, because the button is made by one — and a command that can
+    still be selected by hand into a line that runs. The `$` is written but never selected."""
+    playwright = pytest.importorskip("playwright.sync_api")
+    with playwright.sync_playwright() as pw:
+        if not Path(pw.chromium.executable_path).exists():
+            pytest.skip("Chromium is missing: run `decktalk install` first")
+        browser = pw.chromium.launch()
+        pg = browser.new_page(viewport={"width": 1280, "height": 900}, java_script_enabled=False)
+        pg.goto(f"{origin}/index.html", wait_until="load")
+        seen = read_command(pg)
+        browser.close()
+    assert seen["opacity"] > 0, seen
+    assert seen["command"] == COMMAND, seen
+    assert seen["selected"] == COMMAND, f"a hand-selection does not yield a line that runs: {seen}"
+    assert seen["buttons"] == 0, f"a button that cannot copy is on a page with no script: {seen}"
+
+
+def test_every_command_the_page_shows_can_be_copied(page: object) -> None:
+    """One component, every command: the hero's line and each of the four steps get a copy button.
+
+    Counted by the copy slot rather than by `.pill`, because the film's own slides use that class
+    for the two "20 min" labels on the map and they are not commands.
+    """
+    page.goto(f"{page.origin}/index.html", wait_until="networkidle")  # type: ignore[attr-defined]
+    slots = page.locator(".pill .copy")  # type: ignore[attr-defined]
+    assert slots.count() == 5, "the hero and the four steps"
+    assert page.locator(".pill .copy button").count() == slots.count()  # type: ignore[attr-defined]
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])  # type: ignore[attr-defined]
+    page.locator("#install .pill button").first.click()  # type: ignore[attr-defined]
+    page.wait_for_timeout(200)  # type: ignore[attr-defined]
+    assert page.evaluate("() => navigator.clipboard.readText()") == COMMAND  # type: ignore[attr-defined]
 
 
 def test_a_reader_can_walk_from_the_landing_page_to_the_explanation_and_back(page: object) -> None:

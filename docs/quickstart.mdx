@@ -9,8 +9,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
 
 ## Before you start
 
-- You need Python 3.12 or later.
-- You need uv, pipx, or pip.
+- You need nothing installed first: the one-line installer brings its own Python. Installing with uv, pipx or pip instead needs Python 3.12 or later.
 - On Linux, step 2 needs sudo or root.
 - Part 3 needs an ElevenLabs API key and a voice id.
 
@@ -18,9 +17,18 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
 
 <Steps>
   <Step title="Install DeckTalk" stepNumber={1}>
-    Install the `decktalk` command with your Python installer.
+    Install the `decktalk` command. The one line is the whole of it on a machine that has nothing.
 
     <Tabs>
+      <Tab title="One line">
+        ```console
+        curl -LsSf https://decktalk.ai/install.sh | sh
+        ```
+
+        It installs uv if you do not have it, then DeckTalk, and uv brings its own Python. It never runs sudo, and it never downloads Chromium or ffmpeg: step 2 does that, separately and visibly. [Read the script](https://decktalk.ai/install.sh) before you run it; that is why it is served from a URL.
+
+        Pipe it into `DECKTALK_VERSION=0.4.1 sh` to install one version, or into `sh -s -- --dry-run` to print what would happen and change nothing. It runs on Linux and macOS. On Windows, use the uv tab. On Alpine and other musl systems it stops and says why: Playwright, which records the slides, publishes no musl wheels, so DeckTalk needs glibc.
+      </Tab>
       <Tab title="uv">
         ```console
         uv tool install decktalk

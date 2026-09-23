@@ -42,10 +42,10 @@ Internal presentations and estimation walkthroughs run the same pipeline. Neithe
 
 ## Make your first video
 
-You need Python 3.12 or later. These commands use `uv`, a Python package manager. If you use pipx, run `pipx install decktalk` instead of the first line.
+The first line installs uv, a Python package manager, and then DeckTalk. It brings its own Python, so there is nothing to install before it. [Read the script](https://decktalk.ai/install.sh) before you run it; that is why it is served from a URL. If you already have uv, `uv tool install decktalk` does the same thing, and `pipx install decktalk` works too.
 
 ```console
-uv tool install decktalk
+curl -LsSf https://decktalk.ai/install.sh | sh
 decktalk install
 decktalk init my-lesson && cd my-lesson
 decktalk build --no-voice
@@ -107,7 +107,7 @@ The offset column is the time from the cue time to the onset of the reveal, in m
 
 ## Requirements and costs
 
-- **Software.** DeckTalk needs Python 3.12 or later, on Linux, macOS, or Windows. `decktalk install` downloads the rest.
+- **Software.** The one-line installer brings its own Python, on Linux, macOS, or Windows. Installing with pip or pipx instead needs Python 3.12 or later. `decktalk install` downloads the rest.
 - **Accounts.** A build without voice needs no account. A voiced build needs an ElevenLabs API key and a voice id.
 - **Cost.** Every ElevenLabs plan can call the API. The free plan has limits for a video you publish.
 
