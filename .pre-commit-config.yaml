@@ -26,6 +26,14 @@ repos:
     hooks:
       - id: biome-check
 
+  # The same check CI runs over site/install.sh. shellcheck-py ships the binary as a wheel, so the hook
+  # needs no docker; -s sh holds the installer to POSIX sh, as tests/test_installer.py does.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [-s, sh]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
