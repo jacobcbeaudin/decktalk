@@ -7,9 +7,9 @@ Before this, one wrong word meant editing, rendering and recording the whole thi
 DeckTalk built this film from text files, and every reveal in it starts on its word. <a href="https://decktalk.ai/films/halfway">Watch it with the sound on</a>, or read <a href="https://decktalk.ai">the whole pitch at decktalk.ai</a>.</p>
 
 <p align="center">
-<a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/v/decktalk?style=flat-square&label=pypi&color=2c1fea" alt="PyPI"></a>
-<a href="https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jacobcbeaudin/decktalk/ci.yml?style=flat-square&label=ci" alt="ci"></a>
-<a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-black?style=flat-square&labelColor=0a0a0a&color=2c1fea" alt="Apache-2.0"></a>
+<a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/v/decktalk?style=flat-square&label=pypi&labelColor=0a0a0a&color=f2b441" alt="PyPI"></a>
+<a href="https://github.com/jacobcbeaudin/decktalk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jacobcbeaudin/decktalk/ci.yml?style=flat-square&label=ci&labelColor=0a0a0a" alt="ci"></a>
+<a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-black?style=flat-square&labelColor=0a0a0a&color=f2b441" alt="Apache-2.0"></a>
 </p>
 
 <p align="center">
