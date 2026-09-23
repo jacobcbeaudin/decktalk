@@ -758,6 +758,28 @@
       a.play().catch(() => {});
     });
   }
+  // The edit, file by file, from data.js: the words that changed with the words either side of
+  // them, so the page names every place the number lives rather than only the spoken sentence.
+  const diff = $("[data-diff]");
+  if (diff) {
+    diff.innerHTML = E.diff
+      .map((f) => {
+        const rows = f.changes
+          .map(
+            (c) =>
+              `<li class="row"><span class="at">${esc(c.where)}${c.label ? `<i> · ${esc(c.label)}</i>` : ""}</span>` +
+              `<span class="txt">${c.prefix ? `<span class="ctx">${esc(c.prefix)}</span> ` : ""}` +
+              // "was" and "now" are read, not seen: a strike and a colour say nothing out loud, and
+              // without them the row announced as "eleven fourteen thousand".
+              `<span class="sr">was </span><s>${esc(c.before)}</s><span class="sr">, now</span> ` +
+              `<b>${esc(c.after)}</b>` +
+              `${c.suffix ? ` <span class="ctx">${esc(c.suffix)}</span>` : ""}</span></li>`,
+          )
+          .join("");
+        return `<li class="file"><span class="fn">${esc(f.file)}</span><ul class="rows">${rows}</ul></li>`;
+      })
+      .join("");
+  }
   const lanes = $("[data-lanes]");
   const cellsHtml = [];
   let k = 0;
