@@ -248,6 +248,10 @@ cleanup() {
 }
 
 on_error() {
+	# Dropped first, because `exit` from inside a trap fires the EXIT trap on the way out. Left in
+	# place, cleanup ran twice (two "Full log" lines) and the EXIT arm's own status replaced the
+	# one being reported, so an interrupt exited 1 instead of 130.
+	trap - EXIT INT TERM
 	FAILED=1
 	cleanup
 	exit "${1:-1}"
