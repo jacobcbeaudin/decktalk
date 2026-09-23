@@ -241,14 +241,19 @@ def test_the_install_command_is_readable_and_selectable_with_no_script(origin: s
 
 
 def test_every_command_the_page_shows_can_be_copied(page: object) -> None:
-    """One component, every command: the hero's line and each of the four steps get a copy button.
+    """One component, every command: anything the page shows as a command gets a copy button.
 
-    Counted by the copy slot rather than by `.pill`, because the film's own slides use that class
-    for the two "20 min" labels on the map and they are not commands.
+    Counted against the commands themselves rather than against a number. It used to assert five,
+    "the hero and the four steps", which is where the commands happened to be that week: moving the
+    hero's line into the install section failed a test about copying, over a count that was never
+    the point. `[data-cmd]` is the command, `.copy` is the slot app.js fills, and the invariant is
+    that there is one of the second for every one of the first.
     """
     page.goto(f"{page.origin}/index.html", wait_until="networkidle")  # type: ignore[attr-defined]
+    commands = page.locator(".pill [data-cmd]")  # type: ignore[attr-defined]
     slots = page.locator(".pill .copy")  # type: ignore[attr-defined]
-    assert slots.count() == 5, "the hero and the four steps"
+    assert commands.count() > 0, "the page shows no commands at all"
+    assert slots.count() == commands.count(), f"{commands.count()} commands, {slots.count()} copy slots"
     assert page.locator(".pill .copy button").count() == slots.count()  # type: ignore[attr-defined]
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])  # type: ignore[attr-defined]
     page.locator("#install .pill button").first.click()  # type: ignore[attr-defined]
