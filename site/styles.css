@@ -398,6 +398,11 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 /* Each step is the command component and the sentence that says what it does. The column is wide
    enough for the longest of the four with its copy button beside it, so none of them wraps here. */
 .steps { display: grid; gap: 14px; margin: 28px 0 0; padding: 0; list-style: none; counter-reset: step; }
+/* Half of this list never runs again, and nothing else on the page said so. Carries no .cut: the
+   grouping is part of the instruction, so it survives a script that throws exactly as the
+   commands do. */
+.steps-label { margin: 28px 0 0; font-family: var(--font-mono); font-size: var(--dt-size-sm); color: var(--dt-text-3); }
+.steps-label + .steps { margin-top: 10px; }
 .steps li { display: grid; grid-template-columns: minmax(0, 520px) 1fr; gap: 6px 24px; align-items: center; }
 .steps .pill { margin-top: 0; justify-self: start; }
 .steps code { color: var(--dt-text); }
@@ -433,6 +438,9 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
   .hero .caption { margin-top: 8px; font-size: 13px; }
   .stage { margin-top: 8px; }
   .hero .pill { margin-top: 20px; justify-self: stretch; }
+  /* The command is 45 characters and cannot share a line with the button at this width, so the
+     button takes the far edge of the row it wraps onto rather than sitting under the wrap. */
+  .hero .pill .copy { margin-left: auto; }
   /* The band holds one dimmed line and up to two current lines, so the transport never moves. */
   .band { font-size: 17px; min-height: 72px; }
   .band .prev { min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
