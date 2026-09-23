@@ -314,3 +314,37 @@ def test_the_hero_has_one_sound_control_whose_name_never_moves(page: object) -> 
     pg.click(".transport .sound")  # type: ignore[attr-defined]
     pg.wait_for_timeout(600)  # type: ignore[attr-defined]
     assert pg.evaluate(name) == before, "the control renamed itself when its state changed"  # type: ignore[attr-defined]
+
+
+def test_only_one_voice_plays_at_a_time(page: object) -> None:
+    """The chapter stage and the two takes are built in separate `onPage` closures and could not
+    see each other, so the takes silenced only each other. Pressing a take while the chapters
+    played put two readings of the same script over each other, in the same cloned voice, which
+    sounds like a fault in the product rather than in the page.
+
+    Counted by stubbing play and pause rather than by listening, because the clip is fetched from
+    the media host and the fixture refuses it. The stub is also what makes this deterministic: the
+    first attempt at this test clicked through Playwright, which scrolls the target into view, and
+    that scrolled the pinned stage out of it, whose observer then paused the chapter player. The
+    bug was real and the test said it was not.
+    """
+    pg = page
+    pg.add_init_script(  # type: ignore[attr-defined]
+        """
+        window.__playing = new Set();
+        const P = HTMLMediaElement.prototype;
+        P.play = function () { window.__playing.add(this.src); return Promise.resolve(); };
+        P.pause = function () { window.__playing.delete(this.src); };
+        """
+    )
+    pg.goto(f"{pg.origin}/how", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    pg.wait_for_function("() => document.querySelector('[data-take]')", timeout=15000)  # type: ignore[attr-defined]
+    pg.evaluate("document.querySelector('#edit').scrollIntoView()")  # type: ignore[attr-defined]
+    pg.wait_for_timeout(400)  # type: ignore[attr-defined]
+    for first, second in (("[data-hiw-play]", "[data-take='before']"), ("[data-take='before']", "[data-hiw-play]")):
+        pg.evaluate("window.__playing.clear()")  # type: ignore[attr-defined]
+        for sel in (first, second):
+            pg.evaluate(f"document.querySelector({sel!r}).click()")  # type: ignore[attr-defined]
+            pg.wait_for_timeout(350)  # type: ignore[attr-defined]
+        playing = pg.evaluate("[...window.__playing]")  # type: ignore[attr-defined]
+        assert len(playing) <= 1, f"{first} then {second} left {len(playing)} voices playing: {playing}"

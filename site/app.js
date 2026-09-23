@@ -15,6 +15,17 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 
+  /* Every voice on the page, so one starting silences the rest. The hero, the chapter stage and
+     the two takes are built in separate onPage closures and cannot see each other, so the takes
+     silenced only each other: pressing one while the chapters played put two readings of the same
+     script over each other, in the same cloned voice, which sounds like a fault in the product
+     rather than in the page. */
+  const voices = new Set();
+  const addVoice = (stop) => voices.add(stop);
+  const silenceOtherVoices = (mine) => {
+    for (const stop of voices) if (stop !== mine) stop();
+  };
+
   /* Every command on the site is one component: a `.pill` holding the prompt, the command in
      [data-cmd], and an empty slot. The button is made here rather than written into the markup, so
      a page whose script never ran shows a command and no control that cannot do what it says —
@@ -652,9 +663,12 @@
       },
     });
     hiw.sound = true; // this stage's play button is the voice clock; nothing plays until it is pressed
+    const stopHiw = () => hiw.stop();
+    addVoice(stopHiw);
     hiwPlay.addEventListener("click", () => {
       if (hiw.playing) return hiw.stop();
       if (hiw.ended || hiw.t >= D.total) hiw.t = D.sections[picked - 1].start;
+      silenceOtherVoices(stopHiw);
       hiw.sound = true;
       hiw.play();
     });
@@ -876,6 +890,10 @@
     const E = D.edit;
     for (const name of ["before", "after"]) $(`[data-hash="${name}"]`).textContent = E[name].hash;
     const takeAudio = {};
+    const stopTakes = () => {
+      for (const a of Object.values(takeAudio)) a.pause();
+    };
+    addVoice(stopTakes);
     for (const b of $$("[data-take]")) {
       const name = b.dataset.take;
       const wave = $(".wave", b);
@@ -893,6 +911,7 @@
           return;
         }
         for (const [other, oa] of Object.entries(takeAudio)) if (other !== name) oa.pause();
+        silenceOtherVoices(stopTakes);
         a.currentTime = 0;
         a.onplay = () => {
           b.setAttribute("aria-pressed", "true");
