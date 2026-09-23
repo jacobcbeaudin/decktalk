@@ -1,0 +1,11 @@
+# Cloudflare static assets read this file. It carries no account, no zone and no credential: it
+# describes the files beside it, which is why it lives with them.
+
+# The installer is meant to be read before it is run — that is the whole argument for piping a URL
+# into a shell. Served as application/x-sh, which is what the extension infers, a browser downloads
+# it into a folder instead of showing it, and the argument is lost. curl ignores the type, so this
+# changes nothing about `curl -LsSf https://decktalk.ai/install.sh | sh` and everything about
+# clicking the link. nosniff so the plain type is honoured rather than guessed around.
+/install.sh
+  Content-Type: text/plain; charset=utf-8
+  X-Content-Type-Options: nosniff
