@@ -214,6 +214,10 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .transport .ctl svg { width: 16px; height: 16px; }
 .transport .ctl .i-play, .transport .ctl .i-replay, .transport .ctl .i-pause { display: none; }
 .transport .ctl[data-state="playing"] .i-pause, .transport .ctl[data-state="paused"] .i-play, .transport .ctl[data-state="ended"] .i-replay { display: block; }
+/* The voice loads only on press, so a cold cache or a slow host leaves a gap the viewer has to
+   be able to see. The play glyph holds and dims rather than the control going blank. */
+.transport .ctl[data-state="loading"] .i-play { display: block; opacity: 0.45; }
+.transport .ctl[data-state="loading"] { cursor: progress; }
 .transport .tc { font-family: var(--font-mono); font-size: 13px; color: var(--dt-text-3); min-width: 8ch; font-variant-numeric: tabular-nums; }
 .transport .sound { height: 40px; padding: 0 12px; min-width: 44px; justify-content: center; border-radius: 10px; }
 .scrub { flex: 1; height: 40px; margin: 0; background: transparent; cursor: pointer; -webkit-appearance: none; appearance: none; }
@@ -223,7 +227,14 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .scrub::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--dt-paper); border: 0; }
 
 /* ---- sections */
-section.block { padding: 72px 0; border-top: 1px solid var(--dt-border); }
+/* The rule between sections is the width of the content, not of the window: a full-bleed hairline
+   on a wide screen is twice the width of anything it separates and reads as a stray line. */
+section.block { position: relative; padding: 72px 0; }
+section.block::before {
+  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: min(100% - var(--gutter) * 2, var(--wrap) - var(--gutter) * 2);
+  height: 1px; background: var(--dt-border);
+}
 section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch; }
 
 /* ---- gallery: one row of small cards, each a link to the film's own page. */
@@ -311,6 +322,9 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .lanes .cell.span { grid-column: 2 / -1; }
 .js .lanes .cell { opacity: 0; }
 .js .lanes.in .cell { opacity: 1; transition: opacity var(--cut) linear; transition-delay: calc(var(--k) * var(--stagger)); }
+/* The log is wider than a phone, so it has to say so: a focus ring for the tab stop it now carries,
+   and a fade at the right edge while there is more line to the right of it. */
+.log:focus-visible { outline: 2px solid var(--dt-focus); outline-offset: 3px; }
 .log { margin: 24px 0 0; padding: 16px 18px; border: 1px solid var(--dt-border); border-radius: 10px; background: var(--dt-surface); font-size: 12.5px; line-height: 1.55; color: var(--dt-text-2); overflow: auto; }
 .log .p { color: var(--dt-text-3); }
 .log .cost { display: block; margin-top: 10px; color: var(--dt-text); white-space: normal; }
