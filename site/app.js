@@ -889,23 +889,26 @@
     "aria-label",
     `After the edit to section ${E.section}, the narrate stage voiced section ${E.section} and reused the cached takes of the other ${num(E.kept)}, the record stage filmed section ${E.section} and kept the other ${num(E.kept)}, and the assemble stage cut all ${num(D.sections.length)} into one mp4.`,
   );
+  // The money is the section's second claim, so it is a sentence on the page rather than the last
+  // line of a log behind a disclosure.
+  const C = E.cost;
+  $("[data-cost]").innerHTML =
+    `The rebuild cost <b>about $${C.usd.toFixed(2)}</b>: ${C.sent} characters sent to the voice, ${C.spoken} of them spoken, at $${C.rate.toFixed(2)} per 1,000 characters, the price set in <code>decktalk.toml</code>. The other ${num(C.cached)} sections cost nothing.`;
+  // Each line is its own block, so a line longer than the box wraps under a hanging indent instead
+  // of running off the right edge of a phone with the evidence on it.
   const log = $("[data-log]");
-  const logLines = [`<span class="p">$</span> decktalk build`];
+  const logLines = [`<span class="ln"><span class="p">$</span> decktalk build</span>`];
   for (const ln of E.log) {
     const isLive = / 03 |section 03/.test(ln);
-    logLines.push(`<span class="${isLive ? "live" : ""}">${esc(ln)}</span>`);
+    logLines.push(`<span class="ln${isLive ? " live" : ""}">${esc(ln)}</span>`);
   }
-  const C = E.cost;
-  logLines.push(
-    `<span class="cost">Cost of this rebuild: about $${C.usd.toFixed(2)}, ${C.sent} characters sent to the voice, ${C.spoken} of them spoken, at $${C.rate.toFixed(2)} per 1,000 characters, the price set in decktalk.toml. The other ${C.cached} sections cost nothing.</span>`,
-  );
   const tail = E.log.map((ln) => ln.match(/tail ([\d.]+)s/)).find(Boolean);
   const film = E.log.map((ln) => ln.match(/done: .*\(([\d.]+)s\)/)).find(Boolean);
   if (tail && film)
     logLines.push(
-      `<span class="cost gloss">Each section is its take plus the ${D.lead} s lead and ${tail[1]} s tail, so ${num(D.sections.length)} takes make a ${Math.round(Number(film[1]))} s film.</span>`,
+      `<span class="ln gloss">Each section is its take plus the ${D.lead} s lead and ${tail[1]} s tail, so ${num(D.sections.length)} takes make a ${Math.round(Number(film[1]))} s film.</span>`,
     );
-  log.innerHTML = logLines.join("\n");
+  log.innerHTML = logLines.join("");
   // The claim under the log is the rebuilt film's own measurement: every cue verify measured, and the largest offset.
   const offsets = Object.values(E.verify);
   if (offsets.length && film)
