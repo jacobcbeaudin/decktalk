@@ -15,6 +15,12 @@ DeckTalk needs Python 3.12 or later. It runs on Linux, macOS, and Windows.
 
 The [quickstart](/quickstart) installs DeckTalk with uv, pipx, or pip.
 
+### glibc, not musl
+
+On Linux, DeckTalk needs glibc. Playwright, which records the slides, publishes no musllinux wheels, so on a musl system the install cannot even resolve. Alpine and the other musl distributions are unsupported, and no setting changes that. DeckTalk's install script checks before it installs anything and stops with that reason, rather than leaving you a page of resolver output to read.
+
+Containerise on a Debian-based image: `debian`, `ubuntu`, or `python:3.13-slim`, never `python:3.13-alpine`. Debian is also where `decktalk install` can add Chromium's system libraries, because Playwright installs them with apt-get. [Linux system libraries](#linux-system-libraries) gives the rule for a distribution that has no apt-get.
+
 ## Accounts
 
 A build without voice needs no account and no API key. A voiced build needs two values from ElevenLabs.

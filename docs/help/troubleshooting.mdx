@@ -34,6 +34,7 @@ explains.
 
 | Text you see | Printed by | Entry |
 |---|---|---|
+| `this is a musl system` | `install.sh` | [Entry](#this-is-a-musl-system-in-install-sh) |
 | `playwright install failed` | `install` | [Entry](#playwright-install-failed-in-install) |
 | `MISSING` | `doctor` | [Entry](#missing-in-doctor) |
 | `is not empty` | `init` | [Entry](#is-not-empty-in-init) |
@@ -99,6 +100,18 @@ explains.
 | `owns no cue in ?cues=` | page | [Entry](#owns-no-cue-in-a-page) |
 
 ## install, doctor, and keys
+
+### `this is a musl system` in install.sh
+
+**Cause.** The machine uses musl rather than glibc, and Playwright publishes no musllinux wheels, so
+DeckTalk cannot be installed on it at all. Alpine is the usual one.
+
+**Fix.**
+1. Install on a glibc distribution instead.
+2. If this is a container image, build from `debian`, `ubuntu`, or `python:3.13-slim` rather than an
+   Alpine image.
+
+**More.** [glibc, not musl](/requirements#glibc-not-musl)
 
 ### `playwright install failed` in install
 
