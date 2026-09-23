@@ -33,3 +33,16 @@ def test_cost_unit_matches_the_cli() -> None:
     unit = "per 1,000 characters"
     assert unit in (ROOT / "src" / "decktalk" / "cli" / "output.py").read_text(encoding="utf-8")
     assert unit in (SITE / "app.js").read_text(encoding="utf-8")
+
+
+def test_the_installer_is_served_as_text_rather_than_a_download() -> None:
+    """The one-liner's whole argument is that you can read the script before you run it, and a
+    browser downloads a .sh instead of showing it unless the type says otherwise. curl ignores the
+    type, so this is only ever about the person who clicked the link, which is the person the
+    argument is for."""
+    headers = SITE / "_headers"
+    assert headers.exists(), "site/_headers is what makes install.sh readable in a browser"
+    text = headers.read_text(encoding="utf-8")
+    assert "/install.sh" in text, text
+    rule = text.split("/install.sh", 1)[1]
+    assert "text/plain" in rule, f"install.sh must be served as text, not downloaded: {rule!r}"

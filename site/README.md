@@ -26,6 +26,8 @@ Workers Builds deploy of `site/` serves it as it is.
   Grotesque (500), Instrument Sans (400 to 700) and IBM Plex Mono (400 and 500), all OFL. Each is a
   Google Fonts latin file cut to the printable ASCII range plus a few punctuation marks.
 - `films/` holds one page per film in the gallery, with the film and its script.
+- `_headers` serves `install.sh` as text, so a browser shows the script rather than downloading
+  it. Cloudflare's static assets read it; it names no account, zone or credential.
 
 ## Films
 
