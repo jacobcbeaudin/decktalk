@@ -6,9 +6,11 @@ like bugs in the page:
 - It infers `application/x-sh` for install.sh, so clicking "read it first" downloads the file
   instead of showing it. That is the whole argument for piping a URL into a shell, lost to a
   guessed MIME type. Cloudflare reads site/_headers and sends text/plain.
-- It has no extensionless routing, so /how and /films/halfway 404 and only /how.html works, which
+- It has no extensionless routing, so /films/halfway 404s and only /films/halfway.html works, which
   is the reverse of production: Cloudflare serves the extensionless path and redirects the .html
   one to it.
+- It reads neither site/_headers nor site/_redirects, so /how, which is a 301 into the landing
+  page now that the explanation has moved there, 404s here and looks like a dead link in review.
 
     uv run scripts/serve_site.py [--port 4111]
 """
@@ -23,6 +25,7 @@ import socketserver
 
 SITE = pathlib.Path(__file__).resolve().parent.parent / "site"
 HEADERS_FILE = SITE / "_headers"
+REDIRECTS_FILE = SITE / "_redirects"
 
 
 def read_headers(path: pathlib.Path) -> dict[str, list[tuple[str, str]]]:
@@ -42,16 +45,43 @@ def read_headers(path: pathlib.Path) -> dict[str, list[tuple[str, str]]]:
     return rules
 
 
+def read_redirects(path: pathlib.Path) -> list[tuple[str, str, int]]:
+    """Parse Cloudflare's _redirects: `from to [status]`, one rule a line, 302 when unsaid."""
+    rules: list[tuple[str, str, int]] = []
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        status = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 302
+        rules.append((parts[0], parts[1], status))
+    return rules
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
-    """SimpleHTTPRequestHandler plus _headers and Cloudflare's extensionless routing."""
+    """SimpleHTTPRequestHandler plus _headers, _redirects and Cloudflare's extensionless routing."""
 
     rules: dict[str, list[tuple[str, str]]] = {}
+    redirects: list[tuple[str, str, int]] = []
 
     def send_head(self):  # noqa: D102 - overrides a documented base method
         path = self.path.split("?", 1)[0].split("#", 1)[0]
 
-        # Production redirects /how.html to /how, so a link that costs a redirect there costs one
-        # here too, rather than being invisible until it ships.
+        # A file beside _redirects is served rather than redirected, so these fire only where
+        # nothing is left to serve, which is what /how is now that the explanation is a section of
+        # the landing page. A link already sent to someone has to keep working.
+        if not (SITE / path.lstrip("/")).is_file():
+            for source, target, status in self.redirects:
+                if source == path:
+                    self.send_response(status)
+                    self.send_header("Location", target)
+                    self.end_headers()
+                    return None
+
+        # Production redirects /films/halfway.html to /films/halfway, so a link that costs a
+        # redirect there costs one here too, rather than being invisible until it ships.
         if path.endswith(".html") and (SITE / path.lstrip("/")).is_file():
             target = path[: -len(".html")]
             self.send_response(307)
@@ -59,7 +89,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             return None
 
-        # /how and /films/halfway are the paths the page actually links to.
+        # /films/halfway is the path the page actually links to.
         if not path.endswith("/") and not (SITE / path.lstrip("/")).exists():
             if (SITE / (path.lstrip("/") + ".html")).is_file():
                 self.path = path + ".html"
@@ -93,11 +123,15 @@ def main() -> None:
     args = ap.parse_args()
 
     Handler.rules = read_headers(HEADERS_FILE) if HEADERS_FILE.is_file() else {}
+    Handler.redirects = read_redirects(REDIRECTS_FILE) if REDIRECTS_FILE.is_file() else []
     handler = functools.partial(Handler, directory=str(SITE))
 
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", args.port), handler) as httpd:
-        print(f"site/ on http://localhost:{args.port}  ({len(Handler.rules)} rule(s) from _headers)")
+        print(
+            f"site/ on http://localhost:{args.port}  "
+            f"({len(Handler.rules)} rule(s) from _headers, {len(Handler.redirects)} from _redirects)"
+        )
         httpd.serve_forever()
 
 

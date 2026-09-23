@@ -1,0 +1,8 @@
+# Cloudflare static assets read this file, the way they read _headers beside it. It carries no
+# account, no zone and no credential: it describes the paths of the files beside it.
+
+# The explanation used to be a second page. It is section 2 of the landing page now, and the link
+# has already been sent to people, so the old path keeps working and lands on the same words. 301
+# rather than 302 because the move is permanent and there is no how.html left to go back to.
+/how  /#how  301
+/how.html  /#how  301

@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DeckTalk: narrated video from a script, in your own voice</title>
-<meta name="description" content="Narrated video from a markdown script, plain HTML slides and your own voice. Change a sentence, and only that section is voiced again. Open source, Apache-2.0.">
+<meta name="description" content="Narrated video from a markdown script, plain HTML slides and your own voice. Every picture waits for a phrase of the narration, not a second on a timeline. Change a sentence, and only that section is voiced and recorded again. Open source, Apache-2.0.">
 <link rel="canonical" href="https://decktalk.ai/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DeckTalk">
 <meta property="og:title" content="DeckTalk: every picture lands on its word">
-<meta property="og:description" content="Narrated video from a script, in your own voice. Change a sentence, and only that section is voiced again.">
+<meta property="og:description" content="Narrated video from a script, in your own voice. Change a sentence, and only that section is voiced and recorded again.">
 <meta property="og:url" content="https://decktalk.ai">
 <meta property="og:image" content="https://decktalk.ai/og.png">
 <meta property="og:image:width" content="1200">
@@ -48,7 +48,7 @@
     <nav aria-label="Primary">
       <ul>
         <li><a href="#films">Films</a></li>
-        <li><a href="/how">How it works</a></li>
+        <li><a href="#how">How it works</a></li>
         <li><a href="https://docs.decktalk.ai">Docs</a></li>
         <li><a href="https://github.com/jacobcbeaudin/decktalk">GitHub<small>Open source</small></a></li>
       </ul>
@@ -67,8 +67,14 @@
   <div class="wrap">
     <p class="kicker">Narrated video from a script, in your own voice.</p>
     <h1 id="hero-h">Every picture lands on its word.</h1>
-    <p class="sub">Change a sentence, and only that section is voiced again.</p>
-    <p class="caption">Made with DeckTalk from <a href="/films/halfway">this script</a> · <span data-total>0:35</span> · a fictional pitch</p>
+    <!-- The claim this subhead used to carry, "change a sentence and only that section is voiced
+         again", is not lost: it is the heading of the edit section below, where a reader can hear
+         it proved, and where it can be stated at its true size. It was also understated here. -->
+    <p class="sub">A video is the one document you cannot edit a sentence of. DeckTalk ties every picture to a phrase of the narration instead of to a second on a timeline, so you change the sentence and build again.</p>
+    <!-- The hero plays a 0:35 cut and the films card below says 0:38 of the same title, because
+         they are two builds: the cut trims the last section. That used to be reconciled in a help
+         line two thirds of the way down the other page, which is not where the question is asked. -->
+    <p class="caption">Made with DeckTalk from <a href="/films/halfway">this script</a> · a <span data-total>0:35</span> cut of the full 0:38 film · a fictional pitch</p>
 
     <figure class="stage" id="hero" aria-label="Halfway, a 35-second fictional pitch made with DeckTalk, replayed from its slides and its recorded voice">
       <!-- The film is the unmute control. A separate button for sound is the thing people trip on:
@@ -103,10 +109,119 @@
   </div>
 </section>
 
+<section class="block how" id="how" aria-labelledby="how-h">
+  <div class="wrap">
+    <p class="kicker cut">How it works</p>
+    <!-- The mechanism, named. This heading was a second page's title, and under the hero it said
+         the hero's sentence again. A cue takes "a word or a short phrase", which is the product's
+         own wording in cues.json's reference and in src/decktalk/model/cues.py. -->
+    <h2 id="how-h" class="cut">A cue names a word or a phrase, not a second.</h2>
+    <!-- The line the five chapters trace. On its own it read as a stray caption, because nothing
+         said what it was: one clause of setup turns it into the thing it is. -->
+    <p class="lead cut">Five chapters, and the film above stays with you through all of them. They follow one line of it: "Twenty minutes for her. Twenty minutes for you."</p>
+    <div class="grid">
+      <div class="chapters" data-chapters>
+        <div class="chapter" data-chapter="1">
+          <p class="n">1 of 5</p>
+          <h3>You write the script.</h3>
+          <figure class="panel" data-panel="script"></figure>
+        </div>
+        <div class="chapter" data-chapter="2">
+          <p class="n">2 of 5</p>
+          <h3>Your voice reads it, with a time for every word.</h3>
+          <figure class="panel" data-panel="words"></figure>
+        </div>
+        <div class="chapter" data-chapter="3">
+          <p class="n">3 of 5</p>
+          <h3>A cue names the word or phrase each picture waits for.</h3>
+          <figure class="panel" data-panel="cues"></figure>
+        </div>
+        <div class="chapter" data-chapter="4">
+          <p class="n">4 of 5</p>
+          <h3>The slide is plain HTML, and each picture carries its cue.</h3>
+          <figure class="panel" data-panel="slide"></figure>
+        </div>
+        <div class="chapter" data-chapter="5">
+          <p class="n">5 of 5</p>
+          <h3>A browser films the slide, and every landing is measured.</h3>
+          <figure class="panel" data-panel="verify"></figure>
+        </div>
+      </div>
+
+      <div class="pinned" id="catchup">
+        <div class="stagepin">
+          <div class="frame" aria-hidden="true"><div class="stage-deck" data-stage></div></div>
+          <p class="verify" data-verify aria-live="off"></p>
+        </div>
+        <div class="catchup">
+          <div class="picker" role="radiogroup" aria-label="Section of script.md" data-picker>
+            <span>script.md · section <span data-picked>2</span> of 4</span>
+          </div>
+          <div class="transcript" role="group" data-transcript aria-label="Transcript of the film above. Click a word to move the stage to it. The cue times are links."></div>
+          <div class="row">
+            <button type="button" class="btn" data-hiw-play data-state="paused" aria-label="Play from here">
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-play"/></svg><span>Play from here</span>
+            </button>
+            <button type="button" class="btn" data-speed aria-pressed="false" aria-label="0.75×, slow, pitch preserved">0.75×</button>
+            <span class="tc mono" aria-hidden="true"><span data-tc>0:00</span></span>
+          </div>
+          <p class="help">Underlined phrases are cues. The small number is how many seconds into this section the picture appears. Click a word to move the stage there. Tab in, use the arrow keys, and press Enter to play from a word.</p>
+          <p class="help">This is the 35-second film above. The full 0:38 film is under Films.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block edit" id="edit" aria-labelledby="edit-h">
+  <div class="wrap">
+    <p class="kicker cut">Change one number</p>
+    <!-- "Voiced" is the smaller half, and the lanes below draw the bigger one: the section was
+         voiced and filmed again, and the other three sections' recordings were reused untouched. -->
+    <h2 id="edit-h" class="cut">One number lives in three files. Only its section was voiced and recorded again.</h2>
+    <p class="fine cut" style="margin-top:10px">Section 3 of Halfway, the fictional pitch above. Press both: the same cloned voice, before the edit and after it.</p>
+    <div class="takes cut">
+      <div class="take before">
+        <button type="button" class="btn" data-take="before" aria-pressed="false" aria-label="Play the take before the edit">
+          <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span><span>Before</span>
+        </button>
+        <p class="line">Last month, <mark>eleven thousand</mark> people met in the middle. <span class="rest">Coffee. Lunch. One first date that became a second.</span></p>
+        <span class="hash">cache key <b data-hash="before"></b></span>
+      </div>
+      <div class="take after">
+        <button type="button" class="btn" data-take="after" aria-pressed="false" aria-label="Play the take after the edit">
+          <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span><span>After</span>
+        </button>
+        <p class="line">Last month, <mark>fourteen thousand</mark> people met in the middle. <span class="rest">Coffee. Lunch. One first date that became a second.</span></p>
+        <span class="hash">cache key <b data-hash="after"></b></span>
+      </div>
+    </div>
+    <p class="fine cut files-note">One number, but the film says it and shows it, so it lives in three files: the script, the cue that binds the picture to those words, and the slide that draws it, twice.</p>
+    <!-- Both disclosures are plain <details>: they open with no JavaScript, and .cut stays on the
+         <details> rather than on what it holds, because a closed one is never in the viewport and
+         the observer that reveals .cut would never reach it. -->
+    <details class="drop cut">
+      <summary>The four changes, file by file</summary>
+      <ul class="diff" data-diff aria-label="The four places the edit changed, file by file"></ul>
+    </details>
+    <div class="lanes cut" data-lanes aria-label="What the build did to each section after the edit" role="img"></div>
+    <p class="cost-line cut" data-cost></p>
+    <details class="drop cut">
+      <summary>The build log</summary>
+      <pre class="log" data-log tabindex="0" role="region" aria-label="The captured build log"></pre>
+    </details>
+    <p class="after-line cut">Every landing is measured against its word<span data-verify-sum>.</span></p>
+  </div>
+</section>
+
 <section class="block films" id="films" aria-labelledby="films-h">
   <div class="wrap">
     <p class="kicker cut">Now showing</p>
-    <h2 id="films-h" class="cut">Made with DeckTalk.</h2>
+    <!-- Moved below the explanation, this section stops being a catalogue and becomes scale: the
+         trick holding past 35 seconds, on a tool a reader can go and check. The heading used to
+         repeat the hero's caption, which is 200 px above it no longer. -->
+    <h2 id="films-h" class="cut">Both films, whole.</h2>
+    <p class="lead cut">Halfway is the full thirty-eight seconds: four sections, twenty-one cues, and the hero above is a shorter cut of it. <i>uv, end to end</i> is three and a quarter minutes about a tool you may already use, in seven sections. Both pages carry the film and the script it was built from.</p>
     <ul class="reel cut">
       <li><a class="card" href="/films/uv-tutorial">
         <img src="media/uv-tutorial-poster.webp" width="960" height="540" loading="lazy" alt="">
@@ -120,20 +235,6 @@
   </div>
 </section>
 
-<section class="block how-more" id="how-more" aria-labelledby="how-more-h">
-  <div class="wrap">
-    <p class="kicker cut">How it works</p>
-    <h2 id="how-more-h" class="cut">One line, from the script to the film.</h2>
-    <p class="lead cut">Five chapters beside a pinned stage: the script you write, your voice reading it with a
-      time for every word, the cue that names the word each picture waits for, the slide that carries it, and
-      what <code>decktalk verify</code> measured for every landing. Then one number, changed in three files, in
-      the same cloned voice before and after the edit.</p>
-    <!-- The one route from the landing page to the explanation, and the only thing here without
-         .cut on it: like the nav's Install button, it is never a thing a script can hide. -->
-    <a class="btn solid" href="/how">Read how it works</a>
-  </div>
-</section>
-
 <section class="block" id="install" aria-labelledby="install-h">
   <div class="wrap">
     <p class="kicker cut">Install</p>
@@ -141,8 +242,8 @@
     <p class="lead cut">The first line brings its own Python, so there is nothing to install before it, and nothing to sign up for. Chromium and ffmpeg arrive on the first build, which says so before it downloads them. The last line writes an mp4.</p>
     <!-- The steps carry no .cut. Every .cut on the page starts at opacity 0 and is revealed by
          app.js, and 03d27fc is what that costs when a script throws: a page with no way to install
-         anywhere on it. These three lines are the only reason a stranger scrolled this far, so like
-         the how-more button they are never a thing a script can take away. -->
+         anywhere on it. These three lines are the last thing on the page and the one thing on it a
+         reader cannot get anywhere else, so they are never a thing a script can take away. -->
     <p class="steps-label">Once per machine</p>
     <ol class="steps">
       <li>
@@ -154,16 +255,22 @@
     <ol class="steps">
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk init my-pitch</span></code><span class="copy"></span></div>
-        <span>Writes a starter script, cues, a slide page, <code>decktalk.toml</code> and <code>.env.example</code>.</span>
+        <!-- The old list named five of the sixteen paths init writes, which undersold the one
+             thing that separates a good starter from a bad one. `decktalk init` prints `files 16`
+             and the six skills are fourteen files, not six. -->
+        <span>Writes a whole working project rather than a stub: a three-section script, the cues, the slide page, <code>decktalk.toml</code>, <code>.env.example</code>, a <code>.gitignore</code>, the runtime and the KaTeX the page loads, an <code>AGENTS.md</code>, and six skills, in fourteen files, linked into <code>.claude/skills</code> so a coding agent can drive all of it. Nothing in it has to be deleted first.</span>
       </li>
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>cd my-pitch &amp;&amp; <span class="nb">decktalk build --no-voice</span></span></code><span class="copy"></span></div>
-        <span>Records in real time, so about a minute later: <code>build/out/my-pitch.mp4</code>, with placeholder narration and no key.</span>
+        <!-- "About a minute later" read as though the mp4 were a minute long. The minute is the
+             build; the starter's film is 44 seconds. An unattributed round number is also a
+             benchmark with no machine under it, and docs/requirements.mdx names the machine. -->
+        <span>Recording runs in real time, so the build takes about as long as the film and a little more: 64 seconds on one M5 Pro, for the starter's 44 second video. It ends on the path of <code>build/out/my-pitch.mp4</code>, with placeholder narration and no key.</span>
       </li>
     </ol>
     <p class="install-note cut">For your own voice, copy <code>.env.example</code> to <code>.env</code>, add an ElevenLabs key and a voice id, and build again. Any ElevenLabs voice works, including a clone of your own.</p>
     <p class="install-note cut">Chromium and ffmpeg are fetched by the build that needs them, one time per machine. <code>decktalk install</code> fetches them up front instead, for a Docker layer, a CI cache or a machine about to go offline, and on Linux it installs Chromium's system libraries, which is the one thing here that asks for sudo.</p>
-    <p class="install-note cut">If you already have uv, <code>uv tool install decktalk</code> is the same install. Every project ships with six skill files that teach a coding agent DeckTalk. <a href="https://docs.decktalk.ai/quickstart">Start with the quickstart.</a></p>
+    <p class="install-note cut">If you already have uv, <code>uv tool install decktalk</code> is the same install. Every project carries six skills, in fourteen files, one skill each for the script, the slides, the cues, the build, the fixes and a revision, so a coding agent can write the files, read the JSON every command prints, and fix what it finds. <a href="https://docs.decktalk.ai/quickstart">Start with the quickstart.</a></p>
   </div>
 </section>
 
@@ -175,7 +282,7 @@
     <span>Made by Jacob Beaudin</span>
     <span class="links">
       <a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE">Apache-2.0</a>
-      <a href="https://pypi.org/project/decktalk/">PyPI 0.4.0</a>
+      <a href="https://pypi.org/project/decktalk/">PyPI 0.4.1</a>
       <a href="https://github.com/jacobcbeaudin/decktalk">GitHub · Open source</a>
       <a href="https://docs.decktalk.ai/changelog">Changelog</a>
       <a href="https://docs.decktalk.ai">Docs</a>
