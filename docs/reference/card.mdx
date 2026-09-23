@@ -56,13 +56,15 @@ Full rules: [decktalk.toml](/reference/decktalk-toml).
 
 ### `cues.json`
 
-This shape shows the file. It is not a sample.
+Every key but `cue` and `on` is optional. This sample carries all of them.
 
-```jsonc
-{"sections": {"N": {"min_seconds"?: 12, "cues": [
-  {"cue": "id", "on": "phrase" | "$start" | "$end",
-   "offset"?: 0.2, "occurrence"?: 2, "case_sensitive"?: true, "verify"?: false}
-]}}}
+```json cues.json
+{ "sections": { "2": { "min_seconds": 12, "cues": [
+  { "cue": "2.1average", "on": "the average" },
+  { "cue": "2.1formula", "on": "the formula", "occurrence": 2, "offset": 0.2 },
+  { "cue": "2.1code", "on": "in code", "case_sensitive": true },
+  { "cue": "2.1waited", "on": "$end", "verify": false }
+] } } }
 ```
 
 - Each section key is a section number as a string. It must exist in `decktalk.toml`.
