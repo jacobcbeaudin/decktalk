@@ -60,6 +60,7 @@ ENVELOPE_FLOOR = -60  # dB, silence
 MEDIA = SITE / "media"
 FPS = 25
 TAKE_TAIL = 0.5  # seconds of silence after the last sound of each take on the page
+CONTEXT_CHARS = 46  # of a changed line, the words either side of the change that the edit strip shows
 MAX_LINE_CHARS = 44  # a band line fits the phone band at 17 px, so the dimmed previous line never needs an ellipsis
 DANGLING = {"a", "an", "the", "and", "or", "but", "of", "to", "for", "in", "on", "at", "with", "by"}
 
@@ -229,6 +230,94 @@ def read_deck(path: Path) -> tuple[str, dict[str, str], dict[str, list[str]]]:
             if d:
                 describes.setdefault(tag.group(1), []).append(html.unescape(d.group(1)))
     return css, scenes, describes
+
+
+def one_change(before: str, after: str) -> dict[str, str] | None:
+    """The single run of words that differs between two lines, with the words either side of it.
+
+    The page shows the edit as `prefix before -> after suffix`, so it can never claim a smaller edit
+    than the one the two projects record. Returns None when the lines are the same.
+    """
+    a, b = before.split(), after.split()
+    if a == b:
+        return None
+    lo = next((i for i, (x, y) in enumerate(zip(a, b, strict=False)) if x != y), min(len(a), len(b)))
+    hi_a, hi_b = len(a), len(b)
+    while hi_a > lo and hi_b > lo and a[hi_a - 1] == b[hi_b - 1]:
+        hi_a, hi_b = hi_a - 1, hi_b - 1
+
+    def clip(words: list[str], keep_last: bool) -> str:
+        """Enough of the line to place the change, from the end nearest it, and an ellipsis for the rest."""
+        text = " ".join(words)
+        if len(text) <= CONTEXT_CHARS:
+            return text
+        return "…" + text[-CONTEXT_CHARS:] if keep_last else text[:CONTEXT_CHARS] + "…"
+
+    return {
+        "prefix": clip(a[:lo], keep_last=True),
+        "before": " ".join(a[lo:hi_a]),
+        "after": " ".join(b[lo:hi_b]),
+        "suffix": clip(a[hi_a:], keep_last=False),
+    }
+
+
+def scene_lines(path: Path, scene: str) -> list[str]:
+    """The deck's own lines inside one data-scene wrapper, comments and blank lines dropped."""
+    src = path.read_text(encoding="utf-8")
+    m = re.search(rf'<div data-scene="{scene}"[^>]*>.*?</template>', src, re.S)
+    if not m:
+        return []
+    body = re.sub(r"<!--.*?-->", "", m.group(0), flags=re.S)
+    return [line.strip() for line in body.splitlines() if line.strip()]
+
+
+def edit_diff(before: Path, after: Path, section: int, spoken: tuple[str, str]) -> list[dict]:
+    """Every place the edit changed, file by file, read from the two projects rather than written by hand.
+
+    A number a film speaks and shows lives in three files: the sentence in script.md, the cue phrase in
+    cues.json that binds a picture to those words, and the slide in deck/index.html that draws it. The
+    page showed only the first, which read as though a script edit were the whole edit.
+    """
+    files: list[dict] = []
+
+    # The sentence as the page prints it elsewhere: the words, without the bracketed directions.
+    said = tuple(" ".join(re.sub(r"\[[^\]]*\]", " ", text).split()) for text in spoken)
+    if change := one_change(*said):
+        files.append({"file": "script.md", "changes": [{"where": f"section {section}", **change}]})
+
+    def cues_of(project: Path) -> dict[str, str]:
+        doc = json.loads((project / "cues.json").read_text(encoding="utf-8"))
+        return {c["cue"]: c["on"] for c in doc["sections"][str(section)]["cues"]}
+
+    cues_before, cues_after = cues_of(before), cues_of(after)
+    cue_changes = [
+        {"where": cue, "label": "on", **change}
+        for cue, on in cues_before.items()
+        if cue in cues_after and (change := one_change(on, cues_after[cue]))
+    ]
+    if cue_changes:
+        files.append({"file": "cues.json", "changes": cue_changes})
+
+    deck = ("deck", "index.html")
+    deck_changes = []
+    old_lines = scene_lines(before.joinpath(*deck), str(section))
+    new_lines = scene_lines(after.joinpath(*deck), str(section))
+    for old, new in zip(old_lines, new_lines, strict=False):
+        if old == new:
+            continue
+        cue = re.search(r'data-cue="([^"]+)"', old)
+        where = cue.group(1) if cue else f"scene {section}"
+        # A slide line carries the number in two places that are not the same change: the text a
+        # viewer reads, and data-describe, which is what a screen reader hears. Comparing the
+        # fields rather than the markup keeps each one to the words that changed.
+        for label, pattern in (("describe", r'data-describe="([^"]*)"'), (None, r">([^<>]+)<")):
+            a, b = re.search(pattern, old), re.search(pattern, new)
+            if a and b and (change := one_change(a.group(1), b.group(1))):
+                deck_changes.append({"where": where, "label": label, **change})
+    if deck_changes:
+        files.append({"file": "deck/index.html", "changes": deck_changes})
+
+    return files
 
 
 def ffmpeg(*args: str) -> str:
@@ -511,6 +600,7 @@ def main() -> int:
                 "md": film_script["md"],
                 "words": [[w["word"], w["start"], w["end"]] for w in after_words],
             },
+            "diff": edit_diff(project, args.film.resolve(), edited, (before_md, film_script["md"])),
             "price": price,
             "kept": log["kept"],
             "cost": log["cost"],
