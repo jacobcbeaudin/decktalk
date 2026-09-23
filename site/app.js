@@ -982,7 +982,12 @@
   const io = new IntersectionObserver(
     (es) => {
       for (const e of es) {
-        if (e.isIntersecting) {
+        // Already scrolled past counts as seen. This observer is created on the last line of this
+        // file, so anything above the viewport by the time it attaches reports isIntersecting
+        // false, is never entered again, and stays at opacity 0 for the rest of the visit. A
+        // reader on a slow phone who flicks down the page while the script is still parsing lost
+        // whole sections that way, permanently, with no way to get them back but a reload.
+        if (e.isIntersecting || e.boundingClientRect.bottom < 0) {
           e.target.classList.add("in");
           io.unobserve(e.target);
         }

@@ -53,6 +53,11 @@
         <li><a href="https://github.com/jacobcbeaudin/decktalk">GitHub<small>Open source</small></a></li>
       </ul>
     </nav>
+    <!-- The install lives in one place, at the bottom, and this is the way to it. It was removed
+         while the hero carried the command itself, which made the two of them 181px apart on a
+         desktop. With the hero given back to the film, this is the only install affordance above
+         the fold, and it is the one the nav promises. -->
+    <a class="btn install" href="#install">Install</a>
   </div>
 </header>
 
@@ -63,15 +68,6 @@
     <p class="kicker">Narrated video from a script, in your own voice.</p>
     <h1 id="hero-h">Every picture lands on its word.</h1>
     <p class="sub">Change a sentence, and only that section is voiced again.</p>
-    <!-- One command, one component, and the same line the install section and the film pages carry.
-         The copy button is not written here: app.js makes it, so a page with no script shows a
-         command and no control that lies about what it does. The prompt is not selectable, so a
-         hand-selection is a line that runs. -->
-    <div class="pill" role="group" aria-label="Install command">
-      <code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code>
-      <a class="view" href="/install.sh">view script</a>
-      <span class="copy"></span>
-    </div>
     <p class="caption">Made with DeckTalk from <a href="/films/halfway">this script</a> · <span data-total>0:35</span> · a fictional pitch</p>
 
     <figure class="stage" id="hero" aria-label="Halfway, a 35-second fictional pitch made with DeckTalk, replayed from its slides and its recorded voice">
