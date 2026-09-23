@@ -3,9 +3,21 @@
    times, the cues with their times, and the deck's own scenes. The stage is a pure function of t,
    so the silent replay, the voice clock, the scrubber and the keyboard all draw the same frame. */
 (() => {
+  // Every .cut starts at opacity 0 and is revealed by the observer on the last line of this file,
+  // so anything that throws in between leaves the gallery, how it works, the edit section and the
+  // install commands invisible: the hero and the footer, and no way to install anywhere on the
+  // page. This is registered before anything else can throw, so the page shows itself regardless.
+  const showEverything = () => {
+    for (const el of document.querySelectorAll(".cut, .lanes")) el.classList.add("in");
+  };
+  addEventListener("error", showEverything, { once: true });
+
   const D = window.HALFWAY;
   const S = window.HALFWAY_STAGE;
-  if (!D || !S) return;
+  if (!D || !S) {
+    showEverything();
+    return;
+  }
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
   const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
