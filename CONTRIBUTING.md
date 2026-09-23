@@ -106,18 +106,24 @@ Coverage runs with the whole suite and must stay at or above the floor in `pypro
 
 ### What CI runs
 
-`.github/workflows/ci.yml` runs five jobs on every pull request and push to `main`.
+`.github/workflows/ci.yml` runs six jobs. Four run on every pull request and push to `main`; the two
+heavy ones run only on `main` and from the Actions tab.
 
 | Job | Platform | What it runs |
 |---|---|---|
 | `checks` | Linux, Python 3.12, 3.13 and 3.14 | `uv lock --check`, ruff, ty and the unit tests |
 | `docs` | Linux | every generated page against its source, and every internal link |
-| `lint` | Linux | Biome over the JavaScript |
+| `lint` | Linux | Biome over the JavaScript, and `shellcheck -s sh` over `site/install.sh` |
 | `e2e` | Linux | `decktalk install`, `decktalk doctor` and every suite but the scaffold build, with coverage |
 | `cross-platform` | macOS and Windows | the browser, media and pipeline suites |
+| `installer` | Linux containers | `site/install.sh` installed for real on Debian, Ubuntu and Fedora, refused on Alpine |
 
 The `e2e` job puts the coverage report in the job summary, and on a failure it uploads the pipeline
 project's `verify.json`, its recording logs, its screenshots and its mp4.
+
+The `installer` job runs on the same rule as `cross-platform`, and additionally on any pull request
+that touches `site/install.sh`. It never runs `decktalk install`, which fetches Chromium and ffmpeg:
+that is the separate step the installer tells you to take.
 
 The `cross-platform` job runs on pushes to `main` and from the Actions tab, and `release.yml` runs it
 before `publish`, so a platform regression stops a release. It never runs on the tag release-please
