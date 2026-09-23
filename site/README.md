@@ -5,7 +5,11 @@ Workers Builds deploy of `site/` serves it as it is.
 
 ## Files
 
-- `index.html` is the landing page: the hero, the gallery, the invitation to how.html and the
+- Every internal link points at the extensionless path — `/how`, `/films/halfway`, `/` — because
+  the deploy strips the extension and answers `/how.html` with a 307 to `/how`. A link written with
+  the extension still works, and costs every visitor who follows it a round trip. The canonical and
+  `og:url` of each page name the same extensionless URL.
+- `index.html` is the landing page: the hero, the gallery, the invitation to `/how` and the
   install commands. `how.html` is the explanation: how it works and the edit section. They share
   `styles.css` and `app.js`, and `app.js` runs each part only on the page that carries its DOM, so
   neither page throws on the way past a section it does not have.
