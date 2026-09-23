@@ -10,7 +10,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
 ## Before you start
 
 - You need nothing installed first: the one-line installer brings its own Python. Installing with uv, pipx or pip instead needs Python 3.12 or later.
-- On Linux, step 2 needs sudo or root.
+- Step 2 is optional everywhere but Linux, where it installs Chromium's system libraries and needs sudo or root.
 - Part 3 needs an ElevenLabs API key and a voice id.
 
 ## Part 1: Install DeckTalk
@@ -25,7 +25,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
         curl -LsSf https://decktalk.ai/install.sh | sh
         ```
 
-        It installs uv if you do not have it, then DeckTalk, and uv brings its own Python. It never runs sudo, and it never downloads Chromium or ffmpeg: step 2 does that, separately and visibly. [Read the script](https://decktalk.ai/install.sh) before you run it; that is why it is served from a URL.
+        It installs uv if you do not have it, then DeckTalk, and uv brings its own Python. It never runs sudo, and it never downloads Chromium or ffmpeg: step 2 does that, separately and visibly, and so does your first build. [Read the script](https://decktalk.ai/install.sh) before you run it; that is why it is served from a URL.
 
         Pipe it into `DECKTALK_VERSION=0.4.0 sh` to install one version, or into `sh -s -- --dry-run` to print what would happen and change nothing. It runs on Linux and macOS. On Windows, use the uv tab. On Alpine and other musl systems it stops and says why: Playwright, which records the slides, publishes no musl wheels, so DeckTalk needs glibc.
       </Tab>
@@ -59,8 +59,10 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
     Check that the installer names the `decktalk` executable.
   </Step>
 
-  <Step title="Download Chromium and ffmpeg" stepNumber={2}>
-    `decktalk install` downloads the tools that DeckTalk runs. Run it one time per machine.
+  <Step title="Download Chromium and ffmpeg now, or let the first build do it" stepNumber={2}>
+    Nothing makes you run this. Every command that needs Chromium or ffmpeg downloads it the first time, and says so before the download starts. Run it here to get a few hundred megabytes out of the way while you read, to fill a Docker layer or a CI cache, or to set a machine up before it goes offline.
+
+    On Linux, run it: it is also what installs Chromium's system libraries, through apt-get, and it is the one DeckTalk command that asks for a password. A build never does, because a build runs unattended.
 
     ```console
     decktalk install
@@ -75,7 +77,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
     install complete
     ```
 
-    Check that the last line is `install complete`. On Linux, this step asks for sudo. [What install downloads](/requirements#what-install-downloads) says where each download goes.
+    Check that the last line is `install complete`. On Linux, this step asks for sudo. [What DeckTalk downloads](/requirements#what-decktalk-downloads) says where each download goes.
   </Step>
 
   <Step title="Check the tools" stepNumber={3}>
@@ -96,7 +98,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
     katex     ok      0.18.7 in the wheel (~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/decktalk/katex)
     ```
 
-    Check that the first line reads `missing 0` and that every row says `ok`. If a row does not, run `decktalk install` again. The `config` row is the per-machine settings file, which is optional, so `none` there is a passing row.
+    Check that the first line reads `missing 0` and that every row says `ok`. `doctor` reports and downloads nothing, so if you skipped step 2 the `chromium` and `ffmpeg` rows read `missing` until something fetches them, and each row says what would. The `config` row is the per-machine settings file, which is optional, so `none` there is a passing row.
   </Step>
 </Steps>
 
@@ -125,7 +127,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
           then cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID) and `decktalk build`
     ```
 
-    If you skipped step 2, run `decktalk install` now. `init` copies the packaged KaTeX into `deck/katex/` either way.
+    If you skipped step 2, the build in step 7 fetches Chromium and ffmpeg before it records, and prints a line for each download. `init` copies the packaged KaTeX into `deck/katex/` either way.
 
     <Tip>`decktalk init --example lesson my-lesson` writes a finished lesson instead, to read rather than
     to start from. `--no-skills` leaves the six skills out.</Tip>
@@ -162,7 +164,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
   </Step>
 
   <Step title="Build the video without an account" stepNumber={7}>
-    A build without voice uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took about 64 seconds. Read [What the starter shows](#what-the-starter-shows) while it runs.
+    A build without voice uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took about 64 seconds, on a machine that already had Chromium and ffmpeg. If you skipped step 2, the download comes first and the build names it as it starts. Read [What the starter shows](#what-the-starter-shows) while it runs.
 
     ```console
     decktalk build --no-voice

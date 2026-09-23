@@ -42,15 +42,17 @@ machine. Each section is then sent on its own, with no surrounding text.
 
 ## One-time downloads
 
-`decktalk install` fetches the tools a recording needs, once per machine. These requests carry
-nothing from your project, and after they succeed a build without voice needs no network at all.
+DeckTalk fetches the tools a recording needs, once per machine: the first command that opens a page
+downloads the browser, the first command that encodes downloads the media tool, and `decktalk
+install` does both up front. These requests carry nothing from your project, and after they succeed
+a build without voice needs no network at all.
 
 | Host | What it holds | Fetched by | What DeckTalk sends |
 |---|---|---|---|
-| cdn.playwright.dev | Headless Chromium | `decktalk install` | A download request for the pinned browser build, and nothing else. |
-| github.com | ffmpeg and ffprobe on Linux and on Windows | `decktalk install` | A download request for one pinned release archive, and nothing else. |
-| evermeet.cx | ffmpeg and ffprobe on an Intel Mac | `decktalk install` | A download request for two pinned archives, and nothing else. |
-| ffmpeg.martin-riedl.de | ffmpeg and ffprobe on an Apple silicon Mac | `decktalk install` | A download request for two pinned archives, and nothing else. |
+| cdn.playwright.dev | Headless Chromium | the first command that opens a page, or `decktalk install` | A download request for the pinned browser build, and nothing else. |
+| github.com | ffmpeg and ffprobe on Linux and on Windows | the first command that encodes, or `decktalk install` | A download request for one pinned release archive, and nothing else. |
+| evermeet.cx | ffmpeg and ffprobe on an Intel Mac | the first command that encodes, or `decktalk install` | A download request for two pinned archives, and nothing else. |
+| ffmpeg.martin-riedl.de | ffmpeg and ffprobe on an Apple silicon Mac | the first command that encodes, or `decktalk install` | A download request for two pinned archives, and nothing else. |
 
 **`cdn.playwright.dev`.** This is Playwright's own download host. `PLAYWRIGHT_DOWNLOAD_HOST` points it at a mirror, and `[record] browser_path` skips the download by recording with a browser the machine already has.
 

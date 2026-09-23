@@ -1,7 +1,7 @@
 ---
 name: decktalk-slide
 description: Write or change a DeckTalk deck page, a slide, an equation, a code sample or a screenshot so that every reveal is visible, cued and legible. Use when a narrated video needs a new slide or scene, when maths or code has to appear on screen, when a picture must be added to an existing section, or when a reveal is too small, overlapping or off frame. It covers the markup scene wrapper, data-cue, data-reveal, data-describe and data-tex, the KaTeX tags, the reveal budget, and reading the PNG files that screenshots writes. Do not use it for what the voice says, which belongs to decktalk-script.
-compatibility: Requires the decktalk command on PATH and a browser installed by decktalk install. Steps 8 and 9 read PNG files, so a model that cannot read an image should ask the user to look at the frames instead.
+compatibility: Requires the decktalk command on PATH and a browser, which DeckTalk fetches the first time a command needs one. Steps 8 and 9 read PNG files, so a model that cannot read an image should ask the user to look at the frames instead.
 metadata:
   ends_with: Markup that obeys the page contract, checked against the PNGs that `decktalk screenshots` writes.
 ---
@@ -20,8 +20,11 @@ stop and tell the user what `error.message` says.
 
 ## Steps
 
-1. **Confirm the tools.** Run `decktalk doctor --json` and stop when any row of `doctor.components`
-   has `ok` false and `optional` false. Run `decktalk install` when the browser or ffmpeg is missing.
+1. **Confirm the tools.** Run `decktalk doctor --json`. A row of `doctor.components` with `ok` false
+   and `optional` false stops you, with one exception: `chromium` and `ffmpeg` are fetched by the next
+   command that needs them, and each row's `detail` says whether that is all it is waiting for. Run
+   `decktalk install` when a detail names the system libraries Chromium needs, which is the one thing a
+   command cannot fetch for itself.
 2. **Start from the simplest page that works.** Copy the markup scene wrapper from
    `references/slide-patterns.md`, or from the deck page the project was created with. Never start
    from a page that draws with a frame clock, a canvas or a hand-written colour ramp, and write no

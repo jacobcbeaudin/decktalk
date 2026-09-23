@@ -1,30 +1,29 @@
-"""Fetching the tools a machine needs to record and encode.
+"""Fetching the tools a machine needs to record and encode, before anything asks for them.
 
-`decktalk install` runs once per machine. Chromium comes from Playwright and ffmpeg from the pinned,
-verified download in `toolchain/`. Nothing here touches a project.
+Nothing has to run this. A command that needs Chromium fetches it, and a command that needs ffmpeg
+fetches that, so a machine with DeckTalk on it can build. `decktalk install` is the way to do both
+up front instead: in a Docker layer, in a CI job that caches the download, on a machine that will
+be offline later, and on Linux, where it is also the one command that installs Chromium's system
+libraries and therefore the one command that may ask for a root password. Nothing here touches a
+project.
 """
 
 from __future__ import annotations
 
 import logging
-import subprocess
 import sys
 
-from ..errors import ToolError
 from ..media.ffmpeg import ffmpeg_paths
+from ..toolchain.chromium_fetch import fetch_chromium
 from ..toolchain.ffmpeg_fetch import FFMPEG_VERSION, installed_pinned
 
 log = logging.getLogger(__name__)
 
 
 def install() -> None:
-    """Fetch the headless Chromium and the pinned ffmpeg build."""
+    """Fetch the headless Chromium and the pinned ffmpeg build, with Chromium's system libraries on Linux."""
     log.info("== Chromium (Playwright)")
-    cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
-    if sys.platform.startswith("linux"):
-        cmd.append("--with-deps")
-    if subprocess.call(cmd) != 0:
-        raise ToolError("playwright install failed. See the output above.")
+    fetch_chromium(with_deps=sys.platform.startswith("linux"))
     log.info("== ffmpeg %s", FFMPEG_VERSION)
     found = installed_pinned()
     if found:

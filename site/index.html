@@ -137,21 +137,17 @@
 <section class="block" id="install" aria-labelledby="install-h">
   <div class="wrap">
     <p class="kicker cut">Install</p>
-    <h2 id="install-h" class="cut">Four lines to a first film.</h2>
-    <p class="lead cut">The first line brings its own Python, so there is nothing to install before it, and nothing to sign up for. Chromium and ffmpeg come with <code>decktalk install</code>. The last line writes an mp4.</p>
+    <h2 id="install-h" class="cut">Three lines to a first film.</h2>
+    <p class="lead cut">The first line brings its own Python, so there is nothing to install before it, and nothing to sign up for. Chromium and ffmpeg arrive on the first build, which says so before it downloads them. The last line writes an mp4.</p>
     <!-- The steps carry no .cut. Every .cut on the page starts at opacity 0 and is revealed by
          app.js, and 03d27fc is what that costs when a script throws: a page with no way to install
-         anywhere on it. These four lines are the only reason a stranger scrolled this far, so like
+         anywhere on it. These three lines are the only reason a stranger scrolled this far, so like
          the how-more button they are never a thing a script can take away. -->
     <p class="steps-label">Once per machine</p>
     <ol class="steps">
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code><span class="copy"></span></div>
-        <span>Installs uv, then DeckTalk. It never runs sudo, and it is served from a URL so you can <a href="install.sh">read it first</a>.</span>
-      </li>
-      <li>
-        <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk install</span></code><span class="copy"></span></div>
-        <span>Fetches Chromium and ffmpeg, once per machine. On Linux it asks for sudo, for Chromium's system libraries. If the command is not found, open a new shell.</span>
+        <span>Installs uv, then DeckTalk. It never runs sudo, and it is served from a URL so you can <a href="install.sh">read it first</a>. If the command is not found afterwards, open a new shell.</span>
       </li>
     </ol>
     <p class="steps-label">For each film</p>
@@ -166,6 +162,7 @@
       </li>
     </ol>
     <p class="install-note cut">For your own voice, copy <code>.env.example</code> to <code>.env</code>, add an ElevenLabs key and a voice id, and build again. Any ElevenLabs voice works, including a clone of your own.</p>
+    <p class="install-note cut">Chromium and ffmpeg are fetched by the build that needs them, one time per machine. <code>decktalk install</code> fetches them up front instead, for a Docker layer, a CI cache or a machine about to go offline, and on Linux it installs Chromium's system libraries, which is the one thing here that asks for sudo.</p>
     <p class="install-note cut">If you already have uv, <code>uv tool install decktalk</code> is the same install. Every project ships with six skill files that teach a coding agent DeckTalk. <a href="https://docs.decktalk.ai/quickstart">Start with the quickstart.</a></p>
   </div>
 </section>

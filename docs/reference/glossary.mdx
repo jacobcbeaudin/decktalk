@@ -20,7 +20,7 @@ Each table lists the term, its meaning, and the page that explains it. Write the
 | input files | The four files you write, in this order: `script.md`, `decktalk.toml`, `cues.json`, and the page. | [How it works](/concepts/how-it-works) |
 | starter | The three-section project that `decktalk init` writes by default. | [Quickstart](/quickstart) |
 | example | A whole project packaged in the wheel, which `decktalk init --example NAME` writes instead of the starter. | [CLI](/reference/cli#decktalk-init) |
-| install | `decktalk install`. Fetches headless Chromium and ffmpeg, once per machine. | [CLI](/reference/cli#decktalk-install) |
+| install | `decktalk install`. Fetches headless Chromium and ffmpeg up front, which a command that needs one of them would otherwise fetch itself, and on Linux installs Chromium's system libraries. | [CLI](/reference/cli#decktalk-install) |
 | local origin | The virtual http origin that DeckTalk serves a project's own files from, so a page loads over http instead of `file://`. `decktalk serve` opens the same origin for a browser. | [What leaves your machine](/reference/what-leaves-your-machine) |
 | JSON envelope | The one object that every command prints on stdout with `--json`. | [CLI](/reference/cli#exit-codes) |
 | progress log | `build/progress.jsonl`. One JSON line per stage and section event of a run. | [Build artifacts](/reference/artifacts#build-progress-jsonl) |

@@ -101,7 +101,7 @@ These keys tune the headless Chromium recording, how narration t=0 is found in i
 |---|---|---|---|---|
 | `settle_seconds` | `number` | `0.5` | must not be negative | Shortest wait after the page is ready and before narration t=0. `record --settle` overrides it. |
 | `min_cover_seconds` | `number` | `1.5` | must not be negative | Shortest time from the start of the recorder to narration t=0. |
-| `browser_path` | `string` | `""` |  | Chromium executable that `record` drives. It is empty for the build that `decktalk install` fetched, and a path here is what a managed machine sets. |
+| `browser_path` | `string` | `""` |  | Chromium executable that `record` drives. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another. |
 | `color_scheme` | `string` | `"light"` | must be one of light, dark, no-preference | Color scheme that Chromium reports to the page. |
 | `retries` | `integer` | `2` | must not be negative | How many more times `record` records a section whose frames stalled. |
 | `screenshot_settle_ms` | `integer` | `400` | must not be negative | Milliseconds that `decktalk screenshots` waits before each slide screenshot. |

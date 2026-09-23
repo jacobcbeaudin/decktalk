@@ -35,7 +35,8 @@ explains.
 | Text you see | Printed by | Entry |
 |---|---|---|
 | `this is a musl system` | `install.sh` | [Entry](#this-is-a-musl-system-in-install-sh) |
-| `playwright install failed` | `install` | [Entry](#playwright-install-failed-in-install) |
+| `playwright install failed` | `install`, and any command that fetches Chromium | [Entry](#playwright-install-failed-in-install) |
+| `Chromium was fetched and still would not launch` | any command that opens a page | [Entry](#chromium-was-fetched-and-still-would-not-launch) |
 | `MISSING` | `doctor` | [Entry](#missing-in-doctor) |
 | `is not empty` | `init` | [Entry](#is-not-empty-in-init) |
 | `must be letters` | `init` | [Entry](#must-be-letters-in-init) |
@@ -116,19 +117,37 @@ DeckTalk cannot be installed on it at all. Alpine is the usual one.
 ### `playwright install failed` in install
 
 **Cause.** Playwright could not download Chromium or, on Linux, its system libraries. The output above
-the error shows the reason.
+the error shows the reason. Any command that needs a browser fetches Chromium, so this can come from a
+build on a machine where nothing was installed by hand, not only from `decktalk install`.
 
 **Fix.**
 1. If the output names a network or proxy problem, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
 2. If you are on Linux, run `decktalk install` as a user who can use sudo.
 3. Run `decktalk install` again.
 
-**More.** [What install downloads](/requirements#what-install-downloads)
+**More.** [What DeckTalk downloads](/requirements#what-decktalk-downloads)
+
+### `Chromium was fetched and still would not launch`
+
+**Cause.** The browser is on the machine and cannot start. On Linux that is almost always its system
+libraries: a build fetches Chromium without them, because installing them goes through sudo and a build
+that stops for a password is a build that hangs in CI. The message carries the line Chromium printed,
+and a missing library names itself in it, such as `libnss3.so`.
+
+**Fix.**
+1. Run `decktalk install`, as a user who can use sudo. It is the one command that installs the libraries.
+2. If the distribution has no apt-get, install Chromium's dependencies with its own package manager, or
+   record with a browser the machine already has by naming it in `[record] browser_path`.
+3. Run the build again.
+
+**More.** [Linux system libraries](/requirements#linux-system-libraries)
 
 ### `MISSING` in doctor
 
-**Cause.** A component is not installed. The detail says which one.
-- If `chromium` shows `MISSING`, Chromium does not launch.
+**Cause.** A component is not installed. The detail says which one, and what would install it. `doctor`
+downloads nothing itself, so a machine that has never built anything yet shows rows a build would fill in.
+- If `chromium` shows `MISSING`, Chromium does not launch. The detail says whether it is simply not
+  fetched yet, which the next build does, or on disk and refusing to start, which `decktalk install` fixes.
 - If `ffmpeg` shows `MISSING`, no ffmpeg exists in `DECKTALK_FFMPEG`, the pinned download, or `PATH`.
 - If `katex` shows `MISSING`, the wheel's KaTeX copy is incomplete. The detail names each absent file.
 

@@ -1,8 +1,10 @@
 """Headless Chromium through Playwright: recording a page, taking screenshots and drawing slates.
 
-This is the only module that launches a browser. It waits for the page to say it is ready, reads
-the catalog the runtime publishes, and collects the warnings the page recorded, so a stage above
-asks for a recording or a frame and never for a browser.
+This is the only module that launches a browser, and therefore the one place that fetches one: a
+machine without Chromium gets it here, the first time a command needs it, the way `ffmpeg.py` gets
+ffmpeg. It waits for the page to say it is ready, reads the catalog the runtime publishes, and
+collects the warnings the page recorded, so a stage above asks for a recording or a frame and
+never for a browser.
 
 Every page it opens is served from the local origin in `origin.py`, so a page may fetch a file
 beside it and import a module, and the recorder learns which files the page actually loaded.
@@ -23,6 +25,7 @@ from typing import Any
 
 from ..artifacts import RecordingLog, gap_time
 from ..errors import ToolError
+from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
 from .origin import Assets, route_pages
 
@@ -66,20 +69,56 @@ def chromium(browser_path: str = "") -> Iterator[Any]:
     the way the machine sends it, through its own proxy and its own logging.
 
     `browser_path` is `[record] browser_path`, the executable a machine that manages its own
-    Chromium names. It is empty for the build that `decktalk install` fetched. A ToolError names
-    the fix when no browser can be launched.
+    Chromium names. It is empty on a machine DeckTalk fetches the browser for, which is where
+    `launch` fetches it.
     """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as pw:
-        try:
-            browser = pw.chromium.launch(executable_path=browser_path or None)
-        except Exception as exc:
-            raise ToolError(f"could not launch Chromium ({str(exc).splitlines()[0]}). Run `decktalk install`.") from exc
+        browser = launch(pw, browser_path)
         try:
             yield browser
         finally:
             browser.close()
+
+
+def launch(pw: Any, browser_path: str = "") -> Any:
+    """A launched Chromium, fetching the build Playwright manages when this machine has not got it.
+
+    This is the one place a browser starts, so every command gets the browser it needs without
+    anyone running an install step first, the way `ffmpeg_paths` gets ffmpeg. The fetch downloads
+    Chromium alone and never its system libraries, because installing those goes through sudo and a
+    build that stops for a root password is a build that hangs in a script and in CI. When Chromium
+    still will not launch after it has been fetched, those libraries are what is missing, and the
+    error says to run `decktalk install`, which is the one command that may ask for a password.
+
+    A machine that names its own executable is told about that executable instead. Fetching would
+    not help it: the next launch would use the same path again.
+    """
+    try:
+        return pw.chromium.launch(executable_path=browser_path or None)
+    except Exception as exc:
+        refused = str(exc).splitlines()[0]
+        if browser_path:
+            raise ToolError(
+                f"could not launch the Chromium at {browser_path} ({refused}).",
+                hint="[record] browser_path names it. Clear that setting to use the build DeckTalk fetches.",
+            ) from exc
+    # A launch that failed with no executable named falls through to here, which is the fetch.
+    if chromium_fetch.installed_chromium(pw) is None:
+        log.info("== Chromium (Playwright)")
+        log.info("   fetching the headless build for this machine, %s, one time", chromium_fetch.DOWNLOAD_SIZE)
+    else:
+        log.info("== Chromium (Playwright): it did not launch, so the build is being fetched again")
+    chromium_fetch.fetch_chromium()
+    try:
+        return pw.chromium.launch()
+    except Exception as exc:
+        raise ToolError(
+            f"Chromium was fetched and still would not launch ({str(exc).splitlines()[0]}).",
+            hint="Run `decktalk install`, which also installs the system libraries Chromium needs and is the one "
+            "command that may ask for a password.",
+        ) from exc
 
 
 def instrument(page: Any) -> Any:

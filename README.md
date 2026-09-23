@@ -46,12 +46,11 @@ The first line installs uv, a Python package manager, and then DeckTalk. It brin
 
 ```console
 curl -LsSf https://decktalk.ai/install.sh | sh
-decktalk install
 decktalk init my-lesson && cd my-lesson
 decktalk build --no-voice
 ```
 
-`decktalk install` downloads Chromium and ffmpeg one time per machine, and on Linux it asks for sudo. `decktalk init` writes the starter, a working three-section project with one equation, and nothing in it has to be deleted first. The build without voice needs no account, ends with `built`, and prints the path of `build/out/my-lesson.mp4`. Recording runs in real time, so the build takes about a minute and makes a 44 second video.
+`decktalk init` writes the starter, a working three-section project with one equation, and nothing in it has to be deleted first. The first build downloads Chromium and ffmpeg, one time per machine, and says so before it starts. The build without voice needs no account, ends with `built`, and prints the path of `build/out/my-lesson.mp4`. Recording runs in real time, so the build takes about a minute and makes a 44 second video.
 
 To hear it in your own voice, copy `.env.example` to `.env`, set your ElevenLabs API key and voice id, and run `decktalk build`. DeckTalk never prints the key. A voiced build of the starter sends about 420 characters, and `decktalk narrate --dry-run` prices that run before it starts. Every build writes the mp4, SRT and VTT captions, a chapter per section and a transcript page. [What spends credits](https://docs.decktalk.ai/requirements#what-spends-credits) lists the cost of every command.
 
@@ -107,7 +106,7 @@ The offset column is the time from the cue time to the onset of the reveal, in m
 
 ## Requirements and costs
 
-- **Software.** The one-line installer brings its own Python, on Linux and macOS. On Windows, install with uv or pipx, which needs Python 3.12 or later. `decktalk install` downloads the rest.
+- **Software.** The one-line installer brings its own Python, on Linux and macOS. On Windows, install with uv or pipx, which needs Python 3.12 or later. The first build downloads the rest. `decktalk install` fetches it up front instead, for a Docker layer, a CI cache or a machine that will be offline, and on Linux it is the step that installs Chromium's system libraries and the only one that asks for sudo.
 - **Accounts.** A build without voice needs no account. A voiced build needs an ElevenLabs API key and a voice id.
 - **Cost.** Every ElevenLabs plan can call the API. The free plan has limits for a video you publish.
 

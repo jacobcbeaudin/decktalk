@@ -27,7 +27,7 @@ Run every command in this file from the repository root.
 git clone https://github.com/jacobcbeaudin/decktalk.git
 cd decktalk
 uv sync --group dev           # Python 3.12 and every dependency, into .venv
-uv run decktalk install       # headless Chromium and ffmpeg, once per machine, into ~/.cache
+uv run decktalk install       # headless Chromium and ffmpeg up front, once per machine, into ~/.cache
 uvx pre-commit install        # the lint hooks and the commit message hook
 ```
 
@@ -36,8 +36,11 @@ uvx pre-commit install        # the lint hooks and the commit message hook
 packaged skills and the docs assume, so install it that way before trying a skill by hand.
 
 `decktalk install` downloads about 200 MB and is the only step that needs the network after the
-sync. Every check below runs offline once it has finished. `uv run decktalk doctor` prints what it
-found and where, and it fetches nothing.
+sync. It is not a step you have to take: a command that needs Chromium or ffmpeg fetches it, so the
+checks would fetch both by themselves, inside whichever test ran first. Taking it here puts the
+download where you can see it, and on Linux it is also what installs Chromium's system libraries,
+which is the one thing here that asks for a password. Every check below runs offline once it has
+finished. `uv run decktalk doctor` prints what it found and where, and it fetches nothing.
 
 You need no ElevenLabs key. No check calls the speech API, and no key is a CI secret.
 
@@ -51,7 +54,7 @@ uv run scripts/check.py --fast   # lint, types and the unit tests alone, in a fe
 ```
 
 It prints each step with its time and stops at the first failure. Its first run may download
-Chromium and ffmpeg through `decktalk install`.
+Chromium and ffmpeg, through the `decktalk install` step it starts with.
 
 The steps, for running one on its own:
 
@@ -123,7 +126,8 @@ project's `verify.json`, its recording logs, its screenshots and its mp4.
 
 The `installer` job runs on the same rule as `cross-platform`, and additionally on any pull request
 that touches `site/install.sh`. It never runs `decktalk install`, which fetches Chromium and ffmpeg:
-that is the separate step the installer tells you to take.
+the installer's job is to put the `decktalk` command on a machine, and the tools it records with
+arrive later, on the first build or on an `install` of your own.
 
 The `cross-platform` job runs on pushes to `main` and from the Actions tab, and `release.yml` runs it
 before `publish`, so a platform regression stops a release. It never runs on the tag release-please
@@ -158,6 +162,7 @@ src/decktalk/
     toolchain/           What DeckTalk fetches or ships for one machine, and where it keeps it.
       assets.py          What ships inside the wheel: the page runtime, the pinned KaTeX release, and the projects.
       cache.py           The per-user cache directory, which is where every tool DeckTalk fetches for a machine lives.
+      chromium_fetch.py  The headless Chromium Playwright manages: whether this machine has it, and fetching it.
       ffmpeg_fetch.py    The pinned ffmpeg build: one fixed URL per platform, verified against its SHA-256 before it is opened.
     settings.py          Tool tuning: one dataclass per concern, composed into Settings.
     artifacts/           The typed build artifacts and their JSON files under `build/`.
@@ -195,7 +200,7 @@ src/decktalk/
       doctor.py          One row per component a build needs, and whether it is there, and the same report as a block.
       examples.py        The projects packaged in the wheel, which `decktalk init --example NAME` writes.
       init.py            Writing a project into a directory.
-      install.py         Fetching the tools a machine needs to record and encode.
+      install.py         Fetching the tools a machine needs to record and encode, before anything asks for them.
       skills.py          The six packaged skills, and where a project keeps them.
     stages/              The pipeline, one module per command.
       build.py           The whole pipeline in order: narrate, align, record, assemble, verify.
@@ -311,8 +316,8 @@ every page sits in exactly one navigation group in `docs/docs.json`, and every r
 page that exists. It fetches nothing.
 
 `uv run --with "fonttools[woff]>=4.50" python scripts/build_assets.py` draws every graphic under
-`assets/` and `docs/images/` from one source. It needs the Chromium that `decktalk install`
-fetched.
+`assets/` and `docs/images/` from one source. It drives Playwright itself rather than going through
+DeckTalk, so it needs the Chromium that `decktalk install` fetched and fetches none of its own.
 
 ## Commits and releases
 

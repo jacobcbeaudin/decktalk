@@ -141,8 +141,9 @@ class RecordConfig:
     min_cover_seconds: float = tune(1.5, "Shortest time from the start of the recorder to narration t=0.", NOT_NEGATIVE)
     browser_path: str = tune(
         "",
-        "Chromium executable that `record` drives. It is empty for the build that `decktalk install` fetched, "
-        "and a path here is what a managed machine sets.",
+        "Chromium executable that `record` drives. It is empty for the build DeckTalk fetches itself, and a "
+        "path here is what a managed machine sets: a named executable that will not launch is never a reason "
+        "to download another.",
     )
     color_scheme: str = tune(
         "light",
