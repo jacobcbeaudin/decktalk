@@ -56,8 +56,13 @@ def run(
 
 @pytest.mark.parametrize("shell", SHELLS)
 def test_it_parses_under_every_posix_shell_here(shell: str) -> None:
-    """A bashism would pass on macOS, whose /bin/sh is bash, and fail on Alpine's busybox."""
-    done = subprocess.run([shell, "-n", str(SCRIPT)], capture_output=True, text=True, timeout=30)
+    """A bashism would pass on macOS, whose /bin/sh is bash, and fail on a real POSIX shell.
+
+    busybox is the strictest of them and is a multi-call binary, so it takes the shell as its first
+    argument: `busybox -n file` asks for an applet called `-n` and exits 127.
+    """
+    argv = [shell, "sh", "-n", str(SCRIPT)] if shell.endswith("busybox") else [shell, "-n", str(SCRIPT)]
+    done = subprocess.run(argv, capture_output=True, text=True, timeout=30)
     assert done.returncode == 0, done.stderr
 
 
