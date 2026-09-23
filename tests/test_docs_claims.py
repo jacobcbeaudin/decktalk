@@ -12,7 +12,6 @@ prose has nothing holding it in place.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,9 +19,16 @@ INSTALLER = ROOT / "site" / "install.sh"
 
 
 def released_versions() -> set[str]:
-    """Every version this repository has tagged. Offline, unlike asking PyPI."""
-    done = subprocess.run(["git", "tag"], cwd=ROOT, capture_output=True, text=True, timeout=30)
-    return {t.lstrip("v") for t in done.stdout.split() if re.fullmatch(r"v?\d+\.\d+\.\d+", t)}
+    """Every version the changelog lists, which is every version that was released.
+
+    Read from the changelog rather than from `git tag`, because the tags are not there when this
+    runs: actions/checkout clones one commit and no tags, so `git tag` came back empty in CI and
+    the test failed for a reason that had nothing to do with the docs. The changelog is committed,
+    is generated from CHANGELOG.md by release-please, and is present wherever the file it checks is
+    present, which is the only property that matters for a source of truth.
+    """
+    changelog = (ROOT / "docs" / "changelog.mdx").read_text(encoding="utf-8")
+    return set(re.findall(r'<Update\s+label="(\d+\.\d+\.\d+)"', changelog))
 
 
 def test_every_documented_version_pin_is_a_version_that_exists() -> None:
@@ -30,7 +36,7 @@ def test_every_documented_version_pin_is_a_version_that_exists() -> None:
     version gets a resolver failure rather than an install. The docs named 0.4.1 while the newest
     release was 0.4.0, because the number was written from the release that was being prepared."""
     released = released_versions()
-    assert released, "no version tags, so this test cannot say anything"
+    assert released, "the changelog lists no releases, so this test cannot say anything"
     pattern = re.compile(r"DECKTALK_VERSION=(\d+\.\d+\.\d+)")
     seen = []
     for path in [ROOT / "README.md", INSTALLER, *sorted((ROOT / "docs").rglob("*.mdx"))]:
