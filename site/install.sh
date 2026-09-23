@@ -456,6 +456,10 @@ report() {
 	say ""
 	note "That first build needs no account and spends nothing. For your own voice, put an"
 	note "ElevenLabs key and voice id in .env and run: decktalk build"
+	say ""
+	# One link, and the one that answers the next question. Installers that end in a paragraph get
+	# skimmed; rustup, uv, bun and deno all end in commands and at most one URL.
+	printf '%sDocs%s  https://docs.decktalk.ai/quickstart\n' "$DIM" "$RESET"
 	case ":$ORIGINAL_PATH:" in
 	*":$HOME/.local/bin:"*) ;;
 	*)
