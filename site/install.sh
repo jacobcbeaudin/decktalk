@@ -3,20 +3,18 @@
 #
 #   curl -LsSf https://decktalk.ai/install.sh | sh
 #
-# It installs uv if you do not have it, then `uv tool install decktalk`, then offers to run
-# `decktalk install`, which fetches Chromium and ffmpeg.
+# It installs uv if you do not have it, then `uv tool install decktalk`. That is all it does.
 #
-# This script never calls sudo itself. `decktalk install` can: on Linux it runs
-# `playwright install chromium --with-deps`, and Playwright uses sudo to add Chromium's system
-# libraries. So it is never run without asking. On a terminal you get a y/N question that says the
-# size and the sudo before anything happens, read from /dev/tty rather than stdin, because stdin is
-# the pipe carrying this script. Without a terminal there is nobody to ask, so it is skipped and
-# the one command to run later is printed. --browser and --no-browser decide it up front.
+# It never runs sudo, and it never fetches Chromium or ffmpeg: `decktalk install` does that,
+# separately and visibly, because on Linux it reaches `playwright install chromium --with-deps` and
+# Playwright uses sudo for Chromium's system libraries. An installer that ran it would be an
+# installer that could ask for a root password, and the whole argument for reading a script before
+# piping it into a shell is that it does not do things like that.
 #
 # Every step's output is kept in a log, whether or not it is shown. On failure the log's path is
 # printed and the file is left behind; on success it is removed unless you asked to keep it.
 #
-# DECKTALK_VERSION=0.4.1 pins the version. Options go after `-s --`, for example
+# DECKTALK_VERSION=0.4.0 pins the version. Options go after `-s --`, for example
 # `| sh -s -- --dry-run`; run with --help to see them.
 #
 # Everything is inside main(), which is called on the last line, so a download cut off part way
@@ -39,7 +37,6 @@ UNICODE=0
 TTY=0
 VERBOSE=0
 KEEP_LOG=0
-BROWSER=ask
 SPIN_PID=''
 LABEL=''
 STEP_LOG=''
@@ -81,7 +78,6 @@ note() { printf '%s%s%s\n' "$DIM" "$*" "$RESET"; }
 
 mark_ok() { if [ "$UNICODE" = 1 ]; then printf '%s' "✓"; else printf '%s' "ok"; fi; }
 mark_bad() { if [ "$UNICODE" = 1 ]; then printf '%s' "✗"; else printf '%s' "!!"; fi; }
-mark_skip() { if [ "$UNICODE" = 1 ]; then printf '%s' "·"; else printf '%s' "--"; fi; }
 
 # ---- the log ------------------------------------------------------------------------------------
 # One file for the whole run, written whether or not anything is shown, so a failure three steps
@@ -99,7 +95,7 @@ log_open() {
 	log "  uname: $(uname -a 2>/dev/null || echo '?')"
 	log "  shell: ${0##*/}  tty=$TTY  unicode=$UNICODE  fancy=$FANCY"
 	log "  args: $*"
-	log "  DECKTALK_VERSION=${DECKTALK_VERSION:-<latest>}  browser=$BROWSER"
+	log "  DECKTALK_VERSION=${DECKTALK_VERSION:-<latest>}"
 	log "  PATH=$PATH"
 }
 
@@ -161,7 +157,6 @@ done_line() {
 }
 
 fail_line() { printf '  %s%s%s %s\n' "$RED" "$(mark_bad)" "$RESET" "$1"; }
-skip_line() { printf '  %s%s %s%s\n' "$DIM" "$(mark_skip)" "$1" "$RESET"; }
 
 # step "Label" cmd args...
 #
@@ -265,9 +260,6 @@ DeckTalk installer.
 
 Options, passed after `-s --`, for example `| sh -s -- --dry-run`:
     --dry-run      Print what would happen and change nothing.
-    --browser, -y  Run `decktalk install` without asking (Chromium and ffmpeg).
-                   The only prompt in this script, so -y answers all of it.
-    --no-browser   Skip it. `decktalk install` does the same thing later.
     --verbose      Show the output of every step, not just failing ones.
     --keep-log     Keep the log file even when everything works.
     --no-color     No colour and no spinner, even on a terminal.
@@ -389,60 +381,7 @@ find_decktalk() {
 	log "verified: $INSTALLED at $DECKTALK"
 }
 
-ask_browser() {
-	# stdin is the pipe carrying this script, so a prompt has to read the terminal directly. If
-	# /dev/tty will not open there is nobody to ask, and the answer is no.
-	[ "$TTY" = 1 ] || return 1
-	[ -r /dev/tty ] || return 1
-	say ""
-	note "Chromium and ffmpeg are what record and assemble the film. A few hundred megabytes,"
-	note "once per machine."
-	case "$(uname -s)" in
-	Linux) note "On Linux this asks for sudo, for Chromium's system libraries." ;;
-	esac
-	printf 'Fetch them now? %s[Y/n]%s ' "$DIM" "$RESET"
-	# A bare Enter means yes, so the fast path is one keystroke. EOF is not a bare Enter: it means
-	# the terminal handed us nothing and there is nobody to ask, which has to read as no rather
-	# than as the default, or a closed stdin silently authorises a sudo.
-	if read -r answer </dev/tty; then
-		log "browser prompt answered: '$answer'"
-		case "$answer" in
-		"" | [Yy] | [Yy][Ee][Ss]) return 0 ;;
-		*) return 1 ;;
-		esac
-	fi
-	log "browser prompt: EOF, treating as no"
-	say ""
-	return 1
-}
 
-install_browser() {
-	if [ "$DRY_RUN" = 1 ]; then
-		say "would run: decktalk install"
-		return 0
-	fi
-	case "$BROWSER" in
-	no)
-		BROWSER_DONE=0
-		skip_line "Chromium and ffmpeg skipped."
-		return 0
-		;;
-	yes) ;;
-	*)
-		if ! ask_browser; then
-			BROWSER_DONE=0
-			[ "$TTY" = 1 ] && say "" || true
-			skip_line "Chromium and ffmpeg skipped."
-			return 0
-		fi
-		;;
-	esac
-	say ""
-	# Streamed and never behind a spinner: Playwright prints its own download progress, and on
-	# Linux sudo needs to put a password prompt on the screen where a person can see it.
-	step_stream "Chromium and ffmpeg" "$DECKTALK" install
-	BROWSER_DONE=1
-}
 
 report() {
 	say ""
@@ -452,9 +391,7 @@ report() {
 	fi
 	printf '%s%s is installed.%s Next:\n' "$BOLD" "$INSTALLED" "$RESET"
 	say ""
-	if [ "$BROWSER_DONE" != 1 ]; then
-		printf '    %sdecktalk install%s      %s# Chromium and ffmpeg, once per machine.%s\n' "$GOLD" "$RESET" "$DIM" "$RESET"
-	fi
+	printf '    %sdecktalk install%s      %s# Chromium and ffmpeg, once per machine. On Linux it asks for sudo.%s\n' "$GOLD" "$RESET" "$DIM" "$RESET"
 	printf '    %sdecktalk init my-film%s\n' "$GOLD" "$RESET"
 	printf '    %scd my-film && decktalk build --no-voice%s\n' "$GOLD" "$RESET"
 	say ""
@@ -477,15 +414,12 @@ main() {
 	DRY_RUN=0
 	DECKTALK=decktalk
 	INSTALLED="DeckTalk"
-	BROWSER_DONE=0
 	# Kept because ensure_uv may add ~/.local/bin to this shell's PATH. The advice at the end is
 	# about the author's NEXT shell, so it has to read the PATH they actually have.
 	ORIGINAL_PATH="$PATH"
 	for arg in "$@"; do
 		case "$arg" in
 		--dry-run) DRY_RUN=1 ;;
-		--browser | --yes | -y) BROWSER=yes ;;
-		--no-browser) BROWSER=no ;;
 		--verbose | -v) VERBOSE=1 ;;
 		--keep-log) KEEP_LOG=1 ;;
 		--no-color | --no-colour) NO_COLOR=1 ;;
@@ -515,7 +449,6 @@ main() {
 	ensure_uv
 	install_decktalk
 	[ "$DRY_RUN" = 1 ] || find_decktalk
-	install_browser
 	report
 
 	log "install.sh finished"

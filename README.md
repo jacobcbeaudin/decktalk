@@ -107,7 +107,7 @@ The offset column is the time from the cue time to the onset of the reveal, in m
 
 ## Requirements and costs
 
-- **Software.** The one-line installer brings its own Python, on Linux, macOS, or Windows. Installing with pip or pipx instead needs Python 3.12 or later. `decktalk install` downloads the rest.
+- **Software.** The one-line installer brings its own Python, on Linux and macOS. On Windows, install with uv or pipx, which needs Python 3.12 or later. `decktalk install` downloads the rest.
 - **Accounts.** A build without voice needs no account. A voiced build needs an ElevenLabs API key and a voice id.
 - **Cost.** Every ElevenLabs plan can call the API. The free plan has limits for a video you publish.
 

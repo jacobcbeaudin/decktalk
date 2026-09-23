@@ -27,7 +27,7 @@ If an agent does these steps for you, give it the [Reference card](/reference/ca
 
         It installs uv if you do not have it, then DeckTalk, and uv brings its own Python. It never runs sudo, and it never downloads Chromium or ffmpeg: step 2 does that, separately and visibly. [Read the script](https://decktalk.ai/install.sh) before you run it; that is why it is served from a URL.
 
-        Pipe it into `DECKTALK_VERSION=0.4.1 sh` to install one version, or into `sh -s -- --dry-run` to print what would happen and change nothing. It runs on Linux and macOS. On Windows, use the uv tab. On Alpine and other musl systems it stops and says why: Playwright, which records the slides, publishes no musl wheels, so DeckTalk needs glibc.
+        Pipe it into `DECKTALK_VERSION=0.4.0 sh` to install one version, or into `sh -s -- --dry-run` to print what would happen and change nothing. It runs on Linux and macOS. On Windows, use the uv tab. On Alpine and other musl systems it stops and says why: Playwright, which records the slides, publishes no musl wheels, so DeckTalk needs glibc.
       </Tab>
       <Tab title="uv">
         ```console
