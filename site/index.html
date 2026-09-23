@@ -142,6 +142,7 @@
          app.js, and 03d27fc is what that costs when a script throws: a page with no way to install
          anywhere on it. These four lines are the only reason a stranger scrolled this far, so like
          the how-more button they are never a thing a script can take away. -->
+    <p class="steps-label">Once per machine</p>
     <ol class="steps">
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code><span class="copy"></span></div>
@@ -151,6 +152,9 @@
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk install</span></code><span class="copy"></span></div>
         <span>Fetches Chromium and ffmpeg, once per machine. On Linux it asks for sudo, for Chromium's system libraries. If the command is not found, open a new shell.</span>
       </li>
+    </ol>
+    <p class="steps-label">For each film</p>
+    <ol class="steps">
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk init my-pitch</span></code><span class="copy"></span></div>
         <span>Writes a starter script, cues, a slide page, <code>decktalk.toml</code> and <code>.env.example</code>.</span>

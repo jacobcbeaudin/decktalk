@@ -62,3 +62,22 @@ def test_every_page_carries_the_same_navigation() -> None:
         assert 'class="btn' in text and "install" in text, f"{page.name} has no install control"
     first = next(iter(labels.values()))
     assert all(v == first for v in labels.values()), labels
+
+
+def test_every_install_command_on_the_site_is_the_same_line() -> None:
+    """The hero shows the install command and so does step 1, a screen and a half apart, and the
+    film pages show it under their film. Repeating a command is not the failure mode: a command is
+    an object, not a claim, and seeing the same line twice raises confidence that it is the line.
+    Divergence is the failure mode. The moment one of them gains a flag, a version pin or a
+    different host, the page has taught a stranger there is a choice to get right, and the
+    hesitation is the whole cost. This pins them together so the repeat stays a repeat."""
+    pattern = re.compile(r'data-cmd>([^<]*install\.sh[^<]*)<|id="cmd">([^<]*install\.sh[^<]*)<')
+    found: dict[str, list[str]] = {}
+    for page in sorted(SITE.rglob("*.html")):
+        for m in pattern.finditer(page.read_text(encoding="utf-8")):
+            found.setdefault((m.group(1) or m.group(2)).strip(), []).append(str(page.relative_to(SITE)))
+    assert found, "no install command found on the site at all"
+    assert len(found) == 1, f"the site shows more than one install command: {found}"
+    line, pages = next(iter(found.items()))
+    assert line == "curl -LsSf https://decktalk.ai/install.sh | sh", line
+    assert len(pages) >= 2, f"expected the command in the hero and the install section: {pages}"
