@@ -13,9 +13,15 @@ called all do what they say.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import pty
+import select
 import shutil
+import signal
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -29,18 +35,53 @@ def source() -> str:
     return SCRIPT.read_text(encoding="utf-8")
 
 
-def fake_path(tmp_path: Path, marker: Path) -> dict[str, str]:
-    """A PATH holding a uv and a curl that only record that they were called."""
+def fake_path(
+    tmp_path: Path,
+    marker: Path,
+    *,
+    fail: tuple[str, ...] = (),
+    slow: tuple[str, ...] = (),
+    without: tuple[str, ...] = (),
+) -> dict[str, str]:
+    """A PATH holding stubs that only record that they were called.
+
+    `decktalk` is one of them on purpose. Without it the script falls through to
+    `$HOME/.local/bin/decktalk`, so on a machine that has DeckTalk installed the tests would pass by
+    reaching the real one, and on a machine that does not they would fail for a reason that has
+    nothing to do with the script.
+
+    `fail` names stubs that exit 1, for the paths where something goes wrong. `slow` names stubs
+    that take five seconds. `without` names tools that must not be found at all.
+
+    PATH is /usr/bin:/bin and nothing else, which is what makes `without` mean anything: uv lives in
+    ~/.local/bin or Homebrew, so a PATH that inherited the author's would still find the real one
+    after the stub was removed, and a test for "no uv on this machine" would silently be a test of
+    the machine that has uv.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    for name in ("uv", "curl", "sudo", "wget"):
+    for name in ("uv", "curl", "sudo", "wget", "decktalk"):
+        lines = [
+            "#!/bin/sh",
+            f'echo "{name} $*" >> "{marker}"',
+            f'[ "$1" = "--version" ] && {{ echo "{name} 0.0.0"; exit 0; }}',
+        ]
+        if name in slow:
+            lines.append("sleep 5")
+        if name in fail:
+            lines.append(f'echo "{name}: deliberate failure" >&2')
+            lines.append("exit 1")
+        lines.append("exit 0")
+        if name in without:
+            continue
         stub = bin_dir / name
-        stub.write_text(
-            f'#!/bin/sh\necho "{name} $*" >> "{marker}"\n[ "$1" = "--version" ] && echo "{name} 0.0.0"\nexit 0\n'
-        )
+        stub.write_text("\n".join(lines) + "\n")
         stub.chmod(0o755)
     env = dict(os.environ)
-    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["PATH"] = f"{bin_dir}:/usr/bin:/bin"
+    # HOME too, because find_decktalk falls back to $HOME/.local/bin/decktalk. Left pointing at the
+    # real home, a test would quietly exercise whatever DeckTalk the author happens to have.
+    env["HOME"] = str(tmp_path)
     return env
 
 
@@ -133,3 +174,265 @@ def test_an_unknown_option_is_refused_rather_than_ignored(tmp_path: Path, source
 def test_shellcheck_is_clean() -> None:
     done = subprocess.run(["shellcheck", "-s", "sh", str(SCRIPT)], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stdout
+
+
+# ---- what the script does when something goes wrong ---------------------------------------------
+
+
+def test_a_failing_step_stops_the_install(tmp_path: Path, source: str) -> None:
+    """The regression this file exists to prevent from coming back.
+
+    `step` used to read `$?` after an `if` whose condition had failed. An `if` with no `else` whose
+    condition is false exits 0, so the status read there was the if statement's own, not the
+    command's, and every failed step was recorded as a success. A 404 on uv's installer printed its
+    error, then reported a tick for installing uv from the empty file it had just failed to
+    download, then died three lines later complaining about PATH.
+    """
+    marker = tmp_path / "called"
+    # No uv anywhere, so the script must download and run uv's installer, and curl fails when it
+    # tries. Both halves matter: without `without=("uv",)` the script finds a uv, returns early and
+    # never reaches a step that can fail, and the test passes while testing nothing.
+    env = fake_path(tmp_path, marker, fail=("curl", "wget"), without=("uv",))
+    done = run([], env=env, script=source)
+    assert "Downloading uv" in done.stdout, f"never reached the failing step:\n{done.stdout}"
+    assert done.returncode != 0, f"a failed download exited 0:\n{done.stdout}\n{done.stderr}"
+    # The load-bearing assertion, and the one that tells the bug apart from its symptom. With the
+    # bug the script did still exit non-zero, three steps later and for the wrong reason, so
+    # asserting only on the exit code passes on the broken script. What it must not do is begin
+    # the next step, running uv's installer over the empty file the download just failed to write.
+    assert "Installing uv" not in done.stdout, f"it started the next step anyway:\n{done.stdout}"
+    called = marker.read_text() if marker.exists() else ""
+    assert "uv tool install" not in called, f"it carried on after the failure: {called}"
+
+
+def test_a_failure_shows_the_output_it_held_back(tmp_path: Path, source: str) -> None:
+    """Held-back output is only worth holding back if it arrives when it is needed."""
+    marker = tmp_path / "called"
+    env = fake_path(tmp_path, marker, fail=("curl", "wget"), without=("uv",))
+    done = run([], env=env, script=source)
+    assert "Downloading uv" in done.stdout, f"never reached the failing step:\n{done.stdout}"
+    assert "deliberate failure" in done.stdout + done.stderr, done.stdout + done.stderr
+
+
+def test_the_log_is_kept_and_named_when_something_fails(tmp_path: Path, source: str) -> None:
+    log = tmp_path / "install.log"
+    marker = tmp_path / "called"
+    env = fake_path(tmp_path, marker, fail=("curl", "wget"), without=("uv",)) | {"DECKTALK_INSTALL_LOG": str(log)}
+    done = run([], env=env, script=source)
+    assert done.returncode != 0, f"nothing failed, so there is no failure to keep a log for:\n{done.stdout}"
+    assert log.exists(), "the log was removed on the one run where it was worth keeping"
+    assert str(log) in done.stderr, f"the path was never printed: {done.stderr}"
+    assert "exited 1" in log.read_text(), log.read_text()
+
+
+def test_the_log_is_removed_when_nothing_fails(tmp_path: Path, source: str) -> None:
+    log = tmp_path / "install.log"
+    env = fake_path(tmp_path, marker := tmp_path / "called") | {"DECKTALK_INSTALL_LOG": str(log)}
+    done = run([], env=env, script=source)
+    assert done.returncode == 0, done.stderr
+    assert marker.exists()
+    assert not log.exists(), "a clean run left a log file behind"
+
+
+def test_keep_log_keeps_it(tmp_path: Path, source: str) -> None:
+    log = tmp_path / "install.log"
+    env = fake_path(tmp_path, tmp_path / "called") | {"DECKTALK_INSTALL_LOG": str(log)}
+    done = run(["--keep-log"], env=env, script=source)
+    assert done.returncode == 0, done.stderr
+    assert log.exists()
+    assert "uv tool install decktalk" in log.read_text()
+
+
+# ---- the one step that can reach sudo -----------------------------------------------------------
+
+
+def test_without_a_terminal_the_browser_step_is_skipped(tmp_path: Path, source: str) -> None:
+    """`decktalk install` reaches `playwright install --with-deps`, which uses sudo on Linux. With
+    no terminal there is nobody to answer a password prompt, so a Dockerfile or a CI job must not
+    be left hanging on one, and must be told the command to run instead."""
+    marker = tmp_path / "called"
+    done = run([], env=fake_path(tmp_path, marker), script=source)
+    assert done.returncode == 0, done.stderr
+    assert "decktalk install" not in marker.read_text(), marker.read_text()
+    assert "decktalk install" in done.stdout, "it skipped the step without saying what to run"
+
+
+def test_yes_runs_the_browser_step_without_a_terminal(tmp_path: Path, source: str) -> None:
+    """The opt-in has to work where the prompt cannot: that is the whole point of having it."""
+    marker = tmp_path / "called"
+    done = run(["-y"], env=fake_path(tmp_path, marker), script=source)
+    assert done.returncode == 0, done.stderr
+    assert "decktalk install" in marker.read_text(), marker.read_text()
+
+
+def test_no_browser_declines_it(tmp_path: Path, source: str) -> None:
+    marker = tmp_path / "called"
+    done = run(["--no-browser"], env=fake_path(tmp_path, marker), script=source)
+    assert done.returncode == 0, done.stderr
+    assert "decktalk install" not in marker.read_text(), marker.read_text()
+
+
+def test_it_reports_the_version_that_is_actually_on_disk(tmp_path: Path, source: str) -> None:
+    """ "Installed" was a claim about the command that had just run, not about the one the reader is
+    about to type. It is now read back from the binary."""
+    done = run([], env=fake_path(tmp_path, tmp_path / "called"), script=source)
+    assert "decktalk 0.0.0 is installed" in done.stdout, done.stdout
+
+
+# ---- presentation degrades rather than breaking -------------------------------------------------
+
+
+def test_nothing_writes_escape_codes_when_stdout_is_not_a_terminal(tmp_path: Path, source: str) -> None:
+    """A CI log full of colour codes is a log nobody reads. `[ -t 1 ]` is the whole guard, and this
+    is the assertion that it is actually consulted everywhere rather than in most places."""
+    done = run([], env=fake_path(tmp_path, tmp_path / "called"), script=source)
+    assert "\033[" not in done.stdout, repr(done.stdout)
+    assert "\033[" not in done.stderr, repr(done.stderr)
+
+
+def test_the_plain_path_still_names_every_step(tmp_path: Path, source: str) -> None:
+    """Without a spinner the labels are all a reader gets, so they must still be printed."""
+    done = run([], env=fake_path(tmp_path, tmp_path / "called"), script=source)
+    assert "Installing decktalk" in done.stdout, done.stdout
+
+
+# ---- what needs a real terminal -----------------------------------------------------------------
+#
+# `[ -t 1 ]` and `/dev/tty` are the two things the script branches on that a pipe cannot reproduce,
+# and they guard the only step that can reach sudo. A pty is the only way to test them: pty.fork
+# makes the pty the child's controlling terminal, which is what /dev/tty then opens. Popen with a
+# pty on stdout would leave the child's controlling terminal pointing at pytest's own.
+
+
+def run_pty(
+    args: list[str],
+    env: dict[str, str],
+    feed: str | None = None,
+    interrupt_after: float | None = None,
+    timeout: float = 30.0,
+) -> tuple[int, str]:
+    """Run install.sh under a pty. Returns (exit status, everything it wrote)."""
+    pid, fd = pty.fork()
+    if pid == 0:  # pragma: no cover - the child execs or dies
+        try:
+            os.execvpe("/bin/sh", ["sh", str(SCRIPT), *args], env)
+        finally:
+            os._exit(127)
+    out = b""
+    fed = False
+    reaped = False
+    status = 0
+    started = time.monotonic()
+    interrupted = False
+    try:
+        while True:
+            if time.monotonic() - started > timeout:
+                raise AssertionError(f"install.sh did not finish in {timeout}s:\n{out.decode(errors='replace')}")
+            if interrupt_after is not None and not interrupted and time.monotonic() - started >= interrupt_after:
+                # Ctrl-C reaches the whole foreground process group, not just the shell.
+                os.killpg(os.getpgid(pid), signal.SIGINT)
+                interrupted = True
+            ready, _, _ = select.select([fd], [], [], 0.2)
+            if ready:
+                try:
+                    chunk = os.read(fd, 4096)
+                except OSError:
+                    # The last process holding the slave closed it: EIO here means the run is over,
+                    # not that it went wrong, so the status still has to be collected below.
+                    chunk = b""
+                if not chunk:
+                    break
+                out += chunk
+                if feed is not None and not fed and b"Fetch them now?" in out:
+                    os.write(fd, feed.encode())
+                    fed = True
+                continue
+            done, got = os.waitpid(pid, os.WNOHANG)
+            if done:
+                status, reaped = got, True
+                break
+        if not reaped:
+            _, status = os.waitpid(pid, 0)
+            reaped = True
+        return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
+    finally:
+        with contextlib.suppress(OSError):
+            os.close(fd)
+        if not reaped:
+            with contextlib.suppress(OSError, ChildProcessError):
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+
+
+def test_on_a_terminal_it_asks_before_the_step_that_can_reach_sudo(tmp_path: Path, source: str) -> None:
+    del source
+    marker = tmp_path / "called"
+    code, out = run_pty([], fake_path(tmp_path, marker), feed="n\n")
+    assert code == 0, out
+    assert "Fetch them now?" in out, out
+    assert "megabytes" in out, "the question never says what it is about to download"
+    if sys.platform.startswith("linux"):
+        # Only Linux reaches `playwright install --with-deps`, and so only Linux can reach sudo.
+        # Asserting it everywhere would demand the script lie to macOS about what it is doing.
+        assert "sudo" in out, "on Linux the question must name the sudo it is asking permission for"
+    else:
+        assert "sudo" not in out, f"macOS never needs sudo here, so nothing should mention it:\n{out}"
+    assert "decktalk install" not in marker.read_text(), marker.read_text()
+
+
+@pytest.mark.parametrize("answer", ["y\n", "\n", "YES\n"])
+def test_accepting_the_question_runs_it(tmp_path: Path, source: str, answer: str) -> None:
+    """A bare Enter is the default and has to mean yes, or the fast path costs a keystroke."""
+    del source
+    marker = tmp_path / "called"
+    code, out = run_pty([], fake_path(tmp_path, marker), feed=answer)
+    assert code == 0, out
+    assert "decktalk install" in marker.read_text(), f"{answer!r} did not run it:\n{out}"
+
+
+def test_eof_at_the_question_declines_rather_than_defaulting(tmp_path: Path, source: str) -> None:
+    """The second bug this file exists to prevent.
+
+    The prompt was `read -r answer </dev/tty || answer=""`, and the case arm treated "" as yes so
+    that a bare Enter would be the default. That made EOF mean yes as well. EOF is not a person
+    pressing Enter: it is the terminal handing the script nothing, and it must not silently
+    authorise the one command here that can reach sudo.
+
+    Ctrl-D is how a person produces that EOF at a prompt, and it is the only way to produce one
+    here: while this test holds the pty's master end open, a plain wait would simply block.
+    """
+    del source
+    marker = tmp_path / "called"
+    code, out = run_pty([], fake_path(tmp_path, marker), feed="\x04", timeout=20)
+    assert code == 0, out
+    assert "Fetch them now?" in out, out
+    assert "decktalk install" not in marker.read_text(), f"EOF was taken as consent:\n{out}"
+
+
+def test_a_terminal_gets_the_spinner_and_a_tick(tmp_path: Path, source: str) -> None:
+    del source
+    code, out = run_pty([], fake_path(tmp_path, tmp_path / "called"), feed="n\n")
+    assert code == 0, out
+    assert "\033[" in out, "a terminal got no colour at all"
+    assert "✓" in out, out
+
+
+def test_no_color_is_honoured_on_a_terminal(tmp_path: Path, source: str) -> None:
+    """NO_COLOR is set by people who mean it, and a terminal is exactly where it has to be obeyed."""
+    del source
+    env = fake_path(tmp_path, tmp_path / "called") | {"NO_COLOR": "1"}
+    code, out = run_pty([], env, feed="n\n")
+    assert code == 0, out
+    assert "\033[" not in out, repr(out)
+
+
+def test_an_interrupt_puts_the_cursor_back_and_keeps_the_log(tmp_path: Path, source: str) -> None:
+    """The spinner hides the cursor. Before there was a trap, a Ctrl-C mid-spinner left a terminal
+    with no cursor in it until the next `reset`, and threw away the log of what had happened."""
+    del source
+    log = tmp_path / "install.log"
+    env = fake_path(tmp_path, tmp_path / "called", slow=("uv",)) | {"DECKTALK_INSTALL_LOG": str(log)}
+    code, out = run_pty(["-y"], env, interrupt_after=1.5, timeout=30)
+    assert code == 130, f"an interrupt should exit 130, got {code}:\n{out}"
+    assert "\033[?25h" in out, "the cursor was left hidden"
+    assert log.exists(), "the log of an interrupted run was thrown away"
