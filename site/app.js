@@ -1,4 +1,4 @@
-/* decktalk.ai. One script over both pages, no library, no build step.
+/* decktalk.ai. One script over the one page, no library, no build step.
    Everything that moves reads the Halfway build in data.js and stage.js: the words with their
    times, the cues with their times, and the deck's own scenes. The stage is a pure function of t,
    so the silent replay, the voice clock, the scrubber and the keyboard all draw the same frame. */
@@ -19,7 +19,13 @@
      the two takes are built in separate onPage closures and cannot see each other, so the takes
      silenced only each other: pressing one while the chapters played put two readings of the same
      script over each other, in the same cloned voice, which sounds like a fault in the product
-     rather than in the page. */
+     rather than in the page.
+
+     The hero was left out of this while it was alone on its own page. It is not any more: the
+     film, the chapters and the takes are three sources of the same cloned voice on one scroll,
+     and a tall window holds the hero and the first chapter at once. What a hero registers is a
+     mute rather than a stop, because the film is the picture as well as the voice: another press
+     takes its sound, never the thing it is showing. */
   const voices = new Set();
   const addVoice = (stop) => voices.add(stop);
   const silenceOtherVoices = (mine) => {
@@ -28,7 +34,7 @@
 
   /* Every command on the site is one component: a `.pill` holding the prompt, the command in
      [data-cmd], and an empty slot. The button is made here rather than written into the markup, so
-     a page whose script never ran shows a command and no control that cannot do what it says —
+     a page whose script never ran shows a command and no control that cannot do what it says,
      and the prompt is not selectable, so selecting the line by hand still yields a line that runs.
      Wired before the film is, and before the data.js guard below, because the command is the thing
      a visitor came to take away and the film is the thing they came to watch. */
@@ -87,10 +93,11 @@
   };
   for (const el of $$("[data-total]")) el.textContent = fmt(D.total);
 
-  /* Each page carries only part of this DOM: index.html has the hero, how.html has the chapters and the
-     edit section, and both have the cuts. Every part below runs only when the page
-     being read is the one it belongs to, so the other page runs none of it and neither page throws. The
-     error guard above stays a guard, and never has to fire on a page that is simply missing a section. */
+  /* The hero, the chapters and the edit section are one page now, and each part below still asks for
+     the element it needs before it runs. The guard is not bookkeeping for a second page: it is what
+     lets a section be cut from the markup without taking the rest of the page down with it, which is
+     how the explanation arrived here in the first place. The error guard above stays a guard, and
+     never has to fire on a page that is simply missing a section. */
   const onPage = (sel, part) => {
     const el = $(sel);
     if (el) part(el);
@@ -400,26 +407,33 @@
       for (const b of opts.soundBtns || []) b.setAttribute("aria-pressed", on ? "true" : "false");
       if (!on) for (const w of opts.waves || []) restWave(w);
     }
+    /* Silence, without taking the picture away. This is what the player registers as its voice, so
+       a press on any other voice on the page turns this one off: the film carries on exactly where
+       it was, silently, which is what it was doing before the viewer asked for sound. Idempotent,
+       so a second voice starting while a third is starting costs nothing. */
+    function mute() {
+      if (!P.sound) return;
+      P.sound = false;
+      if (P.audio) {
+        // The clock keeps following the muted audio while it plays, so nothing jumps.
+        if (P.playing && P.audio.readyState >= 1) P.t = P.audio.currentTime;
+        P.audio.muted = true;
+        P.audio.pause();
+      }
+      P.last = performance.now();
+      setSoundUI(false);
+    }
     /* The sound control: a press turns sound on where the film already is, and a press while sound
        is on mutes without stopping. At the end there is nothing left to hear, so a press replays. */
     function toggleSound() {
       if (P.sound && !P.ended) {
-        P.sound = false;
-        if (P.audio) P.audio.muted = true;
-        // The clock keeps following the muted audio while it plays, so nothing jumps.
-        if (P.playing && P.audio) {
-          P.sound = false;
-          P.t = P.audio.currentTime;
-          P.audio.pause();
-          P.last = performance.now();
-        }
-        setSoundUI(false);
+        mute();
         return;
       }
       P.sound = true;
       P.autoplaying = false;
       // Sound is a setting, not a restart. The button sits where every player puts mute, so a press
-      // means "let me hear this", not "start again" — except at the end, where there is nothing left
+      // means "let me hear this", not "start again", except at the end, where there is nothing left
       // to hear and a press is the replay the ended state offers.
       if (P.ended) P.t = 0;
       P.ended = false;
@@ -441,6 +455,21 @@
       P.last = performance.now();
       a.play()
         .then(() => {
+          // Another voice on the page may have taken this one's sound while the clip was loading.
+          // The film goes back to whatever it was doing before the press, and the control never
+          // reports a sound that was already given up.
+          if (!P.sound) {
+            a.pause();
+            setSoundUI(false);
+            if (wasPlaying) {
+              P.playing = true;
+              P.last = performance.now();
+              cancelAnimationFrame(P.raf);
+              P.raf = requestAnimationFrame(loop);
+              setState("playing");
+            } else setState("paused");
+            return;
+          }
           // Seeking again here, because a press during the load may have moved P.t and the element
           // was not ready to honour the currentTime set before play() was called.
           a.currentTime = P.t;
@@ -503,7 +532,7 @@
       pause();
       pausedByPage = false;
     };
-    Object.assign(P, { play, pause, stop, seek, toggleSound, setRate, draw, end });
+    Object.assign(P, { play, pause, stop, mute, seek, toggleSound, setRate, draw, end });
     return P;
   }
 
@@ -603,11 +632,28 @@
         drawBand(hero.t);
       },
     });
+    /* The film's voice in the registry at the top of this file. It is a mute and not a stop: the
+       chapter stage starting is a reason for the film to go quiet, never a reason for it to hold
+       still. Registered before the first press, because the autoplay is silent and the press that
+       gives the film a voice is the one that has to take everyone else's. */
+    const muteHero = () => hero.mute();
+    addVoice(muteHero);
+    /* Every press that can end with this film making a sound takes the others' first. A press that
+       only mutes is not one of them: it is the same test toggleSound makes to decide which half it
+       is doing, so the hero's own mute button never reaches across the page and stops the
+       chapters. Silencing before the press rather than after keeps it true of the press that fails
+       too, since a refused play() leaves the film silent and everything else already quiet. */
+    const heroWillSound = () => !(hero.sound && !hero.ended);
+    const claimTheVoice = () => {
+      if (heroWillSound()) silenceOtherVoices(muteHero);
+    };
     pauseBtn.addEventListener("click", () => {
       if (hero.playing) hero.stop();
-      // A replay honours the sound the viewer chose rather than starting over in silence.
-      else if (hero.ended) hero.play({ silent: !hero.sound });
-      else hero.play();
+      else {
+        // A replay honours the sound the viewer chose rather than starting over in silence.
+        if (hero.sound) silenceOtherVoices(muteHero);
+        hero.play(hero.ended ? { silent: !hero.sound } : {});
+      }
     });
     scrub.addEventListener("input", () => {
       scrubHeld = performance.now();
@@ -619,7 +665,11 @@
       clearTimeout(scrubAnnounce);
       scrubAnnounce = setTimeout(() => hero.seek(Number.parseFloat(scrub.value), { announceIt: true }), 400);
     });
-    for (const b of $$("[data-sound]")) b.addEventListener("click", () => hero.toggleSound());
+    for (const b of $$("[data-sound]"))
+      b.addEventListener("click", () => {
+        claimTheVoice();
+        hero.toggleSound();
+      });
     // Reduced motion: the hero opens on the `1.1forty` frame and plays only on press. Otherwise it plays once, silently.
     if (RM) {
       hero.seek(cueAt["1.1forty"].at + 0.6);
@@ -839,7 +889,7 @@
         })
         .join("\n")}</pre>`,
       cues: `<span class="fn">cues.json → build/cue-times.json</span><pre>{ "cue": "<span class="cue">2.1her</span>", "on": "<span class="hl">Twenty minutes for her</span>" }\n<span class="t">→ ${(her.at - sec2.start).toFixed(2)} s into the section. The recording starts ${D.lead} s after the section begins, so words.json says ${take(her.first)}.</span>\n{ "cue": "<span class="cue">2.1you</span>", "on": "<span class="hl">Twenty minutes for you</span>" }\n<span class="t">→ ${(you.at - sec2.start).toFixed(2)} s into the section.</span></pre>`,
-      slide: `<span class="fn">deck/index.html</span><pre>&lt;div class="pill" <span class="cue">data-cue="2.1her"</span> data-describe="${esc(her.describe)}"&gt;20 min&lt;/div&gt;\n&lt;div class="pill" <span class="cue">data-cue="2.1you"</span> data-describe="${esc(you.describe)}"&gt;20 min&lt;/div&gt;\n<span class="t">&lt;!-- decktalk-runtime.js shows each data-cue element at its cue's second. data-describe is what a screen reader hears when it appears. --&gt;</span></pre>`,
+      slide: `<span class="fn">deck/index.html</span><pre>&lt;div class="pill" <span class="cue">data-cue="2.1her"</span> data-describe="${esc(her.describe)}"&gt;20 min&lt;/div&gt;\n&lt;div class="pill" <span class="cue">data-cue="2.1you"</span> data-describe="${esc(you.describe)}"&gt;20 min&lt;/div&gt;\n<span class="t">&lt;!-- decktalk-runtime.js shows each data-cue element at its cue's second. data-describe is the sentence this reveal writes into the transcript the build publishes beside the film. --&gt;</span></pre>`,
       verify: `<span class="fn">decktalk verify</span><pre>${sec2.cues
         .map(
           (c) =>
@@ -851,14 +901,14 @@
     };
     for (const [name, html] of Object.entries(panels)) $(`[data-panel="${name}"]`).innerHTML = html;
 
-    /* Chapters 4 and 5 label the pictures on the stage itself. The cue name is already on the element —
-       it is the slide's own `data-cue`, which chapter 4's panel quotes — so only the measured landing
+    /* Chapters 4 and 5 label the pictures on the stage itself. The cue name is already on the element:
+       it is the slide's own `data-cue`, which chapter 4's panel quotes, so only the measured landing
        needs writing on. The badges are drawn by the stylesheet from these two attributes.
 
        They are also why the verify line under the frame no longer waits for chapter 5 to appear. It used to
        be the chapter's whole reward, and it was the section's cue list a second time, in a column that grew
        three lines taller at exactly the scroll position where sticky could least afford it. It now reads as
-       what it is — a property of the section you picked — from the first chapter on, and chapter 5's reward
+       what it is, a property of the section you picked, from the first chapter on, and chapter 5's reward
        is on the pictures, where each number belongs to the landing it measures. */
     for (const el of $$(".scene > [data-cue]", hiwStage)) {
       const ms = D.verify[el.dataset.cue];

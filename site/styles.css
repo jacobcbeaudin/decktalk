@@ -157,7 +157,11 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .nav ul small { color: var(--dt-text-3); font-size: 12px; margin-left: 6px; }
 .nav .install { margin-left: auto; height: 36px; padding: 0 14px; }
 
-/* ---- hero. Everything from the top of the nav to the bottom of the transport fits in 900 css px at 1440 by 900.
+/* ---- hero. This used to fit from the top of the nav to the bottom of the transport inside 900 css px
+   at 1440 by 900, which was a rule for a stranger with eight seconds: everything the page might want to
+   say had to fit above a fold or be cut. It is written for someone who will read it now, and the subhead
+   that says what the problem is spends about 40 px of that budget knowingly. The phone rule it replaces
+   is the one that still matters and is still kept: the stage starts inside the first 300 css px at 390.
    Clipped, so the stage glow never widens the page on a phone. */
 .hero { padding: 16px 0 40px; overflow: clip; }
 .hero .wrap {
@@ -272,9 +276,6 @@ section.block::before {
 }
 section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch; }
 
-/* ---- the invitation that stands on the landing page where the explanation used to, and sends a reader to how.html. */
-.how-more .btn { margin-top: 24px; }
-
 /* ---- films: one row of small cards, each a link to the film's own page. */
 .films { padding-top: 40px; padding-bottom: 48px; }
 .reel { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 340px)); gap: 20px; margin: 24px 0 0; padding: 0; list-style: none; }
@@ -294,7 +295,7 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .chapters { display: grid; padding-bottom: var(--chapter-tail); }
 /* Every chapter parks the stage on a moment only it shows, so the column is paid for by the chapter count,
    not by its height: 42vh is a screenful of reading between two different frames. The tail is what keeps the
-   promise the sticky panel makes — the last chapter is the one with a new frame to show, and without a run-out
+   promise the sticky panel makes: the last chapter is the one with a new frame to show, and without a run-out
    below it the panel releases and slides off the top of the screen exactly as that frame arrives. The two come
    out of the same budget: the four chapters give up what the tail takes, so the section is no longer than before. */
 .chapter { min-height: 42vh; display: grid; align-content: center; gap: 14px; padding: 24px 0; }
@@ -317,8 +318,8 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .pinned .verify { font-family: var(--font-mono); font-size: 13px; color: var(--dt-text-2); min-height: 20px; }
 .pinned .verify b { font-weight: 500; color: var(--dt-text); }
 
-/* Chapters 4 and 5 write on the stage. At 4 each picture carries the `data-cue` it was authored with — the
-   attribute the panel beside it quotes — and at 5 the same badge carries what `decktalk verify` measured for
+/* Chapters 4 and 5 write on the stage. At 4 each picture carries the `data-cue` it was authored with, the
+   attribute the panel beside it quotes, and at 5 the same badge carries what `decktalk verify` measured for
    that landing. Sizes are in the deck's own 1920 px space, so they scale with the frame like the deck's labels.
    Colours come from the stage's own palette, which is fixed dark whichever scheme the page is in.
    Where a badge sits is the picture's business, so each picture carries its own corner rather than the badge

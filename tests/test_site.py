@@ -48,6 +48,25 @@ def test_the_installer_is_served_as_text_rather_than_a_download() -> None:
     assert "text/plain" in rule, f"install.sh must be served as text, not downloaded: {rule!r}"
 
 
+def test_the_old_explanation_link_still_goes_somewhere() -> None:
+    """`/how` was a page and is a section now, and the link has already been sent to people.
+
+    Cloudflare's static assets read `_redirects` the way they read `_headers`, and this is the one
+    rule in it. A merge that deletes a page and leaves the URL to 404 costs exactly the readers the
+    page was rewritten for, which is the ones who already have the link.
+    """
+    redirects = SITE / "_redirects"
+    assert redirects.exists(), "site/_redirects is what keeps /how alive after the merge"
+    rules = [line.split() for line in redirects.read_text(encoding="utf-8").splitlines() if line[:1] not in ("", "#")]
+    assert ["/how", "/#how", "301"] in rules, rules
+    assert not (SITE / "how.html").exists(), "how.html is back, so the redirect now shadows a real page"
+    # Nothing on the site may link to the redirect: a rule for the links already out in the world
+    # is not a licence to spend a round trip on every reader of the page as it stands.
+    for page in sorted(SITE.rglob("*.html")):
+        text = page.read_text(encoding="utf-8")
+        assert 'href="/how"' not in text, f"{page.relative_to(SITE)} still links to the redirect"
+
+
 def test_every_page_carries_the_same_navigation() -> None:
     """The film pages drifted: they shipped before the split and the install work and kept a nav of
     two links while the other pages grew to four and a control. A visitor deep in a film had no way
