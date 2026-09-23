@@ -53,11 +53,6 @@
         <li><a href="https://github.com/jacobcbeaudin/decktalk">GitHub<small>Open source</small></a></li>
       </ul>
     </nav>
-    <!-- A nav link to the install section, and styled as one. It used to be the page's only filled
-         button, which made the loudest element on the page the one that performed no action: it
-         moved the viewport 5,000 px and installed nothing. The command itself is in the hero, one
-         screen below, where the copy button is. -->
-    <a class="btn install" href="#install">Install</a>
   </div>
 </header>
 
@@ -68,19 +63,16 @@
     <p class="kicker">Narrated video from a script, in your own voice.</p>
     <h1 id="hero-h">Every picture lands on its word.</h1>
     <p class="sub">Change a sentence, and only that section is voiced again.</p>
-    <button type="button" class="btn solid cta" data-sound aria-pressed="false">
-      <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span>
-      <span class="lbl"><span data-sound-label>Play with sound · <span data-total>0:35</span></span><span data-sound-label-on hidden>Sound on · <span data-total>0:35</span></span></span>
-    </button>
     <!-- One command, one component, and the same line the install section and the film pages carry.
          The copy button is not written here: app.js makes it, so a page with no script shows a
          command and no control that lies about what it does. The prompt is not selectable, so a
          hand-selection is a line that runs. -->
     <div class="pill" role="group" aria-label="Install command">
       <code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code>
+      <a class="view" href="/install.sh">view script</a>
       <span class="copy"></span>
     </div>
-    <p class="caption">Made with DeckTalk from <a href="/films/halfway">this script</a> · a fictional pitch</p>
+    <p class="caption"><span class="hint">The voice is off: press Sound under the film. </span>Made with DeckTalk from <a href="/films/halfway">this script</a> · <span data-total>0:35</span> · a fictional pitch</p>
 
     <figure class="stage" id="hero" aria-label="Halfway, a 35-second fictional pitch made with DeckTalk, replayed from its slides and its recorded voice">
       <div class="frame" aria-hidden="true"><div class="stage-deck" data-stage></div></div>
@@ -93,9 +85,9 @@
         </button>
         <input class="scrub" type="range" min="0" max="35.8" step="0.25" value="0" data-scrub aria-label="Position in the film" aria-valuetext="0 seconds">
         <span class="tc" aria-hidden="true"><span data-tc>0:00</span> / <span data-total>0:35</span></span>
-        <button type="button" class="btn sound" data-sound aria-pressed="false" aria-label="Play with sound">
+        <button type="button" class="btn sound" data-sound aria-pressed="false" aria-label="Sound">
           <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span>
-          <span class="lbl"><span data-sound-label>Sound</span><span data-sound-label-on hidden>Sound on</span></span>
+          <span class="lbl">Sound</span>
         </button>
       </div>
     </figure>

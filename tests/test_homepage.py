@@ -266,3 +266,41 @@ def test_a_reader_can_walk_from_the_landing_page_to_the_explanation_and_back(pag
     page.click(".nav a[href='/#install']")  # type: ignore[attr-defined]
     page.wait_for_url("**/#install")  # type: ignore[attr-defined]
     assert page.locator("#install").count() == 1  # type: ignore[attr-defined]
+
+
+def test_a_voice_that_will_not_play_does_not_cost_the_viewer_the_film(page: object) -> None:
+    """Pressing Sound when the clip cannot be fetched used to stop the hero.
+
+    `toggleSound`'s `.catch` set `P.playing = false` and `setState("paused")`, so a visitor whose
+    press failed, for a missing clip, a refused request or a codec the browser would not take, was
+    left with a still frame instead of the silent film they already had. The press asked for more
+    and took away what was there. The fixture refuses the media host, so this is that exact case.
+    """
+    pg = page
+    pg.goto(f"{pg.origin}/index.html", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    pg.wait_for_function("() => document.querySelector('[data-tc]')?.textContent !== '0:00'", timeout=15000)  # type: ignore[attr-defined]
+    pg.click(".transport .sound")  # type: ignore[attr-defined]
+    before = pg.evaluate("document.querySelector('[data-tc]').textContent")  # type: ignore[attr-defined]
+    pg.wait_for_timeout(1500)  # type: ignore[attr-defined]
+    after = pg.evaluate("document.querySelector('[data-tc]').textContent")  # type: ignore[attr-defined]
+    state = pg.evaluate("document.querySelector('[data-pause]').getAttribute('data-state')")  # type: ignore[attr-defined]
+    assert state == "playing", f"a refused voice clip left the film {state}"
+    assert after != before, f"the clock stopped at {before} after a press that could not make sound"
+
+
+def test_the_hero_has_one_sound_control_whose_name_never_moves(page: object) -> None:
+    """Two buttons wired to `toggleSound` announced as two near-identical toggles carrying the same
+    state, with nothing to tell them apart, and the name swapped between "Play with sound" and
+    "Sound on" as the state changed. A toggle's name must hold still: `aria-pressed` is the part
+    that moves, and announcing both says the state twice.
+    """
+    pg = page
+    pg.goto(f"{pg.origin}/index.html", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    pg.wait_for_function("() => document.querySelector('[data-tc]')?.textContent !== '0:00'", timeout=15000)  # type: ignore[attr-defined]
+    controls = pg.evaluate("document.querySelectorAll('[data-sound]').length")  # type: ignore[attr-defined]
+    assert controls == 1, f"the hero shows {controls} sound controls for one function"
+    name = "document.querySelector('[data-sound]').getAttribute('aria-label')"
+    before = pg.evaluate(name)  # type: ignore[attr-defined]
+    pg.click(".transport .sound")  # type: ignore[attr-defined]
+    pg.wait_for_timeout(600)  # type: ignore[attr-defined]
+    assert pg.evaluate(name) == before, "the control renamed itself when its state changed"  # type: ignore[attr-defined]

@@ -146,9 +146,6 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 /* Both labels of a sound control share one cell, one of them invisible, so a press never changes the control's width. */
 .lbl { display: inline-grid; justify-items: center; }
 .lbl > span { grid-area: 1 / 1; white-space: nowrap; }
-.lbl > span[hidden] { display: block; visibility: hidden; }
-/* On the paper button the gold is 1.7:1, so the pressed glyph takes the light palette's voice token, 6.6:1 on paper. */
-.cta[aria-pressed="true"] .wave { color: #7a5000; }
 
 /* ---- nav */
 .nav { height: 64px; }
@@ -166,12 +163,11 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .hero .wrap {
   display: grid; justify-items: start; column-gap: 16px; row-gap: 0;
   grid-template-columns: auto 1fr;
-  grid-template-areas: "kicker kicker" "h1 h1" "sub sub" "cta pill" "caption caption" "stage stage";
+  grid-template-areas: "kicker kicker" "h1 h1" "sub sub" "pill pill" "caption caption" "stage stage";
 }
 .hero .kicker { grid-area: kicker; font-size: 16px; color: var(--dt-text-2); }
 .hero h1 { grid-area: h1; margin-top: 8px; }
 .hero .sub { grid-area: sub; margin-top: 10px; font-size: var(--dt-size-lg); max-width: 44ch; }
-.hero .cta { grid-area: cta; margin-top: 18px; }
 /* ---- the command component. One pill holds every command the site shows: the hero's, the four in
    the install section, and the film pages'. It wraps rather than clips, because the one line is
    44 characters and a phone is 358 px wide. The prompt is written so a reader sees a shell, and is
@@ -187,10 +183,28 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .pill code { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .pill .p { color: var(--dt-text-3); user-select: none; -webkit-user-select: none; }
 .pill .copy:empty { display: none; }
+/* Reading the script before running it is the whole argument for piping a URL into a shell, and the
+   link that lets you was five thousand pixels below the command, in the install section. It belongs
+   beside the command, where the decision is made. site/_headers serves the file as text/plain so a
+   click shows it rather than downloading it. Set in the text face and pushed away from the command,
+   because in the mono face against `| sh` it read as something you were about to run. */
+.pill .view { margin-left: auto; font-family: var(--font-text); font-size: 13px; color: var(--dt-text-3); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; white-space: nowrap; }
+.pill .view:hover { color: var(--dt-text); }
 .pill button { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--dt-surface-2); color: var(--dt-text); font-size: 13px; font-weight: 500; cursor: pointer; }
 .pill button:hover { background: var(--dt-border); }
+/* The loudest thing on the first screen is the one control that hands the product over. The chip is
+   var(--dt-surface-2) on var(--dt-surface), which is 1.13:1, under the 3:1 a non-text control owes
+   the eye, and it was the page's only conversion control while a mute button wore the paper. */
+.hero .pill button { background: var(--dt-paper); color: var(--dt-paper-ink); }
+.hero .pill button:hover { background: #fff; }
 .hero .caption { grid-area: caption; justify-self: center; width: 100%; max-width: var(--stage-w); margin-top: 14px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
 .hero .caption a { color: var(--dt-text-2); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
+/* The film plays silently on purpose, and nothing on the page said so: the control is a waveform
+   glyph in the transport, which is where a player puts mute but not where a first visitor looks for
+   a voice they have not been told about. The line goes once the control is pressed. A browser with
+   no :has keeps a sentence that is merely no longer needed, which is the harmless way to fail. */
+.hero .caption .hint { color: var(--dt-text-2); }
+.hero:has(.sound[aria-pressed="true"]) .caption .hint { display: none; }
 .hero .caption a:hover { color: var(--dt-text); }
 
 /* The stage: 16:9 inside a paper hairline, the dark page doing the letterboxing. A static glow behind it,
@@ -432,17 +446,21 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 
   :root { --gutter: 16px; }
   .nav { height: 56px; }
-  .nav ul { display: none; }
+  /* The links used to be hidden here, which left a phone with a header of one logo and one
+     button, and that button scrolled to four shell commands. A phone has no shell. So the phone
+     keeps the two links that go somewhere it can use, and the footer keeps Docs and GitHub. */
+  .nav ul { gap: 18px; margin-left: auto; font-size: 14px; }
+  .nav ul li:nth-child(n + 3) { display: none; }
+  .nav ul small { display: none; }
   .hero { padding-top: 4px; }
   /* The pill sits beside the play button on a wide screen, above the film. It used to drop to
      the very bottom here, under the stage, the band and the transport, so on a phone the one
      line a visitor came for arrived after the film rather than with it. Same order as the
      desktop grid now: read the promise, play it, take the line. */
-  .hero .wrap { grid-template-columns: 1fr; grid-template-areas: "kicker" "h1" "sub" "cta" "pill" "caption" "stage"; }
+  .hero .wrap { grid-template-columns: 1fr; grid-template-areas: "kicker" "h1" "sub" "pill" "caption" "stage"; }
   .hero .kicker { font-size: 12px; }
   .hero h1 { font-size: 34px; margin-top: 4px; }
   .hero .sub { margin-top: 6px; font-size: 16px; line-height: 1.4; max-width: 34ch; }
-  .hero .cta { margin-top: 12px; height: 40px; }
   .hero .caption { margin-top: 8px; font-size: 13px; }
   .stage { margin-top: 8px; }
   .hero .pill { margin-top: 20px; justify-self: stretch; }
@@ -454,8 +472,7 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
   .band .prev { min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .band .cur { min-height: 48px; }
   .transport .tc { display: none; }
-  .transport .sound { width: 40px; min-width: 0; padding: 0; }
-  .transport .sound > span:not(.wave) { display: none; }
+  .transport .sound { min-width: 0; padding: 0 10px; gap: 7px; }
   .reel { grid-template-columns: repeat(2, 1fr); gap: 14px; }
   .how .grid { grid-template-columns: 1fr; gap: 16px; }
   /* The stage is pinned here too, at the top instead of beside. It used to be `position: static`

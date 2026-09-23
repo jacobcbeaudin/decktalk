@@ -59,9 +59,26 @@ def test_every_page_carries_the_same_navigation() -> None:
         nav = re.search(r"<nav aria-label=\"Primary\">.*?</nav>", text, re.S)
         assert nav, f"{page.name} has no primary nav"
         labels[page.name] = re.findall(r"<li><a href=\"[^\"]*\"[^>]*>([A-Za-z][A-Za-z ]*)", nav.group(0))
-        assert 'class="btn' in text and "install" in text, f"{page.name} has no install control"
     first = next(iter(labels.values()))
     assert all(v == first for v in labels.values()), labels
+
+
+def test_every_page_offers_a_way_to_install() -> None:
+    """The original of this test asked for `class="btn"` and the word "install" anywhere in the
+    page, which the homepage satisfied with a button that says "Read how it works" and the string
+    `install.sh`. It passed while testing nothing.
+
+    What matters is not that a page holds a control, it is that a visitor on it can start. The
+    homepage shows the command itself, so a button that scrolls 5,000 px to a copy of that command
+    was redundant at 181 px on a desktop and worse than redundant on a phone, where the header had
+    no other links and that button's destination is four shell commands. Every other page has no
+    command on it, so there the control is the way to start.
+    """
+    for page in sorted(SITE.glob("*.html")) + sorted((SITE / "films").glob("*.html")):
+        text = page.read_text(encoding="utf-8")
+        shows_command = "install.sh | sh" in text
+        has_control = re.search(r'class="btn[^"]*install"', text) is not None
+        assert shows_command or has_control, f"{page.name} gives a visitor no way to install"
 
 
 def test_every_install_command_on_the_site_is_the_same_line() -> None:
