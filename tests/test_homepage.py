@@ -46,6 +46,15 @@ def origin() -> Iterator[str]:
         def __init__(self, *a: object, **k: object) -> None:
             super().__init__(*a, directory=str(SITE), **k)  # type: ignore[arg-type]
 
+        def translate_path(self, path: str) -> str:
+            """`/how` is `site/how.html`, the way the deployment serves it.
+
+            Cloudflare strips the extension and redirects `/how.html` to `/how`, so the pages link
+            to the extensionless path and a link followed here has to land the same way.
+            """
+            local = super().translate_path(path)
+            return f"{local}.html" if not Path(local).exists() and Path(f"{local}.html").is_file() else local
+
         def log_message(self, *a: object) -> None:
             return
 
@@ -251,9 +260,9 @@ def test_a_reader_can_walk_from_the_landing_page_to_the_explanation_and_back(pag
     """The explanation moved, so the landing page has to carry a reader to it and the how page has
     to carry them back to the install command. Both routes are followed rather than read."""
     page.goto(f"{page.origin}/index.html", wait_until="domcontentloaded")  # type: ignore[attr-defined]
-    page.click("#how-more a[href='how.html']")  # type: ignore[attr-defined]
-    page.wait_for_url("**/how.html")  # type: ignore[attr-defined]
+    page.click("#how-more a[href='/how']")  # type: ignore[attr-defined]
+    page.wait_for_url("**/how")  # type: ignore[attr-defined]
     assert page.locator("#how").count() == 1  # type: ignore[attr-defined]
-    page.click(".nav a[href='index.html#install']")  # type: ignore[attr-defined]
-    page.wait_for_url("**/index.html#install")  # type: ignore[attr-defined]
+    page.click(".nav a[href='/#install']")  # type: ignore[attr-defined]
+    page.wait_for_url("**/#install")  # type: ignore[attr-defined]
     assert page.locator("#install").count() == 1  # type: ignore[attr-defined]
