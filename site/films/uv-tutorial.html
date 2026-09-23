@@ -15,15 +15,28 @@
 <link rel="stylesheet" href="../tokens.css">
 <link rel="stylesheet" href="../styles.css">
 <style>
-  .film-page { padding: 24px 0 64px; display: grid; gap: 28px; }
+  /* The film and the command share one screen: a visitor who clicked a poster lands on the film, and the
+     line that makes one is the first thing under it, still in view when the film ends. */
+  .film-page { padding: 20px 0 64px; display: grid; gap: 18px; }
+  .film-page .head { display: grid; gap: 4px; }
   .film-page video { width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: var(--dt-surface); box-shadow: 0 0 0 1px rgba(251, 246, 238, 0.15); }
+  .film-page .under { display: grid; gap: 12px; }
   .film-page .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
-  .script { display: grid; gap: 24px; max-width: 64ch; }
+  /* The install command, reusing the homepage's pill. The prompt is not selectable, so a hand-selection
+     yields a line that runs, and the pill wraps rather than clipping on a phone. */
+  .cta-band { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+  .cta-band .pill { grid-area: auto; margin-top: 0; max-width: 100%; height: auto; min-height: 44px; padding: 6px 6px 6px 16px; }
+  .cta-band .pill code { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
+  .cta-band .pill .p { user-select: none; -webkit-user-select: none; }
+  .cta-band .fine { flex: 1 1 24ch; }
+  .script { margin-top: 26px; display: grid; gap: 24px; max-width: 64ch; }
   .script h2 { font-size: var(--dt-size-xl); display: flex; gap: 12px; align-items: baseline; }
   .script h2 .t { font-family: var(--font-mono); font-size: 13px; font-weight: 400; color: var(--dt-text-3); letter-spacing: 0; }
   .script p { font-family: var(--font-display); font-size: 19px; line-height: 1.6; letter-spacing: -0.01em; color: var(--dt-text-2); }
   .script p .beat { color: var(--dt-text-3); font-family: var(--font-mono); font-size: 12px; margin: 0 4px; }
   .note { color: var(--dt-text-2); max-width: 64ch; }
+  .note a { color: var(--dt-text); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
+  .next { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--dt-border); max-width: none; }
 </style>
 </head>
 <body>
@@ -35,16 +48,26 @@
   </div>
 </header>
 <main id="main" class="wrap film-page">
-  <div>
+  <div class="head">
     <p class="kicker">Now showing · a technical tutorial</p>
     <h1 style="font-size:clamp(32px,4vw,48px)">uv, end to end</h1>
-    <p class="sub" style="margin-top:8px">Install uv, start a project, add and remove packages, lock and sync, run tools and scripts. Seven sections, made with DeckTalk from the script below.</p>
   </div>
-  <video controls preload="metadata" playsinline width="1920" height="1080" poster="../media/uv-tutorial-poster.webp"
+  <video id="film" controls preload="metadata" playsinline width="1920" height="1080" poster="../media/uv-tutorial-poster.webp"
          src="https://media.decktalk.ai/decktalk-uv-tutorial-f2407eccdfd4.mp4" aria-label="uv, end to end, the film">
     <track kind="captions" src="../media/uv-tutorial.vtt" srclang="en" label="English" default>
   </video>
-  <p class="meta"><span>3:16</span><span>7 sections</span><span>1920 × 1080, 25 fps</span><span>voice, words and cue times from one build</span></p>
+  <div class="under">
+    <div class="cta-band" id="install">
+      <p class="kicker">Make one like it</p>
+      <div class="pill" role="group" aria-label="Install command">
+        <code><span class="p" aria-hidden="true">$</span> <span id="cmd">curl -LsSf https://decktalk.ai/install.sh | sh</span></code>
+        <span id="copy"></span>
+      </div>
+      <p class="fine">One line: it installs uv, then DeckTalk. Open source, and the first build needs no key.</p>
+    </div>
+    <p class="sub">Install uv, start a project, add and remove packages, lock and sync, run tools and scripts. Seven sections, made with DeckTalk from the script below.</p>
+    <p class="meta"><span>3:16</span><span>7 sections</span><span>1920 × 1080, 25 fps</span><span>voice, words and cue times from one build</span></p>
+  </div>
 
   <section class="script" aria-labelledby="script-h">
     <h2 id="script-h" style="font-size:var(--dt-size-2xl)">script.md</h2>
@@ -78,7 +101,45 @@
       <p>So that is uv, and your project fits on one card. <span class="beat">[beat]</span> uv init starts it, uv add grows it, uv lock pins it, uv sync matches it, and uv run uses it. <span class="beat">[beat]</span> Five commands, one tool. <span class="beat">[beat]</span> Go clear the shelf.</p>
     </article>
   </section>
+
+  <p class="note next">Next: <a href="#install">install DeckTalk</a>, read <a href="https://docs.decktalk.ai/quickstart">the quickstart</a>, or watch <a href="halfway.html">Halfway</a>, a 38-second pitch made the same way.</p>
 </main>
 <footer class="foot"><div class="wrap"><a href="../">decktalk.ai</a><span class="links"><a href="https://docs.decktalk.ai">Docs</a><a href="https://github.com/jacobcbeaudin/decktalk">GitHub · Open source</a></span></div></footer>
+<script>
+  // The film pages load no app.js, so this is the whole of their behaviour. Both halves add to working
+  // markup rather than reveal it: with the script gone the command is still selectable text, and the film
+  // still has its own play control.
+  (() => {
+    const cmd = document.getElementById("cmd");
+    const slot = document.getElementById("copy");
+    if (cmd && slot) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = "Copy";
+      // The visible word is the whole accessible name, and polite live text announces the change.
+      b.setAttribute("aria-live", "polite");
+      let back = 0;
+      b.addEventListener("click", async () => {
+        clearTimeout(back);
+        try {
+          await navigator.clipboard.writeText(cmd.textContent);
+          b.textContent = "Copied";
+        } catch {
+          getSelection().selectAllChildren(cmd);
+          b.textContent = "Selected";
+        }
+        back = setTimeout(() => {
+          b.textContent = "Copy";
+        }, 1500);
+      });
+      slot.append(b);
+    }
+    // A gallery card that draws a play badge links to #film, so the click that looked like a play is one.
+    // Autoplay policy may refuse a film that arrives with no gesture on this page; then the hash has still
+    // scrolled it into view and its own control is the next press.
+    const film = document.getElementById("film");
+    if (film && location.hash === "#film") film.play().catch(() => {});
+  })();
+</script>
 </body>
 </html>
