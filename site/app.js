@@ -4,7 +4,7 @@
    so the silent replay, the voice clock, the scrubber and the keyboard all draw the same frame. */
 (() => {
   // Every .cut starts at opacity 0 and is revealed by the observer on the last line of this file,
-  // so anything that throws in between leaves the gallery, how it works, the edit section and the
+  // so anything that throws in between leaves the films, how it works, the edit section and the
   // install commands invisible: the hero and the footer, and no way to install anywhere on the
   // page. This is registered before anything else can throw, so the page shows itself regardless.
   const showEverything = () => {

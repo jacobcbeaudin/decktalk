@@ -9,7 +9,7 @@ Workers Builds deploy of `site/` serves it as it is.
   the deploy strips the extension and answers `/how.html` with a 307 to `/how`. A link written with
   the extension still works, and costs every visitor who follows it a round trip. The canonical and
   `og:url` of each page name the same extensionless URL.
-- `index.html` is the landing page: the hero, the gallery, the invitation to `/how` and the
+- `index.html` is the landing page: the hero, the films, the invitation to `/how` and the
   install commands. `how.html` is the explanation: how it works and the edit section. They share
   `styles.css` and `app.js`, and `app.js` runs each part only on the page that carries its DOM, so
   neither page throws on the way past a section it does not have.
@@ -20,7 +20,7 @@ Workers Builds deploy of `site/` serves it as it is.
   lines, the captured rebuild log and its cost line, the verify offsets, and the deck's own scenes
   and styles. The hero replays those scenes as HTML and SVG under the real recorded take, so it is
   a pure function of time and loads no video. Do not edit them by hand.
-- `media/` holds the small derived files: the gallery posters as WebP and the films' captions,
+- `media/` holds the small derived files: the film posters as WebP and the films' captions,
   copied here so the text tracks are same-origin. The build script also writes the voice clips
   here (the hero's voice, the four takes laid out as the film lays them out at the film's -16 LUFS,
   and the section 3 take before and after the edit), but mp3s are not in git: the page streams
@@ -29,7 +29,7 @@ Workers Builds deploy of `site/` serves it as it is.
 - `fonts/` holds the self-hosted subsets of Instrument Serif (400, the headings), Bricolage
   Grotesque (500), Instrument Sans (400 to 700) and IBM Plex Mono (400 and 500), all OFL. Each is a
   Google Fonts latin file cut to the printable ASCII range plus a few punctuation marks.
-- `films/` holds one page per film in the gallery, with the film and its script.
+- `films/` holds one page per film, with the film and its script.
 - `_headers` serves `install.sh` as text, so a browser shows the script rather than downloading
   it. Cloudflare's static assets read it; it names no account, zone or credential.
 

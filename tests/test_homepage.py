@@ -2,7 +2,7 @@
 
 `tests/test_site.py` reads the committed files. This opens them. Every `.cut` on a page starts at
 `opacity: 0` and is revealed by an observer on the last line of `site/app.js`, which means a script
-that throws, or a `data.js` that did not load, used to leave the gallery, how it works, the edit
+that throws, or a `data.js` that did not load, used to leave the films, how it works, the edit
 section and the install commands invisible — the hero and the footer, and no way to install
 anywhere on the page. That is the failure this file exists to prevent.
 
@@ -26,7 +26,7 @@ pytestmark = [pytest.mark.browser, pytest.mark.timeout(120)]
 SITE = Path(__file__).resolve().parent.parent / "site"
 # The sections a visitor needs to be able to reach on each page, and the id each one carries.
 SECTIONS = {
-    "index.html": ("gallery", "how-more", "install"),
+    "index.html": ("films", "how-more", "install"),
     "how.html": ("how", "edit"),
 }
 # The one thing on each page a broken script must never be able to hide: the install command on the
