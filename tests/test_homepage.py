@@ -297,8 +297,13 @@ def test_the_hero_has_one_sound_control_whose_name_never_moves(page: object) -> 
     pg = page
     pg.goto(f"{pg.origin}/index.html", wait_until="domcontentloaded")  # type: ignore[attr-defined]
     pg.wait_for_function("() => document.querySelector('[data-tc]')?.textContent !== '0:00'", timeout=15000)  # type: ignore[attr-defined]
-    controls = pg.evaluate("document.querySelectorAll('[data-sound]').length")  # type: ignore[attr-defined]
-    assert controls == 1, f"the hero shows {controls} sound controls for one function"
+    # The picture is wired to the same handler so a tap on it turns the voice on, which is the
+    # gesture every feed has taught. It is aria-hidden and out of the tab order on purpose: what
+    # must not come back is a second *named* control, which is what a screen reader met before.
+    named = pg.evaluate(  # type: ignore[attr-defined]
+        "[...document.querySelectorAll('[data-sound]')].filter(e => e.getAttribute('aria-hidden') !== 'true').length"
+    )
+    assert named == 1, f"the hero offers {named} named sound controls for one function"
     name = "document.querySelector('[data-sound]').getAttribute('aria-label')"
     before = pg.evaluate(name)  # type: ignore[attr-defined]
     pg.click(".transport .sound")  # type: ignore[attr-defined]
