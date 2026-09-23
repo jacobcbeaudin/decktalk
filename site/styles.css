@@ -430,7 +430,11 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
   .nav { height: 56px; }
   .nav ul { display: none; }
   .hero { padding-top: 4px; }
-  .hero .wrap { grid-template-columns: 1fr; grid-template-areas: "kicker" "h1" "sub" "cta" "caption" "stage" "pill"; }
+  /* The pill sits beside the play button on a wide screen, above the film. It used to drop to
+     the very bottom here, under the stage, the band and the transport, so on a phone the one
+     line a visitor came for arrived after the film rather than with it. Same order as the
+     desktop grid now: read the promise, play it, take the line. */
+  .hero .wrap { grid-template-columns: 1fr; grid-template-areas: "kicker" "h1" "sub" "cta" "pill" "caption" "stage"; }
   .hero .kicker { font-size: 12px; }
   .hero h1 { font-size: 34px; margin-top: 4px; }
   .hero .sub { margin-top: 6px; font-size: 16px; line-height: 1.4; max-width: 34ch; }
