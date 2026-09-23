@@ -72,10 +72,19 @@
       <a class="view" href="/install.sh">view script</a>
       <span class="copy"></span>
     </div>
-    <p class="caption"><span class="hint">The voice is off: press Sound under the film. </span>Made with DeckTalk from <a href="/films/halfway">this script</a> · <span data-total>0:35</span> · a fictional pitch</p>
+    <p class="caption">Made with DeckTalk from <a href="/films/halfway">this script</a> · <span data-total>0:35</span> · a fictional pitch</p>
 
     <figure class="stage" id="hero" aria-label="Halfway, a 35-second fictional pitch made with DeckTalk, replayed from its slides and its recorded voice">
-      <div class="frame" aria-hidden="true"><div class="stage-deck" data-stage></div></div>
+      <!-- The film is the unmute control. A separate button for sound is the thing people trip on:
+           the film is already playing, so the transport's play glyph reads as pause, and hearing it
+           means finding a second control that is not the one you pressed. Tapping the picture is
+           the gesture every feed has taught. The button is the picture, and the badge on it says so
+           until the first press. It carries no accessible name: the transport's Sound button is the
+           one named control, and this must not be a second stop in the tab order for the same job. -->
+      <button type="button" class="frame" data-sound tabindex="-1" aria-hidden="true">
+        <div class="stage-deck" data-stage></div>
+        <span class="unmute"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 4.6 5.3H2v5.4h2.6L8 13.5z" fill="currentColor"/><path d="M11 5.8a3 3 0 0 1 0 4.4M13 3.6a6 6 0 0 1 0 8.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Tap for sound</span>
+      </button>
       <div class="band" aria-hidden="true"><p class="prev" data-prev></p><p class="cur" data-cur></p></div>
       <div class="transport">
         <button type="button" class="ctl" data-pause data-state="playing" aria-label="Pause">

@@ -197,19 +197,16 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
    the eye, and it was the page's only conversion control while a mute button wore the paper. */
 .hero .pill button { background: var(--dt-paper); color: var(--dt-paper-ink); }
 .hero .pill button:hover { background: #fff; }
-.hero .caption { grid-area: caption; justify-self: center; width: 100%; max-width: var(--stage-w); margin-top: 14px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
+.hero .caption { grid-area: caption; justify-self: start; width: 100%; max-width: var(--stage-w); margin-top: 14px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
 .hero .caption a { color: var(--dt-text-2); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
-/* The film plays silently on purpose, and nothing on the page said so: the control is a waveform
-   glyph in the transport, which is where a player puts mute but not where a first visitor looks for
-   a voice they have not been told about. The line goes once the control is pressed. A browser with
-   no :has keeps a sentence that is merely no longer needed, which is the harmless way to fail. */
-.hero .caption .hint { color: var(--dt-text-2); }
-.hero:has(.sound[aria-pressed="true"]) .caption .hint { display: none; }
 .hero .caption a:hover { color: var(--dt-text); }
 
 /* The stage: 16:9 inside a paper hairline, the dark page doing the letterboxing. A static glow behind it,
    capped well under the map's lightness, so the picture is always the brightest thing. */
-.stage { grid-area: stage; justify-self: center; width: 100%; min-width: 0; max-width: var(--stage-w); margin: 8px 0 0; position: relative; }
+/* Aligned with the headline, not centred in the wrap. Centred, an 780px stage in a 1120px wrap
+   started 138px to the right of every other left edge on the page, so the hero had two left
+   margins and read as two columns that did not line up. */
+.stage { grid-area: stage; justify-self: start; width: 100%; min-width: 0; max-width: var(--stage-w); margin: 8px 0 0; position: relative; }
 .stage::before {
   content: ""; position: absolute; inset: -12% -8%; z-index: 0; pointer-events: none;
   background: radial-gradient(ellipse at 50% 45%, rgba(251, 246, 238, 0.07), rgba(251, 246, 238, 0) 62%);
@@ -217,7 +214,21 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .frame {
   position: relative; z-index: 1; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px;
   background: var(--dt-bg); box-shadow: 0 0 0 1px rgba(251, 246, 238, 0.15);
+  /* A button sizes to its content, and everything in here is absolutely positioned, so it
+     collapsed to 7px and app.js derived the film's scale from that width. */
+  display: block; width: 100%; border: 0; padding: 0; font: inherit; color: inherit;
+  cursor: pointer; text-align: left; -webkit-tap-highlight-color: transparent;
 }
+/* The badge the picture wears until the voice is on. Gold, because it is the voice, and gone the
+   moment the control it belongs to reports itself pressed. */
+.frame .unmute {
+  position: absolute; left: 12px; bottom: 12px; z-index: 2; display: inline-flex; align-items: center; gap: 8px;
+  height: 34px; padding: 0 13px 0 11px; border-radius: 999px; background: rgba(21, 17, 14, 0.82);
+  border: 1px solid var(--dt-border); color: var(--dt-voice); font-size: 13px; font-weight: 500;
+  backdrop-filter: blur(6px); pointer-events: none;
+}
+.frame .unmute svg { width: 15px; height: 15px; }
+.hero:has(.sound[aria-pressed="true"]) .frame .unmute { display: none; }
 .stage-deck { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; transform: scale(var(--s, 0.4)); overflow: hidden; background: #15110e; }
 .stage-deck .scene { position: absolute; inset: 0; }
 .stage-deck .scene[hidden] { display: none; }
