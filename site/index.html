@@ -88,7 +88,11 @@
           <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-play"/></svg>
           <svg class="i-replay" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a5 5 0 1 1-4.6 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M2.6 2.4v3.8h3.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <input class="scrub" type="range" min="0" max="35.8" step="0.25" value="0" data-scrub aria-label="Position in the film" aria-valuetext="0 seconds">
+        <!-- step="any" because app.js writes this value every frame: at 0.25 the browser snapped
+             each write to the nearest quarter second, so the thumb advanced in 3.6px hops about
+             four times a second instead of moving. Keyboard is unaffected in practice, one arrow
+             press still moves 0.375s, and aria-valuetext is written explicitly either way. -->
+        <input class="scrub" type="range" min="0" max="35.8" step="any" value="0" data-scrub aria-label="Position in the film" aria-valuetext="0 seconds">
         <span class="tc" aria-hidden="true"><span data-tc>0:00</span> / <span data-total>0:35</span></span>
         <button type="button" class="btn sound" data-sound aria-pressed="false" aria-label="Sound">
           <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span>
