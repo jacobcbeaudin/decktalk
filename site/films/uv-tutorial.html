@@ -29,6 +29,10 @@
   .cta-band .pill code { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
   .cta-band .pill .p { user-select: none; -webkit-user-select: none; }
   .cta-band .fine { flex: 1 1 24ch; }
+  /* Under 860px the band wraps and the pill sits alone on its line, so fill it. The hero's pill
+     stretches at the same width; a pill that stopped at its content stopped short of every
+     paragraph under it. */
+  @media (max-width: 860px) { .cta-band .pill { width: 100%; } }
   .script { margin-top: 26px; display: grid; gap: 24px; max-width: 64ch; }
   .script h2 { font-size: var(--dt-size-xl); display: flex; gap: 12px; align-items: baseline; }
   .script h2 .t { font-family: var(--font-mono); font-size: 13px; font-weight: 400; color: var(--dt-text-3); letter-spacing: 0; }
