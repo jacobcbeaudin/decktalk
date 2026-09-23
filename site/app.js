@@ -383,15 +383,10 @@
       } else setState("paused");
     }
     function setSoundUI(on) {
-      for (const b of opts.soundBtns || []) {
-        b.setAttribute("aria-pressed", on ? "true" : "false");
-        // The hero's button has no aria-label: its visible text carries the film's length, and any
-        // name written here would have to repeat it or fail Label in Name. Its own words are the
-        // name. The transport's label says "Sound", so it keeps a fuller name that contains it.
-        if (!b.classList.contains("cta")) b.setAttribute("aria-label", on ? "Sound on" : "Play with sound");
-        for (const s of $$("[data-sound-label]", b)) s.hidden = on;
-        for (const s of $$("[data-sound-label-on]", b)) s.hidden = !on;
-      }
+      // One name, one state attribute. A toggle's name must not move when its state does, which is
+      // what aria-pressed is for: swapping both announced the state twice. The waveform is the
+      // sighted half of the same fact.
+      for (const b of opts.soundBtns || []) b.setAttribute("aria-pressed", on ? "true" : "false");
       if (!on) for (const w of opts.waves || []) restWave(w);
     }
     /* The sound control: a press turns sound on where the film already is, and a press while sound
@@ -422,24 +417,47 @@
       a.currentTime = P.t;
       // Not playing until the audio says so: a rejected play() used to leave P.playing true with a
       // pause icon over a still film, and the next press read as "stop" and did nothing visible.
+      //
+      // The clock also stops while the voice loads. It used to keep running on the wall clock, and
+      // the moment the mp3's metadata arrived the loop started reading audio.currentTime instead,
+      // which was still the press position on an element that had not started: the film ran ahead
+      // of the press and then jumped backwards to it. Holding the frame is the honest picture of
+      // what is happening, which is waiting.
+      const wasPlaying = P.playing;
+      P.playing = false;
+      cancelAnimationFrame(P.raf);
       setState("loading");
       P.last = performance.now();
       a.play()
         .then(() => {
+          // Seeking again here, because a press during the load may have moved P.t and the element
+          // was not ready to honour the currentTime set before play() was called.
+          a.currentTime = P.t;
           P.playing = true;
+          P.last = performance.now();
           cancelAnimationFrame(P.raf);
           P.raf = requestAnimationFrame(loop);
           setSoundUI(true);
           setState("playing");
         })
         .catch(() => {
-          // A press that never became sound has to end somewhere the viewer can see, or the film
-          // sits still under a control that still says it is about to speak.
+          // A press that never became sound has to end somewhere the viewer can see, and it must
+          // not cost them the film they already had: a missing clip or a refused play leaves the
+          // hero exactly as it was before the press, and the live region says which.
           P.sound = false;
-          P.playing = false;
           setSoundUI(false);
-          setState("paused");
-          announce("The voice could not be played. Press play to watch without sound.");
+          if (wasPlaying) {
+            P.playing = true;
+            P.last = performance.now();
+            cancelAnimationFrame(P.raf);
+            P.raf = requestAnimationFrame(loop);
+            setState("playing");
+            announce("The voice could not be played. The film is playing without sound.");
+          } else {
+            P.playing = false;
+            setState("paused");
+            announce("The voice could not be played. Press play to watch without sound.");
+          }
         });
     }
     function setRate(rate) {
