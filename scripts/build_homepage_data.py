@@ -18,7 +18,7 @@ trimmed). From it and the full film's voiced takes this writes:
 - site/media/halfway-hero.mp3         the four takes laid out as the film lays them out, at -16 LUFS
 - site/media/halfway-take-before.mp3  the section 3 take before the edit, at -16 LUFS
 - site/media/halfway-take-after.mp3   the section 3 take after the edit, at -16 LUFS
-- site/media/halfway-poster.webp      the `1.1forty` frame of the film, for the gallery
+- site/media/halfway-poster.webp      the `1.1forty` frame of the film, for the card
 - site/media/halfway.vtt              the film's captions, copied so the text track is same-origin
 
 data.js also carries each clip's loudness envelope, RMS in dB every 20 ms measured from the clip's own
