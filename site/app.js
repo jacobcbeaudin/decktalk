@@ -559,6 +559,7 @@
 
   /* ---------------------------------------------------------------- how it works: the pinned stage and the catch-up transcript */
   const catchup = $("#catchup");
+  const hiwStage = $("[data-stage]", catchup);
   const hiwPlay = $("[data-hiw-play]", catchup);
   const hiwTc = $("[data-tc]", catchup);
   const speedBtn = $("[data-speed]", catchup);
@@ -570,17 +571,18 @@
   let cursor = -1; // the roving word cursor, an index into `words`
   const hiw = makePlayer({
     id: "w",
-    stageEl: $("[data-stage]", catchup),
+    stageEl: hiwStage,
     onDraw(t) {
       hiwTc.textContent = `${Math.max(0, t - D.sections[picked - 1].start).toFixed(1)} s`;
       const k = wordAt(t);
+      // Live marks where the stage's clock is, playing or parked. A chapter parks it, and the lit word
+      // and lit cue tick are how a reader sees which word the frame above them is standing on.
       for (const b of $$(".w", transcriptEl)) {
         const i = Number(b.dataset.i);
         b.classList.toggle("said", i < k);
-        b.classList.toggle("live", i === k && hiw.playing);
+        b.classList.toggle("live", i === k);
       }
-      for (const a of $$(".at", transcriptEl))
-        a.classList.toggle("live", hiw.playing && Math.abs(Number(a.dataset.at) - t) < 0.35);
+      for (const a of $$(".at", transcriptEl)) a.classList.toggle("live", Math.abs(Number(a.dataset.at) - t) < 0.35);
     },
     onState(state) {
       hiwPlay.dataset.state = state;
@@ -732,11 +734,27 @@
   buildTranscript(picked);
 
   /* The five chapters follow one line, "Twenty minutes for her. Twenty minutes for you.": cues 2.1her and 2.1you.
-     Native scroll alone decides the chapter; the stage draws that chapter's moment when nobody is playing it. */
+     Native scroll alone decides the chapter; the stage draws that chapter's moment when nobody is playing it.
+
+     Each chapter owns a moment no other chapter shows, so the pinned stage answers every scroll:
+
+       1  the script          the section's first frame. The city is there, her and you are there, and nothing
+                              the script names has been drawn yet: a script is all that exists at this step.
+       2  the voiced words    the middle of the section, on the word "pin". The transcript below the stage
+                              divides at the same word, and the clock reads the seconds that word was given.
+       3  the cue             40 ms before 2.1her. The cue's phrase is lit in the transcript and its picture is
+                              not on the stage: this is the waiting the chapter describes.
+       4  the slide           2.1her has landed. Every picture in the frame now carries the cue it was written
+                              with, the same `data-cue` the panel beside it quotes.
+       5  the measured film   2.1you has landed too, and each badge turns into what `decktalk verify` measured
+                              for that landing. The frame stops being a picture of the film and becomes its report. */
   const her = cueAt["2.1her"];
   const you = cueAt["2.1you"];
-  const chapterT = { 1: her.at - 0.04, 2: her.at - 0.04, 3: her.at - 0.04, 4: her.at + 0.32, 5: you.at + 0.32 };
+  const pin = cueAt["2.1pin"];
   const sec2 = D.sections[1];
+  // 0.32 s after a cue is far enough into a 0.3 s reveal to read as landed, and near enough to light the cue's
+  // own tick in the transcript, which holds for 0.35 s either side.
+  const chapterT = { 1: sec2.start + 0.02, 2: pin.at + 0.32, 3: her.at - 0.04, 4: her.at + 0.32, 5: you.at + 0.32 };
   const take = (i) => (words[i].start - sec2.start - D.lead).toFixed(3);
   const panels = {
     script: `<span class="fn">script.md</span><pre>## 2. Halfway\n\n<span class="t">…at a place worth the trip. [beat]</span>\n<span class="hl">Twenty minutes for her.</span> <span class="t">[beat]</span> <span class="hl">Twenty minutes for you.</span>\n\n<span class="t">## 2. begins section 2 of 4. [beat] is a short pause and is not spoken.</span></pre>`,
@@ -758,6 +776,21 @@
       )}\n<span class="t">${cues.length} cues in the ${Math.floor(D.total)}-second film above, every picture within ${Math.max(...cues.map((c) => Math.abs(D.verify[c.cue] ?? 0)))} ms of its word. +20 ms means the picture appeared 20 ms after its cue's second, −20 ms before it. "changed" is verify's word for a picture that appeared at its cue.</span></pre>`,
   };
   for (const [name, html] of Object.entries(panels)) $(`[data-panel="${name}"]`).innerHTML = html;
+
+  /* Chapters 4 and 5 label the pictures on the stage itself. The cue name is already on the element —
+     it is the slide's own `data-cue`, which chapter 4's panel quotes — so only the measured landing
+     needs writing on. The badges are drawn by the stylesheet from these two attributes.
+
+     They are also why the verify line under the frame no longer waits for chapter 5 to appear. It used to
+     be the chapter's whole reward, and it was the section's cue list a second time, in a column that grew
+     three lines taller at exactly the scroll position where sticky could least afford it. It now reads as
+     what it is — a property of the section you picked — from the first chapter on, and chapter 5's reward
+     is on the pictures, where each number belongs to the landing it measures. */
+  for (const el of $$(".scene > [data-cue]", hiwStage)) {
+    const ms = D.verify[el.dataset.cue];
+    if (ms !== undefined) el.dataset.cueMs = `${ms >= 0 ? "+" : "−"}${Math.abs(ms)} ms`;
+  }
+
   let chapter = 0;
   const chapterIO = new IntersectionObserver(
     (es) => {
@@ -767,14 +800,14 @@
         if (n !== chapter) {
           chapter = n;
           if (!hiw.playing) hiw.seek(chapterT[n]);
-          verifyEl.hidden = n < 5 && picked === 2;
+          hiwStage.classList.toggle("named", n === 4);
+          hiwStage.classList.toggle("measured", n === 5);
         }
       }
     },
     { rootMargin: "-45% 0px -45% 0px" },
   );
   for (const el of $$("[data-chapter]")) chapterIO.observe(el);
-  if (!RM) verifyEl.hidden = true;
   hiw.seek(chapterT[1]);
 
   /* ---------------------------------------------------------------- change a sentence */

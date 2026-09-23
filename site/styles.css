@@ -249,10 +249,18 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .card:hover b { text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
 
 /* ---- how it works: five chapters scroll by on the left, the stage stays pinned on the right by native scroll alone. */
+/* The run-out under the last chapter, so the panel is still pinned while chapter 5 is being read. It has to
+   clear the panel's own height above the fold: anything shorter and sticky lets go mid-chapter. */
+.how { --chapter-tail: 240px; }
 .how .grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 48px; margin-top: 36px; align-items: start; }
-.chapters { display: grid; }
-.chapter { min-height: 50vh; display: grid; align-content: center; gap: 14px; padding: 24px 0; }
-.chapter:first-child { min-height: 42vh; align-content: start; padding-top: 8px; }
+.chapters { display: grid; padding-bottom: var(--chapter-tail); }
+/* Every chapter parks the stage on a moment only it shows, so the column is paid for by the chapter count,
+   not by its height: 42vh is a screenful of reading between two different frames. The tail is what keeps the
+   promise the sticky panel makes — the last chapter is the one with a new frame to show, and without a run-out
+   below it the panel releases and slides off the top of the screen exactly as that frame arrives. The two come
+   out of the same budget: the four chapters give up what the tail takes, so the section is no longer than before. */
+.chapter { min-height: 42vh; display: grid; align-content: center; gap: 14px; padding: 24px 0; }
+.chapter:first-child { min-height: 38vh; align-content: start; padding-top: 8px; }
 .chapter .n { font-family: var(--font-mono); font-size: var(--dt-size-xs); color: var(--dt-text-3); letter-spacing: var(--dt-tracking-eyebrow); }
 .chapter h3 { font-size: var(--dt-size-2xl); }
 .panel {
@@ -269,6 +277,29 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .pinned .frame { max-width: 100%; }
 .pinned .verify { font-family: var(--font-mono); font-size: 13px; color: var(--dt-text-2); min-height: 20px; }
 .pinned .verify b { font-weight: 500; color: var(--dt-text); }
+
+/* Chapters 4 and 5 write on the stage. At 4 each picture carries the `data-cue` it was authored with — the
+   attribute the panel beside it quotes — and at 5 the same badge carries what `decktalk verify` measured for
+   that landing. Sizes are in the deck's own 1920 px space, so they scale with the frame like the deck's labels.
+   Colours come from the stage's own palette, which is fixed dark whichever scheme the page is in.
+   Where a badge sits is the picture's business, so each picture carries its own corner rather than the badge
+   rule carrying a list of exceptions: the wordmark is a full-bleed row and hangs its badge under its middle. */
+.pinned .stage-deck .scene > [data-cue] { --tag-x: 0; --tag-y: -58px; --tag-shift: 0; }
+.pinned .stage-deck .scene > .mark { --tag-x: 50%; --tag-y: calc(100% + 10px); --tag-shift: -50%; }
+.pinned .stage-deck.named .scene > [data-cue]::after,
+.pinned .stage-deck.measured .scene > [data-cue][data-cue-ms]::after {
+  position: absolute; left: var(--tag-x); top: var(--tag-y); transform: translateX(var(--tag-shift)); z-index: 2;
+  padding: 0 16px; height: 48px; border-radius: 10px;
+  font: 500 34px/48px var(--dt-font-mono); letter-spacing: 0.02em; white-space: nowrap;
+}
+.pinned .stage-deck.named .scene > [data-cue]::after {
+  content: attr(data-cue);
+  background: var(--dt-bg); color: var(--dt-text); box-shadow: 0 0 0 3px var(--dt-border);
+}
+.pinned .stage-deck.measured .scene > [data-cue][data-cue-ms]::after {
+  content: attr(data-cue-ms);
+  background: var(--dt-paper); color: var(--dt-paper-ink); box-shadow: 0 0 0 3px var(--dt-bg);
+}
 
 .catchup { display: grid; gap: 12px; }
 .picker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 13px; color: var(--dt-text-3); }
@@ -377,6 +408,8 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
   .transport .sound > span:not(.wave) { display: none; }
   .reel { grid-template-columns: repeat(2, 1fr); gap: 14px; }
   .how .grid { grid-template-columns: 1fr; gap: 24px; }
+  /* Nothing is pinned here, so neither the screen-height chapters nor the run-out under them buys anything. */
+  .how { --chapter-tail: 0px; }
   .chapter, .chapter:first-child { min-height: 0; padding: 18px 0; }
   .pinned { position: static; order: -1; }
   .pinned .verify { display: none; }
@@ -390,5 +423,6 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 @media (prefers-reduced-motion: reduce) {
   .js .cut, .js .lanes .cell { opacity: 1; transition: none; }
   .pinned { position: static; }
+  .how { --chapter-tail: 0px; }
   .chapter { min-height: 0; }
 }
