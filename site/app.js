@@ -1,4 +1,4 @@
-/* decktalk.ai. One script, no library, no build step.
+/* decktalk.ai. One script over both pages, no library, no build step.
    Everything that moves reads the Halfway build in data.js and stage.js: the words with their
    times, the cues with their times, and the deck's own scenes. The stage is a pure function of t,
    so the silent replay, the voice clock, the scrubber and the keyboard all draw the same frame. */
@@ -35,6 +35,7 @@
   );
   const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
   const sectionAt = (t) => D.sections.reduce((acc, s) => (t >= s.start ? s : acc), D.sections[0]);
   const wordAt = (t) => {
     let k = -1;
@@ -42,6 +43,15 @@
     return k;
   };
   for (const el of $$("[data-total]")) el.textContent = fmt(D.total);
+
+  /* Each page carries only part of this DOM: index.html has the hero, how.html has the chapters and the
+     edit section, and both have the cuts and the copy buttons. Every part below runs only when the page
+     being read is the one it belongs to, so the other page runs none of it and neither page throws. The
+     error guard above stays a guard, and never has to fire on a page that is simply missing a section. */
+  const onPage = (sel, part) => {
+    const el = $(sel);
+    if (el) part(el);
+  };
 
   /* The waveform glyph on a sound control follows the clip's real loudness at the playhead: five bars,
      the centre one at t and the others 40 and 80 ms behind it, so the glyph moves with the voice
@@ -437,483 +447,486 @@
   }
 
   /* ---------------------------------------------------------------- the hero */
-  const heroEl = $("#hero");
-  const band = { prev: $("[data-prev]", heroEl), cur: $("[data-cur]", heroEl) };
-  const scrub = $("[data-scrub]", heroEl);
-  const pauseBtn = $("[data-pause]", heroEl);
-  const heroTc = $("[data-tc]", heroEl);
-  const heroWaves = $$("[data-sound] .wave");
-  scrub.max = String(D.total);
-  // The last input on the scrubber, so the thumb follows the film again half a second later.
-  // -Infinity rather than 0 because under reduced motion the only draw is the one at load, when
-  // performance.now() is still under 500 and `now - 0 > 500` reads as a scrub in progress: the
-  // thumb sat at 0 while the timecode and aria-valuetext said 3.2 seconds.
-  let scrubHeld = -Infinity;
-  let bandLine = -1;
-  let bandWord = -1;
-  let bandLive = false;
-  function drawBand(t) {
-    let li = -1;
-    for (let i = 0; i < lines.length && lines[i].start <= t; i++) li = i;
-    if (li < 0) {
-      if (bandLine !== -1) {
-        band.prev.textContent = "";
-        band.cur.textContent = "";
-        bandLine = -1;
-        bandWord = -1;
-      }
-      return;
-    }
-    const L = lines[li];
-    const k = wordAt(t);
-    if (li !== bandLine) {
-      band.prev.textContent =
-        li > 0
-          ? words
-              .slice(lines[li - 1].a, lines[li - 1].b + 1)
-              .map((w) => w.text)
-              .join(" ")
-          : "";
-      band.cur.innerHTML = words
-        .slice(L.a, L.b + 1)
-        .map((w, i) => `<span class="w" data-i="${L.a + i}" hidden>${w.text}</span>`)
-        .join(" ");
-      bandLine = li;
-      bandWord = -1;
-      // A sighted viewer reads this line under the frame and watches the picture arrive on its word.
-      // Both stage frames are aria-hidden, so without this the film ran its whole length in silence
-      // for a screen reader. One line at a time, with the picture the cue names, is the same film
-      // told out loud, and `describe` is already in data.js because the deck writes it for the films
-      // DeckTalk builds. Only while playing: a seek announces through its own debounce.
-      if (hero.playing) {
-        const said = words
-          .slice(L.a, L.b + 1)
-          .map((w) => w.text)
-          .join(" ");
-        // The picture this line brings, not the last one anywhere: describeAt(t) returns the cue
-        // standing at t, which on a line that starts before its own cue is the previous line's.
-        const shown = cues
-          .filter((c) => c.first >= L.a && c.first <= L.b)
-          .map((c) => c.describe)
-          .filter(Boolean)
-          .join(" ");
-        announce(shown ? `${said.replace(/[.,;:]$/, "")}. ${shown}` : said);
-      }
-    }
-    if (k !== bandWord || bandLive !== hero.playing) {
-      for (const sp of $$(".w", band.cur)) {
-        const i = Number(sp.dataset.i);
-        sp.hidden = i > k;
-        sp.classList.toggle("live", i === k && hero.playing);
-      }
-      bandWord = k;
-      bandLive = hero.playing;
-    }
-  }
-  const hero = makePlayer({
-    id: "h",
-    stageEl: $("[data-stage]", heroEl),
-    soundBtns: $$("[data-sound]"),
-    waves: heroWaves,
-    onDraw(t) {
-      drawBand(t);
-      if (hero.sound) for (const w of heroWaves) drawWave(w, ENV.hero, t);
-      if (performance.now() - scrubHeld > 500) scrub.value = String(t);
-      const k = wordAt(t);
-      scrub.setAttribute("aria-valuetext", `${t.toFixed(1)} seconds${k >= 0 ? `, ${words[k].text}` : ""}`);
-      heroTc.textContent = fmt(t);
-    },
-    onState(state) {
-      pauseBtn.dataset.state = state;
-      pauseBtn.setAttribute(
-        "aria-label",
-        { playing: "Pause", paused: "Play", ended: "Replay from the start", loading: "Loading the voice" }[state],
-      );
-      drawBand(hero.t);
-    },
-  });
-  pauseBtn.addEventListener("click", () => {
-    if (hero.playing) hero.stop();
-    // A replay honours the sound the viewer chose rather than starting over in silence.
-    else if (hero.ended) hero.play({ silent: !hero.sound });
-    else hero.play();
-  });
-  scrub.addEventListener("input", () => {
-    scrubHeld = performance.now();
-    hero.seek(Number.parseFloat(scrub.value));
-  });
-  // A run of arrow presses announces once, after the last one.
-  let scrubAnnounce = 0;
-  scrub.addEventListener("change", () => {
-    clearTimeout(scrubAnnounce);
-    scrubAnnounce = setTimeout(() => hero.seek(Number.parseFloat(scrub.value), { announceIt: true }), 400);
-  });
-  for (const b of $$("[data-sound]")) b.addEventListener("click", () => hero.toggleSound());
-  // Reduced motion: the hero opens on the `1.1forty` frame and plays only on press. Otherwise it plays once, silently.
-  if (RM) {
-    hero.seek(cueAt["1.1forty"].at + 0.6);
-  } else {
-    hero.autoplaying = true;
-    hero.play({ silent: true });
-  }
-
-  /* ---------------------------------------------------------------- how it works: the pinned stage and the catch-up transcript */
-  const catchup = $("#catchup");
-  const hiwStage = $("[data-stage]", catchup);
-  const hiwPlay = $("[data-hiw-play]", catchup);
-  const hiwTc = $("[data-tc]", catchup);
-  const speedBtn = $("[data-speed]", catchup);
-  const transcriptEl = $("[data-transcript]", catchup);
-  const verifyEl = $("[data-verify]", catchup);
-  const picker = $("[data-picker]", catchup);
-  const pickedEl = $("[data-picked]", catchup);
-  let picked = 2;
-  let cursor = -1; // the roving word cursor, an index into `words`
-  const hiw = makePlayer({
-    id: "w",
-    stageEl: hiwStage,
-    onDraw(t) {
-      hiwTc.textContent = `${Math.max(0, t - D.sections[picked - 1].start).toFixed(1)} s`;
-      const k = wordAt(t);
-      // Live marks where the stage's clock is, playing or parked. A chapter parks it, and the lit word
-      // and lit cue tick are how a reader sees which word the frame above them is standing on.
-      for (const b of $$(".w", transcriptEl)) {
-        const i = Number(b.dataset.i);
-        b.classList.toggle("said", i < k);
-        b.classList.toggle("live", i === k);
-      }
-      for (const a of $$(".at", transcriptEl)) a.classList.toggle("live", Math.abs(Number(a.dataset.at) - t) < 0.35);
-    },
-    onState(state) {
-      hiwPlay.dataset.state = state;
-      $("span", hiwPlay).textContent = state === "playing" ? "Pause" : "Play from here";
-      hiwPlay.setAttribute("aria-label", state === "playing" ? "Pause" : "Play from here, with sound");
-    },
-  });
-  hiw.sound = true; // this stage's play button is the voice clock; nothing plays until it is pressed
-  hiwPlay.addEventListener("click", () => {
-    if (hiw.playing) return hiw.stop();
-    if (hiw.ended || hiw.t >= D.total) hiw.t = D.sections[picked - 1].start;
-    hiw.sound = true;
-    hiw.play();
-  });
-  speedBtn.addEventListener("click", () => {
-    const slow = speedBtn.getAttribute("aria-pressed") !== "true";
-    speedBtn.setAttribute("aria-pressed", slow ? "true" : "false");
-    hiw.setRate(slow ? 0.75 : 1);
-  });
-
-  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-  function buildTranscript(n) {
-    const sec = D.sections[n - 1];
-    const phraseOf = new Map();
-    for (const c of sec.cues) for (let k = 0; k < c.n; k++) phraseOf.set(c.first + k, c);
-    let out = "";
-    let openCue = null;
-    sec.words.forEach(([text], k) => {
-      const i = sec.first + k;
-      const c = phraseOf.get(i);
-      if (c && c !== openCue) {
-        out += `<span class="phrase">`;
-        openCue = c;
-      }
-      out += `<button type="button" class="w" data-i="${i}" tabindex="-1" aria-label="${esc(text)}, ${(words[i].start - sec.start).toFixed(2)} seconds into the section">${esc(text)}</button>`;
-      if (openCue && (k === sec.words.length - 1 || phraseOf.get(i + 1) !== openCue)) {
-        const at = (openCue.at - sec.start).toFixed(2);
-        out += `</span><a class="at" href="#cue-${openCue.cue}" data-cue="${openCue.cue}" data-at="${openCue.at}" aria-label="Cue ${openCue.cue} on ${esc(openCue.on)}, at ${at} seconds into the section">${at}</a>`;
-        openCue = null;
-      }
-      out += " ";
-    });
-    transcriptEl.innerHTML = out;
-    cursor = sec.first;
-    const first = $(`.w[data-i="${cursor}"]`, transcriptEl);
-    first.tabIndex = 0;
-    first.classList.add("cursor");
-    pickedEl.textContent = String(n);
-    verifyEl.innerHTML = verifyLine(sec);
-  }
-  function verifyLine(sec) {
-    const parts = sec.cues
-      .filter((c) => D.verify[c.cue] !== undefined)
-      .map((c) => `<span>${c.cue} <b>${D.verify[c.cue] >= 0 ? "+" : "−"}${Math.abs(D.verify[c.cue])} ms</b></span>`);
-    return parts.length ? `verify · ${parts.join(" · ")}` : "";
-  }
-  function setCursor(i) {
-    const prev = $(`.w[data-i="${cursor}"]`, transcriptEl);
-    const next = $(`.w[data-i="${i}"]`, transcriptEl);
-    if (!next) return;
-    if (prev) {
-      prev.tabIndex = -1;
-      prev.classList.remove("cursor");
-    }
-    next.tabIndex = 0;
-    next.classList.add("cursor");
-    next.focus();
-    cursor = i;
-  }
-  // A cue's time is rounded to the frame, so it can sit a few ms after its first word's start. The first word
-  // of a phrase seeks to its cue, so the picture the word brings is the one described. A still frame is taken
-  // once the reveal is up, within the word, since the frame at the cue's own instant is where the rise begins.
-  const wordSeek = (i, still = false) => {
-    const c = cues.find((c) => c.first === i);
-    if (!c) return words[i].start;
-    const at = Math.max(words[i].start, c.at);
-    return still ? Math.min(at + 0.3, Math.max(at, words[i].end - 0.02)) : at;
-  };
-  transcriptEl.addEventListener("click", (e) => {
-    const w = e.target.closest(".w");
-    const a = e.target.closest(".at");
-    if (w) {
-      setCursor(Number(w.dataset.i));
-      hiw.seek(wordSeek(cursor, true), { announceIt: true });
-    }
-    if (a) {
-      e.preventDefault();
-      const c = cueAt[a.dataset.cue];
-      // Announced once, and while the voice plays, held until the cue phrase has been spoken.
-      hiw.seek(c.at, { announceIt: true, until: words[c.first + c.n - 1].end });
-    }
-  });
-  transcriptEl.addEventListener("keydown", (e) => {
-    if (!e.target.classList.contains("w")) return;
-    const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
-    if (e.key === "Enter") {
-      // Enter plays from the cursor word with sound. A pointer click only moves the stage.
-      e.preventDefault();
-      hiw.sound = true;
-      hiw.seek(wordSeek(cursor));
-      hiw.play();
-      announce(describeAt(hiw.t), words[cursor].end);
-    } else if (d) {
-      e.preventDefault();
-      const sec = D.sections[picked - 1];
-      setCursor(clamp(cursor + d, sec.first, sec.first + sec.words.length - 1));
-    } else if (e.key === "Home" || e.key === "End") {
-      e.preventDefault();
-      const sec = D.sections[picked - 1];
-      setCursor(e.key === "Home" ? sec.first : sec.first + sec.words.length - 1);
-    }
-  });
-
-  // The section picker: a radiogroup with arrow keys.
-  D.sections.forEach((s) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.setAttribute("role", "radio");
-    b.setAttribute("aria-checked", s.n === picked ? "true" : "false");
-    b.setAttribute("aria-label", `Section ${s.n}, ${s.chapter}`);
-    b.tabIndex = s.n === picked ? 0 : -1;
-    b.dataset.n = String(s.n);
-    b.textContent = String(s.n);
-    picker.append(b);
-  });
-  function pick(n, focus = false) {
-    picked = n;
-    for (const b of $$("[role=radio]", picker)) {
-      const on = Number(b.dataset.n) === n;
-      b.setAttribute("aria-checked", on ? "true" : "false");
-      b.tabIndex = on ? 0 : -1;
-      if (on && focus) b.focus();
-    }
-    buildTranscript(n);
-    const sec = D.sections[n - 1];
-    hiw.stop();
-    hiw.seek(sec.cues[0].at + 0.3);
-  }
-  picker.addEventListener("click", (e) => {
-    const b = e.target.closest("[role=radio]");
-    if (b) pick(Number(b.dataset.n));
-  });
-  picker.addEventListener("keydown", (e) => {
-    const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
-    if (!d) return;
-    e.preventDefault();
-    pick(((picked - 1 + d + D.sections.length) % D.sections.length) + 1, true);
-  });
-  buildTranscript(picked);
-
-  /* The five chapters follow one line, "Twenty minutes for her. Twenty minutes for you.": cues 2.1her and 2.1you.
-     Native scroll alone decides the chapter; the stage draws that chapter's moment when nobody is playing it.
-
-     Each chapter owns a moment no other chapter shows, so the pinned stage answers every scroll:
-
-       1  the script          the section's first frame. The city is there, her and you are there, and nothing
-                              the script names has been drawn yet: a script is all that exists at this step.
-       2  the voiced words    the middle of the section, on the word "pin". The transcript below the stage
-                              divides at the same word, and the clock reads the seconds that word was given.
-       3  the cue             40 ms before 2.1her. The cue's phrase is lit in the transcript and its picture is
-                              not on the stage: this is the waiting the chapter describes.
-       4  the slide           2.1her has landed. Every picture in the frame now carries the cue it was written
-                              with, the same `data-cue` the panel beside it quotes.
-       5  the measured film   2.1you has landed too, and each badge turns into what `decktalk verify` measured
-                              for that landing. The frame stops being a picture of the film and becomes its report. */
-  const her = cueAt["2.1her"];
-  const you = cueAt["2.1you"];
-  const pin = cueAt["2.1pin"];
-  const sec2 = D.sections[1];
-  // 0.32 s after a cue is far enough into a 0.3 s reveal to read as landed, and near enough to light the cue's
-  // own tick in the transcript, which holds for 0.35 s either side.
-  const chapterT = { 1: sec2.start + 0.02, 2: pin.at + 0.32, 3: her.at - 0.04, 4: her.at + 0.32, 5: you.at + 0.32 };
-  const take = (i) => (words[i].start - sec2.start - D.lead).toFixed(3);
-  const panels = {
-    script: `<span class="fn">script.md</span><pre>## 2. Halfway\n\n<span class="t">…at a place worth the trip. [beat]</span>\n<span class="hl">Twenty minutes for her.</span> <span class="t">[beat]</span> <span class="hl">Twenty minutes for you.</span>\n\n<span class="t">## 2. begins section 2 of 4. [beat] is a short pause and is not spoken.</span></pre>`,
-    words: `<span class="fn">build/narration/${sec2.hash}.words.json</span><pre>${[...Array(8).keys()]
-      .map((k) => {
-        const i = her.first + k;
-        return `{ "word": "${words[i].text.replace(/[.,]$/, "")}", "start": ${take(i)}, "end": ${(words[i].end - sec2.start - D.lead).toFixed(3)} }`;
-      })
-      .join("\n")}</pre>`,
-    cues: `<span class="fn">cues.json → build/cue-times.json</span><pre>{ "cue": "<span class="cue">2.1her</span>", "on": "<span class="hl">Twenty minutes for her</span>" }\n<span class="t">→ ${(her.at - sec2.start).toFixed(2)} s into the section. The recording starts ${D.lead} s after the section begins, so words.json says ${take(her.first)}.</span>\n{ "cue": "<span class="cue">2.1you</span>", "on": "<span class="hl">Twenty minutes for you</span>" }\n<span class="t">→ ${(you.at - sec2.start).toFixed(2)} s into the section.</span></pre>`,
-    slide: `<span class="fn">deck/index.html</span><pre>&lt;div class="pill" <span class="cue">data-cue="2.1her"</span> data-describe="${esc(her.describe)}"&gt;20 min&lt;/div&gt;\n&lt;div class="pill" <span class="cue">data-cue="2.1you"</span> data-describe="${esc(you.describe)}"&gt;20 min&lt;/div&gt;\n<span class="t">&lt;!-- decktalk-runtime.js shows each data-cue element at its cue's second. data-describe is what a screen reader hears when it appears. --&gt;</span></pre>`,
-    verify: `<span class="fn">decktalk verify</span><pre>${sec2.cues
-      .map(
-        (c) =>
-          `${c.cue.padEnd(12)} ${String(D.verify[c.cue] >= 0 ? `+${D.verify[c.cue]}` : D.verify[c.cue]).padStart(4)} ms  <span class="ok">changed</span>`,
-      )
-      .join(
-        "\n",
-      )}\n<span class="t">${cues.length} cues in the ${Math.floor(D.total)}-second film above, every picture within ${Math.max(...cues.map((c) => Math.abs(D.verify[c.cue] ?? 0)))} ms of its word. +20 ms means the picture appeared 20 ms after its cue's second, −20 ms before it. "changed" is verify's word for a picture that appeared at its cue.</span></pre>`,
-  };
-  for (const [name, html] of Object.entries(panels)) $(`[data-panel="${name}"]`).innerHTML = html;
-
-  /* Chapters 4 and 5 label the pictures on the stage itself. The cue name is already on the element —
-     it is the slide's own `data-cue`, which chapter 4's panel quotes — so only the measured landing
-     needs writing on. The badges are drawn by the stylesheet from these two attributes.
-
-     They are also why the verify line under the frame no longer waits for chapter 5 to appear. It used to
-     be the chapter's whole reward, and it was the section's cue list a second time, in a column that grew
-     three lines taller at exactly the scroll position where sticky could least afford it. It now reads as
-     what it is — a property of the section you picked — from the first chapter on, and chapter 5's reward
-     is on the pictures, where each number belongs to the landing it measures. */
-  for (const el of $$(".scene > [data-cue]", hiwStage)) {
-    const ms = D.verify[el.dataset.cue];
-    if (ms !== undefined) el.dataset.cueMs = `${ms >= 0 ? "+" : "−"}${Math.abs(ms)} ms`;
-  }
-
-  let chapter = 0;
-  const chapterIO = new IntersectionObserver(
-    (es) => {
-      for (const e of es) {
-        if (!e.isIntersecting) continue;
-        const n = Number(e.target.dataset.chapter);
-        if (n !== chapter) {
-          chapter = n;
-          if (!hiw.playing) hiw.seek(chapterT[n]);
-          hiwStage.classList.toggle("named", n === 4);
-          hiwStage.classList.toggle("measured", n === 5);
+  onPage("#hero", (heroEl) => {
+    const band = { prev: $("[data-prev]", heroEl), cur: $("[data-cur]", heroEl) };
+    const scrub = $("[data-scrub]", heroEl);
+    const pauseBtn = $("[data-pause]", heroEl);
+    const heroTc = $("[data-tc]", heroEl);
+    const heroWaves = $$("[data-sound] .wave");
+    scrub.max = String(D.total);
+    // The last input on the scrubber, so the thumb follows the film again half a second later.
+    // -Infinity rather than 0 because under reduced motion the only draw is the one at load, when
+    // performance.now() is still under 500 and `now - 0 > 500` reads as a scrub in progress: the
+    // thumb sat at 0 while the timecode and aria-valuetext said 3.2 seconds.
+    let scrubHeld = -Infinity;
+    let bandLine = -1;
+    let bandWord = -1;
+    let bandLive = false;
+    function drawBand(t) {
+      let li = -1;
+      for (let i = 0; i < lines.length && lines[i].start <= t; i++) li = i;
+      if (li < 0) {
+        if (bandLine !== -1) {
+          band.prev.textContent = "";
+          band.cur.textContent = "";
+          bandLine = -1;
+          bandWord = -1;
         }
-      }
-    },
-    { rootMargin: "-45% 0px -45% 0px" },
-  );
-  for (const el of $$("[data-chapter]")) chapterIO.observe(el);
-  hiw.seek(chapterT[1]);
-
-  /* ---------------------------------------------------------------- change a sentence */
-  const E = D.edit;
-  for (const name of ["before", "after"]) $(`[data-hash="${name}"]`).textContent = E[name].hash;
-  const takeAudio = {};
-  for (const b of $$("[data-take]")) {
-    const name = b.dataset.take;
-    const wave = $(".wave", b);
-    let raf = 0;
-    const follow = () => {
-      const a = takeAudio[name];
-      drawWave(wave, ENV[name], a.currentTime);
-      if (!a.paused) raf = requestAnimationFrame(follow);
-    };
-    b.addEventListener("click", () => {
-      if (!takeAudio[name]) takeAudio[name] = new Audio(MEDIA + D.media[name]);
-      const a = takeAudio[name];
-      if (!a.paused) {
-        a.pause();
         return;
       }
-      for (const [other, oa] of Object.entries(takeAudio)) if (other !== name) oa.pause();
-      a.currentTime = 0;
-      a.onplay = () => {
-        b.setAttribute("aria-pressed", "true");
-        cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(follow);
-      };
-      a.onpause = () => {
-        b.setAttribute("aria-pressed", "false");
-        cancelAnimationFrame(raf);
-        restWave(wave);
-      };
-      a.onended = a.onpause;
-      a.play().catch(() => {});
+      const L = lines[li];
+      const k = wordAt(t);
+      if (li !== bandLine) {
+        band.prev.textContent =
+          li > 0
+            ? words
+                .slice(lines[li - 1].a, lines[li - 1].b + 1)
+                .map((w) => w.text)
+                .join(" ")
+            : "";
+        band.cur.innerHTML = words
+          .slice(L.a, L.b + 1)
+          .map((w, i) => `<span class="w" data-i="${L.a + i}" hidden>${w.text}</span>`)
+          .join(" ");
+        bandLine = li;
+        bandWord = -1;
+        // A sighted viewer reads this line under the frame and watches the picture arrive on its word.
+        // Both stage frames are aria-hidden, so without this the film ran its whole length in silence
+        // for a screen reader. One line at a time, with the picture the cue names, is the same film
+        // told out loud, and `describe` is already in data.js because the deck writes it for the films
+        // DeckTalk builds. Only while playing: a seek announces through its own debounce.
+        if (hero.playing) {
+          const said = words
+            .slice(L.a, L.b + 1)
+            .map((w) => w.text)
+            .join(" ");
+          // The picture this line brings, not the last one anywhere: describeAt(t) returns the cue
+          // standing at t, which on a line that starts before its own cue is the previous line's.
+          const shown = cues
+            .filter((c) => c.first >= L.a && c.first <= L.b)
+            .map((c) => c.describe)
+            .filter(Boolean)
+            .join(" ");
+          announce(shown ? `${said.replace(/[.,;:]$/, "")}. ${shown}` : said);
+        }
+      }
+      if (k !== bandWord || bandLive !== hero.playing) {
+        for (const sp of $$(".w", band.cur)) {
+          const i = Number(sp.dataset.i);
+          sp.hidden = i > k;
+          sp.classList.toggle("live", i === k && hero.playing);
+        }
+        bandWord = k;
+        bandLive = hero.playing;
+      }
+    }
+    const hero = makePlayer({
+      id: "h",
+      stageEl: $("[data-stage]", heroEl),
+      soundBtns: $$("[data-sound]"),
+      waves: heroWaves,
+      onDraw(t) {
+        drawBand(t);
+        if (hero.sound) for (const w of heroWaves) drawWave(w, ENV.hero, t);
+        if (performance.now() - scrubHeld > 500) scrub.value = String(t);
+        const k = wordAt(t);
+        scrub.setAttribute("aria-valuetext", `${t.toFixed(1)} seconds${k >= 0 ? `, ${words[k].text}` : ""}`);
+        heroTc.textContent = fmt(t);
+      },
+      onState(state) {
+        pauseBtn.dataset.state = state;
+        pauseBtn.setAttribute(
+          "aria-label",
+          { playing: "Pause", paused: "Play", ended: "Replay from the start", loading: "Loading the voice" }[state],
+        );
+        drawBand(hero.t);
+      },
     });
-  }
-  // The edit, file by file, from data.js: the words that changed with the words either side of
-  // them, so the page names every place the number lives rather than only the spoken sentence.
-  const diff = $("[data-diff]");
-  if (diff) {
-    diff.innerHTML = E.diff
-      .map((f) => {
-        const rows = f.changes
-          .map(
-            (c) =>
-              `<li class="row"><span class="at">${esc(c.where)}${c.label ? `<i> · ${esc(c.label)}</i>` : ""}</span>` +
-              `<span class="txt">${c.prefix ? `<span class="ctx">${esc(c.prefix)}</span> ` : ""}` +
-              // "was" and "now" are read, not seen: a strike and a colour say nothing out loud, and
-              // without them the row announced as "eleven fourteen thousand".
-              `<span class="sr">was </span><s>${esc(c.before)}</s><span class="sr">, now</span> ` +
-              `<b>${esc(c.after)}</b>` +
-              `${c.suffix ? ` <span class="ctx">${esc(c.suffix)}</span>` : ""}</span></li>`,
-          )
-          .join("");
-        return `<li class="file"><span class="fn">${esc(f.file)}</span><ul class="rows">${rows}</ul></li>`;
-      })
-      .join("");
-  }
-  const lanes = $("[data-lanes]");
-  const cellsHtml = [];
-  let k = 0;
-  const cell = (cls, text) => `<div class="cell ${cls}" style="--k:${k++}">${text}</div>`;
-  cellsHtml.push(
-    `<div class="hd"></div>${D.sections.map((s) => `<div class="hd"><b>${s.n}</b>${s.chapter}</div>`).join("")}`,
-  );
-  cellsHtml.push(
-    `<div class="rl">narrate</div>${D.sections.map((s) => cell(s.n === E.section ? "live" : "", s.n === E.section ? "voiced" : "cached")).join("")}`,
-  );
-  cellsHtml.push(
-    `<div class="rl">record</div>${D.sections.map((s) => cell(s.n === E.section ? "live" : "", s.n === E.section ? "recorded" : "kept")).join("")}`,
-  );
-  cellsHtml.push(`<div class="rl">assemble</div>${cell("span", "four sections, straight cuts, one mp4")}`);
-  lanes.innerHTML = cellsHtml.join("");
-  const NUM = ["", "one", "two", "three", "four", "five", "six"];
-  const num = (n) => NUM[n] ?? String(n);
-  lanes.setAttribute(
-    "aria-label",
-    `After the edit to section ${E.section}, the narrate stage voiced section ${E.section} and reused the cached takes of the other ${num(E.kept)}, the record stage filmed section ${E.section} and kept the other ${num(E.kept)}, and the assemble stage cut all ${num(D.sections.length)} into one mp4.`,
-  );
-  // The money is the section's second claim, so it is a sentence on the page rather than the last
-  // line of a log behind a disclosure.
-  const C = E.cost;
-  $("[data-cost]").innerHTML =
-    `The rebuild cost <b>about $${C.usd.toFixed(2)}</b>: ${C.sent} characters sent to the voice, ${C.spoken} of them spoken, at $${C.rate.toFixed(2)} per 1,000 characters, the price set in <code>decktalk.toml</code>. The other ${num(C.cached)} sections cost nothing.`;
-  // Each line is its own block, so a line longer than the box wraps under a hanging indent instead
-  // of running off the right edge of a phone with the evidence on it.
-  const log = $("[data-log]");
-  const logLines = [`<span class="ln"><span class="p">$</span> decktalk build</span>`];
-  for (const ln of E.log) {
-    const isLive = / 03 |section 03/.test(ln);
-    logLines.push(`<span class="ln${isLive ? " live" : ""}">${esc(ln)}</span>`);
-  }
-  const tail = E.log.map((ln) => ln.match(/tail ([\d.]+)s/)).find(Boolean);
-  const film = E.log.map((ln) => ln.match(/done: .*\(([\d.]+)s\)/)).find(Boolean);
-  if (tail && film)
-    logLines.push(
-      `<span class="ln gloss">Each section is its take plus the ${D.lead} s lead and ${tail[1]} s tail, so ${num(D.sections.length)} takes make a ${Math.round(Number(film[1]))} s film.</span>`,
+    pauseBtn.addEventListener("click", () => {
+      if (hero.playing) hero.stop();
+      // A replay honours the sound the viewer chose rather than starting over in silence.
+      else if (hero.ended) hero.play({ silent: !hero.sound });
+      else hero.play();
+    });
+    scrub.addEventListener("input", () => {
+      scrubHeld = performance.now();
+      hero.seek(Number.parseFloat(scrub.value));
+    });
+    // A run of arrow presses announces once, after the last one.
+    let scrubAnnounce = 0;
+    scrub.addEventListener("change", () => {
+      clearTimeout(scrubAnnounce);
+      scrubAnnounce = setTimeout(() => hero.seek(Number.parseFloat(scrub.value), { announceIt: true }), 400);
+    });
+    for (const b of $$("[data-sound]")) b.addEventListener("click", () => hero.toggleSound());
+    // Reduced motion: the hero opens on the `1.1forty` frame and plays only on press. Otherwise it plays once, silently.
+    if (RM) {
+      hero.seek(cueAt["1.1forty"].at + 0.6);
+    } else {
+      hero.autoplaying = true;
+      hero.play({ silent: true });
+    }
+  });
+
+  /* ---------------------------------------------------------------- how it works: the pinned stage and the catch-up transcript */
+  onPage("#catchup", (catchup) => {
+    const hiwStage = $("[data-stage]", catchup);
+    const hiwPlay = $("[data-hiw-play]", catchup);
+    const hiwTc = $("[data-tc]", catchup);
+    const speedBtn = $("[data-speed]", catchup);
+    const transcriptEl = $("[data-transcript]", catchup);
+    const verifyEl = $("[data-verify]", catchup);
+    const picker = $("[data-picker]", catchup);
+    const pickedEl = $("[data-picked]", catchup);
+    let picked = 2;
+    let cursor = -1; // the roving word cursor, an index into `words`
+    const hiw = makePlayer({
+      id: "w",
+      stageEl: hiwStage,
+      onDraw(t) {
+        hiwTc.textContent = `${Math.max(0, t - D.sections[picked - 1].start).toFixed(1)} s`;
+        const k = wordAt(t);
+        // Live marks where the stage's clock is, playing or parked. A chapter parks it, and the lit word
+        // and lit cue tick are how a reader sees which word the frame above them is standing on.
+        for (const b of $$(".w", transcriptEl)) {
+          const i = Number(b.dataset.i);
+          b.classList.toggle("said", i < k);
+          b.classList.toggle("live", i === k);
+        }
+        for (const a of $$(".at", transcriptEl)) a.classList.toggle("live", Math.abs(Number(a.dataset.at) - t) < 0.35);
+      },
+      onState(state) {
+        hiwPlay.dataset.state = state;
+        $("span", hiwPlay).textContent = state === "playing" ? "Pause" : "Play from here";
+        hiwPlay.setAttribute("aria-label", state === "playing" ? "Pause" : "Play from here, with sound");
+      },
+    });
+    hiw.sound = true; // this stage's play button is the voice clock; nothing plays until it is pressed
+    hiwPlay.addEventListener("click", () => {
+      if (hiw.playing) return hiw.stop();
+      if (hiw.ended || hiw.t >= D.total) hiw.t = D.sections[picked - 1].start;
+      hiw.sound = true;
+      hiw.play();
+    });
+    speedBtn.addEventListener("click", () => {
+      const slow = speedBtn.getAttribute("aria-pressed") !== "true";
+      speedBtn.setAttribute("aria-pressed", slow ? "true" : "false");
+      hiw.setRate(slow ? 0.75 : 1);
+    });
+
+    function buildTranscript(n) {
+      const sec = D.sections[n - 1];
+      const phraseOf = new Map();
+      for (const c of sec.cues) for (let k = 0; k < c.n; k++) phraseOf.set(c.first + k, c);
+      let out = "";
+      let openCue = null;
+      sec.words.forEach(([text], k) => {
+        const i = sec.first + k;
+        const c = phraseOf.get(i);
+        if (c && c !== openCue) {
+          out += `<span class="phrase">`;
+          openCue = c;
+        }
+        out += `<button type="button" class="w" data-i="${i}" tabindex="-1" aria-label="${esc(text)}, ${(words[i].start - sec.start).toFixed(2)} seconds into the section">${esc(text)}</button>`;
+        if (openCue && (k === sec.words.length - 1 || phraseOf.get(i + 1) !== openCue)) {
+          const at = (openCue.at - sec.start).toFixed(2);
+          out += `</span><a class="at" href="#cue-${openCue.cue}" data-cue="${openCue.cue}" data-at="${openCue.at}" aria-label="Cue ${openCue.cue} on ${esc(openCue.on)}, at ${at} seconds into the section">${at}</a>`;
+          openCue = null;
+        }
+        out += " ";
+      });
+      transcriptEl.innerHTML = out;
+      cursor = sec.first;
+      const first = $(`.w[data-i="${cursor}"]`, transcriptEl);
+      first.tabIndex = 0;
+      first.classList.add("cursor");
+      pickedEl.textContent = String(n);
+      verifyEl.innerHTML = verifyLine(sec);
+    }
+    function verifyLine(sec) {
+      const parts = sec.cues
+        .filter((c) => D.verify[c.cue] !== undefined)
+        .map((c) => `<span>${c.cue} <b>${D.verify[c.cue] >= 0 ? "+" : "−"}${Math.abs(D.verify[c.cue])} ms</b></span>`);
+      return parts.length ? `verify · ${parts.join(" · ")}` : "";
+    }
+    function setCursor(i) {
+      const prev = $(`.w[data-i="${cursor}"]`, transcriptEl);
+      const next = $(`.w[data-i="${i}"]`, transcriptEl);
+      if (!next) return;
+      if (prev) {
+        prev.tabIndex = -1;
+        prev.classList.remove("cursor");
+      }
+      next.tabIndex = 0;
+      next.classList.add("cursor");
+      next.focus();
+      cursor = i;
+    }
+    // A cue's time is rounded to the frame, so it can sit a few ms after its first word's start. The first word
+    // of a phrase seeks to its cue, so the picture the word brings is the one described. A still frame is taken
+    // once the reveal is up, within the word, since the frame at the cue's own instant is where the rise begins.
+    const wordSeek = (i, still = false) => {
+      const c = cues.find((c) => c.first === i);
+      if (!c) return words[i].start;
+      const at = Math.max(words[i].start, c.at);
+      return still ? Math.min(at + 0.3, Math.max(at, words[i].end - 0.02)) : at;
+    };
+    transcriptEl.addEventListener("click", (e) => {
+      const w = e.target.closest(".w");
+      const a = e.target.closest(".at");
+      if (w) {
+        setCursor(Number(w.dataset.i));
+        hiw.seek(wordSeek(cursor, true), { announceIt: true });
+      }
+      if (a) {
+        e.preventDefault();
+        const c = cueAt[a.dataset.cue];
+        // Announced once, and while the voice plays, held until the cue phrase has been spoken.
+        hiw.seek(c.at, { announceIt: true, until: words[c.first + c.n - 1].end });
+      }
+    });
+    transcriptEl.addEventListener("keydown", (e) => {
+      if (!e.target.classList.contains("w")) return;
+      const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (e.key === "Enter") {
+        // Enter plays from the cursor word with sound. A pointer click only moves the stage.
+        e.preventDefault();
+        hiw.sound = true;
+        hiw.seek(wordSeek(cursor));
+        hiw.play();
+        announce(describeAt(hiw.t), words[cursor].end);
+      } else if (d) {
+        e.preventDefault();
+        const sec = D.sections[picked - 1];
+        setCursor(clamp(cursor + d, sec.first, sec.first + sec.words.length - 1));
+      } else if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        const sec = D.sections[picked - 1];
+        setCursor(e.key === "Home" ? sec.first : sec.first + sec.words.length - 1);
+      }
+    });
+
+    // The section picker: a radiogroup with arrow keys.
+    D.sections.forEach((s) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", s.n === picked ? "true" : "false");
+      b.setAttribute("aria-label", `Section ${s.n}, ${s.chapter}`);
+      b.tabIndex = s.n === picked ? 0 : -1;
+      b.dataset.n = String(s.n);
+      b.textContent = String(s.n);
+      picker.append(b);
+    });
+    function pick(n, focus = false) {
+      picked = n;
+      for (const b of $$("[role=radio]", picker)) {
+        const on = Number(b.dataset.n) === n;
+        b.setAttribute("aria-checked", on ? "true" : "false");
+        b.tabIndex = on ? 0 : -1;
+        if (on && focus) b.focus();
+      }
+      buildTranscript(n);
+      const sec = D.sections[n - 1];
+      hiw.stop();
+      hiw.seek(sec.cues[0].at + 0.3);
+    }
+    picker.addEventListener("click", (e) => {
+      const b = e.target.closest("[role=radio]");
+      if (b) pick(Number(b.dataset.n));
+    });
+    picker.addEventListener("keydown", (e) => {
+      const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      pick(((picked - 1 + d + D.sections.length) % D.sections.length) + 1, true);
+    });
+    buildTranscript(picked);
+
+    /* The five chapters follow one line, "Twenty minutes for her. Twenty minutes for you.": cues 2.1her and 2.1you.
+       Native scroll alone decides the chapter; the stage draws that chapter's moment when nobody is playing it.
+
+       Each chapter owns a moment no other chapter shows, so the pinned stage answers every scroll:
+
+         1  the script          the section's first frame. The city is there, her and you are there, and nothing
+                                the script names has been drawn yet: a script is all that exists at this step.
+         2  the voiced words    the middle of the section, on the word "pin". The transcript below the stage
+                                divides at the same word, and the clock reads the seconds that word was given.
+         3  the cue             40 ms before 2.1her. The cue's phrase is lit in the transcript and its picture is
+                                not on the stage: this is the waiting the chapter describes.
+         4  the slide           2.1her has landed. Every picture in the frame now carries the cue it was written
+                                with, the same `data-cue` the panel beside it quotes.
+         5  the measured film   2.1you has landed too, and each badge turns into what `decktalk verify` measured
+                                for that landing. The frame stops being a picture of the film and becomes its report. */
+    const her = cueAt["2.1her"];
+    const you = cueAt["2.1you"];
+    const pin = cueAt["2.1pin"];
+    const sec2 = D.sections[1];
+    // 0.32 s after a cue is far enough into a 0.3 s reveal to read as landed, and near enough to light the cue's
+    // own tick in the transcript, which holds for 0.35 s either side.
+    const chapterT = { 1: sec2.start + 0.02, 2: pin.at + 0.32, 3: her.at - 0.04, 4: her.at + 0.32, 5: you.at + 0.32 };
+    const take = (i) => (words[i].start - sec2.start - D.lead).toFixed(3);
+    const panels = {
+      script: `<span class="fn">script.md</span><pre>## 2. Halfway\n\n<span class="t">…at a place worth the trip. [beat]</span>\n<span class="hl">Twenty minutes for her.</span> <span class="t">[beat]</span> <span class="hl">Twenty minutes for you.</span>\n\n<span class="t">## 2. begins section 2 of 4. [beat] is a short pause and is not spoken.</span></pre>`,
+      words: `<span class="fn">build/narration/${sec2.hash}.words.json</span><pre>${[...Array(8).keys()]
+        .map((k) => {
+          const i = her.first + k;
+          return `{ "word": "${words[i].text.replace(/[.,]$/, "")}", "start": ${take(i)}, "end": ${(words[i].end - sec2.start - D.lead).toFixed(3)} }`;
+        })
+        .join("\n")}</pre>`,
+      cues: `<span class="fn">cues.json → build/cue-times.json</span><pre>{ "cue": "<span class="cue">2.1her</span>", "on": "<span class="hl">Twenty minutes for her</span>" }\n<span class="t">→ ${(her.at - sec2.start).toFixed(2)} s into the section. The recording starts ${D.lead} s after the section begins, so words.json says ${take(her.first)}.</span>\n{ "cue": "<span class="cue">2.1you</span>", "on": "<span class="hl">Twenty minutes for you</span>" }\n<span class="t">→ ${(you.at - sec2.start).toFixed(2)} s into the section.</span></pre>`,
+      slide: `<span class="fn">deck/index.html</span><pre>&lt;div class="pill" <span class="cue">data-cue="2.1her"</span> data-describe="${esc(her.describe)}"&gt;20 min&lt;/div&gt;\n&lt;div class="pill" <span class="cue">data-cue="2.1you"</span> data-describe="${esc(you.describe)}"&gt;20 min&lt;/div&gt;\n<span class="t">&lt;!-- decktalk-runtime.js shows each data-cue element at its cue's second. data-describe is what a screen reader hears when it appears. --&gt;</span></pre>`,
+      verify: `<span class="fn">decktalk verify</span><pre>${sec2.cues
+        .map(
+          (c) =>
+            `${c.cue.padEnd(12)} ${String(D.verify[c.cue] >= 0 ? `+${D.verify[c.cue]}` : D.verify[c.cue]).padStart(4)} ms  <span class="ok">changed</span>`,
+        )
+        .join(
+          "\n",
+        )}\n<span class="t">${cues.length} cues in the ${Math.floor(D.total)}-second film above, every picture within ${Math.max(...cues.map((c) => Math.abs(D.verify[c.cue] ?? 0)))} ms of its word. +20 ms means the picture appeared 20 ms after its cue's second, −20 ms before it. "changed" is verify's word for a picture that appeared at its cue.</span></pre>`,
+    };
+    for (const [name, html] of Object.entries(panels)) $(`[data-panel="${name}"]`).innerHTML = html;
+
+    /* Chapters 4 and 5 label the pictures on the stage itself. The cue name is already on the element —
+       it is the slide's own `data-cue`, which chapter 4's panel quotes — so only the measured landing
+       needs writing on. The badges are drawn by the stylesheet from these two attributes.
+
+       They are also why the verify line under the frame no longer waits for chapter 5 to appear. It used to
+       be the chapter's whole reward, and it was the section's cue list a second time, in a column that grew
+       three lines taller at exactly the scroll position where sticky could least afford it. It now reads as
+       what it is — a property of the section you picked — from the first chapter on, and chapter 5's reward
+       is on the pictures, where each number belongs to the landing it measures. */
+    for (const el of $$(".scene > [data-cue]", hiwStage)) {
+      const ms = D.verify[el.dataset.cue];
+      if (ms !== undefined) el.dataset.cueMs = `${ms >= 0 ? "+" : "−"}${Math.abs(ms)} ms`;
+    }
+
+    let chapter = 0;
+    const chapterIO = new IntersectionObserver(
+      (es) => {
+        for (const e of es) {
+          if (!e.isIntersecting) continue;
+          const n = Number(e.target.dataset.chapter);
+          if (n !== chapter) {
+            chapter = n;
+            if (!hiw.playing) hiw.seek(chapterT[n]);
+            hiwStage.classList.toggle("named", n === 4);
+            hiwStage.classList.toggle("measured", n === 5);
+          }
+        }
+      },
+      { rootMargin: "-45% 0px -45% 0px" },
     );
-  log.innerHTML = logLines.join("");
-  // The claim under the log is the rebuilt film's own measurement: every cue verify measured, and the largest offset.
-  const offsets = Object.values(E.verify);
-  if (offsets.length && film)
-    $("[data-verify-sum]").textContent =
-      `: ${offsets.length} cues in the full ${fmt(Number(film[1]))} film, none more than ${Math.max(...offsets.map(Math.abs))} ms off.`;
+    for (const el of $$("[data-chapter]")) chapterIO.observe(el);
+    hiw.seek(chapterT[1]);
+  });
+
+  /* ---------------------------------------------------------------- change a sentence */
+  onPage("#edit", () => {
+    const E = D.edit;
+    for (const name of ["before", "after"]) $(`[data-hash="${name}"]`).textContent = E[name].hash;
+    const takeAudio = {};
+    for (const b of $$("[data-take]")) {
+      const name = b.dataset.take;
+      const wave = $(".wave", b);
+      let raf = 0;
+      const follow = () => {
+        const a = takeAudio[name];
+        drawWave(wave, ENV[name], a.currentTime);
+        if (!a.paused) raf = requestAnimationFrame(follow);
+      };
+      b.addEventListener("click", () => {
+        if (!takeAudio[name]) takeAudio[name] = new Audio(MEDIA + D.media[name]);
+        const a = takeAudio[name];
+        if (!a.paused) {
+          a.pause();
+          return;
+        }
+        for (const [other, oa] of Object.entries(takeAudio)) if (other !== name) oa.pause();
+        a.currentTime = 0;
+        a.onplay = () => {
+          b.setAttribute("aria-pressed", "true");
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(follow);
+        };
+        a.onpause = () => {
+          b.setAttribute("aria-pressed", "false");
+          cancelAnimationFrame(raf);
+          restWave(wave);
+        };
+        a.onended = a.onpause;
+        a.play().catch(() => {});
+      });
+    }
+    // The edit, file by file, from data.js: the words that changed with the words either side of
+    // them, so the page names every place the number lives rather than only the spoken sentence.
+    const diff = $("[data-diff]");
+    if (diff) {
+      diff.innerHTML = E.diff
+        .map((f) => {
+          const rows = f.changes
+            .map(
+              (c) =>
+                `<li class="row"><span class="at">${esc(c.where)}${c.label ? `<i> · ${esc(c.label)}</i>` : ""}</span>` +
+                `<span class="txt">${c.prefix ? `<span class="ctx">${esc(c.prefix)}</span> ` : ""}` +
+                // "was" and "now" are read, not seen: a strike and a colour say nothing out loud, and
+                // without them the row announced as "eleven fourteen thousand".
+                `<span class="sr">was </span><s>${esc(c.before)}</s><span class="sr">, now</span> ` +
+                `<b>${esc(c.after)}</b>` +
+                `${c.suffix ? ` <span class="ctx">${esc(c.suffix)}</span>` : ""}</span></li>`,
+            )
+            .join("");
+          return `<li class="file"><span class="fn">${esc(f.file)}</span><ul class="rows">${rows}</ul></li>`;
+        })
+        .join("");
+    }
+    const lanes = $("[data-lanes]");
+    const cellsHtml = [];
+    let k = 0;
+    const cell = (cls, text) => `<div class="cell ${cls}" style="--k:${k++}">${text}</div>`;
+    cellsHtml.push(
+      `<div class="hd"></div>${D.sections.map((s) => `<div class="hd"><b>${s.n}</b>${s.chapter}</div>`).join("")}`,
+    );
+    cellsHtml.push(
+      `<div class="rl">narrate</div>${D.sections.map((s) => cell(s.n === E.section ? "live" : "", s.n === E.section ? "voiced" : "cached")).join("")}`,
+    );
+    cellsHtml.push(
+      `<div class="rl">record</div>${D.sections.map((s) => cell(s.n === E.section ? "live" : "", s.n === E.section ? "recorded" : "kept")).join("")}`,
+    );
+    cellsHtml.push(`<div class="rl">assemble</div>${cell("span", "four sections, straight cuts, one mp4")}`);
+    lanes.innerHTML = cellsHtml.join("");
+    const NUM = ["", "one", "two", "three", "four", "five", "six"];
+    const num = (n) => NUM[n] ?? String(n);
+    lanes.setAttribute(
+      "aria-label",
+      `After the edit to section ${E.section}, the narrate stage voiced section ${E.section} and reused the cached takes of the other ${num(E.kept)}, the record stage filmed section ${E.section} and kept the other ${num(E.kept)}, and the assemble stage cut all ${num(D.sections.length)} into one mp4.`,
+    );
+    // The money is the section's second claim, so it is a sentence on the page rather than the last
+    // line of a log behind a disclosure.
+    const C = E.cost;
+    $("[data-cost]").innerHTML =
+      `The rebuild cost <b>about $${C.usd.toFixed(2)}</b>: ${C.sent} characters sent to the voice, ${C.spoken} of them spoken, at $${C.rate.toFixed(2)} per 1,000 characters, the price set in <code>decktalk.toml</code>. The other ${num(C.cached)} sections cost nothing.`;
+    // Each line is its own block, so a line longer than the box wraps under a hanging indent instead
+    // of running off the right edge of a phone with the evidence on it.
+    const log = $("[data-log]");
+    const logLines = [`<span class="ln"><span class="p">$</span> decktalk build</span>`];
+    for (const ln of E.log) {
+      const isLive = / 03 |section 03/.test(ln);
+      logLines.push(`<span class="ln${isLive ? " live" : ""}">${esc(ln)}</span>`);
+    }
+    const tail = E.log.map((ln) => ln.match(/tail ([\d.]+)s/)).find(Boolean);
+    const film = E.log.map((ln) => ln.match(/done: .*\(([\d.]+)s\)/)).find(Boolean);
+    if (tail && film)
+      logLines.push(
+        `<span class="ln gloss">Each section is its take plus the ${D.lead} s lead and ${tail[1]} s tail, so ${num(D.sections.length)} takes make a ${Math.round(Number(film[1]))} s film.</span>`,
+      );
+    log.innerHTML = logLines.join("");
+    // The claim under the log is the rebuilt film's own measurement: every cue verify measured, and the largest offset.
+    const offsets = Object.values(E.verify);
+    if (offsets.length && film)
+      $("[data-verify-sum]").textContent =
+        `: ${offsets.length} cues in the full ${fmt(Number(film[1]))} film, none more than ${Math.max(...offsets.map(Math.abs))} ms off.`;
+  });
 
   /* ---------------------------------------------------------------- cuts, copy */
   const io = new IntersectionObserver(
