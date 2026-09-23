@@ -46,3 +46,19 @@ def test_the_installer_is_served_as_text_rather_than_a_download() -> None:
     assert "/install.sh" in text, text
     rule = text.split("/install.sh", 1)[1]
     assert "text/plain" in rule, f"install.sh must be served as text, not downloaded: {rule!r}"
+
+
+def test_every_page_carries_the_same_navigation() -> None:
+    """The film pages drifted: they shipped before the split and the install work and kept a nav of
+    two links while the other pages grew to four and a control. A visitor deep in a film had no way
+    to reach how it works, the source, or the command."""
+    pages = sorted(SITE.glob("*.html")) + sorted((SITE / "films").glob("*.html"))
+    labels = {}
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        nav = re.search(r"<nav aria-label=\"Primary\">.*?</nav>", text, re.S)
+        assert nav, f"{page.name} has no primary nav"
+        labels[page.name] = re.findall(r"<li><a href=\"[^\"]*\"[^>]*>([A-Za-z][A-Za-z ]*)", nav.group(0))
+        assert 'class="btn' in text and "install" in text, f"{page.name} has no install control"
+    first = next(iter(labels.values()))
+    assert all(v == first for v in labels.values()), labels
