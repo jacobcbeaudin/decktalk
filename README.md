@@ -3,8 +3,8 @@
 <p align="center"><b>Every picture lands on its word, and you edit the video like a doc.</b><br>
 Before this, one wrong word meant editing, rendering and recording the whole thing again.</p>
 
-<p align="center"><a href="https://decktalk.ai/#watch"><img src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/site/media/decktalk-demo-poster.jpg" alt="The first frame of the demo film. A blue ball rests in a bowl above three boxes named one, two, and three, and under each box is the second at which its word was spoken." width="100%"></a><br>
-DeckTalk built this film from text files, and every reveal in it starts on its word. <a href="https://decktalk.ai/#watch">Watch it with the sound on at decktalk.ai</a>.</p>
+<p align="center"><a href="https://decktalk.ai/films/halfway"><img src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/site/media/halfway-poster.webp" alt="A frame of the film Halfway. On a dark city map, a white route runs from a point labelled her to a point labelled you, with a label reading 40 min on the turn." width="100%"></a><br>
+DeckTalk built this film from text files, and every reveal in it starts on its word. <a href="https://decktalk.ai/films/halfway">Watch it with the sound on</a>, or read <a href="https://decktalk.ai">the whole pitch at decktalk.ai</a>.</p>
 
 <p align="center">
 <a href="https://pypi.org/project/decktalk/"><img src="https://img.shields.io/pypi/v/decktalk?style=flat-square&label=pypi&color=2c1fea" alt="PyPI"></a>
@@ -138,8 +138,7 @@ DeckTalk is alpha, and a minor release can still break things. One person mainta
 
 CI runs the unit tests and a full offline build on Linux for every push to `main` and every pull request. [CONTRIBUTING](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md#what-ci-runs) lists the macOS and Windows runs.
 
-- Report bugs and ask questions in [Issues](https://github.com/jacobcbeaudin/decktalk/issues).
-- Show what you made in [Discussions](https://github.com/jacobcbeaudin/decktalk/discussions).
+- Report bugs, ask questions and show what you made in [Issues](https://github.com/jacobcbeaudin/decktalk/issues).
 - Report a vulnerability privately. [SECURITY.md](https://github.com/jacobcbeaudin/decktalk/blob/main/SECURITY.md) explains how.
 - The [changelog](https://docs.decktalk.ai/changelog) lists every release.
 
