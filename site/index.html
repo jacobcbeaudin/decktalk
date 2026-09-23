@@ -136,8 +136,8 @@
 <section class="block" id="install" aria-labelledby="install-h">
   <div class="wrap">
     <p class="kicker cut">Install</p>
-    <h2 id="install-h" class="cut">Four commands to a first film.</h2>
-    <p class="lead cut">The first line brings its own Python, so there is nothing to install before it. Chromium and ffmpeg come with <code>decktalk install</code>, and the first build needs no key. Your own voice needs an ElevenLabs key and a voice id. Any ElevenLabs voice works, including a clone of your own.</p>
+    <h2 id="install-h" class="cut">Four lines to a first film.</h2>
+    <p class="lead cut">The first line brings its own Python, so there is nothing to install before it, and nothing to sign up for. Chromium and ffmpeg come with <code>decktalk install</code>. The last line writes an mp4.</p>
     <!-- The steps carry no .cut. Every .cut on the page starts at opacity 0 and is revealed by
          app.js, and 03d27fc is what that costs when a script throws: a page with no way to install
          anywhere on it. These four lines are the only reason a stranger scrolled this far, so like
@@ -145,11 +145,11 @@
     <ol class="steps">
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code><span class="copy"></span></div>
-        <span>Installs uv, then DeckTalk. <a href="install.sh">Read the script first</a> — that is why it is served from a URL. If you already have uv, <code>uv tool install decktalk</code> does the same thing.</span>
+        <span>Installs uv, then DeckTalk. It never runs sudo, and it is served from a URL so you can <a href="install.sh">read it first</a>.</span>
       </li>
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk install</span></code><span class="copy"></span></div>
-        <span>Fetches Chromium and ffmpeg, once per machine. On Linux it asks for sudo once, for Chromium's system libraries.</span>
+        <span>Fetches Chromium and ffmpeg, once per machine. On Linux it asks for sudo, for Chromium's system libraries. If the command is not found, open a new shell.</span>
       </li>
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk init my-pitch</span></code><span class="copy"></span></div>
@@ -157,10 +157,11 @@
       </li>
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>cd my-pitch &amp;&amp; <span class="nb">decktalk build --no-voice</span></span></code><span class="copy"></span></div>
-        <span>Builds the film with placeholder narration and no key. Copy <code>.env.example</code> to <code>.env</code>, add your ElevenLabs key and voice id, and build again for your voice.</span>
+        <span>Records in real time, so about a minute later: <code>build/out/my-pitch.mp4</code>, with placeholder narration and no key.</span>
       </li>
     </ol>
-    <p class="install-note cut">Every project ships with six skill files that teach a coding agent DeckTalk. <a href="https://docs.decktalk.ai/quickstart">Start with the quickstart.</a></p>
+    <p class="install-note cut">For your own voice, copy <code>.env.example</code> to <code>.env</code>, add an ElevenLabs key and a voice id, and build again. Any ElevenLabs voice works, including a clone of your own.</p>
+    <p class="install-note cut">If you already have uv, <code>uv tool install decktalk</code> is the same install. Every project ships with six skill files that teach a coding agent DeckTalk. <a href="https://docs.decktalk.ai/quickstart">Start with the quickstart.</a></p>
   </div>
 </section>
 
