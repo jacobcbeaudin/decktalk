@@ -336,6 +336,15 @@ release-please keeps a release pull request open against `main`. It bumps the ve
 `pyproject.toml` and `uv.lock`, writes `CHANGELOG.md`, and picks the bump from the commits since the
 last release.
 
+The version answers for the wheel, and the wheel is `src/decktalk` alone, so `exclude-paths` in
+`release-please-config.json` lists the directories that ship to nobody: `site`, `docs`, `assets`,
+`scripts`, `tests` and `.github`. A commit confined to those is read as no change and bumps nothing.
+A commit that touches one of them and `src/decktalk` as well still counts in full, under its own
+type, because release-please drops a commit only when every file in it sits under an excluded path.
+The option matches directory prefixes only, so a file at the repository root such as `README.md` or
+`biome.json` cannot be excluded, and a `feat:` that edits one bumps the minor version even when the
+rest of the commit is site work.
+
 To release:
 
 1. Merge the release pull request. release-please creates the tag and the GitHub release.
