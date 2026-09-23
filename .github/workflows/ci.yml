@@ -55,7 +55,7 @@ jobs:
       - run: uv run scripts/check_docs_links.py --check
 
   lint:
-    name: lint (JavaScript)
+    name: lint (JavaScript and shell)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,6 +63,10 @@ jobs:
           persist-credentials: false
       # The same version as .pre-commit-config.yaml and biome.json.
       - run: npx --yes @biomejs/biome@2.5.13 ci .
+      # The installer is `#!/bin/sh`, and -s sh is what makes shellcheck say so: without it a bashism
+      # passes here and fails on the busybox sh of whoever pasted the one-liner. The runner ships
+      # shellcheck, and .pre-commit-config.yaml runs the same check before the commit.
+      - run: shellcheck -s sh site/install.sh
 
   e2e:
     # The browser, media and pipeline suites on Linux, with coverage over the whole suite. The pipeline test
@@ -119,3 +123,10 @@ jobs:
     # push to main. Pull requests stay on Linux, which keeps them to about five minutes.
     if: github.event_name != 'pull_request'
     uses: ./.github/workflows/cross-platform.yml
+
+  installer:
+    # site/install.sh installed for real in Debian, Ubuntu, Fedora and Alpine containers. Same rule as
+    # cross-platform: every push to main, not every pull request. A pull request that edits the installer
+    # runs the matrix from installer.yml's own paths filter, so the one that needs it still gets it.
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/installer.yml

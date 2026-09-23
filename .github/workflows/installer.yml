@@ -1,0 +1,152 @@
+# site/install.sh, run for real on the machines tests/test_installer.py cannot be: a bare image with nothing
+# but curl added, no uv, no Python, and an install that has to end with `decktalk --version` printing a
+# version. The local tests own everything a container is not needed for (it parses under every POSIX shell,
+# it never calls sudo, a truncated download installs nothing); this owns the rest.
+#
+# ci.yml calls it on every push to main and from the Actions tab. A pull request runs it only when it
+# touches the installer, because six containers, five of them a real install from PyPI, cost a few minutes
+# and most pull requests do not change a line of shell. release.yml does not call it: the installer installs
+# the version PyPI is serving, which during a release is still the previous one, so running it there would
+# gate the publish on a version that is already out.
+#
+# The images are pinned by tag rather than by digest, unlike the actions. They stand in for the distribution
+# an author already has, and a digest would freeze this matrix on one week's Debian forever.
+name: installer
+
+on:
+  pull_request:
+    paths:
+      - site/install.sh
+      - .github/workflows/installer.yml
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    # The whole promise of the one-liner: paste it on a machine that has never had DeckTalk, get DeckTalk.
+    # The image starts with no uv and no Python, so uv's own installer and uv's managed Python are both part
+    # of what is being tested. Chromium and ffmpeg are not: `decktalk install` downloads those, separately.
+    name: install (${{ matrix.image }})
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [debian:13-slim, ubuntu:24.04, fedora:42]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: A real install, from an image that has only curl
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          docker run --rm -e DEBIAN_FRONTEND=noninteractive -v "$PWD/site:/site:ro" "$IMAGE" sh -euc '
+            if command -v apt-get >/dev/null 2>&1; then
+              apt-get update -qq && apt-get install -y -qq curl >/dev/null
+            else
+              dnf install -y -q curl >/dev/null
+            fi
+            sh /site/install.sh
+            # The shell the author opens next, which is the one the installer prints PATH advice for.
+            PATH="$HOME/.local/bin:$PATH"
+            export PATH
+            decktalk --version
+          '
+
+  refuse-musl:
+    # DeckTalk cannot run on musl: Playwright, which records the slides, publishes no musllinux wheels, so
+    # the resolver fails whatever the installer does. install.sh says that in two lines and exits 1, and the
+    # test is that it does it before installing anything, not that it fails somewhere.
+    name: refuse musl (alpine:3.22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Alpine is refused, with the reason, and nothing is installed
+        run: |
+          docker run --rm -v "$PWD/site:/site:ro" alpine:3.22 sh -euc '
+            apk add --no-cache curl >/dev/null
+            set +e
+            out="$(sh /site/install.sh 2>&1)"
+            code=$?
+            set -e
+            printf "%s\n" "$out"
+            if [ "$code" -ne 1 ]; then
+              echo "expected exit 1 on musl, got $code"
+              exit 1
+            fi
+            case "$out" in
+            *musl*glibc*) ;;
+            *)
+              echo "the refusal never says musl and glibc, so it teaches nothing"
+              exit 1
+              ;;
+            esac
+            if command -v uv >/dev/null 2>&1; then
+              echo "it installed uv before refusing"
+              exit 1
+            fi
+          '
+
+  options:
+    # The two ways the one-liner is not a plain one-liner: a machine that already has uv, and a pinned
+    # version. Both are cheap enough to share a job.
+    name: install (uv already there, and a pinned version)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: An installed uv is used, not installed over
+        run: |
+          # uv's own image carries uv and no curl, which also proves the installer needs no downloader of
+          # its own once uv is there.
+          docker run --rm -v "$PWD/site:/site:ro" ghcr.io/astral-sh/uv:debian-slim sh -euc '
+            out="$(sh /site/install.sh)"
+            printf "%s\n" "$out"
+            case "$out" in
+            *"is already installed"*) ;;
+            *)
+              echo "it did not recognise the uv that was already on PATH"
+              exit 1
+              ;;
+            esac
+            PATH="$HOME/.local/bin:$PATH"
+            export PATH
+            decktalk --version
+          '
+      - name: The version to pin
+        id: pin
+        run: |
+          # The release before the current one. Pinning to the latest version would pass on an installer
+          # that dropped the pin on the floor and installed the latest anyway.
+          version="$(curl -LsSf https://pypi.org/pypi/decktalk/json | jq -r '.releases | keys_unsorted[]' | sort -V | tail -2 | head -1)"
+          if [ -z "$version" ]; then
+            echo "no released version to pin to" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "pinning decktalk==$version"
+      - name: DECKTALK_VERSION installs that version and no other
+        env:
+          PIN: ${{ steps.pin.outputs.version }}
+        run: |
+          docker run --rm -e DEBIAN_FRONTEND=noninteractive -e DECKTALK_VERSION="$PIN" \
+            -v "$PWD/site:/site:ro" debian:13-slim sh -euc '
+            apt-get update -qq && apt-get install -y -qq curl >/dev/null
+            sh /site/install.sh
+            PATH="$HOME/.local/bin:$PATH"
+            export PATH
+            got="$(decktalk --version)"
+            if [ "$got" != "decktalk $DECKTALK_VERSION" ]; then
+              echo "pinned $DECKTALK_VERSION, installed $got"
+              exit 1
+            fi
+          '
