@@ -285,8 +285,11 @@
             { once: true },
           );
         a.play().catch(() => {
+          // The host refused, or the file did not arrive. The film keeps playing silently, which is
+          // what it would have done anyway, but the control stops claiming sound is on.
           P.sound = false;
           setSoundUI(false);
+          announce("The voice could not be played. The film is playing without sound.");
         });
       }
       cancelAnimationFrame(P.raf);
@@ -312,8 +315,7 @@
       cancelAnimationFrame(P.raf);
       P.t = D.total;
       if (P.audio) P.audio.pause();
-      P.sound = false;
-      setSoundUI(false);
+      // P.sound is kept: a viewer who chose sound and watched to the end gets sound on the replay.
       draw();
       setState("ended");
     }
@@ -341,14 +343,17 @@
     function setSoundUI(on) {
       for (const b of opts.soundBtns || []) {
         b.setAttribute("aria-pressed", on ? "true" : "false");
-        b.setAttribute("aria-label", on ? "Sound on" : "Play with sound");
+        // The hero's button has no aria-label: its visible text carries the film's length, and any
+        // name written here would have to repeat it or fail Label in Name. Its own words are the
+        // name. The transport's label says "Sound", so it keeps a fuller name that contains it.
+        if (!b.classList.contains("cta")) b.setAttribute("aria-label", on ? "Sound on" : "Play with sound");
         for (const s of $$("[data-sound-label]", b)) s.hidden = on;
         for (const s of $$("[data-sound-label-on]", b)) s.hidden = !on;
       }
       if (!on) for (const w of opts.waves || []) restWave(w);
     }
-    /* The sound control: a press while sound is off restarts from word one with the lead and sound on,
-       and a press while sound is on mutes without stopping. At the end, a press replays with sound. */
+    /* The sound control: a press turns sound on where the film already is, and a press while sound
+       is on mutes without stopping. At the end there is nothing left to hear, so a press replays. */
     function toggleSound() {
       if (P.sound && !P.ended) {
         P.sound = false;
@@ -365,23 +370,34 @@
       }
       P.sound = true;
       P.autoplaying = false;
-      P.t = 0;
+      // Sound is a setting, not a restart. The button sits where every player puts mute, so a press
+      // means "let me hear this", not "start again" — except at the end, where there is nothing left
+      // to hear and a press is the replay the ended state offers.
+      if (P.ended) P.t = 0;
       P.ended = false;
       const a = ensureAudio();
       a.muted = false;
-      a.currentTime = 0;
-      P.playing = true;
+      a.currentTime = P.t;
+      // Not playing until the audio says so: a rejected play() used to leave P.playing true with a
+      // pause icon over a still film, and the next press read as "stop" and did nothing visible.
+      setState("loading");
       P.last = performance.now();
       a.play()
         .then(() => {
+          P.playing = true;
           cancelAnimationFrame(P.raf);
           P.raf = requestAnimationFrame(loop);
           setSoundUI(true);
           setState("playing");
         })
         .catch(() => {
+          // A press that never became sound has to end somewhere the viewer can see, or the film
+          // sits still under a control that still says it is about to speak.
           P.sound = false;
+          P.playing = false;
           setSoundUI(false);
+          setState("paused");
+          announce("The voice could not be played. Press play to watch without sound.");
         });
     }
     function setRate(rate) {
@@ -428,7 +444,11 @@
   const heroTc = $("[data-tc]", heroEl);
   const heroWaves = $$("[data-sound] .wave");
   scrub.max = String(D.total);
-  let scrubHeld = 0; // the last input on the scrubber, so the thumb follows the film again half a second later
+  // The last input on the scrubber, so the thumb follows the film again half a second later.
+  // -Infinity rather than 0 because under reduced motion the only draw is the one at load, when
+  // performance.now() is still under 500 and `now - 0 > 500` reads as a scrub in progress: the
+  // thumb sat at 0 while the timecode and aria-valuetext said 3.2 seconds.
+  let scrubHeld = -Infinity;
   let bandLine = -1;
   let bandWord = -1;
   let bandLive = false;
@@ -460,6 +480,25 @@
         .join(" ");
       bandLine = li;
       bandWord = -1;
+      // A sighted viewer reads this line under the frame and watches the picture arrive on its word.
+      // Both stage frames are aria-hidden, so without this the film ran its whole length in silence
+      // for a screen reader. One line at a time, with the picture the cue names, is the same film
+      // told out loud, and `describe` is already in data.js because the deck writes it for the films
+      // DeckTalk builds. Only while playing: a seek announces through its own debounce.
+      if (hero.playing) {
+        const said = words
+          .slice(L.a, L.b + 1)
+          .map((w) => w.text)
+          .join(" ");
+        // The picture this line brings, not the last one anywhere: describeAt(t) returns the cue
+        // standing at t, which on a line that starts before its own cue is the previous line's.
+        const shown = cues
+          .filter((c) => c.first >= L.a && c.first <= L.b)
+          .map((c) => c.describe)
+          .filter(Boolean)
+          .join(" ");
+        announce(shown ? `${said.replace(/[.,;:]$/, "")}. ${shown}` : said);
+      }
     }
     if (k !== bandWord || bandLive !== hero.playing) {
       for (const sp of $$(".w", band.cur)) {
@@ -486,13 +525,17 @@
     },
     onState(state) {
       pauseBtn.dataset.state = state;
-      pauseBtn.setAttribute("aria-label", { playing: "Pause", paused: "Play", ended: "Replay from the start" }[state]);
+      pauseBtn.setAttribute(
+        "aria-label",
+        { playing: "Pause", paused: "Play", ended: "Replay from the start", loading: "Loading the voice" }[state],
+      );
       drawBand(hero.t);
     },
   });
   pauseBtn.addEventListener("click", () => {
     if (hero.playing) hero.stop();
-    else if (hero.ended) hero.play({ silent: true });
+    // A replay honours the sound the viewer chose rather than starting over in silence.
+    else if (hero.ended) hero.play({ silent: !hero.sound });
     else hero.play();
   });
   scrub.addEventListener("input", () => {

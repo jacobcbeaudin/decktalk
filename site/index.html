@@ -64,7 +64,7 @@
     <p class="kicker">Narrated video from a script, in your own voice.</p>
     <h1 id="hero-h">Every picture lands on its word.</h1>
     <p class="sub">Change a sentence, and only that section is voiced again.</p>
-    <button type="button" class="btn solid cta" data-sound aria-pressed="false" aria-label="Play with sound">
+    <button type="button" class="btn solid cta" data-sound aria-pressed="false">
       <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span>
       <span class="lbl"><span data-sound-label>Play with sound · <span data-total>0:35</span></span><span data-sound-label-on hidden>Sound on · <span data-total>0:35</span></span></span>
     </button>
@@ -157,7 +157,7 @@
             <button type="button" class="btn" data-hiw-play data-state="paused" aria-label="Play from here">
               <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-play"/></svg><span>Play from here</span>
             </button>
-            <button type="button" class="btn" data-speed aria-pressed="false" aria-label="Slow, 0.75 times speed, pitch preserved">0.75×</button>
+            <button type="button" class="btn" data-speed aria-pressed="false" aria-label="0.75×, slow, pitch preserved">0.75×</button>
             <span class="tc mono" aria-hidden="true"><span data-tc>0:00</span></span>
           </div>
           <p class="help">Underlined phrases are cues. The small number is how many seconds into this section the picture appears. Click a word to move the stage there. Tab in, use the arrow keys, and press Enter to play from a word.</p>
@@ -191,7 +191,7 @@
       </div>
     </div>
     <div class="lanes cut" data-lanes aria-label="What the build did to each section after the edit" role="img"></div>
-    <pre class="log cut" data-log aria-label="The captured build log"></pre>
+    <pre class="log cut" data-log tabindex="0" role="region" aria-label="The captured build log, scrollable"></pre>
     <p class="after-line cut">Every landing is measured against its word<span data-verify-sum>.</span></p>
   </div>
 </section>
