@@ -12,13 +12,6 @@ on:
 permissions:
   contents: read
 
-# One run per branch. A second push supersedes the first rather than racing it, which on a
-# public repository costs no money but does cost the wait for a green tick. `main` is never
-# cancelled: its runs are the record of what shipped.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 
 jobs:
   e2e:
