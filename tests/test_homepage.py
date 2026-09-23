@@ -62,19 +62,68 @@ def page(origin: str) -> Iterator[object]:
             pytest.skip("Chromium is missing: run `decktalk install` first")
         browser = pw.chromium.launch()
         pg = browser.new_page(viewport={"width": 1280, "height": 900})
+        # The hero fetches its voice from the media host. No test here listens to it, and on a
+        # runner with a slow or filtered route to the internet, waiting on it is waiting on
+        # something the test is not about. Refused here so the page is only ever itself.
+        pg.route("https://media.decktalk.ai/**", lambda route: route.abort())
         pg.origin = origin  # type: ignore[attr-defined]
         yield pg
         browser.close()
 
 
-def walk(pg: object) -> None:
-    """Scroll the whole page the way a reader does, half a viewport at a time."""
+def walk(pg: object, name: str) -> None:
+    """Scroll the whole page the way a reader does, then wait for the reveal rather than guess at it.
+
+    The observer reveals a section when it enters the viewport, so a jump to the bottom passes over
+    the middle ones without ever showing them: the walk is the point. What is not the point is how
+    long a runner takes to get there. A fixed sleep passed on macOS and Linux and failed every
+    section on Windows, which is slower, so this waits for the condition the test is about and only
+    fails when it never arrives.
+    """
     height = pg.evaluate("document.documentElement.scrollHeight")  # type: ignore[attr-defined]
     step = pg.viewport_size["height"] // 2  # type: ignore[attr-defined]
     for y in range(0, height, step):
         pg.evaluate(f"window.scrollTo(0, {y})")  # type: ignore[attr-defined]
-        pg.wait_for_timeout(120)  # type: ignore[attr-defined]
-    pg.wait_for_timeout(600)  # type: ignore[attr-defined]
+        pg.wait_for_timeout(60)  # type: ignore[attr-defined]
+    try:
+        pg.wait_for_function(  # type: ignore[attr-defined]
+            """(ids) => ids.every((id) => {
+                const el = document.getElementById(id);
+                if (!el) return false;
+                const cut = el.querySelector(".cut") ?? el;
+                return parseFloat(getComputedStyle(cut).opacity) > 0;
+            })""",
+            arg=list(SECTIONS[name]),
+            timeout=15000,
+        )
+    except Exception:  # noqa: BLE001 — the assertion that follows says which section it was
+        pass
+
+
+def diagnosis(pg: object, name: str) -> str:
+    """What the page actually looked like, for an assertion that fails on a machine nobody is sitting at.
+
+    A bare "all False" says the reveal did not happen and nothing about why. This says whether the
+    script loaded at all, whether the page thinks it has JavaScript, and the opacity of each section
+    with the element it was read from, which separates "never revealed" from "measured the wrong box".
+    """
+    return pg.evaluate(  # type: ignore[attr-defined]
+        """(ids) => {
+            const scripts = [...document.scripts].map((s) => s.src.split('/').pop() || 'inline');
+            const rows = ids.map((id) => {
+                const el = document.getElementById(id);
+                if (!el) return `${id}: MISSING`;
+                const cut = el.querySelector('.cut');
+                const box = cut ?? el;
+                return `${id}: opacity=${getComputedStyle(box).opacity} from=${cut ? '.cut' : 'section'}`
+                     + ` in=${box.classList.contains('in')}`;
+            });
+            return `html.class=${document.documentElement.className}`
+                 + ` scripts=[${scripts.join(',')}] height=${document.documentElement.scrollHeight}`
+                 + ` reveal=${typeof window.HALFWAY} | ` + rows.join(' | ');
+        }""",
+        list(SECTIONS[name]),
+    )
 
 
 def visible_sections(pg: object, name: str) -> dict[str, bool]:
@@ -99,23 +148,23 @@ def test_every_section_is_visible_when_the_page_works(page: object, name: str) -
     """
     thrown: list[str] = []
     page.on("pageerror", lambda e: thrown.append(str(e)))  # type: ignore[attr-defined]
-    page.goto(f"{page.origin}/{name}", wait_until="networkidle")  # type: ignore[attr-defined]
+    page.goto(f"{page.origin}/{name}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
     # Walked rather than jumped: the observer reveals a section when it enters the viewport, so a
     # jump to the bottom passes over the middle ones without ever showing them.
-    walk(page)
+    walk(page, name)
     assert not thrown, f"{name} threw: {thrown}"
-    assert all(visible_sections(page, name).values()), visible_sections(page, name)
+    assert all(visible_sections(page, name).values()), diagnosis(page, name)
 
 
 @pytest.mark.parametrize("name", PAGES)
 def test_the_page_survives_a_data_file_that_did_not_load(page: object, name: str) -> None:
     """data.js 404s, so `window.HALFWAY` is undefined and the script returns on its eighth line."""
     page.route("**/data.js", lambda route: route.fulfill(status=404, body=""))  # type: ignore[attr-defined]
-    page.goto(f"{page.origin}/{name}", wait_until="networkidle")  # type: ignore[attr-defined]
-    walk(page)
+    page.goto(f"{page.origin}/{name}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    walk(page, name)
     seen = visible_sections(page, name)
-    assert seen[ESSENTIAL[name]], f"a visitor could not reach {ESSENTIAL[name]} on {name}: {seen}"
-    assert all(seen.values()), seen
+    assert seen[ESSENTIAL[name]], f"{ESSENTIAL[name]} unreachable on {name} :: {diagnosis(page, name)}"
+    assert all(seen.values()), diagnosis(page, name)
 
 
 @pytest.mark.parametrize("name", PAGES)
@@ -123,16 +172,16 @@ def test_the_page_survives_a_script_that_throws(page: object, name: str) -> None
     """The likelier failure: data.js loads but something below line eight throws, so the observer
     that reveals the page is never reached."""
     page.add_init_script("window.addEventListener('DOMContentLoaded', () => { null.boom; });")  # type: ignore[attr-defined]
-    page.goto(f"{page.origin}/{name}", wait_until="networkidle")  # type: ignore[attr-defined]
-    page.wait_for_timeout(600)  # type: ignore[attr-defined]
+    page.goto(f"{page.origin}/{name}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    walk(page, name)
     seen = visible_sections(page, name)
-    assert seen[ESSENTIAL[name]], f"a visitor could not reach {ESSENTIAL[name]} on {name}: {seen}"
+    assert seen[ESSENTIAL[name]], f"{ESSENTIAL[name]} unreachable on {name} :: {diagnosis(page, name)}"
 
 
 def test_a_reader_can_walk_from_the_landing_page_to_the_explanation_and_back(page: object) -> None:
     """The explanation moved, so the landing page has to carry a reader to it and the how page has
     to carry them back to the install command. Both routes are followed rather than read."""
-    page.goto(f"{page.origin}/index.html", wait_until="networkidle")  # type: ignore[attr-defined]
+    page.goto(f"{page.origin}/index.html", wait_until="domcontentloaded")  # type: ignore[attr-defined]
     page.click("#how-more a[href='how.html']")  # type: ignore[attr-defined]
     page.wait_for_url("**/how.html")  # type: ignore[attr-defined]
     assert page.locator("#how").count() == 1  # type: ignore[attr-defined]
