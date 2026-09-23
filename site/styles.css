@@ -237,6 +237,9 @@ section.block::before {
 }
 section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch; }
 
+/* ---- the invitation that stands on the landing page where the explanation used to, and sends a reader to how.html. */
+.how-more .btn { margin-top: 24px; }
+
 /* ---- gallery: one row of small cards, each a link to the film's own page. */
 .gallery { padding-top: 40px; padding-bottom: 48px; }
 .reel { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 340px)); gap: 20px; margin: 24px 0 0; padding: 0; list-style: none; }

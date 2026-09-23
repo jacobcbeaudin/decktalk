@@ -48,7 +48,7 @@
     <nav aria-label="Primary">
       <ul>
         <li><a href="#gallery">Gallery</a></li>
-        <li><a href="#how">How it works</a></li>
+        <li><a href="how.html">How it works</a></li>
         <li><a href="https://docs.decktalk.ai">Docs</a></li>
         <li><a href="https://github.com/jacobcbeaudin/decktalk">GitHub<small>Open source</small></a></li>
       </ul>
@@ -111,101 +111,17 @@
   </div>
 </section>
 
-<section class="block how" id="how" aria-labelledby="how-h">
+<section class="block how-more" id="how-more" aria-labelledby="how-more-h">
   <div class="wrap">
     <p class="kicker cut">How it works</p>
-    <h2 id="how-h" class="cut">One line, from the script to the film.</h2>
-    <p class="lead cut">Twenty minutes for her. Twenty minutes for you.</p>
-    <div class="grid">
-      <div class="chapters" data-chapters>
-        <div class="chapter" data-chapter="1">
-          <p class="n">1 of 5</p>
-          <h3>You write the script.</h3>
-          <figure class="panel" data-panel="script"></figure>
-        </div>
-        <div class="chapter" data-chapter="2">
-          <p class="n">2 of 5</p>
-          <h3>Your voice reads it, with a time for every word.</h3>
-          <figure class="panel" data-panel="words"></figure>
-        </div>
-        <div class="chapter" data-chapter="3">
-          <p class="n">3 of 5</p>
-          <h3>A cue names the word each picture waits for.</h3>
-          <figure class="panel" data-panel="cues"></figure>
-        </div>
-        <div class="chapter" data-chapter="4">
-          <p class="n">4 of 5</p>
-          <h3>The slide is plain HTML, and each picture carries its cue.</h3>
-          <figure class="panel" data-panel="slide"></figure>
-        </div>
-        <div class="chapter" data-chapter="5">
-          <p class="n">5 of 5</p>
-          <h3>A browser films the slide, and every landing is measured.</h3>
-          <figure class="panel" data-panel="verify"></figure>
-        </div>
-      </div>
-
-      <div class="pinned" id="catchup">
-        <div class="stagepin">
-          <div class="frame" aria-hidden="true"><div class="stage-deck" data-stage></div></div>
-          <p class="verify" data-verify aria-live="off"></p>
-        </div>
-        <div class="catchup">
-          <div class="picker" role="radiogroup" aria-label="Section of script.md" data-picker>
-            <span>script.md · section <span data-picked>2</span> of 4</span>
-          </div>
-          <div class="transcript" role="group" data-transcript aria-label="Transcript of the film above. Click a word to move the stage to it. The cue times are links."></div>
-          <div class="row">
-            <button type="button" class="btn" data-hiw-play data-state="paused" aria-label="Play from here">
-              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-play"/></svg><span>Play from here</span>
-            </button>
-            <button type="button" class="btn" data-speed aria-pressed="false" aria-label="0.75×, slow, pitch preserved">0.75×</button>
-            <span class="tc mono" aria-hidden="true"><span data-tc>0:00</span></span>
-          </div>
-          <p class="help">Underlined phrases are cues. The small number is how many seconds into this section the picture appears. Click a word to move the stage there. Tab in, use the arrow keys, and press Enter to play from a word.</p>
-          <p class="help">This is the 35-second film above. The full 0:38 film is in the gallery.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="block edit" id="edit" aria-labelledby="edit-h">
-  <div class="wrap">
-    <p class="kicker cut">Change one number</p>
-    <h2 id="edit-h" class="cut">One number lives in three files. Only its section was voiced again.</h2>
-    <p class="fine cut" style="margin-top:10px">Section 3 of Halfway, the fictional pitch above. Press both: the same cloned voice, before the edit and after it.</p>
-    <div class="takes cut">
-      <div class="take before">
-        <button type="button" class="btn" data-take="before" aria-pressed="false" aria-label="Play the take before the edit">
-          <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span><span>Before</span>
-        </button>
-        <p class="line">Last month, <mark>eleven thousand</mark> people met in the middle. <span class="rest">Coffee. Lunch. One first date that became a second.</span></p>
-        <span class="hash">cache key <b data-hash="before"></b></span>
-      </div>
-      <div class="take after">
-        <button type="button" class="btn" data-take="after" aria-pressed="false" aria-label="Play the take after the edit">
-          <span class="wave" aria-hidden="true"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i></span><span>After</span>
-        </button>
-        <p class="line">Last month, <mark>fourteen thousand</mark> people met in the middle. <span class="rest">Coffee. Lunch. One first date that became a second.</span></p>
-        <span class="hash">cache key <b data-hash="after"></b></span>
-      </div>
-    </div>
-    <p class="fine cut files-note">One number, but the film says it and shows it, so it lives in three files: the script, the cue that binds the picture to those words, and the slide that draws it, twice.</p>
-    <!-- Both disclosures are plain <details>: they open with no JavaScript, and .cut stays on the
-         <details> rather than on what it holds, because a closed one is never in the viewport and
-         the observer that reveals .cut would never reach it. -->
-    <details class="drop cut">
-      <summary>The four changes, file by file</summary>
-      <ul class="diff" data-diff aria-label="The four places the edit changed, file by file"></ul>
-    </details>
-    <div class="lanes cut" data-lanes aria-label="What the build did to each section after the edit" role="img"></div>
-    <p class="cost-line cut" data-cost></p>
-    <details class="drop cut">
-      <summary>The build log</summary>
-      <pre class="log" data-log tabindex="0" role="region" aria-label="The captured build log"></pre>
-    </details>
-    <p class="after-line cut">Every landing is measured against its word<span data-verify-sum>.</span></p>
+    <h2 id="how-more-h" class="cut">One line, from the script to the film.</h2>
+    <p class="lead cut">Five chapters beside a pinned stage: the script you write, your voice reading it with a
+      time for every word, the cue that names the word each picture waits for, the slide that carries it, and
+      what <code>decktalk verify</code> measured for every landing. Then one number, changed in three files, in
+      the same cloned voice before and after the edit.</p>
+    <!-- The one route from the landing page to the explanation, and the only thing here without
+         .cut on it: like the nav's Install button, it is never a thing a script can hide. -->
+    <a class="btn solid" href="how.html">Read how it works</a>
   </div>
 </section>
 
