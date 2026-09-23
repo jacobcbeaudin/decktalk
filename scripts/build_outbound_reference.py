@@ -57,8 +57,10 @@ machine. Each section is then sent on its own, with no surrounding text.
 DOWNLOAD_HEAD = """
 ## One-time downloads
 
-`decktalk install` fetches the tools a recording needs, once per machine. These requests carry
-nothing from your project, and after they succeed a build without voice needs no network at all.
+DeckTalk fetches the tools a recording needs, once per machine: the first command that opens a page
+downloads the browser, the first command that encodes downloads the media tool, and `decktalk
+install` does both up front. These requests carry nothing from your project, and after they succeed
+a build without voice needs no network at all.
 """
 
 TAIL = """

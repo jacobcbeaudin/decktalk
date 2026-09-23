@@ -1,7 +1,7 @@
 ---
 name: decktalk-build
 description: Render, rebuild, verify or preview a DeckTalk video, and stop for the author's approval before any narration is paid for. Use when someone asks to build, render, export, preview or check a narrated video, an explainer, a tutorial or a lesson, or after any edit to script.md, cues.json, decktalk.toml or a deck page. It rehearses without voice, reports which sections a voiced run would send and what they cost, waits for approval, follows the long run through status, and finishes with verify and frames. Do not use it to repair a finding, which belongs to decktalk-fix.
-compatibility: Requires the decktalk command on PATH, a browser and ffmpeg installed by decktalk install, and network access with a speech key for a voiced run. Step 10 reads PNG files, so a model that cannot read an image should ask the user to look at the frames instead.
+compatibility: Requires the decktalk command on PATH, a browser and ffmpeg, which DeckTalk fetches the first time a command needs them, and network access with a speech key for a voiced run. Step 10 reads PNG files, so a model that cannot read an image should ask the user to look at the frames instead.
 metadata:
   ends_with: A verified build, with the frames shown to you before the work is called done.
 ---
@@ -19,8 +19,11 @@ the exact name of an envelope field, a command's payload key or a line of the pr
 
 ## Steps
 
-1. **Confirm the tools.** Run `decktalk doctor --json` and stop when any row of `doctor.components`
-   has `ok` false and `optional` false. Run `decktalk install` when the browser or ffmpeg is missing.
+1. **Confirm the tools.** Run `decktalk doctor --json`. A row of `doctor.components` with `ok` false
+   and `optional` false stops you, with one exception: `chromium` and `ffmpeg` are fetched by the next
+   command that needs them, and each row's `detail` says whether that is all it is waiting for. Run
+   `decktalk install` when a detail names the system libraries Chromium needs, which is the one thing a
+   command cannot fetch for itself.
 2. **Read the project.** Run `decktalk status --json`. `status.sections[]` gives each section, what
    it plays, whether it is recorded, and `stale`, which is one sentence saying why a recording no
    longer matches the project, or null. `status.narration.estimated` is true when the takes are

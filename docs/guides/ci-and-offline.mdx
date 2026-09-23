@@ -3,8 +3,10 @@ title: Build in CI and offline
 description: Build and check a DeckTalk video on every push, or on a machine with no network.
 ---
 
-A build without voice needs no API key, and after `decktalk install` it needs no network. Use this guide to build and
-check the video on every push, or on a machine that is offline.
+A build without voice needs no API key, and once Chromium and ffmpeg are on the machine it needs no network. A
+build downloads both itself the first time it needs them, and `decktalk install` is how a job or an offline
+machine gets them at a time it chooses. Use this guide to build and check the video on every push, or on a
+machine that is offline.
 
 `decktalk build` can pass when `decktalk verify` fails, because the build's own verify stage does not
 measure the cues. To gate a job on the video, run both commands.
@@ -50,10 +52,13 @@ jobs:
           path: verify.json
 ```
 
-- The cache paths are for Linux. [Requirements](/requirements#what-install-downloads) lists the paths on macOS and
+- The cache paths are for Linux. [Requirements](/requirements#what-decktalk-downloads) lists the paths on macOS and
   Windows.
-- On Linux, `install` installs Chromium's system libraries, which needs sudo or root.
-  [Linux system libraries](/requirements#linux-system-libraries) gives the full rule.
+- The `install` step is what fills that cache, and on a warm cache it downloads nothing. A build would fetch
+  both tools by itself, but then the download would sit inside the build step, and a failed download would read
+  as a failed build.
+- On Linux, `install` is also what installs Chromium's system libraries, which needs sudo or root, and a build
+  never installs them. [Linux system libraries](/requirements#linux-system-libraries) gives the full rule.
 - `install` downloads ffmpeg into DeckTalk's own cache, beside Chromium, so the one cache entry above holds both.
 - If a proxy blocks the Chromium download, set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror.
 
@@ -182,8 +187,9 @@ DECKTALK_PROJECT=lessons/derivatives decktalk build --no-voice
 A build without voice runs with no network after these steps.
 
 <Steps>
-  <Step title="Download the tools">
-    On a machine with network, run `install`. It downloads Chromium and ffmpeg.
+  <Step title="Download the tools while there is a network">
+    Run `install` before the machine goes offline. It downloads Chromium and ffmpeg, which a build would
+    otherwise download the first time it needs them, when there may be no network left to do it with.
 
     ```console
     decktalk install

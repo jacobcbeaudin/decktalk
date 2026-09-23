@@ -3,7 +3,7 @@ title: Requirements and costs
 description: What DeckTalk needs, what install downloads, and which commands spend ElevenLabs credits.
 ---
 
-This page lists what DeckTalk needs, what `decktalk install` downloads, and which commands spend ElevenLabs credits. Read it before you set up a new machine or a CI runner, and before your first voiced build.
+This page lists what DeckTalk needs, what it downloads and when, and which commands spend ElevenLabs credits. Read it before you set up a new machine or a CI runner, and before your first voiced build.
 
 ## Software
 
@@ -11,7 +11,8 @@ DeckTalk needs Python 3.12 or later. It runs on Linux, macOS, and Windows.
 
 - DeckTalk has one Python dependency, Playwright. Your installer adds it.
 - Playwright includes its own browser driver, so you do not need Node.
-- `decktalk install` downloads Chromium and ffmpeg. KaTeX ships inside the wheel, and you install nothing else by hand.
+- DeckTalk downloads Chromium and ffmpeg itself, the first time a command needs one of them. KaTeX ships inside the wheel, and you install nothing else by hand.
+- `decktalk install` makes both downloads up front instead, and on Linux it adds Chromium's system libraries. Nothing requires it: see [What DeckTalk downloads](#what-decktalk-downloads).
 
 The [quickstart](/quickstart) installs DeckTalk with uv, pipx, or pip.
 
@@ -66,14 +67,23 @@ Every ElevenLabs plan can call the API, including the free plan. The free plan h
 
 For a video you publish, start with the Starter plan.
 
-## What install downloads
+## What DeckTalk downloads
 
-`decktalk install` makes two downloads, one time per machine. `decktalk doctor` then reports on each download.
+Two downloads, one time per machine, and DeckTalk makes them itself. The first command that needs a browser fetches Chromium, and the first command that needs to encode fetches ffmpeg. Each one prints a line before its download starts, so a long first build says what it is waiting for. `decktalk doctor` then reports on each download without making either.
 
-| Download | How `install` gets it |
+| Download | How DeckTalk gets it |
 |---|---|
-| Chromium | `install` runs `playwright install chromium`. |
-| ffmpeg and ffprobe | `install` downloads one pinned GPL build, checks each archive against the SHA-256 DeckTalk records for it, and unpacks it into `ffmpeg/<version>-<platform>` in DeckTalk's cache. |
+| Chromium | It runs `playwright install chromium`, the same command `decktalk install` runs. |
+| ffmpeg and ffprobe | It downloads one pinned GPL build, checks each archive against the SHA-256 DeckTalk records for it, and unpacks it into `ffmpeg/<version>-<platform>` in DeckTalk's cache. |
+
+### What `decktalk install` is for
+
+`decktalk install` makes both downloads up front and does nothing else. No command needs it to have been run, and it is worth running when you want the download to happen at a time you choose:
+
+- **A Docker image.** A `RUN decktalk install` layer is cached, so the download is not in every build.
+- **A CI job.** The step is one place to cache, and one place to read when a download fails.
+- **A machine that will be offline.** Fetch everything while there is a network.
+- **Linux.** It is the one command that installs Chromium's system libraries, and therefore the one command that may ask for a password. A build never asks, because a build runs unattended in a script or in CI. If Chromium will not start on Linux, this is the fix.
 
 KaTeX is not downloaded. The pinned release ships inside the wheel, and `decktalk init` copies it into
 `deck/katex/`, so a project typesets its equations with no network and no CDN tag.
@@ -87,7 +97,7 @@ To move DeckTalk's cache, set `DECKTALK_CACHE_DIR`.
 
 ### Linux system libraries
 
-On Linux, `install` passes `--with-deps` to Playwright, and Playwright installs Chromium's system libraries with apt-get.
+On Linux, `decktalk install` passes `--with-deps` to Playwright, and Playwright installs Chromium's system libraries with apt-get.
 
 1. Playwright runs apt-get through sudo.
 2. If sudo is missing, it uses `su root -c`.
@@ -95,10 +105,12 @@ On Linux, `install` passes `--with-deps` to Playwright, and Playwright installs 
 
 If the distribution has no apt-get, this download fails. `install` then stops before it downloads ffmpeg.
 
+A build fetches Chromium without `--with-deps`, and therefore without sudo, because an unattended build that stops at a password prompt is a build that hangs. On a Linux machine whose libraries are missing, the browser downloads and then will not start, and the error says to run `decktalk install`.
+
 ### If a download is missing
 
 - **The wheel's KaTeX copy is incomplete.** `doctor` prints `MISSING` in the `katex` row and names each absent file. Reinstall DeckTalk.
-- **`install` never ran.** DeckTalk downloads the pinned build the first time it needs ffmpeg.
+- **`install` never ran.** Nothing is wrong: DeckTalk downloads Chromium the first time it needs a browser and the pinned ffmpeg the first time it needs to encode.
 - **DeckTalk pins no build for your platform, or the download cannot run.** DeckTalk uses the ffmpeg on your PATH. A download whose digest does not match is discarded and never falls back.
 
 `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE` override every ffmpeg source above.
@@ -110,9 +122,9 @@ A machine with no admin rights, an index mirror, or an intercepting proxy can st
 | What the machine blocks | What to set |
 |---|---|
 | The package index | Point your installer at your mirror, the way uv, pipx, or pip already does it. DeckTalk needs one runtime dependency, Playwright. |
-| The Chromium download host | Set `PLAYWRIGHT_DOWNLOAD_HOST` to your mirror before `decktalk install`, as Playwright documents. |
+| The Chromium download host | Set `PLAYWRIGHT_DOWNLOAD_HOST` to your mirror, as Playwright documents. DeckTalk fetches Chromium through Playwright wherever it fetches it. |
 | A shared browser directory, or a read-only home | Set `PLAYWRIGHT_BROWSERS_PATH` to a directory you can write. Playwright reads it on the download and on every launch, so set it in both places. |
-| The ffmpeg download | Put an approved `ffmpeg` and `ffprobe` on the machine and name them in `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE`. Those two override every other ffmpeg source, so `install` reports them and downloads no build. |
+| The ffmpeg download | Put an approved `ffmpeg` and `ffprobe` on the machine and name them in `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE`. Those two override every other ffmpeg source, so nothing downloads a build. |
 | A write to the default cache | Set `DECKTALK_CACHE_DIR` to a directory you can write. Everything DeckTalk downloads goes under it. |
 
 If the machine already has an approved Chrome or Chromium, record with it instead of the downloaded build. Name its executable in `[record] browser_path`.

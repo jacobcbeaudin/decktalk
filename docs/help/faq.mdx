@@ -88,7 +88,7 @@ Yes. A page can be any HTML that follows the [page contract](/concepts/page-cont
 Yes. DeckTalk runs on Linux, macOS, and Windows.
 
 - Paths in `decktalk.toml` use forward slashes on every platform.
-- `decktalk install` puts Chromium in `%LOCALAPPDATA%\ms-playwright`. If a corporate proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
+- Chromium goes in `%LOCALAPPDATA%\ms-playwright`, fetched by the first command that needs it or by `decktalk install`. If a corporate proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
 - CI runs the full build on Windows for a `v*` tag that a person pushes, and on request. [What CI runs](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md#what-ci-runs) lists every platform and trigger.
 
 ## What does the lesson example mean by error?

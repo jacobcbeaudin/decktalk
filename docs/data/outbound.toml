@@ -34,27 +34,27 @@ note = "The music file is generated once and then reused from `build/`."
 [[download]]
 host = "cdn.playwright.dev"
 name = "Headless Chromium"
-sent_by = "`decktalk install`"
+sent_by = "the first command that opens a page, or `decktalk install`"
 body = "A download request for the pinned browser build, and nothing else."
 note = "This is Playwright's own download host. `PLAYWRIGHT_DOWNLOAD_HOST` points it at a mirror, and `[record] browser_path` skips the download by recording with a browser the machine already has."
 
 [[download]]
 host = "github.com"
 name = "ffmpeg and ffprobe on Linux and on Windows"
-sent_by = "`decktalk install`"
+sent_by = "the first command that encodes, or `decktalk install`"
 body = "A download request for one pinned release archive, and nothing else."
 note = "GitHub answers a release download with a redirect to its asset host, so a proxy rule needs both. The archive is checked against a pinned SHA-256 digest and discarded when the digest does not match."
 
 [[download]]
 host = "evermeet.cx"
 name = "ffmpeg and ffprobe on an Intel Mac"
-sent_by = "`decktalk install`"
+sent_by = "the first command that encodes, or `decktalk install`"
 body = "A download request for two pinned archives, and nothing else."
 note = "The archives are checked against pinned SHA-256 digests and discarded when a digest does not match."
 
 [[download]]
 host = "ffmpeg.martin-riedl.de"
 name = "ffmpeg and ffprobe on an Apple silicon Mac"
-sent_by = "`decktalk install`"
+sent_by = "the first command that encodes, or `decktalk install`"
 body = "A download request for two pinned archives, and nothing else."
 note = "The archives are checked against pinned SHA-256 digests and discarded when a digest does not match."

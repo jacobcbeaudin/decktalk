@@ -1,7 +1,8 @@
 """One row per component a build needs, and whether it is there, and the same report as a block.
 
 `decktalk doctor` reports and fetches nothing. In particular the ffmpeg row looks for executables
-that are already on disk, because asking for them would download the pinned build.
+that are already on disk, because asking for them would download the pinned build, and the
+chromium row launches the browser this machine already has rather than fetching one.
 
 Nothing here prints the value of an environment variable, because a variable may hold a key. A
 component's detail is a version or a path DeckTalk resolved itself.
@@ -16,7 +17,7 @@ from dataclasses import asdict, dataclass
 
 from ..media.ffmpeg import env_missing, installed_paths, unnamed_paths
 from ..settings import user_config_path
-from ..toolchain import assets
+from ..toolchain import assets, chromium_fetch
 from ..toolchain.cache import cache_dir
 
 
@@ -52,7 +53,15 @@ def doctor() -> list[DoctorRow]:
                 rows.append(DoctorRow("chromium", True, b.version))
                 b.close()
             except Exception as exc:
-                rows.append(DoctorRow("chromium", False, f"{str(exc).splitlines()[0]}  -> run `decktalk install`"))
+                # A browser that is on disk and will not launch is missing its system libraries, and
+                # only `decktalk install` adds those. A browser that is not there at all is fetched
+                # by the next command that needs one, so that row is a note and not a chore.
+                fix = (
+                    "run `decktalk install`, which installs the system libraries Chromium needs"
+                    if chromium_fetch.installed_chromium(pw)
+                    else "the next build fetches it, or run `decktalk install` to fetch it now"
+                )
+                rows.append(DoctorRow("chromium", False, f"{str(exc).splitlines()[0]}  -> {fix}"))
     except ImportError:
         rows.append(DoctorRow("chromium", False, "playwright package missing"))
     found, named_but_absent = installed_paths(), env_missing()

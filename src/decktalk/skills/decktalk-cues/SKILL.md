@@ -1,7 +1,7 @@
 ---
 name: decktalk-cues
 description: Match every reveal on a DeckTalk page to the spoken word it lands on, by writing and repairing cues.json. Use when a script, a page or a reveal changes, when align reports an unresolved or unknown cue, when a picture appears early, late or not at all, or when a reveal is too small for the checker to see. It checks the cue ids in both directions, picks phrases written as spoken, sets occurrence for a repeated phrase, measures the gap between neighbouring cues, and clears every NO CHANGE and THIN CHANGE? row. Do not use it to render the video, which belongs to decktalk-build.
-compatibility: Requires the decktalk command on PATH and a browser installed by decktalk install. Every check in this skill reads JSON, so a model that cannot read an image can follow all of it.
+compatibility: Requires the decktalk command on PATH and a browser, which DeckTalk fetches the first time a command needs one. Every check in this skill reads JSON, so a model that cannot read an image can follow all of it.
 metadata:
   ends_with: Every `data-cue` matched to `cues.json` in both directions, with the gaps inside their thresholds.
 ---

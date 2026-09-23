@@ -254,7 +254,7 @@ class Command:
 COMMANDS: tuple[Command, ...] = (
     Command("init", "create a project: decktalk.toml, script.md, cues.json, a deck page and the runtime",
             InitOptions, init_flags, group="one machine", project=False),
-    Command("install", "fetch headless Chromium and ffmpeg, once per machine",
+    Command("install", "fetch headless Chromium and ffmpeg up front, with Chromium's Linux libraries",
             InstallOptions, group="one machine", project=False),
     Command("doctor", "report what is installed and which build a run would use",
             DoctorOptions, doctor_flags, group="one machine", project=False, exit_zero=True),
