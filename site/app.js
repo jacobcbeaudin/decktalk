@@ -12,14 +12,46 @@
   };
   addEventListener("error", showEverything, { once: true });
 
+  const $ = (sel, el = document) => el.querySelector(sel);
+  const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
+
+  /* Every command on the site is one component: a `.pill` holding the prompt, the command in
+     [data-cmd], and an empty slot. The button is made here rather than written into the markup, so
+     a page whose script never ran shows a command and no control that cannot do what it says —
+     and the prompt is not selectable, so selecting the line by hand still yields a line that runs.
+     Wired before the film is, and before the data.js guard below, because the command is the thing
+     a visitor came to take away and the film is the thing they came to watch. */
+  for (const slot of $$(".pill .copy")) {
+    const cmd = $("[data-cmd]", slot.parentElement);
+    if (!cmd) continue;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = "Copy";
+    // The visible word is the whole accessible name, and polite live text announces the change.
+    b.setAttribute("aria-live", "polite");
+    let back = 0;
+    b.addEventListener("click", async () => {
+      clearTimeout(back);
+      try {
+        await navigator.clipboard.writeText(cmd.textContent);
+        b.textContent = "Copied";
+      } catch {
+        getSelection().selectAllChildren(cmd);
+        b.textContent = "Selected";
+      }
+      back = setTimeout(() => {
+        b.textContent = "Copy";
+      }, 1500);
+    });
+    slot.append(b);
+  }
+
   const D = window.HALFWAY;
   const S = window.HALFWAY_STAGE;
   if (!D || !S) {
     showEverything();
     return;
   }
-  const $ = (sel, el = document) => el.querySelector(sel);
-  const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
   const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
   // The voice clips are not in git. They stream from the media host under names that carry their digest,
   // written into data.js by the build script beside the clip bytes they name.
@@ -45,7 +77,7 @@
   for (const el of $$("[data-total]")) el.textContent = fmt(D.total);
 
   /* Each page carries only part of this DOM: index.html has the hero, how.html has the chapters and the
-     edit section, and both have the cuts and the copy buttons. Every part below runs only when the page
+     edit section, and both have the cuts. Every part below runs only when the page
      being read is the one it belongs to, so the other page runs none of it and neither page throws. The
      error guard above stays a guard, and never has to fire on a page that is simply missing a section. */
   const onPage = (sel, part) => {
@@ -928,7 +960,7 @@
         `: ${offsets.length} cues in the full ${fmt(Number(film[1]))} film, none more than ${Math.max(...offsets.map(Math.abs))} ms off.`;
   });
 
-  /* ---------------------------------------------------------------- cuts, copy */
+  /* ---------------------------------------------------------------- cuts */
   const io = new IntersectionObserver(
     (es) => {
       for (const e of es) {
@@ -941,28 +973,4 @@
     { threshold: 0.15 },
   );
   for (const el of $$(".cut")) io.observe(el);
-  for (const b of $$("[data-copy]")) {
-    b.addEventListener("click", async () => {
-      const cmd = $(`#${b.dataset.copy}`);
-      try {
-        await navigator.clipboard.writeText(cmd.textContent);
-        b.textContent = "Copied";
-        announce(`Copied ${cmd.textContent}`);
-        setTimeout(() => {
-          b.textContent = "Copy";
-        }, 1500);
-      } catch {
-        getSelection().selectAllChildren(cmd);
-        b.textContent = "Selected";
-        announce("Copy failed. The command is selected, so copy it yourself.");
-        // "Selected" holds while the command is selected, and "Copy" returns once the selection has gone.
-        const gone = () => {
-          if (getSelection().containsNode(cmd, true)) return;
-          b.textContent = "Copy";
-          document.removeEventListener("selectionchange", gone);
-        };
-        document.addEventListener("selectionchange", gone);
-      }
-    });
-  }
 })();
