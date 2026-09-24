@@ -20,6 +20,7 @@ import html
 import logging
 import re
 import shutil
+import statistics
 import tempfile
 import time
 from collections.abc import Iterator, Mapping
@@ -30,17 +31,15 @@ from typing import Literal, Protocol
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
-from pydantic import BaseModel, Field
 
 from ..errors import InputError, ToolError
-from ..findings import MODEL
 from ..settings import COLOR_SCHEMES, MotionConfig
 from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
 from . import MILLISECONDS, pagereport
 from .encode import css_color
 from .origin import Allowed, Assets, route_pages
-from .pagereport import PageReport
+from .pagereport import PageReport, Recording
 
 log = logging.getLogger(__name__)
 
@@ -127,26 +126,6 @@ font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;overflow:hidden}}
 </style></head><body><div class="wrap">
 <div class="eyebrow">{eyebrow}</div><div class="title">{title}</div><div class="sub">{sub}</div>
 </div><div class="foot">{foot}</div></body></html>"""
-
-
-class Recording(BaseModel):
-    """One section recorded: what the page loaded, what it said, and where narration t=0 sits in the webm.
-
-    This is what the recorder knows. Whether the recording still matches the project, and what the
-    frames of it show, are the stage's to add when it writes the log.
-    """
-
-    model_config = MODEL
-
-    url: str = Field(description="The page URL that was recorded, with its query.")
-    assets: tuple[str, ...] = Field(description="Every project file the page loaded, project-relative.")
-    external: tuple[str, ...] = Field(description="Every other origin the page reached for while recording.")
-    requested_seconds: float = Field(ge=0, description="How long the page was recorded for after the clock started.")
-    load_seconds: float = Field(ge=0, description="How long the page took to load.")
-    settle_seconds: float = Field(ge=0, description="How long the page was left to settle after it loaded.")
-    clock_start_seconds: float = Field(ge=0, description="Seconds from the recorder's start to narration t=0.")
-    page_errors: tuple[str, ...] = Field(description="Uncaught exceptions, or the one line for no runtime at all.")
-    report: PageReport = Field(description="What the page said about itself, read once.")
 
 
 class RecordingSink(Protocol):
@@ -534,6 +513,70 @@ def screenshot(page: Page, url: str, out: Path, *, settle_ms: int) -> PageReport
     out.parent.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(out))
     return read_report(page, out.stem)
+
+
+MEASURED_FRAMES = 12
+"""Calibration: how many frames the bias is measured over, which is enough for the middle one to settle."""
+
+MEASURED_FRAME_MS = 60
+"""Calibration: how long one measured frame is made to take, which is past the browser's own long-frame floor."""
+
+# The page the bias is measured on. It draws nothing anyone looks at: it holds the main thread for
+# longer than a frame, so the browser reports that frame with the work it did and the moment the
+# compositor put it on the screen, and the gap between the two is the bias. A browser that reports
+# no presentation time answers with an empty list, and the machine is told rather than given a guess.
+BIAS_JS = """() => new Promise((done) => {
+  const kinds = window.PerformanceObserver ? PerformanceObserver.supportedEntryTypes || [] : [];
+  if (!kinds.includes("long-animation-frame")) { done([]); return; }
+  const seen = [];
+  const watch = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      if (entry.presentationTime === undefined) continue;
+      seen.push(entry.presentationTime - (entry.startTime + entry.duration));
+    }
+  });
+  watch.observe({ type: "long-animation-frame" });
+  let left = FRAMES;
+  const hold = () => {
+    const until = performance.now() + HOLD_MS;
+    while (performance.now() < until) { /* holding the thread is what makes the frame a long one */ }
+    document.documentElement.style.background = left % 2 ? "#000" : "#fff";
+    left -= 1;
+    if (left > 0) { requestAnimationFrame(hold); return; }
+    requestAnimationFrame(() => setTimeout(() => { watch.disconnect(); done(seen); }, 0));
+  };
+  requestAnimationFrame(hold);
+})"""
+"""The measurement, with `FRAMES` and `HOLD_MS` standing where the two constants above go."""
+
+
+def bias_script(frames: int, hold_ms: int) -> str:
+    """The measurement as the page receives it, which is the one place the two constants are written in."""
+    return BIAS_JS.replace("FRAMES", str(frames)).replace("HOLD_MS", str(hold_ms))
+
+
+def measure_presentation_bias() -> float:
+    """How long this machine takes to present a frame the page has already drawn, in milliseconds.
+
+    This is the one measurement `decktalk doctor --measure` writes into a machine file, because
+    `verify` subtracts it from every offset it measures. It is the middle of a run of frames rather
+    than the worst or the mean, so one frame the operating system held up moves nothing.
+
+    It measures the browser this machine launches by default, which is the browser `doctor` reports
+    on, rather than one a project names: a bias belongs to the machine and not to a deck.
+    """
+    with chromium() as browser:
+        page = browser.new_page()
+        page.set_content("<!doctype html><title>bias</title>")
+        answer = evaluate(page, bias_script(MEASURED_FRAMES, MEASURED_FRAME_MS))
+    rows = answer if isinstance(answer, list) else []
+    samples = [float(row) for row in rows if isinstance(row, (int, float)) and not isinstance(row, bool)]
+    if not samples:
+        raise ToolError(
+            "this machine's browser reports no presentation times, so the bias cannot be measured.",
+            hint="Leave host.presentation_bias_ms at 0, which subtracts nothing from a measured offset.",
+        )
+    return round(statistics.median(samples), 1)
 
 
 def render_slate(

@@ -215,7 +215,8 @@ def test_only_a_caller_that_asks_for_them_reaches_the_system_libraries(monkeypat
 def test_every_command_that_needs_a_browser_goes_through_the_one_function() -> None:
     """The fetch is in `media/browser.py` because that is the only module that starts a browser, and
     the claim that every command gets it therefore rests on nothing else starting one. `doctor` is
-    the exception by design: it reports what a machine has and fetches nothing."""
+    the exception by design: it reports what a machine has and fetches nothing, so the machine
+    launches the browser it already holds and never asks for one."""
     starts = []
     for path in sorted(SRC.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -223,4 +224,4 @@ def test_every_command_that_needs_a_browser_goes_through_the_one_function() -> N
             call = isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
             if call and node.func.attr == "launch":  # type: ignore[union-attr]
                 starts.append(path.relative_to(SRC).as_posix())
-    assert sorted(set(starts)) == ["media/browser.py", "scaffold/doctor.py"], starts
+    assert sorted(set(starts)) == ["machine.py", "media/browser.py"], starts

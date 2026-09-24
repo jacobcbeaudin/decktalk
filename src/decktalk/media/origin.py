@@ -286,9 +286,15 @@ class _Handler(SimpleHTTPRequestHandler):
     index_pages = (INDEX,)
 
     def __init__(
-        self, allowed: Allowed, request: socket.socket, client_address: tuple[str, int], server: HTTPServer
+        self,
+        allowed: Allowed,
+        documents: Mapping[str, bytes],
+        request: socket.socket,
+        client_address: tuple[str, int],
+        server: HTTPServer,
     ) -> None:
         self.allowed = allowed
+        self.documents = documents
         super().__init__(request, client_address, server, directory=str(allowed.root))
 
     def end_headers(self) -> None:
@@ -312,20 +318,34 @@ class _Handler(SimpleHTTPRequestHandler):
         The base class opens the file a second time below, so a name swapped for a link between the
         two lookups is served, which only someone who can already write into the project can do.
         """
-        wanted = self.allowed.target(unquote(urlsplit(self.path).path).lstrip("/"))
+        asked = unquote(urlsplit(self.path).path)
+        body = self.documents.get(asked)
+        if body is not None:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", EXTRA_TYPES[".json"])
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return io.BytesIO(body)
+        wanted = self.allowed.target(asked.lstrip("/"))
         if wanted.path is None:
             self.send_error(HTTPStatus.FORBIDDEN, wanted.refused or OUTSIDE)
             return None
         return super().send_head()
 
 
-def open_server(allowed: Allowed, host: str, port: int) -> ThreadingHTTPServer:
+def open_server(
+    allowed: Allowed, host: str, port: int, documents: Mapping[str, bytes] | None = None
+) -> ThreadingHTTPServer:
     """A stopped-in-a-context HTTP server for the project directory, bound to `host` and `port`.
 
     The address family comes from the host, so the safest address an author can ask for, the IPv6
     loopback, binds as readily as the IPv4 one.
+
+    `documents` are the paths the caller answers itself, which are the same ones the router answers
+    for a recorded page. An author previewing a deck reads its cue times from the origin exactly as
+    the recorder does, so a page that works in the preview is the page that is recorded.
     """
-    handler = partial(_Handler, allowed)
+    handler = partial(_Handler, allowed, dict(documents or {}))
     try:
         family = socket.getaddrinfo(host or None, port, type=socket.SOCK_STREAM)[0][0]
     except OSError as exc:

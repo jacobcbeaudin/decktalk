@@ -524,7 +524,7 @@ class Machine:
         # Measuring drives a browser, so the layer that owns the browser owns the measurement, and
         # the module is loaded by the one caller that asks for it rather than by every report.
         measured = import_module("decktalk.media.browser").measure_presentation_bias
-        return float(measured(self.toolchain))
+        return float(measured())
 
 
 def init(

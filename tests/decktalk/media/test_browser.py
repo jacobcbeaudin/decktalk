@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import get_args
 
@@ -11,7 +13,7 @@ from playwright.sync_api import Error as PlaywrightError
 from decktalk.errors import InputError, ToolError
 from decktalk.media import browser
 from decktalk.media.origin import ORIGIN, Allowed, page_url
-from decktalk.settings import COLOR_SCHEMES, MotionConfig
+from decktalk.settings import BY_ID, COLOR_SCHEMES, MotionConfig
 
 REPORTED = {
     "version": "0.5.0",
@@ -44,6 +46,8 @@ class FakePage:
         self.urls: list[str] = []
         self.scripts: list[str] = []
         self.closed = False
+        self.html = ""
+        self.presented: list[float] = []  # what this machine answers the bias measurement with
         self.video = FakeVideo(context.directory / "page.webm")
 
     def on(self, event: str, handler: object) -> None:
@@ -56,7 +60,12 @@ class FakePage:
         self.scripts.append(script)
         if browser.REPORT_JS in script:
             return dict(REPORTED)
+        if "long-animation-frame" in script:
+            return list(self.presented)
         return True if browser.HAS_CATALOG_JS in script else None
+
+    def set_content(self, html: str) -> None:
+        self.html = html
 
     def wait_for_timeout(self, _ms: float) -> None:
         """A recorder waits in real time and a test does not, so this passes the time by not spending it."""
@@ -387,3 +396,52 @@ def test_the_probe_travels_with_a_page_across_every_url_it_is_driven_through(tmp
         for name in ("one.html", "two.html"):
             page.goto(page_url(f"deck/{name}"), wait_until="load")
             assert page.evaluate("() => typeof window.__dtprobe.report") == "function", name
+
+
+def measuring(monkeypatch, presented: list[float]) -> None:
+    """A launched browser whose one page answers the bias measurement with these milliseconds."""
+    fake = FakeBrowser()
+
+    @contextmanager
+    def chromium(_browser_path: str = "") -> Iterator[FakeBrowser]:
+        yield fake
+
+    def new_page(**_kwargs: object) -> FakePage:
+        page = FakePage(FakeContext(Path(".")))
+        page.presented = presented
+        return page
+
+    monkeypatch.setattr(fake, "new_page", new_page)
+    monkeypatch.setattr(browser, "chromium", chromium)
+
+
+def test_the_bias_is_the_middle_frame_rather_than_the_worst_one(monkeypatch):
+    """One frame the machine held up moves the mean and moves nothing here, which is why it is the median."""
+    measuring(monkeypatch, [11.0, 12.0, 13.0, 14.0, 900.0])
+    assert browser.measure_presentation_bias() == 13.0
+
+
+def test_a_browser_that_reports_no_presentation_time_is_told_rather_than_guessed_for(monkeypatch):
+    measuring(monkeypatch, [])
+    with pytest.raises(ToolError) as raised:
+        browser.measure_presentation_bias()
+    assert "reports no presentation times" in str(raised.value)
+
+
+def test_the_measurement_is_written_from_the_two_constants_it_is_declared_with():
+    script = browser.bias_script(browser.MEASURED_FRAMES, browser.MEASURED_FRAME_MS)
+    assert f"let left = {browser.MEASURED_FRAMES};" in script
+    assert f"performance.now() + {browser.MEASURED_FRAME_MS};" in script
+    assert "FRAMES" not in script and "HOLD_MS" not in script
+
+
+@pytest.mark.browser
+def test_this_machine_either_measures_a_bias_inside_the_published_range_or_says_it_cannot():
+    """The setting is measured or it is zero, so a browser with nothing to say refuses rather than guesses."""
+    bounds = BY_ID["host.presentation_bias_ms"].bounds
+    try:
+        measured = browser.measure_presentation_bias()
+    except ToolError as refused:
+        assert "reports no presentation times" in str(refused)
+        return
+    assert bounds is not None and bounds.ge <= measured <= bounds.le

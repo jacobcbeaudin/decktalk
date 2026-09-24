@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from ..findings import Code, RaisedBy
+from ..findings import MODEL, Code, RaisedBy
 from ..page import REPORT
 from . import MILLISECONDS
 
@@ -176,6 +176,28 @@ ROWS: dict[str, type[BaseModel]] = {
     "longFrames": LongFrame,
 }
 """Each list field of the report against the model one of its rows has to be, which is what `read` walks."""
+
+
+class Recording(BaseModel):
+    """One section recorded: what the page loaded, what it said, and where narration t=0 sits in the webm.
+
+    This is what the recorder knows. Whether the recording still matches the project, and what the
+    frames of it show, are the stage's to add when it writes the log. It is declared beside the
+    report it carries rather than beside the recorder that fills it, so an artifact can hold one
+    whole without importing the browser driver.
+    """
+
+    model_config = MODEL
+
+    url: str = Field(description="The page URL that was recorded, with its query.")
+    assets: tuple[str, ...] = Field(description="Every project file the page loaded, project-relative.")
+    external: tuple[str, ...] = Field(description="Every other origin the page reached for while recording.")
+    requested_seconds: float = Field(ge=0, description="How long the page was recorded for after the clock started.")
+    load_seconds: float = Field(ge=0, description="How long the page took to load.")
+    settle_seconds: float = Field(ge=0, description="How long the page was left to settle after it loaded.")
+    clock_start_seconds: float = Field(ge=0, description="Seconds from the recorder's start to narration t=0.")
+    page_errors: tuple[str, ...] = Field(description="Uncaught exceptions, or the one line for no runtime at all.")
+    report: PageReport = Field(description="What the page said about itself, read once.")
 
 
 def _rows(field: str, given: object) -> tuple[list[BaseModel], list[str]]:

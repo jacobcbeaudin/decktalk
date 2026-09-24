@@ -355,6 +355,18 @@ def test_the_router_records_what_it_turned_away(tmp_path):
     assert assets.paths == [] and assets.missing == []
 
 
+def test_the_preview_server_answers_the_documents_the_router_answers(tmp_path):
+    """An author previewing a deck reads its cue times off the origin exactly as the recorder does."""
+    times = b'{"sections": []}'
+    server = open_server(project(tmp_path), "127.0.0.1", 0, {"/__decktalk/cue-times.json": times})
+    with server:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        Thread(target=server.serve_forever, daemon=True).start()
+        assert _get(f"{base}/__decktalk/cue-times.json") == (200, times)
+        assert _get(f"{base}/__decktalk/nothing.json")[0] == 403
+        server.shutdown()
+
+
 def test_the_preview_server_refuses_what_the_router_refuses(tmp_path):
     """Both halves apply one rule, so an author's own browser reaches exactly what the recorder does."""
     server = open_server(project(tmp_path), "127.0.0.1", 0)
