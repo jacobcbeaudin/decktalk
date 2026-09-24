@@ -86,8 +86,8 @@ The script comes first, the voice gives every word a time, and the cues are wher
 ## Why the cuts are exact
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/alignment-dark.svg">
-  <img alt="A strip of recorded frames. Three magenta cover frames come first, and a line marks t=0 at the first clean frame. Under the strip, the narration &quot;A bowl. A ball. Watch it step down&quot; starts at t=0. Dashed leads join &quot;bowl&quot; and &quot;ball&quot; to the outlined frames where the bowl and then the ball appear." src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/alignment-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/narration-zero-dark.svg">
+  <img alt="A strip of recorded frames. Three magenta cover frames come first, and a line marks t=0 at the first clean frame. Under the strip, the narration &quot;A bowl. A ball. Watch it step down&quot; starts at t=0. Dashed leads join &quot;bowl&quot; and &quot;ball&quot; to the outlined frames where the bowl and then the ball appear." src="https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/assets/narration-zero-light.svg" width="100%">
 </picture>
 
 A browser does not start recording at a known time, so DeckTalk does not use a timer. The recorder covers the page in magenta until the narration starts. The first frame without magenta is narration t=0, on Linux, macOS and Windows.

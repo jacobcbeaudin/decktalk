@@ -3,7 +3,7 @@
 # dependencies = ["playwright>=1.50", "fonttools[woff]>=4.50"]
 # ///
 """Generate every graphic from one source. The graphics are the hero, how-it-works (wide and
-stacked), the pipeline, alignment, the verify probes and onset, the rebuild lanes, the narration
+stacked), the pipeline, narration zero, the verify probes and onset, the rebuild lanes, the narration
 split, the duck lane, the cue offset, the mark and its lockups, the favicon set, the social card
 and the brand's CSS tokens. Every number a figure prints comes from scripts/figure-data/*.json, and
 each of those files names in its own `source` block the release, the command and the project it was
@@ -71,7 +71,7 @@ LIGHT = {
     "voice_soft": "#fbeac4",  # ink 15.2:1 on it
     "ok": "#1f7a44",
     "warn": "#8a5a00",
-    "cover": "#fad3f3",  # the alignment diagram's cover frames, DeckTalk's magenta cover
+    "cover": "#fad3f3",  # the narration-zero diagram's cover frames, DeckTalk's magenta cover
     "cover_edge": "#fd62f9",
 }
 DARK = {
@@ -720,16 +720,16 @@ def mark(pal: dict[str, str], size: int = 32, background: bool = False, mono: bo
 """
 
 
-# ---- alignment ---------------------------------------------------------------------------------
+# ---- narration zero ----------------------------------------------------------------------------
 
 FRAME_W, FRAME_H, FRAME_GAP = 88, 50, 8
 COVER_FRAMES = 3  # frames that are still covered before the clock starts
 # The starter's open, from template/script.md: "A bowl. [beat] A ball. [beat] Watch it step down on my count."
-ALIGN_WORDS = ["A", "bowl.", "A", "ball.", "Watch", "it", "step", "down"]
+ZERO_WORDS = ["A", "bowl.", "A", "ball.", "Watch", "it", "step", "down"]
 STRIP_CUES = {1, 3}  # the two cues the bowl and the ball arrive on, which are the words this strip marks
 
 
-def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
+def narration_zero(pal: dict[str, str], xs: list[float], background: bool) -> str:
     """Why the cuts are exact: the recording opens on the magenta cover, the first clean frame is
     narration t=0, and each cue is a spoken word measured from that same origin. The starter's
     reveals use data-reveal="instant", so the bowl and the ball each appear whole in one frame."""
@@ -788,7 +788,7 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
     cover_mid = left + (COVER_FRAMES * pitch - FRAME_GAP) / 2
     words_svg = "".join(
         f'<tspan class="w {"cue" if i in STRIP_CUES else ""}" x="{t0_x + x:.1f}">{w}</tspan>'
-        for i, (w, x) in enumerate(zip(ALIGN_WORDS, xs, strict=True))
+        for i, (w, x) in enumerate(zip(ZERO_WORDS, xs, strict=True))
     )
     ticks_svg = "".join(
         f'<line class="tick {"on" if i in STRIP_CUES else ""}" x1="{t0_x + x + 1:.1f}" y1="{tick_y}" x2="{t0_x + x + 1:.1f}" y2="{tick_y + 14}"/>'
@@ -1611,12 +1611,12 @@ def build() -> dict[Path, str]:
     for i, w in enumerate(h_widths):
         hero_xs.append(round(x, 1))
         x += w + h_space * (1.6 if HERO_WORDS[i].endswith((",", ".")) else 1.0)
-    a_widths, a_space = measure_words(ALIGN_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
-    align_xs: list[float] = []
+    a_widths, a_space = measure_words(ZERO_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
+    zero_xs: list[float] = []
     x = 0.0
     for i, w in enumerate(a_widths):
-        align_xs.append(round(x, 1))
-        x += w + a_space * (1.6 if ALIGN_WORDS[i].endswith((",", ".")) else 1.0)
+        zero_xs.append(round(x, 1))
+        x += w + a_space * (1.6 if ZERO_WORDS[i].endswith((",", ".")) else 1.0)
     o_widths, o_space = measure_words(OG_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
     og_xs: list[float] = []
     x = 0.0
@@ -1634,8 +1634,8 @@ def build() -> dict[Path, str]:
             out[folder / f"how-it-works-{variant}.svg"] = how_it_works(
                 pal, stacked=False, background=background, ticks=ticks
             )
-            out[folder / f"alignment-{variant}.svg"] = alignment(
-                pal, [x * 26 / MEASURE_PX for x in align_xs], background
+            out[folder / f"narration-zero-{variant}.svg"] = narration_zero(
+                pal, [x * 26 / MEASURE_PX for x in zero_xs], background
             )
         out[ASSETS / f"how-it-works-{variant}-stacked.svg"] = how_it_works(
             pal, stacked=True, background=False, ticks=ticks
