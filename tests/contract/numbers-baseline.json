@@ -5,7 +5,6 @@
     "src/decktalk/media/audio.py": 4,
     "src/decktalk/media/browser.py": 3,
     "src/decktalk/media/frames.py": 9,
-    "src/decktalk/pagescan.py": 2,
     "src/decktalk/runtime/src/contract.ts": 3,
     "src/decktalk/runtime/src/probe/probe.ts": 6,
     "src/decktalk/stages/assemble/loudness.py": 2,
