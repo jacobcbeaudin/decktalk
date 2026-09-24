@@ -25,7 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from decktalk.scaffold.skills import SKILL_NAMES, skills_dir  # noqa: E402  (after sys.path)
+from decktalk.template import SKILL_NAMES  # noqa: E402  (after sys.path)
+from decktalk.toolchain import assets  # noqa: E402
 
 TARGET = ROOT / "docs" / "agents" / "skills.mdx"
 
@@ -68,7 +69,7 @@ def rows() -> list[str]:
     """One row per packaged skill, in the order an author meets them, which the package declares."""
     out: list[str] = []
     for name in SKILL_NAMES:
-        doc = front_matter((skills_dir() / name / "SKILL.md").read_text(encoding="utf-8"))
+        doc = front_matter((assets.package_file("skills") / name / "SKILL.md").read_text(encoding="utf-8"))
         out.append(f"| `{doc['name']}` | {trigger(doc['description'])} | {doc['ends_with'].rstrip()} |")
     return out
 
