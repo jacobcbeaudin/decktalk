@@ -61,10 +61,12 @@ requires = ["uv_build>=0.12.15,<0.13.0"]
 build-backend = "uv_build"
 
 # `uv build` reads the working tree, so a Finder sidecar next to the template would ship in a wheel
-# cut from a laptop. tests/test_wheel.py checks the built wheel against the files git tracks.
+# cut from a laptop. tests/contract/test_wheel.py checks the built wheel against the files git tracks.
+# The runtime ships as the two bundles the build writes, so the TypeScript they are built from and
+# the compiler's own configuration stay out of the wheel: a wheel carries what DeckTalk runs.
 [tool.uv.build-backend]
 source-exclude = ["**/.DS_Store"]
-wheel-exclude = ["**/.DS_Store"]
+wheel-exclude = ["**/.DS_Store", "**/runtime/src/**", "**/tsconfig.json"]
 
 [dependency-groups]
 dev = [
