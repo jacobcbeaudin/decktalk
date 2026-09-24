@@ -1,93 +1,79 @@
 ---
 name: decktalk-slide
-description: Write or change a DeckTalk deck page, a slide, an equation, a code sample or a screenshot so that every reveal is visible, cued and legible. Use when a narrated video needs a new slide or scene, when maths or code has to appear on screen, when a picture must be added to an existing section, or when a reveal is too small, overlapping or off frame. It covers the markup scene wrapper, data-cue, data-reveal, data-describe and data-tex, the KaTeX tags, the reveal budget, and reading the PNG files that screenshots writes. Do not use it for what the voice says, which belongs to decktalk-script.
-compatibility: Requires the decktalk command on PATH and a browser, which DeckTalk fetches the first time a command needs one. Steps 8 and 9 read PNG files, so a model that cannot read an image should ask the user to look at the frames instead.
+description: Write or change a DeckTalk deck page so that every reveal is visible, cued, described and legible. Use when a narrated video needs a new slide or scene, when maths or code has to appear on screen, when a picture must be added to an existing section, or when a reveal is too small, overlapping or off frame. It covers the four moments an element has, the closed style words, describing a reveal for the transcript, the change floor a check measures against, the caption band, and the frame the recorder captures. Do not use it for what the voice says, which belongs to decktalk-script.
+compatibility: This is craft knowledge. The attribute table itself is published by `decktalk schema page`, and a check that looks at pictures needs a browser, which DeckTalk fetches the first time a command needs one.
 metadata:
-  ends_with: Markup that obeys the page contract, checked against the PNGs that `decktalk screenshots` writes.
+  ends_with: Markup that obeys the page contract, with every reveal large enough to be seen and described for a reader.
 ---
 
-# Write the slide
+# Write the picture for the words
 
-A DeckTalk page is one HTML file under `deck/` that declares scenes. A section of the script names a
-page and a scene, a `[data-scene]` wrapper holding one `<template data-slide>` per slide is a whole
-scene, and each element that carries a `data-cue` waits for its spoken word. Write the pictures for
-the words that already exist, in markup rather than in code.
+A deck page is one HTML file under `deck/`. A `[data-scene]` wrapper is one scene, each
+`<template data-slide>` inside it is one slide, and the runtime clones a slide when it mounts. Write
+the pictures for words that already exist, in markup rather than in code.
 
-Run every command from the project directory, or add the project flag to each one. Read the `--json`
-envelope and never the printed table. Exit code 0 means nothing was found, 1 means a finding with
-`error` null, 2 means the command line was wrong, and 3 means DeckTalk could not run, in which case
-stop and tell the user what `error.message` says.
+## The grammar
 
-## Steps
+An element has four moments, and each one is the local name of a cue: it arrives, it steps back, it
+comes to the front, and it leaves. The runtime qualifies a local name with the slide it is written
+in, so `data-in="expand"` inside `<template data-slide="4.1">` is the cue `4.1:expand` that
+`cues.json` gives a spoken phrase. Everything else is either how a moment looks, which is a closed
+word, or what a moment means, which is a sentence for the transcript. **No attribute ever writes a
+second**, because `cues.json` owns seconds.
 
-1. **Confirm the tools.** Run `decktalk doctor --json`. A row of `doctor.components` with `ok` false
-   and `optional` false stops you, with one exception: `chromium` and `ffmpeg` are fetched by the next
-   command that needs them, and each row's `detail` says whether that is all it is waiting for. Run
-   `decktalk install` when a detail names the system libraries Chromium needs, which is the one thing a
-   command cannot fetch for itself.
-2. **Start from the simplest page that works.** Copy the markup scene wrapper from
-   `references/slide-patterns.md`, or from the deck page the project was created with. Never start
-   from a page that draws with a frame clock, a canvas or a hand-written colour ramp, and write no
-   `render` function, no `enter` handler, no `on` handler and no animation code unless the user asks
-   for one by name.
-3. **Declare the scene with the section's number.** A section that sets `scene = 3` needs
-   `<div data-scene="3">` on the page it names, and every cue id on that scene begins with `3.`.
-4. **Give each slide an id that prefixes its cues.** Slide `3.1` owns `3.1open` and `3.1result`
-   without any list. Add `data-owns` only for a cue id that does not start with the slide's id.
-5. **Cue every element that should wait, and describe it.** An element with no `data-cue` and no
-   `data-delay` appears the moment its slide mounts, which puts half the slide on screen before the
-   voice arrives. Give every cued element a `data-describe` sentence, because the transcript page is
-   written from those sentences. Keep a slide to four reveals, start a new slide for the next part of
-   a derivation, and choose the reveal effect from `references/slide-patterns.md`.
-6. **Load KaTeX before the runtime** on any page that uses `data-tex`, by copying the two local tags
-   from the deck page the project was created with. In markup a backslash is written once, and inside a
-   `render` template literal it is written twice. Write a plain-text fallback that is correct
-   mathematics with its own brackets, because it is what shows if KaTeX never loads.
-7. **Keep the picture inside the frame.** The stage is 1920 by 1080. Keep body text at 36 pixels or
-   larger. Keep every cued element out of the bottom fifteen percent of the frame, where the captions
-   sit. Scope every class name to its scene so two scenes cannot collide.
-8. **Look at the slide.** Run `decktalk screenshots --slide 3.1 --json`, then
-   `decktalk screenshots --slide 3.1 --after 3.1open --json` for each cue, and read every path listed
-   under `written`. Open each PNG and check for red TeX, plain-text mathematics, overlapping
-   elements, text that runs off the frame, and text too small to read.
-9. **Prove that each reveal is visible.** Run `decktalk preflight --json` and read
-   `preflight.cues[]`. A row with `verdict.code` of `NO_CHANGE` or `THIN_CHANGE` is a reveal the
-   checker could not see. Make the reveal larger, dim what surrounds it, or move it, and run the
-   command again. A reveal that changes less than about 0.1 percent of the frame reads as no change,
-   and one under about 0.3 percent reads as a thin change, so design for 0.3 percent or more. The
-   comparison is on brightness alone, so a colour change of the same brightness counts as nothing.
+`decktalk schema page` prints every attribute with its values, its default, its range and the
+finding it raises. Read it rather than guessing, and read
+`references/slide-patterns.md` for the shapes that work.
+
+## The craft
+
+1. **Start from the simplest page that works.** Copy a pattern, or the deck page the project was
+   created with. Write no render function and no handler unless the author asks for one by name, and
+   never start from a page that draws with a frame clock, a canvas or a hand-written colour ramp.
+2. **Give the scene the number its section names, and the slide an id its cues can be local to.**
+   A cue only a handler serves is listed in `data-owns`, and nothing else is.
+3. **Cue every element that should wait.** An element with no moment is on screen from the mount,
+   which puts half the slide up before the voice arrives.
+4. **Describe every cued element.** The transcript is written from those phrases, and a reveal
+   without one is silent to a reader who cannot see it. A class change needs its own sentence beside
+   it, and a departure that means something gets a sentence of its own.
+5. **Make every reveal a filled shape.** A frame is compared on brightness alone, so a reveal has to
+   change about 0.3 percent of the frame, which is roughly an eighty by eighty solid block, and it
+   has to differ in brightness rather than only in colour. Text on white is usually too thin. A
+   colour change of the same brightness counts as nothing.
+6. **Keep a slide to four reveals.** Start a new slide for the next part of a derivation.
+7. **Keep the picture inside the frame.** The stage is 1920 by 1080. Body text is 36 pixels or
+   larger. The bottom fifteen percent is the caption band, so keep every cued element out of it.
+   Scope every class name to its scene so two scenes cannot collide.
+8. **Write a readable fallback under every equation.** The element's own text is what shows if the
+   typesetter never loads, so it is correct mathematics with its own brackets, and it reads well out
+   loud.
+9. **Look at the slide.** Freeze each slide at each of its cues, open the pictures, and check for
+   unrendered maths, overlapping elements, text running off the frame and text too small to read.
 
 ## Rules
 
-- Never raise a `[verify]` limit, never set `"verify": false` to silence a reveal, and never pass
-  `--force`, `--exit-zero` or any `--allow-` flag to make a check pass.
-- Never load a font, a stylesheet, a highlighter or KaTeX from a network address. A recording must
-  not depend on the network. Copy the asset into `deck/`.
-- Never draw a product user interface in HTML. Use a real screenshot.
-- A page edit changes the picture and not the words, so it costs nothing to re-record. A script edit
+- Never raise a limit, never exclude a cue from the reveal check, and never pass a flag that makes a
+  check go green. A check that cannot see a reveal is telling you a viewer cannot either.
+- Never load a font, a stylesheet, a highlighter or a typesetter from a network address. A recording
+  must not depend on the network. Copy the asset into `deck/`.
+- Never draw a product interface in HTML. Use a real screenshot, from a demo account, at twice the
+  stage scale.
+- A page edit changes the picture and not the words, so it costs nothing to re-voice. A script edit
   costs a take.
 
 ## Gotchas
 
-- A broken page makes every preflight row skip with `NO_CATALOG` rather than fail, so read
-  `preflight.cues[]` yourself. In markup there is nothing to escape. A backtick, a `${` or a single
-  backslash only breaks a page inside a `render` template literal.
-- A code line must sit on one physical line, because the element's own indentation is shown.
-- A typewriter effect on a code line reads as no change to the checker. Fade a whole container in on
-  the cue instead.
-- The seconds in a slide's `data-preview` drive the browser preview only. They never change the
-  video.
-- `decktalk serve --open` serves the project over http and opens the first page, which is how you
-  look at a slide in a real browser rather than in a PNG.
-- A page that changed is only re-recorded for the sections that play it, so name every such section
-  when the build is limited with `--only`.
+- A code line sits on one physical line, because the element's own indentation is shown.
+- A typed line reads as no change. Fade a whole container in on the cue instead.
+- A staggered container spreads one cue over its children, and the whole spread has to stay under
+  half a second or the cue can no longer be measured at all.
+- A page that throws leaves every reveal unmeasured rather than failing one of them, so read the
+  page's own warnings before believing a green run.
 
 ## Hand off
 
-The chain is decktalk-script, then decktalk-slide, then decktalk-cues, then decktalk-build, and
-decktalk-fix whenever a command reports a finding.
-
-Hand off to **decktalk-cues** once every element that should wait carries a `data-cue`, so each id
-gets its phrase in `cues.json`. Tell it the new or changed cue ids, the section each one belongs to,
-and the sentence in `script.md` that each reveal should land on. Hand off to **decktalk-fix** instead
-when `decktalk preflight --json` exits 1 and the cause is not a slide you just wrote.
+Hand off to **decktalk-cues** once every element that should wait carries a moment, so each one gets
+its phrase. Tell it the new or changed cue ids, the section each belongs to, and the sentence each
+reveal should land on. Hand off to **decktalk-fix** instead when a check reports a finding whose
+cause is not a slide you just wrote.

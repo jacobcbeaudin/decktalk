@@ -39,10 +39,8 @@ and any feature said to exist today.
 
 ## Before a voiced build
 
-Run `decktalk narrate --dry-run --json`, which sends nothing, and confirm that the `placeholders`
-list of every row in `narrate.sections` is empty. A non-empty list means a claim is still open, and
-the voiced run must not start. `decktalk preflight --json` reports the same list as
-`preflight.placeholders` and fails on it.
+`decktalk check` reports every placeholder still in the script and fails on it, which is the gate a
+voiced run has to pass. A claim that is still open means the run does not start.
 
 ## Keeping the ledger honest
 

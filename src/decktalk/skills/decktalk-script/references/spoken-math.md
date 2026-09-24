@@ -55,8 +55,8 @@ a gradient in section 5. Say each letter's meaning the first time it appears.
 - One equation per sentence.
 - A `[beat]` before the sentence that introduces an equation.
 - A `[pause 2]` or longer after a new equation, so a learner can read it.
-- Each bracketed direction sits on its own, never inside a paragraph, because a bracket inside a
-  paragraph changes the text that is sent to the voice.
+- A bracketed direction sits with a space either side of it, inside a paragraph or on its own, and
+  it becomes a pause in the text the voice receives. Any other bracketed note becomes a pause too.
 
 ## Code and product names
 
@@ -68,8 +68,8 @@ a gradient in section 5. Say each letter's meaning the first time it appears.
 
 ## Check before voicing
 
-Run `decktalk narrate --dry-run --json` and read the `text` of every row of `narrate.sections`. That
-is the exact string the voice receives. Rewrite any digit, caret, slash, prime, equals sign, Greek
-letter or bracket that is still in it. Then show the author a two-column table of each spoken phrase
-and the mathematics it stands for, and wait for the author to confirm that the words and the symbols
-say the same thing.
+Read the exact string the voice will receive, rather than the file as you wrote it, because the
+bracketed directions become pauses and nothing else changes. Rewrite any digit, caret, slash, prime,
+equals sign, Greek letter or bracket still in it. Then show the author a two-column table of each
+spoken phrase and the mathematics it stands for, and wait for them to confirm that the words and the
+symbols say the same thing.
