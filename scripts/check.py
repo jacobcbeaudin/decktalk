@@ -190,7 +190,7 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="node",
         why="The runtime's pure functions over strings, under node --test, so no test framework is added.",
-        commands=(("npm", "ci"), ("node", "--test", "tests/runtime")),
+        commands=(("npm", "ci"), ("node", "--test", "tests/decktalk/runtime/src/")),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("npm",),
