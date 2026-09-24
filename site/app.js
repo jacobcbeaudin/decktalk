@@ -479,6 +479,23 @@
           setState("playing");
         })
         .catch(() => {
+          // A mute while the clip was loading rejects the pending play() with AbortError. That is
+          // the viewer's own choice, or another voice's, and not a refused voice, so nothing is
+          // announced: the film goes back to what it was doing, the way the resolved case does.
+          if (!P.sound) {
+            setSoundUI(false);
+            if (wasPlaying) {
+              P.playing = true;
+              P.last = performance.now();
+              cancelAnimationFrame(P.raf);
+              P.raf = requestAnimationFrame(loop);
+              setState("playing");
+            } else {
+              P.playing = false;
+              setState("paused");
+            }
+            return;
+          }
           // A press that never became sound has to end somewhere the viewer can see, and it must
           // not cost them the film they already had: a missing clip or a refused play leaves the
           // hero exactly as it was before the press, and the live region says which.
