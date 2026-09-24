@@ -4,28 +4,32 @@
     uv run scripts/check_coverage.py --check    # exit 1 if the run measured less than the record
 
 A number typed into a configuration file is a magic number wherever it sits, and a floor is the one
-number in the repository that decides whether a change may land. So the floor here is measured:
-`--write` reads the combined coverage data and records the total and one row per module, and
-`--check` reads the same data and gates against that record. A row only ever rises, which is what
-makes the record a ratchet rather than a wish, and `--write` refuses to lower one and says which
-rows it refused.
+number in the repository that decides whether a change may land. So the number here is measured:
+`--write` reads the combined coverage data and records what a complete run scored, `--check` reads
+the same data and gates against that record, and the record only ever rises, which is what makes it
+a ratchet rather than a wish.
 
-**There is no second floor on the unit suite.** A floor on the fast suite alone would pressure a
-contributor to cover `media/frames.py` with mocks, which turns a real gap into a fake proof, and the
-whole point of measuring against ffmpeg and a real Chromium is that the proof is real.
+**The floor is one number over every suite.** A second floor on the unit suite alone would pressure
+a contributor to cover `media/frames.py` with mocks, which turns a real gap into a fake proof, and
+the whole point of measuring against ffmpeg and a real Chromium is that the proof is real. A floor
+per module would do the same thing one module at a time, and it would be a floor measured on one
+machine and gated on another, which is a gate that fails on the runner rather than on the change.
 
-**A suite that did not report is a failure rather than a lower floor.** A cancelled job leaves the
+**A leg that did not report is a failure rather than a lower floor.** A cancelled job leaves the
 combined data short, and without this the floor would quietly drop on exactly the day something
-broke. Each suite in `WITNESSES` names the module only that suite executes, so a leg that never
-reported is named by its own suite rather than by whichever module fell first. The combined data
-does not remember which leg contributed which line, because a context would have to be configured on
-every leg and would be a second place to keep the suite list in step, so the evidence is the module
-rather than a label.
+broke. Each suite writes a data file named after itself, the combine keeps those files, and every
+one of them has to be there and to have measured something, so a silent leg is named as itself
+rather than as whichever module fell first.
+
+**The floor allows a point of margin.** A runner slower than the one the record was measured on
+takes a different branch here and there: a timeout that fires, a page that answers before it is
+asked. That is a fact about the machine rather than about the change, so the gate is the recorded
+measurement less `MARGIN`, and a real regression is far larger than that.
 
 This script carries no `# /// script` header, unlike every other script here, because it reads the
 coverage data through the same `coverage` the suite wrote it with. The other two commands of the
 `coverage` group run from the project environment for the same reason, so all three agree about what
-a module scored.
+a run scored.
 
 The record holds whole percentages. A fraction of a point moves with a runner's own skip set and is
 not a fact about the code, so the record rounds down and reads as a floor rather than as a
@@ -43,184 +47,175 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import check
 import coverage
 
 ROOT = Path(__file__).resolve().parent.parent
 RECORD = ROOT / "scripts" / "coverage-floor.json"
-PACKAGE = "decktalk"
+DATA_FILE = ".coverage"
+"""What `coverage` calls its data file, which every suite writes a file of its own beside."""
+
+MARGIN = 1
+"""How many whole points under the recorded measurement a run may score and still pass.
+
+One point is about a hundred statements here, which is more than a runner's own timing costs and far
+less than a change that stopped testing something.
+"""
 
 STALE = "{path} is out of date. Run: uv run scripts/check_coverage.py --write"
 """The one sentence every generator in this repository fails with, naming the file and the command."""
 
-WITNESSES = {
-    "browser": "decktalk/media/browser.py",
-    "media": "decktalk/media/frames.py",
-}
-"""Each suite against the module only that suite really executes, which is how a missing leg is named.
 
-The `e2e` leg has no witness yet. Its witness is `decktalk/__main__.py`, which nothing but a run of
-the command line as a subprocess reaches, and the row can be named here once the record carries what
-that module really scores rather than the nothing it scored while that leg's measure was being
-written into a temporary directory. Until then the `unit` leg is witnessed by the record itself: a
-leg that never reported leaves every module only it measures unmeasured, and `check` names each one.
-"""
+def reporting_legs() -> tuple[str, ...]:
+    """Every data file a group of the check table measures into, named as the suite that writes it.
 
-NAMED = {
-    "decktalk/speech/elevenlabs.py": (
-        "The one paid path. Every take the founder buys flows through it and no toolchain excuses "
-        "it, so its row is named rather than left to the global number to absorb."
-    ),
-}
-"""Every module whose row carries a sentence of its own, because the global number would hide it."""
+    The table is read rather than copied here, because a list of suites kept in two places is a list
+    that disagrees with itself on the day a suite is added. The three groups that also run on macOS
+    and Windows measure into the file their Linux row names, so the names are one per suite.
+    """
+    named = {
+        Path(value).name.removeprefix(f"{DATA_FILE}.")
+        for group in check.GROUPS
+        for name, value in group.env
+        if name == "COVERAGE_FILE"
+    }
+    return tuple(sorted(named))
 
 
-def percentages() -> tuple[int, dict[str, int]]:
-    """The total and the per-module rows of the combined coverage data, each rounded down.
+def leg_files(leg: str) -> list[Path]:
+    """Every data file one suite left behind, on this machine and as the coverage job renames them.
+
+    A local run writes `.coverage.unit`. The coverage job unpacks one artifact per leg and renames
+    each file after the leg it came from, so the same suite arrives as `.coverage.unit-<leg>.<n>`,
+    once per Python the group runs and once more for every subprocess a suite measured.
+    """
+    return sorted(ROOT.glob(f"{DATA_FILE}.{leg}")) + sorted(ROOT.glob(f"{DATA_FILE}.{leg}-*"))
+
+
+def lines_measured(leg: str) -> int:
+    """How many lines one suite's own data files really measured, which is none when it never ran."""
+    total = 0
+    for path in leg_files(leg):
+        data = coverage.CoverageData(basename=str(path))
+        data.read()
+        total += sum(len(data.lines(measured) or ()) for measured in data.measured_files())
+    return total
+
+
+def silent_legs() -> list[str]:
+    """Every suite that wrote no data file, or wrote one that measured nothing, named as itself."""
+    return [leg for leg in reporting_legs() if not lines_measured(leg)]
+
+
+def measured_total() -> int:
+    """What the combined data scored over the whole package, rounded down.
 
     `analysis2` is the measurement the text report prints, so the record and the report can never
-    disagree about what a module scored.
+    disagree about what a run scored.
     """
     data = coverage.Coverage()
     data.load()
-    rows: dict[str, int] = {}
-    total_statements = total_missing = 0
+    statements = missing = 0
     for measured in sorted(data.get_data().measured_files()):
-        _name, statements, _excluded, missing, _formatted = data.analysis2(measured)
-        if not statements:
-            continue  # An empty module scores nothing, and `skip_empty` leaves it out of the report.
-        total_statements += len(statements)
-        total_missing += len(missing)
-        rows[module_of(measured)] = floor_percent(len(statements) - len(missing), len(statements))
-    return floor_percent(total_statements - total_missing, total_statements), rows
-
-
-def module_of(measured: str) -> str:
-    """One measured file as the record names it, which is its path from the package directory up."""
-    parts = Path(measured).parts
-    return "/".join(parts[parts.index(PACKAGE) :])
+        _name, lines, _excluded, absent, _formatted = data.analysis2(measured)
+        statements += len(lines)
+        missing += len(absent)
+    return floor_percent(statements - missing, statements)
 
 
 def floor_percent(covered: int, statements: int) -> int:
-    """What a module scored, rounded down, so the record reads as a floor rather than a measurement."""
+    """What a run scored, rounded down, so the record reads as a floor rather than as a measurement."""
     return math.floor(100 * covered / statements) if statements else 0
 
 
 @dataclass(frozen=True)
 class Record:
-    """The committed floor: what the numbers were measured on, the total, and one row per module."""
+    """The committed measurement: what a complete run scored, and the platform it scored it on."""
 
     measured_on: str
     total: int
-    modules: dict[str, int]
 
     @classmethod
     def read(cls) -> Record:
         """The committed file, typed once here so that nothing below it reads an untyped mapping."""
         document: dict[str, Any] = json.loads(RECORD.read_text(encoding="utf-8"))
-        return cls(
-            measured_on=str(document["measured_on"]),
-            total=int(document["total"]),
-            modules={str(name): int(score) for name, score in document["modules"].items()},
-        )
+        return cls(measured_on=str(document["measured_on"]), total=int(document["total"]))
 
     @classmethod
     def empty(cls) -> Record:
-        """What the first write starts from, which is a floor of nothing measured nowhere."""
-        return cls(measured_on=platform.system().lower(), total=0, modules={})
+        """What the first write starts from, which is nothing measured nowhere."""
+        return cls(measured_on=platform.system().lower(), total=0)
+
+    @property
+    def floor(self) -> int:
+        """The number a run is held to, which is the measurement less the margin a runner may cost."""
+        return self.total - MARGIN
 
 
-def rendered(total: int, rows: dict[str, int], measured_on: str) -> str:
+def rendered(total: int, measured_on: str) -> str:
     """The record as the committed file holds it, which is two-space JSON with a trailing newline."""
     document = {
         "_comment": (
-            "The coverage floor, measured by scripts/check_coverage.py --write and gated by --check. "
-            "Every number is a whole percent rounded down and only ever rises. Never lower a row to "
-            "make a run pass: write the test the row is asking for."
+            "What a complete run of every measuring suite scored, written by "
+            "scripts/check_coverage.py --write and gated by --check, which allows "
+            f"{MARGIN} point under it. The number is a whole percent rounded down and only ever "
+            "rises. Never lower it to make a run pass: write the test it is asking for."
         ),
         "measured_on": measured_on,
         "total": total,
-        "named": {name: NAMED[name] for name in sorted(NAMED) if name in rows},
-        "modules": dict(sorted(rows.items())),
     }
     return json.dumps(document, indent=2) + "\n"
 
 
-def silent_suites(rows: dict[str, int], modules: dict[str, int]) -> list[str]:
-    """Every suite whose witness module scored under its own row, which is a leg that never reported.
+def roll_call() -> int:
+    """Print every suite that did not report, and answer how many there were."""
+    silent = silent_legs()
+    if silent:
+        print(
+            f"these suites measured nothing, so their legs never reported: {', '.join(silent)}. "
+            "A leg that did not run is a failure rather than a lower floor, so find out which it "
+            "was before touching this record."
+        )
+    return len(silent)
 
-    The test is the witness module's row rather than a zero, because the unit suite imports the same
-    module behind a fake and an import alone already scores. Only the leg that really drives the tool
-    reaches the row, so the row is the evidence that the leg ran.
-    """
-    return sorted(suite for suite, module in WITNESSES.items() if rows.get(module, 0) < modules.get(module, 0))
 
-
-def check() -> int:
-    """Gate the measured run against the committed record, naming every row that fell."""
+def check_floor() -> int:
+    """Gate the measured run against the committed record, naming what fell."""
     if not RECORD.exists():
         print(STALE.format(path=RECORD.relative_to(ROOT).as_posix()))
         return 1
+    if roll_call():
+        return 1
     committed = Record.read()
-    total, rows = percentages()
-    modules = committed.modules
-
-    silent = silent_suites(rows, modules)
-    if silent:
+    total = measured_total()
+    if total < committed.floor:
         print(
-            f"the {', '.join(silent)} suite covered less than its own floor, so either that leg "
-            "never reported or it really regressed. A leg that did not run is a failure rather than "
-            "a lower floor, so find out which before touching this record."
+            f"coverage is {total} percent and the floor is {committed.floor}, which is the "
+            f"{committed.total} percent measured on {committed.measured_on} less {MARGIN} point of "
+            "margin. Write the test the change is asking for rather than lowering the record."
         )
         return 1
-
-    floor = committed.total
-    fallen = {name: (was, rows[name]) for name, was in modules.items() if name in rows and rows[name] < was}
-    gone = sorted(name for name in modules if name not in rows)
-    added = sorted(name for name in rows if name not in modules)
-    if total < floor:
-        print(f"coverage is {total} percent and the floor is {floor} percent, measured on {committed.measured_on}.")
-    if fallen:
-        print(
-            "these modules are covered less than they were: "
-            + ", ".join(f"{name} {was} to {now}" for name, (was, now) in sorted(fallen.items()))
-            + ". Write the test the row is asking for rather than lowering it."
-        )
-    if gone:
-        print(f"these modules have a row and were not measured, so they were deleted or a leg failed: {gone}")
-    if added:
-        print(f"these modules have no row yet: {added}. " + STALE.format(path=RECORD.relative_to(ROOT).as_posix()))
-    if total < floor or fallen or gone or added:
-        return 1
-    print(f"coverage is {total} percent against a floor of {floor}, and no module fell.")
+    print(f"coverage is {total} percent against a floor of {committed.floor}, and every suite reported.")
     return 0
 
 
 def write() -> int:
-    """Raise every row the run has beaten, and refuse to lower one, which is the ratchet."""
+    """Record what this run measured, and refuse to lower the record, which is the ratchet."""
+    if roll_call():
+        print("Nothing was written, because a record written from a short run is a floor no complete run can reach.")
+        return 1
     committed = Record.read() if RECORD.exists() else Record.empty()
-    total, rows = percentages()
-    modules = committed.modules
-    silent = silent_suites(rows, modules)
-    if silent:
-        # Writing from a short run would raise a row off a partial import and leave a floor no full
-        # run can reach, so a record that already exists is never written from an incomplete one.
+    total = measured_total()
+    if total < committed.total:
         print(
-            f"the {', '.join(silent)} suite covered less than its own floor, so nothing was written. "
-            "Run every leg before recording a floor, because a row raised from a short run is a "
-            "floor no complete run can reach."
+            f"this run scored {total} percent against the {committed.total} on record, so nothing "
+            "was written. The record only ever rises: write the test the difference is asking for."
         )
         return 1
-    refused = {name: (was, rows[name]) for name, was in modules.items() if name in rows and rows[name] < was}
-    kept = {name: max(score, modules.get(name, 0)) for name, score in rows.items()}
-    floor = max(total, committed.total)
-    RECORD.write_text(rendered(floor, kept, platform.system().lower()), encoding="utf-8")
-    print(f"wrote {RECORD.relative_to(ROOT).as_posix()} with a floor of {floor} percent")
-    if refused:
-        print(
-            "these rows were kept where they were, because a row only ever rises: "
-            + ", ".join(f"{name} {was} against {now}" for name, (was, now) in sorted(refused.items()))
-        )
-        return 1
+    RECORD.write_text(rendered(total, platform.system().lower()), encoding="utf-8")
+    print(
+        f"wrote {RECORD.relative_to(ROOT).as_posix()} with {total} percent measured, so the floor is {total - MARGIN}"
+    )
     return 0
 
 
@@ -231,7 +226,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.write:
         return write()
-    return check()
+    return check_floor()
 
 
 if __name__ == "__main__":

@@ -362,9 +362,14 @@ GROUPS: tuple[Group, ...] = (
         name="coverage",
         why="One floor, measured on Linux, failing when a suite it combines never reported.",
         commands=(
-            (*UV, "coverage", "combine"),
-            (*UV, "coverage", "report"),
+            # The data files are kept rather than consumed, because the check reads them to learn
+            # which suites reported, and a suite that is missing is the one thing a combined total
+            # cannot show: it looks exactly like a suite that passed. The report comes after the
+            # check for the same reason, because measurement is parallel here and a report combines
+            # every data file it finds, which consumes them.
+            (*UV, "coverage", "combine", "--keep"),
             (*UV, "scripts/check_coverage.py", "--check"),
+            (*UV, "coverage", "report"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),

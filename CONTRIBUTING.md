@@ -82,7 +82,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | macOS, Windows | main, release |
 | `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
 | `generated` | `npm ci`, and 16 more | uv, npm, chromium | Linux | pr, main, release |
-| `coverage` | `uv run coverage combine`, and 2 more | uv | Linux | pr, main, release |
+| `coverage` | `uv run coverage combine --keep`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
 | `scaffold` | `uv run pytest -q -m scaffold` | uv, chromium, ffmpeg | Linux | main, schedule |
 | `installer` | `docker run --rm -v site:/site:ro debian:13-slim sh -euc <shell script>`, and 5 more | docker | Linux | main, schedule |
@@ -144,9 +144,13 @@ it. `tests/support/timing_policy.py` holds the slack, the rounding and the modul
 is one of the two places in the suite that may read `sys.platform`.
 
 Coverage has one floor, measured on Linux and written by `uv run scripts/check_coverage.py --write`
-rather than typed. Rows only ever rise. There is deliberately no second floor on the fast suite,
-because a floor on the fast suite alone pressures a contributor to cover `media/frames.py` with
-mocks and turn a real gap into a fake proof.
+rather than typed. The record only ever rises, and a run is held to it less a point of margin,
+because a slower runner takes a different branch here and there and that is a fact about the machine
+rather than about the change. There is deliberately no second floor on the fast suite and none per
+module, because a floor on the fast suite alone pressures a contributor to cover `media/frames.py`
+with mocks and turn a real gap into a fake proof. What the one floor cannot see is a suite that never
+ran, so every suite that measures has to have left a data file with something in it, and a leg that
+is silent fails by name.
 
 ### What CI runs
 
