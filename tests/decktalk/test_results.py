@@ -205,3 +205,13 @@ def test_the_committed_schemas_are_what_the_generator_writes() -> None:
         check=False,
     )
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_the_committed_api_is_what_the_generator_writes() -> None:
+    done = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "build_api.py"), "--check"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
