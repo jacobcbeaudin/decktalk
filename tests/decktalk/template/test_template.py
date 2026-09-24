@@ -195,7 +195,9 @@ def test_every_attribute_of_the_contract_is_written_by_an_example(attr: Attr) ->
 @pytest.mark.parametrize("project", PARSED.values(), ids=lambda p: p.name)
 def test_the_project_file_opens_with_the_line_an_editor_binds_a_schema_by(project: Project) -> None:
     first = (project.root / "decktalk.toml").read_text(encoding="utf-8").splitlines()[0]
-    assert first == "#:schema https://decktalk.ai/schemas/v1/decktalk.json", first
+    assert first == "#:schema https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1/decktalk.json", (
+        first
+    )
 
 
 @pytest.mark.parametrize("project", PARSED.values(), ids=lambda p: p.name)

@@ -44,7 +44,7 @@ runs, because a published bound you can cross into nonsense is worse than no bou
 Bind the schema to your project file and an editor completes every key as you type it.
 
 ```toml decktalk.toml
-#:schema https://decktalk.ai/schemas/v1/decktalk.json
+#:schema https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1/decktalk.json
 
 [verify]
 cue_offset_max_ms = 120

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://decktalk.ai/schemas/v1/decktalk.json",
+  "$id": "https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1/decktalk.json",
   "title": "DeckTalk project file",
   "description": "Every table of a DeckTalk project file. A document table says what the film is and a tuning table says how it is made, and each key publishes the range that is safe to turn it through.",
   "type": "object",
