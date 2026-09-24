@@ -29,7 +29,7 @@ import pytest
 
 from decktalk.artifacts import RecordingLog
 from decktalk.findings import Certainty
-from decktalk.template import EXAMPLES
+from decktalk.template import EXAMPLES, STARTER
 from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 
 BUILD_BUDGET_SECONDS = budget(EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS)
@@ -48,13 +48,17 @@ An apostrophe and a diacritic reach every shell quote, every ffmpeg concat list 
 a build writes, and the founder's own films live under a name like this one.
 """
 
-STARTER = None
-"""What `--example` is not given, because the starter is the project `init` writes by default."""
+NO_EXAMPLE = None
+"""What `--example` is given for the starter, because the starter is what `init` writes unnamed.
 
-PACKAGED = [STARTER, *(example.name for example in EXAMPLES if example.shipped)]
+It is not the name `init` reports. The starter is a packaged project like any other and `init`
+reports which one it wrote, so `STARTER` is the answer and this is the flag that was never typed.
+"""
+
+PACKAGED = [NO_EXAMPLE, *(example.name for example in EXAMPLES if example.shipped)]
 """Every project `decktalk init` can write today, which is the starter and each shipped example."""
 
-IDS = ["starter", *(name for name in PACKAGED[1:] if name)]
+IDS = [STARTER, *(name for name in PACKAGED[1:] if name)]
 
 RESERVED_KEYS = frozenset({"schema", "ok", "findings", "error"})
 """The four keys every result carries, which is the founder's decided JSON contract."""
@@ -97,14 +101,14 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(tmp_path: Path, 
     """`init`, then `build --no-voice`, then `verify`, on a project straight out of the wheel."""
     home = tmp_path / HOSTILE_DIRECTORY
     home.mkdir(parents=True)
-    name = example or "starter"
+    name = example or STARTER
     root = home / name
 
-    chosen = ("--example", example) if example is not STARTER else ()
+    chosen = ("--example", example) if example is not NO_EXAMPLE else ()
     made = decktalk("init", str(root), "--name", name, "--json", *chosen, cwd=home, cache=home)
     assert made.returncode == FOUND_NOTHING, made.stderr
     doc = flat(made.stdout)
-    assert doc["example"] == example
+    assert doc["example"] == (example or STARTER), "init reports the packaged project it wrote"
     assert Path(doc["root"]).name == name
 
     built = decktalk("--project", str(root), "build", "--no-voice", "--json", cwd=home, cache=home)
@@ -128,5 +132,5 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(tmp_path: Path, 
     checked = decktalk("--project", str(root), "verify", "--json", "--fail-on", "never", cwd=home, cache=home)
     measured = flat(checked.stdout)
     assert certain(measured) == [], measured["findings"]
-    if example is STARTER:
+    if example is NO_EXAMPLE:
         assert measured["findings"] == [], "the starter is the page every author copies, so it is clean"
