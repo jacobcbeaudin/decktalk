@@ -54,6 +54,8 @@ OUTSIDE = "that path is outside the project directory"
 HIDDEN = "a name beginning with a dot is never served"
 UNUSABLE = "that path is not a usable file name"
 UNDECLARED = "that path is not in the deck directory and the project declares no such asset"
+TEXT = "text/plain; charset=utf-8"
+"""What a refusal is answered as, because a page that asked for a file is given a sentence instead."""
 # A type the standard table gets wrong or does not know, and which a deck loads often enough to matter.
 EXTRA_TYPES = {
     ".js": "text/javascript; charset=utf-8",
@@ -221,17 +223,28 @@ class Assets:
             self.refused.append(asked)
 
 
-def route_pages(target: Page | BrowserContext, allowed: Allowed) -> Assets:
+def route_pages(
+    target: Page | BrowserContext, allowed: Allowed, documents: Mapping[str, bytes] | None = None
+) -> Assets:
     """Answer every request under the origin from what `allowed` names, and return what was served.
 
     `target` is a Playwright page or browser context. A request to any other origin is left alone, so
     a page that reaches for a CDN still does what it would do in a browser and `record` can report it.
     Every route is answered, because a route left unanswered hangs the page that made it.
+
+    `documents` are the paths a caller answers itself, such as the cue times a run resolved, which no
+    file on disk holds. They are answered from memory as JSON and never recorded as assets, because a
+    recording keyed on them would be keyed on its own output.
     """
     assets = Assets(root=allowed.root)
+    answered = dict(documents or {})
 
     def handler(route: Route, request: Request) -> None:
         try:
+            asked = unquote(urlsplit(request.url).path)
+            if asked in answered and urlsplit(request.url).netloc == urlsplit(ORIGIN).netloc:
+                route.fulfill(status=HTTPStatus.OK, content_type=EXTRA_TYPES[".json"], body=answered[asked])
+                return
             wanted = local_target(allowed, request.url)
             if not wanted.mine:
                 assets.reached(request.url)
@@ -239,18 +252,19 @@ def route_pages(target: Page | BrowserContext, allowed: Allowed) -> Assets:
                 return
             if wanted.refused or wanted.path is None:
                 assets.turned_away(request.url, wanted.refused or OUTSIDE)
-                route.fulfill(status=403, content_type="text/plain; charset=utf-8", body=wanted.refused)
+                route.fulfill(status=HTTPStatus.FORBIDDEN, content_type=TEXT, body=wanted.refused)
                 return
             if not wanted.path.is_file():
                 assets.record(wanted.path, found=False)
                 body = f"no such file: {wanted.path.name}"
-                route.fulfill(status=404, content_type="text/plain; charset=utf-8", body=body)
+                route.fulfill(status=HTTPStatus.NOT_FOUND, content_type=TEXT, body=body)
                 return
             assets.record(wanted.path, found=True)
-            route.fulfill(status=200, content_type=content_type(wanted.path), body=wanted.path.read_bytes())
+            route.fulfill(status=HTTPStatus.OK, content_type=content_type(wanted.path), body=wanted.path.read_bytes())
         except Exception as exc:  # noqa: BLE001  (the page must learn its request failed rather than wait for it)
             log.warning("could not answer %s (%s)", request.url, exc)
-            route.fulfill(status=500, content_type="text/plain; charset=utf-8", body="the origin could not answer")
+            broke = HTTPStatus.INTERNAL_SERVER_ERROR
+            route.fulfill(status=broke, content_type=TEXT, body="the origin could not answer")
 
     target.route("**/*", handler)
     return assets

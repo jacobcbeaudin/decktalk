@@ -22,7 +22,7 @@ import re
 import shutil
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 
 from ..errors import InputError, ToolError
 from ..findings import MODEL
-from ..settings import COLOR_SCHEMES
+from ..settings import COLOR_SCHEMES, MotionConfig
 from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
 from . import MILLISECONDS, pagereport
@@ -60,6 +60,18 @@ SEAL_JS = """(() => {
   Object.defineProperty(window, "__dtprobe", { value: probe, writable: false, configurable: false });
 })()"""
 COVER_JS = "() => window.__dtprobe.cover()"
+# How much this render slows every declared length down, which the runtime reads off the root. The
+# tag is appended once the page's own sheets are in the head, so the setting decides and not a deck.
+MOTION_JS = """(() => {
+  const add = () => {
+    const style = document.createElement("style");
+    style.id = "dt-motion";
+    style.textContent = ":root{--dt-motion-scale:%s}";
+    (document.head || document.documentElement).appendChild(style);
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add, { once: true });
+  else add();
+})()"""
 # Remove the cover, then start the page clock on the next animation frame.
 START_JS = "() => window.__dtprobe.lift()"
 READY_JS = "() => window.__dtprobe.ready()"
@@ -73,6 +85,21 @@ DEADLINE_SECONDS = 15.0
 
 ColorScheme = Literal["light", "dark", "no-preference"]
 """What a page may be told the viewer prefers, which is the closed set `[record] color_scheme` publishes."""
+
+
+UNSCALED = 1.0
+"""Truth: the multiplier that changes no length, which is a page left exactly as it was written."""
+
+
+def motion_scripts(motion: MotionConfig) -> list[str]:
+    """What `[motion]` asks a page for, as the scripts that put it there before the page's own run.
+
+    Reduced motion is a media feature rather than an attribute, so Chromium is asked for it and the
+    same render is what a person who asked their own machine for less motion sees in a preview. The
+    scale is a custom property, because it multiplies every length the sheet plays and no query key
+    could carry it.
+    """
+    return [] if motion.scale == UNSCALED else [MOTION_JS % f"{motion.scale:g}"]
 
 
 def scheme(value: str) -> ColorScheme:
@@ -247,18 +274,27 @@ def open_page(
     width: int,
     height: int,
     color_scheme: str = "no-preference",
+    motion: MotionConfig | None = None,
+    documents: Mapping[str, bytes] | None = None,
 ) -> tuple[Page, Assets]:
     """A page a command drives, and the record of what it loaded.
 
     Its requests under the local origin are answered from what `allowed` names, and it carries the
-    probe, because every page a command opens is a page that command has to freeze and measure.
+    probe, because every page a command opens is a page that command has to freeze and measure. It
+    renders the motion `[motion]` asks for, so a frozen frame is a frame of the film being built.
     """
+    motion = motion or MotionConfig()
     with driving("could not open a page"):
         page = browser.new_page(
-            viewport={"width": width, "height": height}, device_scale_factor=1, color_scheme=scheme(color_scheme)
+            viewport={"width": width, "height": height},
+            device_scale_factor=1,
+            color_scheme=scheme(color_scheme),
+            reduced_motion="reduce" if motion.reduce else "no-preference",
         )
     instrument(page)
-    return page, route_pages(page, allowed)
+    for script in motion_scripts(motion):
+        page.add_init_script(script)
+    return page, route_pages(page, allowed, documents)
 
 
 def await_ready(page: Page) -> None:
@@ -355,7 +391,16 @@ class Capture:
 
 
 @contextmanager
-def capturing(browser: Browser, allowed: Allowed, *, width: int, height: int, color_scheme: str) -> Iterator[Capture]:
+def capturing(
+    browser: Browser,
+    allowed: Allowed,
+    *,
+    width: int,
+    height: int,
+    color_scheme: str,
+    motion: MotionConfig,
+    documents: Mapping[str, bytes] | None = None,
+) -> Iterator[Capture]:
     """A recording context and the temporary directory it writes into, both closed however this ends.
 
     A page that never loads used to leave both behind and surface as INTERNAL. The context is closed
@@ -368,15 +413,18 @@ def capturing(browser: Browser, allowed: Allowed, *, width: int, height: int, co
                 viewport={"width": width, "height": height},
                 device_scale_factor=1,
                 color_scheme=scheme(color_scheme),
-                reduced_motion="no-preference",
+                reduced_motion="reduce" if motion.reduce else "no-preference",
                 record_video_dir=str(directory),
                 record_video_size={"width": width, "height": height},
             )
         opened = time.monotonic()
-        capture = Capture(context=context, assets=route_pages(context, allowed), directory=directory, opened=opened)
+        assets = route_pages(context, allowed, documents)
+        capture = Capture(context=context, assets=assets, directory=directory, opened=opened)
         context.add_init_script(PROBE_JS)
         context.add_init_script(SEAL_JS)
         context.add_init_script("(" + COVER_JS + ")()")
+        for script in motion_scripts(motion):
+            context.add_init_script(script)
         try:
             yield capture
         finally:
@@ -408,6 +456,8 @@ def record_page(
     width: int,
     height: int,
     color_scheme: str,
+    motion: MotionConfig,
+    documents: Mapping[str, bytes] | None = None,
 ) -> Recording:
     """Record `url` for `seconds` after the narration clock starts, and leave the webm beside its log.
 
@@ -419,7 +469,9 @@ def record_page(
     disk is either complete or absent and a crash can never leave a new picture under an old t=0.
     """
     log_sink.clear()
-    with capturing(browser, allowed, width=width, height=height, color_scheme=color_scheme) as capture:
+    with capturing(
+        browser, allowed, width=width, height=height, color_scheme=color_scheme, motion=motion, documents=documents
+    ) as capture:
         caught: list[str] = []
         page = capture.open(url, caught)
         loaded = time.monotonic()

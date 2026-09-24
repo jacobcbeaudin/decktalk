@@ -209,8 +209,8 @@ def _download_verified(asset: FfmpegAsset, into: Path) -> Path:
         partial.unlink()
         raise ToolError(
             f"{asset.url} does not match the SHA-256 DeckTalk pins for it (expected {asset.sha256}, got "
-            f"{digest.hexdigest()}), so the download was discarded. Nothing was installed. Set DECKTALK_FFMPEG "
-            "and DECKTALK_FFPROBE to a build of your own until the pin is updated."
+            f"{digest.hexdigest()}), so the download was discarded. Nothing was installed. Set `[tools] ffmpeg` "
+            "and `ffprobe` to a build of your own until the pin is updated."
         )
     partial.replace(target)
     return target
@@ -252,7 +252,7 @@ def fetch_ffmpeg(key: str | None = None) -> tuple[str, str]:
     if build is None:
         raise ToolError(
             f"DeckTalk pins no ffmpeg build for {key}. Install ffmpeg and ffprobe on PATH, or set "
-            "DECKTALK_FFMPEG and DECKTALK_FFPROBE."
+            "`[tools] ffmpeg` and `ffprobe`."
         )
     dest = install_dir(key)
     tmp = dest.with_name(f".{dest.name}.tmp")
