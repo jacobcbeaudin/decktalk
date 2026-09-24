@@ -1,0 +1,216 @@
+---
+title: Put a sound effect on a cue
+description: Generate a one-shot sound and play it on the second a named cue lands.
+---
+
+A sound effect is one short file that plays once, at the second a named cue fires. Two tables carry
+it and each one is read by a different stage. `[soundscape.effects.<name>]` says what the sound is,
+and `decktalk soundscape` generates it. `[[mix.effects]]` says where it plays, and `decktalk
+assemble` lays it into the soundtrack.
+
+The two are split because the sound is bought once and placed as often as you like. Moving an effect
+to another word costs nothing, and the file is asked for again only when its own prompt changes.
+
+The starter that `decktalk init` writes declares neither table, so every table below is one you add
+to `decktalk.toml`. The example puts a click on `1.2:word`, the cue in the starter's section 1 where
+the closing band lands.
+
+## Before you start
+
+- Resolve the cues once, with `decktalk cue` or with any build. An effect plays at the second its
+  cue resolved to, so a cue that has never been resolved has no second to sit on.
+- Put `ELEVENLABS_API_KEY` in `.env` to generate the sound. Generating one spends credits at the
+  rate `[voice] price_per_1000_characters` states.
+- Bring your own audio file instead if you have one. Any file ffmpeg can read works, it needs no key,
+  and only the fourth step below applies to it.
+
+<Steps>
+  <Step title="Describe the sound">
+    The table is named for the sound, and that name is what the generated file is called.
+
+    ```toml decktalk.toml
+    [soundscape.effects.tick]
+    text = "one soft interface click, short, dry, no reverb"
+    ```
+
+    `decktalk soundscape` writes it to `build/soundscape/tick.mp3`. Set `out` in the same table to
+    write it somewhere else, such as `media/tick.mp3`, which is where a sound you want to keep when
+    `build/` is deleted belongs.
+
+    The same table may carry `duration_seconds`, `prompt_influence` and `model_id`, each of which
+    replaces the matching key of [`[elevenlabs]`](/reference/configuration#elevenlabs) for this one
+    sound. At the defaults an effect is `effect_seconds` long, which is half a second.
+  </Step>
+
+  <Step title="Read the plan before you buy it">
+    A run without voice reports what it would ask for and buys nothing, so this is how to read the
+    prompt and the price first.
+
+    ```console
+    decktalk soundscape --no-voice --json
+    ```
+
+    {/* sample: decktalk soundscape --no-voice --json on the starter with the [soundscape.effects.tick] table above */}
+    ```json
+    {
+      "schema": 2,
+      "ok": false,
+      "findings": [
+        {
+          "code": "FILE_MISSING",
+          "message": "the effect tick is planned and its audio is not on disk, so a mix would play without it. Generating it would send 47 characters.",
+          "certainty": "certain",
+          "location": {
+            "where": "tick",
+            "file": "build/soundscape/tick.mp3",
+            "line": null,
+            "section": null,
+            "cue": null
+          },
+          "stage": "soundscape",
+          "fix": null,
+          "url": "https://docs.decktalk.ai/reference/findings/FILE_MISSING"
+        }
+      ],
+      "error": null,
+      "run": "aad1d3514574",
+      "written": [],
+      "items": [
+        {
+          "name": "tick",
+          "kind": "effect",
+          "status": "planned",
+          "prompt": "one soft interface click, short, dry, no reverb",
+          "seconds": null,
+          "file": null
+        }
+      ],
+      "spend": {
+        "state": "estimate",
+        "sections": [1, 2, 3],
+        "characters": 47,
+        "dollars": 0.01,
+        "ceiling_dollars": 0.01,
+        "price_per_1000_characters": 0.3,
+        "price_layer": "project"
+      },
+      "seconds": 0.0
+    }
+    ```
+
+    `items[0].status` is `planned`, which is the word for an item this run would buy and did not.
+    The one judgement the stage makes is [`FILE_MISSING`](/reference/findings/FILE_MISSING), for an
+    item whose audio a mix would look for and not find, so the run exits 1 until the file exists.
+  </Step>
+
+  <Step title="Generate it">
+    ```console
+    decktalk soundscape --spend
+    ```
+
+    The file lands at the path the plan named. What was bought is recorded in
+    `build/soundscape/ledger.json`, keyed by the request itself, so a second run that would send the
+    same request keeps the file it has and sends nothing. Change the prompt and the next run buys the
+    sound again, because the request no longer matches the row. `--force` buys every item of the run
+    again whether the request moved or not.
+  </Step>
+
+  <Step title="Cue the sound">
+    A `[[mix.effects]]` row names the file, the section and the cue. The cue is a wire id, which is
+    the slide id, a colon and the local name the page writes.
+
+    ```toml decktalk.toml
+    [[mix.effects]]
+    file = "build/soundscape/tick.mp3"
+    section = 1
+    cue = "1.2:word"
+    db = -16
+    offset = 0.0
+    caption = "soft click"
+    ```
+
+    | Key | Default | What it does |
+    |---|---|---|
+    | `file` | required | The audio file, relative to the project. It is the path the `[soundscape.effects.<name>]` table writes, or a file of your own. |
+    | `section` | required | The section whose clock the cue is read on. A number no `[[section]]` declares is refused at load. |
+    | `cue` | required | The wire id of the moment the sound lands on. |
+    | `db` | `-16` | The level the sound plays at. |
+    | `offset` | `0.0` | Seconds added to the cue time, which is how a sound sits a beat after the word. |
+    | `caption` | `""` | The line a viewer reading captions sees. |
+
+    The sound plays at the section's start in the film, plus the second the cue resolved to, plus
+    `offset`. The cue time is on the section's own clock, so moving a section elsewhere in the film
+    moves its sounds with it and costs no edit here.
+
+    A row may reuse a file another row already names, so one purchase can click on six different
+    cues.
+  </Step>
+
+  <Step title="Mix it into the film">
+    ```console
+    decktalk assemble
+    ```
+
+    `assemble` mixes the soundtrack again and records nothing, so a level or a cue you changed here
+    costs one stage rather than a build.
+
+    A file the row names and the project has not got is a certain `FILE_MISSING`, and that layer
+    plays as silence. A cue that did not resolve is one sentence on the stream, and the sound does
+    not play. The film is still written either way.
+  </Step>
+</Steps>
+
+## Give every sound a caption
+
+`caption` is what a viewer who cannot hear the film reads in its place. The build writes it into the
+SubRip and WebVTT files as its own cue, wrapped in square brackets, so `caption = "soft click"` is
+read as `[soft click]`. A caption you write with the brackets already on it is left as you wrote it.
+
+A sound with no `caption` is in the film and in no caption file, and `assemble` says so on every
+run, naming the file, the cue and the section. There is no finding code for it, because the frozen
+list holds none that means this, so it is a sentence on the stream rather than a code that means
+something else.
+
+The sound's caption stays on screen for one second. Two captions are never on screen at once, so a
+sound that lands inside a speech cue joins that cue as a line of its own, and a sound that lands in
+the gap before one joins the cue after it. Only a sound with a whole second to itself keeps a cue of
+its own. [Accessible video](/guides/accessible-video) is the whole of what a build writes for a
+viewer who cannot see or cannot hear it.
+
+## What ducks and what does not
+
+The music bed plays at `[mix] music_db` and ducks to `[mix] music_duck_db` under every span that
+carries speech, ramped in and out over `[audio] duck_ramp_seconds` at each edge. A span that carries
+speech is a spoken section from its start to its last word, and a clip section for the whole of its
+own length.
+
+A sound effect is neither of those. It does not duck the music, and the music does not duck it, so
+the only thing that decides whether a click is heard over the bed is the `db` on its own row. That is
+why the level sits on the effect rather than on the table that generated it: the same file mixed at
+`-16` under a quiet passage and at `-8` under a loud one is one purchase used twice.
+
+[Sound](/concepts/sound) is the whole mix, layer by layer.
+
+## Pick the sounds one run generates
+
+`--section` selects sections, which is what every stage selects on, and the soundscape's own items
+are named rather than numbered. So a run that names sections keeps the effects those sections cue.
+
+```console
+decktalk soundscape --section 1 --spend
+```
+
+An effect belongs to that run when a `[[mix.effects]]` row in one of the named sections points at
+the file the item writes. The row's `file` and the item's output path are compared as paths, so a
+row that names `media/tick.mp3` while the table writes `build/soundscape/tick.mp3` selects nothing.
+Set `out` on the table when you want the sound somewhere else, rather than copying the file by hand.
+
+The music is generated whenever any section is selected, because one bed plays under the whole film,
+and the ambience bed is generated when a selected page section sets `ambience = true`.
+
+## Related
+
+- **Read every part of the mix:** [Sound](/concepts/sound)
+- **Look up every key of both tables:** [decktalk.toml](/reference/decktalk-toml)
+- **Read the stage's own flags:** [CLI](/reference/cli#decktalk-soundscape)
+- **Write the captions a viewer reads:** [Accessible video](/guides/accessible-video)

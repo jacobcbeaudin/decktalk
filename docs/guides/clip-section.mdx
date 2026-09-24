@@ -1,314 +1,182 @@
 ---
 title: Add a clip section
-description: Play a video clip with its own audio as an opening, between page sections, or as a close.
+description: Play a video of your own as one section of the film, and cut a piece of the finished film into a video of its own.
 ---
 
-A clip section plays a video file of your own, with its own audio, as one section of the video. Use this guide
-to open on camera, to add B-roll between page sections, or to close on a clip.
+A clip is one thing in DeckTalk, which is a short video file. The word is used twice on this page and
+means the same thing both times.
 
-## Before you start
+- A `[[section]]` with `clip = "media/intro.mp4"` plays a video file you supply, with its own audio,
+  as one section of the film. The voice says nothing there, because the clip carries its own sound.
+- `decktalk clip` writes a video file cut from a section of the finished film, with its own audio and
+  its own words file, so a piece of the film can be played again or handed to somebody else.
 
-The steps use the starter that `decktalk init` writes. The starter is three page sections and no clip, so the
-steps below add section 4 as a clip of its own, after the Close.
+One noun names a short video file whoever made it, so a clip you supply and a clip DeckTalk cuts are
+the same kind of thing and a section plays either one the same way.
 
-A clip section names its file with `clip`. `optional = true` plays a titled slate until the file is in place, so
-a project can carry a clip section before its clip exists.
+## A section that plays your own video
 
-## Put a clip in a clip section
+A clip section names its file and nothing else about the picture. It has no `page` and no `scene`,
+`cues.json` says nothing about it, and `script.md` needs no heading for it.
 
-These steps add a test clip as section 4 of a new project named `clip-lesson`.
-
-<Steps>
-  <Step title="Create a project">
-    ```console
-    decktalk init clip-lesson
-    ```
-  </Step>
-
-  <Step title="Go into the project">
-    ```console
-    cd clip-lesson
-    ```
-  </Step>
-
-  <Step title="Add the clip section to decktalk.toml">
-    Paste this table after the section 3 table. A clip section has no `page` and no `scene`, and
-    `script.md` and `cues.json` say nothing about it, because the clip carries its own sound.
-
-    ```toml decktalk.toml
-    [[section]]
-    number = 4
-    chapter = "On camera"
-    clip = "media/intro.mov"          # your video, with its own audio
-    words = "media/intro.words.json"  # the words spoken inside it, for the captions
-    slate_seconds = 4      # a titled slate plays for this long while the file is missing
-    optional = true        # plays the slate under --strict until the clip is in place
-    ```
-
-    - `clip` names your video file, relative to the project.
-    - `words` names a words file for the captions. [Caption the speech in a clip](#caption-the-speech-in-a-clip) explains it.
-    - `slate_seconds` sets how long the slate plays while the file is missing.
-    - `optional = true` lets `--strict` play the slate. [Build with --strict](#build-with-strict) explains it.
-  </Step>
-
-  <Step title="Build the video">
-    Run a build without voice.
-
-    ```console
-    decktalk build --no-voice
-    ```
-
-    {/* sample: decktalk build --no-voice in clip-lesson, the starter with the clip section added and no clip file (assemble lines) */}
-    ```text
-    [cut ] 01  01.webm (t0 1.4s trimmed) -> 01.mp4  (14.280s)
-    [cut ] 02  02.webm (t0 1.44s trimmed) -> 02.mp4  (15.880s)
-    [cut ] 03  03.webm (t0 1.44s trimmed) -> 03.mp4  (14.720s)
-    section 04: media/intro.mov is missing, so a slate plays for 4s. Drop your clip at that path. The section is optional, so --strict allows the slate
-    [cut ] 04  slate -> 04.mp4  (4.000s)
-    [cat ] 4 sections, straight cuts
-    ```
-
-    Each section gets a `[cut ]` line. The clip file does not exist yet, so section 4 plays a titled slate for its `slate_seconds`.
-  </Step>
-
-  <Step title="Put the clip file in place">
-    Save your video as `media/intro.mov`. If you have no video, make a 4 s test clip. This command needs
-    `ffmpeg` on your PATH.
-
-    ```console
-    ffmpeg -f lavfi -i testsrc2=size=1920x1080:rate=25 -f lavfi -i sine=frequency=440 -t 4 -pix_fmt yuv420p media/intro.mov
-    ```
-
-    - A clip that is not 1920 by 1080 is scaled to fit and padded with black.
-    - A clip with no audio track plays silent, and `assemble` prints a warning.
-  </Step>
-
-  <Step title="Cut the clip into the video">
-    A new clip file changes no narration and no recording, so run only `assemble`.
-
-    ```console
-    decktalk assemble
-    ```
-
-    {/* sample: decktalk assemble in clip-lesson after the test clip above is in place */}
-    ```text
-    [cut ] 03  03.webm (t0 1.44s trimmed) -> 03.mp4  (14.720s)
-    [cut ] 04  intro.mov (own audio) -> 04.mp4  (4.000s)
-    [cat ] 4 sections, straight cuts
-    [mix ] 3 audio input(s) -> clip-lesson.mp4
-    section 04: the words file media/intro.words.json is missing, so the clip plays without captions
-    ```
-
-    Check that section 4 reads `intro.mov (own audio)`. The mix gains a third input, which is the clip's own
-    sound. The test clip has no words file, so that sound has no captions. Then run `decktalk verify` to check
-    the video.
-  </Step>
-</Steps>
-
-## Build with --strict
-
-`--strict` on `build` or `assemble` turns a missing clip into an error. A clip section with `optional = true`
-still plays its slate.
-
-Before the test clip was in place, `decktalk assemble --strict` exited 0 and printed this warning for the clip
-section.
-
-{/* sample: decktalk assemble --strict in clip-lesson, the starter with the clip section added and no clip file */}
-```text
-section 04: media/intro.mov is missing, so a slate plays for 4s. Drop your clip at that path. The section is optional, so --strict allows the slate
+```toml decktalk.toml
+[[section]]
+number = 4
+chapter = "On camera"
+clip = "media/intro.mp4"          # your video, with its own audio
+words = "media/intro.words.json"  # the speech inside it, for the captions
+slate_seconds = 4                 # how long the slate plays while the file is missing
 ```
 
-A clip section without `optional = true` stops `--strict` when its file is missing. That is an error rather than a
-finding, so the command exits 3 and writes no video.
+| Key | Default | What it does |
+|---|---|---|
+| `number` | required | Where the section sits in the film. |
+| `clip` | required | The video file, relative to the project. |
+| `chapter` | the script heading, else `Section N` | The chapter marker's title. |
+| `slate_seconds` | `5.0` | How long the titled slate plays while the file is not there. |
+| `words` | none | A words file for the speech inside the clip, which is what captions it. |
+| `optional` | `false` | Says this section is allowed to play its slate. |
+| `seamless` | `false` | Says the clip opens on the previous section's last picture, which `verify` measures. |
 
-{/* sample: decktalk assemble --strict in clip-lesson after deleting optional = true from section 4, with no media/intro.mov, error line */}
-```text
-error[MISSING_INPUT]: section 4: clip missing: ~/clip-lesson/media/intro.mov. Put your clip at that path, or set optional = true on the section to play its slate under --strict.
-```
+A clip that is not the project's frame size is scaled to fit and padded with black, so a portrait
+phone video plays in a letterbox rather than distorted. A clip with no audio track plays silent, and
+`assemble` says so on the stream.
 
-`decktalk status` reports the same thing without building. The missing clip is a `MISSING` row, and `status`
-exits 1.
+### While the file is not there
 
-{/* sample: decktalk status in clip-lesson with no media/intro.mov */}
-```text
-sections 4, cut 4, final True | 1 certain, 0 uncertain finding(s)
-MISSING  media/intro.mov: section 04 names a clip that is not there
-```
+A clip section whose file is missing plays a titled slate for `slate_seconds`, so a project can carry
+the section before the video exists and everyone can watch the film with a hole labelled rather than
+a hole. The slate is drawn once, kept under `build/final/slates/`, and carries the section number,
+the line `Your clip goes here`, and the path to drop the file at. It is drawn on the colour
+[`[video] slate_color`](/reference/configuration#video) names, and `[mix] slate` points at an image of
+your own to use in its place.
 
-After your clip is in place, delete the `optional` line. `--strict` then catches the file if it goes missing
-later.
+Nothing about a slate is silent about itself: `decktalk status` reports the missing file as a certain
+[`FILE_MISSING`](/reference/findings/FILE_MISSING), naming the section and the path.
 
-## Add a clip section of your own
+### Putting one between two page sections
 
-A section's number sets its place in the video. To add a clip between two page sections, give it the next number
-and renumber every section after it.
+A section's number is its place in the film, so adding a clip in the middle renumbers what follows it.
 
-1. In `decktalk.toml`, add 1 to the `number` of every section after the new clip, from the last one up.
-2. Add the clip section's table in its place.
+1. In `decktalk.toml`, add 1 to the `number` of every section after the new clip, from the last one
+   upward, then add the clip section's own table.
+2. In `script.md`, renumber the same headings. The clip section needs no heading of its own, and a
+   heading there is never voiced, because the voice reads every section that does not play a clip.
+3. In `cues.json`, rename each later section key, from the last one upward. The cue ids do not move.
+   A cue id is the slide id, a colon and the local name the page writes, and the slides of the page
+   are untouched by a renumbering of the film.
+4. Run `decktalk build`.
 
-   ```toml decktalk.toml
-   [[section]]
-   number = 4
-   chapter = "Interview"
-   clip = "media/interview.mp4"
-   slate_seconds = 4
-   optional = true         # plays the slate under --strict until the clip is in place
-   ```
+A renumbered section is voiced again by nothing. A take is named by the digest of what was sent to
+the voice, and the section number is not one of those things, so the take is found by its content and
+the run buys nothing. [Rebuild one section](/guides/rebuild-one-section) is the whole of that rule.
 
-3. In `script.md`, renumber the same headings, and add a heading for the clip.
+## How a clip splits the narration
 
-   ```md script.md
-   ## 4. Interview
+The joined narration holds the spoken sections back to back with no gap, and the film does not. A
+clip between two page sections pauses the narration, and the next page section resumes it on its own
+first frame. So the track plays in runs of consecutive page sections, and each run starts where its
+first section starts in the film.
 
-   [The clip at media/interview.mp4 plays here, with its own sound.]
-   ```
-
-   The voice speaks nothing in a clip section, so the body can be a stage direction.
-
-4. In `cues.json`, rename each later section key, from the last one up. The cue ids stay the same. They start with
-   a scene number, and the scenes of the page do not change.
-5. Run `decktalk build`.
-
-A renumbered section keeps its narration. `narrate` finds the take by its hash and copies it to the new file name.
-
-## How the narration splits
-
-`build/narration/narration.mp3` holds the spoken sections back to back, with no gap for a clip. `assemble` splits the
-narration at each clip between page sections.
-
-<Frame caption="A nine-section project: the narration pauses for each clip, and resumes with the next page section.">
-  <img className="block dark:hidden" src="/images/narration-split-light.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 4, 6, 8, and 9 back to back, with a split before section 6 and another before section 8. The video lane plays the 4 s clip of section 5 after section 4 and the 5.04 s slate of section 7 after section 6, and dashed leads move sections 6, 8, and 9 later. Captions sit under page sections only. Chapters mark the starts of sections 1, 2, 3, 4, and 9, because sections 4 to 8 share one title." />
-  <img className="hidden dark:block" src="/images/narration-split-dark.svg" alt="Lanes on one time axis. The narration.mp3 lane holds sections 1, 2, 3, 4, 6, 8, and 9 back to back, with a split before section 6 and another before section 8. The video lane plays the 4 s clip of section 5 after section 4 and the 5.04 s slate of section 7 after section 6, and dashed leads move sections 6, 8, and 9 later. Captions sit under page sections only. Chapters mark the starts of sections 1, 2, 3, 4, and 9, because sections 4 to 8 share one title." />
+<Frame caption="A nine-section film: the narration pauses for each clip and resumes with the next page section.">
+  <img className="block dark:hidden" src="/images/narration-split-light.svg" alt="The narration track holds sections 1, 2, 3, 4, 6, 8 and 9 back to back. The video plays section 5, a clip of 4.00 seconds, after section 4, and section 7, a clip of 5.04 seconds, after section 6. The narration splits before each page section that follows a clip, and sections 6, 8 and 9 start later in the video. Captions sit under page sections only. Each chapter starts with a section, and consecutive sections with the same title share one." />
+  <img className="hidden dark:block" src="/images/narration-split-dark.svg" alt="The narration track holds sections 1, 2, 3, 4, 6, 8 and 9 back to back. The video plays section 5, a clip of 4.00 seconds, after section 4, and section 7, a clip of 5.04 seconds, after section 6. The narration splits before each page section that follows a clip, and sections 6, 8 and 9 start later in the video. Captions sit under page sections only. Each chapter starts with a section, and consecutive sections with the same title share one." />
 </Frame>
 
-- Each part of the narration starts where its first page section starts in the video.
-- A slate splits the narration the same way a clip does.
-- No caption covers a clip section, unless the section sets `words`. [Caption the speech in a clip](#caption-the-speech-in-a-clip) explains it.
-- A clip section gets its own chapter, unless the section before it has the same title.
+One rule places the track, and the captions and the cut check read it too, so all three agree about
+where a moment of the narration plays.
 
-Example: with a 4 s clip in section 5, section 6 starts about 4 s later in the final mp4 than it does on the
-narration clock, plus the frame rounding of every cut before it. `decktalk status` prints the narration times
-and `build/out/cuts.json` the final ones. [Build artifacts](/reference/artifacts#time-bases) explains the two
-time bases.
+- A page section's `hold_seconds` splits the narration exactly as a clip does, because the hold is
+  picture with no speech under it.
+- The clip's own audio joins the mix at its section start, trimmed to its picture and faded over
+  twenty milliseconds at each edge, so a cut into it never clicks.
+- The music ducks under the whole of a clip, because a clip's dialogue is its own. [Sound](/concepts/sound)
+  is the whole mix.
+- A clip section gets its own chapter marker, unless the section before it carries the same
+  `chapter`, in which case the two share one.
+- The narration does not depend on how long a clip runs. After you replace a clip file, run
+  `decktalk assemble` and then `decktalk verify`, and nothing is voiced or recorded.
 
-{/* sample: decktalk status in clip-lesson after the steps above, the section rows */}
-```text
-  01  deck/index.html?scene=1                  rec cut
-  02  deck/index.html?scene=2                  rec cut
-  03  deck/index.html?scene=3                  rec cut
-  04  clip media/intro.mov                         cut
+## Caption the speech inside a clip
+
+The captions are built from the narration's word times, so a clip's own speech is captioned by
+nothing until the section names a words file. A words file is one object with a `words` list, and
+each word carries its span in seconds after the clip starts.
+
+```json media/intro.words.json
+{
+  "words": [
+    { "word": "Watch", "start": 0.15, "end": 0.42 },
+    { "word": "it.", "start": 0.48, "end": 0.71 }
+  ]
+}
 ```
 
-The narration does not depend on the length of a clip. After you replace a clip file, run only `decktalk assemble`,
-then `decktalk verify`.
+Give each word its own punctuation and case, because the captions break where the sentences end. Then
+name the file on the section with `words`, and run `decktalk assemble`.
 
-## The clip's sound
+- A word that starts after the clip's picture ends is left out.
+- A slate has no captions, and neither has a clip with no audio track.
+- A words file the section names and the project has not got is one sentence on the stream, and the
+  clip plays with no captions.
+- The transcript page carries the same words as one paragraph, so a reader is not left with a silent
+  gap where the clip is.
 
-The clip's own audio joins the mix at its section start.
+A take's own `<hash>.words.json` under `build/narrate/` has this shape, and so does the file
+`decktalk clip` writes beside every clip it cuts.
 
-- The audio is trimmed to the clip's picture.
-- The audio fades in and out over 20 ms, so a cut never clicks.
-- The narration is silent while the clip plays.
-- The music ducks under the whole clip. [Sound](/concepts/sound#ducking) explains ducking.
+## Cut a clip out of the film
 
-`verify` checks the start of a clip section, but a clip section has no cut row. The click search of the a/v check
-never reaches into a clip's audio.
+`decktalk clip` cuts a span of one built page section into its own file. The picture is a run of whole
+frames of `build/sections/NN.mp4` and the sound is that section's take over the same span, so a clip
+is a piece of the film rather than a second render of it.
 
-## Caption the speech in a clip
-
-The captions come from the narration's word times, so a clip's own speech has no captions by default. Set
-`words` on the clip section to caption it.
-
-1. Write a words file for the clip. It is a JSON list with one object per word, in seconds after the clip starts.
-
-   ```json media/interview.words.json
-   [
-     { "word": "Watch", "start": 0.15, "end": 0.42 },
-     { "word": "it.", "start": 0.48, "end": 0.71 }
-   ]
-   ```
-
-   Give each word its own punctuation and case. The captions break at the sentence ends it marks.
-
-2. Name the file in the clip section.
-
-   ```toml decktalk.toml
-   [[section]]
-   number = 4
-   chapter = "Interview"
-   clip = "media/interview.mp4"
-   words = "media/interview.words.json"
-   ```
-
-3. Run `decktalk assemble`.
-
-- A word that starts after the clip's picture ends has no caption.
-- A slate or a clip with no audio track has no captions.
-- If the words file is missing, `assemble` prints a warning and the clip has no captions.
-
-A `<hash>.words.json` file from `build/narration` has this format. `decktalk clip` writes the words file of a clip that
-it cuts from a build. [Cut a clip from a build](#cut-a-clip-from-a-build) shows how.
-
-## Cut a clip from a build
-
-`decktalk clip` cuts a span of a built page section into a clip and its words file. Use it to play part of the video
-again in a clip section, such as the Open's count inside a later scene.
-
-These steps use a project after `decktalk build --no-voice`. After a voiced build, the clip carries the real voice.
+The clock is the section's own. Zero is where the section starts, and the lead of silence before its
+first word is part of the span like anything else.
 
 <Steps>
   <Step title="Find the span">
-    Print the words of section 1 with their times, in seconds after the section starts.
+    `decktalk words` is the one command that maps script text to seconds, and it is the clock
+    `--start` and `--end` are written against.
 
     ```console
-    decktalk words --only 1
+    decktalk words --section 1
     ```
 
-    {/* sample: decktalk words --only 1 after decktalk build --no-voice on a fresh starter, header and the first rows */}
-    ```text
-    sections 1, words 26
-    == 01 Open  (14.29s, lead 0.5s, estimated)
-      start     end  word
-      0.500   0.961  This
-      0.981   1.442  is
-      1.462   1.922  DeckTalk.
-      1.942   2.403  You
-      2.423   2.884  write
-      2.904   3.365  what
-      3.385   3.845  you
-      3.865   4.326  will
-      4.346   4.807  say,
-    ```
-
-    The opening sentence runs from the start of "This" at 0.500 s to the end of "DeckTalk." at 1.922 s.
+    Each row is one word with its start and its end, in seconds after the section starts.
   </Step>
 
-  <Step title="Cut the clip">
+  <Step title="Cut it">
     ```console
-    decktalk clip 1 --start 0.48 --end 1.92 --hold 0.5 --out media/open-line.mp4
+    decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4
     ```
 
-    {/* sample: decktalk clip 1 --start 0.48 --end 1.92 --hold 0.5 --out media/open-line.mp4 after decktalk build --no-voice on a fresh starter */}
+    | Flag | Default | What it does |
+    |---|---|---|
+    | `--section N` | required | The one page section to cut from. It names exactly one section. |
+    | `--start SECONDS` | `0` | Where the clip starts on that section's clock. |
+    | `--end SECONDS` | `0` | Where the clip ends. |
+    | `--out FILE` | `clip-N.mp4` | Where to write the clip. |
+    | `--gain-db DB` | `0` | Lifts or cuts the clip's audio, so a clip can match the film it is played beside. |
+    | `--hold-seconds SECONDS` | `0` | Holds the last frame this long, in silence, after the span. |
+
+    The span is rounded outward to whole frames, because a clip that began part way through a frame
+    would play its first frame twice. At the default twenty-five frames a second, that is a fortieth
+    of a second either way.
+
+    Two files are written: the clip, and `<name>.words.json` beside it, holding every word wholly
+    inside the span in seconds after the clip starts. A word the span cuts in two is left out and
+    said aloud on the stream, so move `--end` into the silence beside the word to keep it.
+
+    {/* sample: the two lines decktalk clip writes when a span cuts a word and the narration is a placeholder */}
     ```text
-    section 01: the span cuts the word 'DeckTalk.' in two, so the words file leaves it out
-    section 01: the narration is a silent placeholder, so the word times are estimates
-    seconds 1.92, words 2 | 0 certain, 1 uncertain finding(s)
-    wrote media/open-line.mp4  (1.92s: frames 12 to 47 of sections/01.mp4, 0.48 to 1.92s, hold 0.48s, gain +0 dB)
-    wrote media/open-line.words.json  (2 words)
-    use it in a clip section: clip = "media/open-line.mp4" and words = "media/open-line.words.json"
+    The span from 0.48s to 1.92s cuts the word 'DeckTalk.' in two, so the words file leaves it out.
+    Section 1 carries placeholder narration, so every word time in this clip is an estimate.
     ```
-
-    - The picture comes from `build/sections/01.mp4`. `--start` and `--end` round to whole frames, so the span
-      ran to 1.92 s rather than 1.93 s.
-    - The sound is section 1's narration over the same span. `--hold 0.5` adds 0.48 s of the last frame in silence.
-    - `media/open-line.words.json` lists the two whole words inside the span, in seconds after the clip starts.
-    - The frame grid put the end inside "DeckTalk.", so that word is left out of the words file and `clip` reports
-      it as an uncertain finding. Move `--end` into the silence beside the word to keep it.
   </Step>
 
-  <Step title="Play the clip in a clip section">
-    Add a clip section that names both files, and renumber the sections after it as
-    [Add a clip section of your own](#add-a-clip-section-of-your-own) describes.
+  <Step title="Play it in a clip section">
+    The two files the command wrote are exactly what a clip section takes.
 
     ```toml decktalk.toml
     [[section]]
@@ -318,107 +186,54 @@ These steps use a project after `decktalk build --no-voice`. After a voiced buil
     words = "media/open-line.words.json"
     ```
 
-    Then run `decktalk assemble`, and check that the section reads `open-line.mp4 (own audio)`.
+    Then run `decktalk assemble` and `decktalk verify`.
   </Step>
 </Steps>
 
-- `--gain` changes the clip's level in dB, so a clip cut from another build can match the voice around it.
-- The clip keeps the section's full picture, so a clip cut from a slide plays that whole slide.
-- [`decktalk clip`](/reference/cli#decktalk-clip) lists every option.
+The JSON is one flat object, so a caller reads what was written without parsing a line.
 
-## Keep one chapter across several sections
+{/* sample: decktalk clip --section 1 --json, the fields the result declares */}
+```json
+{
+  "schema": 2,
+  "ok": true,
+  "findings": [],
+  "error": null,
+  "run": "aad1d3514574",
+  "written": ["media/open-line.mp4", "media/open-line.words.json"],
+  "section": 1,
+  "film": "media/open-line.mp4",
+  "words": "media/open-line.words.json",
+  "start": 0.48,
+  "end": 1.92,
+  "seconds": 1.92,
+  "hold_seconds": 0.48,
+  "gain_db": 0.0,
+  "estimated": true
+}
+```
 
-Each section starts a chapter. Consecutive sections with the same `chapter` share one chapter instead, so a page
-section, a clip and the page section after it can read as one part of the video.
+`estimated` is true when the section carries placeholder narration, which is the one fact that
+decides whether the word times in the file beside the clip can be trusted.
 
-## Choose where the clip plays
+### What it refuses, and why
 
-A clip section can sit anywhere in the order of sections.
+`clip` reads two things the pipeline wrote, so it refuses rather than guessing when either is not
+there. Each refusal names the command that makes what is missing.
 
-| Position | Example | What the narration does |
-|---|---|---|
-| Before the first page section | section 0 | The narration starts with the first page section, after the clip. |
-| Between two page sections | a clip in the middle | The narration pauses for the clip. It continues on the first frame of the next page section. |
-| After the last page section | a closing clip | The narration has ended before the clip starts. |
+| The refusal | What to do |
+|---|---|
+| The section has no cut | Run `decktalk assemble` first. |
+| The section has no take, or the take file is gone | Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing. |
+| The section plays a clip the project already has | Cut from a page section, which is one DeckTalk recorded. There is nothing to cut out of a file you supplied. |
+| The span ends before it starts, or starts before zero | Write `--start` at 0 or later and `--end` after it. |
+| The span holds no whole frame | Make it at least one frame long. |
+| The span ends past the section | Write `--end` at the section's own length or earlier, which the refusal states. |
+| `--out` names the section cut itself | Write the clip somewhere else, such as under `media/`. |
 
-- `cues.json` names the cues of a section by its section number, such as `"4"`.
-- A section's `scene` names the scene in the page, and the cue ids of that section start with a slide id of that
-  scene. A page keeps its scene numbers when a clip section renumbers the sections around it, so a section number
-  and its scene can differ.
-- If you add or remove a clip section, renumber the sections in `decktalk.toml`, `script.md`, and `cues.json`. The
-  pages stay the same.
-- `hold_seconds` on a page section pauses the narration too, the same way a clip does.
-
-## Open the video on a clip
-
-These steps add a section 0 to a project, such as `my-lesson` from the [quickstart](/quickstart). Section 0
-comes before section 1, so it needs no renumbering.
-
-<Steps>
-  <Step title="Add section 0 to decktalk.toml">
-    Put this table above the section 1 table.
-
-    ```toml decktalk.toml
-    [[section]]
-    number = 0
-    chapter = "On camera"
-    clip = "media/open.mp4"
-    slate_seconds = 6       # a titled slate plays for this long when the file is missing
-    ```
-  </Step>
-
-  <Step title="Dip the cut out of the clip to black">
-    In the existing `[transition]` table, change `dips = []` to `dips = [[0, 1]]`.
-
-    ```toml decktalk.toml
-    dips = [[0, 1]]
-    ```
-
-    `dips` lists each cut that dips to black, as a `[from, to]` pair of section numbers. The starter sets
-    `dips = []`, so every cut is straight. If you delete the key, every cut dips.
-  </Step>
-
-  <Step title="Add a heading to script.md">
-    Add `## 0. On camera` above section 1. A clip section needs no heading, but the heading keeps the script in
-    the order of the video.
-
-    ```md script.md
-    ## 0. On camera
-
-    [Your clip at media/open.mp4 plays here, with its own sound.]
-
-    ## 1. Open
-    ```
-  </Step>
-
-  <Step title="Put the clip file in place">
-    Save your video as `media/open.mp4`.
-
-    If the file is not ready, skip this step. A missing clip plays a titled slate for `slate_seconds`, with the
-    section's chapter and the path where the file belongs.
-  </Step>
-
-  <Step title="Build the video">
-    Run a build without voice.
-
-    ```console
-    decktalk build --no-voice
-    ```
-
-    {/* sample: the assemble stage of decktalk build --no-voice, the starter with section 0 added as above and no media/open.mp4 (first lines) */}
-    ```text
-    section 00: media/open.mp4 is missing, so a slate plays for 6s. Drop your clip at that path
-    [cut ] 00  slate -> 00.mp4  (6.000s)
-    [cut ] 01  01.webm (t0 1.44s trimmed) -> 01.mp4  (14.280s)
-    ```
-
-    Section 0 has no `optional` key, so its warning ends with `Drop your clip at that path`. `--strict` fails
-    on this section until the file exists.
-  </Step>
-</Steps>
-
-## Next
+## Related
 
 - **Look up every section key:** [decktalk.toml](/reference/decktalk-toml)
+- **Read the mix the clip's sound joins:** [Sound](/concepts/sound)
 - **Rebuild after you replace a clip:** [Rebuild one section](/guides/rebuild-one-section)
-- **Understand the mix:** [Sound](/concepts/sound)
+- **Read the command's own flags:** [CLI](/reference/cli#decktalk-clip)

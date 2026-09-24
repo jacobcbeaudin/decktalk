@@ -1,31 +1,191 @@
 ---
 title: Build in CI and offline
-description: Build and check a DeckTalk video on every push, or on a machine with no network.
+description: Run DeckTalk with nobody watching: the toolchain up front, no prompts, machine-readable output, and the exit codes a pipeline gates on.
 ---
 
-A build without voice needs no API key, and once Chromium and ffmpeg are on the machine it needs no network. A
-build downloads both itself the first time it needs them, and `decktalk install` is how a job or an offline
-machine gets them at a time it chooses. Use this guide to build and check the video on every push, or on a
-machine that is offline.
+A build without voice needs no account and no API key, and once Chromium and ffmpeg are on the
+machine it needs no network at all. Everything else a job needs is here: one command that fetches the
+toolchain, one flag that turns every prompt into a flag or a refusal, two ways to read a run as data,
+and one exit rule every command shares.
 
-`decktalk build` can pass when `decktalk verify` fails, because the build's own verify stage does not
-measure the cues. To gate a job on the video, run both commands.
+## Fetch the toolchain up front
 
 ```console
-decktalk build --no-voice && decktalk verify
+decktalk install
 ```
 
-## Add a GitHub Actions job
+Nothing has to run this, because a command that needs Chromium or ffmpeg fetches it. It exists for
+the three cases where the download belongs somewhere other than inside the work: a container layer, a
+job that caches it, and a machine that will be offline later. A second run names what was already
+there and fetches nothing, so it is safe to leave in a job forever.
 
-This job builds the video with no API key, checks it, and uploads the video and the verify results.
+- ffmpeg and ffprobe go into DeckTalk's own cache, and Chromium goes into Playwright's, so a job
+  caches two directories. [Requirements](/requirements) lists both paths on all three platforms.
+- On Linux, `install` is also what installs Chromium's system libraries, which needs root. A build
+  never installs them. On a terminal it asks before it does, and without a terminal it goes ahead,
+  because a job that ran `install` asked for exactly this.
+- `decktalk doctor` reports what this machine holds and what a run would use, and fetches nothing. Its
+  `cache` field is the directory to cache, read from the machine rather than guessed.
+
+After `install`, no command reaches the network unless it buys speech or sound. A build with
+`--no-voice` never does.
+
+## Never prompt
+
+`--no-input` is on every command. Under it a run never asks a person anything. Each prompt either
+takes the safe default or refuses and names the flag that would have answered, because a prompt an
+agent cannot answer and a flag that does not exist are the same failure.
+
+| The question | Under `--no-input` |
+|---|---|
+| Spend on the voice? | Refused as `APPROVAL`, with the price in the message and `--spend` and `--no-voice` in the hint. |
+| Apply the fixes this run offered? | None are applied. `--fix` applies every safe one and `--no-fix` applies none. |
+| Discard the takes this run replaces? | Not asked. `--replace-voiced` is itself the authorisation, because a run told to replace a take was told so on purpose. |
+| Fetch what `doctor` found missing? | Nothing is fetched. `--fix` fetches it. |
+| The project name and example for `init` | The defaults are taken, and the result says what was chosen. |
+| Install Chromium's system libraries on Linux? | Not asked, and `install` goes ahead. |
+
+The refusal is the whole of what a caller needs.
+
+{/* sample: decktalk narrate --no-input on a starter with no --spend and no --no-voice */}
+```text
+error[APPROVAL]: voicing 3 sections costs up to $0.14, and no terminal is here to approve it.
+  hint: Run decktalk narrate --spend to approve that spend, or decktalk narrate --no-voice to finish with placeholder narration.
+  docs: https://docs.decktalk.ai/reference/errors/APPROVAL
+```
+
+`--json` also turns every prompt off, so a caller that reads the output never blocks on a question it
+cannot see.
+
+## Read the run as data
+
+Two flags make a run machine-readable, and they answer different questions.
+
+`--json` is the answer. The command prints exactly one flat object on stdout, prints nothing else
+there, turns colour off and sends every log line to stderr. Four keys are on every result, which are
+`schema`, `ok`, `findings` and `error`, and each command adds its own fields beside them. There is no
+wrapper object and no nesting. [The JSON contract](/agents/json) is the whole of it.
+
+```console
+decktalk build --no-voice --no-input --json > build.json
+```
+
+`--events` is the account of the run while it happens. One JSON object per line goes to stderr as
+each event occurs, so `--json` and `--events` together are the answer on stdout and the progress on
+stderr with neither in the other's way.
+
+{/* sample: the stderr of decktalk status --json --events on a starter */}
+```json
+{"event":"run.start","time":"2026-09-24T10:24:34.641901Z","seq":0,"run":"200d55f26212","events_path":"build/events/200d55f26212.jsonl"}
+{"event":"run.done","time":"2026-09-24T10:24:34.649525Z","seq":1,"run":"200d55f26212","outcome":"ok","seconds":0.007681916933506727}
+```
+
+`event` is the discriminator, and there are eleven names: `run.start`, `run.done`, `stage.start`,
+`stage.done`, `section.start`, `section.done`, `progress`, `finding`, `spend`, `fetch` and `log`. A
+`stage.done` and a `section.done` each carry an `outcome` of `ok`, `skipped` or `failed`, so a job
+can tell work that was done from work that was kept.
+
+Every run appends the same lines to `build/events/<run>.jsonl` whether `--events` was passed or not,
+and the first line names that file. So a job that backgrounds a build can follow the file, and
+`decktalk status --json` lists any run whose file is still open under `runs`.
+`[output] events_keep_runs` prunes the oldest, and keeps twenty runs by default.
+
+## The exit codes a job gates on
+
+Every command shares one exit rule, so a pipeline asserts on the code rather than on the output.
+
+| Code | What it means |
+|---|---|
+| 0 | The command ran and found nothing at or above the threshold. |
+| 1 | The command found something at or above the threshold. |
+| 2 | The command line was refused, and a retry as written fails again. |
+| 3 | DeckTalk could not run. |
+| 130 | The run was interrupted. |
+
+The codes above 1 come from the error's own code, so a caller that wants to know what broke reads
+`error.code` rather than the number.
+
+| Exit | Error codes |
+|---|---|
+| 2 | `USAGE`, `APPROVAL` |
+| 3 | `INPUT`, `NOT_BUILT`, `PROVIDER`, `TOOL`, `LOCKED`, `INTERNAL` |
+| 130 | `CANCELLED` |
+
+The rule an agent follows is one line. A non-zero exit with `error` null is a finding, and the job may
+fix the project and run again. A non-null `error` is an error, and the job stops and says so.
+
+### Choose what fails the pipeline
+
+Two flags decide which findings count, on every command that reports them.
+
+- `--fail-on certain` is the default and fails on a certain finding. `--fail-on any` fails on any
+  finding, including the uncertain second opinions. `--fail-on never` fails on none, which is how a
+  job reads the JSON and decides for itself.
+- `--allow CODE` carries on past one finding code, and it repeats. The code is still reported and
+  still in the JSON. It only stops counting toward the exit.
+
+```console
+decktalk verify --fail-on any --allow CUE_THIN_CHANGE
+```
+
+`decktalk schema finding` prints every code, and each one has a page under
+[the finding codes](/reference/cli#finding-codes) saying what moves it.
+
+A run that uses `--fail-on never` still exits 3 on an error, because an error is not a finding and no
+threshold covers it.
+
+## Judge the files with no browser
+
+```console
+decktalk check --no-pages
+```
+
+`check` judges `script.md`, `cues.json` and the pages, produces nothing, and prices what a voiced
+build would cost. `--no-pages` drops the browser entirely and says which judgements it could not
+reach, so a docs-only job, a pre-commit hook and a container with no Chromium can all still run it.
+
+{/* sample: the stderr of decktalk check --no-pages on a starter with no ElevenLabs key */}
+```text
+ELEVENLABS_VOICE_ID is not set, so no take on disk can be matched to the voice that made it.
+there is no voice to ask, so the cache could not be checked and the whole run is priced as new. ELEVENLABS_API_KEY is not set.
+no page was opened, so these judgements were not reached: CUE_MISSING, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
+frames were asked for and no page was opened, so no frame was frozen either.
+Checking script.md, cues.json, deck/index.html.
+Voicing it costs about $0.00 at $0.30 per 1,000 characters, up to $0.14.
+```
+
+The run is never quiet about what it skipped, so a hook that runs `--no-pages` cannot be mistaken for
+the full check. `--no-frames` is the middle setting: it keeps the browser and the page's own catalog
+and drops the freeze comparison alone.
+
+`check --json` carries `spend`, so one call is also how an agent prices a run before approving it.
+
+## Say where the project is
+
+Every command takes `-p DIR`, and `DECKTALK_PROJECT` sets the default, so a job can run from the
+repository root without repeating the path.
+
+```console
+DECKTALK_PROJECT=lessons/derivatives decktalk build --no-voice --no-input
+```
+
+Without either, the project is the directory the process started in.
+
+Every settings key publishes an environment variable of its own, named `DECKTALK_<TABLE>_<KEY>`, such
+as `DECKTALK_VIDEO_PRESET`. It sits above `decktalk.toml` and below `--set`.
+`decktalk config explain KEY` prints the value in force with the layer that set it, beside the key's
+default, its safe range and the hazard of leaving that range, which is what to run when a job and a
+laptop disagree.
+
+## A GitHub Actions job
 
 ```yaml .github/workflows/video.yml
 jobs:
   video:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
       - run: uv tool install decktalk
       - name: Cache Chromium and ffmpeg
         uses: actions/cache@v4
@@ -33,195 +193,96 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/.cache/decktalk
-          key: browsers-${{ runner.os }}
-      - run: decktalk install
-      - run: decktalk doctor
-      - run: decktalk build --no-voice
+          key: decktalk-tools-${{ runner.os }}
+      - run: decktalk install --no-input
+      - run: decktalk doctor --no-input --json > doctor.json
+      - run: decktalk check --no-input --json > check.json
+      - run: decktalk build --no-voice --no-input --json > build.json
         env:
           DECKTALK_VIDEO_PRESET: veryfast
-      - run: decktalk verify --json > verify.json
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: video
-          path: build/out/*.mp4
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: verify
-          path: verify.json
+          name: film
+          path: |
+            build/final/
+            *.json
 ```
 
-- The cache paths are for Linux. [Requirements](/requirements#what-decktalk-downloads) lists the paths on macOS and
-  Windows.
-- The `install` step is what fills that cache, and on a warm cache it downloads nothing. A build would fetch
-  both tools by itself, but then the download would sit inside the build step, and a failed download would read
-  as a failed build.
-- On Linux, `install` is also what installs Chromium's system libraries, which needs sudo or root, and a build
-  never installs them. [Linux system libraries](/requirements#linux-system-libraries) gives the full rule.
-- `install` downloads ffmpeg into DeckTalk's own cache, beside Chromium, so the one cache entry above holds both.
-- If a proxy blocks the Chromium download, set `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror.
+`decktalk build` runs all six stages, and `verify` is the last of them, so the film is measured inside
+the same run that made it and its findings already decide the build's exit code. A job does not need
+a second command to gate on the film.
 
-## What each command catches
+`--no-voice` puts a click at every word start, so the measurement covers the recording, the cut and
+the mix and not only the cue times, on a job that spends nothing.
 
-Each command exits 1 on a different set of problems.
+### Allow for a slower runner
 
-| Command | Exits 1 on | Does not catch |
-|---|---|---|
-| `decktalk build` | `PAGE ERROR`, `BLACK`, `SPEECH AT CUT` | `TRUNCATED`, `STALLED`, `NO COVER`, `BLACK?`, `SPOKEN SYMBOL?`, every cue result |
-| `decktalk align` | `UNRESOLVED`, `UNCUED ELEMENT`, an unknown cue id | anything about the pages or the video |
-| `decktalk record` | `PAGE ERROR`, `STALLED`, `TRUNCATED`, `NO COVER`, `KATEX ERROR`, `KATEX NOT LOADED`, `CDN ASSET` | `BLACK?`, unless you pass `--strict` |
-| `decktalk verify` | `BLACK`, `SPEECH AT CUT`, `OFF CUE`, `NO CHANGE`, `UNRESOLVED` | a `skipped` row, such as a cue marked `"verify": false` |
-| `decktalk status` | a missing or unreadable input file, and two input files that disagree | anything the build wrote |
-| `decktalk doctor` | a missing tool | nothing about the project itself |
-| `decktalk preflight` | an unfilled placeholder, `UNRESOLVED`, `UNCUED ELEMENT`, `OFF STAGE`, and `PAGE ERROR`, `NO CHANGE` or `POP AT CUT` in frozen frames, before any recording | motion, timing, and every check on the final mp4. `IN CAPTION BAND?` and `CUES OVERLAP?` are reported and cost exit 1 only with `--strict` |
+A hosted runner has no GPU that Chromium can use, so every frame is drawn in software and the macOS
+and Windows runners are slower than Linux. A reveal can start two or three frames late there, and
+`verify` reports [`CUE_OFF`](/reference/findings/CUE_OFF).
 
-A cue phrase that is not found and a cue id that no page carries stop `build` as errors rather than
-findings, so those two exit 3 there. `decktalk align` reports both as findings and exits 1.
-
-A build without voice puts a click at every word start, so `verify` also reports an
-[a/v value](/reference/verify#the-a/v-value) for each cue. The job fails when an a/v value is past
-`max_av_frames`, which is three frames at the defaults. A build without voice therefore tests the recording, the cut,
-and the mix, not only the cues.
-
-`build --strict` stops on a missing clip, unless the clip section sets `optional = true`. That one is an error
-rather than a finding, so it exits 3. With `--no-voice`, a build cannot fail on loudness at all, because a build
-without voice skips the loudness pass.
-
-## Fail the job on a bad video
-
-Every command shares one exit rule. Use the exit codes as the assertions of a job.
-
-| Code | What it means |
-|---|---|
-| 0 | The command ran and found nothing, or `--exit-zero` was passed. |
-| 1 | The command found something. A certain finding, such as `OFF CUE` or `TRUNCATED`, always does this. An uncertain finding, whose label ends in `?`, does it only under `--strict`. |
-| 2 | A usage error, such as an unknown flag. |
-| 3 | DeckTalk itself could not run. A missing input file, a malformed `decktalk.toml` or a provider that refused does this. |
-| 130 | The run was interrupted. |
-
-A non-zero exit with `error` null in the JSON is a finding the job can fix. A non-null `error.code`
-is an error, and the job stops.
-
-```console
-decktalk record --strict     # also fail on BLACK?
-decktalk verify              # fail on any certain finding
-```
-
-`status` and `doctor` take `--exit-zero` and refuse `--strict`, because every finding they report is
-certain and the flag could change nothing.
-
-To keep the job running and decide later, add `--exit-zero` and read the JSON.
-
-```console
-decktalk verify --json --exit-zero > verify.json
-jq -e '.ok' verify.json
-jq '.verify.cues[] | select(.verdict.code != "CHANGED")' verify.json
-jq '.findings.items[]' verify.json
-```
-
-`--exit-zero` makes the command exit 0 on findings, but an error still exits 3. The JSON `ok` is false when the
-command would exit non-zero without `--exit-zero`. `jq -e` then exits 1, the second `jq` line lists the cue rows
-to look at, and the third lists every finding of the run in the shape every command shares.
-[The `--json` envelope](/reference/cli#the-json-envelope) lists every key.
-
-## Allow for slower runners
-
-A hosted runner has no GPU that Chromium can use, so Chromium draws every frame in software. The macOS and Windows
-runners are slower than Linux.
-
-- A page renders more slowly on a runner than on a laptop.
-- A canvas figure or a large SVG renders more slowly still.
-- A reveal can start two or three frames late, and `verify` reports `OFF CUE`.
-- A long draw after narration t=0 can read `STALLED`.
-
-If that happens only on a slower runner, widen the limits for that runner. Keep the defaults on the machine that
-records the published video. These three variables are the ones a slow runner needs, and the values on the right
-are a starting point rather than a rule.
-
-| Environment variable | Default | A slower runner |
-|---|---|---|
-| `DECKTALK_VERIFY_MAX_OFFSET_FRAMES` | 2 | 4 |
-| `DECKTALK_VERIFY_MAX_AV_FRAMES` | 3 | 5 |
-| `DECKTALK_RECORD_STALL_MS` | 150 | 400 |
-
-A reveal can also start late while a large layer moves, such as a canvas figure that pans. To gate a job on cue
-timing, verify a light deck whose reveals land on still pages, and report the busy deck without failing. DeckTalk's
-own test builds `tests/e2e/fixture`, a five-section still deck, with `pytest -m e2e`. It decides from the platform
-it is running on: it fails on a cue offset over the limit on Linux, and on macOS and Windows it prints the largest
-offset it saw and asserts a wider bound instead. Those two platforms run on every push to `main` and before a
-release is published.
+Widen the limits for that runner alone and keep the defaults on the machine that records the
+published film. `--set` is the way to do it for one run, and the environment variable is the way to
+do it for a whole job.
 
 ```yaml .github/workflows/video.yml
-      - name: Widen the sync tolerance on the slower runners
+      - name: Widen the timing limits on the slower runners
         if: runner.os != 'Linux'
         run: |
-          echo "DECKTALK_VERIFY_MAX_OFFSET_FRAMES=4" >> "$GITHUB_ENV"
-          echo "DECKTALK_VERIFY_MAX_AV_FRAMES=5" >> "$GITHUB_ENV"
-          echo "DECKTALK_RECORD_STALL_MS=400" >> "$GITHUB_ENV"
+          echo "DECKTALK_VERIFY_CUE_OFFSET_MAX_MS=140" >> "$GITHUB_ENV"
+          echo "DECKTALK_VERIFY_AV_OFFSET_MAX_MS=200" >> "$GITHUB_ENV"
+          echo "DECKTALK_RECORD_FRAME_GAP_MAX_MS=400" >> "$GITHUB_ENV"
 ```
 
-## Build a voiced video in CI
-
-Put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in the job's secrets, and export them to the build step.
-DeckTalk never prints either value.
-
-<Warning>A build without voice refuses to run in a project whose take index holds paid takes for the sections it was
-asked to write, because replacing those rows would make the next voiced build pay for them again. The refusal names
-the sections that are free to rehearse. Give a CI job that builds without voice its own checkout, or its own
-`build/` directory.</Warning>
-
-[A build without voice and a voiced build](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build) explains why.
-
-## Set the project directory
-
-Every project command takes `--project DIR`. The `DECKTALK_PROJECT` variable sets the default, so a job can run
-from the repository root.
-
-```console
-DECKTALK_PROJECT=lessons/derivatives decktalk build --no-voice
-```
+Every one of those keys publishes the range that is safe to turn it through, and the loader refuses a
+value outside it, naming the file and the line.
+[Configuration](/reference/configuration#verify) states each range and what a value past it costs
+you.
 
 ## Build offline
 
-A build without voice runs with no network after these steps.
+A build without voice runs with no network at all after these three steps.
 
 <Steps>
-  <Step title="Download the tools while there is a network">
-    Run `install` before the machine goes offline. It downloads Chromium and ffmpeg, which a build would
-    otherwise download the first time it needs them, when there may be no network left to do it with.
-
+  <Step title="Fetch the tools while there is a network">
     ```console
     decktalk install
     ```
-  </Step>
-  <Step title="Create the project">
-    Run `init` after `install`. `init` copies the packaged KaTeX into `deck/katex/`.
 
+    This is the download a build would otherwise do the first time it needs it, which on an offline
+    machine is the moment there is no network left to do it with.
+  </Step>
+  <Step title="Write the project after the tools are there">
     ```console
     decktalk init my-lesson
     ```
-  </Step>
-  <Step title="Build the video">
-    Run a build without voice in the project directory.
 
+    `init` copies the packaged KaTeX into `deck/katex/`, so the equations render with nothing fetched.
+  </Step>
+  <Step title="Build without voice">
     ```console
-    decktalk build --no-voice
+    decktalk build --no-voice --no-input
     ```
   </Step>
 </Steps>
 
-In the starter, `deck/index.html` loads KaTeX from `deck/katex/`, before the runtime. A page of your own
-that points its KaTeX tags anywhere else leaves its equations as plain text offline, and `record` reports
-`KATEX NOT LOADED`, which fails the command. Point the tags at the copy beside the page.
+The starter's page points its KaTeX tags at the copy beside it. A page of your own that points them
+anywhere else leaves its equations as plain text offline, and the run reports
+[`PAGE_KATEX_MISSING`](/reference/findings/PAGE_KATEX_MISSING).
 
 ```html deck/index.html
 <link rel="stylesheet" href="./katex/katex.min.css">
 <script src="./katex/katex.min.js"></script>
 ```
 
-## Next
+Anything else a page loads from another origin is reported as
+[`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET), which is the one finding that names a file an
+offline build would not have. Put the file beside the page and the deck is self-contained.
 
-- **See every exit code:** [CLI](/reference/cli#exit-codes)
-- **Fix a failed check:** [Troubleshooting](/help/troubleshooting)
-- **Understand a cue result:** [Verify](/reference/verify#results)
+## Related
+
+- **Read the JSON an agent parses:** [The JSON contract](/agents/json)
+- **Read every command and every flag:** [CLI](/reference/cli)
+- **Read what a machine has to have:** [Requirements](/requirements)
+- **Turn one key for one run:** [Configuration](/reference/configuration#which-value-wins)

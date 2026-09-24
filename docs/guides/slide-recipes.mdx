@@ -1,383 +1,369 @@
 ---
 title: Slide recipes
-description: Copy six common slides into a project, each with its script lines, section table, cues, and scene.
+description: Nine copy-and-paste patterns, each with its markup, its cue row and what it costs to measure.
 ---
 
-This page has six slides that you can copy into a project. Use a recipe when you need a common
-slide, such as a derivation or a code block.
+Nine patterns, one for each thing an author actually wants a slide to do. Every one is adapted from
+the two decks `decktalk init` writes, so each is markup the runtime already accepts.
 
-- [Sync a subtitle to the voice](#sync-a-subtitle-to-the-voice)
-- [Show a derivation line by line](#show-a-derivation-line-by-line)
-- [Show a chat before and after](#show-a-chat-before-and-after)
-- [Show code one line per phrase](#show-code-one-line-per-phrase)
-- [Compare two columns](#compare-two-columns)
-- [Wait for a screenshot to load](#wait-for-a-screenshot-to-load)
+Each recipe is three things: the markup for one slide, the `cues.json` rows that give its moments a
+second, and one sentence saying what the pattern costs to measure. That last sentence matters,
+because a reveal DeckTalk cannot measure is usually a reveal a viewer cannot see either.
 
 ## Before you start
 
-Each recipe is one section, shown as four files: `script.md`, `decktalk.toml`, `cues.json`, and
-`deck/index.html`. The recipes use section numbers 7 to 12, which the starter does not use. Each
-`<style>` block defines the classes that its recipe needs. The recipes also use the starter's
-`.eyebrow` class and its color and font variables.
+The recipes are slides of one scene numbered 4, which neither packaged deck uses. To add one to a
+project:
 
-To add a recipe to a project, follow these steps:
+1. Paste the `<template>` inside a `<div data-scene="4" data-name="…">` in the page's `<body>`.
+2. Paste the recipe's `<style>` rules into the page's own `<style>` block.
+3. Paste the `cues.json` rows into `"4": { "cues": [ … ] }` inside `sections`.
+4. Add a `[[section]]` with `number = 4`, the page path and `scene = "4"` to `decktalk.toml`, and a
+   `## 4. …` section to `script.md` that speaks each phrase.
 
-1. Paste the `script.md` lines after the last section of the script.
-2. Paste the `[[section]]` table after the last `[[section]]` in `decktalk.toml`.
-3. Paste the `cues.json` entry inside the `sections` object.
-4. Paste the `<style>` block into the page's `<style>`, and the scene markup into `<body>`.
-5. If the section number is already in use, change it in all four files.
+A moment inside `<template data-slide="4.1">` is qualified with that slide id, so `data-in="title"`
+is the wire id `4.1:title` and that is what `cues.json` carries. The recipes use the starter's own
+custom properties, such as `--ink` and `--accent`, and its `.eyebrow` class.
 
-## Sync a subtitle to the voice
+## A title that arrives on its word
 
-An element with `data-text="spoken"` shows its words one at a time, as the voice says them.
-
-<CodeGroup>
-```md script.md
-## 7. The idea
-
-Write the script. [beat] Build the video. [beat] Every picture waits for its word.
-```
-
-```toml decktalk.toml
-[[section]]
-number = 7
-page = "deck/index.html"
-scene = 7
-```
-
-```json cues.json
-"7": { "cues": [
-  { "cue": "7.1a", "on": "Write the script" },
-  { "cue": "7.1b", "on": "Build the video" },
-  { "cue": "7.1c", "on": "Every picture" }
-] }
-```
+The heading and the bar under it are one element with one cue, so the whole block lands together.
 
 ```html deck/index.html
 <style>
-  .stack { position: absolute; left: 120px; top: 360px; display: flex; flex-direction: column; gap: 32px; }
-  .stack > * { margin: 0; }
-  .line { font: 450 48px/1.4 var(--sans); color: var(--ink); }
+  .r-title { position: absolute; left: 120px; top: 190px; width: 1680px; margin: 0;
+             font: 700 96px/1.06 var(--sans); letter-spacing: -.03em; }
+  .r-title h1 { margin: 0; font: inherit; letter-spacing: inherit; }
+  .r-title .r-rule { margin-top: 28px; width: 1000px; height: 12px; background: var(--accent); }
 </style>
+
+<template data-slide="4.1" data-hold="10" data-describe="the opening title">
+  <p class="eyebrow">Open</p>
+  <div class="r-title" data-in="title" data-describe="the title, This is DeckTalk">
+    <h1>This is DeckTalk.</h1>
+    <div class="r-rule"></div>
+  </div>
+</template>
+```
+
+```json cues.json
+"4": { "cues": [
+  { "cue": "4.1:title", "on": "This is DeckTalk", "occurrence": 1 }
+] }
+```
+
+**What it costs to measure.** A line of type is a few hundred pixels of ink, which is well under the
+0.1 percent floor on its own. The 1000 by 12 accent bar arriving with it is 12,000 pixels, about 0.6
+percent of the frame, and that is what carries the cue past `CUE_THIN_CHANGE`.
+
+## A list that staggers
+
+One cue, and the container's children arrive one step apart.
+
+```html deck/index.html
+<style>
+  .r-row { position: absolute; left: 120px; top: 420px; display: flex; gap: 24px; }
+  .r-tile { width: 372px; height: 260px; border-radius: 20px; background: var(--ink); }
+</style>
+
+<template data-slide="4.2" data-hold="14" data-describe="four examples of the same kind of thing">
+  <p class="eyebrow">Examples</p>
+  <div class="r-row" data-in="examples" data-in-style="fade" data-stagger="0.04"
+       data-describe="four examples, arriving one after another">
+    <div class="r-tile"></div>
+    <div class="r-tile"></div>
+    <div class="r-tile"></div>
+    <div class="r-tile"></div>
+  </div>
+</template>
+```
+
+```json cues.json
+"4": { "cues": [
+  { "cue": "4.2:examples", "on": "Here are four of them", "occurrence": 1 }
+] }
+```
+
+**What it costs to measure.** The whole spread is the step times the children after the first, plus
+the entrance, so this one is 0.04 × 3 + 0.24, which is 0.36 seconds. Anything at or above 0.5 seconds
+is [`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN), and the arithmetic that says
+so is exact, so the finding is certain.
+
+## A figure that swaps for another
+
+The card that leaves and the card that arrives share one cue. `data-swaps` holds the leaving card in
+place until its replacement has arrived, so the two read as one thing changing.
+
+```html deck/index.html
+<style>
+  .r-card { position: absolute; left: 120px; top: 440px; width: 1680px; height: 220px;
+            padding: 30px 38px; box-sizing: border-box; border-radius: 20px;
+            background: var(--ink); color: #fff; font: 500 44px/56px var(--sans); }
+  .r-card.grey { background: var(--mute); }
+  .r-card .r-k { font: 600 26px/34px var(--mono); letter-spacing: .12em;
+                 text-transform: uppercase; color: #a9a9ff; }
+</style>
+
+<template data-slide="4.3" data-hold="14" data-describe="the slow way, replaced by the fast one">
+  <p class="eyebrow">The direction</p>
+  <div class="r-card grey" data-in="one" data-out="instead" data-out-style="fall"
+       data-describe="turning one knob at a time, and the billions of tries it would take"
+       data-describe-out="the slow way falls away">
+    <div class="r-k">one knob at a time</div>
+    billions of tries for every step
+  </div>
+  <div class="r-card" data-in="instead" data-swaps
+       data-describe="one round of maths, giving every knob a direction at once">
+    <div class="r-k">every knob at once</div>
+    one round of maths, one direction each
+  </div>
+</template>
+```
+
+```json cues.json
+"4": { "cues": [
+  { "cue": "4.3:one", "on": "one knob at a time", "occurrence": 1 },
+  { "cue": "4.3:instead", "on": "Instead", "occurrence": 1 }
+] }
+```
+
+**What it costs to measure.** A swap is between one thing and one other thing. Zero elements leaving
+on the arrival cue, or two, is [`PAGE_SWAP_AMBIGUOUS`](/reference/findings/PAGE_SWAP_AMBIGUOUS) and
+certain, and two halves landing far enough apart to read as unrelated is
+[`PAGE_SWAP_APART`](/reference/findings/PAGE_SWAP_APART) and uncertain, which is why both cards here
+share a box.
+
+## An element that steps back while a second comes to the front
+
+`data-back` dims an element to 45 percent and `data-front` brings it back. Neither is a second
+reveal, so neither needs a second element.
+
+```html deck/index.html
+<style>
+  .r-formula { position: absolute; left: 120px; top: 360px; width: 820px; height: 280px;
+               box-sizing: border-box; display: grid; place-items: center;
+               border: 10px solid var(--ink); border-radius: 20px; font: 500 58px/1 var(--mono); }
+  .r-code { position: absolute; left: 1000px; top: 360px; width: 800px; height: 280px;
+            box-sizing: border-box; padding: 36px 40px; border-radius: 20px;
+            background: var(--ink); color: #fff; font: 500 32px/52px var(--mono); white-space: pre; }
+</style>
+
+<template data-slide="4.4" data-hold="16" data-describe="the formula beside the code that computes it">
+  <p class="eyebrow">How it works</p>
+  <div class="r-formula" data-in="formula" data-in-style="fade" data-back="code" data-front="waited"
+       data-describe="the formula for the mean of n numbers">x bar = (x1 + … + xn) / n</div>
+  <div class="r-code" data-in="code" data-describe="the same average written as two lines of Python">
+def average(xs):
+    return sum(xs) / len(xs)</div>
+</template>
+```
+
+```json cues.json
+"4": { "cues": [
+  { "cue": "4.4:formula", "on": "the formula", "occurrence": 1 },
+  { "cue": "4.4:code", "on": "in code", "occurrence": 1 },
+  { "cue": "4.4:waited", "on": "waited", "occurrence": 1 }
+] }
+```
+
+**What it costs to measure.** The step back takes 0.28 seconds and the return 0.20 seconds, both well
+under the ceiling. Attention only registers as a change when the element is large, because dimming a
+label to 45 percent moves too few pixels to clear the floor, so step back a whole panel rather than a
+line.
+
+## A line shown word by word on the voice
+
+`data-words` matches the element's own text against the section's spoken words and reveals it one
+word at a time, each word whole by the second the voice reaches it.
+
+```html deck/index.html
+<style>
+  .r-strip { position: absolute; left: 120px; top: 720px; width: 1680px; margin: 0;
+             padding: 28px 40px; box-sizing: border-box; border-radius: 18px;
+             background: var(--accent); color: #fff; font: 600 52px/62px var(--sans); }
+</style>
+
+<template data-slide="4.5" data-hold="12" data-describe="the promise, filled in on the voice">
+  <p class="eyebrow">The promise</p>
+  <p class="r-strip" data-in="word" data-in-style="fade" data-words
+     data-describe="a band that fills in on the voice">
+    every picture waits for its own word
+  </p>
+</template>
+```
+
+```json cues.json
+"4": { "cues": [
+  { "cue": "4.5:word", "on": "its own word", "occurrence": 1 }
+] }
+```
+
+**What it costs to measure.** One word lighting up is far under the change floor, so the runtime
+reports the line through its own telemetry instead of through pixels, and the band fading in on the
+cue is what the frame comparison sees. The text has to be the words the narration really says, or the
+line earns [`PAGE_WORDS_NOT_FOUND`](/reference/findings/PAGE_WORDS_NOT_FOUND). `data-words` defaults
+to `highlight`, which starts every word dim. `data-words="appear"` starts them absent and is limited
+to eight words, above which it earns
+[`PAGE_APPEAR_TOO_LONG`](/reference/findings/PAGE_APPEAR_TOO_LONG).
+
+## A number that counts up
+
+`data-count="last"` grows the last number in the text from zero when the element arrives, and
+`data-count="first"` grows the first one, so the figure the voice says and the figure on screen land
+together.
+
+```html deck/index.html
+<style>
+  .r-stat { position: absolute; left: 120px; top: 620px; width: 1120px; margin: 0;
+            padding: 34px 48px; box-sizing: border-box; border-radius: 20px;
+            background: var(--accent); color: #fff; font: 700 76px/1.1 var(--sans); }
+</style>
+
+<template data-slide="4.6" data-hold="10" data-describe="the count of files a project holds">
+  <p class="eyebrow">Open</p>
+  <p class="r-stat" data-in="files" data-count="last"
+     data-describe="the count of files a project holds">
+    4 files in one folder
+  </p>
+</template>
+```
+
+```json cues.json
+"4": { "cues": [
+  { "cue": "4.6:files", "on": "Four files", "occurrence": 1 }
+] }
+```
+
+**What it costs to measure.** The count runs 0.48 seconds, which ties with the `draw` entrance as the
+longest span the contract declares and leaves nothing under the 0.5 second ceiling. The digits alone are
+a slow, thin change, and the filled band arriving underneath them is what the cue is measured on. The
+script writes the figure in words, because a cue phrase is matched against spoken words.
+
+## A formula typeset with KaTeX
+
+`data-tex` holds the TeX and the element's own text is the readable fallback. `data-tex-display`
+makes it a display equation on its own line.
+
+```html deck/index.html
+<style>
+  .r-eq { position: absolute; left: 120px; top: 360px; width: 1680px; height: 280px;
+          box-sizing: border-box; display: grid; place-items: center;
+          border-radius: 20px; background: #f4f4f5; }
+  .r-eq .katex { font-size: 58px; }
+</style>
+
+<template data-slide="4.7" data-hold="14" data-describe="the mean of n numbers, typeset">
+  <p class="eyebrow">The formula</p>
+  <div class="r-eq" data-in="formula" data-in-style="fade"
+       data-describe="the formula for the mean of n numbers">
+    <span data-tex-display data-tex="\bar{x} = \frac{1}{n} \sum_{i=1}^{n} x_i">
+      x bar = (1 / n) * (x1 + x2 + ... + xn)
+    </span>
+  </div>
+</template>
+```
+
+```json cues.json
+"4": { "cues": [
+  { "cue": "4.7:formula", "on": "the formula", "occurrence": 1 }
+] }
+```
+
+**What it costs to measure.** Typeset glyphs are thin, so the equation sits in a filled panel that
+arrives with it and carries the change. Write the fallback text as correct, fully parenthesised
+mathematics that reads well out loud, because it is what shows if KaTeX never loads, it is what the
+transcript prints, and it is what a screen reader reads. In markup a backslash is written once. KaTeX
+refusing the TeX is [`PAGE_KATEX_ERROR`](/reference/findings/PAGE_KATEX_ERROR) and the element falls
+back to that text, and a page with no KaTeX at all is
+[`PAGE_KATEX_MISSING`](/reference/findings/PAGE_KATEX_MISSING).
+
+## A class change the page's own stylesheet animates
+
+`data-class` adds a class at a moment, written as `moment:name` pairs. It is how a page makes a change
+the contract has no word for.
+
+```html deck/index.html
+<style>
+  .r-guess { position: absolute; left: 1120px; top: 490px; width: 680px; margin: 0;
+             padding: 30px 38px; box-sizing: border-box; border-radius: 20px;
+             background: #f4f4f5; font: 700 72px/1.1 var(--mono);
+             transition: background-color .2s ease, color .2s ease; }
+  .r-guess.stale { background: var(--mute); color: #e4e4e7; }
+  .r-guess.live { background: #22c55e; color: #052e16; }
+  :where(.dt-reduced) .r-guess { transition-duration: 0s; }
+</style>
+
+<template data-slide="4.8" data-hold="16" data-describe="the model's answer, set aside and then corrected">
+  <p class="eyebrow">The loop</p>
+  <p class="r-guess" data-in="guess"
+     data-class="nudge:stale|right:live"
+     data-describe-class="nudge:the answer is set aside while the knobs turn|right:the answer turns green, because it now matches the example"
+     data-describe="the model's answer for this example">cat</p>
+</template>
+```
+
+```json cues.json
+"4": { "cues": [
+  { "cue": "4.8:guess", "on": "and it guesses", "occurrence": 1 },
+  { "cue": "4.8:nudge", "on": "nudges the knobs", "occurrence": 1 },
+  { "cue": "4.8:right", "on": "it is right", "occurrence": 1 }
+] }
+```
+
+**What it costs to measure.** This is the one span the contract cannot bound in advance, so DeckTalk
+lays the slide out, adds each class and reads the longest transition the stylesheet gives it. Keep it
+under half a second. Each class needs its phrase in `data-describe-class` or the change earns
+[`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED), and the stylesheet must drop
+the motion under `.dt-reduced` or a reduced build earns
+[`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED).
+
+## A cue only a handler serves
+
+A cue that no moment attribute names has to be listed in `data-owns`, which is how a slide declares a
+cue it draws with script of its own.
+
+```html deck/index.html
+<style>
+  .r-slider { position: absolute; left: 120px; top: 520px; width: 1680px; height: 40px;
+              border-radius: 999px; background: #f4f4f5; }
+  .r-thumb { position: absolute; top: -60px; left: 760px; width: 160px; height: 160px;
+             border-radius: 999px; background: var(--accent); transition: left .3s ease; }
+  :where(.dt-reduced) .r-thumb { transition-duration: 0s; }
+</style>
+
+<template data-slide="4.9" data-hold="14" data-owns="long short"
+          data-describe="one setting, deciding how long each step is">
+  <p class="eyebrow">The step size</p>
+  <div class="r-slider"><span class="r-thumb"></span></div>
+</template>
+
 <script>
-DeckTalk.scene(7, { name: "The idea", slides: [
-  { id: "7.1", hold: 10, preview: { "7.1a": 1, "7.1b": 3.5, "7.1c": 6 }, render: () => `
-    <div>
-      <p class="eyebrow">The idea</p>
-      <div class="stack">
-        <p class="line" data-cue="7.1a" data-text="spoken">Write the script.</p>
-        <p class="line" data-cue="7.1b" data-text="spoken">Build the video.</p>
-        <p class="line" data-cue="7.1c" data-text="spoken">Every picture waits for its word.</p>
-      </div>
-    </div>` },
-]});
+// A handler takes the wire id, because a handler may be registered anywhere in the deck.
+const step = (left) => (slide) => {
+  const thumb = slide.querySelector(".r-thumb");
+  if (thumb) thumb.style.left = left;
+};
+DeckTalk.on("4.9:long", step("1500px")).on("4.9:short", step("90px"));
 </script>
 ```
-</CodeGroup>
-
-The cue makes each line appear, and its words appear one at a time from there. The text must match
-the script word for word. If a line differs by one word, it appears whole, and the page warns
-`data-text="spoken" text not found in the spoken words`. To check the slide at one cue, open
-`?slide=7.1&after=7.1b`, which hides the line for `7.1c`.
-
-## Show a derivation line by line
-
-Each line of the derivation is its own element with its own cue. `data-tex-display` typesets it as
-display math, and the answer uses `pop` so it stands out. The starter's `deck/index.html` loads
-KaTeX from the copy `decktalk init` put beside it.
-
-<Warning>Inside the backticks of a `render` function, write every backslash twice, because a single
-backslash breaks the TeX or blanks the page. In markup a backslash is written once, which is the
-reason this recipe is a `<template data-slide>` ([`data-tex`](/reference/runtime#data-tex)).</Warning>
-
-<CodeGroup>
-```md script.md
-## 8. The derivative of x squared
-
-Start with the definition of the derivative, the limit of a difference quotient. [beat]
-Expand the square, and the x squared terms cancel. [beat] Only two x is left.
-```
-
-```toml decktalk.toml
-[[section]]
-number = 8
-page = "deck/index.html"
-scene = 8
-```
 
 ```json cues.json
-"8": { "cues": [
-  { "cue": "8.1a", "on": "definition" },
-  { "cue": "8.1b", "on": "Expand" },
-  { "cue": "8.1c", "on": "Only two x", "offset": 0.2 }
+"4": { "cues": [
+  { "cue": "4.9:long", "on": "Too long", "occurrence": 1 },
+  { "cue": "4.9:short", "on": "Too short", "occurrence": 1 }
 ] }
 ```
 
-```html deck/index.html
-<style>
-  .derivation { position: absolute; left: 120px; top: 300px; display: flex; flex-direction: column; gap: 56px; }
-  .math { margin: 0; font-size: 58px; color: var(--ink); }
-  .math .katex-display { margin: 0; }
-  .math .katex-display > .katex { text-align: left; }
-  .answer { color: var(--accent); }
-</style>
-<div data-scene="8" data-name="The derivative of x squared">
-  <template data-slide="8.1" data-hold="14" data-preview="8.1a@1 8.1b@5 8.1c@9">
-    <div class="derivation">
-      <p class="math" data-cue="8.1a" data-tex-display
-         data-tex="\frac{d}{dx}\,x^2 = \lim_{h \to 0} \frac{(x+h)^2 - x^2}{h}">(d/dx) of x^2 = the limit as h goes to 0 of ((x+h)^2 - x^2) / h</p>
-      <p class="math" data-cue="8.1b" data-tex-display
-         data-tex="= \lim_{h \to 0} \frac{2xh + h^2}{h} = \lim_{h \to 0} (2x + h)">= the limit of (2xh + h^2) / h = the limit of (2x + h)</p>
-      <p class="math answer" data-cue="8.1c" data-reveal="pop" data-tex-display
-         data-tex="\frac{d}{dx}\,x^2 = 2x">(d/dx) of x^2 = 2x</p>
-    </div>
-  </template>
-</div>
-```
-</CodeGroup>
-
-The plain text inside each element shows when KaTeX is absent, so write it as a readable fallback.
-In markup a backslash is written once. A slide built by a `render` function is a JavaScript string,
-where every backslash has to be written twice, which is the reason to prefer a `<template>`.
-
-## Show a chat before and after
-
-The question types in with `data-text="type"`, and the reply fades in one line at a time. The bubble and
-its first line share a cue, so the bubble's background appears when its text starts. The second
-slide is the "after", and its cue `9.2` mounts it.
-
-<CodeGroup>
-```md script.md
-## 9. Before and after
-
-Watch a vague prompt first. [beat] Write about photosynthesis. [beat] The reply is true,
-and it is flat. [beat] One line says what it is. [beat] Another line says where it happens.
-
-[Slide 9.2.]
-
-Now ask for what you actually want. [beat] Explain it to a ninth grader, in three
-sentences. [beat] Same model, better prompt.
-```
-
-```toml decktalk.toml
-[[section]]
-number = 9
-page = "deck/index.html"
-scene = 9
-```
-
-```json cues.json
-"9": { "cues": [
-  { "cue": "9.1ask", "on": "Write about" },
-  { "cue": "9.1r1", "on": "One line" },
-  { "cue": "9.1r2", "on": "another line" },
-  { "cue": "9.2", "on": "Now ask" },
-  { "cue": "9.2ask", "on": "Explain it" },
-  { "cue": "9.2reply", "on": "Same model" }
-] }
-```
-
-```html deck/index.html
-<style>
-  .chat { position: absolute; left: 120px; top: 300px; width: 1680px; display: flex; flex-direction: column; gap: 32px; }
-  .bubble { max-width: 1100px; padding: 28px 40px; border-radius: 24px; font: 450 36px/1.4 var(--sans); }
-  .bubble p { margin: 0 0 12px; }
-  .ask { align-self: flex-end; background: var(--accent); color: var(--ground); }
-  .reply { align-self: flex-start; background: #f4f4f5; color: var(--ink); }
-</style>
-<script>
-DeckTalk.scene(9, { name: "Before and after", slides: [
-  { id: "9.1", hold: 12, preview: { "9.1ask": 1, "9.1r1": 5, "9.1r2": 7 }, render: () => `
-    <div>
-      <p class="eyebrow">Before</p>
-      <div class="chat">
-        <div class="bubble ask" data-cue="9.1ask" data-text="type 40ms" data-reveal="fade">Write about photosynthesis.</div>
-        <div class="bubble reply" data-cue="9.1r1" data-reveal="fade">
-          <p data-cue="9.1r1" data-reveal="fade">Photosynthesis is the process by which plants convert light into energy.</p>
-          <p data-cue="9.1r2" data-reveal="fade">It takes place in the chloroplasts.</p>
-        </div>
-      </div>
-    </div>` },
-  { id: "9.2", hold: 12, preview: { "9.2ask": 1, "9.2reply": 6 }, render: () => `
-    <div>
-      <p class="eyebrow">After</p>
-      <div class="chat">
-        <div class="bubble ask" data-cue="9.2ask" data-text="type 30ms" data-reveal="fade">Explain photosynthesis to a ninth grader in three sentences.</div>
-        <div class="bubble reply" data-cue="9.2reply" data-reveal="pop">
-          <p>Plants catch sunlight and use it to turn water and air into sugar.</p>
-        </div>
-      </div>
-    </div>` },
-]});
-</script>
-```
-</CodeGroup>
-
-## Show code one line per phrase
-
-Each line of code is a block element with its own cue. The container keeps the indentation with
-`white-space: pre` and a monospace font. The lines use `fade`, because the motion of `rise` looks
-wrong on code.
-
-<CodeGroup>
-```md script.md
-## 10. Three commands
-
-Three commands run the whole thing. [beat] Initialize a project. [beat] Build it
-without voice, with no key. [beat] Then build it with your voice.
-```
-
-```toml decktalk.toml
-[[section]]
-number = 10
-page = "deck/index.html"
-scene = 10
-```
-
-```json cues.json
-"10": { "cues": [
-  { "cue": "10.1a", "on": "Initialize" },
-  { "cue": "10.1b", "on": "without voice" },
-  { "cue": "10.1c", "on": "your voice" }
-] }
-```
-
-```html deck/index.html
-<style>
-  .code { position: absolute; left: 120px; top: 360px; font: 500 40px/1.5 var(--mono); white-space: pre; color: var(--ink); background: #f4f4f5; border-radius: 24px; padding: 40px 56px; }
-  .code .cmt { color: var(--mute); }
-</style>
-<script>
-DeckTalk.scene(10, { name: "Three commands", slides: [
-  { id: "10.1", hold: 10, preview: { "10.1a": 1, "10.1b": 4, "10.1c": 7 }, render: () => `
-    <div>
-      <div class="code"><div data-cue="10.1a" data-reveal="fade">decktalk init my-lesson</div><div data-cue="10.1b" data-reveal="fade">decktalk build --no-voice   <span class="cmt"># no key</span></div><div data-cue="10.1c" data-reveal="fade">decktalk build</div></div>
-    </div>` },
-]});
-</script>
-```
-</CodeGroup>
-
-Keep the lines on one physical line inside the `render` template. With `white-space: pre`, the
-page would otherwise show the template's own indentation.
-
-## Compare two columns
-
-Two columns appear left and then right, and each column has one cue. The `<style>` block lays them
-out with flex.
-
-<CodeGroup>
-```md script.md
-## 11. Two ways to time a reveal
-
-On the left, a timeline editor. Every reveal is a number of seconds, and every edit moves them
-by hand. [beat] On the right, the words. Every reveal is a phrase, and it moves with the
-sentence.
-```
-
-```toml decktalk.toml
-[[section]]
-number = 11
-page = "deck/index.html"
-scene = 11
-```
-
-```json cues.json
-"11": { "cues": [
-  { "cue": "11.1left", "on": "timeline editor" },
-  { "cue": "11.1right", "on": "the words" }
-] }
-```
-
-```html deck/index.html
-<style>
-  .cols { position: absolute; left: 120px; right: 120px; top: 300px; display: flex; gap: 48px; }
-  .pane { flex: 1; background: #f4f4f5; border-radius: 24px; padding: 48px; min-height: 520px; }
-  .pane h2 { margin: 0 0 24px; font: 600 56px/1.1 var(--sans); letter-spacing: -.02em; color: var(--ink); }
-  .pane .line { margin: 0 0 16px; font: 450 36px/1.4 var(--sans); color: var(--ink); }
-  .pane .caption { margin: 0; font: 450 30px/1.4 var(--sans); color: var(--mute); }
-  .pane .accent { color: var(--accent); }
-</style>
-<script>
-DeckTalk.scene(11, { name: "Two ways to time a reveal", slides: [
-  { id: "11.1", hold: 12, preview: { "11.1left": 1, "11.1right": 6 }, render: () => `
-    <div>
-      <div class="cols">
-        <div class="pane" data-cue="11.1left">
-          <h2>A timeline editor</h2>
-          <p class="line">Every reveal is a number of seconds.</p>
-          <p class="caption">Every edit moves them by hand.</p>
-        </div>
-        <div class="pane" data-cue="11.1right">
-          <h2 class="accent">The words</h2>
-          <p class="line">Every reveal is a phrase.</p>
-          <p class="caption">It moves with the sentence.</p>
-        </div>
-      </div>
-    </div>` },
-]});
-</script>
-```
-</CodeGroup>
-
-## Wait for a screenshot to load
-
-The recorder starts the clock only after `window.__decktalk.ready` resolves. This recipe hands the
-decode of a large image to `DeckTalk.waitFor`, so the image is ready before narration t=0. `waitFor`
-adds a condition to the runtime's own wait rather than replacing it, so the KaTeX wait still applies.
-
-<CodeGroup>
-```md script.md
-## 12. The status report
-
-Here is the status report after a build. [beat] Every section shows a recording and a
-cut, and the captions and chapters sit beside the video.
-```
-
-```toml decktalk.toml
-[[section]]
-number = 12
-page = "deck/index.html"
-scene = 12
-```
-
-```json cues.json
-"12": { "cues": [
-  { "cue": "12.1screenshot", "on": "status report" },
-  { "cue": "12.1note", "on": "captions" }
-] }
-```
-
-```html deck/index.html
-<style>
-  .screenshot { position: absolute; left: 260px; top: 140px; width: 1400px; border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.25); }
-  .note { position: absolute; left: 260px; top: 960px; margin: 0; font: 450 30px/1.4 var(--sans); color: var(--mute); }
-</style>
-<script>
-DeckTalk.scene(12, { name: "The status report", slides: [
-  { id: "12.1", hold: 10, preview: { "12.1screenshot": 0.5, "12.1note": 5 }, render: () => `
-    <div>
-      <img class="screenshot" src="../media/status.png" alt="" data-cue="12.1screenshot" data-reveal="fade">
-      <p class="note" data-cue="12.1note">Captions and chapters sit beside the video.</p>
-    </div>` },
-]});
-
-// Narration t=0 also waits until the screenshot has decoded.
-const image = new Image();
-image.src = "../media/status.png";
-DeckTalk.waitFor(image.decode());
-</script>
-```
-</CodeGroup>
-
-`DeckTalk.waitFor` takes a Promise and holds narration t=0 until it settles. A Promise that rejects,
-or one that has not settled after five seconds, becomes a page warning and the recording goes ahead,
-so a missing image never hangs a build. [`window.__decktalk.ready`](/reference/runtime#window-__decktalk-ready)
-explains the default wait.
+**What it costs to measure.** Nothing in the contract bounds a handler, so the length and the size of
+the change are yours to keep honest: hold the motion under half a second and move something large
+enough to clear the change floor, or the cue reads as
+[`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE). A cue named in `data-owns` that the deck never
+declares is [`PAGE_CUE_UNKNOWN`](/reference/findings/PAGE_CUE_UNKNOWN), and a handler that throws is
+[`PAGE_HANDLER_THREW`](/reference/findings/PAGE_HANDLER_THREW), which leaves that moment doing
+nothing rather than failing the page.
 
 ## Next
 
-- **Size a slide and choose reveal effects:** [Design a slide](/guides/design-a-slide)
-- **Look up every attribute:** [Runtime](/reference/runtime#data-attributes)
-- **Write phrases that time well:** [Writing for the ear](/guides/writing-for-the-ear)
+- **Understand the rules every pattern obeys:** [Design a slide](/guides/design-a-slide)
+- **Write the whole page yourself:** [Write a page by hand](/guides/page-by-hand)
+- **Choose the words each reveal lands on:** [Writing for the ear](/guides/writing-for-the-ear)

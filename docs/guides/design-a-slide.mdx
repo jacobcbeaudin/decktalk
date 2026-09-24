@@ -1,150 +1,243 @@
 ---
 title: Design a slide
-description: Size the elements of a slide, choose a reveal effect for each one, and add a camera push.
+description: Build a slide that reads on screen, says what it changed, and survives every check DeckTalk runs on it.
 ---
 
-This guide shows how to size a slide, choose a reveal effect for each element, and add a camera
-push. Use it when you write or change the scenes of a page.
+A slide has two audiences. A viewer has to see the reveal and a reader has to be told what it was,
+and DeckTalk measures both. This guide is the four rules a slide is judged by: every cued element
+carries a description, every reveal changes enough of the frame to be measured, no motion is still
+playing half a second after its cue, and a page that animates for itself drops that motion under
+reduced motion.
 
-## Before you start
+`decktalk schema page` prints the whole attribute table with each value, default, range and the
+finding it raises. Read it beside this page rather than guessing an attribute name.
 
-You need a page that includes `decktalk-runtime.js`, such as the starter's `deck/index.html`.
-[Your first deck](/guides/first-deck) shows how to add a scene to it.
+## The stage is 1920 by 1080
 
-## Size the slide
+The runtime builds a stage element, `#dt-stage`, that is exactly 1920 by 1080 CSS pixels, scales it
+to fit the window and centres it. A size written in your stylesheet is therefore a size on the video
+frame. A page may supply its own `<div id="dt-stage">` and the runtime will use that one, which is
+how a deck puts one figure under all of its slides.
 
-Size every element in CSS pixels, on a frame of 1920 by 1080.
+Place every element absolutely, so one reveal never moves another. Both packaged decks do this.
 
-{/* copied from template/starter/deck/index.html */}
+{/* input: src/decktalk/template/starter/deck/index.html */}
 ```css deck/index.html
-.eyebrow { left: 120px; top: 80px; font: 600 24px/32px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
+.eyebrow, .title, .card, .strip, .stat { position: absolute; margin: 0; box-sizing: border-box; }
 .title { left: 120px; width: 1680px; font: 700 96px/1.06 var(--sans); letter-spacing: -.03em; }
 ```
 
-The runtime draws each slide inside the stage element, `#dt-stage`. The stage element is 1920 by
-1080 CSS pixels. The runtime scales it to fit the window and centers it. So a size in your CSS is a
-size on the video frame.
-
-| Element | Suggested size | In the starter's `deck/index.html` |
+| Element | Size that reads on a 1920 by 1080 frame | What the starter uses |
 |---|---|---|
-| Side margin | 96 px or more, and 120 px for titles | 120 px |
+| Side margin | 96 px or more, and 120 px for a title | 120 px |
 | Body text | 36 px or more | 44 px for the card values in scene 1 |
-| Headlines | 64 px or more | 96 px for the titles of scenes 1 and 3, and 76 px for the title of scene 2 |
-| Eyebrows and labels | 22 px, in the monospace face and the muted color | 24 px monospace, in `--mute` |
+| Headline | 64 px or more | 96 px for the titles of scenes 1 and 3 |
+| Eyebrow or label | 22 px or more, in the mono face and the muted colour | 24 px mono, in `--mute` |
 
-<Note>`[video] width` and `height` change only the browser window and the encoded frame. A frame
-with another aspect ratio letterboxes the stage element, and the slides do not reflow.</Note>
+Keep every cued element out of the bottom fifteen percent of the frame, which is 162 px of 1080. A
+player draws captions there, so an element that arrives in that band can be covered at the moment it
+arrives. The starter's lowest band sits at `top: 720px` and ends about 840 px down, clear of it.
 
-A page can supply its own `<div id="dt-stage">`, and the runtime uses it. The lesson example's
-`deck/lesson.html` does this to build one figure under all of its slides.
+Keep a slide to about four reveals. A derivation that needs more starts a second slide.
 
-Put one idea on each slide. A slide with more than three or four reveals is hard to follow. If a
-slide is busy, split it into two slides.
+<Note>`video.width` and `video.height` change the browser window and the encoded frame. A frame with
+another aspect ratio letterboxes the stage, and the slides do not reflow.</Note>
 
-## Make each reveal big enough to measure
+## Describe every cued element
 
-A reveal has to change about 0.3 percent of the frame to clear `verify`'s warning, and about 0.1
-percent to pass at all. On a 1920 by 1080 frame that is 6,220 pixels for the warning and 2,073 for
-the pass, which is roughly an 80 by 80 solid block and a 46 by 46 one. Design against the larger
-number, because a reveal that only just passes in `preflight` can fail on the recording.
-
-| Changed share of the frame | What `preflight` and `verify` say |
-|---|---|
-| Below 0.1 percent | `NO CHANGE`, a certain finding. The command exits 1. |
-| 0.1 to 0.3 percent | `THIN CHANGE?`, an uncertain finding. It exits 1 only with `--strict`. |
-| Above 0.3 percent | `changed`. |
-
-Both checks compare luma alone, so brightness is what counts and hue is not. A reveal that swaps one
-colour for another of the same lightness changes nothing they can see, and it also disappears for a
-viewer with low vision. Change the lightness as well as the hue, or fill a shape rather than tint
-one.
-
-The starter's own slides are filled cards and bands rather than text on white for this reason. A
-line of 44 px text is a few hundred pixels of ink, well under the floor, so give a small reveal a
-filled container that appears with it.
-
-Keep every cued element out of the bottom 15 percent of the frame, which is 162 px of a 1080 px
-frame. A player draws captions there, so an element that appears in that band can be covered at the
-moment it appears. `preflight` reports one as `IN CAPTION BAND?` from the measured box, which is
-uncertain because a deck may put something there on purpose, so `--strict` is how a project says the
-band is reserved. The starter puts its lowest band at `top: 720px`, which ends about 840 px down,
-clear of the band.
-
-## Choose a reveal effect
-
-Set `data-reveal` on an element to choose the animation it plays when it appears.
+The transcript, the audio description and every reader who cannot see the picture are written from
+`data-describe`. It is a noun phrase naming the subject of the reveal, and the runtime supplies the
+verb for each moment: an arrival "appears", a step back "steps back", a return "comes to the front"
+and a departure "leaves".
 
 ```html deck/index.html
-<p class="line" data-cue="2.1average">A line of text</p>
-<div class="code" data-cue="2.1code" data-reveal="fade">decktalk build</div>
-<p class="answer" data-cue="2.1waited" data-reveal="pop">2x</p>
-```
-
-An element with no `data-reveal` uses `rise`. The table shows what each reveal effect does and where it
-works well.
-
-| Effect | Motion | Use it for | Avoid it for |
-|---|---|---|---|
-| `rise` | `rise` moves the element up 10 px as it fades in over 0.3 s. | Use it for lines of text, labels, and cards. | Avoid it for code, tables, and grids. There, the motion looks like a layout shift. |
-| `fade` | `fade` fades the element in over 0.3 s. | Use it for code lines, chat bubbles, images, and anything that must not move. | Avoid it for one small element on a large slide. A viewer can miss a small fade. |
-| `draw` | `draw` draws the stroke of an SVG path over 0.3 s, at a constant speed. | Use it for an SVG path with `pathLength="1"`. | Avoid it for a filled shape. Only the stroke draws, and the fill shows at once. |
-| `drop` | `drop` moves the element down 24 px as it fades in over 0.35 s. | Use it for a tile or a stamp. | Avoid it for body text. The motion is too large for text. |
-| `pop` | `pop` scales the element from 60% past 108% to 100% over 0.5 s. | Use it for the one result that the section builds to. | Avoid it for more than one element per slide. Two pops compete for attention. |
-| `dim` | `dim` starts visible and fades the element to 16% opacity over 1.2 s. | Use it for an element that recedes when its cue fires. | Avoid it for an element that has not been on screen long enough to notice. |
-| `instant` | `instant` shows the element on the frame of its cue, with no animation. | Use it for a cursor, a highlight, or a part of a figure. | Avoid it for text. A hard cut can look like a glitch. |
-
-Set `data-duration` in seconds to change the length of an effect. Keep effects short, so each reveal is
-visible on its word and not still moving on the next word. To show math, add
-[`data-tex`](/reference/runtime#data-tex).
-
-A `dim` reveal is the one effect that lowers brightness rather than raising it. The checks read the
-size of the change and not its direction, so a `dim` that drops a large element to 16 percent opacity
-clears the floor as readily as a reveal that appears.
-
-## Check a slide before you record it
-
-`decktalk preflight` freezes each slide before and at each cue and reports the changed share, with no
-recording and no spend. Run it as soon as a slide is drawn.
-
-```console
-decktalk preflight --only 4
-```
-
-{/* sample: decktalk preflight --only 4, the starter with the section from Your first deck */}
-```text
-check              slide       cue   chg %  result
-4:4.1bowl          4.1        7.89    0.49  changed
-4:4.1p0            4.1       12.33    0.11  THIN CHANGE?
-4:4.1rule          4.1       22.68    0.45  changed
-4:4.1over          4.1       39.94    0.73  changed
-```
-
-The frozen PNG files go under `build/preflight/NN/`, one per cue, named for the slide and the cue.
-Open the two frames of any row you want to judge by eye. `decktalk screenshots --slide 4.1 --after
-4.1rule` writes the same frozen state on its own.
-
-## Add a camera push
-
-Set `data-camera="push"` on a scene wrapper to zoom the stage element slowly from 100% to 103%.
-
-```html deck/index.html
-<div data-scene="1" data-name="Open" data-camera="push">
-  <template data-slide="1.1" data-hold="14">…</template>
+<div class="title" style="top: 190px" data-in="title" data-describe="the title, This is DeckTalk">
+  <h1>This is DeckTalk.</h1>
+  <div class="rule"></div>
 </div>
 ```
 
-A scene a script declares sets `camera: "push"` in its `DeckTalk.scene` call instead.
+An element that has a cue, carries no `data-describe` and draws no text of its own earns
+[`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION), which is certain. A shape with no
+words in it is the usual cause, because a filled block is the one kind of reveal that is easy to see
+and impossible to read.
 
-The push lasts the whole scene, and at least 4 s. Freeze mode shows no push.
-[Scene fields](/reference/runtime#scene-fields) gives the exact length.
+Three attributes go with it.
 
-Use a push on one scene at most, such as the open. A push under every scene makes the whole video
-move. `decktalk verify` removes the push from each probe's margin with the
-[control share](/reference/verify#control-share). Its onset rule ignores the slow growth of the
-push. The push still raises each probe's changed share.
+- `data-describe=""` is a decorative element, said out loud in the markup. An empty phrase clears the
+  finding and writes no transcript line.
+- `data-describe-out` replaces the departure sentence when leaving means something of its own, such
+  as the lesson's `data-describe-out="the hand-written rules drop away"`.
+- `data-describe-class` gives a phrase to each class change, as `moment:phrase` pairs separated by a
+  vertical bar. A `data-class` change with no phrase beside it earns
+  [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED), because the transcript
+  would otherwise lose the change entirely.
+
+## Make the change large enough to measure
+
+DeckTalk compares two frames on brightness alone. A pixel counts as changed when its luma differs by
+more than `verify.probe_diff_luma`, which is 40 out of 255 by default, and what is judged is the
+share of the frame those pixels cover.
+
+| Changed share of the frame | What is reported |
+|---|---|
+| Under `verify.changed_share_min_percent`, 0.1 percent | [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE), certain. Nothing happened that a frame can show. |
+| Under that floor times `verify.thin_change_factor`, so under 0.3 percent | [`CUE_THIN_CHANGE`](/reference/findings/CUE_THIN_CHANGE), uncertain. The reveal is there and it is faint. |
+| Above 0.3 percent | Clean. |
+
+On a 1920 by 1080 frame, 0.3 percent is about 6,220 pixels and 0.1 percent about 2,073, which is
+roughly an eighty by eighty solid block and a forty-six by forty-six one. Design against the larger
+number, because a reveal that only just clears the floor on a frozen frame can fall under it once the
+encoder has been over it.
+
+Three consequences follow from comparing luma and nothing else.
+
+- **A colour swap of the same lightness changes nothing.** It is also invisible to a viewer with low
+  vision. Change the lightness as well as the hue.
+- **A line of text is too thin.** A line of 44 px type is a few hundred pixels of ink. Give a small
+  reveal a filled container that arrives with it, which is why both packaged decks reveal filled
+  cards, pills and bands rather than text on white.
+- **An outline is too thin.** Fill the shape.
+
+Raising `verify.probe_diff_luma` does not help, and its published hazard says why: a high value counts
+only a change that crosses most of the range, so a reveal that fades in, or a light element on a light
+slide, reads as no change at all.
+
+## Keep every motion under half a second
+
+`MEASURABLE_SPAN_SECONDS` is 0.5, and it is the one ceiling the page contract is built around. A cue
+still moving half a second after it fires cannot be measured, because that is the frame the next cue
+is read from. No value any attribute admits can reach it on its own.
+
+### The entrance
+
+`data-in-style` is the closed word that says how an element arrives, and each word declares its own
+length.
+
+| `data-in-style` | Length | Travel | Use it for |
+|---|---|---|---|
+| `rise` | 0.32 s | up 10 px | The default. Lines of text, labels and cards. |
+| `settle` | 0.28 s | up 4 px | A large block, where 10 px reads as a jump. |
+| `fade` | 0.24 s | none | Code, tables and grids, where any travel reads as a layout shift. |
+| `pop` | 0.20 s | 4 percent overshoot | The one result a section builds to. Use it once a slide. |
+| `draw` | 0.48 s | none | An SVG stroke, drawn at a constant speed. |
+| `cut` | 0 s | none | A cursor or a highlight that must be there on the frame of its cue. |
+
+`data-in-seconds` overrides that length. It runs from 0.12 to 0.48 in steps of 0.04, which is three
+to twelve captured frames at 25 fps, and a value off that grid earns
+[`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE). It governs the entrance alone and never when
+the entrance starts.
+
+An element whose measured motion still runs past 0.5 seconds earns
+[`PAGE_MOTION_OVERRUN`](/reference/findings/PAGE_MOTION_OVERRUN), which is certain. Since the longest
+entrance a page may write is 0.48 seconds, the two ways to reach it are `motion.scale` above one and
+a staggered container.
+
+### The stagger
+
+`data-stagger` spreads one cue across a container's children, from 0.04 to 0.2 seconds apart in steps
+of 0.04. The total is exact arithmetic: the last child starts one step per earlier child after the
+cue, then plays its own entrance.
+
+```text
+total = data-stagger × (children − 1) + entrance
+```
+
+The lesson example staggers four tiles at 0.04 with a `fade` entrance, so its total is
+0.04 × 3 + 0.24, which is 0.36 seconds and clears the ceiling.
+
+{/* input: src/decktalk/template/examples/lesson/deck/lesson.html, slide 1.1 */}
+```html deck/lesson.html
+<div class="l-row" style="left: 120px; top: 420px" data-in="examples" data-in-style="fade" data-stagger="0.04"
+     data-describe="four examples, each a picture and the word that goes with it">
+  <div class="l-tile"><span class="l-face"></span><span class="l-word">cat</span></div>
+  <div class="l-tile"><span class="l-face"></span><span class="l-word">dog</span></div>
+  <div class="l-tile"><span class="l-face"></span><span class="l-word">bird</span></div>
+  <div class="l-tile"><span class="l-face"></span><span class="l-word">fish</span></div>
+</div>
+```
+
+The same four tiles at 0.2 with a `draw` entrance would total 0.2 × 3 + 0.48, which is 1.08 seconds,
+and DeckTalk measures that exactly and reports
+[`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN) as a certain finding. Fix it by
+shortening the step, choosing a shorter entrance, or splitting the container across two cues.
+
+A container that carries `data-stagger` and has no children spreads one entrance over nothing, which
+is [`PAGE_STAGGER_EMPTY`](/reference/findings/PAGE_STAGGER_EMPTY).
+
+### The other spans
+
+| Attribute | Span it declares |
+|---|---|
+| `data-back` | 0.28 s, to the dimmed state |
+| `data-front` | 0.20 s, back to full strength |
+| `data-out` with `data-out-style` of `fade` or `fall` | 0.20 s |
+| `data-enter` with `crossfade` | 0.24 s, and `cut` is 0 s |
+| `data-words` with `highlight` or `appear` | 0.12 s per word |
+| `data-count` with `last` or `first` | 0.48 s |
+
+`data-words="appear"` shows a line one word at a time from nothing, and a line of more than eight
+words takes longer than one cue can carry, which earns
+[`PAGE_APPEAR_TOO_LONG`](/reference/findings/PAGE_APPEAR_TOO_LONG). Shorten the line, or use
+`highlight`, which starts every word dim and brightens each one as it is said.
+
+## Honour reduced motion
+
+`motion.reduce` renders the whole film as the variant a viewer who asks for less motion should be
+given. The recorder asks Chromium for a page that prefers reduced motion, the runtime puts the class
+`dt-reduced` on the root element, and every entrance the runtime owns becomes a plain fade with no
+travel, no scale and no overshoot. The film keeps its length, its captions and its cue times, so the
+reduced build and the ordinary build are the same film with the motion taken out.
+
+```console
+decktalk build --set motion.reduce=true
+```
+
+There is no flag for it, because no flag duplicates a settings key. `motion.scale` is the companion
+knob, a multiplier from 0.25 to 4 on every declared span, and a scaled span is clamped at the
+measurable ceiling rather than obeyed, so slowing a deck down cannot delete its own checks.
+
+The runtime can only reduce the motion it owns. A `data-class` hands the change to the page's own
+stylesheet, and that stylesheet owes the reduced form. The lesson example writes both halves.
+
+{/* input: src/decktalk/template/examples/lesson/deck/lesson.html */}
+```css deck/lesson.html
+.l-guess { transition: background-color .2s ease, color .2s ease; }
+.l-guess.stale { background: var(--set-aside); color: var(--hair); }
+.l-guess.live { background: var(--good); color: #052e16; }
+:where(.dt-reduced) .l-guess { transition-duration: 0s; }
+```
+
+DeckTalk lays every slide out once, adds each class named in `data-class`, and reads the longest
+animation or transition the stylesheet gives that element. Under a reduced render, a class that still
+animates earns [`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED), which is
+certain and names the class. It can only be raised under a reduced render, so judge the page that way
+at least once:
+
+```console
+decktalk check --set motion.reduce=true
+```
+
+## Look at the slide before you record it
+
+```console
+decktalk check
+decktalk storyboard --slide 1.2
+```
+
+`decktalk check` judges the written files and the pages together, opens no recording, spends nothing
+and prices what a voiced build would cost. It freezes each slide either side of each cue and reports
+the changed share, and every finding on this page comes out of that one command. `--no-frames` keeps
+the browser and drops the freeze comparison, and `--no-pages` judges the written files with no
+browser at all and then says which judgements it could not reach.
+
+`decktalk storyboard` freezes every slide at every cue onto one page, `build/storyboard.html`, and
+narrows to `--section`, `--slide`, `--after`, `--before` and `--at`. It is the human checkpoint
+before any voice credits are spent, and it is where unrendered maths, overlapping elements and text
+running off the frame become obvious.
 
 ## Next
 
-- **Copy a complete slide:** [Slide recipes](/guides/slide-recipes)
-- **Look up every attribute:** [Runtime](/reference/runtime#data-attributes)
-- **Learn how a page plays:** [The page contract](/concepts/page-contract)
+- **Copy a pattern that already ships:** [Slide recipes](/guides/slide-recipes)
+- **Write the page from nothing:** [Write a page by hand](/guides/page-by-hand)
+- **Choose the words the reveal lands on:** [Writing for the ear](/guides/writing-for-the-ear)

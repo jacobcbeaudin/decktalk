@@ -1,143 +1,216 @@
 ---
 title: Writing for the ear
-description: Write a narration script that gives every reveal a word to start on.
+description: Write a script the voice can say, and a cue phrase the spoken words can match.
 ---
 
-This guide shows how to write a script that gives each reveal a word to start on. Read it before you design slides, and again when a reveal feels early or late.
+The script is the clock. `decktalk narrate` turns `script.md` into spoken takes with a word clock,
+and `decktalk cue` turns each phrase in `cues.json` into a second on its section's clock. Nothing on
+a deck page writes a second, so the only way to move a reveal is to change the words it waits for or
+to nudge it off them.
 
-DeckTalk times every reveal from the spoken words, so the script sets the timing. The advice below comes from building DeckTalk's own films and from watching where reveals felt early or late.
+This guide is about the two files that decide that timing: the sentences in `script.md` and the
+phrase each row of `cues.json` names. [Design a slide](/guides/design-a-slide) is about what the
+picture does once the second is known.
 
-## Write the script first
+## Write the script before the slides
 
-Write the whole script before you design a slide. Then read it aloud one time. The words that carry the argument are the words that the reveals start on, so you need those words first. A slide that you design first often needs a sentence that nobody would say.
+Write the whole script, then read it aloud once. The words that carry the argument are the words the
+reveals start on, so you need them before you can decide what appears. A slide drawn first usually
+needs a sentence nobody would say.
 
-## Say the name before the reveal
+Give each idea one reveal and each reveal one sentence. A lesson reads best at about one reveal every
+ten to fifteen seconds. Three reveals in one breath read as an animation rather than an explanation,
+and a minute with no reveal leaves the viewer nothing new to look at.
 
-Name the thing, and let the reveal follow the name. When the script says "here is the bowl", the bowl appears on "bowl", not before it.
+## Write numbers and symbols the way you want them said
 
-- A reveal before its words makes the listener ask what the picture is.
-- A reveal long after its words shows something the listener has already imagined.
+The voice reads what it is given, and a cue phrase is matched against the words it said. So "41" is
+a guess about how the voice pronounces two digits, and no phrase you write can reliably match that
+guess. Write the words instead.
 
-Choose the phrase that names the thing as the cue phrase. The rest of the sentence then explains the thing while it is on screen.
-
-## Start the cue phrase on the named thing
-
-A cue time is the start of the first word of the cue phrase. Begin the phrase with the word that names the reveal.
-
-```json cues.json
-{ "cue": "3.4steps", "on": "steps downhill" }
-```
-
-This cue starts on "steps", a verb, and the ball takes its first step as the word is said. A phrase such as "and then" names nothing on the slide. The starter's cue phrases are nouns that name something visible, such as `This is DeckTalk`, `what you will say`, `the slides`, `the formula`, and `in code`.
-
-## Give each idea one reveal
-
-Give each idea its own reveal, and give each reveal its own sentence. For a lesson, about one cue every ten to fifteen seconds is a comfortable rate.
-
-- Three reveals in one breath look like an animation, not an explanation.
-- A minute with no reveal gives the listener nothing new to look at.
-
-If one sentence carries two ideas, split it into two sentences.
-
-## Put silence before a reveal
-
-A short silence before a reveal makes the reveal feel like an event. Three kinds of stage direction make that silence.
-
-| Direction | Sent to the voice | Use it for |
+| Write this in the script | Not this | Show this on the slide |
 |---|---|---|
-| `[beat]` | a dash after the sentence before it | Use it freely before a reveal. |
-| `[pause N]` | a `<break time="Ns" />` tag | Use it where you want the audience to stop and think. |
-| Any other text in square brackets | a dash, the same as `[beat]` | Use it as a note to yourself. It also makes a beat. |
+| forty one | 41 | `41` |
+| four hundred billion | 400 billion | `400 billion knobs` |
+| version two point three | v2.3 | `v2.3` |
+| two x | 2x | `2x` |
+| decktalk dot AI | decktalk.ai | `decktalk.ai` |
+| x bar equals the mean of x | `\bar{x}` | the typeset formula |
 
-The starter puts a beat before each card, so each one arrives as its own event:
+The starter's script says "Make your own at decktalk dot AI" while its end card shows `decktalk.ai`,
+and the lesson example says "four hundred billion" while its slide shows `400 billion knobs`. The
+number on screen and the number in the ear are the same figure written twice, once for each sense.
 
-```md script.md
-This is DeckTalk. [beat] You write what you will say, [beat] and you write the slides that go with it.
-[beat] Then every picture waits for its own word.
-```
+### The TAKE_SPOKEN_SYMBOL finding
 
-Only a timed pause sends a break tag, because frequent break tags make the voice less steady. Use timed pauses sparingly. Back-to-back directions do not add up, and the longest pause wins. [script.md](/reference/script-md) lists every direction rule.
-
-DeckTalk adds silence before the first word and after the last word of every section, so the picture changes before the voice speaks. A script never needs a pause at either end.
-
-## Shift a reveal with the offset key
-
-The offset key moves a cue time by a number of seconds. A positive offset key moves it later, and a negative offset key moves it earlier.
-
-```json cues.json
-{ "cue": "3.4steps", "on": "steps downhill", "offset": 0.2 }
-```
-
-<Frame caption="A positive offset key moves the cue time after the start of its word.">
-  <img className="block dark:hidden" src="/images/cue-offset-light.svg" alt="The words &quot;it steps downhill&quot; from section 3 sit in boxes as long as each word. A line at the start of &quot;steps&quot; marks the cue time with offset key 0. An accent line 0.2 s later marks offset key 0.2. An arrow pointing earlier marks a negative offset key, for text read aloud." />
-  <img className="hidden dark:block" src="/images/cue-offset-dark.svg" alt="The words &quot;it steps downhill&quot; from section 3 sit in boxes as long as each word. A line at the start of &quot;steps&quot; marks the cue time with offset key 0. An accent line 0.2 s later marks offset key 0.2. An arrow pointing earlier marks a negative offset key, for text read aloud." />
-</Frame>
-
-- **A positive offset key, 0.1 to 0.2 s.** The reveal comes just after the word starts, while the word is still spoken. This feels like the narrator pointing at something. The example above moves the ball's first step 0.2 s after the start of "steps".
-- **A negative offset key.** Use it only when the audience must read along, such as a line of code that the voice reads out. The text must be on screen before its first word is spoken.
-
-The starter's cues have no offset key, so every reveal in a new project starts on its word.
-
-## Close a section on $end
-
-The last reveal of a section can use `$end` as its cue phrase. `$end` is the end of the section's last spoken word, so a summary line appears as the voice stops.
-
-To keep a section's last frame on screen after its narration ends, set `hold_seconds` on that page section. To open a section on a longer or a shorter silence, set its `lead_seconds`. [cues.json](/reference/cues-json) documents `$start` and `$end`.
-
-## Write numbers as words
-
-Write numbers, symbols, and abbreviations the way the voice must say them. A cue phrase must match the spoken words, and the voice can say digits in more than one way.
-
-For example, write "two x" in the script and show `2x` on the slide. The starter's script says "decktalk dot AI", and its end card shows decktalk.ai. `decktalk narrate` reports a section whose spoken text still holds a digit or a symbol as `SPOKEN SYMBOL?`, an uncertain finding.
-
-## Rehearse with a build without voice
-
-A build without voice costs nothing and needs no key. Use it to check the pacing before you spend credits.
+`decktalk check` scans the spoken text of every section and raises
+[`TAKE_SPOKEN_SYMBOL`](/reference/findings/TAKE_SPOKEN_SYMBOL) for a section whose words hold a digit
+or one of the characters `$ € £ % & @ # * / + = < > ~ ^ |`. The finding names the section and lists
+the first five offending words.
 
 ```console
-decktalk build --no-voice
+decktalk check --no-pages
 ```
 
-- A build without voice estimates word times at `silent_words_per_minute` (150) and adds every declared pause.
-- The click track has a soft click at every estimated word start, so you can hear the pacing.
-- `decktalk verify` measures the picture against the clicks. [The a/v value](/reference/verify#the-a/v-value) explains that check.
+`--no-pages` judges the written files with no browser at all, which is the fastest way to read this
+one finding. The finding is uncertain, because "41" may be exactly what you want the voice to try, so
+it does not fail a run under the default `--fail-on certain`. Two things clear it:
 
-Watch the video for pacing. A reveal that comes too early in a build without voice usually comes too early with the real voice too. [How it works](/concepts/how-it-works#the-build-without-voice) explains what a build without voice proves.
+- **Rewrite the word.** Replace the digit or the symbol with the words the voice should say. This is
+  the fix in almost every case, because it is also the only way a cue phrase can match.
+- **Accept it deliberately.** Pass `--allow TAKE_SPOKEN_SYMBOL` on the commands that would otherwise
+  report it, and `--fail-on any` when you want every uncertain finding to fail a run instead.
 
-## Give a section a time budget
+A respelling meant to steady the voice becomes the spoken word, the cue phrase and the caption
+together, so say so in the project when you respell a name.
 
-A time budget is a time range after a dash in a section heading. `decktalk narrate` compares the budget with the estimated length and, after a voiced build, with the real length.
+## The beat marker and the timed pause
 
+A short silence before a reveal makes the reveal an event. Bracketed directions are the only way a
+script asks for one, and they are never spoken.
+
+| Direction | What the voice receives | Use it for |
+|---|---|---|
+| `[beat]` | a dash appended to the paragraph before it | Use it freely, before any reveal that should land on its own. |
+| `[pause 4]` | a `<break time="4s" />` tag | Use it where the viewer should stop and think, and use it rarely. |
+| Any other bracketed note, on a line of its own | nothing, and a beat after the paragraph before it | Use it as a note to yourself, such as which scene a section plays. |
+
+{/* input: src/decktalk/template/starter/script.md, section 1 */}
 ```md script.md
-## 3. How AI learns — 0:40 to 1:40
+## 1. Open
+
+[Scene 1. The title and the count of files, then the two files you write.]
+
+This is DeckTalk. [beat] Four files sit in one folder, and you write two of them. [beat]
+You write what you will say, [beat] and you write the slides that go with it. [beat]
+Then every picture waits for its own word.
 ```
 
-This table comes from `decktalk narrate --dry-run` on the starter, with the section from
-[Your first deck](/guides/first-deck) added and its heading budgeted `— 0:20 to 0:30`. The dry run calls no API.
+Only a timed pause sends a break tag, because frequent break tags unsettle the voice. Back-to-back
+directions do not add up and the longest one wins, and a direction before the first paragraph of a
+section has nothing to pause after, so it is dropped.
 
-{/* sample: decktalk narrate --dry-run, starter plus the first-deck section headed "## 4. Gradient descent — 0:20 to 0:30" (table only) */}
-```text
- #  section                words    est  target  actual  placeholders
----------------------------------------------------------------------
- 1  open                      26   0:11    --      --    -
- 2  how-it-works              30   0:13    --      --    -
- 3  close                     25   0:11    --      --    -
- 4  gradient-descent         100   0:43    0:10    --    -
----------------------------------------------------------------------
-    total                    181   1:18            --
+### What a script may not hold
+
+Inside a paragraph, `[beat]` and `[pause N]` are the only bracketed spans allowed, along with an
+ordinary Markdown link. Any other bracketed note inside a paragraph becomes a pause nobody asked for,
+so `decktalk narrate` refuses it and `decktalk check` reports it as
+[`TAKE_PLACEHOLDER`](/reference/findings/TAKE_PLACEHOLDER) with the line it sits on. A brace and an
+HTML comment are refused for the opposite reason: the voice reads both of them out.
+
+A bracketed word in capitals, such as `[CUSTOMER_COUNT]`, is an open placeholder. Write one wherever
+you have a claim nobody has confirmed, because a voiced run would otherwise buy the claim as it
+stands. `TAKE_PLACEHOLDER` is certain, so it fails a run until the placeholder is filled.
+
+[script.md](/reference/script-md) lists every rule about the file.
+
+## Choose a phrase the voice really says
+
+A cue row names a wire id and a phrase. The wire id is the slide and the local name the page wrote,
+joined by a colon, and the phrase is a word or a short phrase from that section of `script.md`.
+
+{/* input: src/decktalk/template/examples/lesson/cues.json, section 1 */}
+```json cues.json
+{ "cue": "1.4:downhill", "on": "steps downhill", "occurrence": 1 }
 ```
 
-- `target` is the length of the budget, ten seconds for section 4.
-- `est` paces the words at `words_per_minute` (140). Section 4 estimates 0:43, so it runs far past its budget.
-- `actual` fills in after a voiced build.
-- A section with no budget in its heading reads `--` in both columns.
+The script says "So it steps downhill, again and again, and the steps shrink as the ground flattens",
+and the steps on the slide arrive as the word "steps" is said.
 
-If `est` is longer than `target`, delete a sentence. Widen the budget only after a voiced build fills the `actual` column.
+Four rules decide whether a phrase works.
 
-A section's `min_seconds` in `cues.json` checks the other direction. If the speech is shorter than `min_seconds`, `decktalk align` reports an uncertain finding.
+1. **It has to be spoken.** The match is against the words of that section alone, and a heading, a
+   bracketed direction and a word in another section are all invisible to it.
+2. **It starts on the word that names the thing.** A cue time is the start of the phrase's first
+   word, so a phrase beginning "and then" lands the picture on nothing. The starter's phrases are
+   `This is DeckTalk`, `what you will say`, `the slides`, `the formula` and `in code`.
+3. **It is two or three words long.** A single common word such as "the", "one" or "it" matches early
+   and lands on the wrong sentence.
+4. **It is copied, not retyped.** The match drops case and every character but a letter, a digit and
+   an apostrophe, so `Four files` matches "four files" and `project` does not match "project's".
+
+Set `"case_sensitive": true` on a row when the case really is the difference between two matches.
+
+A phrase that is never spoken is [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED), which is
+certain, because there is no second to put the picture at. Fix it by quoting the script again, not by
+moving the limit.
+
+### occurrence, when the phrase is not unique
+
+A repeated phrase matches every run of it, and the first match is usually too early. `occurrence`
+picks which one, counting from 1.
+
+```json cues.json
+{ "cue": "3.2:zero", "on": "Zero", "occurrence": 2 }
+```
+
+That row lands on the second time section 3 says "zero". Prefer changing the phrase to naming an
+occurrence, because an occurrence is a count a later edit to the script silently changes. Every row
+of the lesson example names its occurrence anyway, so a phrase the script repeats later can never
+move a picture by accident.
+
+## offset, which moves a cue off the start of its word
+
+`offset` adds seconds to the resolved second. A positive value moves the cue later and a negative
+value moves it earlier.
+
+```json cues.json
+{ "cue": "1.4:downhill", "on": "steps downhill", "offset": 0.2 }
+```
+
+<Frame caption="A positive offset moves the cue time after the start of its word.">
+  <img className="block dark:hidden" src="/images/cue-offset-light.svg" alt="The words &quot;it steps downhill&quot; sit in boxes as long as each word is spoken. A line at the start of &quot;steps&quot; marks the cue time with offset 0. An accent line 0.2 s later marks offset 0.2. An arrow pointing earlier marks a negative offset, for text read aloud." />
+  <img className="hidden dark:block" src="/images/cue-offset-dark.svg" alt="The words &quot;it steps downhill&quot; sit in boxes as long as each word is spoken. A line at the start of &quot;steps&quot; marks the cue time with offset 0. An accent line 0.2 s later marks offset 0.2. An arrow pointing earlier marks a negative offset, for text read aloud." />
+</Frame>
+
+- **A positive offset of 0.1 to 0.2 seconds.** The reveal lands just after the word starts, while the
+  word is still being said, which reads as the narrator pointing at something.
+- **A small negative offset.** Use it only where the viewer has to read along, such as a line of code
+  the voice reads out. The text must be on screen before its first word is spoken.
+
+Keep an offset under half a second. A reveal that needs more than that belongs on a different word,
+and the offset is hiding the fact that the phrase is wrong. The starter writes no offset at all, so
+every reveal in a new project starts on its word.
+
+The resolved second carries the offset inside it, and `build/cue-times.json` records the offset
+separately so you can see what the phrase alone would have given.
+
+## $start and $end
+
+Two anchors stand in for a phrase. `$start` is the section start, which is zero on its clock, and
+`$end` is the end of the section's last spoken word. Give the last reveal of a section `$end` and it
+lands as the voice stops.
+
+```json cues.json
+{ "cue": "3.4:end", "on": "$end", "offset": 0.3 }
+```
+
+`$end` is the end of speech and not the end of the section's audio, so silence after the last word
+belongs to `hold_seconds` on that `[[section]]` instead. [cues.json](/reference/cues-json) lists
+every key a row may carry.
+
+## Prove it before you spend anything
+
+Two commands read the clock without buying a take.
+
+```console
+decktalk words --section 1
+decktalk check
+```
+
+`decktalk words` prints every spoken word with its start and its end, which is the clock every phrase
+is written against. Before a voiced run the words are estimated from the text, and after one they are
+the times the voice really took.
+
+`decktalk check` judges `script.md`, `cues.json` and the pages together, prices what a voiced build
+would cost and writes `build/storyboard.html`. It reports a moment on the page that no row names as
+[`CUE_MISSING`](/reference/findings/CUE_MISSING), a row the page does not declare as
+[`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN), and two cues close enough together to read as one
+as [`CUE_OVERLAP`](/reference/findings/CUE_OVERLAP). `decktalk check --fix` applies every safe fix,
+and the fix for `CUE_MISSING` adds the row with an empty `on` for you to write the phrase into.
 
 ## Next
 
-- **Copy a common slide:** [Slide recipes](/guides/slide-recipes)
-- **Choose a cue phrase that matches:** [Cues](/concepts/cues#matching-rules)
-- **Write your own section:** [Your first deck](/guides/first-deck)
+- **Make the picture that lands on the word:** [Design a slide](/guides/design-a-slide)
+- **Copy a pattern that already ships:** [Slide recipes](/guides/slide-recipes)
+- **Look up every key of the cue file:** [cues.json](/reference/cues-json)
