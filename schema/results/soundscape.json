@@ -1,0 +1,746 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "soundscape.json",
+  "$defs": {
+    "Applicability": {
+      "description": "How much a fix may be trusted, which is what decides whether `--fix` applies it.\n\nA safe fix cannot lose the author's work, an unsafe fix can, and a display fix is a change only\na person can make, so it is printed and never applied.",
+      "enum": [
+        "safe",
+        "unsafe",
+        "display"
+      ],
+      "title": "Applicability",
+      "type": "string"
+    },
+    "Certainty": {
+      "description": "Whether a finding is wrong for sure or only probably wrong.\n\nThe threshold a run fails on is `--fail-on`, which names a threshold and never a field value, so\nthese two words are read and never compared against a flag.",
+      "enum": [
+        "certain",
+        "uncertain"
+      ],
+      "title": "Certainty",
+      "type": "string"
+    },
+    "Code": {
+      "description": "Every judgement DeckTalk can make, with its sentence, its certainty and what decides it.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL. `decides` names the settings keys whose values move the verdict, so an agent that meets a\ncode knows which knob to read without a second call.",
+      "enum": [
+        "PAGE_UNKNOWN_ATTR",
+        "PAGE_BAD_VALUE",
+        "PAGE_MOMENT_UNKNOWN",
+        "PAGE_MOMENT_ORDER",
+        "PAGE_CUE_UNKNOWN",
+        "PAGE_NO_OWNER",
+        "PAGE_SCENE_EMPTY",
+        "PAGE_SLIDE_NO_ID",
+        "PAGE_SLIDE_DOUBLED",
+        "PAGE_SLIDE_UNUSED",
+        "PAGE_TEMPLATE_IGNORED",
+        "PAGE_WORDS_NOT_FOUND",
+        "PAGE_KATEX_MISSING",
+        "PAGE_KATEX_ERROR",
+        "PAGE_FREEZE_CUE_UNKNOWN",
+        "PAGE_RENDER_THREW",
+        "PAGE_ENTER_THREW",
+        "PAGE_SLIDE_HANDLER_THREW",
+        "PAGE_HANDLER_THREW",
+        "PAGE_WAIT_REJECTED",
+        "PAGE_WAIT_UNSETTLED",
+        "PAGE_CLASS_UNDESCRIBED",
+        "PAGE_CLASS_NOT_REDUCED",
+        "PAGE_SWAP_AMBIGUOUS",
+        "PAGE_PREVIEW_AMBIGUOUS",
+        "PAGE_APPEAR_TOO_LONG",
+        "PAGE_STAGGER_EMPTY",
+        "PAGE_MOTION_OVERRUN",
+        "PAGE_STAGGER_OVERRUN",
+        "PAGE_WORD_LATE",
+        "PAGE_THIN_DRAW",
+        "PAGE_NO_DESCRIPTION",
+        "PAGE_SWAP_APART",
+        "PAGE_STALLED",
+        "PAGE_BLACK",
+        "PAGE_TRUNCATED",
+        "PAGE_CDN_ASSET",
+        "CUE_MISSING",
+        "CUE_UNKNOWN",
+        "CUE_UNRESOLVED",
+        "CUE_OFF",
+        "CUE_NO_ONSET",
+        "CUE_NO_CHANGE",
+        "CUE_THIN_CHANGE",
+        "CUE_OVERLAP",
+        "TAKE_PLACEHOLDER",
+        "TAKE_SPOKEN_SYMBOL",
+        "CUT_SPEECH",
+        "CUT_POP",
+        "MIX_LOUDNESS",
+        "FILE_MISSING"
+      ],
+      "title": "Code",
+      "type": "string"
+    },
+    "CommandFix": {
+      "additionalProperties": false,
+      "description": "A fix that runs a command, which is the whole argv a caller may hand to a subprocess.",
+      "properties": {
+        "kind": {
+          "const": "command",
+          "default": "command",
+          "description": "The kind of fix, which is how a reader dispatches on it.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "description": "One sentence saying what applying this fix does.",
+          "title": "Title",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/Applicability",
+          "description": "Whether this fix may be applied without asking."
+        },
+        "command": {
+          "description": "The command to run, one argument per element.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Command",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "applicability",
+        "command"
+      ],
+      "title": "CommandFix",
+      "type": "object"
+    },
+    "Edit": {
+      "additionalProperties": false,
+      "description": "One change to one file, named by exactly one locator so an agent can apply it without guessing.\n\nA pointer addresses a place in a JSON file, a key addresses a place in a TOML file, and a line\naddresses a place in any other text file.",
+      "properties": {
+        "file": {
+          "description": "The file this edit changes, project-relative.",
+          "format": "path",
+          "title": "File",
+          "type": "string"
+        },
+        "pointer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A JSON pointer into that file, or null.",
+          "title": "Pointer"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A dotted TOML key in that file, or null.",
+          "title": "Key"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A line number in that file, or null.",
+          "title": "Line"
+        },
+        "old": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What is there now, or null when the edit only adds.",
+          "title": "Old"
+        },
+        "new": {
+          "description": "What goes there instead, which is the empty string when the edit removes.",
+          "title": "New",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "new"
+      ],
+      "title": "Edit",
+      "type": "object"
+    },
+    "EditFix": {
+      "additionalProperties": false,
+      "description": "A fix that changes files, which is what scaffolds a missing cue row or repairs a phrase.",
+      "properties": {
+        "kind": {
+          "const": "edit",
+          "default": "edit",
+          "description": "The kind of fix, which is how a reader dispatches on it.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "description": "One sentence saying what applying this fix does.",
+          "title": "Title",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/Applicability",
+          "description": "Whether this fix may be applied without asking."
+        },
+        "edits": {
+          "description": "Every change this fix makes, applied together or not at all.",
+          "items": {
+            "$ref": "#/$defs/Edit"
+          },
+          "title": "Edits",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "applicability",
+        "edits"
+      ],
+      "title": "EditFix",
+      "type": "object"
+    },
+    "ErrorCode": {
+      "description": "Why DeckTalk could not run, with the sentence a reader meets and the exit code it takes.\n\nThe value is the code as JSON writes it and as the docs URL spells it. Each is a noun naming\nwhat is missing or wrong, never an imperative naming what the tool wishes the caller would do.",
+      "enum": [
+        "INPUT",
+        "NOT_BUILT",
+        "PROVIDER",
+        "TOOL",
+        "LOCKED",
+        "APPROVAL",
+        "CANCELLED",
+        "USAGE",
+        "INTERNAL"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
+    },
+    "ErrorInfo": {
+      "additionalProperties": false,
+      "description": "The `error` of a result: why the command could not run, and what would let it.\n\nIt is filled only when the command could not run at all, so a reader that finds it null knows\nthe command ran and that every judgement is in `findings`.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode",
+          "description": "The code a caller dispatches on, such as NOT_BUILT."
+        },
+        "message": {
+          "description": "One sentence saying what is wrong, with the measured detail in it.",
+          "title": "Message",
+          "type": "string"
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The whole command that would clear this, or null.",
+          "title": "Hint"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The file and line to open, or null."
+        },
+        "docs": {
+          "description": "The docs page for this code.",
+          "title": "Docs",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "docs"
+      ],
+      "title": "ErrorInfo",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "One judgement, in the shape every renderer, every schema and every agent receives.\n\n`certainty` and `url` are the code's own and are written into the object rather than left for a\nreader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them\nout and the code fills them, and a value that disagrees with the code is refused.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/Code",
+          "description": "The stable code a caller dispatches on, such as CUE_OFF."
+        },
+        "message": {
+          "description": "One sentence, with every measured number and its limit written into it.",
+          "title": "Message",
+          "type": "string"
+        },
+        "certainty": {
+          "$ref": "#/$defs/Certainty",
+          "description": "Whether this is wrong for sure or only probably wrong."
+        },
+        "location": {
+          "$ref": "#/$defs/Location",
+          "description": "The object this judges, with its file, line, section and cue."
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The stage that raised it, or null when no stage did."
+        },
+        "fix": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "command": "#/$defs/CommandFix",
+                  "edit": "#/$defs/EditFix",
+                  "setting": "#/$defs/SettingFix"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/EditFix"
+                },
+                {
+                  "$ref": "#/$defs/SettingFix"
+                },
+                {
+                  "$ref": "#/$defs/CommandFix"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A change that resolves it, or null when none is known.",
+          "title": "Fix"
+        },
+        "url": {
+          "description": "The docs page for this code.",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "certainty",
+        "location",
+        "url"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "Layer": {
+      "description": "Which of the five layers set a settings value, lowest first.\n\nA key with no override is set by `default`, which is also what refuses `--max-cost` on a price\nnobody has stated: DeckTalk would be capping a spend against a number it made up.",
+      "enum": [
+        "default",
+        "machine",
+        "project",
+        "environment",
+        "override"
+      ],
+      "title": "Layer",
+      "type": "string"
+    },
+    "Location": {
+      "additionalProperties": false,
+      "description": "Where a finding is, as the five facts that travel together into a renderer and into a fix.\n\n`where` is never null, because the object a finding judges is what tells a reader which side of\nthe spend it came from, and the other four are filled by whoever knows them.",
+      "properties": {
+        "where": {
+          "description": "The object this finding judges, such as a cue id, a slide or a file.",
+          "title": "Where",
+          "type": "string"
+        },
+        "file": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The file to open, project-relative, or null.",
+          "title": "File"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The line in that file, counting from one, or null.",
+          "title": "Line"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The section number this is about, or null.",
+          "title": "Section"
+        },
+        "cue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The wire id of the cue this is about, or null.",
+          "title": "Cue"
+        }
+      },
+      "required": [
+        "where"
+      ],
+      "title": "Location",
+      "type": "object"
+    },
+    "SettingFix": {
+      "additionalProperties": false,
+      "description": "A fix that turns a knob, which is the same key space `config set` and `--set` take.",
+      "properties": {
+        "kind": {
+          "const": "setting",
+          "default": "setting",
+          "description": "The kind of fix, which is how a reader dispatches on it.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "description": "One sentence saying what applying this fix does.",
+          "title": "Title",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/Applicability",
+          "description": "Whether this fix may be applied without asking."
+        },
+        "key": {
+          "description": "The settings key to set, such as verify.cue_offset_max_ms.",
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "description": "The value to set it to, spelled as a command line would spell it.",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "applicability",
+        "key",
+        "value"
+      ],
+      "title": "SettingFix",
+      "type": "object"
+    },
+    "SoundItem": {
+      "additionalProperties": false,
+      "description": "One piece of the soundscape, which is a music bed, an ambience bed or an effect.",
+      "properties": {
+        "name": {
+          "description": "What the author calls this item in decktalk.toml.",
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/SoundKind",
+          "description": "Whether this item is music, ambience or an effect."
+        },
+        "status": {
+          "$ref": "#/$defs/SoundStatus",
+          "description": "What this run did about this item."
+        },
+        "prompt": {
+          "description": "The words the author wrote to describe this item.",
+          "title": "Prompt",
+          "type": "string"
+        },
+        "seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long the item runs, or null before it exists.",
+          "title": "Seconds"
+        },
+        "file": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The item's audio file, or null before it exists.",
+          "title": "File"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "status",
+        "prompt"
+      ],
+      "title": "SoundItem",
+      "type": "object"
+    },
+    "SoundKind": {
+      "description": "What one soundscape item is, which decides where it sits in the mix.",
+      "enum": [
+        "music",
+        "ambience",
+        "effect"
+      ],
+      "title": "SoundKind",
+      "type": "string"
+    },
+    "SoundStatus": {
+      "description": "What one run did about one soundscape item.",
+      "enum": [
+        "planned",
+        "kept",
+        "generated"
+      ],
+      "title": "SoundStatus",
+      "type": "string"
+    },
+    "Spend": {
+      "additionalProperties": false,
+      "description": "What a run costs, priced once so a caller never works it out from a character count.\n\n`--max-cost` is compared against `ceiling_dollars` and never against `dollars`, because credits\nare consumed one request at a time and a cap that claimed to stop a run halfway would be a lie.",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/SpendState",
+          "description": "Whether this is what the run would cost or what it did cost."
+        },
+        "sections": {
+          "description": "The sections this price covers, in script order.",
+          "items": {
+            "description": "The section this row is about, counting from one.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Sections",
+          "type": "array"
+        },
+        "characters": {
+          "description": "How many characters of script this price is for.",
+          "minimum": 0,
+          "title": "Characters",
+          "type": "integer"
+        },
+        "dollars": {
+          "description": "The price at the stated rate, in US dollars.",
+          "minimum": 0,
+          "title": "Dollars",
+          "type": "number"
+        },
+        "ceiling_dollars": {
+          "description": "The most this run can cost, in US dollars.",
+          "minimum": 0,
+          "title": "Ceiling Dollars",
+          "type": "number"
+        },
+        "price_per_1000_characters": {
+          "description": "The rate this price was worked out at.",
+          "minimum": 0,
+          "title": "Price Per 1000 Characters",
+          "type": "number"
+        },
+        "price_layer": {
+          "$ref": "#/$defs/Layer",
+          "description": "Which layer set that rate, where default means nobody stated it."
+        }
+      },
+      "required": [
+        "state",
+        "sections",
+        "characters",
+        "dollars",
+        "ceiling_dollars",
+        "price_per_1000_characters",
+        "price_layer"
+      ],
+      "title": "Spend",
+      "type": "object"
+    },
+    "SpendState": {
+      "description": "Whether a price is what a run would cost or what it did cost.",
+      "enum": [
+        "estimate",
+        "charged"
+      ],
+      "title": "SpendState",
+      "type": "string"
+    },
+    "Stage": {
+      "description": "One stage of the pipeline, declared in run order. The value is the word that names it.",
+      "enum": [
+        "narrate",
+        "cue",
+        "record",
+        "soundscape",
+        "assemble",
+        "verify"
+      ],
+      "title": "Stage",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Every piece of the soundscape this run planned or generated.",
+  "properties": {
+    "schema": {
+      "const": 2,
+      "default": 2,
+      "description": "The shape version of this object.",
+      "title": "Schema",
+      "type": "integer"
+    },
+    "ok": {
+      "description": "True when the command ran and judged nothing certain.",
+      "title": "Ok",
+      "type": "boolean"
+    },
+    "findings": {
+      "default": [],
+      "description": "Every judgement this call made, certain first.",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ErrorInfo"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Filled only when the command could not run."
+    },
+    "run": {
+      "description": "The id of the run this call opened, which names its events file.",
+      "title": "Run",
+      "type": "string",
+      "volatile": true
+    },
+    "written": {
+      "default": [],
+      "description": "Every file this run wrote, project-relative, in the order it wrote them.",
+      "items": {
+        "format": "path",
+        "type": "string"
+      },
+      "title": "Written",
+      "type": "array"
+    },
+    "items": {
+      "description": "Every item, in the order decktalk.toml declares them.",
+      "items": {
+        "$ref": "#/$defs/SoundItem"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "spend": {
+      "$ref": "#/$defs/Spend",
+      "description": "What this run cost, or would have cost."
+    },
+    "seconds": {
+      "description": "How long this call took, in seconds.",
+      "minimum": 0,
+      "title": "Seconds",
+      "type": "number",
+      "volatile": true
+    }
+  },
+  "required": [
+    "ok",
+    "run",
+    "items",
+    "spend",
+    "seconds"
+  ],
+  "title": "SoundscapeResult",
+  "type": "object"
+}
