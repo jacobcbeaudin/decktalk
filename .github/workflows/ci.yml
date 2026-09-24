@@ -145,7 +145,25 @@ jobs:
           path: coverage-legs
           merge-multiple: false
       - name: Gather what the Linux legs measured
-        run: find coverage-legs -name '.coverage*' -exec mv {} . \;
+        # Each group names its own data file, so a whole run on one machine combines. Two legs of
+        # one group differ only by the Python they ran, and a suite that spawned subprocesses may
+        # have left more than one file, so each is renamed after the leg it came from and counted.
+        run: |
+          gathered=""
+          count=0
+          for path in coverage-legs/*/.coverage*; do
+            [ -e "$path" ] || continue
+            leg="$(basename "$(dirname "$path")")"
+            leg="${leg#coverage-}"
+            count=$((count + 1))
+            mv "$path" "./.coverage.$leg.$count"
+            gathered="$gathered $leg"
+          done
+          if [ -z "$gathered" ]; then
+            echo "no leg uploaded any coverage data, so this run measured nothing to hold to a floor" >&2
+            exit 1
+          fi
+          echo "gathered the coverage of:$gathered"
       - name: Run the group
         env:
           GROUP: ${{ matrix.group }}

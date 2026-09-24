@@ -15,5 +15,5 @@ tests/out/
 *.wav
 .claude/
 .wrangler/
-.coverage
+.coverage*
 coverage.xml

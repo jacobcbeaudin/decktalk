@@ -72,7 +72,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | Group | What it runs | Needs | Where | Gates on |
 |---|---|---|---|---|
 | `lint` | `uv lock --check`, and 7 more | uv, npm | Linux | pr, main, release |
-| `unit` | `uv run pytest -q` | uv | Linux | pr, main, release |
+| `unit` | `uv run pytest -q --cov --cov-report=` | uv | Linux | pr, main, release |
 | `node` | `npm ci`, and 1 more | npm | Linux | pr, main, release |
 | `browser` | `uv run pytest -q -m browser --cov --cov-report=` | uv, chromium | Linux | pr, main, release |
 | `media` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | Linux | pr, main, release |

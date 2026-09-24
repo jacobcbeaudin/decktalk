@@ -36,6 +36,24 @@ ROOT = Path(__file__).resolve().parent.parent
 UV = ("uv", "run")
 """Every Python command runs in the project environment, so the lockfile decides what it runs."""
 
+MEASURE = ("--cov", "--cov-report=")
+"""What a suite adds to measure itself, which is the data file and no report of its own."""
+
+
+def measured(name: str) -> tuple[tuple[str, str], ...]:
+    """The data file one group writes, named after the group so that no two groups overwrite each other.
+
+    `coverage combine` reads every `.coverage.*` beside it, so naming each group's file is what lets
+    a whole run on one machine be combined at the end. Without this each suite wrote `.coverage` and
+    the last suite to finish was the only one the floor ever saw.
+
+    The path is absolute because a suite that drives the command line starts its subprocesses in the
+    project they are building, and a relative name would leave each subprocess writing its measure
+    into a temporary directory nothing ever reads.
+    """
+    return (("COVERAGE_FILE", str(ROOT / f".coverage.{name}")),)
+
+
 LINUX, MACOS, WINDOWS = "ubuntu-latest", "macos-latest", "windows-latest"
 EVERY_PLATFORM = (LINUX, MACOS, WINDOWS)
 
@@ -196,29 +214,31 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="browser",
         why="Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.",
-        commands=((*UV, "pytest", "-q", "-m", "browser", "--cov", "--cov-report="),),
+        commands=((*UV, "pytest", "-q", "-m", "browser", *MEASURE),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("uv", "chromium"),
         timeout=25,
         when=("pr", "main", "release"),
         wall_seconds=52,
+        env=measured("browser"),
     ),
     Group(
         name="media",
         why="Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.",
-        commands=((*UV, "pytest", "-q", "-m", "media", "--cov", "--cov-report="),),
+        commands=((*UV, "pytest", "-q", "-m", "media", *MEASURE),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("uv", "ffmpeg"),
         timeout=25,
         when=("pr", "main", "release"),
         wall_seconds=9,
+        env=measured("media"),
     ),
     Group(
         name="e2e",
         why="The pipeline fixture built end to end, which samples the joint behaviour of every tool.",
-        commands=((*UV, "pytest", "-q", "-m", "e2e", "--cov", "--cov-report="),),
+        commands=((*UV, "pytest", "-q", "-m", "e2e", *MEASURE),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("uv", "chromium", "ffmpeg"),
@@ -228,7 +248,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
         # This suite drives the command line as a subprocess, and a subprocess measures nothing
         # unless it is told where the configuration is. Without this the leg reports no coverage at
         # all, which reads exactly like a leg that passed.
-        env=(("COVERAGE_PROCESS_START", str(ROOT / "pyproject.toml")),),
+        env=(*measured("e2e"), ("COVERAGE_PROCESS_START", str(ROOT / "pyproject.toml"))),
     ),
 )
 """The three groups that drive a real tool, each written once and run on Linux and on the other two.
@@ -262,13 +282,16 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="unit",
         why="Every test that needs no tool, which the collection hook makes the default suite.",
-        commands=((*UV, "pytest", "-q"),),
+        commands=((*UV, "pytest", "-q", *MEASURE),),
         runners=(LINUX,),
         pythons=EVERY_PYTHON,
         tools=("uv",),
         timeout=15,
         when=("pr", "main", "release"),
         wall_seconds=17,
+        # The floor is one number over every suite, and this is the suite that reaches most of the
+        # package, so a floor combined without it is a floor no complete run could meet.
+        env=measured("unit"),
     ),
     Group(
         name="node",

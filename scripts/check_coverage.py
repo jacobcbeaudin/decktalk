@@ -58,10 +58,11 @@ WITNESSES = {
 }
 """Each suite against the module only that suite really executes, which is how a missing leg is named.
 
-The `e2e` leg has no witness yet. It drives the command line as a subprocess and a subprocess is
-measured only when `COVERAGE_PROCESS_START` is set for it, so that leg contributes no data at all
-today and its absence cannot be told from its presence. Its witness is `decktalk/__main__.py` the
-day the environment variable is set on the leg that runs it.
+The `e2e` leg has no witness yet. Its witness is `decktalk/__main__.py`, which nothing but a run of
+the command line as a subprocess reaches, and the row can be named here once the record carries what
+that module really scores rather than the nothing it scored while that leg's measure was being
+written into a temporary directory. Until then the `unit` leg is witnessed by the record itself: a
+leg that never reported leaves every module only it measures unmeasured, and `check` names each one.
 """
 
 NAMED = {
