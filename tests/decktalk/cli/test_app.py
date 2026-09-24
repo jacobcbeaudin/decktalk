@@ -3,7 +3,7 @@
 A dropped `Option` loses both the flag and its sentence with no error anywhere, so the sentences and
 the metavars are asserted verbatim against the rendered help. The derivation of the shared flags is
 asserted against the result each command declares, in both directions, so a command that starts
-reporting judgements gains `--fail-on` by saying so in its return annotation and in no other place.
+reporting judgements gains `--fail-on` by saying so on its result model and in no other place.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import pytest
 
 from decktalk.cli import catalog
 from decktalk.cli.app import PROMPT_FLAGS
-from decktalk.cli.options import JUDGES, SPENDS, Group
+from decktalk.cli.options import Group
 from decktalk.results import RESULTS, Result
 
 TOP_LINES = (
@@ -82,7 +82,8 @@ def test_every_command_answers_with_a_result_the_registry_knows() -> None:
 def test_the_finding_flags_are_exactly_on_the_commands_that_judge(name: str) -> None:
     row = rows()[name]
     flags = {opt for param in row["params"] for opt in param["opts"]}  # ty: ignore[not-iterable]
-    judges = _model(row) in JUDGES
+    model = _model(row)
+    judges = model is not None and model.reports_findings
     assert ("--fail-on" in flags) is judges
     assert ("--allow" in flags) is judges
 
@@ -91,7 +92,8 @@ def test_the_finding_flags_are_exactly_on_the_commands_that_judge(name: str) -> 
 def test_the_spending_flags_are_exactly_on_the_commands_that_buy(name: str) -> None:
     row = rows()[name]
     flags = {opt for param in row["params"] for opt in param["opts"]}  # ty: ignore[not-iterable]
-    spends = _model(row) in SPENDS
+    model = _model(row)
+    spends = model is not None and model.spends
     assert ("--spend" in flags) is spends
     assert ("--no-voice" in flags) is spends
     assert ("--max-cost" in flags) is spends

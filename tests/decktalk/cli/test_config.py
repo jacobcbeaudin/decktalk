@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from decktalk import settings as knobs
 from decktalk.cli import config as commands
 from decktalk.results import ConfigGetResult, ConfigListResult, Layer
 from support.projects import write_project
@@ -77,6 +78,15 @@ def test_unset_takes_one_key_back_out(run, project_dir) -> None:
     assert ran.exit_code == 0
     assert json.loads(ran.out)["keys"] == ["video.crf"]
     assert "crf" not in (project_dir / "decktalk.toml").read_text(encoding="utf-8")
+
+
+def test_unset_prints_the_value_that_now_applies_and_the_layer_it_comes_from(run, project_dir) -> None:
+    """The settings panel has the remover say what decides the key now, which the library measures."""
+    run("-p", str(project_dir), "config", "set", "video.crf", "20")
+    written = json.loads(run("-p", str(project_dir), "config", "unset", "video.crf", "--json").out)
+    assert written["previous"] == 20
+    assert written["effective"] == knobs.BY_ID["video.crf"].default
+    assert written["layer"] == Layer.DEFAULT.value
 
 
 def test_unset_of_a_key_the_file_does_not_set_says_so(run, project_dir) -> None:

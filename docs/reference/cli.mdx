@@ -224,6 +224,10 @@ It answers with the `storyboard` result: `decktalk schema storyboard`.
 | Option | Meaning |
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
+| `--slide` `ID` | Only these slides, by the id the page declares. Repeats. |
+| `--after` `CUE` | Freeze the slide at the moment this cue fires. Repeats. |
+| `--before` `CUE` | Freeze the slide just before this cue fires. Repeats. |
+| `--at` `SECONDS` | Freeze whatever is on screen this many seconds into its section. Repeats. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |

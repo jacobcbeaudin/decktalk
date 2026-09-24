@@ -9,6 +9,7 @@ command from being added without a library call, and a library call from quietly
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 
 import jsonschema
@@ -61,7 +62,7 @@ SURFACE: dict[str, tuple[object, str, type[Result] | None]] = {
     "config list": (knobs, "KEYS", ConfigListResult),
     "config get": (knobs, "value_of", ConfigGetResult),
     "config set": (knobs, "write", ConfigSetResult),
-    "config unset": (knobs, "load", ConfigUnsetResult),
+    "config unset": (knobs, "unset", ConfigUnsetResult),
     "config explain": (sys.modules[explain.__module__], "explain", ConfigExplainResult),
     "schema": (catalog, "document", None),
     "narrate": (Project, "narrate", NarrateResult),
@@ -116,8 +117,14 @@ def _name_of(model: type[Result]) -> str:
 
 
 def test_importing_the_command_line_loads_no_stage() -> None:
-    loaded = [name for name in sys.modules if name.startswith("decktalk.stages")]
-    assert loaded == [], f"importing cli loaded {loaded}"
+    """A browser and an encoder are loaded by the call that needs them, so `--help` costs a signature.
+
+    It is asked in an interpreter of its own, because this one has already imported the stages
+    through the suite around it and would answer about the suite rather than about the command line.
+    """
+    asked = "import decktalk.cli, sys; print([n for n in sys.modules if n.startswith('decktalk.stages')])"
+    done = subprocess.run([sys.executable, "-c", asked], capture_output=True, text=True, check=True, cwd=REPO)
+    assert done.stdout.strip() == "[]", f"importing cli loaded {done.stdout.strip()}"
 
 
 def test_the_project_facade_keeps_the_one_edge_the_cli_calls() -> None:

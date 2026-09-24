@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import typer
 
-from decktalk.cli.options import GLOBALS, JUDGES, SPENDS, allowed, one_section, pairs, sections_of, shared_for
+from decktalk.cli.options import GLOBALS, allowed, one_section, pairs, sections_of, shared_for
 from decktalk.findings import Code
 from decktalk.results import RESULTS, BuildResult, InitResult, StatusResult, WordsResult
 
@@ -64,8 +64,9 @@ def test_a_result_that_is_not_a_result_gains_the_globals_alone() -> None:
     assert {param.name for param in shared_for(dict)} == {name for name, _, _ in GLOBALS}
 
 
-def test_every_published_result_is_classified_in_both_directions() -> None:
-    every = set(RESULTS.values())
-    assert JUDGES <= every
-    assert SPENDS <= every
-    assert InitResult not in JUDGES
+def test_every_published_result_answers_both_questions_about_its_command() -> None:
+    """The derivation reads two facts off the model, so every published result has to state them."""
+    for model in RESULTS.values():
+        assert isinstance(model.reports_findings, bool)
+        assert isinstance(model.spends, bool)
+    assert InitResult.reports_findings is False

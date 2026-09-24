@@ -6,6 +6,10 @@ result model, so a command that reports findings takes `--fail-on` and `--allow`
 of command that reports findings, and a command that can spend takes `--no-voice`, `--spend` and
 `--max-cost` by being the sort of command that spends.
 
+The model says which sort it is. `Result.reports_findings` and `Result.spends` are declared beside
+the fields they belong with, so a result added without either fact takes the globals alone and there
+is no list here to keep in step with the models.
+
 Each family is one flag over a vocabulary the product already publishes, rather than a flag per
 value. `--allow` takes finding codes, `--skip` takes stages, `--set` takes settings keys, and
 `--section` takes section numbers, so an agent that has read `decktalk schema` can already write
@@ -26,19 +30,7 @@ from decktalk.errors import InputError
 from decktalk.findings import Certainty, Code
 from decktalk.pipeline import Stage
 from decktalk.project import section_numbers
-from decktalk.results import (
-    AssembleResult,
-    BuildResult,
-    CheckResult,
-    CueResult,
-    DoctorResult,
-    NarrateResult,
-    RecordResult,
-    Result,
-    SoundscapeResult,
-    StoryboardResult,
-    VerifyResult,
-)
+from decktalk.results import Result
 
 DOCS = "https://docs.decktalk.ai/reference/cli"
 """Where the generated reference page lives, which every command's help closes with."""
@@ -91,32 +83,6 @@ class Where(Enum):
     PROJECT = "project"
     MACHINE = "machine"
 
-
-JUDGES: frozenset[type[Result]] = frozenset(
-    {
-        AssembleResult,
-        BuildResult,
-        CheckResult,
-        CueResult,
-        DoctorResult,
-        NarrateResult,
-        RecordResult,
-        SoundscapeResult,
-        StoryboardResult,
-        VerifyResult,
-    }
-)
-"""Every result whose command can report a judgement, which is what `--fail-on` and `--allow` act on.
-
-`StatusResult` is not here on purpose: `status` reports what is on disk and judges nothing, so it
-would be a third judge beside `check` and `verify` if it could fail on a finding.
-"""
-
-SPENDS: frozenset[type[Result]] = frozenset({BuildResult, NarrateResult, SoundscapeResult})
-"""Every result whose command can buy something, which is what the three spending flags act on.
-
-`CheckResult` carries a `spend` and is not here, because pricing a run is not buying one.
-"""
 
 # The shared families, each written once and derived onto the commands that carry it. A hidden
 # global is on every command so that it works after the command name as well as before it, and the
@@ -295,9 +261,9 @@ def shared_for(result: object) -> list[inspect.Parameter]:
     """
     families = list(GLOBALS)
     if isinstance(result, type) and issubclass(result, Result):
-        if result in JUDGES:
+        if result.reports_findings:
             families = [*FINDING_FAMILY, *families]
-        if result in SPENDS:
+        if result.spends:
             families = [*SPEND_FAMILY, *families]
     return [
         inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, annotation=annotation, default=default)
@@ -350,9 +316,7 @@ def pairs(values: Sequence[str] | None) -> tuple[str, ...]:
 
 __all__ = [
     "GLOBALS",
-    "JUDGES",
     "SHARED",
-    "SPENDS",
     "Allow",
     "Color",
     "Events",

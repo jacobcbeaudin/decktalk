@@ -11,11 +11,10 @@ where unset says exactly what happens: the override is removed and the layer bel
 
 from __future__ import annotations
 
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
-import tomlkit
 import typer
 from pydantic import JsonValue
 from typer._click import Context
@@ -25,7 +24,6 @@ from decktalk.cli import session as sessions
 from decktalk.cli.app import CONTEXT, DOCS, DeckTalkGroup, app, command
 from decktalk.cli.options import Group, Where
 from decktalk.errors import InputError
-from decktalk.explain import Explanation
 from decktalk.explain import explain as explained
 from decktalk.results import (
     ConfigExplainResult,
@@ -140,6 +138,11 @@ def unset_key(
 
     One key needs no permission. A whole table is many keys at once, so it is removed only when
     `--all` says so, and on a terminal it is confirmed first.
+
+    The removal itself is the settings layer's, because editing a validated file is library work and
+    a second editor here would be a second thing to keep true. A table is that call once per key the
+    file states, and the value that now applies is the first key's, because the three scalars
+    describe one key and `keys` names the rest.
     """
     session = sessions.of(ctx)
     path = _file(session, where)
@@ -148,12 +151,20 @@ def unset_key(
             f"{path.as_posix()} is not there, so it sets nothing to remove.",
             hint=f"Run decktalk config set {key} VALUE first.",
         )
-    document = tomlkit.parse(path.read_text(encoding="utf-8"))
-    removed = _removed(document, key, asked=_asked(session, key, whole=whole))
-    text = tomlkit.dumps(document)
-    _loads(text, path, where)
-    path.write_text(text, encoding="utf-8")
-    return ConfigUnsetResult(ok=True, written=(path,), keys=removed, scope=_scope(where), file=path)
+    scope = _scope(where)
+    going = _stating(path, key, asked=_asked(session, key, whole=whole))
+    removed = tuple(knobs.unset(path, one, scope=scope) for one in going)
+    first = removed[0]
+    return ConfigUnsetResult(
+        ok=True,
+        written=(path,),
+        keys=tuple(name for one in removed for name in one.keys),
+        previous=first.previous,
+        effective=first.effective,
+        layer=first.layer,
+        scope=first.scope,
+        file=first.file,
+    )
 
 
 @command("explain", group=Group.CONTRACTS, to=config, epilog=f"Docs: {DOCS}#config-explain")
@@ -174,7 +185,7 @@ def explain_key(
     root = session.flags.project or Path.cwd()
     here = root if (root / knobs.PROJECT_FILE).exists() else None
     try:
-        read = _read(key, here, value)
+        read = explained(key, project=here, value=value)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
     winner = next((layer for layer in read.layers if layer.layer is read.winner), None)
@@ -198,19 +209,6 @@ def explain_key(
         hazard=read.hazard,
         docs=read.docs,
     )
-
-
-def _read(key: str, project: Path | None, value: str | None) -> Explanation:
-    """One key explained against this project, or against the defaults when the project cannot be read.
-
-    The explainer reads this project's resolved cue times to say what a value would clamp, and a
-    project whose cue times it cannot read still has a key worth explaining, so the answer is given
-    without the clamping rather than withheld.
-    """
-    try:
-        return explained(key, project=project, value=value)
-    except (TypeError, KeyError, ValueError):
-        return explained(key, project=None, value=value)
 
 
 def _rows(session: sessions.Session, table: str | None, *, defaults: bool, changed: bool) -> tuple[SettingValue, ...]:
@@ -266,38 +264,37 @@ def _asked(session: sessions.Session, key: str, *, whole: bool) -> bool:
     return session.confirm(f"Remove everything {key} sets?")
 
 
-def _removed(document: MutableMapping[str, Any], key: str, *, asked: bool) -> tuple[str, ...]:
-    """Take one key or one whole table out of a parsed document, and say what went."""
-    parts = key.split(".")
-    table: Any = document
-    for part in parts[:-1]:
-        if not isinstance(table, Mapping) or part not in table:
-            raise InputError(f"this file sets nothing under '{key}'.", hint="Run decktalk config list --changed.")
-        table = table[part]
-    last = parts[-1]
-    if not isinstance(table, Mapping) or last not in table:
-        raise InputError(f"this file does not set '{key}'.", hint="Run decktalk config list --changed.")
-    going = table[last]
-    if isinstance(going, Mapping):
-        if not asked:
-            raise InputError(
-                f"'{key}' is a whole table, and removing it would take out {len(going)} keys at once.",
-                hint=f"Run decktalk config unset {key} --all to remove all of them.",
-            )
-        names = tuple(f"{key}.{name}" for name in going)
-    else:
-        names = (key,)
-    del cast("MutableMapping[str, Any]", table)[last]
-    return names
+def _stating(path: Path, key: str, *, asked: bool) -> tuple[str, ...]:
+    """Every published key this file states under the name a caller gave, in the order the tables declare them.
+
+    A caller names one key or one table, and a table is refused until `--all` or a person says so,
+    because a table is many keys at once and a person who typed one word meant one thing.
+    """
+    document = knobs.read_toml(path)
+    going = tuple(one.id for one in knobs.KEYS if _under(one.id, key) and _states(document, one.id))
+    if not going:
+        raise InputError(f"this file sets nothing under '{key}'.", hint="Run decktalk config list --changed.")
+    if key not in knobs.BY_ID and not asked:
+        raise InputError(
+            f"'{key}' is a whole table, and removing it would take out {len(going)} keys at once.",
+            hint=f"Run decktalk config unset {key} --all to remove all of them.",
+        )
+    return going
 
 
-def _loads(text: str, path: Path, where: Where) -> None:
-    """Refuse a removal that would leave a file no run could load, before the file is written."""
-    parsed = dict(tomlkit.parse(text))
-    if where is Where.MACHINE:
-        knobs.load(project={}, machine=parsed, machine_path=path)
-    else:
-        knobs.load(project=parsed, machine={})
+def _under(published: str, named: str) -> bool:
+    """Whether one published key is the key a caller named, or one of the keys of the table they named."""
+    return published == named or published.startswith(f"{named}.")
+
+
+def _states(document: Mapping[str, Any], key: str) -> bool:
+    """Whether this file states one published key, walked down its dotted name."""
+    here: Any = document
+    for part in key.split("."):
+        if not isinstance(here, Mapping) or part not in here:
+            return False
+        here = here[part]
+    return True
 
 
 def _json(value: object) -> JsonValue:

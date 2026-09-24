@@ -16,7 +16,7 @@ from typer._click import Context
 
 from decktalk.cli import session as sessions
 from decktalk.cli.app import DOCS, command
-from decktalk.cli.options import Fix, Group, Overrides, Sections, pairs, sections_of
+from decktalk.cli.options import Fix, Group, Overrides, Panel, Sections, pairs, sections_of
 from decktalk.results import CheckResult, ServeResult, StatusResult, StoryboardResult, WordsResult
 
 STATUS_EPILOG = f"""\
@@ -43,6 +43,46 @@ else. The JSON object carries run, url, port and root. Docs: {DOCS}#serve"""
 
 DEFAULT_HOST = "127.0.0.1"
 """Where the origin listens, which is this machine alone until a caller names another interface."""
+
+# The four selectors `storyboard` adds to `--section`, each repeatable and each a narrowing. They
+# live here rather than in `options.py`, because one command carries them and a shared family is
+# what `options.py` is for.
+Slides = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--slide",
+        metavar="ID",
+        rich_help_panel=Panel.SCOPE.value,
+        help="Only these slides, by the id the page declares. Repeats.",
+    ),
+]
+After = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--after",
+        metavar="CUE",
+        rich_help_panel=Panel.SCOPE.value,
+        help="Freeze the slide at the moment this cue fires. Repeats.",
+    ),
+]
+Before = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--before",
+        metavar="CUE",
+        rich_help_panel=Panel.SCOPE.value,
+        help="Freeze the slide just before this cue fires. Repeats.",
+    ),
+]
+At = Annotated[
+    list[float] | None,
+    typer.Option(
+        "--at",
+        metavar="SECONDS",
+        rich_help_panel=Panel.SCOPE.value,
+        help="Freeze whatever is on screen this many seconds into its section. Repeats.",
+    ),
+]
 
 
 @command(group=Group.PROJECT, epilog=STATUS_EPILOG)
@@ -127,17 +167,29 @@ def words(ctx: Context, section: Sections = None, set_: Overrides = None) -> Wor
 
 
 @command(group=Group.PROJECT, epilog=STORYBOARD_EPILOG)
-def storyboard(ctx: Context, section: Sections = None, set_: Overrides = None) -> StoryboardResult:
+def storyboard(
+    ctx: Context,
+    section: Sections = None,
+    slide: Slides = None,
+    after: After = None,
+    before: Before = None,
+    at: At = None,
+    set_: Overrides = None,
+) -> StoryboardResult:
     """Freeze every slide at every cue onto one page.
 
     One panel of a storyboard is still a storyboard, so the name survives every selector, and the
-    page it writes is the checkpoint a voiced build points at before it buys.
+    page it writes is the checkpoint a voiced build points at before it buys. The five selectors
+    narrow the sheet and a selector that matches nothing draws nothing, which is what a section
+    number that matches no section already does.
     """
     session = sessions.of(ctx)
     session.overriding(pairs(set_))
     project = session.project()
     with session.watching(project.events):
-        return project.storyboard(only=sections_of(section), cancel=session.cancel)
+        return project.storyboard(
+            only=sections_of(section), slide=slide, after=after, before=before, at=at, cancel=session.cancel
+        )
 
 
 @command(group=Group.PROJECT, epilog=SERVE_EPILOG)
