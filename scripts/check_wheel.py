@@ -17,8 +17,10 @@ smoke installs the wheel into an environment with no project and nothing else in
 The tag check is a version comparison and never a string comparison. A git tag is semver and a wheel
 is PEP 440, so `v0.5.0-rc1` and `0.5.0rc1` are one version spelled two ways, and comparing the text
 would refuse every release candidate the founder cuts. The tag is read from `--tag`, or from
-`GITHUB_REF_NAME` when a workflow supplies it, and when neither names one the check says out loud
-that it judged nothing rather than passing quietly.
+`GITHUB_REF_NAME` when the ref a workflow is building really is a tag, and when neither names one
+the check says out loud that it judged nothing rather than passing quietly. A branch is never read
+as a tag: `GITHUB_REF_NAME` is `33/merge` on a pull request and `gen5` on a branch push, and reading
+either as a version failed the wheel group on every change rather than at a release.
 
 This script has no `--write`, unlike every generator in the check table, because it writes no file.
 It reads what `uv build` already left in `dist/` and builds nothing of its own, so that what is
@@ -46,7 +48,13 @@ WRITTEN_BY_INIT = ("decktalk.toml", "script.md", "cues.json")
 """The files every new project holds, so a wheel that ships no template fails here rather than later."""
 
 TAG_VARIABLE = "GITHUB_REF_NAME"
-"""Where a workflow puts the tag it is building, which is the only tag this check ever judges."""
+"""Where a workflow puts the ref it is building, which names a tag only when the type below says so."""
+
+TAG_TYPE_VARIABLE = "GITHUB_REF_TYPE"
+"""What kind of ref a workflow is building, which is `tag` for a release and `branch` for everything else."""
+
+TAG = "tag"
+"""The one value of that variable this check reads a version out of."""
 
 
 def wheel() -> Path:
@@ -93,11 +101,18 @@ def smoke(built: Path) -> int:
     return 0
 
 
+def tag_in_the_environment() -> str:
+    """The tag a workflow is building, which is empty unless the ref it checked out is a tag."""
+    if os.environ.get(TAG_TYPE_VARIABLE) != TAG:
+        return ""
+    return os.environ.get(TAG_VARIABLE, "")
+
+
 def tag_matches(named: str | None) -> int:
     """Hold the tag and the packaged version to the same version, whichever way each one spells it."""
-    tag = named or os.environ.get(TAG_VARIABLE, "")
+    tag = named or tag_in_the_environment()
     if not tag:
-        print(f"no tag was named and {TAG_VARIABLE} is unset, so the tag was not judged.")
+        print(f"no tag was named and {TAG_VARIABLE} names no tag, so the tag was not judged.")
         return 0
     try:
         wanted = Version(tag.removeprefix("v"))
