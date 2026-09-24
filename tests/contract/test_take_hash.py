@@ -1,81 +1,79 @@
-"""Golden take digests of the founder's voiced demo film.
+"""The golden take digests of the founder's own films, held against the script they were voiced from.
 
-Every ElevenLabs take is paid for once and cached by the digest that `text_hash` computes from the
-provider identity (name, voice id, model, output format), the voice settings and the exact text sent
-to the voice. The digests here are copied from `lay-demo/v11-voiced/build/narration/takes.json`, with
-each section's script markdown and the text `parse_script` makes of it. If any of them changes, the
-next `narrate` run pays to re-voice that section, so this test must never be updated without the
-founder re-voicing the film. It needs no audio, no network and no API key, and runs in milliseconds.
+`tests/data/take_hash.json` carries, for every take the founder has really paid for, the markdown of
+its section, the text that markdown parses to and the digest that text was bought under. So this file
+holds the whole path from what an author writes to what names an audio file: the script parser, the
+take inputs and the digest. If any of them moves, the next `narrate` run buys that take again.
+
+It no longer skips. The voice id is one of the take inputs and it is a published name rather than a
+secret, so it sits in the data file beside the digests it produced, and the digests that protect
+every paid take are proved on every machine and in CI rather than on the founder's laptop alone.
+Nothing here needs audio, a network or a credential, because a digest is arithmetic over text.
+
+`tests/decktalk/artifacts/test_takes.py` holds the same digests against `TakeInputs` alone. This file
+is the other half of the pair, and the half that reads the markdown, because a take is bought over
+what the parser makes of what the author wrote.
 """
 
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
-from decktalk.model import Voice
-from decktalk.model.script import Segment, parse_script
-from decktalk.secret import Secret
-from decktalk.settings import ElevenLabsConfig, NarrationConfig
-from decktalk.speech import SpeechRequest
-from decktalk.speech.elevenlabs import ElevenLabs
-from decktalk.stages.narrate import text_hash
+from decktalk.artifacts.takes import TakeInputs
+from decktalk.inputs.script import parse_script
 from support.paths import DATA
 
 GOLDEN = json.loads((DATA / "take_hash.json").read_text(encoding="utf-8"))
-SECTIONS = GOLDEN["sections"]
-IDS = [s["key"] for s in SECTIONS]
+INPUTS = GOLDEN["inputs"]
+TAKES = GOLDEN["takes"]
+IDS = [f"{take['film']}-{take['section']}" for take in TAKES]
+
+EXPECTED_FILMS = ("halfway", "halfway/hero")
+"""The two films the founder has really paid to voice, which are the only source of a golden digest."""
 
 
-def _voice_id() -> str:
-    """The founder's voice id, read from the environment so it never sits in the repository."""
-    voice_id = os.environ.get("ELEVENLABS_VOICE_ID")
-    if not voice_id:
-        pytest.skip("ELEVENLABS_VOICE_ID is not set, so the take digests cannot be recomputed")
-    return voice_id
+def digest_of(text: str) -> str:
+    """The digest the founder's takes were bought under, built from the inputs the data file names."""
+    return TakeInputs.of(
+        provider=INPUTS["provider"],
+        voice=INPUTS["voice"],
+        model=INPUTS["model"],
+        output_format=INPUTS["output_format"],
+        settings=INPUTS["settings"],
+        text=text,
+    ).digest
 
 
-def provider_key() -> str:
-    """The provider part of the payload, built the way `narrate` builds it."""
-    provider = ElevenLabs(api_key=Secret(""), cfg=ElevenLabsConfig(), voice=Secret(_voice_id()))
-    request = SpeechRequest(
-        text="",
-        model=GOLDEN["model"],
-        voice_settings=Voice(**GOLDEN["voice"]).api_settings(),
-        output_format=GOLDEN["output_format"],
-    )
-    return provider.cache_key(request)
+def test_the_data_file_says_what_it_is_for():
+    """The file is never edited to make a test pass, so it carries the sentence that says so."""
+    assert GOLDEN["source"].endswith("."), GOLDEN["source"]
+    assert "never updated to make a test pass" in GOLDEN["rule"]
 
 
-def test_fixture_covers_every_voiced_section() -> None:
-    assert IDS == ["00", "01", "02", "03", "04", "05", "06", "08", "09"]
+def test_the_golden_rows_cover_both_films():
+    assert {take["film"] for take in TAKES} == set(EXPECTED_FILMS)
+    assert len({take["hash"] for take in TAKES}) == len({take["text"] for take in TAKES})
 
 
-def test_provider_key_is_byte_identical() -> None:
-    assert provider_key() == f"elevenlabs\n{_voice_id()}\neleven_multilingual_v2\nmp3_44100_128"
+def test_the_voice_id_is_a_published_name_and_not_a_credential():
+    """It sits in a tracked file on purpose: two voices reading one sentence are two different takes."""
+    assert INPUTS["voice"] and INPUTS["voice"].isalnum()
+    assert digest_of("hello") != TakeInputs.of(**{**INPUTS, "voice": "someone-else", "text": "hello"}).digest
 
 
-def test_voice_settings_are_byte_identical() -> None:
-    settings = Voice(**GOLDEN["voice"]).api_settings()
-    assert json.dumps(settings, sort_keys=True) == (
-        '{"similarity_boost": 0.75, "speed": 1.0, "stability": 0.55, "style": 0.0, "use_speaker_boost": true}'
-    )
+@pytest.mark.parametrize("take", TAKES, ids=IDS)
+def test_the_markdown_still_parses_to_the_text_that_was_voiced(take: dict[str, object]):
+    """The script parser is the first half of the path, so a change to it re-voices every film."""
+    (segment,) = parse_script(str(take["markdown"]))
+    assert segment.index == take["section"]
+    assert segment.title == take["title"]
+    assert segment.text == take["text"]
 
 
-@pytest.mark.parametrize("section", SECTIONS, ids=IDS)
-def test_script_syntax_yields_the_voiced_text(section: dict[str, str]) -> None:
-    """The markdown of the film's script still parses to the exact text that was voiced."""
-    (segment,) = parse_script(section["markdown"])
-    assert segment.key == section["key"]
-    assert segment.title == section["title"]
-    assert segment.text == section["text"]
-
-
-@pytest.mark.parametrize("section", SECTIONS, ids=IDS)
-def test_take_hash_matches_the_paid_take(section: dict[str, str]) -> None:
-    """The digest of the voiced text under the film's voice settings is the one in its take index."""
-    segment = Segment(index=int(section["key"]), title=section["title"], slug="x", text=section["text"])
-    settings = Voice(**GOLDEN["voice"]).api_settings()
-    assert text_hash(segment, NarrationConfig(), provider_key(), settings) == section["hash"]
+@pytest.mark.parametrize("take", TAKES, ids=IDS)
+def test_the_digest_of_the_parsed_text_is_the_one_that_was_paid_for(take: dict[str, object]):
+    """A digest here that moved means the next run buys that take again, so this may never be updated."""
+    (segment,) = parse_script(str(take["markdown"]))
+    assert digest_of(segment.text) == take["hash"], f"{take['film']} section {take['section']} would be voiced again"
