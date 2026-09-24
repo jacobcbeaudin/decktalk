@@ -17,7 +17,7 @@ from typer._click import Context
 
 from decktalk.cli import session as sessions
 from decktalk.cli import watch as watching
-from decktalk.cli.app import DOCS, command
+from decktalk.cli.app import command, docs_for
 from decktalk.cli.options import (
     Fix,
     Force,
@@ -48,7 +48,7 @@ from decktalk.results import (
 BUILD_EPILOG = f"""\
 Writes build/final/<name>.mp4 with its captions, chapters, transcript page
 and poster. The JSON object carries run, stages, seconds, written, findings
-and error. Docs: {DOCS}#build"""
+and error. Docs: {docs_for("build")}"""
 
 BUILD_SHORT = "Run every stage in order, or a span of them."
 """What the command tree says about `build`, where its own help names the two flags that span it."""
@@ -76,7 +76,9 @@ Watch = Annotated[
 ]
 
 
-@command(group=Group.STAGE, epilog=f"The JSON object carries run, sections, spend and takes. Docs: {DOCS}#narrate")
+@command(
+    group=Group.STAGE, epilog=f"The JSON object carries run, sections, spend and takes. Docs: {docs_for('narrate')}"
+)
 def narrate(
     ctx: Context,
     section: Sections = None,
@@ -103,7 +105,7 @@ def narrate(
         )
 
 
-@command(group=Group.STAGE, epilog=f"The JSON object carries run, sections and file. Docs: {DOCS}#cue")
+@command(group=Group.STAGE, epilog=f"The JSON object carries run, sections and file. Docs: {docs_for('cue')}")
 def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueResult:
     """Turn each cue phrase into a second on its section clock.
 
@@ -120,7 +122,7 @@ def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueRe
         )
 
 
-@command(group=Group.STAGE, epilog=f"The JSON object carries run, sections and written. Docs: {DOCS}#record")
+@command(group=Group.STAGE, epilog=f"The JSON object carries run, sections and written. Docs: {docs_for('record')}")
 def record(ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None) -> RecordResult:
     """Record each page section in headless Chromium.
 
@@ -133,7 +135,7 @@ def record(ctx: Context, section: Sections = None, force: Force = False, set_: O
         return project.record(only=sections_of(section), force=force, cancel=session.cancel)
 
 
-@command(group=Group.STAGE, epilog=f"The JSON object carries run, items and spend. Docs: {DOCS}#soundscape")
+@command(group=Group.STAGE, epilog=f"The JSON object carries run, items and spend. Docs: {docs_for('soundscape')}")
 def soundscape(
     ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None
 ) -> SoundscapeResult:
@@ -155,7 +157,9 @@ def soundscape(
         )
 
 
-@command(group=Group.STAGE, epilog=f"The JSON object carries run, film, sections and loudness. Docs: {DOCS}#assemble")
+@command(
+    group=Group.STAGE, epilog=f"The JSON object carries run, film, sections and loudness. Docs: {docs_for('assemble')}"
+)
 def assemble(ctx: Context, section: Sections = None, skip: Skip = None, set_: Overrides = None) -> AssembleResult:
     """Cut, mix and encode the sections into one mp4.
 
@@ -184,7 +188,8 @@ def _skipped_here(skip: Sequence[Stage] | None) -> tuple[Stage, ...]:
 
 
 @command(
-    group=Group.STAGE, epilog=f"The JSON object carries run, film, starts, cuts, seams and cues. Docs: {DOCS}#verify"
+    group=Group.STAGE,
+    epilog=f"The JSON object carries run, film, starts, cuts, seams and cues. Docs: {docs_for('verify')}",
 )
 def verify(ctx: Context, section: Sections = None, set_: Overrides = None) -> VerifyResult:
     """Measure the finished mp4: every start, cut, seam and landing.
@@ -263,7 +268,7 @@ def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, 
     return built
 
 
-@command(group=Group.WHOLE, epilog=f"The JSON object carries run, film, words and written. Docs: {DOCS}#clip")
+@command(group=Group.WHOLE, epilog=f"The JSON object carries run, film, words and written. Docs: {docs_for('clip')}")
 def clip(
     ctx: Context,
     section: Sections = None,

@@ -13,10 +13,17 @@ from __future__ import annotations
 
 import re
 
+from decktalk.cli import catalog
+from decktalk.cli.app import docs_for
 from support.paths import REPO
 
 ROOT = REPO
 INSTALLER = ROOT / "site" / "install.sh"
+
+
+def slugify(heading: str) -> str:
+    """A heading as the site anchors it, which is its words lowercased and joined by hyphens."""
+    return re.sub(r"[^a-z0-9]+", "-", heading.lower()).strip("-")
 
 
 def released_versions() -> set[str]:
@@ -62,3 +69,15 @@ def test_the_platforms_the_one_liner_claims_are_the_ones_it_accepts() -> None:
     assert "one-line installer" in bullet, bullet
     head = bullet.split("Installing with", 1)[0].split("On Windows", 1)[0]
     assert "Windows" not in head, f"the one-liner is offered to Windows, which it refuses: {bullet}"
+
+
+def test_every_docs_link_a_command_prints_reaches_its_own_heading() -> None:
+    """Every command's help closes with the reference page and the anchor of its own section, and
+    nothing held the two halves together: the anchors named the bare command where the page heads
+    each section with the whole command line, so all of them landed at the top of the page."""
+    page = (ROOT / "docs" / "reference" / "cli.mdx").read_text(encoding="utf-8")
+    headings = {slugify(text) for text in re.findall(r"^#{1,6}\s+(.+?)\s*$", page, re.MULTILINE)}
+    rows = catalog.walk()
+    assert rows, "the parser offers no command, so this test says nothing"
+    missing = [row["command"] for row in rows if docs_for(*row["command"].split()).split("#")[1] not in headings]
+    assert not missing, f"the help sends a reader to an anchor the reference page has not got: {missing}"

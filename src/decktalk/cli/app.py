@@ -40,6 +40,18 @@ from decktalk.results import Result
 PROGRAM = "decktalk"
 """The name every usage line and every hint spells, whatever the file the entry point is in."""
 
+
+def docs_for(*path: str) -> str:
+    """Where the reference page explains one command, built from the command rather than spelled.
+
+    The generated page gives every command a heading of its whole command line, and the site turns
+    a heading into an anchor by lowercasing it and making each run of punctuation one hyphen. A link
+    written by hand beside the command drifts the moment either side is renamed, so it is derived
+    here from the same words the parser already carries.
+    """
+    return f"{DOCS}#{'-'.join((PROGRAM, *path))}"
+
+
 PURPOSE = (
     "Every picture lands on its word. DeckTalk turns a markdown script, HTML slides and your voice "
     "into one narrated mp4."

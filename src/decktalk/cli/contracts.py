@@ -18,12 +18,12 @@ import typer
 from typer._click import Context
 
 from decktalk.cli import catalog
-from decktalk.cli.app import DOCS, command
+from decktalk.cli.app import command, docs_for
 from decktalk.cli.options import Group
 
 SCHEMA_EPILOG = f"""\
 Prints the contract itself and not a result, which is the one command whose
-output carries no schema, ok, findings or error. Docs: {DOCS}#schema"""
+output carries no schema, ok, findings or error. Docs: {docs_for("schema")}"""
 
 
 @command(group=Group.CONTRACTS, epilog=SCHEMA_EPILOG)

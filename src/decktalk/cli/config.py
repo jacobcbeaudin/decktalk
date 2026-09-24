@@ -21,7 +21,7 @@ from typer._click import Context
 
 from decktalk import settings as knobs
 from decktalk.cli import session as sessions
-from decktalk.cli.app import CONTEXT, DOCS, DeckTalkGroup, app, command
+from decktalk.cli.app import CONTEXT, DeckTalkGroup, app, command, docs_for
 from decktalk.cli.options import Group, Where
 from decktalk.errors import InputError
 from decktalk.explain import explain as explained
@@ -59,7 +59,7 @@ Scoped = Annotated[
 ]
 
 
-@command("list", group=Group.CONTRACTS, to=config, epilog=f"Docs: {DOCS}#config-list")
+@command("list", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'list')}")
 def list_keys(
     ctx: Context,
     table: Annotated[str | None, typer.Argument(metavar="TABLE", help="One table, such as verify.")] = None,
@@ -75,7 +75,7 @@ def list_keys(
     return ConfigListResult(ok=True, keys=_rows(session, table, defaults=defaults, changed=changed))
 
 
-@command("get", group=Group.CONTRACTS, to=config, epilog=f"Docs: {DOCS}#config-get")
+@command("get", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'get')}")
 def get_key(ctx: Context, key: Named) -> ConfigGetResult:
     """Print one key's value and the layer that set it."""
     session = sessions.of(ctx)
@@ -94,7 +94,7 @@ def get_key(ctx: Context, key: Named) -> ConfigGetResult:
     )
 
 
-@command("set", group=Group.CONTRACTS, to=config, epilog=f"Docs: {DOCS}#config-set")
+@command("set", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'set')}")
 def set_key(
     ctx: Context,
     key: Named,
@@ -127,7 +127,7 @@ def set_key(
     )
 
 
-@command("unset", group=Group.CONTRACTS, to=config, epilog=f"Docs: {DOCS}#config-unset")
+@command("unset", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'unset')}")
 def unset_key(
     ctx: Context,
     key: Named,
@@ -167,7 +167,7 @@ def unset_key(
     )
 
 
-@command("explain", group=Group.CONTRACTS, to=config, epilog=f"Docs: {DOCS}#config-explain")
+@command("explain", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'explain')}")
 def explain_key(
     ctx: Context,
     key: Named,

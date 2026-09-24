@@ -15,23 +15,23 @@ from typer._click import Context
 
 from decktalk import machine as machines
 from decktalk.cli import session as sessions
-from decktalk.cli.app import DOCS, command
+from decktalk.cli.app import command, docs_for
 from decktalk.cli.options import Fix, Group
 from decktalk.results import DoctorResult, InitResult, InstallResult
 
 INIT_EPILOG = f"""\
 Writes decktalk.toml, script.md, cues.json and a deck that builds with no
 credential. The JSON object carries run, root, name, example, skills and
-written. Docs: {DOCS}#init"""
+written. Docs: {docs_for("init")}"""
 
 INSTALL_EPILOG = f"""\
 Fetches into this machine's cache, which doctor names. The JSON object
-carries run, tools and cache. Docs: {DOCS}#install"""
+carries run, tools and cache. Docs: {docs_for("install")}"""
 
 DOCTOR_EPILOG = f"""\
 Reads this machine and fetches nothing, and --measure writes the bias it
 measured. The JSON object carries run, written, tools, cache, python,
-platform, voice_key and bias_ms. Docs: {DOCS}#doctor"""
+platform, voice_key and bias_ms. Docs: {docs_for("doctor")}"""
 
 
 @command(group=Group.MACHINE, epilog=INIT_EPILOG)

@@ -15,31 +15,31 @@ import typer
 from typer._click import Context
 
 from decktalk.cli import session as sessions
-from decktalk.cli.app import DOCS, command
+from decktalk.cli.app import command, docs_for
 from decktalk.cli.options import Fix, Group, Overrides, Panel, Sections, pairs, sections_of
 from decktalk.results import CheckResult, ServeResult, StatusResult, StoryboardResult, WordsResult
 
 STATUS_EPILOG = f"""\
 Reads the project and writes nothing. The JSON object carries run, name,
-script, cues, sections, film, runs and next. Docs: {DOCS}#status"""
+script, cues, sections, film, runs and next. Docs: {docs_for("status")}"""
 
 CHECK_EPILOG = f"""\
 Judges the written files and the pages, and prices what a voiced build costs.
 The JSON object carries run, judged, pages, frames, spend, storyboard,
-written and findings. Docs: {DOCS}#check"""
+written and findings. Docs: {docs_for("check")}"""
 
 WORDS_EPILOG = f"""\
 Prints the clock a cue phrase is written against. The JSON object carries run
-and sections. Docs: {DOCS}#words"""
+and sections. Docs: {docs_for("words")}"""
 
 STORYBOARD_EPILOG = f"""\
 Writes build/storyboard.html, which is the checkpoint before credits are
 spent. The JSON object carries run, storyboard, panels and written.
-Docs: {DOCS}#storyboard"""
+Docs: {docs_for("storyboard")}"""
 
 SERVE_EPILOG = f"""\
 Serves the deck directory and the files decktalk.toml declares, and nothing
-else. The JSON object carries run, url, port and root. Docs: {DOCS}#serve"""
+else. The JSON object carries run, url, port and root. Docs: {docs_for("serve")}"""
 
 DEFAULT_HOST = "127.0.0.1"
 """Where the origin listens, which is this machine alone until a caller names another interface."""
