@@ -12,56 +12,71 @@ section that shows it. Nothing else is recorded again, and nothing else is voice
 
 ## What a viewer gets
 
-- Each callout, arrow and highlight appears on the word that names it, so the eye is never hunting
+- Each callout, arrow and highlight arrives on the word that names it, so the eye is never hunting
   for what the voice is talking about.
-- Real product footage, because a section can be a screen recording rather than a page.
-- A cut with no dead air, because DeckTalk cuts the video to the narration and not the other way
-  round.
-- Captions, chapters and a transcript page, which a demo needs on a site where most viewers watch
-  with the sound off.
+- Real product footage, because a section can be a video file of your own rather than a page.
+- A cut with no dead air, because the film is cut to the narration rather than the narration fitted
+  to the film.
+- Captions, chapters, a transcript page and a poster frame, which a demo needs on a site where most
+  viewers watch with the sound off.
 
 ## What the author writes
 
 | File | What it holds |
 |---|---|
-| `script.md` | The pitch, one heading per section, with a time budget that keeps the whole demo short. |
-| `decktalk.toml` | The sections, the voice and the `clip` value on any section that plays a screen recording. |
-| `cues.json` | The phrase each callout starts on. |
-| The deck page | The title cards, the callouts and the closing card. |
+| `script.md` | The pitch, one `## N. Title` heading per section. |
+| `decktalk.toml` | The sections, the voice, and the `clip` key on any section that plays a video file of your own. |
+| `cues.json` | The phrase each callout waits for. |
+| `deck/index.html` | The title cards, the callouts and the closing card. |
 
-A screen recording enters the video as a clip section. The section names its file in
-`decktalk.toml`, and `decktalk clip` cuts a span of a built section and its narration into a clip
-file and its words file. A sound effect lands on a cue through a `[[mix.sfx]]` entry, and the music
-bed comes from the `[soundscape.music]` table.
+A section is either a page section, which names a `page` and a `scene`, or a clip section, which
+names a `clip` file instead. A clip section may also name a `words` file of the speech inside it, so
+the captions carry those words too, and `seamless = true` says the clip continues the previous
+section's picture, which `verify` then measures at the seam.
+
+An effect lands on a cue through a `[[mix.effects]]` row, which names a `file`, a `section`, a `cue`
+and an optional `caption` and `db`. `decktalk soundscape` is what generates those files, along with
+the music bed and the ambience, from the prompts in `[soundscape.music]`,
+`[soundscape.ambience]` and `[soundscape.effects.<name>]`. That stage spends, so it runs last and a
+draft loop that stops at `record` never reaches it.
 
 ## The workflow
 
 <Steps>
   <Step title="Write the pitch first">
-    Write `script.md` before the slides, because the words decide the cuts. Keep each section to its
-    budget and read it aloud once.
+    Write `script.md` before the slides, because the words decide the cuts. Read each section aloud
+    once and keep it to one idea.
   </Step>
-  <Step title="Build it without voice">
-    `decktalk build --no-voice` gives a complete video with placeholder narration, which is enough
-    to judge the pacing before anyone spends a credit.
+  <Step title="Draft it with no voice">
+    `decktalk build --no-voice` gives a complete film on placeholder narration, which is enough to
+    judge the pacing before anyone spends a credit.
   </Step>
   <Step title="Drop the product footage in">
-    Add a clip section for each screen recording, then run `decktalk verify` to see every seam
-    between a page section and a clip section.
+    Add a clip section for each screen recording, then run `decktalk verify` to measure every seam
+    between a page section and a clip section. `decktalk clip --section 3 --start 4 --end 9 --out
+    build/callout.mp4` cuts a span of a built section into its own file when you need a short one
+    on its own.
   </Step>
-  <Step title="Voice it and check the landings">
-    `decktalk preflight` freezes every reveal and estimates the run, then a voiced build writes the
-    takes. `decktalk verify` reports every cue that did not land on its word.
+  <Step title="Look at the storyboard, then buy the voice">
+    `decktalk storyboard` freezes every slide at every cue onto `build/storyboard.html`, and
+    `decktalk check` prices the run. Then `decktalk build --spend` voices what needs it, with
+    `--max-cost N` as the ceiling that refuses the run before the first call.
   </Step>
   <Step title="Rebuild the section the product change touched">
-    Edit the sentence or the callout, then run `decktalk build --only 3`. Every other section keeps
-    its take and its recording.
+    Edit the sentence or the callout, then run `decktalk build --section 3`. Every other section
+    keeps its take and its recording.
   </Step>
 </Steps>
 
-Read [Quickstart](/quickstart) for the first build, [Add a clip section](/guides/clip-section) for
-screen recordings, and [Put a sound effect on a cue](/guides/sfx-on-a-cue) for the accents a demo
-lives on.
+## Where to start
 
-The other two use cases with worked examples are
-[technical tutorials](/use-cases/technical-tutorials) and [lessons](/use-cases/lessons).
+Read [Quickstart](/quickstart) for the first build and
+[Add a clip section](/guides/clip-section) for video of your own. [Sound](/concepts/sound) explains
+the accents a demo lives on, and the difference between bringing your own audio files and generating
+them.
+
+## Also fits
+
+Release notes, launch videos and conference talks run the same pipeline. The two use cases beside
+this one are [technical tutorials](/use-cases/technical-tutorials) and
+[lessons](/use-cases/lessons).

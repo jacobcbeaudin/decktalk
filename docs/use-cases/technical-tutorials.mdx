@@ -3,23 +3,24 @@ title: Technical tutorials
 description: Keep a narrated walkthrough correct when the library it teaches changes, by editing text and rebuilding one section.
 ---
 
-A viewer watches a walkthrough whose commands and screenshots match the version she just installed.
+A viewer watches a walkthrough whose commands match the version she just installed, where each line
+of code appears as the voice reaches it.
 
 This is the use case DeckTalk is built around. A tutorial goes stale the week the API it teaches
-changes, and re-recording it costs a day, so most authors stop making them. In DeckTalk the whole
+changes, and recording it again costs a day, so most authors stop making them. In DeckTalk the whole
 video is text and code, so a change to the library is a change to a few lines, and only the sections
 whose words changed are voiced again.
 
 ## What a viewer gets
 
 - Every reveal starts on the word that names it, so a command appears as the voice says it and
-  nothing is read ahead.
-- The commands and the screenshots on screen are the ones the project rendered on the day it was
-  built, not the ones an author remembered while recording.
-- Captions, chapters and a transcript page come out of the same build, so a viewer can read the
-  walkthrough instead of watching it.
-- A section that shows a terminal or an editor can be a screen recording instead of a page, cut and
-  mixed with the same narration.
+  nothing on the slide is read ahead.
+- The commands and the output on screen are the ones the project rendered on the day it was built,
+  not the ones an author remembered while recording.
+- Captions, chapters, a transcript page and a poster frame come out of the same build, so a viewer
+  can read the walkthrough instead of watching it.
+- A section that shows a terminal or an editor can be a video file of your own instead of a page,
+  cut and mixed against the same narration.
 
 ## What the author writes
 
@@ -27,55 +28,66 @@ Four files hold the whole tutorial.
 
 | File | What it holds |
 |---|---|
-| `script.md` | One heading per section and the words the voice says, with a time budget per section. |
-| `decktalk.toml` | The project, the voice, the sections and their pages. |
-| `cues.json` | One entry per cue, naming the phrase the reveal starts on. |
-| The deck page | The slides, as HTML with `data-slide`, `data-cue` and `data-reveal` attributes. |
+| `script.md` | One `## N. Title` heading per section and the words the voice says. |
+| `decktalk.toml` | The project, the voice, and one `[[section]]` per section naming its page and scene. |
+| `cues.json` | One row per moment, naming the phrase the reveal waits for. |
+| `deck/index.html` | The slides, as HTML with `data-scene`, `data-slide` and the moment attributes. |
 
-A code slide is markup. An equation is a `data-tex` attribute typeset by the KaTeX files the wheel
-carries. A screenshot is a file the page loads, and `decktalk screenshots` writes one PNG per slide
-so the author can read what the recorder will see.
+A code slide is markup. An equation is a `data-tex` attribute typeset by the KaTeX files
+`decktalk init` copies into `deck/katex/`, so no equation needs a download. A reveal is a moment
+attribute naming a cue local to its slide, so `data-in="expand"` inside
+`<template data-slide="4.1">` waits for the cue `4.1:expand`, and `cues.json` is where that cue gets
+a phrase. `decktalk schema page` prints all twenty-four attributes with their values and ranges.
 
 ## The workflow
 
 <Steps>
-  <Step title="Start a tutorial project">
-    `decktalk init --example tutorial` writes the four files, the runtime and the skills. Add
-    `--no-skills` to leave the skills out.
+  <Step title="Start a project">
+    `decktalk init my-tutorial` writes a deck that already builds: three sections, one equation,
+    the packaged runtime, KaTeX, six skills under `.agents/skills/`, and an `AGENTS.md` when the
+    directory has none. Add `--no-skills` to leave the skills out and `--defaults` to be asked
+    nothing.
   </Step>
-  <Step title="Build it without voice">
-    `decktalk build --no-voice` runs the five stages, which are `narrate`, `align`, `record`,
-    `assemble` and `verify`. It writes placeholder narration, so it spends nothing and needs no key.
+  <Step title="Judge it before you build it">
+    `decktalk check` reads `script.md`, `cues.json` and the pages, freezes a frame either side of
+    every cue, and prints what a voiced run would cost. `decktalk check --no-pages` does the same
+    reading with no browser at all and names the judgements it could not reach.
   </Step>
-  <Step title="Place the cues">
-    `decktalk align` resolves each cue phrase to a second on its section clock, and `decktalk verify`
-    reports every reveal that landed late, early or not at all.
+  <Step title="Draft it with no voice">
+    `decktalk build --no-voice` runs the whole pipeline on placeholder narration that still carries
+    a real word clock. It spends nothing and needs no key, so the pacing is settled before a credit
+    is bought. `decktalk build --no-voice --to record` stops before the stage that generates audio.
   </Step>
-  <Step title="Plan the spend, then voice it">
-    `decktalk preflight` freezes every reveal and estimates the takes without spending a credit, and
-    `decktalk narrate --dry-run` prints the characters and the dollars a voiced run would cost.
+  <Step title="Look at the storyboard, then buy the voice">
+    `decktalk storyboard` freezes every slide at every cue onto `build/storyboard.html`, which is
+    the human checkpoint before credits are spent. Then `decktalk build --spend` voices the
+    sections that need it, and `--max-cost N` refuses the run before the first call if the most it
+    could cost is over N US dollars.
   </Step>
   <Step title="Rebuild one section when the library changes">
-    Edit the sentence, the slide or the cue, then run `decktalk build --only 4`. A section whose
+    Edit the sentence, the slide or the cue, then run `decktalk build --section 4`. A section whose
     words did not change keeps its take, so it is never voiced twice.
   </Step>
 </Steps>
 
-Read [Quickstart](/quickstart) for the first build, [Your first deck](/guides/first-deck) for one
-section written end to end, and [Slide recipes](/guides/slide-recipes) for the slides a tutorial
-needs most.
-
 ## On a locked-down machine
 
 A tutorial author inside a company meets two real conditions. A cloud speech service receives the
-script, and the first run downloads a browser and a media tool.
+script, and the first run that needs them downloads Chromium and ffmpeg.
 [What leaves your machine](/reference/what-leaves-your-machine) names every host and every request
 body, and [Requirements and costs](/requirements) covers the package index mirror, the browser path
-and the cache directory that a managed machine needs. A build with `--no-voice` contacts no service
-at all, so a finished video can exist before any approval does.
+and the cache directory a managed machine needs. `decktalk install` fetches the toolchain up front
+rather than in the middle of a build, and a build with `--no-voice` contacts no speech service at
+all, so a finished video can exist before any approval does.
+
+## Where to start
+
+Read [Quickstart](/quickstart) for the first build and [Your first deck](/guides/first-deck) for one
+section written end to end. [Slide recipes](/guides/slide-recipes) has the slides a tutorial needs
+most, and [Rebuild one section](/guides/rebuild-one-section) is the loop the whole use case rests
+on.
 
 ## Also fits
 
-Internal presentations, estimation and interview prep run the same pipeline, and none of them has a
-shipped example yet. The two use cases with worked examples beside this one are
-[product demos](/use-cases/product-demos) and [lessons](/use-cases/lessons).
+Internal presentations, estimates and interview preparation run the same pipeline. The two use cases
+beside this one are [product demos](/use-cases/product-demos) and [lessons](/use-cases/lessons).
