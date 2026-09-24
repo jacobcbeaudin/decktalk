@@ -301,6 +301,9 @@ GROUPS: tuple[Group, ...] = (
         name="generated",
         why="Every generated file held to the source it is generated from, and every link in them.",
         commands=(
+            # The runtime bundles are compiled by the pinned TypeScript, so the group that judges
+            # them installs it first, the way every other group that lists npm does.
+            ("npm", "ci"),
             generator("build_runtime"),
             generator("build_result_schemas"),
             generator("build_settings_schema"),
