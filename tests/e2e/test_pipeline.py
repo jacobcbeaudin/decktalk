@@ -281,13 +281,17 @@ def missing_tools(shim: Path) -> list[str]:
 
     Asking the CLI rather than importing Playwright keeps this file on the surface an author uses,
     and it means a machine with no browser skips rather than failing halfway through a recording.
+
+    A tool is held when `doctor` reports its version. The browser has no path to report, because it
+    is asked for by launching it rather than by looking for a file, so a row read by its path
+    skipped this whole suite on every machine including one that had just installed everything.
     """
     done = subprocess.run(
         [sys.executable, "-m", "decktalk", "doctor", "--json"], capture_output=True, text=True, check=False, cwd=shim
     )
     doc = json.loads(done.stdout)
     held = {row["tool"]: row for row in doc["tools"]}
-    return [name for name in NEEDED_TOOLS if not (held.get(name) or {}).get("path")]
+    return [name for name in NEEDED_TOOLS if not (held.get(name) or {}).get("version")]
 
 
 def generate_media(root: Path) -> None:
