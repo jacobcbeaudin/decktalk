@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import lru_cache
@@ -238,6 +238,23 @@ def stderr(*args: str) -> str:
 def raw(*args: str) -> bytes:
     """ffmpeg run whose useful output is the bytes on stdout, such as decoded samples."""
     return _checked([ffmpeg(), "-v", "error", *args], "ffmpeg").stdout
+
+
+def concat_line(path: Path | str) -> str:
+    """One line of an ffmpeg concat list, quoted so that any path a person can write survives it.
+
+    The demuxer reads a single-quoted path, so an apostrophe inside one ends the quoting and the rest
+    of the name becomes arguments. It is written as `'\''`, which closes the quote, escapes one
+    apostrophe and opens the quote again, and that is the one form both of ffmpeg's readings accept.
+    A build under `jacob's films/` died at the concatenation step without it.
+    """
+    quoted = str(path).replace("'", "'\\''")
+    return f"file '{quoted}'\n"
+
+
+def concat_list(paths: Iterable[Path | str]) -> str:
+    """The whole of a concat list, which is the one place a path is written for the demuxer to read."""
+    return "".join(concat_line(path) for path in paths)
 
 
 def probe_duration(path: Path | str) -> float:

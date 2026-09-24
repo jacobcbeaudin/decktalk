@@ -121,3 +121,30 @@ def test_binding_the_tools_also_binds_where_a_fetch_is_kept(tmp_path):
     with ffmpeg.using_tools(ToolsConfig(cache_dir=str(tmp_path / "elsewhere"))):
         assert cache_dir() == tmp_path / "elsewhere"
     assert cache_dir() != tmp_path / "elsewhere"
+
+
+def test_a_concat_line_quotes_a_path_a_person_could_actually_write():
+    r"""An apostrophe inside a single-quoted path ends the quoting, so it is written as `'\''`."""
+    assert ffmpeg.concat_line("/films/a.mp4") == "file '/films/a.mp4'\n"
+    assert ffmpeg.concat_line("/jacob's films/a.mp4") == "file '/jacob'\\''s films/a.mp4'\n"
+    assert ffmpeg.concat_list([Path("a.mp4"), Path("b.mp4")]) == "file 'a.mp4'\nfile 'b.mp4'\n"
+
+
+@pytest.mark.media
+def test_ffmpeg_concatenates_files_under_a_directory_with_an_apostrophe_in_its_name(tmp_path):
+    """The live defect: a build under `jacob's films/` died at the concatenation step."""
+    films = tmp_path / "jacob's films"
+    films.mkdir()
+    parts = []
+    for name in ("a", "b"):
+        part = films / f"{name}.mp4"
+        ffmpeg.run(
+            "-f", "lavfi", "-i", "color=c=black:s=64x64:r=25:d=0.4",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(part),
+        )  # fmt: skip
+        parts.append(part)
+    listing = films / "parts.txt"
+    listing.write_text(ffmpeg.concat_list(parts), encoding="utf-8")
+    joined = films / "joined.mp4"
+    ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(joined))
+    assert ffmpeg.probe_duration(joined) == pytest.approx(0.8, abs=0.1)
