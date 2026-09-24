@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from decktalk.artifacts import Cut, Cuts, RecordingLog, Takes
 from decktalk.errors import InputError, NotBuiltError, ToolError
@@ -24,20 +23,15 @@ from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.document import frame_dip
 from decktalk.machine import Run
 from decktalk.media import browser, ffmpeg
-from decktalk.media.encode import Encoder, VideoSettings
+from decktalk.media.encode import Encoder
 from decktalk.pipeline import Stage
 from decktalk.results import SectionKind, Substitute
 from decktalk.stages import SECOND_DIGITS, judge, selects
 
 
 def encoder(inputs: Inputs) -> Encoder:
-    """The encoder every output of this stage is made with, built from `[video]` once.
-
-    `media.encode.VideoSettings` declares its members as plain attributes, which reads as a protocol
-    whose members can be written to, and `[video]` is a frozen record that satisfies it for reading,
-    which is all the encoder ever does with it.
-    """
-    return Encoder(cast("VideoSettings", inputs.settings.video))
+    """The encoder every output of this stage is made with, built from `[video]` once."""
+    return Encoder(inputs.settings.video)
 
 
 BLACK = "0x000000"
@@ -143,7 +137,7 @@ def _render_slate_section(
     source = (
         ["-loop", "1", "-framerate", str(enc.v.output_fps), "-t", f"{seconds}", "-i", str(png)]
         if png
-        else enc.color_source(inputs.settings.video.slate_color, seconds)
+        else enc.color_source(enc.v.slate_color, seconds)
     )
     ffmpeg.run(
         *source,

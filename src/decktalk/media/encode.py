@@ -16,17 +16,37 @@ class VideoSettings(Protocol):
     """What one output is made from, which is the whole of `[video]` this module reads.
 
     The encoder names the keys it reads rather than importing the settings class, because what an
-    output is made from is a fact about encoding and a project is what supplies it.
+    output is made from is a fact about encoding and a project is what supplies it. Every member is
+    read-only, because an encoder reads its settings and never writes them, and a frozen record of
+    the same keys therefore satisfies this without being cast to it.
     """
 
-    width: int
-    height: int
-    output_fps: int
-    crf: int
-    preset: str
-    sample_rate: int
-    channels: int
-    audio_bitrate: str
+    @property
+    def width(self) -> int: ...
+
+    @property
+    def height(self) -> int: ...
+
+    @property
+    def output_fps(self) -> int: ...
+
+    @property
+    def crf(self) -> int: ...
+
+    @property
+    def preset(self) -> str: ...
+
+    @property
+    def sample_rate(self) -> int: ...
+
+    @property
+    def channels(self) -> int: ...
+
+    @property
+    def audio_bitrate(self) -> str: ...
+
+    @property
+    def slate_color(self) -> str: ...
 
 
 # An mp4 stream's language is an ISO 639-2 three-letter code, while `[project] language` is the BCP 47

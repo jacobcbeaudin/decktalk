@@ -18,7 +18,6 @@ cuts are the same kind of thing under the same name.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 from decktalk.artifacts import WORDS_SUFFIX, Take, Takes, Words
 from decktalk.errors import InputError
@@ -27,7 +26,7 @@ from decktalk.inputs import Inputs, PageSection
 from decktalk.inputs.paths import at
 from decktalk.machine import Run
 from decktalk.media import ffmpeg
-from decktalk.media.encode import Encoder, VideoSettings
+from decktalk.media.encode import Encoder
 from decktalk.pipeline import Artifact
 from decktalk.results import ClipResult, SectionWords, Word
 from decktalk.stages import SECOND_DIGITS
@@ -259,9 +258,7 @@ def _render(
         f"[0:v]trim=start_frame={span.first}:end_frame={span.last},setpts=PTS-STARTPTS,fps={fps},"
         f"tpad=stop_mode=clone:stop={span.hold}[v]"
     )
-    # The encoder names the keys it reads as a protocol of plain attributes, and `[video]` is a
-    # frozen record, so the two agree on every value and differ only on whether one may be written.
-    encoder = Encoder(cast("VideoSettings", settings))
+    encoder = Encoder(settings)
     ffmpeg.run(
         "-i", str(video), "-i", str(source),
         "-filter_complex", f"{picture};{sound}",
