@@ -1,52 +1,87 @@
-"""The rules a script must obey: what the voice must never receive, and what is only a note."""
+"""What the voice must never receive, and the two scans `check` judges a script by."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from decktalk import ConfigError
-from decktalk.model.script import Segment, parse_script
-from decktalk.stages.narrate.script_rules import check_script, script_refusals, symbol_findings
-from decktalk.verdicts import Verdict
+from decktalk.errors import InputError
+from decktalk.inputs.script import parse_script
+from decktalk.stages.narrate.script_rules import (
+    ascending,
+    check_script,
+    script_refusals,
+    shown,
+    spoken_lines,
+    symbol_tokens,
+)
+
+CLEAN = """## 1. Open
+
+[A whole line of direction, which nobody speaks.]
+
+A bowl. [beat] A ball. [pause 2] Then it falls.
+
+See [the docs](https://example.test) and fill [NUMBER] in.
+"""
 
 
-def _segment(text: str, index: int = 1) -> Segment:
-    return Segment(index=index, title="T", slug="t", text=text)
+def test_a_clean_script_is_refused_nothing() -> None:
+    assert script_refusals(CLEAN) == []
 
 
 @pytest.mark.parametrize(
-    ("line", "wanted"),
+    ("line", "what"),
     [
-        ("Learning <!-- rewrite this --> nudges the knobs.", "an HTML comment"),
-        ("It guesses {name} again.", "a brace"),
-        ("A bowl. [maybe cut this] A ball.", "[maybe cut this] inside a paragraph"),
+        ("A ball <!-- and a note --> falls.", "an HTML comment"),
+        ("A ball {x} falls.", "a brace"),
+        ("A ball [which is red] falls.", "inside a paragraph"),
     ],
 )
-def test_the_script_refuses_what_the_voice_would_read_or_swallow(line, wanted):
-    markdown = f"# Notes\n\nA {{brace}} up here is never spoken.\n\n## 1. Open\n\n{line}\n"
-    ((number, what),) = script_refusals(markdown)
-    assert number == 7 and what.startswith(wanted)
-    with pytest.raises(ConfigError) as caught:
-        check_script(str(Path("script.md")), markdown)
-    assert "line 7" in str(caught.value) and "[beat] or [pause N]" in str(caught.value)
+def test_the_voice_never_receives_what_it_would_read_out(line: str, what: str) -> None:
+    (found,) = script_refusals(f"## 1. Open\n\n{line}\n")
+    assert found[0] == 3
+    assert what in found[1]
 
 
-def test_the_script_allows_a_direction_a_beat_a_pause_a_placeholder_and_a_link():
-    markdown = (
-        "## 1. Open\n\n[Deck scene 1. A bowl and a ball appear.]\n\n"
-        "A bowl. [beat] A ball. [pause 1.5] Now [NUMBER] of them, see the [docs](http://x).\n"
-    )
-    assert script_refusals(markdown) == []
-    assert len(parse_script(markdown)[0].placeholders) == 1
+def test_only_the_body_of_a_numbered_section_is_spoken() -> None:
+    numbered = dict(spoken_lines("# Notes\n\nnever spoken\n\n## 1. Open\n\nspoken\n"))
+    assert "spoken" in numbered.values()
+    assert "never spoken" not in numbered.values()
 
 
-def test_digits_and_symbols_are_a_note_and_not_a_refusal():
-    segment = _segment("It costs 41% more, and 100% of nothing.")
-    (row,) = symbol_findings([segment], "script.md")
-    assert row.verdict is Verdict.SPOKEN_SYMBOL and not row.verdict.certain
-    assert row.section == 1 and row.where == "script.md"
-    assert "100%" in row.detail and "41%" in row.detail
-    assert symbol_findings([_segment("Forty one percent more.")], "script.md") == []
-    assert script_refusals("## 1. A\n\nIt costs 41% more.\n") == []
+def test_a_refused_script_names_every_line_and_the_rule() -> None:
+    with pytest.raises(InputError) as refused:
+        check_script("script.md", "## 1. Open\n\nA ball {x} [which is red] falls.\n")
+    assert "script.md has 2 thing(s)" in str(refused.value)
+    assert "line 3" in str(refused.value)
+    assert refused.value.hint is not None
+    assert "[beat]" in refused.value.hint
+
+
+def test_a_clean_script_raises_nothing() -> None:
+    check_script("script.md", CLEAN)
+
+
+def test_a_digit_or_a_symbol_is_named_word_by_word() -> None:
+    (segment,) = parse_script("## 1. Open\n\nIt costs 40% of $2 today.\n")
+    assert symbol_tokens(segment) == ("$2", "40%")
+
+
+def test_a_section_the_voice_can_read_names_nothing() -> None:
+    (segment,) = parse_script("## 1. Open\n\nForty per cent of two dollars.\n")
+    assert symbol_tokens(segment) == ()
+
+
+def test_a_finding_names_the_first_few_words_rather_than_all_of_them() -> None:
+    assert shown(["a", "b", "c", "d", "e", "f"]) == "a, b, c, d, e"
+
+
+def test_headings_that_ascend_are_in_the_one_order_the_index_holds() -> None:
+    assert ascending(parse_script("## 1. One\n\nx\n\n## 2. Two\n\ny\n")) is None
+
+
+def test_headings_that_count_backwards_name_the_pair_that_does_not_ascend() -> None:
+    out_of_order = ascending(parse_script("## 2. Two\n\nx\n\n## 1. One\n\ny\n"))
+    assert out_of_order is not None
+    first, second = out_of_order
+    assert (first.index, second.index) == (2, 1)

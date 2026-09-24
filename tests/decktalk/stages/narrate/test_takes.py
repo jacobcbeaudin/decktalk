@@ -1,210 +1,179 @@
-"""Writing one take, placing it by its own section's lead and tail, and joining every take into one track."""
+"""Writing one take, placing it, and joining every take into one narration track."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
-from decktalk.artifacts import Take, Takes, Word, write_words
-from decktalk.media import audio, ffmpeg
-from decktalk.stages.align import align
-from decktalk.stages.narrate import estimated_words, join_takes, placed
-from decktalk.stages.narrate.plan import silent_hash, take_name, words_name
-from decktalk.stages.narrate.takes import index_cached_take, write_silent_take, write_voiced_take
+from decktalk.artifacts import Take, Takes, Words, take_file, words_file
+from decktalk.inputs import Inputs
+from decktalk.inputs.script import parse_script
+from decktalk.media import audio
+from decktalk.results import Word
+from decktalk.speech import SpeechRequest
+from decktalk.stages.narrate.plan import placeholder_plan, voiced_plan
+from decktalk.stages.narrate.takes import (
+    PLACEHOLDER_CLOSE_SECONDS,
+    estimated_words,
+    join_takes,
+    place,
+    planned_words,
+    write_placeholder_take,
+    write_voiced_take,
+)
 
-from decktalk.model.script import Segment  # isort: skip
-
-
-def _segment(text: str = "one two three four five", index: int = 1) -> Segment:
-    return Segment(index=index, title="T", slug="t", text=text)
-
-
-def test_estimated_words_span_the_whole_take():
-    """A take carries neither its lead nor its tail, so the estimated words fill it from zero to its end."""
-    words = estimated_words(_segment(), 5.0)
-    assert [w.word for w in words] == ["one", "two", "three", "four", "five"]
-    assert words[0].start == 0.0 and words[-1].end == pytest.approx(4.98)
-
-
-def test_a_silent_take_is_written_under_its_content_hash(project, monkeypatch):
-    seg = project.script_sections()[1][0]
-    digest = silent_hash(seg, project.settings.narration)
-    project.narration_dir.mkdir(parents=True)
-    monkeypatch.setattr(audio, "write_clicks", lambda path, *a, **kw: Path(path).write_bytes(b"clicks"))
-    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 1.6)
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
-    row = write_silent_take(project, seg, "Open", digest)
-    assert row.file == take_name(digest) and row.words_file == words_name(digest)
-    assert row.voiced is False and row.duration_seconds == 2.0 and row.index == 1
-    # The lead and the tail are placement, so they are on the row and never in the take.
-    assert (row.lead_seconds, row.sound_end_seconds, row.tail_seconds, row.span_seconds) == (0.5, 1.6, 0.7, 2.8)
-    assert (project.narration_dir / take_name(digest)).read_bytes() == b"clicks"
+from .conftest import VOICE_ID
 
 
-def test_a_voiced_take_is_the_voice_bytes_and_nothing_else(project, voice, monkeypatch):
-    from decktalk.speech import SpeechRequest
+@pytest.fixture(autouse=True)
+def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where a take's sound ends is read from real bytes, which no take written here has.
 
-    seg = project.script_sections()[1][0]
-    project.narration_dir.mkdir(parents=True)
-    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 2.9)
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 3.0)
-    request = SpeechRequest(text=seg.text, model="m", voice_settings={}, output_format="mp3")
-    row = write_voiced_take(project, voice, seg, "Open", "abc123", request)
-    assert voice.sent == [request] and row.voiced is True and row.hash == "abc123"
-    assert (project.narration_dir / "abc123.mp3").read_bytes() == b"mp3 " + seg.text.encode()
-    assert (row.sound_end_seconds, row.tail_seconds, row.span_seconds) == (2.9, 0.7, 4.1)
-    assert row.spoken == seg.spoken
-
-
-def test_a_take_is_placed_the_same_whether_it_was_voiced_or_found_cached(project, voice, monkeypatch):
-    """The path that wrote the row reaches none of its numbers, and neither does the row that was there before."""
-    from decktalk.speech import SpeechRequest
-
-    seg = project.script_sections()[1][0]
-    project.narration_dir.mkdir(parents=True)
-    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 2.9)
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 3.0)
-    request = SpeechRequest(text=seg.text, model="m", voice_settings={}, output_format="mp3")
-    voiced = write_voiced_take(project, voice, seg, "Open", "abc123", request)
-    data = (project.narration_dir / "abc123.mp3").read_bytes()
-    cached = index_cached_take(project, seg, "Open", "abc123", voiced=True)
-    assert cached == voiced and placed(project, "01", cached) == voiced
-    assert (project.narration_dir / "abc123.mp3").read_bytes() == data, "a cached take was rewritten"
-
-
-def test_a_sections_own_lead_and_tail_replace_the_narration_defaults(project, monkeypatch):
-    from decktalk.model import Project
-
-    assert (project.lead_seconds("02"), project.tail_seconds("02")) == (0.5, 0.7)
-    toml = (project.root / "decktalk.toml").read_text(encoding="utf-8")
-    (project.root / "decktalk.toml").write_text(
-        toml.replace("number = 2\n", "number = 2\nlead_seconds = 0\ntail_seconds = 2.5\n")
-    )
-    reloaded = Project.load(project.root, environ={})
-    assert (reloaded.lead_seconds("02"), reloaded.tail_seconds("02")) == (0.0, 2.5)
-    # The first section is placed like every other: being first gives it no silence of its own.
-    assert (reloaded.lead_seconds("01"), reloaded.tail_seconds("01")) == (0.5, 0.7)
-
-
-def _index(project, digest: str, key: str, *, lead: float = 0.5, end: float = 3.0, tail: float = 0.0) -> Take:
-    write_words(project.takes_dir / words_name(digest), [Word("a", 0.5, 0.9), Word("b", 1.0, 1.6)])
-    return Take(
-        int(key), key, take_name(digest), words_name(digest), digest, 2, 1.0, 3.0,
-        sound_end_seconds=end, lead_seconds=lead, tail_seconds=tail,
-    )  # fmt: skip
-
-
-def test_the_join_puts_each_sections_silence_before_its_take(project, monkeypatch):
-    """A lead is silence in narration.mp3 before the take, so the words move and the take does not."""
-    toml = (project.root / "decktalk.toml").read_text(encoding="utf-8")
-    (project.root / "decktalk.toml").write_text(toml.replace("number = 2\n", "number = 2\nlead_seconds = 1.25\n"))
-    (project.root / "cues.json").write_text(
-        json.dumps({"sections": {"2": {"cues": [{"cue": "2.0", "on": "$start"}, {"cue": "2.1", "on": "b"}]}}})
-    )
-    from decktalk.model import Project
-
-    p = Project.load(project.root, environ={})
-    p.narration_dir.mkdir(parents=True)
-    index = Takes(script="script.md", model="m", output_format="mp3")
-    index.sections = {"01": _index(p, "h1", "01"), "02": _index(p, "h2", "02", lead=1.25), "03": _index(p, "h3", "03")}
-    index.save(p.takes_path)
-    joined: dict = {}
-    monkeypatch.setattr(
-        audio,
-        "concat_audio",
-        lambda parts, out, **kw: joined.update(files=[p.path.name for p in parts], leads=[p.lead for p in parts]),
-    )
-    join_takes(p, index, p.script_sections()[1])
-    # Every section carries [narration] lead_seconds, and section 2 its own lead_seconds in its place.
-    assert joined == {"files": ["h1.mp3", "h2.mp3", "h3.mp3"], "leads": [0.5, 1.25, 0.5]}
-    assert (index.start("01"), index.end("01")) == (0.0, 3.5)
-    assert (index.start("02"), index.end("02"), index.span("02")) == (3.5, 7.75, 4.25)
-    two_words = p.narration_words("02", index.sections["02"].words_file, at=index.start("02"))
-    assert [(w.start, w.end) for w in two_words] == [(5.25, 5.65), (5.75, 6.35)]
-    saved = Takes.load(p.takes_path)
-    assert saved is not None and saved.sections["02"].lead_seconds == 1.25
-    # Cue times count from the section start, so the lead moves each word cue and $start stays at 0.
-    assert align(p).cue_times.times("02") == {"2.0": 0.0, "2.1": 2.25}
-
-
-def test_a_shared_cache_dir_holds_the_takes_and_never_one_project_index(make_project, base, tmp_path, monkeypatch):
-    """A take is named by content and safe to share, while the index and the joined track are one project's own."""
-    from decktalk.stages.narrate import narrate
-
-    monkeypatch.setattr(audio, "write_clicks", lambda path, *a, **kw: Path(path).write_bytes(b"clicks"))
-    monkeypatch.setattr(audio, "concat_audio", lambda files, out, **kw: out.write_bytes(b"narration"))
-    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 1.8)
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 2.0)
-    monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path, sample_rate=48000: 2.0)
-    toml, script = base
-    shared = tmp_path / "takes"
-    toml = toml.replace("[narration]\n", f'[narration]\ncache_dir = "{shared}"\n')
-    one = make_project(toml=toml, script=script, name="one")
-    narrate(one, silent=True)
-    assert one.takes_dir == shared and one.takes_path.parent == one.root / "build" / "narration"
-    assert sorted(p.suffix for p in shared.iterdir()) == [".json", ".json", ".json", ".mp3", ".mp3", ".mp3"]
-    assert not (shared / "takes.json").exists() and not (shared / "narration.mp3").exists()
-
-    # A second project shares the takes and keeps its own index, so neither run replaces the other's.
-    two = make_project(toml=toml, script=script.replace("## 3. Close", "## 3. A different close"), name="two")
-    result = narrate(two, silent=True)
-    assert result.cached == ["01", "02", "03"] and Takes.load(one.takes_path) != Takes.load(two.takes_path)
-
-
-def test_a_take_in_a_shared_cache_is_placed_like_any_other_and_never_rewritten(
-    make_project, base, tmp_path, monkeypatch
-):
-    """No stage rewrites a take, so a shared one needs no rule of its own: its silence is placed around it."""
-    toml, script = base
-    shared = tmp_path / "shared"
-    shared.mkdir()
-    project = make_project(toml=toml.replace("[narration]\n", f'[narration]\ncache_dir = "{shared}"\n'), name="one")
-    seg = project.script_sections()[1][0]
-    (shared / "abc123.mp3").write_bytes(b"mp3")
-    write_words(shared / "abc123.words.json", [Word("a", 0.1, 0.4)])
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 3.0)
-    monkeypatch.setattr(audio, "sound_end", lambda path, **kw: 2.4)
-    row = index_cached_take(project, seg, "Open", "abc123", voiced=True)
-    assert (row.lead_seconds, row.sound_end_seconds, row.tail_seconds, row.span_seconds) == (0.5, 2.4, 0.7, 3.6)
-    assert (shared / "abc123.mp3").read_bytes() == b"mp3"
-
-
-def test_the_tail_reaches_the_join_the_clock_and_the_total(make_project, base, monkeypatch):
-    """The tail is silence after the take's last sound, so every reader counts it and the join ends the take there."""
-    toml, script = base
-    project = make_project(toml=toml, name="tailed")
-    project.narration_dir.mkdir(parents=True)
-    index = Takes(script="script.md", model="m", output_format="mp3")
-    for key in ("01", "02", "03"):
-        index.sections[key] = _index(project, f"h{key}", key, end=2.5, tail=0.7)
-    index.save(project.takes_path)
-    # Every take sounds for 2.5 s of its 3.0 s, after a 0.5 s lead and before a 0.7 s tail.
-    assert index.total_seconds == pytest.approx(3 * 3.7)
-    joined: dict = {}
-    monkeypatch.setattr(audio, "concat_audio", lambda parts, out, **kw: joined.update(parts=parts))
-    join_takes(project, index, project.script_sections()[1])
-    # Each take plays to its sound end and no further, and its tail is silence placed after that.
-    assert [(p.lead, p.play, p.tail) for p in joined["parts"]] == [(0.5, 2.5, 0.7)] * 3
-    assert (index.start("01"), index.end("01")) == (0.0, 3.7)
-    assert (index.start("02"), index.end("02")) == (3.7, 7.4)
-
-
-@pytest.mark.media
-def test_the_join_cuts_or_pads_each_take_to_its_length(tmp_path):
-    """The filter graph places every take to the sample, so the joined track is as long as the clock says.
-
-    This one runs the real ffmpeg, which `decktalk install` fetches, so it carries the media marker
-    and the default suite leaves it out.
+    The fake encoder writes an empty file, so the scan is answered at the seam the stage reads it
+    through, and every placement test measures the arithmetic rather than ffmpeg.
     """
-    from decktalk.media import ffmpeg as real_ffmpeg
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
 
-    one, two = tmp_path / "a.mp3", tmp_path / "b.mp3"
-    for path in (one, two):
-        audio.write_clicks(path, 1.0, [0.1], sample_rate=48000, bitrate="128k")
-    out = tmp_path / "joined.mp3"
-    # The first take plays all of its 1.0 s and gets 0.25 s of tail, and the second is cut at 0.6 s.
-    parts = [audio.Placement(one, lead=0.5, play=1.0, tail=0.25), audio.Placement(two, lead=0.25, play=0.6)]
-    audio.concat_audio(parts, out, bitrate="128k", sample_rate=48000)
-    assert real_ffmpeg.decoded_duration(out, sample_rate=48000) == pytest.approx(2.6, abs=0.03)
+
+def a_take(section: int = 1, *, digest: str = "abc", seconds: float = 1.0) -> Take:
+    return Take(
+        section=section,
+        key=f"{section:02d}",
+        chapter="Open",
+        hash=digest,
+        voiced=True,
+        word_count=2,
+        characters=8,
+        estimated_seconds=1.0,
+        duration_seconds=seconds,
+        spoken="A bowl.",
+    )
+
+
+def test_estimated_words_space_the_section_evenly_and_drop_its_punctuation() -> None:
+    (segment,) = parse_script("## 1. Open\n\nA bowl, a ball.\n")
+    words = estimated_words(segment, 4.0)
+    assert [word.word for word in words] == ["A", "bowl", "a", "ball"]
+    assert words[0].start == 0.0
+    assert words[-1].end == pytest.approx(3.98)
+
+
+def test_a_section_that_says_nothing_has_no_estimated_words() -> None:
+    (segment,) = parse_script("## 1. Open\n\n[A direction alone.]\n")
+    assert estimated_words(segment, 4.0) == []
+
+
+def test_placing_a_take_reads_its_own_bytes_and_its_own_section(inputs: Inputs) -> None:
+    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
+    (inputs.workspace.takes_dir / take_file("abc")).write_bytes(b"")
+    placed = place(inputs, 1, a_take())
+    assert placed.sound_end_seconds == pytest.approx(0.8)
+    assert placed.lead_seconds == pytest.approx(0.5)
+    assert placed.tail_seconds == pytest.approx(0.7)
+    assert placed.span_seconds == pytest.approx(2.0)
+
+
+def test_a_row_that_carries_its_sound_end_keeps_it(inputs: Inputs) -> None:
+    """The file its hash names holds the same bytes it was measured on, so it is measured once."""
+    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
+    (inputs.workspace.takes_dir / take_file("abc")).write_bytes(b"")
+    assert place(inputs, 1, a_take().model_copy(update={"sound_end_seconds": 0.25})).sound_end_seconds == 0.25
+
+
+def test_a_placeholder_take_writes_its_audio_and_its_words(inputs: Inputs, fake_ffmpeg: object) -> None:
+    assert fake_ffmpeg is not None
+    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
+    (segment,) = [s for s in inputs.spoken() if s.index == 1]
+    plan = placeholder_plan(inputs, [segment])[0]
+    assert plan.digest is not None
+    row, written = write_placeholder_take(inputs, segment, "Open", plan.digest)
+    assert [path.name for path in written] == [take_file(plan.digest), words_file(plan.digest)]
+    assert all(path.exists() for path in written)
+    assert row.voiced is False
+    assert row.section == 1
+    words = Words.read(inputs.workspace.takes_dir / words_file(plan.digest))
+    assert words is not None
+    assert [word.word for word in words.words] == ["A", "bowl", "A", "ball"]
+
+
+def test_a_placeholder_take_closes_on_silence_so_its_sound_end_can_be_read(
+    inputs: Inputs, fake_ffmpeg: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert fake_ffmpeg is not None
+    asked: list[float] = []
+    monkeypatch.setattr(audio, "write_clicks", lambda path, duration, times, **_k: asked.append(duration))
+    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
+    (segment,) = [s for s in inputs.spoken() if s.index == 1]
+    (inputs.workspace.takes_dir / take_file("d")).write_bytes(b"")
+    write_placeholder_take(inputs, segment, "Open", "d")
+    assert asked == [pytest.approx(segment.silent_seconds(inputs.settings.narration) + PLACEHOLDER_CLOSE_SECONDS)]
+
+
+def test_a_voiced_take_writes_what_the_provider_answered(
+    inputs: Inputs, fake_ffmpeg: object, fake_voice: object
+) -> None:
+    assert fake_ffmpeg is not None
+    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
+    (segment,) = [s for s in inputs.spoken() if s.index == 1]
+    request = SpeechRequest(text=segment.tts_text, voice_id=VOICE_ID, model="m")
+    row, written = write_voiced_take(inputs, fake_voice, segment, "Open", "paid", request)  # type: ignore[arg-type]
+    assert (inputs.workspace.takes_dir / take_file("paid")).read_bytes() == b"take"
+    assert row.voiced is True
+    assert row.speech_end_seconds == pytest.approx(1.0)
+    assert fake_voice.requests == [request]  # type: ignore[attr-defined]
+    assert len(written) == 2
+
+
+def test_the_narration_is_joined_in_the_order_the_index_holds(
+    inputs: Inputs, fake_ffmpeg: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The index is the one order the narration plays in, so the join never reads the script."""
+    placed: list[audio.Placement] = []
+    monkeypatch.setattr(audio, "concat_audio", lambda parts, _out, **_k: placed.extend(parts))
+    assert fake_ffmpeg is not None
+    index = Takes(
+        script="script.md",
+        model="m",
+        output_format="mp3_44100_128",
+        sections=(
+            a_take(1, digest="one").model_copy(
+                update={"sound_end_seconds": 0.8, "lead_seconds": 0.5, "tail_seconds": 0.7}
+            ),
+            a_take(2, digest="two").model_copy(
+                update={"sound_end_seconds": 0.4, "lead_seconds": 0.1, "tail_seconds": 0.2}
+            ),
+        ),
+    )
+    join_takes(inputs, index)
+    assert [part.path.name for part in placed] == [take_file("one"), take_file("two")]
+    assert [part.lead for part in placed] == [0.5, 0.1]
+    assert [part.play for part in placed] == [0.8, 0.4]
+    assert [part.tail for part in placed] == [0.7, 0.2]
+
+
+def test_planned_words_estimate_a_section_nothing_has_voiced_yet(inputs: Inputs) -> None:
+    (segment,) = [s for s in inputs.spoken() if s.index == 1]
+    plan = placeholder_plan(inputs, [segment])[0]
+    words, span, estimated = planned_words(inputs, plan)
+    assert estimated is True
+    assert words[0].start == pytest.approx(inputs.lead_seconds(1))
+    assert span == pytest.approx(inputs.lead_seconds(1) + segment.silent_seconds(inputs.settings.narration) + 0.7)
+
+
+def test_planned_words_read_the_take_on_disk_when_there_is_one(
+    inputs: Inputs, fake_ffmpeg: object, fake_voice: object
+) -> None:
+    """A cached take already carries its own words, so a cue resolves against them and not a guess."""
+    assert fake_ffmpeg is not None and fake_voice is not None
+    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
+    targets = [s for s in inputs.spoken() if s.index == 1]
+    plans, _why = voiced_plan(inputs, targets, model="m", voice_id=VOICE_ID)
+    digest = plans[0].digest
+    assert digest is not None
+    (inputs.workspace.takes_dir / take_file(digest)).write_bytes(b"")
+    Words(words=(Word(word="A", start=0.0, end=0.4),)).write(inputs.workspace.takes_dir / words_file(digest))
+    kept, _why = voiced_plan(inputs, targets, model="m", voice_id=VOICE_ID)
+    words, span, estimated = planned_words(inputs, kept[0])
+    assert estimated is False
+    assert [word.word for word in words] == ["A"]
+    assert words[0].start == pytest.approx(0.5)
+    assert span == pytest.approx(0.5 + 0.8 + 0.7)
