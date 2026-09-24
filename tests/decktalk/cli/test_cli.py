@@ -1,129 +1,158 @@
-"""`main`: what each ending looks like to a caller, in the exit code and in the one envelope."""
+"""The whole surface: every command, the library call behind it, and the result it answers with.
+
+`SURFACE` is the one table this suite holds the command line to, and it is total in both directions.
+A command with no row is named here, a row with no command is named here, and a row whose callable
+is not on `Project`, on `Machine` or in the module it names is named here. That is what stops a
+command from being added without a library call, and a library call from quietly losing its command.
+"""
 
 from __future__ import annotations
 
-import logging
+import json
+import sys
 
-from decktalk.cli import dispatch, main
-from decktalk.cli.schema import ErrorSlot, read_envelope
-from decktalk.errors import ConfigError, ErrorCode, ToolError
-from decktalk.pipeline import Stage
-from decktalk.verdicts import Verdict
+import jsonschema
+import pytest
 
+from decktalk import __version__
+from decktalk import machine as machines
+from decktalk import project as projects
+from decktalk import settings as knobs
+from decktalk.cli import catalog, main
+from decktalk.errors import NotBuiltError
+from decktalk.explain import explain
+from decktalk.machine import Machine
+from decktalk.project import Project
+from decktalk.results import (
+    AssembleResult,
+    BuildResult,
+    CheckResult,
+    ClipResult,
+    ConfigExplainResult,
+    ConfigGetResult,
+    ConfigListResult,
+    ConfigSetResult,
+    ConfigUnsetResult,
+    CueResult,
+    DoctorResult,
+    InitResult,
+    InstallResult,
+    NarrateResult,
+    RecordResult,
+    Result,
+    ServeResult,
+    SoundscapeResult,
+    StatusResult,
+    StoryboardResult,
+    VerifyResult,
+    WordsResult,
+)
+from support.paths import REPO
 
-def test_a_usage_error_exits_2_and_says_so_in_the_envelope(capsys):
-    assert main(["nonesuch"]) == 2
-    assert "error[USAGE]:" in capsys.readouterr().err
-    assert main(["verify", "--nope", "--json"]) == 2
-    doc = read_envelope(capsys.readouterr().out)
-    assert (doc.command, doc.ok, doc.exit_code) == (Stage.VERIFY.value, False, 2)
-    assert doc.error is not None and doc.error.code is ErrorCode.USAGE and "--nope" in doc.error.message
-    assert doc.error.hint and doc.payload is None and doc.findings.items == []
+SURFACE: dict[str, tuple[object, str, type[Result] | None]] = {
+    "init": (machines, "init", InitResult),
+    "install": (Machine, "install", InstallResult),
+    "doctor": (Machine, "doctor", DoctorResult),
+    "status": (Project, "status", StatusResult),
+    "check": (Project, "check", CheckResult),
+    "words": (Project, "words", WordsResult),
+    "storyboard": (Project, "storyboard", StoryboardResult),
+    "serve": (Project, "serve", ServeResult),
+    "config list": (knobs, "KEYS", ConfigListResult),
+    "config get": (knobs, "value_of", ConfigGetResult),
+    "config set": (knobs, "write", ConfigSetResult),
+    "config unset": (knobs, "load", ConfigUnsetResult),
+    "config explain": (sys.modules[explain.__module__], "explain", ConfigExplainResult),
+    "schema": (catalog, "document", None),
+    "narrate": (Project, "narrate", NarrateResult),
+    "cue": (Project, "cue", CueResult),
+    "record": (Project, "record", RecordResult),
+    "soundscape": (Project, "soundscape", SoundscapeResult),
+    "assemble": (Project, "assemble", AssembleResult),
+    "verify": (Project, "verify", VerifyResult),
+    "build": (Project, "build", BuildResult),
+    "clip": (Project, "clip", ClipResult),
+}
+"""Every command, the library name that implements it, and the result it answers with.
 
+`schema` answers with the contract document itself rather than a result, which is the one envelope
+exemption in the product, so its row carries no model.
+"""
 
-def test_an_argument_rule_is_a_usage_error_and_not_a_crash(capsys):
-    assert main(["screenshots", "--after", "3.1eq", "--json"]) == 2
-    error = read_envelope(capsys.readouterr().out).error
-    assert error is not None and error.code is ErrorCode.USAGE
-    assert "--after needs exactly one --slide" in error.message
-
-
-def test_every_decktalk_error_exits_3_with_the_error_slot_filled(monkeypatch, capsys):
-    """Exit 3 means stop and tell the user. A skill must never read it as a finding to fix."""
-
-    def boom(opts):
-        raise ToolError("ffmpeg is not on PATH")
-
-    monkeypatch.setitem(dispatch.HANDLERS, "verify", boom)
-    assert main(["verify", "--json"]) == 3
-    doc = read_envelope(capsys.readouterr().out)
-    assert (doc.ok, doc.exit_code) == (False, 3)
-    assert doc.error == ErrorSlot(code=ErrorCode.TOOL, message="ffmpeg is not on PATH", hint=None, path=None, line=None)
-    assert (doc.findings.certain, doc.findings.uncertain, doc.findings.items) == (0, 0, [])
-    assert main(["verify"]) == 3
-    assert capsys.readouterr().err == "error[TOOL]: ffmpeg is not on PATH\n"
-
-
-def test_an_unexpected_exception_exits_3_under_the_internal_code(monkeypatch, capsys):
-    """A bug is not a finding either, and `--exit-zero` cannot turn it into a pass."""
-
-    def boom(opts):
-        raise ZeroDivisionError("division by zero")
-
-    monkeypatch.setitem(dispatch.HANDLERS, "align", boom)
-    assert main(["align", "--json", "--exit-zero"]) == 3
-    doc = read_envelope(capsys.readouterr().out)
-    assert doc.exit_code == 3 and doc.ok is False and doc.payload is None
-    assert doc.error == ErrorSlot(code=ErrorCode.INTERNAL, message="division by zero", hint=None, path=None, line=None)
-    assert main(["align"]) == 3
-    assert capsys.readouterr().err == "error[INTERNAL]: division by zero\n"
-
-
-def test_verbose_adds_the_traceback_of_a_bug_and_still_exits_3(monkeypatch, capsys):
-    """A developer keeps the traceback, and exit 1 would tell a caller the project is what to fix."""
-
-    def boom(opts):
-        raise ZeroDivisionError("division by zero")
-
-    monkeypatch.setitem(dispatch.HANDLERS, "align", boom)
-    assert main(["align", "-v", "--json"]) == 3
-    captured = capsys.readouterr()
-    error = read_envelope(captured.out).error
-    assert error is not None and error.code is ErrorCode.INTERNAL
-    assert "Traceback" in captured.err and "ZeroDivisionError" in captured.err
-
-
-def test_an_error_names_its_file_relative_to_the_project_it_was_asked_for(tmp_path, capsys):
-    """`error.path` is project-relative, which is the only form a caller can act on."""
-    assert main(["preflight", "-p", str(tmp_path / "nowhere"), "--json"]) == 3
-    slot = read_envelope(capsys.readouterr().out).error
-    assert slot is not None and (slot.code, slot.path) == (ErrorCode.CONFIG, "decktalk.toml")
-    assert slot.message == "decktalk.toml is not there." and slot.hint is not None and "--project DIR" in slot.hint
+EXPECTED_COMMANDS = 18
+"""How many commands the tree has, counting the nested group as the one command a reader types."""
 
 
-def test_a_project_file_that_is_not_there_is_the_one_thing_status_still_reports(tmp_path, capsys):
-    """Every other command stops, and `status` reports, because reading the file is its work."""
-    assert main(["status", "-p", str(tmp_path / "nowhere"), "--json"]) == 1
-    doc = read_envelope(capsys.readouterr().out)
-    assert doc.error is None and doc.findings.certain == 1
-    [row] = doc.findings.items
-    assert (row.verdict, row.where) == (Verdict.MISSING, "decktalk.toml")
+def commands() -> dict[str, dict[str, object]]:
+    """Every command the parser really has, by the words a caller types to reach it."""
+    return {str(row["command"]): row for row in catalog.walk()}
 
 
-def test_a_project_file_that_will_not_parse_is_reported_and_never_called_missing(tmp_path, capsys):
-    (tmp_path / "decktalk.toml").write_text("[project\nname = 'x'\n", encoding="utf-8")
-    assert main(["status", "-p", str(tmp_path), "--json"]) == 1
-    [row] = read_envelope(capsys.readouterr().out).findings.items
-    assert (row.verdict, row.where) == (Verdict.UNREADABLE, "decktalk.toml")
-    assert "is not valid TOML" in row.detail and "bracket left open" in row.detail
-    assert main(["preflight", "-p", str(tmp_path), "--json"]) == 3
+def test_every_command_has_a_row_and_every_row_has_a_command() -> None:
+    assert set(commands()) == set(SURFACE)
 
 
-def test_a_quiet_run_leaves_only_warnings_on_the_logger(tmp_path, capsys):
-    main(["status", "-q", "-p", str(tmp_path / "nowhere")])
-    assert logging.getLogger("decktalk").level == logging.WARNING
-    main(["status", "-v", "-p", str(tmp_path / "nowhere")])
-    assert logging.getLogger("decktalk").level == logging.DEBUG
+def test_the_tree_has_eighteen_commands() -> None:
+    top = {name.split(" ")[0] for name in commands()}
+    assert len(top) == EXPECTED_COMMANDS
 
 
-def test_an_error_hint_reaches_a_person_too(monkeypatch, capsys):
-    def boom(opts):
-        error = ConfigError("cues.json is not valid JSON")
-        error.hint = "run `decktalk status`"
-        raise error
-
-    monkeypatch.setitem(dispatch.HANDLERS, "align", boom)
-    assert main(["align"]) == 3
-    assert capsys.readouterr().err.splitlines() == [
-        "error[CONFIG]: cues.json is not valid JSON",
-        "  hint: run `decktalk status`",
-    ]
+@pytest.mark.parametrize("name", sorted(SURFACE))
+def test_every_row_names_a_library_call_that_is_there(name: str) -> None:
+    holder, attribute, _ = SURFACE[name]
+    assert hasattr(holder, attribute), f"{name} names {attribute}, which is not there"
 
 
-def test_an_interrupt_exits_130_and_promises_no_envelope(monkeypatch, capsys):
-    def stop(opts):
-        raise KeyboardInterrupt
+@pytest.mark.parametrize("name", sorted(SURFACE))
+def test_every_command_answers_with_the_result_its_row_names(name: str) -> None:
+    model = SURFACE[name][2]
+    printed = commands()[name]["result"]
+    assert printed == (None if model is None else _name_of(model))
 
-    monkeypatch.setitem(dispatch.HANDLERS, "record", stop)
-    assert main(["record", "--json"]) == 130
-    assert capsys.readouterr().out == ""
+
+def _name_of(model: type[Result]) -> str:
+    """The name `decktalk schema NAME` prints a result under, read back off the library's registry."""
+    return catalog.NAMES[model]
+
+
+def test_importing_the_command_line_loads_no_stage() -> None:
+    loaded = [name for name in sys.modules if name.startswith("decktalk.stages")]
+    assert loaded == [], f"importing cli loaded {loaded}"
+
+
+def test_the_project_facade_keeps_the_one_edge_the_cli_calls() -> None:
+    assert callable(projects.open)
+    assert callable(projects.section_numbers)
+
+
+def test_bare_decktalk_prints_the_help_on_stderr_and_exits_zero(run) -> None:
+    ran = run()
+    assert ran.exit_code == 0
+    assert ran.out == ""
+    assert "Set up this machine:" in ran.err
+
+
+def test_the_version_is_the_package_version(run) -> None:
+    ran = run("--version")
+    assert ran.exit_code == 0
+    assert ran.out.strip() == __version__
+
+
+def test_the_entry_point_is_the_one_main(run) -> None:
+    assert callable(main)
+    assert run("schema", "error").exit_code == 0
+
+
+def test_the_json_of_a_command_validates_against_its_committed_schema(run, project, answers) -> None:
+    project(status=answers["status"], check=answers["check"])
+    for command, name in (("status", "status"), ("check", "check")):
+        written = json.loads(run(command, "--json").out)
+        committed = json.loads((REPO / "schema" / "results" / f"{name}.json").read_text(encoding="utf-8"))
+        jsonschema.validate(written, committed)
+
+
+def test_the_json_of_a_refusal_validates_against_the_committed_error_schema(run, project) -> None:
+    project(words=NotBuiltError("build/narrate/takes.json is not there."))
+    written = json.loads(run("words", "--json").out)
+    committed = json.loads((REPO / "schema" / "results" / "error.json").read_text(encoding="utf-8"))
+    jsonschema.validate(written, committed)

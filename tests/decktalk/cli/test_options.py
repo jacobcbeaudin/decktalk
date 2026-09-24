@@ -1,80 +1,71 @@
-"""The typed options each command is handed, and the fields a command cannot read."""
+"""The flag families, and the rule that derives them from what a command answers with."""
 
 from __future__ import annotations
 
-import dataclasses
-
 import pytest
+import typer
 
-from decktalk.cli.options import (
-    AlignOptions,
-    BuildOptions,
-    ClipOptions,
-    DoctorOptions,
-    Options,
-    RecordOptions,
-    WordsOptions,
-    load_project,
-    project_root,
-)
-from decktalk.cli.parser import COMMANDS, build_parser
-from decktalk.model import Project
-from decktalk.scaffold import init
-
-REQUIRED = {"init": ["somewhere"], "clip": ["1", "--start", "0", "--end", "1", "--out", "a.mp4"]}
+from decktalk.cli.options import GLOBALS, JUDGES, SPENDS, allowed, one_section, pairs, sections_of, shared_for
+from decktalk.findings import Code
+from decktalk.results import RESULTS, BuildResult, InitResult, StatusResult, WordsResult
 
 
-def test_options_take_their_own_fields_from_the_parsed_line():
-    args = build_parser().parse_args(["build", "-p", "d", "--only", "3-4", "--no-voice", "--crf", "20"])
-    opts = BuildOptions.of(args)
-    assert (opts.project, opts.only, opts.no_voice, opts.crf) == ("d", [3, 4], True, 20)
-    assert (opts.preset, opts.force, opts.progress) == (None, False, None)
-    assert opts.json is False and opts.strict is False
+def test_a_section_selection_is_parsed_by_the_library_and_kept_in_order() -> None:
+    assert sections_of(["3", "5-7", "3"]) == (3, 5, 6, 7)
 
 
-def test_a_flag_a_command_does_not_offer_is_a_field_it_does_not_have():
-    """A handler cannot read a flag its command never took, because the field is not there."""
-    assert not hasattr(AlignOptions(), "only")
-    assert not hasattr(WordsOptions(), "force")
-    assert not hasattr(DoctorOptions(), "project")
+def test_no_section_flag_means_every_section() -> None:
+    assert sections_of(None) is None
+    assert sections_of([]) is None
 
 
-def test_an_option_object_is_frozen():
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        Options().json = True  # type: ignore[misc]
+def test_a_selection_that_names_nothing_is_a_usage_refusal() -> None:
+    with pytest.raises(typer.BadParameter) as refused:
+        sections_of(["three"])
+    assert refused.value.param_hint == "--section"
 
 
-def test_every_command_builds_its_own_options_from_its_own_line():
-    parser = build_parser()
-    for command in COMMANDS:
-        args = parser.parse_args([command.name, *REQUIRED.get(command.name, [])])
-        opts = command.options.of(args)
-        assert isinstance(opts, command.options), command.name
-        assert opts.strict is False and opts.exit_zero is False, command.name
+def test_a_command_that_cuts_one_piece_needs_exactly_one_section() -> None:
+    assert one_section(["3"]) == 3
+    with pytest.raises(typer.BadParameter):
+        one_section(["3,4"])
+    with pytest.raises(typer.BadParameter):
+        one_section(None)
 
 
-def test_a_flag_rebuilds_the_frozen_table_it_overrides(tmp_path, monkeypatch):
-    """The tables are frozen, so a flag replaces one rather than writing into a shared object."""
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    root = init(tmp_path / "deck", name="deck").root
-    plain = Project.load(root)
-    loaded = load_project(ClipOptions(project=str(root), preset="veryfast", crf=20))
-    assert (loaded.settings.video.preset, loaded.settings.video.crf) == ("veryfast", 20)
-    assert (plain.settings.video.preset, plain.settings.video.crf) != ("veryfast", 20)
-    # A table no flag touched is the one the file gave, so an override reaches only what it names.
-    assert loaded.settings.record == plain.settings.record
-    recorded = load_project(RecordOptions(project=str(root), settle=1.5))
-    assert recorded.settings.record.settle_seconds == 1.5
-    assert recorded.settings.video == plain.settings.video
+def test_an_override_that_is_not_a_pair_is_refused_before_anything_loads() -> None:
+    assert pairs(["video.crf=20"]) == ("video.crf=20",)
+    with pytest.raises(typer.BadParameter) as refused:
+        pairs(["video.crf"])
+    assert refused.value.param_hint == "--set"
 
 
-def test_the_root_an_error_names_its_file_against_follows_the_project_flag(tmp_path, monkeypatch):
-    monkeypatch.delenv("DECKTALK_PROJECT", raising=False)
-    assert project_root(ClipOptions(project=str(tmp_path))) == tmp_path.resolve()
-    assert project_root(DoctorOptions()) is None
-    monkeypatch.setenv("DECKTALK_PROJECT", str(tmp_path))
-    assert project_root(ClipOptions()) == tmp_path.resolve()
-    # The project file stands for the directory holding it, as `Project.load` reads it.
-    named = tmp_path / "decktalk.toml"
-    named.write_text("[project]\nname = 'deck'\n", encoding="utf-8")
-    assert project_root(ClipOptions(project=str(named))) == tmp_path.resolve()
+def test_allowed_codes_are_a_set_whatever_the_flag_repeated() -> None:
+    assert allowed([Code.CUE_UNKNOWN, Code.CUE_UNKNOWN]) == frozenset({Code.CUE_UNKNOWN})
+    assert allowed(None) == frozenset()
+
+
+def test_the_globals_are_derived_onto_every_command() -> None:
+    names = {param.name for param in shared_for(StatusResult)}
+    assert {name for name, _, _ in GLOBALS} <= names
+
+
+def test_a_result_that_judges_gains_the_two_finding_flags() -> None:
+    assert {"fail_on", "allow"} <= {param.name for param in shared_for(BuildResult)}
+    assert "fail_on" not in {param.name for param in shared_for(StatusResult)}
+
+
+def test_a_result_that_buys_gains_the_three_spending_flags() -> None:
+    assert {"no_voice", "spend", "max_cost"} <= {param.name for param in shared_for(BuildResult)}
+    assert "spend" not in {param.name for param in shared_for(WordsResult)}
+
+
+def test_a_result_that_is_not_a_result_gains_the_globals_alone() -> None:
+    assert {param.name for param in shared_for(dict)} == {name for name, _, _ in GLOBALS}
+
+
+def test_every_published_result_is_classified_in_both_directions() -> None:
+    every = set(RESULTS.values())
+    assert JUDGES <= every
+    assert SPENDS <= every
+    assert InitResult not in JUDGES

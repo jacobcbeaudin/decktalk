@@ -1,111 +1,108 @@
-"""`doctor`: the table, the envelope and the block a person pastes into a bug report."""
+"""The three commands about this machine, driven through the real parser against a faked machine."""
 
 from __future__ import annotations
 
-import sys
+from pathlib import Path
 
-from decktalk.cli import machine, main
-from decktalk.cli.schema import DoctorPayload, InitPayload, InstallPayload, read_envelope
-from decktalk.verdicts import Verdict
+import pytest
 
+from decktalk.cli import machine as commands
+from decktalk.results import DoctorResult
 
-def test_a_command_prints_one_object_and_nothing_else_on_stdout(tmp_path, monkeypatch, capsys):
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", None)  # keeps the test free of Chromium
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    code = main(["doctor", "--json"])
-    doc = read_envelope(capsys.readouterr().out)  # the whole of stdout parses, so nothing else was there
-    assert doc.command == "doctor" and doc.schema == 1 and isinstance(doc.payload, DoctorPayload)
-    names = {c.name: c for c in doc.payload.components}
-    assert names["python"].ok is True and names["katex"].ok is True
-    assert names["config"].optional is True  # a build runs without it, so its absence is no finding
-    assert doc.findings.certain >= 1 and doc.findings.uncertain == 0
-    assert [r.verdict for r in doc.findings.items] == [Verdict.MISSING] * doc.findings.certain
-    assert doc.ok is False and doc.exit_code == 1 and code == 1
-    assert main(["doctor", "--json", "--exit-zero"]) == 0
-    relaxed = read_envelope(capsys.readouterr().out)
-    assert relaxed.ok is False and relaxed.exit_code == 0  # --exit-zero never hides what was found
+from .conftest import ANSWERS, Fake, finding
 
 
-def test_doctor_report_is_pasteable_and_carries_no_secret(tmp_path, monkeypatch, capsys):
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", None)
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setenv("ELEVENLABS_API_KEY", "sk-not-in-the-report")
-    monkeypatch.setenv("DECKTALK_VIDEO_PRESET", "veryfast")
-    main(["doctor", "--report", "--exit-zero"])
-    block = capsys.readouterr().out
-    assert block.count("```") == 2 and block.splitlines()[1].startswith("```text")
-    for line in ("decktalk ", "platform ", "python ", "katex ", "cache "):
-        assert line in block, line
-    # No environment variable's value reaches it, because a variable may hold a key.
-    assert "sk-not-in-the-report" not in block and "veryfast" not in block
+def test_init_writes_the_project_and_reports_what_it_chose(run, machine, monkeypatch, tmp_path) -> None:
+    made = Fake()
+    monkeypatch.setattr(commands.machines, "init", lambda *args, **keywords: _record(made, *args, **keywords))
+    machine()
+    ran = run("init", str(tmp_path / "demo"), "--defaults")
+    assert ran.exit_code == 0
+    assert made.called("init")["skills"] is True
+    assert "Wrote" in ran.out
 
 
-def test_init_reports_every_file_it_wrote(tmp_path, monkeypatch, capsys):
-    """`written` is the list a caller opens next, so it is the project and not a count of it."""
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    assert main(["init", str(tmp_path / "deck"), "--json"]) == 0
-    doc = read_envelope(capsys.readouterr().out)
-    for name in ("decktalk.toml", "script.md", "cues.json"):
-        assert name in doc.written, name
-    assert doc.summary == {"files": len(doc.written)}
-    assert isinstance(doc.payload, InitPayload)
-    assert doc.payload.name == "deck" and doc.payload.files == doc.written
-    assert (doc.findings.certain, doc.findings.uncertain, doc.findings.items) == (0, 0, []) and doc.error is None
+def _record(fake: Fake, *args: object, **keywords: object) -> object:
+    """Stand in for the one module function `init` calls, and answer with a real result."""
+    fake.calls.append(("init", args, keywords))
+    return ANSWERS["init"]
 
 
-def test_the_doctor_table_names_each_component_and_marks_the_missing_one(tmp_path, monkeypatch, capsys):
-    """The six rows are the test's own state, so the table is the same on a fresh clone as on a built machine."""
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", None)
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    ffmpeg, ffprobe = tmp_path / "ffmpeg", tmp_path / "ffprobe"
-    for tool in (ffmpeg, ffprobe):
-        tool.write_text("#!/bin/sh\n", encoding="utf-8")
-        tool.chmod(0o755)
-    monkeypatch.setenv("DECKTALK_FFMPEG", str(ffmpeg))
-    monkeypatch.setenv("DECKTALK_FFPROBE", str(ffprobe))
-    assert main(["doctor", "--exit-zero"]) == 0
-    rows = {line.split()[0]: line for line in capsys.readouterr().out.splitlines()[1:]}
-    assert set(rows) == {"python", "chromium", "ffmpeg", "ffprobe", "config", "katex"}
-    assert Verdict.MISSING.label in rows["chromium"] and Verdict.OK.label in rows["python"]
+def test_init_takes_the_flags_it_was_given_over_the_defaults(run, machine, monkeypatch, tmp_path) -> None:
+    made = Fake()
+    monkeypatch.setattr(commands.machines, "init", lambda *args, **keywords: _record(made, *args, **keywords))
+    machine()
+    run("init", str(tmp_path / "demo"), "--defaults", "--name", "lesson", "--example", "lesson", "--no-skills")
+    asked = made.called("init")
+    assert asked["name"] == "lesson"
+    assert asked["example"] == "lesson"
+    assert asked["skills"] is False
 
 
-def test_an_ffmpeg_a_variable_names_and_the_disk_does_not_have_is_reported_missing(tmp_path, monkeypatch, capsys):
-    """A typo in the override told a managed machine everything was installed, and the run then died."""
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", None)
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    monkeypatch.setenv("DECKTALK_FFMPEG", str(tmp_path / "not-there"))
-    monkeypatch.setenv("DECKTALK_FFPROBE", str(tmp_path / "also-not-there"))
-    assert main(["doctor", "--exit-zero"]) == 0
-    rows = {line.split()[0]: line for line in capsys.readouterr().out.splitlines()[1:]}
-    assert Verdict.MISSING.label in rows["ffmpeg"] and "DECKTALK_FFMPEG" in rows["ffmpeg"]
-    assert Verdict.MISSING.label in rows["ffprobe"] and "DECKTALK_FFPROBE" in rows["ffprobe"]
+def test_init_into_a_directory_that_holds_files_refuses_and_names_overwrite(run, machine, tmp_path) -> None:
+    (tmp_path / "already.txt").write_text("here", encoding="utf-8")
+    machine()
+    ran = run("init", str(tmp_path))
+    assert ran.exit_code == 2
+    assert "error[APPROVAL]" in ran.err
+    assert "--overwrite" in ran.err
 
 
-def test_a_broken_ffprobe_variable_blames_ffprobe_and_still_reports_the_ffmpeg_that_works(
-    tmp_path, monkeypatch, capsys
-):
-    """A report that names the wrong tool sends an author debugging something that is not broken."""
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", None)
-    monkeypatch.setenv("DECKTALK_CACHE_DIR", str(tmp_path / "empty-cache"))
-    real = tmp_path / "ffmpeg"
-    real.write_text("#!/bin/sh\n", encoding="utf-8")
-    real.chmod(0o755)
-    monkeypatch.setenv("DECKTALK_FFMPEG", str(real))
-    monkeypatch.setenv("DECKTALK_FFPROBE", str(tmp_path / "not-there"))
-    monkeypatch.setattr(machine, "installed_paths", lambda: None)
-    assert main(["doctor", "--exit-zero"]) == 0
-    rows = {line.split()[0]: line for line in capsys.readouterr().out.splitlines()[1:]}
-    assert "DECKTALK_FFPROBE" in rows["ffprobe"] and Verdict.MISSING.label in rows["ffprobe"]
-    # The tool that is fine is still a row of its own, and it never carries the other's variable.
-    assert "DECKTALK_FFPROBE" not in rows["ffmpeg"]
+def test_install_fetches_and_reports_the_cache(run, machine, answers) -> None:
+    made = machine(install=answers["install"])
+    ran = run("install")
+    assert ran.exit_code == 0
+    assert "cache" in ran.out
+    assert made.called("install")
 
 
-def test_install_reports_the_binaries_a_run_would_use(tmp_path, monkeypatch, capsys):
-    """`install` fetches once per machine, so its envelope names what the machine now has."""
-    ffmpeg, ffprobe = (tmp_path / "ffmpeg").as_posix(), (tmp_path / "ffprobe").as_posix()
-    monkeypatch.setattr(machine, "fetch", lambda: None)
-    monkeypatch.setattr(machine, "installed_paths", lambda: (ffmpeg, ffprobe))
-    assert main(["install", "--json"]) == 0
-    doc = read_envelope(capsys.readouterr().out)
-    assert doc.payload == InstallPayload(ffmpeg=ffmpeg, ffprobe=ffprobe)
-    assert doc.written == [] and doc.ok is True and doc.error is None
+def test_doctor_reports_the_machine_and_fetches_nothing(run, machine, answers) -> None:
+    made = machine(doctor=answers["doctor"])
+    ran = run("doctor")
+    assert ran.exit_code == 0
+    assert made.called("doctor")["measure"] is False
+    assert "Python" in ran.out
+
+
+def test_doctor_measures_only_when_asked(run, machine, answers) -> None:
+    made = machine(doctor=answers["doctor"])
+    run("doctor", "--measure")
+    assert made.called("doctor")["measure"] is True
+
+
+def test_doctor_applies_nothing_without_a_terminal_and_without_the_flag(run, machine) -> None:
+    missing = DoctorResult(
+        ok=False,
+        findings=(finding(),),
+        run="r",
+        tools=(),
+        cache=Path("cache"),
+        python="3.12",
+        platform="test",
+        voice_key=False,
+    )
+    made = machine(doctor=missing, apply=None)
+    ran = run("doctor")
+    assert ran.exit_code == 1
+    assert [name for name, _, _ in made.calls] == ["doctor"]
+
+
+def test_doctor_fix_applies_and_reads_the_machine_again(run, machine) -> None:
+    missing = DoctorResult(
+        ok=False,
+        findings=(finding(),),
+        run="r",
+        tools=(),
+        cache=Path("cache"),
+        python="3.12",
+        platform="test",
+        voice_key=False,
+    )
+    made = machine(doctor=missing, apply=None)
+    run("doctor", "--fix")
+    assert [name for name, _, _ in made.calls] == ["doctor", "apply", "doctor"]
+
+
+@pytest.mark.parametrize("name", ["init", "install", "doctor"])
+def test_every_machine_command_is_registered(name: str) -> None:
+    assert hasattr(commands, name)

@@ -1,80 +1,150 @@
-"""The text a person reads: the summary that leads it, and the clock it is written in."""
+"""What the command line writes: the finding line, the error block, and the tables per result."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import io
+from datetime import UTC, datetime
+from pathlib import Path
 
-from decktalk.artifacts import CueTimes
-from decktalk.cli.output import align_table, lead, mmss, status_table, verify_table
-from decktalk.pipeline import SectionKind, Stage
-from decktalk.stages.align import AlignResult, SectionCueTimes
-from decktalk.stages.status import RunStatus, SectionStatus, StatusResult
-from decktalk.verdicts import Findings, Verdict
+import pytest
+from rich.console import Console
 
+from decktalk.cli import output
+from decktalk.errors import ErrorCode, ErrorInfo, InputError
+from decktalk.events import Level, Log, Progress, RunStart, StageDone
+from decktalk.findings import Certainty, Code
+from decktalk.pipeline import Outcome, Stage
+from decktalk.results import RESULTS, ErrorResult, StatusResult
 
-def test_mmss_rounds_before_splitting_minutes():
-    assert mmss(179.6) == "3:00"
-    assert mmss(59.5) == "1:00"
-    assert mmss(197.96) == "3:18"
-    assert mmss(0.0) == "0:00"
-    assert mmss(None) == "  --  "
-
-
-def test_the_summary_leads_with_the_command_s_own_counts():
-    assert lead({"sections": 9, "cues": 24}, Findings()) == "sections 9, cues 24"
-    assert lead({"unresolved": 0, "unknown": None}, Findings()) == "unresolved 0"
-    assert lead({}, Findings()) == ""
+from .conftest import finding
 
 
-def test_the_summary_names_what_was_found_when_anything_was():
-    assert lead({"cues": 24}, Findings(certain=1, uncertain=2)) == "cues 24 | 1 certain, 2 uncertain finding(s)"
-    assert lead({}, Findings(uncertain=1)) == "0 certain, 1 uncertain finding(s)"
+def written(render, *args: object) -> str:
+    """Whatever one renderer put on its console, as plain text."""
+    console = Console(file=io.StringIO(), width=100, no_color=True)
+    render(*args, console)
+    return console.file.getvalue()  # ty: ignore[unresolved-attribute]
 
 
-def test_the_align_table_names_every_cue_it_resolved_and_counts_what_it_did_not():
-    section = SectionCueTimes(key="03", speech_end_seconds=18.5, min_seconds=20.0, resolved=[])
-    section.resolved.append(SimpleNamespace(cue="3.1bowl", at=4.25))
-    result = AlignResult(cue_times=CueTimes(), sections=[section], unresolved=1, estimated=False, unknown=0)
-    lines = align_table(result).splitlines()
-    assert lines[0].split() == ["sec", "speech", "need", "cues"]
-    assert lines[1].split() == ["03", "18.5", "20.0", "3.1bowl@4.25"]
-    assert lines[-1] == "0 sections with cues, 1 unresolved"
-    assert ";" not in align_table(result)
+def test_a_finding_line_carries_its_place_its_code_and_its_sentence() -> None:
+    line = written(output.finding_lines, (finding(),))
+    assert "cues.json:14:" in line
+    assert Code.CUE_UNRESOLVED.value in line
+    assert "is not spoken in section 2" in line
 
 
-def test_the_verify_table_leads_with_each_section_start_and_totals_the_film():
-    start = SimpleNamespace(key="01", start=0.0, probe_at=0.4, yavg=52.0, ymax=201.0, verdict=Verdict.OK)
-    result = SimpleNamespace(
-        starts=[start], total_seconds=41.25, black_starts=0, cuts=[], seams=[], cues=[], recordings=[]
+def test_a_fix_is_printed_under_its_finding_with_its_applicability() -> None:
+    line = written(output.finding_lines, (finding(fix=True),))
+    assert "fix (safe):" in line
+
+
+def test_the_count_line_says_how_many_and_how_many_are_fixable() -> None:
+    line = written(output.finding_lines, (finding(fix=True), finding(Code.CUE_THIN_CHANGE)))
+    assert "Found 2 findings, 1 certain." in line
+    assert "1 fixable with --fix." in line
+
+
+def test_one_finding_is_counted_in_the_singular() -> None:
+    assert "Found 1 finding, 1 certain." in written(output.finding_lines, (finding(),))
+
+
+def test_the_error_block_carries_the_code_the_sentence_the_hint_and_the_page() -> None:
+    info = ErrorInfo.of(InputError("decktalk.toml is not valid TOML.", hint="Fix line 59, then run decktalk status."))
+    block = written(output.error_block, info)
+    assert block.startswith("error[INPUT]: decktalk.toml is not valid TOML.")
+    assert "  hint: Fix line 59, then run decktalk status." in block
+    assert f"  docs: {ErrorCode.INPUT.url}" in block
+
+
+def test_an_uncertain_finding_is_not_counted_as_certain() -> None:
+    soft = finding(Code.CUE_THIN_CHANGE)
+    assert soft.certainty is Certainty.UNCERTAIN
+    assert "0 certain" in written(output.finding_lines, (soft,))
+
+
+@pytest.mark.parametrize("name", sorted(output.RENDERERS, key=lambda model: model.__name__))
+def test_every_renderer_is_for_a_published_result(name) -> None:
+    assert name in set(RESULTS.values())
+
+
+def test_a_result_with_no_renderer_still_prints_its_findings() -> None:
+    console = Console(file=io.StringIO(), width=100, no_color=True)
+    output.render(ErrorResult(ok=False, findings=(finding(),)), console)
+    assert Code.CUE_UNRESOLVED.value in console.file.getvalue()  # ty: ignore[unresolved-attribute]
+
+
+def test_the_plain_lines_renderer_writes_one_line_per_stage_that_ended() -> None:
+    console = Console(file=io.StringIO(), width=100, no_color=True)
+    lines = output.Lines(console)
+    lines(_stage_done())
+    lines(
+        Progress(
+            event="progress",
+            time=_now(),
+            seq=1,
+            run="r",
+            stage=Stage.RECORD,
+            done=1,
+            total=3,
+            unit="section",
+            label="a section",
+        )
+    )  # ty: ignore[invalid-argument-type]
+    assert console.file.getvalue().count("\n") == 1  # ty: ignore[unresolved-attribute]
+    assert "Record" in console.file.getvalue()  # ty: ignore[unresolved-attribute]
+
+
+def test_the_events_renderer_writes_the_library_s_own_line() -> None:
+    console = Console(file=io.StringIO(), width=100, no_color=True)
+    output.Jsonl(console)(_stage_done())
+    assert '"event":"stage.done"' in console.file.getvalue()  # ty: ignore[unresolved-attribute]
+
+
+def test_a_debug_line_is_written_under_verbose_alone() -> None:
+    quiet = Console(file=io.StringIO(), width=100, no_color=True)
+    output.Notes(quiet, verbose=False, quiet=False)(_log(Level.DEBUG))
+    assert quiet.file.getvalue() == ""  # ty: ignore[unresolved-attribute]
+    loud = Console(file=io.StringIO(), width=100, no_color=True)
+    output.Notes(loud, verbose=True, quiet=False)(_log(Level.DEBUG))
+    assert "a debug line" in loud.file.getvalue()  # ty: ignore[unresolved-attribute]
+
+
+def test_a_warning_survives_quiet() -> None:
+    console = Console(file=io.StringIO(), width=100, no_color=True)
+    output.Notes(console, verbose=False, quiet=True)(_log(Level.WARNING))
+    assert "a debug line" in console.file.getvalue()  # ty: ignore[unresolved-attribute]
+
+
+def test_the_opening_line_names_the_run_and_its_events_file_once() -> None:
+    console = Console(file=io.StringIO(), width=100, no_color=True)
+    opening = output.Opening(console)
+    line = RunStart(event="run.start", time=_now(), seq=0, run="abc", events_path=Path("build/events/abc.jsonl"))
+    opening(line)
+    opening(line)
+    assert console.file.getvalue().count("run abc") == 1  # ty: ignore[unresolved-attribute]
+
+
+def test_a_status_table_names_every_column_a_reader_scans() -> None:
+    console = Console(file=io.StringIO(), width=120, no_color=True)
+    output.render(
+        StatusResult(ok=True, run="r", name="demo", script=Path("script.md"), cues=Path("cues.json"), sections=()),
+        console,
     )
-    lines = verify_table(result).splitlines()
-    assert lines[0].split() == "sec start probe YAVG YMAX result".split()
-    assert lines[1].split() == ["01", "0.00", "0.40", "52", "201", Verdict.OK.label]
-    assert lines[-1] == "total 41.25s, 0 black section start(s)"
+    assert "Section" in console.file.getvalue()  # ty: ignore[unresolved-attribute]
 
 
-def test_the_status_table_says_what_is_there_and_whether_a_build_runs(tmp_path):
-    report = StatusResult(
-        root=tmp_path,
-        name="deck",
-        script=tmp_path / "script.md",
-        script_exists=True,
-        cues=tmp_path / "cues.json",
-        cues_exists=True,
-        sections=[
-            SectionStatus(key="01", kind=SectionKind.PAGE, source="deck/index.html?scene=1", recorded=True, cut=False)
-        ],
-        takes=None,
-        cue_times_exists=False,
-        cue_times_sections={},
-        final=tmp_path / "build" / "out" / "deck.mp4",
-        final_exists=False,
-        final_duration=None,
-        run=RunStatus(pid=7, started="2026-09-18T20:32:53.581Z", stage=Stage.RECORD,
-                      sections_done=2, sections_total=None, alive=True),
-    )  # fmt: skip
-    lines = status_table(report).splitlines()
-    assert lines[0].startswith(f"project   {tmp_path}") and "(name: deck)" in lines[0]
-    assert lines[1].split()[:3] == ["script", "script.md", Verdict.OK.label]
-    assert "final     not built" in lines
-    assert lines[-1] == "build     running at record (started 2026-09-18T20:32:53.581Z)"
+def _stage_done() -> StageDone:
+    """One stage that ended, which is the moment both stage renderers print."""
+    return StageDone(
+        event="stage.done", time=_now(), seq=0, run="r", stage=Stage.RECORD, outcome=Outcome.OK, seconds=58.0
+    )
+
+
+def _log(level: Level) -> Log:
+    """One line the library would have printed, at the level a test is about."""
+    return Log(event="log", time=_now(), seq=0, run="r", level=level, message="a debug line")
+
+
+def _now() -> datetime:
+    """One instant, which every event carries and no assertion here reads."""
+    return datetime.now(UTC)

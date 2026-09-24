@@ -1,122 +1,185 @@
-"""Stage results built by hand, so a handler is tested with no recording, no ffmpeg and no browser.
+"""What every command-line test drives: the real parser, with the library faked at one seam.
 
-Each fixture returns the real result class a stage returns, so the payload a handler prints is the
-payload a caller receives, and a test reads it back through `cli.schema` like any other caller.
+A test here writes a command line and reads what came back on the two streams and in the exit code,
+which is the whole contract the command line publishes. The parser, the help, the derivation of the
+shared flags, the renderer and the exit code are all real. What is faked is the one seam a command
+reaches the library through, which is `Session.project` and `Session.machine`, so a test exercises
+the client without a browser, an encoder or a voice.
 """
 
 from __future__ import annotations
 
-import importlib
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
 
 import pytest
+from typer.testing import CliRunner
 
-from decktalk.artifacts import Luma, RecordingChecks, RecordingLog
-from decktalk.cli import authoring, video
-from decktalk.model import PageSection
-from decktalk.stages.record import RecordResult, SectionRecording
-from decktalk.stages.verify import CueCheck, CutCheck, StartCheck, VerifyResult
-from decktalk.verdicts import SkipReason, Verdict
+from decktalk.cli import main
+from decktalk.cli import session as sessions
+from decktalk.events import Event, Events
+from decktalk.findings import Applicability, Code, EditFix, Finding, Location
+from decktalk.results import (
+    BuildResult,
+    CheckResult,
+    DoctorResult,
+    InitResult,
+    InstallResult,
+    Layer,
+    Result,
+    ServeResult,
+    Spend,
+    SpendState,
+    StatusResult,
+    StoryboardResult,
+    Voicing,
+    WordsResult,
+)
+
+TTY = "TTY_COMPATIBLE"
+"""The variable Rich reads to be told there is a terminal here, which is how both paths are run."""
+
+
+@dataclass(frozen=True)
+class Ran:
+    """One command line, as its caller sees it: the exit code and the two streams."""
+
+    exit_code: int
+    out: str
+    err: str
 
 
 @pytest.fixture
-def stage():
-    """The stage module itself, so a test replaces the function the handler calls."""
+def run(monkeypatch: pytest.MonkeyPatch):
+    """Run one command line through the real entry point and give back what a caller would see."""
 
-    def module(name: str) -> ModuleType:
-        return importlib.import_module(f"decktalk.stages.{name}")
+    def go(*argv: str, stdin: str = "", tty: bool = False) -> Ran:
+        monkeypatch.setenv(TTY, "1" if tty else "0")
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        runner = CliRunner()
+        with runner.isolation(input=stdin) as (out, err, _):
+            code = main(list(argv))
+            sys.stdout.flush()
+            sys.stderr.flush()
+            return Ran(code, out.getvalue().decode(), err.getvalue().decode())
 
-    return module
+    return go
 
 
-@pytest.fixture
-def fake_project(monkeypatch, tmp_path):
-    """Skip Project.load, so a command runs against the stage function a test installs.
+class Fake:
+    """A stand-in for `Project` or `Machine` that records every call and answers as it was told to.
 
-    It carries the paths and the one setting the handlers read, so a handler is exercised whole
-    rather than up to its first attribute.
+    Every command is a thin client of one of those two objects, so a fake at that seam is the whole
+    of what a command-line test needs to say what the client did.
     """
-    narration = tmp_path / "build" / "narration"
-    project = SimpleNamespace(
-        root=tmp_path,
-        build=tmp_path / "build",
-        path=lambda name: tmp_path / name,
-        narration_dir=narration,
-        takes_dir=narration,
-        takes_path=narration / "takes.json",
-        narration_path=narration / "narration.mp3",
-        settings=SimpleNamespace(narration=SimpleNamespace(words_per_minute=150)),
-        voice=SimpleNamespace(price_per_1000_characters=0.0),
-        workspace=SimpleNamespace(
-            recording_log=lambda key: tmp_path / "build" / "recordings" / f"{key}.json",
-            progress_path=tmp_path / "build" / "progress.jsonl",
-        ),
-        page_files=["deck/index.html"],
+
+    def __init__(self, **answers: object) -> None:
+        self.answers = dict(answers)
+        self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+        self.events = Events()
+        self.emits: dict[str, tuple[type[Event], dict[str, object]]] = {}
+        self.root = Path.cwd()
+
+    def called(self, name: str) -> dict[str, object]:
+        """The keywords one call was made with, which is what a client test asserts on."""
+        for made, _, keywords in self.calls:
+            if made == name:
+                return keywords
+        raise AssertionError(f"{name} was never called, and these were: {[made for made, _, _ in self.calls]}")
+
+    def __getattr__(self, name: str) -> Callable[..., object]:
+        def call(*args: object, **keywords: object) -> object:
+            self.calls.append((name, args, keywords))
+            line = self.emits.get(name)
+            if line is not None:
+                self.events.emit("r", line[0], **line[1])
+            answer = self.answers.get(name)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        return call
+
+
+@pytest.fixture
+def project(monkeypatch: pytest.MonkeyPatch):
+    """Put a fake project behind `Session.project`, which is the seam every project command uses."""
+
+    def install(**answers: object) -> Fake:
+        fake = Fake(**answers)
+        monkeypatch.setattr(sessions.Session, "project", lambda self: fake)
+        return fake
+
+    return install
+
+
+@pytest.fixture
+def machine(monkeypatch: pytest.MonkeyPatch):
+    """Put a fake machine behind `Session.machine`, which is the seam every machine command uses."""
+
+    def install(**answers: object) -> Fake:
+        fake = Fake(**answers)
+        monkeypatch.setattr(sessions.Session, "machine", property(lambda self: fake))
+        return fake
+
+    return install
+
+
+def spend(dollars: float = 0.12, ceiling: float = 0.2) -> Spend:
+    """A priced run, which is what `check` reports and what an approval refusal carries."""
+    return Spend(
+        state=SpendState.ESTIMATE,
+        sections=(1, 2, 3),
+        characters=392,
+        dollars=dollars,
+        ceiling_dollars=ceiling,
+        price_per_1000_characters=0.3,
+        price_layer=Layer.PROJECT,
     )
-    for module in (authoring, video):
-        monkeypatch.setattr(module, "load_project", lambda opts: project)
-    return project
 
 
-@pytest.fixture
-def recording_row(tmp_path):
-    """One section of a `record` run, carrying whichever verdicts a test wants judged."""
-
-    def row(*verdicts: Verdict, number: int = 1, kept: bool = False) -> SectionRecording:
-        checks = RecordingChecks(9.0, 10.5, Luma(y10=100.0, y50=100.0, y90=100.0, max50=200.0), verdicts)
-        log = RecordingLog(
-            url="u", requested_seconds=10.5, settle_seconds=0.5, load_seconds=0.1, clock_start_seconds=1.4,
-            t0_method="cover", checks=checks,
-        )  # fmt: skip
-        section = PageSection(number=number, page="deck/index.html", scene=str(number))
-        path = Path(tmp_path) / "build" / "recordings" / f"{section.key}.webm"
-        return SectionRecording(section=section, path=path, log=log, kept=kept)
-
-    return row
-
-
-@pytest.fixture
-def record_result():
-    """A whole `record` result around the section rows a test hands it."""
-
-    def result(*rows: SectionRecording) -> RecordResult:
-        return RecordResult(sections=list(rows))
-
-    return result
-
-
-@pytest.fixture
-def cue_row():
-    """One cue row of `verify`, with the fields a test cares about overridden."""
-
-    def row(check: str, verdict: Verdict, reason: SkipReason | None = None, **fields) -> CueCheck:
-        built = dict(
-            cue_seconds=1.0,
-            final_seconds=1.0,
-            changed_percent=1.0,
-            control_percent=0.0,
-            ok=verdict is Verdict.CHANGED,
-            note="",
-            offset_ms=0,
+def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
+    """One judgement, with a safe fix under it when the test is about fixing."""
+    repair = (
+        EditFix(
+            title='Change the phrase to "the same thing in code".',
+            applicability=Applicability.SAFE,
+            edits=({"file": "cues.json", "line": 14, "new": '"on": "the same thing in code"'},),
         )
-        built.update(fields)
-        return CueCheck(check=check, verdict=verdict, reason=reason, **built)
+        if fix
+        else None
+    )
+    return Finding.model_validate(
+        {
+            "code": code,
+            "message": 'The phrase "same thing in the code" is not spoken in section 2.',
+            "location": Location(where="cues.json", file=Path("cues.json"), line=14, section=2),
+            "fix": repair,
+        }
+    )
 
-    return row
+
+ANSWERS: dict[str, Result] = {
+    "init": InitResult(ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills=True),
+    "install": InstallResult(ok=True, run="r", tools=(), cache=Path("cache")),
+    "doctor": DoctorResult(
+        ok=True, run="r", tools=(), cache=Path("cache"), python="3.12", platform="test", voice_key=False
+    ),
+    "status": StatusResult(
+        ok=True, run="r", name="demo", script=Path("script.md"), cues=Path("cues.json"), sections=()
+    ),
+    "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=spend()),
+    "words": WordsResult(ok=True, run="r", sections=()),
+    "storyboard": StoryboardResult(ok=True, run="r", storyboard=Path("build/storyboard.html"), panels=()),
+    "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000, root=Path(".")),
+    "build": BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=spend(), seconds=1.0),
+}
+"""One prepared answer per command, so a client test says what it asked for rather than what it got."""
 
 
 @pytest.fixture
-def verify_result(tmp_path):
-    """A whole `verify` result around the cue rows a test hands it, over a film that opens and cuts cleanly."""
-
-    def result(*cues: CueCheck) -> VerifyResult:
-        return VerifyResult(
-            total_seconds=10.0,
-            starts=[StartCheck(key="01", start=0.0, probe_at=0.5, yavg=50.0, ymax=200.0, ok=True)],
-            cuts=[CutCheck(key="01", cut_at=10.0, rms_db=-120.0, ok=True)],
-            cues=list(cues),
-            final=Path(tmp_path) / "build" / "out" / "deck.mp4",
-        )
-
-    return result
+def answers() -> dict[str, Result]:
+    """One prepared result per command, which a client test hands to its fake."""
+    return dict(ANSWERS)

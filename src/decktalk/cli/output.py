@@ -1,412 +1,539 @@
-"""The tables and the leading summary the CLI prints, read from the stage results themselves.
+"""Everything the command line writes, so that no command anywhere prints a character itself.
 
-Every table reads one result object, so the text output and the `--json` payload can never
-disagree. The summary leads, because a long table's last line is the one a person scrolls for, and
-the failing rows lead the machine output for the same reason. Internal: nothing here is in
-`decktalk.__all__`.
+A command returns its result and this module renders it, which is what keeps the table, the JSON
+object and the exit code one decision rather than three. Three renderings share one stream of
+events: a transient live region on a terminal, plain stage lines in a pipe, and the JSON lines
+`--events` writes on stderr. The file under `build/events/` is the library's, so it is written
+whichever of these is on.
+
+Colour is the only difference between a terminal and a pipe. The tables are the same tables, the
+error block is the same block, and nothing prints a second vocabulary for a reader who piped it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
-from ..artifacts import Takes
-from ..jsonio import relative
-from ..model.script import Segment
-from ..pipeline import SectionKind, Stage, TakeStatus
-from ..scaffold import DoctorRow, InitResult
-from ..settings import NarrationConfig
-from ..stages import StatusResult
-from ..stages.align import AlignResult
-from ..stages.clip import ClipResult, SectionWords
-from ..stages.narrate import NarrateResult, TakePlan, plan_totals
-from ..stages.preflight import PreflightResult
-from ..stages.record import RecordResult
-from ..stages.soundscape import SoundscapeItem
-from ..stages.verify import VerifyResult
-from ..verdicts import Findings, SkipReason, Verdict
+from rich import box
+from rich.console import Console, RenderableType
+from rich.console import Group as Stack
+from rich.live import Live
+from rich.table import Table
+from rich.text import Text
+
+from decktalk.errors import ErrorInfo
+from decktalk.events import Event, Fetch, Log, Progress, RunStart, StageDone, StageStart
+from decktalk.findings import Applicability, Certainty, Code, Finding, Location
+from decktalk.pipeline import Outcome, Stage
+from decktalk.results import (
+    AssembleResult,
+    BuildResult,
+    CheckResult,
+    ClipResult,
+    ConfigExplainResult,
+    ConfigGetResult,
+    ConfigListResult,
+    ConfigSetResult,
+    ConfigUnsetResult,
+    CueResult,
+    DoctorResult,
+    InitResult,
+    InstallResult,
+    NarrateResult,
+    RecordResult,
+    Result,
+    ServeResult,
+    SoundscapeResult,
+    StatusResult,
+    StoryboardResult,
+    VerifyResult,
+    WordsResult,
+)
+
+STAGE_COLUMN = 12
+"""How wide the stage name sits in a progress line, which is the longest of the six plus a space."""
+
+REFRESH_PER_SECOND = 8
+"""How often the live region redraws, which is fast enough to read and slow enough not to flicker."""
+
+CERTAIN_STYLE = "bold red"
+UNCERTAIN_STYLE = "yellow"
+CODE_STYLE = "bold"
+QUIET_STYLE = "dim"
 
 
-def lead(summary: dict[str, object], findings: Findings) -> str:
-    """The one line a command's text output opens with: its own counts, then what it found.
+@dataclass
+class Report:
+    """One stage line as the live region and the plain renderer both hold it."""
 
-    The keys are the command's own, and they are the keys of the envelope's `summary`, so a person
-    and a program read the same numbers in the same order.
+    stage: Stage
+    label: str = ""
+    seconds: float | None = None
+    outcome: Outcome | None = None
+    done: int = 0
+    total: int = 0
+
+    def line(self) -> Text:
+        """The stage's own row, which is its name, what it is working on and how long it took."""
+        name = self.stage.value.title().rjust(STAGE_COLUMN)
+        text = Text(f"{name} {self.label}")
+        if self.seconds is not None:
+            text.append(f"   {_clock(self.seconds)}", style=QUIET_STYLE)
+        elif self.total:
+            text.append(f"   {self.done}/{self.total}", style=QUIET_STYLE)
+        return text
+
+
+class Region:
+    """The transient live region a terminal shows, which is one row per stage of the run.
+
+    It is transient because a run's own summary is what a reader keeps, and because a region that
+    stayed behind would double every line of a watch loop.
     """
-    counts = ", ".join(f"{key.replace('_', ' ')} {value}" for key, value in summary.items() if value is not None)
-    found = f"{findings.certain} certain, {findings.uncertain} uncertain finding(s)"
-    return " | ".join(part for part in (counts, found if findings.certain or findings.uncertain else "") if part)
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+        self._rows: dict[Stage, Report] = {}
+        self._live = Live(console=console, transient=True, refresh_per_second=REFRESH_PER_SECOND)
+
+    def open(self) -> None:
+        """Start drawing, which a command does once it knows the run has begun."""
+        self._live.start()
+
+    def close(self) -> None:
+        """Stop drawing and leave nothing behind."""
+        self._live.stop()
+
+    def __call__(self, event: Event) -> None:
+        """Take one line of the stream into the region."""
+        if isinstance(event, StageStart):
+            self._rows[event.stage] = Report(stage=event.stage)
+        elif isinstance(event, Progress):
+            row = self._rows.setdefault(event.stage, Report(stage=event.stage))
+            row.label, row.done, row.total = event.label, event.done, event.total
+        elif isinstance(event, StageDone):
+            row = self._rows.setdefault(event.stage, Report(stage=event.stage))
+            row.seconds, row.outcome = event.seconds, event.outcome
+        elif isinstance(event, Fetch):
+            self._live.update(Text(f"{'Fetching'.rjust(STAGE_COLUMN)} {event.tool}, {_bytes(event.bytes)}"))
+            return
+        else:
+            return
+        self._live.update(Stack(*(row.line() for row in self._rows.values())))
 
 
-def _verdict_text(verdict: Verdict | None, reason: SkipReason | None) -> str:
-    """A row's verdict as a table prints it: the label, then the reason code a skipped row carries."""
-    parts = (None if verdict is None else verdict.label, None if reason is None else reason.value)
-    return " ".join(part for part in parts if part)
+class Lines:
+    """The plain stage lines a pipe gets, which are the live region without the cursor movement."""
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+
+    def open(self) -> None:
+        """Nothing is drawn until a stage ends, so there is nothing to start."""
+
+    def close(self) -> None:
+        """Nothing is held open, so there is nothing to stop."""
+
+    def __call__(self, event: Event) -> None:
+        """Write one line for every stage that ended, and nothing for the moments in between."""
+        if isinstance(event, StageDone):
+            row = Report(stage=event.stage, seconds=event.seconds, outcome=event.outcome)
+            self._console.print(row.line())
 
 
-def mmss(seconds: float | None) -> str:
-    if seconds is None:
-        return "  --  "
-    whole = int(round(seconds))  # round first, so 179.6 s reads 3:00, not 2:60
-    return f"{whole // 60}:{whole % 60:02d}"
+class Jsonl:
+    """The JSON lines `--events` writes on stderr, which are the library's own lines untouched."""
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+
+    def open(self) -> None:
+        """A line stream has nothing to start."""
+
+    def close(self) -> None:
+        """A line stream has nothing to stop."""
+
+    def __call__(self, event: Event) -> None:
+        """Write one line, exactly as the library minted it."""
+        self._console.file.write(event.model_dump_json() + "\n")
+        self._console.file.flush()
 
 
-def narrate_table(result: NarrateResult) -> str:
-    """One narrate run: the sections, the plan with its price, and the narration clock it wrote."""
-    wpm = result.narration.words_per_minute
-    parts = [
-        segments_table(result.segments, wpm, result),
-        "",
-        plan_table(result.plans, result.narration, result.rate, result.note),
-    ]
-    for row in result.rows:
-        parts.append(f"! {row.verdict.label} section {row.section}: {row.detail}")
-    if result.takes is not None:
-        parts += ["", narration_table(result.takes)]
-    return "\n".join(parts)
+class Notes:
+    """The log lines the library would have printed, written at the level `-v` and `-q` choose."""
+
+    def __init__(self, console: Console, *, verbose: bool, quiet: bool) -> None:
+        self._console = console
+        self._verbose = verbose
+        self._quiet = quiet
+
+    def open(self) -> None:
+        """Nothing is held open."""
+
+    def close(self) -> None:
+        """Nothing is held open."""
+
+    def __call__(self, event: Event) -> None:
+        """Write one log line when its level passes the two flags that choose between them."""
+        if not isinstance(event, Log):
+            return
+        level = event.level.value
+        if level == "debug" and not self._verbose:
+            return
+        if self._quiet and level in ("debug", "info"):
+            return
+        self._console.print(Text(event.message, style=QUIET_STYLE if level in ("debug", "info") else "yellow"))
 
 
-def segments_table(segments: list[Segment], wpm: int, result: NarrateResult | None = None) -> str:
-    lines = [f"{'#':>2}  {'section':<22} {'words':>5}  {'est':>5}  {'target':>6}  {'actual':>6}  placeholders"]
-    lines.append("-" * len(lines[0]))
-    total_words = total_est = total_actual = 0.0
-    for seg in segments:
-        est = seg.word_count / wpm * 60
-        total_words += seg.word_count
-        total_est += est
-        actual = None
-        if result is not None and result.takes is not None:
-            entry = result.takes.sections.get(seg.key)
-            if entry:
-                actual = entry.duration_seconds
-                total_actual += actual
-        ph = ",".join(seg.placeholders) if seg.placeholders else "-"
-        lines.append(
-            f"{seg.index:>2}  {seg.slug[:22]:<22} {seg.word_count:>5}  {mmss(est):>5}  "
-            f"{mmss(seg.target_seconds):>6}  {mmss(actual):>6}  {ph}"
+class Opening:
+    """The first line `build` writes, which names the run and the file its events are appended to."""
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+        self.said = False
+
+    def open(self) -> None:
+        """Nothing is held open."""
+
+    def close(self) -> None:
+        """Nothing is held open."""
+
+    def __call__(self, event: Event) -> None:
+        """Name the run and its events file once, before the first stage of the run."""
+        if not isinstance(event, RunStart) or self.said:
+            return
+        self.said = True
+        where = event.events_path.as_posix() if event.events_path else "no file"
+        self._console.print(Text(f"run {event.run}, events {where}", style=QUIET_STYLE))
+
+
+def error_block(info: ErrorInfo, console: Console) -> None:
+    """The one layout an error takes, on a terminal and in a pipe, with colour the only difference."""
+    block = Text()
+    block.append(f"error[{info.code.value}]", style="bold red")
+    block.append(f": {info.message}\n")
+    if info.hint:
+        block.append(f"  hint: {info.hint}\n")
+    block.append(f"  docs: {info.docs}", style=QUIET_STYLE)
+    console.print(block)
+
+
+def finding_lines(findings: Sequence[Finding], console: Console) -> None:
+    """Every judgement, then the one count line that says how many and how many are fixable."""
+    for found in findings:
+        console.print(_finding(found))
+    if findings:
+        console.print(_counted(findings))
+
+
+def _finding(found: Finding) -> Text:
+    """One judgement: where it is, its code, its sentence, and the fix under it."""
+    line = Text(f"{_where(found.location)}: ")
+    line.append(found.code.value, style=CODE_STYLE if found.certainty is Certainty.CERTAIN else UNCERTAIN_STYLE)
+    line.append(f" {found.message}")
+    if found.fix is not None:
+        line.append(f"\n  fix ({found.fix.applicability.value}): {found.fix.title}", style=QUIET_STYLE)
+    return line
+
+
+def _counted(findings: Sequence[Finding]) -> Text:
+    """How many judgements there are, how many are certain, and how many `--fix` would apply."""
+    certain = sum(1 for found in findings if found.certainty is Certainty.CERTAIN)
+    fixable = sum(1 for found in findings if found.fix is not None and found.fix.applicability is Applicability.SAFE)
+    word = "finding" if len(findings) == 1 else "findings"
+    text = Text(f"Found {len(findings)} {word}, {certain} certain.")
+    if fixable:
+        text.append(f" {fixable} fixable with --fix.")
+    return text
+
+
+def _where(location: Location) -> str:
+    """The object a judgement names, with its file and line when the judgement knows them."""
+    if location.file is not None and location.line is not None:
+        return f"{location.file.as_posix()}:{location.line}"
+    if location.file is not None:
+        return location.file.as_posix()
+    return location.where
+
+
+def render(result: Result, console: Console) -> None:
+    """The human reading of one result, which is the same reading piped as on a terminal."""
+    write = RENDERERS.get(type(result))
+    if write is not None:
+        for piece in write(result):
+            console.print(piece)
+    finding_lines(result.findings, console)
+
+
+def _table(*columns: str) -> Table:
+    """One table in the one shape every table here takes, which is a simple box and a bold header."""
+    table = Table(box=box.SIMPLE, header_style="bold", pad_edge=False)
+    for column in columns:
+        table.add_column(column)
+    return table
+
+
+def _clock(seconds: float) -> str:
+    """A duration as a person reads one, which is minutes and seconds."""
+    return f"{int(seconds) // 60}:{int(seconds) % 60:02d}"
+
+
+def _bytes(count: int) -> str:
+    """A download as a person reads one, in megabytes."""
+    return f"{count / 1_000_000:.1f} MB"
+
+
+def _money(dollars: float) -> str:
+    """A price as a person reads one, in US dollars."""
+    return f"${dollars:.2f}"
+
+
+def _yes(state: bool) -> str:
+    """A boolean column, written as the two words a reader scans rather than as true and false."""
+    return "yes" if state else "no"
+
+
+def _init(result: InitResult) -> Iterable[RenderableType]:
+    yield Text(f"Wrote {result.root.as_posix()} from the {result.example} example, {len(result.written)} files.")
+    yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-voice", style=QUIET_STYLE)
+
+
+def _tools(tools: Iterable[Any]) -> Table:
+    table = _table("Tool", "Version", "Where")
+    for tool in tools:
+        table.add_row(tool.tool, tool.version or "missing", tool.path.as_posix() if tool.path else "")
+    return table
+
+
+def _install(result: InstallResult) -> Iterable[RenderableType]:
+    yield _tools(result.tools)
+    yield Text(f"Cache  {result.cache.as_posix()}", style=QUIET_STYLE)
+
+
+def _doctor(result: DoctorResult) -> Iterable[RenderableType]:
+    yield _tools(result.tools)
+    yield Text(f"Python    {result.python}")
+    yield Text(f"Platform  {result.platform}")
+    yield Text(f"Voice key {_yes(result.voice_key)}")
+    if result.bias_ms is not None:
+        yield Text(f"Bias      {result.bias_ms:.0f} ms")
+
+
+def _status(result: StatusResult) -> Iterable[RenderableType]:
+    table = _table("Section", "Key", "Plays", "Voiced", "Recorded", "Cut", "Stale")
+    for section in result.sections:
+        table.add_row(
+            str(section.section),
+            section.key,
+            section.source,
+            _yes(section.voiced),
+            _yes(section.recorded),
+            _yes(section.cut),
+            _yes(section.stale),
         )
-    lines.append("-" * len(lines[0]))
-    actual_total = mmss(total_actual) if total_actual else "  --  "
-    lines.append(f"{'':>2}  {'total':<22} {int(total_words):>5}  {mmss(total_est):>5}  {'':>6}  {actual_total:>6}")
-    return "\n".join(lines)
+    yield table
+    if result.film is not None:
+        yield Text(f"Film   {result.film.as_posix()}, {_clock(result.film_seconds or 0)} long")
+    for run in result.runs:
+        yield Text(f"Live   {run.run} writing {run.events.as_posix()}", style=QUIET_STYLE)
+    if result.next is not None:
+        yield Text(f"Next   {result.next}", style=QUIET_STYLE)
 
 
-def plan_table(plans: list[TakePlan], cfg: NarrationConfig, rate: float = 0.0, note: str | None = None) -> str:
-    """What a run would do with each section: voice it, or play the take of that text it already holds."""
-    lines = [f"{'#':>2}  {'section':<22} {'take':<10} {'sent':>6} {'spoken':>6}  reason"]
-    lines.append("-" * len(lines[0]))
-    for p in plans:
-        seg = p.segment
-        lines.append(
-            f"{seg.index:>2}  {seg.slug[:22]:<22} {p.status.value:<10} {p.characters_sent:>6} "
-            f"{len(seg.spoken):>6}  {p.reason or '-'}"
-        )
-    t = plan_totals(plans, cfg, rate)
-    voiced, cached, unchecked = (t[s.value] for s in (TakeStatus.SYNTHESIZE, TakeStatus.CACHED, TakeStatus.UNKNOWN))
-    lines.append("-" * len(lines[0]))
-    unknown = f", {unchecked} unknown" if unchecked else ""
-    cost = ""
-    if rate:
-        cost = f" About ${t['estimated_cost']:.2f} at ${rate:.2f} per 1,000 characters."
-        if t["most_it_can_cost"] != t["estimated_cost"]:
-            cost += f" Up to ${t['most_it_can_cost']:.2f} if the {unchecked} unknown section(s) are voiced too."
-    lines.append(
-        f"voice {voiced} section(s): {t['characters_sent']} characters sent, "
-        f"{t['characters_spoken']} spoken, {t['characters_with_context']} with context. "
-        f"{cached} cached{unknown}.{cost}"
+def _check(result: CheckResult) -> Iterable[RenderableType]:
+    yield Text(f"Checking {', '.join(path.as_posix() for path in result.judged)}.")
+    rate = _money(result.spend.price_per_1000_characters)
+    yield Text(
+        f"Voicing it costs about {_money(result.spend.dollars)} at {rate} per 1,000 characters, "
+        f"up to {_money(result.spend.ceiling_dollars)}."
     )
-    if note:
-        lines.append(f"note: {note}")
-    return "\n".join(lines)
+    if result.storyboard is not None:
+        yield Text(f"Storyboard {result.storyboard.as_posix()}", style=QUIET_STYLE)
 
 
-def narration_table(takes: Takes) -> str:
-    """Where each section lands once the takes are joined, which the take index says on its own."""
-    lines = [f"{'#':>3}  {'section':<22} {'start':>7} {'end':>7} {'length':>7}"]
-    for key in takes.keys:
-        row, span = takes.sections[key], takes.span(key) or 0.0
-        lines.append(
-            f"{int(key):>3}  {row.chapter[:22]:<22} {mmss(takes.start(key)):>7} {mmss(takes.end(key)):>7} {span:>7.1f}"
+def _words(result: WordsResult) -> Iterable[RenderableType]:
+    for section in result.sections:
+        table = _table(f"Section {section.section}", "Start", "End")
+        for word in section.words:
+            table.add_row(word.word, f"{word.start:.2f}", f"{word.end:.2f}")
+        yield table
+
+
+def _storyboard(result: StoryboardResult) -> Iterable[RenderableType]:
+    where = result.storyboard.as_posix() if result.storyboard else "nothing"
+    yield Text(f"Wrote {where}, {len(result.panels)} panels.")
+
+
+def _serve(result: ServeResult) -> Iterable[RenderableType]:
+    yield Text(f"Serving {result.root.as_posix()} on {result.url}")
+
+
+def _narrate(result: NarrateResult) -> Iterable[RenderableType]:
+    table = _table("Section", "Take", "Characters", "Seconds")
+    for take in result.sections:
+        table.add_row(str(take.section), take.status.value, str(take.characters), f"{take.seconds or 0:.1f}")
+    yield table
+    yield Text(f"Spent {_money(result.spend.dollars)} on {result.voice.value} narration.")
+
+
+def _cue(result: CueResult) -> Iterable[RenderableType]:
+    table = _table("Section", "Cue", "Phrase", "Seconds")
+    for section in result.sections:
+        for cue in section.cues:
+            seconds = "unresolved" if cue.seconds is None else f"{cue.seconds:.2f}"
+            table.add_row(str(section.section), cue.cue, cue.phrase, seconds)
+    yield table
+
+
+def _record(result: RecordResult) -> Iterable[RenderableType]:
+    table = _table("Section", "File", "Seconds", "Frames", "Kept")
+    for section in result.sections:
+        table.add_row(
+            str(section.section),
+            section.file.as_posix() if section.file else "",
+            f"{section.seconds:.1f}",
+            str(section.frames),
+            _yes(section.kept),
         )
-    est = "  (estimated: silent placeholders)" if takes.estimated else ""
-    lines.append(f"     narration total {mmss(takes.total_seconds)}{est}")
-    return "\n".join(lines)
+    yield table
 
 
-def align_table(result: AlignResult) -> str:
-    lines = [f"{'sec':>3}  {'speech':>6}  {'need':>5}  cues"]
-    for s in result.sections:
-        if s.skipped:
-            lines.append(f"{s.key:>3}  {'--':>6}  {s.min_seconds or '-':>5}  ({s.skipped})")
-            continue
-        cues = ",".join(f"{r.cue}@{r.at}" for r in s.resolved) or "-"
-        lines.append(f"{s.key:>3}  {s.speech_end_seconds:>6.1f}  {str(s.min_seconds or '-'):>5}  {cues}")
-        for note in s.notes:
-            lines.append(f"{'':>3}  {'':>6}  {'':>5}  ! {note}")
-    tail = f"{len(result.cue_times.sections)} sections with cues, {result.unresolved} unresolved"
-    if result.estimated:
-        tail += "  (estimated words: times are placeholders)"
-    lines.append(tail)
-    return "\n".join(lines)
+def _soundscape(result: SoundscapeResult) -> Iterable[RenderableType]:
+    table = _table("Item", "Kind", "Status", "Seconds")
+    for item in result.items:
+        table.add_row(item.name, item.kind.value, item.status.value, f"{item.seconds or 0:.1f}")
+    yield table
+    yield Text(f"Spent {_money(result.spend.dollars)}.")
 
 
-def preflight_table(result: PreflightResult) -> str:
-    """The take plan, the cues resolved on the words each section will have, and the frozen-frame estimates."""
-    root = result.root
-    voice = result.voice
-    lines = [f"voice: provider={voice['provider']} model={voice['model']}"]
-    lines.append(plan_table(result.takes, result.narration, result.rate, result.note))
-    unfilled = sorted({name for plan in result.takes for name in plan.segment.placeholders})
-    if unfilled:
-        lines.append(f"a voiced run refuses the unfilled placeholders {unfilled}")
-    lines += ["", align_table(result.align)]
-    if result.estimated:
-        lines.append(f"estimated words in sections {', '.join(result.estimated)}, which a voiced run will voice")
-    if result.frames is None:
-        lines += ["", "frames skipped (--no-frames)"]
-        return "\n".join(lines)
-    lines.append("")
-    lines.append(f"{'check':<18} {'slide':<8} {'cue':>6} {'chg %':>7}  result")
-    for c in result.cues:
-        chg = f"{c.changed_percent:>7.2f}" if c.changed_percent is not None else f"{'-':>7}"
-        label = _verdict_text(c.verdict, c.reason)
-        label += f": {c.detail}" if c.detail else ""
-        label += f" ({c.note})" if c.note else ""
-        lines.append(f"{c.check:<18} {c.slide or '-':<8} {c.cue_seconds:>6.2f} {chg}  {label}")
-    judged = (Verdict.CHANGED, Verdict.THIN_CHANGE, Verdict.NO_CHANGE, Verdict.SKIPPED)
-    tally = {v: sum(c.verdict is v for c in result.cues) for v in judged}
-    counts = ", ".join(f"{n} {v.label}" for v, n in tally.items() if n) or "none"
-    where = relative(result.frames, root) if root is not None else result.frames
-    lines.append(f"{len(result.cues)} cue(s): {counts}. Frozen frames in {where}")
-    if result.seams:
-        lines.append("")
-        lines.append(f"{'sec':>3} {'chg %':>7}  result")
-        for k in result.seams:
-            chg = f"{k.changed_percent:>7.2f}" if k.changed_percent is not None else f"{'-':>7}"
-            label = _verdict_text(k.verdict, k.reason) + (f": {k.detail}" if k.detail else "")
-            lines.append(f"{k.key:>3} {chg}  {label}")
-    return "\n".join(lines)
-
-
-def record_table(result: RecordResult) -> str:
-    """One row per section: how long it ran, where narration t=0 landed, how bright it is, and its verdicts."""
-    head = f"{'sec':<4} {'webm_s':<8} {'want_s':<8} {'t0_s':<7} {'Y10':<6} {'Y50':<6} {'Y90':<6} {'MAX50':<6}  result"
-    lines = [head]
-    kept = [row.key for row in result.kept_sections]
-    for row in result.sections:
-        checks = row.log.checks
-        luma = checks.luma if checks else None
-        lines.append(
-            f"{row.key:<4} {checks.duration_seconds if checks else 0:<8.1f} "
-            f"{checks.wanted_seconds if checks else 0:<8.1f} {row.log.trim_seconds:<7.3f} "
-            f"{luma.y10 if luma else 0:<6.0f} {luma.y50 if luma else 0:<6.0f} {luma.y90 if luma else 0:<6.0f} "
-            f"{luma.max50 if luma else 0:<6.0f}  {row.label}"
+def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
+    yield Text(f"Built {result.film.as_posix()}, {_clock(result.film_seconds)} long.")
+    if result.loudness is not None:
+        yield Text(
+            f"Loudness {result.loudness.integrated_lufs:.1f} LUFS against {result.loudness.target_lufs:.1f}.",
+            style=QUIET_STYLE,
         )
-    if kept:
-        lines.append(f"kept {len(kept)} unchanged section(s): {', '.join(kept)}")
-    for row in result.sections:
-        for message in row.log.page_errors:
-            lines.append(f"{row.key:<4} page error: {message}")
-    guessed = [row.key for row in result.sections if row.log.t0_guessed]
-    if guessed:
-        lines.append(f"narration t=0 is a guess in section(s) {', '.join(guessed)}")
-    return "\n".join(lines)
 
 
-def verify_table(result: VerifyResult) -> str:
-    lines: list[str] = []
-    if result.recordings:
-        lines.append(f"{'sec':>3}  recording")
-        for r in result.recordings:
-            label = " ".join(v.label for v in r.verdicts) or Verdict.OK.label
-            lines.append(f"{r.key:>3}  {label}")
-        for r in result.recordings:
-            for message in r.page_errors:
-                lines.append(f"{r.key:>3}  page error: {message}")
-        lines.append("")
-    lines.append(f"{'sec':>3} {'start':>8} {'probe':>8} {'YAVG':>6} {'YMAX':>6}  result")
-    for s in result.starts:
-        lines.append(f"{s.key:>3} {s.start:>8.2f} {s.probe_at:>8.2f} {s.yavg:>6.0f} {s.ymax:>6.0f}  {s.verdict.label}")
-    lines.append(f"total {result.total_seconds:.2f}s, {result.black_starts} black section start(s)")
-    if result.cuts:
-        lines.append("")
-        lines.append(f"{'sec':>3} {'cut at':>8} {'before cut':>11}  result")
-        for c in result.cuts:
-            lines.append(f"{c.key:>3} {c.cut_at:>8.2f} {c.rms_db:>8.1f} dB  {c.verdict.label}")
-    if result.seams:
-        lines.append("")
-        lines.append(f"{'sec':>3} {'cut at':>8} {'chg %':>7}  result")
-        for k in result.seams:
-            lines.append(f"{k.key:>3} {k.cut_at:>8.2f} {k.changed_percent:>7.2f}  {k.verdict.label}")
-    if result.cues:
-        lines.append("")
-        av = any(c.av_ms is not None for c in result.cues)
-        head = f"{'check':<18} {'cue':>6} {'at':>8} {'chg %':>7} {'ctl %':>7} {'offset':>8}"
-        lines.append(head + (f" {'a/v':>7}" if av else "") + "  result")
-        for c in result.cues:
-            if c.changed_percent is None or c.verdict is Verdict.SKIPPED:
-                # A row that was never measured shows its verdict, its reason code, and its note.
-                cue = f"{c.cue_seconds:>6.2f}" if c.cue_seconds is not None else f"{'-':>6}"
-                # A skipped row's note already starts with its verdict and reason, so print it alone.
-                if c.note and c.verdict is not None and c.note.startswith(c.verdict.label):
-                    label = c.note
-                else:
-                    label = " ".join(part for part in (_verdict_text(c.verdict, c.reason), c.note) if part)
-                lines.append(
-                    f"{c.check:<18} {cue} {'-':>8} {'-':>7} {'-':>7} {'-':>8}"
-                    + (f" {'-':>7}" if av else "")
-                    + f"  {label}"
-                )
-                continue
-            offset = f"{c.offset_ms:+d}ms" if c.offset_ms is not None else "-"
-            lines.append(
-                f"{c.check:<18} {c.cue_seconds:>6.2f} {c.final_seconds or 0:>8.2f} {c.changed_percent or 0:>7.2f} "
-                f"{c.control_percent or 0:>7.2f} {offset:>8}"
-                + (f" {(f'{c.av_ms:+d}ms' if c.av_ms is not None else '-'):>7}" if av else "")
-                + f"  {_verdict_text(c.verdict, None)}"
+def _verify(result: VerifyResult) -> Iterable[RenderableType]:
+    yield Text(f"Verifying {result.film.as_posix()}, {_clock(result.film_seconds)} long.")
+    measured = [cue for cue in result.cues if cue.offset is not None]
+    if measured:
+        table = _table("Section", "Cue", "Spoken", "Shown", "Offset")
+        for cue in measured:
+            table.add_row(
+                str(cue.section),
+                cue.cue,
+                f"{cue.spoken:.2f}",
+                "" if cue.shown is None else f"{cue.shown:.2f}",
+                f"{cue.offset:+.2f}" if cue.offset is not None else "",
             )
-    return "\n".join(lines)
+        yield table
 
 
-def status_table(report: StatusResult) -> str:
-    """The text of `decktalk status`, read from the same report its --json output prints."""
-    root, ok = report.root, Verdict.OK.label
-    lines = [f"{row.verdict.label}  {row.where}: {row.detail}" for row in report.problems]
-    lines += [
-        f"project   {root}  (name: {report.name})",
-        f"script    {relative(report.script, root)}  {ok if report.script_exists else Verdict.MISSING.label}",
-        f"cues      {relative(report.cues, root)}  {ok if report.cues_exists else 'none'}",
-    ]
-    for sec in report.sections:
-        what = f"clip {sec.source}" if sec.kind is SectionKind.CLIP else sec.source
-        made = "rec " if sec.recorded else "    "
-        lines.append(f"  {sec.key}  {what:<40} {made}{'cut' if sec.cut else ''}")
-        if sec.stale:
-            lines.append(f"      stale: {sec.stale}")
-    lines.append(narration_table(report.takes) if report.takes else "narration  none (run `decktalk narrate`)")
-    lines.append(
-        f"cue times {len(report.cue_times_sections)} section(s) resolved"
-        if report.cue_times_sections
-        else "cue times none (run `decktalk align`)"
-    )
-    if report.final_exists:
-        lines.append(f"final     {relative(report.final, root)}  {mmss(report.final_duration)}")
-    else:
-        lines.append("final     not built")
-    for out in report.outputs:
-        lines.append(f"{out.label:<9} {relative(out.path, root)}  {ok if out.exists else 'not built'}")
-    run = report.run
-    if run is not None:
-        state = "running" if run.alive else "last run"
-        stage = "an unknown stage" if run.stage is None else run.stage.value
-        lines.append(f"build     {state} at {stage} (started {run.started})")
-    return "\n".join(lines)
+def _build(result: BuildResult) -> Iterable[RenderableType]:
+    # The stages are not printed again here. Each one was reported as it ran, by the live region on
+    # a terminal and by one plain line in a pipe, so this is the run's own last sentence.
+    where = result.film.as_posix() if result.film else "nothing"
+    found = f"{len(result.findings)} findings" if result.findings else "nothing found"
+    yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {_money(result.spend.dollars)}, {found}")
+    if result.storyboard is not None:
+        yield Text(f"{'Next'.rjust(STAGE_COLUMN)} open {result.storyboard.as_posix()}", style=QUIET_STYLE)
 
 
-def words_table(sections: list[SectionWords]) -> str:
-    """The text of `decktalk words`: each section's words, in seconds after the section starts."""
-    lines: list[str] = []
-    for sec in sections:
-        notes = [f"{sec.duration:.2f}s"]
-        if sec.lead_seconds:
-            notes.append(f"lead {sec.lead_seconds:g}s")
-        if sec.estimated:
-            notes.append("estimated")
-        if lines:
-            lines.append("")
-        lines.append(f"== {sec.key} {sec.title}  ({', '.join(notes)})")
-        lines.append("  start     end  word")
-        lines += [f"{w.start:7.3f} {w.end:7.3f}  {text}" for w, text in zip(sec.words, sec.texts, strict=True)]
-    return "\n".join(lines) or "no spoken sections"
+def _clip(result: ClipResult) -> Iterable[RenderableType]:
+    yield Text(f"Cut {result.film.as_posix()}, {result.seconds:.1f} seconds of section {result.section}.")
 
 
-def soundscape_table(items: list[SoundscapeItem]) -> str:
-    lines = []
-    for it in items:
-        dur = f" ({it.duration_seconds}s)" if it.duration_seconds else ""
-        lines.append(f"== {it.name} -> {it.out}  [{it.status.value}{dur}]")
-        lines.append(f"   POST {it.endpoint}")
-        for r in it.requests:
-            lines.append(f"   {r}")
-    return "\n".join(lines) or "nothing to generate"
+def _config_list(result: ConfigListResult) -> Iterable[RenderableType]:
+    table = _table("Key", "Value", "Layer", "Default")
+    for key in result.keys:
+        table.add_row(key.key, _scalar(key.value), key.layer.value, _scalar(key.default))
+    yield table
 
 
-# ---- the text of the commands that write rather than judge -------------------------------------
+def _config_get(result: ConfigGetResult) -> Iterable[RenderableType]:
+    yield Text(f"{result.key.key} = {_scalar(result.key.value)} ({result.key.layer.value})")
 
 
-def starter_note(result: InitResult) -> str:
-    """What `init` wrote, and the one next step a first-time reader takes.
-
-    A file the author already had is never replaced, so a line is printed only for a file this run
-    wrote, which is what `written` says.
-    """
-    lines = [
-        f"created {result.root}",
-        "  decktalk.toml  the project file: sections -> pages or clips, voice, mix, soundscape",
-        "  script.md      the narration (## N. sections)",
-        "  cues.json      which spoken phrase each visual lands on",
-        "  deck/          the pages, decktalk-runtime.js and katex/ (open a page for its scene index)",
-    ]
-    if result.root / "AGENTS.md" in result.written:
-        lines.append("  AGENTS.md      the rules an agent working in this project follows")
-    if result.skills:
-        lines.append("  .agents/skills the six DeckTalk skills, linked from .claude/skills")
-    lines.append("next: `decktalk build --no-voice` renders with placeholder narration, no API key and no spend")
-    lines.append("      then cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID) and `decktalk build`")
-    return "\n".join(lines)
+def _config_set(result: ConfigSetResult) -> Iterable[RenderableType]:
+    verb = "would set" if result.dry_run else "set"
+    yield Text(f"{result.file.as_posix()} {verb} {result.key} = {_scalar(result.value)}")
+    if result.layer.value != result.scope.value:
+        yield Text(f"The {result.layer.value} layer still decides it, at {_scalar(result.effective)}.", style="yellow")
 
 
-def doctor_table(rows: list[DoctorRow]) -> str:
-    """One line per component: what it is, whether it is there, and which build a run would use."""
-    return "\n".join(f"{r.name:<9} {Verdict.OK.label if r.ok else Verdict.MISSING.label:<7} {r.detail}" for r in rows)
+def _config_unset(result: ConfigUnsetResult) -> Iterable[RenderableType]:
+    yield Text(f"{result.file.as_posix()} no longer sets {', '.join(result.keys)}.")
 
 
-def file_list(written: list[str]) -> str:
-    """The files a command wrote, one per line, which is what a person asked for by running it."""
-    return "\n".join(written) or "nothing was written"
+def _config_explain(result: ConfigExplainResult) -> Iterable[RenderableType]:
+    yield Text(f"{result.key} = {_scalar(result.value)} ({result.layer.value})", style=CODE_STYLE)
+    yield Text(f"  {result.sentence}")
+    yield Text(f"  type {result.type}, default {_scalar(result.default)}, {result.range}")
+    if result.unit:
+        yield Text(f"  unit {result.unit}")
+    if result.hazard:
+        yield Text(f"  hazard {result.hazard}", style="yellow")
+    if result.decides:
+        yield Text(f"  decides {', '.join(code.value for code in result.decides)}", style=QUIET_STYLE)
+    yield Text(f"  docs {result.docs}", style=QUIET_STYLE)
 
 
-def clip_note(result: ClipResult, video: str, words_file: str) -> str:
-    """What `clip` cut, and the two lines a clip section needs in decktalk.toml."""
-    source = f"sections/{result.section:02d}.mp4"
-    return "\n".join(
-        [
-            f"wrote {video}  ({result.duration:.2f}s: frames {result.first_frame} to {result.last_frame} "
-            f"of {source}, {result.start:.2f} to {result.end:.2f}s, hold {result.hold_seconds:g}s, "
-            f"gain {result.gain_db:+g} dB)",
-            f"wrote {words_file}  ({len(result.words)} words)",
-            f'use it in a clip section: clip = "{video}" and words = "{words_file}"',
-        ]
-    )
+def _scalar(value: object) -> str:
+    """One settings value as a row prints it, which is JSON's own spelling for everything but a string."""
+    return value if isinstance(value, str) else repr(value)
 
 
-def plan_report(result: NarrateResult) -> str:
-    """What the next run would send, section by section, with nothing sent."""
-    cfg = result.narration
-    targets = [plan.segment for plan in result.plans]
-    lines = [f"=== {s.key} {s.title}\n{s.tts_text}\n" for s in targets]
-    voiced = result.voice.get("provider") is not None
-    lines.append(f"voice: {result.voice}" if voiced else "voice: none (--no-voice)")
-    lines.append(segments_table(targets, cfg.words_per_minute))
-    lines.append("")
-    lines.append(plan_table(result.plans, cfg, result.rate, result.note))
-    unfilled = sorted({p for s in targets for p in s.placeholders})
-    if unfilled:
-        lines.append(f"\nnote: unfilled placeholders {unfilled}. Fill them before the real run.")
-    return "\n".join(lines)
-
-
-STAGE_TABLES: dict[Stage, Callable[[Any], str]] = {
-    Stage.NARRATE: narrate_table,
-    Stage.ALIGN: align_table,
-    Stage.RECORD: record_table,
-    Stage.VERIFY: verify_table,
+RENDERERS: dict[type[Result], Callable[[Any], Iterable[RenderableType]]] = {
+    AssembleResult: _assemble,
+    BuildResult: _build,
+    CheckResult: _check,
+    ClipResult: _clip,
+    ConfigExplainResult: _config_explain,
+    ConfigGetResult: _config_get,
+    ConfigListResult: _config_list,
+    ConfigSetResult: _config_set,
+    ConfigUnsetResult: _config_unset,
+    CueResult: _cue,
+    DoctorResult: _doctor,
+    InitResult: _init,
+    InstallResult: _install,
+    NarrateResult: _narrate,
+    RecordResult: _record,
+    ServeResult: _serve,
+    SoundscapeResult: _soundscape,
+    StatusResult: _status,
+    StoryboardResult: _storyboard,
+    VerifyResult: _verify,
+    WordsResult: _words,
 }
-"""The table each stage of a build prints as it finishes. `assemble` prints the film's path instead."""
+"""One reading per result, so the command returns its result and the reading lives in one place."""
 
 
-def stage_table(stage: Stage, result: Any) -> str:
-    """The table one stage of a build prints as it finishes, or nothing when it prints none."""
-    builder = STAGE_TABLES.get(stage)
-    return builder(result) if builder else ""
+@dataclass
+class Counted:
+    """How a run's judgements land against the threshold the caller set."""
+
+    findings: tuple[Finding, ...] = ()
+    allowed: frozenset[Code] = field(default_factory=frozenset)
+
+    @property
+    def judged(self) -> tuple[Finding, ...]:
+        """Every judgement the caller did not carry on past with `--allow`."""
+        return tuple(found for found in self.findings if found.code not in self.allowed)
+
+
+__all__ = [
+    "Counted",
+    "Jsonl",
+    "Lines",
+    "Notes",
+    "Opening",
+    "Region",
+    "error_block",
+    "finding_lines",
+    "render",
+]
