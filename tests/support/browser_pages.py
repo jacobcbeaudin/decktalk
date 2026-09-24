@@ -90,21 +90,3 @@ def served_page(root: Path, name: str, body: str, *, head: str = "") -> str:
 def warnings_of(page: Page) -> list[str]:
     """The page's warnings without the note every slide a partial cue list leaves out earns."""
     return [w for w in page.evaluate("() => window.__decktalk.warnings") if "owns no cue in ?cues=" not in w]
-
-
-# The three-slide scene every markup test uses: attributes only, no JavaScript anywhere.
-MARKUP_SCENE = """
-<div data-scene="1" data-name="Open" data-camera="push">
-  <template data-slide="1.1" data-hold="6">
-    <h1 class="title">A bowl</h1>
-    <p data-cue="1.1ball" data-reveal="pop" data-describe="a ball rests in the bowl">A ball</p>
-    <p data-cue="1.1count" data-reveal="fade" data-duration="0.4">Watch it step down</p>
-  </template>
-  <template data-slide="1.2" data-hold="4" data-preview="1.2sum@0.5">
-    <p data-cue="1.2sum" data-tex-display data-tex="\\sum_{i=1}^{n} x_i">the sum of x i from one to n</p>
-  </template>
-  <template data-slide="1.3" data-hold="4" data-owns="odd-one">
-    <p data-cue="odd-one">a cue id that carries no slide id</p>
-  </template>
-</div>
-"""
