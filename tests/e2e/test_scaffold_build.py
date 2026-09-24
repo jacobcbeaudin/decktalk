@@ -30,8 +30,9 @@ import pytest
 from decktalk.artifacts import RecordingLog
 from decktalk.findings import Certainty
 from decktalk.template import EXAMPLES
+from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 
-BUILD_BUDGET_SECONDS = 900
+BUILD_BUDGET_SECONDS = budget(EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS)
 """How long one packaged project may take to build, which the lesson example sets and nothing else.
 
 The lesson draws every attribute in the table, so it records more slides than any other project

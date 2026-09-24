@@ -1,15 +1,19 @@
-"""When a late frame is a failure and when it is only news, in one place.
+"""When a late frame is a failure and when it is only news, and how long a slow runner may take.
 
-A hosted Linux runner presents frames on time, so a reveal that lands off its word there is a real
-fault. The hosted macOS and Windows runners do not, so `cross-platform.yml` reports a late reveal
-and asserts the wider limits instead of failing on it.
+Three numbers used to be typed into the tests that needed them, and each one was a magic number
+inside the suite that enforces the no-magic-numbers rule. They live here instead, each derived from
+the project's own settings or written once with the sentence that says why.
 
-That policy used to live only inside the two tests that measure cue offsets, and a build's exit
-code carries verify's verdict, so any test that wrote `assert code == 0` after a build quietly
-gated itself on the same timing as well. `test_build_only_rerecords_section_4` did, and it failed
-three times on the hosted runners over builds whose only findings were reveals 90 ms late, while
-its own subject, which sections were recorded again, was never in doubt. `tolerated` is the rule
-itself, with no pytest in it, so `tests/contract/test_timing_policy.py` can hold it to each case.
+**The timing default inverts.** It used to read `sys.platform`, which is the wrong predicate: the
+property is that this runner's compositor is not trustworthy, not that this is macOS, so the
+founder's own Mac was permanently weaker than a Linux runner. `--timing=gate` is the default
+everywhere now, and the one workflow step that owns a weak runner passes `--timing=report` itself,
+so the weakening lives in the file that owns it rather than in every test that measures a cue.
+
+**A budget is a ceiling and never a measurement.** A module timeout is a base budget times a factor
+for this platform, because a hundred and eighty seconds is generous on Linux and tight on a cold
+Windows runner. This module is one of the two places the suite may read `sys.platform`, which is
+what `tests/contract/test_layout.py` allows and what keeps that read out of every other file.
 """
 
 from __future__ import annotations
@@ -19,42 +23,91 @@ from collections.abc import Iterable
 
 import pytest
 
-from decktalk.verdicts import Verdict
+from decktalk.findings import Certainty, Code
+from decktalk.page import FRAME_STEP_MS
 
-LATE_FRAME = (Verdict.OFF_CUE,)
-"""What a runner that presents frames late produces, and the only verdict an ungated platform tolerates."""
+LATE_FRAME = (Code.CUE_OFF,)
+"""What a runner that presents frames late produces, and the only code an ungated platform tolerates."""
+
+UNGATED_EXTRA_FRAMES = 2
+"""How many extra frames of slack a runner whose compositor is not trustworthy is given.
+
+Two frames is what the recorded failures needed: every one of them was a reveal under a hundred
+milliseconds late, and the capture runs at twenty five frames a second. It is written once here and
+added to the project's own limit, because the `4` and the `5` this replaces were the settings plus
+two, spelled as literals inside the suite that is supposed to enforce the rule.
+"""
+
+ROUNDING_SLACK_FRAMES = 0.5
+"""Half a frame, which is the most a measured time may pass a frame boundary by and still name it."""
+
+BASE_BUDGET_SECONDS = 180
+"""How long a module that drives a real build may take on a warm Linux runner, as a ceiling."""
+
+FIRST_FETCH_SECONDS = 420
+"""What the first build on a machine adds while it downloads Chromium and ffmpeg, once per machine."""
+
+EVERY_PACKAGED_PROJECT_SECONDS = 720
+"""What a run of every project `decktalk init` writes takes, which is several builds one after another."""
+
+PLATFORM_FACTOR = {"linux": 1.0, "darwin": 2.0, "win32": 3.0}
+"""How much longer the same work takes on each hosted runner, measured as a ceiling and never a target.
+
+A cold Windows runner unpacks an archive, starts a browser and encodes on a slower disk, so the same
+module needs three times the ceiling. Nothing is asserted about these numbers. They exist so that a
+hung page fails as a timeout rather than as a six hour job.
+"""
 
 
-def gates_timing(request: pytest.FixtureRequest) -> bool:
-    """Timing gates on Linux, where the hosted runner renders on time, and reports on macOS and Windows."""
-    return sys.platform == "linux" or bool(request.config.getoption("--gate-timing"))
+def budget(base: float = BASE_BUDGET_SECONDS) -> float:
+    """How long a module may take on this platform, which is the base budget times this runner's factor."""
+    return base * PLATFORM_FACTOR.get(sys.platform, max(PLATFORM_FACTOR.values()))
 
 
-def tolerated(code: int, verdicts: Iterable[Verdict], gate: bool) -> str | None:
+def gates_timing(config: pytest.Config) -> bool:
+    """Whether a late reveal fails here, which is everywhere unless this run asked for a report.
+
+    The option is read defensively because a run that does not register it is a run with the default
+    in force, and a missing option may never quietly turn the gate off.
+    """
+    try:
+        return str(config.getoption("--timing", default="gate")) != "report"
+    except ValueError:
+        return True
+
+
+def offset_limit_ms(stated_ms: float, gate: bool) -> float:
+    """The offset a cue may miss its word by here, which is the project's own limit plus the slack.
+
+    The slack is added rather than typed, so a project that widens its own limit widens this one too
+    and the two can never disagree about what late means.
+    """
+    if gate:
+        return stated_ms
+    return stated_ms + UNGATED_EXTRA_FRAMES * FRAME_STEP_MS
+
+
+def tolerated(code: int, codes: Iterable[Code], gate: bool) -> str | None:
     """None when a build finished acceptably, else the one sentence saying why it did not.
 
-    A build exits 0 when it found nothing. Where timing is not gated, a build that exited on late
-    reveals alone is acceptable too. Every other fault fails on every platform, and so does a late
-    reveal wherever timing is gated.
+    A build exits 0 when it found nothing certain. Where timing is not gated, a build that exited on
+    late reveals alone is acceptable too. Every other fault fails on every platform, and so does a
+    late reveal wherever timing is gated.
     """
     if code == 0:
         return None
-    # Only a certain verdict exits a build that is not strict, so an uncertain one rides along and
-    # says nothing about why this build exited. The fixture's own section 5 carries SLATE for good.
-    faults = [v for v in verdicts if v.certain]
+    faults = [found for found in codes if found.certainty is Certainty.CERTAIN]
     if gate:
-        return f"the build exited {code} and timing is gated here: {[v.name for v in faults] or 'no finding row'}"
-    if others := [v for v in faults if v not in LATE_FRAME]:
-        return f"the build exited {code} on more than late reveals: {[v.name for v in others]}"
+        return f"the build exited {code} and timing is gated here: {[found.name for found in faults] or 'no row'}"
+    if others := [found for found in faults if found not in LATE_FRAME]:
+        return f"the build exited {code} on more than late reveals: {[found.name for found in others]}"
     if not faults:
         return f"the build exited {code} with no finding row to explain it"
     return None
 
 
-def assert_build_finished(code: int, verdicts: Iterable[Verdict], detail: str, request: pytest.FixtureRequest) -> None:
-    """Assert a build finished acceptably on this platform, and say what it tolerated when it did."""
-    rows = list(verdicts)
-    why = tolerated(code, rows, gates_timing(request))
+def assert_build_finished(code: int, codes: Iterable[Code], detail: str, config: pytest.Config) -> None:
+    """Assert a build finished acceptably on this runner, and say what it tolerated when it did."""
+    rows = list(codes)
+    why = tolerated(code, rows, gates_timing(config))
     assert why is None, f"{why}\n{detail}"
-    if code != 0:
-        print(f"build exited {code} on late reveals only, which {sys.platform} reports and does not gate")

@@ -44,11 +44,12 @@ from decktalk.media import audio, ffmpeg, frames
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import SectionKind, SpendState, Substitute, Voicing, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
+from support.timing_policy import BASE_BUDGET_SECONDS, FIRST_FETCH_SECONDS, budget
 
 # An advisory lock on the output directory, where the platform has one.
 fcntl = importlib.util.find_spec("fcntl") and importlib.import_module("fcntl")
 
-BUILD_BUDGET_SECONDS = 600
+BUILD_BUDGET_SECONDS = budget(BASE_BUDGET_SECONDS + FIRST_FETCH_SECONDS)
 """How long one test may take, which is generous enough for a cold Chromium fetch on a slow runner.
 
 The fixture builds in about a minute on a warm machine. The budget is a ceiling that catches a hung
