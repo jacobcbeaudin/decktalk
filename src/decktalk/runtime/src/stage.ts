@@ -1,8 +1,8 @@
 /*! The stage a deck is drawn on, and the one stylesheet that renders every closed word.
  *
- * A DeckTalk page draws into a fixed 1920 by 1080 stage, scaled to whatever window it is opened in,
- * so an element measured on a laptop is at the pixel a recording will put it at. This module owns
- * that stage, the fit, the heads-up display, and the stylesheet.
+ * A DeckTalk page draws into one stage of a fixed size, named below and scaled to whatever window
+ * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
+ * This module owns that stage, the fit, the heads-up display, and the stylesheet.
  *
  * Every rule below is generated from the registry, so a style word's length lives once. Each
  * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
@@ -117,6 +117,24 @@ function rule(family: string, word: string, seconds: number, body: string, extra
 }
 
 /**
+ * The rules for the two things DeckTalk draws for an author rather than for a film.
+ *
+ * The heads-up display sits over the stage and the index page lists a deck's scenes, and a
+ * recording holds neither of them. Every length here is therefore typography that no check reads
+ * and no finding names, which is why the block is one binding rather than a number a reader has to
+ * weigh one at a time.
+ */
+const CHROME_CSS = [
+  ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;" +
+    "color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}\n",
+  ":where(#dt-index){font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}\n",
+  ":where(#dt-index h1){font-size:28px}:where(#dt-index h2){font-size:20px;margin-top:28px}\n",
+  ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
+  ":where(#dt-index code){color:inherit;opacity:.7}\n",
+  ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
+];
+
+/**
  * The whole stylesheet, generated from the registry so no length is written twice.
  *
  * The attribute selectors below are derived from the registry as well: every row whose value is an
@@ -171,15 +189,7 @@ function sheet(): string {
   parts.push(
     `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}\n`,
   );
-  parts.push(
-    ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;" +
-      "color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}\n",
-    ":where(#dt-index){font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}\n",
-    ":where(#dt-index h1){font-size:28px}:where(#dt-index h2){font-size:20px;margin-top:28px}\n",
-    ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
-    ":where(#dt-index code){color:inherit;opacity:.7}\n",
-    ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
-  );
+  parts.push(...CHROME_CSS);
   return parts.join("");
 }
 

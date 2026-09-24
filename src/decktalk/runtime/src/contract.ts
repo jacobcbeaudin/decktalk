@@ -19,6 +19,24 @@
  * own cue unmeasurable.
  */
 
+// ---- the two units every clock here converts between -------------------------------------------
+
+/**
+ * How many milliseconds one second holds.
+ *
+ * Truth: the browser reports every time in milliseconds and every number DeckTalk publishes is in
+ * seconds, so the conversion happens at each boundary and is named there rather than spelled out.
+ */
+export const MILLISECONDS = 1000;
+
+/**
+ * How many decimal places a second is written to, which is a millisecond.
+ *
+ * Truth: a millisecond is finer than any frame a recording holds, so a reader comparing two seconds
+ * against each other never has to read precision the measurement never had.
+ */
+export const SECOND_DIGITS = 3;
+
 // ---- what the recording can see ---------------------------------------------------------------
 
 /** The rate the recorder captures at, which is the rate Chromium's screencast paints a deck at. */

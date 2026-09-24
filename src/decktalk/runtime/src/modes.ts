@@ -11,7 +11,7 @@
  */
 
 import { frameAt, now, round, run, schedule, start } from "./clock.ts";
-import { FRAME_STEP_MS, type Q, SLIDE_ENTRANCES, wireId } from "./contract.ts";
+import { FRAME_STEP_MS, MILLISECONDS, type Q, SLIDE_ENTRANCES, wireId } from "./contract.ts";
 import { typeset, ready as typesetterReady } from "./katex.ts";
 import { fire, type Mounted, prepare } from "./reveal.ts";
 import {
@@ -189,7 +189,7 @@ function retire(incoming: HTMLElement, outgoing: HTMLElement, entrance: keyof ty
   incoming.addEventListener("animationend", go, { once: true });
   // The fallback is the crossfade the stylesheet is really playing plus one captured frame, so a
   // page that never fires the event still loses its outgoing slide at the right moment.
-  setTimeout(go, (slideSeconds(entrance) + FRAME_STEP_MS / 1000) * 1000);
+  setTimeout(go, (slideSeconds(entrance) + FRAME_STEP_MS / MILLISECONDS) * MILLISECONDS);
 }
 
 /** What a handler is told about where it is running, which is the same for every kind of handler. */

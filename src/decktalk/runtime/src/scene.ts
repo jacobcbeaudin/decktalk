@@ -4,8 +4,8 @@
  * runtime reads markup, so every rule about what an author may write is in one place: the attribute
  * names are derived from the registry rather than spelled here, an unknown `data-` word and a value
  * outside its published set are reported before a single pixel is drawn, and a moment is qualified
- * with the id of the template it was written in so the author writes `expand` and the wire carries
- * `4.1:expand`.
+ * with the id of the template it was written in, so the author writes `expand` inside the slide
+ * `pitch.listing` and the wire carries `pitch.listing:expand`.
  *
  * Ownership is declared and never inferred. A slide owns exactly the cues its moment attributes
  * name plus the local names it lists, which is what lets a cue id carry any characters an author
@@ -23,10 +23,12 @@ import {
   EXITS,
   type Exit,
   known,
+  MILLISECONDS,
   MOMENT_SELECTOR,
   MOMENTS,
   pairs,
   refuse,
+  SECOND_DIGITS,
   SLIDE_ENTRANCES,
   type SlideEntrance,
   WORD_STYLES,
@@ -349,7 +351,7 @@ export function spansOf(slide: Slide): Record<string, number> {
  * plays and a published span that had been clamped would hide the very overrun a finding names.
  */
 function declared(span: number): number {
-  return Number((span * motionScale).toFixed(3));
+  return Number((span * motionScale).toFixed(SECOND_DIGITS));
 }
 
 /** The span one moment of one element declares, which is the length of the motion that moment starts. */
@@ -408,7 +410,7 @@ function longestMotion(el: Element): number {
   const lengths = [style.animationDuration, style.animationDelay, style.transitionDuration, style.transitionDelay]
     .join(",")
     .split(",")
-    .map((part) => Number.parseFloat(part) * (part.trim().endsWith("ms") ? 0.001 : 1))
+    .map((part) => Number.parseFloat(part) * (part.trim().endsWith("ms") ? 1 / MILLISECONDS : 1))
     .filter((value) => Number.isFinite(value));
   const animation = lengths.length ? Math.max(...lengths) : 0;
   return animation > 0 ? animation : 0;

@@ -3,11 +3,11 @@
  * Include it and declare a scene in markup. Nothing here needs JavaScript:
  *
  *   <script src="decktalk-runtime.js"></script>
- *   <div data-scene="3" data-name="How often">
- *     <template data-slide="3.1" data-hold="8">
+ *   <div data-scene="pitch" data-name="How often">
+ *     <template data-slide="pitch.listing">
  *       <h1>Value still listed</h1>
  *       <p data-in="by-hour" data-describe="the hourly figure">by hour, through first pitch</p>
- *       <p data-in="share" data-count="last" data-describe="the share of games">1 in 10</p>
+ *       <p data-in="share" data-describe="the share of games">one game in ten</p>
  *     </template>
  *   </div>
  *
@@ -22,6 +22,7 @@
  */
 
 import { now, start, started } from "./clock.ts";
+import { MILLISECONDS } from "./contract.ts";
 import { begin, buildSlide, isFrozen, type Probe, query, state, waitsForSignal } from "./modes.ts";
 import { all, declare, findSlide, type Handler, on, type SceneInput, setMotionScale } from "./scene.ts";
 import { motionScale } from "./stage.ts";
@@ -67,7 +68,7 @@ function gatesSettled(): Promise<void> {
     setTimeout(() => {
       if (!done) warn("PAGE_WAIT_UNSETTLED");
       resolve();
-    }, GATE_SECONDS * 1000);
+    }, GATE_SECONDS * MILLISECONDS);
   });
   return Promise.race([all_, limit]);
 }

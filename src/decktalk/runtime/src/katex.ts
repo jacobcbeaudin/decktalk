@@ -7,6 +7,7 @@
  * prints, and it is what a screen reader reads.
  */
 
+import { MILLISECONDS } from "./contract.ts";
 import { ATTR, flagged, written } from "./scene.ts";
 import { warn } from "./warn.ts";
 
@@ -94,7 +95,7 @@ function watch(slideId: string | null): void {
   waiting = true;
   setTimeout(() => {
     if (!window.katex) warn("PAGE_KATEX_MISSING", slideId, null, { attr: ATTR.tex });
-  }, KATEX_SECONDS * 1000);
+  }, KATEX_SECONDS * MILLISECONDS);
 }
 
 /**
@@ -113,7 +114,7 @@ export function ready(root: ParentNode | null): Promise<void> {
         resolve();
         return;
       }
-      if (performance.now() - started > KATEX_SECONDS * 1000) {
+      if (performance.now() - started > KATEX_SECONDS * MILLISECONDS) {
         warn("PAGE_KATEX_MISSING", null, null, { attr: ATTR.tex });
         resolve();
         return;

@@ -1,58 +1,5 @@
 "use strict";
 (() => {
-  // src/decktalk/runtime/src/clock.ts
-  /*! The narration clock and the queue of everything the page has still to do.
-   *
-   * Every second a DeckTalk page reasons in is a second after narration t=0, which is the frame the
-   * recorder's cover came off or the moment a preview started. This module owns that origin, the
-   * queue of work sorted by the second it is due, and the one animation frame loop that drains it.
-   *
-   * It holds no DOM and reads no markup, so a test can drive a whole recording's worth of cues
-   * through it without a browser. The queue is drained inside an animation frame on purpose: a cue
-   * that fires between two frames is a cue whose reveal is painted at the same time as one that fired
-   * inside the frame, and the recorder cannot tell the two apart afterwards.
-   */
-  var MOUNT_FIRST = 0;
-  var AFTER_THE_MOUNT = 1;
-  var origin = null;
-  var frame = 0;
-  var queue = [];
-  var looping = false;
-  function start() {
-    if (origin === null) origin = performance.now();
-  }
-  function started() {
-    return origin !== null;
-  }
-  function now() {
-    return origin === null ? Number.NEGATIVE_INFINITY : (performance.now() - origin) / 1e3;
-  }
-  function frameAt() {
-    return origin === null ? null : round((frame - origin) / 1e3);
-  }
-  function round(seconds2) {
-    return Number(seconds2.toFixed(3));
-  }
-  function schedule(at, kind, id, run2) {
-    queue.push({ at, kind, id, run: run2 });
-    queue.sort((a, b) => a.at - b.at || rank(a.kind) - rank(b.kind));
-  }
-  function rank(kind) {
-    return kind === "mount" ? MOUNT_FIRST : AFTER_THE_MOUNT;
-  }
-  function run(onFrame) {
-    if (looping) return;
-    looping = true;
-    const tick = (at) => {
-      frame = at;
-      const seconds2 = now();
-      while (queue.length && queue[0].at <= seconds2) queue.shift().run();
-      onFrame?.(seconds2);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }
-
   // src/decktalk/runtime/src/contract.ts
   /*! The page contract: every attribute an author writes, every code the page reports, and the words a
    * URL and a report are spelled with.
@@ -74,6 +21,8 @@
    * `MEASURABLE_SPAN_SECONDS`, because an effect still moving half a second after its cue marks its
    * own cue unmeasurable.
    */
+  var MILLISECONDS = 1e3;
+  var SECOND_DIGITS = 3;
   var FRAME_STEP_MS = 40;
   var MEASURABLE_SPAN_SECONDS = 0.5;
   var APPEAR_WORDS_MAX = 8;
@@ -634,6 +583,59 @@
     return Math.min(span2 * scale2, MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1e3);
   }
 
+  // src/decktalk/runtime/src/clock.ts
+  /*! The narration clock and the queue of everything the page has still to do.
+   *
+   * Every second a DeckTalk page reasons in is a second after narration t=0, which is the frame the
+   * recorder's cover came off or the moment a preview started. This module owns that origin, the
+   * queue of work sorted by the second it is due, and the one animation frame loop that drains it.
+   *
+   * It holds no DOM and reads no markup, so a test can drive a whole recording's worth of cues
+   * through it without a browser. The queue is drained inside an animation frame on purpose: a cue
+   * that fires between two frames is a cue whose reveal is painted at the same time as one that fired
+   * inside the frame, and the recorder cannot tell the two apart afterwards.
+   */
+  var MOUNT_FIRST = 0;
+  var AFTER_THE_MOUNT = 1;
+  var origin = null;
+  var frame = 0;
+  var queue = [];
+  var looping = false;
+  function start() {
+    if (origin === null) origin = performance.now();
+  }
+  function started() {
+    return origin !== null;
+  }
+  function now() {
+    return origin === null ? Number.NEGATIVE_INFINITY : (performance.now() - origin) / MILLISECONDS;
+  }
+  function frameAt() {
+    return origin === null ? null : round((frame - origin) / MILLISECONDS);
+  }
+  function round(seconds2) {
+    return Number(seconds2.toFixed(SECOND_DIGITS));
+  }
+  function schedule(at, kind, id, run2) {
+    queue.push({ at, kind, id, run: run2 });
+    queue.sort((a, b) => a.at - b.at || rank(a.kind) - rank(b.kind));
+  }
+  function rank(kind) {
+    return kind === "mount" ? MOUNT_FIRST : AFTER_THE_MOUNT;
+  }
+  function run(onFrame) {
+    if (looping) return;
+    looping = true;
+    const tick = (at) => {
+      frame = at;
+      const seconds2 = now();
+      while (queue.length && queue[0].at <= seconds2) queue.shift().run();
+      onFrame?.(seconds2);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   // src/decktalk/runtime/src/warn.ts
   /*! Everything the page could not honour, in the five fields the contract publishes.
    *
@@ -674,8 +676,8 @@
    * runtime reads markup, so every rule about what an author may write is in one place: the attribute
    * names are derived from the registry rather than spelled here, an unknown `data-` word and a value
    * outside its published set are reported before a single pixel is drawn, and a moment is qualified
-   * with the id of the template it was written in so the author writes `expand` and the wire carries
-   * `4.1:expand`.
+   * with the id of the template it was written in, so the author writes `expand` inside the slide
+   * `pitch.listing` and the wire carries `pitch.listing:expand`.
    *
    * Ownership is declared and never inferred. A slide owns exactly the cues its moment attributes
    * name plus the local names it lists, which is what lets a cue id carry any characters an author
@@ -842,7 +844,7 @@
     return spans;
   }
   function declared(span2) {
-    return Number((span2 * motionScale).toFixed(3));
+    return Number((span2 * motionScale).toFixed(SECOND_DIGITS));
   }
   function spanOf(el, attr) {
     if (attr === ATTR.back) return ATTENTION.back.seconds;
@@ -877,7 +879,7 @@
     const lengths = [style2.animationDuration, style2.animationDelay, style2.transitionDuration, style2.transitionDelay]
       .join(",")
       .split(",")
-      .map((part) => Number.parseFloat(part) * (part.trim().endsWith("ms") ? 1e-3 : 1))
+      .map((part) => Number.parseFloat(part) * (part.trim().endsWith("ms") ? 1 / MILLISECONDS : 1))
       .filter((value) => Number.isFinite(value));
     const animation = lengths.length ? Math.max(...lengths) : 0;
     return animation > 0 ? animation : 0;
@@ -1068,7 +1070,7 @@
     waiting = true;
     setTimeout(() => {
       if (!window.katex) warn("PAGE_KATEX_MISSING", slideId, null, { attr: ATTR.tex });
-    }, KATEX_SECONDS * 1e3);
+    }, KATEX_SECONDS * MILLISECONDS);
   }
   function ready(root) {
     if (!wants() || window.katex) return Promise.resolve();
@@ -1080,7 +1082,7 @@
           resolve();
           return;
         }
-        if (performance.now() - started2 > KATEX_SECONDS * 1e3) {
+        if (performance.now() - started2 > KATEX_SECONDS * MILLISECONDS) {
           warn("PAGE_KATEX_MISSING", null, null, { attr: ATTR.tex });
           resolve();
           return;
@@ -1094,9 +1096,9 @@
   // src/decktalk/runtime/src/stage.ts
   /*! The stage a deck is drawn on, and the one stylesheet that renders every closed word.
    *
-   * A DeckTalk page draws into a fixed 1920 by 1080 stage, scaled to whatever window it is opened in,
-   * so an element measured on a laptop is at the pixel a recording will put it at. This module owns
-   * that stage, the fit, the heads-up display, and the stylesheet.
+   * A DeckTalk page draws into one stage of a fixed size, named below and scaled to whatever window
+   * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
+   * This module owns that stage, the fit, the heads-up display, and the stylesheet.
    *
    * Every rule below is generated from the registry, so a style word's length lives once. Each
    * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
@@ -1156,6 +1158,14 @@
 :where(.${name}){animation-name:${name};animation-duration:var(${SPAN_PROPERTY},${seconds2}s);animation-timing-function:${EASE};animation-fill-mode:both;${extra}}
 `;
   }
+  var CHROME_CSS = [
+    ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}\n",
+    ":where(#dt-index){font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}\n",
+    ":where(#dt-index h1){font-size:28px}:where(#dt-index h2){font-size:20px;margin-top:28px}\n",
+    ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
+    ":where(#dt-index code){color:inherit;opacity:.7}\n",
+    ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
+  ];
   function sheet() {
     const declared2 = Object.values(ATTRS)
       .filter((row) => row.kind === "id")
@@ -1209,14 +1219,7 @@
       `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}
 `,
     );
-    parts.push(
-      ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}\n",
-      ":where(#dt-index){font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}\n",
-      ":where(#dt-index h1){font-size:28px}:where(#dt-index h2){font-size:20px;margin-top:28px}\n",
-      ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
-      ":where(#dt-index code){color:inherit;opacity:.7}\n",
-      ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
-    );
+    parts.push(...CHROME_CSS);
     return parts.join("");
   }
   var stageEl = null;
@@ -1329,14 +1332,16 @@
    * so the line reports itself through the telemetry seam instead of being measured in pixels.
    */
   function key(word2) {
-    return word2.toLowerCase().replace(/[^a-z0-9]/g, "");
+    return word2.toLowerCase().replace(/[^a-z\d]/g, "");
   }
   var TEXT_MAX = 24;
   var NEAR_THE_CUE_SECONDS = 1.5;
   var LAST_NUMBER = /(\d[\d,]*(?:\.\d+)?)(?!.*\d)/;
   var FIRST_NUMBER = /(\d[\d,]*(?:\.\d+)?)/;
+  var EASE_POWER = 3;
+  var THOUSANDS = /\B(?=(\d{3})+(?!\d))/g;
   function eased(part) {
-    return 1 - (1 - part) ** 3;
+    return 1 - (1 - part) ** EASE_POWER;
   }
   function count(el, text, first, seconds2, scene) {
     const found = text.match(first ? FIRST_NUMBER : LAST_NUMBER);
@@ -1351,11 +1356,11 @@
     const at = found.index;
     const draw = (value) => {
       let body = value.toFixed(decimals);
-      if (grouped) body = body.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      if (grouped) body = body.replace(THOUSANDS, ",");
       el.textContent = text.slice(0, at) + body + text.slice(at + written2.length);
     };
     const started2 = performance.now();
-    const length = seconds2 * 1e3;
+    const length = seconds2 * MILLISECONDS;
     let live = true;
     scene.onLeave(() => {
       live = false;
@@ -1739,7 +1744,7 @@
       outgoing.remove();
     };
     incoming.addEventListener("animationend", go, { once: true });
-    setTimeout(go, (slideSeconds(entrance) + FRAME_STEP_MS / 1e3) * 1e3);
+    setTimeout(go, (slideSeconds(entrance) + FRAME_STEP_MS / MILLISECONDS) * MILLISECONDS);
   }
   function context(cue, slideId, at) {
     return { id: cue, at: round(at), frozen, slideId };
@@ -2002,11 +2007,11 @@
    * Include it and declare a scene in markup. Nothing here needs JavaScript:
    *
    *   <script src="decktalk-runtime.js"><\/script>
-   *   <div data-scene="3" data-name="How often">
-   *     <template data-slide="3.1" data-hold="8">
+   *   <div data-scene="pitch" data-name="How often">
+   *     <template data-slide="pitch.listing">
    *       <h1>Value still listed</h1>
    *       <p data-in="by-hour" data-describe="the hourly figure">by hour, through first pitch</p>
-   *       <p data-in="share" data-count="last" data-describe="the share of games">1 in 10</p>
+   *       <p data-in="share" data-describe="the share of games">one game in ten</p>
    *     </template>
    *   </div>
    *
@@ -2039,7 +2044,7 @@
       setTimeout(() => {
         if (!done) warn("PAGE_WAIT_UNSETTLED");
         resolve();
-      }, GATE_SECONDS * 1e3);
+      }, GATE_SECONDS * MILLISECONDS);
     });
     return Promise.race([all_, limit]);
   }

@@ -10,6 +10,8 @@
  * inside the frame, and the recorder cannot tell the two apart afterwards.
  */
 
+import { MILLISECONDS, SECOND_DIGITS } from "./contract.ts";
+
 /** What a queued task is, which decides the order two tasks due at the same second run in. */
 export type Kind = "mount" | "cue" | "reveal";
 
@@ -60,17 +62,17 @@ export function started(): boolean {
 
 /** The second on the narration clock, or minus infinity before the clock has started. */
 export function now(): number {
-  return origin === null ? Number.NEGATIVE_INFINITY : (performance.now() - origin) / 1000;
+  return origin === null ? Number.NEGATIVE_INFINITY : (performance.now() - origin) / MILLISECONDS;
 }
 
 /** The second the animation frame that ran the queue began, which is when a cue was really drawn. */
 export function frameAt(): number | null {
-  return origin === null ? null : round((frame - origin) / 1000);
+  return origin === null ? null : round((frame - origin) / MILLISECONDS);
 }
 
 /** A second on the narration clock at the precision every report and every log row carries. */
 export function round(seconds: number): number {
-  return Number(seconds.toFixed(3));
+  return Number(seconds.toFixed(SECOND_DIGITS));
 }
 
 /** Owe the clock one piece of work at one second, which the next frame past that second runs. */

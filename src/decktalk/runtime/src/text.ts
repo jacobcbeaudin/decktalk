@@ -7,7 +7,7 @@
  */
 
 import { now, round } from "./clock.ts";
-import { APPEAR_WORDS_MAX, BACK_OPACITY, scaled, WORD_STYLES, type WordStyle } from "./contract.ts";
+import { APPEAR_WORDS_MAX, BACK_OPACITY, MILLISECONDS, scaled, WORD_STYLES, type WordStyle } from "./contract.ts";
 import { CLASS, motionScale, styleClass } from "./stage.ts";
 import { recorder } from "./telemetry.ts";
 import { warn } from "./warn.ts";
@@ -17,7 +17,7 @@ export type Spoken = { readonly key: string; readonly at: number };
 
 /** The characters a match ignores, because punctuation and case are the script's and not the voice's. */
 export function key(word: string): string {
-  return word.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return word.toLowerCase().replace(/[^a-z\d]/g, "");
 }
 
 /** The opening of a line, which is enough to find it again in the script without carrying the whole of it. */
@@ -49,9 +49,20 @@ export type Scene = {
 const LAST_NUMBER = /(\d[\d,]*(?:\.\d+)?)(?!.*\d)/;
 const FIRST_NUMBER = /(\d[\d,]*(?:\.\d+)?)/;
 
+/**
+ * The curve a count runs on, as the power the remaining share is raised to.
+ *
+ * Calibration: a cube is the shallowest ease that still lands the last digits slowly enough for a
+ * viewer to read them, and a viewer reads a number that arrives rather than one that stops.
+ */
+const EASE_POWER = 3;
+
+/** Every group of digits a thousands separator goes in front of, which is how the author wrote it. */
+const THOUSANDS = /\B(?=(\d{3})+(?!\d))/g;
+
 /** The share of the count still to run after a given share of its length, which is a cubic ease out. */
 function eased(part: number): number {
-  return 1 - (1 - part) ** 3;
+  return 1 - (1 - part) ** EASE_POWER;
 }
 
 /**
@@ -73,11 +84,11 @@ export function count(el: HTMLElement, text: string, first: boolean, seconds: nu
   const at = found.index as number;
   const draw = (value: number) => {
     let body = value.toFixed(decimals);
-    if (grouped) body = body.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    if (grouped) body = body.replace(THOUSANDS, ",");
     el.textContent = text.slice(0, at) + body + text.slice(at + written.length);
   };
   const started = performance.now();
-  const length = seconds * 1000;
+  const length = seconds * MILLISECONDS;
   let live = true;
   scene.onLeave(() => {
     live = false;
