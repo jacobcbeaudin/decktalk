@@ -45,13 +45,14 @@ purpose, and every one of them needs an API key that you supply.
 SERVICE_TAIL = """
 ### Reading a request before you make it
 
-`decktalk narrate --dry-run --json` plans a voiced run with no API key and no request. It reports
-the sections it would voice, their character counts and the host, so a reviewer can read exactly
-what would be sent before anything is sent. `decktalk build` stops at the same point and names the
-host and the character count before it spends a credit.
+`decktalk check --json` prices a voiced run with no API key and no request. Its `spend` object
+reports the sections a voiced run would pay for, their character count, the price per thousand
+characters and the layer that set it, so a reviewer can read exactly what would be sent before
+anything is sent. `decktalk build` stops at the same point and names the price before it spends a
+credit, and `--max-cost N` refuses the whole run before the first call when the ceiling is above N.
 
-Set `context_chars = 0` under `[elevenlabs]` when the neighbouring sections must stay on the
-machine. Each section is then sent on its own, with no surrounding text.
+Set `narration.context_chars = 0` when the neighbouring sections must stay on the machine. Each
+section is then sent on its own, with no surrounding text.
 """
 
 DOWNLOAD_HEAD = """
@@ -97,18 +98,20 @@ and none of them is a DeckTalk feature you have to wait for.
 - **Use the browser the machine already has.** Set `[record] browser_path` in `decktalk.toml`, or
   point `PLAYWRIGHT_BROWSERS_PATH` at a location your administrators have already filled. The
   pinned build is the reference, and a managed browser is supported and unverified.
-- **Use the ffmpeg the machine already has.** `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE` name
-  executables directly, and a build that finds them downloads nothing from the second table.
+- **Use the ffmpeg the machine already has.** `[tools] ffmpeg` and `[tools] ffprobe` name
+  executables directly, and a build that finds them downloads nothing from the second table. Both
+  are machine keys, so they belong in this machine's settings file rather than in a project that
+  ships to somebody else.
 - **Ask the proxy to leave the local origin alone.** Pages record over a virtual origin on the
   loopback address, so the proxy rules need a bypass for it. `decktalk serve` binds to the loopback
   address and takes `--host` and `--port`.
 
 [Requirements and costs](/requirements) has the full managed-machine section, with the package index
-mirror, `PLAYWRIGHT_BROWSERS_PATH`, `DECKTALK_FFMPEG` and `DECKTALK_CACHE_DIR`.
+mirror, `PLAYWRIGHT_BROWSERS_PATH` and the `[tools]` keys.
 
 `decktalk doctor` reports what is installed and which browser and media build a run would use,
-without fetching anything, and `decktalk doctor --report` prints a redacted block you can paste into
-a ticket.
+without fetching anything, and `decktalk doctor --json` prints the same reading as one object with
+no credential in it.
 """
 
 
