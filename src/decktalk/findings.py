@@ -257,7 +257,7 @@ class Code(Enum):
     )
     PAGE_APPEAR_TOO_LONG = (
         "PAGE_APPEAR_TOO_LONG",
-        "An entrance runs longer than the span a cue can still be measured under.",
+        "A line appears word by word over more words than one cue can carry, so it runs past its own cue.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )

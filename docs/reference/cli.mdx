@@ -84,7 +84,7 @@ A finding carries its code, its sentence, its certainty and often a fix an agent
 | `PAGE_CLASS_NOT_REDUCED` | certain | A class change declares no reduced form, so a reduced render would animate anyway. |
 | `PAGE_SWAP_AMBIGUOUS` | certain | Two elements claim the same swap, so the runtime cannot tell which one leaves. |
 | `PAGE_PREVIEW_AMBIGUOUS` | certain | Two elements claim the same preview, so preview mode cannot choose between them. |
-| `PAGE_APPEAR_TOO_LONG` | certain | An entrance runs longer than the span a cue can still be measured under. |
+| `PAGE_APPEAR_TOO_LONG` | certain | A line appears word by word over more words than one cue can carry, so it runs past its own cue. |
 | `PAGE_STAGGER_EMPTY` | certain | An element staggers its children and has none, so the stagger plays nothing. |
 | `PAGE_MOTION_OVERRUN` | certain | A motion span runs past the measurable ceiling, so the cue it carries cannot be verified. |
 | `PAGE_STAGGER_OVERRUN` | certain | A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact. |
