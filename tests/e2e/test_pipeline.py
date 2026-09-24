@@ -30,7 +30,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
@@ -39,7 +39,7 @@ import pytest
 
 from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words
 from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart, StageDone, StageStart
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Code
 from decktalk.media import MILLISECONDS, audio, ffmpeg, frames
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import Layer, SectionKind, SpendState, Substitute, Voicing, Word
@@ -49,8 +49,8 @@ from support.timing_policy import (
     FIRST_FETCH_SECONDS,
     assert_build_finished,
     budget,
-    faults,
     gates_timing,
+    held_to,
     note_late_reveals,
     offset_limit_ms,
 )
@@ -153,12 +153,17 @@ def moment(line: type[Event]) -> str:
 
 @dataclass
 class Run:
-    """One `decktalk` command that has finished, with its exit code and its two streams."""
+    """One `decktalk` command that has finished, with its exit code, its two streams and this leg.
+
+    The run carries the session's configuration because the timing policy is a property of the leg
+    rather than of a test, and a run is what every test here reads a finding from.
+    """
 
     args: tuple[str, ...]
     code: int
     stdout: str
     stderr: str
+    config: pytest.Config
 
     @property
     def json(self) -> dict[str, Any]:
@@ -174,9 +179,14 @@ class Run:
     def findings(self) -> list[dict[str, Any]]:
         return list(self.json["findings"])
 
-    def certain(self) -> list[dict[str, Any]]:
-        """Every finding the run is sure about, which is what decides the exit code by default."""
-        return [row for row in self.findings if row["certainty"] == Certainty.CERTAIN.value]
+    def certain(self) -> list[Mapping[str, Any]]:
+        """Every finding the run is sure about that this leg holds the deck to, and prints the rest.
+
+        Reading the rows through the timing policy here rather than in each test is what puts every
+        test of this suite on the policy, including the ones that are about something else and read
+        a run's findings to say that the command found nothing.
+        """
+        return held_to(self.config, " ".join(self.args), self.findings)
 
     def codes(self) -> list[Code]:
         """Every finding as the model's own member, which is what the timing policy judges."""
@@ -218,6 +228,7 @@ class Project:
     root: Path
     shim: Path
     attempts: Path
+    config: pytest.Config
     built: Run | None = None
     verified: Run | None = None
 
@@ -243,7 +254,7 @@ class Project:
             env=env,
             cwd=self.shim,
         )
-        return Run((*args,), done.returncode, done.stdout, done.stderr)
+        return Run((*args,), done.returncode, done.stdout, done.stderr, self.config)
 
     @property
     def build_dir(self) -> Path:
@@ -339,7 +350,7 @@ def hold(path: Path) -> IO[str] | None:
 
 
 @pytest.fixture(scope="session")
-def built() -> Iterator[Project]:
+def built(pytestconfig: pytest.Config) -> Iterator[Project]:
     """Copy the fixture, add the runtime and KaTeX, generate the media, and build it with no voice."""
     assert katex_missing() == [], "the packaged KaTeX copy is incomplete"
     OUT.mkdir(parents=True, exist_ok=True)
@@ -359,7 +370,7 @@ def built() -> Iterator[Project]:
     vendor_katex(root / "deck")
     generate_media(root)
 
-    project = Project(root=root, shim=shim, attempts=shim / "attempts.txt")
+    project = Project(root=root, shim=shim, attempts=shim / "attempts.txt", config=pytestconfig)
     try:
         project.built = project.cli("build", "--no-voice", "--json")
         # One reading over the sections that carry cues, kept on disk for the CI upload on a failure.
@@ -478,9 +489,7 @@ def test_a_second_record_run_keeps_every_section(built: Project) -> None:
 # ---- what verify measured -------------------------------------------------------------------------
 
 
-def test_verify_measures_every_cue_every_start_every_cut_and_the_seam(
-    built: Project, pytestconfig: pytest.Config
-) -> None:
+def test_verify_measures_every_cue_every_start_every_cut_and_the_seam(built: Project) -> None:
     """Every cue the fixture declares is measured, and nothing it measured is a certain finding.
 
     What this test is about is which rows a reading produces, so a late landing on a runner that
@@ -492,7 +501,7 @@ def test_verify_measures_every_cue_every_start_every_cut_and_the_seam(
     assert {row["section"] for row in doc["starts"]} == {1, 2, 4}
     assert {row["section"] for row in doc["cuts"]} == {1, 2, 4}
     assert [row["section"] for row in doc["seams"]] == [2], "section 2 is the one seamless section"
-    assert faults(built.verified.codes(), gates_timing(pytestconfig)) == [], built.verified.certain()
+    assert built.verified.certain() == [], built.verified.findings
     assert doc["film_seconds"] > FILM_SECONDS_RANGE[0]
 
 
@@ -778,7 +787,7 @@ def test_cues_resolve_by_occurrence_and_by_phrase_on_uneven_word_timestamps(buil
     root = tmp_path / HOSTILE_DIRECTORY / "sync"
     shutil.copytree(built.root, root, ignore=shutil.ignore_patterns("build"))
     shutil.copytree(built.build_dir, root / "build", ignore=shutil.ignore_patterns("final", "sections", "events"))
-    project = Project(root=root, shim=built.shim, attempts=tmp_path / "attempts.txt")
+    project = Project(root=root, shim=built.shim, attempts=tmp_path / "attempts.txt", config=built.config)
 
     takes = Takes.read(root / Artifact.TAKES.value)
     assert takes is not None

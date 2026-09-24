@@ -8,6 +8,10 @@ again.
 Each case here is one decision the rule makes. The message `tolerated` returns is read only for the
 code it names and never for its wording, so the sentence can be rewritten without touching these.
 
+The middle section holds the seam, which is the one reading every suite that drives a real build
+gets its certain findings from. Applying the rule test by test is what let a second test fail a
+merge on the same reveal, so the rule being right matters less than every test asking it.
+
 The last section holds the other half of the rule, which is that a leg reaches the suite with it.
 The rule read `--timing` correctly from the day it was written and no row of `GROUPS` ever passed
 that flag, so every hosted runner gated and the founder's decision lived only in a docstring.
@@ -17,8 +21,8 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from types import ModuleType
-from typing import Protocol
+from types import ModuleType, SimpleNamespace
+from typing import Any, Protocol, cast
 
 import pytest
 
@@ -31,6 +35,7 @@ from support.timing_policy import (
     UNGATED_EXTRA_FRAMES,
     budget,
     faults,
+    held_to,
     judged,
     offset_limit_ms,
     tolerated,
@@ -143,6 +148,83 @@ def test_a_project_that_widens_its_own_limit_widens_the_ungated_one_too() -> Non
     narrow = offset_limit_ms(STATED_LIMIT_MS, gate=False)
     wide = offset_limit_ms(STATED_LIMIT_MS * 2, gate=False)
     assert wide - narrow == pytest.approx(STATED_LIMIT_MS)
+
+
+# ---- the seam every suite reads a finding through ------------------------------------------------
+
+
+class Leg:
+    """A run of the suite with the timing option set one way, which is all the policy reads of one.
+
+    This file's own run gates, because a contract may not depend on the flag the leg that collected
+    it was given, so both readings are stood up here. The leg is its own terminal reporter, which is
+    how the sentences it printed are read back.
+    """
+
+    def __init__(self, timing: str) -> None:
+        self.timing = timing
+        self.printed: list[str] = []
+        self.pluginmanager = SimpleNamespace(get_plugin=lambda name: self)
+
+    def getoption(self, name: str, **_: object) -> object:
+        """The option this leg was given, whatever default the caller offered for a run without one."""
+        assert name == "--timing", f"the policy reads one option and asked for {name}"
+        return self.timing
+
+    def write_line(self, line: str) -> None:
+        self.printed.append(line)
+
+
+def row(code: Code, certainty: Certainty | None = None) -> dict[str, Any]:
+    """One finding as `--json` publishes it, which is the shape the seam reads a run's findings in."""
+    return {
+        "code": code.value,
+        "certainty": (certainty or code.certainty).value,
+        "message": f"{code.value} was reported by the run",
+    }
+
+
+def seam(timing: str, *findings: dict[str, Any]) -> tuple[list[Any], list[str]]:
+    """What a leg with this timing option holds a deck to, and what it printed instead."""
+    leg = Leg(timing)
+    held = held_to(cast(pytest.Config, leg), "pipeline", findings)
+    return list(held), leg.printed
+
+
+def test_a_late_landing_is_printed_rather_than_returned_where_timing_is_not_gated() -> None:
+    """The seam is what makes a leg's decision reach a test that is about something else entirely."""
+    held, printed = seam("report", row(Code.CUE_OFF))
+    assert held == []
+    assert any(Code.CUE_OFF.value in line for line in printed), printed
+
+
+def test_a_late_landing_is_returned_where_timing_is_gated() -> None:
+    """Gating is the default, so the same run read on a trusted runner hands the row back to the test."""
+    held, printed = seam("gate", row(Code.CUE_OFF))
+    assert held == [row(Code.CUE_OFF)]
+    assert printed == []
+
+
+@pytest.mark.parametrize("other", [Code.CUE_NO_CHANGE, Code.PAGE_WORDS_NOT_FOUND, Code.PAGE_RENDER_THREW])
+def test_every_other_certain_finding_is_returned_on_either_leg(other: Code) -> None:
+    """A deck's own fault fails everywhere, which is what a leg that reports timing does not touch."""
+    assert seam("report", row(Code.CUE_OFF), row(other))[0] == [row(other)]
+    assert seam("gate", row(other))[0] == [row(other)]
+
+
+def test_an_uncertain_row_is_not_a_certain_finding_on_either_leg() -> None:
+    """The seam answers what a run is sure about, so a row it is unsure of is neither held nor news."""
+    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
+    assert seam("gate", row(uncertain))[0] == []
+    assert seam("report", row(uncertain, Certainty.UNCERTAIN)) == ([], [])
+
+
+def test_a_run_with_no_reporter_still_holds_the_deck_to_every_other_finding() -> None:
+    """A run under `-p no:terminal` has nowhere to print the news, which may not lose a fault."""
+    leg = Leg("report")
+    leg.pluginmanager = SimpleNamespace(get_plugin=lambda name: None)
+    held = held_to(cast(pytest.Config, leg), "pipeline", [row(Code.CUE_OFF), row(Code.CUE_NO_CHANGE)])
+    assert list(held) == [row(Code.CUE_NO_CHANGE)]
 
 
 def test_the_budget_is_a_ceiling_that_grows_with_the_runner() -> None:
