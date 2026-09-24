@@ -1,312 +1,399 @@
 ---
 title: Reference card for agents
 sidebarTitle: Reference card for agents
-description: Look up the whole DeckTalk contract on one page, with a link to the page behind each rule.
+description: The whole DeckTalk contract on one page: the install, the four input files, all eighteen commands, the JSON contract, the stages, the page vocabulary and the settings.
 ---
 
-This card lists the whole DeckTalk contract on one page, and each group links to the page that
-explains it. Use it to look up one rule, option, or exit code, or give it to an agent that writes a
-project.
+This is the page to hand an agent that has no skills loaded. It is usable on its own, and each
+section links to the generated page that holds the full table.
 
-Every doc page is also served as plain text at [llms.txt](https://docs.decktalk.ai/llms.txt). The
-whole site is one file at [llms-full.txt](https://docs.decktalk.ai/llms-full.txt).
+Every doc page is also served as plain text at [llms.txt](https://docs.decktalk.ai/llms.txt), and
+the whole site is one file at [llms-full.txt](https://docs.decktalk.ai/llms-full.txt).
 
-## Inputs
+## Install
 
-You write four files, in this order: `script.md`, `decktalk.toml`, `cues.json`, and the page. All of
-them live in the project directory. [Your first deck](/guides/first-deck) writes each one.
+```console
+curl -LsSf https://decktalk.ai/install.sh | sh
+decktalk init my-lesson && cd my-lesson
+decktalk build --no-voice
+```
+
+The installer brings uv, and uv brings its own Python, on Linux and macOS. On Windows install with
+uv or pipx, which needs Python 3.12 or later. Chromium and ffmpeg are announced and downloaded by
+the first build that needs them, and `decktalk install` fetches them up front instead.
+
+A build without voice needs no account. A voiced build needs `ELEVENLABS_API_KEY` in the project's
+`.env`, and `ELEVENLABS_VOICE_ID`, which is a published name rather than a secret and is part of
+what names a take. A variable already exported wins over `.env`, and a value that still starts with
+`<` counts as unset. ElevenLabs is the only speech provider.
+
+## The four files an author writes
+
+`script.md`, `decktalk.toml`, `cues.json` and the deck page, in that order. The section number, the
+scene its `[[section]]` names and the slide ids of its cues all agree.
 
 ### `script.md`
 
-- `## N. Title` starts section `N`.
-- `## N. Title — 0:40 to 1:10` adds a time budget.
-- `---`, `# Title`, or `## Title` with no number ends the section.
-- A page section needs a `## N.` heading. A clip section does not.
-- `[any text]` and `[beat]` make a beat. The voice reads a dash there.
-- `[pause N]` sends `<break time="Ns" />`. No other direction sends a break tag.
-- A written `<break time="1s" />` passes through as written.
-- `[CAPS_1]` is a placeholder. Its pattern is `[A-Z][A-Z0-9_]*`.
-- `narrate` refuses a placeholder without `--allow-placeholders`.
-- `narrate` removes Markdown formatting before it sends the text.
-- DeckTalk places `lead_seconds` (0.5) of silence before every spoken section's first word.
-- DeckTalk places exactly `min_tail_seconds` of silence after every section's last word.
-- The default `min_tail_seconds` is 0.7. The starter sets 1.3.
-- The `est` column assumes 140 words per minute.
-- A build without voice assumes 150 words per minute plus 0.7 s per beat.
+What the voice says. `## N. Title` starts section `N`, and `## N. Title - 0:40 to 1:10` adds a time
+budget. Bracketed text is a stage direction the voice does not speak: `[beat]` and any other note
+become a short pause, `[pause 3]` becomes a three second pause, and an ALL-CAPS bracket such as
+`[NUMBER]` is a placeholder that raises `TAKE_PLACEHOLDER`. Markdown formatting is stripped before
+the text is sent, and the exact text a section sends is that take's cache key.
 
 Full rules: [script.md](/reference/script-md).
 
 ### `decktalk.toml`
 
-- `[project]` holds `name` and the optional `script`, `cues`, and `build` paths.
-- `[voice]` holds voice settings. The voice id and key live in `.env`.
-- Each `[[section]]` has a `number` and an optional `chapter`.
-- A page section adds `page` and an optional `scene`. `scene` defaults to `number`.
-- A clip section adds `clip`, and the optional `slate_seconds`, `optional`, and `words`.
-- `words` names a words file of the speech inside the clip, and the captions add it.
-- Consecutive sections with the same `chapter` share one chapter.
-- A clip section with `optional = true` plays its slate under `--strict` too.
-- A clip section can sit before, between, or after page sections.
-- A page section can set its own `lead_seconds` and `tail_seconds`, and `hold_seconds` to add silence. A hold pauses the narration.
-- `[transition]`, `[mix]`, `[soundscape]`, and the tuning tables are optional.
-- An unknown top-level table fails the load.
-- DeckTalk warns about an unknown key inside a table, then ignores the key.
+The project file. `[project]` holds `name` and the optional `script`, `cues` and `build` paths. One
+`[[section]]` per script section, in order, each with a `number` and an optional `chapter`. A page
+section adds `page` and `scene`, and a clip section adds `clip` and plays a video file of your own.
+`[voice]`, `[transition]`, `[mix]` and `[soundscape]` follow, and every tuning table is optional.
 
-Full rules: [decktalk.toml](/reference/decktalk-toml).
+Full rules: [decktalk.toml](/reference/decktalk-toml) and [Configuration](/reference/configuration).
 
 ### `cues.json`
 
-Every key but `cue` and `on` is optional. This sample carries all of them.
+Which spoken phrase each moment on the page waits for. `decktalk schema project` prints its shape.
 
 ```json cues.json
-{ "sections": { "2": { "min_seconds": 12, "cues": [
-  { "cue": "2.1average", "on": "the average" },
-  { "cue": "2.1formula", "on": "the formula", "occurrence": 2, "offset": 0.2 },
-  { "cue": "2.1code", "on": "in code", "case_sensitive": true },
-  { "cue": "2.1waited", "on": "$end", "verify": false }
-] } } }
+{
+  "sections": {
+    "2": {
+      "min_seconds": 12,
+      "cues": [
+        { "cue": "2.1:average", "on": "the average" },
+        { "cue": "2.1:formula", "on": "the formula", "occurrence": 2, "offset": 0.2 },
+        { "cue": "2.1:code", "on": "in code", "case_sensitive": true },
+        { "cue": "2.1:waited", "on": "$end", "verify": false }
+      ]
+    }
+  }
+}
 ```
 
-- Each section key is a section number as a string. It must exist in `decktalk.toml`.
-- `$start` is 0.0 s. `$end` is the end of the section's last spoken word.
-- Matching splits the phrase and the spoken words on whitespace only.
-- A hyphenated word is one token.
-- Each token keeps only A to Z, a to z, 0 to 9, and the straight apostrophe.
-- Matching ignores case unless `case_sensitive` is true.
-- The cue time is the matched word's start plus the offset key.
-- `occurrence` picks a later match. The default is the first.
-- A cue id must not contain a comma, because a comma breaks `?cues=`. DeckTalk does not check this.
-- An `@` inside an id still works. By convention, ids have no `@`.
-- `align` ignores a top-level key other than `sections`, such as `_comment`.
+`cue` is a wire id. `on` is a word or short phrase from that section of the script, `$start` for the
+section start or `$end` for the end of its last spoken word. `occurrence` picks which match, from 1.
+`case_sensitive` defaults to false, `offset` shifts the second, and `verify` defaults to true.
+`cues.json` owns seconds and the page owns what a thing looks like and what it means.
 
 Full rules: [cues.json](/reference/cues-json) and [Cues](/concepts/cues).
 
-### Pages
+### The deck page
 
-- A page is any HTML file that a `[[section]]` names.
-- The starter has one page, `deck/index.html`, with three scenes. A project can have as many pages as it likes.
-- Load `decktalk-runtime.js` before any `DeckTalk.scene` call.
-- A `<div data-scene="N">` holding one `<template data-slide="N.1">` per slide declares a scene in markup, and needs no JavaScript.
-- `DeckTalk.scene(N, {name, camera?, slides})` declares the same scene in script, for a slide that builds itself in code.
-- Each slide is `{id, hold?, owns?, preview?, render, enter?, on?}`.
-- `enter`, each `on[id]`, and `DeckTalk.on(id, fn)` receive `(slide, {id, at, frozen, slideId})`.
-- An element appears on its cue with `data-cue="id"`, or at a time with `data-delay="s"`.
-- `data-text="spoken"`, `data-text="count"`, and `data-text="type"` also need `data-cue` or `data-delay`.
-- Inside `render` backticks, write every backslash twice.
-- The runtime creates the stage element `#dt-stage` at 1920 by 1080.
-- A slide owns a cue whose id is its own, one its `owns` list names, or one whose longest slide-id prefix it is. A `preview` entry is timing only and grants no ownership.
+One HTML file under `deck/` that a `[[section]]` names. A `[data-scene]` wrapper is one scene, each
+`<template data-slide>` inside it is one slide, and the runtime clones a slide when it mounts. The
+runtime is `deck/decktalk-runtime.js`, which `decktalk init` copies in beside KaTeX so the page
+loads nothing from the network.
 
-Full rules: [Runtime](/reference/runtime) and [Page contract](/concepts/page-contract).
+Full rules: [The page contract](/concepts/page-contract) and [Runtime](/reference/runtime).
 
-### `.env`
+## The page vocabulary
 
-- A voiced build needs `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`.
-- An exported variable wins over `.env`.
-- A value that starts with `<` counts as unset.
-- A build without voice needs neither key.
+An element has four moments, and each names a cue local to its slide.
 
-### One number for each section
+| Moment | Attribute | What it is |
+|---|---|---|
+| in | `data-in` | The element arrives at this cue. |
+| back | `data-back` | It steps back, over 0.28 seconds. |
+| front | `data-front` | It comes to the front, over 0.2 seconds. |
+| out | `data-out` | It leaves. |
 
-- The number `N` is the same in the script heading, `[[section]]`, and the `cues.json` key.
-- A section can play a scene with another number, and a cue id starts with the id of the slide that owns it rather than with the section number.
-- `align` exits 1 on a cue id that its page never quotes.
-- `build` stops on such an id unless you pass `--allow-unknown-cues`.
+The runtime qualifies a local name into a wire id, which is the slide id, a colon and the local
+name. `data-in="expand"` inside `<template data-slide="4.1">` is the wire id `4.1:expand`, and that
+is what `cues.json` carries. No attribute writes a second.
 
-[Cue mismatches](/concepts/cues#cue-mismatches) lists every page warning about cues.
+Twenty-four attributes are published by `decktalk schema page`, with each one's values, default,
+range, warning code and motion span. They fall on four rows.
 
-### A minimal page
+| Row | Attributes |
+|---|---|
+| Element and container | `data-in`, `data-describe`, `data-tex`, `data-tex-display`, `data-in-style`, `data-back`, `data-front`, `data-out`, `data-words`, `data-count`, `data-class`, `data-describe-class`, `data-stagger`, `data-steps`, `data-in-seconds`, `data-out-style`, `data-swaps`, `data-describe-out` |
+| Scene | `data-scene`, `data-name` |
+| Slide | `data-slide`, `data-hold`, `data-owns`, `data-enter` |
 
-This page is the smallest page that plays one scene. For KaTeX, keep the `deck/katex/` directory that
-`decktalk init` wrote, and keep its two tags before the runtime.
+The closed word lists are small. `data-in-style` is `rise`, `settle`, `fade`, `pop`, `draw` or
+`cut`, and defaults to `rise`. `data-out-style` is `fade` or `fall`, and defaults to `fade`.
+`data-words` is `highlight` or `appear`, `data-count` is `last` or `first`, and `data-enter` is
+`crossfade` or `cut`.
 
-```html deck/index.html
-<!doctype html>
-<meta charset="utf-8">
-<link rel="stylesheet" href="./katex/katex.min.css">
-<script src="./katex/katex.min.js"></script>
-<style>
-  html, body, #dt-stage { margin: 0; background: #ffffff; color: #0a0a0a; }
-  .slide { position: absolute; inset: 0; }
-</style>
-<script src="decktalk-runtime.js"></script>
-<script>
-DeckTalk.scene(1, { name: "Open", slides: [
-  { id: "1.1", hold: 8, preview: { "1.1a": 1 }, render: () => `
-    <div class="slide"><h1 data-cue="1.1a">Hello</h1></div>` },
-]});
-</script>
-```
+`MEASURABLE_SPAN_SECONDS` is 0.5, the one ceiling above which a cue cannot be measured.
+`data-in-seconds` runs from 0.12 to 0.48 in steps of 0.04, which is three to twelve frames at 25
+frames per second. `data-stagger` runs from 0.04 to 0.2 in steps of 0.04, and a staggered
+container's total is the step times the children less one, plus the entrance, which must stay under
+0.5 seconds. `data-hold` defaults to 8 and runs from 1 to 60.
 
-The runtime mounts each slide as a `.dt-slide` with `position: absolute; inset: 0`. Set your own
-background on `html, body` and `#dt-stage`.
-
-## Commands
+Read the table rather than this summary:
 
 ```console
-uv tool install decktalk                    # Python 3.12 or later. pipx install decktalk also works.
-decktalk install                            # optional: fetch Chromium and ffmpeg up front, and Chromium's Linux libraries
-decktalk doctor                             # each tool and its path. Exit 1 on any MISSING row.
-decktalk init DIR [--name NAME] [--force]   # write the starter, with KaTeX in deck/katex/
-decktalk init DIR --example lesson          # a packaged example instead. --no-skills leaves the skills out.
-decktalk build --no-voice                   # every stage with a click track. No key.
-decktalk build                              # the voiced video at build/out/<name>.mp4
-decktalk build --only 3 --preset veryfast   # record section 3 again, with a fast encode
-decktalk align                              # the cue time of every cue. Exit 1 on a missing phrase or id.
-decktalk verify                             # section starts, cuts, and every cue in the final video
-decktalk verify 1:1.1title 2:2.1code        # only these two cues
-decktalk verify --json                      # the same result as one JSON object on stdout
-decktalk screenshots                        # one PNG per slide
-decktalk screenshots --slide 2.1 --after 2.1formula           # slide 2.1 frozen at cue 2.1formula
-decktalk screenshots --section 2 --at 12.5  # a frame 12.5 s after narration t=0 in section 2
-decktalk words --only 1                     # section 1's words, in seconds after the section starts
-decktalk clip 1 --start 2.3 --end 8.4 --out media/count.mp4   # that span of section 1 as a clip and a words file
-decktalk status [--json]                    # what the four input files say, and what disagrees
-decktalk narrate --dry-run                  # the text, and which sections a voiced run voices. Sends nothing.
-decktalk narrate --dry-run --json           # the same take plan as one JSON object
-decktalk preflight                          # takes, cues, and frozen reveals before a voiced build
-decktalk soundscape --dry-run               # every sound request. Sends nothing.
-decktalk serve                              # the project on the local origin, so a page loads over http
+decktalk schema page
 ```
 
-- A project command takes `-p DIR`. The default is `DECKTALK_PROJECT`, then the current directory.
-- `-v` and `-q` go before or after the command name.
-- `-p` goes before the command name, or after it on every command except `init`, `install`, and `doctor`.
-- `--only` takes a number, a list or a range, and repeats: `--only 3`, `--only 3,5`, `--only 7-9`.
-- `--strict` fails on an uncertain finding, and on `assemble` and `build` on a missing recording or clip.
-- A clip section with `optional = true` still plays its slate under `--strict`.
+## The six stages
 
-Every command prints one JSON envelope with `--json`, and each takes the exit options its own
-findings can reach.
+`build` runs them in this order, and each skips work whose inputs have not moved.
 
-| Option | Commands | Meaning |
+| Stage | Reads | Writes | Why |
+|---|---|---|---|
+| `narrate` | the script | `build/narrate/takes.json`, the take files and their words files, `build/narrate/narration.mp3` | The script becomes spoken takes with a word clock. |
+| `cue` | `build/narrate/takes.json` | `build/cue-times.json` | Each cue phrase becomes a second on its section clock. |
+| `record` | `build/cue-times.json` | `build/recordings/` | The pages are recorded against those seconds. |
+| `soundscape` | `build/narrate/takes.json` | `build/soundscape/` | The music, the ambience bed and the effects are generated. |
+| `assemble` | the takes, the recordings and the soundscape | `build/sections/`, then `build/final/` | The parts are cut, mixed and encoded into one film. |
+| `verify` | `build/cue-times.json` and `build/final/` | nothing | The finished film is measured against the clock the earlier stages promised. |
+
+`build/final/` holds `<name>.mp4`, `<name>.srt`, `<name>.vtt`, `<name>.chapters.txt`, `cuts.json`,
+`<name>-transcript.html` and `<name>-poster.png`. `build/frames/` holds the slides `check` freezes,
+`build/storyboard.html` and `build/storyboard/` hold the contact sheet, and `build/events/` holds
+one JSON Lines file per run.
+
+Every path: [Build artifacts](/reference/artifacts).
+
+## The eighteen commands
+
+Every one of them takes `--json`. Run `decktalk <command> --help` for the whole list of its flags.
+
+### Set up this machine
+
+| Command | What it does | Flags that matter |
 |---|---|---|
-| `--json` | every command | One envelope on stdout, and nothing else there. An error prints it too. |
-| `--strict` | `align`, `preflight`, `record`, `assemble`, `verify`, `clip`, `build` | Also exits 1 on an uncertain finding. |
-| `--exit-zero` | the same commands, plus `doctor` and `status` | Exits 0 on findings. An error still exits 3. |
+| `decktalk init DIR` | Create a project with a deck that already builds. | `--name NAME`, `--example NAME`, `--no-skills`, `--defaults`, `--overwrite` |
+| `decktalk install` | Fetch Chromium and ffmpeg before a build needs them. | |
+| `decktalk doctor` | Report what is installed and what a run would use. | `--measure`, `--fix`, `--no-fix` |
+
+### Read the project, spending nothing
+
+| Command | What it does | Flags that matter |
+|---|---|---|
+| `decktalk status` | Report what is written, what is built and what is stale. | |
+| `decktalk check [PATH]...` | Judge `script.md`, `cues.json` and the pages before a build, and price what a voiced build would cost. | `--no-pages`, `--no-frames`, `--fix`, `--no-fix`, `--section N` |
+| `decktalk words` | Print every spoken word with its start and end. | `--section N` |
+| `decktalk storyboard` | Freeze every slide at every cue onto one page. | `--section N`, `--slide ID`, `--after CUE`, `--before CUE`, `--at SECONDS` |
+| `decktalk serve` | Serve the project on a local origin over http. | `--host HOST`, `--port PORT` |
+
+`check` makes no film and replaces the idea of a rehearsal before a paid run. `check --no-pages`
+judges the written files with no browser at all and names on stderr the codes it could not reach.
+`check --no-frames` keeps the browser and drops the freeze comparison. `check --fix` applies every
+safe fix. `storyboard` writes `build/storyboard.html`, which is the human checkpoint before voice
+credits are spent.
+
+### Read the knobs and the contracts
+
+| Command | What it does | Flags that matter |
+|---|---|---|
+| `decktalk schema [NAME]` | Print a contract document. | `--machine` |
+| `decktalk config list [TABLE]` | Print every key, its value and the layer that set it. | `--defaults`, `--changed` |
+| `decktalk config get KEY` | Print one key's value and the layer that set it. | |
+| `decktalk config set KEY VALUE` | Write one key into `decktalk.toml` or into this machine's file. | `--where project\|machine`, `--dry-run` |
+| `decktalk config unset KEY` | Remove one key so the layer below it wins again. | `--where project\|machine`, `--all` |
+| `decktalk config explain KEY` | Print one key whole: what it does, what may be set, and what set it. | `--value N` |
+
+`decktalk schema NAME` takes a command name, or `finding`, `error`, `event`, `settings`, `page` or
+`project`.
+
+### Run one stage, in this order
+
+| Command | What it does | Flags that matter |
+|---|---|---|
+| `decktalk narrate` | Voice each section of `script.md` and time every word. | `--section N`, `--force`, `--replace-voiced`, `--no-voice`, `--spend`, `--max-cost N` |
+| `decktalk cue` | Turn each cue phrase into a second on its section clock. | `--section N` |
+| `decktalk record` | Record each page section in headless Chromium. | `--section N`, `--force` |
+| `decktalk soundscape` | Generate the music, the ambience bed and the effects. | `--section N`, `--force`, `--no-voice`, `--spend`, `--max-cost N` |
+| `decktalk assemble` | Cut, mix and encode the sections into one mp4. | `--section N`, `--skip STAGE` |
+| `decktalk verify` | Measure the finished mp4: every start, cut, seam and landing. | `--section N` |
+
+`--replace-voiced` is the one flag here that destroys money, because it discards the take it
+replaces. `--force` builds again from nothing and keeps every voiced take.
+
+### Run them all, or cut one piece out
+
+| Command | What it does | Flags that matter |
+|---|---|---|
+| `decktalk build` | Run every stage in order, or a span of them. | `--from STAGE`, `--to STAGE`, `--skip STAGE`, `--section N`, `--fix`, `--no-fix`, `--force`, `--replace-voiced`, `--watch`, `--no-voice`, `--spend`, `--max-cost N` |
+| `decktalk clip` | Cut a span of a built section into its own file. | `--section N`, `--start SECONDS`, `--end SECONDS`, `--out FILE`, `--gain-db DB`, `--hold-seconds SECONDS` |
+
+`build --watch` stays running, rebuilds the changed section and never spends.
+
+Every flag: [CLI](/reference/cli).
+
+## The flag families
+
+Seven global flags work on every command, before or after the command name. `--version` is the
+eighth, and it works on `decktalk` itself.
+
+| Flag | Meaning |
+|---|---|
+| `-p`, `--project DIR` | The project directory. The default is `DECKTALK_PROJECT`, else the current directory. |
+| `--json` | Print one JSON object on stdout and nothing else there. |
+| `--events` | Print one JSON line per progress event on stderr. |
+| `--color WHEN` | `auto`, `always` or `never`. The default is `auto`. |
+| `--no-input` | Never prompt. Take the safe default, or refuse and name the flag that would have answered. |
+| `-v`, `--verbose` | Debug lines on stderr, and the traceback of a bug. |
+| `-q`, `--quiet` | Warnings and errors only on stderr. |
+| `--version` | Print the version and exit, on `decktalk` itself. |
+
+`--yes` is recognised on every command and always refused with `USAGE`, and the refusal names the
+flags that answer that command's prompts. Every prompt DeckTalk asks has a flag of its own, so a
+blanket yes would be a flag that agreed to things nobody named.
+
+**The scope flags** narrow what a command works on. `--section N` takes `3`, `3,5` or `7-9` and
+repeats, and it is on `check`, `words`, `storyboard`, `clip` and every stage command. `build` adds
+`--from`, `--to` and `--skip`, `assemble` adds `--skip`, `storyboard` adds `--slide`, `--after`,
+`--before` and `--at`, and `check` takes deck pages as positional arguments beside the project's own.
+
+**The spend flags** are on the three commands that can buy something, which are `narrate`,
+`soundscape` and `build`. `--no-voice` writes placeholder narration and needs no API key.
+`--spend` voices what needs it without asking first. `--max-cost N` refuses before the first call if
+the most the run can cost is over N US dollars, and it is compared against the spend object's
+`ceiling_dollars`. On a terminal a voiced run prices the spend and asks. Without a terminal it
+refuses with the error code `APPROVAL` unless `--spend` or `--no-voice` is passed.
+
+**The findings flags** are on every command that can judge something, which are `doctor`, `check`,
+`storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`, `verify` and `build`.
+`--fail-on certain` is the default, `--fail-on any` also fails on an uncertain finding, and
+`--fail-on never` fails on none. `--allow CODE` carries on past one code and repeats. `--fix`
+applies every safe fix and `--no-fix` applies none, on `doctor`, `check` and `build`.
+
+**`--set KEY=VALUE`** overrides one setting for one run, repeats, and is on `status`, `check`,
+`words`, `storyboard`, `serve`, `clip` and every stage command. No flag duplicates a settings key,
+so reduced motion is `--set motion.reduce=true` and not a flag of its own.
+
+## The JSON contract
+
+Every command's `--json` is one flat object. There is no wrapper, no `command` key and no
+`exit_code` key.
+
+| Key | Meaning |
+|---|---|
+| `schema` | The shape version, always `2`. |
+| `ok` | True when the command ran and judged nothing certain. |
+| `findings` | Every judgement, certain first. |
+| `error` | Filled only when the command could not run, and null otherwise. |
+| `run` | The run id, on every result whose command opens a run. |
+| `written` | Every file written, project-relative, on every result that writes. |
+
+`decktalk schema` is the one exemption: it prints the contract document itself with no reserved keys
+around it, because a JSON Schema document inside a wrapper is not that document.
+
+A finding carries `code`, `message`, `certainty`, `location`, `stage`, `fix` and `url`. `certainty`
+is `certain` or `uncertain`. `location` carries a required `where` naming the object judged, plus
+`file`, `line`, `section` and `cue`. `fix` is one of `edit`, `setting` or `command`, each with a
+`title` and an `applicability` of `safe`, `unsafe` or `display`. In the library
+`Project.apply(finding)` applies one.
+
+`--events` prints one JSON line per event on stderr as it happens, and every run of a project also
+appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are eleven names:
+`run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`, `section.done`, `progress`,
+`finding`, `spend`, `fetch` and `log`. `run.done`, `stage.done` and `section.done` carry an
+`outcome` of `ok`, `skipped` or `failed`.
+
+Whole contract: [The JSON contract](/agents/json).
+
+## Exit codes and error codes
 
 | Exit | Meaning |
 |---|---|
-| 0 | Nothing found, or `--exit-zero`. |
-| 1 | A finding. `error` is null, and the project is what to fix. |
-| 2 | A usage error. `error.code` is `USAGE`. |
-| 3 | DeckTalk could not run. `error` names the error class. Stop. |
-| 130 | Interrupted. |
+| 0 | The command ran and found nothing. |
+| 1 | The command ran and found something at or above the threshold `--fail-on` set. |
+| 2 | The command line was refused, which is `USAGE` or `APPROVAL`. |
+| 3 | The command could not run, which is every other error code. |
+| 130 | The caller stopped the run. |
 
-Every option: [CLI](/reference/cli).
-
-## Gate a script on the video
-
-- `build` ends with the same five checks `decktalk verify` runs, cues included.
-- `build` exits 1 on any certain finding, so `TRUNCATED`, `STALLED` and `NO COVER` each fail a run.
-- To gate a script on the video with no key, run `decktalk build --no-voice`.
-- The offset column must be between -80 ms and +80 ms.
-- After a build without voice, the `a/v` column must be between -120 ms and +120 ms.
-- `OFF CUE` prints no distance. Compare the columns with those limits.
-- A `-` in the `a/v` column means no click was found. The JSON reason is `NO_CLICK`, and it does not fail.
-- Every cut must be at most -40 dBFS in its last 0.15 s. Clip sections have no cut row.
-- A build without voice skips the loudness pass.
-
-| `skipped` reason | Cause |
-|---|---|
-| `OPTED_OUT` | `"verify": false` in `cues.json`. Name the cue to measure it. |
-| `REFERENCE_CLAMPED` | The cue is too close to the section start. A `$start` cue with no offset key gets it. |
-| `SECTION_NOT_ASSEMBLED` | `build/sections/NN.mp4` is missing. |
-| `TOO_CLOSE_TO_END` | The cue is less than 0.75 s before the section end. |
-
-A `skipped` row never fails. A named cue that is not in `cue-times.json` is `UNRESOLVED`, which fails.
-Measurement details: [verify](/reference/verify).
-
-To test a new project with no key, run these commands in order.
-
-1. Run `decktalk build --no-voice`.
-2. Run `decktalk verify`.
-3. Run `decktalk screenshots`.
-
-To see the cue times before anything records, run `decktalk narrate --no-voice` and then
-`decktalk align`.
-
-## Stages and artifacts
-
-`build` runs `narrate`, `align`, `record`, `assemble` and `verify`, in that
-order.
-
-| Artifact | Written by | Holds |
+| Error code | Exit | Meaning |
 |---|---|---|
-| `build/narration/<hash>.mp3`, `<hash>.words.json` | `narrate` | One take's audio and its `[{word, start, end}]` list, named by the take's content hash. |
-| `build/narration/takes.json` | `narrate` | One entry per section, with its text hash and lengths, which is also the narration clock. |
-| `build/narration/narration.mp3` | `narrate` | Spoken sections back to back, with each section's silence joined around its take. |
-| `build/cue-times.json` | `align` | One row per cue with `cue`, `on`, `at` and `word_at`, in seconds after the section start. |
-| `build/recordings/NN.webm`, `recordings/NN.json` | `record` | The recording and its recording log: t=0, its checks, warnings, page errors, and frame gaps. |
-| `build/sections/NN.mp4` | `assemble` | One section cut to its span, video only. |
-| `build/out/<name>.mp4` | `assemble` | The video with chapters, and both streams tagged with `[project] language`. A second copy named with the date and time is written only when `[output] timestamped_copy` is true. |
-| `build/out/<name>.srt`, `<name>.vtt` | `assemble` | Captions from the word times. |
-| `build/out/<name>.chapters.txt` | `assemble` | One chapter per section, or per run of sections with the same chapter. |
-| `build/screenshots/**/*.png` | `screenshots` | Review screenshots, in one folder per page when there are several pages. |
+| `INPUT` | 3 | A file the author writes is missing, unreadable or malformed. |
+| `NOT_BUILT` | 3 | A file a stage needs was never built. |
+| `PROVIDER` | 3 | The voice could not be reached, refused the request, or failed it. |
+| `TOOL` | 3 | ffmpeg or Chromium is missing, or one of them failed. |
+| `LOCKED` | 3 | Another writer holds this project's build directory. |
+| `APPROVAL` | 2 | A spend needed an approval that no flag and no terminal gave. |
+| `CANCELLED` | 130 | The caller stopped the run. |
+| `USAGE` | 2 | The command line was refused, and a retry as written fails again. |
+| `INTERNAL` | 3 | A bug in DeckTalk, with a traceback under `-v`. |
 
-After a clip between page sections, final-video times are later than narration times by the clip
-lengths before them. [Time bases](/reference/artifacts#time-bases) gives each clock.
-[Build artifacts](/reference/artifacts) gives every field.
+A non-zero exit with `error` null is a finding, so read `findings`, change the project and run the
+command again. A non-null `error` is an error, so stop and tell the person.
+
+The fifty-one finding codes each have a page of their own, and `decktalk schema` prints them all
+with their sentences, their certainties and the settings keys that move them.
 
 ## Settings
 
-Settings come from five layers. Each layer overrides the layer before it.
+Five layers set a key, each overriding the ones before it.
 
-1. DeckTalk's defaults.
-2. The per-machine file at `DECKTALK_CONFIG`. It can hold tuning tables only.
-3. Tables of the same name in `decktalk.toml`.
-4. `DECKTALK_<TABLE>_<FIELD>` environment variables.
-5. The options `--preset`, `--crf`, `--settle`, and `--model`.
+1. The default DeckTalk declares.
+2. The same table in the per-machine settings file.
+3. The same table in the project's `decktalk.toml`.
+4. The environment variable `DECKTALK_<TABLE>_<KEY>`.
+5. `--set table.key=value` given for one run.
 
-The tuning tables are these seven.
+The per-machine file is `decktalk.toml` under `~/Library/Application Support/decktalk/` on macOS,
+under `%APPDATA%\decktalk\` on Windows, and under `$XDG_CONFIG_HOME/decktalk/` or
+`~/.config/decktalk/` otherwise. `DECKTALK_CONFIG` names a different one. `decktalk schema settings
+--machine` prints the keys a per-machine file may hold, which are the ones about this machine rather
+than about the film.
 
-- `[video]`
-- `[narration]`
-- `[record]`
-- `[audio]`
-- `[verify]`
-- `[elevenlabs]`
-- `[output]`
+The knobs sit in `[video]`, `[narration]`, `[record]`, `[audio]`, `[verify]`, `[voice]`,
+`[mix.loudness]`, `[motion]`, `[elevenlabs]`, `[output]`, `[tools]` and `[host]`. `decktalk.toml`
+also carries the tables that are project content rather than tuning, which are `[project]`,
+`[[section]]`, `[transition]`, `[soundscape]` with `[soundscape.effects.<name>]`, and
+`[[mix.effects]]`. `[voice]` and `[mix]` are each both things at once, because each holds content
+keys the document owns beside knobs the settings loader declares.
 
-`DECKTALK_CACHE_DIR` moves the ffmpeg cache. `DECKTALK_FFMPEG` and `DECKTALK_FFPROBE` point at your
-own binaries. Set both. [CLI](/reference/cli#environment-variables) gives the default paths, and
-[Configuration](/reference/configuration) lists every field.
+The published range is the safe range. A bound is there because a value past it deletes a check,
+corrupts the evidence a later stage measures or breaks a tool, and the loader refuses a value
+outside it, naming the file and the line. `decktalk config explain KEY` prints all five layers with
+the winner marked, along with the key's sentence, its unit, its range, its hazard and the finding
+codes it moves.
 
-## Exit codes and errors
+Three environment variables name no key: `DECKTALK_PROJECT`, `DECKTALK_CONFIG` and
+`DECKTALK_ALLOW_ANY_API_BASE`. Every other `DECKTALK_` name is a key or a typo.
 
-| Code | Meaning |
-|---|---|
-| 0 | Nothing found, or `--exit-zero` on a command with findings. |
-| 1 | A finding. `error` is null, and the project is what to fix. [Exit codes](/reference/cli#exit-codes) lists the findings of each command. |
-| 2 | A usage error, such as an unknown option or a missing command. `error.code` is `USAGE`. |
-| 3 | DeckTalk itself could not run. `error` names the error class, so stop. |
-| 130 | Interrupted. |
-
-| Error | `error.code` | Meaning |
-|---|---|---|
-| `ConfigError` | `CONFIG` | An input is bad or inconsistent. |
-| `MissingInputError` | `MISSING_INPUT` | An earlier stage has not run. |
-| `ProviderError` | `PROVIDER` | The speech provider refused or failed. |
-| `ToolError` | `TOOL` | ffmpeg or Chromium failed. |
-
-An error prints `error[CODE]: <message>` on stderr and exits 3, even with `--exit-zero`. Under
-`--json` it fills the envelope's `error` slot instead. Logs go to stderr through the `decktalk`
-logger. DeckTalk never prints a key.
+Every key: [Configuration](/reference/configuration).
 
 ## Python
 
-This example builds a project silently and prints the final path.
+Nothing in the library prints, and every call returns the same object the CLI serialises.
 
 ```python
 import decktalk
-project = decktalk.Project.load("my-lesson")
-result = decktalk.build(project, silent=True)
-print(result.assembly.final, result.verification.ok)
+
+project = decktalk.open("my-lesson")
+result = project.build(voice=decktalk.Voicing.PAID, max_cost=5.0)
+for finding in result.findings:
+    print(finding.code, finding.message, finding.location.where)
 ```
 
-[Python API](/reference/python-api) lists every public name.
+`decktalk.open(path, *, machine=None, overrides=())` returns a `Project`, and
+`decktalk.init(path, *, machine, name, example, skills, force)` writes one.
+`Machine.from_environment()` is the only function that reads the environment, the per-machine file
+or the working directory. `Project` carries the twelve calls `narrate`, `cue`, `record`,
+`soundscape`, `assemble`, `verify`, `build`, `status`, `check`, `words`, `storyboard` and `clip`,
+each taking `cancel`, along with `apply`, `serve`, `reload` and `sections_touching`. No library call
+spends without `voice=Voicing.PAID`, `max_cost` is checked before the first paid call, and
+`ApprovalRequired` is raised rather than spending.
+
+Every public name: [Python API](/reference/python-api).
+
+## The calls that discover the rest
+
+This card is a summary of what the tool already publishes. When a fact here and a fact from the tool
+disagree, the tool is right.
+
+```console
+decktalk --help                      # the tree, the global flags and the exit codes
+decktalk <command> --help            # one command's flags, and what its JSON object carries
+decktalk schema                      # every command, flag, exit, error code, finding code and stage
+decktalk schema NAME                 # one command's result, or finding, error, event, settings, page, project
+decktalk schema settings             # every knob with its default, range, unit and hazard
+decktalk config explain KEY          # one knob whole, with all five layers and the winner marked
+decktalk status --json               # where this project stands, and the command to run next
+decktalk doctor --json               # what this machine has, and what a run would use
+```
 
 ## Related
 
-- **Look up an option:** [CLI](/reference/cli)
-- **Fix a message:** [Troubleshooting](/help/troubleshooting)
+- **Look up a command:** [CLI](/reference/cli)
+- **Look up a knob:** [Configuration](/reference/configuration)
+- **Read a result:** [The JSON contract](/agents/json)
 - **Look up a term:** [Glossary](/reference/glossary)
+- **Fix a message:** [Troubleshooting](/help/troubleshooting)
