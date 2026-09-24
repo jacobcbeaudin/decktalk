@@ -1,10 +1,11 @@
 """The platform fact: APFS and NTFS make `deck/Index.html` and `deck/index.html` one file and two strings.
 
 The origin allowlist is a comparison between the path a request asked for, resolved, and the paths a
-project declared. On a case-sensitive filesystem those two spellings are two files and the second is
-refused, so a Linux runner can never fail the rule this file holds. Here they open the same bytes,
-and the measured surprise is that `Path.resolve()` keeps the spelling it was given rather than the
-one on disk, so one file still reaches the comparison under two names.
+project declared. A declared directory is a place, so both spellings are inside it and both are
+allowed on every filesystem, and what this platform decides is whether they are one file or one file
+and one name for nothing. The measured surprise is that `Path.resolve()` keeps the spelling it was
+given rather than the one on disk, so on a folding filesystem one file reaches the comparison under
+two names and the allowlist never sees that they are the same.
 
 That is why the allowlist compares containment against declared directories rather than names: a
 declared directory holds both spellings, while a declared file is reached only by the spelling that
@@ -48,11 +49,11 @@ def test_a_declared_directory_answers_both_spellings_of_one_file(tmp_path: Path)
     assert served.path is not None and not served.refused
 
     other = allowed.target("deck/Index.html")
+    assert other.path is not None and not other.refused, "a declared directory holds every name under it"
     if folds_case(tmp_path):
-        assert other.path is not None and not other.refused
         assert os.path.samefile(other.path, served.path), "the two spellings open one file on this filesystem"
     else:
-        assert other.refused == UNDECLARED, "this filesystem is case sensitive, so the second spelling is no file"
+        assert not other.path.exists(), "this filesystem is case sensitive, so the second spelling opens nothing"
 
 
 def test_a_declared_file_is_reached_only_by_the_spelling_that_was_declared(tmp_path: Path) -> None:
