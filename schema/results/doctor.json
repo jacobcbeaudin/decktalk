@@ -607,6 +607,16 @@
       "type": "string",
       "volatile": true
     },
+    "written": {
+      "default": [],
+      "description": "Every file this run wrote, project-relative, in the order it wrote them.",
+      "items": {
+        "format": "path",
+        "type": "string"
+      },
+      "title": "Written",
+      "type": "array"
+    },
     "tools": {
       "description": "Every tool this machine needs, in the order it checks them.",
       "items": {

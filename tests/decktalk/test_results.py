@@ -43,6 +43,7 @@ OPENS_A_RUN = {
 }
 WRITES_A_FILE = {
     "init",
+    "doctor",
     "check",
     "storyboard",
     "config-set",
@@ -160,6 +161,21 @@ def test_run_is_declared_by_exactly_the_commands_that_open_one() -> None:
 
 def test_written_is_declared_by_exactly_the_commands_that_write_a_file() -> None:
     assert {name for name, model in RESULTS.items() if "written" in model.model_fields} == WRITES_A_FILE
+
+
+def test_the_two_command_facts_are_class_facts_and_never_fields() -> None:
+    """The command line derives its shared flags from these, and a caller never meets them in the JSON."""
+    for model in RESULTS.values():
+        assert isinstance(model.reports_findings, bool)
+        assert isinstance(model.spends, bool)
+        assert not {"reports_findings", "spends"} & set(model.model_fields)
+
+
+def test_every_result_that_spends_also_reports_what_it_judged() -> None:
+    """A command that buys something judges what it bought, so spending is a narrowing of judging."""
+    spending = {name for name, model in RESULTS.items() if model.spends}
+    judging = {name for name, model in RESULTS.items() if model.reports_findings}
+    assert spending and spending <= judging
 
 
 def test_a_volatile_field_says_so_in_its_own_schema() -> None:

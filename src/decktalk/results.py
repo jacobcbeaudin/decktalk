@@ -6,6 +6,12 @@ is filled only when the command could not run at all. A result whose command ope
 declares `run`, and one whose command writes files also declares `written`, so a reader learns from
 the schema which commands do those things rather than meeting a null on the ones that do not.
 
+A result also declares two facts about its own command rather than about its own JSON.
+`reports_findings` says the command can report a judgement and `spends` says it can buy something,
+and the command line derives `--fail-on`, `--allow` and the three spending flags from them. They are
+class facts rather than fields, so the shape a caller reads is unchanged and the command line needs
+no list of its own beside the models.
+
 Every result lives here rather than in the stage that fills it, because importing the command line
 must load no stage, and because the row types a result carries would otherwise sit above it. Nothing
 in this module imports a stage, a project or a machine.
@@ -20,7 +26,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, Field, JsonValue
 
@@ -189,6 +195,12 @@ class Result(BaseModel):
     """
 
     model_config = MODEL
+
+    reports_findings: ClassVar[bool] = False
+    """True when the command answering with this can report a judgement, so it takes --fail-on and --allow."""
+
+    spends: ClassVar[bool] = False
+    """True when the command answering with this can buy something, so it takes the three spending flags."""
 
     schema_: Literal[2] = Field(SCHEMA, alias="schema", description="The shape version of this object.")
     ok: bool = Field(description="True when the command ran and judged nothing certain.")
@@ -477,7 +489,10 @@ class InstallResult(Result):
 class DoctorResult(Result):
     """What this machine holds, and what a run on it would use."""
 
+    reports_findings: ClassVar[bool] = True
+
     run: Run
+    written: Written
     tools: tuple[InstalledTool, ...] = Field(description="Every tool this machine needs, in the order it checks them.")
     cache: ProjectPath = Field(description="The directory the fetched tools live in.")
     python: str = Field(description="The Python this DeckTalk runs on.")
@@ -503,6 +518,8 @@ class StatusResult(Result):
 class CheckResult(Result):
     """What a judgement before a build found, and what the build would cost."""
 
+    reports_findings: ClassVar[bool] = True
+
     run: Run
     written: Written
     judged: tuple[ProjectPath, ...] = Field(description="Every file and page this call judged, project-relative.")
@@ -521,6 +538,8 @@ class WordsResult(Result):
 
 class StoryboardResult(Result):
     """The contact sheet of every slide at every cue, which is the checkpoint before credits are spent."""
+
+    reports_findings: ClassVar[bool] = True
 
     run: Run
     written: Written
@@ -601,6 +620,9 @@ class ConfigExplainResult(Result):
 class NarrateResult(Result):
     """What the voice was asked for, what it returned and what the run kept."""
 
+    reports_findings: ClassVar[bool] = True
+    spends: ClassVar[bool] = True
+
     run: Run
     written: Written
     voice: Voicing = Field(description="Whether this run spent on speech or wrote placeholders.")
@@ -613,6 +635,8 @@ class NarrateResult(Result):
 class CueResult(Result):
     """Every cue phrase resolved to a second on its section's clock."""
 
+    reports_findings: ClassVar[bool] = True
+
     run: Run
     written: Written
     sections: tuple[SectionCues, ...] = Field(description="Every section that declares a cue, in script order.")
@@ -623,6 +647,8 @@ class CueResult(Result):
 class RecordResult(Result):
     """Every section the recorder touched, in the order it touched them."""
 
+    reports_findings: ClassVar[bool] = True
+
     run: Run
     written: Written
     sections: tuple[SectionRecording, ...] = Field(description="Every section this run considered, in script order.")
@@ -631,6 +657,9 @@ class RecordResult(Result):
 
 class SoundscapeResult(Result):
     """Every piece of the soundscape this run planned or generated."""
+
+    reports_findings: ClassVar[bool] = True
+    spends: ClassVar[bool] = True
 
     run: Run
     written: Written
@@ -641,6 +670,8 @@ class SoundscapeResult(Result):
 
 class AssembleResult(Result):
     """The finished film and everything written beside it."""
+
+    reports_findings: ClassVar[bool] = True
 
     run: Run
     written: Written
@@ -654,6 +685,8 @@ class AssembleResult(Result):
 class VerifyResult(Result):
     """Every start, cut, seam and landing measured on the finished film."""
 
+    reports_findings: ClassVar[bool] = True
+
     run: Run
     film: ProjectPath = Field(description="The film this call measured, project-relative.")
     film_seconds: float = Field(ge=0, description="How long that film runs.")
@@ -666,6 +699,9 @@ class VerifyResult(Result):
 
 class BuildResult(Result):
     """A whole run: which stages ran, how each ended, what it cost and what it left behind."""
+
+    reports_findings: ClassVar[bool] = True
+    spends: ClassVar[bool] = True
 
     run: Run
     written: Written
