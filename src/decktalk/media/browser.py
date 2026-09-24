@@ -38,7 +38,7 @@ from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
 from . import pagereport
 from .encode import css_color
-from .origin import Assets, route_pages
+from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport
 
 log = logging.getLogger(__name__)
@@ -244,7 +244,7 @@ def instrument(page: Page) -> Page:
 
 def open_page(
     browser: Browser,
-    root: Path,
+    allowed: Allowed,
     *,
     width: int,
     height: int,
@@ -252,15 +252,15 @@ def open_page(
 ) -> tuple[Page, Assets]:
     """A page a command drives, and the record of what it loaded.
 
-    Its requests under the local origin are answered from `root`, and it carries the probe, because
-    every page a command opens is a page that command has to be able to freeze and measure.
+    Its requests under the local origin are answered from what `allowed` names, and it carries the
+    probe, because every page a command opens is a page that command has to freeze and measure.
     """
     with driving("could not open a page"):
         page = browser.new_page(
             viewport={"width": width, "height": height}, device_scale_factor=1, color_scheme=scheme(color_scheme)
         )
     instrument(page)
-    return page, route_pages(page, root)
+    return page, route_pages(page, allowed)
 
 
 def await_ready(page: Page) -> None:
@@ -357,7 +357,7 @@ class Capture:
 
 
 @contextmanager
-def capturing(browser: Browser, root: Path, *, width: int, height: int, color_scheme: str) -> Iterator[Capture]:
+def capturing(browser: Browser, allowed: Allowed, *, width: int, height: int, color_scheme: str) -> Iterator[Capture]:
     """A recording context and the temporary directory it writes into, both closed however this ends.
 
     A page that never loads used to leave both behind and surface as INTERNAL. The context is closed
@@ -375,7 +375,7 @@ def capturing(browser: Browser, root: Path, *, width: int, height: int, color_sc
                 record_video_size={"width": width, "height": height},
             )
         opened = time.monotonic()
-        capture = Capture(context=context, assets=route_pages(context, root), directory=directory, opened=opened)
+        capture = Capture(context=context, assets=route_pages(context, allowed), directory=directory, opened=opened)
         context.add_init_script(PROBE_JS)
         context.add_init_script(SEAL_JS)
         context.add_init_script("(" + COVER_JS + ")()")
@@ -403,7 +403,7 @@ def record_page(
     seconds: float,
     out: Path,
     *,
-    root: Path,
+    allowed: Allowed,
     log_sink: RecordingSink,
     settle_seconds: float,
     min_cover_seconds: float,
@@ -413,15 +413,15 @@ def record_page(
 ) -> Recording:
     """Record `url` for `seconds` after the narration clock starts, and leave the webm beside its log.
 
-    `root` is the project directory the local origin serves, so the page may fetch its own files and
-    the log can name every one of them.
+    `allowed` is what the local origin may answer with, so the page may fetch its own files, the log
+    can name every one of them, and a page reaching for the script or for `.env` is turned away.
 
     The order is the whole point of `log_sink`. The old log goes before anything is captured, the
     webm is replaced next, and the log of what was just recorded is written last, so the pair on
     disk is either complete or absent and a crash can never leave a new picture under an old t=0.
     """
     log_sink.clear()
-    with capturing(browser, root, width=width, height=height, color_scheme=color_scheme) as capture:
+    with capturing(browser, allowed, width=width, height=height, color_scheme=color_scheme) as capture:
         caught: list[str] = []
         page = capture.open(url, caught)
         loaded = time.monotonic()

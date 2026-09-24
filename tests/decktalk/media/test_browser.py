@@ -9,7 +9,7 @@ from playwright.sync_api import Error as PlaywrightError
 
 from decktalk.errors import InputError, ToolError
 from decktalk.media import browser
-from decktalk.media.origin import ORIGIN, page_url
+from decktalk.media.origin import ORIGIN, Allowed, page_url
 
 REPORTED = {
     "version": "0.5.0",
@@ -127,7 +127,7 @@ def record(tmp_path: Path, sink: Sink, *, out: Path, fake: FakeBrowser | None = 
         page_url("deck/index.html"),
         0.5,
         out,
-        root=tmp_path,
+        allowed=Allowed.of(tmp_path, ["."]),
         log_sink=sink,
         settle_seconds=0.0,
         min_cover_seconds=0.0,
@@ -182,8 +182,9 @@ def test_the_recording_carries_what_the_page_said_and_what_it_loaded(tmp_path):
 def test_the_temporary_directory_and_the_context_go_however_the_recording_ends(tmp_path):
     """A page that never loads used to leave a context and a webm behind and surface as a bug in DeckTalk."""
     fake = FakeBrowser()
+    allowed = Allowed.of(tmp_path, ["."])
     with pytest.raises(PlaywrightError):
-        with browser.capturing(fake, tmp_path, width=960, height=540, color_scheme="dark") as capture:
+        with browser.capturing(fake, allowed, width=960, height=540, color_scheme="dark") as capture:
             directory = capture.directory
             assert directory.is_dir()
             raise PlaywrightError("Target page, context or browser has been closed")
@@ -197,7 +198,7 @@ def test_a_browser_that_will_not_do_something_is_a_tool_failure_and_not_a_bug(tm
             raise PlaywrightError("Browser closed\nCall log:\n  - launching")
 
     with pytest.raises(ToolError) as raised:
-        with browser.capturing(Refuses(), tmp_path, width=960, height=540, color_scheme="dark"):
+        with browser.capturing(Refuses(), Allowed.of(tmp_path, []), width=960, height=540, color_scheme="dark"):
             pytest.fail("the context opened after all")
     assert str(raised.value).startswith("could not open a recording context (Browser closed")
 
@@ -207,7 +208,7 @@ def test_every_call_into_the_page_carries_a_deadline(tmp_path):
     out = tmp_path / "01.webm"
     fake = FakeBrowser()
     browser.record_page(
-        fake, page_url("deck/index.html"), 0.1, out, root=tmp_path, log_sink=Sink(out),
+        fake, page_url("deck/index.html"), 0.1, out, allowed=Allowed.of(tmp_path, ["."]), log_sink=Sink(out),
         settle_seconds=0.0, min_cover_seconds=0.0, width=960, height=540, color_scheme="dark",
     )  # fmt: skip
     page = fake.contexts[0].page
@@ -266,7 +267,7 @@ def test_a_deck_cannot_take_the_probes_name_on_a_real_page(tmp_path):
         encoding="utf-8",
     )
     with browser.chromium() as real:
-        page, _assets = browser.open_page(real, tmp_path, width=400, height=300)
+        page, _assets = browser.open_page(real, Allowed.of(tmp_path, ["deck"]), width=400, height=300)
         page.goto(page_url("deck/index.html"), wait_until="load")
         assert page.evaluate("() => typeof window.__dtprobe.report") == "function"
         assert page.evaluate("() => window.__dtprobe.report().taken") is None
