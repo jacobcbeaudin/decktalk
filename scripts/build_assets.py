@@ -11,7 +11,7 @@ measured from. The README reads assets/, the docs site reads docs/images/ and do
 homepage reads site/tokens.css and site/favicon.svg.
 
     uv run scripts/build_assets.py            # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, the favicons, site/tokens.css
-    uv run scripts/build_assets.py --check    # exit 1 if the committed files would change
+    uv run scripts/build_assets.py --check    # exit 1 if a committed file no longer says what the source says
 
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
 they cannot drift. The palette is the brand's: a warm near-black or warm paper as the ground, one
@@ -22,8 +22,11 @@ and IBM Plex Mono subsets (OFL, assets/fonts/) are embedded as base64 in the dia
 and PyPI render the intended faces, and the two diagrams that carry a headline add Instrument Serif,
 the face the headings are set in.
 Word positions in the hero are measured in Chromium with that exact font, so the tick under each
-word is under the word. The wordmark instead carries the letters as outline paths traced with
-fontTools, so each logo is a few kilobytes.
+word is under the word. A measurement is the one thing in here that a second machine answers
+differently, because Chromium shapes a word through CoreText on macOS and through FreeType on
+Linux, so `--check` holds a measured figure to its source in every character but its numbers and
+holds each number within SHAPING_TOLERANCE_PX. The wordmark instead carries the letters as outline
+paths traced with fontTools, so each logo is a few kilobytes and is the same on every machine.
 
 Motion rules (from the design review): base styles are the END state, keyframes carry the start
 values, so `prefers-reduced-motion: reduce` shows the finished frame. Loops dissolve back to the
@@ -42,9 +45,6 @@ import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
-from fontTools.pens.svgPathPen import SVGPathPen
-from fontTools.pens.transformPen import TransformPen
-from fontTools.ttLib import TTFont
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -213,7 +213,15 @@ def glyph_outlines(text: str, size: float, tracking: float) -> tuple[str, float]
 
     The display face (a static instance at the wordmark's weight) places each glyph by its own
     advance width, with `tracking` (in em) added between letters.
+
+    fontTools is not a dependency of the project. The one command that runs this generator adds it,
+    so the tracer's imports sit in the only function that traces and every other part of the file,
+    including the comparison its own test judges, imports with the project alone.
     """
+    from fontTools.pens.svgPathPen import SVGPathPen  # noqa: PLC0415  (fontTools is the wordmark's, not the project's)
+    from fontTools.pens.transformPen import TransformPen  # noqa: PLC0415
+    from fontTools.ttLib import TTFont  # noqa: PLC0415
+
     font = TTFont(FONTS / DISPLAY_FACE[1])
     scale = size / font["head"].unitsPerEm
     cmap = font.getBestCmap()
@@ -1596,6 +1604,95 @@ def render_png(svg: str, target: Path, width: int, height: int) -> None:
         b.close()
 
 
+# ---- holding a generated file to its source -----------------------------------------------------
+
+
+MEASURED_FIGURES = ("hero", "how-it-works", "narration-zero", "og")
+"""The figures whose geometry comes from a word measured in Chromium.
+
+These are the only generated files whose numbers can differ between two machines, so they are the
+only ones `--check` reads with a tolerance rather than byte for byte.
+"""
+
+SHAPING_TOLERANCE_PX = MEASURE_PX / 8
+"""How far a number in a measured figure may stand from the committed number, in SVG user units.
+
+Chromium shapes the embedded fonts through CoreText on macOS and through FreeType on Linux, and the
+two give the same word an advance width that differs by up to about a pixel at MEASURE_PX. A word's
+position on a line carries the sum of the drifts of every word before it, so the longest line in
+these figures moves by about two and a half pixels between the two platforms. An eighth of
+MEASURE_PX clears that accumulation and stays well under a word's width, which is the smallest move
+any of these figures makes on purpose.
+"""
+
+FONT_PAYLOAD = re.compile(r"data:font/[a-z0-9]+;base64,[A-Za-z0-9+/=]+")
+"""One embedded font, held out of the number split because base64 is a long run of letters and digits."""
+
+NUMBER = re.compile(r"(?<![A-Za-z0-9_#.])-?(?:\d+(?:\.\d+)?|\.\d+)")
+"""A number a figure draws with. A digit that follows a letter, a hash or another number belongs to
+that name, colour or number instead, so `w3` is a class, `#7a5000` is a colour and `1.25` is one
+number rather than two."""
+
+FONT_STANDIN = "\x00"  # what an embedded font leaves behind, chosen because no figure can contain it.
+
+
+def measured(path: Path) -> bool:
+    """Whether this file's geometry comes from a measurement rather than from constants alone."""
+    return any(path.stem == figure or path.stem.startswith(f"{figure}-") for figure in MEASURED_FIGURES)
+
+
+def _parts(text: str) -> tuple[list[str], list[str], list[float]]:
+    """A file as the text between its numbers, its embedded fonts, and its numbers."""
+    fonts = FONT_PAYLOAD.findall(text)
+    figure = FONT_PAYLOAD.sub(FONT_STANDIN, text)
+    return NUMBER.split(figure), fonts, [float(m.group()) for m in NUMBER.finditer(figure)]
+
+
+def stale_reason(generated: str, committed: str) -> str | None:
+    """Why the committed file no longer says what the generator says, or None when it still does.
+
+    A measured figure has to match its source exactly in every character that is not a number, and
+    each of its numbers has to sit within SHAPING_TOLERANCE_PX of the committed one. That holds a
+    real change to a figure to a failure and lets the shaping drift between macOS and Linux pass, so
+    the author regenerates the figures on his own machine and the Linux runner agrees with him.
+    """
+    new_text, new_fonts, new_numbers = _parts(generated)
+    old_text, old_fonts, old_numbers = _parts(committed)
+    if new_fonts != old_fonts:
+        return "the embedded fonts differ"
+    if new_text != old_text:
+        return f"the text differs at {_first_difference(new_text, old_text)!r}"
+    # Matching text means matching numbers one for one, because the text is what the split left behind.
+    for new, old in zip(new_numbers, old_numbers, strict=True):
+        if abs(new - old) > SHAPING_TOLERANCE_PX:
+            return f"{old} is now {new}, which is further than the {SHAPING_TOLERANCE_PX} tolerance"
+    return None
+
+
+def _first_difference(generated: list[str], committed: list[str]) -> str:
+    """The start of the first stretch of text the two files do not share, so the report points at it."""
+    for new, old in zip(generated, committed, strict=False):
+        if new != old:
+            return (new or old).strip()[:60]
+    return "the end of the file"
+
+
+def report_stale(files: dict[Path, str]) -> int:
+    """Print every committed file that no longer says what its source says, and return how many there are."""
+    stale = 0
+    for path, source in files.items():
+        if not path.exists():
+            reason: str | None = "it is not committed"
+        elif measured(path):
+            reason = stale_reason(source, path.read_text(encoding="utf-8"))
+        else:
+            reason = None if path.read_text(encoding="utf-8") == source else "it differs from its source"
+        if reason:
+            print(f"stale: {path.relative_to(ROOT)}, because {reason}")
+            stale += 1
+    return stale
+
+
 # ---- entry ------------------------------------------------------------------------------------
 
 
@@ -1672,14 +1769,14 @@ def build() -> dict[Path, str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="exit 1 if any generated file would change")
+    ap.add_argument(
+        "--check", action="store_true", help="exit 1 if any committed file no longer says what its source says"
+    )
     args = ap.parse_args()
     files = build()
-    changed = [p for p, s in files.items() if not p.exists() or p.read_text(encoding="utf-8") != s]
     if args.check:
-        for p in changed:
-            print(f"stale: {p.relative_to(ROOT)}")
-        return 1 if changed else 0
+        return 1 if report_stale(files) else 0
+    changed = [p for p, s in files.items() if not p.exists() or p.read_text(encoding="utf-8") != s]
     for p, s in files.items():
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(s, encoding="utf-8")
