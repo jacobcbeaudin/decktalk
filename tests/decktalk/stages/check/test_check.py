@@ -78,10 +78,12 @@ def test_a_cue_phrase_nothing_speaks_is_judged_before_anything_is_voiced(tmp_pat
 
 
 def test_the_files_it_judged_are_the_ones_it_read(tmp_path: Path) -> None:
+    """A run without pages opens none of them, so naming one would send a reader looking for a
+    judgement nobody made."""
     inputs = a_project(tmp_path, cues=CUES)
     result = check(inputs, a_run(tmp_path), pages=False)
     judged = {one.as_posix() for one in result.judged}
-    assert {"script.md", "cues.json", "deck/index.html"} <= judged
+    assert judged == {"script.md", "cues.json"}
 
 
 def test_a_script_that_cannot_be_read_is_a_judgement_and_not_a_refusal(tmp_path: Path) -> None:

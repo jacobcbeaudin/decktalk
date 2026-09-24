@@ -256,9 +256,15 @@ def _kept(inputs: Inputs, section: Section, out: Path) -> Rendered | None:
 
 
 def _judge_missing(run: Run, rows: list[Rendered]) -> None:
-    """One judgement per section whose own file the project names and has not got."""
+    """One judgement per section whose own file the project names and has not got.
+
+    A clip section that declares `optional` says the slate is what it wants when the clip is not
+    there, so judging it certain would stop the build on the very thing the project asked for.
+    """
     for row in rows:
         if row.missing is None:
+            continue
+        if isinstance(row.section, ClipSection) and row.section.optional:
             continue
         stood_in = "a slate" if row.substitute is Substitute.SLATE else "a black frame"
         run.found(

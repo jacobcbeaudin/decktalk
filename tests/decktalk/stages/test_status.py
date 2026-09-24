@@ -155,6 +155,15 @@ def test_a_section_is_voiced_when_a_take_of_its_current_text_is_on_disk(tmp_path
     assert fake_ffmpeg.calls == []
 
 
+def test_a_placeholder_take_does_not_make_a_section_voiced(tmp_path: Path) -> None:
+    """`voiced` is the take's own word, so the column that says what this project has paid for
+    counted a run without a voice as though it had bought every section."""
+    inputs = a_project(tmp_path)
+    a_take(inputs, voiced=False)
+    result = status(inputs, a_run(tmp_path))
+    assert result.sections[0].voiced is False
+
+
 def test_a_take_of_older_words_does_not_make_a_section_voiced(tmp_path: Path) -> None:
     """A take the author has since rewritten is not a take of what this section says now."""
     inputs = a_project(tmp_path)

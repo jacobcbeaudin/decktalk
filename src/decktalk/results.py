@@ -237,7 +237,7 @@ class SectionStatus(BaseModel):
     key: SectionKey
     kind: SectionKind = Field(description="Whether the section plays a recorded page or a supplied clip.")
     source: str = Field(description="The page or the file this section plays.")
-    voiced: bool = Field(description="True when a take of this section's current text is on disk.")
+    voiced: bool = Field(description="True when a voice spoke a take of this section's current text.")
     recorded: bool = Field(description="True when a recording of this section is on disk.")
     cut: bool = Field(description="True when this section has been cut into the film.")
     stale: bool = Field(description="True when what is on disk no longer matches what the project says.")

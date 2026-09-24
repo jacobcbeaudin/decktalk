@@ -42,7 +42,7 @@ from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart,
 from decktalk.findings import Certainty
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.pipeline import Artifact, Outcome, Stage
-from decktalk.results import SectionKind, SpendState, Substitute, Voicing, Word
+from decktalk.results import Layer, SectionKind, SpendState, Substitute, Voicing, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 from support.timing_policy import BASE_BUDGET_SECONDS, FIRST_FETCH_SECONDS, budget
 
@@ -435,8 +435,9 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
     assert all(log.t0_seconds is not None and not log.t0_guessed for log in logs.values())
     assert all(log.url.startswith("http://") for log in logs.values())
     # Every project file the page loaded is named, which is what the next run keys its skip on.
-    assert "deck/index.html" in logs["01"].assets
-    assert f"deck/{RUNTIME_FILE}" in logs["01"].assets
+    loaded = {path.as_posix() for path in logs["01"].assets}
+    assert "deck/index.html" in loaded
+    assert f"deck/{RUNTIME_FILE}" in loaded
 
 
 def test_no_page_loaded_anything_from_another_origin(built: Project) -> None:
@@ -542,8 +543,8 @@ def test_the_cut_list_records_where_every_section_plays(built: Project) -> None:
     spans = built.spans()
     rows = {row.key: row for row in cuts.sections}
     assert set(rows) == set(EVERY_SECTION)
-    assert rows["03"].kind is SectionKind.CLIP and rows["03"].source == "media/broll.mp4"
-    assert rows["01"].source == "build/recordings/01.webm"
+    assert rows["03"].kind is SectionKind.CLIP and rows["03"].source.as_posix() == "media/broll.mp4"
+    assert rows["01"].source.as_posix() == "build/recordings/01.webm"
     assert [row.key for row in cuts.sections if row.substitute is not None] == ["05"]
     assert cuts.fps > 0
     for key, (start, end) in spans.items():
@@ -658,15 +659,20 @@ def test_status_reports_what_is_written_what_is_built_and_what_is_stale(built: P
 
 
 def test_check_judges_the_inputs_and_prices_the_run_without_a_browser(built: Project) -> None:
-    """`check --no-pages` is the door a docs job or a pre-commit hook goes through, so it fetches nothing."""
+    """`check --no-pages` is the door a docs job or a pre-commit hook goes through, so it fetches nothing.
+
+    This fixture sets no credential and states no price, which is the machine a hook runs on. The
+    price is therefore an estimate over the spoken sections at the rate nobody stated, and the run
+    says so through `price_layer` rather than pricing the script against a number it made up.
+    """
     run = built.cli("check", "--no-pages", "--json", "--fail-on", "never")
     doc = run.json
     assert doc["pages"] is False
     assert sorted(Path(path).name for path in doc["judged"]) == ["cues.json", "script.md"]
     spend = doc["spend"]
     assert spend["state"] == SpendState.ESTIMATE.value, spend
-    assert spend["characters"] > 0 and spend["sections"] == len(SPOKEN), spend
-    assert spend["dollars"] >= 0 and spend["price_layer"], spend
+    assert spend["sections"] == [int(key) for key in SPOKEN], spend
+    assert spend["dollars"] == 0 and spend["price_layer"] == Layer.DEFAULT.value, spend
 
 
 def test_words_prints_every_spoken_word_with_its_place_on_the_clock(built: Project) -> None:
@@ -702,7 +708,7 @@ def test_the_equation_typesets_from_the_deck_and_not_from_a_cdn(built: Project) 
     """KaTeX is vendored into deck/katex, so section 4 records with no finding and loads no host."""
     log = built.recording_log("04")
     assert list(log.findings) == [] and list(log.external) == []
-    assert any(name.startswith("deck/katex/") for name in log.assets), log.assets
+    assert any(path.as_posix().startswith("deck/katex/") for path in log.assets), log.assets
 
 
 def test_the_take_index_and_the_cue_times_agree_with_what_was_built(built: Project) -> None:

@@ -126,7 +126,7 @@ def check(
         run.wrote(sheet)
     return run.result(
         CheckResult,
-        judged=_judged(inputs, script, resolved, sections, extra),
+        judged=_judged(inputs, script, resolved, sections if pages else (), extra if pages else ()),
         pages=pages,
         frames=pages and frames,
         spend=spend,
@@ -231,7 +231,11 @@ def _judged(
     sections: Sequence[PageSection],
     extra: Sequence[str],
 ) -> tuple[ProjectPath, ...]:
-    """Every file and page this call judged, project-relative and in the order it met them."""
+    """Every file and page this call judged, project-relative and in the order it met them.
+
+    A run without pages opened none of them, so it names the script and the cue file alone. A page
+    listed by a run that never read it sends a reader looking for a judgement nobody made.
+    """
     files: list[Path] = [script]
     if resolved or inputs.cues_path.is_file():
         files.append(inputs.relative(inputs.cues_path))

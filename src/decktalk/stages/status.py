@@ -122,7 +122,9 @@ def section_rows(inputs: Inputs, run: Run) -> tuple[SectionStatus, ...]:
         take = takes.of(section.number) if takes is not None else None
         on_disk = take is not None and (inputs.workspace.takes_dir / take.file).is_file()
         said = spoken.get(section.number)
-        voiced = on_disk and (said is None or take is None or take.spoken == said)
+        # `voiced` is the take's own word, so a placeholder take on disk is not one a voice spoke
+        # and the column that says what this project has paid for never counts it.
+        voiced = on_disk and take is not None and take.voiced and (said is None or take.spoken == said)
         recorded = isinstance(section, PageSection) and inputs.workspace.recording(section.key).is_file()
         rows.append(
             SectionStatus(

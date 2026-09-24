@@ -526,7 +526,7 @@
           "type": "string"
         },
         "voiced": {
-          "description": "True when a take of this section's current text is on disk.",
+          "description": "True when a voice spoke a take of this section's current text.",
           "title": "Voiced",
           "type": "boolean"
         },

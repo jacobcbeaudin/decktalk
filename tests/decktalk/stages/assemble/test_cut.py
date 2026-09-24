@@ -10,6 +10,7 @@ from decktalk.errors import InputError, NotBuiltError
 from decktalk.media import ffmpeg
 from decktalk.results import SectionKind, Substitute
 from decktalk.stages.assemble.cut import (
+    _judge_missing,
     concat,
     cut_list,
     page_target,
@@ -83,8 +84,28 @@ def test_strict_refuses_a_missing_recording_and_names_the_stage_that_writes_one(
     assert "decktalk record" in (refused.value.hint or "")
 
 
+def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, write_project, open_run, monkeypatch):
+    """A section that declares `optional` says the slate is what it wants when the clip is not there.
+
+    A certain `FILE_MISSING` stopped the build on that very slate, so a project could declare the
+    slot and never build, which made `optional` mean nothing to anybody running a command.
+    """
+    toml = (
+        "[project]\nname = 't'\n[[section]]\nnumber = 1\nclip = 'media/slot.mp4'\nslate_seconds = 4\noptional = true\n"
+    )
+    inputs = write_project(tmp_path, toml)
+    opened = open_run(tmp_path)
+    monkeypatch.setattr("decktalk.stages.assemble.cut.section_slate", lambda *_args: None)
+    enc = make_encoder(inputs)
+    (slot,) = inputs.document.clip_sections
+    row = render_clip(inputs, opened.run, enc, slot, tmp_path / "out.mp4", 0.0, strict=False)
+    _judge_missing(opened.run, [row])
+    assert (row.substitute, row.missing) == (Substitute.SLATE, "media/slot.mp4")
+    assert opened.codes() == []
+
+
 def test_strict_refuses_a_missing_clip_unless_the_section_is_optional(tmp_path, write_project, open_run, monkeypatch):
-    """An optional slot is the scaffold's own B-roll, so its slate is what `--strict` is told to allow."""
+    """A section that declares `optional` says its slate is what `--strict` is told to allow."""
     toml = (
         "[project]\nname = 't'\n"
         "[[section]]\nnumber = 1\nclip = 'media/real.mp4'\n"
