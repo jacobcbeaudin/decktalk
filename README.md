@@ -56,6 +56,63 @@ To hear it in your own voice, copy `.env.example` to `.env`, set your ElevenLabs
 
 The [quickstart](https://docs.decktalk.ai/quickstart) shows the output of each step. If you try DeckTalk on one section of something you teach, tell me in [Issues](https://github.com/jacobcbeaudin/decktalk/issues) what stopped you.
 
+## Drive it from Python
+
+The command line is the first client of a library, and everything a command does, a method does the same way and returns the same object the command prints. Nothing in the library prints. A run reports through its event stream, and a renderer subscribes to it.
+
+```python
+import decktalk
+
+project = decktalk.open("my-lesson")
+project.events.subscribe(lambda event: print(event.event, event.run))
+
+result = project.build(voice=decktalk.Voicing.PLACEHOLDER)
+print(result.ok, result.film)
+for finding in result.findings:
+    print(finding.code.name, finding.message, finding.location.where)
+```
+
+`decktalk.open` returns a `Project` with one method per stage, `narrate`, `cue`, `record`, `soundscape`, `assemble` and `verify`, plus `build`, `check`, `status`, `words`, `storyboard`, `clip` and `serve`. Every method returns a frozen result whose paths are relative to the project root, so `result.model_dump_json()` is correct as it is. A voiced call takes `voice=decktalk.Voicing.PAID` and `max_cost`, and the library refuses before the first paid request when the estimate is above the cap. `Machine.from_environment()` is the only function that reads the environment, so two projects on one machine share one toolchain and one stream. `decktalk.__all__` is the whole supported surface, generated as the closure of every type a result can hand you. [The Python API](https://docs.decktalk.ai/reference/python-api) documents each call.
+
+## Give an agent the whole tool
+
+An agent learns DeckTalk from the tool itself rather than from a manual.
+
+- **One contract call.** `decktalk schema` prints every command with its options, the global flags, the exit codes, the error codes, every finding code with its sentence and the six stages, as one JSON object. `decktalk schema settings` prints the settings schema and `decktalk schema page` the page attributes.
+- **One shape for every answer.** Every command prints one flat JSON object under `--json`: its own fields beside `schema`, `ok`, `findings` and `error`, with `run` and `written` where the command opened a run or wrote a file. Exit codes are closed: 0 found nothing, 1 found something, 2 refused the command line, 3 could not run, 130 interrupted.
+- **Progress as data.** `--events` writes one JSON line per event to stderr as it happens, and every run also writes `build/events/<run>.jsonl`, so a long build can be followed and replayed.
+- **Every knob explained.** `decktalk config explain KEY` prints a setting's sentence, type, default, safe range, unit, the finding codes it decides and its hazard. `--set KEY=VALUE` overrides one setting for one run through the same validation, and `config set` writes it to `decktalk.toml` keeping the comments.
+- **Findings carry their fix.** A finding names its code, a sentence with the measured number, where it was found, whether it is certain, and often a typed fix. `check --fix` applies every safe fix, and `--fail-on certain|any|never` and `--allow CODE` set the exit policy.
+
+This is a finding from a real build, as `--json` prints it.
+
+```json
+{
+  "code": "MIX_LOUDNESS",
+  "message": "the true peak is -1.4 dBTP, which is above the -1.5 dBTP ceiling the mix was mastered to.",
+  "certainty": "uncertain",
+  "location": {"where": "build/final/uv-tutorial.mp4", "file": "build/final/uv-tutorial.mp4", "line": null, "section": null, "cue": null},
+  "stage": "assemble",
+  "fix": null,
+  "url": "https://docs.decktalk.ai/reference/findings/MIX_LOUDNESS"
+}
+```
+
+And this is what a knob says about itself.
+
+```console
+$ decktalk config explain verify.cue_offset_max_ms
+verify.cue_offset_max_ms = 80.0 (default)
+  How far the measured onset may sit from the cue time, early or late.
+  type number, default 80.0, must be between 20 and 400
+  unit milliseconds
+  hazard A viewer sees a reveal land late at about a fifth of a second, so above roughly 200 milliseconds the limit passes films whose pictures visibly miss their words.
+  decides CUE_OFF
+  docs https://docs.decktalk.ai/reference/configuration#verify
+```
+
+The [reference card](https://docs.decktalk.ai/reference/card) is the same instruction set on one page, and the six skills `decktalk init` installs teach only what a command line cannot say: writing for the ear, spelling math as speech, choosing cue phrases and shaping a slide.
+
 ## What you write
 
 <picture>
@@ -82,6 +139,19 @@ The `narrate` stage writes a words file with the start and end of every spoken w
 </picture>
 
 The script comes first, the voice gives every word a time, and the cues are where a named phrase meets its picture. Change one sentence, and only that section is voiced and recorded again.
+
+## The page contract
+
+A slide is a `<template data-slide="N.M">` in plain HTML, and each element on it names the moment it waits for. Four attributes carry the moments, `data-in`, `data-back`, `data-front` and `data-out`, and each names a cue local to its slide, which the runtime joins to the slide id into the wire id `cues.json` carries. This is the opening slide of the starter.
+
+```html
+<template data-slide="1.1" data-hold="10" data-describe="the opening title and the count of files">
+  <div class="title" data-in="title" data-describe="the title, This is DeckTalk">This is DeckTalk</div>
+  <p class="stat" data-in="files" data-count="last" data-describe="the count of files a project holds">4 files</p>
+</template>
+```
+
+`data-in="title"` is the cue `1.1:title`, and its phrase in `cues.json` is the words the picture waits for. `data-describe` is the sentence the transcript prints when the picture appears. How a moment looks is a closed set of style words, and how long it plays is measured in frames, so `verify` can hold every landing to its word. No attribute writes a second. [The page contract](https://docs.decktalk.ai/concepts/page-contract) lists all twenty-four attributes with their values, defaults and the finding each one can raise.
 
 ## Why the cuts are exact
 
@@ -112,6 +182,31 @@ A browser does not start recording at a known time, so DeckTalk does not use a t
 ```
 
 Spoken is the second the cue phrase is said, Shown is the second the picture changed, and Offset is the distance between them. [Verify](https://docs.decktalk.ai/reference/verify) defines every column and every limit that moves one.
+
+## Every command
+
+| Command | What it does |
+|---|---|
+| `init` | Create a project with a deck that already builds. |
+| `install` | Fetch Chromium and ffmpeg before a build needs them. |
+| `doctor` | Report what is installed and what a run would use. |
+| `status` | Report what is written, what is built and what is stale. |
+| `check` | Judge `script.md`, `cues.json` and the pages before a build, and price the run. |
+| `words` | Print every spoken word with its start and end. |
+| `storyboard` | Freeze every slide at every cue onto one page. |
+| `serve` | Serve the project on a local origin over http. |
+| `config` | List, get, set, explain or unset a setting. |
+| `schema` | Print the JSON Schema of a command, a setting or an event. |
+| `narrate` | Voice each section of `script.md` and time every word. |
+| `cue` | Turn each cue phrase into a second on its section clock. |
+| `record` | Record each page section in headless Chromium. |
+| `soundscape` | Generate the music, the ambience bed and the effects. |
+| `assemble` | Cut, mix and encode the sections into one mp4. |
+| `verify` | Measure the finished mp4: every start, cut, seam and landing. |
+| `build` | Run every stage in order, or a span of them, with `--watch` to rebuild the changed section as you edit. |
+| `clip` | Cut a span of a built section into its own file. |
+
+A build writes the film, the captions, the chapters and the transcript under `build/final/`, the takes named by their content hash under `build/narrate/`, the recordings under `build/recordings/`, the storyboard under `build/storyboard/` and the run's events under `build/events/`. `decktalk status` reads all of it back.
 
 ## Requirements and costs
 
