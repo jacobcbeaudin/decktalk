@@ -118,9 +118,9 @@ from .media.pagereport import (
     ElementRow,
     FrameGap,
     LongFrame,
+    MeasuredScene,
     PageReport,
     PageWarningRow,
-    SceneCatalog,
     WordRow,
 )
 from .pipeline import PIPELINE, Artifact, Outcome, Stage, StageSpec
@@ -285,6 +285,7 @@ __all__ = [
     "Machine",
     "Marker",
     "Markers",
+    "MeasuredScene",
     "Mix",
     "MixConfig",
     "MixEffect",
@@ -320,7 +321,6 @@ __all__ = [
     "Run",
     "RunDone",
     "RunStart",
-    "SceneCatalog",
     "Scope",
     "SeamCheck",
     "Section",

@@ -27,7 +27,7 @@ from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Locat
 from decktalk.inputs.cues import CuedSection
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.paths import relative
-from decktalk.media.pagereport import SceneCatalog
+from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import Measured
 from decktalk.pipeline import Stage
 from decktalk.stages import judge
@@ -51,7 +51,7 @@ SECTIONS_KEY = re.compile(r'^(?P<indent>\s*)"sections"\s*:\s*\{')
 """The line the sections object opens on, which is where a whole new section block is written."""
 
 
-def scene_cues(entry: SceneCatalog) -> tuple[str, ...]:
+def scene_cues(entry: MeasuredScene) -> tuple[str, ...]:
     """Every wire id one scene declares, in the order the catalog names them and without repeats.
 
     A moment reaches the catalog twice, once as the attribute of the element that draws it and once
@@ -62,7 +62,7 @@ def scene_cues(entry: SceneCatalog) -> tuple[str, ...]:
     return tuple(dict.fromkeys(found + _listed(entry)))
 
 
-def measured_rows(entry: SceneCatalog) -> list[Measured]:
+def measured_rows(entry: MeasuredScene) -> list[Measured]:
     """Every element the probe measured on one scene, as the rows `pagescan` judges.
 
     The catalog speaks the page's own shapes and `pagescan` speaks the contract's, so this is the
@@ -80,7 +80,7 @@ def measured_rows(entry: SceneCatalog) -> list[Measured]:
     ]
 
 
-def _listed(entry: SceneCatalog) -> list[str]:
+def _listed(entry: MeasuredScene) -> list[str]:
     """The wire ids the scene's own cue map names, which is a map of slide to ids or a plain list."""
     listed = (entry.model_extra or {}).get(CUES_FIELD)
     if isinstance(listed, Mapping):
@@ -96,7 +96,7 @@ def _ids(given: object) -> list[str]:
 
 
 def declared_cues(
-    catalogs: Mapping[str, Sequence[SceneCatalog]],
+    catalogs: Mapping[str, Sequence[MeasuredScene]],
     sections: Iterable[PageSection],
 ) -> dict[int, tuple[str, ...]]:
     """Every wire id the scene each section plays declares, by section number.

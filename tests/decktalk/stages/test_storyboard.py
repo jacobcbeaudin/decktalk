@@ -13,7 +13,7 @@ import pytest
 from decktalk.errors import Cancel
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain
-from decktalk.media.pagereport import PageReport, SceneCatalog
+from decktalk.media.pagereport import PageReport, MeasuredScene
 from decktalk.page import Q
 from decktalk.results import Panel, StoryboardResult
 from decktalk.stages import storyboard as stage
@@ -119,7 +119,7 @@ def test_a_frozen_state_names_one_file_safely() -> None:
 
 
 def test_a_scene_declares_its_slides_and_the_cues_it_lists_against_each() -> None:
-    entry = SceneCatalog.model_validate(catalog("1", {"1.1": ["1.1:a", "1.1:b"]}))
+    entry = MeasuredScene.model_validate(catalog("1", {"1.1": ["1.1:a", "1.1:b"]}))
     assert slide_cues(entry) == {"1.1": ("1.1:a", "1.1:b")}
 
 
@@ -128,7 +128,7 @@ def test_a_page_that_published_no_such_scene_declares_nothing() -> None:
 
 
 def test_a_scene_that_lists_no_cues_falls_back_to_the_moments_its_elements_name() -> None:
-    entry = SceneCatalog.model_validate(
+    entry = MeasuredScene.model_validate(
         {"scene": "1", "elements": {"1.1": [{"attrs": {}, "moments": {"data-in": "1.1:a"}, "text": "", "box": BOX}]}}
     )
     assert slide_cues(entry) == {"1.1": ("1.1:a",)}

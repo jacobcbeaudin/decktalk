@@ -10,7 +10,7 @@ from decktalk.artifacts import Cut, Cuts, RecordingLog, Words
 from decktalk.captions import CaptionCue
 from decktalk.errors import ToolError
 from decktalk.media import browser
-from decktalk.media.pagereport import CueRow, PageReport, SceneCatalog
+from decktalk.media.pagereport import CueRow, PageReport, MeasuredScene
 from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
 from decktalk.stages.assemble.cut import cut_list
@@ -237,8 +237,8 @@ def test_no_two_captions_are_ever_on_screen_at_once():
 
 
 def test_a_scene_names_its_slides_in_the_order_the_page_declares_them():
-    declared = SceneCatalog.model_validate({"scene": "1", "elements": {"1.2": []}, "slides": ["1.1", "1.2"]})
-    measured_only = SceneCatalog(scene="2", elements={"2.1": ()})
+    declared = MeasuredScene.model_validate({"scene": "1", "elements": {"1.2": []}, "slides": ["1.1", "1.2"]})
+    measured_only = MeasuredScene(scene="2", elements={"2.1": ()})
     assert scene_slides((declared,), "1") == ("1.1", "1.2")
     assert scene_slides((measured_only,), "2") == ("2.1",)
     assert scene_slides((declared,), "9") == ()
@@ -246,7 +246,7 @@ def test_a_scene_names_its_slides_in_the_order_the_page_declares_them():
 
 def test_the_poster_freezes_the_opening_slide_with_its_reveals_fired(tmp_path, write_project):
     inputs = write_project(tmp_path)
-    catalog = (SceneCatalog.model_validate({"scene": "1", "elements": {}, "slides": ["1.1", "1.2"]}),)
+    catalog = (MeasuredScene.model_validate({"scene": "1", "elements": {}, "slides": ["1.1", "1.2"]}),)
     assert poster_query(catalog, inputs.document.page_sections[0]) == {Q.SLIDE: "1.1"}
     assert poster_query((), inputs.document.page_sections[0]) is None
 

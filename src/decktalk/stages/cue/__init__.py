@@ -28,7 +28,7 @@ from decktalk.events import Level
 from decktalk.findings import Finding
 from decktalk.inputs import CuedSection, Inputs
 from decktalk.machine import Run
-from decktalk.media.pagereport import SceneCatalog
+from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import overlap_findings
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import CueResult, SectionCues, Word
@@ -113,14 +113,14 @@ def _catalog_findings(inputs: Inputs, only: Sequence[int] | None, allow_unknown:
     )
 
 
-def _catalogs(inputs: Inputs) -> dict[str, tuple[SceneCatalog, ...]]:
+def _catalogs(inputs: Inputs) -> dict[str, tuple[MeasuredScene, ...]]:
     """The catalog each page published, read from the recording the last run left beside it.
 
     A recording log keeps the page's whole report, so the catalog is the page's own document rather
     than a reading of its markup. A page nothing has recorded is absent from this map, which is what
     leaves its sections unjudged instead of judged against nothing.
     """
-    out: dict[str, tuple[SceneCatalog, ...]] = {}
+    out: dict[str, tuple[MeasuredScene, ...]] = {}
     for section in inputs.document.page_sections:
         if section.page in out:
             continue

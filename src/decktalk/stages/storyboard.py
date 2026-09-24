@@ -31,7 +31,7 @@ from decktalk.machine import Run
 from decktalk.media import MILLISECONDS
 from decktalk.media.browser import await_ready, chromium, open_page, read_report, screenshot
 from decktalk.media.origin import Allowed, page_url
-from decktalk.media.pagereport import PageReport, SceneCatalog
+from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import Panel, StoryboardResult
 from decktalk.stages import SECOND_DIGITS, selects
@@ -83,7 +83,7 @@ class Freeze:
         return LABEL_SAFE.sub("_", text)
 
 
-def slide_cues(entry: SceneCatalog | None) -> Slides | None:
+def slide_cues(entry: MeasuredScene | None) -> Slides | None:
     """Each slide of one scene with the cues it declares, or None when the page published no such scene.
 
     Ownership is declared: a slide owns exactly the cues the catalog lists against it, which are the
@@ -106,7 +106,7 @@ def _names(given: object) -> list[str]:
     return [str(one) for one in given]
 
 
-def _moments(entry: SceneCatalog, slide: str) -> list[str]:
+def _moments(entry: MeasuredScene, slide: str) -> list[str]:
     """The wire ids one slide's own elements name, for a scene that lists its cues nowhere else."""
     return [wire for row in entry.elements.get(slide, ()) for wire in row.moments.values() if wire]
 
@@ -282,12 +282,12 @@ def _section_panels(
     return out
 
 
-def _entry(entries: Sequence[SceneCatalog] | None, scene: str) -> SceneCatalog | None:
+def _entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
     """The catalog entry for one scene of one page, or None when the page published no such scene."""
     return next((one for one in entries or () if str(one.scene) == str(scene)), None)
 
 
-def _catalog(reports: Mapping[str, PageReport], page: str) -> tuple[SceneCatalog, ...] | None:
+def _catalog(reports: Mapping[str, PageReport], page: str) -> tuple[MeasuredScene, ...] | None:
     """What one page published, or None when it published nothing this run could read."""
     report = reports.get(page)
     return report.catalog if report is not None and report.catalog else None

@@ -39,7 +39,7 @@ from decktalk.machine import Run
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import iso_639_2
 from decktalk.media.origin import Allowed, page_url
-from decktalk.media.pagereport import SceneCatalog
+from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Q
 from decktalk.results import SectionKind, Word
 from decktalk.stages import SECOND_DIGITS
@@ -326,7 +326,7 @@ def transcript_sections(inputs: Inputs, cuts: Cuts, texts: Mapping[int, str]) ->
 # ---- the poster -------------------------------------------------------------------------------
 
 
-def scene_slides(catalog: tuple[SceneCatalog, ...], scene: str) -> tuple[str, ...]:
+def scene_slides(catalog: tuple[MeasuredScene, ...], scene: str) -> tuple[str, ...]:
     """Every slide of one scene, in the order the page declares them.
 
     The catalog keeps what its model does not name, so the declared order is read from the entry
@@ -341,7 +341,7 @@ def scene_slides(catalog: tuple[SceneCatalog, ...], scene: str) -> tuple[str, ..
     return tuple(entry.elements)
 
 
-def poster_query(catalog: tuple[SceneCatalog, ...], section: PageSection) -> dict[Q, str] | None:
+def poster_query(catalog: tuple[MeasuredScene, ...], section: PageSection) -> dict[Q, str] | None:
     """The freeze query for a section's opening slide with every one of its reveals already fired.
 
     A poster is the one picture that has to stand for the film, and a cue-driven slide before its

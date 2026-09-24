@@ -26,7 +26,7 @@ from decktalk.inputs.document import PageSection
 from decktalk.machine import Run
 from decktalk.media import MILLISECONDS, frames
 from decktalk.media.browser import screenshot
-from decktalk.media.pagereport import PageReport, SceneCatalog
+from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Attr
 from decktalk.pagescan import asset_findings, slide_findings
 from decktalk.results import Panel, SkipReason
@@ -146,13 +146,13 @@ def origin_findings(origins: Iterable[str], *, where: str, section: int | None =
 
 
 def static_findings(
-    entry: SceneCatalog, times: Mapping[str, float], *, where: str, section: int | None, settings: Settings
+    entry: MeasuredScene, times: Mapping[str, float], *, where: str, section: int | None, settings: Settings
 ) -> list[Finding]:
     """Every judgement the measured catalog supports on its own, before any frame is compared."""
     return slide_findings(measured_rows(entry), times, where=where, section=section, scale=settings.motion.scale)
 
 
-def drawn_cues(entry: SceneCatalog) -> set[str]:
+def drawn_cues(entry: MeasuredScene) -> set[str]:
     """Every cue whose element arrives as a stroke, which is the reveal a thin share is about."""
     return {
         row.cue
@@ -161,7 +161,7 @@ def drawn_cues(entry: SceneCatalog) -> set[str]:
     }
 
 
-def element_cues(entry: SceneCatalog) -> set[str]:
+def element_cues(entry: MeasuredScene) -> set[str]:
     """Every cue an element of this scene declares, which is every cue a frozen frame can show.
 
     A still fires the cues up to the one it is frozen at and runs no handler, so a cue that only a
@@ -175,7 +175,7 @@ def element_cues(entry: SceneCatalog) -> set[str]:
 def landing_findings(
     sheet: Sheet,
     section: PageSection,
-    entry: SceneCatalog,
+    entry: MeasuredScene,
     slides: Slides,
     times: Mapping[str, float],
     *,

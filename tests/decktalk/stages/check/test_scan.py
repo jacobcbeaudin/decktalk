@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.findings import Code
-from decktalk.media.pagereport import SceneCatalog
+from decktalk.media.pagereport import MeasuredScene
 from decktalk.settings import Settings
 from decktalk.stages.check import scan
 from decktalk.stages.check.scan import (
@@ -57,8 +57,8 @@ def settings() -> Settings:
     return Settings()
 
 
-def entry_of(moments: dict[str, list[str]]) -> SceneCatalog:
-    return SceneCatalog.model_validate(catalog("1", moments))
+def entry_of(moments: dict[str, list[str]]) -> MeasuredScene:
+    return MeasuredScene.model_validate(catalog("1", moments))
 
 
 def wrote(out: Path) -> None:
@@ -118,7 +118,7 @@ def test_an_origin_the_page_reached_for_is_judged_against_the_page() -> None:
 
 def test_an_element_that_describes_nothing_is_judged_from_the_catalog_alone() -> None:
     """The measured rows say what is on the slide, so this judgement needs no picture at all."""
-    entry = SceneCatalog.model_validate(
+    entry = MeasuredScene.model_validate(
         {
             "scene": "1",
             "elements": {"1.1": [{"attrs": {}, "moments": {"data-in": "1.1:a"}, "text": "", "box": BOX}]},
@@ -131,7 +131,7 @@ def test_an_element_that_describes_nothing_is_judged_from_the_catalog_alone() ->
 
 
 def test_the_strokes_of_a_scene_are_the_elements_that_arrive_drawn() -> None:
-    entry = SceneCatalog.model_validate(
+    entry = MeasuredScene.model_validate(
         {
             "scene": "1",
             "elements": {

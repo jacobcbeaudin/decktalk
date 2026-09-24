@@ -25,8 +25,8 @@ from . import MILLISECONDS
 PAGE = ConfigDict(frozen=True, extra="forbid", populate_by_name=True, serialize_by_alias=True)
 """The configuration every row here uses, which refuses a field the page contract does not name."""
 
-CATALOG = ConfigDict(frozen=True, extra="allow", populate_by_name=True, serialize_by_alias=True)
-"""The catalog's own configuration, which keeps what it does not name, because `pagescan` reads the rest."""
+MEASURED = ConfigDict(frozen=True, extra="allow", populate_by_name=True, serialize_by_alias=True)
+"""A measured scene's own configuration, which keeps what it does not name, because `pagescan` reads the rest."""
 
 
 class PageWarningRow(BaseModel):
@@ -121,14 +121,16 @@ class ElementRow(BaseModel):
     box: Box
 
 
-class SceneCatalog(BaseModel):
+class MeasuredScene(BaseModel):
     """One scene of the catalog the page published, with the boxes the probe measured onto it.
 
     The catalog is the page's own document and `pagescan.py` is its reader, so what this model does
-    not name is kept rather than dropped, and what it does name is read.
+    not name is kept rather than dropped, and what it does name is read. It is named for what it
+    carries rather than for the field it arrives under, because `decktalk.catalog` is the library's
+    own contract walker and no published name may be read as that one.
     """
 
-    model_config = CATALOG
+    model_config = MEASURED
 
     scene: str = Field(description="The scene this entry is about.")
     elements: dict[str, tuple[ElementRow, ...]] = Field(
@@ -146,7 +148,7 @@ class PageReport(BaseModel):
     scene: str | None = Field(None, description=REPORT["scene"])
     slide: str | None = Field(None, description=REPORT["slide"])
     warnings: tuple[PageWarningRow, ...] = Field((), description=REPORT["warnings"])
-    catalog: tuple[SceneCatalog, ...] = Field((), description=REPORT["catalog"])
+    catalog: tuple[MeasuredScene, ...] = Field((), description=REPORT["catalog"])
     cues: tuple[CueRow, ...] = Field((), description=REPORT["cues"])
     words: tuple[WordRow, ...] = Field((), description=REPORT["words"])
     frame_gaps: tuple[FrameGap, ...] = Field((), alias="frameGaps", description=REPORT["frameGaps"])
@@ -169,7 +171,7 @@ class PageReport(BaseModel):
 
 ROWS: dict[str, type[BaseModel]] = {
     "warnings": PageWarningRow,
-    "catalog": SceneCatalog,
+    "catalog": MeasuredScene,
     "cues": CueRow,
     "words": WordRow,
     "frameGaps": FrameGap,

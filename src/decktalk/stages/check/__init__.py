@@ -36,7 +36,7 @@ from decktalk.inputs.script import Segment
 from decktalk.machine import Run
 from decktalk.media.browser import chromium, open_page
 from decktalk.media.origin import Allowed
-from decktalk.media.pagereport import PageReport, SceneCatalog
+from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.results import CheckResult, Panel, SectionCues, SpendState
 from decktalk.stages import judge, selects
 from decktalk.stages.check.scan import (
@@ -88,7 +88,7 @@ class Look:
 
     findings: list[Finding] = field(default_factory=list)
     panels: list[Panel] = field(default_factory=list)
-    catalogs: dict[str, tuple[SceneCatalog, ...]] = field(default_factory=dict)
+    catalogs: dict[str, tuple[MeasuredScene, ...]] = field(default_factory=dict)
 
 
 def check(
@@ -357,7 +357,7 @@ def _two_way(
     return cue_findings(declared, cued, cues_path=inputs.cues_path, root=inputs.root)
 
 
-def _entry(entries: Sequence[SceneCatalog] | None, scene: str) -> SceneCatalog | None:
+def _entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
     """The catalog entry for one scene of one page, or None when the page published no such scene."""
     return next((one for one in entries or () if str(one.scene) == str(scene)), None)
 
