@@ -2,145 +2,301 @@
 
     uv run pytest -m e2e
 
-The build is silent, so it needs no API key and spends nothing, and it runs with the network blocked. The
-fixture is copied to tests/out/e2e/pipeline, which CI uploads when a test fails. That directory is one
-per machine, so a session takes a lock on it and skips rather than deleting another session's build,
-and DECKTALK_E2E_OUT names another directory for a second session. Every test is one property
-of the finished build, so a failure names what broke. The cue timing gate fails on OFF CUE on Linux and, on
-macOS and Windows, only reports it while asserting the wider limits of four offset frames and five a/v frames,
-because the hosted runners there present frames late. Pass --gate-timing to gate everywhere.
+The build is unvoiced, so it needs no API key and spends nothing, and it runs with the network
+blocked. The fixture is copied under tests/out/e2e, which CI uploads when a test fails. That
+directory is one per machine, so a session takes a lock on it and skips rather than deleting another
+session's build, and DECKTALK_E2E_OUT names another directory for a second session.
+
+This suite is the panel's integration sample rather than a policy test. It proves no proposition on
+its own and samples the joint behaviour of Chromium, ffmpeg and the filesystem on one machine, so
+every assertion here is an exit code, an artifact, a JSON shape or a path, and never a pixel and
+never a millisecond of wall time. Every test is one property of the finished build, so a failure
+names what broke.
+
+The command line is driven as a real subprocess of `python -m decktalk`, so nothing about the CLI's
+internal module layout is assumed and nothing is faked. The commands and flags are spelled from
+`~/Documents/decktalk-plan/gen5/synthesis/design.md` section 3, the final vocabulary, with the flag
+families of `~/Documents/decktalk-plan/gen5/panels/cli/design.md` section 2 and the resolutions R7,
+R10, R24 and R26 applied. T8 had not landed when this was written, so a failure that names a missing
+command or an unknown flag is T8's spelling and not a broken property.
 """
 
 from __future__ import annotations
 
 import importlib
 import importlib.util
-import io
 import json
 import os
-import re
 import shutil
-import socket
 import subprocess
 import sys
 from collections.abc import Iterator
-from contextlib import contextmanager, redirect_stdout
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
 import pytest
 
-from decktalk.artifacts import RecordingLog, Takes, Word, read_rows, write_words
-from decktalk.cli import main
-from decktalk.cli.schema import BuildPlanPayload, Envelope, NarratePayload, VerifyPayload, read_envelope
+from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words
+from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart, StageDone, StageStart
+from decktalk.findings import Certainty
 from decktalk.media import audio, ffmpeg, frames
-from decktalk.model import Project
-from decktalk.pipeline import ProgressEvent, SectionKind, Stage, Substitute, TakeStatus
-from decktalk.speech import SpeechRequest, VoiceContext, get_provider, register_speech_provider
-from decktalk.stages.narrate import join_takes, take_name, text_hash, words_name
+from decktalk.pipeline import Artifact, Outcome, Stage
+from decktalk.results import SectionKind, SpendState, Substitute, Voicing, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
-from decktalk.verdicts import Verdict
-from support.timing_policy import assert_build_finished, gates_timing
 
 # An advisory lock on the output directory, where the platform has one.
 fcntl = importlib.util.find_spec("fcntl") and importlib.import_module("fcntl")
 
-pytestmark = [pytest.mark.e2e, pytest.mark.timeout(180)]
+BUILD_BUDGET_SECONDS = 600
+"""How long one test may take, which is generous enough for a cold Chromium fetch on a slow runner.
+
+The fixture builds in about a minute on a warm machine. The budget is a ceiling that catches a hung
+page or a stalled encoder, so it is not a measurement of anything and it is deliberately loose.
+"""
+
+pytestmark = [pytest.mark.e2e, pytest.mark.timeout(BUILD_BUDGET_SECONDS)]
 
 FIXTURE = Path(__file__).parent / "fixture"
-# One directory, so CI uploads it from a path it knows. DECKTALK_E2E_OUT moves it for a second
-# session on one machine, and the lock below refuses to share it rather than corrupting it.
-OUT = Path(os.environ.get("DECKTALK_E2E_OUT") or Path(__file__).parent.parent / "out") / "e2e"
-FPS = 25
-SPOKEN = ("01", "02", "04")  # the page sections, because 03 is a clip and 05 a slate
-CUES = ("1:1.1first", "1:1.1second", "1:1.1third", "2:2.1fourth", "2:2.1fifth", "4:3.1eq", "4:3.1bar")
+
+HOSTILE_DIRECTORY = "jacob's fïlms 2"
+"""The name every temporary root of this suite sits under, because a path is an input like any other.
+
+An apostrophe and a diacritic reach every shell quote, every ffmpeg concat list and every served URL
+the build writes, and the founder's own films live under a name like this one. Building anywhere
+else would leave the quoting of must 1 proven by nothing that runs on every platform.
+"""
+
+OUT = Path(os.environ.get("DECKTALK_E2E_OUT") or Path(__file__).parent.parent / "out") / "e2e" / HOSTILE_DIRECTORY
+
+FILM_NAME = "pipeline"
+"""The project name in the fixture's decktalk.toml, which names every file `assemble` writes."""
+
+SPOKEN = ("01", "02", "04")
+"""The page sections of the fixture, because section 3 plays a clip and section 5 plays a slate."""
+
+EVERY_SECTION = ("01", "02", "03", "04", "05")
+
+CUES = (
+    "1:1.1:first",
+    "1:1.1:second",
+    "1:1.1:third",
+    "2:2.1:fourth",
+    "2:2.1:fifth",
+    "4:3.1:eq",
+    "4:3.1:bar",
+)
+"""Every cue the fixture declares, as the section number, then the wire id of slide and local name."""
+
+RESERVED_KEYS = frozenset({"schema", "ok", "findings", "error"})
+"""The four keys every result carries, which is the founder's decided JSON contract."""
+
+RETIRED_KEYS = frozenset({"command", "exit_code", "summary", "payload", "data"})
+"""The envelope keys 0.4 wrapped a result in, none of which may come back under any name."""
+
+FOUND_NOTHING, FOUND_SOMETHING = 0, 1
+"""What the CLI exits when it judged nothing and when it judged something, from the CLI design."""
+
+SLATE_SECONDS = 1.0
+"""How long section 5's slate plays, which `decktalk.toml` states as `slate_seconds = 1`."""
+
+CLIP_SECONDS = 2.5
+"""How long the generated B-roll clip runs, which the ffmpeg command below asks lavfi for."""
+
+CLIP_FPS = 30
+"""The frame rate the B-roll clip is generated at, which differs from the film's on purpose."""
+
+CLIP_TONE_HZ = 660
+CLIP_TONE_FLOOR_DBFS = -30
+"""How loud the clip's own tone must still be in the finished film, well over the mix's beds."""
+
+FRAME_COMPARE_LEVEL = 40
+FRAME_COMPARE_WIDTH = 480
+FRAME_COMPARE_HEIGHT = 270
+"""The luma step and the thumbnail size two frames are compared at, which verify's own probe uses."""
+
+POSTER_WIDTH, POSTER_HEIGHT = 1920, 1080
+"""The poster's size, which is the deck's own page size and the size every recording is made at."""
+
+MINIMUM_CAPTION_SECONDS = 1.0
+"""How long a caption is on screen at least, because a line nobody can read is not a caption."""
+
+FILM_SECONDS_RANGE = (18.0, 26.0)
+"""How long the finished fixture runs, which is a sanity range around its twenty or so seconds."""
+
+SECOND_TOLERANCE = 0.05
+"""How far two measurements of one length may differ, which is one frame and a little rounding."""
+
+
+def qualified(row: dict[str, Any]) -> str:
+    """One cue as a reader names it, which is its section number and then its wire id."""
+    return f"{row['section']}:{row['cue']}"
+
+
+def moment(line: type[Event]) -> str:
+    """The word one event line carries, read from the model that declares it and never spelled here."""
+    return str(line.model_fields["event"].default)
+
+
+# ---- driving the command line --------------------------------------------------------------------
 
 
 @dataclass
-class Built:
-    """The fixture project after `build --no-voice`, with the exit code and the verify envelope of that build."""
+class Run:
+    """One `decktalk` command that has finished, with its exit code and its two streams."""
 
-    root: Path
-    exit_code: int
+    args: tuple[str, ...]
+    code: int
     stdout: str
-    verify: Envelope | None = None
-    network_attempts: list[str] = field(default_factory=list)
+    stderr: str
 
     @property
-    def out(self) -> Path:
-        return self.root / "build" / "out"
-
-    @property
-    def verified(self) -> VerifyPayload:
-        """What the strict verify run of the build measured, read as the types a caller reads."""
-        assert self.verify is not None and isinstance(self.verify.payload, VerifyPayload), self.verify
-        return self.verify.payload
-
-    def cli(self, *args: str) -> tuple[int, str]:
-        """Run one decktalk command on the project in process, so coverage counts it."""
-        buf = io.StringIO()
-        with redirect_stdout(buf):
-            code = main(["-p", str(self.root), *args])
-        return code, buf.getvalue()
-
-    def envelope(self, *args: str) -> Envelope:
-        """One command run with `--json`, read back through the typed reader any caller uses."""
-        _code, out = self.cli(*args)
-        doc = read_envelope(out)
-        assert doc.command == args[0], doc
+    def json(self) -> dict[str, Any]:
+        """The one flat object the command printed, checked against the reserved key contract."""
+        doc = json.loads(self.stdout)
+        assert isinstance(doc, dict), f"{self.args}: --json prints one object and nothing else"
+        assert RESERVED_KEYS <= set(doc), f"{self.args}: missing {sorted(RESERVED_KEYS - set(doc))}"
+        assert not RETIRED_KEYS & set(doc), f"{self.args}: carries the retired key {sorted(RETIRED_KEYS & set(doc))}"
+        assert doc["schema"] == 2, doc["schema"]
         return doc
 
+    @property
+    def findings(self) -> list[dict[str, Any]]:
+        return list(self.json["findings"])
+
+    def certain(self) -> list[dict[str, Any]]:
+        """Every finding the run is sure about, which is what decides the exit code by default."""
+        return [row for row in self.findings if row["certainty"] == Certainty.CERTAIN.value]
+
+
+BLOCK_THE_NETWORK = '''
+"""Refuse every socket connection but loopback, and write down what was attempted.
+
+Python imports this module at interpreter start when its directory is on PYTHONPATH, so it reaches
+the `decktalk` subprocess before the CLI does. A test that blocked sockets in its own process would
+prove nothing about a command an agent runs, which is the only way this build is ever driven.
+"""
+
+import os
+import socket
+
+LOOPBACK = ("127.0.0.1", "::1", "localhost")
+_real = socket.socket.connect
+
+
+def connect(self, address):
+    host = address[0] if isinstance(address, tuple) else ""
+    if not isinstance(address, tuple) or host in LOOPBACK:
+        return _real(self, address)
+    with open(os.environ["DECKTALK_E2E_ATTEMPTS"], "a", encoding="utf-8") as out:
+        out.write(repr(address) + "\\n")
+    raise OSError("the pipeline test blocks the network: " + repr(address))
+
+
+socket.socket.connect = connect
+'''
+
+
+@dataclass
+class Project:
+    """A project directory the tests drive `decktalk` against, and what the network saw it do."""
+
+    root: Path
+    shim: Path
+    attempts: Path
+    built: Run | None = None
+    verified: Run | None = None
+
+    def cli(self, *args: str) -> Run:
+        """One `decktalk` command, run as a real subprocess against this project with no network.
+
+        The CLI is reached through `python -m decktalk` rather than through a console script, so the
+        command under test is the one the wheel installs and no entry point has to be on PATH.
+        """
+        env = dict(os.environ)
+        env["DECKTALK_E2E_ATTEMPTS"] = str(self.attempts)
+        # A key or a settings file belonging to whoever runs the suite must not reach the build.
+        for name in ("DECKTALK_PROJECT", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"):
+            env.pop(name, None)
+        env["DECKTALK_CONFIG"] = str(self.shim / "no-machine-config.toml")
+        existing = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = os.pathsep.join([str(self.shim), *([existing] if existing else [])])
+        done = subprocess.run(
+            [sys.executable, "-m", "decktalk", "--project", str(self.root), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            cwd=self.shim,
+        )
+        return Run((*args,), done.returncode, done.stdout, done.stderr)
+
+    @property
+    def build_dir(self) -> Path:
+        return self.root / "build"
+
+    @property
+    def final_dir(self) -> Path:
+        return self.build_dir / "final"
+
+    @property
+    def film(self) -> Path:
+        return self.final_dir / f"{FILM_NAME}.mp4"
+
+    def deliverable(self, suffix: str) -> Path:
+        return self.final_dir / f"{FILM_NAME}{suffix}"
+
+    def recording_log(self, key: str) -> RecordingLog:
+        log = RecordingLog.read(self.build_dir / "recordings" / f"{key}.json")
+        assert log is not None, f"section {key} has no recording log"
+        return log
+
+    def network_attempts(self) -> list[str]:
+        if not self.attempts.exists():
+            return []
+        return [line for line in self.attempts.read_text(encoding="utf-8").splitlines() if line]
+
     def probe(self, *args: str, path: Path | None = None) -> dict[str, Any]:
-        cmd = [ffmpeg.ffprobe(), "-v", "error", "-of", "json", *args, str(path or self.out / "pipeline.mp4")]
-        return json.loads(subprocess.run(cmd, capture_output=True, text=True, check=True).stdout)
+        """One ffprobe reading of the finished film, or of another file this build wrote."""
+        command = [ffmpeg.ffprobe(), "-v", "error", "-of", "json", *args, str(path or self.film)]
+        return json.loads(subprocess.run(command, capture_output=True, text=True, check=True).stdout)
 
     def spans(self) -> dict[str, tuple[float, float]]:
-        """(start, end) of every section in the final mp4, from the section files' lengths."""
-        t = 0.0
-        spans: dict[str, tuple[float, float]] = {}
-        for key in ("01", "02", "03", "04", "05"):
-            dur = ffmpeg.probe_duration(self.root / "build" / "sections" / f"{key}.mp4")
-            spans[key] = (t, t + dur)
-            t += dur
-        return spans
+        """Where every section starts and ends in the finished film, read from the cut list."""
+        cuts = Cuts.read(self.final_dir / "cuts.json")
+        assert cuts is not None, "the build wrote no cut list"
+        return {row.key: (row.start, row.end) for row in cuts.sections}
 
 
-@contextmanager
-def offline(attempts: list[str]) -> Iterator[None]:
-    """Refuse every socket connection except loopback, and record what was attempted."""
-    real: Any = socket.socket.connect
-
-    def connect(self: Any, address: Any) -> None:
-        host = address[0] if isinstance(address, tuple) else ""
-        if not isinstance(address, tuple) or host in ("127.0.0.1", "::1", "localhost"):
-            return real(self, address)
-        attempts.append(repr(address))
-        raise OSError(f"the test blocks the network: {address!r}")
-
-    patched: Any = socket.socket
-    patched.connect = connect
-    try:
-        yield
-    finally:
-        patched.connect = real
+# ---- the fixture, built once -----------------------------------------------------------------------
 
 
-def chromium_available() -> bool:
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        return False
-    with sync_playwright() as pw:
-        return Path(pw.chromium.executable_path).exists()
+NEEDED_TOOLS = ("chromium", "ffmpeg")
+"""What a build of this fixture reaches for, which `decktalk doctor` is the one command that reports."""
+
+
+def missing_tools(shim: Path) -> list[str]:
+    """Every tool this machine does not hold, asked of DeckTalk through its own doctor command.
+
+    Asking the CLI rather than importing Playwright keeps this file on the surface an author uses,
+    and it means a machine with no browser skips rather than failing halfway through a recording.
+    """
+    done = subprocess.run(
+        [sys.executable, "-m", "decktalk", "doctor", "--json"], capture_output=True, text=True, check=False, cwd=shim
+    )
+    doc = json.loads(done.stdout)
+    held = {row["tool"]: row for row in doc["tools"]}
+    return [name for name in NEEDED_TOOLS if not (held.get(name) or {}).get("path")]
 
 
 def generate_media(root: Path) -> None:
-    """The clip and the beds, from ffmpeg's lavfi sources. Videos and audio never go in git."""
+    """The clip and the three beds, from ffmpeg's own sources, because no media file is tracked."""
     media = root / "media"
     ffmpeg.run(
-        "-f", "lavfi", "-i", "testsrc=s=1280x720:r=30", "-f", "lavfi", "-i", "sine=f=660:r=48000",
-        "-t", "2.5", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(media / "broll.mp4"),
+        "-f", "lavfi", "-i", f"testsrc=s=1280x720:r={CLIP_FPS}",
+        "-f", "lavfi", "-i", f"sine=f={CLIP_TONE_HZ}:r=48000",
+        "-t", str(CLIP_SECONDS), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        str(media / "broll.mp4"),
     )  # fmt: skip
     ffmpeg.run("-f", "lavfi", "-i", "sine=f=220:r=44100", "-t", "8", "-af", "volume=0.5", str(media / "music.mp3"))
     ffmpeg.run("-f", "lavfi", "-i", "anoisesrc=c=pink:r=44100:a=0.2", "-t", "6", str(media / "ambience.mp3"))
@@ -150,11 +306,11 @@ def generate_media(root: Path) -> None:
 def hold(path: Path) -> IO[str] | None:
     """The lock file held for this session, or None when another session already holds it.
 
-    The whole point is that two sessions never share one output directory, because the build deletes
-    it and writes it again. Where no advisory lock exists, one session at a time is the rule instead.
+    Two sessions must never share one output directory, because the build deletes it and writes it
+    again. Where no advisory lock exists, one session at a time is the rule instead.
     """
     handle = path.open("w", encoding="utf-8")
-    if fcntl is None:  # Windows has no advisory lock, and its runner builds one session at a time.
+    if fcntl is None:
         return handle
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -165,655 +321,465 @@ def hold(path: Path) -> IO[str] | None:
 
 
 @pytest.fixture(scope="session")
-def built() -> Iterator[Built]:
-    """Copy the fixture, add the runtime and KaTeX, generate the media, and build it without voice offline."""
-    if ffmpeg.installed_paths() is None:
-        pytest.skip("ffmpeg is missing: run `decktalk install` first")
-    if not chromium_available():
-        pytest.skip("Chromium is missing: run `decktalk install` first")
-    assert not katex_missing(), "the packaged KaTeX copy is incomplete"
-    root = OUT / "pipeline"
+def built() -> Iterator[Project]:
+    """Copy the fixture, add the runtime and KaTeX, generate the media, and build it with no voice."""
+    assert katex_missing() == [], "the packaged KaTeX copy is incomplete"
     OUT.mkdir(parents=True, exist_ok=True)
+    if absent := missing_tools(OUT):
+        pytest.skip(f"{', '.join(absent)} is missing: run `decktalk install` first")
     lock = hold(OUT / "pipeline.lock")
     if lock is None:
-        pytest.skip(f"another session is building {root}: set DECKTALK_E2E_OUT to build somewhere else")
+        pytest.skip(f"another session is building under {OUT}: set DECKTALK_E2E_OUT to build elsewhere")
+    root = OUT / FILM_NAME
+    shim = OUT / "shim"
     shutil.rmtree(root, ignore_errors=True)
+    shutil.rmtree(shim, ignore_errors=True)
+    shim.mkdir(parents=True)
+    (shim / "sitecustomize.py").write_text(BLOCK_THE_NETWORK, encoding="utf-8")
     shutil.copytree(FIXTURE, root)
     shutil.copyfile(runtime_path(), root / "deck" / RUNTIME_FILE)
-    assert vendor_katex(root / "deck")
+    vendor_katex(root / "deck")
     generate_media(root)
-    # The user's own settings file and any key in the environment must not reach the build.
-    env = {
-        "DECKTALK_CONFIG": str(OUT / "no-user-config.toml"),
-        "DECKTALK_PROJECT": None,
-        "ELEVENLABS_API_KEY": None,
-        "ELEVENLABS_VOICE_ID": None,
-    }
-    saved = {k: os.environ.get(k) for k in env}
-    for k, v in env.items():
-        os.environ.pop(k, None)
-        if v is not None:
-            os.environ[k] = v
+
+    project = Project(root=root, shim=shim, attempts=shim / "attempts.txt")
     try:
-        attempts: list[str] = []
-        built = Built(root, 1, "", None, attempts)
-        with offline(attempts):
-            built.exit_code, built.stdout = built.cli("build", "--no-voice")
-            # One strict verify run over the sections with no slate. Its JSON is kept for the CI upload.
-            _code, out = built.cli(
-                "verify", "--json", "--strict", "--exit-zero", "--only", "1", "--only", "2", "--only", "4"
-            )
-        (root / "verify.json").write_text(out, encoding="utf-8")
-        built.verify = read_envelope(out)
-        yield built
+        project.built = project.cli("build", "--no-voice", "--json")
+        # One reading over the sections that carry cues, kept on disk for the CI upload on a failure.
+        project.verified = project.cli(
+            "verify", "--json", "--fail-on", "never", "--section", "1", "--section", "2", "--section", "4"
+        )
+        (root / "verify.json").write_text(project.verified.stdout, encoding="utf-8")
+        yield project
     finally:
-        for k, v in saved.items():
-            os.environ.pop(k, None)
-            if v is not None:
-                os.environ[k] = v
         lock.close()
 
 
-def voiced_copy(built: Built, name: str, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A copy of the built project whose takes sit under the content hash a real voiced run would compute.
-
-    A take is found by its content, so the placeholder files are renamed to the digests a voiced run
-    would give them. The dry run then plans against real-looking takes and sends nothing, so a
-    placeholder key is enough for it.
-    """
-    root = OUT / name
-    shutil.rmtree(root, ignore_errors=True)
-    shutil.copytree(
-        built.root,
-        root,
-        ignore=shutil.ignore_patterns("recordings", "out", "sections", "preflight", "screenshots", "*.mp4"),
-    )
-    monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
-    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "test-voice")
-    project = Project.load(root)
-    cfg = project.settings.narration
-    model = project.voice.model or cfg.model
-    settings = project.voice.api_settings()
-    provider = get_provider(project.voice.provider, VoiceContext(settings=project.settings, secrets=project.env))
-    take_index = Takes.load(project.takes_path)
-    assert take_index is not None and take_index.estimated
-    take_index.model = model
-    for seg in project.script_sections()[1]:
-        request = SpeechRequest(seg.tts_text, model, voice_settings=settings, output_format=cfg.output_format)
-        row = take_index.sections[seg.key]
-        digest = text_hash(seg, cfg, provider.cache_key(request), settings)
-        for old, new in ((row.file, take_name(digest)), (row.words_file, words_name(digest))):
-            (project.narration_dir / old).rename(project.narration_dir / new)
-        row.file, row.words_file, row.hash, row.voiced = take_name(digest), words_name(digest), digest, True
-    take_index.save(project.takes_path)
-    assert not take_index.estimated
-    return root
+# ---- the build -----------------------------------------------------------------------------------
 
 
-def planned(doc: Envelope) -> NarratePayload:
-    assert isinstance(doc.payload, NarratePayload), doc
-    return doc.payload
+def test_the_build_finds_nothing_with_the_network_blocked(built: Project) -> None:
+    """The build's last stage is the real verify, so exit 0 means every reveal landed on its word."""
+    assert built.built is not None
+    assert built.network_attempts() == [], built.network_attempts()
+    assert built.built.certain() == [], built.built.stderr
+    assert built.built.code == FOUND_NOTHING, built.built.stderr
+    assert built.film.is_file() and built.film.stat().st_size > 0
 
 
-def statuses(doc: Envelope) -> dict[str, TakeStatus]:
-    return {s.key: s.status for s in planned(doc).sections}
+def relative(built: Project, path: Path) -> str:
+    """One path as the CLI prints it, which is always relative to the project root."""
+    return path.relative_to(built.root).as_posix()
 
 
-def srt_cues(path: Path) -> list[tuple[float, float, str]]:
-    """Every caption of an SRT file as (start, end, text), in the order it plays."""
-    rows: list[tuple[float, float, str]] = []
-    blocks = path.read_text(encoding="utf-8").strip().split("\n\n")
-    for block in blocks:
-        lines = block.splitlines()
-        [stamp] = [line for line in lines if " --> " in line]
-        a, b = srt_times(stamp)
-        rows.append((a, b, "\n".join(lines[lines.index(stamp) + 1 :])))
-    return rows
+def test_the_build_reports_every_stage_and_the_film_it_wrote(built: Project) -> None:
+    """`build`'s own fields are the six stages, the film and what the run wrote, in one flat object."""
+    assert built.built is not None
+    doc = built.built.json
+    assert [row["stage"] for row in doc["stages"]] == [stage.value for stage in Stage]
+    assert {row["outcome"] for row in doc["stages"]} <= {outcome.value for outcome in Outcome}
+    assert doc["film"] == relative(built, built.film)
+    assert doc["voice"] == Voicing.PLACEHOLDER.value, "--no-voice never asks a provider for a take"
+    assert doc["spend"]["dollars"] == 0, doc["spend"]
+    assert relative(built, built.film) in set(doc["written"])
+    assert doc["run"], "a build opens a run, so its id is on the result an agent reads"
 
 
-def srt_times(stamp: str) -> tuple[float, float]:
-    """The two times of one SRT timestamp line, in seconds."""
-
-    def seconds(value: str) -> float:
-        hms, ms = value.split(",")
-        h, m, s = hms.split(":")
-        return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
-
-    a, b = stamp.split(" --> ")
-    return seconds(a), seconds(b)
-
-
-# ---- the build ---------------------------------------------------------------------------------
-
-
-def test_build_exits_zero_with_the_network_blocked(built: Built, request: pytest.FixtureRequest) -> None:
-    """The build's last stage is the real verify, so exit 0 means every reveal landed on its word.
-
-    A hosted runner off Linux presents frames late, which is the one failure this row tolerates, and
-    `test_cue_timing_gate` measures how late. Every other fault still fails here, on every platform.
-    """
-    v = built.verified
-    verdicts = [r.verdict for r in (*v.cues, *v.starts, *v.cuts, *v.seams)]
-    verdicts += [verdict for r in v.recordings for verdict in r.verdicts]
-    assert_build_finished(built.exit_code, verdicts, built.stdout, request)
-    assert built.network_attempts == []
-    assert (built.out / "pipeline.mp4").exists()
+def test_the_build_writes_one_events_file_an_agent_can_read(built: Project) -> None:
+    """Every line is a whole event, the six stages each open and close, and each section is named."""
+    assert built.built is not None
+    run_id = built.built.json["run"]
+    path = built.build_dir / "events" / f"{run_id}.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    rows = [json.loads(line) for line in lines]
+    assert len(rows) == len(lines), "every line is one whole event"
+    assert all(row["run"] == run_id for row in rows), "a run's file holds that run's lines alone"
+    assert [row["seq"] for row in rows] == sorted(row["seq"] for row in rows), "seq counts up within a run"
+    assert rows[0]["event"] == moment(RunStart) and rows[-1]["event"] == moment(RunDone)
+    started = [row["stage"] for row in rows if row["event"] == moment(StageStart)]
+    done = [row["stage"] for row in rows if row["event"] == moment(StageDone)]
+    assert started == [stage.value for stage in Stage], started
+    assert done == started, "a file whose last stage only started is a run that died"
+    recorded = [row for row in rows if row.get("stage") == Stage.RECORD.value and row.get("section")]
+    opened = {row["section"] for row in recorded if row["event"] == moment(SectionStart)}
+    closed = {row["section"] for row in recorded if row["event"] == moment(SectionDone)}
+    assert opened == closed == {int(key) for key in SPOKEN}
+    assert all(row["time"].endswith("Z") for row in rows), "every line carries a UTC instant"
 
 
-def test_the_build_writes_a_progress_log_an_agent_can_read(built: Built) -> None:
-    log = built.root / "build" / "progress.jsonl"
-    rows = read_rows(log)
-    assert len(rows) == len(log.read_text(encoding="utf-8").splitlines()), "every line is a whole row"
-    stages = list(Stage)
-    assert {r.stage for r in rows} == set(stages)
-    assert all(r.stage_count == len(stages) for r in rows)
-    assert [r.stage for r in rows if r.event is ProgressEvent.START and r.section is None] == stages
-    # Every stage closes its own row, so a log whose last stage says start alone is a run that died.
-    assert [r.stage for r in rows if r.event is ProgressEvent.DONE and r.section is None] == stages
-    # Every section opens and closes a row of its own, so a reader of a long run sees it go.
-    recorded = [r for r in rows if r.stage is Stage.RECORD and r.section]
-    opened = [r.section for r in recorded if r.event is ProgressEvent.START]
-    closed = {r.section for r in recorded if r.event in (ProgressEvent.DONE, ProgressEvent.SKIP)}
-    assert set(opened) == closed == {int(k) for k in SPOKEN}
-    assert all(r.ts.endswith("Z") and r.pid == os.getpid() for r in rows)
-    assert all(r.detail and r.detail.endswith(".") for r in rows), "a detail is one sentence"
+def test_the_build_writes_every_artifact_the_pipeline_declares(built: Project) -> None:
+    """A path an agent finds from `Artifact` and nowhere else, so no reader spells a build path."""
+    for artifact in (Artifact.TAKES, Artifact.CUE_TIMES, Artifact.RECORDINGS, Artifact.FINAL):
+        assert (built.root / artifact.value).exists(), artifact.value
 
 
-def test_build_dry_run_prints_the_stage_plan(built: Built) -> None:
-    doc = built.envelope("build", "--dry-run", "--json")
-    assert doc.payload == BuildPlanPayload(stages=list(Stage), missing=[]) and doc.ok
-    doc = built.envelope("build", "--dry-run", "--json", "--from", "record", "--to", "assemble")
-    assert doc.payload == BuildPlanPayload(stages=[Stage.RECORD, Stage.ASSEMBLE], missing=[])
+def test_the_missing_optional_clip_plays_its_slate(built: Project) -> None:
+    """Section 5 names a clip file that is never there, so a titled slate plays for slate_seconds."""
+    start, end = built.spans()["05"]
+    assert end - start == pytest.approx(SLATE_SECONDS, abs=SECOND_TOLERANCE)
+    cuts = Cuts.read(built.final_dir / "cuts.json")
+    assert cuts is not None
+    [row] = [section for section in cuts.sections if section.key == "05"]
+    assert row.substitute == Substitute.SLATE
 
 
-def test_the_missing_optional_clip_plays_its_slate(built: Built) -> None:
-    """Section 5 has no clip file, so a titled slate of slate_seconds plays there. Asserted apart from --strict."""
-    assert (built.out / "slates" / "05-slate.png").stat().st_size > 0
-    assert ffmpeg.probe_duration(built.root / "build" / "sections" / "05.mp4") == pytest.approx(1.0, abs=1 / FPS)
-    _yavg, ymax = frames.luma_at(built.out / "pipeline.mp4", built.spans()["05"][0] + 0.5)
-    assert ymax > 60, "the slate frame is black"
-
-
-def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: Built) -> None:
-    """`record` writes one log per section with its own measurement and its own verdicts."""
-    rows: dict[str, RecordingLog] = {}
-    for key in SPOKEN:
-        recording = RecordingLog.load(built.root / "build" / "recordings" / f"{key}.json")
-        assert recording is not None and recording.checks is not None, key
-        rows[key] = recording
-    assert {k: r.checks.verdicts for k, r in rows.items() if r.checks} == {k: () for k in SPOKEN}
-    assert all(r.page_errors == [] for r in rows.values())
-    assert all(r.t0_seconds is not None and str(r.t0_method).startswith("cover") for r in rows.values())
-    assert all(r.url.startswith("http://project.localhost/") for r in rows.values())
+def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: Project) -> None:
+    """`record` writes one log per page section carrying its own measurement and its own findings."""
+    logs = {key: built.recording_log(key) for key in SPOKEN}
+    assert {key: list(log.findings) for key, log in logs.items()} == {key: [] for key in SPOKEN}
+    assert all(log.checks is not None for log in logs.values())
+    assert all(log.t0_seconds is not None and not log.t0_guessed for log in logs.values())
+    assert all(log.url.startswith("http://") for log in logs.values())
     # Every project file the page loaded is named, which is what the next run keys its skip on.
-    assert "deck/index.html" in rows["01"].assets and "deck/decktalk-runtime.js" in rows["01"].assets
+    assert "deck/index.html" in logs["01"].assets
+    assert f"deck/{RUNTIME_FILE}" in logs["01"].assets
 
 
-def test_a_second_record_run_keeps_every_section(built: Built) -> None:
-    """Nothing the pages are recorded from has moved, so the run opens no browser and keeps every webm."""
-    before = {k: (built.root / "build" / "recordings" / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
-    doc = built.envelope("record", "--json")
-    assert doc.ok, doc.findings
-    rows = {r.key: r for r in doc.payload.recordings}
-    assert set(rows) == set(SPOKEN) and all(r.kept for r in rows.values())
-    after = {k: (built.root / "build" / "recordings" / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
+def test_no_page_loaded_anything_from_another_origin(built: Project) -> None:
+    """The film may depend on no host it does not own, which is what the local origin is for."""
+    for key in SPOKEN:
+        assert list(built.recording_log(key).external) == [], key
+
+
+def test_a_second_record_run_keeps_every_section(built: Project) -> None:
+    """Nothing the pages are recorded from has moved, so the run opens no browser and keeps each webm."""
+    before = {key: (built.build_dir / "recordings" / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
+    again = built.cli("record", "--json")
+    doc = again.json
+    assert again.code == FOUND_NOTHING, again.stderr
+    rows = {row["key"]: row for row in doc["sections"]}
+    assert set(rows) == set(SPOKEN)
+    assert all(row["kept"] for row in rows.values()), rows
+    after = {key: (built.build_dir / "recordings" / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
     assert after == before
 
 
-def test_verify_strict_finds_nothing_but_timing(built: Built) -> None:
-    """Every start is on screen, every cut is quiet, and every one of the seven cues changed the picture."""
-    v = built.verified
-    assert [f"{c.section}:{c.cue}" for c in v.cues] == list(CUES)
-    # Each verdict reads back as its member, so a row is compared with a verdict and never with a string.
-    assert {s.key: s.verdict for s in v.starts} == {k: Verdict.OK for k in ("01", "02", "03", "04", "05")}
-    assert {c.key: c.verdict for c in v.cuts} == {k: Verdict.QUIET for k in SPOKEN}
-    bad = [c for c in v.cues if c.verdict not in (Verdict.CHANGED, Verdict.OFF_CUE)]
-    assert not bad, bad  # THIN CHANGE?, NO CHANGE, UNRESOLVED and skipped all fail here
-    assert all(c.av_ms is not None for c in v.cues), "a build without voice carries a click at every cued word"
+# ---- what verify measured -------------------------------------------------------------------------
 
 
-def test_a_reveal_on_a_page_with_nothing_moving_still_lands_on_its_frame(
-    built: Built, request: pytest.FixtureRequest
-) -> None:
-    """The guard against Chromium ceasing to present frames on a page where nothing is moving.
+def test_verify_measures_every_cue_every_start_every_cut_and_the_seam(built: Project) -> None:
+    """Every cue the fixture declares is measured, and nothing it measured is a certain finding."""
+    assert built.verified is not None
+    doc = built.verified.json
+    assert [qualified(row) for row in doc["cues"]] == list(CUES)
+    assert {row["section"] for row in doc["starts"]} == {1, 2, 4}
+    assert {row["section"] for row in doc["cuts"]} == {1, 2, 4}
+    assert [row["section"] for row in doc["seams"]] == [2], "section 2 is the one seamless section"
+    assert built.verified.certain() == [], built.verified.certain()
+    assert doc["film_seconds"] > FILM_SECONDS_RANGE[0]
 
-    A reveal is a single instant change on an otherwise motionless page, and a compositor with no
-    other work can stop swapping frames until something moves, which stamps the change late or
-    early and moves every measured cue with it. These are real recordings of real pages, so a
-    recorder that stopped keeping frames flowing would show here as cues drifting off their mark
-    together rather than as one bad cue. `test_cue_timing_gate` is where the drift is measured,
-    and this is where the property it protects is named.
+
+def test_every_cue_changed_the_picture_it_was_measured_against(built: Project) -> None:
+    """The guard against Chromium ceasing to present frames on a page where nothing else is moving.
+
+    A reveal is one instant change on an otherwise motionless page, and a compositor with no other
+    work can stop swapping frames until something moves, which stamps the change late and moves every
+    measured cue with it. A recorder that stopped keeping frames flowing shows up here as cues that
+    changed nothing at all rather than as one bad cue.
     """
-    cues = built.verified.cues
-    assert cues, "the fixture has cued reveals, so a run with none measured nothing at all"
-    # Every cued reveal changed the picture, which is what a frame that was never presented loses.
-    assert all(c.changed_percent is not None and c.changed_percent > 0 for c in cues), cues
-    assert all(c.verdict in (Verdict.CHANGED, Verdict.OFF_CUE) for c in cues), cues
-    # A stalled compositor shows as a gap between frames that a viewer can see, after narration t=0.
-    # A gap under the cover is warm-up that the cut trims, so only the visible part counts.
-    stalls = {}
-    for key in SPOKEN:
-        recording = RecordingLog.load(built.root / "build" / "recordings" / f"{key}.json")
-        assert recording is not None, key
-        stalls[key] = recording.worst_stall_ms
-    if gates_timing(request):
-        assert not any(stalls.values()), stalls
-    elif any(stalls.values()):
-        print(f"visible frame stalls reported and not gated on {sys.platform}: {stalls}")
+    assert built.verified is not None
+    rows = built.verified.json["cues"]
+    assert rows, "the fixture declares cued reveals, so a run that measured none measured nothing"
+    unchanged = [row for row in rows if not row["skipped"] and not (row["change_percent"] or 0) > 0]
+    assert unchanged == [], unchanged
 
 
-def test_cue_timing_gate(built: Built, request: pytest.FixtureRequest) -> None:
-    """OFF CUE fails on Linux. macOS and Windows report it and assert the wider limits instead."""
-    gate = gates_timing(request)
-    rows = built.verified.cues
-    offsets = {f"{c.section}:{c.cue}": (c.offset_ms, c.av_ms) for c in rows}
-    worst = max((abs(o) for o, _ in offsets.values() if o is not None), default=0)
-    line = f"largest cue offset {worst} ms over {len(rows)} cues ({'gate' if gate else 'report'} on {sys.platform})"
-    print(line)
-    summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary:
-        with Path(summary).open("a", encoding="utf-8") as out:
-            out.write(f"- pipeline test: {line}\n")
-    off = [c for c in rows if c.verdict is Verdict.OFF_CUE]
-    if gate:
-        assert not off, off
-        assert built.verify is not None and built.verify.ok, built.verify
-        return
-    if off:
-        print(f"{len(off)} OFF CUE row(s) reported and not gated: this platform's hosted runner presents frames late")
-    offset_limit = 4 * 1000 / FPS + 0.5
-    av_limit = 5 * 1000 / FPS + 0.5
-    for check, (offset_ms, av_ms) in offsets.items():
-        assert offset_ms is not None and abs(offset_ms) <= offset_limit, (check, offset_ms)
-        assert av_ms is not None and abs(av_ms) <= av_limit, (check, av_ms)
+def test_every_cue_lands_inside_the_limit_the_project_publishes(built: Project) -> None:
+    """The limit is read from the project's own settings, so no number here decides a verdict."""
+    assert built.verified is not None
+    published = built.cli("config", "get", "verify.cue_offset_max_ms", "--json")
+    limit_ms = float(published.json["key"]["value"])
+    late = [
+        (qualified(row), row["offset"])
+        for row in built.verified.json["cues"]
+        if row["offset"] is not None and abs(row["offset"]) * 1000 > limit_ms
+    ]
+    assert late == [], late
 
 
-def test_section_2_is_seamless_after_section_1(built: Built) -> None:
-    [seam] = built.verified.seams
-    assert (seam.key, seam.verdict) == ("02", Verdict.OK), seam
-    assert seam.changed_percent <= 0.1
+def test_section_2_opens_on_section_1s_last_frame(built: Project) -> None:
+    assert built.verified is not None
+    [seam] = built.verified.json["seams"]
+    assert seam["section"] == 2
+    assert seam["drift"] is not None
 
 
-def test_streams_start_together_and_sections_sum_to_the_film(built: Built) -> None:
+# ---- the finished film ------------------------------------------------------------------------------
+
+
+def test_streams_start_together_and_the_sections_sum_to_the_film(built: Project) -> None:
     streams = built.probe("-show_entries", "stream=codec_type,start_time")["streams"]
-    starts = {s["codec_type"]: float(s["start_time"]) for s in streams if s["codec_type"] in ("video", "audio")}
+    starts = {row["codec_type"]: float(row["start_time"]) for row in streams if row["codec_type"] in ("video", "audio")}
     assert starts == {"video": 0.0, "audio": 0.0}
     spans = built.spans()
-    frames = built.probe("-select_streams", "v", "-show_entries", "frame=pts_time")["frames"]
-    pts = {round(float(f["pts_time"]), 3) for f in frames}
+    assert sorted(spans) == list(EVERY_SECTION)
+    presented = built.probe("-select_streams", "v", "-show_entries", "frame=pts_time")["frames"]
+    frame_times = {round(float(row["pts_time"]), 3) for row in presented}
     for key, (start, _end) in spans.items():
-        assert round(start, 3) in pts, f"section {key} starts at {start}, between frames"
+        assert round(start, 3) in frame_times, f"section {key} starts at {start}, which is between two frames"
     total = spans["05"][1]
-    assert abs(total - ffmpeg.probe_duration(built.out / "pipeline.mp4")) < 0.05
-    assert 18 < total < 26, f"the fixture should run about twenty seconds, not {total:.1f}"
+    assert abs(total - ffmpeg.probe_duration(built.film)) < SECOND_TOLERANCE
+    assert FILM_SECONDS_RANGE[0] < total < FILM_SECONDS_RANGE[1], f"the fixture runs {total:.1f}s"
 
 
-def test_chapters_merge_the_two_blocks_sections(built: Built) -> None:
+def test_the_two_blocks_sections_share_one_chapter(built: Project) -> None:
     chapters = built.probe("-show_chapters")["chapters"]
     spans = built.spans()
-    assert [c["tags"]["title"] for c in chapters] == ["Blocks", "B-roll", "Equation", "Missing"]
+    assert [row["tags"]["title"] for row in chapters] == ["Blocks", "B-roll", "Equation", "Missing"]
     want = [spans["01"][0], spans["03"][0], spans["04"][0], spans["05"][0]]
     for chapter, start in zip(chapters, want, strict=True):
-        assert abs(float(chapter["start_time"]) - start) < 1e-6, (chapter, start)
-    assert abs(float(chapters[0]["end_time"]) - spans["02"][1]) < 1e-6, "the merged chapter ends with section 2"
+        assert float(chapter["start_time"]) == pytest.approx(start, abs=SECOND_TOLERANCE), chapter
+    assert float(chapters[0]["end_time"]) == pytest.approx(spans["02"][1], abs=SECOND_TOLERANCE)
 
 
-def test_captions_and_chapter_files_are_written(built: Built) -> None:
-    for name in ("pipeline.srt", "pipeline.vtt", "pipeline.chapters.txt"):
-        assert (built.out / name).stat().st_size > 0, name
+def test_the_cut_list_records_where_every_section_plays(built: Project) -> None:
+    cuts = Cuts.read(built.final_dir / "cuts.json")
+    assert cuts is not None
     spans = built.spans()
-    clip_at, clip_end = spans["03"]
-    captions = [(a, b) for a, b, _text in srt_cues(built.out / "pipeline.srt")]
-    assert captions
-    over = [c for c in captions if c[0] < clip_end - 1e-3 and c[1] > clip_at + 1e-3]
-    assert not over, f"captions over the clip at {clip_at:.2f}-{clip_end:.2f}: {over}"
-    assert any(clip_end <= c[0] < spans["04"][1] for c in captions), "section 4 has no captions after the clip"
-    assert "WEBVTT" in (built.out / "pipeline.vtt").read_text(encoding="utf-8")[:6]
-
-
-def test_the_cut_list_records_where_every_section_plays(built: Built) -> None:
-    cuts = json.loads((built.out / "cuts.json").read_text(encoding="utf-8"))
-    spans = built.spans()
-    assert cuts["fps"] == FPS and abs(cuts["total_seconds"] - spans["05"][1]) < 0.05
-    rows = {f"{r['section']:02d}": r for r in cuts["sections"]}
-    assert set(rows) == set(spans)
+    rows = {row.key: row for row in cuts.sections}
+    assert set(rows) == set(EVERY_SECTION)
+    assert rows["03"].kind is SectionKind.CLIP and rows["03"].source == "media/broll.mp4"
+    assert rows["01"].source == "build/recordings/01.webm"
+    assert [row.key for row in cuts.sections if row.substitute is not None] == ["05"]
+    assert cuts.fps > 0
     for key, (start, end) in spans.items():
-        assert (rows[key]["start"], rows[key]["end"]) == pytest.approx((start, end), abs=1e-3)
-    assert rows["03"]["kind"] == SectionKind.CLIP.value and rows["03"]["source"] == "media/broll.mp4"
-    assert rows["01"]["source"] == "build/recordings/01.webm"
-    # Section 5's clip is missing on purpose, so the row says a slate stands in for it.
-    assert rows["05"]["substitute"] == Substitute.SLATE.value
-    assert [r for r in cuts["sections"] if r["substitute"]] == [rows["05"]]
+        assert (rows[key].start, rows[key].end) == pytest.approx((start, end), abs=1e-3)
 
 
-def test_the_transcript_page_and_the_poster_are_written(built: Built) -> None:
-    """The transcript is the media alternative, and the poster is a lossless PNG from the page."""
-    page = (built.out / "pipeline-transcript.html").read_text(encoding="utf-8")
+def test_every_deliverable_beside_the_film_is_written(built: Project) -> None:
+    """One command's worth of output: the captions, the chapters, the transcript and the poster."""
+    for suffix in (".srt", ".vtt", ".chapters.txt", "-transcript.html", "-poster.png"):
+        assert built.deliverable(suffix).stat().st_size > 0, suffix
+    assert (built.final_dir / "cuts.json").stat().st_size > 0
+
+
+def test_the_transcript_page_is_the_media_alternative(built: Project) -> None:
+    page = built.deliverable("-transcript.html").read_text(encoding="utf-8")
     assert page.startswith("<!doctype html>") and "<script" not in page
     for chapter in ("Blocks", "B-roll", "Equation", "Missing"):
         assert f"<h2>{chapter}</h2>" in page, chapter
     assert "A first block, a second beside it, a third below." in page
-    assert "A clip plays here: media/broll.mp4." in page and "A placeholder slate frame plays here." in page
 
-    # A player names the audio from this tag, and the container takes the three-letter code alone.
+
+def test_the_poster_is_drawn_by_the_page_rather_than_taken_from_the_film(built: Project) -> None:
+    poster = built.deliverable("-poster.png")
+    assert poster.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "the poster is a lossless PNG"
+    probed = built.probe("-show_entries", "stream=width,height,codec_name", path=poster)["streams"][0]
+    assert (probed["codec_name"], probed["width"], probed["height"]) == ("png", POSTER_WIDTH, POSTER_HEIGHT)
+    first = built.build_dir / "first-frame.png"
+    ffmpeg.run("-ss", "0.5", "-i", str(built.film), "-frames:v", "1", "-y", str(first))
+    changed = frames.changed_images_percent(
+        first, poster, level=FRAME_COMPARE_LEVEL, width=FRAME_COMPARE_WIDTH, height=FRAME_COMPARE_HEIGHT
+    )
+    assert changed > 1.0, "the poster is drawn by the page with its reveals fired, not lifted from the mp4"
+
+
+def test_the_player_is_told_what_language_the_film_speaks(built: Project) -> None:
     streams = built.probe("-show_entries", "stream=codec_type:stream_tags=language")["streams"]
-    tagged = {s["codec_type"]: s.get("tags", {}).get("language") for s in streams}
+    tagged = {row["codec_type"]: row.get("tags", {}).get("language") for row in streams}
     assert tagged["video"] == "eng" and tagged["audio"] == "eng"
 
-    poster = built.out / "pipeline-poster.png"
-    assert poster.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "the poster is a lossless PNG"
-    probe = built.probe("-show_entries", "stream=width,height,codec_name", path=poster)["streams"][0]
-    assert (probe["codec_name"], probe["width"], probe["height"]) == ("png", 1920, 1080)
-    # Drawn by the page with its reveals fired, so it is not the film's first frame with nothing on it.
-    first = built.root / "build" / "first-frame.png"
-    ffmpeg.run("-ss", "0.5", "-i", str(built.out / "pipeline.mp4"), "-frames:v", "1", "-y", str(first))
-    assert frames.changed_images_percent(first, poster, level=40, width=480, height=270) > 1.0, (
-        "the poster is drawn by the page, not taken from the mp4"
-    )
+
+def test_the_broll_clip_keeps_its_own_sound(built: Project) -> None:
+    start, end = built.spans()["03"]
+    assert end - start == pytest.approx(CLIP_SECONDS, abs=SECOND_TOLERANCE)
+    assert audio.rms_db(built.film, start + 0.5, end - start - 1.0) > CLIP_TONE_FLOOR_DBFS
 
 
-def test_the_cued_sound_reaches_the_captions(built: Built) -> None:
-    """A sound a viewer is meant to notice is written down where it plays, in both caption files."""
-    srt = (built.out / "pipeline.srt").read_text(encoding="utf-8")
-    vtt = (built.out / "pipeline.vtt").read_text(encoding="utf-8")
-    assert "[a tick lands]" in srt and "[a tick lands]" in vtt
+# ---- the captions ------------------------------------------------------------------------------------
+
+
+def srt_cues(path: Path) -> list[tuple[float, float, str]]:
+    """Every caption of an SRT file as its start, its end and its text, in the order it plays."""
+    rows: list[tuple[float, float, str]] = []
+    for block in path.read_text(encoding="utf-8").strip().split("\n\n"):
+        lines = block.splitlines()
+        [stamp] = [line for line in lines if " --> " in line]
+        start, end = (srt_seconds(value) for value in stamp.split(" --> "))
+        rows.append((start, end, "\n".join(lines[lines.index(stamp) + 1 :])))
+    return rows
+
+
+def srt_seconds(value: str) -> float:
+    """One SRT timestamp in seconds, which is hours, minutes, seconds and a comma before the millis."""
+    hms, millis = value.strip().split(",")
+    hours, minutes, seconds = hms.split(":")
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(millis) / 1000
+
+
+def test_no_caption_plays_over_the_clip_and_the_film_has_both_caption_files(built: Project) -> None:
     spans = built.spans()
-    cues = srt_cues(built.out / "pipeline.srt")
-    [(at, end, text)] = [row for row in cues if "[a tick lands]" in row[2]]
-    assert spans["01"][0] <= at < spans["01"][1], "the sound caption sits in the section that cues it"
-    assert text.splitlines()[-1] == "[a tick lands]", "the sound is a line of its own"
-    assert end - at >= 1.0, "no caption is on screen for under a second"
+    clip_start, clip_end = spans["03"]
+    captions = [(start, end) for start, end, _text in srt_cues(built.deliverable(".srt"))]
+    assert captions
+    over = [row for row in captions if row[0] < clip_end - 1e-3 and row[1] > clip_start + 1e-3]
+    assert over == [], f"captions play over the clip at {clip_start:.2f} to {clip_end:.2f}: {over}"
+    assert any(clip_end <= start < spans["04"][1] for start, _end in captions), "section 4 has no captions"
+    assert built.deliverable(".vtt").read_text(encoding="utf-8").startswith("WEBVTT")
 
 
-def test_no_two_captions_are_on_screen_at_once(built: Built) -> None:
+def test_the_cued_sound_reaches_the_captions(built: Project) -> None:
+    """A sound a viewer is meant to notice is written down where it plays, in both caption files."""
+    caption = "[a tick lands]"
+    assert caption in built.deliverable(".srt").read_text(encoding="utf-8")
+    assert caption in built.deliverable(".vtt").read_text(encoding="utf-8")
+    start, end, text = next(row for row in srt_cues(built.deliverable(".srt")) if caption in row[2])
+    first_start, first_end = built.spans()["01"]
+    assert first_start <= start < first_end, "the sound caption sits in the section that cues it"
+    assert text.splitlines()[-1] == caption, "the sound is a line of its own"
+    assert end - start >= MINIMUM_CAPTION_SECONDS
+
+
+def test_no_two_captions_are_on_screen_at_once(built: Project) -> None:
     """Two overlapping cues are drawn twice or dropped, so a sound under speech joins the speech cue."""
-    spans = [(a, b) for a, b, _text in srt_cues(built.out / "pipeline.srt")]
+    spans = [(start, end) for start, end, _text in srt_cues(built.deliverable(".srt"))]
     assert spans == sorted(spans)
-    assert all(b <= next_a for (_a, b), (next_a, _b) in zip(spans, spans[1:], strict=False))
-    assert all(b - a >= 1.0 - 1e-3 for a, b in spans), "no caption is on screen for under a second"
+    assert all(end <= next_start for (_start, end), (next_start, _end) in zip(spans, spans[1:], strict=False))
+    assert all(end - start >= MINIMUM_CAPTION_SECONDS - 1e-3 for start, end in spans)
 
 
-def test_the_broll_clip_keeps_its_own_sound(built: Built) -> None:
-    clip_at, clip_end = built.spans()["03"]
-    assert clip_end - clip_at == pytest.approx(2.5, abs=1 / FPS)
-    assert audio.rms_db(built.out / "pipeline.mp4", clip_at + 0.5, clip_end - clip_at - 1.0) > -30
+# ---- the commands that read the project --------------------------------------------------------------
 
 
-def test_the_equation_typesets_offline_and_the_slide_screenshot_shows_it(built: Built) -> None:
-    """KaTeX comes from deck/katex, so section 4 records with no warning, and its slide screenshot is written."""
-    recording_log = RecordingLog.load(built.root / "build" / "recordings" / "04.json")
-    assert recording_log is not None and recording_log.warnings == [] and recording_log.page_errors == []
-    assert any(e["id"] == "3.1eq" for e in recording_log.cue_log), recording_log.cue_log
-    code, _out = built.cli("screenshots", "--slide", "3.1")
-    assert code == 0
-    png = built.root / "build" / "screenshots" / "slide-3.1.png"
-    assert png.stat().st_size > 0
-    # The card with the equation is dark on a white page, so the frozen slide is far from blank.
-    blank = built.root / "build" / "screenshots" / "blank.png"
-    ffmpeg.run("-f", "lavfi", "-i", "color=c=white:s=1920x1080", "-frames:v", "1", str(blank))
-    assert frames.changed_images_percent(blank, png, level=40, width=480, height=270) > 5
+def test_status_reports_what_is_written_what_is_built_and_what_is_stale(built: Project) -> None:
+    doc = built.cli("status", "--json").json
+    assert doc["name"] == FILM_NAME
+    assert doc["film"] == relative(built, built.film)
+    assert doc["film_seconds"] is not None and doc["film_seconds"] > FILM_SECONDS_RANGE[0]
+    rows = {row["key"]: row for row in doc["sections"]}
+    assert sorted(rows) == list(EVERY_SECTION)
+    assert [key for key, row in rows.items() if row["recorded"]] == list(SPOKEN)
+    assert all(row["cut"] for row in rows.values())
+    assert not any(row["voiced"] for row in rows.values()), "an unvoiced build owns no paid take"
 
 
-def test_preflight_plans_every_take_and_estimates_each_reveal(built: Built) -> None:
-    p = built.envelope("preflight", "--json", "--exit-zero").payload
-    assert [t.key for t in p.takes] == list(SPOKEN)
-    assert p.totals.synthesize == len(p.takes) == 3, p.totals
-    verdicts = {f"{c.section}:{c.cue}": c.verdict for c in p.cues}
-    assert set(verdicts) == set(CUES)
-    assert set(verdicts.values()) <= {Verdict.CHANGED, Verdict.THIN_CHANGE, Verdict.SKIPPED}, verdicts
-    assert [(k.key, k.verdict) for k in p.seams] == [("02", Verdict.OK)]
+def test_check_judges_the_inputs_and_prices_the_run_without_a_browser(built: Project) -> None:
+    """`check --no-pages` is the door a docs job or a pre-commit hook goes through, so it fetches nothing."""
+    run = built.cli("check", "--no-pages", "--json", "--fail-on", "never")
+    doc = run.json
+    assert doc["pages"] is False
+    assert sorted(Path(path).name for path in doc["judged"]) == ["cues.json", "script.md"]
+    spend = doc["spend"]
+    assert spend["state"] == SpendState.ESTIMATE.value, spend
+    assert spend["characters"] > 0 and spend["sections"] == len(SPOKEN), spend
+    assert spend["dollars"] >= 0 and spend["price_layer"], spend
 
 
-def test_screenshots_write_a_frame_from_a_playing_section(built: Built) -> None:
-    doc = built.envelope("screenshots", "--json", "--section", "1", "--at", "1")
-    assert (built.root / "build" / "screenshots" / "section-01-at-1s.png").stat().st_size > 0
-    [row] = doc.payload.files
-    assert row.file == "build/screenshots/section-01-at-1s.png"
-    assert (row.section, row.at, row.slide, row.page_errors) == (1, 1.0, None, [])
+def test_words_prints_every_spoken_word_with_its_place_on_the_clock(built: Project) -> None:
+    doc = built.cli("words", "--json").json
+    rows = {row["key"]: row for row in doc["sections"]}
+    assert sorted(rows) == list(SPOKEN)
+    assert all(row["estimated"] for row in rows.values()), "an unvoiced build times its words by estimate"
+    words = rows["01"]["words"]
+    assert [word["word"] for word in words][:2] == ["A", "first"]
+    assert all(word["end"] >= word["start"] for word in words)
+    assert words == sorted(words, key=lambda word: word["start"])
 
 
-def test_screenshots_json_names_the_slide_and_the_cue_of_every_file(built: Built) -> None:
-    doc = built.envelope("screenshots", "--json", "--slide", "3.1", "--after", "3.1eq")
-    [row] = doc.payload.files
-    assert row.slide == "3.1" and row.cue == "3.1eq" and row.page == "deck/index.html"
-    assert row.file == "build/screenshots/slide-3.1-after-3.1eq.png"
-    assert row.page_errors == [] and row.section is None
+def test_the_storyboard_is_one_page_of_every_slide_at_every_cue(built: Project) -> None:
+    """The storyboard is the human checkpoint before any credit is spent, so `build` writes it too."""
+    run = built.cli("storyboard", "--json")
+    doc = run.json
+    assert doc["storyboard"] == "build/storyboard.html"
+    assert (built.build_dir / "storyboard.html").stat().st_size > 0
+    panels = doc["panels"]
+    assert panels, "a deck with three slides and seven cues has panels"
+    assert {panel["slide"] for panel in panels} == {"1.1", "2.1", "3.1"}
+    for panel in panels:
+        assert (built.root / panel["image"]).stat().st_size > 0, panel
 
 
-def test_status_lists_every_output(built: Built) -> None:
-    s = built.envelope("status", "--json").payload
-    assert s.final.exists and s.final.duration is not None and s.final.duration > 18
-    # Every file `assemble` writes beside the film, so a reader learns from one command what is built.
-    assert set(s.outputs) == {"srt", "vtt", "chapters", "cuts", "transcript", "poster"}
-    assert all(o.exists for o in s.outputs.values())
-    assert all(sec.cut for sec in s.sections)
-    assert [sec.key for sec in s.sections if sec.recorded] == list(SPOKEN)
-    assert s.narration.estimated and s.cue_times.exists
+def test_the_storyboard_narrows_to_one_slide(built: Project) -> None:
+    doc = built.cli("storyboard", "--json", "--slide", "3.1").json
+    assert {panel["slide"] for panel in doc["panels"]} == {"3.1"}
 
 
-# ---- what a voiced run would spend, with no key and no call --------------------------------------
+def test_the_equation_typesets_from_the_deck_and_not_from_a_cdn(built: Project) -> None:
+    """KaTeX is vendored into deck/katex, so section 4 records with no finding and loads no host."""
+    log = built.recording_log("04")
+    assert list(log.findings) == [] and list(log.external) == []
+    assert any(name.startswith("deck/katex/") for name in log.assets), log.assets
 
 
-def test_narrate_dry_run_voices_nothing_when_nothing_changed(built: Built, monkeypatch: pytest.MonkeyPatch) -> None:
-    root = voiced_copy(built, "untouched", monkeypatch)
-    doc = Built(root, 0, "").envelope("narrate", "--dry-run", "--json")
-    assert planned(doc).note is None, planned(doc).note
-    assert statuses(doc) == {k: TakeStatus.CACHED for k in SPOKEN}
-    assert planned(doc).totals.synthesize == 0 and planned(doc).totals.characters_sent == 0
+def test_the_take_index_and_the_cue_times_agree_with_what_was_built(built: Project) -> None:
+    """The two artifacts every later stage reads, checked as the models a caller reads them as."""
+    takes = Takes.read(built.root / Artifact.TAKES.value)
+    assert takes is not None
+    assert [row.key for row in takes.sections] == list(SPOKEN)
+    assert takes.estimated, "every take of an unvoiced build is a placeholder"
+    cue_times = CueTimes.read(built.root / Artifact.CUE_TIMES.value)
+    assert cue_times is not None
+    resolved = [f"{section.section}:{cue.cue}" for section in cue_times.sections for cue in section.cues]
+    assert resolved == list(CUES)
+    assert all(cue.seconds is not None for section in cue_times.sections for cue in section.cues)
 
 
-def test_narrate_dry_run_voices_only_the_changed_section(built: Built, monkeypatch: pytest.MonkeyPatch) -> None:
-    root = voiced_copy(built, "edited", monkeypatch)
-    script = root / "script.md"
-    script.write_text(script.read_text(encoding="utf-8").replace("and then a bar under it", "and then a wide bar"))
-    doc = Built(root, 0, "").envelope("narrate", "--dry-run", "--json")
-    assert statuses(doc) == {"01": TakeStatus.CACHED, "02": TakeStatus.CACHED, "04": TakeStatus.SYNTHESIZE}
-    [take] = [s for s in planned(doc).sections if s.status is TakeStatus.SYNTHESIZE]
-    assert take.reason == "the text, voice, model, or voice settings changed" and take.request is not None
-    assert planned(doc).totals.characters_sent == take.characters_sent == len(take.request.text)
+# ---- cue resolution on word timestamps that are not evenly spaced ---------------------------------------
 
 
-def test_narrate_dry_run_plans_one_take_for_an_inserted_section(built: Built, monkeypatch: pytest.MonkeyPatch) -> None:
-    root = voiced_copy(built, "inserted", monkeypatch)
-    toml = root / "decktalk.toml"
-    toml.write_text(
-        toml.read_text(encoding="utf-8")
-        + '\n[[section]]\nnumber = 6\nchapter = "Coda"\npage = "deck/index.html"\nscene = 3\n',
-        encoding="utf-8",
-    )
-    script = root / "script.md"
-    script.write_text(script.read_text(encoding="utf-8") + "\n## 6. Coda\n\nOne more line closes it.\n")
-    doc = Built(root, 0, "").envelope("narrate", "--dry-run", "--json")
-    assert statuses(doc) == {
-        "01": TakeStatus.CACHED,
-        "02": TakeStatus.CACHED,
-        "04": TakeStatus.CACHED,
-        "06": TakeStatus.SYNTHESIZE,
-    }
-    assert planned(doc).totals.synthesize == 1
-
-
-# ---- word-level sync, with uneven timestamps made here ------------------------------------------
-
-
-UNEVEN = [
+UNEVEN = (
     ("A", 0.70), ("first", 0.81), ("block", 1.40), ("a", 2.60), ("second", 2.66),
     ("beside", 3.30), ("it", 3.92), ("a", 4.05), ("third", 4.10), ("below", 5.55),
-]  # fmt: skip
+)  # fmt: skip
+"""Section 1's words with the spacing a real voice leaves, which is what a cue is resolved against."""
+
+WORD_GAP_SECONDS = 0.05
+"""How long the silence between two words is made here, so each word ends before the next begins."""
+
+TRAILING_WORD_SECONDS = 0.4
+"""How long the last word runs, because nothing after it says where it ends."""
 
 
-def test_cues_resolve_on_uneven_word_timestamps(built: Built, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A words file with real-looking spacing resolves by occurrence, keeps its cached take, and answers --only."""
-    root = voiced_copy(built, "sync", monkeypatch)
-    project = Project.load(root)
-    take_index = project.takes()
-    assert take_index is not None
-    entry = take_index.sections["01"]
-    words = [
-        Word(w, start, round((UNEVEN[i + 1][1] if i + 1 < len(UNEVEN) else start + 0.4) - 0.05, 3))
-        for i, (w, start) in enumerate(UNEVEN)
-    ]
-    write_words(project.takes_dir / entry.words_file, words)
-    join_takes(project, take_index, project.script_sections()[1])
-    # Section 1's cues alone are rewritten, so every other section's elements stay cued.
+def test_cues_resolve_by_occurrence_and_by_phrase_on_uneven_word_timestamps(built: Project, tmp_path: Path) -> None:
+    """A cue names a spoken phrase, so resolution is about the words file and never about the page.
+
+    The words file is not part of what a take's name is taken over, so rewriting it here re-resolves
+    every cue and buys nothing, which is the property that lets an author fix a phrase for free.
+    """
+    root = tmp_path / HOSTILE_DIRECTORY / "sync"
+    shutil.copytree(built.root, root, ignore=shutil.ignore_patterns("build"))
+    shutil.copytree(built.build_dir, root / "build", ignore=shutil.ignore_patterns("final", "sections", "events"))
+    project = Project(root=root, shim=built.shim, attempts=tmp_path / "attempts.txt")
+
+    takes = Takes.read(root / Artifact.TAKES.value)
+    assert takes is not None
+    [first] = [row for row in takes.sections if row.key == "01"]
+    words = []
+    for index, (token, start) in enumerate(UNEVEN):
+        after = UNEVEN[index + 1][1] if index + 1 < len(UNEVEN) else start + TRAILING_WORD_SECONDS
+        words.append(Word(word=token, start=start, end=round(after - WORD_GAP_SECONDS, 3)))
+    Words(words=tuple(words)).write(root / "build" / "narrate" / f"{first.hash}.words.json")
+
     cues = json.loads((root / "cues.json").read_text(encoding="utf-8"))
     cues["sections"]["1"]["cues"] = [
-        {"cue": "1.1first", "on": "first"},
-        {"cue": "1.1second", "on": "a", "occurrence": 3},
-        {"cue": "1.1third", "on": "third below", "offset": -0.2},
+        {"cue": "1.1:first", "on": "first"},
+        {"cue": "1.1:second", "on": "a", "occurrence": 3},
+        {"cue": "1.1:third", "on": "third below", "offset": -0.2},
     ]
     (root / "cues.json").write_text(json.dumps(cues), encoding="utf-8")
-    run = Built(root, 0, "")
-    aligned = run.envelope("align", "--json")
-    assert aligned.ok, aligned.findings
-    [section] = [s for s in aligned.payload.sections if s.key == "01"]
-    assert section.notes == []
-    # Times count from the section start, which begins with the section's lead.
-    lead = project.lead_seconds("01")
-    assert section.cues == {
-        "1.1first": round(0.81 + lead, 2),
-        "1.1second": round(4.05 + lead, 2),
-        "1.1third": pytest.approx(3.9 + lead),
-    }
-    # The words file is not part of the take hash, so the take stays cached, and --only keeps section 1 alone.
-    plan = run.envelope("narrate", "--dry-run", "--json", "--only", "1")
-    assert statuses(plan) == {"01": TakeStatus.CACHED}
-    spoken = run.envelope("words", "--json", "--only", "1")
-    [row] = spoken.payload.sections
-    assert row.key == "01" and not row.estimated
-    assert [(w.word, w.start) for w in row.words] == [(w, round(s + lead, 3)) for w, s in UNEVEN]
-    assert [w.text for w in row.words][:3] == ["A", "first", "block,"]
+
+    run = project.cli("cue", "--json", "--section", "1")
+    doc = run.json
+    assert run.code == FOUND_NOTHING, run.stderr
+    [section] = [row for row in doc["sections"] if row["key"] == "01"]
+    resolved = {row["cue"]: row["seconds"] for row in section["cues"]}
+    lead = first.lead_seconds
+    assert resolved["1.1:first"] == pytest.approx(0.81 + lead, abs=1e-2)
+    assert resolved["1.1:second"] == pytest.approx(4.05 + lead, abs=1e-2), "the third `a` is the one named"
+    assert resolved["1.1:third"] == pytest.approx(4.10 + lead - 0.2, abs=1e-2), "the phrase starts at `third`"
 
 
-# ---- the silence across every cut, measured in a voiced film of synthetic takes ----------------------
+# ---- the rebuild of one section, last because it writes into the built project ---------------------------
 
 
-CUTS_SCRIPT = """# Cut silence
-
-## 1. Blocks
-
-A first block, a second beside it, a third below.
-
-## 2. More
-
-Two more: a fourth on the right, then a fifth.
-
-## 3. Equation
-
-Here is one equation, and then a bar under it.
-"""
-
-
-class UnevenVoice:
-    """A synthetic voice: a tone for each word, then a pause whose length the text alone decides.
-
-    A real voice leaves anything from a breath to a second and a half after its last word, so the
-    pause here varies from section to section, as the pauses of the smoke build did.
-    """
-
-    name = "uneven-voice"
-    sent: list[str] = []
-
-    def __init__(self, workdir: Path) -> None:
-        self.workdir = workdir
-
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
-        UnevenVoice.sent.append(request.text)
-        tokens = [t.strip(".,:;") for t in re.sub(r"<[^>]+>", " ", request.text).split()]
-        speech, pause = 0.3 * len(tokens), 0.15 + (len(request.text) % 5) * 0.3
-        out = self.workdir / "voice.mp3"
-        ffmpeg.run(
-            "-y", "-f", "lavfi", "-i", f"sine=f=440:r=44100:d={speech}", "-af", f"volume=0.25,apad=pad_dur={pause}",
-            "-c:a", "libmp3lame", "-b:a", "128k", str(out),
-        )  # fmt: skip
-        words = [Word(t, round(i * 0.3, 3), round(i * 0.3 + 0.28, 3)) for i, t in enumerate(tokens)]
-        return out.read_bytes(), words
-
-    def cache_key(self, request: SpeechRequest) -> str:
-        return self.name
-
-
-def cut_silences(final: Path, cuts: list[float]) -> list[tuple[float, float]]:
-    """(the silence before, the silence after) every cut, measured on the film's own audio track."""
-    err = ffmpeg.stderr("-i", str(final), "-vn", "-af", "silencedetect=noise=-45dB:d=0.1", "-f", "null", "-")
-    quiet = list(
-        zip(
-            (float(t) for t in re.findall(r"silence_start: ([0-9.]+)", err)),
-            (float(t) for t in re.findall(r"silence_end: ([0-9.]+)", err)),
-            strict=False,
-        )
-    )
-    around: list[tuple[float, float]] = []
-    for cut in cuts:
-        spans = [(a, b) for a, b in quiet if a < cut < b]
-        assert len(spans) == 1, f"the cut at {cut:.3f}s does not fall in silence: {quiet}"
-        a, b = spans[0]
-        around.append((round(cut - a, 3), round(b - cut, 3)))
-    return around
-
-
-def test_the_silence_across_every_cut_is_one_tail_then_one_lead(built: Built) -> None:
-    """Every cut sits between one section's tail and the next one's lead, in the first build and after an edit.
-
-    The takes leave uneven pauses of their own, and the one edit re-voices the middle section while
-    its neighbours are reused, which is where their tails once came back different. The silence is
-    measured on the finished film's audio, so every stage from the join to the mix is in the loop.
-    """
-    root = OUT / "cuts"
-    shutil.rmtree(root, ignore_errors=True)
-    (root / "media").mkdir(parents=True)
-    shutil.copytree(built.root / "deck", root / "deck")
-    fixture_cues = json.loads((FIXTURE / "cues.json").read_text(encoding="utf-8"))["sections"]
-    cues = {"sections": {"1": fixture_cues["1"], "2": fixture_cues["2"], "3": fixture_cues["4"]}}
-    (root / "cues.json").write_text(json.dumps(cues), encoding="utf-8")
-    (root / "script.md").write_text(CUTS_SCRIPT, encoding="utf-8")
-    (root / "decktalk.toml").write_text(
-        f"[project]\nname = 'cuts'\n[video]\npreset = 'veryfast'\n[voice]\nprovider = '{UnevenVoice.name}'\n"
-        + "".join(f"[[section]]\nnumber = {n}\npage = 'deck/index.html'\nscene = {n}\n" for n in (1, 2, 3)),
-        encoding="utf-8",
-    )
-    register_speech_provider(UnevenVoice.name, lambda context: UnevenVoice(root / "media"))
-    run = Built(root, 1, "")
-
-    def measured() -> list[tuple[float, float]]:
-        with offline(run.network_attempts):
-            _code, out = run.cli("build")
-        final = run.out / "cuts.mp4"
-        assert final.exists(), out
-        cuts = run.root / "build" / "out" / "cuts.json"
-        starts = [row["start"] for row in json.loads(cuts.read_text(encoding="utf-8"))["sections"][1:]]
-        return cut_silences(final, starts)
-
-    project = Project.load(root)
-    tail, lead = project.tail_seconds("01"), project.lead_seconds("01")
-    first = measured()
-    assert len(UnevenVoice.sent) == 3
-    for before, after in first:
-        assert (before, after) == (pytest.approx(tail, abs=0.05), pytest.approx(lead, abs=0.05)), first
-
-    script = root / "script.md"
-    script.write_text(CUTS_SCRIPT.replace("then a fifth.", "and then a fifth one."), encoding="utf-8")
-    again = measured()
-    assert len(UnevenVoice.sent) == 4, "only the edited section is voiced again"
-    for before, after in again:
-        assert (before, after) == (pytest.approx(tail, abs=0.05), pytest.approx(lead, abs=0.05)), again
-    assert run.network_attempts == []
-
-
-# ---- the rebuild of one section, last because it writes into the built project -------------------
-
-
-def test_build_only_rerecords_section_4(built: Built, request: pytest.FixtureRequest) -> None:
-    rec = built.root / "build" / "recordings"
-    before = {k: (rec / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
-    length = ffmpeg.probe_duration(built.out / "pipeline.mp4")
-    with offline(built.network_attempts):
-        doc = built.envelope("build", "--no-voice", "--only", "4", "--json")
-    # This row is about which sections were recorded again, so it reads the build the way
-    # `test_build_exits_zero_with_the_network_blocked` does rather than gating on a bare exit code.
-    assert_build_finished(doc.exit_code, [f.verdict for f in doc.findings.items], str(doc.findings.items), request)
-    after = {k: (rec / f"{k}.webm").stat().st_mtime_ns for k in SPOKEN}
-    assert after["01"] == before["01"] and after["02"] == before["02"], "only section 4 should be recorded again"
+def test_building_one_section_records_that_section_and_no_other(built: Project) -> None:
+    recordings = built.build_dir / "recordings"
+    before = {key: (recordings / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
+    length = ffmpeg.probe_duration(built.film)
+    run = built.cli("build", "--no-voice", "--section", "4", "--json")
+    assert run.certain() == [], run.stderr
+    assert run.code in (FOUND_NOTHING, FOUND_SOMETHING), run.stderr
+    after = {key: (recordings / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
+    assert after["01"] == before["01"] and after["02"] == before["02"], "only section 4 is recorded again"
     assert after["04"] > before["04"]
-    assert abs(ffmpeg.probe_duration(built.out / "pipeline.mp4") - length) < 0.05
-    assert built.network_attempts == []
+    assert abs(ffmpeg.probe_duration(built.film) - length) < SECOND_TOLERANCE
+    assert built.network_attempts() == []
