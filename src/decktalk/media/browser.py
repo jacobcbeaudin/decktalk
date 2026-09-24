@@ -2,12 +2,16 @@
 
 This is the only module that launches a browser, and therefore the one place that fetches one: a
 machine without Chromium gets it here, the first time a command needs it, the way `ffmpeg.py` gets
-ffmpeg. It waits for the page to say it is ready, reads the catalog the runtime publishes, and
-collects the warnings the page recorded, so a stage above asks for a recording or a frame and
-never for a browser.
+ffmpeg. It waits for the page to say it is ready and then asks it for one report, so a stage above
+asks for a recording or a frame and never for a browser.
 
 Every page it opens is served from the local origin in `origin.py`, so a page may fetch a file
 beside it and import a module, and the recorder learns which files the page actually loaded.
+
+Two rules hold this module to a page it does not trust. Every call into the page carries a deadline,
+because a deck's own script runs in the same thread and a page that never answers would otherwise
+hold a build for as long as it cared to. And the probe is sealed onto the window before any script
+of the page runs, so the measurements come from the instrumentation the recorder injected.
 """
 
 from __future__ import annotations
@@ -20,14 +24,22 @@ import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Literal, Protocol
 
-from ..artifacts import RecordingLog, gap_time
-from ..errors import ToolError
+from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
+from playwright.sync_api import Error as PlaywrightError
+from pydantic import BaseModel, Field
+
+from ..errors import InputError, ToolError
+from ..findings import MODEL
 from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
+from . import pagereport
+from .encode import css_color
 from .origin import Assets, route_pages
+from .pagereport import PageReport
 
 log = logging.getLogger(__name__)
 
@@ -37,15 +49,47 @@ log = logging.getLogger(__name__)
 # it runs before the page's own scripts and the runtime finds it, and it is never a <script src>
 # in a deck. The cover is drawn only where it is asked for, so a screenshot never shows it.
 PROBE_JS = probe_path().read_text(encoding="utf-8")
+# The probe is the recorder's own instrument, so a deck cannot take its name once it is on the
+# window. This runs as the init script after the probe's own and before any script of the page.
+SEAL_JS = """(() => {
+  const probe = window.__dtprobe;
+  const own = Object.getOwnPropertyDescriptor(window, "__dtprobe");
+  if (!probe || (own && own.writable === false)) return;
+  Object.freeze(probe);
+  Object.defineProperty(window, "__dtprobe", { value: probe, writable: false, configurable: false });
+})()"""
 COVER_JS = "() => window.__dtprobe.cover()"
 # Remove the cover, then start the page clock on the next animation frame.
 START_JS = "() => window.__dtprobe.lift()"
 READY_JS = "() => window.__dtprobe.ready()"
-# What the runtime could not honor: unknown cue ids, cues no slide owns, KaTeX that never loaded.
-WARNINGS_JS = "() => (window.__decktalk && window.__decktalk.warnings) || []"
+REPORT_JS = "() => window.__dtprobe.report()"
 # Whether the runtime is present and the page registered at least one scene.
 HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
 NO_CATALOG = "no window.__decktalk.catalog (is decktalk-runtime.js included, and does the page register a scene?)"
+
+DEADLINE_SECONDS = 15.0
+"""How long one call into the page may take, which is many times the longest a probe call measures."""
+
+ColorScheme = Literal["dark", "light", "no-preference"]
+"""What a page may be told the viewer prefers, which is the closed set Chromium itself accepts."""
+
+COLOR_SCHEMES: tuple[ColorScheme, ...] = ("dark", "light", "no-preference")
+"""The values `[record] color_scheme` may take, named here because this is the layer that passes them on."""
+
+
+def scheme(value: str) -> ColorScheme:
+    """The colour scheme a page is opened under, refused here rather than handed to Chromium unread.
+
+    A setting Chromium does not know is a project file that says something untrue about the render,
+    and the browser takes it silently, so the one place that passes it on is the place that reads it.
+    """
+    if value not in COLOR_SCHEMES:
+        raise InputError(
+            f"[record] color_scheme = {value!r} is not one of {', '.join(COLOR_SCHEMES)}.",
+            hint=f"Set it to one of {', '.join(COLOR_SCHEMES)}.",
+        )
+    return value
+
 
 SLATE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{{margin:0;width:{w}px;height:{h}px;background:{bg};color:#f4f6f8;
@@ -60,8 +104,58 @@ font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;overflow:hidden}}
 </div><div class="foot">{foot}</div></body></html>"""
 
 
+class Recording(BaseModel):
+    """One section recorded: what the page loaded, what it said, and where narration t=0 sits in the webm.
+
+    This is what the recorder knows. Whether the recording still matches the project, and what the
+    frames of it show, are the stage's to add when it writes the log.
+    """
+
+    model_config = MODEL
+
+    url: str = Field(description="The page URL that was recorded, with its query.")
+    assets: tuple[str, ...] = Field(description="Every project file the page loaded, project-relative.")
+    external: tuple[str, ...] = Field(description="Every other origin the page reached for while recording.")
+    requested_seconds: float = Field(ge=0, description="How long the page was recorded for after the clock started.")
+    load_seconds: float = Field(ge=0, description="How long the page took to load.")
+    settle_seconds: float = Field(ge=0, description="How long the page was left to settle after it loaded.")
+    clock_start_seconds: float = Field(ge=0, description="Seconds from the recorder's start to narration t=0.")
+    page_errors: tuple[str, ...] = Field(description="Uncaught exceptions, or the one line for no runtime at all.")
+    report: PageReport = Field(description="What the page said about itself, read once.")
+
+
+class RecordingSink(Protocol):
+    """Where the log of one recording is kept, which the recorder clears before it captures and fills after.
+
+    The pair on disk has to be complete or absent. A webm replaced under the log of the recording
+    before it keeps its hash and moves narration t=0, so the next assemble trims the new picture at
+    the old moment and every reveal in the section lands wrong. Clearing first and writing last
+    leaves a crash with no log, which the next run reads as a section it has not recorded.
+    """
+
+    def clear(self) -> None:
+        """Delete the log of the recording that is about to be replaced, before anything is captured."""
+
+    def write(self, recording: Recording) -> None:
+        """Write the log of the recording now on disk, once the webm is in place."""
+
+
 @contextmanager
-def chromium(browser_path: str = "") -> Iterator[Any]:
+def driving(what: str) -> Iterator[None]:
+    """Turn a browser that would not do something into a `ToolError` saying what it would not do.
+
+    A page that never loads, a context that will not open and a call the page never answered are all
+    the tool failing, and reporting them as INTERNAL would send a reader looking for a bug in
+    DeckTalk instead of at their own deck or their own machine.
+    """
+    try:
+        yield
+    except PlaywrightError as exc:
+        raise ToolError(f"{what} ({str(exc).splitlines()[0]}).") from exc
+
+
+@contextmanager
+def chromium(browser_path: str = "") -> Iterator[Browser]:
     """A launched headless Chromium, as the machine configures it, closed on exit.
 
     No proxy argument is passed. Request routing answers the local origin before the network stack
@@ -72,8 +166,6 @@ def chromium(browser_path: str = "") -> Iterator[Any]:
     Chromium names. It is empty on a machine DeckTalk fetches the browser for, which is where
     `launch` fetches it.
     """
-    from playwright.sync_api import sync_playwright
-
     with sync_playwright() as pw:
         browser = launch(pw, browser_path)
         try:
@@ -82,7 +174,7 @@ def chromium(browser_path: str = "") -> Iterator[Any]:
             browser.close()
 
 
-def launch(pw: Any, browser_path: str = "") -> Any:
+def launch(pw: Playwright, browser_path: str = "") -> Browser:
     """A launched Chromium, fetching the build Playwright manages when this machine has not got it.
 
     This is the one place a browser starts, so every command gets the browser it needs without
@@ -97,70 +189,83 @@ def launch(pw: Any, browser_path: str = "") -> Any:
     """
     try:
         return pw.chromium.launch(executable_path=browser_path or None)
-    except Exception as exc:
-        refused = str(exc).splitlines()[0]
+    except PlaywrightError as exc:
         if browser_path:
             raise ToolError(
-                f"could not launch the Chromium at {browser_path} ({refused}).",
+                f"could not launch the Chromium at {browser_path} ({str(exc).splitlines()[0]}).",
                 hint="[record] browser_path names it. Clear that setting to use the build DeckTalk fetches.",
             ) from exc
     # A launch that failed with no executable named falls through to here, which is the fetch.
-    if chromium_fetch.installed_chromium(pw) is None:
-        log.info("== Chromium (Playwright)")
-        log.info("   fetching the headless build for this machine, %s, one time", chromium_fetch.DOWNLOAD_SIZE)
-    else:
-        log.info("== Chromium (Playwright): it did not launch, so the build is being fetched again")
+    if chromium_fetch.installed_chromium(pw) is not None:
+        log.info("Chromium is on this machine and did not launch, so the build is being fetched again")
     chromium_fetch.fetch_chromium()
-    try:
+    with driving("Chromium was fetched and still would not launch"):
         return pw.chromium.launch()
-    except Exception as exc:
-        raise ToolError(
-            f"Chromium was fetched and still would not launch ({str(exc).splitlines()[0]}).",
-            hint="Run `decktalk install`, which also installs the system libraries Chromium needs and is the one "
-            "command that may ask for a password.",
-        ) from exc
 
 
-def instrument(page: Any) -> Any:
-    """Add decktalk-probe.js to every page `page` loads from here on. Returns the page.
+def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECONDS) -> object:
+    """Run one expression in the page and refuse to wait for it past the deadline.
 
-    A page that a command opened more than once keeps the one copy, because an init script is
-    added to the page and not to a navigation.
+    The expression is raced against a timer inside the page, because the page is where a deck's own
+    promises are kept and a call that hangs there hangs this build. A page whose script never yields
+    the thread at all cannot be raced from inside itself, and that is what `page.close()` on the way
+    out of the recording context is for.
     """
-    if not getattr(page, "_decktalk_probe", False):
-        page.add_init_script(PROBE_JS)
-        page._decktalk_probe = True
+    raced = (
+        "async () => {"
+        f"  const answer = Promise.resolve().then({script});"
+        "  const timer = new Promise((_ok, no) => setTimeout("
+        f"    () => no(new Error('the page did not answer within {deadline_seconds:g} seconds')),"
+        f"    {deadline_seconds * 1000:.0f}));"
+        "  return await Promise.race([answer, timer]);"
+        "}"
+    )
+    with driving("the page could not answer"):
+        return page.evaluate(raced)
+
+
+def instrument(page: Page) -> Page:
+    """Add decktalk-probe.js to every page `page` loads from here on, sealed. Returns the page.
+
+    An init script is added to the page and not to a navigation, so a page a command drives through
+    several URLs keeps one probe across all of them. The seal runs after the probe and before any
+    script of the page, and it leaves an already sealed window alone.
+    """
+    page.add_init_script(PROBE_JS)
+    page.add_init_script(SEAL_JS)
     return page
 
 
 def open_page(
-    browser: Any,
+    browser: Browser,
     root: Path,
     *,
     width: int,
     height: int,
     color_scheme: str = "no-preference",
-) -> tuple[Any, Assets]:
+) -> tuple[Page, Assets]:
     """A page a command drives, and the record of what it loaded.
 
     Its requests under the local origin are answered from `root`, and it carries the probe, because
     every page a command opens is a page that command has to be able to freeze and measure.
     """
-    page = browser.new_page(
-        viewport={"width": width, "height": height}, device_scale_factor=1, color_scheme=color_scheme
-    )
+    with driving("could not open a page"):
+        page = browser.new_page(
+            viewport={"width": width, "height": height}, device_scale_factor=1, color_scheme=scheme(color_scheme)
+        )
     instrument(page)
     return page, route_pages(page, root)
 
 
-def await_ready(page: Any) -> None:
+def await_ready(page: Page) -> None:
+    """Wait for the page's fonts and the runtime's own readiness, and carry on when it has neither."""
     try:
-        page.evaluate(READY_JS)
-    except Exception:
-        pass
+        evaluate(page, READY_JS)
+    except ToolError:
+        log.debug("the page did not answer __dtprobe.ready(), so it is taken as ready")
 
 
-def page_error_text(err: Any) -> str:
+def page_error_text(err: object) -> str:
     """One line for an uncaught page exception: the message, and the file and line when Chromium gives them."""
     message = str(getattr(err, "message", None) or err).strip().splitlines()[0] if str(err).strip() else "error"
     name = getattr(err, "name", None)
@@ -173,154 +278,206 @@ def page_error_text(err: Any) -> str:
     return message
 
 
-def page_errors(page: Any, caught: list[str], label: str) -> list[str]:
+def page_errors(page: Page, caught: list[str], label: str) -> list[str]:
     """The page's uncaught exceptions, plus one entry when the runtime catalog is missing. Each is logged."""
     errors = list(caught)
     try:
-        if not page.evaluate(HAS_CATALOG_JS):
+        if not evaluate(page, HAS_CATALOG_JS):
             errors.append(NO_CATALOG)
-    except Exception:
+    except ToolError:
         errors.append(NO_CATALOG)
     for e in errors:
         log.warning("[page] %s  page error: %s", label, e)
     return errors
 
 
-def page_warnings(page: Any, label: str) -> list[str]:
-    """The runtime's warnings for this page, each logged as a warning under `label`."""
+def read_report(page: Page, label: str) -> PageReport:
+    """What the page says about itself, in the one call the contract names, read into models.
+
+    A page that cannot answer at all reports nothing rather than stopping the recording, because a
+    recording of a page with no probe in it is still a recording and `page_errors` says so.
+    """
     try:
-        found = page.evaluate(WARNINGS_JS)
-    except Exception:
-        return []
-    warnings = [str(w) for w in found] if isinstance(found, list) else []
-    for w in warnings:
-        log.warning("[page] %s  %s", label, w)
-    return warnings
+        answer = evaluate(page, REPORT_JS)
+    except ToolError as refused:
+        return pagereport.read(None).model_copy(update={"unreadable": (str(refused),)})
+    report = pagereport.read(answer)
+    for row in report.warnings:
+        log.warning("[page] %s  %s: %s", label, row.code.name, row.message)
+    for line in report.unreadable:
+        log.warning("[page] %s  %s", label, line)
+    return report
+
+
+@dataclass
+class Capture:
+    """A browser context that is recording, and the temporary directory Playwright writes its webm into.
+
+    Playwright writes the file when the context closes, so this owns both the context and the
+    directory and hands the finished file over in one step.
+    """
+
+    context: BrowserContext
+    assets: Assets
+    directory: Path
+    opened: float  # time.monotonic() when the context was created, which is when capture may have begun
+    page: Page | None = None
+
+    def open(self, url: str, caught: list[str]) -> Page:
+        """The one page of this recording, loaded, with its uncaught exceptions collected into `caught`."""
+        with driving(f"could not open {url}"):
+            self.page = self.context.new_page()
+        self.page.on("pageerror", lambda err: caught.append(page_error_text(err)))
+        with driving(f"could not load {url}"):
+            self.page.goto(url, wait_until="load")
+        return self.page
+
+    def place(self, out: Path) -> None:
+        """Close the context, which writes the webm, and move that webm onto `out`.
+
+        The page is closed first, so a deck whose script is still running is stopped before anything
+        waits on it, and the old file at `out` is replaced only once the new one exists.
+        """
+        video = self.page.video if self.page else None
+        if self.page:
+            self.page.close()
+        self.context.close()
+        src = Path(video.path()) if video else None
+        if src is None or not src.exists():
+            raise ToolError(f"Chromium produced no video for {out.name}")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.unlink(missing_ok=True)
+        shutil.move(str(src), str(out))
+
+
+@contextmanager
+def capturing(browser: Browser, root: Path, *, width: int, height: int, color_scheme: str) -> Iterator[Capture]:
+    """A recording context and the temporary directory it writes into, both closed however this ends.
+
+    A page that never loads used to leave both behind and surface as INTERNAL. The context is closed
+    here and never by a caller, so the one place that owns them is the one place that releases them.
+    """
+    directory = Path(tempfile.mkdtemp(prefix="decktalk-rec-"))
+    try:
+        with driving("could not open a recording context"):
+            context = browser.new_context(
+                viewport={"width": width, "height": height},
+                device_scale_factor=1,
+                color_scheme=scheme(color_scheme),
+                reduced_motion="no-preference",
+                record_video_dir=str(directory),
+                record_video_size={"width": width, "height": height},
+            )
+        opened = time.monotonic()
+        capture = Capture(context=context, assets=route_pages(context, root), directory=directory, opened=opened)
+        context.add_init_script(PROBE_JS)
+        context.add_init_script(SEAL_JS)
+        context.add_init_script("(" + COVER_JS + ")()")
+        try:
+            yield capture
+        finally:
+            with suppressing_a_closed_context():
+                context.close()
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+@contextmanager
+def suppressing_a_closed_context() -> Iterator[None]:
+    """Close a context that may already be closed, because `place` closes it on the way out."""
+    try:
+        yield
+    except PlaywrightError as exc:
+        log.debug("the recording context was already closed (%s)", str(exc).splitlines()[0])
 
 
 def record_page(
-    browser: Any,
+    browser: Browser,
     url: str,
     seconds: float,
     out: Path,
     *,
     root: Path,
+    log_sink: RecordingSink,
     settle_seconds: float,
     min_cover_seconds: float,
     width: int,
     height: int,
     color_scheme: str,
-) -> RecordingLog:
-    """Record `url` for `seconds` after the narration clock starts, and write the webm beside its log.
+) -> Recording:
+    """Record `url` for `seconds` after the narration clock starts, and leave the webm beside its log.
 
     `root` is the project directory the local origin serves, so the page may fetch its own files and
     the log can name every one of them.
+
+    The order is the whole point of `log_sink`. The old log goes before anything is captured, the
+    webm is replaced next, and the log of what was just recorded is written last, so the pair on
+    disk is either complete or absent and a crash can never leave a new picture under an old t=0.
     """
-    tmp_dir = Path(tempfile.mkdtemp(prefix="decktalk-rec-"))
-    context = browser.new_context(
-        viewport={"width": width, "height": height},
-        device_scale_factor=1,
-        color_scheme=color_scheme,
-        reduced_motion="no-preference",
-        record_video_dir=str(tmp_dir),
-        record_video_size={"width": width, "height": height},
-    )
-    assets = route_pages(context, root)
-    created = time.monotonic()
-    context.add_init_script(PROBE_JS)
-    context.add_init_script("(" + COVER_JS + ")()")
-    page = context.new_page()
-    caught: list[str] = []
-    page.on("pageerror", lambda e: caught.append(page_error_text(e)))
-    page.goto(url, wait_until="load")
-    loaded = time.monotonic()
-    await_ready(page)
-    # Settle after load, and never start the clock before the recorder has certainly begun
-    # capturing, because Windows starts its capture late, and the cover makes the wait invisible.
-    wait = max(settle_seconds, min_cover_seconds - (time.monotonic() - created))
-    page.wait_for_timeout(wait * 1000)
-    page.evaluate(START_JS)
-    started = time.monotonic()
-    page.wait_for_timeout(seconds * 1000)
-    warnings = page_warnings(page, out.stem)
-    errors = page_errors(page, caught, out.stem)
-    gaps = page.evaluate("() => (window.__decktalk && window.__decktalk.frameGaps) || []")
-    spoken_log = page.evaluate("() => (window.__decktalk && window.__decktalk.spokenLog) || []")
-    cue_log = page.evaluate("() => (window.__decktalk && window.__decktalk.cueLog) || []")
-    long_frames = page.evaluate("() => (window.__decktalk && window.__decktalk.longFrames) || []")
-    for entry in cue_log if isinstance(cue_log, list) else []:
+    log_sink.clear()
+    with capturing(browser, root, width=width, height=height, color_scheme=color_scheme) as capture:
+        caught: list[str] = []
+        page = capture.open(url, caught)
+        loaded = time.monotonic()
+        await_ready(page)
+        # Settle after load, and never start the clock before the recorder has certainly begun
+        # capturing, because Windows starts its capture late, and the cover makes the wait invisible.
+        wait = max(settle_seconds, min_cover_seconds - (time.monotonic() - capture.opened))
+        page.wait_for_timeout(wait * 1000)
+        evaluate(page, START_JS)
+        started = time.monotonic()
+        page.wait_for_timeout(seconds * 1000)
+        report = read_report(page, out.stem)
+        errors = page_errors(page, caught, out.stem)
+        recording = Recording(
+            url=url,
+            assets=tuple(capture.assets.paths),
+            external=tuple(capture.assets.external),
+            requested_seconds=round(seconds, 3),
+            load_seconds=round(loaded - capture.opened, 3),
+            settle_seconds=round(started - loaded, 3),
+            clock_start_seconds=round(started - capture.opened, 3),
+            page_errors=tuple(errors),
+            report=report,
+        )
+        _log_what_the_page_reported(recording, out.stem)
+        capture.place(out)
+    log_sink.write(recording)
+    for name in capture.assets.missing:
+        log.warning("[page] %s  the page asked for %s and the project has no such file", out.stem, name)
+    return recording
+
+
+def _log_what_the_page_reported(recording: Recording, label: str) -> None:
+    """The lines a person reading a build wants about one recording, which no artifact carries."""
+    for cue in recording.report.cues:
         log.debug(
             "[cue ] %s  due %s  ran %s  frame %s  next %s  after %s",
-            entry.get("id"),
-            entry.get("due"),
-            entry.get("ran"),
-            entry.get("frame"),
-            entry.get("next"),
-            entry.get("after"),
-        )
-    for entry in spoken_log if isinstance(spoken_log, list) else []:
+            cue.id, cue.due, cue.ran, cue.frame, cue.next, cue.after,
+        )  # fmt: skip
+    for line in recording.report.words:
         log.debug(
             "[spkn] %s  cue %.3f  run %.3f  first word shown %s",
-            entry.get("text"),
-            entry.get("cueAt", 0),
-            entry.get("runAt", 0),
-            entry.get("firstOn"),
-        )
-    frame_gaps = [(gap_time(g.get("at")), int(g["ms"])) for g in gaps if isinstance(g, dict)]
-    after_start = [(at, ms) for at, ms in frame_gaps if at is not None and at > 0]
+            line.text, line.cue_at, line.run_at, line.first_shown,
+        )  # fmt: skip
+    after_start = [gap for gap in recording.report.frame_gaps if gap.at is not None and gap.at > 0]
     if after_start:
-        worst = max(ms for _, ms in after_start)
-        log.warning("[page] %s  %d frame stall(s) after narration t=0, worst %d ms", out.stem, len(after_start), worst)
-    if len(after_start) < len(frame_gaps):
-        log.debug("[page] %s  %d frame stall(s) under the cover", out.stem, len(frame_gaps) - len(after_start))
-    video = page.video
-    context.close()
-    src = Path(video.path()) if video else None
-    out.parent.mkdir(parents=True, exist_ok=True)
-    if out.exists():
-        out.unlink()
-    if src is None or not src.exists():
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise ToolError(f"Chromium produced no video for {out.name}")
-    shutil.move(str(src), str(out))
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    recording_log = RecordingLog(
-        url=url,
-        assets=list(assets.paths),
-        external=list(assets.external),
-        requested_seconds=round(seconds, 3),
-        settle_seconds=round(started - loaded, 3),
-        load_seconds=round(loaded - created, 3),
-        clock_start_seconds=round(started - created, 3),
-        warnings=warnings,
-        page_errors=errors,
-        frame_gaps=frame_gaps,
-        spoken_log=[spoken_entry(e) for e in spoken_log if isinstance(e, dict)],
-        cue_log=[dict(e) for e in cue_log if isinstance(e, dict)] if isinstance(cue_log, list) else [],
-        long_frames=[dict(e) for e in long_frames if isinstance(e, dict)] if isinstance(long_frames, list) else [],
-    )
-    for name in assets.missing:
-        log.warning("[page] %s  the page asked for %s and the project has no such file", out.stem, name)
-    return recording_log
+        worst = max(gap.ms for gap in after_start)
+        log.warning("[page] %s  %d frame stall(s) after narration t=0, worst %d ms", label, len(after_start), worst)
+    under_cover = len(recording.report.frame_gaps) - len(after_start)
+    if under_cover:
+        log.debug("[page] %s  %d frame stall(s) under the cover", label, under_cover)
 
 
-# The runtime's own JavaScript stays camelCase, and the recorder is the boundary where an artifact turns snake_case.
-_SPOKEN_KEYS = {"cueAt": "cue_at", "runAt": "run_at", "n": "words", "firstOn": "first_shown"}
-
-
-def spoken_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """One spoken-log row from the page, with the recording log's snake_case keys."""
-    return {_SPOKEN_KEYS.get(k, k): v for k, v in entry.items()}
-
-
-def screenshot(page: Any, url: str, out: Path, *, settle_ms: int) -> list[str]:
-    """Write one PNG of `url`, and give back what the runtime warned about while it was open."""
-    page.goto(url)
+def screenshot(page: Page, url: str, out: Path, *, settle_ms: int) -> PageReport:
+    """Write one PNG of `url`, and give back what the page reported while it was open."""
+    with driving(f"could not load {url}"):
+        page.goto(url)
     await_ready(page)
     page.wait_for_timeout(settle_ms)
     out.parent.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(out))
-    return page_warnings(page, out.stem)
+    return read_report(page, out.stem)
 
 
 def render_slate(
@@ -332,14 +489,18 @@ def render_slate(
     foot: str = "",
     width: int,
     height: int,
-    background: str = "#0e1116",
+    background: str,
     browser_path: str = "",
 ) -> Path:
-    """A titled placeholder frame, for a section whose clip is missing."""
+    """A titled placeholder frame, for a section whose clip is missing.
+
+    `background` is `[video] slate_color`, written as ffmpeg writes a colour, because the plain
+    frame this stands in for is drawn by ffmpeg from the same setting.
+    """
     doc = SLATE_HTML.format(
         w=width,
         h=height,
-        bg=background,
+        bg=css_color(background),
         eyebrow=html.escape(eyebrow),
         title=html.escape(title),
         sub=html.escape(sub),
