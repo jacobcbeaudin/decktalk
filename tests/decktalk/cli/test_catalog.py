@@ -12,7 +12,7 @@ from decktalk.errors import ErrorCode
 from decktalk.findings import Code
 from decktalk.results import RESULTS
 
-SCHEMA_DIR = Path(__file__).resolve().parents[3] / "schema"
+SCHEMA_DIR = Path(__file__).resolve().parents[3] / "schemas" / "v1"
 """Where the committed schemas sit, which the rendered settings document is held equal to."""
 
 ROW_KEYS = ("command", "group", "purpose", "result", "params")
@@ -71,7 +71,7 @@ def test_a_name_that_is_not_a_contract_raises() -> None:
 
 
 def test_the_rendered_settings_document_names_the_committed_schema_s_keys() -> None:
-    committed = json.loads((SCHEMA_DIR / "decktalk-1.json").read_text(encoding="utf-8"))
+    committed = json.loads((SCHEMA_DIR / "decktalk.json").read_text(encoding="utf-8"))
     published = {key["id"] for key in catalog.settings_schema()["keys"]}
     assert published == set(_ids(committed["properties"]))
 

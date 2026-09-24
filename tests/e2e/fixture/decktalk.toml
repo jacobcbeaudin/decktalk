@@ -1,4 +1,4 @@
-#:schema https://decktalk.ai/schema/decktalk-1.json
+#:schema https://decktalk.ai/schemas/v1/decktalk.json
 # The pipeline fixture. tests/e2e/test_pipeline.py copies it to tests/out/e2e/pipeline, adds the runtime and
 # KaTeX, generates the clip and the beds with ffmpeg, and builds it without voice in about twenty seconds of video.
 # Every page is still, and every reveal is a solid block that snaps in on its frame, so a hosted runner

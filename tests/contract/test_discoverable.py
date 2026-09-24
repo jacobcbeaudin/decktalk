@@ -33,10 +33,10 @@ from decktalk.results import RESULTS, Result
 from decktalk.settings import KEYS, NUMBERS
 from support.paths import REPO
 
-SCHEMA = REPO / "schema"
+SCHEMA = REPO / "schemas" / "v1"
 RESULT_SCHEMAS = SCHEMA / "results"
-SETTINGS_SCHEMA = SCHEMA / "decktalk-1.json"
-MACHINE_SCHEMA = SCHEMA / "decktalk-machine-1.json"
+SETTINGS_SCHEMA = SCHEMA / "decktalk.json"
+MACHINE_SCHEMA = SCHEMA / "machine.json"
 
 DOCS = "https://docs.decktalk.ai"
 """Where every published address resolves, which is the one host a printed URL may name."""

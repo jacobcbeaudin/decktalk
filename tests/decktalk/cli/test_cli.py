@@ -154,12 +154,12 @@ def test_the_json_of_a_command_validates_against_its_committed_schema(run, proje
     project(status=answers["status"], check=answers["check"])
     for command, name in (("status", "status"), ("check", "check")):
         written = json.loads(run(command, "--json").out)
-        committed = json.loads((REPO / "schema" / "results" / f"{name}.json").read_text(encoding="utf-8"))
+        committed = json.loads((REPO / "schemas" / "v1" / "results" / f"{name}.json").read_text(encoding="utf-8"))
         jsonschema.validate(written, committed)
 
 
 def test_the_json_of_a_refusal_validates_against_the_committed_error_schema(run, project) -> None:
     project(words=NotBuiltError("build/narrate/takes.json is not there."))
     written = json.loads(run("words", "--json").out)
-    committed = json.loads((REPO / "schema" / "results" / "error.json").read_text(encoding="utf-8"))
+    committed = json.loads((REPO / "schemas" / "v1" / "results" / "error.json").read_text(encoding="utf-8"))
     jsonschema.validate(written, committed)

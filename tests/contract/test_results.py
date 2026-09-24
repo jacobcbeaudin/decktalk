@@ -77,7 +77,7 @@ RESERVED = ("schema", "ok", "findings", "error")
 RETIRED = ("command", "exit_code", "summary", "data", "result")
 """Keys the 0.4 envelope carried. The JSON is one flat object now, so none of them may come back."""
 
-SCHEMAS = REPO / "schema" / "results"
+SCHEMAS = REPO / "schemas" / "v1" / "results"
 """Where the committed JSON Schema of each result lives, one file per name `decktalk schema` prints."""
 
 HERE = "here"
@@ -343,7 +343,7 @@ def test_every_row_names_a_result_with_a_committed_schema(row: Row):
     """An agent reads the contract from the schema directory, so every result has a file there."""
     assert issubclass(row.result, Result)
     name = next(key for key, model in RESULTS.items() if model is row.result)
-    assert (SCHEMAS / f"{name}.json").is_file(), f"{name}.json is missing from schema/results/"
+    assert (SCHEMAS / f"{name}.json").is_file(), f"{name}.json is missing from schemas/v1/results/"
 
 
 @pytest.mark.parametrize("row", [row for row in ALL_ROWS if row.call], ids=lambda row: row.call)

@@ -40,7 +40,7 @@ from decktalk.settings import (
 )
 from decktalk.tomlmap import Key, Nature, Source
 
-SCHEMA = Path(__file__).resolve().parents[2] / "schema" / "decktalk-1.json"
+SCHEMA = Path(__file__).resolve().parents[2] / "schemas" / "v1" / "decktalk.json"
 
 
 def schema() -> dict[str, Any]:

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://decktalk.ai/schema/decktalk-machine-1.json",
+  "$id": "https://decktalk.ai/schemas/v1/machine.json",
   "title": "DeckTalk per-machine settings file",
   "description": "The keys a per-machine settings file may hold, which are the ones that describe this machine rather than the film. A key about the film belongs in the project file, because the file that ships carries whatever the runner believes.",
   "type": "object",
