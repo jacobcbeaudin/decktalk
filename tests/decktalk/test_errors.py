@@ -1,45 +1,125 @@
-"""The exceptions DeckTalk raises on purpose, and the closed list of codes the envelope reports them by."""
+"""Nine codes, seven classes, and a mapping from a refusal to an exit code that cannot miss a row."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
+import pytest
 
-from decktalk.errors import ConfigError, DeckTalkError, ErrorCode, MissingInputError, ProviderError, ToolError
-from support.paths import DATA
+from decktalk.errors import (
+    BROKEN,
+    INTERRUPTED,
+    REFUSED,
+    ApprovalRequired,
+    Cancel,
+    Cancelled,
+    DeckTalkError,
+    ErrorCode,
+    ErrorInfo,
+    InputError,
+    NotBuiltError,
+    ProjectLocked,
+    ProviderError,
+    ToolError,
+)
+from decktalk.findings import DOCS, Location
 
-WIRE = json.loads((DATA / "vocabulary.json").read_text(encoding="utf-8"))
+CLASSES = (InputError, NotBuiltError, ProviderError, ToolError, ProjectLocked, ApprovalRequired, Cancelled)
+CODELESS = (ErrorCode.USAGE, ErrorCode.INTERNAL)
 
 
-def test_the_codes_are_the_six_the_contract_lists_and_nothing_else():
-    assert [code.value for code in ErrorCode] == WIRE["error_codes"]
-    for code in ErrorCode:
-        assert code != code.value, "a plain enum, so a raw code never compares equal to one"
-
-
-def test_every_error_class_carries_its_own_code_and_a_bare_error_is_internal():
-    assert [kind.code for kind in (ConfigError, MissingInputError, ProviderError, ToolError)] == [
-        ErrorCode.CONFIG,
-        ErrorCode.MISSING_INPUT,
-        ErrorCode.PROVIDER,
-        ErrorCode.TOOL,
+def test_there_are_nine_codes_and_they_are_the_ones_the_design_named() -> None:
+    assert [code.value for code in ErrorCode] == [
+        "INPUT",
+        "NOT_BUILT",
+        "PROVIDER",
+        "TOOL",
+        "LOCKED",
+        "APPROVAL",
+        "CANCELLED",
+        "USAGE",
+        "INTERNAL",
     ]
-    assert DeckTalkError("bare").code is ErrorCode.INTERNAL
 
 
-def test_a_subclass_inherits_the_code_of_the_class_it_is_a_kind_of():
-    class CarriesAResult(ConfigError):
-        pass
+def test_there_are_seven_classes_and_each_is_a_kind_of_the_base() -> None:
+    assert len(CLASSES) == 7
+    for kind in CLASSES:
+        assert issubclass(kind, DeckTalkError)
 
-    assert CarriesAResult("x").code is ErrorCode.CONFIG
+
+def test_every_class_carries_a_different_code() -> None:
+    carried = [kind.code for kind in CLASSES]
+    assert len(set(carried)) == len(carried)
 
 
-def test_an_error_carries_the_next_action_the_file_and_the_line_when_the_raiser_knows_them():
-    error = ConfigError("unknown key", hint="see the reference", path=Path("decktalk.toml"), line=4)
-    assert (str(error), error.hint, error.path, error.line) == (
-        "unknown key",
-        "see the reference",
-        Path("decktalk.toml"),
-        4,
+def test_exactly_usage_and_internal_have_no_class_that_raises_them() -> None:
+    raised = {kind.code for kind in CLASSES}
+    assert set(ErrorCode) - raised == set(CODELESS)
+
+
+def test_the_base_is_never_raised_bare_so_it_carries_no_code() -> None:
+    assert "code" not in vars(DeckTalkError)
+
+
+def test_the_exit_mapping_is_total_and_is_the_one_the_design_named() -> None:
+    exits = {code: code.exit_code for code in ErrorCode}
+    assert set(exits) == set(ErrorCode)
+    assert {code for code, value in exits.items() if value == REFUSED} == {ErrorCode.USAGE, ErrorCode.APPROVAL}
+    assert {code for code, value in exits.items() if value == INTERRUPTED} == {ErrorCode.CANCELLED}
+    assert {code for code, value in exits.items() if value == BROKEN} == set(ErrorCode) - {
+        ErrorCode.USAGE,
+        ErrorCode.APPROVAL,
+        ErrorCode.CANCELLED,
+    }
+
+
+def test_every_code_publishes_one_sentence_and_one_page() -> None:
+    for code in ErrorCode:
+        assert code.sentence.endswith("."), code.value
+        assert ";" not in code.sentence, code.value
+        assert code.url == f"{DOCS}/errors/{code.value}"
+
+
+def test_a_raiser_carries_the_next_command_and_the_place_to_open() -> None:
+    error = InputError(
+        "decktalk.toml is not valid TOML.",
+        hint="Fix line 59 of decktalk.toml, then run decktalk status.",
+        location=Location(where="decktalk.toml", file="decktalk.toml", line=59),
     )
-    assert (ToolError("gone").hint, ToolError("gone").path, ToolError("gone").line) == (None, None, None)
+    assert error.code is ErrorCode.INPUT
+    assert error.location is not None
+    assert error.location.line == 59
+
+
+def test_a_provider_refusal_says_whether_waiting_would_help() -> None:
+    assert ProviderError("refused").retryable is False
+    assert ProviderError("refused", retryable=True).retryable is True
+
+
+def test_an_exception_becomes_data_in_one_place() -> None:
+    error = NotBuiltError("build/narrate/takes.json is not there.", hint="Run decktalk build --to assemble.")
+    info = ErrorInfo.of(error)
+    assert info.code is ErrorCode.NOT_BUILT
+    assert info.message == "build/narrate/takes.json is not there."
+    assert info.docs == ErrorCode.NOT_BUILT.url
+    assert ErrorInfo.model_validate_json(info.model_dump_json()) == info
+
+
+def test_a_cancel_token_is_unset_until_it_is_set() -> None:
+    token = Cancel()
+    assert token.is_set() is False
+    token.check()
+    token.cancel()
+    assert token.is_set() is True
+
+
+def test_a_cancelled_run_raises_the_class_that_carries_the_interrupt_code() -> None:
+    token = Cancel()
+    token.cancel()
+    with pytest.raises(Cancelled) as raised:
+        token.check()
+    assert raised.value.code.exit_code == INTERRUPTED
+
+
+def test_every_error_field_publishes_one_sentence() -> None:
+    for name, field in ErrorInfo.model_fields.items():
+        assert field.description, name
