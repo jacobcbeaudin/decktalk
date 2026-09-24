@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from decktalk.artifacts.words import Word
 from decktalk.captions.layout import CAPTION_MAX_CHARS, CAPTION_MIN_SECONDS, caption_cues, display_words
+from decktalk.results import Word
 
 
 def _spoken(text: str, start: float = 0.0, step: float = 0.4, gap_after: str | None = None) -> list[Word]:
     words: list[Word] = []
     t = start
     for w in text.split():
-        words.append(Word(w, round(t, 3), round(t + 0.3, 3)))
+        words.append(Word(word=w, start=round(t, 3), end=round(t + 0.3, 3)))
         t += step
         if gap_after is not None and w == gap_after:
             t += 3.0
@@ -18,7 +18,7 @@ def _spoken(text: str, start: float = 0.0, step: float = 0.4, gap_after: str | N
 
 
 def _film(*words: tuple[str, float, float]) -> list[Word]:
-    return [Word(w, start, end) for w, start, end in words]
+    return [Word(word=w, start=start, end=end) for w, start, end in words]
 
 
 def test_caption_cues_group_whole_sentences_and_keep_lines_short():
@@ -119,7 +119,7 @@ def test_caption_cues_split_on_a_long_pause_and_never_cross_sections():
 
 
 def test_display_words_restores_punctuation_and_case():
-    words = [Word("welcome", 0, 1), Word("this", 1, 2), Word("is", 2, 3), Word("two", 3, 4), Word("x", 4, 5)]
+    words = [Word(word=w, start=i, end=i + 1) for i, w in enumerate(("welcome", "this", "is", "two", "x"))]
     text = "Welcome. This is two x."
     out = display_words(words, text)
     assert [w.word for w in out] == ["Welcome.", "This", "is", "two", "x."]
