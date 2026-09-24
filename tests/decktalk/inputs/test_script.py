@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decktalk.model.script import BREAK_RE, parse_script, strip_markdown
+from decktalk.inputs.script import BREAK_RE, parse_script, strip_markdown
 from decktalk.settings import Settings
 
 SCRIPT = """# Title

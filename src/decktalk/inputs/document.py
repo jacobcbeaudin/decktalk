@@ -1,15 +1,17 @@
 """The `decktalk.toml` document: the frozen tables that say what this presentation is.
 
-    [project]                name, script, cues, build
-    [voice]                  the speech settings for this presentation
-    [[section]]              number, chapter, then either page+scene or clip
+    [project]                name, script, cues, build, language
+    [voice]                  which voice reads this presentation
+    [[section]]              number, chapter, then either page and scene, or clip
     [transition]             dips, dip_seconds, page_fades_in
-    [mix]                    music, ambience, music_markers, sfx, levels, loudness
-    [soundscape]             prompts for `decktalk soundscape`
+    [mix]                    music, ambience, music_markers, effects and their levels
+    [soundscape]             the prompts `decktalk soundscape` generates from
 
-Everything here changes per presentation. What changes per machine is the tuning in
-`settings.py`, and secrets live only in `.env`. Every value is read through `tomlmap.Table`, so a
-bad file fails at load with the table and the key named, not deep inside ffmpeg.
+Everything here changes per presentation. What a knob changes is tuning and lives in `settings.py`,
+and secrets live only in `.env`. `[voice]` and `[mix]` are shared: this module reads the content
+half and the settings layer reads the knobs, so neither warns about the other's keys. Every value is
+read through `tomlmap.Table`, so a bad file fails at load with the table, the key and the line
+named, rather than deep inside ffmpeg.
 """
 
 from __future__ import annotations
@@ -18,10 +20,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..errors import ConfigError
-from ..pipeline import SectionKind
-from ..settings import PROJECT_FILE, Settings
-from ..tomlmap import Table, unknown_key_message
+from decktalk.errors import InputError
+from decktalk.results import SectionKind
+from decktalk.settings import BY_ID, PROJECT_FILE, Settings
+from decktalk.tomlmap import Table, unknown_key_message
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +67,7 @@ class PageSection:
     into it should not show. verify compares the two frames.
 
     `lead_seconds` replaces `[narration] lead_seconds`, the silence in the narration before the
-    section's first word, and `tail_seconds` replaces `[narration] min_tail_seconds`, the silence
+    section's first word, and `tail_seconds` replaces `[narration] tail_min_seconds`, the silence
     after its last. Both are placed when the takes are joined, not sent to the voice, so a cached
     take stays cached. `hold_seconds` holds the section's
     last frame after its narration, and the narration pauses for it.
@@ -81,7 +83,7 @@ class PageSection:
     params: dict[str, str] = field(default_factory=dict)
     seamless: bool = False
     lead_seconds: float | None = None  # None uses [narration] lead_seconds.
-    tail_seconds: float | None = None  # None uses [narration] min_tail_seconds.
+    tail_seconds: float | None = None  # None uses [narration] tail_min_seconds.
 
     @property
     def key(self) -> str:
@@ -106,25 +108,13 @@ Section = ClipSection | PageSection
 
 @dataclass(frozen=True)
 class Voice:
-    """Speech settings. `model` may be overridden per project too."""
+    """Which voice reads this presentation, which is content. How it reads is `[voice]` tuning."""
 
-    provider: str = "elevenlabs"  # a registered SpeechProvider name
-    model: str | None = None  # falls back to settings.narration.model
-    stability: float = 0.55
-    similarity_boost: float = 0.75
-    style: float = 0.0
-    speaker_boost: bool = True
-    speed: float = 1.0
-    price_per_1000_characters: float = 0.0  # What this project's plan charges, which `narrate --dry-run` prices.
+    provider: str = "elevenlabs"
+    """The speech provider this project is read by, which is a name the machine's own map answers."""
 
-    def api_settings(self) -> dict[str, Any]:
-        return {
-            "stability": self.stability,
-            "similarity_boost": self.similarity_boost,
-            "style": self.style,
-            "use_speaker_boost": self.speaker_boost,
-            "speed": self.speed,
-        }
+    model: str | None = None
+    """The provider model, or None to take the one `[narration] model` names."""
 
 
 @dataclass(frozen=True)
@@ -135,14 +125,7 @@ class Transition:
 
 
 @dataclass(frozen=True)
-class Loudness:
-    target_lufs: float = -16.0
-    true_peak_db: float = -1.5
-    range_lu: float = 11.0
-
-
-@dataclass(frozen=True)
-class Sfx:
+class MixEffect:
     """One sound file played at a cue, with the caption line a viewer reads when it plays."""
 
     file: str
@@ -164,8 +147,7 @@ class Mix:
     ambience: str | None = None
     ambience_db: float = -20.0
     slate: str | None = None
-    sfx: tuple[Sfx, ...] = ()
-    loudness: Loudness = Loudness()
+    effects: tuple[MixEffect, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -189,12 +171,12 @@ class MusicSpec:
 @dataclass(frozen=True)
 class Soundscape:
     ambience: SoundSpec | None = None
-    sfx: dict[str, SoundSpec] = field(default_factory=dict)
+    effects: dict[str, SoundSpec] = field(default_factory=dict)
     music: MusicSpec | None = None
 
     @property
     def empty(self) -> bool:
-        return self.ambience is None and not self.sfx and self.music is None
+        return self.ambience is None and not self.effects and self.music is None
 
 
 # The fields of Document that [project] fills. Every other table's keys are the fields of its own class.
@@ -227,7 +209,7 @@ class Document:
         known = TOP_TABLES | set(Settings.__dataclass_fields__)
         unknown = top.unknown(known)
         if unknown:
-            raise ConfigError(f"{PROJECT_FILE}: unknown table(s) {unknown}. The known tables are {sorted(known)}.")
+            raise InputError(f"{PROJECT_FILE}: unknown table(s) {unknown}. The known tables are {sorted(known)}.")
         project = Table(top.get_table("project") or {}, f"{PROJECT_FILE}: [project]")
         project.warn_unknown(PROJECT_KEYS)
         sections = parse_sections(doc)
@@ -296,6 +278,15 @@ class Document:
         return seen
 
 
+def tuning_keys(table: str) -> set[str]:
+    """The keys of one shared table that the settings layer owns, so the document warns for neither.
+
+    `[voice]` and `[mix]` each hold knobs beside the content this module parses, so a reader of one
+    of them has to know both halves before it can call a key unknown.
+    """
+    return {key.id.rsplit(".", 1)[1] for key in BY_ID.values() if key.id.rsplit(".", 1)[0] == table}
+
+
 def warn_section_keys(t: Table, *, clip: bool) -> None:
     """Warn about keys a section does not read, and name the section kind a misplaced key belongs to."""
     own, other, kind = (CLIP_KEYS, PAGE_KEYS, SectionKind.PAGE) if clip else (PAGE_KEYS, CLIP_KEYS, SectionKind.CLIP)
@@ -312,7 +303,7 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
     t.where = f"{PROJECT_FILE}: [[section]] number={number}"
     chapter = t.get_str("chapter", "")
     if "clip" in raw and "page" in raw:
-        raise ConfigError(f"{t.where}: give either 'clip' or 'page', not both")
+        raise InputError(f"{t.where}: give either 'clip' or 'page', not both")
     if "clip" in raw:
         warn_section_keys(t, clip=True)
         return ClipSection(
@@ -325,16 +316,16 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
             seamless=t.get_bool("seamless"),
         )
     if "page" not in raw:
-        raise ConfigError(f"{t.where}: needs 'page' (an HTML file) or 'clip' (a video file)")
+        raise InputError(f"{t.where}: needs 'page' (an HTML file) or 'clip' (a video file)")
     warn_section_keys(t, clip=False)
     params_raw = t.get_table("params") or {}
     scene = raw.get("scene", number)
     if isinstance(scene, bool) or not isinstance(scene, (int, str)):
-        raise ConfigError(f"{t.where}: 'scene' must be a number or a string")
+        raise InputError(f"{t.where}: 'scene' must be a number or a string")
     for key in ("record_margin_seconds", "hold_seconds", "lead_seconds", "tail_seconds"):
         value = t.get_num(key)
         if value is not None and value < 0:
-            raise ConfigError(f"{t.where}: '{key}' must be 0 or more, got {value:g}")
+            raise InputError(f"{t.where}: '{key}' must be 0 or more, got {value:g}")
     return PageSection(
         number=number,
         page=t.get_path("page", ""),
@@ -353,15 +344,15 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
 def parse_sections(doc: dict[str, Any]) -> list[Section]:
     raw = Table(doc, PROJECT_FILE).get_tables("section")
     if not raw:
-        raise ConfigError(f"{PROJECT_FILE}: no [[section]] tables. Add one per '## N.' section of the script.")
+        raise InputError(f"{PROJECT_FILE}: no [[section]] tables. Add one per '## N.' section of the script.")
     sections = [parse_section(item, i + 1) for i, item in enumerate(raw)]
     numbers = [s.number for s in sections]
     dupes = sorted({n for n in numbers if numbers.count(n) > 1})
     if dupes:
-        raise ConfigError(f"{PROJECT_FILE}: duplicate section number(s) {dupes}")
+        raise InputError(f"{PROJECT_FILE}: duplicate section number(s) {dupes}")
     sections.sort(key=lambda s: s.number)
     if sections[0].seamless:
-        raise ConfigError(
+        raise InputError(
             f"{PROJECT_FILE}: [[section]] number={sections[0].number}: seamless is set on the first section, "
             "which has no previous section"
         )
@@ -372,18 +363,9 @@ def parse_voice(doc: dict[str, Any]) -> Voice:
     raw = doc.get("voice")
     if raw is None:
         return Voice()
-    t = Table(raw, f"{PROJECT_FILE}: [voice]")
-    t.warn_unknown(Voice.__dataclass_fields__)
-    return Voice(
-        provider=t.get_str("provider", "elevenlabs"),
-        model=t.get_str("model"),
-        stability=t.get_num("stability", 0.55),
-        similarity_boost=t.get_num("similarity_boost", 0.75),
-        style=t.get_num("style", 0.0),
-        speaker_boost=t.get_bool("speaker_boost", True),
-        speed=t.get_num("speed", 1.0),
-        price_per_1000_characters=t.get_num("price_per_1000_characters", 0.0),
-    )
+    t = Table(raw, f"{PROJECT_FILE}: [voice]", table="voice")
+    t.warn_unknown(set(Voice.__dataclass_fields__) | tuning_keys("voice"))
+    return Voice(provider=t.get_str("provider", "elevenlabs"), model=t.get_str("model"))
 
 
 def parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
@@ -396,13 +378,13 @@ def parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
     dips: tuple[tuple[int, int], ...] | None = None
     if dips_raw is not None:
         if not isinstance(dips_raw, list):
-            raise ConfigError(f"{t.where}: 'dips' must be a list of [from, to] pairs")
+            raise InputError(f"{t.where}: 'dips' must be a list of [from, to] pairs")
         pairs: list[tuple[int, int]] = []
         for pair in dips_raw:
             if not (isinstance(pair, list) and len(pair) == 2 and all(isinstance(x, int) for x in pair)):
-                raise ConfigError(f"{t.where}: dips entry {pair!r} is not a [from, to] pair of section numbers")
+                raise InputError(f"{t.where}: dips entry {pair!r} is not a [from, to] pair of section numbers")
             if pair[0] not in numbers or pair[1] not in numbers:
-                raise ConfigError(f"{t.where}: dips entry {pair!r} names a section that does not exist")
+                raise InputError(f"{t.where}: dips entry {pair!r} names a section that does not exist")
             pairs.append((pair[0], pair[1]))
         dips = tuple(pairs)
     return Transition(
@@ -414,19 +396,17 @@ def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
     raw = doc.get("mix")
     if raw is None:
         return Mix()
-    t = Table(raw, f"{PROJECT_FILE}: [mix]")
-    t.warn_unknown(Mix.__dataclass_fields__)
-    ln = Table(t.get_table("loudness") or {}, f"{PROJECT_FILE}: [mix.loudness]")
-    ln.warn_unknown(Loudness.__dataclass_fields__)
-    sfx: list[Sfx] = []
-    for i, item in enumerate(t.get_tables("sfx")):
-        s = Table(item, f"{PROJECT_FILE}: [[mix.sfx]] #{i + 1}")
-        s.warn_unknown(Sfx.__dataclass_fields__)
+    t = Table(raw, f"{PROJECT_FILE}: [mix]", table="mix")
+    t.warn_unknown(set(Mix.__dataclass_fields__) | tuning_keys("mix") | {"loudness"})
+    effects: list[MixEffect] = []
+    for i, item in enumerate(t.get_tables("effects")):
+        s = Table(item, f"{PROJECT_FILE}: [[mix.effects]] #{i + 1}")
+        s.warn_unknown(MixEffect.__dataclass_fields__)
         section = s.get_int("section", required=True)
         if section not in numbers:
-            raise ConfigError(f"{s.where}: section {section} does not exist")
-        sfx.append(
-            Sfx(
+            raise InputError(f"{s.where}: section {section} does not exist")
+        effects.append(
+            MixEffect(
                 file=s.get_path("file", required=True),
                 section=section,
                 cue=s.get_str("cue", required=True),
@@ -445,12 +425,7 @@ def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
         ambience=t.get_path("ambience"),
         ambience_db=t.get_num("ambience_db", -20.0),
         slate=t.get_path("slate"),
-        sfx=tuple(sfx),
-        loudness=Loudness(
-            target_lufs=ln.get_num("target_lufs", -16.0),
-            true_peak_db=ln.get_num("true_peak_db", -1.5),
-            range_lu=ln.get_num("range_lu", 11.0),
-        ),
+        effects=tuple(effects),
     )
 
 
@@ -473,11 +448,11 @@ def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
     t = Table(raw, f"{PROJECT_FILE}: [soundscape]")
     t.warn_unknown(Soundscape.__dataclass_fields__)
     amb_raw = t.get_table("ambience")
-    sfx: dict[str, SoundSpec] = {}
-    for name, item in (t.get_table("sfx") or {}).items():
+    effects: dict[str, SoundSpec] = {}
+    for name, item in (t.get_table("effects") or {}).items():
         if not isinstance(item, dict):
-            raise ConfigError(f"{PROJECT_FILE}: [soundscape.sfx.{name}] must be a table")
-        sfx[str(name)] = parse_sound(item, f"{PROJECT_FILE}: [soundscape.sfx.{name}]")
+            raise InputError(f"{PROJECT_FILE}: [soundscape.effects.{name}] must be a table")
+        effects[str(name)] = parse_sound(item, f"{PROJECT_FILE}: [soundscape.effects.{name}]")
     music_raw = t.get_table("music")
     music = None
     if music_raw is not None:
@@ -492,7 +467,7 @@ def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
         )
     return Soundscape(
         ambience=parse_sound(amb_raw, f"{PROJECT_FILE}: [soundscape.ambience]") if amb_raw is not None else None,
-        sfx=sfx,
+        effects=effects,
         music=music,
     )
 

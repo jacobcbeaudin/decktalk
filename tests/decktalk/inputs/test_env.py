@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
 
-from decktalk.errors import ConfigError
-from decktalk.model.env import Env, read_dotenv
+from decktalk.errors import InputError
+from decktalk.inputs.env import Env, read_dotenv
 
 
 def write_env(tmp_path: Path, text: str) -> Path:
@@ -48,7 +49,7 @@ def test_a_comment_a_blank_line_and_a_line_with_no_equals_are_skipped(tmp_path):
 
 
 def test_a_placeholder_counts_as_unset(tmp_path):
-    """The scaffold writes `<your key>`, and a project that still holds it has no key."""
+    """`init` writes `<your key>`, and a project that still holds it has no key."""
     env = Env(write_env(tmp_path, "ELEVENLABS_API_KEY=<your key>\n"), environ={})
     assert not env.get("ELEVENLABS_API_KEY")
 
@@ -59,7 +60,7 @@ def test_a_real_environment_variable_wins_over_the_file(tmp_path):
 
 
 def test_the_file_is_read_once_however_many_variables_are_asked_for(tmp_path, monkeypatch):
-    """A model reads its file once, which is the rule every other model module follows."""
+    """One file is read once, which is the rule every module in this layer follows."""
     path = write_env(tmp_path, "A=1\nB=2\n")
     env, reads = Env(path, environ={}), []
     real = Path.read_text
@@ -72,19 +73,17 @@ def test_a_missing_variable_names_itself_the_file_and_the_next_action(tmp_path):
     """The error slot is filled by the raiser that knows, and no value reaches the message."""
     path = write_env(tmp_path, "ELEVENLABS_VOICE_ID=abc\n")
     env = Env(path, environ={})
-    with pytest.raises(ConfigError) as info:
+    with pytest.raises(InputError) as info:
         env.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
     error = info.value
     assert str(error) == "ELEVENLABS_API_KEY is not set."
     assert error.hint is not None and ".env.example" in error.hint
-    assert error.path == path
+    assert error.location is not None and error.location.file == path
     assert "abc" not in str(error) and "abc" not in (error.hint or "")
 
 
 def test_the_environment_is_not_a_field_so_no_walker_can_reach_it(tmp_path):
     """A walker over `fields(Env)` must never be able to print a whole machine's environment."""
-    import dataclasses
-
     env = Env(write_env(tmp_path, "K=v\n"), environ={"SECRET_TOKEN": "sk_live_0"})
     assert [f.name for f in dataclasses.fields(env)] == ["file"]
     assert "sk_live_0" not in repr(dataclasses.asdict(env))
@@ -97,3 +96,10 @@ def test_a_byte_order_mark_does_not_hide_the_first_key(tmp_path):
     values = read_dotenv(path)
     assert values == {"ELEVENLABS_API_KEY": "sk_real", "ELEVENLABS_VOICE_ID": "abc"}
     assert Env(path, environ={}).get("ELEVENLABS_API_KEY").reveal() == "sk_real"
+
+
+def test_a_project_holding_every_variable_it_needs_says_so_without_revealing_one(tmp_path):
+    """`doctor` reports whether the credential is set, which is a question and never a read."""
+    env = Env(write_env(tmp_path, "ELEVENLABS_API_KEY=sk_real\n"), environ={})
+    assert env.has("ELEVENLABS_API_KEY")
+    assert not env.has("ELEVENLABS_API_KEY", "MISSING_ONE")

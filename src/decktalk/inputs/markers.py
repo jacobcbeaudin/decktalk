@@ -15,9 +15,9 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..errors import ConfigError
-from ..jsonio import read_json
-from ..tomlmap import Table
+from decktalk.errors import InputError
+from decktalk.inputs.paths import at, relative
+from decktalk.tomlmap import Table
 
 
 @dataclass(frozen=True)
@@ -46,27 +46,27 @@ class Markers:
     markers: tuple[Marker, ...] = field(default_factory=tuple)
 
 
-def load_markers(path: Path) -> Markers:
+def load_markers(path: Path, root: Path) -> Markers:
     """The parsed markers file. A malformed file fails here, with the file and the row named."""
     try:
-        data = read_json(path)
+        data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ConfigError(
+        raise InputError(
             f"{path.name} is not valid JSON: {exc.msg}.",
             hint="Check the brackets and the commas on the line named here.",
-            path=path,
-            line=exc.lineno,
+            location=at(path, root, line=exc.lineno),
         ) from exc
     if not isinstance(data, dict):
-        raise ConfigError(
+        raise InputError(
             f"{path.name} has no top-level 'markers' array.",
             hint='Wrap the markers in {"markers": [...]}.',
-            path=path,
+            location=at(path, root),
         )
-    top = Table(data, path.name, path)
+    shown = relative(path, root)
+    top = Table(data, path.name, shown)
     rows: list[Marker] = []
     for i, raw in enumerate(top.get_tables("markers")):
-        t = Table(raw, f"{path.name}: markers #{i + 1}", path)
+        t = Table(raw, f"{path.name}: markers #{i + 1}", shown)
         t.warn_unknown(Marker.__dataclass_fields__)
         rows.append(
             Marker(

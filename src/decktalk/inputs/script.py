@@ -16,8 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..errors import ConfigError, MissingInputError
-from ..settings import NarrationConfig
+from decktalk.errors import InputError
+from decktalk.inputs.paths import at
+from decktalk.settings import NarrationConfig
 
 DIRECTION_MARK = "\x00DIR\x00"
 # "## 3. The demo — 1:40 to 3:40"  (the dash and time range are optional)
@@ -178,26 +179,30 @@ def parse_script(markdown: str) -> list[Segment]:
     return segments
 
 
-def read_script(path: Path, *, declared: set[int], clips: set[int]) -> tuple[list[Segment], list[Segment]]:
+def read_script(path: Path, root: Path, *, declared: set[int], clips: set[int]) -> tuple[list[Segment], list[Segment]]:
     """(every section in the script, the spoken ones in order).
 
     `declared` is every section number in `decktalk.toml`, and `clips` are the ones that play a
     clip instead of a page, which the voice never reads.
     """
     if not path.exists():
-        raise MissingInputError(
+        raise InputError(
             f"{path.name} is not there.",
             hint="Write the script, or point [project] script at the file you meant.",
-            path=path,
+            location=at(path, root),
         )
     all_segments = parse_script(path.read_text(encoding="utf-8"))
     if not all_segments:
-        raise ConfigError(
+        raise InputError(
             f"{path.name} holds no '## N. Title' section.",
             hint="Open each spoken section with a heading such as '## 1. Open'.",
-            path=path,
+            location=at(path, root),
         )
     undeclared = [s.index for s in all_segments if s.index not in declared]
     if undeclared:
-        raise ConfigError(f"script sections {undeclared} have no [[section]] in decktalk.toml")
+        raise InputError(
+            f"script sections {undeclared} have no [[section]] in decktalk.toml.",
+            hint="Add a [[section]] for each, or drop the heading from the script.",
+            location=at(path, root),
+        )
     return all_segments, [s for s in all_segments if s.index not in clips]
