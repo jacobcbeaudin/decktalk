@@ -1,0 +1,17 @@
+{
+  "name": "decktalk-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The TypeScript sources of the deck runtime and the recorder's probe, and the pinned tools that build them.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/decktalk/runtime/src/"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13",
+    "@types/node": "26.6.2",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}
