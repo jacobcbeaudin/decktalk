@@ -2,11 +2,16 @@
 
 The environment override wins, the pinned build that `toolchain/ffmpeg_fetch.py` downloads comes
 next, and a build on PATH is the fallback, so every machine renders with the same ffmpeg unless it
-is told otherwise. Every invocation checks the return code, so a failed render says what ffmpeg
-said rather than leaving an empty file behind.
+is told otherwise. The override is a pair: a machine that names one half and not the other is
+refused rather than quietly rendered with a build it did not ask for.
 
-`audio.py` and `frames.py` build on the four calls here: `run`, `stderr`, `probe_duration` and
-`decoded_duration`.
+Every call goes through `_checked`, so a return code other than zero raises `ToolError` carrying
+the tail of what the tool said. A measurement that read a failure as silence, as blackness or as a
+missing audio stream would turn a broken tool into a verdict about the film, which is the one
+mistake this module exists to prevent.
+
+`audio.py` and `frames.py` build on the five calls here: `run`, `stderr`, `raw`, `probe_duration`
+and `has_audio`.
 """
 
 from __future__ import annotations
@@ -19,14 +24,50 @@ from functools import lru_cache
 from pathlib import Path
 
 from ..errors import ToolError
+from ..findings import Location
 from ..toolchain import ffmpeg_fetch
 
 log = logging.getLogger(__name__)
 
+FFMPEG_VARIABLE = "DECKTALK_FFMPEG"
+FFPROBE_VARIABLE = "DECKTALK_FFPROBE"
+OVERRIDE = (FFMPEG_VARIABLE, FFPROBE_VARIABLE)
+"""The two variables that name a build of the caller's own, which are set together or not at all."""
+
+TAIL_LINES = 6
+"""How many of a tool's last lines an error quotes, which is where it says what it could not do."""
+
+HINT_CHARS = 200
+"""How much of a probe's complaint a hint carries, because a hint is read beside the sentence."""
+
+
+def _tail(err: bytes) -> str:
+    """The last lines of what a tool wrote, as one line, which is where the reason for a failure is."""
+    lines = err.decode(errors="replace").strip().splitlines()
+    return " | ".join(line.strip() for line in lines[-TAIL_LINES:]) or "it said nothing"
+
+
+def _checked(cmd: list[str], what: str, *, location: Location | None = None) -> subprocess.CompletedProcess[bytes]:
+    """Run one tool call and hand back what it wrote, or raise `ToolError` carrying the tail of its complaint.
+
+    Every invocation in this package comes through here, so no caller can read a failed run as a
+    measurement. The output is captured as bytes, because a decoder writes samples to stdout and a
+    filter writes its report to stderr in the same call shape.
+    """
+    proc = subprocess.run(cmd, capture_output=True, check=False)
+    if proc.returncode != 0:
+        raise ToolError(f"{what} failed: {_tail(proc.stderr)}", location=location)
+    return proc
+
+
+def _at(path: Path | str) -> Location:
+    """Where a file failure happened, which is the file the tool was given."""
+    return Location(where=Path(path).name, file=Path(path))
+
 
 def _env_paths() -> tuple[str, str] | None:
     """The pair the environment names, when both variables are set and both name a file that is there."""
-    env_ff, env_fp = os.environ.get("DECKTALK_FFMPEG"), os.environ.get("DECKTALK_FFPROBE")
+    env_ff, env_fp = os.environ.get(FFMPEG_VARIABLE), os.environ.get(FFPROBE_VARIABLE)
     if not (env_ff and env_fp):
         return None
     return (env_ff, env_fp) if not env_missing() else None
@@ -38,8 +79,18 @@ def env_missing() -> list[str]:
     `doctor` reports this and `ffmpeg_paths` refuses on it, which is the difference between a command
     whose work is to report what a machine has and one that needs the tool to do anything at all.
     """
-    named = ("DECKTALK_FFMPEG", "DECKTALK_FFPROBE")
-    return [name for name in named if (value := os.environ.get(name)) and not Path(value).is_file()]
+    return [name for name in OVERRIDE if (value := os.environ.get(name)) and not Path(value).is_file()]
+
+
+def env_unpaired() -> list[str]:
+    """The half of the override that is not set, when the other half is, which is never a usable pair.
+
+    ffmpeg and ffprobe are one build, so naming one of them and leaving the other to PATH renders
+    with two builds. The half that is missing is named rather than ignored, because a caller who set
+    one variable meant to set both and would otherwise never learn that nothing happened.
+    """
+    set_names = [name for name in OVERRIDE if os.environ.get(name)]
+    return [] if len(set_names) != 1 else [name for name in OVERRIDE if name not in set_names]
 
 
 def _path_pair() -> tuple[str, str] | None:
@@ -47,15 +98,26 @@ def _path_pair() -> tuple[str, str] | None:
     return (ff, fp) if ff and fp else None
 
 
+def _refuse_a_half_override() -> None:
+    """Refuse an override that names one executable of the pair, naming the one it left out."""
+    if unpaired := env_unpaired():
+        raise ToolError(
+            f"{', '.join(unpaired)} is not set, and ffmpeg and ffprobe have to come from one build.",
+            hint=f"Set {' and '.join(OVERRIDE)} together, or unset both to use the pinned build.",
+        )
+
+
 @lru_cache(maxsize=1)
 def ffmpeg_paths() -> tuple[str, str]:
     """(ffmpeg, ffprobe) executables.
 
-    The environment override wins. The pinned build comes next, fetched when it is not on disk yet,
-    so every machine renders with the same ffmpeg. A build on PATH is the fallback when there is no
-    pinned build for this platform or the download cannot run. A download whose digest does not
-    match is never used and never falls back, because that is the one failure that must stop a run.
+    The environment override wins, and half an override is refused. The pinned build comes next,
+    fetched when it is not on disk yet, so every machine renders with the same ffmpeg. A build on
+    PATH is the fallback when there is no pinned build for this platform or the download cannot run.
+    A download whose digest does not match is never used and never falls back, because that is the
+    one failure that must stop a run.
     """
+    _refuse_a_half_override()
     if missing := env_missing():
         raise ToolError(
             f"{', '.join(missing)} names a file that is not there.",
@@ -71,7 +133,7 @@ def ffmpeg_paths() -> tuple[str, str]:
             return on_path
         raise ToolError(
             f"ffmpeg/ffprobe not found: DeckTalk pins no build for {ffmpeg_fetch.platform_key()} and none is on "
-            "PATH. Install ffmpeg, or set DECKTALK_FFMPEG and DECKTALK_FFPROBE."
+            f"PATH. Install ffmpeg, or set {' and '.join(OVERRIDE)}."
         )
     try:
         return ffmpeg_fetch.fetch_ffmpeg()
@@ -97,9 +159,11 @@ def unnamed_paths() -> tuple[str, str] | None:
 def installed_paths() -> tuple[str, str] | None:
     """The (ffmpeg, ffprobe) pair that ffmpeg_paths() would return without downloading anything.
 
-    None means only a fetch could provide them. `decktalk doctor` reports on that instead of
-    triggering it.
+    None means only a fetch could provide them, or that the override names half a build. `decktalk
+    doctor` reports on that instead of triggering it.
     """
+    if env_unpaired():
+        return None
     return _env_paths() or ffmpeg_fetch.installed_pinned() or _path_pair()
 
 
@@ -112,19 +176,23 @@ def ffprobe() -> str:
 
 
 def run(*args: str) -> None:
-    """ffmpeg -hide_banner -loglevel error -y ARGS. Raises ToolError with ffmpeg's message."""
-    cmd = [ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", *args]
-    log.debug("ffmpeg %s", " ".join(args))
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        tail = proc.stderr.strip().splitlines()[-6:]
-        raise ToolError("ffmpeg failed: " + " | ".join(tail))
+    """ffmpeg -hide_banner -loglevel error -y ARGS, which writes a file and reports nothing."""
+    _checked([ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", *args], "ffmpeg")
 
 
 def stderr(*args: str) -> str:
-    """ffmpeg run whose useful output is on stderr (metadata=print, silencedetect, loudnorm)."""
-    cmd = [ffmpeg(), "-hide_banner", "-nostats", *args]
-    return subprocess.run(cmd, capture_output=True, text=True).stderr
+    """ffmpeg run whose useful output is on stderr (metadata=print, silencedetect, loudnorm).
+
+    A filter reports on stderr and exits zero, so a non-zero code here is the tool failing rather
+    than the film measuring badly, and the caller is told so instead of reading an empty report.
+    """
+    proc = _checked([ffmpeg(), "-hide_banner", "-nostats", *args], "ffmpeg")
+    return proc.stderr.decode(errors="replace")
+
+
+def raw(*args: str) -> bytes:
+    """ffmpeg run whose useful output is the bytes on stdout, such as decoded samples."""
+    return _checked([ffmpeg(), "-v", "error", *args], "ffmpeg").stdout
 
 
 def probe_duration(path: Path | str) -> float:
@@ -139,38 +207,23 @@ def probe_duration(path: Path | str) -> float:
         "default=noprint_wrappers=1:nokey=1",
         str(path),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0 or not proc.stdout.strip():
+    proc = _checked(cmd, f"ffprobe on {Path(path).name}", location=_at(path))
+    text = proc.stdout.decode(errors="replace").strip()
+    if not text:
         raise ToolError(
-            f"ffprobe could not read {Path(path).name}.",
-            hint=proc.stderr.strip()[-200:] or None,
-            path=Path(path),
+            f"ffprobe could not read the length of {Path(path).name}.",
+            hint=proc.stderr.decode(errors="replace").strip()[-HINT_CHARS:] or None,
+            location=_at(path),
         )
-    return round(float(proc.stdout.strip()), 3)
-
-
-def decoded_duration(path: Path | str, *, sample_rate: int = 48000) -> float:
-    """The length of the audio as it decodes, in seconds.
-
-    A container's reported duration can include encoder padding that the decoder trims,
-    which for MP3 is 30 to 50 ms per file. Positions in a concatenated track add up from
-    decoded lengths, so anything that maps section times onto that track must use these.
-    """
-    out = subprocess.run(
-        [ffmpeg(), "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-"],
-        capture_output=True,
-    )
-    if out.returncode != 0:
-        raise ToolError(
-            f"ffmpeg could not decode {Path(path).name}.",
-            hint=out.stderr.decode(errors="replace").strip()[-200:] or None,
-            path=Path(path),
-        )
-    return round(len(out.stdout) / 2 / sample_rate, 4)
+    return round(float(text), 3)
 
 
 def has_audio(path: Path | str) -> bool:
-    """Whether the file carries an audio stream at all."""
+    """Whether the file carries an audio stream at all.
+
+    A failed probe is a tool failure and never an answer, because reading it as no audio would let a
+    broken ffprobe publish a verdict about a film it never opened.
+    """
     cmd = [
         ffprobe(),
         "-v",
@@ -183,4 +236,5 @@ def has_audio(path: Path | str) -> bool:
         "csv=p=0",
         str(path),
     ]
-    return bool(subprocess.run(cmd, capture_output=True, text=True).stdout.strip())
+    proc = _checked(cmd, f"ffprobe on {Path(path).name}", location=_at(path))
+    return bool(proc.stdout.decode(errors="replace").strip())
