@@ -66,6 +66,17 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # The release pull request is opened with the changelog app's token rather than the workflow's
+      # own, because GitHub holds every workflow on a pull request the workflow token opens until a
+      # person approves it, and a release pull request nobody has to approve is the point of the app.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          app-id: ${{ vars.CHANGELOG_APP_ID }}
+          private-key: ${{ secrets.CHANGELOG_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
       # release-please reads the history of `main` through the API and needs no checkout of its own.
       # `workflow_run` runs the default branch's copy of this file and github.sha is that tip rather
       # than the commit ci tested, so no job below reads github.sha and every checkout names a ref.
@@ -73,6 +84,7 @@ jobs:
         id: release
         with:
           target-branch: main
+          token: ${{ steps.token.outputs.token }}
 
   build:
     # The artifact that goes to PyPI is built from the tag and from nothing else.
