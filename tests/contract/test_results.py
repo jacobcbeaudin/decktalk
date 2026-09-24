@@ -107,7 +107,7 @@ class Row:
 SURFACE: tuple[Row, ...] = (
     Row("init", "decktalk:init", InitResult, True, True, HERE),
     Row("install", "decktalk.machine:Machine.install", InstallResult, True, False, "tests/decktalk/test_machine.py"),
-    Row("doctor", "decktalk.machine:Machine.doctor", DoctorResult, True, False, HERE),
+    Row("doctor", "decktalk.machine:Machine.doctor", DoctorResult, True, True, HERE),
     Row("status", "decktalk.project:Project.status", StatusResult, True, False, HERE),
     Row("check", "decktalk.project:Project.check", CheckResult, True, True, HERE),
     Row("words", "decktalk.project:Project.words", WordsResult, True, False, "tests/decktalk/stages/test_words.py"),
@@ -383,9 +383,18 @@ def test_the_run_and_the_written_fields_are_declared_exactly_where_the_table_say
 
 
 def subject_of(row: Row) -> tuple[str, ...]:
-    """What a file that drives this row has to name, which is its result or the callable itself."""
+    """What a file that drives this row has to name, which is its result, its callable or its command.
+
+    The `schema` row carries no result at all, because it prints the contract document itself, which
+    is the one envelope exemption in the product. Its command is the name a driver has to hold.
+    """
     callable_name = row.call.rpartition(".")[2] or row.call.rpartition(":")[2]
-    return tuple(name for name in (row.result.__name__, callable_name) if name)
+    return tuple(name for name in (named(row), callable_name) if name)
+
+
+def named(row: Row) -> str:
+    """One row by the name a message calls it, which is its result unless it answers with none."""
+    return row.result.__name__ if row.result is not None else row.command
 
 
 @pytest.mark.parametrize("row", DRIVEN_ELSEWHERE, ids=[f"{row.command or 'error'}" for row in DRIVEN_ELSEWHERE])
@@ -393,11 +402,11 @@ def test_a_row_driven_elsewhere_names_a_file_that_drives_it(row: Row):
     """A row this file cannot drive without a tool names the test that runs its real stage."""
     path = REPO / row.driver
     files = sorted(path.glob("test_*.py")) if path.is_dir() else [path]
-    assert files and all(one.is_file() for one in files), f"{row.driver} drives {row.result} and is not there"
+    assert files and all(one.is_file() for one in files), f"{row.driver} drives {named(row)} and is not there"
     text = "\n".join(one.read_text(encoding="utf-8") for one in files)
     wanted = subject_of(row)
     assert any(name in text for name in wanted), (
-        f"{row.driver} is named as the driver of {row.result.__name__} and names none of {wanted}"
+        f"{row.driver} is named as the driver of {named(row)} and names none of {wanted}"
     )
 
 
