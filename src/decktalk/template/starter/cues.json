@@ -1,33 +1,35 @@
 {
   "_comment": [
-    "Which spoken phrase each visual lands on. `cue` is a cue id from the section's page: a slide id,",
-    "then a short word. `on` is a word or short phrase from that section of script.md, matched ignoring",
-    "case and punctuation. `occurrence` picks which match, counting from 1. `$start` is the section start",
+    "Which spoken phrase each moment on the page lands on. `cue` is a wire id: the slide id, a colon,",
+    "then the local name the page writes, so data-in=\"title\" inside <template data-slide=\"1.1\"> is",
+    "1.1:title. `on` is a word or short phrase from that section of script.md, matched ignoring case",
+    "and punctuation. `occurrence` picks which match, counting from 1. `$start` is the section start",
     "and `$end` is the end of speech, and `offset` shifts a cue in seconds.",
-    "`decktalk align` reports any phrase it cannot find."
+    "`decktalk check` names every moment this file has no row for, and offers the row as a fix."
   ],
   "sections": {
     "1": {
       "cues": [
-        { "cue": "1.1title", "on": "This is DeckTalk", "occurrence": 1 },
-        { "cue": "1.1script", "on": "what you will say", "occurrence": 1 },
-        { "cue": "1.1deck", "on": "the slides", "occurrence": 1 },
-        { "cue": "1.1word", "on": "its own word", "occurrence": 1 }
+        { "cue": "1.1:title", "on": "This is DeckTalk", "occurrence": 1 },
+        { "cue": "1.1:files", "on": "Four files", "occurrence": 1 },
+        { "cue": "1.2:script", "on": "what you will say", "occurrence": 1 },
+        { "cue": "1.2:deck", "on": "the slides", "occurrence": 1 },
+        { "cue": "1.2:word", "on": "its own word", "occurrence": 1 }
       ]
     },
     "2": {
       "cues": [
-        { "cue": "2.1average", "on": "the average", "occurrence": 1 },
-        { "cue": "2.1formula", "on": "the formula", "occurrence": 1 },
-        { "cue": "2.1code", "on": "in code", "occurrence": 1 },
-        { "cue": "2.1waited", "on": "waited", "occurrence": 1 }
+        { "cue": "2.1:average", "on": "the average", "occurrence": 1 },
+        { "cue": "2.1:formula", "on": "the formula", "occurrence": 1 },
+        { "cue": "2.1:code", "on": "in code", "occurrence": 1 },
+        { "cue": "2.1:waited", "on": "waited", "occurrence": 1 }
       ]
     },
     "3": {
       "cues": [
-        { "cue": "3.1idea", "on": "the whole idea", "occurrence": 1 },
-        { "cue": "3.1again", "on": "made again", "occurrence": 1 },
-        { "cue": "3.1make", "on": "Make your own", "occurrence": 1 }
+        { "cue": "3.1:idea", "on": "the whole idea", "occurrence": 1 },
+        { "cue": "3.1:again", "on": "made again", "occurrence": 1 },
+        { "cue": "3.1:make", "on": "Make your own", "occurrence": 1 }
       ]
     }
   }
