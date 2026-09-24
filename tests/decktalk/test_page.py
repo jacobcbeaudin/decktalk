@@ -137,7 +137,12 @@ def test_the_page_module_is_what_the_committed_contract_says():
 def test_the_committed_contract_is_what_the_typescript_says():
     """The one generator, run in the mode that changes nothing, over every artifact it owns."""
     done = subprocess.run(
-        [sys.executable, str(GENERATOR), "--check"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8"
+        [sys.executable, str(GENERATOR), "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     assert done.returncode == 0, done.stdout + done.stderr
 

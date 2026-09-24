@@ -265,8 +265,11 @@ class Events:
             if subscription in self._subscriptions:
                 self._subscriptions.remove(subscription)
 
-    def emit(self, run: str, kind: type[E], **fields: Any) -> E:
+    def emit(self, run: str, kind: type[E], **fields: Any) -> E:  # noqa: ANN401
         """Mint the four fields onto one event, hand it to every renderer, and give it back.
+
+        The fields are typed Any because they are whatever the named event class declares, and the
+        class validates them, so a narrower type here would only repeat every event's schema.
 
         The event is returned so a caller that needs what it just reported, such as the run id and
         the sink path on `run.start`, reads it off the line rather than working it out a second time.

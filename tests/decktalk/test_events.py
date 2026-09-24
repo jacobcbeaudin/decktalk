@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import typing
 from datetime import UTC, datetime
 
@@ -160,8 +161,6 @@ def test_pruning_keeps_the_newest_runs_and_leaves_the_directory_alone_when_it_is
     for index, name in enumerate(("a", "b", "c")):
         path = directory / f"{name}.jsonl"
         path.write_text("{}\n", encoding="utf-8")
-        import os
-
         os.utime(path, (index, index))
     gone = JsonlSink.prune(directory, 2)
     assert [path.name for path in gone] == ["a.jsonl"]
