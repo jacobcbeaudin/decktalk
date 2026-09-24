@@ -1,35 +1,35 @@
 # __TITLE__ — narration script
 
 One section, about two minutes. Bracketed directions are not spoken: `[beat]` is a short pause and
-`[pause 4]` is a four second pause. The page draws one figure before narration t=0 and moves it on
-each cue, so nothing heavy is built while the clock runs.
+`[pause 2]` is a two second pause. Every number is written the way the voice must say it, because a
+cue phrase is matched against these words.
 
 ---
 
-## 1. How AI learns
+## 1. How a model learns
 
-[Scene 1 of deck/lesson.html. A box of knobs learns from examples, a ball steps down a bowl, and
-the lesson ends on chips that do the math.]
+[Scene 1 of deck/lesson.html. Examples take the place of rules, one guess is corrected, and the same
+small step repeats until the error stops falling.]
 
-How does AI learn? [beat] From examples, not rules people write. [beat] Learning from examples is called machine learning. [beat]
-An AI model is like a box of knobs. [beat] It guesses, [beat] and a meter shows its error, how wrong the guess was. [beat]
-Learning nudges the knobs. [beat] It guesses again, and now it's right, with a lower error. [beat]
-Then a new example, [beat] and a smaller nudge fixes it. [beat]
-Example after example, the model gets better.
-[pause 1] But which way should each knob turn? [beat]
-In a big model, testing knobs one at a time would take billions of tries for every step. [beat]
-Instead, one round of math gives a direction for every knob at once.
-[pause 1] Picture two knobs. [beat]
-The floor is every way to set them. [beat]
-The height is the error. [beat]
-For this lesson it is a bowl.
-[pause 2] The ball is where the knobs are set right now. [beat]
-It can't see the whole bowl, only the slope where it stands. [beat]
-So it steps downhill, [beat] again and again, and the steps shrink as the ground flattens. [beat]
+How does a model learn? [beat] From examples. [beat]
+Here are four of them: a picture, and the word that goes with it. [beat]
+Not from rules a person writes out by hand. [beat]
+Learning this way has a name, and the name is machine learning.
+[pause 2] A model is a box of knobs, and every knob is one number it can turn. [beat]
+It looks at an example, and it guesses. [beat]
+A meter shows the error, which is how wrong that guess was. [beat]
+Learning nudges the knobs. [beat]
+It guesses again, and this time it is right, with a lower error.
+[pause 2] But which way should each knob turn? [beat]
+Turning one knob at a time would take billions of tries for every step. [beat]
+Instead, one round of maths gives a direction for every knob at once.
+[pause 2] Picture the error as a hill. [beat]
+The model stands somewhere on it, and it cannot see the whole hill, only the slope under its feet. [beat]
+So it steps downhill, again and again, and the steps shrink as the ground flattens. [beat]
 That is gradient descent.
-[pause 1] One setting makes every step longer or shorter. [beat]
-Too long, and it bounces past the bottom. [beat] Too short, and it is very slow.
-[pause 1] Zoom out, and the ground can have many valleys. [beat] The ball finds a low one, not always the lowest.
-[pause 2] Today's AI is trained with a version of this. [beat] Inside, the knobs are grids of numbers, called tensors.
-[pause 1] Chips like GPUs and TPUs multiply grids, row times column, all at once. [beat] For a big model, the chips do billions of billions of small calculations for every step. [beat]
-The large language models behind AI chat apps split the work across thousands of chips.
+[pause 2] One setting decides how long each step is. [beat]
+Too long, and the model bounces past the bottom. [beat]
+Too short, and it crawls.
+[pause 2] Inside a real model the knobs are grids of numbers. [beat]
+A large one holds four hundred billion of them. [beat]
+Chips multiply whole grids at once, which is why training needs them.
