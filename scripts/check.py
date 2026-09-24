@@ -59,6 +59,16 @@ different tool on the day it releases, which is a check that changes its mind on
 
 PYPI_DECKTALK = "https://pypi.org/pypi/decktalk/json"
 
+RUNTIME_TESTS = "tests/decktalk/runtime/src/*.test.ts"
+"""Every test of the runtime, named as a pattern because Node 22 runs a directory rather than reading it.
+
+`node --test <dir>` searches the directory on Node 24 and later and runs the directory itself as a
+module on Node 22, which is the version `package.json` sets as the floor and the version CI has. A
+pattern is expanded by the test runner on every version, so this one string is what both this table
+and the `test` script in `package.json` name.
+"""
+
+
 # What `site/install.sh` has to survive: an image with nothing but curl on it. The installer's own
 # promise is that a machine that has never had DeckTalk ends with `decktalk --version` printing one,
 # so the whole check is that line, run in a shell the installer did not write.
@@ -262,7 +272,7 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="node",
         why="The runtime's pure functions over strings, under node --test, so no test framework is added.",
-        commands=(("npm", "ci"), ("node", "--test", "tests/decktalk/runtime/src/")),
+        commands=(("npm", "ci"), ("node", "--test", RUNTIME_TESTS)),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("npm",),

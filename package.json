@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/decktalk/runtime/src/",
+    "test": "node --test 'tests/decktalk/runtime/src/*.test.ts'",
     "typecheck": "tsc --noEmit -p src/decktalk/runtime/tsconfig.json",
     "check": "biome ci ."
   },
