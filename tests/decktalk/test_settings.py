@@ -34,6 +34,7 @@ from decktalk.settings import (
     read_machine_toml,
     route,
     scoped,
+    unset,
     value_of,
     write,
 )
@@ -399,6 +400,77 @@ class TestTheWriter:
         assert written.shadowed is True
         assert written.layer is Layer.ENVIRONMENT
         assert written.effective == "slow"
+
+
+class TestTheRemover:
+    """A removal is the write's opposite, and it answers with the layer that shows through."""
+
+    def test_a_removal_keeps_every_comment_and_reports_the_layer_below(self, tmp_path: Path) -> None:
+        path = tmp_path / "decktalk.toml"
+        path.write_text("# my project\n[verify]\n# how late\ncue_offset_max_ms = 100\n", encoding="utf-8")
+        removed = unset(path, "verify.cue_offset_max_ms", scope=Scope.PROJECT)
+        text = path.read_text(encoding="utf-8")
+        assert "# my project" in text and "# how late" in text
+        assert "cue_offset_max_ms" not in text
+        assert removed.keys == ("verify.cue_offset_max_ms",)
+        assert removed.previous == 100
+        assert removed.layer is Layer.DEFAULT
+        assert removed.effective == BY_ID["verify.cue_offset_max_ms"].default
+
+    def test_the_table_the_key_sat_in_stays_where_it_was(self, tmp_path: Path) -> None:
+        path = tmp_path / "decktalk.toml"
+        path.write_text('# the encoder\n[video]\npreset = "veryfast"\n', encoding="utf-8")
+        unset(path, "video.preset", scope=Scope.PROJECT)
+        assert path.read_text(encoding="utf-8") == "# the encoder\n[video]\n"
+
+    def test_a_key_the_file_never_stated_leaves_the_file_alone(self, tmp_path: Path) -> None:
+        """The call is idempotent, because an agent that cannot read the file has to be able to call it twice."""
+        path = tmp_path / "decktalk.toml"
+        path.write_text('[video]\npreset = "veryfast"\n', encoding="utf-8")
+        removed = unset(path, "video.crf", scope=Scope.PROJECT)
+        assert removed.keys == ("video.crf",)
+        assert removed.previous is None
+        assert path.read_text(encoding="utf-8") == '[video]\npreset = "veryfast"\n'
+
+    def test_a_removal_from_a_file_that_is_not_there_writes_no_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "decktalk.toml"
+        assert unset(path, "video.crf", scope=Scope.PROJECT).previous is None
+        assert not path.exists()
+
+    def test_an_environment_variable_that_was_shadowing_the_file_is_reported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DECKTALK_VIDEO_PRESET", "slow")
+        path = tmp_path / "decktalk.toml"
+        path.write_text('[video]\npreset = "veryfast"\n', encoding="utf-8")
+        removed = unset(path, "video.preset", scope=Scope.PROJECT)
+        assert removed.layer is Layer.ENVIRONMENT
+        assert removed.effective == "slow"
+
+    def test_a_file_the_loader_would_refuse_whole_is_not_written_back(self, tmp_path: Path) -> None:
+        """The removal goes through the loader the write goes through, so neither launders a bad file."""
+        path = tmp_path / "machine.toml"
+        path.write_text('[video]\npreset = "slow"\n[tools]\nffmpeg = "/opt/ffmpeg"\n', encoding="utf-8")
+        with pytest.raises(InputError, match="project-scoped and does not belong in this file"):
+            unset(path, "tools.ffmpeg", scope=Scope.MACHINE)
+        assert "ffmpeg" in path.read_text(encoding="utf-8")
+
+    def test_a_key_nobody_knows_is_refused_with_the_nearest_one(self, tmp_path: Path) -> None:
+        with pytest.raises(InputError, match="Did you mean 'verify.cue_offset_max_ms'"):
+            unset(tmp_path / "decktalk.toml", "verify.cue_offset_maks_ms", scope=Scope.PROJECT)
+
+    def test_a_machine_key_taken_out_of_the_project_file_names_the_other_flag(self, tmp_path: Path) -> None:
+        with pytest.raises(InputError, match="machine-scoped") as caught:
+            unset(tmp_path / "decktalk.toml", "tools.ffmpeg", scope=Scope.PROJECT)
+        assert caught.value.hint is not None
+        assert "--machine" in caught.value.hint
+
+    def test_a_measured_key_may_be_taken_out_although_it_may_not_be_written(self, tmp_path: Path) -> None:
+        path = tmp_path / "machine.toml"
+        path.write_text("[host]\npresentation_bias_ms = 5.0\n", encoding="utf-8")
+        removed = unset(path, "host.presentation_bias_ms", scope=Scope.MACHINE)
+        assert removed.keys == ("host.presentation_bias_ms",)
+        assert removed.layer is Layer.DEFAULT
 
 
 class TestTheTables:

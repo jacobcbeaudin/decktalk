@@ -1065,6 +1065,24 @@ class SettingWrite(BaseModel):
     shadowed: bool = Field(description="True when a higher layer still decides this key despite the write.")
 
 
+class SettingUnset(BaseModel):
+    """What a removal from a settings file took out, and what decides the key once it is gone.
+
+    It reports the value in force as well as the value it removed, because the layer that shows
+    through may be the default or an environment variable that was shadowed all along, and an agent
+    that is told only what it removed cannot tell which of the two it is now running on.
+    """
+
+    model_config = MODEL
+
+    keys: tuple[str, ...] = Field(description="Every key that file no longer sets, in the order this call named them.")
+    previous: JsonValue = Field(None, description="The value that file held before, or null when it held none.")
+    scope: Scope = Field(description="Which file the removal landed in.")
+    file: ProjectPath = Field(description="The file that was read, and written when it stated the key.")
+    effective: JsonValue = Field(None, description="The value in force once the key is gone from that file.")
+    layer: Layer = Field(description="Which layer decides this key now that the file has stopped stating it.")
+
+
 def machine_config_path() -> Path:
     """The per-machine settings file. DECKTALK_CONFIG names a different one."""
     override = os.environ.get("DECKTALK_CONFIG")
@@ -1450,6 +1468,47 @@ def write(
     )
 
 
+def unset(path: Path, key: str, *, scope: Scope) -> SettingUnset:
+    """Take one key out of one file, so the layer below it decides again.
+
+    This is the writer's opposite and it is built the same way: the would-be file is loaded whole
+    before a byte lands, so a removal that breaks a relation between two keys never reaches the
+    disk, and the document is edited rather than rewritten so the comments a person wrote around the
+    key survive. A key the file never stated is taken out of nothing and the call says so, which is
+    what lets an agent that cannot read the file call this twice. A measured key may be taken out
+    although it may not be written, because a measurement that no longer describes the machine needs
+    a way back to the default.
+    """
+    known = BY_ID.get(key)
+    if known is None:
+        raise InputError(
+            f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
+            hint="Run `decktalk schema settings` for every key DeckTalk reads.",
+        )
+    if known.scope is not scope:
+        other = "--machine" if known.scope is Scope.MACHINE else "--project"
+        raise InputError(
+            f"'{key}' is {known.scope.value}-scoped, so it cannot be taken out of the {scope.value} file.",
+            hint=f"Run `decktalk config unset {key} {other}`.",
+        )
+    document = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
+    previous = _stated(document, key)
+    if previous is not _ABSENT:
+        _take(document, key.split("."))
+        text = tomlkit.dumps(document)
+        _validate(text, path, scope)
+        path.write_text(text, encoding="utf-8")
+    tree = _in_force(path, scope, {})
+    return SettingUnset(
+        keys=(key,),
+        previous=None if previous is _ABSENT else _json(previous),
+        scope=scope,
+        file=path,
+        effective=_json(value_of(tree.settings, key)),
+        layer=tree.layers.winner(key).layer,
+    )
+
+
 def _put(document: MutableMapping[str, Any], parts: list[str], value: object) -> None:
     """One key set in a parsed document, adding the tables it sits in when they are not there yet."""
     table = document
@@ -1458,6 +1517,18 @@ def _put(document: MutableMapping[str, Any], parts: list[str], value: object) ->
             table[part] = tomlkit.table()
         table = cast("MutableMapping[str, Any]", table[part])
     table[parts[-1]] = value
+
+
+def _take(document: MutableMapping[str, Any], parts: list[str]) -> None:
+    """One key taken out of a parsed document, leaving the table it sat in where it was.
+
+    A table that the removal empties stays, because a person's comments live around the table and a
+    remover that deleted it would delete the sentences they wrote the first time they cleared a key.
+    """
+    table = document
+    for part in parts[:-1]:
+        table = cast("MutableMapping[str, Any]", table[part])
+    del table[parts[-1]]
 
 
 def _validate(text: str, path: Path, scope: Scope) -> None:
@@ -1486,18 +1557,28 @@ def _machine_scope(data: Mapping[str, Any], path: Path) -> None:
             )
 
 
+def _in_force(path: Path, scope: Scope, stated: Mapping[str, object]) -> Loaded:
+    """The whole tree as it stands once a write or a removal has landed in the named file.
+
+    Only the key the call touched is handed back to the loader, because no other key in that file
+    decides this one: the layer under a settings file is the default, and the layers over it are the
+    environment and the run's own overrides. A key is scoped to one file, so the file the call left
+    alone states nothing about it either.
+    """
+    return load(
+        machine=_nested(stated) if scope is Scope.MACHINE else {},
+        project=_nested(stated) if scope is Scope.PROJECT else {},
+        machine_path=path if scope is Scope.MACHINE else None,
+    )
+
+
 def _after(path: Path, key: str, scope: Scope, typed: object) -> dict[str, Any]:
     """The value in force once this write lands, and whether a higher layer still decides the key.
 
     A write that a higher layer shadows changes the file and not the run, so the call says so
     rather than reporting a new value the next command will not use.
     """
-    written = {key: typed}
-    tree = load(
-        machine=_nested(written) if scope is Scope.MACHINE else {},
-        project=_nested(written) if scope is Scope.PROJECT else {},
-        machine_path=path if scope is Scope.MACHINE else None,
-    )
+    tree = _in_force(path, scope, {key: typed})
     winner = tree.layers.winner(key)
     own = Layer.MACHINE if scope is Scope.MACHINE else Layer.PROJECT
     return {
@@ -1541,6 +1622,7 @@ __all__ = [
     "Number",
     "OutputConfig",
     "RecordConfig",
+    "SettingUnset",
     "SettingWrite",
     "Settings",
     "ToolsConfig",
@@ -1558,6 +1640,7 @@ __all__ = [
     "read_toml",
     "route",
     "scoped",
+    "unset",
     "value_of",
     "write",
 ]

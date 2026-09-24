@@ -377,6 +377,19 @@
       "title": "Finding",
       "type": "object"
     },
+    "JsonValue": {},
+    "Layer": {
+      "description": "Which of the five layers set a settings value, lowest first.\n\nA key with no override is set by `default`, which is also what refuses `--max-cost` on a price\nnobody has stated: DeckTalk would be capping a spend against a number it made up.",
+      "enum": [
+        "default",
+        "machine",
+        "project",
+        "environment",
+        "override"
+      ],
+      "title": "Layer",
+      "type": "string"
+    },
     "Location": {
       "additionalProperties": false,
       "description": "Where a finding is, as the five facts that travel together into a renderer and into a fix.\n\n`where` is never null, because the object a finding judges is what tells a reader which side of\nthe spend it came from, and the other four are filled by whoever knows them.",
@@ -558,12 +571,16 @@
       "type": "array"
     },
     "keys": {
-      "description": "Every key this call removed, in the order it removed them.",
+      "description": "Every key that file no longer sets, in the order this call named them.",
       "items": {
         "type": "string"
       },
       "title": "Keys",
       "type": "array"
+    },
+    "previous": {
+      "$ref": "#/$defs/JsonValue",
+      "description": "The value that file held before, or null when it held none."
     },
     "scope": {
       "$ref": "#/$defs/Scope",
@@ -574,13 +591,24 @@
       "format": "path",
       "title": "File",
       "type": "string"
+    },
+    "effective": {
+      "$ref": "#/$defs/JsonValue",
+      "description": "The value in force once this call is done, which the layer below sets."
+    },
+    "layer": {
+      "$ref": "#/$defs/Layer",
+      "description": "Which layer decides the key now, so a variable that still sets it says so."
     }
   },
   "required": [
     "ok",
     "keys",
+    "previous",
     "scope",
-    "file"
+    "file",
+    "effective",
+    "layer"
   ],
   "title": "ConfigUnsetResult",
   "type": "object"

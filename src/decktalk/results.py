@@ -567,9 +567,12 @@ class ConfigUnsetResult(Result):
     """What a settings removal took out, so the layer below it wins again."""
 
     written: Written
-    keys: tuple[str, ...] = Field(description="Every key this call removed, in the order it removed them.")
+    keys: tuple[str, ...] = Field(description="Every key that file no longer sets, in the order this call named them.")
+    previous: JsonValue = Field(description="The value that file held before, or null when it held none.")
     scope: Scope = Field(description="Which file the removal landed in.")
     file: ProjectPath = Field(description="The file that was written, project-relative.")
+    effective: JsonValue = Field(description="The value in force once this call is done, which the layer below sets.")
+    layer: Layer = Field(description="Which layer decides the key now, so a variable that still sets it says so.")
 
 
 class ConfigExplainResult(Result):
