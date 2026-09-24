@@ -1,36 +1,35 @@
-"""Stage 4: the recordings, the narration, the clips and the soundscape become one mp4.
+"""Stage 5: the recordings, the narration, the clips and the soundscape become one film.
 
     cut.py        every section as one silent mp4, and the cut list
-    mix.py        the whole soundtrack as one filter graph, one MixInput per layer
-    loudness.py   the two-pass normalization and its report
+    mix.py        the whole soundtrack as one filter graph, one `MixInput` per layer
+    loudness.py   the two-pass normalization and what it measured
     publish.py    captions, chapters, the transcript, the poster and the atomic final file
 
-The order is fixed. Each section is cut to its span and the sections are concatenated with no gaps.
-The soundtrack is mixed over a silent anchor of the picture's length. The mix is normalized to the
-EBU R128 target unless the narration is a placeholder, whose clicks the a/v check listens for. Then
+The order is fixed. Each section is cut to its span and the sections are joined with no gaps. The
+soundtrack is mixed over a silent anchor of the picture's length. The mix is normalized to the EBU
+R128 target unless the narration is a placeholder, whose clicks the a/v check listens for. Then
 everything a viewer receives is written, and the finished film is renamed into place in one step.
 """
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass, field
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
-from ...artifacts import Cuts, Takes
-from ...captions import write_transcript
-from ...errors import MissingInputError, ToolError
-from ...jsonio import as_json, relative
-from ...media import audio, ffmpeg
-from ...media.encode import Encoder
-from ...model import Project
-from ...model.timeline import narration_offsets
-from ...verdicts import Finding, Findings, Verdict
-from .cut import RenderedSection, concat, cut_list, render_sections, rendered_starts, stray_warnings
-from .loudness import loudness_problems, normalize_loudness
-from .mix import MixInput, MixPlan, encode_soundtrack, mix_input_args, plan_mix
-from .publish import (
+from decktalk.artifacts import Cuts, Takes
+from decktalk.errors import NotBuiltError, ToolError
+from decktalk.events import Unit
+from decktalk.inputs import Inputs
+from decktalk.inputs.timeline import narration_offsets
+from decktalk.machine import Run
+from decktalk.media import audio, ffmpeg
+from decktalk.pipeline import Stage
+from decktalk.results import AssembleResult, RenderedSection
+from decktalk.stages import SECOND_DIGITS, clock, since
+from decktalk.stages.assemble.cut import Rendered, cut_list, render_sections, rendered_starts, stray_cuts
+from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
+from decktalk.stages.assemble.mix import MixPlan, encode_soundtrack, mix_soundtrack
+from decktalk.stages.assemble.publish import (
     build_captions,
     build_chapters,
     caption_texts,
@@ -38,235 +37,169 @@ from .publish import (
     publish,
     render_poster,
     sound_captions,
-    transcript_sections,
     uncaptioned_sounds,
     with_sound_captions,
     write_caption_files,
+    write_transcript_page,
 )
 
-log = logging.getLogger(__name__)
+WORK_MARK = "."
+"""What the name of a file only this run may read opens with, so no viewer ever opens a half-made one."""
 
-__all__ = [
-    "AssembleResult",
-    "MixInput",
-    "MixPlan",
-    "RenderedSection",
-    "assemble",
-    "cut_list",
-    "plan_mix",
-    "render_sections",
-]
+DELIVERY_PASSES: tuple[str, ...] = (
+    "mix the soundtrack",
+    "encode the soundtrack",
+    "write the captions",
+    "publish the film",
+)
+"""Truth: the passes that follow the section cuts, in the order the encoder and the writers run them.
 
-
-@dataclass
-class AssembleResult:
-    """The finished video and everything written beside it."""
-
-    final: Path
-    stamped: Path | None  # The timestamped copy, when [output] timestamped_copy is on.
-    duration: float
-    sections: list[RenderedSection]
-    warnings: list[str]
-    loudness: tuple[audio.Loudness, audio.Loudness] | None
-    cuts: Cuts | None = None
-    captions_srt: Path | None = None
-    captions_vtt: Path | None = None
-    chapters: Path | None = None
-    cuts_file: Path | None = None
-    transcript: Path | None = None
-    poster: Path | None = None
-    loudness_problems: list[Finding] = field(default_factory=list)  # A peak over the ceiling, or a missed target.
-    rows: list[Finding] = field(default_factory=list)  # A cued sound that names no caption line.
-
-    @property
-    def substituted(self) -> list[RenderedSection]:
-        """The sections that played a slate or a black frame instead of the real thing."""
-        return [row for row in self.sections if row.substitute is not None]
-
-    @property
-    def substitutions(self) -> list[Finding]:
-        """One `SLATE` row per section a slate or a black frame stood in for, naming the file that is missing."""
-        return [
-            Finding(
-                detail=f"section {row.section.key} plays {row.substitute.value} because {row.source} is not there",
-                verdict=Verdict.SLATE,
-                section=row.section.number,
-                where=row.source,
-            )
-            for row in self.sections
-            if row.substitute is not None
-        ]
-
-    @property
-    def written(self) -> list[Path]:
-        """Every file this run wrote, in the order it wrote them."""
-        made = [self.captions_srt, self.captions_vtt, self.chapters, self.cuts_file, self.transcript, self.poster]
-        return [path for path in (*made, self.final, self.stamped) if path is not None]
-
-    @property
-    def findings(self) -> Findings:
-        """Uncertain: a slate or black section, a loudness miss, and a cued sound with no caption."""
-        return (
-            Findings.of(row.verdict for row in self.loudness_problems)
-            + Findings.of(row.verdict for row in self.substitutions)
-            + Findings.of(row.verdict for row in self.rows)
-        )
-
-    def to_dict(self, root: Path) -> dict[str, Any]:
-        """The build as JSON-ready data, with every written path relative to the project root."""
-        before, after = self.loudness if self.loudness else (None, None)
-        return {
-            "final": relative(self.final, root),
-            "duration": round(self.duration, 3),
-            "stamped": None if self.stamped is None else relative(self.stamped, root),
-            "sections": [
-                {
-                    "key": row.section.key,
-                    "source": row.note,
-                    "substitute": None if row.substitute is None else row.substitute.value,
-                    "duration": round(row.duration, 3),
-                    "path": relative(row.path, root),
-                }
-                for row in self.sections
-            ],
-            "captions": {
-                "srt": None if self.captions_srt is None else relative(self.captions_srt, root),
-                "vtt": None if self.captions_vtt is None else relative(self.captions_vtt, root),
-                "chapters": None if self.chapters is None else relative(self.chapters, root),
-                "transcript": None if self.transcript is None else relative(self.transcript, root),
-            },
-            "cuts": None if self.cuts_file is None else relative(self.cuts_file, root),
-            "poster": None if self.poster is None else relative(self.poster, root),
-            "loudness": None
-            if after is None or before is None
-            else {
-                "before": as_json(before),
-                "after": as_json(after),
-                "problems": [row.to_dict() for row in self.loudness_problems],
-            },
-            "warnings": list(self.warnings),
-            "uncaptioned": [row.to_dict() for row in self.rows],
-            "substituted": [row.to_dict() for row in self.substitutions],
-        }
+They are named rather than counted, so the count a renderer reads and the label it prints beside it
+come from one list and a pass added here reaches both.
+"""
 
 
-def mix_soundtrack(
-    project: Project, rows: list[RenderedSection], takes: Takes, work: Path, *, soundscape: bool
-) -> MixPlan:
-    """Concatenate the sections and lay the whole soundtrack under them, into one work file.
+class Passes:
+    """How far through its own passes one assemble is, counted in the passes themselves.
 
-    The soundtrack is written as floating-point samples, so a sum of layers louder than 0 dBFS is
-    carried rather than clipped, and the delivery encoder runs once, downstream of the limiter.
+    A renderer never works out a fraction, so the stage counts what it has finished rather than
+    naming each step's number where it happens, which is how the count and the plan stay equal.
     """
-    out_dir = project.out_dir
-    picture = out_dir / ".picture.mp4"
-    log.info("[cat ] %d sections, %s", len(rows), project.document.cut_summary)
-    concat([r.path for r in rows], picture)
-    plan = plan_mix(project, rows, takes, soundscape=soundscape)
-    for message in plan.warnings:
-        log.warning(message)
-    enc = Encoder(project.settings.video)
-    log.info("[mix ] %d audio input(s) -> %s", len(plan.inputs), project.final.name)
-    try:
-        ffmpeg.run(
-            "-i", str(picture), *mix_input_args(plan),
-            "-filter_complex", plan.filter,
-            "-map", "0:v", "-map", "[a]", "-c:v", "copy", *enc.amix, str(work),
-        )  # fmt: skip
-    finally:
-        picture.unlink(missing_ok=True)
-    return plan
 
+    def __init__(self, run: Run, cuts: int) -> None:
+        self.run = run
+        self.total = cuts + len(DELIVERY_PASSES)
+        self.done = cuts
 
-def deliver(
-    project: Project, mixed: Path, work: Path, takes: Takes, *, loudness: bool, strict: bool
-) -> tuple[tuple[audio.Loudness, audio.Loudness] | None, list[Finding]]:
-    """Encode the mixed soundtrack to its delivery codec, normalized when there is speech to normalize.
-
-    Returns (the loudness before and after, the problems). The encode happens exactly once, here or
-    in `normalize_loudness`, so nothing a viewer hears has been through AAC twice.
-    """
-    if takes.estimated or not loudness:
-        # A build without voice carries clicks and silence, and normalizing them would move the clicks
-        # the a/v check listens for, so the pass is skipped and the result has no loudness.
-        why = "the narration is a silent placeholder" if takes.estimated else "--no-loudness was passed"
-        log.info("[loud] skipped: %s, so the soundtrack is encoded as it was mixed", why)
-        encode_soundtrack(project, mixed, work)
-        return None, []
-    measured = normalize_loudness(project, mixed, work)
-    b, a = measured
-    ln = project.mix.loudness
-    log.info(
-        "[loud] I %.1f -> %.1f LUFS (target %.1f), TP %.1f -> %.1f dBTP (ceiling %.1f), LRA %.1f -> %.1f LU",
-        b.i, a.i, ln.target_lufs, b.tp, a.tp, ln.true_peak_db, b.lra, a.lra,
-    )  # fmt: skip
-    problems = loudness_problems(project, a)
-    for row in problems:
-        log.warning("[loud] %s", row.detail)
-    if problems and strict:
-        raise ToolError("loudness: " + ", ".join(row.detail for row in problems))
-    return measured, problems
+    def finished(self, label: str) -> None:
+        """One more pass is behind this run, which is the line a renderer draws its bar from."""
+        self.done += 1
+        self.run.progress(Stage.ASSEMBLE, done=self.done, total=self.total, unit=Unit.PASS, label=label)
 
 
 def assemble(
-    project: Project, *, soundscape: bool = True, loudness: bool = True, strict: bool = False
+    inputs: Inputs,
+    run: Run,
+    *,
+    only: Sequence[int] | None = None,
+    soundscape: bool = True,
+    loudness: bool = True,
+    strict: bool = False,
 ) -> AssembleResult:
     """Cut, mix, normalize and publish the whole film, with everything a viewer receives beside it."""
-    takes = project.takes()
-    if takes is None:
-        raise MissingInputError(
-            f"{relative(project.takes_path, project.root)} is not there, so there is nothing to assemble.",
-            hint="Run `decktalk narrate` first.",
-            path=project.takes_path,
-        )
-    paths = project.workspace.output_paths()
-    warnings = stray_warnings(project)
-    rows = render_sections(project, takes, strict=strict)
+    started = clock()
+    takes = _takes(inputs)
+    stray_cuts(inputs, run)
+    passes = Passes(run, len(inputs.document.sections))
+    rows = render_sections(
+        inputs, run, takes, only=list(only) if only is not None else None, strict=strict, passes=passes.total
+    )
 
-    work = project.out_dir / f".{project.name}.tmp.mp4"
-    mixed = project.out_dir / f".{project.name}.mix.mov"
+    final_dir = inputs.workspace.final_dir
+    work = final_dir / f"{WORK_MARK}{inputs.workspace.name}.tmp.mp4"
+    mixed = final_dir / f"{WORK_MARK}{inputs.workspace.name}.mix.mov"
     for path in (work, mixed):
         path.unlink(missing_ok=True)
-    plan = mix_soundtrack(project, rows, takes, mixed, soundscape=soundscape)
-    warnings += plan.warnings
+
+    plan = mix_soundtrack(inputs, run, rows, takes, mixed, soundscape=soundscape)
+    passes.finished(f"mix {len(plan.inputs)} audio layers")
     try:
-        measured, problems = deliver(project, mixed, work, takes, loudness=loudness, strict=strict)
+        after = _deliver(inputs, run, mixed, work, takes, loudness=loudness, strict=strict)
     finally:
         mixed.unlink(missing_ok=True)
+    passes.finished(DELIVERY_PASSES[1])
 
-    starts = rendered_starts(rows)
-    texts = caption_texts(project, takes)
-    cues = build_captions(project, takes, narration_offsets([r.section for r in rows], takes, starts), texts)
-    cues = with_sound_captions(
-        sorted(cues + clip_captions(project, rows), key=lambda c: c.start), sound_captions(project, starts)
-    )
-    chapters = build_chapters(rows, project.chapters())
-    write_caption_files(paths, cues, chapters)
-    cuts = cut_list(project, rows)
-    cuts.save(paths["cuts"])
-    write_transcript(
-        paths["transcript"], project.name, transcript_sections(project, cuts, texts), language=project.document.language
-    )
-    stamped = publish(project, work, chapters, paths)
+    _write_deliverables(inputs, run, rows, takes)
+    passes.finished(DELIVERY_PASSES[2])
+    stamped = publish(inputs, work, inputs.workspace.deliverables())
+    run.wrote(inputs.workspace.film)
+    if stamped is not None:
+        run.wrote(stamped)
     # The poster is drawn last, because it is one picture beside a film that is already finished.
-    poster = render_poster(project, paths["poster"])
+    poster = render_poster(inputs, run, inputs.workspace.deliverables()["poster"])
+    if poster is not None:
+        run.wrote(poster)
+    passes.finished(DELIVERY_PASSES[3])
 
-    duration = ffmpeg.probe_duration(project.final)
-    log.info("done: %s  (%.2fs)%s", project.final, duration, f"  copy: {stamped.name}" if stamped else "")
-    return AssembleResult(
-        final=project.final,
-        stamped=stamped,
-        duration=duration,
-        sections=rows,
-        warnings=warnings,
-        loudness=measured,
-        loudness_problems=problems,
-        rows=uncaptioned_sounds(project),
-        cuts=cuts,
-        cuts_file=paths["cuts"],
-        captions_srt=paths["srt"],
-        captions_vtt=paths["vtt"],
-        chapters=paths["chapters"],
-        transcript=paths["transcript"],
-        poster=poster,
+    return run.result(
+        AssembleResult,
+        film=inputs.relative(inputs.workspace.film),
+        film_seconds=ffmpeg.probe_duration(inputs.workspace.film),
+        sections=_rendered_rows(inputs, rows),
+        loudness=None if after is None else measured(inputs, after),
+        seconds=since(started),
     )
+
+
+def _takes(inputs: Inputs) -> Takes:
+    """The take index, or the refusal that names the stage which writes it."""
+    takes = inputs.takes()
+    if takes is None:
+        raise NotBuiltError(
+            "the take index is not there, so no section has a length to cut to.",
+            hint="Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing.",
+        )
+    return takes
+
+
+def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *, loudness: bool, strict: bool
+             ) -> audio.Loudness | None:  # fmt: skip
+    """Encode the mixed soundtrack to its delivery codec, normalized when there is speech to normalize.
+
+    The encode happens exactly once, here or inside the loudness pass, so nothing a viewer hears has
+    been through AAC twice.
+    """
+    if takes.estimated or not loudness:
+        # A placeholder narration is clicks and silence, and normalizing them would move the clicks
+        # the a/v check listens for, so the pass is skipped and the result reports no loudness.
+        why = "the narration is a placeholder" if takes.estimated else "the run asked for no loudness pass"
+        run.note(f"The loudness pass is skipped because {why}, so the soundtrack is encoded as it was mixed.")
+        encode_soundtrack(inputs, mixed, work)
+        return None
+    _before, after = normalize_loudness(inputs, mixed, work)
+    missed = loudness_findings(inputs, run, after)
+    if missed and strict:
+        raise ToolError(
+            f"the mix missed the loudness it was mastered to in {len(missed)} way(s).",
+            hint="Run without --strict to publish it, or change [mix.loudness] to what this film is for.",
+        )
+    return after
+
+
+def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes) -> Cuts:
+    """The captions, the chapters, the cut list and the transcript, and the cut list they are read from."""
+    paths = inputs.workspace.deliverables()
+    starts = rendered_starts(rows)
+    texts = caption_texts(inputs, takes)
+    offsets = narration_offsets([row.section for row in rows], takes, starts)
+    uncaptioned_sounds(inputs, run)
+    spoken = sorted(build_captions(inputs, takes, offsets, texts) + clip_captions(inputs, run, rows),
+                    key=lambda cue: cue.start)  # fmt: skip
+    cues = with_sound_captions(spoken, sound_captions(inputs, starts))
+    chapters = build_chapters(rows, inputs.chapters())
+    write_caption_files(paths, cues, chapters)
+    cuts = cut_list(inputs, rows)
+    cuts.write(paths["cuts"])
+    write_transcript_page(inputs, paths["transcript"], cuts, texts)
+    for name in ("srt", "vtt", "chapters", "cuts", "transcript"):
+        run.wrote(paths[name])
+    return cuts
+
+
+def _rendered_rows(inputs: Inputs, rows: list[Rendered]) -> tuple[RenderedSection, ...]:
+    """Every section as the result publishes it, which is where it plays and what stood in for it."""
+    starts = rendered_starts(rows)
+    return tuple(
+        RenderedSection(
+            section=row.number,
+            key=row.key,
+            file=inputs.relative(row.path),
+            start=round(starts[row.number], SECOND_DIGITS),
+            seconds=round(row.seconds, SECOND_DIGITS),
+            substitute=row.substitute,
+        )
+        for row in rows
+    )
+
+
+__all__ = ["MixPlan", "Rendered", "assemble"]
