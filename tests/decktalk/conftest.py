@@ -30,6 +30,7 @@ class FakeFfmpeg:
 
     calls: list[list[str]] = field(default_factory=list)
     stderr_text: str = ""
+    raw_bytes: bytes = b""
     duration_seconds: float = 1.0
     sounds: bool = True
 
@@ -53,31 +54,63 @@ def fake_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> FakeFfmpeg:
         fake.calls.append(list(args))
         return fake.stderr_text
 
+    def raw(*args: str) -> bytes:
+        fake.calls.append(list(args))
+        return fake.raw_bytes
+
     monkeypatch.setattr(ffmpeg, "run", run)
     monkeypatch.setattr(ffmpeg, "stderr", stderr)
+    monkeypatch.setattr(ffmpeg, "raw", raw)
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: fake.duration_seconds)
     monkeypatch.setattr(ffmpeg, "has_audio", lambda _path: fake.sounds)
     return fake
 
 
+NOTHING_REPORTED: dict[str, object] = {
+    "version": "0.5.0",
+    "mode": "cue",
+    "scene": None,
+    "slide": None,
+    "warnings": [],
+    "catalog": [],
+    "cues": [],
+    "words": [],
+    "frameGaps": [],
+    "longFrames": [],
+}
+"""What a page with the runtime on it and nothing to say answers `report()` with."""
+
+
 class FakePage:
     """A Chromium page that answers every call and remembers what was asked of it."""
 
-    def __init__(self, answer: Callable[[str], object] | None = None) -> None:
+    def __init__(self, video: Path | None = None, answer: Callable[[str], object] | None = None) -> None:
         self.urls: list[str] = []
         self.scripts: list[str] = []
         self.screenshots: list[Path] = []
+        self.report: dict[str, object] = dict(NOTHING_REPORTED)
+        self.video = FakeVideo(video) if video else None
         self._answer = answer or (lambda _script: None)
+
+    def on(self, event: str, handler: object) -> None:
+        """A recorder listens for the page's own exceptions, and this page throws none."""
 
     def goto(self, url: str, **_kwargs: object) -> None:
         self.urls.append(url)
 
     def evaluate(self, script: str, *_args: object) -> object:
         self.scripts.append(script)
+        if browser.REPORT_JS in script:
+            return dict(self.report)
+        if browser.HAS_CATALOG_JS in script:
+            return True
         return self._answer(script)
 
     def wait_for_function(self, script: str, **_kwargs: object) -> None:
         self.scripts.append(script)
+
+    def wait_for_timeout(self, _ms: float) -> None:
+        """A recorder waits in real time and a test does not, so this passes the time by not spending it."""
 
     def screenshot(self, *, path: str | Path, **_kwargs: object) -> None:
         self.screenshots.append(Path(path))
@@ -87,28 +120,75 @@ class FakePage:
         """A page a test opened is closed the way a real one is, and closing it does nothing here."""
 
 
+@dataclass
+class FakeVideo:
+    """The webm Playwright writes when the recording context closes, which `Capture.place` moves."""
+
+    path_: Path
+
+    def path(self) -> str:
+        return str(self.path_)
+
+
+class FakeContext:
+    """The browser context a recording opens, which routes, takes init scripts and leaves a webm.
+
+    Playwright writes the video when the context closes, so this writes one too, and `Capture` then
+    moves it exactly as it moves the real one.
+    """
+
+    def __init__(self, page: FakePage, directory: Path | None) -> None:
+        self.page = page
+        self.directory = directory
+        self.closed = False
+
+    def add_init_script(self, script: str) -> None:
+        self.page.scripts.append(script)
+
+    def route(self, _pattern: str, _handler: object) -> None:
+        """Every request under the origin is answered by the router, and no page here makes one."""
+
+    def new_page(self) -> FakePage:
+        if self.directory is not None:
+            self.page.video = FakeVideo(self.directory / "page.webm")
+        return self.page
+
+    def close(self) -> None:
+        if not self.closed and self.page.video is not None:
+            Path(self.page.video.path()).write_bytes(b"webm")
+        self.closed = True
+
+
+class FakeBrowser:
+    """A launched Chromium that launches nothing, handing every caller the one page of the test."""
+
+    def __init__(self, page: FakePage) -> None:
+        self.page = page
+
+    def new_context(self, **kwargs: object) -> FakeContext:
+        recording = kwargs.get("record_video_dir")
+        return FakeContext(self.page, Path(str(recording)) if recording else None)
+
+    def new_page(self, **_kwargs: object) -> FakePage:
+        return self.page
+
+    def close(self) -> None:
+        """Closing the browser is what a recorder does, and there is nothing behind it here."""
+
+
 @pytest.fixture
 def fake_browser(monkeypatch: pytest.MonkeyPatch) -> FakePage:
-    """`decktalk.media.browser.chromium` yielding a page that runs nothing, so no browser is launched."""
+    """`decktalk.media.browser.chromium` yielding a browser that records without launching one.
+
+    The page is the same object whichever way a stage reaches it, so a test reads the URLs and the
+    scripts off the fixture. The recording context is real enough for `record_page` to run whole,
+    so the `Capture` the recorder opens behaves as the one Playwright hands it.
+    """
     page = FakePage()
 
-    class Context:
-        def new_page(self) -> FakePage:
-            return page
-
-        def close(self) -> None:
-            """Closing the context is what a recorder does, and there is nothing behind it here."""
-
-    class Browser:
-        def new_context(self, **_kwargs: object) -> Context:
-            return Context()
-
-        def close(self) -> None:
-            """Closing the browser is what a recorder does, and there is nothing behind it here."""
-
     @contextmanager
-    def chromium(_browser_path: str = "") -> Iterator[Browser]:
-        yield Browser()
+    def chromium(_browser_path: str = "") -> Iterator[FakeBrowser]:
+        yield FakeBrowser(page)
 
     monkeypatch.setattr(browser, "chromium", chromium)
     monkeypatch.setattr(browser, "instrument", lambda page: page)
