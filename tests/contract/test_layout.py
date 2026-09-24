@@ -14,11 +14,13 @@ each entry, and it only ever shrinks.
 from __future__ import annotations
 
 import ast
+import re
 import tomllib
 from pathlib import Path
 
 import pytest
 
+from decktalk.settings import ENV_PREFIX, env_warnings
 from support.paths import REPO, TESTS
 
 SRC = REPO / "src" / "decktalk"
@@ -252,6 +254,31 @@ def test_no_test_branches_on_the_platform_outside_the_platform_directory():
         assert platform_branches(path) == 0, (
             f"{key} decides something from the platform. A policy test injects the environment and holds "
             "everywhere, and the environment test belongs in tests/platform/."
+        )
+
+
+def named_in_the_settings_namespace(path: Path) -> set[str]:
+    """Every name the file spells inside DeckTalk's own environment namespace.
+
+    The file's text is read rather than its syntax tree, because a suite that drives a subprocess
+    writes the shim that subprocess imports as a string, and a name inside that string reaches the
+    real environment exactly as a name outside it does.
+    """
+    return set(re.findall(rf"{ENV_PREFIX.upper()}_[A-Z0-9_]+", path.read_text(encoding="utf-8")))
+
+
+def test_no_end_to_end_test_names_a_variable_decktalk_does_not_read():
+    """A suite that drives the real command hands it this environment, so a name of its own is a typo.
+
+    DeckTalk warns about every name in its namespace that it does not read, and a suite that names
+    its own variable there puts that warning in the stderr those same tests print as the evidence
+    for a failure. The loader answers here rather than a list, so the rule and the warning agree.
+    """
+    for path in sorted((TESTS / "e2e").glob("test_*.py")):
+        warnings = env_warnings(dict.fromkeys(named_in_the_settings_namespace(path), ""))
+        assert warnings == [], (
+            f"{path.relative_to(REPO).as_posix()}: {warnings} A variable a suite owns is spelled outside "
+            f"the {ENV_PREFIX.upper()}_ namespace, because every name inside that one is a key or a typo."
         )
 
 

@@ -10,6 +10,11 @@ founder's own Mac was permanently weaker than a Linux runner. `--timing=gate` is
 everywhere now, and the legs that own a weak runner pass `--timing=report` themselves, so the
 weakening lives in the `GROUPS` table that owns them rather than in every test that measures a cue.
 
+**The policy is one seam rather than a habit.** A suite that drives a real build reads its certain
+findings through `held_to`, so a test written next year is on the policy by reading a run the way
+every other test reads one. Applying the rule test by test left a test whose subject was which
+sections got recorded again failing a whole merge on a reveal that this runner was told to report.
+
 **A report is printed rather than swallowed.** A leg that does not gate timing still measures it,
 so `note_late_reveals` writes what it tolerated into the run's own log. A test that reported
 nothing and a test that reported a reveal a frame late read the same otherwise, which is how a
@@ -24,7 +29,8 @@ what `tests/contract/test_layout.py` allows and what keeps that read out of ever
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 import pytest
 
@@ -92,15 +98,20 @@ def offset_limit_ms(stated_ms: float, gate: bool) -> float:
     return stated_ms + UNGATED_EXTRA_FRAMES * FRAME_STEP_MS
 
 
-def judged(codes: Iterable[Code], gate: bool) -> list[Code]:
-    """Every reported code this runner still judges, which is all of them unless a late reveal is news.
+def holds(code: Code, gate: bool) -> bool:
+    """Whether this runner still holds a deck to one reported code, which every reading asks first.
 
     A late reveal is the one code a runner whose compositor is not trustworthy may report without
     being held to it, because a frame presented late moves a measurement and nothing else. Every
     other code is a property of the deck rather than of the machine: a cue that never changed the
     picture, a phrase the page never found and a page that threw are faults on every runner.
     """
-    return [found for found in codes if gate or found not in LATE_FRAME]
+    return gate or code not in LATE_FRAME
+
+
+def judged(codes: Iterable[Code], gate: bool) -> list[Code]:
+    """Every reported code this runner still judges, which is all of them unless a late reveal is news."""
+    return [found for found in codes if holds(found, gate)]
 
 
 def faults(codes: Iterable[Code], gate: bool) -> list[Code]:
@@ -138,6 +149,29 @@ def note_late_reveals(config: pytest.Config, subject: str, news: Iterable[str]) 
     reporter.write_line(f"\n{subject}: this runner reports cue timing rather than gating it, and it tolerated:")
     for line in news:
         reporter.write_line(f"  {line}")
+
+
+def held_to(config: pytest.Config, subject: str, findings: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Every certain finding this runner holds a deck to, with the ones it tolerated written to the log.
+
+    This is the one seam a suite reads a run's certain findings through, so a leg that reports cue
+    timing reports it in every test that leg runs rather than in the tests somebody remembered to
+    change. A row is a finding as `--json` publishes it, and the code it names is what decides
+    whether this runner judges the row or only prints it.
+    """
+    gate = gates_timing(config)
+    held: list[Mapping[str, Any]] = []
+    news: list[str] = []
+    for row in findings:
+        if row["certainty"] != Certainty.CERTAIN.value:
+            continue
+        if holds(Code(row["code"]), gate):
+            held.append(row)
+        else:
+            news.append(f"{row['code']}: {row['message']}")
+    if news:
+        note_late_reveals(config, subject, news)
+    return held
 
 
 def assert_build_finished(code: int, codes: Iterable[Code], detail: str, config: pytest.Config) -> None:
