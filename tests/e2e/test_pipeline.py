@@ -5,7 +5,7 @@
 The build is unvoiced, so it needs no API key and spends nothing, and it runs with the network
 blocked. The fixture is copied under tests/out/e2e, which CI uploads when a test fails. That
 directory is one per machine, so a session takes a lock on it and skips rather than deleting another
-session's build, and DECKTALK_E2E_OUT names another directory for a second session.
+session's build, and E2E_OUT names another directory for a second session.
 
 This suite is the panel's integration sample rather than a policy test. It proves no proposition on
 its own and samples the joint behaviour of Chromium, ffmpeg and the filesystem on one machine, so
@@ -77,7 +77,7 @@ the build writes, and the founder's own films live under a name like this one. B
 else would leave the quoting of must 1 proven by nothing that runs on every platform.
 """
 
-OUT = Path(os.environ.get("DECKTALK_E2E_OUT") or Path(__file__).parent.parent / "out") / "e2e" / HOSTILE_DIRECTORY
+OUT = Path(os.environ.get("E2E_OUT") or Path(__file__).parent.parent / "out") / "e2e" / HOSTILE_DIRECTORY
 
 FILM_NAME = "pipeline"
 """The project name in the fixture's decktalk.toml, which names every file `assemble` writes."""
@@ -212,7 +212,7 @@ def connect(self, address):
     host = address[0] if isinstance(address, tuple) else ""
     if not isinstance(address, tuple) or host in LOOPBACK:
         return _real(self, address)
-    with open(os.environ["DECKTALK_E2E_ATTEMPTS"], "a", encoding="utf-8") as out:
+    with open(os.environ["E2E_ATTEMPTS"], "a", encoding="utf-8") as out:
         out.write(repr(address) + "\\n")
     raise OSError("the pipeline test blocks the network: " + repr(address))
 
@@ -239,7 +239,7 @@ class Project:
         command under test is the one the wheel installs and no entry point has to be on PATH.
         """
         env = dict(os.environ)
-        env["DECKTALK_E2E_ATTEMPTS"] = str(self.attempts)
+        env["E2E_ATTEMPTS"] = str(self.attempts)
         # A key or a settings file belonging to whoever runs the suite must not reach the build.
         for name in ("DECKTALK_PROJECT", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"):
             env.pop(name, None)
@@ -358,7 +358,7 @@ def built(pytestconfig: pytest.Config) -> Iterator[Project]:
         pytest.skip(f"{', '.join(absent)} is missing: run `decktalk install` first")
     lock = hold(OUT / "pipeline.lock")
     if lock is None:
-        pytest.skip(f"another session is building under {OUT}: set DECKTALK_E2E_OUT to build elsewhere")
+        pytest.skip(f"another session is building under {OUT}: set E2E_OUT to build elsewhere")
     root = OUT / FILM_NAME
     shim = OUT / "shim"
     shutil.rmtree(root, ignore_errors=True)
