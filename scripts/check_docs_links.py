@@ -126,49 +126,73 @@ def check_link(target: str, page: Page, pages: dict[str, Page], redirects: dict[
     return None
 
 
-def problems() -> list[str]:
-    """Every broken link, every page outside the navigation, and every navigation entry with no page."""
-    pages = read_pages()
-    nav = json.loads(NAV.read_text(encoding="utf-8"))
-    listed = nav_slugs(nav)
-    redirects = {r["source"].strip("/"): r["destination"].strip("/") for r in nav.get("redirects", [])}
+def page_problems(pages: dict[str, Page], redirects: dict[str, str]) -> list[str]:
+    """Every link that does not resolve, and every page MDX would refuse to render."""
     found: list[str] = []
-
     for slug in sorted(pages):
         page = pages[slug]
         for target in page.links:
             problem = check_link(target, page, pages, redirects)
             if problem:
                 found.append(f"{page.path.relative_to(ROOT)}: {problem}")
-
-    # MDX rejects an HTML comment, and Mintlify then fails to render the whole page.
-    for page in pages.values():
+        # MDX rejects an HTML comment, and Mintlify then fails to render the whole page.
         if "<!--" in page.path.read_text(encoding="utf-8"):
             found.append(f"{page.path.relative_to(ROOT)}: an HTML comment, which MDX cannot parse, so use {{/* */}}")
+    return found
 
-    for slug in sorted(set(pages) - set(listed)):
-        found.append(f"docs/docs.json: {slug} is a page and is in no navigation group")
-    for slug in listed:
-        if slug not in pages:
-            found.append(f"docs/docs.json: navigation names {slug}, and docs/{slug}.mdx is not there")
-    for slug in sorted({s for s in listed if listed.count(s) > 1}):
-        found.append(f"docs/docs.json: navigation names {slug} more than once")
 
+def navigation_problems(pages: dict[str, Page], listed: list[str]) -> list[str]:
+    """Every page outside the navigation, and every navigation entry that names no page."""
+    found = [
+        f"docs/docs.json: {slug} is a page and is in no navigation group" for slug in sorted(set(pages) - set(listed))
+    ]
+    found += [
+        f"docs/docs.json: navigation names {slug}, and docs/{slug}.mdx is not there"
+        for slug in listed
+        if slug not in pages
+    ]
+    found += [
+        f"docs/docs.json: navigation names {slug} more than once"
+        for slug in sorted({s for s in listed if listed.count(s) > 1})
+    ]
+    return found
+
+
+def redirect_problems(pages: dict[str, Page], redirects: dict[str, str]) -> list[str]:
+    """Every redirect that leaves from a page that is still there, or arrives at one that is not."""
+    found: list[str] = []
     for source, destination in sorted(redirects.items()):
         if source in pages:
             found.append(f"docs/docs.json: /{source} redirects away and is still a page")
         if destination not in pages:
             found.append(f"docs/docs.json: /{source} redirects to /{destination}, which is not a page")
+    return found
 
+
+def asset_problems(nav: dict) -> list[str]:
+    """Every logo and favicon the navigation names, held to being a file under docs/."""
     logo = nav.get("logo")
     assets = {"favicon": nav.get("favicon")}
     assets |= {f"logo.{k}": v for k, v in (logo or {}).items() if k != "href"} if isinstance(logo, dict) else {}
     assets |= {"logo": logo} if isinstance(logo, str) else {}
-    for key, asset in sorted(assets.items()):
-        if isinstance(asset, str) and not (DOCS / asset.strip("/")).is_file():
-            found.append(f"docs/docs.json: {key} names {asset}, which is not a file under docs/")
+    return [
+        f"docs/docs.json: {key} names {asset}, which is not a file under docs/"
+        for key, asset in sorted(assets.items())
+        if isinstance(asset, str) and not (DOCS / asset.strip("/")).is_file()
+    ]
 
-    return found
+
+def problems() -> list[str]:
+    """Every broken link, every page outside the navigation, and every navigation entry with no page."""
+    pages = read_pages()
+    nav = json.loads(NAV.read_text(encoding="utf-8"))
+    redirects = {r["source"].strip("/"): r["destination"].strip("/") for r in nav.get("redirects", [])}
+    return (
+        page_problems(pages, redirects)
+        + navigation_problems(pages, nav_slugs(nav))
+        + redirect_problems(pages, redirects)
+        + asset_problems(nav)
+    )
 
 
 def main() -> int:
