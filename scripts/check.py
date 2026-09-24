@@ -27,7 +27,7 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -47,12 +47,14 @@ TOOLS = {
     "ruff": "0.16.8",
     "biome": "2.5.13",
     "shellcheck": "0.11.0.1",
+    "zizmor": "1.30.1",
 }
 """Every tool pinned outside the lockfile, and the version every other file must agree on.
 
-`ruff` is the dev group's floor and the `ruff-pre-commit` rev, `biome` is `biome.json`'s `$schema`
-and the `@biomejs/biome` entry in `package-lock.json`, and `shellcheck` is the `shellcheck-py` rev.
-`tests/contract/test_checks.py` holds all four spellings equal.
+`ruff` is the dev group's floor in `pyproject.toml` and the `ruff-pre-commit` rev, `biome` is
+`biome.json`'s `$schema` and the `@biomejs/biome` entry in `package.json`, `shellcheck` is the
+`shellcheck-py` rev, and `zizmor` is named here alone. A tool fetched without a version is a
+different tool on the day it releases, which is a check that changes its mind on its own.
 """
 
 PYPI_DECKTALK = "https://pypi.org/pypi/decktalk/json"
@@ -136,8 +138,14 @@ def in_image(image: str, script: str) -> tuple[str, ...]:
 
 
 def generator(name: str) -> tuple[str, ...]:
-    """A generated file held to its source. Every generator takes `--check` and `--write` alike."""
-    return (*UV, f"scripts/{name}.py", "--check")
+    """A generated file held to its source. Every generator takes `--check` and `--write` alike.
+
+    The script is named to the project's own interpreter rather than run as a file, because a file
+    run by `uv run` is resolved as a standalone script in an environment of its own and six of these
+    read the package they generate from. The lockfile decides what a generator sees, the same way it
+    decides what a test sees.
+    """
+    return (*UV, "python", f"scripts/{name}.py", "--check")
 
 
 @dataclass(frozen=True)
@@ -153,6 +161,70 @@ class Group:
     timeout: int  # minutes, which is the CI job's timeout-minutes
     when: tuple[str, ...]
     wall_seconds: int  # measured on the author's machine, and 0 where nobody has measured it yet
+    env: tuple[tuple[str, str], ...] = ()  # what this group's commands need in the environment
+
+
+def elsewhere(group: Group) -> Group:
+    """The same group on macOS and Windows, gating a merge and a release rather than a pull request.
+
+    A group that drives a real tool is the only kind a second platform can fail on its own, and that
+    happens a few times a year. Running all three on every push would make every change wait for
+    three legs to buy one difference, so the Linux leg gates the change and this one gates the merge,
+    which is still before a user meets it.
+    """
+    return replace(
+        group,
+        name=f"{group.name}-platforms",
+        why=f"{group.why} This row is macOS and Windows, which gate a merge rather than a pull request.",
+        runners=(MACOS, WINDOWS),
+        when=("main", "release"),
+    )
+
+
+ON_A_REAL_TOOL: tuple[Group, ...] = (
+    Group(
+        name="browser",
+        why="Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.",
+        commands=((*UV, "pytest", "-q", "-m", "browser", "--cov", "--cov-report="),),
+        runners=(LINUX,),
+        pythons=(FLOOR,),
+        tools=("uv", "chromium"),
+        timeout=25,
+        when=("pr", "main", "release"),
+        wall_seconds=52,
+    ),
+    Group(
+        name="media",
+        why="Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.",
+        commands=((*UV, "pytest", "-q", "-m", "media", "--cov", "--cov-report="),),
+        runners=(LINUX,),
+        pythons=(FLOOR,),
+        tools=("uv", "ffmpeg"),
+        timeout=25,
+        when=("pr", "main", "release"),
+        wall_seconds=9,
+    ),
+    Group(
+        name="e2e",
+        why="The pipeline fixture built end to end, which samples the joint behaviour of every tool.",
+        commands=((*UV, "pytest", "-q", "-m", "e2e", "--cov", "--cov-report="),),
+        runners=(LINUX,),
+        pythons=(FLOOR,),
+        tools=("uv", "chromium", "ffmpeg"),
+        timeout=30,
+        when=("pr", "main", "release"),
+        wall_seconds=117,
+        # This suite drives the command line as a subprocess, and a subprocess measures nothing
+        # unless it is told where the configuration is. Without this the leg reports no coverage at
+        # all, which reads exactly like a leg that passed.
+        env=(("COVERAGE_PROCESS_START", str(ROOT / "pyproject.toml")),),
+    ),
+)
+"""The three groups that drive a real tool, each written once and run on Linux and on the other two.
+
+Every other group is the same on three platforms or is about one of them already, so these are the
+only rows `elsewhere()` makes a second of.
+"""
 
 
 GROUPS: tuple[Group, ...] = (
@@ -167,7 +239,7 @@ GROUPS: tuple[Group, ...] = (
             ("npm", "ci"),
             ("npm", "exec", "--no", "--", "biome", "ci", "."),
             ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "site/install.sh"),
-            ("uvx", "zizmor", ".github/workflows"),
+            ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
@@ -198,39 +270,8 @@ GROUPS: tuple[Group, ...] = (
         when=("pr", "main", "release"),
         wall_seconds=0,
     ),
-    Group(
-        name="browser",
-        why="Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.",
-        commands=((*UV, "pytest", "-q", "-m", "browser", "--cov", "--cov-report="),),
-        runners=EVERY_PLATFORM,
-        pythons=(FLOOR,),
-        tools=("uv", "chromium"),
-        timeout=25,
-        when=("pr", "main", "release"),
-        wall_seconds=52,
-    ),
-    Group(
-        name="media",
-        why="Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.",
-        commands=((*UV, "pytest", "-q", "-m", "media", "--cov", "--cov-report="),),
-        runners=EVERY_PLATFORM,
-        pythons=(FLOOR,),
-        tools=("uv", "ffmpeg"),
-        timeout=25,
-        when=("pr", "main", "release"),
-        wall_seconds=9,
-    ),
-    Group(
-        name="e2e",
-        why="The pipeline fixture built end to end, which samples the joint behaviour of every tool.",
-        commands=((*UV, "pytest", "-q", "-m", "e2e", "--cov", "--cov-report="),),
-        runners=EVERY_PLATFORM,
-        pythons=(FLOOR,),
-        tools=("uv", "chromium", "ffmpeg"),
-        timeout=30,
-        when=("pr", "main", "release"),
-        wall_seconds=117,
-    ),
+    *ON_A_REAL_TOOL,
+    *(elsewhere(group) for group in ON_A_REAL_TOOL),
     Group(
         name="platform",
         why="The short list only macOS or Windows can prove, plus the two commands every machine runs.",
@@ -363,6 +404,7 @@ def legs(groups: tuple[Group, ...]) -> list[dict[str, object]]:
                         "runs-on": runner,
                         "python": python,
                         "timeout-minutes": group.timeout,
+                        "tools": list(group.tools),
                         "leg": f"{group.name} ({runner}, {python})",
                     }
                 )
@@ -379,11 +421,12 @@ def selected(names: list[str], when: str | None) -> tuple[Group, ...]:
     return tuple(group for group in GROUPS if (when or DEFAULT_WHEN) in group.when)
 
 
-def run(command: tuple[str, ...]) -> bool:
+def run(command: tuple[str, ...], extra: tuple[tuple[str, str], ...] = ()) -> bool:
     print(f"\n$ {shell(command)}", flush=True)
     started = time.monotonic()
     # uv runs this script in an environment of its own, and a nested `uv run` would warn about it.
     env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
+    env.update(extra)
     code = subprocess.call(command, cwd=ROOT, env=env)
     print(f"{'ok' if code == 0 else f'FAILED (exit {code})'} in {time.monotonic() - started:.1f}s", flush=True)
     return code == 0
@@ -393,7 +436,9 @@ def run_group(group: Group) -> bool:
     """Run one group, opening with the name and the one local command that reproduces it."""
     print(f"\n== {group.name}: uv run scripts/check.py --group {group.name}", flush=True)
     print(f"   {group.why}", flush=True)
-    return all(run(command) for command in group.commands)
+    for name, value in group.env:
+        print(f"   {name}={value.replace(f'{ROOT}/', '')}", flush=True)
+    return all(run(command, group.env) for command in group.commands)
 
 
 def table() -> str:

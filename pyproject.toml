@@ -142,12 +142,16 @@ filterwarnings = ["error"]
 [tool.coverage.run]
 source = ["decktalk"]
 # Playwright runs every synchronous call on a greenlet, so without this every line after the first
-# page call inside a browser test reads as dead and the floor below would be blind to the recorder.
+# page call inside a browser test reads as dead and the floor would be blind to the recorder.
 concurrency = ["thread", "greenlet"]
+# The e2e suite drives the command line as a subprocess, and a subprocess that starts coverage with
+# `COVERAGE_PROCESS_START` writes its own data file. Without a suffix per process those files would
+# be one name that every process overwrites, and `coverage combine` is what puts them back together.
+parallel = true
 
+# There is no `fail_under` here. The one floor is `scripts/coverage-floor.json`, which is measured
+# from a real run and gated by `scripts/check_coverage.py`, and a second floor typed into this file
+# would be a number nobody measured that fails `coverage report` on its own.
 [tool.coverage.report]
-# The floor is the whole suite with `-m 'not scaffold'`, rounded down, with one point of room for the
-# paths a platform takes and no more. Raise it when coverage grows.
-fail_under = 91
 show_missing = false
 skip_empty = true

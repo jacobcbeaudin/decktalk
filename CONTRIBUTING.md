@@ -74,11 +74,14 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `lint` | `uv lock --check`, and 7 more | uv, npm | Linux | pr, main, release |
 | `unit` | `uv run pytest -q` | uv | Linux | pr, main, release |
 | `node` | `npm ci`, and 1 more | npm | Linux | pr, main, release |
-| `browser` | `uv run pytest -q -m browser --cov --cov-report=` | uv, chromium | Linux, macOS, Windows | pr, main, release |
-| `media` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | Linux, macOS, Windows | pr, main, release |
-| `e2e` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
+| `browser` | `uv run pytest -q -m browser --cov --cov-report=` | uv, chromium | Linux | pr, main, release |
+| `media` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | Linux | pr, main, release |
+| `e2e` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | Linux | pr, main, release |
+| `browser-platforms` | `uv run pytest -q -m browser --cov --cov-report=` | uv, chromium | macOS, Windows | main, release |
+| `media-platforms` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | macOS, Windows | main, release |
+| `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | macOS, Windows | main, release |
 | `platform` | `uv run pytest -q tests/platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
-| `generated` | `uv run scripts/build_runtime.py --check`, and 14 more | uv, npm, chromium | Linux | pr, main, release |
+| `generated` | `uv run python scripts/build_runtime.py --check`, and 14 more | uv, npm, chromium | Linux | pr, main, release |
 | `coverage` | `uv run coverage combine`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
 | `scaffold` | `uv run pytest -q -m scaffold` | uv, chromium, ffmpeg | Linux | main, schedule |
@@ -87,18 +90,21 @@ command that reproduces it, because a job name scrolls away and the first line o
 Every group, one at a time:
 
 ```console
-uv run scripts/check.py --group lint          # Style, types and shell held to one set of rules, so no review spends a comment on them.
-uv run scripts/check.py --group unit          # Every test that needs no tool, which the collection hook makes the default suite.
-uv run scripts/check.py --group node          # The runtime's pure functions over strings, under node --test, so no test framework is added.
-uv run scripts/check.py --group browser       # Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.
-uv run scripts/check.py --group media         # Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.
-uv run scripts/check.py --group e2e           # The pipeline fixture built end to end, which samples the joint behaviour of every tool.
-uv run scripts/check.py --group platform      # The short list only macOS or Windows can prove, plus the two commands every machine runs.
-uv run scripts/check.py --group generated     # Every generated file held to the source it is generated from, and every link in them.
-uv run scripts/check.py --group coverage      # One floor, measured on Linux, failing when a suite it combines never reported.
-uv run scripts/check.py --group wheel         # What `uv build` writes, opened on a machine that has only the wheel and the tag.
-uv run scripts/check.py --group scaffold      # Every packaged project recorded and verified without a voice, which is the scaffold's promise.
-uv run scripts/check.py --group installer     # The one-line installer run for real, on images that start with nothing but a package manager.
+uv run scripts/check.py --group lint              # Style, types and shell held to one set of rules, so no review spends a comment on them.
+uv run scripts/check.py --group unit              # Every test that needs no tool, which the collection hook makes the default suite.
+uv run scripts/check.py --group node              # The runtime's pure functions over strings, under node --test, so no test framework is added.
+uv run scripts/check.py --group browser           # Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.
+uv run scripts/check.py --group media             # Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.
+uv run scripts/check.py --group e2e               # The pipeline fixture built end to end, which samples the joint behaviour of every tool.
+uv run scripts/check.py --group browser-platforms # Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches. This row is macOS and Windows, which gate a merge rather than a pull request.
+uv run scripts/check.py --group media-platforms   # Frame and audio measurement against the real ffmpeg, on synthetic files the tests build. This row is macOS and Windows, which gate a merge rather than a pull request.
+uv run scripts/check.py --group e2e-platforms     # The pipeline fixture built end to end, which samples the joint behaviour of every tool. This row is macOS and Windows, which gate a merge rather than a pull request.
+uv run scripts/check.py --group platform          # The short list only macOS or Windows can prove, plus the two commands every machine runs.
+uv run scripts/check.py --group generated         # Every generated file held to the source it is generated from, and every link in them.
+uv run scripts/check.py --group coverage          # One floor, measured on Linux, failing when a suite it combines never reported.
+uv run scripts/check.py --group wheel             # What `uv build` writes, opened on a machine that has only the wheel and the tag.
+uv run scripts/check.py --group scaffold          # Every packaged project recorded and verified without a voice, which is the scaffold's promise.
+uv run scripts/check.py --group installer         # The one-line installer run for real, on images that start with nothing but a package manager.
 ```
 <!-- checks:end -->
 

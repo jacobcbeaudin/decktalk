@@ -20,10 +20,10 @@ SUITE_MARKERS = ("browser", "media", "e2e", "scaffold")
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
-        "--gate-timing",
-        action="store_true",
-        default=False,
-        help="fail the pipeline test on OFF CUE on every platform, as it does on Linux by itself",
+        "--timing",
+        choices=("gate", "report"),
+        default="gate",
+        help="whether a late reveal fails the run or is only reported, default gate",
     )
 
 

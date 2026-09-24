@@ -77,9 +77,10 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
-      # Node is installed on every leg rather than on the legs whose row lists it, because the
-      # matrix row carries no tool list and adding one would edit the table this file only reads.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      # Node is installed on the legs whose row lists it, which the matrix row carries, so a leg
+      # that runs no JavaScript spends none of its minutes on a toolchain it never calls.
+      - if: contains(matrix.tools, 'npm')
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: npm

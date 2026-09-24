@@ -174,8 +174,12 @@ def render_checks() -> str:
     lines.append("Every group, one at a time:")
     lines.append("")
     lines.append("```console")
-    for group in rows:
-        lines.append(f"uv run scripts/check.py --group {group.name}".ljust(46) + f"# {group.why}")
+    # The comment column is measured from the longest row rather than typed, so a group whose name
+    # grows still leaves a space between the command and the sentence that explains it.
+    calls = [f"uv run scripts/check.py --group {group.name}" for group in rows]
+    column = max(len(call) for call in calls) + 1
+    for call, group in zip(calls, rows, strict=True):
+        lines.append(call.ljust(column) + f"# {group.why}")
     lines.append("```")
     return "\n".join(lines)
 
