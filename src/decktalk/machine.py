@@ -99,6 +99,9 @@ FFMPEG = "ffmpeg"
 FFPROBE = "ffprobe"
 KATEX = "katex"
 
+BIAS_KEY = "host.presentation_bias_ms"
+"""The one key a command measures rather than a person chooses, which `doctor --measure` writes."""
+
 
 def new_run() -> str:
     """A fresh run id, which names this run's events file and its rows in `status`."""
@@ -462,7 +465,7 @@ class Machine:
                 python=f"{sys.version.split()[0]} ({sys.executable})",
                 platform=f"{platform.platform()} ({sys.platform})",
                 voice_key=self.voice_key,
-                bias_ms=self._bias(measure=measure),
+                bias_ms=self._bias(run, measure=measure),
             )
 
     def apply(self, fix: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
@@ -517,14 +520,23 @@ class Machine:
             bytes=None,
         )
 
-    def _bias(self, *, measure: bool) -> float | None:
-        """This host's presentation bias, measured only when asked, because measuring drives a browser."""
+    def _bias(self, run: Run, *, measure: bool) -> float | None:
+        """This host's presentation bias, measured only when asked, because measuring drives a browser.
+
+        A measurement that is taken is kept. The key is refused to every hand that would type it,
+        because a number typed into it is a guess subtracted from every later measurement, and this
+        command is the one holding an honest value, so it writes through the door `settings.write`
+        opens for exactly that and reports the file it wrote like any other.
+        """
         if not measure:
             return None
         # Measuring drives a browser, so the layer that owns the browser owns the measurement, and
         # the module is loaded by the one caller that asks for it rather than by every report.
         measured = import_module("decktalk.media.browser").measure_presentation_bias
-        return float(measured())
+        bias = float(measured())
+        write(self.config_path, BIAS_KEY, str(bias), scope=SettingScope.MACHINE, measured=True)
+        run.wrote(self.config_path)
+        return bias
 
 
 def init(

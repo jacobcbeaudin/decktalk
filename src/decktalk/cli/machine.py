@@ -29,8 +29,9 @@ Fetches into this machine's cache, which doctor names. The JSON object
 carries run, tools and cache. Docs: {DOCS}#install"""
 
 DOCTOR_EPILOG = f"""\
-Reads this machine and fetches nothing. The JSON object carries run, tools,
-cache, python, platform, voice_key and bias_ms. Docs: {DOCS}#doctor"""
+Reads this machine and fetches nothing, and --measure writes the bias it
+measured. The JSON object carries run, written, tools, cache, python,
+platform, voice_key and bias_ms. Docs: {DOCS}#doctor"""
 
 
 @command(group=Group.MACHINE, epilog=INIT_EPILOG)

@@ -319,6 +319,8 @@ def _doctor(result: DoctorResult) -> Iterable[RenderableType]:
     yield Text(f"Voice key {_yes(result.voice_key)}")
     if result.bias_ms is not None:
         yield Text(f"Bias      {result.bias_ms:.0f} ms")
+    for path in result.written:
+        yield Text(f"Wrote     {path.as_posix()}", style=QUIET_STYLE)
 
 
 def _status(result: StatusResult) -> Iterable[RenderableType]:

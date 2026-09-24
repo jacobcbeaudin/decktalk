@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -277,6 +278,26 @@ def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path, monk
     assert not result.ok  # this machine has no encoder, which a build needs
     assert {found.code for found in result.findings} == {Code.FILE_MISSING}
     assert result.bias_ms is None  # the bias is measured only when a caller asks
+
+
+def test_a_measured_doctor_keeps_the_number_it_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The one key no person may type is written by the one command that holds an honest value for it."""
+    here = a_machine(tmp_path)
+    monkeypatch.setattr(
+        machine_module,
+        "import_module",
+        lambda _name: SimpleNamespace(measure_presentation_bias=lambda: 12.5),
+    )
+    result = here.doctor(measure=True)
+    assert result.bias_ms == 12.5
+    assert result.written == (here.config_path,)
+    assert "presentation_bias_ms = 12.5" in here.config_path.read_text(encoding="utf-8")
+
+
+def test_a_doctor_that_measured_nothing_writes_nothing(tmp_path: Path) -> None:
+    here = a_machine(tmp_path)
+    assert here.doctor().written == ()
+    assert not here.config_path.exists()
 
 
 def test_install_fetches_the_browser_and_the_encoder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
