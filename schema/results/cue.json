@@ -459,7 +459,7 @@
         "section": {
           "anyOf": [
             {
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer"
             },
             {
@@ -495,8 +495,8 @@
       "description": "One section's cues, each resolved to a second on that section's own clock.",
       "properties": {
         "section": {
-          "description": "The section this row is about, counting from one.",
-          "minimum": 1,
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
           "title": "Section",
           "type": "integer"
         },

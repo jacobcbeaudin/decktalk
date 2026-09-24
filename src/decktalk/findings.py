@@ -437,7 +437,7 @@ class Code(Enum):
     )
     CUT_POP = (
         "CUT_POP",
-        "The waveform steps at a section cut, so the film pops on the seam.",
+        "The picture steps at a section cut, so the film pops on the seam.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
         ("verify.cut_change_max_percent",),
@@ -481,7 +481,7 @@ class Location(BaseModel):
     where: str = Field(description="The object this finding judges, such as a cue id, a slide or a file.")
     file: ProjectPath | None = Field(None, description="The file to open, project-relative, or null.")
     line: int | None = Field(None, ge=1, description="The line in that file, counting from one, or null.")
-    section: int | None = Field(None, ge=1, description="The section number this is about, or null.")
+    section: int | None = Field(None, ge=0, description="The section number this is about, or null.")
     cue: str | None = Field(None, description="The wire id of the cue this is about, or null.")
 
 

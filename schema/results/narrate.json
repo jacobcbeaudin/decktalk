@@ -429,7 +429,7 @@
         "section": {
           "anyOf": [
             {
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer"
             },
             {
@@ -465,8 +465,8 @@
       "description": "One section's take: what it cost, how long it runs and what the run did about it.",
       "properties": {
         "section": {
-          "description": "The section this row is about, counting from one.",
-          "minimum": 1,
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
           "title": "Section",
           "type": "integer"
         },
@@ -580,8 +580,8 @@
         "sections": {
           "description": "The sections this price covers, in script order.",
           "items": {
-            "description": "The section this row is about, counting from one.",
-            "minimum": 1,
+            "description": "The section this row is about, as the author numbered it.",
+            "minimum": 0,
             "type": "integer"
           },
           "title": "Sections",

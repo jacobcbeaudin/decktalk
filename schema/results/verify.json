@@ -121,8 +121,8 @@
       "description": "One cue measured on the finished film against the word it was promised to.",
       "properties": {
         "section": {
-          "description": "The section this row is about, counting from one.",
-          "minimum": 1,
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
           "title": "Section",
           "type": "integer"
         },
@@ -204,8 +204,8 @@
       "description": "What one seam between two sections sounds like.",
       "properties": {
         "section": {
-          "description": "The section this row is about, counting from one.",
-          "minimum": 1,
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
           "title": "Section",
           "type": "integer"
         },
@@ -536,7 +536,7 @@
         "section": {
           "anyOf": [
             {
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer"
             },
             {
@@ -572,8 +572,8 @@
       "description": "How far one section's picture has drifted from its own clock by the time it ends.",
       "properties": {
         "section": {
-          "description": "The section this row is about, counting from one.",
-          "minimum": 1,
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
           "title": "Section",
           "type": "integer"
         },
@@ -672,8 +672,8 @@
       "description": "What the first frame of one section looks like, which is how a black opening is caught.",
       "properties": {
         "section": {
-          "description": "The section this row is about, counting from one.",
-          "minimum": 1,
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
           "title": "Section",
           "type": "integer"
         },

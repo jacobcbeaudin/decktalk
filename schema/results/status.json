@@ -461,7 +461,7 @@
         "section": {
           "anyOf": [
             {
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer"
             },
             {
@@ -506,8 +506,8 @@
       "description": "What one section has and what it still needs, as `status` reads it off disk.",
       "properties": {
         "section": {
-          "description": "The section this row is about, counting from one.",
-          "minimum": 1,
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
           "title": "Section",
           "type": "integer"
         },

@@ -58,8 +58,8 @@ NextCommand = Annotated[
 ]
 """A reading of project state that goes stale, so only the two objects a caller takes fresh carry it."""
 
-SectionNumber = Annotated[int, Field(ge=1, description="The section this row is about, counting from one.")]
-"""A section's number, which is how the author numbers sections in decktalk.toml."""
+SectionNumber = Annotated[int, Field(ge=0, description="The section this row is about, as the author numbered it.")]
+"""A section's number, which is how the author numbers sections in decktalk.toml, counting from zero or one."""
 
 SectionKey = Annotated[str, Field(description="The section's key, which names its files under build/.")]
 """A section's key, which is the stable name its recording, its take and its cut are filed under."""
