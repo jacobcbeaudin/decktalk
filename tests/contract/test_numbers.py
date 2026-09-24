@@ -30,6 +30,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+# `--write` is run as a plain script, where pytest's own `pythonpath` is not in force yet.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from decktalk.settings import KEYS
 from support.paths import REPO
 
