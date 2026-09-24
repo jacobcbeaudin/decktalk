@@ -30,7 +30,6 @@ from pathlib import Path
 from typing import IO, Any
 
 import pytest
-from timing_policy import assert_build_finished, gates_timing
 
 from decktalk.artifacts import RecordingLog, Takes, Word, read_rows, write_words
 from decktalk.cli import main
@@ -42,6 +41,7 @@ from decktalk.speech import SpeechRequest, VoiceContext, get_provider, register_
 from decktalk.stages.narrate import join_takes, take_name, text_hash, words_name
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 from decktalk.verdicts import Verdict
+from support.timing_policy import assert_build_finished, gates_timing
 
 # An advisory lock on the output directory, where the platform has one.
 fcntl = importlib.util.find_spec("fcntl") and importlib.import_module("fcntl")

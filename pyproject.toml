@@ -79,6 +79,11 @@ select = ["E", "F", "W", "I", "B", "UP"]
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["E501"]  # generated CSS and SVG strings
 
+# `tests/support` is on the path as `support`, so it sorts beside `decktalk` rather than with the
+# third-party packages, which is where a reader looks for it.
+[tool.ruff.lint.isort]
+known-first-party = ["decktalk", "support"]
+
 [tool.ruff.format]
 quote-style = "double"
 
@@ -89,16 +94,18 @@ python-version = "3.12"
 testpaths = ["tests"]
 # Two modules of the tree are named plan.py, so their mirrored test files share a basename.
 consider_namespace_packages = true
-# tests/ is on the path, so a module that holds pages several test modules share is imported by name.
+# tests/ is on the path, so `tests/support/` is imported as `support.<module>` from anywhere in the suite.
 pythonpath = ["tests"]
+# Every marker names its tool in its first clause, so `pytest --markers` answers what a table used to.
 markers = [
-    "browser: needs headless Chromium (run `decktalk install` first)",
-    "media: runs the ffmpeg that `decktalk install` fetches",
-    "e2e: builds the pipeline fixture in tests/e2e with Chromium and ffmpeg, about a minute",
-    "scaffold: records and verifies every packaged project without a voice, about five minutes",
+    "browser: needs the headless Chromium that `decktalk install` fetches",
+    "media: needs the ffmpeg that `decktalk install` fetches",
+    "e2e: needs Chromium and ffmpeg, and builds the pipeline fixture in tests/e2e, about a minute",
+    "scaffold: needs Chromium and ffmpeg, and builds every packaged project without a voice, about five minutes",
 ]
-# A bare `pytest` runs the unit suite alone. Pass -m to pick the slower suites, as scripts/check.py does.
-addopts = "-m 'not browser and not media and not e2e and not scaffold' --strict-markers --import-mode=importlib"
+# Selection is `tests/conftest.py`'s collection hook rather than an `-m` here, because a person's own
+# `-m` replaces this line whole and would admit every suite it did not name.
+addopts = "--strict-markers --import-mode=importlib"
 filterwarnings = ["error"]
 
 [tool.coverage.run]

@@ -3,7 +3,7 @@
 This is the promise the scaffold makes: a fresh project builds on the machine it was written on,
 with no API key, no spend and no file of the author's. The starter takes about a minute and the
 lesson example a few, so the suite carries the `scaffold` marker and is the one suite
-`scripts/check.py` leaves out. It is run by hand before a release. `tests/test_scaffold_data.py`
+`scripts/check.py` leaves out. It is run by hand before a release. `tests/decktalk/scaffold/test_scaffold.py`
 checks the same projects on every pull request without building them.
 
     uv run pytest -m scaffold
