@@ -18,7 +18,6 @@ nothing, which is how the stages and the command line stay private.
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import enum
 import importlib
 import inspect
@@ -82,16 +81,18 @@ def seeds() -> dict[str, list[str]]:
 
 
 def annotations_of(obj: object) -> list[object]:
-    """Every annotation one exported object carries, which is where the closure walks next."""
+    """Every annotation one exported object carries, which is where the closure walks next.
+
+    Every annotation is resolved rather than read as it was written, because the package writes
+    `from __future__ import annotations` and a dataclass field then carries the source text of its
+    type instead of the type. A string names no class, so a walk that read it would stop at the
+    first dataclass and call everything beyond it private.
+    """
     if isinstance(obj, type) and issubclass(obj, BaseModel):
         return [field.annotation for field in obj.model_fields.values()]
     if isinstance(obj, type) and issubclass(obj, enum.Enum):
         return []
-    if dataclasses.is_dataclass(obj) and isinstance(obj, type):
-        return [field.type for field in dataclasses.fields(obj)]
-    if isinstance(obj, type):
-        return list(typing.get_type_hints(obj).values())
-    if inspect.isfunction(obj):
+    if isinstance(obj, type) or inspect.isfunction(obj):
         return list(typing.get_type_hints(obj).values())
     return [obj]
 
