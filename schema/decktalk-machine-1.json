@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decktalk.ai/schema/decktalk-machine-1.json",
+  "title": "DeckTalk per-machine settings file",
+  "description": "The keys a per-machine settings file may hold, which are the ones that describe this machine rather than the film. A key about the film belongs in the project file, because the file that ships carries whatever the runner believes.",
+  "type": "object",
+  "properties": {
+    "narration": {
+      "type": "object",
+      "description": "These keys govern how the script is turned into audio.",
+      "x-kind": "tuning",
+      "properties": {
+        "cache_dir": {
+          "description": "Directory that holds the take files and their words files, each named by its content hash. It is empty for `build/narrate/` inside the project, and a path here keeps the voiced takes when `build/` is deleted and lets many projects share one cache.",
+          "type": "string",
+          "default": "",
+          "x-range": "takes any value of its type",
+          "x-unit": "path",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-see-also": [
+            "tools.cache_dir"
+          ],
+          "x-environment": "DECKTALK_NARRATION_CACHE_DIR"
+        }
+      },
+      "additionalProperties": false
+    },
+    "record": {
+      "type": "object",
+      "description": "These keys tune the headless Chromium recording and how narration t=0 is found in it.",
+      "x-kind": "tuning",
+      "properties": {
+        "browser_path": {
+          "description": "Chromium executable that `record` drives. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another.",
+          "type": "string",
+          "default": "",
+          "x-range": "takes any value of its type",
+          "x-unit": "path",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_RECORD_BROWSER_PATH"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tools": {
+      "type": "object",
+      "description": "These keys name the tools DeckTalk drives, for a machine that supplies its own.",
+      "x-kind": "tuning",
+      "properties": {
+        "ffmpeg": {
+          "description": "ffmpeg executable. It is empty for the build DeckTalk fetches itself.",
+          "type": "string",
+          "default": "",
+          "x-range": "takes any value of its type",
+          "x-unit": "path",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_TOOLS_FFMPEG"
+        },
+        "ffprobe": {
+          "description": "ffprobe executable. It is empty for the build DeckTalk fetches itself.",
+          "type": "string",
+          "default": "",
+          "x-range": "takes any value of its type",
+          "x-unit": "path",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_TOOLS_FFPROBE"
+        },
+        "cache_dir": {
+          "description": "Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache.",
+          "type": "string",
+          "default": "",
+          "x-range": "takes any value of its type",
+          "x-unit": "path",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-see-also": [
+            "narration.cache_dir"
+          ],
+          "x-environment": "DECKTALK_TOOLS_CACHE_DIR"
+        }
+      },
+      "additionalProperties": false
+    },
+    "host": {
+      "type": "object",
+      "description": "These keys are facts about this machine that a run measures rather than a person chooses.",
+      "x-kind": "tuning",
+      "properties": {
+        "presentation_bias_ms": {
+          "description": "How long this machine takes to present a frame the page has already drawn, which verify subtracts from a measured offset when the record still matches the run.",
+          "type": "number",
+          "default": 0.0,
+          "minimum": -200,
+          "maximum": 200,
+          "x-range": "must be between -200 and 200",
+          "x-unit": "milliseconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "measured",
+          "x-evidence": "decktalk doctor --measure",
+          "x-hazard": "A bias written by hand is a guess subtracted from every measurement, which moves whichever verdict the guess was chosen to move. It is measured or it is zero.",
+          "x-decides": [
+            "CUE_OFF"
+          ],
+          "x-environment": "DECKTALK_HOST_PRESENTATION_BIAS_MS"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
