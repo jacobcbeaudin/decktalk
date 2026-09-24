@@ -19,12 +19,19 @@ import pytest
 from decktalk.errors import ToolError
 from decktalk.media import ffmpeg as ff
 from decktalk.toolchain import ffmpeg_fetch as fetch
+from decktalk.toolchain.announce import announcing
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 PLATFORMS = ("linux-x86_64", "linux-arm64", "darwin-x86_64", "darwin-arm64", "win32-x86_64")
 
 
 class Response(io.BytesIO):
+    """What urlopen hands back, including the length header a download reads to say how far it is."""
+
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.headers = {"Content-Length": str(len(data))}
+
     def __enter__(self):
         return self
 
@@ -36,7 +43,7 @@ def serve(monkeypatch, archives: dict[str, bytes]) -> list[str]:
     """Answer urlopen from a dict of url -> bytes, recording the URLs asked for."""
     asked: list[str] = []
 
-    def urlopen(request, timeout):
+    def urlopen(request, timeout):  # noqa: ARG001  (urlopen's own signature, so a missing timeout shows)
         url = request.full_url
         assert request.get_header("User-agent") == fetch.USER_AGENT
         asked.append(url)
@@ -112,7 +119,7 @@ def test_install_dir_sits_under_the_decktalk_cache(tmp_path):
 # ---- the fetch ---------------------------------------------------------------------------------
 
 
-def test_fetch_verifies_each_archive_and_installs_both_executables(tmp_path, monkeypatch):
+def test_fetch_verifies_each_archive_and_installs_both_executables(monkeypatch):
     tar = tar_xz_bytes(
         {"build/bin/ffmpeg": b"#!/bin/sh\necho ffmpeg\n", "build/bin/ffprobe": b"#!/bin/sh\necho ffprobe\n"}
     )
@@ -136,7 +143,7 @@ def test_fetch_verifies_each_archive_and_installs_both_executables(tmp_path, mon
     assert not dest.with_name(f".{dest.name}.tmp").exists()
 
 
-def test_fetch_takes_one_executable_per_archive_from_zip_roots(tmp_path, monkeypatch):
+def test_fetch_takes_one_executable_per_archive_from_zip_roots(monkeypatch):
     a, b = zip_bytes({fetch._exe("ffmpeg"): b"A"}), zip_bytes({fetch._exe("ffprobe"): b"B"})
     first = fetch.FfmpegAsset("https://example.test/ffmpeg.zip", hashlib.sha256(a).hexdigest(), binaries=("ffmpeg",))
     second = fetch.FfmpegAsset("https://example.test/ffprobe.zip", hashlib.sha256(b).hexdigest(), binaries=("ffprobe",))
@@ -167,7 +174,7 @@ def test_a_digest_mismatch_discards_the_download_and_installs_nothing(tmp_path, 
         ff.ffmpeg_paths()
 
 
-def test_an_oversized_archive_is_refused_before_it_is_read_to_the_end(tmp_path, monkeypatch):
+def test_an_oversized_archive_is_refused_before_it_is_read_to_the_end(monkeypatch):
     url = "https://example.test/huge.zip"
     build = fetch.FfmpegBuild(
         builder="test", license="GPL-3.0-or-later",
@@ -201,7 +208,7 @@ def test_only_the_named_members_leave_the_archive(tmp_path, monkeypatch):
     assert written == [f"{prefix}{exe('ffmpeg')}", f"{prefix}{exe('ffprobe')}"]
 
 
-def test_an_archive_without_the_executable_is_a_tool_error(tmp_path, monkeypatch):
+def test_an_archive_without_the_executable_is_a_tool_error(monkeypatch):
     archive = zip_bytes({"bin/README": b"no binaries here"})
     url = "https://example.test/ffmpeg.zip"
     build = fetch.FfmpegBuild(
@@ -239,7 +246,7 @@ def test_an_override_naming_a_file_that_is_not_there_is_refused_rather_than_reso
         ff.ffmpeg_paths()
 
 
-def test_an_installed_build_is_used_without_a_fetch(tmp_path, monkeypatch):
+def test_an_installed_build_is_used_without_a_fetch(monkeypatch):
     pin(monkeypatch, "test-installed", fetch.FFMPEG_BUILDS["linux-x86_64"])
     d = fetch.install_dir()
     d.mkdir(parents=True)
@@ -276,19 +283,30 @@ def test_an_unpinned_platform_uses_path_or_says_so(monkeypatch):
     assert ff.ffmpeg_paths() == ("/usr/bin/ffmpeg", "/usr/bin/ffprobe")
 
 
-def test_doctor_reports_missing_ffmpeg_without_fetching(tmp_path, monkeypatch):
-    from decktalk import scaffold
+def pinned_tar(monkeypatch, key: str) -> bytes:
+    """A pinned build of one archive, served and ready to fetch, and the bytes the host will answer with."""
+    tar = tar_xz_bytes({"bin/ffmpeg": b"#!/bin/sh\n", "bin/ffprobe": b"#!/bin/sh\n"})
+    url = f"https://example.test/{key}.tar.xz"
+    build = fetch.FfmpegBuild(
+        builder="test", license="GPL-3.0-or-later",
+        assets=(fetch.FfmpegAsset(url=url, sha256=hashlib.sha256(tar).hexdigest(), bin_dir="bin/"),),
+    )  # fmt: skip
+    pin(monkeypatch, key, build)
+    serve(monkeypatch, {url: tar})
+    return tar
 
-    monkeypatch.setattr(fetch, "fetch_ffmpeg", lambda key=None: pytest.fail("doctor must not download ffmpeg"))
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", None)  # keeps the test free of Chromium
-    rows = {name: (ok, detail) for name, ok, detail in scaffold.doctor()}
-    assert rows["ffmpeg"] == (False, "not fetched yet and none on PATH  -> run `decktalk install`")
-    assert "ffprobe" not in rows
-    # Executables already on disk are reported without fetching either.
-    d = fetch.install_dir()
-    d.mkdir(parents=True)
-    for name in ("ffmpeg", "ffprobe"):
-        (d / fetch._exe(name)).write_bytes(b"")
-    rows = {name: (ok, detail) for name, ok, detail in scaffold.doctor()}
-    assert rows["ffmpeg"] == (True, str(d / fetch._exe("ffmpeg")))
-    assert rows["ffprobe"] == (True, str(d / fetch._exe("ffprobe")))
+
+def test_a_download_says_what_is_arriving_and_how_much_of_it(monkeypatch):
+    """A run that stops for a few hundred megabytes says so as it happens, through the one seam it has."""
+    tar = pinned_tar(monkeypatch, "test-announce")
+    heard: list[tuple[str, int, int | None]] = []
+    with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
+        fetch.fetch_ffmpeg()
+    assert heard[0] == (fetch.TOOL, 0, len(tar)), heard
+    assert heard[-1] == (fetch.TOOL, len(tar), len(tar)), heard
+
+
+def test_a_download_nobody_is_listening_to_says_nothing_and_still_arrives(monkeypatch):
+    """The listener is what a machine sets for a run, so a caller that sets none downloads as before."""
+    pinned_tar(monkeypatch, "test-silent")
+    assert fetch.fetch_ffmpeg() == fetch.installed_pinned()

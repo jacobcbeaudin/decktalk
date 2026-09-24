@@ -23,15 +23,27 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..errors import ToolError
+from .announce import announce
 from .cache import cache_dir
 
 log = logging.getLogger(__name__)
+
+TOOL = "ffmpeg"
+"""What a `fetch` line calls this download, which is the name `doctor` and `install` print too."""
+
+ANNOUNCE_STEP_BYTES = 4 * 1024 * 1024
+"""How much has to arrive before a download says so again, which is often enough to look alive."""
 
 FFMPEG_VERSION = "8.1.2"
 # An archive that grows past this is refused mid-download. The largest pinned archive is 169 MB.
 MAX_ARCHIVE_BYTES = 400 * 1024 * 1024
 # One host refuses urllib's default User-Agent, so every fetch names itself.
 USER_AGENT = "decktalk"
+CHUNK_BYTES = 1 << 20
+"""How much of an archive is read at a time, which is large enough that the hash keeps up with the socket."""
+
+DOWNLOAD_TIMEOUT_SECONDS = 60
+"""How long one read of an archive may block, after which a host that stopped answering is a failure."""
 _BTBN = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27"
 _BTBN_DIR = "ffmpeg-n8.1.2-50-g1a748fe2cd"
 _EVERMEET = "https://evermeet.cx/ffmpeg"
@@ -162,6 +174,12 @@ def installed_pinned(key: str | None = None) -> tuple[str, str] | None:
     return None
 
 
+def _content_length(resp: object) -> int | None:
+    """How large the host says the archive is, or None when it did not say, which some hosts do not."""
+    stated = getattr(resp, "headers", {}).get("Content-Length")
+    return int(stated) if stated and stated.isdigit() else None
+
+
 def _download_verified(asset: FfmpegAsset, into: Path) -> Path:
     """Stream the archive into `into`, hashing it as it arrives. A digest other than the pinned one is refused.
 
@@ -172,15 +190,21 @@ def _download_verified(asset: FfmpegAsset, into: Path) -> Path:
     partial = target.with_name(f"{target.name}.part")
     digest = hashlib.sha256()
     total = 0
-    log.info("   fetching %s", asset.url)
     request = urllib.request.Request(asset.url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=60) as resp, partial.open("wb") as fh:
-        while chunk := resp.read(1 << 20):
+    with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as resp, partial.open("wb") as fh:
+        expected = _content_length(resp)
+        announce(TOOL, 0, expected)
+        said = 0
+        while chunk := resp.read(CHUNK_BYTES):
             total += len(chunk)
             if total > MAX_ARCHIVE_BYTES:
                 raise ToolError(f"{asset.url} is larger than {MAX_ARCHIVE_BYTES} bytes, so the download was refused")
             digest.update(chunk)
             fh.write(chunk)
+            if total - said >= ANNOUNCE_STEP_BYTES:
+                announce(TOOL, total, expected)
+                said = total
+    announce(TOOL, total, expected)
     if digest.hexdigest() != asset.sha256:
         partial.unlink()
         raise ToolError(

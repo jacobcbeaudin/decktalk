@@ -5,15 +5,15 @@ from __future__ import annotations
 import re
 import shutil
 
-from decktalk import scaffold
-from decktalk.scaffold import init
-from decktalk.toolchain import assets
 from decktalk.toolchain.assets import (
     KATEX_FILES,
     KATEX_VERSION,
     katex_dir,
     katex_fonts,
     katex_missing,
+    probe_path,
+    runtime_path,
+    vendor_katex,
 )
 
 
@@ -37,37 +37,33 @@ def test_the_packaged_copy_is_the_pinned_version():
     assert "MIT License" in licence and "Khan Academy" in licence
 
 
-def test_init_copies_the_packaged_copy_and_the_page_loads_it_locally(tmp_path):
-    root = init(tmp_path / "proj", name="proj").root
-    deck = root / "deck"
-    assert katex_missing(deck / "katex") == []
+def test_vendoring_copies_the_packaged_release_beside_a_deck_byte_for_byte(tmp_path):
+    """A project renders equations with no network and no CDN tag, which is what the copy is for."""
+    copied_to = vendor_katex(tmp_path / "deck")
+    assert katex_missing(copied_to) == []
     packaged = sorted(p.relative_to(katex_dir()) for p in katex_dir().rglob("*") if p.is_file())
-    copied = sorted(p.relative_to(deck / "katex") for p in (deck / "katex").rglob("*") if p.is_file())
+    copied = sorted(p.relative_to(copied_to) for p in copied_to.rglob("*") if p.is_file())
     assert copied == packaged
     for rel in packaged:
-        assert (deck / "katex" / rel).read_bytes() == (katex_dir() / rel).read_bytes(), rel
-    html = (deck / "index.html").read_text(encoding="utf-8")
-    assert '<link rel="stylesheet" href="./katex/katex.min.css">' in html
-    assert '<script src="./katex/katex.min.js"></script>' in html
-    assert html.index("katex.min.js") < html.index("decktalk-runtime.js")  # KaTeX loads before the runtime
-    for page in deck.glob("*.html"):
-        text = page.read_text(encoding="utf-8")
-        assert "cdnjs" not in text and "https://" not in text.split("<style>")[0], page.name
+        assert (copied_to / rel).read_bytes() == (katex_dir() / rel).read_bytes(), rel
 
 
-def test_katex_missing_names_each_absent_file(tmp_path, monkeypatch):
+def test_vendoring_again_replaces_what_was_there_rather_than_adding_to_it(tmp_path):
+    copied_to = vendor_katex(tmp_path / "deck")
+    (copied_to / "fonts" / "left-behind.woff2").write_bytes(b"")
+    assert vendor_katex(tmp_path / "deck") == copied_to
+    assert not (copied_to / "fonts" / "left-behind.woff2").exists()
+
+
+def test_the_runtime_and_the_probe_ship_in_the_wheel_and_only_one_of_them_is_copied():
+    """A deck loads the runtime and never the probe, because a command injects the probe into the page."""
+    assert runtime_path().is_file() and probe_path().is_file()
+    assert runtime_path().parent == probe_path().parent
+
+
+def test_katex_missing_names_each_absent_file(tmp_path):
     copy = tmp_path / "katex"
     shutil.copytree(katex_dir(), copy)
     (copy / "fonts" / "KaTeX_Main-Regular.woff2").unlink()
     (copy / "LICENSE").unlink()
     assert katex_missing(copy) == ["LICENSE", "fonts/KaTeX_Main-Regular.woff2"]
-    monkeypatch.setattr(assets, "katex_dir", lambda: copy)
-    row = {r.name: r for r in scaffold.doctor()}["katex"]
-    assert row.ok is False
-    assert row.detail.endswith("lacks LICENSE, fonts/KaTeX_Main-Regular.woff2  -> reinstall decktalk")
-    assert str(copy) in row.detail
-
-
-def test_doctor_reports_the_packaged_version_when_it_is_complete():
-    row = {r.name: r for r in scaffold.doctor()}["katex"]
-    assert row.ok is True and row.detail == f"{KATEX_VERSION} in the wheel ({katex_dir()})"

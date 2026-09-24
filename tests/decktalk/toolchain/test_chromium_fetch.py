@@ -18,20 +18,17 @@ tests say the same thing on a machine that has Chromium and on one that has neve
 from __future__ import annotations
 
 import ast
-import importlib
+import contextlib
 from pathlib import Path
-from typing import Any
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError
 
 from decktalk.errors import ToolError
 from decktalk.media import browser
 from decktalk.toolchain import chromium_fetch
+from decktalk.toolchain.announce import announcing
 from support.paths import REPO
-
-# The package exports the `install` function under its module's own name, so the module is asked for
-# by name rather than reached through the package, where the attribute is the function.
-install_module = importlib.import_module("decktalk.scaffold.install")
 
 SRC = REPO / "src" / "decktalk"
 
@@ -62,9 +59,9 @@ class FakeChromium:
         self.launches.append(executable_path)
         target = Path(executable_path or self.executable_path)
         if not target.is_file():
-            raise RuntimeError(f"Executable doesn't exist at {target}\nPlaywright was just installed")
+            raise PlaywrightError(f"Executable doesn't exist at {target}\nPlaywright was just installed")
         if self.broken:
-            raise RuntimeError("error while loading shared libraries: libnss3.so: cannot open shared object file")
+            raise PlaywrightError("error while loading shared libraries: libnss3.so: cannot open shared object file")
         return FakeBrowser(str(target))
 
 
@@ -81,7 +78,7 @@ def fake_fetch(monkeypatch: pytest.MonkeyPatch, installs: Path | None, *, code: 
     """
     seen: list[list[str]] = []
 
-    def call(cmd: list[str], **kwargs: Any) -> int:
+    def call(cmd: list[str], **_kwargs: object) -> int:
         seen.append(list(cmd))
         if installs is not None and code == 0:
             installs.parent.mkdir(parents=True, exist_ok=True)
@@ -136,24 +133,23 @@ def test_a_launch_that_still_fails_after_the_fetch_names_the_install_command(mon
     assert "libnss3" in said, f"the reason Chromium gave is not in the message: {said}"
 
 
-def test_the_download_is_announced_before_it_starts(monkeypatch, on_disk, caplog) -> None:
-    """A few hundred megabytes arriving in silence reads as a hung build. The line has to be printed
-    before the download, not with the result, so it is read at the moment the fetch runs."""
+def test_the_download_is_announced_before_it_starts(monkeypatch, on_disk) -> None:
+    """A few hundred megabytes arriving in silence reads as a hung build, so the line goes out before
+    the download rather than with its result, and it goes out as a `fetch` line and not as a log."""
     pw = FakePlaywright(FakeChromium(on_disk))
-    announced: list[str] = []
+    heard: list[tuple[str, int, int | None]] = []
 
-    def call(cmd: list[str], **kwargs: Any) -> int:
-        announced.extend(record.getMessage() for record in caplog.records)
+    def call(_cmd: list[str], **_kwargs: object) -> int:
+        assert heard, "the download started with nothing said about it"
         on_disk.parent.mkdir(parents=True, exist_ok=True)
         on_disk.write_text("#!/bin/sh\n", encoding="utf-8")
         return 0
 
     monkeypatch.setattr(chromium_fetch.subprocess, "call", call)
-    with caplog.at_level("INFO", logger="decktalk.media.browser"):
+    with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
         browser.launch(pw)
-    assert announced, "the download started with nothing said about it"
-    assert any("fetching" in line for line in announced), announced
-    assert any(chromium_fetch.DOWNLOAD_SIZE in line for line in announced), announced
+    # Playwright reports its own progress to its own output, so the start is all this download knows.
+    assert heard == [(chromium_fetch.TOOL, 0, None)], heard
 
 
 def test_a_browser_that_is_already_there_is_launched_without_a_fetch(monkeypatch, on_disk) -> None:
@@ -191,13 +187,9 @@ def test_a_fetch_that_fails_is_a_tool_error_rather_than_a_return_code(monkeypatc
 def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, on_disk) -> None:
     """`chromium()` is what every stage calls, so the wiring from it to the fetch is worth one test.
     Playwright itself is replaced here, so this never reaches a real browser either."""
-    import contextlib
-
-    import playwright.sync_api
-
     pw = FakePlaywright(FakeChromium(on_disk))
     commands = fake_fetch(monkeypatch, on_disk)
-    monkeypatch.setattr(playwright.sync_api, "sync_playwright", lambda: contextlib.nullcontext(pw))
+    monkeypatch.setattr(browser, "sync_playwright", lambda: contextlib.nullcontext(pw))
     with browser.chromium() as opened:
         assert isinstance(opened, FakeBrowser)
     assert opened.closed, "the browser was left running"
@@ -207,19 +199,17 @@ def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, 
 # ---- the one command that may ask for a password ------------------------------------------------
 
 
-@pytest.mark.parametrize(("platform", "wants_deps"), [("linux", True), ("darwin", False), ("win32", False)], ids=str)
-def test_decktalk_install_is_the_one_call_that_asks_for_the_system_libraries(
-    monkeypatch, tmp_path, platform, wants_deps
-) -> None:
-    """`decktalk install` is a command a person typed and is waiting on, so it is allowed to prompt.
-    It is also the only fix for a Chromium that cannot load its libraries, which is why it stays."""
-    commands = fake_fetch(monkeypatch, None)
-    monkeypatch.setattr(install_module.sys, "platform", platform)
-    monkeypatch.setattr(install_module, "installed_pinned", lambda: None)
-    monkeypatch.setattr(install_module, "ffmpeg_paths", lambda: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe")))
-    install_module.install()
-    assert len(commands) == 1, commands
-    assert (chromium_fetch.WITH_DEPS in commands[0]) is wants_deps, commands[0]
+def test_only_a_caller_that_asks_for_them_reaches_the_system_libraries(monkeypatch, on_disk) -> None:
+    """`decktalk install` is a command a person typed and is waiting on, so it alone may prompt.
+
+    It is also the only fix for a Chromium that cannot load its libraries, which is why the flag stays
+    on this function and why no build passes it.
+    """
+    commands = fake_fetch(monkeypatch, on_disk)
+    chromium_fetch.fetch_chromium(with_deps=True)
+    chromium_fetch.fetch_chromium()
+    assert chromium_fetch.WITH_DEPS in commands[0], commands[0]
+    assert commands[1][1:] == list(chromium_fetch.INSTALL_ARGS), commands[1]
 
 
 def test_every_command_that_needs_a_browser_goes_through_the_one_function() -> None:

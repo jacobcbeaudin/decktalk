@@ -199,8 +199,14 @@ def launch(pw: Playwright, browser_path: str = "") -> Browser:
     if chromium_fetch.installed_chromium(pw) is not None:
         log.info("Chromium is on this machine and did not launch, so the build is being fetched again")
     chromium_fetch.fetch_chromium()
-    with driving("Chromium was fetched and still would not launch"):
+    try:
         return pw.chromium.launch()
+    except PlaywrightError as exc:
+        raise ToolError(
+            f"Chromium was fetched and still would not launch ({str(exc).splitlines()[0]}).",
+            hint="Run `decktalk install`, which also installs the system libraries Chromium needs and is the one "
+            "command that may ask for a password.",
+        ) from exc
 
 
 def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECONDS) -> object:

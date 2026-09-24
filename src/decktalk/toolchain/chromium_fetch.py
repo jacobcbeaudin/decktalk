@@ -19,11 +19,17 @@ import logging
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import Playwright
 
 from ..errors import ToolError
+from .announce import announce
 
 log = logging.getLogger(__name__)
+
+TOOL = "chromium"
+"""What a `fetch` line calls this download, which is the name `doctor` and `install` print too."""
 
 # What both callers run. Playwright resolves the revision from its own version, so nothing is
 # pinned here: the pin is the playwright dependency in pyproject.toml.
@@ -36,7 +42,7 @@ WITH_DEPS = "--with-deps"
 DOWNLOAD_SIZE = "about 200 MB"
 
 
-def installed_chromium(pw: Any) -> str | None:
+def installed_chromium(pw: Playwright) -> str | None:
     """The Chromium executable Playwright has on disk for this machine, or None when it has none.
 
     `pw` is a started `sync_playwright`. The path it names is the revision this playwright package
@@ -45,7 +51,7 @@ def installed_chromium(pw: Any) -> str | None:
     """
     try:
         path = pw.chromium.executable_path
-    except Exception:  # pragma: no cover - a driver that cannot answer is a machine without it
+    except PlaywrightError:  # pragma: no cover - a driver that cannot answer is a machine without it
         return None
     return str(path) if Path(path).is_file() else None
 
@@ -55,8 +61,12 @@ def fetch_chromium(*, with_deps: bool = False) -> None:
 
     `with_deps` adds Chromium's system libraries and may ask for a root password, so only
     `decktalk install` passes it. Playwright's progress goes to stderr, where DeckTalk's own log
-    lines go, so stdout carries the table or the `--json` envelope alone.
+    lines go, so stdout carries the result alone.
+
+    The download is announced before it starts and never counted as it arrives, because Playwright
+    reports its progress to its own output and tells this process nothing.
     """
+    announce(TOOL, 0, None)
     cmd = [sys.executable, *INSTALL_ARGS, *([WITH_DEPS] if with_deps else [])]
     if subprocess.call(cmd, stdout=sys.stderr) != 0:
         raise ToolError(
