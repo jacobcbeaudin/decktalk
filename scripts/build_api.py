@@ -38,7 +38,18 @@ STALE = "stale: {path}. Run `uv run scripts/{script} --write` to bring it up to 
 LINE_LENGTH = 120
 """The line ruff wraps at, which decides whether a module's imports fit on one line."""
 
-MODULES = ("errors", "events", "explain", "findings", "pipeline", "results")
+MODULES = (
+    "artifacts",
+    "errors",
+    "events",
+    "explain",
+    "findings",
+    "inputs",
+    "machine",
+    "pipeline",
+    "project",
+    "results",
+)
 """Every module whose `__all__` seeds the closure, in the order the imports are written."""
 
 DOCSTRING = '''"""DeckTalk: narrated presentation videos, cut to the word.
