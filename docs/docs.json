@@ -224,10 +224,6 @@
     {
       "source": "/concepts/project-file",
       "destination": "/reference/decktalk-toml"
-    },
-    {
-      "source": "/reference/settings/:key*",
-      "destination": "/reference/configuration"
     }
   ]
 }

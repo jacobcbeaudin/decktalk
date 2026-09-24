@@ -65,7 +65,7 @@ class TestTheKeyItself:
         assert found.nature is Nature.TASTE
         assert found.source is Source.CHOSEN
         assert found.environment == "DECKTALK_VERIFY_CUE_OFFSET_MAX_MS"
-        assert found.docs.endswith("/settings/verify.cue_offset_max_ms")
+        assert found.docs.endswith("/configuration#verify")
 
     def test_a_key_with_a_wider_type_range_publishes_both(self) -> None:
         found = explain("verify.onset_rise_points")

@@ -120,7 +120,7 @@ def explain(key: str, *, project: Path | None = None, value: str | None = None) 
         candidate=None if candidate is None else _json(value_of(candidate, known.id)),
         clamped=_clamped(known, candidate or here.settings, cues),
         measured=bool(cues),
-        docs=f"{DOCS}/settings/{known.id}",
+        docs=f"{DOCS}/configuration#{known.id.rsplit('.', 1)[0].replace('.', '-')}",
     )
 
 

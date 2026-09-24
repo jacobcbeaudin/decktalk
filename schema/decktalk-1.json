@@ -172,7 +172,7 @@
       "x-kind": "tuning",
       "properties": {
         "model": {
-          "description": "Speech model. `[voice] model` and `narrate --model` override it.",
+          "description": "Speech model. `[voice] model` and `--set narration.model` override it.",
           "type": "string",
           "default": "eleven_multilingual_v2",
           "x-range": "takes any value of its type",

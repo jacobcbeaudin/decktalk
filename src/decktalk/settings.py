@@ -156,7 +156,9 @@ class VideoConfig:
 class NarrationConfig:
     """These keys govern how the script is turned into audio."""
 
-    model: str = tune("eleven_multilingual_v2", "Speech model. `[voice] model` and `narrate --model` override it.")
+    model: str = tune(
+        "eleven_multilingual_v2", "Speech model. `[voice] model` and `--set narration.model` override it."
+    )
     output_format: str = tune(
         "mp3_44100_128", "Audio format that the speech provider returns. It is part of the narration cache key."
     )
@@ -1146,7 +1148,7 @@ def read_machine_toml(path: Path | None = None) -> dict[str, Any]:
             raise InputError(
                 f"{path.name}: '{dotted}' is {key.scope.value}-scoped, so it belongs in the project's "
                 f"{PROJECT_FILE} where the film that ships carries it.",
-                hint=f"Remove it from this file and run `decktalk config set {dotted} <value> --project`.",
+                hint=f"Remove it from this file and run `decktalk config set {dotted} <value> --where project`.",
                 location=Location(where=f"[{key.table}] {key.name}", file=path, line=locate(text, dotted)),
             )
     for message in key_warnings(data, path.name):
@@ -1443,7 +1445,7 @@ def write(
             hint="Run `decktalk schema settings` for every key DeckTalk reads.",
         )
     if known.scope is not scope:
-        other = "--machine" if known.scope is Scope.MACHINE else "--project"
+        other = "--where machine" if known.scope is Scope.MACHINE else "--where project"
         raise InputError(
             f"'{key}' is {known.scope.value}-scoped, so it cannot be written to the {scope.value} file.",
             hint=f"Run `decktalk config set {key} {value} {other}`.",
@@ -1497,7 +1499,7 @@ def unset(path: Path, key: str, *, scope: Scope) -> SettingUnset:
             hint="Run `decktalk schema settings` for every key DeckTalk reads.",
         )
     if known.scope is not scope:
-        other = "--machine" if known.scope is Scope.MACHINE else "--project"
+        other = "--where machine" if known.scope is Scope.MACHINE else "--where project"
         raise InputError(
             f"'{key}' is {known.scope.value}-scoped, so it cannot be taken out of the {scope.value} file.",
             hint=f"Run `decktalk config unset {key} {other}`.",
@@ -1564,7 +1566,7 @@ def _machine_scope(data: Mapping[str, Any], path: Path) -> None:
         if key is not None and key.scope is not Scope.MACHINE:
             raise InputError(
                 f"{path.name}: '{dotted}' is {key.scope.value}-scoped and does not belong in this file.",
-                hint=f"Run `decktalk config set {dotted} <value> --project`.",
+                hint=f"Run `decktalk config set {dotted} <value> --where project`.",
             )
 
 

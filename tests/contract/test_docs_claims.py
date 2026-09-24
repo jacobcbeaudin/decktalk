@@ -15,6 +15,8 @@ import re
 
 from decktalk.cli import catalog
 from decktalk.cli.app import docs_for
+from decktalk.explain import explain
+from decktalk.settings import KEYS
 from support.paths import REPO
 
 ROOT = REPO
@@ -81,3 +83,13 @@ def test_every_docs_link_a_command_prints_reaches_its_own_heading() -> None:
     assert rows, "the parser offers no command, so this test says nothing"
     missing = [row["command"] for row in rows if docs_for(*row["command"].split()).split("#")[1] not in headings]
     assert not missing, f"the help sends a reader to an anchor the reference page has not got: {missing}"
+
+
+def test_every_settings_key_sends_a_reader_to_the_table_that_holds_it() -> None:
+    """`config explain KEY` publishes a URL per key, and the reference has one page with a heading per
+    table. The URL named a page per key, so every one of them was a link into nothing."""
+    page = (ROOT / "docs" / "reference" / "configuration.mdx").read_text(encoding="utf-8")
+    headings = {slugify(text) for text in re.findall(r"^#{1,6}\s+(.+?)\s*$", page, re.MULTILINE)}
+    assert KEYS, "the settings tree publishes no key, so this test says nothing"
+    missing = sorted(key.id for key in KEYS if explain(key.id).docs.split("#")[-1] not in headings)
+    assert not missing, f"explained with an anchor the configuration page has not got: {missing}"

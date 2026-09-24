@@ -116,7 +116,7 @@ def test_explain_reads_one_knob_whole(run, project_dir) -> None:
     assert written["key"] == "video.crf"
     assert written["range"]
     assert written["environment"] == "DECKTALK_VIDEO_CRF"
-    assert written["docs"].endswith("video.crf")
+    assert written["docs"].endswith("/configuration#video")
 
 
 def test_explain_holds_a_candidate_to_the_same_range(run, project_dir) -> None:

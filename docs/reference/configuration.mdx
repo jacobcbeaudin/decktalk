@@ -8,8 +8,8 @@ description: Every DeckTalk setting, with its safe range, its unit, and the fail
 A setting is a number or a word a project could reasonably hold differently, and which some
 judgement names when it fails. Every one below publishes the range that is safe to turn it through,
 its true unit, the file it belongs in, and the findings its value moves. The range is the range the
-loader enforces: a value outside it is refused with the file and the line that wrote it, because a
-published bound you can cross into nonsense is worse than no bound at all.
+loader enforces: a value outside it is refused by name, with the range it left, before any stage
+runs, because a published bound you can cross into nonsense is worse than no bound at all.
 
 Bind the schema to your project file and an editor completes every key as you type it.
 
@@ -90,7 +90,7 @@ These keys govern how the script is turned into audio.
 
 | Key | Type | Default | Safe range | Unit | Decides | Meaning |
 |---|---|---|---|---|---|---|
-| `model` | string | `"eleven_multilingual_v2"` | takes any value of its type |  |  | Speech model. `[voice] model` and `narrate --model` override it. |
+| `model` | string | `"eleven_multilingual_v2"` | takes any value of its type |  |  | Speech model. `[voice] model` and `--set narration.model` override it. |
 | `output_format` | string | `"mp3_44100_128"` | takes any value of its type |  |  | Audio format that the speech provider returns. It is part of the narration cache key. |
 | `mp3_bitrate` | string | `"128k"` | must be one of 64k, 96k, 128k, 160k, 192k, 256k |  |  | Bitrate of the mp3 files that DeckTalk writes, which are the click tracks and the joined narration. |
 | `words_per_minute` | integer | `140` | must be between 60 and 300 | words per minute |  | Pacing of the estimated length in the narrate table. |

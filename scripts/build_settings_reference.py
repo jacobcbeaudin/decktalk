@@ -38,8 +38,8 @@ description: Every DeckTalk setting, with its safe range, its unit, and the fail
 A setting is a number or a word a project could reasonably hold differently, and which some
 judgement names when it fails. Every one below publishes the range that is safe to turn it through,
 its true unit, the file it belongs in, and the findings its value moves. The range is the range the
-loader enforces: a value outside it is refused with the file and the line that wrote it, because a
-published bound you can cross into nonsense is worse than no bound at all.
+loader enforces: a value outside it is refused by name, with the range it left, before any stage
+runs, because a published bound you can cross into nonsense is worse than no bound at all.
 
 Bind the schema to your project file and an editor completes every key as you type it.
 

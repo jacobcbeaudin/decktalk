@@ -256,7 +256,7 @@ class TestScope:
         assert caught.value.location is not None
         assert caught.value.location.line == 2
         assert caught.value.hint is not None
-        assert "--project" in caught.value.hint
+        assert "--where project" in caught.value.hint
 
     def test_a_machine_key_in_the_machine_file_is_read(self, tmp_path: Path) -> None:
         path = tmp_path / "machine.toml"
@@ -387,7 +387,7 @@ class TestTheWriter:
         with pytest.raises(InputError, match="machine-scoped") as caught:
             write(tmp_path / "decktalk.toml", "tools.ffmpeg", "/opt/ffmpeg", scope=Scope.PROJECT)
         assert caught.value.hint is not None
-        assert "--machine" in caught.value.hint
+        assert "--where machine" in caught.value.hint
 
     def test_a_measured_key_is_refused_and_the_command_that_takes_it_is_named(self, tmp_path: Path) -> None:
         with pytest.raises(InputError, match="measured rather than chosen") as caught:
@@ -475,7 +475,7 @@ class TestTheRemover:
         with pytest.raises(InputError, match="machine-scoped") as caught:
             unset(tmp_path / "decktalk.toml", "tools.ffmpeg", scope=Scope.PROJECT)
         assert caught.value.hint is not None
-        assert "--machine" in caught.value.hint
+        assert "--where machine" in caught.value.hint
 
     def test_a_measured_key_may_be_taken_out_although_it_may_not_be_written(self, tmp_path: Path) -> None:
         path = tmp_path / "machine.toml"
