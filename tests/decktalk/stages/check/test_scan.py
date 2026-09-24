@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from decktalk.events import Log
 from decktalk.findings import Code
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.settings import Settings
@@ -172,6 +173,20 @@ def test_a_clean_frozen_share_judges_nothing(tmp_path: Path, frozen: list[float]
     sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": object()}, 0)
     section = inputs.document.page_sections[0]
     assert landing_findings(sheet, section, entry_of({"1.1": list(SLIDES["1.1"])}), SLIDES, TIMES, skipped=set()) == []
+
+
+def test_a_cue_no_element_declares_is_passed_over_rather_than_judged(tmp_path: Path, frozen: list[float]) -> None:
+    """A still fires cues and runs no handler, so a `data-owns` cue draws nothing however well it plays."""
+    inputs = a_project(tmp_path)
+    frozen[0] = 0.0
+    run = a_run(tmp_path)
+    said: list[str] = []
+    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
+    sheet = Sheet(inputs, run, {"deck/index.html": object()}, 0)
+    section = inputs.document.page_sections[0]
+    found = landing_findings(sheet, section, entry_of({"1.1": ["1.1:a"]}), SLIDES, TIMES, skipped=set())
+    assert [one.location.cue for one in found] == ["1.1:a"]
+    assert any("1.1:b" in line and "runs no handler" in line for line in said)
 
 
 def test_a_cue_the_cue_file_opts_out_of_is_never_measured(tmp_path: Path, frozen: list[float]) -> None:

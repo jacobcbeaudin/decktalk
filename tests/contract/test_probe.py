@@ -10,11 +10,22 @@ one cue live here, and none of them may reach a page that no command is driving.
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import pytest
 from contract.test_runtime import MARKUP_SCENE, deck
 
 from decktalk.page import REPORT
-from decktalk.toolchain.assets import PROBE_FILE, package_file, probe_path
+from decktalk.toolchain.assets import (
+    KATEX_DIR,
+    PROBE_FILE,
+    RUNTIME_FILE,
+    katex_dir,
+    package_file,
+    probe_path,
+    runtime_path,
+)
 from support.browser_pages import chromium_page, write_page
 
 pytestmark = pytest.mark.browser
@@ -235,4 +246,40 @@ def test_freeze_at_and_before_one_cue(page, tmp_path):
     reported = page.evaluate("() => window.__decktalk.warnings")
     assert [row["code"] for row in reported] == ["PAGE_FREEZE_CUE_UNKNOWN"]
     assert (reported[0]["slide"], reported[0]["cue"]) == ("1.1", "nope")
+    assert not page.errors
+
+
+def starter_deck(tmp_path: Path) -> str:
+    """The deck `decktalk init` writes, laid out beside the runtime and the KaTeX release it loads."""
+    root = tmp_path / "deck"
+    shutil.copytree(package_file("template") / "starter" / "deck", root)
+    shutil.copyfile(runtime_path(), root / RUNTIME_FILE)
+    shutil.copytree(katex_dir(), root / KATEX_DIR)
+    return (root / "index.html").resolve().as_uri()
+
+
+def test_the_frame_before_a_cue_and_the_frame_at_it_are_two_pictures(page, tmp_path):
+    """The two stills a check compares are the reveal itself, so an arrival held back stays hidden.
+
+    This is the whole of what `check` measures: it freezes the starter's own slide either side of one
+    cue and reads the share of the frame that changed. A page that drew both stills the same way
+    would answer every cue of every project with CUE_NO_CHANGE while the film played the reveal
+    perfectly, so the two files are compared here as bytes rather than as classes alone.
+    """
+    url = starter_deck(tmp_path)
+    shown = "() => getComputedStyle(document.querySelector('.end')).opacity"
+    page.goto(f"{url}?slide=3.1&before=3.1:make")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    assert page.evaluate("() => window.__decktalk.fired") == ["3.1:idea", "3.1:again"]
+    assert float(page.evaluate(shown)) == 0
+    before = page.screenshot()
+
+    page.goto(f"{url}?slide=3.1&after=3.1:make")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    assert page.evaluate("() => window.__decktalk.fired") == ["3.1:idea", "3.1:again", "3.1:make"]
+    assert float(page.evaluate(shown)) == 1
+    assert page.evaluate("() => document.querySelector('.end').classList.contains('dt-shown')") is True
+    after = page.screenshot()
+
+    assert before != after
     assert not page.errors
