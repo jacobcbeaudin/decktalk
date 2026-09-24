@@ -77,7 +77,8 @@ class Example:
 EXAMPLES: tuple[Example, ...] = (
     Example(
         "lesson",
-        "a lesson that teaches how a model learns, whose one long scene is drawn in code",
+        "a lesson that teaches how a model learns, whose one long scene is written in markup, and "
+        "which exercises every page attribute",
         "examples/lesson",
     ),
     Example(
