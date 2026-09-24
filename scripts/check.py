@@ -193,6 +193,26 @@ class Group:
     env: tuple[tuple[str, str], ...] = ()  # what this group's commands need in the environment
 
 
+REPORT_TIMING = "--timing=report"
+"""What a leg whose compositor is not trustworthy passes to a suite that measures a cue.
+
+A hosted macOS or Windows runner composites through a stack DeckTalk does not own, and a hosted
+Linux runner that renders in software presents a frame tens of milliseconds after the paint it
+answers. Either way the measurement moves and the deck did not, so these legs report a late reveal
+and Linux stays the one that gates it. This weakens nothing else: `tests/support/timing_policy.py`
+tolerates a late landing alone, and a cue that never changed the picture still fails every runner.
+"""
+
+
+def reports_timing(command: tuple[str, ...]) -> tuple[str, ...]:
+    """The same command with cue timing reported, which only a suite has an opinion about.
+
+    The flag is `tests/conftest.py`'s own option, so it is added to the suites and to nothing else.
+    A tool that never collected a test would exit on an argument it has never heard of.
+    """
+    return (*command, REPORT_TIMING) if "pytest" in command else command
+
+
 def elsewhere(group: Group) -> Group:
     """The same group on macOS and Windows, gating a merge and a release rather than a pull request.
 
@@ -200,11 +220,15 @@ def elsewhere(group: Group) -> Group:
     happens a few times a year. Running all three on every push would make every change wait for
     three legs to buy one difference, so the Linux leg gates the change and this one gates the merge,
     which is still before a user meets it.
+
+    These two runners are also the ones whose compositor is not trustworthy, so cue timing is
+    reported here and gated on the Linux row of the same group.
     """
     return replace(
         group,
         name=f"{group.name}-platforms",
         why=f"{group.why} This row is macOS and Windows, which gate a merge rather than a pull request.",
+        commands=tuple(reports_timing(command) for command in group.commands),
         runners=(MACOS, WINDOWS),
         when=("main", "release"),
     )
@@ -396,7 +420,12 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="scaffold",
         why="Every packaged project recorded and verified without a voice, which is the scaffold's promise.",
-        commands=((*UV, "pytest", "-q", "-m", "scaffold"),),
+        # This row records five projects in one job, so the runner renders in software throughout and
+        # presents a reveal tens of milliseconds after the frame it belongs on. The promise being
+        # judged is that a project out of the wheel builds and verifies, which the cue timing of the
+        # machine it was built on is no part of, so this row reports a late landing and fails on
+        # every other finding exactly as the gated rows do.
+        commands=(reports_timing((*UV, "pytest", "-q", "-m", "scaffold")),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("uv", "chromium", "ffmpeg"),

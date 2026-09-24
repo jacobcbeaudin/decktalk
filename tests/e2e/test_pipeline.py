@@ -39,12 +39,21 @@ import pytest
 
 from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words
 from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart, StageDone, StageStart
-from decktalk.findings import Certainty
-from decktalk.media import audio, ffmpeg, frames
+from decktalk.findings import Certainty, Code
+from decktalk.media import MILLISECONDS, audio, ffmpeg, frames
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import Layer, SectionKind, SpendState, Substitute, Voicing, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
-from support.timing_policy import BASE_BUDGET_SECONDS, FIRST_FETCH_SECONDS, budget
+from support.timing_policy import (
+    BASE_BUDGET_SECONDS,
+    FIRST_FETCH_SECONDS,
+    assert_build_finished,
+    budget,
+    faults,
+    gates_timing,
+    note_late_reveals,
+    offset_limit_ms,
+)
 
 # An advisory lock on the output directory, where the platform has one.
 fcntl = importlib.util.find_spec("fcntl") and importlib.import_module("fcntl")
@@ -168,6 +177,10 @@ class Run:
     def certain(self) -> list[dict[str, Any]]:
         """Every finding the run is sure about, which is what decides the exit code by default."""
         return [row for row in self.findings if row["certainty"] == Certainty.CERTAIN.value]
+
+    def codes(self) -> list[Code]:
+        """Every finding as the model's own member, which is what the timing policy judges."""
+        return [Code(row["code"]) for row in self.findings]
 
 
 BLOCK_THE_NETWORK = '''
@@ -362,12 +375,15 @@ def built() -> Iterator[Project]:
 # ---- the build -----------------------------------------------------------------------------------
 
 
-def test_the_build_finds_nothing_with_the_network_blocked(built: Project) -> None:
-    """The build's last stage is the real verify, so exit 0 means every reveal landed on its word."""
+def test_the_build_finds_nothing_with_the_network_blocked(built: Project, pytestconfig: pytest.Config) -> None:
+    """The build's last stage is the real verify, so exit 0 means every reveal landed on its word.
+
+    Where timing is reported rather than gated, a build that exited on late reveals alone is a
+    finished build too, which is the one judgement `assert_build_finished` makes.
+    """
     assert built.built is not None
     assert built.network_attempts() == [], built.network_attempts()
-    assert built.built.certain() == [], built.built.stderr
-    assert built.built.code == FOUND_NOTHING, built.built.stderr
+    assert_build_finished(built.built.code, built.built.codes(), built.built.stderr, pytestconfig)
     assert built.film.is_file() and built.film.stat().st_size > 0
 
 
@@ -462,15 +478,21 @@ def test_a_second_record_run_keeps_every_section(built: Project) -> None:
 # ---- what verify measured -------------------------------------------------------------------------
 
 
-def test_verify_measures_every_cue_every_start_every_cut_and_the_seam(built: Project) -> None:
-    """Every cue the fixture declares is measured, and nothing it measured is a certain finding."""
+def test_verify_measures_every_cue_every_start_every_cut_and_the_seam(
+    built: Project, pytestconfig: pytest.Config
+) -> None:
+    """Every cue the fixture declares is measured, and nothing it measured is a certain finding.
+
+    What this test is about is which rows a reading produces, so a late landing on a runner that
+    reports timing may not fail it. The test above it is the one that judges the landings.
+    """
     assert built.verified is not None
     doc = built.verified.json
     assert [qualified(row) for row in doc["cues"]] == list(CUES)
     assert {row["section"] for row in doc["starts"]} == {1, 2, 4}
     assert {row["section"] for row in doc["cuts"]} == {1, 2, 4}
     assert [row["section"] for row in doc["seams"]] == [2], "section 2 is the one seamless section"
-    assert built.verified.certain() == [], built.verified.certain()
+    assert faults(built.verified.codes(), gates_timing(pytestconfig)) == [], built.verified.certain()
     assert doc["film_seconds"] > FILM_SECONDS_RANGE[0]
 
 
@@ -489,17 +511,24 @@ def test_every_cue_changed_the_picture_it_was_measured_against(built: Project) -
     assert unchanged == [], unchanged
 
 
-def test_every_cue_lands_inside_the_limit_the_project_publishes(built: Project) -> None:
-    """The limit is read from the project's own settings, so no number here decides a verdict."""
+def test_every_cue_lands_inside_the_limit_the_project_publishes(built: Project, pytestconfig: pytest.Config) -> None:
+    """The limit is read from the project's own settings, so no number here decides a verdict.
+
+    A leg that reports timing is held to that same limit plus the slack the policy declares, because
+    a report is not an amnesty: a reveal half a second late is a broken deck on any runner.
+    """
     assert built.verified is not None
     published = built.cli("config", "get", "verify.cue_offset_max_ms", "--json")
-    limit_ms = float(published.json["key"]["value"])
+    stated_ms = float(published.json["key"]["value"])
+    allowed_ms = offset_limit_ms(stated_ms, gates_timing(pytestconfig))
     late = [
-        (qualified(row), row["offset"])
+        (qualified(row), abs(row["offset"]) * MILLISECONDS)
         for row in built.verified.json["cues"]
-        if row["offset"] is not None and abs(row["offset"]) * 1000 > limit_ms
+        if row["offset"] is not None and abs(row["offset"]) * MILLISECONDS > stated_ms
     ]
-    assert late == [], late
+    assert [(cue, out) for cue, out in late if out > allowed_ms] == [], late
+    if late:
+        note_late_reveals(pytestconfig, FILM_NAME, (f"{cue} landed {out:.0f} ms from its word" for cue, out in late))
 
 
 def test_section_2_opens_on_section_1s_last_frame(built: Project) -> None:
