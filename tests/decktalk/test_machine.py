@@ -11,7 +11,7 @@ from decktalk import machine as machine_module
 from decktalk.errors import ApprovalRequired, Cancel, Cancelled, ErrorCode
 from decktalk.events import Event, Level, Log, RunDone, RunStart, StageDone, StageStart
 from decktalk.findings import Applicability, Certainty, Code, CommandFix, Finding, Location, SettingFix
-from decktalk.machine import Machine, Toolchain, apply_fix, fixes_of, init
+from decktalk.machine import CHROMIUM, InstalledTool, Machine, Toolchain, apply_fix, fixes_of, init
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Layer, Scope, Spend, SpendState, StatusResult, Voicing
@@ -309,6 +309,24 @@ def test_install_fetches_the_browser_and_the_encoder(tmp_path: Path, monkeypatch
     assert [tool.tool for tool in result.tools] == ["chromium", "ffmpeg", "ffprobe"]
     assert result.tools[1].path == tmp_path / "ffmpeg"
     assert result.ok
+
+
+def test_install_reports_the_browser_it_just_fetched_rather_than_a_blank_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The row said version null, so `install` printed the browser as missing while `doctor` run
+    straight afterwards read the real version off the very browser the fetch had left behind."""
+    monkeypatch.setattr(machine_module.chromium_fetch, "fetch_chromium", lambda **_kw: None)
+    monkeypatch.setattr(machine_module, "fetch_ffmpeg", lambda: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe")))
+    here = a_machine(tmp_path)
+    monkeypatch.setattr(
+        type(here),
+        "_browser_row",
+        lambda _self: InstalledTool(tool=CHROMIUM, version="141.0.1", path=None, fetched=False, bytes=None),
+    )
+    (browser, *_rest) = here.install().tools
+    assert browser.version == "141.0.1"
+    assert browser.fetched
 
 
 # ---- applying a fix ---------------------------------------------------------------------------

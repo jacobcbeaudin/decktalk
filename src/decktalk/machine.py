@@ -435,7 +435,9 @@ class Machine:
         """
         with self.run(cancel=cancel) as run:
             chromium_fetch.fetch_chromium(with_deps=sys.platform.startswith("linux"))
-            browser = InstalledTool(tool=CHROMIUM, version=None, path=None, fetched=True, bytes=None)
+            # The row is asked for the way `doctor` asks for it, by launching what was just fetched,
+            # so `install` cannot print the browser as missing a second after it downloaded one.
+            browser = self._browser_row().model_copy(update={"fetched": True})
             held = self.toolchain.complete
             toolchain = self.toolchain.fetched()
             tools = (

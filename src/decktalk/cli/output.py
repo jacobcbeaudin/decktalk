@@ -46,6 +46,7 @@ from decktalk.results import (
     Result,
     ServeResult,
     SoundscapeResult,
+    SpendState,
     StatusResult,
     StoryboardResult,
     VerifyResult,
@@ -407,7 +408,10 @@ def _soundscape(result: SoundscapeResult) -> Iterable[RenderableType]:
     for item in result.items:
         table.add_row(item.name, item.kind.value, item.status.value, f"{item.seconds or 0:.1f}")
     yield table
-    yield Text(f"Spent {_money(result.spend.dollars)}.")
+    # A run that bought nothing still prices what it would have bought, and a bare "Spent" line over
+    # that number reads as a charge nobody made.
+    charged = result.spend.state is SpendState.CHARGED
+    yield Text(f"{'Spent' if charged else 'Would spend'} {_money(result.spend.dollars)} on the soundscape.")
 
 
 def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
