@@ -1,16 +1,16 @@
 """The platform fact: APFS and NTFS make `deck/Index.html` and `deck/index.html` one file and two strings.
 
-The origin allowlist is a comparison between the path a request asked for, resolved, and the paths a
-project declared. A declared directory is a place, so both spellings are inside it and both are
-allowed on every filesystem, and what this platform decides is whether they are one file or one file
-and one name for nothing. The measured surprise is that `Path.resolve()` keeps the spelling it was
-given rather than the one on disk, so on a folding filesystem one file reaches the comparison under
-two names and the allowlist never sees that they are the same.
+The origin allowlist is a comparison between the names a request asked for and the names a project
+declared. A declared directory is a place, so both spellings are inside it and both are allowed on
+every filesystem, and what this platform decides is whether they open one file or one file and one
+name for nothing. The measured surprise is that `Path` folds case on Windows and not elsewhere, so a
+comparison made over paths rather than over names lets `deck/Index.html` be the declared
+`deck/index.html` on one platform and nothing on the others.
 
-That is why the allowlist compares containment against declared directories rather than names: a
-declared directory holds both spellings, while a declared file is reached only by the spelling that
-was declared. The policy half of the pair is `tests/decktalk/media/test_origin.py`, which injects
-the resolver and holds everywhere, and this half holds the assumption the policy rests on.
+That is why the allowlist compares the names: a declared directory holds both spellings, while a
+declared file is reached only by the spelling that was declared, on every platform. The policy half
+of the pair is `tests/decktalk/media/test_origin.py`, which holds everywhere, and this half holds the
+assumption the policy rests on, which is what this machine really does with two spellings of a name.
 """
 
 from __future__ import annotations

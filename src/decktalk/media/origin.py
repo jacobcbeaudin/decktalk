@@ -8,8 +8,9 @@ and no port is chosen, `*.localhost` is a secure context in Chromium, and a rela
 resolves the way the author wrote it.
 
 One rule decides what may leave the project directory, and `Allowed` is that rule, which both halves
-of this module apply. A request is answered only from a file under a directory the project declared,
-resolved, containing no name that begins with a dot. Everything else in a project is refused, which
+of this module apply. A request is answered only when the names it asks for are the ones a project
+declared or sit under a directory it declared, and only when the file those names open is inside the
+project and carries no name that begins with a dot. Everything else in a project is refused, which
 is the change this release makes: the script, the cues, the build directory and the `.env` holding
 the speech key are beside the deck and are not part of it, and a page that could fetch them could
 put them on screen or send them to whoever it liked.
@@ -100,6 +101,26 @@ def path_names(rel: str) -> list[str]:
     return [part for part in rel.split("/") if part]
 
 
+def project_path(rel: str) -> str | None:
+    """A request path folded to the names it opens under the project, or None when it climbs out.
+
+    The folding is over the names alone, because whether two spellings are one file is what a
+    filesystem answers and what this rule may never ask it. `.` says to stay and `..` says to go
+    back, so a path that goes back further than the project is not a path under it at all.
+    """
+    names: list[str] = []
+    for name in path_names(rel):
+        if name == ".":
+            continue
+        if name == "..":
+            if not names:
+                return None
+            names.pop()
+            continue
+        names.append(name)
+    return "/".join(names)
+
+
 def hidden_name(parts: list[str]) -> bool:
     """Whether any name in a path begins with a dot, which is the one name this origin never serves.
 
@@ -136,47 +157,72 @@ class Allowed:
     """
 
     root: Path  # the project directory, which every served path is named relative to
-    served: tuple[Path, ...]  # each declared directory or file, resolved, under the root
+    served: tuple[str, ...]  # each declared directory or file, as the project spells it under the root
 
     @classmethod
     def of(cls, root: Path, declared: Iterable[Path | str]) -> Allowed:
-        """The rule for one project: its root, and each directory or file it declares, resolved once.
+        """The rule for one project: its root, and the name of each directory or file it declares.
+
+        A declaration is kept as the name it was written with rather than as the file that name
+        opens, because a request is compared against the declaration and a filesystem that folds two
+        spellings into one file would otherwise widen the rule to a spelling nobody wrote down.
 
         A declared path outside the project is dropped rather than refused at request time, because a
         rule that names a place the project does not own is a mistake in the project file and this
         module answers requests rather than reporting on `decktalk.toml`.
         """
         base = root.resolve()
-        inside: list[Path] = []
+        inside: list[str] = []
         for path in declared:
-            candidate = (base / path).resolve()
-            if candidate == base or candidate.is_relative_to(base):
-                inside.append(candidate)
+            spelled = Path(path)
+            candidate = (base / spelled).resolve()
+            if not candidate.is_relative_to(base):
+                continue
+            # A declaration made as an absolute path is named from the root, which is the only way
+            # to say where it sits under the project. A relative one already says it.
+            named = candidate.relative_to(base).as_posix() if spelled.is_absolute() else spelled.as_posix()
+            place = project_path(named)
+            if place is not None:
+                inside.append(place)
         return cls(root=base, served=tuple(dict.fromkeys(inside)))
 
-    def declares(self, target: Path) -> bool:
-        """Whether a resolved file is the one a declaration names, or sits under a declared directory."""
-        return any(target == place or target.is_relative_to(place) for place in self.served)
+    def declares(self, asked: str) -> bool:
+        """Whether a request names a declared file, or a name under a declared directory.
+
+        The comparison is over the names rather than over the files they open, because a declaration
+        names a spelling and only the filesystem knows whether two spellings open one file. A
+        declared directory is a place, so every name under it is declared with it, and a project that
+        declares its own root declares everything in it.
+        """
+        return any(not place or asked == place or asked.startswith(f"{place}/") for place in self.served)
 
     def target(self, rel: str) -> Target:
         """The file a project-relative request path is answered from, or the reason it is refused.
 
-        The tests are applied to the file that is opened rather than to the name that was asked for,
-        so the path is resolved and a directory's `index.html` is appended before they run.
+        The declaration is answered over the names the request asks for, so a spelling nobody
+        declared is refused on a folding filesystem exactly as it is on a case-sensitive one. The
+        other three refusals are about the file that is opened rather than about the name that was
+        asked for, so the path is resolved and a directory's `index.html` is appended before they run.
         """
+        asked = project_path(rel)
+        if asked is None:
+            return Target(refused=OUTSIDE)
         try:
-            target = (self.root / rel).resolve() if rel else self.root
-            target = (target / INDEX).resolve() if target.is_dir() else target
-            contained = target.is_relative_to(self.root)
+            named = (self.root / asked).resolve() if asked else self.root
+            directory = named.is_dir()
+            opened = (named / INDEX).resolve() if directory else named
+            contained = opened.is_relative_to(self.root)
         except (OSError, ValueError):
             return Target(refused=UNUSABLE)
         if not contained:
             return Target(refused=OUTSIDE)
-        if hidden_name(path_names(rel)) or hidden_name(list(target.relative_to(self.root).parts)):
+        if hidden_name(path_names(rel)) or hidden_name(list(opened.relative_to(self.root).parts)):
             return Target(refused=HIDDEN)
-        if not self.declares(target):
+        # A directory is served as its index, so the name the declaration is asked about is the name
+        # the request really opens.
+        if not self.declares(f"{asked}/{INDEX}".lstrip("/") if directory else asked):
             return Target(refused=UNDECLARED)
-        return Target(path=target)
+        return Target(path=opened)
 
 
 def local_target(allowed: Allowed, url: str) -> Target:

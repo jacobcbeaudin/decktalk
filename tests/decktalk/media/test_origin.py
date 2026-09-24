@@ -327,6 +327,29 @@ def test_a_declared_file_opens_that_file_and_not_the_directory_it_sits_in(tmp_pa
     assert local_target(allowed, f"{ORIGIN}/script.md").refused == UNDECLARED
 
 
+def test_a_declaration_names_a_spelling_and_a_declared_directory_names_a_place(tmp_path):
+    """The comparison is over names, so no filesystem can fold a request onto a file nobody declared.
+
+    A machine whose filesystem folds case opens one file for `logo.svg` and `Logo.svg`, and the rule
+    is that the project declared one of those names. The declared directory is the other half: it is
+    a place, so every name under it is served and what the two spellings open is the disk's business.
+    The platform half of this pair is `tests/platform/test_case.py`.
+    """
+    allowed = project(tmp_path)
+    assert local_target(allowed, f"{ORIGIN}/logo.svg").path is not None
+    assert local_target(allowed, f"{ORIGIN}/Logo.svg").refused == UNDECLARED
+    assert local_target(allowed, f"{ORIGIN}/deck/Index.html").path == tmp_path / "deck" / "Index.html"
+
+
+def test_a_declared_file_is_served_to_the_directory_that_opens_it(tmp_path):
+    """A request for a directory opens its index, so the name the declaration answers is that index."""
+    (tmp_path / "deck").mkdir()
+    (tmp_path / "deck" / "index.html").write_text("<p>hi</p>", encoding="utf-8")
+    allowed = Allowed.of(tmp_path, ["deck/index.html"])
+    assert local_target(allowed, f"{ORIGIN}/deck/").path == tmp_path / "deck" / "index.html"
+    assert local_target(allowed, f"{ORIGIN}/deck/other.css").refused == UNDECLARED
+
+
 def test_the_rules_are_applied_in_the_order_that_names_the_worst_problem_first(tmp_path):
     """A dot name and an escape are refused as themselves, because they say more than undeclared would."""
     allowed = project(tmp_path)
@@ -341,7 +364,7 @@ def test_a_declaration_outside_the_project_is_dropped_rather_than_opened(tmp_pat
     outside.mkdir(exist_ok=True)
     (outside / "secret.txt").write_text("no", encoding="utf-8")
     allowed = Allowed.of(tmp_path, ["deck", "../elsewhere", str(outside)])
-    assert allowed.served == (tmp_path.resolve() / "deck",)
+    assert allowed.served == ("deck",)
     assert local_target(allowed, f"{ORIGIN}/../elsewhere/secret.txt").refused == OUTSIDE
 
 
