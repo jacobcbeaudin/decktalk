@@ -374,7 +374,7 @@ picture did not.
 1. Read the number in the message. It says how far off the change landed and what the limit is.
 2. A whole section that is late by the same amount is a machine bias rather than a deck problem. Run
    `decktalk doctor --measure`, which drives a browser to measure this host's presentation bias and
-   writes `host.presentation_bias_ms`. Every later run then subtracts it.
+   writes `host.presentation_bias_ms`, and read the offsets the message names against that number.
 3. One cue that is late on its own is usually a phrase that resolves to the wrong word. Run
    `decktalk words` and read what the section really says around it. Set `occurrence` on the row
    when the phrase repeats.

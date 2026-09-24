@@ -361,7 +361,6 @@ class Code(Enum):
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
         (
-            "host.presentation_bias_ms",
             "verify.av_offset_max_ms",
             "verify.click_floor_dbfs",
             "verify.click_search_seconds",

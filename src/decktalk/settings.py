@@ -783,18 +783,17 @@ class HostConfig:
 
     presentation_bias_ms: float = tune(
         0.0,
-        "How long this machine takes to present a frame the page has already drawn, which verify "
-        "subtracts from a measured offset when the record still matches the run.",
+        "How long this machine takes to present a frame the page has already drawn, which is what a "
+        "run's own measurements of this machine are read against.",
         unit="milliseconds",
         bounds=Bounds(ge=-200, le=200),
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
         source=Source.MEASURED,
         evidence="decktalk doctor --measure",
-        decides=(Code.CUE_OFF,),
         hazard=(
-            "A bias written by hand is a guess subtracted from every measurement, which moves whichever "
-            "verdict the guess was chosen to move. It is measured or it is zero."
+            "A bias written by hand is a claim about this machine that nobody measured, and the one "
+            "command that can measure it is beside this key. It is measured or it is zero."
         ),
     )
 

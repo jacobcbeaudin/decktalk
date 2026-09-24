@@ -49,7 +49,7 @@ have a code and want the candidates before you run anything.
 |---|---|
 | `CUE_NO_CHANGE` | `video.crf`, `verify.probe_delays_seconds`, `verify.probe_diff_luma`, `verify.changed_share_min_percent`, `verify.margin_min_points` |
 | `CUE_NO_ONSET` | `verify.onset_rise_points`, `verify.onset_diff_luma` |
-| `CUE_OFF` | `verify.onset_rise_points`, `verify.onset_diff_luma`, `verify.click_search_seconds`, `verify.click_floor_dbfs`, `verify.cue_offset_max_ms`, `verify.av_offset_max_ms`, `host.presentation_bias_ms` |
+| `CUE_OFF` | `verify.onset_rise_points`, `verify.onset_diff_luma`, `verify.click_search_seconds`, `verify.click_floor_dbfs`, `verify.cue_offset_max_ms`, `verify.av_offset_max_ms` |
 | `CUE_THIN_CHANGE` | `video.crf`, `verify.probe_diff_luma`, `verify.changed_share_min_percent`, `verify.margin_min_points`, `verify.thin_change_factor` |
 | `CUT_POP` | `verify.cut_change_max_percent` |
 | `CUT_SPEECH` | `narration.tail_min_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds`, `verify.cut_window_seconds`, `verify.cut_max_dbfs` |
@@ -283,10 +283,10 @@ These keys are facts about this machine that a run measures rather than a person
 
 | Key | Type | Default | Safe range | Unit | Decides | Meaning |
 |---|---|---|---|---|---|---|
-| `presentation_bias_ms` | number | `0.0` | must be between -200 and 200 | milliseconds | `CUE_OFF` | How long this machine takes to present a frame the page has already drawn, which verify subtracts from a measured offset when the record still matches the run. |
+| `presentation_bias_ms` | number | `0.0` | must be between -200 and 200 | milliseconds |  | How long this machine takes to present a frame the page has already drawn, which is what a run's own measurements of this machine are read against. |
 
 <Warning>
-**`host.presentation_bias_ms`** A bias written by hand is a guess subtracted from every measurement, which moves whichever verdict the guess was chosen to move. It is measured or it is zero.
+**`host.presentation_bias_ms`** A bias written by hand is a claim about this machine that nobody measured, and the one command that can measure it is beside this key. It is measured or it is zero.
 
 </Warning>
 

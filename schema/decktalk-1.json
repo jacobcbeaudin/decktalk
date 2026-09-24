@@ -1412,7 +1412,7 @@
       "x-kind": "tuning",
       "properties": {
         "presentation_bias_ms": {
-          "description": "How long this machine takes to present a frame the page has already drawn, which verify subtracts from a measured offset when the record still matches the run.",
+          "description": "How long this machine takes to present a frame the page has already drawn, which is what a run's own measurements of this machine are read against.",
           "type": "number",
           "default": 0.0,
           "minimum": -200,
@@ -1423,10 +1423,7 @@
           "x-nature": "apparatus",
           "x-source": "measured",
           "x-evidence": "decktalk doctor --measure",
-          "x-hazard": "A bias written by hand is a guess subtracted from every measurement, which moves whichever verdict the guess was chosen to move. It is measured or it is zero.",
-          "x-decides": [
-            "CUE_OFF"
-          ],
+          "x-hazard": "A bias written by hand is a claim about this machine that nobody measured, and the one command that can measure it is beside this key. It is measured or it is zero.",
           "x-environment": "DECKTALK_HOST_PRESENTATION_BIAS_MS"
         }
       },
