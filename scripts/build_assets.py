@@ -5,14 +5,13 @@
 """Generate every graphic from one source. The graphics are the hero, how-it-works (wide and
 stacked), the pipeline, alignment, the verify probes and onset, the rebuild lanes, the narration
 split, the duck lane, the cue offset, the mark and its lockups, the favicon set, the social card
-and the brand's CSS tokens. Every number a figure prints comes from scripts/figure-data/*.json, which `--capture`
-measures from a built scaffold. The README reads assets/, the docs site reads docs/images/ and
-docs/logo/, and the homepage reads site/tokens.css and site/favicon.svg.
+and the brand's CSS tokens. Every number a figure prints comes from scripts/figure-data/*.json, and
+each of those files names in its own `source` block the release, the command and the project it was
+measured from. The README reads assets/, the docs site reads docs/images/ and docs/logo/, and the
+homepage reads site/tokens.css and site/favicon.svg.
 
     uv run scripts/build_assets.py            # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, the favicons, site/tokens.css
     uv run scripts/build_assets.py --check    # exit 1 if the committed files would change
-    uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson --clip-project path/to/clip-lesson
-                                              # re-measure figure data
 
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
 they cannot drift. The palette is the brand's: a warm near-black or warm paper as the ground, one
@@ -35,9 +34,18 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
+import math
 import re
 import sys
+import tomllib
+from collections.abc import Callable
 from pathlib import Path
+
+from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.ttLib import TTFont
+from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
@@ -181,8 +189,6 @@ def bg_rect(pal: dict[str, str], w: int, h: int, background: bool) -> str:
 
 def measure_words(words: list[str], font: str, letter_spacing: str) -> tuple[list[float], float]:
     """Advance widths of each word and of a space, in Chromium with the embedded font."""
-    from playwright.sync_api import sync_playwright
-
     html = f"""<style>{font_face()}</style><svg xmlns="http://www.w3.org/2000/svg" width="2000" height="100">
       <text id="t" x="0" y="50" style="font:{font};letter-spacing:{letter_spacing}">{"".join(f'<tspan id="w{i}">{w}</tspan>' for i, w in enumerate(words))}<tspan id="sp"> </tspan><tspan id="sp2">a a</tspan><tspan id="aa">aa</tspan></text></svg>"""
     with sync_playwright() as pw:
@@ -208,10 +214,6 @@ def glyph_outlines(text: str, size: float, tracking: float) -> tuple[str, float]
     The display face (a static instance at the wordmark's weight) places each glyph by its own
     advance width, with `tracking` (in em) added between letters.
     """
-    from fontTools.pens.svgPathPen import SVGPathPen
-    from fontTools.pens.transformPen import TransformPen
-    from fontTools.ttLib import TTFont
-
     font = TTFont(FONTS / DISPLAY_FACE[1])
     scale = size / font["head"].unitsPerEm
     cmap = font.getBestCmap()
@@ -230,20 +232,28 @@ def glyph_outlines(text: str, size: float, tracking: float) -> tuple[str, float]
 # ---- hero --------------------------------------------------------------------------------
 
 
-def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
-    """The lesson film's opening. Each word lights at its real start, the bowl and the ball appear on
-    their words, and on each count the ball steps down and that word's box fills with its start time."""
+def hero_times() -> tuple[list[float], float]:
+    """The measured start of each word of the hero line, and the start of the word "count".
+
+    The words file holds every word of the section, so the line's own words are found in order and a
+    repeated word takes the next occurrence rather than the first.
+    """
     words = figure_data("hero")["words"]
     times, j = [], 0
-    for w in HERO_WORDS:
-        key = w.strip(".,")
+    for word in HERO_WORDS:
+        key = word.strip(".,")
         while words[j]["word"] != key:
             j += 1
         times.append(words[j]["start"])
         j += 1
-    count_t = next(w["start"] for w in words if w["word"] == "count")
-    bowl_t, ball_t, counts = times[1], times[3], times[4:]
+    return times, next(w["start"] for w in words if w["word"] == "count")
+
+
+def hero_css(pal: dict[str, str], ticks_x: list[float], times: list[float], count_t: float) -> str:
+    """Every rule the hero loop needs: the palette, the playhead, one pair of keyframes per word, and
+    the reveals of the bowl, the ball and the three count boxes."""
     total = HERO_LOOP
+    bowl_t, ball_t, counts = times[1], times[3], times[4:]
 
     def pct(t: float) -> float:
         return round((HERO_LEAD + t) / total * 100, 1)
@@ -259,7 +269,6 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
             base = "opacity:0;"
         return f"@keyframes {name}{{{frames}}}.{name}{{{base}animation:{name} {total}s linear infinite}}"
 
-    ticks_x = [x + 1 for x in xs]
     css = [font_face()]
     css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
     css.append(
@@ -312,6 +321,16 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
         css.append(show(f"m{k}", t))
         css.append(show(f"f{k}", t))
     css.append(reduced_motion())
+    return chr(10).join(css)
+
+
+def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
+    """The lesson film's opening. Each word lights at its real start, the bowl and the ball appear on
+    their words, and on each count the ball steps down and that word's box fills with its start time."""
+    times, count_t = hero_times()
+    counts = times[4:]
+    ticks_x = [x + 1 for x in xs]
+    css = hero_css(pal, ticks_x, times, count_t)
 
     words_svg = "".join(
         f'<tspan class="w w{i}" x="{x:.1f}">{w}</tspan>' for i, (w, x) in enumerate(zip(HERO_WORDS, xs, strict=True))
@@ -357,7 +376,7 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{HERO_W}" height="{HERO_H}" viewBox="0 0 {HERO_W} {HERO_H}" role="img" aria-labelledby="t d">
   <title id="t">DeckTalk</title>
   <desc id="d">A playhead moves along the narration "{spoken}", one tick per word. A bowl appears on the slide on "bowl", and a ball appears on its rim on "ball". On each count word, the ball steps down the bowl and a box fills with that word's start time: {time_list}.</desc>
-  <defs><style>{chr(10).join(css)}</style></defs>
+  <defs><style>{css}</style></defs>
   {bg_rect(pal, HERO_W, HERO_H, background)}
   <g class="loop">
   <text class="lab" x="{HERO_PAD}" y="{card_y}">NARRATION</text>
@@ -467,7 +486,7 @@ def hiw_css(pal: dict[str, str], ticks: list[float], total: float = 10.0) -> str
     return "\n".join(css)
 
 
-def stage_svg(i: int, pal: dict[str, str], x: int, y: int, ticks: list[float]) -> str:
+def stage_svg(i: int, x: int, y: int, ticks: list[float]) -> str:
     lab, h, s = STAGES[i]
     if i == 0:
         art = """<g transform="translate(0 100)">
@@ -518,10 +537,10 @@ def how_it_works(pal: dict[str, str], stacked: bool, background: bool, ticks: li
     title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The five stages are narrate, align, record, assemble, and verify."
     if not stacked:
         w, h = 1200, 240 + CMD_ROW
-        stages = "\n".join(stage_svg(i, pal, 60 + 280 * i, -40, ticks) for i in range(4))
+        stages = "\n".join(stage_svg(i, 60 + 280 * i, -40, ticks) for i in range(4))
     else:
         w, h = 600, 560 + 2 * CMD_ROW
-        stages = "\n".join(stage_svg(i, pal, 40 + 280 * (i % 2), 280 * (i // 2), ticks) for i in range(4))
+        stages = "\n".join(stage_svg(i, 40 + 280 * (i % 2), 280 * (i // 2), ticks) for i in range(4))
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t">
   <title id="t">{title}</title>
   <defs><style>{css}</style></defs>
@@ -815,12 +834,14 @@ def _signed(value: float, digits: int, unit: str) -> str:
 
 
 def figure_data(name: str) -> dict:
-    """The captured values for one figure, from scripts/figure-data/NAME.json. capture() writes them."""
-    import json
+    """The measured values for one figure, from scripts/figure-data/NAME.json.
 
+    Each file carries a `source` block naming the release, the command and the project it was
+    measured from, so a figure that prints a number says where the number came from.
+    """
     path = ROOT / "scripts" / "figure-data" / f"{name}.json"
     if not path.exists():
-        sys.exit(f"{path} is missing. Run `build_assets.py --capture` on a built scaffold.")
+        sys.exit(f"{path} is missing, and every figure that prints a measured number reads it.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -1017,6 +1038,56 @@ def verify_onset(pal: dict[str, str], background: bool) -> str:
 # ---- narration split ----------------------------------------------------------------------------
 
 
+def listed(numbers: list[str]) -> str:
+    """A list of section numbers as a reader says it, with "and" before the last one."""
+    return ", ".join(numbers[:-1]) + (" and " if len(numbers) > 1 else "") + numbers[-1]
+
+
+def split_footer(d: dict, tx: Callable[[float], float], cap_y: int, chap_y: int, span: tuple[int, int]) -> list[str]:
+    """The caption bars, the chapter marks and the time axis under the two tracks."""
+    x0, x1 = span
+    secs = d["sections"]
+    parts: list[str] = []
+    for a, b in d["captions"]:
+        parts.append(
+            f'<rect class="cp" x="{tx(a) + 0.6:.1f}" y="{cap_y}" width="{max(tx(b) - tx(a) - 1.2, 0.8):.1f}" height="12" rx="2"/>'
+        )
+    for n, t in enumerate(d["chapters"]):
+        x = tx(t)
+        parts.append(f'<line class="ch" x1="{x:.1f}" y1="{chap_y}" x2="{x:.1f}" y2="{chap_y + 16}"/>')
+        # A chapter starts with a section, and consecutive sections with the same title share one chapter.
+        num = next((s["number"] for s in secs if abs(s["video_start"] - t) < 0.01), n + 1)
+        parts.append(f'<text class="tl ink" x="{x + 4:.1f}" y="{chap_y + 13}">{num}</text>')
+    axis_y = chap_y + 36
+    parts.append(f'<line class="axis" x1="{x0}" y1="{axis_y}" x2="{x1}" y2="{axis_y}"/>')
+    t = 0
+    while t <= d["video_seconds"]:
+        x = tx(t)
+        parts.append(f'<line class="tk" x1="{x:.1f}" y1="{axis_y - 4}" x2="{x:.1f}" y2="{axis_y + 4}"/>')
+        parts.append(
+            f'<text class="tl" x="{x:.1f}" y="{axis_y + 20}" text-anchor="middle">{t // 60}:{t % 60:02d}</text>'
+        )
+        t += 30
+    return parts
+
+
+def split_desc(secs: list[dict], moved: list[dict]) -> str:
+    """What a reader who cannot see the figure is told, which is every claim the picture makes."""
+    clips = [s for s in secs if s["clip"]]
+    if not (clips and moved):
+        return "The narration track and the video, section by section."
+    plays = " ".join(
+        f"The video plays section {c['number']}, a clip of {c['video_end'] - c['video_start']:.2f} seconds, after section {c['number'] - 1}."
+        for c in clips
+    )
+    return (
+        f"The narration track holds sections {listed([str(s['number']) for s in secs if not s['clip']])} back to back. "
+        f"{plays}"
+        f" The narration splits before each page section that follows a clip, and sections {listed([str(s['number']) for s in moved])} start later in the video. "
+        "Captions sit under page sections only. Each chapter starts with a section, and consecutive sections with the same title share one."
+    )
+
+
 def narration_split(pal: dict[str, str], background: bool) -> str:
     """A clip between page sections pauses the narration: the track splits, and the later part moves right."""
     d = figure_data("narration-split")
@@ -1084,51 +1155,43 @@ def narration_split(pal: dict[str, str], background: bool) -> str:
         sx = tx(first["narration_start"])
         parts.append(f'<line class="cue" x1="{sx:.1f}" y1="{narr_y - 12}" x2="{sx:.1f}" y2="{narr_y + bh + 6}"/>')
         parts.append(f'<text class="note acc" x="{sx:.1f}" y="{narr_y - 18}" text-anchor="middle">split</text>')
-    for a, b in d["captions"]:
-        parts.append(
-            f'<rect class="cp" x="{tx(a) + 0.6:.1f}" y="{cap_y}" width="{max(tx(b) - tx(a) - 1.2, 0.8):.1f}" height="12" rx="2"/>'
-        )
-    for n, t in enumerate(d["chapters"]):
-        x = tx(t)
-        parts.append(f'<line class="ch" x1="{x:.1f}" y1="{chap_y}" x2="{x:.1f}" y2="{chap_y + 16}"/>')
-        # A chapter starts with a section, and consecutive sections with the same title share one chapter.
-        num = next((s["number"] for s in secs if abs(s["video_start"] - t) < 0.01), n + 1)
-        parts.append(f'<text class="tl ink" x="{x + 4:.1f}" y="{chap_y + 13}">{num}</text>')
-    axis_y = chap_y + 36
-    parts.append(f'<line class="axis" x1="{x0}" y1="{axis_y}" x2="{x1}" y2="{axis_y}"/>')
-    t = 0
-    while t <= d["video_seconds"]:
-        x = tx(t)
-        parts.append(f'<line class="tk" x1="{x:.1f}" y1="{axis_y - 4}" x2="{x:.1f}" y2="{axis_y + 4}"/>')
-        parts.append(
-            f'<text class="tl" x="{x:.1f}" y="{axis_y + 20}" text-anchor="middle">{t // 60}:{t % 60:02d}</text>'
-        )
-        t += 30
-    clips = [s for s in secs if s["clip"]]
-    listed = lambda nums: ", ".join(nums[:-1]) + (" and " if len(nums) > 1 else "") + nums[-1]  # noqa: E731
-    desc = (
-        (
-            f"The narration track holds sections {listed([str(s['number']) for s in secs if not s['clip']])} back to back. "
-            + " ".join(
-                f"The video plays section {c['number']}, a clip of {c['video_end'] - c['video_start']:.2f} seconds, after section {c['number'] - 1}."
-                for c in clips
-            )
-            + f" The narration splits before each page section that follows a clip, and sections {listed([str(s['number']) for s in moved])} start later in the video. "
-            "Captions sit under page sections only. Each chapter starts with a section, and consecutive sections with the same title share one."
-        )
-        if clips and moved
-        else "The narration track and the video, section by section."
-    )
+    parts += split_footer(d, tx, cap_y, chap_y, (x0, x1))
+    desc = split_desc(secs, moved)
     return _svg(w, h, "The narration pauses for a clip", desc, css, pal, background, "".join(parts))
 
 
 # ---- duck lane ----------------------------------------------------------------------------------
 
 
+def duck_spans(d: dict, tx: Callable[[float], float], span_y: int, window: tuple[float, float]) -> list[str]:
+    """One bar per span the music ducks under, each saying whether it is a spoken span or a whole clip."""
+    a, b = window
+    clip_keys = {(s["video_start"], s["video_end"]) for s in d["sections"] if s["clip"]}
+    parts: list[str] = []
+    for sa, sb in d["spans"]:
+        xa, xb = tx(max(sa, a)) + 1, tx(min(sb, b)) - 1
+        is_clip = any(abs(sa - p) < 1e-6 and abs(sb - q) < 1e-6 for p, q in clip_keys)
+        parts.append(f'<rect class="bar" x="{xa:.1f}" y="{span_y}" width="{xb - xa:.1f}" height="22" rx="4"/>')
+        parts.append(
+            f'<text class="val" x="{(xa + xb) / 2:.1f}" y="{span_y + 15}" text-anchor="middle">{"the whole clip" if is_clip else "spoken span"}</text>'
+        )
+    return parts
+
+
+def duck_desc(d: dict, window: tuple[float, float], base: float, duck: float) -> str:
+    """What a reader who cannot see the figure is told, which is every claim the curve makes."""
+    a, b = window
+    s3, clip, s5 = d["sections"]
+    return (
+        f"The music level from {a // 60:.0f}:{a % 60:02.0f} to {b // 60:.0f}:{b % 60:02.0f} of the video, across the end of section {s3['number']}, "
+        f"the clip in section {clip['number']}, and the start of section {s5['number']}. The level sits at {base:.0f} dB, drops to "
+        f"{base + duck:.0f} dB under each spoken span and under the whole clip, and comes back up in the short silence after the last word "
+        f"of section {s3['number']}."
+    )
+
+
 def duck_lane(pal: dict[str, str], background: bool) -> str:
     """The music level around a clip, from [mix] and the spans that plan_mix() ducks under."""
-    import math
-
     d = figure_data("duck-lane")
     a, b = d["window"]
     base, duck, ramp = d["music_db"], d["music_duck_db"], d["duck_ramp_seconds"]
@@ -1172,15 +1235,7 @@ def duck_lane(pal: dict[str, str], background: bool) -> str:
             else ""
         )
         clipped.append(f'<text class="note" x="{tx_anchor:.1f}" y="{sec_y + 23}" text-anchor="middle">{label}</text>')
-    clip_keys = {(s["video_start"], s["video_end"]) for s in d["sections"] if s["clip"]}
-    for sa, sb in d["spans"]:
-        ca, cb = max(sa, a), min(sb, b)
-        xa, xb = tx(ca) + 1, tx(cb) - 1
-        is_clip = any(abs(sa - p) < 1e-6 and abs(sb - q) < 1e-6 for p, q in clip_keys)
-        clipped.append(f'<rect class="bar" x="{xa:.1f}" y="{span_y}" width="{xb - xa:.1f}" height="22" rx="4"/>')
-        clipped.append(
-            f'<text class="val" x="{(xa + xb) / 2:.1f}" y="{span_y + 15}" text-anchor="middle">{"the whole clip" if is_clip else "spoken span"}</text>'
-        )
+    clipped += duck_spans(d, tx, span_y, (a, b))
     for db_ in (base, base + duck):
         y = ly(db_)
         clipped.append(f'<line class="grid" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
@@ -1200,13 +1255,7 @@ def duck_lane(pal: dict[str, str], background: bool) -> str:
         parts.append(
             f'<text class="tl" x="{x:.1f}" y="{axis_y + 20}" text-anchor="middle">{t // 60}:{t % 60:02d}</text>'
         )
-    s3, clip, s5 = d["sections"]
-    desc = (
-        f"The music level from {a // 60:.0f}:{a % 60:02.0f} to {b // 60:.0f}:{b % 60:02.0f} of the video, across the end of section {s3['number']}, "
-        f"the clip in section {clip['number']}, and the start of section {s5['number']}. The level sits at {base:.0f} dB, drops to "
-        f"{base + duck:.0f} dB under each spoken span and under the whole clip, and comes back up in the short silence after the last word "
-        f"of section {s3['number']}."
-    )
+    desc = duck_desc(d, (a, b), base, duck)
     return _svg(w, h, "How the music ducks", desc, css, pal, background, "".join(parts))
 
 
@@ -1287,8 +1336,6 @@ def starter_sections() -> list[tuple[int, str, bool]]:
 
     A section that sets no `chapter` takes the script's own "## N." heading, as DeckTalk does.
     """
-    import tomllib
-
     starter = ROOT / "src" / "decktalk" / "template" / "starter"
     doc = tomllib.loads((starter / "decktalk.toml").read_text(encoding="utf-8"))
     headings = {
@@ -1414,7 +1461,7 @@ OG_FRAME = ASSETS / "halfway-frame.webp"
 OG_FRAME_BOX = (780, 196, 340, 191)  # x, y, width, height: beside the headline, on the site's right margin
 
 
-def og(pal: dict[str, str], xs: list[float], widths: list[float]) -> str:
+def og(pal: dict[str, str], xs: list[float]) -> str:
     """The 1200 by 630 card that link previews show: the wordmark, the site's name, the headline, a frame of Halfway
     beside it, and the Halfway line the homepage follows, with a tick under each word and the cue phrases in the
     voice colour."""
@@ -1539,8 +1586,6 @@ def tokens_css() -> str:
 
 def render_png(svg: str, target: Path, width: int, height: int) -> None:
     """Rasterize an SVG with Chromium, for the places that cannot show SVG such as link previews."""
-    from playwright.sync_api import sync_playwright
-
     with sync_playwright() as pw:
         b = pw.chromium.launch()
         p = b.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
@@ -1549,263 +1594,6 @@ def render_png(svg: str, target: Path, width: int, height: int) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         p.screenshot(path=str(target))
         b.close()
-
-
-# ---- capture ----------------------------------------------------------------------------------
-
-FIG_DATA = ROOT / "scripts" / "figure-data"
-# The cue the verify figures and the verify samples in the docs share. Section 8 plays scene 7.
-VERIFY_CUE = "8:7.1checked"
-CUE_OFFSET_WORDS = ("3", "it", "steps", "downhill")  # section, then the words around 3.4steps ("So it steps downhill")
-# The clip figures come from the clip project: the scaffold with the test clip that docs/guides/clip-section.mdx
-# puts in its clip section 5, the BEFORE clip of the edit. Section 7 stays a slate.
-DUCK_SECTIONS = ("04", "05", "06")  # the music lane: the end of section 4, the clip, the start of section 6
-DUCK_WINDOW = (-3.0, 4.0)  # seconds before the clip starts and after it ends
-
-
-def capture(project_dir: Path, clip_dir: Path | None = None) -> None:
-    """Measure every number the figures print from a built scaffold, with DeckTalk's own code.
-
-    Run it on a scaffold after `decktalk build --no-voice`, with an interpreter that imports decktalk:
-
-        uv run --with-editable . scripts/build_assets.py --capture path/to/my-lesson --clip-project path/to/clip-lesson
-
-    The scaffold's clip sections play slates, with no sound, so the narration split and the duck lane come
-    from the clip project, a second scaffold with the test clip that docs/guides/clip-section.mdx puts in
-    section 5, built the same way. Without --clip-project those two data files stay as they are.
-
-    It reads the builds and never writes into a project. It writes scripts/figure-data/*.json,
-    and the draw functions read only those files, so a scaffold change is a new capture, not a
-    hand edit. The verify measurement must equal what `decktalk verify` reports, or it stops.
-    """
-    import importlib
-    import json
-    import re
-    from types import SimpleNamespace
-
-    import decktalk
-    from decktalk.media import ffmpeg
-    from decktalk.model import Project
-
-    vmod = importlib.import_module("decktalk.stages.verify")
-    amod = importlib.import_module("decktalk.stages.assemble")
-
-    project = Project.load(project_dir)
-    cfg = project.settings.verify
-    fps = project.settings.video.fps
-    final = project.final
-    timeline = project.timeline()
-    if timeline is None or not final.exists():
-        sys.exit(f"{project_dir}: no timeline or final mp4. Run `decktalk build --no-voice` there first.")
-    starts, total = vmod.section_starts(project)
-    sections = sorted([*project.page_sections, *project.clip_sections], key=lambda s: s.number)
-    source = {
-        "decktalk": decktalk.__version__,
-        "build": "decktalk build --no-voice on the scaffold that decktalk init writes",
-        "estimated_words": timeline.estimated,
-    }
-    FIG_DATA.mkdir(parents=True, exist_ok=True)
-
-    def write(name: str, data: dict) -> None:
-        (FIG_DATA / name).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        print(f"wrote {(FIG_DATA / name).relative_to(ROOT)}")
-
-    # verify: the reference, both probes with their control spans, and the onset series
-    sec, cue = VERIFY_CUE.split(":")
-    key = f"{int(sec):02d}"
-    row = vmod.verify(project, checks=[VERIFY_CUE]).cues[0]
-    cue_t = project.cue_times().get(key, cue)
-    sec_start = starts[key]
-    sec_end = next((t for k, t in starts.items() if k > key), total)
-    cue_at = sec_start + cue_t
-    fade_in = amod.fade_flags(project).get(key, (False, False))[0]
-    dip = amod.frame_dip(project.transition.dip_seconds, fps)
-    floor = sec_start + (dip if fade_in else 0.0)
-    before = vmod.reference_time(sec_start, cue_t, fade_in, dip, cfg, fps)
-    lead = vmod.cue_reach(cfg, fps)
-    size = {"width": cfg.probe_width, "height": cfg.probe_height}
-    # The probes verify uses: probe_delays, or probes fitted between the cue and a close neighbor.
-    neighbors = [sec_start + t for c, t in project.cue_times().sections.get(key, {}).items() if c != cue]
-    delays, fitted = vmod.probe_plan(cue_at, before, floor, sec_end, neighbors, cfg, fps)
-    probes = []
-    for delay in delays:
-        after = cue_at + delay
-        span = after - before
-        chg = ffmpeg.changed_pixels_percent(final, before, after, level=cfg.diff_level, **size)
-        controls = []
-        for a, b in vmod.control_spans(before, span, floor):
-            pct = ffmpeg.changed_pixels_percent(final, a, b, level=cfg.diff_level, **size)
-            controls.append({"from": round(a - cue_at, 3), "to": round(b - cue_at, 3), "percent": round(pct, 4)})
-        ctl = min((c["percent"] for c in controls), default=0.0)
-        probes.append(
-            {
-                "delay": delay,
-                "changed_percent": round(chg, 4),
-                "control_percent": ctl,
-                "margin": round(chg - ctl, 4),
-                "controls": controls,
-            }
-        )
-    reported = 0
-    for i, p in enumerate(probes):  # the largest margin, the earlier probe on a tie, as verify() chooses
-        if p["margin"] > probes[reported]["margin"]:
-            reported = i
-    after = cue_at + probes[reported]["delay"]
-    series = ffmpeg.changed_series(final, before, before, after, fps=fps, level=cfg.onset_diff_level, **size)
-    tolerance = (cfg.max_offset_frames + 0.5) / fps
-    offset_ms = vmod.onset_offset_ms(series, before, cue_at, cfg.onset_percent, tolerance=tolerance)
-    measured = (round(probes[reported]["changed_percent"], 2), round(probes[reported]["control_percent"], 2), offset_ms)
-    reported_row = (round(row.changed_percent, 2), round(row.control_percent, 2), row.offset_ms)
-    if measured != reported_row:
-        sys.exit(f"capture {measured} differs from decktalk verify {reported_row}")
-    write(
-        "verify-strip.json",
-        {
-            "source": {**source, "command": f"decktalk verify {VERIFY_CUE} --json, and the onset series verify reads"},
-            "check": VERIFY_CUE,
-            "cue_seconds": cue_t,
-            "final_seconds": round(cue_at, 3),
-            "section_start": sec_start,
-            "reference_lead_seconds": round(lead, 4),
-            "reference_seconds": round(before - cue_at, 4),
-            "fps": fps,
-            "diff_level": cfg.diff_level,
-            "onset_diff_level": cfg.onset_diff_level,
-            "onset_percent": cfg.onset_percent,
-            "max_offset_ms": round(cfg.max_offset_frames * 1000 / fps),
-            "max_av_ms": round(cfg.max_av_frames * 1000 / fps),
-            "probe_delays": list(cfg.probe_delays),
-            "fitted": fitted,
-            "probes": probes,
-            "reported_probe": reported,
-            "series": [{"ms": round((t - cue_at) * 1000), "percent": pct} for t, pct in series],
-            "row": {
-                "changed_percent": reported_row[0],
-                "control_percent": reported_row[1],
-                "offset_ms": row.offset_ms,
-                "av_ms": row.av_ms,
-                "click_ms": None if row.av_ms is None else row.offset_ms - row.av_ms,
-                "verdict": row.verdict,
-            },
-        },
-    )
-
-    # cue offset: one real word and its neighbours from the words file of section 3
-    sec_key = f"{int(CUE_OFFSET_WORDS[0]):02d}"
-    ts = timeline.sections[sec_key]
-    words = [w for w in ts.words]
-    names = [w.word.lower() for w in words]
-    target = list(CUE_OFFSET_WORDS[1:])
-    at = next(i for i in range(len(names) - 2) if names[i : i + 3] == target)
-    write(
-        "cue-offset.json",
-        {
-            "source": {**source, "file": f"build/narration/{sec_key}-*.words.json via timeline.json"},
-            "section": int(sec_key),
-            "words": [
-                {"word": w.word, "start": round(w.start - ts.start, 3), "end": round(w.end - ts.start, 3)}
-                for w in words[at : at + 3]
-            ],
-        },
-    )
-
-    # how it works: the word time printed in the narrate panel is the real start of "bowl"
-    s1 = timeline.sections["01"]
-    bowl = next(w for w in s1.words if w.word.lower() == "bowl")
-    write("how-it-works.json", {"source": source, "word": "bowl", "start": round(bowl.start - s1.start, 2)})
-
-    if clip_dir is None:
-        print("kept narration-split.json and duck-lane.json: pass --clip-project to measure them")
-        return
-    project = Project.load(clip_dir)
-    timeline = project.timeline()
-    if timeline is None or not project.final.exists():
-        sys.exit(f"{clip_dir}: no timeline or final mp4. Run `decktalk build --no-voice` there first.")
-    starts, total = vmod.section_starts(project)
-    sections = sorted([*project.page_sections, *project.clip_sections], key=lambda s: s.number)
-    if not any(s.is_clip for s in sections):
-        sys.exit(f"{clip_dir}: no clip section. Put in the test clip from docs/guides/clip-section.mdx.")
-    source = {
-        **source,
-        "build": "decktalk build --no-voice on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
-        "estimated_words": timeline.estimated,
-    }
-
-    # narration split: the narration track, the video, the captions, and the chapters
-    shim = [SimpleNamespace(section=s) for s in sections]
-    offsets = amod.narration_offsets(shim, timeline, starts)
-    srt = (project.out_dir / f"{project.name}.srt").read_text(encoding="utf-8")
-    stamp = r"(\d+):(\d+):(\d+),(\d+)"
-    captions = [
-        [
-            int(h1) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000,
-            int(h2) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000,
-        ]
-        for h1, m1, s1, ms1, h2, m2, s2, ms2 in re.findall(stamp + r" --> " + stamp, srt)
-    ]
-    chapters = [
-        int(m) / 1000
-        for m in re.findall(
-            r"^START=(\d+)$", (project.out_dir / f"{project.name}.chapters.txt").read_text(encoding="utf-8"), re.M
-        )
-    ]
-    rows = []
-    for s in sections:
-        entry = {
-            "number": s.number,
-            "key": s.key,
-            "chapter": s.chapter,
-            "clip": s.is_clip,
-            "video_start": round(starts[s.key], 3),
-        }
-        entry["video_end"] = round(next((t for k, t in starts.items() if k > s.key), total), 3)
-        if s.key in timeline.sections:
-            ts = timeline.sections[s.key]
-            entry.update(
-                narration_start=ts.start,
-                narration_end=ts.end,
-                speech_end=ts.speech_end,
-                offset=round(offsets[s.key], 3),
-            )
-        if s.is_clip:
-            entry.update(file=str(s.clip), file_exists=project.path(s.clip).exists(), slate_seconds=s.slate_seconds)
-        rows.append(entry)
-    write(
-        "narration-split.json",
-        {
-            "source": source,
-            "narration_seconds": timeline.total_seconds,
-            "video_seconds": round(total, 3),
-            "sections": rows,
-            "captions": captions,
-            "chapters": chapters,
-        },
-    )
-
-    # duck lane: the music gain from [mix] and the spoken spans, as plan_mix() builds them
-    mix = project.mix
-    spans = [
-        [offsets[k] + ts.start, offsets[k] + (ts.speech_end if ts.speech_end is not None else ts.end)]
-        for k, ts in timeline.sections.items()
-    ]
-    spans += [[starts[s.key], next((t for k, t in starts.items() if k > s.key), total)] for s in sections if s.is_clip]
-    clip = next(r for r in rows if r["key"] == DUCK_SECTIONS[1])
-    window = [clip["video_start"] + DUCK_WINDOW[0], clip["video_end"] + DUCK_WINDOW[1]]
-    write(
-        "duck-lane.json",
-        {
-            "source": {
-                **source,
-                "rule": "gain = music_db x (1 - (1 - music_duck_db) x max over spans of a linear ramp), from stages/assemble.py plan_mix",
-            },
-            "music_db": mix.music_db,
-            "music_duck_db": mix.music_duck_db,
-            "duck_ramp_seconds": project.settings.audio.duck_ramp_seconds,
-            "window": [round(t, 3) for t in window],
-            "spans": [[round(a, 3), round(b, 3)] for a, b in sorted(spans) if b > window[0] and a < window[1]],
-            "sections": [r for r in rows if r["key"] in DUCK_SECTIONS],
-        },
-    )
 
 
 # ---- entry ------------------------------------------------------------------------------------
@@ -1877,7 +1665,7 @@ def build() -> dict[Path, str]:
     # The favicon sits on the dark ground in both themes, so the gold beats read on any tab.
     for target in (docs / "favicon.svg", site / "favicon.svg"):
         out[target] = mark(DARK, size=32, background=True)
-    out[ASSETS / "og.svg"] = og(DARK, og_xs, o_widths)
+    out[ASSETS / "og.svg"] = og(DARK, og_xs)
     out[site / "tokens.css"] = tokens_css()
     return {k: _clean(v) for k, v in out.items()}
 
@@ -1885,21 +1673,7 @@ def build() -> dict[Path, str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="exit 1 if any generated file would change")
-    ap.add_argument(
-        "--capture", type=Path, metavar="PROJECT", help="measure scripts/figure-data/*.json from a built scaffold"
-    )
-    ap.add_argument(
-        "--clip-project",
-        type=Path,
-        metavar="PROJECT",
-        help="with --capture, measure the narration split and the duck lane from this built scaffold with a clip section",
-    )
     args = ap.parse_args()
-    if args.clip_project and not args.capture:
-        ap.error("--clip-project needs --capture")
-    if args.capture:
-        capture(args.capture.resolve(), args.clip_project.resolve() if args.clip_project else None)
-        return 0
     files = build()
     changed = [p for p, s in files.items() if not p.exists() or p.read_text(encoding="utf-8") != s]
     if args.check:
