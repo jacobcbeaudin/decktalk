@@ -1,229 +1,156 @@
-"""Section starts, quiet cuts and the seam into a section that carries the picture before it."""
+"""The three checks that read the shape of the film: the section starts, the cuts and the seams."""
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest
 
-from decktalk.artifacts import Take, Takes, Word, write_words
-from decktalk.cli import main
-from decktalk.cli.schema import Seam, read_envelope
-from decktalk.jsonio import read_as
-from decktalk.media import audio, ffmpeg
-from decktalk.model import Project
-from decktalk.speech import register_speech_provider
-from decktalk.stages.narrate import narrate
-from decktalk.stages.verify import verify
-from decktalk.stages.verify.seams import cut_checks, seam_checks, start_checks
-from decktalk.verdicts import Verdict
+from decktalk.findings import Code
+from decktalk.inputs import Inputs
+from decktalk.media import audio, frames
+from decktalk.stages.verify.seams import SEAM_SEARCH_FRAMES, cut_checks, seam_checks, start_checks
+
+from .conftest import PAGES_TOML, SECTION_SECONDS, Measurements, opened
+
+SEAMLESS_TOML = PAGES_TOML + "seamless = true\n"
+"""The same project, with its second section declaring that it carries the first one's picture."""
+
+STARTS = {1: 0.0, 2: SECTION_SECONDS}
+"""Where the two sections of the test film sit, which the cut list also says."""
 
 
-def test_verify_flags_a_pop_at_the_cut_into_a_seamless_section(verify_project, pages_toml, monkeypatch, capsys):
-    from decktalk.media import frames as frames_module
-
-    seamless_toml = pages_toml.replace(
-        'number = 2\npage = "deck/index.html"\n', 'number = 2\npage = "deck/index.html"\nseamless = true\n'
-    )
-    seamless_toml = seamless_toml.replace(
-        'number = 3\npage = "deck/index.html"\n', 'number = 3\npage = "deck/index.html"\nseamless = true\n'
-    )
-    p = verify_project({}, toml=seamless_toml)
-    calls: list[tuple[float, float, dict]] = []
-    share = [0.05]
-
-    def changed(path, t1, t2, **kw):
-        calls.append((round(t1, 3), round(t2, 3), kw))
-        return share[0]
-
-    monkeypatch.setattr(frames_module, "changed_pixels_percent", changed)
-    result = verify(p)
-    # Section 1 dips out over 0.16 s, so the last frame compared sits before the dip. Section 3 is not assembled.
-    assert calls == [(4.78, 5.0, {"level": 40, "width": 480, "height": 270})]
-    (row,) = result.seams
-    assert (row.key, row.cut_at, row.verdict, row.ok) == ("02", 5.0, Verdict.OK, True) and result.ok
-
-    share[0] = 0.5
-    result = verify(p)
-    assert [c.verdict for c in result.seams] == [Verdict.POP_AT_CUT] and not result.ok
-    [seam_json] = result.to_dict(p.root)["seams"]
-    seam = read_as(Seam, seam_json)
-    assert (seam.key, seam.cut_at, seam.last_at, seam.first_at, seam.changed_percent, seam.verdict) == (
-        "02", 5.0, 4.78, 5.0, 0.5, Verdict.POP_AT_CUT,
-    )  # fmt: skip
-    # A judged row carries the one sentence with its measured number, which the envelope lifts.
-    assert seam.detail is not None and "0.50 percent" in seam.detail
-    assert main(["-p", str(p.root), "verify"]) == 1
-    assert Verdict.POP_AT_CUT.label in capsys.readouterr().out
-    assert main(["-p", str(p.root), "verify", "--json"]) == 1
-    doc = read_envelope(capsys.readouterr().out)
-    assert (doc.findings.certain, doc.findings.uncertain) == (1, 0)
-    assert doc.payload.seams[0].verdict is Verdict.POP_AT_CUT
-    [row] = doc.findings.items
-    assert row.verdict is Verdict.POP_AT_CUT and row.detail and row.section == 2
-
-    # A straight cut compares the frame just before the cut, and a section without the key gets no row.
-    calls.clear()
-    (p.root / "decktalk.toml").write_text(seamless_toml + "\n[transition]\ndips = []\n", encoding="utf-8")
-    assert [c.last_at for c in verify(Project.load(p.root, environ={})).seams] == [4.94]
-    (p.root / "decktalk.toml").write_text(pages_toml, encoding="utf-8")
-    assert verify(Project.load(p.root, environ={})).seams == []
+# ---- the section starts ------------------------------------------------------------------------
 
 
-def test_a_section_that_opens_on_black_is_a_certain_finding(verify_project, monkeypatch):
-    from decktalk.media import frames as frames_module
-
-    project = verify_project({"01": "a@1.0"})
-    monkeypatch.setattr(frames_module, "luma_at", lambda path, t, crop=None: (1.0, 2.0))
-    rows = start_checks(project, project.final, {"01": 0.0, "02": 5.0})
-    assert [(r.key, r.verdict, r.ok) for r in rows] == [("01", Verdict.BLACK, False), ("02", Verdict.BLACK, False)]
-    assert rows[0].to_dict()["ymax"] == 2.0
-
-
-def _two_takes() -> Takes:
-    """Section 01 sounds to the end of its 5.0 s take, and section 02 for 4.5 s with a 0.3 s tail."""
-    takes = Takes(script="script.md", model="m", output_format="mp3")
-    takes.sections["01"] = Take(1, "A", "h1.mp3", "h1.words.json", "h1", 1, 5.0, 5.0, speech_end_seconds=4.5)
-    takes.sections["02"] = Take(
-        2, "B", "h2.mp3", "h2.words.json", "h2", 1, 5.0, 5.0, speech_end_seconds=4.5, sound_end_seconds=4.5,
-        tail_seconds=0.3,
-    )  # fmt: skip
-    return takes
+def test_every_section_start_reports_the_brightest_luma_of_its_own_frame(
+    assembled: Callable[..., Inputs], measured: Measurements
+) -> None:
+    inputs = assembled()
+    measured.luma = 180.0
+    with opened(inputs.root) as run:
+        rows = start_checks(inputs, run, inputs.workspace.film, STARTS)
+    assert [row.section for row in rows] == [1, 2]
+    assert rows[0].luma == pytest.approx(180.0)
+    assert rows[0].at == pytest.approx(inputs.settings.verify.after_dip_seconds)
 
 
-def test_a_cut_is_quiet_when_the_narration_has_stopped(verify_project, monkeypatch):
-    project = verify_project({"01": "a@1.0"})
-    project.narration_path.write_bytes(b"x")
-    write_words(project.takes_dir / "h1.words.json", [Word("Hi", 0.7, 1.0)])
-    takes = _two_takes()
-    windows: list[tuple[float, float]] = []
-
-    def rms(level):
-        return lambda path, start, length: windows.append((round(start, 3), round(length, 3))) or level
-
-    monkeypatch.setattr(audio, "rms_db", rms(-60.0))
-    # The picture of section 02 starts on a whole frame at 5.04 s, and its narration still plays from 5.0 s on.
-    quiet = cut_checks(project, takes, {"01": 0.0, "02": 5.04})
-    assert [(r.key, r.cut_at, r.verdict, r.ok) for r in quiet] == [
-        ("01", 5.0, Verdict.QUIET, True),
-        ("02", 9.8, Verdict.QUIET, True),
-    ]
-    # Each window is the last 0.15 s of the section's span, the samples that play just before its cut_at.
-    assert windows == [(4.85, 0.15), (9.65, 0.15)]
-    monkeypatch.setattr(audio, "rms_db", rms(-3.0))
-    one, two = cut_checks(project, takes, {"01": 0.0, "02": 5.04})
-    assert (one.verdict, one.ok, two.verdict) == (Verdict.SPEECH_AT_CUT, False, Verdict.SPEECH_AT_CUT)
-    # The sentence names the cut out of the section, into the section that follows or the end of the film.
-    assert one.detail == (
-        "section 01's narration still sounds at -3.0 dBFS just before the cut into section 02 at 5.000s, "
-        "so a word is cut off."
-    )
-    assert two.detail is not None and "just before the end of the film at 9.800s" in two.detail
-    # With no narration track there is nothing to listen to, so there are no rows at all.
-    assert cut_checks(project, None, {"01": 0.0}) == []
+def test_a_section_that_opens_on_black_is_a_certain_finding(
+    assembled: Callable[..., Inputs], measured: Measurements
+) -> None:
+    inputs = assembled()
+    measured.luma = 10.0
+    with opened(inputs.root) as run:
+        start_checks(inputs, run, inputs.workspace.film, STARTS)
+        found = [row for row in run.findings if row.code is Code.PAGE_BLACK]
+    assert len(found) == 2
+    assert "10.0" in found[0].message
+    assert f"{inputs.settings.verify.black_max_luma:.0f}" in found[0].message
 
 
-def test_a_hold_moves_the_narration_after_it_and_is_named_at_the_cut_before_it(verify_project, pages_toml, monkeypatch):
-    """A hold pauses the narration, so the cut after it is placed on the next run and the one before it is the hold."""
-    held = pages_toml.replace(
-        'number = 1\npage = "deck/index.html"\n', 'number = 1\npage = "deck/index.html"\nhold_seconds = 1\n'
-    )
-    project = verify_project({"01": "a@1.0"}, toml=held)
-    project.narration_path.write_bytes(b"x")
-    monkeypatch.setattr(audio, "rms_db", lambda path, start, length: -3.0)
-    one, two = cut_checks(project, _two_takes(), {"01": 0.0, "02": 6.0})
-    # Section 02's narration resumes at 6.0 s on its own first frame, one second after the track holds it.
-    assert (one.cut_at, one.held, two.cut_at, two.held) == (5.0, True, 10.8, False)
-    assert one.detail is not None and "just before its hold at 5.000s" in one.detail
+def test_a_section_that_opens_on_a_picture_says_nothing(
+    assembled: Callable[..., Inputs], measured: Measurements
+) -> None:
+    inputs = assembled()
+    measured.luma = 200.0
+    with opened(inputs.root) as run:
+        start_checks(inputs, run, inputs.workspace.film, STARTS)
+        assert run.findings == []
 
 
-def test_a_section_that_sets_no_seamless_key_has_no_seam_row(verify_project):
-    project = verify_project({"01": "a@1.0"})
-    assert seam_checks(project, project.final, {"01": 0.0, "02": 5.0}) == []
+# ---- the cuts -----------------------------------------------------------------------------------
 
 
-def test_a_dark_section_start_carries_the_sentence_with_its_measured_luma():
-    """A judged row says what is wrong with the number in it, which is the rule for all four shapes."""
-    from decktalk.stages.verify.seams import StartCheck
-
-    dark = StartCheck(key="02", start=14.48, probe_at=14.68, yavg=1.5, ymax=6.0, ok=False)
-    assert dark.verdict is Verdict.BLACK
-    detail = dark.detail
-    assert detail is not None
-    assert "section 02" in detail and "14.480" in detail and "1.5" in detail and "6.0" in detail
-    row = dark.to_dict("build/out/t.mp4")
-    assert row["detail"] == detail and row["where"] == "build/out/t.mp4"
-    # A start that is fine carries no sentence, because it is not a finding.
-    assert StartCheck(key="01", start=0.0, probe_at=0.2, yavg=100.0, ymax=200.0, ok=True).detail is None
+def test_a_cut_that_lands_on_speech_is_a_certain_finding(
+    assembled: Callable[..., Inputs], measured: Measurements
+) -> None:
+    inputs = assembled()
+    measured.rms_dbfs = -10.0
+    with opened(inputs.root) as run:
+        rows = cut_checks(inputs, run, inputs.workspace.film, inputs.takes(), STARTS)
+        found = [row for row in run.findings if row.code is Code.CUT_SPEECH]
+    assert rows and rows[0].speech_dbfs == pytest.approx(-10.0)
+    assert found and "-10.0 dBFS" in found[0].message
+    assert f"{inputs.settings.verify.cut_max_dbfs:.1f} dBFS" in found[0].message
 
 
-def _narrated(tmp_path: Path, name: str, take, narration: str) -> Project:
-    """Narrate a two-section project whose voice returns the file `take` writes, and give back the project."""
-
-    class FileVoice:
-        def speak(self, request):
-            src = tmp_path / "voice.mp3"
-            take(src)
-            return src.read_bytes(), [Word("Hello", 0.0, 0.5), Word("there", 0.5, 1.0)]
-
-        def cache_key(self, request):
-            return name
-
-    FileVoice.name = name
-    register_speech_provider(name, lambda context: FileVoice())
-    (tmp_path / "script.md").write_text("## 1. Open\n\nHello there.\n\n## 2. Close\n\nBye.\n", encoding="utf-8")
-    (tmp_path / "decktalk.toml").write_text(
-        f"[narration]\n{narration}\n[voice]\nprovider = '{name}'\n"
-        "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\npage = 'a.html'\n",
-        encoding="utf-8",
-    )
-    p = Project.load(tmp_path, environ={})
-    narrate(p)
-    return p
+def test_a_quiet_cut_says_nothing_and_still_reports_its_level(
+    assembled: Callable[..., Inputs], measured: Measurements
+) -> None:
+    inputs = assembled()
+    measured.rms_dbfs = -90.0
+    with opened(inputs.root) as run:
+        rows = cut_checks(inputs, run, inputs.workspace.film, inputs.takes(), STARTS)
+        assert run.findings == []
+    assert [row.speech_dbfs for row in rows] == [pytest.approx(-90.0), pytest.approx(-90.0)]
 
 
-def _take_with_a_breath_at_its_end(path: Path) -> None:
-    """One second of tone, 0.62 s of silence, then 0.02 s of breath that ends the file.
+def test_the_row_reports_the_step_the_waveform_takes_across_the_cut(
+    assembled: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The step is the level after the cut less the level before it, which is what a viewer hears."""
+    inputs = assembled()
+    film = inputs.workspace.film
+    cut = SECTION_SECONDS
 
-    The silence ends within the tolerance of the file end, so the sound is measured to end with the tone
-    and the breath lies past it, the shape of the take that ended Halfway's section 2.
-    """
-    ffmpeg.run(
-        "-f", "lavfi", "-i",
-        "aevalsrc='if(lt(t,1),0.25*sin(2*PI*440*t),if(gte(t,1.62),0.2*(2*random(0)-1),0))':s=44100:d=1.64",
-        "-c:a", "libmp3lame", "-b:a", "128k", str(path),
-    )  # fmt: skip
+    def level(path: object, start: float, _seconds: float) -> float:
+        if path != film:
+            return -90.0
+        return -20.0 if start >= cut else -60.0
 
-
-@pytest.mark.media
-def test_a_breath_past_a_take_sound_end_never_reaches_its_tail_or_the_cut(tmp_path):
-    """The tail is silence placed after the sound end, so what a take holds past it never plays before a cut."""
-    p = _narrated(tmp_path, "breath-voice", _take_with_a_breath_at_its_end, "min_tail_seconds = 0.7\nlead_seconds = 0")
-    takes = p.takes()
-    assert takes is not None
-    entry = takes.sections["02"]
-    take = p.takes_dir / entry.file
-    assert entry.sound_end_seconds == pytest.approx(1.0, abs=0.03)
-    assert audio.rms_db(take, 1.6, 0.05) > -40, "the take holds no breath past its sound end"
-    # The breath would land 0.62 s into the 0.7 s tail, inside the window the cut check measures.
-    rows = cut_checks(p, takes, takes.starts)
-    assert [(r.key, r.verdict) for r in rows] == [("01", Verdict.QUIET), ("02", Verdict.QUIET)]
-    end = takes.end("02")
-    assert end is not None and audio.rms_db(p.narration_path, end - 0.7, 0.7) < -80, "the tail is not silent"
+    monkeypatch.setattr(audio, "rms_db", level)
+    with opened(inputs.root) as run:
+        rows = cut_checks(inputs, run, film, inputs.takes(), STARTS)
+    assert rows[0].step_dbfs == pytest.approx(40.0)
 
 
-@pytest.mark.media
-def test_a_take_that_still_sounds_at_its_cut_is_speech_at_the_cut(tmp_path):
-    """A take whose sound runs to its end, with no tail after it, is cut while it speaks, and the check says so."""
+def test_a_film_with_no_narration_track_has_no_cut_rows(assembled: Callable[..., Inputs]) -> None:
+    inputs = assembled()
+    inputs.workspace.narration_path.unlink()
+    with opened(inputs.root) as run:
+        assert cut_checks(inputs, run, inputs.workspace.film, inputs.takes(), STARTS) == ()
 
-    def speaks_to_its_end(path: Path) -> None:
-        ffmpeg.run("-f", "lavfi", "-i", "sine=f=440:r=44100:d=1.2", "-c:a", "libmp3lame", "-b:a", "128k", str(path))
 
-    p = _narrated(tmp_path, "speaking-voice", speaks_to_its_end, "min_tail_seconds = 0\nlead_seconds = 0")
-    takes = p.takes()
-    assert takes is not None
-    one, two = cut_checks(p, takes, takes.starts)
-    assert (one.verdict, two.verdict) == (Verdict.SPEECH_AT_CUT, Verdict.SPEECH_AT_CUT)
-    assert one.rms_db > -40 and one.cut_at == takes.end("01")
-    assert one.detail is not None and "just before the cut into section 02" in one.detail
-    assert two.detail is not None and "just before the end of the film" in two.detail
+# ---- the seams ------------------------------------------------------------------------------------
+
+
+def test_a_section_that_declares_nothing_is_never_checked_for_a_seam(assembled: Callable[..., Inputs]) -> None:
+    inputs = assembled()
+    with opened(inputs.root) as run:
+        assert seam_checks(inputs, run, inputs.workspace.film, STARTS) == ()
+
+
+def test_a_seam_that_matches_at_once_has_drifted_by_nothing(
+    assembled: Callable[..., Inputs], measured: Measurements
+) -> None:
+    inputs = assembled(toml=SEAMLESS_TOML)
+    measured.changed = 0.0
+    with opened(inputs.root) as run:
+        rows = seam_checks(inputs, run, inputs.workspace.film, STARTS)
+        assert run.findings == []
+    assert [(row.section, row.drift) for row in rows] == [(2, 0.0)]
+
+
+def test_a_seam_whose_picture_arrives_late_reports_the_drift_in_seconds(
+    assembled: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A picture a frame late is a section whose clock slipped, which the row says in seconds."""
+    inputs = assembled(toml=SEAMLESS_TOML)
+    shares = iter([9.0, 0.0])
+    monkeypatch.setattr(frames, "changed_pixels_percent", lambda _p, _a, _b, **_kw: next(shares))
+    with opened(inputs.root) as run:
+        rows = seam_checks(inputs, run, inputs.workspace.film, STARTS)
+    assert rows[0].drift == pytest.approx(1 / inputs.settings.video.output_fps, abs=1e-3)
+
+
+def test_a_seam_that_never_matches_is_a_pop_naming_the_share_and_the_limit(
+    assembled: Callable[..., Inputs], measured: Measurements
+) -> None:
+    inputs = assembled(toml=SEAMLESS_TOML)
+    measured.changed = 42.0
+    with opened(inputs.root) as run:
+        rows = seam_checks(inputs, run, inputs.workspace.film, STARTS)
+        found = [row for row in run.findings if row.code is Code.CUT_POP]
+    assert found and "42.00 percent" in found[0].message
+    assert f"{inputs.settings.verify.cut_change_max_percent:.2f} percent" in found[0].message
+    assert rows[0].drift == pytest.approx(SEAM_SEARCH_FRAMES / inputs.settings.video.output_fps, abs=1e-3)

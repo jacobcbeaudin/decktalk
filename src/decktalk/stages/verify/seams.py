@@ -1,209 +1,172 @@
 """The three checks that read the shape of the film rather than one cue: starts, cuts and seams.
 
 A section start must show a real picture past the dip to black, the narration must be quiet in the
-window before each section's narration ends, and a section that sets `seamless` must open on the picture the section
-before it ended on.
+window before each section's narration ends, and a section that declares itself seamless must open
+on the picture the section before it ended on.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from ...artifacts import Takes
-from ...media import audio, frames
-from ...model import PageSection, Project
-from ...model.document import frame_dip
-from ...model.timeline import narration_offsets
-from ...verdicts import Verdict
+from decktalk.artifacts import Takes
+from decktalk.findings import Code, Location
+from decktalk.inputs import Inputs
+from decktalk.inputs.document import frame_dip
+from decktalk.inputs.timeline import narration_offsets
+from decktalk.machine import Run
+from decktalk.media import audio, frames
+from decktalk.pipeline import Stage
+from decktalk.results import CutCheck, SeamCheck, StartCheck
+from decktalk.stages import judge
+from decktalk.stages.verify.plan import EPSILON, frame_size
 
+STEP_WINDOW_SECONDS = 0.05
+"""Calibration: how much of the waveform either side of a cut the step is measured over.
 
-@dataclass
-class StartCheck:
-    key: str
-    start: float
-    probe_at: float
-    yavg: float
-    ymax: float
-    ok: bool
+A twentieth of a second is longer than one frame at every rate DeckTalk encodes at and shorter than
+a syllable, so it reads the level the cut lands on rather than the phrase around it.
+"""
 
-    @property
-    def verdict(self) -> Verdict:
-        return Verdict.OK if self.ok else Verdict.BLACK
+SEAM_SEARCH_FRAMES = 3
+"""Calibration: how many frames past a seamless cut are searched for the picture the section before it ended on.
 
-    @property
-    def detail(self) -> str | None:
-        """The one sentence a judged row carries, with the measured number a reader needs in it."""
-        if self.ok:
-            return None
-        return (
-            f"section {self.key} starts at {self.start:.3f}s and the frame read at {self.probe_at:.3f}s "
-            f"is dark, with an average luma of {self.yavg:.1f} and a brightest luma of {self.ymax:.1f}."
-        )
+A picture that arrives later than this is not drifting, it is a different picture, and the share the
+seam check measures says so on its own.
+"""
 
-    def to_dict(self, where: str | None = None) -> dict[str, Any]:
-        return {
-            "key": self.key,
-            "where": where,
-            "start": round(self.start, 3),
-            "probe_at": round(self.probe_at, 3),
-            "yavg": round(self.yavg, 2),
-            "ymax": round(self.ymax, 2),
-            "verdict": self.verdict.to_dict(),
-            "detail": self.detail,
-        }
+HALF_FRAME = 0.5
+"""Truth: a frame is the first one at or after its time, so a read aims half a frame inside it."""
+
+TRAILING_FRAMES = 1.5
+"""Truth: the last whole frame of a section sits one and a half frames before the cut that ends it."""
 
 
-@dataclass
-class CutCheck:
-    """The narration just before a section's narration ends. Sound still there means a word is cut off."""
-
-    key: str
-    cut_at: float  # Where the section's narration ends in the final mp4.
-    rms_db: float
-    ok: bool
-    into: str | None = None  # The section the film cuts to there, or None when the film ends there.
-    held: bool = False  # The section holds its last frame after its narration ends, so the film cuts later.
-
-    @property
-    def verdict(self) -> Verdict:
-        return Verdict.QUIET if self.ok else Verdict.SPEECH_AT_CUT
-
-    @property
-    def detail(self) -> str | None:
-        """The one sentence a judged row carries, with the measured number a reader needs in it."""
-        if self.ok:
-            return None
-        if self.held:
-            boundary = "its hold"
-        elif self.into is not None:
-            boundary = f"the cut into section {self.into}"
-        else:
-            boundary = "the end of the film"
-        return (
-            f"section {self.key}'s narration still sounds at {self.rms_db:.1f} dBFS just before {boundary} "
-            f"at {self.cut_at:.3f}s, so a word is cut off."
-        )
-
-    def to_dict(self, where: str | None = None) -> dict[str, Any]:
-        return {
-            "key": self.key,
-            "where": where,
-            "cut_at": round(self.cut_at, 3),
-            "rms_db": round(self.rms_db, 2),
-            "verdict": self.verdict.to_dict(),
-            "detail": self.detail,
-        }
-
-
-@dataclass
-class SeamCheck:
-    """The cut into a section that sets seamless. A picture that jumps there is a pop."""
-
-    key: str
-    cut_at: float
-    last_at: float  # The previous section's last frame before any dip, in the final mp4.
-    first_at: float  # This section's first frame after any dip, in the final mp4.
-    changed_percent: float
-    ok: bool
-
-    @property
-    def verdict(self) -> Verdict:
-        return Verdict.OK if self.ok else Verdict.POP_AT_CUT
-
-    @property
-    def detail(self) -> str | None:
-        """The one sentence a judged row carries, with the measured number a reader needs in it."""
-        if self.ok:
-            return None
-        return (
-            f"section {self.key} declares seamless and {self.changed_percent:.2f} percent of the "
-            f"picture changes across its cut at {self.cut_at:.3f}s, so the join shows."
-        )
-
-    def to_dict(self, where: str | None = None) -> dict[str, Any]:
-        return {
-            "key": self.key,
-            "where": where,
-            "cut_at": round(self.cut_at, 3),
-            "last_at": round(self.last_at, 3),
-            "first_at": round(self.first_at, 3),
-            "changed_percent": round(self.changed_percent, 2),
-            "verdict": self.verdict.to_dict(),
-            "detail": self.detail,
-        }
-
-
-def seam_checks(project: Project, final: Path, starts: dict[str, float]) -> list[SeamCheck]:
-    """One row per assembled section that sets seamless and follows an assembled section.
-
-    The frames compared sit outside any dip, so a fade to black is never taken for a pop. Each
-    time sits half a frame before the frame it names, because a frame is the first at or after it.
-    """
-    cfg = project.settings.verify
-    fps = project.settings.video.fps
-    flags = project.document.fade_flags
-    dip = frame_dip(project.transition.dip_seconds, fps)
-    rows: list[SeamCheck] = []
-    for prev, sec in zip(project.sections, project.sections[1:], strict=False):
-        if not sec.seamless or sec.key not in starts or prev.key not in starts:
-            continue
-        cut = starts[sec.key]
-        last = cut - (dip if flags.get(prev.key, (False, False))[1] else 0.0) - 1.5 / fps
-        first = cut + (dip if flags.get(sec.key, (False, False))[0] else 0.0) - 0.5 / fps
-        first = max(first, cut)
-        share = frames.changed_pixels_percent(
-            final, last, first, level=cfg.diff_level, width=cfg.probe_width, height=cfg.probe_height
-        )
-        rows.append(SeamCheck(sec.key, cut, last, first, share, share <= cfg.max_pop_percent))
-    return rows
-
-
-def start_checks(project: Project, final: Path, starts: dict[str, float]) -> list[StartCheck]:
-    """One row per assembled section: the frame past the dip shows a real picture, not black."""
-    cfg = project.settings.verify
+def start_checks(inputs: Inputs, run: Run, film: Path, starts: dict[int, float]) -> tuple[StartCheck, ...]:
+    """One row per assembled section: the frame past the dip shows a real picture and not black."""
+    verify = inputs.settings.verify
     rows: list[StartCheck] = []
-    for key, t in starts.items():
-        probe = t + cfg.after_dip_seconds
-        yavg, ymax = frames.luma_at(final, probe)
-        rows.append(StartCheck(key=key, start=t, probe_at=probe, yavg=yavg, ymax=ymax, ok=ymax > cfg.visible_ymax))
-    return rows
-
-
-def cut_checks(project: Project, takes: Takes | None, starts: dict[str, float]) -> list[CutCheck]:
-    """One row per spoken section: the narration is quiet in the window before the section's narration ends.
-
-    The window is the last `cut_window_seconds` of the section's span in narration.mp3, and those are
-    exactly the samples the viewer hears before `cut_at`, because the section's narration run places
-    them there in the final mp4 as the mix does. The picture cuts within half a frame of it, or after
-    the section's hold.
-
-    The check listens to the narration track alone, so music or an effect at a boundary does not
-    count as speech, and a clip, which carries its own audio, is exempt.
-    """
-    cfg = project.settings.verify
-    narration = project.narration_path
-    if takes is None or not narration.exists():
-        return []
-    played = [sec for sec in project.sections if sec.key in starts]
-    offsets = narration_offsets(played, takes, starts)
-    following = {sec.key: nxt.key for sec, nxt in zip(played, played[1:], strict=False)}
-    rows: list[CutCheck] = []
-    for sec in played:
-        span, end = takes.span(sec.key), takes.end(sec.key)
-        if span is None or end is None:
-            continue
-        window = min(cfg.cut_window_seconds, span)
-        level = audio.rms_db(narration, max(0.0, end - window), window)
-        rows.append(
-            CutCheck(
-                key=sec.key,
-                cut_at=round(offsets[sec.key] + end, 3),
-                rms_db=level,
-                ok=level <= cfg.cut_max_db,
-                into=following.get(sec.key),
-                held=isinstance(sec, PageSection) and sec.hold_seconds > 0,
+    for number, at in starts.items():
+        probe = at + verify.after_dip_seconds
+        _mean, brightest = frames.luma_at(film, probe)
+        rows.append(StartCheck(section=number, at=round(probe, 3), luma=round(brightest, 2)))
+        if brightest <= verify.black_max_luma:
+            run.found(
+                judge(
+                    Code.PAGE_BLACK,
+                    f"section {number} opens at {at:.3f}s and the frame read at {probe:.3f}s is black, "
+                    f"with a brightest luma of {brightest:.1f} against the {verify.black_max_luma:.0f} "
+                    "a frame must pass to count as a picture.",
+                    Location(where=f"section {number}", file=inputs.relative(film), section=number),
+                    stage=Stage.VERIFY,
+                )
             )
-        )
-    return rows
+    return tuple(rows)
+
+
+def cut_checks(
+    inputs: Inputs, run: Run, film: Path, takes: Takes | None, starts: dict[int, float]
+) -> tuple[CutCheck, ...]:
+    """One row per spoken section: the narration is quiet before its cut, and the waveform does not step.
+
+    The speech level is read from the narration track alone, so music or an effect at a boundary is
+    never taken for a word, and a clip, which carries its own audio, is exempt. The step is read from
+    the finished film either side of the cut, because a step is what a viewer hears.
+    """
+    verify = inputs.settings.verify
+    narration = inputs.workspace.narration_path
+    if takes is None or not narration.exists():
+        return ()
+    played = [section for section in inputs.document.sections if section.number in starts]
+    offsets = narration_offsets(played, takes, starts)
+    rows: list[CutCheck] = []
+    for section in played:
+        take = takes.of(section.number)
+        end = takes.end(section.number)
+        if take is None or end is None:
+            continue
+        window = min(verify.cut_window_seconds, take.span_seconds)
+        speech = audio.rms_db(narration, max(0.0, end - window), window)
+        at = round(offsets[section.number] + end, 3)
+        step = _step_dbfs(film, at)
+        rows.append(CutCheck(section=section.number, at=at, speech_dbfs=round(speech, 2), step_dbfs=round(step, 2)))
+        if speech > verify.cut_max_dbfs:
+            run.found(
+                judge(
+                    Code.CUT_SPEECH,
+                    f"section {section.number}'s narration is still sounding at {speech:.1f} dBFS in the "
+                    f"{window:.2f}s before its cut at {at:.3f}s, which is over the "
+                    f"{verify.cut_max_dbfs:.1f} dBFS a silent cut must be under, so a word is sliced in two.",
+                    Location(where=f"section {section.number}", file=inputs.relative(film), section=section.number),
+                    stage=Stage.VERIFY,
+                )
+            )
+    return tuple(rows)
+
+
+def _step_dbfs(film: Path, at: float) -> float:
+    """How far the waveform steps across one cut, as the level after it less the level before it."""
+    before = audio.rms_db(film, max(0.0, at - STEP_WINDOW_SECONDS), STEP_WINDOW_SECONDS)
+    after = audio.rms_db(film, at, STEP_WINDOW_SECONDS)
+    return after - before
+
+
+def seam_checks(inputs: Inputs, run: Run, film: Path, starts: dict[int, float]) -> tuple[SeamCheck, ...]:
+    """One row per assembled section that declares itself seamless and follows an assembled section.
+
+    The frames compared sit outside any dip, so a fade to black is never taken for a jump. The row
+    reports how far the picture has drifted from its own clock, which is the distance from the cut to
+    the first frame of the incoming section that still shows what the outgoing one ended on.
+    """
+    verify = inputs.settings.verify
+    fps = inputs.settings.video.output_fps
+    flags = inputs.document.fade_flags
+    dip = frame_dip(inputs.document.transition.dip_seconds, fps)
+    size = {"level": verify.probe_diff_luma, **frame_size(inputs.settings)}
+    rows: list[SeamCheck] = []
+    sections = inputs.document.sections
+    for previous, section in zip(sections, sections[1:], strict=False):
+        if not section.seamless or section.number not in starts or previous.number not in starts:
+            continue
+        cut = starts[section.number]
+        last = cut - (dip if flags.get(previous.key, (False, False))[1] else 0.0) - TRAILING_FRAMES / fps
+        opening = cut + (dip if flags.get(section.key, (False, False))[0] else 0.0) - HALF_FRAME / fps
+        opening = max(opening, cut)
+        drift, share = _drift(film, last, opening, fps, size, verify.cut_change_max_percent)
+        rows.append(SeamCheck(section=section.number, at=round(cut, 3), drift=drift))
+        if share > verify.cut_change_max_percent:
+            run.found(
+                judge(
+                    Code.CUT_POP,
+                    f"section {section.number} declares itself seamless and {share:.2f} percent of the picture "
+                    f"changes across its cut at {cut:.3f}s, which is over the "
+                    f"{verify.cut_change_max_percent:.2f} percent a join may show, so the seam is visible.",
+                    Location(where=f"section {section.number}", file=inputs.relative(film), section=section.number),
+                    stage=Stage.VERIFY,
+                )
+            )
+    return tuple(rows)
+
+
+def _drift(
+    film: Path, last: float, opening: float, fps: int, size: dict[str, int], limit: float
+) -> tuple[float, float]:
+    """(how far past the cut the outgoing picture is found, the smallest share measured), in seconds.
+
+    The first frame of the incoming section is compared with the outgoing section's last frame. A
+    seam that matches straight away has drifted by nothing. When it does not match, the next few
+    frames are read too, because a picture that arrives a frame or two late is a section whose clock
+    has slipped rather than a section showing something else.
+    """
+    best = frames.changed_pixels_percent(film, last, opening, **size)
+    if best <= limit:
+        return 0.0, round(best, 2)
+    for step in range(1, SEAM_SEARCH_FRAMES + 1):
+        share = frames.changed_pixels_percent(film, last, opening + step / fps, **size)
+        best = min(best, share)
+        if share <= limit + EPSILON:
+            return round(step / fps, 3), round(share, 2)
+    return round(SEAM_SEARCH_FRAMES / fps, 3), round(best, 2)
+
+
+__all__ = ["SEAM_SEARCH_FRAMES", "STEP_WINDOW_SECONDS", "cut_checks", "seam_checks", "start_checks"]
