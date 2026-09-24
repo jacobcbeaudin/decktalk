@@ -31,7 +31,7 @@ Workers Builds deploy of `site/` serves it as it is.
   Google Fonts latin file cut to the printable ASCII range plus a few punctuation marks.
 - `films/` holds one page per film, with the film, the one-line install and its script. The film pages load `app.js` for the copy button, and their styles live in `styles.css` beside everything else's.
 - `_headers` serves `install.sh` as text, so a browser shows the script rather than downloading
-  it. Cloudflare's static assets read it; it names no account, zone or credential.
+  it. Cloudflare's static assets read it. It names no account, zone or credential.
 
 ## Films
 

@@ -42,7 +42,7 @@ Internal presentations and estimation walkthroughs run the same pipeline. Neithe
 
 ## Make your first video
 
-The first line installs uv, a Python package manager, and then DeckTalk. It brings its own Python, so there is nothing to install before it. [Read the script](https://decktalk.ai/install.sh) before you run it; that is why it is served from a URL. If you already have uv, `uv tool install decktalk` does the same thing, and `pipx install decktalk` works too.
+The first line installs uv, a Python package manager, and then DeckTalk. It brings its own Python, so there is nothing to install before it. [Read the script](https://decktalk.ai/install.sh) before you run it. That is why it is served from a URL. If you already have uv, `uv tool install decktalk` does the same thing, and `pipx install decktalk` works too.
 
 ```console
 curl -LsSf https://decktalk.ai/install.sh | sh
