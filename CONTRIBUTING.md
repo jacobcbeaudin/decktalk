@@ -77,14 +77,14 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `browser` | `uv run pytest -q -m browser --cov --cov-report=` | uv, chromium | Linux | pr, main, release |
 | `media` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | Linux | pr, main, release |
 | `e2e` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | Linux | pr, main, release |
-| `browser-platforms` | `uv run pytest -q -m browser --cov --cov-report=` | uv, chromium | macOS, Windows | main, release |
-| `media-platforms` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | macOS, Windows | main, release |
-| `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | macOS, Windows | main, release |
+| `browser-platforms` | `uv run pytest -q -m browser --cov --cov-report= --timing=report` | uv, chromium | macOS, Windows | main, release |
+| `media-platforms` | `uv run pytest -q -m media --cov --cov-report= --timing=report` | uv, ffmpeg | macOS, Windows | main, release |
+| `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report= --timing=report` | uv, chromium, ffmpeg | macOS, Windows | main, release |
 | `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
 | `generated` | `npm ci`, and 16 more | uv, npm, chromium | Linux | pr, main, release |
 | `coverage` | `uv run coverage combine --keep`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
-| `scaffold` | `uv run pytest -q -m scaffold` | uv, chromium, ffmpeg | Linux | main, schedule |
+| `scaffold` | `uv run pytest -q -m scaffold --timing=report` | uv, chromium, ffmpeg | Linux | main, schedule |
 | `installer` | `docker run --rm -v site:/site:ro debian:13-slim sh -euc <shell script>`, and 5 more | docker | Linux | main, schedule |
 
 Every group, one at a time:
@@ -138,10 +138,14 @@ storyboard, the events stream, `status`, `check`, and a rebuild of one section. 
 sample rather than a policy test: it proves no proposition on its own and samples the joint
 behaviour of Chromium, ffmpeg and the filesystem on one machine.
 
-Timing gates everywhere by default. The one CI step that runs on a hosted runner whose compositor
-presents frames late passes `--timing=report` itself, so the weakening lives in the file that owns
-it. `tests/support/timing_policy.py` holds the slack, the rounding and the module budgets, and it
-is one of the two places in the suite that may read `sys.platform`.
+Timing gates everywhere by default. The legs that run on a hosted runner whose compositor presents
+frames late pass `--timing=report` themselves, so the weakening lives in the `GROUPS` table that
+owns them. Those legs are the three `-platforms` rows, which are macOS and Windows, and the weekly
+`scaffold` row, which renders every packaged project in software. A leg that reports still measures
+and still prints what it tolerated, it is still held to the project's own limit plus the slack, and
+a finding that is not a late landing fails it exactly as it fails a Linux row.
+`tests/support/timing_policy.py` holds the slack, the rounding and the module budgets, and it is
+one of the two places in the suite that may read `sys.platform`.
 
 Coverage has one floor, measured on Linux and written by `uv run scripts/check_coverage.py --write`
 rather than typed. The record only ever rises, and a run is held to it less a point of margin,
