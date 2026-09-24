@@ -1,461 +1,651 @@
-"""Every result a command returns serialises each row it judges, so a reader can dispatch on it.
+"""The surface table: one row per command, and the test is total in both directions.
 
-`findings.items[]` has one shape, and the CLI lifts those rows out of the result's own payload
-rather than being handed them. So a row a result holds and does not write under a key of its own is
-a finding no reader sees, and a row with an empty `where` or `detail` is one no reader can act on.
-Both are invisible at the result that makes them and obvious here, which is why the rule is a test
-over every result rather than a rule a reader applies at one site at a time.
+Four sets used to be asserted against each other here, which meant four places to add a row and four
+ways to forget one. `SURFACE` is that assertion as one table. Each row names a command, the callable
+that implements it, the result that callable returns, whether the command opens a run and whether it
+writes a file, and what drives it. A stage added without a command, a command added without a result,
+or a result added without either, fails here by name.
 
-Each result the package returns is driven through its real stage, arranged to judge something, and
-read back four ways: every judged row the result holds reaches the payload, each names the file it
-is about, each carries its sentence, and the payload is exactly the shape `cli/schema.py` declares
-for its command, read back into enum members by the same reader a caller uses. The toolchain is
-replaced where a stage would shell out, because what is under test is the wiring from a judgement to
-a payload and not the pixels. A result class added later fails `test_every_stage_result_is_driven_here`
-until it is driven here as well.
+Nothing in this file fakes a tool. A row whose command needs ffmpeg, Chromium or a paid voice names
+the mirrored test that drives it through its real stage instead, and a test holds that file to
+naming the result, so the table stays total without a second copy of the stage suite and without
+reaching into fixtures this directory cannot see. Every other row is driven here for real, and each
+one is read back the way a caller reads it: the JSON is one flat object with four reserved keys, the
+result round-trips through its own schema, the library printed nothing, and a subscriber collected
+typed events that validate back and pair.
 """
 
 from __future__ import annotations
 
 import importlib
-import inspect
 import json
 import pkgutil
-from collections.abc import Callable
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
+import typer
+from pydantic import BaseModel, TypeAdapter
 
 import decktalk
-from decktalk.artifacts import Luma, RecordingChecks, RecordingLog, Take, Takes, Word, write_words
-from decktalk.cli.envelope import finding_rows
-from decktalk.cli.schema import PAYLOADS
-from decktalk.jsonio import dumps, read_as
-from decktalk.model import Project
-from decktalk.pipeline import Stage, Substitute
-from decktalk.verdicts import Finding, Findings, StageResult, Verdict
+from decktalk import settings
+from decktalk.errors import DeckTalkError
+from decktalk.events import EVENTS, Event, Line, RunDone, RunStart
+from decktalk.findings import Applicability, Certainty, Code, Finding, Location, SettingFix
+from decktalk.machine import Machine
+from decktalk.pipeline import Stage
+from decktalk.project import Origin, Project
+from decktalk.results import (
+    RESULTS,
+    SCHEMA,
+    ApplyResult,
+    AssembleResult,
+    BuildResult,
+    CheckResult,
+    ClipResult,
+    ConfigExplainResult,
+    ConfigGetResult,
+    ConfigListResult,
+    ConfigSetResult,
+    ConfigUnsetResult,
+    CueResult,
+    DoctorResult,
+    ErrorResult,
+    InitResult,
+    InstallResult,
+    NarrateResult,
+    RecordResult,
+    Result,
+    Scope,
+    ServeResult,
+    SoundscapeResult,
+    StatusResult,
+    StoryboardResult,
+    VerifyResult,
+    WordsResult,
+)
+from support.paths import REPO
 
-# ---- every result the package returns ---------------------------------------------------
+SOME_CODE = Code.CUE_OFF
+"""One finding code, for the rows where a finding is the input rather than the subject."""
+
+RESERVED = ("schema", "ok", "findings", "error")
+"""The four keys the base reserves, which every result carries and no subclass may spell again."""
+
+RETIRED = ("command", "exit_code", "summary", "data", "result")
+"""Keys the 0.4 envelope carried. The JSON is one flat object now, so none of them may come back."""
+
+SCHEMAS = REPO / "schema" / "results"
+"""Where the committed JSON Schema of each result lives, one file per name `decktalk schema` prints."""
+
+HERE = "here"
+"""What a row's driver says when this file drives it for real, which needs no tool of any kind."""
+
+CLI_TESTS = "tests/decktalk/cli"
+"""Where a row the command line owns whole is driven, which is a directory because T8 names its own files."""
+
+APP_NAMES = ("decktalk.cli:app", "decktalk.cli.parser:app", "decktalk.cli.main:app")
+"""Where the Typer app may live. The command set is read from it, so a miss names all three."""
 
 
-def _modules() -> list[Any]:
-    """Every module of the package, imported, so a result class cannot hide in one nothing imports."""
-    found = [decktalk]
+@dataclass(frozen=True)
+class Row:
+    """One command, what implements it, what it returns, what it opens and what drives it."""
+
+    command: str
+    call: str  # a dotted path this file resolves, or an empty string when the CLI composes the result
+    result: type[Result] | None
+    opens_run: bool
+    writes: bool
+    driver: str  # `HERE`, or the test file or directory that drives this row through its real stage
+    returns_its_result: bool = True  # false when the callable returns a library record the CLI renders
+    note: str = ""  # why this row is not a plain callable returning its own result
+
+
+SURFACE: tuple[Row, ...] = (
+    Row("init", "decktalk:init", InitResult, True, True, HERE),
+    Row("install", "decktalk.machine:Machine.install", InstallResult, True, False, "tests/decktalk/test_machine.py"),
+    Row("doctor", "decktalk.machine:Machine.doctor", DoctorResult, True, False, HERE),
+    Row("status", "decktalk.project:Project.status", StatusResult, True, False, HERE),
+    Row("check", "decktalk.project:Project.check", CheckResult, True, True, HERE),
+    Row("words", "decktalk.project:Project.words", WordsResult, True, False, "tests/decktalk/stages/test_words.py"),
+    Row(
+        "storyboard",
+        "decktalk.project:Project.storyboard",
+        StoryboardResult,
+        True,
+        True,
+        "tests/decktalk/stages/test_storyboard.py",
+    ),
+    Row(
+        "serve",
+        "decktalk.project:Project.serve",
+        ServeResult,
+        True,
+        False,
+        HERE,
+        returns_its_result=False,
+        note="It returns an Origin the caller holds open, and the result is what that Origin carries.",
+    ),
+    Row("build", "decktalk.project:Project.build", BuildResult, True, True, "tests/decktalk/stages/test_build.py"),
+    Row("clip", "decktalk.project:Project.clip", ClipResult, True, True, "tests/decktalk/stages/test_clip.py"),
+    Row(
+        Stage.NARRATE.value,
+        "decktalk.project:Project.narrate",
+        NarrateResult,
+        True,
+        True,
+        "tests/decktalk/stages/narrate/test_narrate.py",
+    ),
+    Row(
+        Stage.CUE.value,
+        "decktalk.project:Project.cue",
+        CueResult,
+        True,
+        True,
+        "tests/decktalk/stages/cue/test_cue.py",
+    ),
+    Row(
+        Stage.RECORD.value,
+        "decktalk.project:Project.record",
+        RecordResult,
+        True,
+        True,
+        "tests/decktalk/stages/record/test_record.py",
+    ),
+    Row(
+        Stage.SOUNDSCAPE.value,
+        "decktalk.project:Project.soundscape",
+        SoundscapeResult,
+        True,
+        True,
+        "tests/decktalk/stages/soundscape/test_soundscape.py",
+    ),
+    Row(
+        Stage.ASSEMBLE.value,
+        "decktalk.project:Project.assemble",
+        AssembleResult,
+        True,
+        True,
+        "tests/decktalk/stages/assemble/test_assemble.py",
+    ),
+    Row(
+        Stage.VERIFY.value,
+        "decktalk.project:Project.verify",
+        VerifyResult,
+        True,
+        False,
+        "tests/decktalk/stages/verify/test_verify.py",
+    ),
+    Row(
+        "config list",
+        "",
+        ConfigListResult,
+        False,
+        False,
+        CLI_TESTS,
+        note="The CLI joins the key registry with the project's own layers, so no one call returns this.",
+    ),
+    Row(
+        "config get",
+        "",
+        ConfigGetResult,
+        False,
+        False,
+        CLI_TESTS,
+        note="The CLI joins the key registry with the project's own layers, so no one call returns this.",
+    ),
+    Row(
+        "config set",
+        "decktalk.settings:write",
+        ConfigSetResult,
+        False,
+        True,
+        HERE,
+        returns_its_result=False,
+        note="The writer returns a SettingWrite, which is the library's record, and the CLI renders it.",
+    ),
+    Row(
+        "config unset",
+        "decktalk.settings:unset",
+        ConfigUnsetResult,
+        False,
+        True,
+        HERE,
+        returns_its_result=False,
+        note="The remover is the writer's opposite and belongs beside it, because editing a file is library work.",
+    ),
+    Row(
+        "config explain",
+        "decktalk.explain:explain",
+        ConfigExplainResult,
+        False,
+        False,
+        HERE,
+        returns_its_result=False,
+        note="The explainer returns an Explanation, which is the library's record, and the CLI renders it.",
+    ),
+    Row(
+        "schema",
+        "",
+        None,
+        False,
+        False,
+        CLI_TESTS,
+        note="It prints the contract document itself, which is the one exemption from the reserved keys.",
+    ),
+)
+"""Every command, the callable that implements it, the result it returns and what drives it."""
+
+
+NO_COMMAND: tuple[Row, ...] = (
+    Row(
+        "",
+        "decktalk.project:Project.apply",
+        ApplyResult,
+        True,
+        True,
+        HERE,
+        note="A fix is applied from a finding a caller already holds, so a command would have nothing to take.",
+    ),
+    Row(
+        "",
+        "",
+        ErrorResult,
+        False,
+        False,
+        CLI_TESTS,
+        note="It is what a refused command line fills, so it belongs to every command and to none of them.",
+    ),
+)
+"""Every result that no command returns, each with the sentence saying why it has no row above."""
+
+
+ALL_ROWS = (*SURFACE, *NO_COMMAND)
+MODEL_ROWS = tuple(row for row in ALL_ROWS if row.result is not None)
+DRIVEN_ELSEWHERE = tuple(row for row in ALL_ROWS if row.driver != HERE)
+IDS = [row.command or row.result.__name__ for row in MODEL_ROWS]
+
+
+# ---- resolving what a row names ----------------------------------------------------------
+
+
+def resolve(call: str) -> object:
+    """The object a row's dotted path names, as `module:name` or `module:Class.method`."""
+    module_name, _, attribute = call.partition(":")
+    found: object = importlib.import_module(module_name)
+    for part in attribute.split("."):
+        found = getattr(found, part)
+    return found
+
+
+def import_everything() -> list[str]:
+    """Import every module of the package, and give back the ones that would not import.
+
+    A module that does not import could be hiding a result, so the walk reports rather than passes.
+    """
+    broken: list[str] = []
     for info in pkgutil.walk_packages(decktalk.__path__, f"{decktalk.__name__}."):
-        # `__main__` runs the CLI when it is imported, which is the whole of what it is for.
-        if not info.name.endswith(".__main__"):
-            found.append(importlib.import_module(info.name))
-    return found
+        # `__main__` runs the command line when it is imported, which is the whole of what it is for.
+        if info.name.endswith(".__main__"):
+            continue
+        try:
+            importlib.import_module(info.name)
+        except ImportError as missing:
+            broken.append(f"{info.name}: {missing}")
+    return broken
 
 
-def _is_stage_result(obj: Any, module_name: str) -> bool:
-    """Whether a class is one of the results a command returns, by the protocol and not by its name.
+def every_result_class() -> set[type[Result]]:
+    """Every `Result` subclass the imported package holds, however deep it is subclassed."""
 
-    `StageResult` is a tally and JSON-ready data keyed on the project root, which is what separates a
-    result from the row shapes inside it: a row serialises itself against the film or against nothing.
-    """
-    if not inspect.isclass(obj) or obj.__module__ != module_name or obj is StageResult:
-        return False
-    if not (hasattr(obj, "findings") and callable(getattr(obj, "to_dict", None))):
-        return False
-    return "root" in inspect.signature(obj.to_dict).parameters
+    def below(cls: type[Result]) -> set[type[Result]]:
+        return {sub for child in cls.__subclasses__() for sub in {child, *below(child)}}
 
+    return below(Result)
 
-def stage_results() -> dict[str, type]:
-    """Every `StageResult` class in the package, by name."""
-    found: dict[str, type] = {}
-    for module in _modules():
-        for name, obj in vars(module).items():
-            if _is_stage_result(obj, module.__name__):
-                found[name] = obj
-    return found
 
-
-# ---- the projects each stage is driven on -----------------------------------------------
-
-PAGE_TOML = """
-[project]
-name = "t"
-
-[[section]]
-number = 1
-page = "deck/index.html"
-
-[[section]]
-number = 2
-page = "deck/index.html"
-scene = "2"
-"""
-
-
-def _page_project(
-    tmp_path: Path, html: str = "<!doctype html>", toml: str = PAGE_TOML, voiced: bool = False
-) -> Project:
-    """Two page sections on one page, with a take and a words file for each, voiced or not."""
-    (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
-    (tmp_path / "script.md").write_text("## 1. A\n\nHello there.\n\n## 2. B\n\nBye now.\n", encoding="utf-8")
-    (tmp_path / "deck").mkdir(exist_ok=True)
-    (tmp_path / "deck" / "index.html").write_text(html, encoding="utf-8")
-    project = Project.load(tmp_path, environ={})
-    project.takes_dir.mkdir(parents=True, exist_ok=True)
-    index = Takes(script="script.md", model="m", output_format="mp3")
-    for key, words in (("01", [Word("Hello", 0.5, 0.9), Word("there", 1.0, 1.4)]), ("02", [Word("Bye", 0.4, 0.8)])):
-        write_words(project.takes_dir / f"{key}.words.json", words)
-        (project.takes_dir / f"{key}.mp3").write_bytes(b"a take")
-        index.sections[key] = Take(
-            index=int(key), chapter=key, file=f"{key}.mp3", words_file=f"{key}.words.json", hash=f"h{key}",
-            word_count=len(words), estimated_seconds=2.0, duration_seconds=3.0, speech_end_seconds=2.5,
-            voiced=voiced,
-        )  # fmt: skip
-    index.total_seconds = 6.0
-    index.save(project.takes_path)
-    return project
-
-
-def _cues(project: Project, sections: dict[str, Any]) -> None:
-    (project.root / "cues.json").write_text(json.dumps({"sections": sections}), encoding="utf-8")
-
-
-def _assembled(project: Project) -> None:
-    """The files `verify` measures: a section video each, and the final film."""
-    project.out_dir.mkdir(parents=True, exist_ok=True)
-    project.sections_dir.mkdir(parents=True, exist_ok=True)
-    for key in ("01", "02"):
-        (project.sections_dir / f"{key}.mp4").write_bytes(b"x")
-    project.final.write_bytes(b"x")
-
-
-# ---- one driver per result --------------------------------------------------------------
-
-
-def drive_align(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """A phrase that is not in the narration, an element no cue fires, and a section too short."""
-    from decktalk.stages.align import align
-
-    html = '<b data-cue="1.1a"></b><b data-cue="1.1b"></b><i data-cue="1.2forgotten"></i>'
-    project = _page_project(tmp_path, html)
-    _cues(
-        project,
-        {
-            "1": {
-                "min_seconds": 9,
-                "cues": [{"cue": "1.1a", "on": "hello"}, {"cue": "1.1b", "on": "a phrase nobody says"}],
-            }
-        },
-    )
-    return align(project)
-
-
-def drive_narrate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """A number written in digits, which is the wording finding a silent run still makes."""
-    from decktalk.media import audio, ffmpeg
-    from decktalk.stages.narrate import narrate
-
-    project = _page_project(tmp_path)
-    (project.root / "script.md").write_text("## 1. A\n\n41 bowls.\n\n## 2. B\n\nBye now.\n", encoding="utf-8")
-    monkeypatch.setattr(audio, "write_clicks", lambda path, *a, **kw: path.write_bytes(b"x"))
-    monkeypatch.setattr(audio, "concat_audio", lambda parts, out, *a, **kw: out.write_bytes(b"x"))
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 3.0)
-    monkeypatch.setattr(ffmpeg, "decoded_duration", lambda path: 3.0)
-    return narrate(project, silent=True)
-
-
-def drive_preflight(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """The rehearsal with no frames: a cue phrase nobody says, and a placeholder nobody filled."""
-    from decktalk.stages.preflight import preflight
-
-    project = _page_project(tmp_path, '<b data-cue="1.1a"></b>')
-    _cues(project, {"1": {"cues": [{"cue": "1.1a", "on": "a phrase nobody says"}]}})
-    (project.root / "script.md").write_text(
-        "## 1. A\n\nHello there.\n\n## 2. B\n\nBye now, [CLIENT_NAME].\n", encoding="utf-8"
-    )
-    return preflight(project, frames=False)
-
-
-def drive_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """One section whose recording was judged, and one `--only` passed over that no longer stands."""
-    from decktalk.stages.record import start as start_module
-
-    record_stage = importlib.import_module("decktalk.stages.record")
-    project = _page_project(tmp_path)
-
-    def a_log() -> RecordingLog:
-        return RecordingLog(
-            url="u", requested_seconds=3.5, settle_seconds=0.6, load_seconds=0.1, clock_start_seconds=1.5
-        )
-
-    def capture_section(p: Project, browser: Any, job: Any) -> RecordingLog:
-        log = a_log()
-        log.assets = [job.section.page]
-        log.input_hash = job.input_hash
-        job.out.parent.mkdir(parents=True, exist_ok=True)
-        job.out.write_bytes(b"a recording")
-        return log
-
-    class _NoBrowser:
-        def __enter__(self) -> object:
-            return object()
-
-        def __exit__(self, *exc: object) -> bool:
-            return False
-
-    monkeypatch.setattr(record_stage, "chromium", lambda path: _NoBrowser())
-    monkeypatch.setattr(record_stage, "capture_section", capture_section)
-    monkeypatch.setattr(record_stage, "find_start", lambda webm, settle, cfg: start_module.Start(0.44, "cover"))
-    monkeypatch.setattr(
-        record_stage,
-        "check_recording",
-        lambda webm, log, cfg: RecordingChecks(3.5, 3.5, Luma(90.0, 90.0, 90.0, 200.0), (Verdict.KATEX_NOT_LOADED,)),
-    )
-    record_stage.record(project)
-    # The page moves under section 1, and only section 2 is recorded again, so section 1 is left
-    # behind out of date: a certain finding whose row the run reports rather than the author noticing.
-    (project.root / "deck" / "index.html").write_text("<!doctype html><p>new</p>", encoding="utf-8")
-    return record_stage.record(project, only=[2])
-
-
-def drive_assemble(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """A cued sound with no caption, a section playing black for its missing recording, and a loud film."""
-    from decktalk.media.audio import Loudness
-    from decktalk.stages.assemble.cut import RenderedSection
-
-    asm = importlib.import_module("decktalk.stages.assemble")
-    cut_module = importlib.import_module("decktalk.stages.assemble.cut")
-    publish_module = importlib.import_module("decktalk.stages.assemble.publish")
-    loudness_module = importlib.import_module("decktalk.stages.assemble.loudness")
-
-    sfx = "\n[[mix.sfx]]\nfile = 'media/hum.mp3'\nsection = 1\ncue = '1.1a'\n"
-    # Voiced takes, because a build without voice skips the loudness pass and would miss nothing.
-    project = _page_project(tmp_path, toml=PAGE_TOML + sfx, voiced=True)
-    _assembled(project)
-    rows = [
-        RenderedSection(project.sections[0], project.sections_dir / "01.mp4", 3.0, "01.webm"),
-        RenderedSection(
-            project.sections[1],
-            project.sections_dir / "02.mp4",
-            3.0,
-            Substitute.BLACK.value,
-            "build/recordings/02.webm",
-            Substitute.BLACK,
-        ),
-    ]
-    # The film is measured louder than the ceiling allows, so the pass reports a miss it cannot fix.
-    measured = Loudness(i=-11.0, tp=0.5, lra=5, thresh=-27, offset=0)
-    monkeypatch.setattr(asm, "render_sections", lambda project, takes, strict: rows)
-    monkeypatch.setattr(asm, "render_poster", lambda project, out: None)
-    monkeypatch.setattr(publish_module, "render_poster", lambda project, out: None)
-    monkeypatch.setattr(asm, "concat", lambda files, out: out.write_bytes(b"x"))
-    monkeypatch.setattr(publish_module, "mux_chapters", lambda src, chapters, dst, language: dst.write_bytes(b"x"))
-    monkeypatch.setattr(loudness_module.audio, "measure_loudness", lambda path, **kw: measured)
-    for module in (asm, cut_module, publish_module, loudness_module):
-        monkeypatch.setattr(module.ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"x"))
-        monkeypatch.setattr(module.ffmpeg, "probe_duration", lambda path: 3.0)
-    return asm.assemble(project, soundscape=False)
-
-
-def drive_verify(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """A cue whose picture never changed, a dark section start, and a recording log's own verdict."""
-    from decktalk.media import ffmpeg
-    from decktalk.media import frames as frames_module
-    from decktalk.stages.verify import verify
-
-    project = _page_project(tmp_path)
-    _assembled(project)
-    rows = [{"cue": "1.1a", "on": "hello", "at": 1.0, "word_at": 1.0}]
-    project.cue_times_path.write_text(json.dumps({"sections": {"01": rows}}), encoding="utf-8")
-    checks = RecordingChecks(3.0, 3.0, Luma(90.0, 90.0, 90.0, 200.0), (Verdict.KATEX_NOT_LOADED,))
-    RecordingLog(
-        url="u", requested_seconds=3.0, settle_seconds=0.5, load_seconds=0.1, clock_start_seconds=1.5,
-        t0_seconds=1.44, t0_method="cover", checks=checks,
-    ).save(project.recording_log(project.page_sections[0]))  # fmt: skip
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 3.0)
-    # A dark first frame is BLACK, and a cue whose picture does not move is NO CHANGE.
-    monkeypatch.setattr(frames_module, "luma_at", lambda path, t, crop=None: (1.0, 2.0))
-    monkeypatch.setattr(frames_module, "changed_pixels_percent", lambda path, t1, t2, **kw: 0.0)
-    monkeypatch.setattr(frames_module, "changed_series", lambda *a, **kw: [])
-    return verify(project)
-
-
-def drive_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """A project whose page is not on disk, which is the input check `status` alone makes."""
-    from decktalk.stages.status import status
-
-    project = _page_project(tmp_path)
-    (project.root / "deck" / "index.html").unlink()
-    return status(project)
-
-
-def drive_clip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """A span that ends in the middle of a word, which the words file leaves out."""
-    clip_module = importlib.import_module("decktalk.stages.clip")
-
-    project = _page_project(tmp_path)
-    _assembled(project)
-    monkeypatch.setattr(clip_module.ffmpeg, "probe_duration", lambda path: 3.0)
-    monkeypatch.setattr(clip_module.ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"x"))
-    # Section 01's 0.5 s lead puts "Hello" at 1.0 to 1.4 s, so a span ending at 1.2 s cuts it in two.
-    return clip_module.clip(project, 1, start=0.0, end=1.2, out="media/cut.mp4")
-
-
-def drive_words(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """`words` reads the narration clock and judges nothing, so its tally and its rows are both empty."""
-    from decktalk.stages.clip import words
-
-    return words(_page_project(tmp_path))
-
-
-def drive_screenshots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """`screenshots` writes pictures for a person to look at and judges nothing."""
-    screenshots_module = importlib.import_module("decktalk.stages.screenshots")
-
-    project = _page_project(tmp_path)
-    written = project.screenshots_dir / "01.png"
-
-    def taken(*args: Any, **kwargs: Any) -> list[Any]:
-        written.parent.mkdir(parents=True, exist_ok=True)
-        written.write_bytes(b"png")
-        return [screenshots_module.Screenshot(path=written, page="deck/index.html", section=1, at=0.5)]
-
-    monkeypatch.setattr(screenshots_module, "screenshot_slides", taken)
-    monkeypatch.setattr(screenshots_module, "screenshot_frames", taken)
-    return screenshots_module.screenshots(project, section=1)
-
-
-def drive_soundscape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """A request that fails raises, so a run that returns has nothing to judge."""
-    from decktalk.stages.soundscape import soundscape
-
-    toml = PAGE_TOML + "\n[soundscape.music]\nprompt = 'a hum'\nseconds = 4\nout = 'media/music.mp3'\n"
-    return soundscape(_page_project(tmp_path, toml=toml), dry_run=True)
-
-
-def drive_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> StageResult:
-    """One stage of a run, so the whole-run result carries the stage's rows and its tally."""
-    from decktalk.stages.build import build
-
-    project = _page_project(tmp_path, '<b data-cue="1.1a"></b><i data-cue="1.2forgotten"></i>')
-    _cues(project, {"1": {"cues": [{"cue": "1.1a", "on": "hello"}]}})
-    return build(project, from_stage=Stage.ALIGN, to_stage=Stage.ALIGN)
-
-
-DRIVERS: dict[str, Callable[[Path, pytest.MonkeyPatch], StageResult]] = {
-    "AlignResult": drive_align,
-    "AssembleResult": drive_assemble,
-    "BuildResult": drive_build,
-    "ClipResult": drive_clip,
-    "NarrateResult": drive_narrate,
-    "PreflightResult": drive_preflight,
-    "RecordResult": drive_record,
-    "ScreenshotsResult": drive_screenshots,
-    "SoundscapeResult": drive_soundscape,
-    "StatusResult": drive_status,
-    "VerifyResult": drive_verify,
-    "WordsResult": drive_words,
-}
-
-JUDGES_NOTHING = {"ScreenshotsResult", "SoundscapeResult", "WordsResult"}
-"""The three results whose `findings` is empty by construction, which this test holds them to."""
-
-
-# ---- what a result holds, however deep in its own rows ----------------------------------
-
-
-def _fields_and_properties(obj: Any) -> list[Any]:
-    """Every value a result or a row of one exposes, its stored fields and its derived ones alike.
-
-    A derived collection counts, because `PreflightResult.error_rows` and `ClipResult.rows` are
-    properties and are exactly the kind of row list that is wired to the payload by hand and forgotten.
-    """
-    values = list(vars(obj).values())
-    for name, _prop in inspect.getmembers(type(obj), lambda a: isinstance(a, property)):
-        if not name.startswith("_"):
-            values.append(getattr(obj, name))
-    return values
-
-
-def _own(value: Any) -> bool:
-    return type(value).__module__.startswith(f"{decktalk.__name__}.")
-
-
-def judged(obj: Any, seen: set[int] | None = None) -> list[Verdict]:
-    """Every non-passing verdict this result holds, wherever in its own rows it sits.
-
-    A row is anything of the package's own that carries a `verdict` or a `verdicts`, so the walk
-    finds the rows a result keeps in a list, in a property, and inside another result it holds.
-    """
-    seen = set() if seen is None else seen
-    # A verdict is a singleton of its enum, so it is read every time it is met and never memoised:
-    # two rows that judge the same way are two findings.
-    if isinstance(obj, Verdict):
-        return [obj] if not obj.passing else []
-    if id(obj) in seen:
-        return []
-    seen.add(id(obj))
-    if isinstance(obj, (str, bytes, Path)) or not _own(obj) and not isinstance(obj, (list, tuple, dict)):
-        return []
-    if isinstance(obj, dict):
-        return [verdict for value in obj.values() for verdict in judged(value, seen)]
-    if isinstance(obj, (list, tuple)):
-        return [verdict for item in obj for verdict in judged(item, seen)]
-    return [verdict for value in _fields_and_properties(obj) for verdict in judged(value, seen)]
-
-
-# ---- the mechanism ----------------------------------------------------------------------
-
-
-def test_every_stage_result_is_driven_here():
-    """A result class the package grows is driven through its stage here, or this fails.
-
-    This is the half of the mechanism a reader cannot supply: without it the rules below would hold
-    over whichever results somebody remembered to list.
-    """
-    assert sorted(stage_results()) == sorted(DRIVERS)
-
-
-@pytest.mark.parametrize("name", sorted(DRIVERS))
-def test_a_result_serialises_every_row_it_judges(name, tmp_path, monkeypatch):
-    """Every judged row a result holds reaches its payload, and every one is filled in.
-
-    `finding_rows` is the CLI's own lift, so this reads the payload exactly as `findings.items[]`
-    does. A row list wired to the payload by hand and forgotten, a row with no file and a row with
-    no sentence each fail here, at the result that makes them, rather than at whichever one of a
-    dozen reading sites somebody happens to look at.
-    """
-    result = DRIVERS[name](tmp_path, monkeypatch)
-    assert isinstance(result, stage_results()[name])
-    held = sorted(judged(result), key=lambda verdict: verdict.name)
-    rows = [Finding.from_dict(row) for row in finding_rows(result.to_dict(tmp_path))]
-    lifted = sorted((row.verdict for row in rows), key=lambda verdict: verdict.name)
-
-    if name in JUDGES_NOTHING:
-        assert result.findings == Findings() and held == [] and rows == [], f"{name} judges nothing and reports nothing"
+def models_within(model: type[BaseModel], seen: set[type[BaseModel]]) -> Iterator[type[BaseModel]]:
+    """Every model reachable from one model's fields, which is the whole of what it publishes."""
+    if model in seen:
         return
+    seen.add(model)
+    yield model
+    for field in model.model_fields.values():
+        annotation = field.annotation
+        candidates = [annotation, *(getattr(annotation, "__args__", ()) or ())]
+        for candidate in candidates:
+            if isinstance(candidate, type) and issubclass(candidate, BaseModel):
+                yield from models_within(candidate, seen)
 
-    assert held, f"{name} is driven here without judging anything, so this test proves nothing"
-    assert result.findings != Findings(), f"{name} holds judged rows its tally does not count"
-    assert lifted == held, (
-        f"{name} holds the judged rows {held} and its payload serialises {lifted}. A row a result "
-        f"tallies but does not write under a key of its own is a finding no reader of findings.items[] "
-        f"can dispatch on."
+
+# ---- the table is total in both directions -----------------------------------------------
+
+
+def test_every_result_class_is_in_exactly_one_table():
+    """A result nothing drives and nothing returns is a shape no reader will ever meet."""
+    broken = import_everything()
+    declared = [row.result for row in ALL_ROWS if row.result is not None]
+    assert len(declared) == len(set(declared)), "a result is claimed by two rows"
+    assert set(declared) == every_result_class()
+    assert broken == [], "these modules do not import, so a result could be hiding in one:\n" + "\n".join(broken)
+
+
+def test_the_schema_names_and_the_tables_name_the_same_results():
+    """`RESULTS` is what `decktalk schema NAME` reads, so it cannot hold a result no row claims."""
+    assert set(RESULTS.values()) == {row.result for row in ALL_ROWS if row.result is not None}
+
+
+@pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
+def test_every_row_names_a_result_with_a_committed_schema(row: Row):
+    """An agent reads the contract from the schema directory, so every result has a file there."""
+    assert issubclass(row.result, Result)
+    name = next(key for key, model in RESULTS.items() if model is row.result)
+    assert (SCHEMAS / f"{name}.json").is_file(), f"{name}.json is missing from schema/results/"
+
+
+@pytest.mark.parametrize("row", [row for row in ALL_ROWS if row.call], ids=lambda row: row.call)
+def test_every_row_names_a_callable_that_is_public_and_returns_its_result(row: Row):
+    """The callable and the result are one fact, so a row that names the wrong one fails here."""
+    try:
+        found = resolve(row.call)
+    except (ImportError, AttributeError) as missing:
+        pytest.fail(f"{row.command or row.result} names {row.call}, which does not resolve: {missing}")
+    assert callable(found), row.call
+    assert not row.call.rpartition(".")[2].startswith("_"), f"{row.call} is private, so no caller may reach it"
+
+
+@pytest.mark.parametrize(
+    "row",
+    [row for row in ALL_ROWS if row.call and row.result is not None and row.returns_its_result],
+    ids=lambda row: row.call,
+)
+def test_a_plain_row_returns_the_result_it_declares(row: Row):
+    """Most rows are a callable that returns its own result, which is the ordinary shape."""
+    returned = getattr(resolve(row.call), "__annotations__", {}).get("return")
+    assert returned == row.result.__name__, f"{row.call} returns {returned} and the table says {row.result.__name__}"
+
+
+def test_serve_returns_an_origin_that_carries_its_result():
+    """R43 gives `serve` an object a caller holds open, so the result is what that object carries."""
+    assert Project.serve.__annotations__.get("return") == Origin.__name__
+    assert Origin.__init__.__annotations__.get("result") == ServeResult.__name__
+
+
+@pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
+def test_the_run_and_the_written_fields_are_declared_exactly_where_the_table_says(row: Row):
+    """Founder decision 13: four keys on the base, and these two declared by the commands that earn them."""
+    declared = row.result.model_fields
+    assert ("run" in declared) == row.opens_run, f"{row.result.__name__} and the table disagree about run"
+    assert ("written" in declared) == row.writes, f"{row.result.__name__} and the table disagree about written"
+
+
+def subject_of(row: Row) -> tuple[str, ...]:
+    """What a file that drives this row has to name, which is its result or the callable itself."""
+    callable_name = row.call.rpartition(".")[2] or row.call.rpartition(":")[2]
+    return tuple(name for name in (row.result.__name__, callable_name) if name)
+
+
+@pytest.mark.parametrize("row", DRIVEN_ELSEWHERE, ids=[f"{row.command or 'error'}" for row in DRIVEN_ELSEWHERE])
+def test_a_row_driven_elsewhere_names_a_file_that_drives_it(row: Row):
+    """A row this file cannot drive without a tool names the test that runs its real stage."""
+    path = REPO / row.driver
+    files = sorted(path.glob("test_*.py")) if path.is_dir() else [path]
+    assert files and all(one.is_file() for one in files), f"{row.driver} drives {row.result} and is not there"
+    text = "\n".join(one.read_text(encoding="utf-8") for one in files)
+    wanted = subject_of(row)
+    assert any(name in text for name in wanted), (
+        f"{row.driver} is named as the driver of {row.result.__name__} and names none of {wanted}"
     )
-    # The tally is the rows, so `findings.certain` and `findings.uncertain` count what `items` lists.
-    assert Findings.of(lifted) == result.findings, f"{name} tallies {result.findings} over rows {lifted}"
-    for row in rows:
-        assert row.where, f"{name} row {row.verdict!r} names no file, page or artifact: {row}"
-        assert row.detail, f"{name} row {row.verdict!r} carries no sentence: {row}"
 
 
-@pytest.mark.parametrize("name", sorted(DRIVERS))
-def test_a_result_writes_exactly_the_payload_its_command_declares(name, tmp_path, monkeypatch):
-    """The payload is JSON as it is, and it reads back as its command's type with every enum a member.
+@pytest.mark.parametrize(
+    "row", [row for row in ALL_ROWS if row.note], ids=[row.command or "apply" for row in ALL_ROWS if row.note]
+)
+def test_every_row_that_is_not_a_plain_call_says_why(row: Row):
+    """An exception is designed when it is written down, and an unexplained one is an accident."""
+    assert row.note.endswith("."), row.note
 
-    `json.dumps` refuses an enum member or a path, so a result that left one in its data fails here
-    rather than as an internal error on a caller's machine. The strict reader refuses a key the type
-    does not declare and a declared key the result forgot, so the schema a caller reads by and the
-    data a result writes cannot drift apart, and a verdict that is not its code's own object fails.
-    """
-    result = DRIVERS[name](tmp_path, monkeypatch)
-    command = name.removesuffix("Result").lower()
-    payload = read_as(PAYLOADS[command], json.loads(dumps(result.to_dict(tmp_path))), f"$.{command}")
-    assert type(payload).__name__.startswith(command.title()), f"{name} read back as {type(payload).__name__}"
+
+def typer_commands() -> set[str]:
+    """Every command the Typer app publishes, with a group's subcommands spelled as the CLI takes them."""
+    for name in APP_NAMES:
+        try:
+            app = resolve(name)
+        except (ImportError, AttributeError):
+            continue
+        command = typer.main.get_command(app)
+        found: set[str] = set()
+        for label, sub in getattr(command, "commands", {}).items():
+            children = getattr(sub, "commands", {})
+            found |= {f"{label} {child}" for child in children} if children else {label}
+        return found
+    pytest.fail(f"no Typer app answered to any of {', '.join(APP_NAMES)}, so the command set cannot be read")
+
+
+def test_the_command_set_of_the_app_is_the_surface_table():
+    """The fourth set: a command the app publishes and the table does not know is undiscoverable."""
+    assert typer_commands() == {row.command for row in SURFACE}
+
+
+# ---- what every result promises a reader -------------------------------------------------
+
+
+@pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
+def test_the_schema_is_one_flat_object_with_the_four_reserved_keys(row: Row):
+    """The founder's decided contract: its own fields plus four keys, with no envelope around them."""
+    schema = row.result.model_json_schema(by_alias=True)
+    properties = schema["properties"]
+    assert set(RESERVED) <= set(properties), sorted(set(RESERVED) - set(properties))
+    assert not set(RETIRED) & set(properties), sorted(set(RETIRED) & set(properties))
+    assert properties["schema"]["const"] == SCHEMA
+    for name, definition in schema.get("$defs", {}).items():
+        nested = set(definition.get("properties", {}))
+        assert not set(RESERVED) <= nested, f"{name} is a second envelope inside {row.result.__name__}"
+
+
+@pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
+def test_every_field_a_result_publishes_carries_its_sentence(row: Row):
+    """`Field(description=...)` is the one home of each key's sentence, so a key without one is mute."""
+    mute = [
+        f"{model.__name__}.{name}"
+        for model in models_within(row.result, set())
+        for name, field in model.model_fields.items()
+        if not field.description
+    ]
+    assert mute == [], mute
+
+
+@pytest.mark.parametrize(
+    "row", [row for row in MODEL_ROWS if row.opens_run], ids=[r.command or "apply" for r in MODEL_ROWS if r.opens_run]
+)
+def test_the_run_id_is_declared_volatile(row: Row):
+    """R11: a value that differs between two identical runs is declared, so a golden read drops it."""
+    schema = row.result.model_json_schema(by_alias=True)
+    assert schema["properties"]["run"].get("volatile") is True, f"{row.result.__name__}.run is not declared volatile"
+
+
+@pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
+def test_a_measured_duration_is_declared_volatile(row: Row):
+    """The same rule as the run id, because a wall-clock second is measured and never reproduced."""
+    schema = row.result.model_json_schema(by_alias=True)
+    for name in ("seconds", "film_seconds"):
+        field = row.result.model_fields.get(name)
+        if field is not None and field.json_schema_extra:
+            assert schema["properties"][name].get("volatile") is True, name
+
+
+def test_a_finding_carries_everything_a_reader_dispatches_on():
+    """R9: the code, the sentence, the certainty, the object judged, the fix and the page that explains it."""
+    declared = set(Finding.model_fields)
+    assert {"code", "message", "certainty", "location", "fix", "url"} <= declared
+    assert "where" in Location.model_fields
+    assert Location.model_fields["where"].is_required(), "the object a finding judged is never null"
+
+
+def test_ok_is_false_exactly_when_a_judgement_is_certain():
+    """Must 5, in the shape 0.5.0 gives it: one rule every command shares rather than a flag per result."""
+    sure = Finding(code=SOME_CODE, message="A cue landed late.", location=Location(where="1.1:first"))
+    assert sure.certainty is Certainty.CERTAIN
+    assert ErrorResult(ok=False, findings=(sure,)).ok is False
+    assert ErrorResult(ok=True).ok is True
+
+
+# ---- the rows this file drives for real --------------------------------------------------
+
+
+@pytest.fixture
+def machine(tmp_path: Path) -> Machine:
+    """A machine whose cache is this test's own directory, so nothing reaches the author's real one."""
+    return Machine.from_environment(overrides=(("tools.cache_dir", str(tmp_path / "cache")),))
+
+
+@pytest.fixture
+def collected(machine: Machine) -> Iterator[list[Event]]:
+    """Every event the library emitted while a driven row ran, in the order a renderer would see it."""
+    seen: list[Event] = []
+    with machine.events.subscribe(seen.append):
+        yield seen
+
+
+@pytest.fixture
+def project(tmp_path: Path, machine: Machine) -> Project:
+    """A real project, written by `init`, which is the state every other driven row starts from."""
+    decktalk.init(tmp_path / "film", machine=machine)
+    return decktalk.open(tmp_path / "film", machine=machine)
+
+
+def read_back(result: Result) -> dict[str, Any]:
+    """One result as a caller meets it: dumped to JSON, validated back, and read as an object."""
+    text = result.model_dump_json(by_alias=True)
+    assert type(result).model_validate_json(text) == result, "a result does not round-trip through its own JSON"
+    return json.loads(text)
+
+
+def driven(row: Row, project: Project, machine: Machine) -> Result:
+    """Run one row for real, with no tool and nothing faked."""
+    if row.command == "init":
+        return decktalk.init(project.root.parent / "second", machine=machine)
+    if row.command == "doctor":
+        return machine.doctor()
+    if row.command == "status":
+        return project.status()
+    if row.command == "check":
+        return project.check(pages=False)
+    if row.command == "serve":
+        with project.serve() as origin:
+            return origin.result
+    raise AssertionError(f"{row.command} is marked driven here and this file does not drive it")
+
+
+RUNNABLE = (InitResult, DoctorResult, StatusResult, CheckResult, ServeResult)
+"""The rows `driven` below runs in one loop, because each is a call with no argument of its own."""
+
+OWN_DRIVER = (ConfigSetResult, ConfigUnsetResult, ConfigExplainResult, ApplyResult)
+"""The rows with a driver of their own, because each takes an input or renders a record the loop cannot."""
+
+DRIVEN_HERE = tuple(row for row in SURFACE if row.result in RUNNABLE)
+
+
+def test_every_row_marked_driven_here_really_is_driven_here():
+    """The mark means a real call in this file, so a row that carries it and runs nowhere fails."""
+    assert {row.result for row in ALL_ROWS if row.driver == HERE} == {*RUNNABLE, *OWN_DRIVER}
+
+
+@pytest.mark.parametrize("row", DRIVEN_HERE, ids=[row.command for row in DRIVEN_HERE])
+def test_a_driven_row_returns_its_result_as_one_flat_object(
+    row: Row, project: Project, machine: Machine, capsys: pytest.CaptureFixture[str]
+):
+    """The whole contract on a real call: the type, the four keys, the round trip and the silence."""
+    capsys.readouterr()
+    result = driven(row, project, machine)
+    assert isinstance(result, row.result)
+    payload = read_back(result)
+    assert payload["schema"] == SCHEMA
+    assert set(RESERVED) <= set(payload)
+    assert not set(RETIRED) & set(payload)
+    assert ("run" in payload) == row.opens_run
+    assert ("written" in payload) == row.writes
+    printed = capsys.readouterr()
+    assert printed.out == "" and printed.err == "", "the library printed, and nothing in the library may print"
+
+
+def test_a_driven_call_opens_a_run_and_closes_it(project: Project, collected: list[Event]):
+    """Every top-level call opens a run, so a renderer that subscribed sees a start and a finish."""
+    project.status()
+    names = [event.event for event in collected]
+    started = [name for name in names if EVENTS[name] is RunStart]
+    finished = [name for name in names if EVENTS[name] is RunDone]
+    assert len(started) == len(finished) == 1
+
+
+def test_every_event_a_driven_call_emitted_validates_back(project: Project, collected: list[Event]):
+    """An event is data on a wire, so every line a subscriber saw is readable by the same reader."""
+    project.check(pages=False)
+    reader = TypeAdapter(Line)
+    assert collected, "a call that opened a run emitted nothing"
+    for event in collected:
+        assert reader.validate_json(event.model_dump_json()) is not None
+        assert event.event in EVENTS, event.event
+
+
+def test_the_settings_writer_reports_what_a_config_set_would_change(project: Project, capsys):
+    """`config set` is the writer's record rendered, so the writer is what this row really drives."""
+    capsys.readouterr()
+    written = settings.write(project.root / "decktalk.toml", "video.width", "1280", scope=Scope.PROJECT, dry_run=True)
+    assert written.key == "video.width"
+    assert written.dry_run is True
+    assert set(ConfigSetResult.model_fields) >= set(type(written).model_fields) - {"line", "shadowed"}
+    printed = capsys.readouterr()
+    assert printed.out == "" and printed.err == ""
+
+
+def test_the_settings_remover_reports_what_a_config_unset_would_change(project: Project):
+    """`config unset` takes the layer below back, and writing a validated file is library work."""
+    removed = settings.unset(project.root / "decktalk.toml", "video.width", scope=Scope.PROJECT)
+    assert removed.keys == ("video.width",)
+    assert set(ConfigUnsetResult.model_fields) >= {"keys", "scope", "file"}
+
+
+def test_the_explainer_reports_what_a_config_explain_would_render(project: Project, capsys):
+    """`config explain` is the explainer's record rendered, so the explainer is what this row drives."""
+    capsys.readouterr()
+    explanation = decktalk.explain("video.width", project=project.root)
+    assert explanation.key == "video.width"
+    assert set(ConfigExplainResult.model_fields) >= {"key", "value", "default", "layer", "docs"}
+    printed = capsys.readouterr()
+    assert printed.out == "" and printed.err == ""
+
+
+def test_applying_a_fix_reports_what_it_changed(project: Project, capsys: pytest.CaptureFixture[str]):
+    """`apply` has no command, so this is its driver: a finding a caller holds, applied for real."""
+    capsys.readouterr()
+    finding = Finding(
+        code=SOME_CODE,
+        message="The frame is narrower than the deck draws.",
+        location=Location(where="1.1:first"),
+        fix=SettingFix(
+            title="Widen the frame.",
+            applicability=Applicability.SAFE,
+            key="video.width",
+            value="1280",
+        ),
+    )
+    applied = project.apply(finding)
+    assert isinstance(applied, ApplyResult)
+    assert [outcome.applied for outcome in applied.fixes] == [True]
+    assert Path("decktalk.toml") in applied.written
+    payload = read_back(applied)
+    assert set(RESERVED) <= set(payload)
+    printed = capsys.readouterr()
+    assert printed.out == "" and printed.err == ""
+
+
+def test_a_refused_call_raises_a_typed_error_rather_than_returning_one(project: Project):
+    """`ErrorResult` is what the command line fills from an exception, so the library raises instead."""
+    with pytest.raises(DeckTalkError) as refused:
+        project.words()
+    assert refused.value.code is not None
+    assert str(refused.value)
