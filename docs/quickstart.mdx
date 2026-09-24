@@ -1,219 +1,309 @@
 ---
 title: Quickstart
-description: Install DeckTalk, build the starter video without an account, then add your voice.
+description: Install DeckTalk, build the starter film with no account, then add your own voice.
 ---
 
-This quickstart installs DeckTalk and builds the starter video, first with no account and then with your voice. Only part 3 needs an ElevenLabs API key.
+Three lines take a machine with nothing on it to a finished film.
 
-If an agent does these steps for you, give it the [Reference card](/reference/card).
+```console
+curl -LsSf https://decktalk.ai/install.sh | sh
+decktalk init my-lesson && cd my-lesson
+decktalk build --no-voice
+```
 
-## Before you start
+The third line spends nothing and needs no account, because `--no-voice` writes placeholder
+narration and a click track in place of a voice. Part 3 of this page adds your own voice, which is
+the one thing in DeckTalk that costs money.
 
-- You need nothing installed first: the one-line installer brings its own Python. Installing with uv, pipx or pip instead needs Python 3.12 or later.
-- Step 2 is optional everywhere but Linux, where it installs Chromium's system libraries and needs sudo or root.
-- Part 3 needs an ElevenLabs API key and a voice id.
-
-## Part 1: Install DeckTalk
+## Part 1: install
 
 <Steps>
-  <Step title="Install DeckTalk" stepNumber={1}>
-    Install the `decktalk` command. The one line is the whole of it on a machine that has nothing.
-
+  <Step title="Install the decktalk command">
     <Tabs>
       <Tab title="One line">
         ```console
         curl -LsSf https://decktalk.ai/install.sh | sh
         ```
 
-        It installs uv if you do not have it, then DeckTalk, and uv brings its own Python. It never runs sudo, and it never downloads Chromium or ffmpeg: step 2 does that, separately and visibly, and so does your first build. [Read the script](https://decktalk.ai/install.sh) before you run it. That is why it is served from a URL.
+        The script installs uv if the machine has none, then runs `uv tool install decktalk`, and uv
+        brings its own Python. That is all it does. It never runs sudo, and it fetches neither
+        Chromium nor ffmpeg, because on Linux that download reaches `apt-get` through sudo and an
+        installer you piped into a shell has no business asking for a root password. [Read the
+        script](https://decktalk.ai/install.sh) before you run it. That is why it is served from a
+        URL rather than hidden in a package.
 
-        Pipe it into `DECKTALK_VERSION=0.4.0 sh` to install one version, or into `sh -s -- --dry-run` to print what would happen and change nothing. It runs on Linux and macOS. On Windows, use the uv tab. On Alpine and other musl systems it stops and says why: Playwright, which records the slides, publishes no musl wheels, so DeckTalk needs glibc.
+        It finishes by naming the version it installed and the three commands to run next. Pipe it
+        into `sh -s -- --dry-run` to print what it would do and change nothing, and set
+        `DECKTALK_VERSION` to install one version rather than the latest.
+
+        It runs on Linux and on macOS. On a musl system such as Alpine it stops and says why, because
+        Playwright, which records the slides, publishes no musl wheels. On Windows, use the uv tab.
       </Tab>
       <Tab title="uv">
         ```console
         uv tool install decktalk
         ```
 
-        uv is a Python package manager. If you do not have it, [install uv](https://docs.astral.sh/uv/getting-started/installation/) first.
+        uv is a Python package manager and it brings its own Python. This is the way to install on
+        Windows. [Install uv](https://docs.astral.sh/uv/getting-started/installation/) first if the
+        machine has none.
       </Tab>
       <Tab title="pipx">
         ```console
         pipx install decktalk
         ```
-      </Tab>
-      <Tab title="pip">
-        ```console
-        python -m venv .venv && source .venv/bin/activate
-        pip install decktalk
-        ```
 
-        On Windows, activate the environment with `.venv\Scripts\activate`.
+        pipx uses a Python already on the machine, which has to be 3.12 or later.
       </Tab>
     </Tabs>
 
-    {/* sample: uv tool install, last line */}
-    ```text
-    Installed 1 executable: decktalk
-    ```
-
-    Check that the installer names the `decktalk` executable.
-  </Step>
-
-  <Step title="Download Chromium and ffmpeg now, or let the first build do it" stepNumber={2}>
-    Nothing makes you run this. Every command that needs Chromium or ffmpeg downloads it the first time, and says so before the download starts. Run it here to get a few hundred megabytes out of the way while you read, to fill a Docker layer or a CI cache, or to set a machine up before it goes offline.
-
-    On Linux, run it: it is also what installs Chromium's system libraries, through apt-get, and it is the one DeckTalk command that asks for a password. A build never does, because a build runs unattended.
+    Check the install by asking for the version.
 
     ```console
-    decktalk install
+    decktalk --version
     ```
 
-    {/* sample: decktalk install, uv tool install on macOS */}
-    ```text
-    == Chromium (Playwright)
-    == ffmpeg 8.1.2
-       ffmpeg  ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
-       ffprobe ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
-    install complete
-    ```
-
-    Check that the last line is `install complete`. On Linux, this step asks for sudo. [What DeckTalk downloads](/requirements#what-decktalk-downloads) says where each download goes.
+    If the shell cannot find `decktalk`, add `~/.local/bin` to your PATH and open a new shell. That
+    is where uv puts the command.
   </Step>
 
-  <Step title="Check the tools" stepNumber={3}>
-    `decktalk doctor` reports each tool that DeckTalk needs.
+  <Step title="Read the machine">
+    `decktalk doctor` reports what is installed and what a run would use. This is what it prints on a
+    machine that has recorded before.
 
     ```console
     decktalk doctor
     ```
 
-    {/* sample: decktalk doctor, uv tool install on macOS */}
     ```text
-    components 6, missing 0
-    python    ok      3.13.1 (~/.local/share/uv/tools/decktalk/bin/python)
-    chromium  ok      151.0.7922.34
-    ffmpeg    ok      ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
-    ffprobe   ok      ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
-    config    ok      none (at ~/Library/Application Support/decktalk/decktalk.toml)
-    katex     ok      0.18.7 in the wheel (~/.local/share/uv/tools/decktalk/lib/python3.13/site-packages/decktalk/katex)
+     Tool       Version         Where
+     ──────────────────────────────────────────────────────────────────────────────────
+     chromium   153.0.8010.12
+     ffmpeg     8.1.2           ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
+     ffprobe    8.1.2           ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
+     katex      0.18.7          ~/.local/share/uv/tools/decktalk/lib/python3.13/site-p…
+
+    Python    3.13.1 (~/.local/share/uv/tools/decktalk/bin/python)
+    Platform  macOS-26.6.2-arm64-arm-64bit-Mach-O (darwin)
+    Voice key no
     ```
 
-    Check that the first line reads `missing 0` and that every row says `ok`. `doctor` reports and downloads nothing, so if you skipped step 2 the `chromium` and `ffmpeg` rows read `missing` until something fetches them, and each row says what would. The `config` row is the per-machine settings file, which is optional, so `none` there is a passing row.
+    `Voice key no` means `ELEVENLABS_API_KEY` is unset, which is the right state for everything up to
+    part 3. KaTeX is not a download: the pinned release ships inside the wheel, and `decktalk init`
+    copies it into the project.
+
+    `doctor` fetches nothing itself, so on a machine that has never recorded the `chromium`, `ffmpeg`
+    and `ffprobe` rows read `missing`, and each one comes with a finding.
+
+    ```text
+    chromium: FILE_MISSING chromium is not on this machine, so a build that needs it cannot run.
+      fix (safe): Fetch chromium into the cache.
+    Found 1 finding, 1 certain. 1 fixable with --fix.
+    ```
+
+    The fix is the command `decktalk install`, so `decktalk doctor --fix` fetches what is absent. You
+    never have to, because the first command that needs a tool fetches it.
   </Step>
 </Steps>
 
-## Part 2: Build the starter without an account
+## Chromium and ffmpeg
+
+DeckTalk drives headless Chromium to record the slides and ffmpeg to cut and encode them. It fetches
+both itself, one time per machine, the first time a command needs one. The run announces each
+download as it starts and reports the bytes as they arrive, so a long first build says what it is
+waiting on. Under `--events` the same thing is one `fetch` line per step on stderr.
+
+```text
+{"event":"fetch","time":"2026-09-24T10:36:18.527286Z","seq":1,"run":"85725c3fff31","tool":"chromium","bytes":0,"total_bytes":null}
+{"event":"fetch","time":"2026-09-24T10:36:19.030032Z","seq":2,"run":"85725c3fff31","tool":"ffmpeg","bytes":0,"total_bytes":28196358}
+```
+
+`decktalk install` makes both downloads up front instead, and does nothing else.
+
+```console
+decktalk install
+```
+
+Nothing has to run it, and a build works on a machine where it never has. It exists for the three
+cases where the timing of a few hundred megabytes matters: a `RUN decktalk install` layer in a
+Dockerfile is cached, a CI job gets one step to cache and one place to read when a download fails,
+and a laptop that is about to go offline gets everything while there is a network. On Linux it is
+also the one command that installs Chromium's system libraries, and therefore the one command that
+may ask for a password. [Requirements and costs](/requirements#what-decktalk-downloads) gives the
+sizes and the cache paths.
+
+## Part 2: build the starter film
 
 <Steps>
-  <Step title="Create the starter" stepNumber={4}>
-    `decktalk init` writes the starter: three sections, one page, one equation, and a build that
-    takes about a minute. Nothing in it is a demo you have to delete first.
-
+  <Step title="Write the project">
     ```console
-    decktalk init my-lesson
+    decktalk init my-lesson && cd my-lesson
     ```
 
-    {/* sample: decktalk init my-lesson, run in ~ */}
     ```text
-    files 16
-    created ~/my-lesson
-      decktalk.toml  the project file: sections -> pages or clips, voice, mix, soundscape
-      script.md      the narration (## N. sections)
-      cues.json      which spoken phrase each visual lands on
-      deck/          the pages, decktalk-runtime.js and katex/ (open a page for its scene index)
-      AGENTS.md      the rules an agent working in this project follows
-      .agents/skills the six DeckTalk skills, linked from .claude/skills
-    next: `decktalk build --no-voice` renders with placeholder narration, no API key and no spend
-          then cp .env.example .env  (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID) and `decktalk build`
+    Wrote my-lesson from the starter example, 16 files.
+    Next   cd my-lesson && decktalk build --no-voice
     ```
 
-    If you skipped step 2, the build in step 7 fetches Chromium and ffmpeg before it records, and prints a line for each download. `init` copies the packaged KaTeX into `deck/katex/` either way.
+    On a terminal `init` asks for the name, the example and whether to write the skills. Pass
+    `--defaults` to take every default and ask nothing, which is what it does with no terminal
+    anyway. `--example NAME` writes a finished project to read rather than the starter to build on,
+    and `--no-skills` leaves the packaged skills out.
 
-    <Tip>`decktalk init --example lesson my-lesson` writes a finished lesson instead, to read rather than
-    to start from. `--no-skills` leaves the six skills out.</Tip>
+    | File | What it is |
+    |---|---|
+    | `script.md` | The narration. Each `## N. Title` heading opens section N. |
+    | `decktalk.toml` | The project file: one `[[section]]` per script section, plus the voice, the mix and the soundscape. |
+    | `cues.json` | One row per moment on a page, naming the spoken phrase it lands on. |
+    | `deck/index.html` | The slides, with `deck/decktalk-runtime.js` and `deck/katex/` beside them. |
+    | `.env.example` | The two ElevenLabs variables a voiced run reads, as placeholders. |
+    | `AGENTS.md` | The rules an agent working in this project follows, written when the directory has none. |
+    | `.agents/skills/` | Six packaged skills, with `.claude/skills` beside them. |
+
+    The starter is three sections on one page, and none of it is a demo to delete first.
   </Step>
 
-  <Step title="Go into the project" stepNumber={5}>
-    ```console
-    cd my-lesson
-    ```
-  </Step>
-
-  <Step title="Open the slides in a browser" stepNumber={6}>
-    Serve the project and open the page it prints. This takes seconds, and you see the slides before
-    you build. `decktalk serve` answers from your project directory on 127.0.0.1, which is the origin
-    the recorder uses, so what you see is what the recorder will see. Press Ctrl-C to stop it.
-
-    ```console
-    decktalk serve --open
-    ```
-
-    {/* sample: decktalk serve, in the starter */}
-    ```text
-    http://127.0.0.1:57962/deck/index.html
-    serving /Users/you/my-lesson, and Ctrl-C stops it
-    ```
-
-    The port is any free one unless you set `--port`.
-
-    <Frame caption="The scene index lists each scene of the page with its slides and cue ids.">
-      <img src="/images/quickstart-index.png" alt="The starter page in index mode, headed My Lesson. A line names the stage as 1920 by 1080 and gives the URL parameters: ?scene=N previews a scene, ?slide=ID freezes a slide, &speed=2, &hud=1, and &cues=id@s with &t0=. Under it are Scene 1 Open, Scene 2 How it works, and Scene 3 Close, each with a play link, and under each one a single slide with its hold seconds and its four cue ids." />
-    </Frame>
-
-    Check that the page shows an index of its three scenes, one slide each. Every cue id of a slide is listed beside it.
-  </Step>
-
-  <Step title="Build the video without an account" stepNumber={7}>
-    A build without voice uses estimated word times and a click track, so it needs no key. Recording runs in real time. On a MacBook Pro with Apple M5 Pro and 64 GB memory, this build took about 64 seconds, on a machine that already had Chromium and ffmpeg. If you skipped step 2, the download comes first and the build names it as it starts. Read [What the starter shows](#what-the-starter-shows) while it runs.
-
+  <Step title="Build it with no voice">
     ```console
     decktalk build --no-voice
     ```
 
-    {/* sample: decktalk build --no-voice, fresh starter on macOS (the last lines of the assemble stage, then the last two lines) */}
     ```text
-    [caps] 9 cue(s) -> my-lesson.srt, my-lesson.vtt
-    [chap] 3 chapter(s) -> my-lesson.chapters.txt
-    done: ~/my-lesson/build/out/my-lesson.mp4  (44.88s)
-    [4/5 assemble] done in 2.5s
-    ===== verify =====
-    ...
-    stages 5, seconds 44.88
-    built build/out/my-lesson.mp4
+    run 819a92a4ab4f, events build/events/819a92a4ab4f.jsonl
+         Narrate    0:00
+             Cue    0:00
+          Record    0:56
+    The project declares no soundscape for this run, so there is nothing to generate.
+      Soundscape    0:00
+    The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
+        Assemble    0:02
+    another cue sits close to 1:1.1:title, so its probes were fitted to 0.7, 1.281 seconds after it.
+    another cue sits close to 1:1.1:files, so its probes were fitted to 0.7, 1.14 seconds after it.
+    another cue sits close to 3:3.1:again, so its probes were fitted to 0.7, 0.772 seconds after it.
+    another cue sits close to 3:3.1:make, so its probes were fitted to 0.62, 1.5 seconds after it.
+          Verify    0:09
+           Built build/final/my-lesson.mp4, $0.00, nothing found
     ```
 
-    Check that the last line starts with `built`. Each of the five stages prints a table of its own above it.
+    One line per stage, in run order, with the seconds it took. The last line is the one to read:
+    `Built`, the film, what the run spent, and what the measurements found. That run took 69 seconds
+    in all on a MacBook Pro with an Apple M5 Pro and 64 GB of memory, on a machine that already had
+    Chromium and ffmpeg. Recording is the long part and it runs in real time, so a longer film takes
+    longer.
+
+    The middle lines are the run explaining itself. The starter declares no soundscape, so that stage
+    has nothing to do. The loudness pass is skipped because normalising a click track to a broadcast
+    target would teach you nothing about the mix your voice will make. The four `verify` lines say
+    that two cues sat close enough together that the probes either side of the first were fitted into
+    the gap.
+
+    If this machine has never run DeckTalk before, the download comes first and the run names it.
   </Step>
 
-  <Step title="Play the video" stepNumber={8}>
+  <Step title="Find the film">
+    The film and everything that goes with it land in `build/final/`.
+
+    ```console
+    ls build/final
+    ```
+
+    ```text
+    cuts.json             my-lesson-transcript.html  my-lesson.mp4  my-lesson.vtt
+    my-lesson-poster.png  my-lesson.chapters.txt     my-lesson.srt
+    ```
+
+    `my-lesson.mp4` is the film. The name comes from `[project] name` in `decktalk.toml`. The
+    captions, the chapter marks, the transcript page and the poster frame are written from the same
+    word clock the film was cut against, so they cannot drift from it.
+
     <Tabs>
       <Tab title="macOS">
         ```console
-        open build/out/my-lesson.mp4
+        open build/final/my-lesson.mp4
         ```
       </Tab>
       <Tab title="Linux">
         ```console
-        xdg-open build/out/my-lesson.mp4
+        xdg-open build/final/my-lesson.mp4
         ```
       </Tab>
       <Tab title="Windows">
         ```console
-        start build\out\my-lesson.mp4
+        start build\final\my-lesson.mp4
         ```
       </Tab>
     </Tabs>
+  </Step>
 
-    The video is 44.88 seconds long, in three sections, with a soft click on each word. [What the starter shows](#what-the-starter-shows) describes each one.
+  <Step title="Ask what the project is holding">
+    ```console
+    decktalk status
+    ```
+
+    ```text
+     Section   Key   Plays                     Voiced   Recorded   Cut   Stale
+     ─────────────────────────────────────────────────────────────────────────
+     1         01    deck/index.html?scene=1   yes      yes        yes   no
+     2         02    deck/index.html?scene=2   yes      yes        yes   no
+     3         03    deck/index.html?scene=3   yes      yes        yes   no
+
+    Film   build/final/my-lesson.mp4, 0:50 long
+    Next   decktalk verify
+    ```
+
+    One row per section, with the scene of the page it plays. `Voiced` is true when a take of that
+    section's current text is on disk, which a build without voice writes as a placeholder, so it
+    reads `yes` here. `Stale` is the column that matters after an edit: it marks a section whose
+    inputs have moved since the film was cut. `status` judges nothing and never exits 1, so it is a
+    reading of the project rather than a third opinion beside `check` and `verify`.
+
+    Before the first build the same table reads `no` in every column, and `Next` reads
+    `decktalk narrate --no-voice`.
   </Step>
 </Steps>
 
-## Part 3: Add your voice and change a sentence
+## What the starter shows
 
-If you have no ElevenLabs account, stop here. The video without voice is a complete build.
+Three sections on one page, one scene each, every slide written as markup inside a
+`<template data-slide>` element. There is no JavaScript in it to read.
+
+| Section | Plays | What it shows |
+|---|---|---|
+| 1. Open | `deck/index.html?scene=1` | The title and a growing count of files, then a card for each of the two files you write, then a band that fills in on the voice. |
+| 2. How it works | `deck/index.html?scene=2` | A heading, one displayed equation typeset by KaTeX, the same average as two lines of Python, and a closing band. |
+| 3. Close | `deck/index.html?scene=3` | The idea, the line about rebuilding one part, and the end card. |
+
+Open `deck/index.html` in a browser for the scene index, which lists every scene and every slide
+with the cues it declares.
+
+<Frame caption="The starter's scene index, with every slide and the wire ids it declares.">
+  <img src="/images/quickstart-index.png" alt="The starter page in index mode, headed My Lesson. Under it are Scene 1 Open, Scene 2 How it works and Scene 3 Close, each with a play link, and under each one its slides with the seconds each slide holds for and the wire ids of its cues, such as 1.1:title and 1.1:files." />
+</Frame>
+
+```console
+decktalk serve
+```
+
+```text
+Serving . on http://127.0.0.1:64517
+```
+
+`serve` answers from the project directory on 127.0.0.1, which is the origin the recorder uses, so
+what the browser shows is what the recorder sees. The port is any free one unless `--port` names
+one. Press Ctrl-C to stop it.
+
+The equation in scene 2 is where the starter shows its one trap. `data-tex` holds the TeX and the
+element's own text is the fallback that shows if KaTeX ever fails to load, so the fallback is written
+to read correctly out loud rather than left as raw TeX.
+
+## Part 3: add your own voice
+
+A voiced build sends each section's text to ElevenLabs and gets speech back, and that is the only
+part of DeckTalk that costs money. Stop here if you have no account: the film you built is a complete
+film.
 
 <Steps>
-  <Step title="Copy the example settings file" stepNumber={9}>
+  <Step title="Put the two values in .env">
     <Tabs>
       <Tab title="macOS and Linux">
         ```console
@@ -226,114 +316,107 @@ If you have no ElevenLabs account, stop here. The video without voice is a compl
         ```
       </Tab>
     </Tabs>
-  </Step>
 
-  <Step title="Set your key and voice id" stepNumber={10}>
-    In `.env`, replace the two placeholders with your API key and voice id.
+    Replace the two placeholders with your own values.
 
     ```dotenv .env
-    ELEVENLABS_API_KEY=<your-elevenlabs-key>     # Profile, then API keys, on elevenlabs.io
-    ELEVENLABS_VOICE_ID=<voice-id>               # the id on a voice's card under Voices
+    ELEVENLABS_API_KEY=<your-elevenlabs-key>
+    ELEVENLABS_VOICE_ID=<voice-id>
     ```
 
-    A value that still starts with `<` counts as unset. DeckTalk never prints the key and never writes it under `build/`.
+    Both values come from your ElevenLabs account. The key is the one credential, and DeckTalk never
+    prints it: no value read from `.env` or from the environment reaches a `--json` payload, a log
+    line or an error message. The voice id is a published name rather than a secret. It says which
+    voice to speak in and grants nothing, and it is part of what names a take, so changing it voices
+    every section again.
+
+    A value that still starts with `<` counts as unset, so the example file as it ships approves
+    nothing. A variable already in the environment wins over the file. The starter's `.gitignore`
+    already covers `.env`, and keeps `.env.example`.
   </Step>
 
-  <Step title="Build the video with your voice" stepNumber={11}>
-    <Warning>`decktalk build` without `--no-voice` spends ElevenLabs credits. [What spends credits](/requirements#what-spends-credits) lists the cost.</Warning>
+  <Step title="Price the run before you make it">
+    `decktalk check` judges the written files and the pages and prices what a voiced build would
+    cost. It produces nothing and calls no API, so it is the one call to make when you want the
+    price of a run.
 
     ```console
-    decktalk build
+    decktalk check --json
     ```
 
-    The `narrate` stage prints one line per section it sends, and the run ends with `built` as before. It
-    voices all three sections, because a click track is never reused as a voice. `decktalk narrate --dry-run`
-    prints what the run will send and what it will cost before you start it.
+    The result is one flat object carrying `judged`, `pages`, `frames`, `storyboard`, `written` and
+    `findings` beside the four keys every result reserves. Its `spend` is the price:
 
+    ```json
+    {
+      "state": "estimate",
+      "sections": [1, 2, 3],
+      "characters": 476,
+      "dollars": 0.14,
+      "ceiling_dollars": 0.14,
+      "price_per_1000_characters": 0.3,
+      "price_layer": "project"
+    }
+    ```
+
+    `state` is `estimate` for what a run would cost and `charged` for what one did cost.
+    `characters` is what would be sent, `dollars` is that at the stated rate, and `ceiling_dollars`
+    is the most the run can reach. The rate is `[voice] price_per_1000_characters` in your own
+    `decktalk.toml`, and `price_layer` names which of the five settings layers set it, so the figure
+    is your plan's and not an invention. [Requirements and costs](/requirements#how-the-price-is-worked-out)
+    explains why the two dollar figures can differ.
+  </Step>
+
+  <Step title="Look at what you are about to buy">
     ```console
-    decktalk narrate --dry-run
+    decktalk storyboard
     ```
 
-    {/* sample: decktalk narrate --dry-run, fresh starter, the take plan and its totals */}
     ```text
-     #  section                take         sent spoken  reason
-    -----------------------------------------------------------
-     1  open                   synthesize    140    131  no take yet
-     2  how-it-works           synthesize    150    141  no take yet
-     3  close                  synthesize    126    120  no take yet
-    -----------------------------------------------------------
-    voice 3 section(s): 416 characters sent, 392 spoken, 949 with context. 0 cached. About $0.12 at $0.30 per 1,000.
+    Wrote build/storyboard.html, 16 panels.
     ```
 
-    The rate comes from `[voice] price_per_1000_characters` in your own `decktalk.toml`, so the dollars are your plan's.
+    A storyboard freezes every slide at every cue onto one page. It is the checkpoint before credits
+    are spent: open `build/storyboard.html` and read the film as stills, because a slide you fix here
+    costs nothing and a slide you fix after a voiced build costs that section again. `--section`,
+    `--slide`, `--after`, `--before` and `--at` narrow the sheet.
   </Step>
 
-  <Step title="Change one word" stepNumber={12}>
-    In section 3 of `script.md`, add a word to the last line.
+  <Step title="Build with your voice">
+    <Warning>This command spends ElevenLabs credits.</Warning>
 
-    ```diff script.md
-    -[beat] Make your own at decktalk dot AI.
-    +[beat] Make your own today at decktalk dot AI.
-    ```
-
-    The cue for that line matches the phrase "Make your own", which is still there, so `cues.json`
-    and the page need no change.
-  </Step>
-
-  <Step title="Build again" stepNumber={13}>
     ```console
-    decktalk build
+    decktalk build --spend --max-cost 1
     ```
 
-    DeckTalk voices only section 3 again. Sections 1 and 2 take their narration from the cache, because their text did not change. A take is named by the hash of its text and voice settings, so the two unchanged sections play the files they already have. [Rebuild one section](/guides/rebuild-one-section) says what each kind of edit runs again.
+    `--spend` approves the spend. `--max-cost N` refuses the whole run before the first paid call
+    when the most it can cost is over N US dollars, and the refusal names the figure that would let
+    it through. A ceiling of five cents on this project reads:
 
-    <Tip>Run `decktalk narrate --dry-run` again after the edit. Sections 1 and 2 read `cached`, section 3 reads `synthesize`, and the totals count only what section 3 costs.</Tip>
-  </Step>
-
-  <Step title="Check that a reveal starts on its word" stepNumber={14}>
-    ```console
-    decktalk verify 3:3.1make
-    ```
-
-    {/* sample: decktalk verify 3:3.1make after decktalk build --no-voice on a fresh starter (cue table only) */}
     ```text
-    check                 cue       at   chg %   ctl %   offset     a/v  result
-    3:3.1make            8.71    38.87   10.85    0.00    +10ms    -6ms  changed
+    error[APPROVAL]: this run can cost up to $0.14, which is over the $0.05 ceiling --max-cost set.
+      hint: Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
+      docs: https://docs.decktalk.ai/reference/errors/APPROVAL
     ```
 
-    Check that the result is `changed`. The offset column is the time from the cue time to the onset of the reveal, in milliseconds. The `a/v` column is filled only after a build without voice, because only a click track has clicks. [Verify](/reference/verify#cues) defines every column.
+    On a terminal, `decktalk build` with neither flag prints the price and asks. With no terminal
+    there is nobody to ask, so it refuses rather than guessing, and the refusal carries the price, so
+    one call prices the run.
+
+    ```text
+    error[APPROVAL]: voicing 3 sections sends 476 characters and costs up to $0.14, and no terminal is here to approve it.
+      hint: Run decktalk build --spend to approve that spend, or decktalk build --no-voice to finish with placeholder narration.
+      docs: https://docs.decktalk.ai/reference/errors/APPROVAL
+    ```
+
+    A take is named by the hash of its text and its voice settings, so the next build voices only the
+    sections whose words or voice changed and reads the rest from the cache.
   </Step>
 </Steps>
 
-## What the starter shows
-
-The starter is three sections on one page. Every slide is markup: a `<template data-slide>` inside a
-`[data-scene]` wrapper, with a `data-cue` on each thing that appears. There is no JavaScript to read.
-
-| Section | Plays | What it shows |
-|---|---|---|
-| 1. Open | `deck/index.html`, scene 1 | The title, then a card for each of the two files you write, then the promise. |
-| 2. How it works | `deck/index.html`, scene 2 | The heading, then one displayed equation typeset by KaTeX, then the same average as two lines of Python, then a closing band. |
-| 3. Close | `deck/index.html`, scene 3 | The idea, the line about rebuilding one part, and the end card. |
-
-The equation is the one place the starter shows a trap: `data-tex` holds the TeX and the element's
-own text is the fallback that shows if KaTeX ever fails to load. The comment beside it names all
-three traps. [Design a slide](/guides/design-a-slide) is the next thing to read.
-
-### The examples
-
-`decktalk init --example NAME` writes a finished project instead of the starter.
-
-| Name | What it is |
-|---|---|
-| `lesson` | A lesson on how a model learns, with a figure drawn in code and moved on every cue. It is the example of a page that needs more than attributes. |
-| `product` | Reserved. It is the film that shows DeckTalk itself, and it ships with that film. |
-| `tutorial` | Reserved. It is a short technical tutorial with a code slide, a terminal block and a screenshot. |
-
-`decktalk init --example NAME` refuses a reserved name, so `lesson` is the one example to read today.
-
 ## Next
 
-- **Write your own section:** [Your first deck](/guides/first-deck)
+- **Write a section of your own:** [Your first deck](/guides/first-deck)
+- **Know what a machine needs and what it costs:** [Requirements and costs](/requirements)
 - **Make the script time well:** [Writing for the ear](/guides/writing-for-the-ear)
 - **Rebuild only what changed:** [Rebuild one section](/guides/rebuild-one-section)
