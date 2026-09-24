@@ -1,0 +1,29 @@
+{
+  "files": {
+    "src/decktalk/captions/files.py": 8,
+    "src/decktalk/captions/layout.py": 14,
+    "src/decktalk/media/audio.py": 16,
+    "src/decktalk/media/browser.py": 5,
+    "src/decktalk/media/ffmpeg.py": 2,
+    "src/decktalk/media/frames.py": 11,
+    "src/decktalk/media/origin.py": 4,
+    "src/decktalk/pagescan.py": 2,
+    "src/decktalk/runtime/src/contract.ts": 3,
+    "src/decktalk/runtime/src/probe/probe.ts": 6,
+    "src/decktalk/stages/assemble/loudness.py": 2,
+    "src/decktalk/stages/assemble/mix.py": 7,
+    "src/decktalk/stages/assemble/publish.py": 1,
+    "src/decktalk/stages/clip.py": 4,
+    "src/decktalk/stages/narrate/plan.py": 2,
+    "src/decktalk/stages/narrate/takes.py": 3,
+    "src/decktalk/stages/preflight/freeze.py": 4,
+    "src/decktalk/stages/record/checks.py": 4,
+    "src/decktalk/stages/record/start.py": 2,
+    "src/decktalk/stages/screenshots.py": 5,
+    "src/decktalk/stages/soundscape.py": 1,
+    "src/decktalk/stages/status.py": 1,
+    "src/decktalk/stages/verify/measure.py": 8,
+    "src/decktalk/stages/verify/plan.py": 10,
+    "src/decktalk/stages/verify/seams.py": 2
+  }
+}
