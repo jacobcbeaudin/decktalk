@@ -49,6 +49,9 @@ has to be argued for in review. Raising this number is the edit a reviewer refus
 
 ALLOW = {
     "contract/test_api.py": "`decktalk.__all__`, which is the whole supported Python API.",
+    "contract/test_discoverable.py": (
+        "The founder's thesis: every command, key, code and attribute reachable from --help and the schemas."
+    ),
     "contract/test_docs_claims.py": "The claims in `docs/` that a reader can act on.",
     "contract/test_env_ignore.py": "`.gitignore` and the wheel's exclude list, judged with git itself.",
     "contract/test_homepage.py": "`site/`, opened in a browser rather than read as files.",
@@ -57,14 +60,16 @@ ALLOW = {
     "contract/test_layout.py": "This mirror rule, which belongs to the suite rather than to a module.",
     "contract/test_numbers.py": "`tests/contract/numbers-baseline.json`, every number written outside settings.py.",
     "contract/test_probe.py": "`src/decktalk/runtime/decktalk-probe.js`, read as the compiled bundle.",
+    "contract/test_prose.py": "Every tracked text file, judged by the two prose rules that are mechanical.",
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
     "contract/test_selection.py": "The collection hook in `tests/conftest.py`.",
     "contract/test_site.py": "The committed files under `site/`.",
-    "contract/test_skills.py": "`src/decktalk/skills/`, every command line through the real parser.",
     "contract/test_take_hash.py": "`tests/data/take_hash.json`, the golden digests of the founder's film.",
     "contract/test_timing_policy.py": "`tests/support/timing_policy.py`, the suite's own timing rule.",
-    "contract/test_vocabulary.py": "`tests/data/vocabulary.json`, every closed vocabulary on the wire.",
+    "contract/test_vocabulary.py": (
+        "`tests/contract/vocabulary-baseline.json`, every literal still spelling a closed vocabulary."
+    ),
     "contract/test_wheel.py": "The built wheel's file list.",
 }
 """Every test file that belongs to no source module, and the repository artifact it holds instead."""
