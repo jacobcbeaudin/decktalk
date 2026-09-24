@@ -10,7 +10,7 @@ from decktalk.artifacts import Cut, Cuts, RecordingLog, Words
 from decktalk.captions import CaptionCue
 from decktalk.errors import ToolError
 from decktalk.media import browser
-from decktalk.media.pagereport import CueRow, PageReport, MeasuredScene
+from decktalk.media.pagereport import CueRow, MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
 from decktalk.stages.assemble.cut import cut_list

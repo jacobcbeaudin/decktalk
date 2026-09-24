@@ -13,11 +13,19 @@ import pytest
 from decktalk.errors import Cancel
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain
-from decktalk.media.pagereport import PageReport, MeasuredScene
+from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import Panel, StoryboardResult
 from decktalk.stages import storyboard as stage
-from decktalk.stages.storyboard import Freeze, freeze_url, panels_of, slide_cues, storyboard, write_page
+from decktalk.stages.storyboard import (
+    Freeze,
+    Selection,
+    freeze_url,
+    panels_of,
+    slide_cues,
+    storyboard,
+    write_page,
+)
 
 TOML = """
 [project]
@@ -147,6 +155,42 @@ def test_a_slide_with_no_resolved_cue_still_gets_its_panels() -> None:
     assert [cue for _freeze, cue, _at in panels] == [None, "1.1:a"]
 
 
+def test_a_named_slide_is_the_only_slide_that_contributes() -> None:
+    panels = panels_of(
+        {"1.1": ("1.1:a",), "1.2": ("1.2:a",)}, {"1.1:a": 1.0, "1.2:a": 2.0}, Selection.of(["1.2"], None, None, None)
+    )
+    assert {freeze.slide for freeze, _cue, _at in panels} == {"1.2"}
+
+
+def test_a_named_cue_draws_the_state_after_it_and_drops_the_opening_states() -> None:
+    panels = panels_of(
+        {"1.1": ("1.1:a", "1.1:b")}, {"1.1:a": 1.0, "1.1:b": 2.0}, Selection.of(None, ["1.1:b"], None, None)
+    )
+    assert panels == [(Freeze("1.1", cue="1.1:b"), "1.1:b", 2.0)]
+
+
+def test_the_two_states_around_one_cue_are_the_pair_an_author_compares() -> None:
+    chosen = Selection.of(None, ["1.1:a"], ["1.1:a"], None)
+    panels = panels_of({"1.1": ("1.1:a",)}, {"1.1:a": 1.0}, chosen)
+    assert [freeze for freeze, _cue, _at in panels] == [Freeze("1.1", cue="1.1:a"), Freeze("1.1", before="1.1:a")]
+
+
+def test_a_second_names_whatever_is_on_screen_then() -> None:
+    panels = panels_of(
+        {"1.1": ("1.1:a", "1.1:b")}, {"1.1:a": 1.0, "1.1:b": 4.0}, Selection.of(None, None, None, [2.5, 9.0])
+    )
+    assert [at for _freeze, _cue, at in panels] == [1.0, 4.0]
+
+
+def test_a_second_before_the_scene_starts_names_nothing() -> None:
+    panels = panels_of({"1.1": ("1.1:a",)}, {"1.1:a": 3.0}, Selection.of(None, None, None, [1.0]))
+    assert panels == []
+
+
+def test_a_selector_that_matches_nothing_draws_nothing() -> None:
+    assert panels_of({"1.1": ("1.1:a",)}, {"1.1:a": 1.0}, Selection.of(["9.9"], None, None, None)) == []
+
+
 def test_a_frozen_url_asks_for_a_state_and_never_for_the_recorder_clock(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     url = freeze_url(inputs, inputs.document.page_sections[0], Freeze("1.1", cue="1.1:a"))
@@ -200,6 +244,14 @@ def test_a_selection_draws_the_sections_it_names_and_no_others(tmp_path: Path, o
     opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
     result = storyboard(inputs, a_run(tmp_path), only=[2])
     assert {panel.section for panel in result.panels} == {2}
+
+
+def test_the_four_selectors_reach_the_sheet_through_the_stage(tmp_path: Path, opened: Opened) -> None:
+    """The selectors are the stage's own arguments, so a caller narrows the sheet without a second call."""
+    inputs = a_project(tmp_path, cues=CUES)
+    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
+    result = storyboard(inputs, a_run(tmp_path), slide=["1.1"], after=["1.1:a"])
+    assert [(panel.slide, panel.cue) for panel in result.panels] == [("1.1", "1.1:a")]
 
 
 def test_a_scene_that_published_no_catalog_is_a_line_and_no_panel(tmp_path: Path, opened: Opened) -> None:

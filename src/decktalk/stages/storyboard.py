@@ -57,6 +57,43 @@ Slides = dict[str, tuple[str, ...]]
 
 
 @dataclass(frozen=True)
+class Selection:
+    """Which panels of the whole sheet a run draws, which is every panel when it names none.
+
+    Every selector narrows. `slides` chooses which slides contribute at all, `after` and `before`
+    choose the moment of a cue, which are the two states an author compares to see what one reveal
+    changed, and `at` chooses whatever is on screen at a second of the section's own clock. A
+    selector that matches nothing draws nothing, which is what a section number that matches no
+    section already does, so one storyboard of nothing never means two things.
+    """
+
+    slides: tuple[str, ...] = ()
+    after: tuple[str, ...] = ()
+    before: tuple[str, ...] = ()
+    at: tuple[float, ...] = ()
+
+    @classmethod
+    def of(
+        cls,
+        slide: Sequence[str] | None,
+        after: Sequence[str] | None,
+        before: Sequence[str] | None,
+        at: Sequence[float] | None,
+    ) -> Selection:
+        """One selection from the four selectors as a caller passes them, each of which repeats."""
+        return cls(tuple(slide or ()), tuple(after or ()), tuple(before or ()), tuple(at or ()))
+
+    @property
+    def names_a_cue(self) -> bool:
+        """Whether a cue moment was asked for, which is what replaces the whole run of a slide's states."""
+        return bool(self.after or self.before)
+
+
+EVERY_PANEL = Selection()
+"""What a run that names no selector draws, which is every slide at every cue it declares."""
+
+
+@dataclass(frozen=True)
 class Freeze:
     """One frozen state of a page: a slide, with its cues fired up to `cue`, or before `before`, or none.
 
@@ -141,21 +178,50 @@ def freeze_url(inputs: Inputs, section: PageSection, freeze: Freeze) -> str:
     return page_url(section.page, {**query, **freeze.query()})
 
 
-def panels_of(slides: Slides, times: Mapping[str, float]) -> list[tuple[Freeze, str | None, float]]:
+def panels_of(
+    slides: Slides, times: Mapping[str, float], chosen: Selection = EVERY_PANEL
+) -> list[tuple[Freeze, str | None, float]]:
     """(the state to draw, the cue it shows, the second it sits at) for every panel of one scene.
 
     Each slide contributes the state it opens on and then one state per cue it declares, so a reader
     meets the slide as a viewer first meets it and then once per change. A cue with no resolved
     second still gets its panel, because a storyboard is read before `cue` has run as well as after.
+
+    A selection narrows that set rather than replacing it. A run that names a cue draws that cue's
+    own moment and drops the opening states, because a reader who asked for one reveal is asking
+    about the change and not about the deck.
     """
     out: list[tuple[Freeze, str | None, float]] = []
     for slide, wires in slides.items():
+        if chosen.slides and slide not in chosen.slides:
+            continue
         resolved = [times[wire] for wire in wires if wire in times]
         opening = min(resolved) if resolved else SECTION_START_SECONDS
+        at = {wire: round(times.get(wire, opening), SECOND_DIGITS) for wire in wires}
+        if chosen.names_a_cue:
+            out += [(Freeze(slide, cue=wire), wire, at[wire]) for wire in wires if wire in chosen.after]
+            out += [(Freeze(slide, before=wire), wire, at[wire]) for wire in wires if wire in chosen.before]
+            continue
         out.append((Freeze(slide, before=wires[0]) if wires else Freeze(slide), None, round(opening, SECOND_DIGITS)))
-        for wire in wires:
-            out.append((Freeze(slide, cue=wire), wire, round(times.get(wire, opening), SECOND_DIGITS)))
-    return out
+        out += [(Freeze(slide, cue=wire), wire, at[wire]) for wire in wires]
+    return _at(out, chosen.at) if chosen.at else out
+
+
+def _at(
+    panels: list[tuple[Freeze, str | None, float]], seconds: Sequence[float]
+) -> list[tuple[Freeze, str | None, float]]:
+    """The panel on screen at each named second, which is the latest one that has already started.
+
+    A second before the first panel of the scene names nothing, because the scene was not playing
+    yet and the nearest panel would be a picture of a moment the caller did not ask about.
+    """
+    ordered = sorted(panels, key=lambda panel: panel[2])
+    wanted: list[tuple[Freeze, str | None, float]] = []
+    for second in seconds:
+        showing = [panel for panel in ordered if panel[2] <= second]
+        if showing and showing[-1] not in wanted:
+            wanted.append(showing[-1])
+    return wanted
 
 
 def write_page(workspace: Workspace, panels: Sequence[Panel], *, title: str) -> Path:
@@ -208,16 +274,29 @@ def _document(title: str, count: int, figures: str) -> str:
     )
 
 
-def storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> StoryboardResult:
+def storyboard(
+    inputs: Inputs,
+    run: Run,
+    *,
+    only: Sequence[int] | None = None,
+    slide: Sequence[str] | None = None,
+    after: Sequence[str] | None = None,
+    before: Sequence[str] | None = None,
+    at: Sequence[float] | None = None,
+) -> StoryboardResult:
     """Freeze every slide at every cue onto one page, and write nothing else.
 
     It opens the pages the recorder opens, with the same params, the same words and the same motion,
     so a panel is a frame of the film being built rather than a picture of something near it. It
     judges nothing, so a page that will not draw is a line on the stream and never a finding.
+
+    One panel of a storyboard is still a storyboard, so the five selectors narrow what it draws and
+    the sheet it writes is the same sheet with fewer panels on it.
     """
+    chosen = Selection.of(slide, after, before, at)
     wanted = selects(only)
     sections = [one for one in inputs.document.page_sections if wanted(one.number)]
-    panels = _draw(inputs, run, sections) if sections else []
+    panels = _draw(inputs, run, sections, chosen) if sections else []
     page = write_page(inputs.workspace, panels, title=inputs.document.name) if panels else None
     if page is not None:
         run.wrote(page)
@@ -228,7 +307,7 @@ def storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -
     )
 
 
-def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection]) -> list[Panel]:
+def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Selection) -> list[Panel]:
     """Every panel of every named section, drawn by one browser holding one page open."""
     video, cfg = inputs.settings.video, inputs.settings.record
     settle = int(cfg.screenshot_settle_seconds * MILLISECONDS)
@@ -256,7 +335,7 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection]) -> list[Pan
                 )
                 continue
             resolved = times.times(section.number) if times is not None else {}
-            drawn += _section_panels(inputs, run, page, section, slides, resolved, settle=settle)
+            drawn += _section_panels(inputs, run, page, section, slides, resolved, chosen, settle=settle)
     return drawn
 
 
@@ -267,12 +346,13 @@ def _section_panels(
     section: PageSection,
     slides: Slides,
     times: Mapping[str, float],
+    chosen: Selection,
     *,
     settle: int,
 ) -> list[Panel]:
     """Every panel of one section, each still written under that section's own directory."""
     out: list[Panel] = []
-    for freeze, wire, at in panels_of(slides, times):
+    for freeze, wire, at in panels_of(slides, times, chosen):
         target = inputs.workspace.storyboard_dir / section.key / f"{freeze.label}.png"
         screenshot(page, freeze_url(inputs, section, freeze), target, settle_ms=settle)
         run.wrote(target)
@@ -295,8 +375,10 @@ def _catalog(reports: Mapping[str, PageReport], page: str) -> tuple[MeasuredScen
 
 __all__ = [
     "CUES_FIELD",
+    "EVERY_PANEL",
     "SLIDES_FIELD",
     "Freeze",
+    "Selection",
     "Slides",
     "reports_of",
     "freeze_url",

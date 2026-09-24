@@ -366,9 +366,25 @@ class Project:
         """Every spoken word with its start and its end, which is how a cue phrase is written."""
         return self._call("words", WordsResult, cancel=cancel, writes=False, only=only)
 
-    def storyboard(self, *, only: Sequence[int] | None = None, cancel: Cancel | None = None) -> StoryboardResult:
-        """Freeze every slide at every cue onto one page, which is the checkpoint before credits are spent."""
-        return self._call("storyboard", StoryboardResult, cancel=cancel, only=only)
+    def storyboard(
+        self,
+        *,
+        only: Sequence[int] | None = None,
+        slide: Sequence[str] | None = None,
+        after: Sequence[str] | None = None,
+        before: Sequence[str] | None = None,
+        at: Sequence[float] | None = None,
+        cancel: Cancel | None = None,
+    ) -> StoryboardResult:
+        """Freeze every slide at every cue onto one page, which is the checkpoint before credits are spent.
+
+        The four selectors beside `only` narrow which moments are drawn. `slide` names the slides,
+        `after` and `before` name the state just after and just before one cue, which are the pair
+        an author compares to see what a reveal changed, and `at` names a second of the section's
+        own clock. Each one repeats, and one that matches nothing draws nothing.
+        """
+        return self._call("storyboard", StoryboardResult, cancel=cancel, only=only, slide=slide, after=after,
+                          before=before, at=at)  # fmt: skip
 
     def clip(
         self,
