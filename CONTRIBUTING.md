@@ -405,8 +405,8 @@ and every one fails with the same sentence naming the file and the command that 
 | What is generated | From | Command |
 |---|---|---|
 | `src/decktalk/runtime/*.js` and `contract.json` | `src/decktalk/runtime/src/**` | `uv run scripts/build_runtime.py --write` |
-| `schema/results/*.json` | The result models in `src/decktalk/results.py` | `uv run scripts/build_result_schemas.py --write` |
-| `schema/decktalk-1.json` and the machine schema | The key table in `src/decktalk/settings.py` | `uv run scripts/build_settings_schema.py --write` |
+| `schemas/v1/results/*.json` | The result models in `src/decktalk/results.py` | `uv run scripts/build_result_schemas.py --write` |
+| `schemas/v1/*.json` and the copies under `site/schemas/v1/` | The key table in `src/decktalk/settings.py` | `uv run scripts/build_settings_schema.py --write` |
 | `docs/reference/configuration.mdx` | The published settings schema | `uv run scripts/build_settings_reference.py --write` |
 | `docs/reference/cli.mdx` | The Typer app in `src/decktalk/cli/` | `uv run scripts/build_cli_reference.py --write` |
 | `src/decktalk/__init__.py` | The public modules, as a reachable closure | `uv run scripts/build_api.py --write` |

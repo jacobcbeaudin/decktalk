@@ -1,13 +1,17 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-"""Generate schema/results/*.json, one JSON Schema per command result, from the models.
+"""Generate schemas/v1/results/*.json, one JSON Schema per command result, from the models.
 
     uv run scripts/build_result_schemas.py --write    # write every schema
     uv run scripts/build_result_schemas.py --check    # exit 1 if a committed schema would change
 
 Every field's sentence, type, range and default come from the `Field` that declares it, so the
 published contract cannot drift from the code. Edit `src/decktalk/results.py`, then run this.
+
+The `v1` in the path is the version of the schemas layout rather than of a result, which carries its
+own `schema` number inside every payload. A result whose shape changes says so in that number, and
+the directory moves only when the whole published layout does.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from decktalk.catalog import result_schemas  # noqa: E402  (after sys.path, so a checkout needs no install)
 
-TARGET = ROOT / "schema" / "results"
+TARGET = ROOT / "schemas" / "v1" / "results"
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 STALE = "stale: {path}. Run `uv run scripts/{script} --write` to bring it up to date."
 
