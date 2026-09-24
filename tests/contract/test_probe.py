@@ -2,20 +2,32 @@
 
 Every page here is the same page `tests/contract/test_runtime.py` writes, opened through the hook
 `media/browser.py` uses, so what these tests measure is what the probe adds and nothing the deck
-carries. The cover, the wait helper, the measured boxes and the freeze that stops at one cue live
-here, and none of them may reach a page that no command is driving.
+carries. The cover, the wait helper, the measured boxes, the one report and the freeze that stops at
+one cue live here, and none of them may reach a page that no command is driving.
 
-    uv run pytest -m browser
+    uv run pytest -m browser tests/contract/test_probe.py
 """
 
 from __future__ import annotations
 
 import pytest
+from contract.test_runtime import MARKUP_SCENE, deck
 
-from decktalk.media.browser import instrument
-from support.browser_pages import MARKUP_SCENE, chromium_page, write_page
+from decktalk.page import REPORT
+from decktalk.toolchain.assets import PROBE_FILE, package_file, probe_path
+from support.browser_pages import chromium_page, write_page
 
 pytestmark = pytest.mark.browser
+
+
+def instrument(page):
+    """Add decktalk-probe.js to every page this one loads, which is what every command does.
+
+    The recorder reaches the same bundle through `media/browser.py`, and that module's own test holds
+    the hook. This file holds what the bundle does once it is there, so it adds it for itself.
+    """
+    page.add_init_script(probe_path().read_text(encoding="utf-8"))
+    return page
 
 
 @pytest.fixture(scope="module")
@@ -35,12 +47,17 @@ def _fresh_errors(page):
 
 def test_no_page_references_the_probe():
     """The probe is injected, so it is never a file a deck loads and never a file init copies."""
-    from decktalk.toolchain.assets import PROBE_FILE, package_file
-
     template = package_file("template")
     loaded = [p for p in template.rglob("*.html") if PROBE_FILE in p.read_text(encoding="utf-8")]
     assert loaded == []
     assert not list(template.rglob(PROBE_FILE))
+
+
+def test_the_probe_imports_the_contract_and_the_seam_and_nothing_else():
+    """The split is only honest while the probe knows the vocabulary and the sink and no DOM the runtime owns."""
+    source = (package_file("runtime") / "src" / "probe" / "probe.ts").read_text(encoding="utf-8")
+    imported = {line.split('"')[1] for line in source.splitlines() if line.startswith("import ")}
+    assert imported == {"../contract.ts", "../telemetry.ts"}
 
 
 def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
@@ -48,10 +65,10 @@ def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
     # A second page of the same browser, opened the way a person opens one, with no init script.
     bare = page.context.browser.new_page(viewport={"width": 1920, "height": 1080})
     try:
-        url = write_page(tmp_path, "bare.html", MARKUP_SCENE)
+        url = deck(tmp_path, "bare.html")
         bare.goto(f"{url}?slide=1.1")
         bare.wait_for_function("() => document.body.dataset.done === '1'")
-        assert bare.evaluate("() => window.__decktalk.fired") == ["1.1ball", "1.1count"]
+        assert bare.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
         bare.goto(url)
         bare.evaluate("() => window.__decktalk.ready")
         assert bare.evaluate("() => !!document.getElementById('dt-index')")
@@ -67,7 +84,7 @@ def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
 
 def test_the_cover_hides_the_page_until_the_clock_starts(page, tmp_path):
     """The recorder starts capturing before the page settles, so the cover owns every frame until t=0."""
-    page.goto(f"{write_page(tmp_path, 'cover.html', MARKUP_SCENE)}?scene=1&t0=signal")
+    page.goto(f"{deck(tmp_path, 'cover.html')}?scene=1&t0=signal")
     page.evaluate("() => window.__dtprobe.cover()")
     box = page.evaluate("() => document.getElementById('__t0cover').getBoundingClientRect().toJSON()")
     assert (box["width"], box["height"]) == (1920, 1080)
@@ -90,7 +107,7 @@ def test_the_wait_helper_waits_for_the_pages_own_condition(page, tmp_path):
     body = (
         "<script>DeckTalk.waitFor(new Promise((r) => setTimeout(() => { window.__late = true; r(); }, 300)));</script>"
     )
-    page.goto(write_page(tmp_path, "wait.html", body + MARKUP_SCENE))
+    page.goto(deck(tmp_path, "wait.html", body + MARKUP_SCENE))
     assert page.evaluate("() => window.__dtprobe.ready()") is True
     assert page.evaluate("() => window.__late") is True
     assert not page.errors
@@ -100,46 +117,90 @@ def test_the_wait_helper_waits_for_the_pages_own_condition(page, tmp_path):
 
 
 def test_the_catalog_measures_every_cued_element(page, tmp_path):
-    """In index mode each slide is laid out once, so every reveal carries a box in stage pixels."""
+    """In index mode each slide is laid out once, so every element carries a box in stage pixels."""
     head = "<style>.title { position: absolute; left: 120px; top: 80px; width: 600px; height: 90px; margin: 0 }</style>"
     page.goto(write_page(tmp_path, "boxes.html", MARKUP_SCENE, head=head))
     page.evaluate("() => window.__decktalk.ready")
     rows = page.evaluate("() => window.__decktalk.catalog[0].elements['1.1']")
-    by_cue = {r["cue"]: r for r in rows}
-    assert set(by_cue) == {"1.1ball", "1.1count", None}
-    ball = by_cue["1.1ball"]
-    assert ball["describe"] == "a ball rests in the bowl" and ball["reveal"] == "pop"
+    by_cue = {row["moments"].get("data-in"): row for row in rows}
+    assert set(by_cue) == {"1.1:ball", "1.1:step", None}
+    ball = by_cue["1.1:ball"]
+    assert ball["attrs"]["data-describe"] == "a ball rests in the bowl"
+    assert ball["attrs"]["data-in-style"] == "pop"
     assert ball["text"] == "A ball"
     assert ball["box"]["w"] > 0 and ball["box"]["h"] > 0
     assert 0 <= ball["box"]["x"] < 1920 and 0 <= ball["box"]["y"] < 1080
-    # The title has no cue and no delay, so it is on screen from the mount and the scan says so.
+    # A moment other than an arrival is qualified exactly like one, so every moment is on the wire.
+    assert by_cue["1.1:step"]["moments"]["data-back"] == "1.1:ball"
+    # The title has no moment, so it is on screen from the mount, and the scan measures it all the same.
     uncued = by_cue[None]
     assert uncued["text"] == "A bowl"
     assert uncued["box"] == {"x": 120, "y": 80, "w": 600, "h": 90}
     # The equation's TeX travels with its row, so a check can read it without opening the page.
     tex = page.evaluate("() => window.__decktalk.catalog[0].elements['1.2'][0]")
-    assert tex["tex"] == "\\sum_{i=1}^{n} x_i" and tex["cue"] == "1.2sum"
+    assert tex["attrs"]["data-tex"] == "\\sum_{i=1}^{n} x_i"
+    assert tex["moments"]["data-in"] == "1.2:sum"
     assert page.evaluate("() => window.__decktalk.mode") == "index"
     assert page.evaluate("() => !!document.getElementById('dt-index')")
-    assert page.evaluate("() => window.__decktalk.warnings") == []
     assert not page.errors
 
 
 def test_measuring_leaves_nothing_on_the_stage(page, tmp_path):
     """The measuring layer is hidden while it is used and gone when the index page shows."""
-    page.goto(write_page(tmp_path, "clean.html", MARKUP_SCENE))
+    page.goto(deck(tmp_path, "clean.html"))
     page.evaluate("() => window.__decktalk.ready")
     assert page.evaluate("() => !document.getElementById('dt-measure')")
+    assert page.evaluate("() => !document.getElementById('dt-spans')")
     assert page.evaluate("() => document.querySelectorAll('#dt-pan .dt-slide').length") == 0
     assert page.evaluate("() => getComputedStyle(document.getElementById('dt-stage')).display") == "none"
 
 
 def test_a_played_scene_is_not_measured(page, tmp_path):
     """Measuring mounts every slide, so it never runs in a mode a recording could be made in."""
-    page.goto(f"{write_page(tmp_path, 'unmeasured.html', MARKUP_SCENE)}?scene=1&t0=0&cues=1.1ball@0.1")
+    page.goto(f"{deck(tmp_path, 'unmeasured.html')}?scene=1&t0=0&cues=1.1:ball@0.1")
     page.evaluate("() => window.__decktalk.ready")
     assert page.evaluate("() => window.__decktalk.catalog.every((c) => c.elements === undefined)")
     assert page.evaluate("() => document.querySelectorAll('#dt-pan .dt-slide').length") == 1
+
+
+# ---- the one report ------------------------------------------------------------------------
+
+
+def test_the_recorder_reads_the_whole_page_back_in_one_call(page, tmp_path):
+    """Six round trips into one call is what the seam bought, so the report carries every published field."""
+    url = deck(tmp_path, "report.html")
+    page.goto(f"{url}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:step@0.3")
+    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+    report = page.evaluate("() => window.__dtprobe.report()")
+    assert set(report) == set(REPORT)
+    assert report["mode"] == "cue"
+    assert report["scene"] == "1"
+    assert report["slide"] == "1.1"
+    assert [row["id"] for row in report["cues"]] == ["1.1:ball", "1.1:step"]
+    assert report["cues"][0]["due"] == 0.1
+    assert report["cues"][0]["ran"] >= 0.1
+    # The transcript is composed by the runtime, one sentence per cue, in document order.
+    assert report["cues"][0]["describe"] == "a ball rests in the bowl appears. A ball"
+    assert report["version"] == page.evaluate("() => window.__decktalk.version")
+
+
+def test_a_synced_line_reports_itself_through_the_seam(page, tmp_path):
+    """One word is far under the change floor, so the only record of it is the row the seam carries."""
+    scene = """
+    <div data-scene="20">
+      <template data-slide="20.1">
+        <p data-in="say" data-words data-describe="the line the voice reaches">alpha beta</p>
+      </template>
+    </div>
+    """
+    url = write_page(tmp_path, "spoken.html", scene)
+    page.goto(f"{url}?scene=20&t0=0&cues=20.1:say@0.05&words=alpha@0.4,beta@0.8")
+    page.wait_for_function("() => window.__dtprobe.report().words.length === 1")
+    row = page.evaluate("() => window.__dtprobe.report().words[0]")
+    assert row["text"] == "alpha beta"
+    assert row["count"] == 2
+    assert row["runAt"] == 0.4
+    assert row["firstOn"] <= row["runAt"]
 
 
 # ---- freezing at one cue ------------------------------------------------------------------
@@ -147,29 +208,31 @@ def test_a_played_scene_is_not_measured(page, tmp_path):
 
 def test_freeze_at_and_before_one_cue(page, tmp_path):
     """?after=ID stops after that cue, ?before=ID stops just before it, and after wins over before."""
-    url = write_page(tmp_path, "freezecue.html", MARKUP_SCENE)
+    url = deck(tmp_path, "freezecue.html")
     on = "(sel) => document.querySelector(sel).classList.contains('dt-shown')"
-    page.goto(f"{url}?slide=1.1&after=1.1ball")
+    page.goto(f"{url}?slide=1.1&after=1.1:ball")
     page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1ball"]
-    assert page.evaluate(on, '[data-cue="1.1ball"]') is True
-    assert page.evaluate(on, '[data-cue="1.1count"]') is False
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
+    assert page.evaluate(on, ".ball") is True
+    assert page.evaluate(on, ".step") is False
 
-    page.goto(f"{url}?slide=1.1&before=1.1count")
+    page.goto(f"{url}?slide=1.1&before=1.1:step")
     page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1ball"]
-    assert page.evaluate(on, '[data-cue="1.1count"]') is False
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
+    assert page.evaluate(on, ".step") is False
 
-    page.goto(f"{url}?slide=1.1&before=1.1ball")
+    page.goto(f"{url}?slide=1.1&before=1.1:ball")
     page.wait_for_function("() => document.body.dataset.done === '1'")
     assert page.evaluate("() => window.__decktalk.fired") == []
-    assert page.evaluate(on, '[data-cue="1.1ball"]') is False
+    assert page.evaluate(on, ".ball") is False
 
-    page.goto(f"{url}?slide=1.1&after=1.1count&before=1.1ball")
+    page.goto(f"{url}?slide=1.1&after=1.1:step&before=1.1:ball")
     page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1ball", "1.1count"]
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
 
     page.goto(f"{url}?slide=1.1&after=nope")
     page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => window.__decktalk.warnings") == ['cue "nope" is not one of slide 1.1\'s cues']
+    reported = page.evaluate("() => window.__decktalk.warnings")
+    assert [row["code"] for row in reported] == ["PAGE_FREEZE_CUE_UNKNOWN"]
+    assert (reported[0]["slide"], reported[0]["cue"]) == ("1.1", "nope")
     assert not page.errors

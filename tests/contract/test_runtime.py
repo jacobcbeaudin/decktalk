@@ -1,796 +1,993 @@
-"""The page runtime, in a real headless Chromium. Skipped when Chromium is unavailable.
+"""decktalk-runtime.js, the page contract as a deck loads it, opened the way a person opens it.
 
-Every page here is written by the test, so this module measures the runtime and nothing else. It
-opens each page the way a person does, with no probe injected, so what it holds to is what a deck
-gets on its own. The instrumentation a command injects is `tests/contract/test_probe.py`, and what the
-scaffold's own pages do with the runtime is `tests/decktalk/scaffold/test_scaffold.py`.
+Every page here is written by the test, carries the shipped bundle and nothing else, and is judged
+through `window.__decktalk`. What the recorder adds to a page lives in `tests/contract/test_probe.py`
+and never here, which is the property the split between the two bundles is supposed to have.
 
-    uv run pytest -m browser
+The numbers every assertion is written against come from `decktalk.page`, which is generated from
+`contract.ts`, so a length that changes in the registry changes here without an edit.
+
+    uv run pytest -m browser tests/contract/test_runtime.py
 """
 
 from __future__ import annotations
 
+import json
+import shutil
+import threading
+from collections.abc import Iterator
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
 import pytest
 
-from decktalk.toolchain.assets import RUNTIME_FILE
-from decktalk.verdicts import Verdict
-from support.browser_pages import (
-    KATEX,
-    MARKUP_SCENE,
-    chromium_page,
-    script_page,
-    served_page,
-    warnings_of,
-    write_page,
+from decktalk.page import (
+    APPEAR_WORDS_MAX,
+    ATTENTION,
+    BACK_OPACITY,
+    COUNTS,
+    ENTRANCES,
+    EXITS,
+    FRAME_STEP_MS,
+    MEASURABLE_SPAN_SECONDS,
+    ONSET_FIRST_FRAME_PERCENT,
+    SLIDE_ENTRANCES,
+    WORD_STYLES,
 )
+from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
+from support.browser_pages import KATEX, chromium_page, script_page, write_page
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
 
 
-@pytest.fixture(scope="module")
-def page():
-    """The page a person opens: decktalk-runtime.js and nothing a command injected."""
-    yield from chromium_page()
-
-
-@pytest.fixture(autouse=True)
-def _fresh_errors(page):
-    """One page serves every test, so each test starts with an empty error list of its own."""
-    page.errors.clear()
-    yield
-
-
-# ---- the shape of a page ---------------------------------------------------------------
-
-
-def test_the_runtime_declares_the_version_it_shipped_with(page, tmp_path):
-    """DeckTalk.version is the package version, so a page and the CLI that records it can be compared."""
-    from decktalk import __version__
-
-    page.goto(write_page(tmp_path, "version.html", MARKUP_SCENE))
-    assert page.evaluate("() => DeckTalk.version") == page.evaluate("() => window.__decktalk.version")
-    if __version__ != "0+unknown":
-        assert page.evaluate("() => DeckTalk.version") == __version__
-
-
-def test_the_stylesheet_is_prepended_and_carries_no_specificity(page, tmp_path):
-    """Every runtime selector sits in :where(), so one page class wins over it, and it is the first sheet."""
-    head = "<style>.mine { opacity: .5 }</style>"
-    url = write_page(tmp_path, "where.html", MARKUP_SCENE.replace('class="title"', 'class="mine"'), head=head)
-    page.goto(f"{url}?scene=1&speed=40")
-    page.wait_for_function("() => window.__decktalk.slide === '1.1'")
-    assert page.evaluate("() => document.head.firstElementChild.id") == "dt-style"
-    assert page.evaluate("() => document.head.firstElementChild.textContent.includes(':where(.dt-reveal)')")
-    # .mine is one class and :where(.dt-reveal) is none, so the page wins even on an unrevealed element.
-    page.evaluate("() => document.querySelector('.mine').classList.add('dt-reveal')")
-    assert page.evaluate("() => getComputedStyle(document.querySelector('.mine')).opacity") == "0.5"
-
-
-def test_wait_for_holds_ready_until_the_pages_own_condition(page, tmp_path):
-    """DeckTalk.waitFor adds a readiness condition instead of replacing a global."""
-    script = (
-        "window.__late = false;"
-        "DeckTalk.waitFor(new Promise((r) => setTimeout(() => { window.__late = true; r(); }, 300)));"
-        "DeckTalk.scene(1, { slides: [ { id: '1.1', render: () => `<p>hi</p>` } ] });"
-    )
-    page.goto(script_page(tmp_path, "waitfor.html", script))
-    assert page.evaluate("() => window.__decktalk.ready instanceof Promise")
-    page.evaluate("() => window.__decktalk.ready")
-    assert page.evaluate("() => window.__late") is True
-    assert not page.errors
-
-
-def test_ready_survives_a_page_promise_that_rejects(page, tmp_path):
-    """A rejected DeckTalk.waitFor promise is a warning, because every reader treats ready as a promise
-    that resolves, and a rejection would leave the index page blank and the catalog without boxes."""
-    script = (
-        "DeckTalk.waitFor(Promise.reject(new Error('no network')));"
-        "DeckTalk.scene(1, { slides: [ { id: '1.1', render: () => `<p>hi</p>` } ] });"
-    )
-    page.goto(script_page(tmp_path, "reject.html", script))
-    assert page.evaluate("() => window.__decktalk.ready") is True
-    assert any("rejected" in w for w in warnings_of(page))
-    assert page.evaluate("() => !!document.getElementById('dt-index')")
-
-
-# ---- slides written as markup ----------------------------------------------------------
-
-
-def test_a_markup_scene_needs_no_javascript(page, tmp_path):
-    """A [data-scene] wrapper of <template data-slide> elements is a whole scene, with no script."""
-    page.goto(write_page(tmp_path, "markup.html", MARKUP_SCENE))
-    catalog = page.evaluate("() => window.__decktalk.catalog")
-    assert [c["scene"] for c in catalog] == ["1"]
-    assert catalog[0]["name"] == "Open" and catalog[0]["camera"] == "push"
-    assert catalog[0]["slides"] == ["1.1", "1.2", "1.3"]
-    # A slide's cues come from its own markup, in document order, with no preview object needed.
-    assert catalog[0]["cues"] == {"1.1": ["1.1ball", "1.1count"], "1.2": ["1.2sum"], "1.3": ["odd-one"]}
-    assert page.evaluate("() => window.__decktalk.warnings") == []
-    assert not page.errors
-
-
-def test_a_template_slide_writes_a_backslash_once(page, tmp_path):
-    """Markup is not a JavaScript string, so TeX carries single backslashes and typesets."""
-    page.goto(f"{write_page(tmp_path, 'tex.html', MARKUP_SCENE, head=KATEX)}?slide=1.2")
-    page.evaluate("() => window.__decktalk.ready")
-    assert page.evaluate("() => document.querySelectorAll('[data-tex][data-typeset] .katex').length") == 1
-    assert page.evaluate("() => !document.querySelector('.katex-error')")
-    assert page.evaluate("() => window.__decktalk.warnings") == []
-    assert not page.errors
-
-
-def test_a_template_fills_a_slide_that_defines_no_render(page, tmp_path):
-    """A scene registered in script takes each slide's markup from the template with its id."""
-    body = (
-        '<div data-scene="2"><template data-slide="2.1"><p data-cue="2.1a">from markup</p></template>'
-        '<template data-slide="2.2"><p>unused</p></template></div>'
-        "<script>DeckTalk.scene(2, { name: 'Mixed', slides: ["
-        " { id: '2.1' },"
-        " { id: '2.2', render: () => `<p data-cue=\"2.2a\">from render</p>` } ] });</script>"
-    )
-    page.goto(f"{write_page(tmp_path, 'mixed.html', body)}?slide=2.1")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => document.querySelector('.dt-slide p').textContent") == "from markup"
-    warnings = page.evaluate("() => window.__decktalk.warnings")
-    assert warnings == ['slide "2.2" has both a render function and a <template data-slide>, so the template is unused']
-
-
-def test_markup_slides_join_a_scene_declared_in_script(page, tmp_path):
-    """A template whose slide id the script never declared is appended to that scene."""
-    body = (
-        '<div data-scene="2"><template data-slide="2.2"><p data-cue="2.2a">second</p></template></div>'
-        "<script>DeckTalk.scene(2, { slides: [ { id: '2.1', render: () => `<p>first</p>` } ] });</script>"
-    )
-    page.goto(write_page(tmp_path, "join.html", body))
-    assert page.evaluate("() => window.__decktalk.catalog[0].slides") == ["2.1", "2.2"]
-    assert not page.errors
-
-
-# ---- the first frame of a recording ----------------------------------------------------
-
-
-def test_the_first_slide_is_mounted_before_the_clock_starts(page, tmp_path):
-    """The stage is never empty on the first frame the recorder keeps.
-
-    The recorder covers the page, settles, removes the cover and starts the clock on the next
-    animation frame, and that frame is t=0. A first slide mounted from the clock's own queue is
-    therefore drawn one frame *after* t=0, and the recording opens on one white frame. The first
-    slide is mounted while the cover is still up instead, and it enters with no animation.
-    """
-    url = write_page(tmp_path, "race.html", MARKUP_SCENE)
-    page.goto(f"{url}?scene=1&t0=signal&cues=1.1ball@0.4,1.1count@0.8")
-    page.evaluate("() => window.__decktalk.ready")
-    assert page.evaluate("() => window.__decktalk.fired") == []  # the clock has not started
-    assert page.evaluate("() => window.__decktalk.slide") == "1.1"
-    assert page.evaluate("() => document.querySelectorAll('#dt-pan .dt-slide').length") == 1
-    slide = "document.querySelector('#dt-pan .dt-slide')"
-    assert page.evaluate(f"() => getComputedStyle({slide}).animationName") == "none"
-    assert page.evaluate(f"() => getComputedStyle({slide}).opacity") == "1"
-    assert page.evaluate("() => getComputedStyle(document.querySelector('.title')).opacity") == "1"
-    # The slide's own reveals still wait for their cues, which start on the recorder's signal.
-    assert (
-        page.evaluate("() => document.querySelector('[data-cue=\"1.1ball\"]').classList.contains('dt-shown')") is False
-    )
-    page.evaluate("() => DeckTalk.startClock()")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 2", timeout=3000)
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1ball", "1.1count"]
-    assert warnings_of(page) == []
-    assert not page.errors
-
-
-def test_a_later_slide_still_enters_on_its_own_cue(page, tmp_path):
-    """Only the first mount skips the entrance, so a mid-section slide change still crossfades."""
-    page.goto(f"{write_page(tmp_path, 'enter.html', MARKUP_SCENE)}?scene=1&t0=0&cues=1.1ball@0.1,1.2sum@0.3")
-    page.wait_for_function("() => window.__decktalk.slide === '1.2'")
-    mounted = "document.querySelector('#dt-pan [data-slide=\"1.2\"]')"
-    assert page.evaluate(f"() => getComputedStyle({mounted}).animationName") in (
-        "dt-fadein",
-        "none",  # the .35 s crossfade may already have finished
-    )
-    assert page.evaluate(f"() => {mounted}.classList.contains('dt-enter')")
-
-
-def test_a_template_with_no_slide_id_is_ignored_with_a_warning(page, tmp_path):
-    """An empty data-slide would be a prefix of every cue id, so the slide is dropped rather than
-    made the owner of the whole page."""
-    body = (
-        '<div data-scene="1"><template data-slide><p data-cue="1.1a">nameless</p></template>'
-        '<template data-slide="1.1"><p data-cue="1.1a">named</p></template></div>'
-    )
-    page.goto(write_page(tmp_path, "noid.html", body))
-    page.evaluate("() => window.__decktalk.ready")
-    assert page.evaluate("() => window.__decktalk.catalog[0].slides") == ["1.1"]
-    assert any("no id" in w for w in warnings_of(page))
-
-
-def test_a_template_on_a_scripted_slide_warns_about_the_fields_it_cannot_give(page, tmp_path):
-    """A slide the script declared takes only the template's markup, so its other attributes warn."""
-    body = (
-        '<div data-scene="1"><template data-slide="1.1" data-hold="20" data-preview="1.1a@2">'
-        '<p data-cue="1.1a">from markup</p></template></div>'
-        "<script>DeckTalk.scene(1, { slides: [ { id: '1.1', hold: 4 } ] });</script>"
-    )
-    page.goto(write_page(tmp_path, "mixed.html", body))
-    page.evaluate("() => window.__decktalk.ready")
-    assert any("hold, owns and preview are ignored" in w for w in warnings_of(page))
-    # The warning is only worth having if the runtime does what it says, so the script's hold stands.
-    assert page.evaluate("() => DeckTalk.findSlide('1.1').slide.hold") == 4
-
-
-# ---- cue ownership ---------------------------------------------------------------------
-
-
-def test_the_id_prefix_is_the_ownership_rule(page, tmp_path):
-    """A cue belongs to the slide whose id is the longest prefix of the cue id."""
-    body = (
-        '<div data-scene="4">'
-        '<template data-slide="4.2"><p data-cue="4.2a">first</p></template>'
-        '<template data-slide="4.2b"><p data-cue="4.2b1">second</p></template></div>'
-    )
-    page.goto(f"{write_page(tmp_path, 'prefix.html', body)}?scene=4&t0=0&cues=4.2a@0.1,4.2b1@0.4")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 2")
-    # "4.2b" is a longer prefix of "4.2b1" than "4.2" is, so the second cue mounted the second slide.
-    assert page.evaluate("() => window.__decktalk.slide") == "4.2b"
-    assert page.evaluate("() => window.__decktalk.warnings") == []
-
-
-def test_preview_seconds_grant_no_ownership(page, tmp_path):
-    """`preview` is timing only, so a cue no slide id or owns list claims is unknown."""
-    script = (
-        "DeckTalk.scene(5, { slides: [ { id: '5.1', preview: { 'borrowed': 1 },"
-        ' render: () => `<p data-cue="borrowed">mine?</p>` } ] });'
-    )
-    page.goto(f"{script_page(tmp_path, 'preview.html', script)}?scene=5&t0=0&cues=borrowed@0.1")
-    page.wait_for_timeout(300)
-    warnings = page.evaluate("() => window.__decktalk.warnings")
-    assert "unknown cue id borrowed (no slide id or owns list matches it)" in warnings, warnings
-    assert "no slide owns any listed cue, so nothing will mount" in warnings, warnings
-
-
-def test_owns_claims_a_cue_id_that_carries_no_slide_id(page, tmp_path):
-    """`owns` is the exception the prefix rule needs, and it is enough on its own."""
-    page.goto(f"{write_page(tmp_path, 'owns.html', MARKUP_SCENE)}?scene=1&t0=0&cues=odd-one@0.1")
-    page.wait_for_function("() => window.__decktalk.fired.includes('odd-one')")
-    assert page.evaluate("() => window.__decktalk.slide") == "1.3"
-    assert page.evaluate("() => document.querySelector('[data-cue=\"odd-one\"]').classList.contains('dt-shown')")
-
-
-# ---- modes ------------------------------------------------------------------------------
-
-
-def test_cue_mode_fires_in_order_and_logs_each_cue(page, tmp_path):
-    cues = "1.1ball@0.3,1.1count@0.9,1.2sum@1.4,odd-one@1.8"
-    page.goto(f"{write_page(tmp_path, 'cues.html', MARKUP_SCENE)}?scene=1&t0=0&cues={cues}")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 4", timeout=5000)
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1ball", "1.1count", "1.2sum", "odd-one"]
-    assert page.evaluate("() => document.body.dataset.done") == "1"
-    page.wait_for_function("() => window.__decktalk.cueLog.every((e) => e.after !== null)")
-    log = page.evaluate("() => window.__decktalk.cueLog")
-    for e, due in zip(log, (0.3, 0.9, 1.4, 1.8), strict=True):
-        assert e["due"] == due and e["ran"] >= due, e
-        assert e["frame"] <= e["ran"] + 0.001 and e["frame"] < e["next"] < e["after"], e
-    assert page.evaluate("() => window.__decktalk.warnings") == []
-    assert not page.errors
-
-
-def test_each_cue_log_row_carries_what_its_reveals_describe(page, tmp_path):
-    """The transcript is built from these strings, so the row a recording leaves has to carry them."""
-    cues = "1.1ball@0.3,1.1count@0.9,1.2sum@1.4"
-    page.goto(f"{write_page(tmp_path, 'described.html', MARKUP_SCENE)}?scene=1&t0=0&cues={cues}")
-    page.wait_for_function("() => window.__decktalk.cueLog.length >= 3", timeout=5000)
-    described = {e["id"]: e["describe"] for e in page.evaluate("() => window.__decktalk.cueLog")}
-    # Only 1.1ball carries data-describe in the scene, and a reveal without one writes null.
-    assert described == {"1.1ball": "a ball rests in the bowl", "1.1count": None, "1.2sum": None}
-    assert not page.errors
-
-
-def test_preview_mode_uses_holds_and_preview_seconds(page, tmp_path):
-    page.goto(f"{write_page(tmp_path, 'preview.html', MARKUP_SCENE)}?scene=1&speed=20")
-    assert page.evaluate("() => window.__decktalk.mode") == "preview"
-    assert page.evaluate("() => window.__decktalk.slide") == "1.1"
-    page.wait_for_function("() => document.body.dataset.done === '1'", timeout=5000)
-    page.wait_for_function("() => window.__decktalk.fired.includes('1.2sum')", timeout=5000)
-
-
-def test_signal_mode_waits_for_start_clock(page, tmp_path):
-    """With t0=signal the clock does not start at load, and starts when the recorder says so."""
-    page.goto(f"{write_page(tmp_path, 'signal.html', MARKUP_SCENE)}?scene=1&t0=signal&cues=1.1ball@0.1")
-    page.wait_for_timeout(400)
-    assert page.evaluate("() => window.__decktalk.fired") == []
-    page.evaluate("() => DeckTalk.startClock()")
-    page.wait_for_function("() => window.__decktalk.fired.includes('1.1ball')", timeout=2000)
-
-
-def test_freeze_mode_reveals_everything(page, tmp_path):
-    page.goto(f"{write_page(tmp_path, 'freeze.html', MARKUP_SCENE)}?slide=1.1")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => window.__decktalk.mode") == "freeze"
-    hidden = "() => [...document.querySelectorAll('.dt-reveal')].filter(e => !e.classList.contains('dt-shown')).length"
-    assert page.evaluate(hidden) == 0
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1ball", "1.1count"]
-    assert not page.errors
-
-
-# ---- handlers ----------------------------------------------------------------------------
-
-# Two slides whose handlers record what they receive. Slide 1.2 also keeps a zero-argument handler.
-HANDLER_PAGE = """
-window.__got = [];
-DeckTalk.scene(1, { slides: [
-  { id: '1.1', preview: { '1.1a': 0.1 }, render: () => `<p data-cue="1.1a">a</p>`,
-    enter: (slide, ctx) => window.__got.push({ kind: 'enter', slide: slide.dataset.slide, ctx }),
-    on: { '1.1a': (slide, ctx) => window.__got.push({ kind: 'on', slide: slide.dataset.slide,
-      current: slide === document.querySelector('.dt-slide:not(.dt-leave)'), ctx }) } },
-  { id: '1.2', preview: { '1.2a': 0.1 }, render: () => `<p data-cue="1.2a">b</p>`,
-    on: { '1.2a': () => window.__got.push({ kind: 'zero' }) } },
-]});
-DeckTalk.on('1.2a', (slide, ctx) => window.__got.push({ kind: 'global', slide: slide.dataset.slide, ctx }));
-DeckTalk.on('1.2a', () => window.__got.push({ kind: 'global-zero' }));
-"""
-
-
-def test_slide_handlers_receive_the_slide_and_ctx(page, tmp_path):
-    """A slide's on[id] is called with the mounted slide element and { id, at, frozen, slideId }."""
-    page.goto(f"{script_page(tmp_path, 'handlers.html', HANDLER_PAGE)}?scene=1&t0=0&cues=1.1a@0.1,1.2a@0.4")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 2")
-    got = page.evaluate("() => window.__got")
-    on = next(g for g in got if g["kind"] == "on")
-    assert on["slide"] == "1.1" and on["current"] is True
-    assert set(on["ctx"]) == {"id", "at", "frozen", "slideId"}
-    assert on["ctx"]["id"] == "1.1a" and on["ctx"]["slideId"] == "1.1" and on["ctx"]["frozen"] is False
-    assert 0.1 <= on["ctx"]["at"] < 0.4, on
-    assert any(g["kind"] == "zero" for g in got), got
-    assert page.evaluate("() => window.__decktalk.warnings") == []
-    assert not page.errors
-
-
-def test_global_handlers_receive_the_slide_and_ctx(page, tmp_path):
-    """Every DeckTalk.on handler is called with the slide mounted when the cue fires."""
-    page.goto(f"{script_page(tmp_path, 'handlers.html', HANDLER_PAGE)}?scene=1&t0=0&cues=1.1a@0.1,1.2a@0.4")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 2")
-    got = page.evaluate("() => window.__got")
-    glob = next(g for g in got if g["kind"] == "global")
-    assert glob["slide"] == "1.2"
-    assert glob["ctx"]["id"] == "1.2a" and glob["ctx"]["slideId"] == "1.2" and glob["ctx"]["frozen"] is False
-    assert glob["ctx"]["at"] >= 0.4, glob
-    kinds = [g["kind"] for g in got]
-    assert kinds.index("zero") < kinds.index("global") < kinds.index("global-zero"), kinds
-
-
-def test_enter_receives_the_same_ctx(page, tmp_path):
-    """A slide's enter gets the slide and a ctx whose id and slideId are the slide id, frozen or not."""
-    url = script_page(tmp_path, "handlers.html", HANDLER_PAGE)
-    page.goto(f"{url}?scene=1&t0=0&cues=1.1a@0.1,1.2a@0.4")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 1")
-    enter = next(g for g in page.evaluate("() => window.__got") if g["kind"] == "enter")
-    assert enter["slide"] == "1.1"
-    assert set(enter["ctx"]) == {"id", "at", "frozen", "slideId"}
-    assert enter["ctx"]["id"] == "1.1" and enter["ctx"]["slideId"] == "1.1" and enter["ctx"]["frozen"] is False
-    page.goto(f"{url}?slide=1.1")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
-    frozen = [g for g in page.evaluate("() => window.__got") if g["kind"] in ("enter", "on")]
-    assert [g["kind"] for g in frozen] == ["enter", "on"]
-    assert all(g["ctx"]["frozen"] is True and g["ctx"]["slideId"] == "1.1" for g in frozen), frozen
-
-
-def test_an_unlisted_cue_id_reaches_a_handler(page, tmp_path):
-    """A cue no slide owns still fires when a DeckTalk.on handler is waiting for it."""
-    body = (
-        '<div data-scene="1"><template data-slide="1.1"><p data-cue="1.1a">a</p></template></div>'
-        "<script>window.__hits = []; DeckTalk.on('custom', () => window.__hits.push('custom'));</script>"
-    )
-    page.goto(f"{write_page(tmp_path, 'custom.html', body)}?scene=1&t0=0&cues=1.1a@0.1,custom@0.3")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 2")
-    assert page.evaluate("() => window.__hits") == ["custom"]
-    assert page.evaluate("() => window.__decktalk.warnings") == []
-
-
-# ---- text modes --------------------------------------------------------------------------
-
-# A data-text="spoken" caption styled to show every word unlit at its cue and light each one as it is spoken, with the
-# word being spoken, the last lit one, in the accent.
-SYNC_PAGE = """
-<style>
-  .cap .dt-word { opacity: 1; color: rgb(113, 113, 122); transition: none; }
-  .cap .dt-word.dt-shown { color: rgb(9, 9, 11); }
-  .cap .dt-word.dt-shown:has(+ .dt-word:not(.dt-shown)) { color: rgb(44, 31, 234); }
-</style>
-<div data-scene="1">
-  <template data-slide="1.1">
-    <p class="cap" data-cue="1.1cap" data-text="spoken">The height is the error, so lower is better.</p>
+# The three-slide scene every markup test uses: attributes only, no JavaScript anywhere. Its moments
+# are local names, so the wire ids the recorder sees are "1.1:ball" and the rest.
+MARKUP_SCENE = """
+<div data-scene="1" data-name="Open">
+  <template data-slide="1.1" data-hold="6">
+    <h1 class="title">A bowl</h1>
+    <p class="ball" data-in="ball" data-in-style="pop" data-describe="a ball rests in the bowl">A ball</p>
+    <p class="step" data-in="step" data-back="ball" data-describe="the step down">Watch it step down</p>
+  </template>
+  <template data-slide="1.2" data-hold="4">
+    <p class="sum" data-in="sum" data-tex-display data-tex="\\sum_{i=1}^{n} x_i"
+       data-describe="the sum of the first n terms">the sum of x i from one to n</p>
+  </template>
+  <template data-slide="1.3" data-hold="4" data-owns="aside">
+    <p class="late" data-in="late" data-describe="the closing line">nothing follows</p>
   </template>
 </div>
 """
 
 
-def test_synced_caption_lights_each_word_as_it_is_spoken(page, tmp_path):
-    """A data-text="spoken" caption wraps every word at its cue and lights each one at its spoken second."""
-    words = "The@0.1,height@0.15,is@0.2,the@0.25,error@0.3,so@0.35,lower@6,is@6.2,better@6.4"
-    url = write_page(tmp_path, "sync.html", SYNC_PAGE)
-    page.goto(f"{url}?scene=1&t0=0&cues=1.1cap@0.05&words={words}")
-    page.wait_for_function("() => document.querySelectorAll('.cap .dt-word.dt-shown').length >= 6", timeout=3000)
-    assert page.evaluate("() => document.querySelectorAll('.cap .dt-word').length") == 9
-    assert page.evaluate("() => document.querySelectorAll('.cap .dt-word.dt-shown').length") == 6
-    style = "(sel) => { const s = getComputedStyle(document.querySelector(sel)); return [s.opacity, s.color]; }"
-    assert page.evaluate(style, ".cap .dt-word:not(.dt-shown)") == ["1", "rgb(113, 113, 122)"]
-    assert page.evaluate(style, ".cap .dt-word.dt-shown:has(+ .dt-word:not(.dt-shown))") == ["1", "rgb(44, 31, 234)"]
-    assert page.evaluate("() => window.__decktalk.warnings") == []
-    assert page.evaluate("() => window.__decktalk.spokenLog")[0]["n"] == 9
+def deck(tmp_path: Path, name: str, body: str = MARKUP_SCENE) -> str:
+    """A page carrying the shared scene and the typesetter its one equation asks for."""
+    return write_page(tmp_path, name, body, head=KATEX)
 
 
-def test_spoken_text_has_no_container_animation(page, tmp_path):
-    """A data-text="spoken" element without data-reveal gets data-reveal="instant", so it never fades or rises."""
-    page.goto(f"{write_page(tmp_path, 'sync.html', SYNC_PAGE)}?scene=1&t0=0&cues=1.1cap@0.05")
-    page.wait_for_function("() => window.__decktalk.fired.includes('1.1cap')")
-    cap = "document.querySelector('[data-cue=\"1.1cap\"]')"
-    assert page.evaluate(f"() => {cap}.getAttribute('data-reveal')") == "instant"
-    assert page.evaluate(f"() => getComputedStyle({cap}).animationName") == "none"
+@pytest.fixture(scope="module")
+def page():
+    """The page a person opens: the runtime and nothing the recorder would add."""
+    yield from chromium_page()
 
 
-def test_spoken_text_keeps_an_explicit_reveal(page, tmp_path):
-    """A data-text="spoken" element that sets its own data-reveal keeps it."""
-    body = (
-        '<div data-scene="1"><template data-slide="1.1">'
-        '<p data-delay="0" data-text="spoken" data-reveal="fade">Hello there</p></template></div>'
+@pytest.fixture(autouse=True)
+def _fresh_errors(page):
+    page.errors.clear()
+    yield
+
+
+def warnings_of(page: Page) -> list[dict[str, Any]]:
+    """Every warning the page reported, as the five fields the contract publishes."""
+    return page.evaluate("() => window.__decktalk.warnings")
+
+
+def codes_of(page: Page) -> list[str]:
+    """The codes alone, which is what a test that cares about the condition and not the place reads."""
+    return [row["code"] for row in warnings_of(page)]
+
+
+def opacity_one_frame_in(page: Page, selector: str) -> float:
+    """The opacity of an element one captured frame into whatever it is playing.
+
+    The animation is paused and moved rather than watched, so the assertion is exact rather than a
+    race against the compositor.
+    """
+    return page.evaluate(
+        """([selector, frame]) => {
+            const el = document.querySelector(selector);
+            const playing = el.getAnimations();
+            for (const one of playing) { one.pause(); one.currentTime = frame; }
+            return Number(getComputedStyle(el).opacity);
+        }""",
+        [selector, FRAME_STEP_MS],
     )
-    page.goto(f"{write_page(tmp_path, 'syncfx.html', body)}?scene=1")
-    page.wait_for_function("() => !!document.querySelector('[data-text=spoken].dt-shown')")
-    assert page.evaluate("() => document.querySelector('[data-text=spoken]').getAttribute('data-reveal')") == "fade"
-    assert (
-        page.evaluate("() => getComputedStyle(document.querySelector('[data-text=spoken]')).animationName")
-        == "dt-fadein"
-    )
 
 
-TEXT_MODES = (
-    '<div data-scene="1"><template data-slide="1.1">'
-    '<b data-cue="1.1n" data-text="count" data-duration="1.5">1 in 10</b>'
-    '<i data-cue="1.1t" data-text="type 60ms">typed out</i></template></div>'
+class _Alias(SimpleHTTPRequestHandler):
+    """A local origin that serves a directory and answers the one router alias a preview asks for."""
+
+    times: str | None = None
+
+    def do_GET(self) -> None:  # noqa: N802  (the base class spells it this way)
+        if self.path != "/__decktalk/cue-times.json":
+            super().do_GET()
+            return
+        if type(self).times is None:
+            self.send_error(404)
+            return
+        body = type(self).times.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: object) -> None:
+        """A test server that printed every request would bury the failure that matters."""
+
+
+@pytest.fixture
+def origin(tmp_path: Path) -> Iterator[Any]:
+    """A served project directory, so a preview can ask for the cue times the last run resolved."""
+
+    class Server:
+        def __init__(self, root: Path) -> None:
+            self.root = root
+            handler = type("Handler", (_Alias,), {})
+            self.handler = handler
+            self.server = ThreadingHTTPServer(("127.0.0.1", 0), partial(handler, directory=str(root)))
+            self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+            self.thread.start()
+
+        @property
+        def url(self) -> str:
+            return f"http://127.0.0.1:{self.server.server_address[1]}"
+
+        def publish(self, document: dict[str, Any] | None) -> None:
+            self.handler.times = None if document is None else json.dumps(document)
+
+        def write(self, name: str, body: str) -> str:
+            """A page beside its own copy of the runtime and the typesetter, as a project is served."""
+            (self.root / RUNTIME_FILE).write_bytes(runtime_path().read_bytes())
+            shutil.copytree(katex_dir(), self.root / "katex", dirs_exist_ok=True)
+            (self.root / name).write_text(
+                f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{name}</title>'
+                f'<link rel="stylesheet" href="katex/katex.min.css"><script src="katex/katex.min.js"></script>'
+                f'<script src="{RUNTIME_FILE}"></script></head><body>{body}</body></html>',
+                encoding="utf-8",
+            )
+            return f"{self.url}/{name}"
+
+    served = Server(tmp_path)
+    yield served
+    served.server.shutdown()
+    served.server.server_close()
+    served.thread.join()
+
+
+# ---- the shape of a page --------------------------------------------------------------------
+
+
+def test_the_runtime_declares_the_version_it_shipped_with(page, tmp_path):
+    """The recorder writes the page's version into the recording log, so the page publishes one."""
+    page.goto(deck(tmp_path, "version.html"))
+    page.evaluate("() => window.__decktalk.ready")
+    assert page.evaluate("() => window.__decktalk.version") == page.evaluate("() => window.DeckTalk.version")
+    assert page.evaluate("() => /^\\d+\\.\\d+\\.\\d+/.test(window.__decktalk.version)")
+
+
+def test_the_stylesheet_is_prepended_and_carries_no_specificity(page, tmp_path):
+    """A page rule of equal weight has to win, so every runtime selector sits inside :where()."""
+    head = "<style>.ball { color: rgb(1, 2, 3) }</style>"
+    page.goto(write_page(tmp_path, "weight.html", MARKUP_SCENE, head=head + KATEX))
+    page.evaluate("() => window.__decktalk.ready")
+    sheet = page.evaluate("() => document.getElementById('dt-style').textContent")
+    assert sheet.strip().startswith(":where(")
+    # A still is the one rule the page may not be argued out of, so it is the only forced one.
+    forced = [line for line in sheet.splitlines() if "!important" in line]
+    assert all("dt-frozen" in line for line in forced)
+    assert page.evaluate("() => document.head.firstElementChild.id") == "dt-style"
+    page.goto(f"{write_page(tmp_path, 'weight-shown.html', MARKUP_SCENE, head=head + KATEX)}?slide=1.1")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).color") == "rgb(1, 2, 3)"
+
+
+def test_wait_for_holds_ready_until_the_pages_own_condition(page, tmp_path):
+    """A deck with a condition of its own adds it to the runtime rather than replacing a global."""
+    body = "<script>DeckTalk.waitFor(new Promise((r) => setTimeout(() => { window.__late = 1; r(); }, 200)));</script>"
+    page.goto(deck(tmp_path, "gate.html", body + MARKUP_SCENE))
+    page.evaluate("() => window.__decktalk.ready")
+    assert page.evaluate("() => window.__late") == 1
+    assert not page.errors
+
+
+def test_ready_survives_a_page_promise_that_rejects(page, tmp_path):
+    """A page's own readiness is the page's own business, so a rejection is a warning and not a stall."""
+    body = "<script>DeckTalk.waitFor(Promise.reject(new Error('nope')));</script>"
+    page.goto(deck(tmp_path, "reject.html", body + MARKUP_SCENE))
+    assert page.evaluate("() => window.__decktalk.ready") is True
+    assert "PAGE_WAIT_REJECTED" in codes_of(page)
+
+
+# ---- slides written as markup ------------------------------------------------------------------
+
+
+def test_a_markup_scene_needs_no_javascript(page, tmp_path):
+    """The whole contract is attributes, so a deck of templates is a deck with no script in it."""
+    page.goto(deck(tmp_path, "markup.html"))
+    page.evaluate("() => window.__decktalk.ready")
+    catalog = page.evaluate("() => window.__decktalk.catalog")
+    assert [entry["scene"] for entry in catalog] == ["1"]
+    assert catalog[0]["name"] == "Open"
+    assert catalog[0]["slides"] == ["1.1", "1.2", "1.3"]
+    assert warnings_of(page) == []
+
+
+def test_a_template_slide_writes_a_backslash_once(page, tmp_path):
+    """Markup is parsed and not evaluated, which is the reason to prefer a template to a render string."""
+    page.goto(f"{deck(tmp_path, 'tex.html')}?slide=1.2")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    assert page.evaluate("() => document.querySelector('.sum').getAttribute('data-tex')") == "\\sum_{i=1}^{n} x_i"
+
+
+def test_markup_slides_join_a_scene_declared_in_script(page, tmp_path):
+    """A deck may be half markup and half script, and neither half has to know about the other."""
+    script = """
+      DeckTalk.scene(1, { name: "Scripted", slides: [
+        { id: "1.1" },
+        { id: "1.9", owns: ["only"], render: () => "<p>built in script</p>" },
+      ]});
+    """
+    page.goto(deck(tmp_path, "mixed.html", f"<script>{script}</script>{MARKUP_SCENE}"))
+    page.evaluate("() => window.__decktalk.ready")
+    catalog = page.evaluate("() => window.__decktalk.catalog")
+    assert catalog[0]["name"] == "Scripted"
+    assert catalog[0]["slides"] == ["1.1", "1.9", "1.2", "1.3"]
+    assert catalog[0]["cues"]["1.9"] == ["1.9:only"]
+
+
+# ---- every moment reaches the cue order ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("attribute", "local"),
+    [("data-in", "arrive"), ("data-back", "dim"), ("data-front", "lift"), ("data-out", "go")],
 )
-
-
-WATCH_TEXT = """(selector) => {
-  window.__seen = [];
-  const el = document.querySelector(selector);
-  new MutationObserver(() => window.__seen.push(el.textContent)).observe(el, {
-    childList: true,
-    characterData: true,
-    subtree: true,
-  });
-}"""
-"""Record every text an element holds while a text mode runs. Sampling from outside sees the
-finished text on a fast machine, and the finished text is the text the author already wrote, so
-only the states in between tell a mode that ran from a mode that was deleted."""
-
-
-def test_count_runs_up_to_the_last_number_and_stops_there(page, tmp_path):
-    """data-text="count" counts the last number of the text up from zero and lands on it.
-
-    The surrounding words never change, and the number passes through values below the target.
+def test_every_moment_attribute_joins_the_cue_order(page, tmp_path, attribute, local):
+    """An exit that never reached the cue order was a cue no check could see, which is the whole repair."""
+    scene = f"""
+    <div data-scene="2">
+      <template data-slide="2.1">
+        <p data-in="arrive" data-describe="the line">a line</p>
+        <p {attribute}="{local}" data-describe="the subject">the subject</p>
+      </template>
+    </div>
     """
-    page.goto(f"{write_page(tmp_path, 'count.html', TEXT_MODES)}?scene=1&t0=signal&cues=1.1n@0.05,1.1t@9")
+    page.goto(write_page(tmp_path, f"moment-{local}.html", scene))
     page.evaluate("() => window.__decktalk.ready")
-    page.evaluate(WATCH_TEXT, "b")
-    page.evaluate("() => DeckTalk.startClock()")
-    # The author already wrote "1 in 10", so waiting for that text alone would pass without a count.
-    page.wait_for_function(
-        "() => window.__seen.length > 0 && window.__seen[window.__seen.length - 1] === '1 in 10'",
-        timeout=5000,
-    )
-    seen = page.evaluate("() => window.__seen")
-    counts = [int(t.removeprefix("1 in ")) for t in seen]
-    assert all(t.startswith("1 in ") for t in seen)
-    assert min(counts) < 10 and counts[-1] == 10
-    assert counts == sorted(counts)
-    assert page.evaluate("() => window.__decktalk.warnings") == []
+    assert f"2.1:{local}" in page.evaluate("() => window.__decktalk.catalog[0].cues['2.1']")
 
 
-def test_count_first_counts_the_first_number_and_leaves_the_rest(page, tmp_path):
-    """data-text="count first" counts the first number instead of the last, which is the other branch."""
-    body = (
-        '<div data-scene="1"><template data-slide="1.1">'
-        '<b data-cue="1.1n" data-text="count first" data-duration="1.5">40 of 100</b></template></div>'
-    )
-    page.goto(f"{write_page(tmp_path, 'countfirst.html', body)}?scene=1&t0=signal&cues=1.1n@0.05")
+def test_a_local_moment_is_qualified_with_the_slide_that_carries_it(page, tmp_path):
+    """The author writes `ball` and the wire carries `1.1:ball`, which is the whole of the qualification."""
+    page.goto(deck(tmp_path, "wire.html"))
     page.evaluate("() => window.__decktalk.ready")
-    page.evaluate(WATCH_TEXT, "b")
-    page.evaluate("() => DeckTalk.startClock()")
-    page.wait_for_function(
-        "() => window.__seen.length > 0 && window.__seen[window.__seen.length - 1] === '40 of 100'",
-        timeout=5000,
-    )
-    seen = page.evaluate("() => window.__seen")
-    assert all(t.endswith(" of 100") for t in seen)
-    counts = [int(t.removesuffix(" of 100")) for t in seen]
-    assert min(counts) < 40 and counts[-1] == 40
+    cues = page.evaluate("() => window.__decktalk.catalog[0].cues")
+    assert cues["1.1"] == ["1.1:ball", "1.1:step"]
+    assert cues["1.3"] == ["1.3:late", "1.3:aside"]
 
 
-def test_type_writes_the_text_one_character_at_a_time(page, tmp_path):
-    """data-text="type Nms" types the text out, so the element holds a growing prefix while it runs."""
-    page.goto(f"{write_page(tmp_path, 'type.html', TEXT_MODES)}?scene=1&t0=signal&cues=1.1n@9,1.1t@0.05")
-    page.evaluate("() => window.__decktalk.ready")
-    page.evaluate(WATCH_TEXT, "i")
-    page.evaluate("() => DeckTalk.startClock()")
-    page.wait_for_function(
-        "() => window.__seen.length > 0 && window.__seen[window.__seen.length - 1] === 'typed out'",
-        timeout=5000,
-    )
-    seen = page.evaluate("() => window.__seen")
-    assert all("typed out".startswith(t) for t in seen)
-    assert len(seen) >= len("typed out")
-    assert [len(t) for t in seen] == sorted(len(t) for t in seen)
-    assert page.evaluate("() => window.__decktalk.warnings") == []
+def test_data_owns_claims_a_cue_only_a_handler_serves(page, tmp_path):
+    """A cue with no element of its own still belongs to a slide, which is what declares its owner."""
+    body = "<script>DeckTalk.on('1.3:aside', (slide) => { window.__aside = slide.dataset ? 1 : 1; });</script>"
+    url = deck(tmp_path, "owns.html", body + MARKUP_SCENE)
+    page.goto(f"{url}?scene=1&t0=0&cues=1.3:late@0.1,1.3:aside@0.2")
+    page.wait_for_function("() => window.__aside === 1")
+    assert "PAGE_NO_OWNER" not in codes_of(page)
 
 
-REVEAL_EFFECTS = {
-    "rise": "dt-rise",
-    "fade": "dt-fadein",
-    "draw": "dt-draw",
-    "drop": "dt-drop",
-    "pop": "dt-pop",
-    "dim": "dt-dim",
-    "instant": "none",
-}
-
-
-@pytest.mark.parametrize(("effect", "keyframes"), sorted(REVEAL_EFFECTS.items()))
-def test_every_reveal_effect_plays_its_own_animation(page, tmp_path, effect, keyframes):
-    """Each data-reveal value names one animation of its own, and instant names none.
-
-    The names are distinct, so deleting one effect's rule makes that effect fall back to `rise`.
-    A computed animation name is only a string the stylesheet handed back, so the element is also
-    asked for the animation it is running, which is what deleting the keyframes takes away.
+def test_a_class_moment_joins_the_cue_order_and_declares_its_span(page, tmp_path):
+    """A class hands the page's own stylesheet an animation at a cue, so its length is read off the page."""
+    head = "<style>.stale { animation: fade 0.3s linear both } @keyframes fade { to { opacity: .2 } }</style>"
+    scene = """
+    <div data-scene="3">
+      <template data-slide="3.1">
+        <p data-in="show" data-class="cancel:stale" data-describe-class="cancel:the h is struck out"
+           data-describe="the fraction">h over h</p>
+      </template>
+    </div>
     """
-    body = (
-        '<div data-scene="1"><template data-slide="1.1">'
-        f'<p data-cue="1.1a" data-reveal="{effect}">shown</p></template></div>'
-    )
-    page.goto(f"{write_page(tmp_path, f'reveal-{effect}.html', body)}?scene=1&t0=0&cues=1.1a@0.1")
-    page.wait_for_function("() => window.__decktalk.fired.includes('1.1a')")
-    el = "document.querySelector('[data-cue=\"1.1a\"]')"
-    assert page.evaluate(f"() => getComputedStyle({el}).animationName") == keyframes
-    assert page.evaluate(f"() => {el}.getAnimations().length") == (0 if effect == "instant" else 1)
-    assert len(set(REVEAL_EFFECTS.values())) == len(REVEAL_EFFECTS)
-
-
-def test_dim_starts_visible_and_the_others_start_hidden(page, tmp_path):
-    """A dim reveal is on screen before its cue and recedes on it, which is the opposite of the rest."""
-    body = (
-        '<div data-scene="1"><template data-slide="1.1">'
-        '<p class="d" data-cue="1.1d" data-reveal="dim">receding</p>'
-        '<p class="r" data-cue="1.1r" data-reveal="rise">arriving</p></template></div>'
-    )
-    page.goto(f"{write_page(tmp_path, 'dim.html', body)}?scene=1&t0=signal&cues=1.1d@0.2,1.1r@0.4")
+    page.goto(write_page(tmp_path, "class.html", scene, head=head))
     page.evaluate("() => window.__decktalk.ready")
-    assert page.evaluate("() => getComputedStyle(document.querySelector('.d')).opacity") == "1"
-    assert page.evaluate("() => getComputedStyle(document.querySelector('.r')).opacity") == "0"
+    entry = page.evaluate("() => window.__decktalk.catalog[0]")
+    assert entry["cues"]["3.1"] == ["3.1:show", "3.1:cancel"]
+    assert entry["spans"]["3.1:cancel"] == pytest.approx(0.3)
+    assert warnings_of(page) == []
 
 
-def test_a_typewriter_stops_when_its_slide_leaves(page, tmp_path):
-    """A slide that has left the stage is removed, and nothing it started keeps painting it."""
-    body = (
-        '<div data-scene="1">'
-        '<template data-slide="1.1"><i data-cue="1.1t" data-text="type 200ms">a long line of typing</i></template>'
-        '<template data-slide="1.2"><p data-cue="1.2a">next</p></template></div>'
+def test_a_class_with_no_phrase_for_it_loses_its_line(page, tmp_path):
+    """The transcript is the reason a class may ship at all, so a class with no phrase is refused."""
+    scene = """
+    <div data-scene="3">
+      <template data-slide="3.1"><p data-in="show" data-class="cancel:stale">h over h</p></template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "undescribed.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    assert "PAGE_CLASS_UNDESCRIBED" in codes_of(page)
+
+
+# ---- the modes -------------------------------------------------------------------------------
+
+
+def test_cue_mode_fires_in_order_and_reports_each_cue(page, tmp_path):
+    """The recorder passes wire ids and seconds, and the page fires each at its own second."""
+    url = deck(tmp_path, "cued.html")
+    page.goto(f"{url}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:step@0.3,1.2:sum@0.6")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    page.wait_for_function("() => window.__decktalk.fired.length === 3")
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step", "1.2:sum"]
+    assert page.evaluate("() => window.__decktalk.mode") == "cue"
+
+
+def test_the_first_slide_is_mounted_before_the_clock_starts(page, tmp_path):
+    """A recording that opened on an empty stage would spend its first frames on nothing."""
+    url = deck(tmp_path, "first.html")
+    page.goto(f"{url}?scene=1&t0=signal&cues=1.1:ball@0.2,1.2:sum@0.6")
+    page.evaluate("() => window.__decktalk.ready")
+    assert page.evaluate("() => window.__decktalk.slide") == "1.1"
+    assert page.evaluate("() => window.__decktalk.started()") is False
+    assert page.evaluate("() => window.__decktalk.fired") == []
+    page.evaluate("() => window.DeckTalk.startClock()")
+    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+
+
+def test_freeze_mode_fires_every_cue_the_slide_declares(page, tmp_path):
+    """A still is the whole slide, which is what the index links and what a screenshot records."""
+    page.goto(f"{deck(tmp_path, 'frozen.html')}?slide=1.1")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
+    assert page.evaluate("() => window.__decktalk.mode") == "freeze"
+    assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).opacity") == "1"
+
+
+def test_the_index_page_lists_every_scene_and_slide(page, tmp_path):
+    """A page with no query is a contents page, which is where a person starts and where boxes are measured."""
+    page.goto(deck(tmp_path, "index.html"))
+    page.evaluate("() => window.__decktalk.ready")
+    assert page.evaluate("() => window.__decktalk.mode") == "index"
+    links = page.evaluate("() => [...document.querySelectorAll('#dt-index a')].map((a) => a.getAttribute('href'))")
+    assert "?scene=1" in links
+    assert "?slide=1.1" in links
+    assert page.evaluate("() => getComputedStyle(document.getElementById('dt-stage')).display") == "none"
+
+
+def test_a_preview_without_cue_times_still_shows_every_cue(page, tmp_path):
+    """A deck whose cues have never been resolved must still preview, or the stage opens empty."""
+    page.goto(f"{deck(tmp_path, 'preview.html')}?scene=1&speed=8")
+    page.wait_for_function("() => window.__decktalk.fired.includes('1.1:step')", timeout=15000)
+    assert page.evaluate("() => window.__decktalk.mode") == "preview"
+    assert page.evaluate("() => window.__decktalk.fired")[:2] == ["1.1:ball", "1.1:step"]
+
+
+def test_a_preview_plays_the_cue_times_the_project_resolved(page, origin):
+    """The point of a preview is to review the film's own timing without spending a recording on it."""
+    origin.publish({"sections": [{"key": "01", "scene": "1", "cues": [{"cue": "1.1:step", "at": 0.2}]}]})
+    page.goto(f"{origin.write('timed.html', MARKUP_SCENE)}?scene=1")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:step"]
+    assert page.evaluate("() => window.__decktalk.mode") == "preview"
+    assert warnings_of(page) == []
+
+
+def test_two_sections_naming_one_scene_cannot_be_told_apart(page, origin):
+    """A preview that guessed which section's timing to play would show a film nobody is making."""
+    origin.publish(
+        {
+            "sections": [
+                {"key": "01", "scene": "1", "cues": [{"cue": "1.1:ball", "at": 0.2}]},
+                {"key": "02", "scene": "1", "cues": [{"cue": "1.1:step", "at": 0.2}]},
+            ]
+        }
     )
-    page.goto(f"{write_page(tmp_path, 'stop.html', body)}?scene=1&t0=0&cues=1.1t@0.1,1.2a@0.4")
-    page.wait_for_function("() => document.querySelector('i') && (window.__typing = document.querySelector('i'))")
-    page.wait_for_function("() => window.__decktalk.slide === '1.2'")
-    page.wait_for_function("() => !document.body.contains(window.__typing)", timeout=2000)
-    settled = page.evaluate("() => window.__typing.textContent.length")
-    page.wait_for_timeout(700)
-    assert page.evaluate("() => window.__typing.textContent.length") == settled
-    assert settled < len("a long line of typing")
+    page.goto(f"{origin.write('twice.html', MARKUP_SCENE)}?scene=1&speed=8")
+    page.wait_for_function("() => window.__decktalk.warnings.length > 0")
+    assert "PAGE_PREVIEW_AMBIGUOUS" in codes_of(page)
+
+
+def test_an_absent_cue_times_file_never_fails_a_preview(page, origin):
+    """Nothing on the preview path may fail a page, so a project that has never run `cue` previews anyway."""
+    origin.publish(None)
+    page.goto(f"{origin.write('absent.html', MARKUP_SCENE)}?scene=1&speed=8")
+    page.wait_for_function("() => window.__decktalk.fired.includes('1.1:ball')", timeout=15000)
+    assert warnings_of(page) == []
     assert not page.errors
 
 
-def test_a_typewriter_keeps_the_box_of_its_finished_text(page, tmp_path):
-    """A reveal measures its own box, so the slide is on the stage before the first reveal runs.
+# ---- how a moment looks ------------------------------------------------------------------------
 
-    An element that types from the mount is the case that catches it. A slide still detached has no
-    layout, so the guard would set a minimum of zero and everything around the element would shift.
+
+@pytest.mark.parametrize("style", sorted(ENTRANCES))
+def test_every_entrance_draws_its_share_inside_the_first_captured_frame(page, tmp_path, style):
+    """An entrance that drew almost nothing in its first frame is an onset `verify` cannot read."""
+    scene = f"""
+    <div data-scene="4">
+      <template data-slide="4.1">
+        <p class="subject" data-in="show" data-in-style="{style}" data-describe="the subject">a subject</p>
+      </template>
+    </div>
     """
-    body = (
-        '<div data-scene="1"><template data-slide="1.1">'
-        '<i data-delay="0" data-text="type 200ms">a long line of typing</i></template></div>'
+    page.goto(f"{write_page(tmp_path, f'onset-{style}.html', scene)}?scene=4&t0=0&cues=4.1:show@0.05")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    assert opacity_one_frame_in(page, ".subject") >= ONSET_FIRST_FRAME_PERCENT / 100
+
+
+def test_an_entrance_plays_for_the_length_its_author_wrote(page, tmp_path):
+    """`data-in-seconds` governs the entrance alone, which is the span and never the onset."""
+    scene = """
+    <div data-scene="4">
+      <template data-slide="4.1">
+        <p class="subject" data-in="show" data-in-seconds="0.4" data-describe="the subject">a subject</p>
+      </template>
+    </div>
+    """
+    page.goto(f"{write_page(tmp_path, 'length.html', scene)}?scene=4&t0=0&cues=4.1:show@0.05")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    length = page.evaluate("() => document.querySelector('.subject').getAnimations()[0].effect.getTiming().duration")
+    assert length == pytest.approx(400)
+
+
+def test_a_step_back_dims_the_element_without_hiding_it(page, tmp_path):
+    """Stepping back is emphasis, which is dim enough to read as secondary and light enough to read."""
+    url = deck(tmp_path, "back.html")
+    page.goto(f"{url}?scene=1&t0=0&cues=1.1:step@0.05,1.1:ball@0.3")
+    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+    page.wait_for_timeout(int(ATTENTION["back"].seconds * 1000) + 200)
+    assert float(page.evaluate("() => getComputedStyle(document.querySelector('.step')).opacity")) == pytest.approx(
+        BACK_OPACITY, abs=0.02
     )
-    page.goto(f"{write_page(tmp_path, 'typebox.html', body)}?scene=1&t0=0")
-    page.wait_for_function("() => document.querySelector('i').textContent.length > 0", timeout=3000)
-    el = "document.querySelector('i')"
-    assert page.evaluate(f"() => parseFloat(getComputedStyle({el}).minWidth)") > 0
-    assert page.evaluate(f"() => parseFloat(getComputedStyle({el}).minHeight)") > 0
 
 
-def test_a_page_callback_that_throws_becomes_a_warning(page, tmp_path):
-    """A render, an enter and a handler are the page's code, so what they throw the recorder reads back."""
-    script = (
-        "DeckTalk.scene(1, { slides: [ { id: '1.1',"
-        ' render: () => `<p data-cue="1.1a">hi</p>`,'
-        " enter: () => { throw new Error('enter boom') },"
-        " on: { '1.1a': () => { throw new Error('cue boom') } } } ] });"
+def test_an_exit_plays_the_word_the_author_chose(page, tmp_path):
+    """Both exits are the one length an exit is allowed, and the word decides what it looks like."""
+    scene = """
+    <div data-scene="5">
+      <template data-slide="5.1">
+        <p class="gone" data-in="show" data-out="hide" data-out-style="fall" data-describe="the wrong answer">two</p>
+      </template>
+    </div>
+    """
+    page.goto(f"{write_page(tmp_path, 'exit.html', scene)}?scene=5&t0=0&cues=5.1:show@0.05,5.1:hide@0.3")
+    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+    names = page.evaluate("() => document.querySelector('.gone').getAnimations().map((a) => a.animationName)")
+    assert "dt-out-fall" in names
+    length = page.evaluate(
+        "() => document.querySelector('.gone').getAnimations()"
+        ".find((a) => a.animationName === 'dt-out-fall').effect.getTiming().duration"
     )
-    page.goto(f"{script_page(tmp_path, 'throws.html', script)}?scene=1&t0=0&cues=1.1a@0.1")
-    page.wait_for_function("() => window.__decktalk.fired.includes('1.1a')")
-    warnings = warnings_of(page)
-    assert any("enter function that threw" in w for w in warnings), warnings
-    assert any("slide handler that threw" in w for w in warnings), warnings
+    assert length == pytest.approx(EXITS["fall"].seconds * 1000)
 
 
-def test_a_spoken_caption_stops_when_its_slide_leaves(page, tmp_path):
-    """The word-by-word tick is the other thing a mount starts, so it stops with its slide too."""
-    body = (
-        '<div data-scene="1"><template data-slide="1.1">'
-        '<p class="cap" data-cue="1.1cap" data-text="spoken">one two three four five</p></template>'
-        '<template data-slide="1.2"><p data-cue="1.2a">next</p></template></div>'
+def test_a_staggered_container_spreads_one_cue_across_its_children(page, tmp_path):
+    """One cue and several arrivals is a row of tiles, which is invisible to a frozen frame and exact here."""
+    scene = """
+    <div data-scene="6">
+      <template data-slide="6.1">
+        <ul class="row" data-in="tiles" data-stagger="0.08" data-describe="the three tiles">
+          <li>one</li><li>two</li><li>three</li>
+        </ul>
+      </template>
+    </div>
+    """
+    page.goto(f"{write_page(tmp_path, 'stagger.html', scene)}?scene=6&t0=0&cues=6.1:tiles@0.05")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    delays = page.evaluate("() => [...document.querySelectorAll('.row li')].map((li) => li.style.animationDelay)")
+    assert delays == ["0s", "0.08s", "0.16s"]
+    span = page.evaluate("() => window.__decktalk.catalog[0].spans['6.1:tiles']")
+    assert span == pytest.approx(0.08 * 2 + ENTRANCES["rise"].seconds)
+    # The published span is the honest arithmetic, which is what makes the overrun a certain finding.
+    assert span > MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1000
+
+
+def test_a_container_that_staggers_nothing_is_a_mistake(page, tmp_path):
+    """A stagger over no children spreads one entrance over nothing, which is never what was meant."""
+    scene = """
+    <div data-scene="6">
+      <template data-slide="6.1"><p data-in="tiles" data-stagger="0.08" data-describe="nothing">x</p></template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "empty-stagger.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    assert "PAGE_STAGGER_EMPTY" in codes_of(page)
+
+
+def test_steps_brings_each_child_forward_and_steps_the_ones_before_it_back(page, tmp_path):
+    """A stepped list is written once and lands in the catalog as though every moment were typed."""
+    scene = """
+    <div data-scene="7">
+      <template data-slide="7.1">
+        <ul class="list" data-steps>
+          <li class="one" data-in="first" data-describe="the first point">one</li>
+          <li class="two" data-in="second" data-describe="the second point">two</li>
+        </ul>
+      </template>
+    </div>
+    """
+    page.goto(f"{write_page(tmp_path, 'steps.html', scene)}?scene=7&t0=0&cues=7.1:first@0.05,7.1:second@0.3")
+    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+    page.wait_for_timeout(int(ATTENTION["back"].seconds * 1000) + 200)
+    assert page.evaluate("() => document.querySelector('.one').classList.contains('dt-back')") is True
+    assert page.evaluate("() => document.querySelector('.two').classList.contains('dt-back')") is False
+    assert page.evaluate("() => window.__decktalk.catalog[0].cues['7.1']") == ["7.1:first", "7.1:second"]
+
+
+def test_a_swap_holds_what_it_replaces_until_it_has_arrived(page, tmp_path):
+    """A swap with nothing under it is a cut, so the outgoing element waits for the incoming one."""
+    scene = """
+    <div data-scene="8">
+      <template data-slide="8.1">
+        <p class="wrong" data-in="show" data-out="fix" data-describe="the wrong answer">two</p>
+        <p class="right" data-in="fix" data-swaps data-describe="the right answer">three</p>
+      </template>
+    </div>
+    """
+    page.goto(f"{write_page(tmp_path, 'swap.html', scene)}?scene=8&t0=0&cues=8.1:show@0.05,8.1:fix@0.4")
+    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+    assert page.evaluate("() => getComputedStyle(document.querySelector('.wrong')).opacity") == "1"
+    page.wait_for_function("() => Number(getComputedStyle(document.querySelector('.wrong')).opacity) < 0.5")
+    assert warnings_of(page) == []
+
+
+def test_a_swap_with_nothing_to_replace_is_reported(page, tmp_path):
+    """Zero candidates and two candidates are both guesses, and the page refuses to make either."""
+    scene = """
+    <div data-scene="8">
+      <template data-slide="8.1"><p data-in="fix" data-swaps data-describe="the right answer">three</p></template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "lonely-swap.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    assert "PAGE_SWAP_AMBIGUOUS" in codes_of(page)
+
+
+def test_the_crossfade_holds_the_outgoing_slide_at_full_opacity(page, tmp_path):
+    """Two half-faded slides compose to a dip towards the page background, which is a flash on a white deck."""
+    url = deck(tmp_path, "cross.html")
+    page.goto(f"{url}?scene=1&t0=0&cues=1.1:ball@0.05,1.2:sum@0.4")
+    page.wait_for_function("() => document.querySelectorAll('#dt-pan .dt-slide').length === 2")
+    pair = page.evaluate(
+        """([half]) => {
+            const arriving = document.querySelector('.dt-slide.dt-arriving');
+            for (const one of arriving.getAnimations()) { one.pause(); one.currentTime = half; }
+            const leaving = document.querySelector('.dt-slide.dt-leaving');
+            return [Number(getComputedStyle(leaving).opacity), Number(getComputedStyle(arriving).opacity)];
+        }""",
+        [SLIDE_ENTRANCES["crossfade"].seconds * 1000 / 2],
     )
-    words = "one@0.2,two@1.6,three@2.4,four@3.2,five@4"
-    url = write_page(tmp_path, "spokenstop.html", body)
-    page.goto(f"{url}?scene=1&t0=0&cues=1.1cap@0.1,1.2a@0.5&words={words}")
-    page.wait_for_function("() => document.querySelector('.cap') && (window.__cap = document.querySelector('.cap'))")
-    page.wait_for_function("() => window.__decktalk.slide === '1.2'")
-    page.wait_for_function("() => !document.body.contains(window.__cap)", timeout=2000)
-    settled = page.evaluate("() => window.__cap.querySelectorAll('.dt-word.dt-shown').length")
-    page.wait_for_timeout(1200)
-    assert page.evaluate("() => window.__cap.querySelectorAll('.dt-word.dt-shown').length") == settled
-    assert settled < 5
-    assert not page.errors
+    leaving, arriving = pair
+    assert leaving == 1.0
+    assert 0 < arriving < 1
+    # The composite of an opaque slide under a half-faded one is opaque, which is the whole repair.
+    assert leaving + (1 - leaving) * arriving == pytest.approx(1.0)
 
 
-# ---- what the runtime cannot honor --------------------------------------------------------
+def test_the_outgoing_slide_goes_on_the_crossfades_own_end(page, tmp_path):
+    """A length written twice is a slide cut off, so the removal waits for the animation and not a timer."""
+    head = f"<style>:root {{ --dt-span: {SLIDE_ENTRANCES['crossfade'].seconds}s }}</style>"
+    url = write_page(tmp_path, "retire.html", MARKUP_SCENE, head=head + KATEX)
+    page.goto(f"{url}?scene=1&t0=0&cues=1.1:ball@0.05,1.2:sum@0.3")
+    page.wait_for_function("() => document.querySelectorAll('#dt-pan .dt-slide').length === 1", timeout=5000)
+    assert page.evaluate("() => document.querySelector('#dt-pan .dt-slide').dataset === undefined") is False
 
 
-def test_an_unknown_cue_id_is_a_warning(page, tmp_path):
-    page.goto(f"{write_page(tmp_path, 'unknown.html', MARKUP_SCENE)}?scene=1&t0=0&cues=nope@0.1")
-    page.wait_for_timeout(200)
-    warnings = page.evaluate("() => window.__decktalk.warnings")
-    assert "unknown cue id nope (no slide id or owns list matches it)" in warnings, warnings
-    assert "no slide owns any listed cue, so nothing will mount" in warnings, warnings
-    assert not page.errors
+# ---- the text effects -------------------------------------------------------------------------
 
 
-def test_a_cue_that_hits_nothing_is_a_warning(page, tmp_path):
-    """A cue id owned by a slide by prefix but with no data-cue, handler, or slide of its own is reported."""
-    cues = "1.1ball@0.1,1.1count@0.2,1.1answer@0.3"
-    page.goto(f"{write_page(tmp_path, 'nothing.html', MARKUP_SCENE)}?scene=1&t0=0&cues={cues}")
-    page.wait_for_function("() => window.__decktalk.fired.includes('1.1answer')")
-    assert warnings_of(page) == ['cue "1.1answer" matches no element, handler, or slide']
+def test_a_count_runs_up_to_the_number_the_author_wrote(page, tmp_path):
+    """A number growing towards its own value is the one slow change `verify` reads as an onset."""
+    scene = """
+    <div data-scene="9">
+      <template data-slide="9.1">
+        <p class="tile" data-in="show" data-count="last" data-describe="the share of games">1 in 1,250</p>
+      </template>
+    </div>
+    """
+    page.goto(f"{write_page(tmp_path, 'count.html', scene)}?scene=9&t0=0&cues=9.1:show@0.05")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    page.wait_for_timeout(int(COUNTS["last"].seconds * 1000) + 300)
+    assert page.evaluate("() => document.querySelector('.tile').textContent") == "1 in 1,250"
 
 
-def test_a_data_cue_left_out_of_the_cue_list_shows_at_the_mount(page, tmp_path):
-    """An element whose cue ?cues= leaves out is shown rather than left invisible, with a warning."""
-    page.goto(f"{write_page(tmp_path, 'unlisted.html', MARKUP_SCENE)}?scene=1&t0=0&cues=1.1ball@0.1")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 1")
-    assert warnings_of(page) == ['data-cue "1.1count" is not in ?cues=, so it shows as soon as the slide mounts']
-    assert page.evaluate("() => document.querySelector('[data-cue=\"1.1count\"]').classList.contains('dt-shown')")
+def test_a_line_is_shown_word_by_word_on_the_voice(page, tmp_path):
+    """One word is far under the change floor, so the line reports itself through the telemetry seam."""
+    scene = """
+    <div data-scene="10">
+      <template data-slide="10.1">
+        <p class="said" data-in="say" data-words data-describe="the line the voice reaches">two words here</p>
+      </template>
+    </div>
+    """
+    url = write_page(tmp_path, "words.html", scene)
+    page.goto(f"{url}?scene=10&t0=0&cues=10.1:say@0.05&words=two@0.3,words@0.5,here@0.7")
+    page.wait_for_function("() => document.querySelectorAll('.said .dt-word.dt-shown').length === 3", timeout=5000)
+    assert page.evaluate("() => document.querySelectorAll('.said .dt-word').length") == 3
+    assert warnings_of(page) == []
 
 
-def test_a_slide_with_no_listed_cue_warns(page, tmp_path):
-    """In cue mode a slide that owns none of the listed cues never mounts, and the page says so."""
-    page.goto(f"{write_page(tmp_path, 'nomount.html', MARKUP_SCENE)}?scene=1&t0=0&cues=1.1ball@0.1,1.1count@0.2")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 2")
-    warnings = page.evaluate("() => window.__decktalk.warnings")
-    assert 'slide "1.2" owns no cue in ?cues=, so it never appears' in warnings, warnings
-    assert 'slide "1.3" owns no cue in ?cues=, so it never appears' in warnings, warnings
+def test_a_word_is_whole_by_the_second_the_voice_reaches_it(page, tmp_path):
+    """The lead is the length of a word's own fade, so a word arrives as it is said and not after."""
+    scene = """
+    <div data-scene="10">
+      <template data-slide="10.1">
+        <p class="said" data-in="say" data-words data-describe="the line">alpha beta</p>
+      </template>
+    </div>
+    """
+    url = write_page(tmp_path, "lead.html", scene)
+    page.goto(f"{url}?scene=10&t0=0&cues=10.1:say@0.05&words=alpha@1.2,beta@1.6")
+    page.wait_for_function("() => document.querySelectorAll('.said .dt-word.dt-shown').length === 1", timeout=5000)
+    shown_at = page.evaluate("() => window.__decktalk.now()")
+    assert shown_at <= 1.2 - WORD_STYLES["highlight"].seconds + 0.1
 
 
-def test_an_element_with_both_a_cue_and_a_delay_warns(page, tmp_path):
-    """data-delay is the trigger for an element with no cue, so the two together are a mistake."""
-    body = (
-        '<div data-scene="1"><template data-slide="1.1">'
-        '<p data-cue="1.1a" data-delay="2">which one?</p></template></div>'
-    )
-    page.goto(f"{write_page(tmp_path, 'both.html', body)}?scene=1&t0=0&cues=1.1a@0.1")
-    page.wait_for_function("() => window.__decktalk.fired.includes('1.1a')")
-    assert page.evaluate("() => window.__decktalk.warnings") == [
-        'data-cue "1.1a" is on an element that also sets data-delay, so the delay is ignored'
+def test_a_line_the_voice_never_says_is_reported(page, tmp_path):
+    """A line that is not the spoken text cannot be shown on the voice, so the page says so."""
+    scene = """
+    <div data-scene="10">
+      <template data-slide="10.1"><p data-in="say" data-words data-describe="the line">nothing like it</p></template>
+    </div>
+    """
+    url = write_page(tmp_path, "unsaid.html", scene)
+    page.goto(f"{url}?scene=10&t0=0&cues=10.1:say@0.05&words=alpha@0.3,beta@0.5")
+    page.wait_for_function("() => window.__decktalk.warnings.length > 0")
+    assert "PAGE_WORDS_NOT_FOUND" in codes_of(page)
+
+
+def test_appear_on_a_long_line_is_reported(page, tmp_path):
+    """One word at a time is a cue's worth of motion, and a long line is more than a cue can carry."""
+    long_line = " ".join(f"word{index}" for index in range(APPEAR_WORDS_MAX + 2))
+    spoken = ",".join(f"word{index}@{0.3 + index / 10}" for index in range(APPEAR_WORDS_MAX + 2))
+    scene = f"""
+    <div data-scene="10">
+      <template data-slide="10.1">
+        <p data-in="say" data-words="appear" data-describe="the long line">{long_line}</p>
+      </template>
+    </div>
+    """
+    url = write_page(tmp_path, "long.html", scene)
+    page.goto(f"{url}?scene=10&t0=0&cues=10.1:say@0.05&words={spoken}")
+    page.wait_for_function("() => window.__decktalk.warnings.length > 0")
+    assert "PAGE_APPEAR_TOO_LONG" in codes_of(page)
+
+
+# ---- the transcript ---------------------------------------------------------------------------
+
+
+def test_each_moment_composes_its_own_sentence(page, tmp_path):
+    """The author writes one noun phrase and the runtime gives it the verb the moment owns."""
+    scene = """
+    <div data-scene="11">
+      <template data-slide="11.1">
+        <p data-in="show" data-back="aside" data-front="back-to-it" data-out="go"
+           data-describe="the definition of the derivative">f'(x)</p>
+      </template>
+    </div>
+    """
+    url = write_page(tmp_path, "transcript.html", scene)
+    probe = "<script>window.__said = []; </script>"
+    page.goto(f"{url}?scene=11&t0=0&cues=11.1:show@0.05,11.1:aside@0.2,11.1:back-to-it@0.35,11.1:go@0.5")
+    page.wait_for_function("() => window.__decktalk.fired.length === 4")
+    assert probe  # The sentences are read back through the probe in test_probe.py, not written here.
+    assert page.evaluate("() => window.__decktalk.fired") == [
+        "11.1:show",
+        "11.1:aside",
+        "11.1:back-to-it",
+        "11.1:go",
     ]
 
 
-def test_a_text_mode_with_no_trigger_warns(page, tmp_path):
-    """A data-text mode without data-cue or data-delay never reveals, in any mode."""
-    body = (
-        '<div data-scene="1"><template data-slide="1.1">'
-        '<p data-text="spoken">hi there</p><b data-text="count">5</b><i data-text="type 30ms">x</i>'
-        '<p data-delay="0" data-text="spoken">fine</p></template></div>'
-    )
-    page.goto(f"{write_page(tmp_path, 'notrigger.html', body)}?slide=1.1")
+def test_a_decorative_element_writes_no_line(page, tmp_path):
+    """An empty phrase is the author saying the element means nothing, which the transcript honours."""
+    scene = """
+    <div data-scene="11">
+      <template data-slide="11.1"><p class="rule" data-in="show" data-describe="">---</p></template>
+    </div>
+    """
+    page.goto(f"{write_page(tmp_path, 'decorative.html', scene)}?slide=11.1")
     page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert sorted(page.evaluate("() => window.__decktalk.warnings")) == sorted(
-        f'data-text="{mode}" on an element without data-cue or data-delay never reveals, so add data-delay="0"'
-        for mode in ("spoken", "count", "type 30ms")
-    )
+    assert warnings_of(page) == []
+
+
+# ---- handlers ---------------------------------------------------------------------------------
+
+
+def test_a_slide_handler_and_a_deck_handler_both_receive_the_slide(page, tmp_path):
+    """A handler is the escape hatch, so it is handed the mounted slide and where in the deck it ran."""
+    script = """
+      window.__seen = [];
+      DeckTalk.scene(12, { name: "Handled", slides: [{
+        id: "12.1", owns: ["beat"], render: () => "<p>drawn</p>",
+        entered: (el, ctx) => window.__seen.push(["entered", ctx.slideId]),
+        on: { beat: (el, ctx) => window.__seen.push(["slide", ctx.id, el.className]) },
+      }]});
+      DeckTalk.on("12.1:beat", (el, ctx) => window.__seen.push(["deck", ctx.id, ctx.frozen]));
+    """
+    page.goto(f"{script_page(tmp_path, 'handlers.html', script)}?scene=12&t0=0&cues=12.1:beat@0.1")
+    page.wait_for_function("() => window.__seen.length === 3")
+    assert page.evaluate("() => window.__seen") == [
+        ["entered", "12.1"],
+        ["slide", "12.1:beat", "dt-slide"],
+        ["deck", "12.1:beat", False],
+    ]
+
+
+@pytest.mark.parametrize(
+    ("script", "code"),
+    [
+        (
+            'DeckTalk.scene(13, { slides: [{ id: "13.1", owns: ["beat"],'
+            ' render: () => { throw new Error("no"); } }] });',
+            "PAGE_RENDER_THREW",
+        ),
+        (
+            'DeckTalk.scene(13, { slides: [{ id: "13.1", owns: ["beat"], render: () => "<p>x</p>",'
+            ' entered: () => { throw new Error("no"); } }] });',
+            "PAGE_ENTER_THREW",
+        ),
+        (
+            'DeckTalk.scene(13, { slides: [{ id: "13.1", owns: ["beat"], render: () => "<p>x</p>",'
+            ' on: { beat: () => { throw new Error("no"); } } }] });',
+            "PAGE_SLIDE_HANDLER_THREW",
+        ),
+        (
+            'DeckTalk.scene(13, { slides: [{ id: "13.1", owns: ["beat"], render: () => "<p>x</p>" }] });'
+            'DeckTalk.on("13.1:beat", () => { throw new Error("no"); });',
+            "PAGE_HANDLER_THREW",
+        ),
+    ],
+)
+def test_a_page_callback_that_throws_becomes_a_warning(page, tmp_path, script, code):
+    """A deck that threw at its author would cost a recording rather than save one."""
+    page.goto(f"{script_page(tmp_path, f'threw-{code}.html', script)}?scene=13&t0=0&cues=13.1:beat@0.1")
+    page.wait_for_function("() => window.__decktalk.warnings.length > 0")
+    assert code in codes_of(page)
     assert not page.errors
 
 
-def test_a_preview_cue_past_the_hold_warns(page, tmp_path):
-    """A preview cue at or past its slide's hold fires on the next slide, except on the last slide."""
-    body = (
-        '<div data-scene="3">'
-        '<template data-slide="3.1" data-hold="30" data-preview="3.1go@1 3.1min@32">'
-        '<p data-cue="3.1go">a</p><p data-cue="3.1min">b</p></template>'
-        '<template data-slide="3.2" data-hold="5" data-preview="3.2late@9">'
-        '<p data-cue="3.2late">c</p></template></div>'
-    )
-    url = write_page(tmp_path, "pasthold.html", body)
-    page.goto(f"{url}?scene=3&speed=50")
-    page.wait_for_function("() => window.__decktalk.mode === 'preview'")
-    warnings = page.evaluate("() => window.__decktalk.warnings")
-    assert 'slide "3.1" fires "3.1min" at 32 s but holds 30 s, so it fires on the next slide' in warnings, warnings
-    assert not any("3.2late" in w for w in warnings), warnings
-    # Cue mode ignores holds, so the same page warns nothing about them.
-    page.goto(f"{url}?scene=3&t0=0&cues=3.1go@0.1,3.1min@0.2,3.2late@0.3")
-    page.wait_for_function("() => window.__decktalk.fired.length >= 3")
-    assert page.evaluate("() => window.__decktalk.warnings") == []
+# ---- what the page cannot honour ---------------------------------------------------------------
 
 
-def test_a_scene_wrapper_with_no_template_warns(page, tmp_path):
-    page.goto(write_page(tmp_path, "empty.html", '<div data-scene="9"><p>nothing here</p></div>'))
-    assert page.evaluate("() => window.__decktalk.warnings") == ['scene "9" holds no <template data-slide> element']
-    assert page.evaluate("() => window.__decktalk.catalog") == []
-
-
-def test_katex_parse_error_is_a_warning(page, tmp_path):
-    """A data-tex value KaTeX cannot parse renders in red and is reported, since throwOnError is off."""
-    body = '<div data-scene="1"><template data-slide="1.1"><p data-tex="\\frac{1}">x</p></template></div>'
-    page.goto(f"{write_page(tmp_path, 'badtex.html', body, head=KATEX)}?slide=1.1")
+def test_an_attribute_the_registry_does_not_define_is_reported(page, tmp_path):
+    """Every misspelling of every knob is one condition, and this is the code that names it."""
+    scene = """
+    <div data-scene="14">
+      <template data-slide="14.1"><p data-inn="show" data-describe="the line">a line</p></template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "misspelled.html", scene))
     page.evaluate("() => window.__decktalk.ready")
-    assert page.evaluate("() => window.__decktalk.warnings") == ['data-tex could not be parsed: "\\frac{1}"']
-    assert page.evaluate("() => !!document.querySelector('.katex-error')")
+    rows = warnings_of(page)
+    assert [row["code"] for row in rows] == ["PAGE_UNKNOWN_ATTR"]
+    assert rows[0]["attr"] == "data-inn"
 
 
-def test_ready_warns_when_katex_never_loads(page, tmp_path):
-    """A page with [data-tex] and no KaTeX resolves __decktalk.ready after the 5 s poll with a warning."""
-    body = '<div data-scene="1"><template data-slide="1.1"><p data-tex="x^2">x^2</p></template></div>'
-    page.goto(f"{write_page(tmp_path, 'notex.html', body)}?slide=1.1")
+def test_a_value_outside_its_published_set_is_reported(page, tmp_path):
+    """A closed word is closed, and a range is the safe range, so a value outside either is named."""
+    scene = """
+    <div data-scene="14">
+      <template data-slide="14.1">
+        <p data-in="show" data-in-style="zoom" data-describe="the line">a line</p>
+        <p data-in="late" data-in-seconds="9" data-describe="another line">another</p>
+      </template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "bad-value.html", scene))
     page.evaluate("() => window.__decktalk.ready")
-    warnings = page.evaluate("() => window.__decktalk.warnings")
-    assert any("KaTeX" in w for w in warnings), warnings
-    assert page.evaluate("() => document.querySelector('[data-tex]').textContent") == "x^2"
+    rows = [row for row in warnings_of(page) if row["code"] == "PAGE_BAD_VALUE"]
+    assert {row["attr"] for row in rows} == {"data-in-style", "data-in-seconds"}
 
 
-def test_cue_mode_warns_when_a_slide_mounts_equations_without_katex(page, tmp_path):
-    """In cue mode a later slide mounts after the ready check ran, so a later check warns."""
-    body = (
-        '<div data-scene="1"><template data-slide="1.1"><p data-cue="1.1a">plain</p></template>'
-        '<template data-slide="1.2"><p data-cue="1.2a" data-tex="x^2">x^2</p></template></div>'
+def test_a_moment_outside_a_slide_names_a_cue_nothing_owns(page, tmp_path):
+    """A moment is qualified by the template it is written in, so one written outside has no owner."""
+    scene = """
+    <div data-scene="14">
+      <p data-in="loose" data-describe="a line outside every slide">loose</p>
+      <template data-slide="14.1"><p data-in="show" data-describe="the line">a line</p></template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "loose.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    assert "PAGE_MOMENT_UNKNOWN" in codes_of(page)
+
+
+def test_an_exit_at_or_before_its_own_entrance_never_plays(page, tmp_path):
+    """The declared order makes the comparison exact, so this is a certain finding and not a guess."""
+    scene = """
+    <div data-scene="14">
+      <template data-slide="14.1">
+        <p data-in="show" data-out="show" data-describe="the line">a line</p>
+      </template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "order.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    assert "PAGE_MOMENT_ORDER" in codes_of(page)
+
+
+def test_a_scene_with_no_template_and_a_template_with_no_id_are_reported(page, tmp_path):
+    """A scene that declares no slide and a slide that declares no id both reach no recording."""
+    scene = '<div data-scene="15"></div><div data-scene="16"><template></template></div>'
+    page.goto(write_page(tmp_path, "empty.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    assert set(codes_of(page)) >= {"PAGE_SCENE_EMPTY", "PAGE_SLIDE_NO_ID"}
+
+
+def test_two_templates_claiming_one_slide_id_are_reported(page, tmp_path):
+    """Every moment local to a doubled id has two owners, which no wire id can tell apart."""
+    scene = """
+    <div data-scene="17">
+      <template data-slide="17.1"><p data-in="a" data-describe="one">one</p></template>
+      <template data-slide="17.1"><p data-in="b" data-describe="two">two</p></template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "doubled.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    assert "PAGE_SLIDE_DOUBLED" in codes_of(page)
+
+
+def test_a_template_inside_a_slide_with_no_id_is_reported(page, tmp_path):
+    """A template nothing ever mounts is markup an author believes is on screen and is not."""
+    scene = """
+    <div data-scene="18">
+      <template data-slide="18.1"><template><p>never mounted</p></template></template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "nested.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    assert "PAGE_TEMPLATE_IGNORED" in codes_of(page)
+
+
+def test_a_slide_that_owns_no_listed_cue_is_reported(page, tmp_path):
+    """A slide with no cue in the list never appears, so nothing it declares reaches the recording."""
+    page.goto(f"{deck(tmp_path, 'unused.html')}?scene=1&t0=0&cues=1.1:ball@0.1")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    rows = [row for row in warnings_of(page) if row["code"] == "PAGE_SLIDE_UNUSED"]
+    assert {row["slide"] for row in rows} == {"1.2", "1.3"}
+
+
+def test_a_listed_cue_no_slide_owns_is_reported(page, tmp_path):
+    """A cue nothing owns mounts nothing, which is the one failure that empties a whole recording."""
+    page.goto(f"{deck(tmp_path, 'orphan.html')}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:nobody@0.3")
+    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+    assert "PAGE_NO_OWNER" in codes_of(page)
+
+
+def test_katex_refusing_a_value_leaves_the_readable_text(page, tmp_path):
+    """The element's own text is the equation's readable fallback, which is what it falls back to."""
+    head = (
+        f'<link rel="stylesheet" href="{(katex_dir() / "katex.min.css").resolve().as_uri()}">'
+        f'<script src="{(katex_dir() / "katex.min.js").resolve().as_uri()}"></script>'
     )
-    page.goto(f"{write_page(tmp_path, 'notex-cues.html', body)}?scene=1&t0=0&cues=1.1a@0.1,1.2a@0.3")
-    page.wait_for_function("() => window.__decktalk.warnings.some((w) => w.includes('KaTeX'))", timeout=9000)
-    assert page.evaluate("() => document.querySelector('[data-tex]').textContent") == "x^2"
+    scene = """
+    <div data-scene="19">
+      <template data-slide="19.1">
+        <p class="bad" data-in="show" data-tex="\\frac{1}{" data-describe="a broken equation">one over</p>
+      </template>
+    </div>
+    """
+    page.goto(f"{write_page(tmp_path, 'katex-bad.html', scene, head=head)}?slide=19.1")
+    page.wait_for_function("() => document.body.dataset.done === '1'")
+    assert "PAGE_KATEX_ERROR" in codes_of(page)
+    assert page.evaluate("() => document.querySelector('.bad').textContent") == "one over"
 
 
-# ---- what the recorder reads back -----------------------------------------------------------
+def test_a_page_that_wants_katex_and_never_gets_it_says_so(page, tmp_path):
+    """A recording of plain TeX is a recording nobody can use, so the page reports the missing typesetter."""
+    scene = """
+    <div data-scene="19">
+      <template data-slide="19.1"><p data-in="show" data-tex="x^2" data-describe="x squared">x squared</p></template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "katex-missing.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    assert "PAGE_KATEX_MISSING" in codes_of(page)
 
 
-def test_record_page_stores_page_errors_in_the_recording_log(page, tmp_path):
-    """A page that throws, and a page without the runtime, both leave page_errors that record turns into PAGE ERROR."""
-    from decktalk.media.browser import NO_CATALOG, record_page
-    from decktalk.media.origin import page_url
-    from decktalk.settings import RecordConfig
-    from decktalk.stages.record.checks import log_verdicts
+# ---- the reduced-motion render ------------------------------------------------------------------
 
-    broken = served_page(
-        tmp_path,
-        "broken.html",
-        '<div data-scene="1"><template data-slide="1.1"><p>hi</p></template></div>'
-        "<script>\nnotDefinedAnywhere();\n</script>",
+
+@pytest.fixture
+def quiet(page):
+    """A page that asks for reduced motion, which is what `motion.reduce` asks Chromium for."""
+    other = page.context.browser.new_page(viewport={"width": 1920, "height": 1080}, reduced_motion="reduce")
+    errors: list[str] = []
+    other.on("pageerror", lambda exc: errors.append(str(exc)))
+    other.errors = errors
+    yield other
+    other.close()
+
+
+TRAVELLED = """
+<div data-scene="20">
+  <template data-slide="20.1">
+    <p class="subject" data-in="show" data-in-style="rise" data-describe="the subject">a subject</p>
+  </template>
+</div>
+"""
+
+
+def test_a_reduced_render_keeps_every_length_and_drops_every_travel(quiet, tmp_path):
+    """Nothing in the reduced render moves a cue, so the film is the same duration with the same captions."""
+    url = write_page(tmp_path, "reduced.html", TRAVELLED)
+    quiet.goto(f"{url}?scene=20&t0=0&cues=20.1:show@0.05")
+    quiet.wait_for_function("() => window.__decktalk.fired.length === 1")
+    assert quiet.evaluate("() => document.documentElement.classList.contains('dt-reduced')") is True
+    playing = quiet.evaluate(
+        "() => document.querySelector('.subject').getAnimations()"
+        ".map((a) => [a.animationName, a.effect.getTiming().duration])"
     )
-    bare = tmp_path / "bare.html"
-    bare.write_text("<!doctype html><html><body><p>no runtime here</p></body></html>", encoding="utf-8")
-    kw = dict(root=tmp_path, settle_seconds=0.1, min_cover_seconds=0.1, width=640, height=360, color_scheme="light")
-    browser = page.context.browser  # the module's Playwright already owns this thread's sync loop
-    url = page_url(broken, {"slide": "1.1"})
-    recording_log = record_page(browser, url, 0.5, tmp_path / "01-section.webm", **kw)
-    recording_log2 = record_page(browser, page_url("bare.html"), 0.5, tmp_path / "02-section.webm", **kw)
-    assert len(recording_log.page_errors) == 1, recording_log.page_errors
-    assert recording_log.page_errors[0].startswith("ReferenceError: notDefinedAnywhere is not defined"), (
-        recording_log.page_errors
+    assert playing == [["dt-in-fade", ENTRANCES["rise"].seconds * 1000]]
+    assert not quiet.errors
+
+
+def test_a_full_motion_page_keeps_the_travel_its_style_declares(page, tmp_path):
+    """The reduced render is a render, so the same page opened without it moves exactly as it says."""
+    url = write_page(tmp_path, "travelled.html", TRAVELLED)
+    page.goto(f"{url}?scene=20&t0=0&cues=20.1:show@0.05")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    names = page.evaluate("() => document.querySelector('.subject').getAnimations().map((a) => a.animationName)")
+    assert names == ["dt-in-rise"]
+
+
+def test_the_motion_scale_multiplies_the_length_and_the_declared_span(page, tmp_path):
+    """`motion.scale` reaches the page as one declaration on the root, and it moves both numbers together."""
+    head = "<style>:root { --dt-motion-scale: 1.2 }</style>"
+    url = write_page(tmp_path, "scaled.html", TRAVELLED, head=head)
+    page.goto(url)
+    page.evaluate("() => window.__decktalk.ready")
+    assert page.evaluate("() => window.__decktalk.catalog[0].spans['20.1:show']") == pytest.approx(
+        ENTRANCES["rise"].seconds * 1.2
     )
-    assert "(broken.html:2)" in recording_log.page_errors[0], recording_log.page_errors
-    assert recording_log2.page_errors == [NO_CATALOG]
-    assert recording_log.assets == ["broken.html", RUNTIME_FILE]
-    for recorded, name in ((recording_log, "01-section.json"), (recording_log2, "02-section.json")):
-        assert Verdict.PAGE_ERROR in log_verdicts(recorded, RecordConfig())
-        recorded.save(tmp_path / name)
-        reloaded = type(recorded).load(tmp_path / name)
-        assert reloaded is not None and reloaded.page_errors == recorded.page_errors
+    page.goto(f"{url}?scene=20&t0=0&cues=20.1:show@0.05")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    length = page.evaluate("() => document.querySelector('.subject').getAnimations()[0].effect.getTiming().duration")
+    assert length == pytest.approx(ENTRANCES["rise"].seconds * 1.2 * 1000)
+
+
+def test_a_class_that_still_animates_under_reduced_motion_is_reported(quiet, tmp_path):
+    """The page's own stylesheet owns the class, so the page's own stylesheet owes the reduction."""
+    head = "<style>.stale { animation: fade 0.3s linear both } @keyframes fade { to { opacity: .2 } }</style>"
+    scene = """
+    <div data-scene="21">
+      <template data-slide="21.1">
+        <p data-in="show" data-class="cancel:stale" data-describe-class="cancel:the h is struck out"
+           data-describe="the fraction">h over h</p>
+      </template>
+    </div>
+    """
+    quiet.goto(write_page(tmp_path, "not-reduced.html", scene, head=head))
+    quiet.evaluate("() => window.__decktalk.ready")
+    reported = quiet.evaluate("() => window.__decktalk.warnings")
+    assert [row["code"] for row in reported] == ["PAGE_CLASS_NOT_REDUCED"]
+    assert reported[0]["cue"] == "21.1:cancel"
+
+
+def test_a_cue_that_draws_nothing_and_runs_nothing_is_reported(page, tmp_path):
+    """A cue that drifted between the page and the project file is almost never a cue anyone meant."""
+    page.goto(f"{deck(tmp_path, 'nothing.html')}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:nobody@0.3")
+    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+    assert "PAGE_CUE_UNKNOWN" in codes_of(page)
+
+
+def test_a_promise_that_never_settles_does_not_hold_the_page(page, tmp_path):
+    """A recording that waited forever would cost more than a page drawn without one condition."""
+    body = "<script>DeckTalk.waitFor(new Promise(() => {}));</script>"
+    page.goto(deck(tmp_path, "unsettled.html", body + MARKUP_SCENE))
+    assert page.evaluate("() => window.__decktalk.ready") is True
+    assert "PAGE_WAIT_UNSETTLED" in codes_of(page)
