@@ -154,7 +154,12 @@ def _unresolved(
     """The judgement for one cue that resolved to nothing, or none when the section is never spoken."""
     if block.number in clips:
         return []
-    if words is None:
+    if not cue.on:
+        message = (
+            f"the cue {cue.cue} has no phrase yet, so write the words it lands on into its 'on' and "
+            "it will have a second."
+        )
+    elif words is None:
         message = (
             f"the cue {cue.cue} waits for {cue.on!r} and section {block.number} has no take, so there are no "
             "words to place it against."

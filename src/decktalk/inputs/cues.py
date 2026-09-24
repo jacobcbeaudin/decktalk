@@ -114,7 +114,12 @@ def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...
 
 
 def parse_cue(raw: dict[str, object], where: str, location: Location | None = None) -> Cue:
-    """One cue row, refusing a key this file does not read so that a typo cannot move a cue in silence."""
+    """One cue row, refusing a key this file does not read so that a typo cannot move a cue in silence.
+
+    An `on` that is there and empty is a row a fix scaffolded and nobody has written the phrase into
+    yet, so it loads and `CUE_UNRESOLVED` judges it. A refusal here would mean the file a fix just
+    wrote could not be read by the command run straight after it.
+    """
     unknown = sorted(set(raw) - CUE_KEYS)
     if unknown:
         raise InputError(
@@ -125,9 +130,8 @@ def parse_cue(raw: dict[str, object], where: str, location: Location | None = No
     t = Table(raw, where)
     cue_id = t.get_str("cue", required=True)
     on = t.get_str("on", required=True)
-    for key, value in (("cue", cue_id), ("on", on)):
-        if not value:
-            raise InputError(f"{where}: '{key}' must not be empty", location=location)
+    if not cue_id:
+        raise InputError(f"{where}: 'cue' must not be empty", location=location)
     return Cue(
         cue=cue_id,
         on=on,

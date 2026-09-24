@@ -123,3 +123,14 @@ def test_a_section_shorter_than_its_visuals_need_is_said_once_with_both_numbers(
     assert said is not None and "2.3s" in said and "6.7s" in said and "9.0s" in said
     assert short_section(CuedSection(number=1, cues=(), min_seconds=1.0), WORDS) is None
     assert short_section(CuedSection(number=1, cues=()), WORDS) is None
+
+
+def test_a_cue_whose_phrase_is_not_written_yet_says_so_rather_than_naming_an_empty_phrase() -> None:
+    """A scaffolded row carries an empty `on`, and telling its author that no word of the section is
+    `''` reads as a defect where the truth is that nobody has written the phrase yet."""
+    block = CuedSection(number=1, cues=(Cue(cue="1.1:a", on=""),))
+    sections, found = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set())
+    assert sections[0].cues[0].seconds is None
+    (judged,) = found
+    assert judged.code is Code.CUE_UNRESOLVED
+    assert "has no phrase yet" in judged.message and "''" not in judged.message
