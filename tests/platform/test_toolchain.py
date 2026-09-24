@@ -7,7 +7,10 @@ platform and that a faked download can never reach: where the per-user cache is,
 is called, and that `doctor` reports a row for every tool with a path this platform could run.
 
 Nothing here downloads anything, so it runs in milliseconds and the two real commands that follow it
-in the group are the smoke. `doctor` fetches nothing by design, which is what lets it run first.
+in the group are the smoke. `doctor` fetches nothing by design, which is what lets it run first, and
+it is also why a row here may be a tool this machine has not fetched yet. What is asserted is the
+pair: a tool `doctor` found names a version, and a tool it did not find names neither a version nor
+a path and was not fetched to make the report read better.
 """
 
 from __future__ import annotations
@@ -35,9 +38,11 @@ def test_doctor_reports_a_row_for_every_tool_and_fetches_nothing() -> None:
     report = Machine.from_environment().doctor()
     assert tuple(row.tool for row in report.tools) == EXPECTED_TOOLS
     for row in report.tools:
-        assert row.version, row.tool
-        assert row.path is None or Path(row.path).is_absolute(), row.tool
         assert row.fetched is False, f"doctor fetched {row.tool}, and doctor is the command that fetches nothing"
+        if row.version is None:
+            assert row.path is None, f"doctor named a path for {row.tool} and no version to go with it"
+            continue
+        assert row.path is None or Path(row.path).is_absolute(), row.tool
 
 
 def test_doctor_names_this_platform_and_this_python() -> None:
