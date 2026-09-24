@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,25 +55,52 @@ def _stats(d: dict[str, float]) -> FrameStats:
     )
 
 
+COARSE_SEEK_SECONDS = 3.0
+"""Truth: far enough back that a decoder passes a keyframe before `t`, and near enough to stay quick."""
+
+LOOP_TAIL_SECONDS = 0.2
+"""Truth: the looped reference outlasts the span it is compared against, so the shortest input ends the run."""
+
+
+@dataclass(frozen=True)
+class Seek:
+    """How one frame is reached: a coarse jump that goes before the input, and the exact remainder after it."""
+
+    before: tuple[str, ...]  # the arguments that go ahead of -i, which is the coarse jump
+    after: float  # the seconds still to drop once the input is open, which is the exact part
+
+    def trim(self, seconds: float | None = None) -> str:
+        """The filters that drop what the coarse jump overshot, so the first frame out is the one asked for.
+
+        The remainder is applied inside the graph rather than on the output, because `metadata=print`
+        reports on every frame the graph sees and an output seek drops frames that have already been
+        reported. `seconds` bounds the span that follows, for the readers that want more than one frame.
+        """
+        span = "" if seconds is None else f":duration={seconds:.3f}"
+        return f"trim=start={self.after:.3f}{span},setpts=PTS-STARTPTS"
+
+
+def frame_seek(t: float) -> Seek:
+    """The one way this module reaches the frame at `t`, which every reader of a frame goes through.
+
+    Seeking before the input is fast but it lands on the frame the container's own timing says is
+    there, and a recording whose frames were stamped by a busy compositor moves that by a frame.
+    Jumping to a little before `t` on the input and then dropping the remainder in the graph is both
+    quick and exact. Every measurement here compares two frames, so a reader that took the coarse
+    jump alone would compare one frame against another frame's neighbour.
+    """
+    coarse = max(0.0, t - COARSE_SEEK_SECONDS)
+    return Seek(before=("-ss", f"{coarse:.3f}"), after=t - coarse)
+
+
 def luma_at(path: Path, t: float, *, crop: str | None = None) -> tuple[float, float]:
     """(YAVG, YMAX) of the frame at t, optionally after crop=w:h:x:y."""
-    vf = (f"crop={crop}," if crop else "") + "signalstats,metadata=print"
-    err = ffmpeg.stderr("-ss", f"{t:.3f}", "-i", str(path), "-frames:v", "1", "-vf", vf, "-f", "null", "-")
+    seek = frame_seek(t)
+    vf = f"{seek.trim()}," + (f"crop={crop}," if crop else "") + "signalstats,metadata=print"
+    err = ffmpeg.stderr(*seek.before, "-i", str(path), "-vf", vf, "-frames:v", "1", "-f", "null", "-")
     yavg = re.search(r"YAVG=([0-9.]+)", err)
     ymax = re.search(r"YMAX=([0-9.]+)", err)
     return (float(yavg.group(1)) if yavg else 0.0, float(ymax.group(1)) if ymax else 0.0)
-
-
-def frame_seek(t: float) -> tuple[list[str], str]:
-    """A coarse input seek and the exact output seek that follows it, for one frame at `t`.
-
-    Seeking before the input is fast but some builds land on a keyframe rather than the
-    frame asked for, and seeking after the input is exact but decodes from wherever the
-    input starts. Jumping to a little before `t` on the input and then seeking the small
-    remainder on the output is both quick and exact on every build.
-    """
-    coarse = max(0.0, t - 3.0)
-    return ["-ss", f"{coarse:.3f}"], f"{t - coarse:.3f}"
 
 
 def write_luma_frame(path: Path, t: float, target: Path, *, width: int, height: int) -> None:
@@ -82,9 +110,9 @@ def write_luma_frame(path: Path, t: float, target: Path, *, width: int, height: 
     upsampling and clipping, and comparing it with a frame that never left YUV reports
     changed pixels on colored edges that did not change.
     """
-    pre, rest = frame_seek(t)
-    vf = f"scale={width}:{height},format=gray"
-    ffmpeg.run(*pre, "-i", str(path), "-ss", rest, "-frames:v", "1", "-vf", vf, str(target))
+    seek = frame_seek(t)
+    vf = f"{seek.trim()},scale={width}:{height},format=gray"
+    ffmpeg.run(*seek.before, "-i", str(path), "-vf", vf, "-frames:v", "1", str(target))
 
 
 def _changed_mask(level: int) -> str:
@@ -98,8 +126,6 @@ def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, widt
     Each frame is extracted once as a grayscale image and the two images are compared, which
     every ffmpeg build handles the same way and costs two keyframe seeks.
     """
-    import tempfile
-
     with tempfile.TemporaryDirectory() as tmp:
         a, b = Path(tmp) / "a.png", Path(tmp) / "b.png"
         for t, target in ((t1, a), (t2, b)):
@@ -139,23 +165,21 @@ def changed_series(
     frames' own positions on the 1/fps grid. When start is ref_t, the first pair is the
     reference compared with itself, and its share is zero.
     """
-    import tempfile
-
     span = max(end - start, 0.0)
     if span <= 0:
         return []
-    pre_s, rest_s = frame_seek(start)
+    seek = frame_seek(start)
     with tempfile.TemporaryDirectory() as tmp:
         ref = Path(tmp) / "ref.png"
         write_luma_frame(path, ref_t, ref, width=width, height=height)
         fc = (
             f"[0:v]format=gray[r];"
-            f"[1:v]trim=start={rest_s}:duration={span:.3f},setpts=PTS-STARTPTS,scale={width}:{height},format=gray[b];"
+            f"[1:v]{seek.trim(span)},scale={width}:{height},format=gray[b];"
             f"[r][b]blend=all_mode=difference:shortest=1,{_changed_mask(level)}"
         )
         err = ffmpeg.stderr(
-            "-loop", "1", "-framerate", str(fps), "-t", f"{span + 0.2:.3f}", "-i", str(ref),
-            *pre_s, "-i", str(path),
+            "-loop", "1", "-framerate", str(fps), "-t", f"{span + LOOP_TAIL_SECONDS:.3f}", "-i", str(ref),
+            *seek.before, "-i", str(path),
             "-filter_complex", fc, "-f", "null", "-",
         )  # fmt: skip
     first = math.ceil(start * fps - 1e-6) / fps
