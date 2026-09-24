@@ -20,10 +20,9 @@ The `v1` in the path is the version of the file shape these two schemas describe
 of `decktalk.toml` and of the per-machine settings file beside it. A change that an existing project
 file would not survive is a new directory rather than a new revision of this one.
 
-Each schema is written twice, once into `schemas/v1/` and once into `site/schemas/v1/`, because the
-`#:schema` line in every project file names a URL and a URL has to be served by something. The two
-copies are the same bytes under one `--check`, so the address an editor fetches cannot fall behind
-the schema the repository holds.
+The `#:schema` line in every project file names the committed file by its raw GitHub URL on `main`,
+so the one copy the repository holds is the one an editor fetches, and there is no second copy to
+fall behind it.
 """
 
 from __future__ import annotations
@@ -47,12 +46,11 @@ from decktalk.settings import (  # noqa: E402
 )
 from decktalk.tomlmap import Key  # noqa: E402
 
-BASE = "https://decktalk.ai/schemas/v1"
+BASE = "https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1"
 DRAFT = "https://json-schema.org/draft/2020-12/schema"
 PROJECT_NAME = "decktalk.json"
 MACHINE_NAME = "machine.json"
 SCHEMAS = ROOT / "schemas" / "v1"
-PUBLISHED = ROOT / "site" / "schemas" / "v1"
 
 TITLE = "DeckTalk project file"
 MACHINE_TITLE = "DeckTalk per-machine settings file"
@@ -212,13 +210,8 @@ def render(*, machine: bool) -> str:
 
 
 def documents() -> dict[Path, str]:
-    """Every file this generator owns, which is each schema and the copy of it the site serves."""
-    out: dict[Path, str] = {}
-    for name, machine in ((PROJECT_NAME, False), (MACHINE_NAME, True)):
-        text = render(machine=machine)
-        out[SCHEMAS / name] = text
-        out[PUBLISHED / name] = text
-    return out
+    """Every file this generator owns, which is the project schema and the machine schema."""
+    return {SCHEMAS / name: render(machine=machine) for name, machine in ((PROJECT_NAME, False), (MACHINE_NAME, True))}
 
 
 def main() -> int:

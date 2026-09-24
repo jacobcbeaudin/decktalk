@@ -1,4 +1,4 @@
-#:schema https://decktalk.ai/schemas/v1/decktalk.json
+#:schema https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1/decktalk.json
 # The project file. Every path is relative to this directory, and `decktalk schema settings` prints
 # every key this file may carry with its default, its range and its sentence.
 
