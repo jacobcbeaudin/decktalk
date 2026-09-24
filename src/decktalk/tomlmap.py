@@ -16,7 +16,6 @@ bound the other does not have.
 from __future__ import annotations
 
 import difflib
-import logging
 import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -29,8 +28,6 @@ from .errors import InputError
 from .findings import Code, Location
 from .locate import locate
 from .results import Scope
-
-log = logging.getLogger(__name__)
 
 
 class Nature(Enum):
@@ -350,6 +347,9 @@ class Table:
         # The dotted name of this table inside the file, which a key's own name is not enough to
         # find, because the same key name sits in several tables.
         self.table = table
+        # Every sentence this table has to say about keys it does not read, in the order it read
+        # them, which the caller folds into what it returns.
+        self.notes: list[str] = []
 
     def _refuse(self, message: str, key: str, hint: str | None = None) -> InputError:
         dotted = f"{self.table}.{key}" if self.table else key
@@ -454,10 +454,17 @@ class Table:
     def unknown(self, known: Iterable[str]) -> list[str]:
         return sorted(set(self.data) - set(known))
 
-    def warn_unknown(self, known: Iterable[str]) -> None:
-        """Log a warning for every key this table does not read. DeckTalk ignores such a key."""
-        for message in unknown_key_warnings(self.data, known, self.where):
-            log.warning(message)
+    def note_unknown(self, known: Iterable[str]) -> list[str]:
+        """Every key this table does not read, as one sentence each, collected on the table.
+
+        An unknown key is ignored rather than refused, so the sentence is a note a caller carries
+        into what it returns. It is not written anywhere here, because a library that decided where
+        a note went would decide it for every caller, and a note nobody can read is a note nobody
+        acts on.
+        """
+        found = unknown_key_warnings(self.data, known, self.where)
+        self.notes += found
+        return found
 
 
 def _is_optional(annotation: Any) -> bool:

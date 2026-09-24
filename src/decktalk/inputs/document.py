@@ -211,7 +211,7 @@ class Document:
         if unknown:
             raise InputError(f"{PROJECT_FILE}: unknown table(s) {unknown}. The known tables are {sorted(known)}.")
         project = Table(top.get_table("project") or {}, f"{PROJECT_FILE}: [project]")
-        project.warn_unknown(PROJECT_KEYS)
+        warn(project.note_unknown(PROJECT_KEYS))
         sections = parse_sections(doc)
         numbers = {s.number for s in sections}
         return cls(
@@ -285,6 +285,12 @@ def tuning_keys(table: str) -> set[str]:
     of them has to know both halves before it can call a key unknown.
     """
     return {key.id.rsplit(".", 1)[1] for key in BY_ID.values() if key.id.rsplit(".", 1)[0] == table}
+
+
+def warn(notes: list[str]) -> None:
+    """Say what the document parser found, which is where an ignored key reaches a person today."""
+    for note in notes:
+        log.warning(note)
 
 
 def warn_section_keys(t: Table, *, clip: bool) -> None:
@@ -364,7 +370,7 @@ def parse_voice(doc: dict[str, Any]) -> Voice:
     if raw is None:
         return Voice()
     t = Table(raw, f"{PROJECT_FILE}: [voice]", table="voice")
-    t.warn_unknown(set(Voice.__dataclass_fields__) | tuning_keys("voice"))
+    warn(t.note_unknown(set(Voice.__dataclass_fields__) | tuning_keys("voice")))
     return Voice(provider=t.get_str("provider", "elevenlabs"), model=t.get_str("model"))
 
 
@@ -373,7 +379,7 @@ def parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
     if raw is None:
         return Transition()
     t = Table(raw, f"{PROJECT_FILE}: [transition]")
-    t.warn_unknown(Transition.__dataclass_fields__)
+    warn(t.note_unknown(Transition.__dataclass_fields__))
     dips_raw = raw.get("dips")
     dips: tuple[tuple[int, int], ...] | None = None
     if dips_raw is not None:
@@ -397,11 +403,11 @@ def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
     if raw is None:
         return Mix()
     t = Table(raw, f"{PROJECT_FILE}: [mix]", table="mix")
-    t.warn_unknown(set(Mix.__dataclass_fields__) | tuning_keys("mix") | {"loudness"})
+    warn(t.note_unknown(set(Mix.__dataclass_fields__) | tuning_keys("mix") | {"loudness"}))
     effects: list[MixEffect] = []
     for i, item in enumerate(t.get_tables("effects")):
         s = Table(item, f"{PROJECT_FILE}: [[mix.effects]] #{i + 1}")
-        s.warn_unknown(MixEffect.__dataclass_fields__)
+        warn(s.note_unknown(MixEffect.__dataclass_fields__))
         section = s.get_int("section", required=True)
         if section not in numbers:
             raise InputError(f"{s.where}: section {section} does not exist")
@@ -431,7 +437,7 @@ def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
 
 def parse_sound(raw: dict[str, Any], where: str) -> SoundSpec:
     t = Table(raw, where)
-    t.warn_unknown(SoundSpec.__dataclass_fields__)
+    warn(t.note_unknown(SoundSpec.__dataclass_fields__))
     return SoundSpec(
         text=t.get_str("text", required=True),
         out=t.get_path("out"),
@@ -446,7 +452,7 @@ def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
     if raw is None:
         return Soundscape()
     t = Table(raw, f"{PROJECT_FILE}: [soundscape]")
-    t.warn_unknown(Soundscape.__dataclass_fields__)
+    warn(t.note_unknown(Soundscape.__dataclass_fields__))
     amb_raw = t.get_table("ambience")
     effects: dict[str, SoundSpec] = {}
     for name, item in (t.get_table("effects") or {}).items():
@@ -457,7 +463,7 @@ def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
     music = None
     if music_raw is not None:
         m = Table(music_raw, f"{PROJECT_FILE}: [soundscape.music]")
-        m.warn_unknown(MusicSpec.__dataclass_fields__)
+        warn(m.note_unknown(MusicSpec.__dataclass_fields__))
         music = MusicSpec(
             prompt=m.get_str("prompt", required=True),
             seconds=m.get_int("seconds", 360),

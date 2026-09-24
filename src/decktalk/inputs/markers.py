@@ -12,12 +12,15 @@ reported by `assemble` and skipped.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from decktalk.errors import InputError
 from decktalk.inputs.paths import at, relative
 from decktalk.tomlmap import Table
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -67,7 +70,8 @@ def load_markers(path: Path, root: Path) -> Markers:
     rows: list[Marker] = []
     for i, raw in enumerate(top.get_tables("markers")):
         t = Table(raw, f"{path.name}: markers #{i + 1}", shown)
-        t.warn_unknown(Marker.__dataclass_fields__)
+        for note in t.note_unknown(Marker.__dataclass_fields__):
+            log.warning(note)
         rows.append(
             Marker(
                 name=t.get_str("name", ""),
