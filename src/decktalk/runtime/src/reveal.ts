@@ -72,6 +72,11 @@ export type Mounted = {
  *
  * Nothing is drawn here and no cue is fired. A frozen slide is the one exception, because a still
  * has no clock to fire anything on, so every cue it is not asked to hold is run as it is wired.
+ *
+ * An element that has still to arrive hides on a still exactly as it does on a clock. A still of one
+ * moment is the elements that have arrived by that moment and no others, so an element left on
+ * screen while its own cue is held would make the frame before a reveal and the frame at it the same
+ * picture, and a check comparing the two would measure nothing.
  */
 export function prepare(el: HTMLElement, slide: Slide, playing: Playing): Mounted {
   const actions = new Map<string, Action[]>();
@@ -90,8 +95,7 @@ export function prepare(el: HTMLElement, slide: Slide, playing: Playing): Mounte
   for (const target of momentElements(el)) {
     const element = target as HTMLElement;
     const moments = momentsOf(element, slide.id);
-    const arrival = moments.find((one) => one.attr === ATTR.in);
-    if (arrival && !playing.frozen) hide(element);
+    if (moments.some((one) => one.attr === ATTR.in)) hide(element);
     for (const moment of moments) {
       const action = actionFor(element, moment.attr, moment.cue, slide, playing, held, onLeave);
       push(actions, moment.cue, action);

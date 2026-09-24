@@ -1483,8 +1483,7 @@
     for (const target of momentElements(el)) {
       const element = target;
       const moments = momentsOf(element, slide.id);
-      const arrival2 = moments.find((one) => one.attr === ATTR.in);
-      if (arrival2 && !playing.frozen) hide2(element);
+      if (moments.some((one) => one.attr === ATTR.in)) hide2(element);
       for (const moment of moments) {
         const action = actionFor(element, moment.attr, moment.cue, slide, playing, held, onLeave);
         push(actions, moment.cue, action);
