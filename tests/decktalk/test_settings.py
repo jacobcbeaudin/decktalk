@@ -394,6 +394,18 @@ class TestTheWriter:
             write(tmp_path / "machine.toml", "host.presentation_bias_ms", "5", scope=Scope.MACHINE)
         assert caught.value.hint == "Run `decktalk doctor --measure`."
 
+    def test_the_measuring_command_writes_a_measured_key_through_its_own_door(self, tmp_path: Path) -> None:
+        """The one exception to the refusal above, which is the command holding the only honest value."""
+        path = tmp_path / "machine.toml"
+        written = write(path, "host.presentation_bias_ms", "5", scope=Scope.MACHINE, measured=True)
+        assert written.value == 5.0
+        assert path.read_text(encoding="utf-8") == "[host]\npresentation_bias_ms = 5.0\n"
+
+    def test_a_chosen_key_is_refused_through_the_measuring_door(self, tmp_path: Path) -> None:
+        """The door opens one way only, so nothing dresses a preference up as a measurement."""
+        with pytest.raises(InputError, match="chosen rather than measured"):
+            write(tmp_path / "decktalk.toml", "video.preset", "veryfast", scope=Scope.PROJECT, measured=True)
+
     def test_a_write_a_higher_layer_shadows_says_so(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DECKTALK_VIDEO_PRESET", "slow")
         written = write(tmp_path / "decktalk.toml", "video.preset", "veryfast", scope=Scope.PROJECT)

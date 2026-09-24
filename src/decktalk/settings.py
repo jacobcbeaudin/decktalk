@@ -1421,6 +1421,7 @@ def write(
     *,
     scope: Scope,
     dry_run: bool = False,
+    measured: bool = False,
 ) -> SettingWrite:
     """Set one key in one file, through the whole loader, keeping every comment the file already has.
 
@@ -1429,6 +1430,11 @@ def write(
     The document is edited rather than rewritten, because a person wrote the comments around the
     key and a writer that dumped a parsed tree would delete them the first time an agent turned a
     knob.
+
+    `measured` is the door the one command that takes a measurement comes through. A measured key is
+    refused by hand because a number typed into it is a guess, and the command that measured it is
+    holding the only honest value there is, so the refusal has to have exactly one exception and it
+    has to be named at the call rather than assumed from the key.
     """
     known = BY_ID.get(key)
     if known is None:
@@ -1442,10 +1448,15 @@ def write(
             f"'{key}' is {known.scope.value}-scoped, so it cannot be written to the {scope.value} file.",
             hint=f"Run `decktalk config set {key} {value} {other}`.",
         )
-    if known.source is Source.MEASURED:
+    if known.source is Source.MEASURED and not measured:
         raise InputError(
             f"'{key}' is measured rather than chosen, so a value written by hand would be a guess.",
             hint=f"Run `{known.evidence}`.",
+        )
+    if measured and known.source is not Source.MEASURED:
+        raise InputError(
+            f"'{key}' is chosen rather than measured, so nothing may write it as a measurement.",
+            hint=f"Run `decktalk config set {key} {value}`.",
         )
     typed = parse_value(known, value)
     document = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
