@@ -34,9 +34,10 @@ from pydantic import BaseModel, Field
 
 from ..errors import InputError, ToolError
 from ..findings import MODEL
+from ..settings import COLOR_SCHEMES
 from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
-from . import pagereport
+from . import MILLISECONDS, pagereport
 from .encode import css_color
 from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport
@@ -68,13 +69,10 @@ HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && win
 NO_CATALOG = "no window.__decktalk.catalog (is decktalk-runtime.js included, and does the page register a scene?)"
 
 DEADLINE_SECONDS = 15.0
-"""How long one call into the page may take, which is many times the longest a probe call measures."""
+"""Calibration: many times the longest a probe call measures, so only a page that stopped answering hits it."""
 
-ColorScheme = Literal["dark", "light", "no-preference"]
-"""What a page may be told the viewer prefers, which is the closed set Chromium itself accepts."""
-
-COLOR_SCHEMES: tuple[ColorScheme, ...] = ("dark", "light", "no-preference")
-"""The values `[record] color_scheme` may take, named here because this is the layer that passes them on."""
+ColorScheme = Literal["light", "dark", "no-preference"]
+"""What a page may be told the viewer prefers, which is the closed set `[record] color_scheme` publishes."""
 
 
 def scheme(value: str) -> ColorScheme:
@@ -88,7 +86,7 @@ def scheme(value: str) -> ColorScheme:
             f"[record] color_scheme = {value!r} is not one of {', '.join(COLOR_SCHEMES)}.",
             hint=f"Set it to one of {', '.join(COLOR_SCHEMES)}.",
         )
-    return value
+    return value  # type: ignore[return-value]  (the settings tuple and the type above are held equal by a test)
 
 
 SLATE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
@@ -222,7 +220,7 @@ def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECO
         f"  const answer = Promise.resolve().then({script});"
         "  const timer = new Promise((_ok, no) => setTimeout("
         f"    () => no(new Error('the page did not answer within {deadline_seconds:g} seconds')),"
-        f"    {deadline_seconds * 1000:.0f}));"
+        f"    {deadline_seconds * MILLISECONDS:.0f}));"
         "  return await Promise.race([answer, timer]);"
         "}"
     )
@@ -429,10 +427,10 @@ def record_page(
         # Settle after load, and never start the clock before the recorder has certainly begun
         # capturing, because Windows starts its capture late, and the cover makes the wait invisible.
         wait = max(settle_seconds, min_cover_seconds - (time.monotonic() - capture.opened))
-        page.wait_for_timeout(wait * 1000)
+        page.wait_for_timeout(wait * MILLISECONDS)
         evaluate(page, START_JS)
         started = time.monotonic()
-        page.wait_for_timeout(seconds * 1000)
+        page.wait_for_timeout(seconds * MILLISECONDS)
         report = read_report(page, out.stem)
         errors = page_errors(page, caught, out.stem)
         recording = Recording(

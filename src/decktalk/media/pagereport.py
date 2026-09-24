@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from ..findings import Code, RaisedBy
 from ..page import REPORT
+from . import MILLISECONDS
 
 PAGE = ConfigDict(frozen=True, extra="forbid", populate_by_name=True, serialize_by_alias=True)
 """The configuration every row here uses, which refuses a field the page contract does not name."""
@@ -162,7 +163,7 @@ class PageReport(BaseModel):
         there. A gap is recorded when it ends, so a gap that began before t=0 counts only what fell
         after it, and a gap with no time on the narration clock counts nothing.
         """
-        visible = (0.0 if gap.at is None else min(gap.ms, gap.at * 1000) for gap in self.frame_gaps)
+        visible = (0.0 if gap.at is None else min(gap.ms, gap.at * MILLISECONDS) for gap in self.frame_gaps)
         return int(max((seen for seen in visible if seen > 0), default=0))
 
 

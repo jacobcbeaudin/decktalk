@@ -71,8 +71,17 @@ def answers(monkeypatch: pytest.MonkeyPatch, reply: object, *, status: int = 200
     return asked
 
 
-def provider() -> ElevenLabs:
-    return ElevenLabs(api_key=Secret(SENTINEL, "ELEVENLABS_API_KEY"), api_base=BASE, context_chars=10)
+def provider(**over: object) -> ElevenLabs:
+    """The provider a project with these four values would build, which is how a run builds one."""
+    fields: dict[str, object] = {
+        "api_key": Secret(SENTINEL, "ELEVENLABS_API_KEY"),
+        "api_base": BASE,
+        "context_chars": 10,
+        "speech_timeout_seconds": 180,
+        "sound_timeout_seconds": 30,
+        **over,
+    }
+    return ElevenLabs(**fields)  # type: ignore[arg-type]
 
 
 def request(**over: object) -> SpeechRequest:
@@ -126,11 +135,11 @@ def test_the_provider_refuses_a_foreign_base_before_any_request(monkeypatch):
     """The refusal names the rule and the switch, and never the value, which may hold a path token."""
     monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
     with pytest.raises(InputError) as caught:
-        ElevenLabs(api_key=Secret(SENTINEL), api_base="https://evil.test/v1/SUPERSECRETTOKEN")
+        provider(api_base="https://evil.test/v1/SUPERSECRETTOKEN")
     said = f"{caught.value} {caught.value.hint}"
     assert "evil.test" not in said and "SUPERSECRETTOKEN" not in said
     monkeypatch.setenv(ALLOW_ANY_API_BASE, "1")
-    assert ElevenLabs(api_key=Secret(SENTINEL), api_base="https://evil.test/v1").checked_base.endswith("/v1")
+    assert provider(api_base="https://evil.test/v1").checked_base.endswith("/v1")
 
 
 # ---- the real synthesize ------------------------------------------------------------------------

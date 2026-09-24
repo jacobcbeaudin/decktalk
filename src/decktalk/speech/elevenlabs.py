@@ -96,9 +96,9 @@ class ElevenLabs:
 
     api_key: Secret
     api_base: str
-    context_chars: int = 1500
-    speech_timeout_seconds: int = 180
-    sound_timeout_seconds: int = 180
+    context_chars: int  # [narration] context_chars
+    speech_timeout_seconds: int  # [narration] timeout_seconds
+    sound_timeout_seconds: int  # [elevenlabs] timeout_seconds
     name: str = "elevenlabs"
     checked_base: str = field(init=False)
 

@@ -1,11 +1,10 @@
 {
   "files": {
     "src/decktalk/captions/files.py": 8,
-    "src/decktalk/captions/layout.py": 14,
-    "src/decktalk/media/audio.py": 16,
-    "src/decktalk/media/browser.py": 5,
-    "src/decktalk/media/ffmpeg.py": 2,
-    "src/decktalk/media/frames.py": 11,
+    "src/decktalk/captions/layout.py": 11,
+    "src/decktalk/media/audio.py": 4,
+    "src/decktalk/media/browser.py": 3,
+    "src/decktalk/media/frames.py": 9,
     "src/decktalk/media/origin.py": 4,
     "src/decktalk/pagescan.py": 2,
     "src/decktalk/runtime/src/contract.ts": 3,

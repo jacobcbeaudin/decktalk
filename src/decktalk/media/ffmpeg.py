@@ -1,9 +1,13 @@
 """Finding ffmpeg and ffprobe for this machine, running them, and probing what they read.
 
-The environment override wins, the pinned build that `toolchain/ffmpeg_fetch.py` downloads comes
-next, and a build on PATH is the fallback, so every machine renders with the same ffmpeg unless it
-is told otherwise. The override is a pair: a machine that names one half and not the other is
-refused rather than quietly rendered with a build it did not ask for.
+`[tools] ffmpeg` and `ffprobe` win, the pinned build that `toolchain/ffmpeg_fetch.py` downloads
+comes next, and a build on PATH is the fallback, so every machine renders with the same ffmpeg
+unless it is told otherwise. Those two keys are a pair: a machine that names one half and not the
+other is refused rather than quietly rendered with a build it did not ask for.
+
+The keys reach this module through `using_tools`, which the machine opens for a run, because `run`
+and `stderr` are called from inside a filter chain and threading a settings object through every one
+of them would put a project in the middle of an audio filter.
 
 Every call goes through `_checked`, so a return code other than zero raises `ToolError` carrying
 the tail of what the tool said. A measurement that read a failure as silence, as blackness or as a
@@ -17,28 +21,54 @@ and `has_audio`.
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
 
 from ..errors import ToolError
 from ..findings import Location
+from ..settings import ToolsConfig
 from ..toolchain import ffmpeg_fetch
+from ..toolchain.cache import caching_in
 
 log = logging.getLogger(__name__)
 
-FFMPEG_VARIABLE = "DECKTALK_FFMPEG"
-FFPROBE_VARIABLE = "DECKTALK_FFPROBE"
-OVERRIDE = (FFMPEG_VARIABLE, FFPROBE_VARIABLE)
-"""The two variables that name a build of the caller's own, which are set together or not at all."""
+NAMED = ("tools.ffmpeg", "tools.ffprobe")
+"""The two keys that name a build of the machine's own, which are set together or not at all."""
+
+TOOLS: ContextVar[ToolsConfig | None] = ContextVar("decktalk_tools", default=None)
+"""What this run renders with, which `using_tools` sets and every call below reads."""
+
+
+def bound_tools() -> ToolsConfig:
+    """The tools in force, which is what a run was bound to or a machine that named none of its own."""
+    return TOOLS.get() or ToolsConfig()
+
+
+@contextmanager
+def using_tools(tools: ToolsConfig) -> Iterator[None]:
+    """Render with the executables and the cache directory `[tools]` names, while this is open.
+
+    One call binds a run to a machine's own toolchain, so nothing between the machine and an audio
+    filter has to carry a settings object to say which ffmpeg this is.
+    """
+    token = TOOLS.set(tools)
+    try:
+        with caching_in(tools.cache_dir):
+            yield
+    finally:
+        TOOLS.reset(token)
+
 
 TAIL_LINES = 6
-"""How many of a tool's last lines an error quotes, which is where it says what it could not do."""
+"""Truth: ffmpeg says what it could not do in its last few lines, and everything above is what it read."""
 
 HINT_CHARS = 200
-"""How much of a probe's complaint a hint carries, because a hint is read beside the sentence."""
+"""Truth: a hint is read in one glance beside the sentence it follows, so it carries about two lines."""
 
 
 def _tail(err: bytes) -> str:
@@ -65,32 +95,37 @@ def _at(path: Path | str) -> Location:
     return Location(where=Path(path).name, file=Path(path))
 
 
-def _env_paths() -> tuple[str, str] | None:
-    """The pair the environment names, when both variables are set and both name a file that is there."""
-    env_ff, env_fp = os.environ.get(FFMPEG_VARIABLE), os.environ.get(FFPROBE_VARIABLE)
-    if not (env_ff and env_fp):
+def _named(tools: ToolsConfig) -> tuple[str, str] | None:
+    """The pair `[tools]` names, when both keys are set and both name a file that is there."""
+    if not (tools.ffmpeg and tools.ffprobe):
         return None
-    return (env_ff, env_fp) if not env_missing() else None
+    return (tools.ffmpeg, tools.ffprobe) if not missing_tools(tools) else None
 
 
-def env_missing() -> list[str]:
-    """The variables that name a file which is not there, so a typo is reported and never resolved.
+def missing_tools(tools: ToolsConfig | None = None) -> list[str]:
+    """The keys that name a file which is not there, so a typo is reported and never resolved.
 
     `doctor` reports this and `ffmpeg_paths` refuses on it, which is the difference between a command
     whose work is to report what a machine has and one that needs the tool to do anything at all.
     """
-    return [name for name in OVERRIDE if (value := os.environ.get(name)) and not Path(value).is_file()]
+    named = _stated(tools or bound_tools())
+    return [key for key, value in named.items() if not Path(value).is_file()]
 
 
-def env_unpaired() -> list[str]:
-    """The half of the override that is not set, when the other half is, which is never a usable pair.
+def unpaired_tool(tools: ToolsConfig | None = None) -> list[str]:
+    """The half of the pair that is not set, when the other half is, which is never a usable build.
 
     ffmpeg and ffprobe are one build, so naming one of them and leaving the other to PATH renders
-    with two builds. The half that is missing is named rather than ignored, because a caller who set
-    one variable meant to set both and would otherwise never learn that nothing happened.
+    with two builds. The half that is missing is named rather than ignored, because a machine that
+    set one key meant to set both and would otherwise never learn that nothing happened.
     """
-    set_names = [name for name in OVERRIDE if os.environ.get(name)]
-    return [] if len(set_names) != 1 else [name for name in OVERRIDE if name not in set_names]
+    stated = _stated(tools or bound_tools())
+    return [] if len(stated) != 1 else [key for key in NAMED if key not in stated]
+
+
+def _stated(tools: ToolsConfig) -> dict[str, str]:
+    """Each of the two keys a machine actually filled in, against the path it filled in."""
+    return {key: value for key, value in zip(NAMED, (tools.ffmpeg, tools.ffprobe), strict=True) if value}
 
 
 def _path_pair() -> tuple[str, str] | None:
@@ -98,33 +133,42 @@ def _path_pair() -> tuple[str, str] | None:
     return (ff, fp) if ff and fp else None
 
 
-def _refuse_a_half_override() -> None:
-    """Refuse an override that names one executable of the pair, naming the one it left out."""
-    if unpaired := env_unpaired():
+def _refuse_half_a_build(tools: ToolsConfig) -> None:
+    """Refuse a machine that named one executable of the pair, naming the key it left out."""
+    if unpaired := unpaired_tool(tools):
         raise ToolError(
             f"{', '.join(unpaired)} is not set, and ffmpeg and ffprobe have to come from one build.",
-            hint=f"Set {' and '.join(OVERRIDE)} together, or unset both to use the pinned build.",
+            hint=f"Set {' and '.join(NAMED)} together, or clear both to use the pinned build.",
         )
 
 
-@lru_cache(maxsize=1)
 def ffmpeg_paths() -> tuple[str, str]:
-    """(ffmpeg, ffprobe) executables.
+    """(ffmpeg, ffprobe) executables for the tools this run is bound to."""
+    return _resolve(bound_tools())
 
-    The environment override wins, and half an override is refused. The pinned build comes next,
+
+RESOLUTIONS_KEPT = 4
+"""Truth: a process renders for one machine, and a handful of bound toolchains covers every test of it."""
+
+
+@lru_cache(maxsize=RESOLUTIONS_KEPT)
+def _resolve(tools: ToolsConfig) -> tuple[str, str]:
+    """(ffmpeg, ffprobe) executables, worked out once per set of tools a process is asked for.
+
+    The keys win, and half a build is refused. The pinned build comes next,
     fetched when it is not on disk yet, so every machine renders with the same ffmpeg. A build on
     PATH is the fallback when there is no pinned build for this platform or the download cannot run.
     A download whose digest does not match is never used and never falls back, because that is the
     one failure that must stop a run.
     """
-    _refuse_a_half_override()
-    if missing := env_missing():
+    _refuse_half_a_build(tools)
+    if missing := missing_tools(tools):
         raise ToolError(
             f"{', '.join(missing)} names a file that is not there.",
-            hint="Point the variable at an executable, or unset it to use the pinned build.",
+            hint="Point the key at an executable, or clear it to use the pinned build.",
         )
-    if env := _env_paths():
-        return env
+    if named := _named(tools):
+        return named
     if installed := ffmpeg_fetch.installed_pinned():
         return installed
     on_path = _path_pair()
@@ -133,7 +177,7 @@ def ffmpeg_paths() -> tuple[str, str]:
             return on_path
         raise ToolError(
             f"ffmpeg/ffprobe not found: DeckTalk pins no build for {ffmpeg_fetch.platform_key()} and none is on "
-            f"PATH. Install ffmpeg, or set {' and '.join(OVERRIDE)}."
+            f"PATH. Install ffmpeg, or set {' and '.join(NAMED)}."
         )
     try:
         return ffmpeg_fetch.fetch_ffmpeg()
@@ -148,23 +192,24 @@ def ffmpeg_paths() -> tuple[str, str]:
 
 
 def unnamed_paths() -> tuple[str, str] | None:
-    """The pair a machine has without the environment override, which is what `doctor` falls back to.
+    """The pair a machine has without `[tools]`, which is what `doctor` falls back to.
 
-    A variable that names a file which is not there tells nothing about the other component, so the
-    row for the component that is fine still reports the build it would really use.
+    A key that names a file which is not there tells nothing about the other component, so the row
+    for the component that is fine still reports the build it would really use.
     """
     return ffmpeg_fetch.installed_pinned() or _path_pair()
 
 
-def installed_paths() -> tuple[str, str] | None:
+def installed_paths(tools: ToolsConfig | None = None) -> tuple[str, str] | None:
     """The (ffmpeg, ffprobe) pair that ffmpeg_paths() would return without downloading anything.
 
-    None means only a fetch could provide them, or that the override names half a build. `decktalk
+    None means only a fetch could provide them, or that `[tools]` names half a build. `decktalk
     doctor` reports on that instead of triggering it.
     """
-    if env_unpaired():
+    tools = tools or bound_tools()
+    if unpaired_tool(tools):
         return None
-    return _env_paths() or ffmpeg_fetch.installed_pinned() or _path_pair()
+    return _named(tools) or ffmpeg_fetch.installed_pinned() or _path_pair()
 
 
 def ffmpeg() -> str:

@@ -9,6 +9,8 @@ import pytest
 
 from decktalk.errors import ToolError
 from decktalk.media import ffmpeg
+from decktalk.settings import ToolsConfig
+from decktalk.toolchain.cache import cache_dir
 
 
 @pytest.fixture
@@ -80,29 +82,42 @@ def test_stderr_hands_back_the_report_and_raw_hands_back_the_bytes(monkeypatch):
     assert seen[1][:3] == ["ffmpeg", "-v", "error"]
 
 
-def test_naming_one_half_of_the_override_is_refused_rather_than_ignored(monkeypatch, tmp_path):
-    """ffmpeg and ffprobe are one build, so half an override would render with two of them."""
+def test_naming_one_half_of_the_build_is_refused_rather_than_ignored(tmp_path):
+    """ffmpeg and ffprobe are one build, so naming one key would render with two of them."""
     binary = tmp_path / "ffmpeg"
     binary.write_text("")
-    monkeypatch.setenv(ffmpeg.FFMPEG_VARIABLE, str(binary))
-    monkeypatch.delenv(ffmpeg.FFPROBE_VARIABLE, raising=False)
-    ffmpeg.ffmpeg_paths.cache_clear()
-    assert ffmpeg.env_unpaired() == [ffmpeg.FFPROBE_VARIABLE]
-    with pytest.raises(ToolError) as raised:
+    half = ToolsConfig(ffmpeg=str(binary))
+    assert ffmpeg.unpaired_tool(half) == ["tools.ffprobe"]
+    with ffmpeg.using_tools(half), pytest.raises(ToolError) as raised:
         ffmpeg.ffmpeg_paths()
-    assert ffmpeg.FFPROBE_VARIABLE in str(raised.value)
+    assert "tools.ffprobe" in str(raised.value)
     # `doctor` reports a machine rather than rendering on it, so it says there is no usable pair.
-    assert ffmpeg.installed_paths() is None
-    ffmpeg.ffmpeg_paths.cache_clear()
+    assert ffmpeg.installed_paths(half) is None
 
 
-def test_setting_both_halves_is_the_override_it_was_written_to_be(monkeypatch, tmp_path):
+def test_a_key_that_names_a_file_which_is_not_there_is_refused_rather_than_resolved(tmp_path):
+    """A typo told `doctor` the machine was ready and then died inside the first render."""
+    both = ToolsConfig(ffmpeg=str(tmp_path / "nope"), ffprobe=str(tmp_path / "also-nope"))
+    assert ffmpeg.missing_tools(both) == ["tools.ffmpeg", "tools.ffprobe"]
+    with ffmpeg.using_tools(both), pytest.raises(ToolError, match="tools.ffmpeg"):
+        ffmpeg.ffmpeg_paths()
+
+
+def test_naming_both_halves_is_the_build_this_machine_renders_with(tmp_path):
     ff, fp = tmp_path / "ffmpeg", tmp_path / "ffprobe"
     ff.write_text("")
     fp.write_text("")
-    monkeypatch.setenv(ffmpeg.FFMPEG_VARIABLE, str(ff))
-    monkeypatch.setenv(ffmpeg.FFPROBE_VARIABLE, str(fp))
-    ffmpeg.ffmpeg_paths.cache_clear()
-    assert ffmpeg.env_unpaired() == []
-    assert ffmpeg.ffmpeg_paths() == (str(ff), str(fp))
-    ffmpeg.ffmpeg_paths.cache_clear()
+    tools = ToolsConfig(ffmpeg=str(ff), ffprobe=str(fp))
+    assert ffmpeg.unpaired_tool(tools) == [] and ffmpeg.missing_tools(tools) == []
+    with ffmpeg.using_tools(tools):
+        assert ffmpeg.ffmpeg_paths() == (str(ff), str(fp))
+        assert ffmpeg.installed_paths() == (str(ff), str(fp))
+    # A run that bound nothing is back to the pinned build, so one run never decides another's.
+    assert ffmpeg.bound_tools() == ToolsConfig()
+
+
+def test_binding_the_tools_also_binds_where_a_fetch_is_kept(tmp_path):
+    """One call says which ffmpeg a run renders with, and a cache directory is part of that answer."""
+    with ffmpeg.using_tools(ToolsConfig(cache_dir=str(tmp_path / "elsewhere"))):
+        assert cache_dir() == tmp_path / "elsewhere"
+    assert cache_dir() != tmp_path / "elsewhere"

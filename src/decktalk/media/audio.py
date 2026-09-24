@@ -6,8 +6,9 @@ corrects loudness here, and `verify` reads the samples of one span here. Every c
 edit says what ffmpeg said rather than leaving an empty file behind.
 
 Every number a verdict depends on arrives as an argument. The sample rate comes from `[video]`, the
-two bounds that decide where a take stops sounding come from `[narration]`, and what is left here
-is a fact about audio rather than a choice about a film.
+two bounds that decide where a take stops sounding come from `[narration]`, the click level is the
+published number `verify.click_floor_dbfs` is derived from, and what is left here is a fact about
+audio rather than a choice about a film.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..settings import CLICK_LEVEL_DBFS
 from . import ffmpeg
 
 SILENCE_END_TOLERANCE_SECONDS = 0.06
@@ -39,9 +41,6 @@ CLICK_HZ = 1000
 
 CLICK_SECONDS = 0.008
 """Truth: short enough that a click reads as an event rather than as a tone."""
-
-CLICK_LEVEL_DBFS = -24.0
-"""Truth: loud enough for `verify` to find and quiet enough to review a whole draft under."""
 
 PCM_BYTES_PER_SAMPLE = 2
 """Truth: the width of one signed 16-bit sample, which is what the s16le calls below read and write."""

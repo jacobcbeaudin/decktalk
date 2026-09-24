@@ -31,9 +31,13 @@ CREDENTIAL = "<credential>"
 # Every header that carries a credential. None of them follows a redirect to another origin.
 AUTH_HEADERS = ("xi-api-key", "Authorization", "Proxy-Authorization", "Cookie")
 DEFAULT_PORTS = {"https": 443, "http": 80}
-BODY_CHARS = 500  # How much of a reply a message quotes, cut after the credentials are taken out.
-# The replies worth trying again: the service asked for a slower pace, or it failed on its own side.
+"""Truth: the port a URL means when it names none, which is half of what an origin is."""
+
+BODY_CHARS = 500
+"""Truth: enough of a reply to say what was refused, cut once the credentials are out of it."""
+
 RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+"""Truth: the replies that say to try again, which are a slower pace or a failure on the service's side."""
 
 
 def origin(url: str) -> tuple[str, str, int]:

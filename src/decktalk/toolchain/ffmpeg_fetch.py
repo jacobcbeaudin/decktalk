@@ -32,18 +32,18 @@ TOOL = "ffmpeg"
 """What a `fetch` line calls this download, which is the name `doctor` and `install` print too."""
 
 ANNOUNCE_STEP_BYTES = 4 * 1024 * 1024
-"""How much has to arrive before a download says so again, which is often enough to look alive."""
+"""Calibration: often enough that a download looks alive, and rare enough to cost a run nothing."""
 
 FFMPEG_VERSION = "8.1.2"
-# An archive that grows past this is refused mid-download. The largest pinned archive is 169 MB.
 MAX_ARCHIVE_BYTES = 400 * 1024 * 1024
+"""Calibration: well over the largest pinned archive at 169 MB, so only a wrong answer grows past it."""
 # One host refuses urllib's default User-Agent, so every fetch names itself.
 USER_AGENT = "decktalk"
 CHUNK_BYTES = 1 << 20
-"""How much of an archive is read at a time, which is large enough that the hash keeps up with the socket."""
+"""Truth: a megabyte at a time, which is large enough that hashing keeps up with the socket."""
 
 DOWNLOAD_TIMEOUT_SECONDS = 60
-"""How long one read of an archive may block, after which a host that stopped answering is a failure."""
+"""Calibration: longer than any read of a healthy host takes, so only one that stopped answering hits it."""
 _BTBN = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27"
 _BTBN_DIR = "ffmpeg-n8.1.2-50-g1a748fe2cd"
 _EVERMEET = "https://evermeet.cx/ffmpeg"

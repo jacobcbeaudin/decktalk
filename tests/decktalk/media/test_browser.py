@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from playwright.sync_api import Error as PlaywrightError
@@ -10,6 +11,7 @@ from playwright.sync_api import Error as PlaywrightError
 from decktalk.errors import InputError, ToolError
 from decktalk.media import browser
 from decktalk.media.origin import ORIGIN, Allowed, page_url
+from decktalk.settings import COLOR_SCHEMES
 
 REPORTED = {
     "version": "0.5.0",
@@ -254,6 +256,11 @@ def test_a_colour_scheme_chromium_does_not_know_is_refused_rather_than_passed_on
         browser.scheme("sepia")
     assert "no-preference" in str(raised.value)
     assert browser.scheme("dark") == "dark"
+
+
+def test_the_colour_schemes_this_module_accepts_are_the_ones_the_setting_publishes():
+    """Two spellings of one closed set, held equal here, because only one of them can be a type."""
+    assert set(get_args(browser.ColorScheme)) == set(COLOR_SCHEMES)
 
 
 @pytest.mark.browser
