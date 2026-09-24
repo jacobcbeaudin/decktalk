@@ -1,105 +1,178 @@
-"""What one finished recording is judged on: its length, its brightness, and what the page reported."""
+"""What one finished recording is judged on, and that every judgement arrives as a code.
+
+The channel these tests hold open is the one the code review's must 7 named: the page reports a
+code, the recorder dispatches on that code, and no sentence is matched against a substring anywhere
+between them.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from decktalk.artifacts import Luma, RecordingChecks, RecordingLog
+import pytest
+
+from decktalk.artifacts import Luma, RecordingChecks
+from decktalk.findings import Code
 from decktalk.media import ffmpeg, frames
-from decktalk.settings import RecordConfig
-from decktalk.stages.record.checks import check_recording, katex_verdicts, label, log_verdicts, measure_luma
-from decktalk.verdicts import Verdict
+from decktalk.media.browser import Recording
+from decktalk.media.pagereport import FrameGap, PageReport, PageWarningRow
+from decktalk.settings import Settings
+from decktalk.stages.record.checks import (
+    check_recording,
+    frame_findings,
+    measure_luma,
+    page_findings,
+    recording_findings,
+    stall_finding,
+)
 
-CFG = RecordConfig()
-WEBM = Path("01.webm")
+PAGE = "deck/index.html"
+"""The page every row here is about, as `decktalk.toml` spells it."""
 
-BAD_TEX = 'data-tex could not be parsed: "\\frac{1}" (write \\\\ for every backslash inside a template literal)'
-NO_KATEX = "KaTeX did not load within 5 s, so [data-tex] elements stay plain text"
+WHERE = Path("build/recordings/01.webm")
+"""The recording every frame judgement here is about, project-relative."""
 
-
-def a_log(**fields) -> RecordingLog:
-    base = dict(url="u", requested_seconds=10.0, settle_seconds=0.0, load_seconds=0.0, clock_start_seconds=0.0)
-    return RecordingLog(**{**base, **fields})
-
-
-def bright(monkeypatch, duration: float = 10.0) -> None:
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: duration)
-    monkeypatch.setattr(frames, "luma_at", lambda path, at: (90.0, 200.0))
-
-
-def test_the_page_own_warnings_carry_the_katex_verdict():
-    assert katex_verdicts([]) == []
-    assert katex_verdicts(["a cue fired twice"]) == []
-    assert katex_verdicts([BAD_TEX]) == [Verdict.KATEX_ERROR]
-    assert katex_verdicts([NO_KATEX]) == [Verdict.KATEX_NOT_LOADED]
-    assert katex_verdicts([BAD_TEX, NO_KATEX, BAD_TEX]) == [Verdict.KATEX_ERROR, Verdict.KATEX_NOT_LOADED]
+SECTION = 1
+"""The section every row here belongs to."""
 
 
-def test_the_log_carries_the_verdicts_the_frames_cannot_see():
-    recording_log = a_log()
-    assert log_verdicts(recording_log, CFG) == []
-    recording_log.t0_method, recording_log.t0_guessed = "fallback guess + settle", True
-    recording_log.page_errors = ["ReferenceError: nope is not defined (index.html:5)"]
-    recording_log.warnings = [BAD_TEX]
-    recording_log.frame_gaps = [(1.0, 400)]
-    assert log_verdicts(recording_log, CFG) == [
-        Verdict.NO_COVER,
-        Verdict.PAGE_ERROR,
-        Verdict.KATEX_ERROR,
-        Verdict.STALLED,
-    ]
+def a_report(**fields: object) -> PageReport:
+    return PageReport.model_validate({"version": "0.5.0", "mode": "cue", "scene": "1", "slide": "1.1", **fields})
 
 
-def test_a_dark_middle_frame_is_uncertain_and_a_short_recording_is_certain(monkeypatch):
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: 8.0)
-    monkeypatch.setattr(frames, "luma_at", lambda path, at: (2.0, 4.0))
-    checks = check_recording(WEBM, a_log(), CFG)
-    assert checks.verdicts == (Verdict.BLACK_UNSURE, Verdict.TRUNCATED)
-    assert checks.duration_seconds == 8.0 and checks.wanted_seconds == 10.0 and not checks.ok
+def a_recording(report: PageReport, *, external: tuple[str, ...] = (), wanted: float = 10.0) -> Recording:
+    return Recording(
+        url="http://project.localhost/deck/index.html?scene=1",
+        assets=(PAGE,),
+        external=external,
+        requested_seconds=wanted,
+        load_seconds=0.2,
+        settle_seconds=0.5,
+        clock_start_seconds=1.5,
+        page_errors=(),
+        report=report,
+    )
 
 
-def test_a_recording_that_ran_its_length_on_a_bright_page_passes(monkeypatch):
-    bright(monkeypatch)
-    checks = check_recording(WEBM, a_log(), CFG)
-    assert checks.verdicts == () and checks.ok
-    assert checks.luma == Luma(y10=90.0, y50=90.0, y90=90.0, max50=200.0)
+def checks_of(*, duration: float = 10.0, wanted: float = 10.0, peak: float = 200.0) -> RecordingChecks:
+    return RecordingChecks(
+        duration_seconds=duration,
+        wanted_seconds=wanted,
+        luma=Luma(at_tenth=90.0, at_half=90.0, at_nine_tenths=90.0, peak_at_half=peak),
+    )
 
 
-def test_a_recording_asked_for_nothing_is_never_truncated(monkeypatch):
-    bright(monkeypatch, duration=0.5)
-    assert check_recording(WEBM, a_log(requested_seconds=0.0), CFG).verdicts == ()
+@pytest.fixture
+def settings() -> Settings:
+    return Settings()
 
 
-def test_the_luma_is_read_at_a_tenth_a_half_and_nine_tenths(monkeypatch):
-    seen: list[float] = []
+def test_the_luma_is_read_at_a_tenth_a_half_and_nine_tenths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    read: list[float] = []
 
-    def luma_at(path, at):
-        seen.append(round(at, 3))
-        return (at, at * 2)
+    def luma_at(_path: Path, at: float, **_kwargs: object) -> tuple[float, float]:
+        read.append(round(at, 3))
+        return 90.0, 210.0
 
     monkeypatch.setattr(frames, "luma_at", luma_at)
-    assert measure_luma(WEBM, 10.0) == Luma(y10=1.0, y50=5.0, y90=9.0, max50=10.0)
-    assert seen == [1.0, 5.0, 9.0, 5.0]
+    measured = measure_luma(tmp_path / "01.webm", 10.0)
+    assert read[:3] == [1.0, 5.0, 9.0]
+    assert measured.peak_at_half == 210.0
 
 
-def test_the_line_a_table_prints_names_every_verdict_and_the_stall_length():
-    checks = RecordingChecks(10.0, 10.0, Luma(1, 1, 1, 1), (Verdict.NO_COVER, Verdict.STALLED))
-    assert label(checks, 140) == f"{Verdict.NO_COVER.label} {Verdict.STALLED.label} 140ms"
-    assert label(checks, 0) == f"{Verdict.NO_COVER.label} {Verdict.STALLED.label}"
-    assert label(RecordingChecks(1.0, 1.0, Luma(1, 1, 1, 1)), 0) == Verdict.OK.label
-    assert label(None, 0) == Verdict.OK.label
+def test_the_checks_measure_the_file_against_what_the_recorder_asked_for(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: 9.5)
+    monkeypatch.setattr(frames, "luma_at", lambda _path, _at, **_kwargs: (90.0, 210.0))
+    measured = check_recording(tmp_path / "01.webm", a_recording(a_report(), wanted=10.0))
+    assert (measured.duration_seconds, measured.wanted_seconds) == (9.5, 10.0)
 
 
-def test_a_page_that_fetched_from_another_origin_is_a_certain_finding():
-    """A recording that depends on a host the project does not own cannot be rebuilt from the project."""
-    from decktalk.artifacts import RecordingLog
-    from decktalk.settings import RecordConfig
-    from decktalk.stages.record.checks import log_verdicts
+def test_every_page_warning_becomes_the_finding_of_the_code_the_page_carried() -> None:
+    report = a_report(
+        warnings=[
+            {"code": "PAGE_KATEX_ERROR", "message": "KaTeX refused $x$.", "slide": "1.1", "cue": None, "attr": None},
+            {
+                "code": "PAGE_UNKNOWN_ATTR",
+                "message": "data-nope is not a knob.",
+                "slide": None,
+                "cue": "1.1:open",
+                "attr": "data-nope",
+            },
+        ]
+    )
+    found = page_findings(report, page=PAGE, section=SECTION)
+    assert [row.code for row in found] == [Code.PAGE_KATEX_ERROR, Code.PAGE_UNKNOWN_ATTR]
+    assert [row.location.where for row in found] == ["1.1", "1.1:open"]
+    assert found[0].location.file == Path(PAGE)
 
-    made = dict(url="http://project.localhost/deck/index.html", requested_seconds=3.0, settle_seconds=0.5,
-                load_seconds=0.2, clock_start_seconds=0.7)  # fmt: skip
-    clean = RecordingLog(**made, t0_guessed=False)
-    assert Verdict.CDN_ASSET not in log_verdicts(clean, RecordConfig())
-    reached = RecordingLog(**made, t0_guessed=False, external=["https://cdn.example.com"])
-    assert Verdict.CDN_ASSET in log_verdicts(reached, RecordConfig())
-    assert Verdict.CDN_ASSET.certain
+
+def test_a_page_that_reported_nothing_is_judged_on_nothing() -> None:
+    assert page_findings(a_report(), page=PAGE, section=SECTION) == []
+
+
+def test_a_dark_frame_half_way_through_is_black(settings: Settings) -> None:
+    peak = settings.verify.black_max_luma
+    found = frame_findings(checks_of(peak=peak), where=WHERE, section=SECTION, settings=settings)
+    assert [row.code for row in found] == [Code.PAGE_BLACK]
+    assert f"{peak:.1f}" in found[0].message
+
+
+def test_a_bright_frame_half_way_through_is_not_black(settings: Settings) -> None:
+    peak = settings.verify.black_max_luma + 1
+    assert frame_findings(checks_of(peak=peak), where=WHERE, section=SECTION, settings=settings) == []
+
+
+def test_a_recording_short_of_its_own_length_is_truncated(settings: Settings) -> None:
+    short = 10.0 - settings.record.truncated_slack_seconds - 0.5
+    found = frame_findings(checks_of(duration=short, wanted=10.0), where=WHERE, section=SECTION, settings=settings)
+    assert [row.code for row in found] == [Code.PAGE_TRUNCATED]
+    assert "10.00s" in found[0].message
+
+
+def test_a_recording_inside_its_own_slack_is_not_truncated(settings: Settings) -> None:
+    inside = 10.0 - settings.record.truncated_slack_seconds
+    assert (
+        frame_findings(checks_of(duration=inside, wanted=10.0), where=WHERE, section=SECTION, settings=settings) == []
+    )
+
+
+def test_a_stall_over_the_limit_carries_the_measured_gap_and_the_limit(settings: Settings) -> None:
+    limit = settings.record.frame_gap_max_ms
+    found = stall_finding(limit + 40, where=WHERE, section=SECTION, settings=settings)
+    assert found is not None
+    assert found.code is Code.PAGE_STALLED
+    assert f"{limit + 40} ms" in found.message
+    assert f"{limit} ms" in found.message
+
+
+def test_a_gap_inside_the_limit_is_no_stall(settings: Settings) -> None:
+    assert stall_finding(settings.record.frame_gap_max_ms, where=WHERE, section=SECTION, settings=settings) is None
+
+
+def test_every_judgement_of_one_recording_arrives_in_one_list(settings: Settings) -> None:
+    report = a_report(
+        warnings=[{"code": "PAGE_KATEX_MISSING", "message": "KaTeX never arrived.", "slide": "1.1"}],
+        frameGaps=[FrameGap(at=2.0, ms=settings.record.frame_gap_max_ms + 100).model_dump()],
+    )
+    found = recording_findings(
+        a_recording(report, external=("https://cdn.example.com",)),
+        checks_of(peak=1.0),
+        page=PAGE,
+        where=WHERE,
+        section=SECTION,
+        settings=settings,
+    )
+    assert {row.code for row in found} == {
+        Code.PAGE_KATEX_MISSING,
+        Code.PAGE_BLACK,
+        Code.PAGE_CDN_ASSET,
+        Code.PAGE_STALLED,
+    }
+
+
+def test_a_warning_the_page_has_no_business_raising_is_refused_before_it_reaches_a_finding() -> None:
+    """The media layer refuses a code DeckTalk measures itself, so no deck can decide its own verdict."""
+    with pytest.raises(ValueError, match="PAGE_BLACK"):
+        PageWarningRow(code=Code.PAGE_BLACK, message="the deck says it is fine")

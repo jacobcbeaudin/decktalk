@@ -1,21 +1,21 @@
-"""The URL a page section is opened at, and the capture that records it.
+"""The URL a page section is opened at, and what its recording is keyed on.
 
-The page is opened at `http://project.localhost/<page>?scene=<scene>&<params>&words=…&cues=id@t,…`,
-which the local origin serves from the project directory, and it is recorded for its span in the
-narration plus `record_margin_seconds`. A section whose frames stall is recorded again while the
-machine is quieter, up to `[record] retries` times.
+The page is opened on the local origin with the section's scene, the cues `cue` resolved and the
+words the voice spoke, and it is recorded for its span in the narration plus its record margin. A
+section whose frames stall is recorded again while the machine is quieter, up to `[record] retries`
+times.
 
 A section is keyed on that URL, which already carries the scene, the resolved cues and the spoken
-words with their times, on the frame geometry and colour scheme, and on what the page puts on screen
-for this one section: the markup of the scene it plays, the rest of the page file, which every scene
-shares, and the content of every project file the page loaded when it was last recorded. A run that
-would open the same page with the same everything would record the same pixels, so `record` keeps
-the recording it has.
+words with their times, on the frame geometry, the colour scheme and the motion the render asks for,
+and on what the page puts on screen for this one section: the markup of the scene it plays, the rest
+of the page file, which every scene shares, and the content of every project file the page loaded
+when it was last recorded. A run that would open the same page with the same everything would record
+the same pixels, so `record` keeps the recording it has.
 
 The key is cut that way because a page holds every scene of a film. A digest of the whole file would
 call all nine sections of a nine-scene page stale for one slide's edit, which on the one-page project
-`decktalk init` writes is every section there is. The scene slice is taken from the page source, not
-from the browser, because `status` and `record --only` ask whether a recording still stands and
+`decktalk init` writes is every section there is. The scene slice is taken from the page source and
+never from the browser, because `status` and `record --only` ask whether a recording still stands and
 neither may open Chromium to find out. The asset list is what keeps the key honest in the other
 direction: a page that swaps one picture for another changes no line of HTML, so the markup alone
 would say nothing had moved.
@@ -23,85 +23,120 @@ would say nothing had moved.
 
 from __future__ import annotations
 
-import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
-from ...artifacts import CueTimes, RecordingLog, Word, input_hash, text_digest
-from ...errors import ConfigError
-from ...media.browser import record_page
-from ...media.origin import page_url
-from ...model import PageSection, Project
+from decktalk.artifacts import CueTimes, RecordingLog, input_hash, text_digest
+from decktalk.errors import InputError
+from decktalk.inputs import Inputs, PageSection
+from decktalk.media.origin import page_url
+from decktalk.page import Q
+from decktalk.results import Word
 
-log = logging.getLogger(__name__)
+SIGNAL = "signal"
+"""What `t0` is set to so the page starts its clock on the recorder's signal rather than on a second."""
+
+SECOND_DIGITS = 3
+"""Truth: three decimal places of a second is one millisecond, which is finer than any frame."""
+
+WORD_DIGITS = 2
+"""How precisely a word's start is written into the page URL, which is a hundredth of a second."""
 
 
-# ---- the page URL ---------------------------------------------------------------------------
+def as_query(params: dict[str, str]) -> dict[Q, str]:
+    """A section's own params as contract keys, refusing a key no page reads.
+
+    The query vocabulary has one home, so a param that names a key outside it is a project file
+    asking the page for something it cannot answer, which is worth refusing at load rather than
+    sending and watching nothing happen.
+    """
+    known = {key.value: key for key in Q}
+    unknown = sorted(name for name in params if name not in known)
+    if unknown:
+        raise InputError(
+            f"a section's params name {', '.join(unknown)}, which no DeckTalk page reads.",
+            hint=f"The query keys a page reads are {', '.join(sorted(known))}.",
+        )
+    return {known[name]: value for name, value in params.items()}
 
 
-def scene_params(section: PageSection, cue_times: CueTimes | None) -> dict[str, str]:
+def scene_params(section: PageSection, cue_times: CueTimes | None) -> dict[Q, str]:
     """The section's own query parameters, plus its resolved cues unless the section sets `cues` itself."""
-    params = dict(section.params)
-    if cue_times is not None and "cues" not in params:
-        query = cue_times.query(section.key)
+    params = as_query(dict(section.params))
+    if cue_times is not None and Q.CUES not in params:
+        query = cue_times.query(section.number)
         if query:
-            params["cues"] = query
+            params[Q.CUES] = query
     return params
 
 
-def scene_url(project: Project, section: PageSection, params: dict[str, str]) -> str:
-    """The local origin URL the recorder and the frame screenshots open for a page section."""
-    page = project.path(section.page)
+def words_param(words: tuple[Word, ...]) -> str | None:
+    """A section's words as word@seconds pairs, in seconds after that section starts.
+
+    A comma separates two pairs and an at sign separates a word from its second, so neither may
+    appear inside a word that is written into the value.
+    """
+    if not words:
+        return None
+    return ",".join(
+        f"{word.word.replace(',', '').replace('@', '')}@{max(0.0, word.start):.{WORD_DIGITS}f}" for word in words
+    )
+
+
+def spoken_words(inputs: Inputs, section: int) -> tuple[Word, ...]:
+    """One section's words in seconds after it starts, or nothing when it has no take yet."""
+    takes = inputs.takes()
+    take = takes.of(section) if takes is not None else None
+    return () if take is None else inputs.words(section, take.hash)
+
+
+def words_query(inputs: Inputs, section: PageSection) -> str | None:
+    """The section's spoken words with their seconds, which is what a word-synced line is drawn on."""
+    return words_param(spoken_words(inputs, section.number))
+
+
+def scene_url(inputs: Inputs, section: PageSection, params: dict[Q, str]) -> str:
+    """The local origin URL the recorder and the frozen frames open for one page section."""
+    page = inputs.path(section.page)
     if not page.exists():
-        raise ConfigError(f"section {section.number}: page not found: {page}")
-    query = {"scene": section.scene, **params}
-    words = words_query(project, section)
-    if words and "words" not in query:
-        query["words"] = words
-    prev = prev_words_query(project, section)
-    if prev and "prevwords" not in query:
-        query["prevwords"] = prev
-    query["t0"] = "signal"
+        raise InputError(
+            f"section {section.number} plays {section.page}, which is not there.",
+            hint="Write the page, or point the section at the file you meant.",
+        )
+    query: dict[Q, str] = {Q.SCENE: section.scene, **params}
+    words = words_query(inputs, section)
+    if words and Q.WORDS not in query:
+        query[Q.WORDS] = words
+    query[Q.T0] = SIGNAL
     return page_url(section.page, query)
 
 
-def words_param(words: list[Word]) -> str | None:
-    """A section's words as word@seconds pairs, in seconds after that section starts."""
-    if not words:
-        return None
-    return ",".join(f"{w.word.replace(',', '').replace('@', '')}@{max(0.0, w.start):.2f}" for w in words)
+def served_paths(inputs: Inputs) -> tuple[str, ...]:
+    """Every project-relative path the local origin may answer for, in the order the document names them.
 
-
-def _spoken(project: Project, key: str) -> list[Word]:
-    """One section's words in seconds after it starts, or nothing when it has no take."""
-    takes = project.takes()
-    take = takes.sections.get(key) if takes is not None else None
-    return [] if take is None else project.section_words(key, take.words_file)
-
-
-def words_query(project: Project, section: PageSection) -> str | None:
-    """The section's spoken words with their seconds after the section starts, for data-text="spoken" reveals."""
-    return words_param(_spoken(project, section.key))
-
-
-def prev_words_query(project: Project, section: PageSection) -> str | None:
-    """The spoken words of the section before a seamless one, in seconds after that section starts.
-
-    A page that opens on the previous section's last frame reads them, so a value it carries across
-    the cut, such as a word's time, matches what the previous recording showed. A section that opens
-    on its own picture reads nothing from the section before it, and giving it those words anyway
-    would put them in its recorded URL and re-record it whenever the section before it was reworded.
+    The origin serves the deck directory and the files the document declares, and nothing else, so a
+    recorded page reaches its own pictures and its own modules while the script, the cues, the build
+    directory and the credential beside them stay out of reach.
     """
-    takes = project.takes()
-    if takes is None or not section.seamless or section.key not in takes.sections:
-        return None
-    keys = takes.keys
-    at = keys.index(section.key)
-    return words_param(_spoken(project, keys[at - 1])) if at > 0 else None
+    document = inputs.document
+    named: list[str] = [Path(page).parent.as_posix() for page in document.page_files]
+    named += [section.clip for section in document.clip_sections]
+    named += [section.words for section in document.clip_sections if section.words]
+    mix = document.mix
+    named += [name for name in (mix.music, mix.ambience, mix.slate, mix.music_markers) if name]
+    named += [effect.file for effect in mix.effects]
+    soundscape = document.soundscape
+    generated = (soundscape.ambience, soundscape.music, *soundscape.effects.values())
+    named += [item.out for item in generated if item is not None and item.out]
+    return tuple(dict.fromkeys(name.lstrip("./") for name in named if name))
 
 
 # ---- the page, cut into the scene one section plays and the part every scene shares -----------
+
+VOID_TAGS = frozenset("area base br col embed hr img input link meta param source track wbr".split())
+"""Truth: the elements HTML gives no end tag, so an open one never holds anything."""
 
 
 class SceneSpans(HTMLParser):
@@ -120,13 +155,14 @@ class SceneSpans(HTMLParser):
     def __init__(self, source: str) -> None:
         super().__init__(convert_charrefs=True)
         self.source = source
-        # The offset each line starts at, so the parser's (line, column) becomes an index into the
-        # file. The parser counts a line per "\n" and nothing else, so this split has to agree.
+        # The parser reports a position as a line and a column, so the offset each line starts at is
+        # what turns that pair into an index into the file. The parser counts a line per newline and
+        # nothing else, so this split has to agree with it.
         self.line_starts = [0]
         for line in source.split("\n"):
             self.line_starts.append(self.line_starts[-1] + len(line) + 1)
-        self.spans: list[tuple[str, int, int]] = []  # (scene id, start, end) in source order
-        self.open: tuple[str, str, int] | None = None  # the wrapper's tag, its scene id, where it begins
+        self.spans: list[tuple[str, int, int]] = []
+        self.open: tuple[str, str, int] | None = None
         self.depth = 0
         self.balanced = True
 
@@ -144,6 +180,8 @@ class SceneSpans(HTMLParser):
         return self.line_starts[line - 1] + column
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in VOID_TAGS:
+            return
         if self.open is not None:
             if tag == self.open[0]:
                 self.depth += 1
@@ -158,7 +196,7 @@ class SceneSpans(HTMLParser):
         self.depth -= 1
         if self.depth:
             return
-        _, scene, start = self.open
+        _tag, scene, start = self.open
         closed = self.source.find(">", self.at())
         self.spans.append((scene, start, len(self.source) if closed < 0 else closed + 1))
         self.open = None
@@ -174,8 +212,11 @@ class SceneSpans(HTMLParser):
 class PageParts:
     """One page's source in two pieces, as one section is recorded from it."""
 
-    scene: str  # the markup of the scene this section plays, or nothing when the page declares none
-    shared: str  # everything else in the file: the head, the styles, the scripts, the other scenes
+    scene: str
+    """The markup of the scene this section plays, or nothing when the page declares none."""
+
+    shared: str
+    """Everything else in the file: the head, the styles, the scripts and the other scenes."""
 
 
 def page_parts(source: str, scene: str) -> PageParts:
@@ -183,15 +224,15 @@ def page_parts(source: str, scene: str) -> PageParts:
 
     A page that declares its scenes in script has no `[data-scene]` element to cut out, and neither
     has a page the parser could not follow, so the whole file is shared and every section of it is
-    recorded again whenever it is edited. That is the conservative answer, and it is the right one:
-    a `render` function is reached by any line of the script around it.
+    recorded again whenever it is edited. That is the conservative answer, and it is the right one,
+    because a render function is reached by any line of the script around it.
     """
     spans = SceneSpans.of(source)
-    if spans is None or not any(found == scene for found, _, _ in spans):
+    if spans is None or not any(found == scene for found, _start, _end in spans):
         return PageParts(scene="", shared=source)
     kept: list[str] = []
     cut = 0
-    for _, start, end in spans:
+    for _scene, start, end in spans:
         kept.append(source[cut:start])
         cut = end
     kept.append(source[cut:])
@@ -207,31 +248,32 @@ def page_source(path: Path) -> str:
         return ""
 
 
-# ---- what a section's recording is keyed on --------------------------------------------------
-
-
-def section_hash(project: Project, section: PageSection, url: str, seconds: float, assets: list[str]) -> str:
+def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float, assets: Sequence[str | Path]) -> str:
     """The digest of everything that decides what this section's recording looks like.
 
     The page joins the key in two pieces rather than as one file, so an edit to one scene moves the
     key of the sections that play it and of no others, while an edit to the head, a style, a script
-    or another shared part of the file moves every section of that page. `assets` is every project
-    file the page loaded, which the last run's log names, and the page file itself is left out of
-    them because its two pieces are already here.
+    or another shared part of the file moves every section of that page. The motion the render asks
+    for joins the key too, or a reduced build would reuse the full-motion recordings it made before.
+    `assets` is every project file the page loaded, which the last run's log names, and the page file
+    itself is left out of them because its two pieces are already here.
     """
-    video, cfg = project.settings.video, project.settings.record
-    page = project.path(section.page)
-    parts_of_page = page_parts(page_source(page), section.scene)
-    parts = [
+    settings = inputs.settings
+    video, record, motion = settings.video, settings.record, settings.motion
+    page = inputs.path(section.page)
+    parts = page_parts(page_source(page), section.scene)
+    lines = [
         url,
-        f"{seconds:.3f}",
-        f"{video.width}x{video.height}@{video.fps}",
-        cfg.color_scheme,
-        f"scene:{text_digest(parts_of_page.scene)}",
-        f"page:{text_digest(parts_of_page.shared)}",
+        f"{seconds:.{SECOND_DIGITS}f}",
+        f"{video.width}x{video.height}@{video.output_fps}",
+        record.color_scheme,
+        f"motion:{motion.reduce}:{motion.scale:g}",
+        f"scene:{text_digest(parts.scene)}",
+        f"page:{text_digest(parts.shared)}",
     ]
-    files = {rel: found for rel in assets if (found := project.path(rel)) != page}
-    return input_hash(parts, files)
+    named = [Path(rel).as_posix() for rel in assets]
+    files = {rel: found for rel in named if (found := inputs.path(rel)) != page}
+    return input_hash(lines, files)
 
 
 @dataclass(frozen=True)
@@ -244,11 +286,17 @@ class Job:
     out: Path
     log_path: Path
     input_hash: str
-    previous: RecordingLog | None  # The log of the recording already on disk, when there is one.
+    previous: RecordingLog | None
+    """The log of the recording already on disk, when there is one."""
 
     @property
     def unchanged(self) -> bool:
-        """Whether the recording on disk was made from these exact inputs, and is finished."""
+        """Whether the recording on disk was made from these exact inputs, and is finished.
+
+        A log with no narration t=0 in it belongs to a run that was stopped between placing the webm
+        and measuring it, so the section is recorded again rather than assembled from a picture whose
+        first frame nobody found.
+        """
         return (
             self.previous is not None
             and bool(self.previous.input_hash)
@@ -258,55 +306,35 @@ class Job:
         )
 
 
-def plan_job(project: Project, section: PageSection, cue_times: CueTimes | None, seconds: float) -> Job:
+def plan_job(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, seconds: float) -> Job:
     """What recording one section would open and write, and whether the recording on disk still stands."""
-    url = scene_url(project, section, scene_params(section, cue_times))
-    previous = RecordingLog.load(project.recording_log(section))
+    url = scene_url(inputs, section, scene_params(section, cue_times))
+    workspace = inputs.workspace
+    previous = RecordingLog.read(workspace.recording_log(section.key))
     return Job(
         section=section,
         url=url,
         seconds=seconds,
-        out=project.recording(section),
-        log_path=project.recording_log(section),
-        input_hash=section_hash(project, section, url, seconds, list(previous.assets) if previous else []),
+        out=workspace.recording(section.key),
+        log_path=workspace.recording_log(section.key),
+        input_hash=section_hash(inputs, section, url, seconds, previous.assets if previous else ()),
         previous=previous,
     )
 
 
-# ---- the capture ----------------------------------------------------------------------------
-
-
-def capture_section(project: Project, browser: object, job: Job) -> RecordingLog:
-    """Record one section, retrying while its frames stall, and return the log of the run that stuck."""
-    cfg = project.settings.record
-    video = project.settings.video
-    recording_log = None
-    for attempt in range(1, cfg.retries + 2):
-        recording_log = record_page(
-            browser,
-            job.url,
-            job.seconds,
-            job.out,
-            root=project.root,
-            settle_seconds=cfg.settle_seconds,
-            min_cover_seconds=cfg.min_cover_seconds,
-            width=video.width,
-            height=video.height,
-            color_scheme=cfg.color_scheme,
-        )
-        stall = recording_log.worst_stall_ms
-        if stall <= cfg.stall_ms or attempt > cfg.retries:
-            break
-        # A stalled page froze a reveal for a few frames, which no cut can repair, so the section
-        # is recorded again while the machine is quieter.
-        log.warning(
-            "       frames stalled for %d ms, so section %s is recorded again (%d/%d)",
-            stall,
-            job.section.key,
-            attempt,
-            cfg.retries,
-        )
-    assert recording_log is not None  # the loop runs at least once
-    # The page may have loaded a file the last run never saw, so the key is recomputed on what it did load.
-    recording_log.input_hash = section_hash(project, job.section, job.url, job.seconds, recording_log.assets)
-    return recording_log
+__all__ = [
+    "Job",
+    "PageParts",
+    "SceneSpans",
+    "as_query",
+    "page_parts",
+    "page_source",
+    "plan_job",
+    "scene_params",
+    "scene_url",
+    "section_hash",
+    "served_paths",
+    "spoken_words",
+    "words_param",
+    "words_query",
+]
