@@ -1,8 +1,10 @@
-"""The homepage in site/ shows nothing from the machine it was built on.
+"""What the homepage in site/ claims, held against the tool it is selling.
 
-data.js carries a captured build log, and the build script writes every path in it relative to the
-project. This reads the committed files the way a visitor's browser would and fails on any absolute
-home or temp path, in any text file the site serves.
+The site is the one page a stranger reads before running anything, so every command it prints, every
+path it names and every count it states has to be a fact about the wheel rather than a sentence
+somebody wrote once. This file reads the committed files the way a visitor's browser would.
+`tests/contract/test_homepage.py` opens them in a real browser and holds what a visitor can still
+reach when the page's own script fails.
 """
 
 from __future__ import annotations
@@ -12,12 +14,31 @@ from pathlib import Path
 
 import pytest
 
+from decktalk.cli import catalog
+from decktalk.pipeline import Artifact
+from decktalk.template import SKILL_NAMES
+from decktalk.toolchain import assets
 from support.paths import REPO
 
 ROOT = REPO
 SITE = ROOT / "site"
 TEXT = {".html", ".css", ".js", ".json", ".svg", ".vtt", ".md", ".txt", ".xml"}
 HOME_PATH = re.compile(r"(/Users/|/home/|/root/|[A-Za-z]:\\Users\\|/private/tmp/|/tmp/)")
+SPOKEN_COMMAND = re.compile(r"\bdecktalk ([a-z][a-z-]*)")
+"""A command the site prints, which is the first thing a stranger copies out of a page."""
+
+SPOKEN_PATH = re.compile(r"\bbuild/[a-z][a-z-]*")
+"""A path under the build directory that the site names, which a reader expects to find on disk."""
+
+
+def pages() -> list[Path]:
+    """Every page the site serves, which is where a claim about the tool can be written."""
+    return sorted(SITE.glob("*.html")) + sorted((SITE / "films").glob("*.html"))
+
+
+def page_text() -> str:
+    """Every page at once, because a claim is held wherever it is written."""
+    return "\n".join(path.read_text(encoding="utf-8") for path in pages())
 
 
 def site_text_files() -> list[Path]:
@@ -100,3 +121,37 @@ def test_every_install_command_on_the_site_is_the_same_line() -> None:
     line, pages = next(iter(found.items()))
     assert line == "curl -LsSf https://decktalk.ai/install.sh | sh", line
     assert len(pages) >= 2, f"expected the command in the hero and the install section: {pages}"
+
+
+def test_every_command_the_site_prints_is_a_command_the_wheel_has() -> None:
+    """A page that prints a command nobody can run costs a stranger the only run they were going to
+    give the tool. The names are read off the parser, so a renamed command fails here rather than in
+    somebody's terminal."""
+    known = {str(row["command"]).split()[0] for row in catalog.walk()} | {"--help", "--version"}
+    printed = set(SPOKEN_COMMAND.findall(page_text()))
+    unknown = sorted(printed - known)
+    assert unknown == [], f"the site prints {unknown}, and the command line has no such command"
+
+
+def test_every_build_path_the_site_names_is_one_a_stage_writes() -> None:
+    """The site names the file a first build ends on, and a reader goes looking for exactly it.
+
+    The paths are read off `Artifact`, which is the one declaration of where each stage writes, so a
+    stage that moves its output fails this rather than leaving the site pointing at nothing.
+    """
+    written = {str(artifact.value) for artifact in Artifact}
+    known = {path for artifact in written for path in (artifact, artifact.rsplit("/", 1)[0])}
+    named = set(SPOKEN_PATH.findall(page_text()))
+    unknown = sorted(named - known)
+    assert unknown == [], f"the site names {unknown}, and no stage writes there"
+
+
+def test_the_skill_count_the_site_states_is_the_count_in_the_wheel() -> None:
+    """The site sells the skills by their number, twice, and that number is what `decktalk init`
+    copies out of the wheel. A skill added or dropped fails here, where the sentence is."""
+    files = sorted(path for path in assets.package_file("skills").rglob("*") if path.is_file())
+    text = page_text()
+    assert f"{len(SKILL_NAMES)} skills" in text or "six skills" in text, "the site states no skill count"
+    assert len(SKILL_NAMES) == 6, f"the site says six skills and the wheel carries {len(SKILL_NAMES)}"
+    assert "twelve files" in text, "the site states the skills as a file count, and that count moved"
+    assert len(files) == 12, f"the site says twelve skill files and the wheel carries {len(files)}"
