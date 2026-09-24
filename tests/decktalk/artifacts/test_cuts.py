@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from decktalk.artifacts import Cut, Cuts
+from decktalk.artifacts.cuts import Cut, Cuts
 from decktalk.pipeline import SectionKind, Substitute
 
 

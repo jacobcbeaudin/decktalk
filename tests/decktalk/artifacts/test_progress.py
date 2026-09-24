@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from decktalk.artifacts import ProgressRow, append_row, read_rows, start_log
+from decktalk.artifacts.progress import ProgressRow, append_row, read_rows, start_log
 from decktalk.jsonio import as_json
 from decktalk.pipeline import ProgressEvent, Stage
 

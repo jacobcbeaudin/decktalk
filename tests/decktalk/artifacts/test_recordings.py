@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from decktalk.artifacts import (
+from decktalk.artifacts.recordings import (
     Luma,
     RecordingChecks,
     RecordingLog,
