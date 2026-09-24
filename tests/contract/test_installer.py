@@ -299,7 +299,7 @@ def run_pty(
     timeout: float = 30.0,
 ) -> tuple[int, str]:
     """Run install.sh under a pty. Returns (exit status, everything it wrote)."""
-    import pty  # noqa: PLC0415 - imports termios, which Windows has not got; see pytestmark
+    import pty  # noqa: PLC0415 - termios is not on Windows, which is what pytestmark refuses this file on
 
     pid, fd = pty.fork()
     if pid == 0:  # pragma: no cover - the child execs or dies

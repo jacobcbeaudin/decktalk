@@ -2,6 +2,7 @@
   "files": {
     "tests/contract/test_numbers.py": 3,
     "tests/contract/test_probe.py": 2,
+    "tests/contract/test_results.py": 2,
     "tests/contract/test_runtime.py": 27,
     "tests/decktalk/cli/test_envelope.py": 2,
     "tests/decktalk/cli/test_machine.py": 1,
