@@ -328,6 +328,13 @@ GROUPS: tuple[Group, ...] = (
             # The runtime bundles are compiled by the pinned TypeScript, so the group that judges
             # them installs it first, the way every other group that lists npm does.
             ("npm", "ci"),
+            # `build_assets.py` measures the hero's word widths in the real Chromium with the real
+            # font, so this group needs a browser as much as the browser group does. The suites
+            # fetch their own through `media/browser.py`, and a generator that launches Playwright
+            # directly reaches nothing that would, so this row fetches it the way that module does.
+            # Playwright resolves the revision from its own version and the call is a no-op on a
+            # machine that already has it.
+            (*UV, "python", "-m", "playwright", "install", "chromium"),
             generator("build_runtime"),
             generator("build_result_schemas"),
             generator("build_settings_schema"),

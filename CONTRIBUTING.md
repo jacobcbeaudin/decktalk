@@ -81,7 +81,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `media-platforms` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | macOS, Windows | main, release |
 | `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | macOS, Windows | main, release |
 | `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
-| `generated` | `npm ci`, and 15 more | uv, npm, chromium | Linux | pr, main, release |
+| `generated` | `npm ci`, and 16 more | uv, npm, chromium | Linux | pr, main, release |
 | `coverage` | `uv run coverage combine`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
 | `scaffold` | `uv run pytest -q -m scaffold` | uv, chromium, ffmpeg | Linux | main, schedule |
