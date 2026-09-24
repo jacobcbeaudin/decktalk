@@ -293,7 +293,7 @@ export const CODES = {
   },
   PAGE_WORD_LATE: {
     message: "The first synced word of {value} was shown after the voice reached it, so the line trails the speech.",
-    certainty: "certain",
+    certainty: "uncertain",
     raisedBy: "python",
   },
   PAGE_THIN_DRAW: {

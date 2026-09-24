@@ -152,3 +152,12 @@ def test_the_page_codes_are_the_same_list_the_finding_codes_carry():
     findings = pytest.importorskip("decktalk.findings", reason="the finding codes land with the core models")
     written = {name for name in findings.Code.__members__ if name.startswith("PAGE_")}
     assert written == set(PageWarning.__members__)
+
+
+def test_the_page_codes_carry_the_same_certainty_the_finding_codes_carry():
+    """A result serialises the certainty `findings.py` holds and the console prints the one the page
+    holds, so a reader who saw both would be told two different things about the same code."""
+    findings = pytest.importorskip("decktalk.findings", reason="the finding codes land with the core models")
+    for name, warning in PageWarning.__members__.items():
+        certain = findings.Code[name].certainty is findings.Certainty.CERTAIN
+        assert warning.certain == certain, f"{name} is certain in one registry and uncertain in the other"

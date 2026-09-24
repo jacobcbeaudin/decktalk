@@ -161,7 +161,7 @@ class Code(Enum):
     PAGE_SLIDE_UNUSED = (
         "PAGE_SLIDE_UNUSED",
         "No section plays this slide, so nothing on it reaches the film.",
-        Certainty.UNCERTAIN,
+        Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
     PAGE_TEMPLATE_IGNORED = (

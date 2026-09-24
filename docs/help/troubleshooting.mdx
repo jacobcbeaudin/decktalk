@@ -478,7 +478,7 @@ contract either declares a thing or it does not.
 | [PAGE_SCENE_EMPTY](/reference/findings/PAGE_SCENE_EMPTY) | Add a `<template data-slide>` to the scene, or remove the scene. |
 | [PAGE_SLIDE_NO_ID](/reference/findings/PAGE_SLIDE_NO_ID) | Give the template a `data-slide` value. |
 | [PAGE_SLIDE_DOUBLED](/reference/findings/PAGE_SLIDE_DOUBLED) | Rename one of the two, and rename its cues in `cues.json` with it. |
-| [PAGE_SLIDE_UNUSED](/reference/findings/PAGE_SLIDE_UNUSED) | Have a section play its scene, or delete the slide. This one is uncertain, because a slide nobody has wired up yet is normal. |
+| [PAGE_SLIDE_UNUSED](/reference/findings/PAGE_SLIDE_UNUSED) | Have a section play its scene, or delete the slide. Pass `--allow PAGE_SLIDE_UNUSED` while a slide is still being wired up. |
 | [PAGE_TEMPLATE_IGNORED](/reference/findings/PAGE_TEMPLATE_IGNORED) | Give the nested template its own `data-slide`, or take it out of the slide. |
 | [PAGE_SWAP_AMBIGUOUS](/reference/findings/PAGE_SWAP_AMBIGUOUS) | Give the arriving element and the one it replaces a cue they share. |
 | [PAGE_PREVIEW_AMBIGUOUS](/reference/findings/PAGE_PREVIEW_AMBIGUOUS) | Give the two sections different scenes. |

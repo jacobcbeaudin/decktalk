@@ -335,7 +335,7 @@ class PageWarning(Enum):
     )
     PAGE_WORD_LATE = (
         ("The first synced word of {value} was shown after the voice reached it, so the line trails the speech."),
-        True,
+        False,
         RaisedBy.PYTHON,
     )
     PAGE_THIN_DRAW = (

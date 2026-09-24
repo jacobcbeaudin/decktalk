@@ -68,7 +68,7 @@ A finding carries its code, its sentence, its certainty and often a fix an agent
 | `PAGE_SCENE_EMPTY` | certain | A slide renders no element at all, so its section would play an empty picture. |
 | `PAGE_SLIDE_NO_ID` | certain | A slide template carries no id, so no cue and no section can name it. |
 | `PAGE_SLIDE_DOUBLED` | certain | Two slide templates carry the same id, so a cue that names it is ambiguous. |
-| `PAGE_SLIDE_UNUSED` | uncertain | No section plays this slide, so nothing on it reaches the film. |
+| `PAGE_SLIDE_UNUSED` | certain | No section plays this slide, so nothing on it reaches the film. |
 | `PAGE_TEMPLATE_IGNORED` | certain | A template sits outside every slide, so the runtime never instantiates it. |
 | `PAGE_WORDS_NOT_FOUND` | certain | An element syncs to words the transcript does not hold, so word timing cannot start. |
 | `PAGE_KATEX_MISSING` | certain | The page asks for KaTeX and the library is not loaded, so every formula shows its source. |
