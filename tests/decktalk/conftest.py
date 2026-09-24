@@ -13,7 +13,6 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -67,23 +66,23 @@ def fake_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> FakeFfmpeg:
 class FakePage:
     """A Chromium page that answers every call and remembers what was asked of it."""
 
-    def __init__(self, answer: Callable[[str], Any] | None = None) -> None:
+    def __init__(self, answer: Callable[[str], object] | None = None) -> None:
         self.urls: list[str] = []
         self.scripts: list[str] = []
         self.screenshots: list[Path] = []
         self._answer = answer or (lambda _script: None)
 
-    def goto(self, url: str, **_kwargs: Any) -> None:
+    def goto(self, url: str, **_kwargs: object) -> None:
         self.urls.append(url)
 
-    def evaluate(self, script: str, *_args: Any) -> Any:
+    def evaluate(self, script: str, *_args: object) -> object:
         self.scripts.append(script)
         return self._answer(script)
 
-    def wait_for_function(self, script: str, **_kwargs: Any) -> None:
+    def wait_for_function(self, script: str, **_kwargs: object) -> None:
         self.scripts.append(script)
 
-    def screenshot(self, *, path: str | Path, **_kwargs: Any) -> None:
+    def screenshot(self, *, path: str | Path, **_kwargs: object) -> None:
         self.screenshots.append(Path(path))
         Path(path).write_bytes(b"")
 
@@ -104,7 +103,7 @@ def fake_browser(monkeypatch: pytest.MonkeyPatch) -> FakePage:
             """Closing the context is what a recorder does, and there is nothing behind it here."""
 
     class Browser:
-        def new_context(self, **_kwargs: Any) -> Context:
+        def new_context(self, **_kwargs: object) -> Context:
             return Context()
 
         def close(self) -> None:

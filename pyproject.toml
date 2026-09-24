@@ -38,7 +38,12 @@ classifiers = [
     "Topic :: Multimedia :: Video",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
-dependencies = ["playwright>=1.63.0,<2"]
+dependencies = [
+    "playwright>=1.63.0,<2",
+    "pydantic>=2",
+    "rich>=13",
+    "typer>=0.15",
+]
 
 [project.urls]
 Homepage = "https://decktalk.ai"
@@ -62,6 +67,9 @@ wheel-exclude = ["**/.DS_Store"]
 
 [dependency-groups]
 dev = [
+    # `contract/test_results.py` validates every real output against the committed JSON Schema, so the
+    # validator is a development dependency rather than something the schema generator reimplements.
+    "jsonschema>=4.23",
     "pytest>=8",
     "pytest-cov>=6",
     "pytest-timeout>=2.3",
@@ -74,15 +82,36 @@ line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP"]
+select = [
+    "E", "F", "W", "I", "B", "UP",
+    "ANN401",   # a parameter typed Any accepts anything, so the caller learns nothing from the signature
+    "ARG",      # an argument nothing reads is either dead or a signature that no longer fits
+    "BLE001",   # a bare `except Exception` swallows the failure the error codes exist to name
+    "C901",     # a branch count above the default is a function that wants to be two
+    "PLC0415",  # an import inside a function hides a dependency from the layering guard
+    "PLR0915",  # a statement count above the default is a function that wants to be two
+    "PLW1510",  # a `subprocess.run` with no `check` ignores the return code, which is must 4
+    "RUF046",   # `int()` around a value that is already an int is a cast that means nothing
+]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["E501"]  # generated CSS and SVG strings
+# These two read TOML and JSON, whose values are `Any` before they are checked. Typing the parameter
+# as anything narrower would be a claim the file has not made yet, which is what they exist to make.
+"src/decktalk/tomlmap.py" = ["ANN401"]
+"src/decktalk/jsonio.py" = ["ANN401"]
+# A test replaces a seam with a lambda of the real signature and reads only the arguments it judges,
+# so ARG005 there measures the seam rather than the test. ARG still holds over every other argument.
+"tests/**" = ["ARG005"]
 
 # `tests/support` is on the path as `support`, so it sorts beside `decktalk` rather than with the
 # third-party packages, which is where a reader looks for it.
 [tool.ruff.lint.isort]
 known-first-party = ["decktalk", "support"]
+
+[tool.ruff.lint.flake8-unused-arguments]
+# A fake of a third-party seam takes the arguments the real one takes, and reads the ones it judges.
+ignore-variadic-names = true
 
 [tool.ruff.format]
 quote-style = "double"

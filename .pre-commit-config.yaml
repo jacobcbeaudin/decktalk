@@ -13,14 +13,15 @@ repos:
 
   # Same lint + format rules CI enforces (config in pyproject.toml).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.7
+    rev: v0.16.8
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
-  # JavaScript lint + format, as CI does (config in biome.json). Keep rev in step with the version
-  # pinned in biome.json's $schema and in ci.yml.
+  # JavaScript and TypeScript lint + format, as CI does (config in biome.json). Keep rev in step with
+  # the version in biome.json's $schema and with the `@biomejs/biome` pin in package-lock.json, which
+  # is what `npm ci` installs and what `scripts/check.py` runs.
   - repo: https://github.com/biomejs/pre-commit
     rev: v2.5.13
     hooks:

@@ -16,3 +16,12 @@ updates:
     groups:
       python:
         patterns: ["*"]
+  # esbuild and Biome are pinned by package-lock.json, because a lockfile is the only way to make the
+  # byte-for-byte bundle check mean anything.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      node:
+        patterns: ["*"]

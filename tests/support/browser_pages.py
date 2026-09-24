@@ -9,13 +9,22 @@ property the split is supposed to have.
 from __future__ import annotations
 
 import shutil
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
+
+try:
+    from playwright.sync_api import Error as PlaywrightError
+    from playwright.sync_api import sync_playwright
+except ImportError:  # A checkout without the browser bindings skips every page below.
+    PlaywrightError = sync_playwright = None  # type: ignore[assignment, misc]
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 RUNTIME = f'<script src="{runtime_path().resolve().as_uri()}"></script>'
 KATEX = (
@@ -24,20 +33,18 @@ KATEX = (
 )
 
 
-def chromium_page(instrument: Any = None) -> Iterator[Any]:
+def chromium_page(instrument: Callable[[Page], object] | None = None) -> Iterator[Page]:
     """One Chromium page for a module, with an `errors` list of everything it threw.
 
     `instrument` is the hook a DeckTalk command uses to add decktalk-probe.js, and a module that
     passes none gets the page a person opens.
     """
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
+    if sync_playwright is None:
         pytest.skip("playwright not installed")
     with sync_playwright() as pw:
         try:
             browser = pw.chromium.launch()
-        except Exception as exc:
+        except PlaywrightError as exc:
             pytest.skip(f"Chromium unavailable: {str(exc).splitlines()[0]}")
         page = browser.new_page(viewport={"width": 1920, "height": 1080})
         if instrument is not None:
@@ -80,7 +87,7 @@ def served_page(root: Path, name: str, body: str, *, head: str = "") -> str:
     return name
 
 
-def warnings_of(page: Any) -> list[str]:
+def warnings_of(page: Page) -> list[str]:
     """The page's warnings without the note every slide a partial cue list leaves out earns."""
     return [w for w in page.evaluate("() => window.__decktalk.warnings") if "owns no cue in ?cues=" not in w]
 
