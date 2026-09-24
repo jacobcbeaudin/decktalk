@@ -26,9 +26,12 @@ from decktalk.findings import Certainty, Code
 from support.paths import REPO
 from support.timing_policy import (
     BASE_BUDGET_SECONDS,
+    LATE_FRAME,
     PLATFORM_FACTOR,
     UNGATED_EXTRA_FRAMES,
     budget,
+    faults,
+    judged,
     offset_limit_ms,
     tolerated,
 )
@@ -99,6 +102,26 @@ def test_a_non_zero_exit_with_nothing_to_explain_it_fails() -> None:
     uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
     why = tolerated(1, [uncertain], gate=False)
     assert why is not None
+
+
+def test_a_reading_with_no_exit_code_is_judged_on_the_same_rule() -> None:
+    """`verify --fail-on never` always exits 0, so its rows are judged rather than its code."""
+    assert faults([Code.CUE_OFF], gate=True) == [Code.CUE_OFF]
+    assert faults([Code.CUE_OFF], gate=False) == []
+
+
+@pytest.mark.parametrize("other", [Code.CUE_NO_CHANGE, Code.PAGE_WORDS_NOT_FOUND, Code.PAGE_RENDER_THREW])
+def test_a_finding_that_is_not_a_late_landing_is_judged_wherever_it_is_read(other: Code) -> None:
+    """A cue that never changed, a phrase the page never found and a page that threw are the deck."""
+    assert faults([Code.CUE_OFF, other], gate=False) == [other]
+    assert judged([Code.CUE_OFF, other], gate=False) == [other]
+
+
+def test_the_starter_rule_reads_every_row_and_not_only_the_certain_ones() -> None:
+    """The starter may publish no finding at all, so an uncertain row is judged there as well."""
+    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
+    assert judged([uncertain], gate=True) == [uncertain]
+    assert judged(LATE_FRAME, gate=False) == []
 
 
 def test_a_gated_run_holds_the_project_to_the_limit_it_states() -> None:

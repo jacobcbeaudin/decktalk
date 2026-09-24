@@ -28,9 +28,19 @@ from typing import Any
 import pytest
 
 from decktalk.artifacts import RecordingLog
-from decktalk.findings import Certainty
+from decktalk.findings import Code
 from decktalk.template import EXAMPLES, STARTER
-from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
+from support.timing_policy import (
+    EVERY_PACKAGED_PROJECT_SECONDS,
+    FIRST_FETCH_SECONDS,
+    LATE_FRAME,
+    assert_build_finished,
+    budget,
+    faults,
+    gates_timing,
+    judged,
+    note_late_reveals,
+)
 
 BUILD_BUDGET_SECONDS = budget(EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS)
 """How long one packaged project may take to build, which the lesson example sets and nothing else.
@@ -76,9 +86,14 @@ def flat(stdout: str) -> dict[str, Any]:
     return doc
 
 
-def certain(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every finding the run is sure about, which is what a packaged project may never produce."""
-    return [row for row in doc["findings"] if row["certainty"] == Certainty.CERTAIN.value]
+def codes(doc: dict[str, Any]) -> list[Code]:
+    """Every finding as the model's own member, which is what the timing policy judges."""
+    return [Code(row["code"]) for row in doc["findings"]]
+
+
+def sentences(doc: dict[str, Any], wanted: tuple[Code, ...]) -> list[str]:
+    """What the run said about the codes named, which is the news a runner that reports prints."""
+    return [str(row["message"]) for row in doc["findings"] if Code(row["code"]) in wanted]
 
 
 def decktalk(*args: str, cwd: Path, cache: Path) -> subprocess.CompletedProcess[str]:
@@ -97,8 +112,17 @@ def decktalk(*args: str, cwd: Path, cache: Path) -> subprocess.CompletedProcess[
 
 
 @pytest.mark.parametrize("example", PACKAGED, ids=IDS)
-def test_a_packaged_project_builds_and_verifies_without_a_voice(tmp_path: Path, example: str | None) -> None:
-    """`init`, then `build --no-voice`, then `verify`, on a project straight out of the wheel."""
+def test_a_packaged_project_builds_and_verifies_without_a_voice(
+    tmp_path: Path, example: str | None, pytestconfig: pytest.Config
+) -> None:
+    """`init`, then `build --no-voice`, then `verify`, on a project straight out of the wheel.
+
+    This suite runs whole builds one after another on a runner that renders in software, so its leg
+    reports cue timing rather than gating it and `tests/support/timing_policy.py` says what that
+    means. Nothing else is weakened: a cue that never changed the picture, a phrase the page never
+    found and a page that threw fail this test on every runner it is ever run on.
+    """
+    gate = gates_timing(pytestconfig)
     home = tmp_path / HOSTILE_DIRECTORY
     home.mkdir(parents=True)
     name = example or STARTER
@@ -113,8 +137,7 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(tmp_path: Path, 
 
     built = decktalk("--project", str(root), "build", "--no-voice", "--json", cwd=home, cache=home)
     report = flat(built.stdout)
-    assert certain(report) == [], built.stderr
-    assert built.returncode == FOUND_NOTHING, built.stderr
+    assert_build_finished(built.returncode, codes(report), built.stderr, pytestconfig)
     film = root / report["film"]
     assert film.is_file() and film.stat().st_size > 0
 
@@ -125,12 +148,15 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(tmp_path: Path, 
         assert list(log.findings) == [], (log_path.name, log.findings)
         assert list(log.external) == [], (log_path.name, log.external)
 
-    # Read the finished film back. No packaged project may raise a certain finding, because that is
-    # a cue that did not land. An example is a project that was really made and its art is its own,
-    # so a reveal of its that sits at the measurement floor may be uncertain. What it may never be
-    # is a missed cue.
+    # Read the finished film back. No packaged project may raise a certain finding this runner
+    # judges, because that is a cue that did not land. An example is a project that was really made
+    # and its art is its own, so a reveal of its that sits at the measurement floor may be
+    # uncertain. What it may never be is a missed cue.
     checked = decktalk("--project", str(root), "verify", "--json", "--fail-on", "never", cwd=home, cache=home)
     measured = flat(checked.stdout)
-    assert certain(measured) == [], measured["findings"]
+    assert faults(codes(measured), gate) == [], measured["findings"]
     if example is NO_EXAMPLE:
-        assert measured["findings"] == [], "the starter is the page every author copies, so it is clean"
+        clean = "the starter is the page every author copies, so it is clean"
+        assert judged(codes(measured), gate) == [], f"{clean}: {measured['findings']}"
+    if news := sentences(measured, LATE_FRAME):
+        note_late_reveals(pytestconfig, name, news)

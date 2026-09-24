@@ -7,8 +7,13 @@ the project's own settings or written once with the sentence that says why.
 **The timing default inverts.** It used to read `sys.platform`, which is the wrong predicate: the
 property is that this runner's compositor is not trustworthy, not that this is macOS, so the
 founder's own Mac was permanently weaker than a Linux runner. `--timing=gate` is the default
-everywhere now, and the one workflow step that owns a weak runner passes `--timing=report` itself,
-so the weakening lives in the file that owns it rather than in every test that measures a cue.
+everywhere now, and the legs that own a weak runner pass `--timing=report` themselves, so the
+weakening lives in the `GROUPS` table that owns them rather than in every test that measures a cue.
+
+**A report is printed rather than swallowed.** A leg that does not gate timing still measures it,
+so `note_late_reveals` writes what it tolerated into the run's own log. A test that reported
+nothing and a test that reported a reveal a frame late read the same otherwise, which is how a
+runner that quietly drifted would go unnoticed for a release.
 
 **A budget is a ceiling and never a measurement.** A module timeout is a base budget times a factor
 for this platform, because a hundred and eighty seconds is generous on Linux and tight on a cold
@@ -87,6 +92,22 @@ def offset_limit_ms(stated_ms: float, gate: bool) -> float:
     return stated_ms + UNGATED_EXTRA_FRAMES * FRAME_STEP_MS
 
 
+def judged(codes: Iterable[Code], gate: bool) -> list[Code]:
+    """Every reported code this runner still judges, which is all of them unless a late reveal is news.
+
+    A late reveal is the one code a runner whose compositor is not trustworthy may report without
+    being held to it, because a frame presented late moves a measurement and nothing else. Every
+    other code is a property of the deck rather than of the machine: a cue that never changed the
+    picture, a phrase the page never found and a page that threw are faults on every runner.
+    """
+    return [found for found in codes if gate or found not in LATE_FRAME]
+
+
+def faults(codes: Iterable[Code], gate: bool) -> list[Code]:
+    """Every reported code this runner fails on, which is the judged ones it is certain about."""
+    return [found for found in judged(codes, gate) if found.certainty is Certainty.CERTAIN]
+
+
 def tolerated(code: int, codes: Iterable[Code], gate: bool) -> str | None:
     """None when a build finished acceptably, else the one sentence saying why it did not.
 
@@ -96,14 +117,27 @@ def tolerated(code: int, codes: Iterable[Code], gate: bool) -> str | None:
     """
     if code == 0:
         return None
-    faults = [found for found in codes if found.certainty is Certainty.CERTAIN]
-    if gate:
-        return f"the build exited {code} and timing is gated here: {[found.name for found in faults] or 'no row'}"
-    if others := [found for found in faults if found not in LATE_FRAME]:
-        return f"the build exited {code} on more than late reveals: {[found.name for found in others]}"
-    if not faults:
+    rows = list(codes)
+    if failing := faults(rows, gate):
+        return f"the build exited {code} on a fault this runner judges: {[found.name for found in failing]}"
+    if not any(found.certainty is Certainty.CERTAIN for found in rows):
         return f"the build exited {code} with no finding row to explain it"
     return None
+
+
+def note_late_reveals(config: pytest.Config, subject: str, news: Iterable[str]) -> None:
+    """Print what a runner that does not gate timing tolerated, because news nobody prints is lost.
+
+    The terminal reporter is written to rather than a warning raised, because the suite turns every
+    warning into an error and a report that fails the run is a gate under a second name. A leg that
+    has no reporter is a run under `-p no:terminal`, where there is no log to write the news into.
+    """
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is None:
+        return
+    reporter.write_line(f"\n{subject}: this runner reports cue timing rather than gating it, and it tolerated:")
+    for line in news:
+        reporter.write_line(f"  {line}")
 
 
 def assert_build_finished(code: int, codes: Iterable[Code], detail: str, config: pytest.Config) -> None:
