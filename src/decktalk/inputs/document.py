@@ -33,7 +33,8 @@ class ClipSection:
     """A section that is your own video clip, with its own audio.
 
     A missing clip plays a titled slate for `slate_seconds`. With `strict` that is an error,
-    unless the section is `optional`, as the scaffold's B-roll slot is. `words` names a words
+    unless the section declares `optional`, which is how a project says the slate is the point.
+    `words` names a words
     file of the speech inside the clip, in seconds after the clip starts, which the captions add.
     `seamless` says the clip continues the previous section's picture, which verify checks.
     """

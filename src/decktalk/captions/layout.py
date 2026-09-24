@@ -1,7 +1,7 @@
 """Words become caption cues: where each cue starts and ends, and how its one or two lines break.
 
-    build/out/<name>.srt   the cues as SubRip
-    build/out/<name>.vtt   the same cues as WebVTT
+    build/final/<name>.srt   the cues as SubRip
+    build/final/<name>.vtt   the same cues as WebVTT
 
 A cue never spans a section boundary, so a caption is always the speech of one section. A cue stays
 on screen for at least `CAPTION_MIN_SECONDS`, unless the next cue begins before that.

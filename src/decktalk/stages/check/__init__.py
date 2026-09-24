@@ -12,8 +12,9 @@ the credits are gone.
 
 It has two scope flags and no others, because neither names a stage a run could skip nor a knob a
 project could turn. Without pages it judges the script, the cue phrases and the take plan with no
-browser at all and says which judgements it could not reach, so a new deck gets its first `cues.json`
-rows without a download and a hook that has no browser can still run. Without frames it keeps the
+browser at all and says which judgements it could not reach, so a hook that has no browser still
+prices a run and reads its script. Every judgement that scaffolds a `cues.json` row reads the
+catalog a page publishes, so a new deck gets those rows from a run with pages. Without frames it keeps the
 browser and the catalog and drops the freeze comparison.
 
 Nothing it writes is a deliverable: the frozen frames and the storyboard are there to be looked at,

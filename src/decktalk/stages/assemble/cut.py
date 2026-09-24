@@ -121,7 +121,7 @@ def render_clip(inputs: Inputs, run: Run, enc: Encoder, section: ClipSection, ou
     if strict and not section.optional:
         raise InputError(
             f"section {section.number} names the clip {section.clip}, which is not there.",
-            hint="Put your clip at that path, or set optional = true on the section to play its slate under --strict.",
+            hint="Put your clip at that path, or set optional = true on the section to play its slate instead.",
             location=Location(where=section.clip, file=inputs.relative(clip), section=section.number),
         )
     return _render_slate_section(inputs, run, enc, section, out, dip)

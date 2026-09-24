@@ -279,8 +279,8 @@ def _stops(found: Finding, allow_unknown: bool) -> bool:
     """Whether one finding stops the run, which every certain one does but the one a flag forgives.
 
     A cue row no page declares is the one certain finding an author may knowingly keep, because a
-    deck under construction lists the cues of slides it has not drawn yet, and `--allow-unknown` is
-    the flag that says so.
+    deck under construction lists the cues of slides it has not drawn yet, and
+    `--allow CUE_UNKNOWN` is what says so.
     """
     if found.certainty is not Certainty.CERTAIN:
         return False

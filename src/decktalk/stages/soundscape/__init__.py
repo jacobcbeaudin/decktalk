@@ -3,10 +3,13 @@
     build/soundscape/<name>.mp3   one file per item the `[soundscape]` table declares
     build/soundscape/ledger.json  what this project has already bought, keyed by the request
 
-It runs after `record`, so the unpaid draft loop still stops at a recording and the two stages that
-spend sit beside each other. Ambience and effects are one sound request each, billed by the service
-per second of audio, and music is asked for in chunks of at most `[elevenlabs] max_music_chunk_seconds`
-and joined with a crossfade, because the service will not write a long piece in one answer.
+It runs after `record`, so the unpaid draft loop still stops at a recording and every credit a run
+spends is already spent by the time the film is cut. `narrate` is the other stage that buys, with
+`cue` and `record` between the two, so a run that reaches here has nothing left to pay for.
+
+Ambience and effects are one sound request each, billed by the service per second of audio, and
+music is asked for in chunks of at most `[elevenlabs] max_music_chunk_seconds` and joined with a
+crossfade, because the service will not write a long piece in one answer.
 
 Every path this stage writes comes from `Workspace`, so no build directory is spelled here and a
 project that moves its build directory moves its soundscape with it. What has already been bought
@@ -14,8 +17,8 @@ is `ledger.py`, one typed file rather than a cache beside every output, and an i
 still matches its row is kept rather than bought again.
 
 Nothing is bought without `run.approve`, so a run whose voicing is `placeholder` reports the plan
-and writes nothing at all. That is what the old `dry_run` parameter said, and saying it once through
-the voicing is what keeps a flag from contradicting the gate beside it.
+and writes nothing at all. The voicing is the only thing that says so, because a second flag beside
+it could be set to contradict the gate.
 
 `only` names section numbers, because that is what every other stage takes, and the soundscape's own
 items are named rather than numbered. An effect is wanted when a `[[mix.effects]]` row cues it in a

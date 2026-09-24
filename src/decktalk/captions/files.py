@@ -1,10 +1,10 @@
 """The caption, chapter and transcript files `assemble` writes beside the final mp4.
 
-build/out/<name>.srt              the caption cues as SubRip
-build/out/<name>.vtt              the same cues as WebVTT
-build/out/<name>.chapters.txt     an ffmetadata file with one [CHAPTER] per section
-build/out/<name>-transcript.html  the whole film as a page: one heading per chapter, the spoken
-                                  text under it, and the description of each reveal
+build/final/<name>.srt              the caption cues as SubRip
+build/final/<name>.vtt              the same cues as WebVTT
+build/final/<name>.chapters.txt     an ffmetadata file with one [CHAPTER] per section
+build/final/<name>-transcript.html  the whole film as a page: one heading per chapter, the spoken
+                                    text under it, and the description of each reveal
 
 The transcript is the media alternative a viewer who cannot see or cannot hear the film reads
 instead. Captions carry speech alone, so the transcript is the only place the picture is written
