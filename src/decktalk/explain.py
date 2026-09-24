@@ -10,6 +10,7 @@ layer rather than inside it, because naming a cue means reading the project's ow
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -197,22 +198,29 @@ def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[_Cue, ..
 def _cues(project: Path) -> tuple[tuple[str, tuple[_Cue, ...]], ...]:
     """Every resolved cue of this project in section order, or nothing when the stage has not run.
 
-    The file is read leniently, because a project that has never been cued is the common case and a
-    knob is explainable without one.
+    The file is `cue`'s own artifact, so it is one block per section, in section order, and each
+    block holds the rows that section resolved. A row whose second is null was never resolved
+    against a word, so it is left out rather than read as a cue at zero. The file is read leniently
+    and by hand, because a project that has never been cued is the common case, a knob is
+    explainable without one, and the artifact layer sits above this module rather than below it.
     """
     path = project / CUE_TIMES
     if not path.exists():
         return ()
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
-        sections = document["sections"]
+        blocks = [_block(one) for one in document["sections"]]
     except (OSError, ValueError, KeyError, TypeError):
         return ()
-    out: list[tuple[str, tuple[_Cue, ...]]] = []
-    for name in sorted(sections):
-        rows = tuple(_Cue(id=str(row["cue"]), at=float(row["at"])) for row in sections[name])
-        out.append((name, tuple(sorted(rows, key=lambda row: row.at))))
-    return tuple(out)
+    return tuple(blocks)
+
+
+def _block(section: Mapping[str, Any]) -> tuple[str, tuple[_Cue, ...]]:
+    """One section of the artifact as the explainer reads it, which is its key and its resolved cues."""
+    rows = tuple(
+        _Cue(id=str(row["cue"]), at=float(row["seconds"])) for row in section["cues"] if row["seconds"] is not None
+    )
+    return str(section["key"]), tuple(sorted(rows, key=lambda row: row.at))
 
 
 def _type_name(key: Key) -> str:

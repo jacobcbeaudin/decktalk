@@ -2,29 +2,38 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
+from decktalk.artifacts.cue_times import CueTimes
 from decktalk.errors import InputError
 from decktalk.explain import explain
 from decktalk.findings import Code
-from decktalk.results import Layer, Scope
+from decktalk.results import CueTime, Layer, Scope, SectionCues
 from decktalk.settings import BY_ID
 from decktalk.tomlmap import Nature, Source
 
-CUES = {
-    "estimated": False,
-    "sections": {
-        "01": [
-            {"cue": "1.1:first", "on": "first", "at": 1.0},
-            {"cue": "1.1:close", "on": "close", "at": 1.1},
-            {"cue": "1.1:far", "on": "far", "at": 5.0},
-        ]
-    },
-}
-"""One section whose second cue sits a tenth of a second after its first, which a wider lead swallows."""
+CUES = CueTimes(
+    sections=(
+        SectionCues(
+            section=1,
+            key="01",
+            estimated=False,
+            cues=(
+                CueTime(cue="1.1:first", phrase="first", seconds=1.0),
+                CueTime(cue="1.1:close", phrase="close", seconds=1.1),
+                CueTime(cue="1.1:far", phrase="far", seconds=5.0),
+                CueTime(cue="1.1:never", phrase="never", seconds=None),
+            ),
+        ),
+    )
+)
+"""One section whose second cue sits a tenth of a second after its first, which a wider lead swallows.
+
+It is the artifact `cue` writes rather than a shape spelled here, because the explainer reads that
+file by hand and a fixture written by hand could agree with the reader while both were wrong.
+"""
 
 
 @pytest.fixture(autouse=True)
@@ -37,8 +46,7 @@ def _no_machine_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pyte
 def project(tmp_path: Path) -> Path:
     """A project that states one key and has been cued once."""
     (tmp_path / "decktalk.toml").write_text("[verify]\ncue_offset_max_ms = 100\n", encoding="utf-8")
-    (tmp_path / "build").mkdir()
-    (tmp_path / "build" / "cue-times.json").write_text(json.dumps(CUES), encoding="utf-8")
+    CUES.write(tmp_path / "build" / "cue-times.json")
     return tmp_path
 
 
@@ -134,6 +142,9 @@ class TestTheCuesACandidateWouldClamp:
         found = explain("verify.cue_offset_max_ms", project=tmp_path, value="300")
         assert found.measured is False
         assert found.clamped == ()
+
+    def test_a_cue_that_resolved_to_no_second_is_not_read_as_a_cue_at_zero(self, project: Path) -> None:
+        assert "1.1:never" not in explain("verify.cue_offset_max_ms", project=project, value="300").clamped
 
     def test_a_cue_file_that_will_not_parse_costs_nothing(self, project: Path) -> None:
         (project / "build" / "cue-times.json").write_text("{", encoding="utf-8")
