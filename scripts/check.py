@@ -494,11 +494,10 @@ def main() -> int:
         names = [*FAST, *names]
     groups = selected(names, args.when)
 
-    if args.list:
-        print(epilog())
-        return 0
-    if args.json:
-        print(json.dumps(legs(groups)))
+    # `--list` and `--json` are the same answer in two renderings, so asking for both is asking for
+    # the listing a workflow reads rather than for the table and then nothing.
+    if args.list or args.json:
+        print(json.dumps(legs(groups)) if args.json else epilog())
         return 0
 
     started = time.monotonic()
