@@ -289,16 +289,18 @@ src/decktalk/
         seams.py         The three checks that read the shape of the film rather than one cue: starts, cuts and seams.
     project.py           A project is a directory, one object opens it, and every call on it opens a run.
   cli                    the first client, and the package's public surface
-    cli/                 The `decktalk` command line: parse, dispatch, and map what happened to one exit code.
-      authoring.py       The commands an author runs around a build: what is there, what it would do, and what it cuts.
-      dispatch.py        The table that maps a command name to the handler that runs it.
-      envelope.py        The one `--json` envelope, and the exit policy behind it.
-      machine.py         The commands that act on a machine rather than on a project: `init`, `install` and `doctor`.
-      options.py         One typed options dataclass per command, read from the parsed arguments by field name.
-      output.py          The tables and the leading summary the CLI prints, read from the stage results themselves.
-      parser.py          The command table, the shared flag groups, and the parser both are built into.
-      schema.py          The `--json` envelope as types: one frozen dataclass per payload and per row, and the reader.
-      video.py           The commands that make the video: the stages in order, and `build`, which runs them all.
+    cli/                 The command line: eighteen commands, each a thin client of one library call.
+      app.py             The one table: a command is its function's signature, and everything else is read off that.
+      catalog.py         One walk over the parser, joined onto what the library publishes about itself.
+      config.py          The one noun that owns five verbs, which is why it is the one group that earns a level of nesting.
+      contracts.py       The one command that prints a contract rather than a result.
+      machine.py         The three commands about this computer: writing a project, fetching the toolchain and reporting.
+      options.py         The flags, declared once, and the rule that decides which command carries which family.
+      output.py          Everything the command line writes, so that no command anywhere prints a character itself.
+      report.py          The five commands that read a project and spend nothing.
+      run.py             The eight commands that move a project forward: the six stages, the whole run, and one cut of it.
+      session.py         One run of one command: the flags in force, the streams it writes to, and how it ends.
+      watch.py           One terminal that serves the deck and rebuilds the section a save changed.
     __init__.py          DeckTalk: narrated presentation videos, cut to the word.
     __main__.py          `python -m decktalk` runs the CLI.
   packaged data          what ships in the wheel and holds no Python
