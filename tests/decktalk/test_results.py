@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from decktalk import errors, findings, results
+from decktalk import errors, events, findings, results
 from decktalk.findings import Code, Finding, Location
 from decktalk.results import RESULTS, SCHEMA, Result
 
@@ -104,7 +104,7 @@ def sample(model: type[BaseModel]) -> BaseModel:
 def models() -> list[type[BaseModel]]:
     """Every model this track declares, which is what the shared rules are asserted over."""
     found: list[type[BaseModel]] = []
-    for module in (findings, errors, results):
+    for module in (findings, errors, results, events):
         for name in dir(module):
             member = getattr(module, name)
             if isinstance(member, type) and issubclass(member, BaseModel) and member.__module__ == module.__name__:
