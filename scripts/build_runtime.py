@@ -12,6 +12,7 @@ thing that reads it: esbuild builds the contract as a CommonJS module, node prin
 JSON, and every artifact below is written from that JSON. No regular expression ever reads
 TypeScript, so a contract that compiles is a contract Python can be generated from.
 
+    src/decktalk/runtime/decktalk-runtime.js the bundle a deck loads
     src/decktalk/runtime/decktalk-probe.js   the bundle the recorder injects into every page
     src/decktalk/runtime/contract.json       the intermediate, committed so the rest is pure Python
     src/decktalk/page.py                     the vocabulary the library and the CLI read
@@ -45,7 +46,10 @@ PAGE_MODULE = ROOT / "src" / "decktalk" / "page.py"
 
 # Every bundle the runtime ships, from the entry point that builds it. A module reaches a bundle
 # only by being imported from one of these, which is what keeps the probe free of the runtime.
-BUNDLES: dict[str, Path] = {"decktalk-probe.js": SOURCE / "probe" / "probe.ts"}
+BUNDLES: dict[str, Path] = {
+    "decktalk-runtime.js": SOURCE / "index.ts",
+    "decktalk-probe.js": SOURCE / "probe" / "probe.ts",
+}
 
 # The browsers a bundle must run in are the ones Playwright drives and the ones an author previews
 # in, so the output is the newest syntax level every current engine parses.
@@ -70,6 +74,7 @@ def run(cmd: list[str | Path], *, stdin: str | None = None) -> str:
     env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
     done = subprocess.run(
         [str(part) for part in cmd],
+        check=False,
         cwd=ROOT,
         env=env,
         input=stdin,

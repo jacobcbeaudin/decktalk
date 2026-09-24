@@ -6,12 +6,17 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/decktalk/runtime/src/"
+    "test": "node --test tests/decktalk/runtime/src/",
+    "typecheck": "tsc --noEmit -p src/decktalk/runtime/tsconfig.json",
+    "check": "biome ci ."
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",
     "@types/node": "26.6.2",
     "esbuild": "0.28.2",
     "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }

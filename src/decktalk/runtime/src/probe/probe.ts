@@ -218,7 +218,10 @@ function watchFrames(): void {
   const kinds = window.PerformanceObserver ? PerformanceObserver.supportedEntryTypes || [] : [];
   if (!kinds.includes("long-animation-frame")) return;
   new PerformanceObserver((list) => {
-    for (const entry of list.getEntries() as (PerformanceEntry & { renderStart?: number; presentationTime?: number })[]) {
+    for (const entry of list.getEntries() as (PerformanceEntry & {
+      renderStart?: number;
+      presentationTime?: number;
+    })[]) {
       if (origin === null || entry.startTime < origin || longFrames.length >= KEEP) continue;
       longFrames.push({
         start: clockAt(entry.startTime),
