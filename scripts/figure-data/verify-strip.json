@@ -3,9 +3,9 @@
     "decktalk": "0.2.1",
     "build": "decktalk build --no-voice on the scaffold that decktalk init writes",
     "estimated_words": true,
-    "command": "decktalk verify 8:7.1checked --json, and the onset series verify reads"
+    "command": "decktalk verify --section 8 --json, and the onset series it reads"
   },
-  "check": "8:7.1checked",
+  "check": "8:7.1:checked",
   "cue_seconds": 10.03,
   "final_seconds": 238.31,
   "section_start": 228.28,
@@ -153,6 +153,6 @@
     "offset_ms": 10,
     "av_ms": 3,
     "click_ms": 7,
-    "verdict": "changed"
+    "outcome": "changed"
   }
 }

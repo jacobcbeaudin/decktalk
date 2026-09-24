@@ -403,7 +403,7 @@ STAGES = [
     ("01 WRITE", "A script in markdown", "One heading starts one section."),
     ("02 NARRATE", "Your voice reads it", "The speech provider times every word."),
     ("03 RECORD", "Slides appear on their words", "Plain HTML, recorded in Chromium."),
-    ("04 ASSEMBLE", "Cut to the frame", "ffmpeg cuts, mixes, verifies."),
+    ("04 ASSEMBLE", "Cut to the frame", "ffmpeg cuts, mixes and measures."),
 ]
 NARRATE_W = 222  # the width the narrate panel's ticks span
 NARRATE_CUES = (1, 3)  # the cue dots sit on "bowl" and "ball", and the timestamp sits on "bowl"
@@ -528,13 +528,13 @@ def stage_svg(i: int, x: int, y: int, ticks: list[float]) -> str:
 
 
 # The pipeline stages each panel runs, in their fixed order. Writing the script runs none.
-STAGE_COMMANDS = ((), ("narrate", "align"), ("record",), ("assemble", "verify"))
+STAGE_COMMANDS = ((), ("narrate", "cue"), ("record", "soundscape"), ("assemble", "verify"))
 CMD_ROW = 22  # the height the command row adds under each panel label
 
 
 def how_it_works(pal: dict[str, str], stacked: bool, background: bool, ticks: list[float]) -> str:
     css = hiw_css(pal, ticks) + f"\n.cmd{{font:500 13px {MONO};fill:{pal['ink']}}}"
-    title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The five stages are narrate, align, record, assemble, and verify."
+    title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The six stages are narrate, cue, record, soundscape, assemble and verify."
     if not stacked:
         w, h = 1200, 240 + CMD_ROW
         stages = "\n".join(stage_svg(i, 60 + 280 * i, -40, ticks) for i in range(4))
@@ -559,11 +559,11 @@ STATIONS = (
     ("Voice", "<hash>.mp3 · words.json", ("Your voice reads it, and", "every word gets a time.")),
     ("Cues", "cues.json", ("You name the phrase, and", "the picture starts on it.")),
     ("Slides", "deck/index.html", ("Plain HTML, one scene", "a section, in any theme.")),
-    ("Video", "build/out/<name>.mp4", ("Recorded in real time, and", "every reveal is measured.")),
+    ("Video", "build/final/<name>.mp4", ("Recorded in real time, and", "every reveal is measured.")),
 )
 CUE_STATION = 2
 # The cue on the cues station: the starter's first cue, from src/decktalk/template/starter/cues.json.
-STATION_CUE = ("This is DeckTalk", "1.1title")
+STATION_CUE = ("This is DeckTalk", "1.1:title")
 PIPELINE_HEADLINE = "A script becomes one film, and every picture lands on its word."
 PIPELINE_NOTE = "Only that section is voiced and recorded again. The others keep their takes and their recordings."
 
@@ -724,14 +724,14 @@ def mark(pal: dict[str, str], size: int = 32, background: bool = False, mono: bo
 
 FRAME_W, FRAME_H, FRAME_GAP = 88, 50, 8
 COVER_FRAMES = 3  # frames that are still covered before the clock starts
-# The scaffold's open, from template/script.md: "A bowl. [beat] A ball. [beat] Watch it step down on my count."
+# The starter's open, from template/script.md: "A bowl. [beat] A ball. [beat] Watch it step down on my count."
 ALIGN_WORDS = ["A", "bowl.", "A", "ball.", "Watch", "it", "step", "down"]
-STRIP_CUES = {1, 3}  # cues 1.1bowl and 1.1ball in template/cues.json
+STRIP_CUES = {1, 3}  # the two cues the bowl and the ball arrive on, which are the words this strip marks
 
 
 def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
     """Why the cuts are exact: the recording opens on the magenta cover, the first clean frame is
-    narration t=0, and each cue is a spoken word measured from that same origin. The scaffold's
+    narration t=0, and each cue is a spoken word measured from that same origin. The starter's
     reveals use data-reveal="instant", so the bowl and the ball each appear whole in one frame."""
     w, h = 1200, 250
     left = 72
@@ -764,7 +764,7 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
 
     bowl_frame, ball_frame = frame_at(bowl_x), frame_at(ball_x)
     lit = {bowl_frame, ball_frame}
-    # A miniature of scene 1 of the scaffold's deck/index.html: the bowl y = 720 - 320 u^2 and the
+    # A miniature of scene 1 of the starter's deck/index.html: the bowl y = 720 - 320 u^2 and the
     # ball at its first position, u = -0.96, scaled into a frame.
     bowl_pts = [(u, 44 + 30 * u, 42 - 26 * u * u) for u in (i / 10 - 1.05 for i in range(22))]
     frames = []
@@ -824,7 +824,7 @@ def alignment(pal: dict[str, str], xs: list[float], background: bool) -> str:
 # ---- figure data --------------------------------------------------------------------------------
 
 MINUS = "&#8722;"
-CUE_OFFSET_KEY = 0.2  # the offset key of the "3.4steps" example in docs/guides/writing-for-the-ear.mdx
+CUE_OFFSET_KEY = 0.2  # the offset key of the worked example in docs/guides/writing-for-the-ear.mdx
 
 
 def _signed(value: float, digits: int, unit: str) -> str:
@@ -1106,7 +1106,7 @@ def narration_split(pal: dict[str, str], background: bool) -> str:
     css.append(f".cp{{fill:{pal['bar']}}}.ch{{stroke:{pal['ink']};stroke-width:2}}")
     narr_y, vid_y, cap_y, chap_y, bh = 64, 164, 236, 268, 40
     parts: list[str] = [
-        '<text class="lab" x="60" y="30">SCAFFOLD WITH A CLIP SECTION, BUILD WITHOUT VOICE, TO SCALE</text>'
+        '<text class="lab" x="60" y="30">A STARTER WITH A CLIP SECTION, BUILD WITHOUT VOICE, TO SCALE</text>'
     ]
     for label, y in (
         ("narration.mp3", narr_y + 25),
@@ -1217,7 +1217,7 @@ def duck_lane(pal: dict[str, str], background: bool) -> str:
     css.append(f".curve{{stroke:{pal['accent']};stroke-width:3;fill:none;stroke-linejoin:round}}")
     sec_y, span_y = 56, 104
     parts = [f'<clipPath id="win"><rect x="{x0}" y="0" width="{x1 - x0}" height="{h}"/></clipPath>']
-    parts.append('<text class="lab" x="60" y="36">MUSIC LEVEL AROUND A CLIP, SCAFFOLD [MIX] SETTINGS</text>')
+    parts.append('<text class="lab" x="60" y="36">MUSIC LEVEL AROUND A CLIP, A STARTER\u2019S [MIX] SETTINGS</text>')
     parts.append(f'<text class="ln" x="60" y="{sec_y + 23}">section</text>')
     parts.append(f'<text class="ln" x="60" y="{span_y + 17}">ducked</text>')
     parts.append(f'<text class="ln" x="60" y="{ly(base) + 5:.1f}">music</text>')
@@ -1327,7 +1327,7 @@ LANES = (
     # lane, the page sections that run in it, the text on those, the text on the other page sections
     ("narrate", {EDITED_SECTION}, "voiced", "cached"),
     ("record, plain build", None, "recorded", ""),  # None: every page section
-    (f"record, --only {EDITED_SECTION}", {EDITED_SECTION}, "recorded", "kept"),
+    (f"record, --section {EDITED_SECTION}", {EDITED_SECTION}, "recorded", "kept"),
 )
 
 
@@ -1414,7 +1414,7 @@ def rebuild_lanes(pal: dict[str, str], background: bool) -> str:
         clip_text = f"Sections {', '.join(names[:-1])} and {names[-1]} are clips"
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
   <title id="t">What runs again after an edit to section {EDITED_SECTION}</title>
-  <desc id="d">{len(sections)} section columns and three lanes. {clip_text} in every lane. In the narrate lane, section {EDITED_SECTION} is voiced, and sections {others} are cached. A plain build records every page section. A build with --only {EDITED_SECTION} records section {EDITED_SECTION} and keeps the other recordings. The assemble bar spans every section.</desc>
+  <desc id="d">{len(sections)} section columns and three lanes. {clip_text} in every lane. In the narrate lane, section {EDITED_SECTION} is voiced, and sections {others} are cached. A plain build records every page section. A build with --section {EDITED_SECTION} records section {EDITED_SECTION} and keeps the other recordings. The assemble bar spans every section.</desc>
   <defs><style>{chr(10).join(css)}</style>{hatch(pal)}</defs>
   {bg_rect(pal, w, h, background)}
   {"".join(rows)}
@@ -1455,7 +1455,7 @@ OG_WORDS = ["Twenty", "minutes", "for", "her.", "Twenty", "minutes", "for", "you
 OG_CUES = {0, 1, 2, 3, 4, 5, 6, 7}  # both phrases are cue phrases, 2.1her and 2.1you
 OG_DOTS = {0, 4}  # the pictures land on the first word of each phrase
 # The frame in the card's right third: Halfway's scene 2 once both routes are drawn, the picture the
-# card's line lands on. Rendered losslessly from the deck by `decktalk screenshots --section 2 --at 15`
+# card's line lands on. Rendered losslessly from the deck by `decktalk storyboard --section 2 --at 15`
 # in the Halfway project, then scaled to 640 by 360 as lossless WebP. Never a frame of the mp4.
 OG_FRAME = ASSETS / "halfway-frame.webp"
 OG_FRAME_BOX = (780, 196, 340, 191)  # x, y, width, height: beside the headline, on the site's right margin
