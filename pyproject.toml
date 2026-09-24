@@ -99,10 +99,9 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["E501"]  # generated CSS and SVG strings
-# These two read TOML and JSON, whose values are `Any` before they are checked. Typing the parameter
-# as anything narrower would be a claim the file has not made yet, which is what they exist to make.
+# This one reads TOML, whose values are `Any` before they are checked. Typing the parameter as
+# anything narrower would be a claim the file has not made yet, which is what it exists to make.
 "src/decktalk/tomlmap.py" = ["ANN401"]
-"src/decktalk/jsonio.py" = ["ANN401"]
 # A test replaces a seam with a lambda of the real signature and reads only the arguments it judges,
 # so ARG005 there measures the seam rather than the test. ARG still holds over every other argument.
 "tests/**" = ["ARG005"]
