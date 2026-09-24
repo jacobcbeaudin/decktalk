@@ -26,15 +26,17 @@
   #dt-stage { background: var(--ground); }
 
   /* Every element is placed absolutely on the 1920 by 1080 stage, so a reveal moves nothing else. */
-  .eyebrow, .title, .card, .strip { position: absolute; margin: 0; box-sizing: border-box; }
+  .eyebrow, .title, .card, .strip, .stat { position: absolute; margin: 0; box-sizing: border-box; }
   .eyebrow { left: 120px; top: 80px; font: 600 24px/32px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
 
-  /* A reveal has to change about 0.3 percent of the frame, compared on luma alone, or `preflight`
-     reads it as NO CHANGE or THIN CHANGE?. That is roughly an 80 by 80 solid block. Every card and
-     strip below is a filled shape for that reason, and not text on white. */
+  /* A reveal has to change about 0.3 percent of the frame, compared on luma alone, or `decktalk
+     check` reads it as CUE_NO_CHANGE or CUE_THIN_CHANGE. That is roughly an 80 by 80 solid block.
+     Every card and strip below is a filled shape for that reason, and not text on white. */
   .title { left: 120px; width: 1680px; font: 700 96px/1.06 var(--sans); letter-spacing: -.03em; }
   .title h1 { margin: 0; font: inherit; letter-spacing: inherit; }
   .title .rule { margin-top: 28px; width: 1000px; height: 12px; background: var(--accent); }
+
+  .stat { left: 120px; top: 620px; width: 1120px; padding: 34px 48px; border-radius: 20px; background: var(--accent); color: #fff; font: 700 76px/1.1 var(--sans); letter-spacing: -.02em; }
 
   .card { width: 760px; height: 220px; padding: 34px 40px; border-radius: 20px; background: var(--ink); color: #fff; }
   .card .k { font: 600 28px/36px var(--mono); color: #a9a9ff; }
@@ -42,7 +44,6 @@
 
   .strip { left: 120px; width: 1680px; padding: 28px 40px; border-radius: 18px; background: var(--accent); color: #fff; font: 600 52px/62px var(--sans); }
   .strip.dark { background: var(--ink); }
-
 
   /* Scene 2: the formula beside the code that computes it. */
   .formula { position: absolute; left: 120px; top: 360px; width: 820px; height: 280px; box-sizing: border-box;
@@ -62,42 +63,57 @@
 <body>
 
 <!-- A scene is markup. Each <template data-slide> is one slide, and the runtime clones it when the
-     slide mounts. The cue ids start with the slide id, which is how the runtime knows whose they
-     are, and `cues.json` says which spoken word each one lands on. -->
+     slide mounts. An element has four moments, and each of them is the local name of a cue: it
+     arrives on data-in, it steps back on data-back, it comes to the front on data-front, and it
+     leaves on data-out. The runtime qualifies a local name with the slide it is written in, so
+     data-in="title" inside <template data-slide="1.1"> is the cue 1.1:title that cues.json carries.
+     Seconds are never written here, because cues.json owns them. -->
 
 <div data-scene="1" data-name="Open">
-  <template data-slide="1.1" data-hold="14">
+  <template data-slide="1.1" data-hold="10" data-describe="the opening title and the count of files">
     <p class="eyebrow">DeckTalk</p>
 
-    <div class="title" style="top: 190px" data-cue="1.1title" data-describe="the title, This is DeckTalk">
+    <div class="title" style="top: 190px" data-in="title" data-describe="the title, This is DeckTalk">
       <h1>This is DeckTalk.</h1>
       <div class="rule"></div>
     </div>
 
-    <div class="card" style="left: 120px; top: 430px" data-cue="1.1script"
+    <!-- data-count grows the last number in the text from zero when the element arrives, so the
+         figure the voice says and the figure on screen land together. -->
+    <p class="stat" data-in="files" data-count="last" data-describe="the count of files a project holds">
+      4 files in one folder
+    </p>
+  </template>
+
+  <template data-slide="1.2" data-hold="12" data-describe="the two files you write, and the promise">
+    <p class="eyebrow">DeckTalk</p>
+
+    <div class="card" style="left: 120px; top: 300px" data-in="script"
          data-describe="a card for script.md, the file that holds what you say">
       <div class="k">script.md</div>
       <div class="v">what you will say</div>
     </div>
 
-    <div class="card" style="left: 1040px; top: 430px" data-cue="1.1deck"
+    <div class="card" style="left: 1040px; top: 300px" data-in="deck"
          data-describe="a card for deck/index.html, the file that holds the slides">
       <div class="k">deck/index.html</div>
       <div class="v">the slides that go with it</div>
     </div>
 
-    <p class="strip" style="top: 720px" data-cue="1.1word" data-reveal="fade"
-       data-describe="a band reading: every picture waits for its own word">
-      Every picture waits for its own word.
+    <!-- data-words shows the line one word at a time on the voice, so its text has to be the words
+         the narration really says. -->
+    <p class="strip" style="top: 720px" data-in="word" data-in-style="fade" data-words
+       data-describe="a band that fills in on the voice">
+      every picture waits for its own word
     </p>
   </template>
 </div>
 
 <div data-scene="2" data-name="How it works">
-  <template data-slide="2.1" data-hold="16">
+  <template data-slide="2.1" data-hold="16" data-describe="the average of n numbers, as a formula and as code">
     <p class="eyebrow">How it works</p>
 
-    <div class="title" style="top: 170px; font-size: 76px" data-cue="2.1average"
+    <div class="title" style="top: 170px; font-size: 76px" data-in="average"
          data-describe="the heading, the average of n numbers">
       <h1>The average of n numbers.</h1>
       <div class="rule" style="width: 760px"></div>
@@ -108,19 +124,21 @@
             if KaTeX ever fails to load. Write the fallback so it reads correctly out loud, fully
             parenthesized, rather than leaving the raw TeX there.
          2. `data-tex-display` is what makes it a displayed equation rather than an inline one.
-         3. In markup a backslash is written once, as below. Inside a `render` template literal in
-            JavaScript every backslash has to be written twice, because \f and \t are escapes. -->
-    <div class="formula" data-cue="2.1formula" data-describe="the formula for the mean of n numbers">
+         3. A backslash is written once in markup, as below.
+         The formula steps back when the code arrives and comes to the front on the closing line,
+         which is what data-back and data-front are for: attention, without a second reveal. -->
+    <div class="formula" data-in="formula" data-in-style="fade" data-back="code" data-front="waited"
+         data-describe="the formula for the mean of n numbers">
       <span data-tex-display data-tex="\bar{x} = \frac{1}{n} \sum_{i=1}^{n} x_i">
         x bar = (1 / n) * (x1 + x2 + ... + xn)
       </span>
     </div>
 
-    <div class="code" data-cue="2.1code" data-describe="the same average written as three lines of Python">
+    <div class="code" data-in="code" data-describe="the same average written as two lines of Python">
 <span class="kw">def</span> average(xs):
     <span class="kw">return</span> sum(xs) / len(xs)</div>
 
-    <p class="strip" style="top: 720px" data-cue="2.1waited"
+    <p class="strip" style="top: 720px" data-in="waited"
        data-describe="a band reading: each one waited for the words I just said">
       Each one waited for the words I just said.
     </p>
@@ -128,20 +146,20 @@
 </div>
 
 <div data-scene="3" data-name="Close">
-  <template data-slide="3.1" data-hold="12">
+  <template data-slide="3.1" data-hold="12" data-describe="the closing idea and the end card">
     <p class="eyebrow">Close</p>
 
-    <div class="title" style="top: 190px" data-cue="3.1idea" data-describe="the heading, change one word">
+    <div class="title" style="top: 190px" data-in="idea" data-describe="the heading, change one word">
       <h1>Change one word.</h1>
       <div class="rule"></div>
     </div>
 
-    <p class="strip dark" style="top: 440px; width: 1440px" data-cue="3.1again"
+    <p class="strip dark" style="top: 440px; width: 1440px" data-in="again"
        data-describe="a band reading: only that part is made again">
       Only that part is made again.
     </p>
 
-    <div class="end" data-cue="3.1make" data-reveal="pop" data-describe="the end card, decktalk.ai">decktalk.ai</div>
+    <div class="end" data-in="make" data-in-style="pop" data-describe="the end card, decktalk.ai">decktalk.ai</div>
   </template>
 </div>
 

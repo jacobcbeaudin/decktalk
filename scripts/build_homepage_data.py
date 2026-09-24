@@ -1,36 +1,29 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pillow>=10"]
 # ///
 """Generate the homepage's data from the Halfway build, so the page cannot drift from the film.
 
-    uv run scripts/build_homepage_data.py --project ~/films/halfway/hero --hero-log ~/films/halfway/hero/build-fixed.log \
-        --takes ~/films/halfway/build/narration --film ~/films/halfway --rebuild-log ~/films/halfway/build-edit.log
+    uv run scripts/build_homepage_data.py --write
+    uv run scripts/build_homepage_data.py --check
+    uv run scripts/build_homepage_data.py --write --media   # also re-cut the clips the page streams
 
-The hero cut is its own DeckTalk project (sections 1 to 3 shared with the full film, section 4
-trimmed). From it and the full film's voiced takes this writes:
+The film is `--project`, and the hero cut is the project inside it at `hero/`: sections 1 to 3 word
+for word the film's, section 4 trimmed. Everything is read through the SDK, so the page's numbers are
+the artifacts' own numbers rather than a second reading of the same files.
 
-- site/data.js        the words with their times, the cues with their times and what each one shows,
-                      the band lines, the hero cut's own verify offsets, the rebuild log with its cost and
-                      the full film's verify offsets, in film seconds
-- site/stage.js       the deck's scenes and styles, scoped, so the hero replays the production slides
-                      as HTML and SVG under the real take rather than as a captured video
-- site/media/halfway-hero.mp3         the four takes laid out as the film lays them out, at -16 LUFS
-- site/media/halfway-take-before.mp3  the section 3 take before the edit, at -16 LUFS
-- site/media/halfway-take-after.mp3   the section 3 take after the edit, at -16 LUFS
-- site/media/halfway-poster.webp      the `1.1forty` frame of the film, for the card
-- site/media/halfway.vtt              the film's captions, copied so the text track is same-origin
+- site/data.js   the words with their times, the cues with their times and what each one shows, the
+                 band lines, the hero cut's own verify offsets, the rebuild's stage lines with the
+                 cost of the take the edit bought, and the full film's verify offsets, in film seconds
+- site/stage.js  the deck's scenes and styles, scoped, so the hero replays the production slides as
+                 HTML and SVG under the real take rather than as a captured video
 
-data.js also carries each clip's loudness envelope, RMS in dB every 20 ms measured from the clip's own
-bytes, so the page's waveform glyphs move with the real sound at any playhead position.
-
-The mp3s are not in git. The page streams them from media.decktalk.ai under names that carry the first
-twelve hex digits of their SHA-256, like the films, and data.js carries those names next to the clips'
-envelopes, so a clip and its name change together. The script prints the upload list at the end.
-
-Every take is matched to its section by its words, so the script decides which take plays. The hero
-cut's last section, "Halfway. Meet in the middle.", is the tail of the full film's section 4 take,
-clipped at the word "Halfway", because sections that share their words share their takes.
+With `--media` it also writes the files the page streams, which are the four takes laid out as the
+film lays them out, the section 3 take before and after the edit, the film's poster and the film's
+captions. The mp3s are not in git. The page streams them from media.decktalk.ai under names that
+carry the first twelve hex digits of their SHA-256, like the films, and `data.js` carries those names
+next to the clips' loudness envelopes, so a clip and its name change together. Without `--media` the
+committed names and envelopes are carried over and the run first proves the film still lays its
+sections out where those clips were cut, because a new name is a file nobody has uploaded yet.
 """
 
 from __future__ import annotations
@@ -40,109 +33,200 @@ import hashlib
 import html
 import json
 import math
-import os
 import re
 import shutil
 import struct
-import subprocess
 import sys
-import tomllib
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
+from typing import Any
+
+from pydantic import TypeAdapter
+
+import decktalk
+from decktalk import Certainty, CueTimes, Cut, Cuts, Project, Take, Takes, Words
+from decktalk.artifacts.words import words_file
+from decktalk.cli.output import Report
+from decktalk.events import Event, Line, SectionDone, StageDone
+from decktalk.inputs import Inputs
+from decktalk.inputs.cues import find_phrase
+from decktalk.inputs.script import Segment
+from decktalk.media import audio, ffmpeg
+from decktalk.page import ATTRS, ENTRANCES, Attr, wire_id
+from decktalk.results import VerifyResult, Word
+from decktalk.stages.assemble.loudness import (
+    LIMITER_ATTACK_MS,
+    LIMITER_HEADROOM_DB,
+    LIMITER_OVERSAMPLE_RATE,
+    LIMITER_RELEASE_MS,
+)
+from decktalk.stages.assemble.mix import gain
 
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
-FFMPEG = os.environ.get("DECKTALK_FFMPEG") or next(
-    (str(p) for p in sorted(Path.home().glob("Library/Caches/decktalk/ffmpeg/*/ffmpeg"))), "ffmpeg"
-)
-ENVELOPE_STEP = 0.02  # seconds per envelope sample
-ENVELOPE_FLOOR = -60  # dB, silence
 MEDIA = SITE / "media"
-FPS = 25
-TAKE_TAIL = 0.5  # seconds of silence after the last sound of each take on the page
-CONTEXT_CHARS = 46  # of a changed line, the words either side of the change that the edit strip shows
-MAX_LINE_CHARS = 44  # a band line fits the phone band at 17 px, so the dimmed previous line never needs an ellipsis
+DATA = SITE / "data.js"
+STAGE = SITE / "stage.js"
+
+DEFAULT_PROJECT = Path.home() / "films" / "halfway"
+"""Where the film is unless `--project` names another directory, which is the founder's film shelf."""
+
+STALE = "stale: {path}. Run `uv run scripts/{script} --write` to bring it up to date."
+
+HERO = "hero"
+"""The directory inside the film that holds the cut the homepage plays."""
+
+BEAT = "[beat]"
+"""How the page writes a pause, which is the direction the author writes in `script.md`."""
+
+BEAT_MARK = "\N{EM DASH}"
+"""How `Segment.text` carries a pause, which is one token between two sentences."""
+
+ENVELOPE_STEP = 0.02
+"""Seconds per envelope sample, which is fine enough that a waveform glyph moves with the voice."""
+
+ENVELOPE_FLOOR = -60
+"""The level in dB a sample is floored at, which is silence."""
+
+ENVELOPE_RATE = 8000
+"""The rate the envelope is measured at, which resolves every syllable and decodes in a moment."""
+
+TAKE_TAIL = 0.5
+"""Seconds of silence after the last sound of each take on the page, so the pair breathes alike."""
+
+CONTEXT_CHARS = 46
+"""How much of a changed line the edit strip shows either side of the change."""
+
+MAX_LINE_CHARS = 44
+"""A band line fits the phone band at 17 px, so the dimmed previous line never needs an ellipsis."""
+
 DANGLING = {"a", "an", "the", "and", "or", "but", "of", "to", "for", "in", "on", "at", "with", "by"}
+"""Words a line may not end on, because the eye reaches for the noun that is on the next line."""
+
+POSTER_CUE = "1.1:forty"
+"""The cue whose picture the film's card shows, which is the route with its forty minute label."""
+
+POSTER_AFTER_SECONDS = 0.6
+"""How long after that cue the poster frame is taken, which is after the reveal has finished."""
+
+POSTER_WIDTH = 960
+"""How wide the card's poster is written, which is twice the widest the card is ever drawn."""
+
+POSTER_QUALITY = 82
+"""The WebP quality of the poster, which is where the gradient stops banding."""
+
+MACHINE_PATH = re.compile(r"(/Users/|/home/|/root/|[A-Za-z]:\\Users\\|/private/tmp/|/tmp/)")
+"""What a path on somebody's machine opens with, none of which the page may ever show."""
+
+CLIPS = {"hero": "hero", "before": "take-before", "after": "take-after"}
+"""Each clip the page streams, against the stem of the file it is cut into."""
 
 
-def norm(word: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", word.lower())
+# ---- the deck ---------------------------------------------------------------------------------
 
 
-def read_script(path: Path) -> list[dict]:
-    """The spoken sections: number, chapter, and the text with [beat] kept and other directions dropped."""
-    sections = []
-    for m in re.finditer(
-        r"^## (\d+)\.\s*(.+?)\s*$\n(.*?)(?=^## \d+\.|\Z)", path.read_text(encoding="utf-8"), re.M | re.S
-    ):
-        body = re.sub(r"\[(?!beat\])[^\]]*\]", "", m.group(3))  # drop [Scene …] and other notes, keep [beat]
-        text = " ".join(body.split())
-        sections.append({"n": int(m.group(1)), "chapter": m.group(2), "md": text})
-    return sections
-
-
-def script_words(md: str) -> list[str]:
-    return [w for w in md.split() if w != "[beat]"]
-
-
-def find_take(takes: Path, words: list[str]) -> tuple[Path, list[dict], int]:
-    """The voiced take whose words end with these words: (mp3, its word list, index of the first word)."""
-    keys = [norm(w) for w in words]
-    best = None
-    for wf in sorted(takes.glob("*.words.json")):
-        if wf.name.startswith("silent-"):
+def scoped_css(css: str) -> str:
+    """The deck's stylesheet scoped under .stage-deck, without the page-level rules."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    rules = []
+    for rule in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+        selectors, body = rule.group(1).strip(), " ".join(rule.group(2).split())
+        if selectors == ":root":
+            rules.append(f".stage-deck {{ {body} }}")
             continue
-        data = json.loads(wf.read_text(encoding="utf-8"))
-        have = [norm(w["word"]) for w in data]
-        if have == keys:
-            return wf.with_suffix("").with_suffix(".mp3"), data, 0
-        if len(have) > len(keys) and have[-len(keys) :] == keys and best is None:
-            best = (wf.with_suffix("").with_suffix(".mp3"), data, len(have) - len(keys))
-    if best is None:
-        sys.exit(f"no voiced take in {takes} says: {' '.join(words)}")
-    return best
+        if selectors.startswith(("html", "body", "#dt-stage")):
+            continue
+        scoped = ", ".join(f".stage-deck {one.strip()}" for one in selectors.split(","))
+        rules.append(f"{scoped} {{ {body} }}")
+    return "\n".join(rules)
 
 
-def sound_end(mp3: Path, start: float) -> float:
-    """Where the take's sound ends, in take seconds after `start`: the start of the silence that runs to
-    its end, measured with the threshold, run and end tolerance decktalk.media.audio.sound_end uses, so
-    the page's sections are as long as the film's."""
-    out = subprocess.run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-nostats",
-            "-i",
-            str(mp3),
-            "-af",
-            "silencedetect=noise=-35dB:d=0.05",
-            "-f",
-            "null",
-            "-",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stderr
-    duration = float(
-        subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(mp3)],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
-    )
-    starts = re.findall(r"silence_start: ([0-9.]+)", out)
-    ends = re.findall(r"silence_end: ([0-9.]+)", out)
-    rate = re.search(r"Audio: [^\n]*?(\d+) Hz", out)
-    tolerance = max(0.06, 1152 / int(rate.group(1)) if rate else 0.0)
-    if starts and (len(ends) < len(starts) or float(ends[-1]) >= duration - tolerance):
-        return round(float(starts[-1]) - start, 3)
-    return round(duration - start, 3)
+SCENE_RE = re.compile(
+    rf'<div {Attr.SCENE.value}="(\d+)"[^>]*>\s*<template[^>]*{Attr.SLIDE.value}="([^"]+)"[^>]*>(.*?)</template>',
+    re.S,
+)
+ARRIVAL_RE = re.compile(rf'<[^>]+{Attr.IN.value}="([^"]+)"[^>]*>')
+DESCRIBE_RE = re.compile(rf'{Attr.DESCRIBE.value}="([^"]*)"')
 
 
-def frames(seconds: float) -> float:
-    return round(seconds * FPS) / FPS
+@dataclass(frozen=True)
+class Deck:
+    """One deck page as the hero replays it, read once through the contract's own attribute table."""
+
+    css: str
+    """The deck's stylesheet, scoped under the page's stage."""
+
+    scenes: dict[str, str]
+    """The markup of each scene's slide, by scene."""
+
+    slides: dict[str, str]
+    """The slide each scene declares, by scene, which is what composes a moment's wire id."""
+
+    describes: dict[str, list[str]]
+    """What each moment's elements describe themselves as, by wire id, in document order."""
+
+
+def entrances() -> dict[str, float]:
+    """How long each entrance plays, which is the contract's own table and never a second one.
+
+    The page draws every reveal itself, so it needs the lengths an element that writes none is drawn
+    at. They are published here rather than written into the page's script, where they would be a
+    second contract that nothing holds to this one.
+    """
+    return {style: effect.seconds for style, effect in ENTRANCES.items()}
+
+
+def unwritten() -> dict[str, str]:
+    """What the contract draws an element with when the element names none of it."""
+    return {attr.value: str(ATTRS[attr].default) for attr in (Attr.IN_STYLE, Attr.WORDS)}
+
+
+def read_deck(path: Path) -> Deck:
+    """The deck the hero replays: its scoped styles, each scene's slide and markup, and every moment.
+
+    A slide names each moment by the local word the element carries, so the id the rest of the page
+    keys on is composed here the one way the contract composes it, and never spelled by hand.
+    """
+    source = path.read_text(encoding="utf-8")
+    styles = re.search(r"<style>(.*?)</style>", source, re.S)
+    if styles is None:
+        sys.exit(f"{path.name} has no stylesheet, and the hero replays the deck's own styles")
+    deck = Deck(scoped_css(styles.group(1)), {}, {}, {})
+    for scene in SCENE_RE.finditer(source):
+        markup = re.sub(r"<!--.*?-->", "", scene.group(3), flags=re.S)
+        deck.scenes[scene.group(1)] = " ".join(markup.split())
+        deck.slides[scene.group(1)] = scene.group(2)
+        for tag in ARRIVAL_RE.finditer(markup):
+            cue = wire_id(scene.group(2), tag.group(1))
+            said = DESCRIBE_RE.search(tag.group(0))
+            if said:
+                deck.describes.setdefault(cue, []).append(html.unescape(said.group(1)))
+    return deck
+
+
+def scene_lines(path: Path, scene: str) -> list[str]:
+    """The deck's own lines inside one scene wrapper, comments and blank lines dropped."""
+    source = path.read_text(encoding="utf-8")
+    block = re.search(rf'<div {Attr.SCENE.value}="{scene}"[^>]*>.*?</template>', source, re.S)
+    if not block:
+        return []
+    body = re.sub(r"<!--.*?-->", "", block.group(0), flags=re.S)
+    return [line.strip() for line in body.splitlines() if line.strip()]
+
+
+# ---- the band ---------------------------------------------------------------------------------
+
+
+def spoken_words(segment: Segment) -> list[str]:
+    """The words of one section, which is what the take says and what the band lights."""
+    return segment.spoken.split()
+
+
+def written(segment: Segment) -> str:
+    """One section as the page prints it, which is the spoken words with the author's own pauses."""
+    return " ".join(BEAT if token == BEAT_MARK else token for token in segment.text.split())
 
 
 def band_lines(md: str, first: int) -> list[list[int]]:
@@ -151,7 +235,7 @@ def band_lines(md: str, first: int) -> list[list[int]]:
     lies there, so the line under the frame is always whole and the callback word is never cut."""
     lines: list[list[int]] = []
     sentence: list[tuple[int, str, bool]] = []  # (word index, word, a beat before it)
-    i, beat = first, False
+    index, beat = first, False
 
     def flush() -> None:
         nonlocal sentence
@@ -159,77 +243,47 @@ def band_lines(md: str, first: int) -> list[list[int]]:
             lines.extend(break_sentence(sentence))
         sentence = []
 
-    for unit in [u for u in re.split(r"(\[beat\])", md) if u.strip()]:
-        if unit == "[beat]":
-            beat = True
-            continue
-        for w in unit.split():
-            sentence.append((i, w, beat))
+    for unit in [part for part in re.split(re.escape(BEAT), md) if part.strip()]:
+        for word in unit.split():
+            sentence.append((index, word, beat))
             beat = False
-            i += 1
-            if re.search(r"[.!?]$", w):
+            index += 1
+            if re.search(r"[.!?]$", word):
                 flush()
+        beat = True
     flush()
     return lines
 
 
 def break_sentence(sentence: list[tuple[int, str, bool]]) -> list[list[int]]:
-    words = [w for _, w, _ in sentence]
-    n = len(words)
+    """One sentence as the fewest band lines that each fit, broken where a reader would breathe."""
+    words = [word for _index, word, _beat in sentence]
+    count = len(words)
 
-    def length(a: int, b: int) -> int:
-        return len(" ".join(words[a:b]))
+    def length(start: int, end: int) -> int:
+        return len(" ".join(words[start:end]))
 
-    if length(0, n) <= MAX_LINE_CHARS:
+    if length(0, count) <= MAX_LINE_CHARS:
         return [[sentence[0][0], sentence[-1][0]]]
-    for k in range(2, n + 1):
+    for lines in range(2, count + 1):
         best: tuple[tuple[int, int, int], list[tuple[int, int]]] | None = None
-        for cuts in combinations(range(1, n), k - 1):
-            bounds = [0, *cuts, n]
-            runs = [(bounds[j], bounds[j + 1]) for j in range(k)]
-            if any(length(a, b) > MAX_LINE_CHARS for a, b in runs):
+        for cuts in combinations(range(1, count), lines - 1):
+            bounds = [0, *cuts, count]
+            runs = [(bounds[at], bounds[at + 1]) for at in range(lines)]
+            if any(length(start, end) > MAX_LINE_CHARS for start, end in runs):
                 continue
-            longest = max(length(a, b) for a, b in runs)
-            soft = sum(1 for c in cuts if not (sentence[c][2] or words[c - 1].endswith(",")))
-            dangling = sum(1 for c in cuts if norm(words[c - 1]) in DANGLING)
+            longest = max(length(start, end) for start, end in runs)
+            soft = sum(1 for cut in cuts if not (sentence[cut][2] or words[cut - 1].endswith(",")))
+            dangling = sum(1 for cut in cuts if words[cut - 1].strip(".,;:!?").lower() in DANGLING)
             key = (longest, dangling, soft)
             if best is None or key < best[0]:
                 best = (key, runs)
         if best:
-            return [[sentence[a][0], sentence[b - 1][0]] for a, b in best[1]]
+            return [[sentence[start][0], sentence[end - 1][0]] for start, end in best[1]]
     return [[sentence[0][0], sentence[-1][0]]]
 
 
-def scoped_css(css: str) -> str:
-    """The deck's stylesheet scoped under .stage-deck, without the page-level rules."""
-    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
-    rules = []
-    for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
-        selectors, body = m.group(1).strip(), " ".join(m.group(2).split())
-        if selectors in (":root",):
-            rules.append(f".stage-deck {{ {body} }}")
-            continue
-        if selectors.startswith(("html", "body", "#dt-stage")):
-            continue
-        scoped = ", ".join(f".stage-deck {s.strip()}" for s in selectors.split(","))
-        rules.append(f"{scoped} {{ {body} }}")
-    return "\n".join(rules)
-
-
-def read_deck(path: Path) -> tuple[str, dict[str, str], dict[str, list[str]]]:
-    """The deck's scoped css, one markup string per scene, and every cue's data-describe texts in document order."""
-    src = path.read_text(encoding="utf-8")
-    css = scoped_css(re.search(r"<style>(.*?)</style>", src, re.S).group(1))
-    scenes: dict[str, str] = {}
-    describes: dict[str, list[str]] = {}
-    for m in re.finditer(r'<div data-scene="(\d+)"[^>]*>\s*<template[^>]*>(.*?)</template>', src, re.S):
-        markup = re.sub(r"<!--.*?-->", "", m.group(2), flags=re.S)
-        scenes[m.group(1)] = " ".join(markup.split())
-        for tag in re.finditer(r"<[^>]+data-cue=\"([^\"]+)\"[^>]*>", markup):
-            d = re.search(r'data-describe="([^"]*)"', tag.group(0))
-            if d:
-                describes.setdefault(tag.group(1), []).append(html.unescape(d.group(1)))
-    return css, scenes, describes
+# ---- the edit ---------------------------------------------------------------------------------
 
 
 def one_change(before: str, after: str) -> dict[str, str] | None:
@@ -238,405 +292,579 @@ def one_change(before: str, after: str) -> dict[str, str] | None:
     The page shows the edit as `prefix before -> after suffix`, so it can never claim a smaller edit
     than the one the two projects record. Returns None when the lines are the same.
     """
-    a, b = before.split(), after.split()
-    if a == b:
+    old, new = before.split(), after.split()
+    if old == new:
         return None
-    lo = next((i for i, (x, y) in enumerate(zip(a, b, strict=False)) if x != y), min(len(a), len(b)))
-    hi_a, hi_b = len(a), len(b)
-    while hi_a > lo and hi_b > lo and a[hi_a - 1] == b[hi_b - 1]:
-        hi_a, hi_b = hi_a - 1, hi_b - 1
+    start = next((i for i, (a, b) in enumerate(zip(old, new, strict=False)) if a != b), min(len(old), len(new)))
+    end_old, end_new = len(old), len(new)
+    while end_old > start and end_new > start and old[end_old - 1] == new[end_new - 1]:
+        end_old, end_new = end_old - 1, end_new - 1
 
     def clip(words: list[str], keep_last: bool) -> str:
         """Enough of the line to place the change, from the end nearest it, and an ellipsis for the rest."""
         text = " ".join(words)
         if len(text) <= CONTEXT_CHARS:
             return text
-        return "…" + text[-CONTEXT_CHARS:] if keep_last else text[:CONTEXT_CHARS] + "…"
+        return (
+            "\N{HORIZONTAL ELLIPSIS}" + text[-CONTEXT_CHARS:]
+            if keep_last
+            else text[:CONTEXT_CHARS] + "\N{HORIZONTAL ELLIPSIS}"
+        )
 
     return {
-        "prefix": clip(a[:lo], keep_last=True),
-        "before": " ".join(a[lo:hi_a]),
-        "after": " ".join(b[lo:hi_b]),
-        "suffix": clip(a[hi_a:], keep_last=False),
+        "prefix": clip(old[:start], keep_last=True),
+        "before": " ".join(old[start:end_old]),
+        "after": " ".join(new[start:end_new]),
+        "suffix": clip(old[end_old:], keep_last=False),
     }
 
 
-def scene_lines(path: Path, scene: str) -> list[str]:
-    """The deck's own lines inside one data-scene wrapper, comments and blank lines dropped."""
-    src = path.read_text(encoding="utf-8")
-    m = re.search(rf'<div data-scene="{scene}"[^>]*>.*?</template>', src, re.S)
-    if not m:
-        return []
-    body = re.sub(r"<!--.*?-->", "", m.group(0), flags=re.S)
-    return [line.strip() for line in body.splitlines() if line.strip()]
-
-
-def edit_diff(before: Path, after: Path, section: int, spoken: tuple[str, str]) -> list[dict]:
+def edit_diff(before: Inputs, after: Inputs, section: int) -> list[dict]:
     """Every place the edit changed, file by file, read from the two projects rather than written by hand.
 
-    A number a film speaks and shows lives in three files: the sentence in script.md, the cue phrase in
-    cues.json that binds a picture to those words, and the slide in deck/index.html that draws it. The
-    page showed only the first, which read as though a script edit were the whole edit.
+    A number a film speaks and shows lives in three files: the sentence in `script.md`, the cue phrase
+    in `cues.json` that binds a picture to those words, and the slide in the deck that draws it. A page
+    that showed only the first would read as though a script edit were the whole edit.
     """
     files: list[dict] = []
-
-    # The sentence as the page prints it elsewhere: the words, without the bracketed directions.
-    said = tuple(" ".join(re.sub(r"\[[^\]]*\]", " ", text).split()) for text in spoken)
+    said = tuple(one_section(inputs, section).spoken for inputs in (before, after))
     if change := one_change(*said):
         files.append({"file": "script.md", "changes": [{"where": f"section {section}", **change}]})
 
-    def cues_of(project: Path) -> dict[str, str]:
-        doc = json.loads((project / "cues.json").read_text(encoding="utf-8"))
-        return {c["cue"]: c["on"] for c in doc["sections"][str(section)]["cues"]}
+    def phrases(inputs: Inputs) -> dict[str, str]:
+        block = next(block for block in inputs.cues() if block.number == section)
+        return {cue.cue: cue.on for cue in block.cues}
 
-    cues_before, cues_after = cues_of(before), cues_of(after)
+    was, now = phrases(before), phrases(after)
     cue_changes = [
         {"where": cue, "label": "on", **change}
-        for cue, on in cues_before.items()
-        if cue in cues_after and (change := one_change(on, cues_after[cue]))
+        for cue, on in was.items()
+        if cue in now and (change := one_change(on, now[cue]))
     ]
     if cue_changes:
         files.append({"file": "cues.json", "changes": cue_changes})
 
-    deck = ("deck", "index.html")
+    deck = Path(before.document.page_files[0])
+    slides = read_deck(before.path(deck)).slides
     deck_changes = []
-    old_lines = scene_lines(before.joinpath(*deck), str(section))
-    new_lines = scene_lines(after.joinpath(*deck), str(section))
+    old_lines = scene_lines(before.path(deck), str(section))
+    new_lines = scene_lines(after.path(deck), str(section))
     for old, new in zip(old_lines, new_lines, strict=False):
         if old == new:
             continue
-        cue = re.search(r'data-cue="([^"]+)"', old)
-        where = cue.group(1) if cue else f"scene {section}"
+        arrival = ARRIVAL_RE.search(old)
+        where = wire_id(slides[str(section)], arrival.group(1)) if arrival else f"scene {section}"
         # A slide line carries the number in two places that are not the same change: the text a
-        # viewer reads, and data-describe, which is what a screen reader hears. Comparing the
+        # viewer reads, and the description, which is what a screen reader hears. Comparing the
         # fields rather than the markup keeps each one to the words that changed.
-        for label, pattern in (("describe", r'data-describe="([^"]*)"'), (None, r">([^<>]+)<")):
-            a, b = re.search(pattern, old), re.search(pattern, new)
-            if a and b and (change := one_change(a.group(1), b.group(1))):
+        for label, pattern in (("describe", DESCRIBE_RE), (None, re.compile(r">([^<>]+)<"))):
+            first, second = pattern.search(old), pattern.search(new)
+            if first and second and (change := one_change(first.group(1), second.group(1))):
                 deck_changes.append({"where": where, "label": label, **change})
     if deck_changes:
-        files.append({"file": "deck/index.html", "changes": deck_changes})
-
+        files.append({"file": deck.as_posix(), "changes": deck_changes})
     return files
 
 
-def ffmpeg(*args: str) -> str:
-    return subprocess.run(
-        ["ffmpeg", "-hide_banner", "-nostats", "-y", *args], capture_output=True, text=True, check=True
-    ).stderr
+def one_section(inputs: Inputs, section: int) -> Segment:
+    """One section of a project's script, by its number."""
+    return next(segment for segment in inputs.spoken() if segment.index == section)
 
 
-def measure(inputs: list[str], filter_graph: str) -> float:
-    err = ffmpeg(
-        *inputs, "-filter_complex", f"{filter_graph}loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"
+def edited_section(film: Inputs, hero: Inputs) -> int:
+    """The one section whose words differ between the film and the cut, which is what the page edits."""
+    cut = {segment.index: segment.spoken for segment in hero.spoken()}
+    differ = [
+        segment.index
+        for segment in film.spoken()
+        if segment.index in cut and cut[segment.index] != segment.spoken and segment.index in _shared(film, hero)
+    ]
+    if len(differ) != 1:
+        sys.exit(f"the film and its hero cut differ in {len(differ)} spoken section(s), and the page shows one edit")
+    return differ[0]
+
+
+def _shared(film: Inputs, hero: Inputs) -> set[int]:
+    """Every section both projects declare with the same cue list length, which is a section the cut kept."""
+    counts = {block.number: len(block.cues) for block in hero.cues()}
+    return {block.number for block in film.cues() if counts.get(block.number) == len(block.cues)}
+
+
+# ---- the run ----------------------------------------------------------------------------------
+
+
+EVENT: TypeAdapter[Event] = TypeAdapter(Line)
+
+
+def read_events(path: Path) -> list[Event]:
+    """One run's lines, parsed into the events the library minted."""
+    return [EVENT.validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def build_runs(project: Project) -> list[tuple[Path, list[Event]]]:
+    """Every run under `build/events/` this version can read, newest first, whichever wrote them."""
+    runs = []
+    for path in sorted(project.inputs.workspace.events_dir.glob("*.jsonl"), key=lambda one: one.stat().st_mtime):
+        try:
+            runs.append((path, read_events(path)))
+        except ValueError:
+            continue
+    return list(reversed(runs))
+
+
+def the_rebuild(project: Project, wanted: str | None) -> tuple[str, list[Event]]:
+    """The run whose stage lines the page prints, which is a build that ran every stage.
+
+    The run the page was written from is named in `data.js`, and that one wins while its file is
+    still there, so a later run of this script prints the same lines and `--check` compares a page
+    against its own run rather than against whatever was built last.
+    """
+    runs = build_runs(project)
+    asked = wanted or carried()["edit"].get("run")
+    for path, events in runs:
+        if {event.stage for event in events if isinstance(event, StageDone)} != set(decktalk.Stage):
+            continue
+        if path.stem == asked:
+            return path.stem, events
+        if wanted is None:
+            return path.stem, events
+    sys.exit(f"no whole build is recorded under {project.inputs.relative(project.inputs.workspace.events_dir)}")
+
+
+def stage_lines(events: Sequence[Event]) -> list[str]:
+    """The lines a pipe saw that run print, rendered by the command line's own stage row."""
+    return [
+        Report(stage=event.stage, seconds=event.seconds, outcome=event.outcome).line().plain
+        for event in events
+        if isinstance(event, StageDone)
+    ]
+
+
+def lanes(events: Sequence[Event]) -> list[dict]:
+    """What each stage did with each section, which is the run's own account of what it redid."""
+    rows: dict[str, list[dict]] = {}
+    for event in events:
+        if isinstance(event, SectionDone):
+            rows.setdefault(event.stage.value, []).append({"n": event.section, "outcome": event.outcome.value})
+    return [{"stage": stage, "sections": sections} for stage, sections in rows.items()]
+
+
+# ---- the audio --------------------------------------------------------------------------------
+
+
+def normalize(inputs: Inputs, src: Path, dst: Path) -> None:
+    """One clip at the film's own loudness: a plain gain to the target, then the true-peak limiter.
+
+    It is the film's pass over an audio file rather than over a film, so the numbers are `[mix.loudness]`
+    and the limiter is the assemble stage's own, and a clip on the page sits where the film sits.
+    """
+    loudness = inputs.settings.mix.loudness
+    measured = audio.measure_loudness(
+        src, i=loudness.target_lufs, tp=loudness.true_peak_max_dbtp, lra=loudness.range_max_lu
     )
-    return float(re.search(r'"input_i"\s*:\s*"([-0-9.]+)"', err).group(1))
+    lift = loudness.target_lufs - measured.i
+    ceiling = gain(loudness.true_peak_max_dbtp - LIMITER_HEADROOM_DB)
+    rate = inputs.settings.video.sample_rate
+    ffmpeg.run(
+        "-i", str(src),
+        "-af",
+        f"volume={lift:.2f}dB,aresample={LIMITER_OVERSAMPLE_RATE},"
+        f"alimiter=limit={ceiling:.4f}:attack={LIMITER_ATTACK_MS}:release={LIMITER_RELEASE_MS}:level=false,"
+        f"aresample={rate}",
+        "-ac", "1", "-b:a", inputs.settings.narration.mp3_bitrate, str(dst),
+    )  # fmt: skip
 
 
-def section_gain(mp3: Path, clip: float, end: float) -> float:
-    """The gain, in dB, that brings this take's spoken span to -16 LUFS, so no level jump is audible at a cut."""
-    return -16.0 - measure(["-i", str(mp3)], f"[0]atrim=start={clip}:end={clip + end},asetpts=PTS-STARTPTS,")
-
-
-def loudnorm(filter_graph: str, inputs: list[str], target: Path) -> None:
-    """The film's own loudness pass: a plain gain to -16 LUFS, then a true-peak limiter at -1.5 dBTP,
-    oversampled, as decktalk.stages.assemble.loudness does it. The gain is corrected once for what
-    the limiter took, so the takes land within a fraction of a LU of the film. Then a mono mp3."""
-    target_lufs, true_peak_db, headroom_db = -16.0, -1.5, 0.3
-    ceiling = 10 ** ((true_peak_db - headroom_db) / 20)
-    gain = target_lufs - measure(inputs, filter_graph)
-    for _ in range(3):
-        chain = f"{filter_graph}volume={gain:.2f}dB,aresample=192000,alimiter=limit={ceiling:.4f}:attack=5:release=50:level=false,aresample=44100,"
-        got = measure(inputs, chain)
-        if abs(got - target_lufs) < 0.25:
-            break
-        gain += target_lufs - got
-    ffmpeg(*inputs, "-filter_complex", chain.rstrip(","), "-ac", "1", "-b:a", "96k", str(target))
-
-
-def envelope(mp3: Path, rate: int = 8000) -> list[int]:
-    """The clip's loudness, RMS in dB every ENVELOPE_STEP seconds, from its decoded samples, floored at silence."""
-    pcm = subprocess.run(
-        [FFMPEG, "-hide_banner", "-nostats", "-i", str(mp3), "-f", "f32le", "-ac", "1", "-ar", str(rate), "-"],
-        capture_output=True,
-        check=True,
-    ).stdout
+def envelope(mp3: Path) -> list[int]:
+    """The clip's loudness, RMS in dB every ENVELOPE_STEP seconds, from its own samples, floored at silence."""
+    pcm = ffmpeg.raw("-i", str(mp3), "-f", "f32le", "-ac", "1", "-ar", str(ENVELOPE_RATE), "-")
     samples = struct.unpack(f"<{len(pcm) // 4}f", pcm)
-    window = int(rate * ENVELOPE_STEP)
+    window = int(ENVELOPE_RATE * ENVELOPE_STEP)
     out = []
-    for i in range(0, len(samples), window):
-        chunk = samples[i : i + window]
-        rms = math.sqrt(sum(x * x for x in chunk) / len(chunk))
+    for at in range(0, len(samples), window):
+        chunk = samples[at : at + window]
+        rms = math.sqrt(sum(one * one for one in chunk) / len(chunk))
         out.append(max(ENVELOPE_FLOOR, round(20 * math.log10(rms))) if rms > 0 else ENVELOPE_FLOOR)
     return out
 
 
-HOME_PATH = re.compile(r"(/Users/|/home/|/root/|[A-Za-z]:\\Users\\|/private/tmp/|/tmp/)")
-
-
-def relative_paths(line: str, project: Path) -> str:
-    """The line with every path under the project written relative to it, as a reader's own build would print it."""
-    return line.replace(str(project) + "/", "")
-
-
-def parse_rebuild_log(path: Path, project: Path) -> dict:
-    """What the page prints from the captured build: the lines that show one section voiced, the cost, and the verify rows."""
-    text = path.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    keep = [
-        relative_paths(ln, project)
-        for ln in lines
-        if re.match(
-            r"\[1/5 narrate\] \[(skip|tts )\]|\[1/5 narrate\]        03|\[2/5 align\] Wrote|\[3/5 record\] \[rec \]|\[3/5 record\]        build|\[4/5 assemble\] \[(cat |loud)\]|\[4/5 assemble\] done:|\[5/5 verify\] done",
-            ln,
+def write_clips(hero: Project, film: Project, section: int) -> None:
+    """The three clips the page plays, cut and levelled the way the film cuts and levels them."""
+    inputs, takes = hero.inputs, _takes(hero)
+    MEDIA.mkdir(parents=True, exist_ok=True)
+    placements = [
+        audio.Placement(
+            inputs.workspace.takes_dir / take.file,
+            lead=take.lead_seconds,
+            play=take.sound_seconds,
+            tail=round(_cut(hero, take.section).seconds - take.lead_seconds - take.sound_seconds, 3),
         )
+        for take in takes.sections
     ]
-    leaked = [ln for ln in keep if HOME_PATH.search(ln)]
-    if leaked:
-        sys.exit(
-            "the build log still names a machine path, and the page shows only project-relative paths:\n  "
-            + "\n  ".join(leaked)
-        )
-    # The cost line's numbers. The page writes its own sentence from them, with the unit the CLI's line lacked.
-    m = re.search(
-        r"^voice 1 section(?:\(s\))?: (\d+) characters sent, (\d+) spoken.*?(\d+) cached\. About \$([\d.]+) at \$([\d.]+) per 1,000",
-        text,
-        re.M,
+    joined = MEDIA / "halfway-hero-joined.mp3"
+    audio.concat_audio(
+        placements,
+        joined,
+        bitrate=inputs.settings.narration.mp3_bitrate,
+        sample_rate=inputs.settings.video.sample_rate,
     )
-    if not m:
-        sys.exit("the build log has no cost line for one voiced section")
-    cost = {
-        "sent": int(m.group(1)),
-        "spoken": int(m.group(2)),
-        "cached": int(m.group(3)),
-        "usd": float(m.group(4)),
-        "rate": float(m.group(5)),
-    }
-    findings = re.search(r"^stages 5, seconds [\d.]+ \| (\d+) certain", text, re.M)
-    certain = int(findings.group(1)) if findings else 0
-    if certain:
-        print(
-            f"warning: this build's verify stage reported {certain} certain finding(s). Recapture the log from a clean build before the page ships.",
-            file=sys.stderr,
+    normalize(inputs, joined, MEDIA / "halfway-hero.mp3")
+    joined.unlink()
+    for name, project in (("before", hero), ("after", film)):
+        take = _take(project, section)
+        source = project.inputs.workspace.takes_dir / take.file
+        # Each take ends TAKE_TAIL seconds after its last sound, so the pair a visitor compares
+        # breathes alike, and each keeps its section's own lead so it opens the way the film opens.
+        one = MEDIA / f"halfway-take-{name}-cut.mp3"
+        audio.concat_audio(
+            [audio.Placement(source, lead=take.lead_seconds, play=take.sound_seconds, tail=TAKE_TAIL)],
+            one,
+            bitrate=project.inputs.settings.narration.mp3_bitrate,
+            sample_rate=project.inputs.settings.video.sample_rate,
         )
-    kept = re.search(r"^kept (\d+) unchanged section\(s\)", text, re.M).group(1)
-    return {"lines": keep, "cost": cost, "verify": verify_rows(text), "kept": int(kept), "findings": certain}
+        normalize(project.inputs, one, MEDIA / f"halfway-take-{name}.mp3")
+        one.unlink()
 
 
-def verify_rows(text: str) -> dict[str, int]:
-    """The verify table of a build log: each cue's offset in ms, positive when the picture came after its cue."""
+def write_poster_and_captions(film: Project, at: float) -> None:
+    """The film's card picture and its captions, copied here so the text track is same-origin."""
+    deliverables = film.inputs.workspace.deliverables()
+    shutil.copy(deliverables["vtt"], MEDIA / "halfway.vtt")
+    ffmpeg.run(
+        "-ss", f"{at}", "-i", str(deliverables["film"]), "-frames:v", "1",
+        "-vf", f"scale={POSTER_WIDTH}:-1", "-quality", str(POSTER_QUALITY), str(MEDIA / "halfway-poster.webp"),
+    )  # fmt: skip
+
+
+def clip_names() -> dict[str, str]:
+    """The name each clip is uploaded under, from its own bytes, so the page never plays another build's."""
     return {
-        m.group(1): int(m.group(2))
-        for m in re.finditer(r"^\d:(\S+)\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+([+-]\d+)ms\s+(\w+)", text, re.M)
+        name: f"decktalk-halfway-{stem}-{_digest(MEDIA / f'halfway-{stem}.mp3')}.mp3" for name, stem in CLIPS.items()
     }
 
 
-def hero_verify(path: Path, cues: list[str]) -> dict[str, int]:
-    """The hero cut's own measurement, from its clean build log: a row for every cue in the cut, and no finding."""
+def _digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+
+
+# ---- the page's own document -------------------------------------------------------------------
+
+
+def _takes(project: Project) -> Takes:
+    index = project.inputs.takes()
+    if index is None:
+        sys.exit(f"{project.root} has no take index, so nothing says what it says. Build it first.")
+    return index
+
+
+def _cuts(project: Project) -> Cuts:
+    cuts = project.inputs.cuts()
+    if cuts is None:
+        sys.exit(f"{project.root} has no cut list, so nothing says how long it runs. Build it first.")
+    return cuts
+
+
+def _take(project: Project, section: int) -> Take:
+    """One section's row of the take index, which is what it says and what saying it cost."""
+    take = _takes(project).of(section)
+    if take is None:
+        sys.exit(f"{project.root} has no take for section {section}, so nothing says what it says.")
+    return take
+
+
+def _cut(project: Project, section: int) -> Cut:
+    """One section's row of the cut list, which is where it plays in the film."""
+    cut = _cuts(project).of(section)
+    if cut is None:
+        sys.exit(f"{project.root} does not play section {section}, so the page has no place for it.")
+    return cut
+
+
+def sections_of(hero: Project) -> list[dict]:
+    """One row per section of the cut: its words with their times, its band lines and its cues."""
+    inputs, times = hero.inputs, hero.inputs.cue_times()
+    if times is None:
+        sys.exit(f"{hero.root} has no resolved cues, so the page has no second for any of them.")
+    describes = read_deck(_deck(inputs)).describes
+    chapters = inputs.chapters()
+    rows, first = [], 0
+    for segment in inputs.spoken():
+        number = segment.index
+        take, cut = _take(hero, number), _cut(hero, number)
+        words = inputs.words(number, take.hash)
+        spoken = spoken_words(segment)
+        if len(words) != len(spoken):
+            sys.exit(f"section {number} says {len(spoken)} words and its take timed {len(words)}")
+        md = written(segment)
+        rows.append(
+            {
+                "n": number,
+                "chapter": chapters[number],
+                "md": md,
+                "hash": take.hash,
+                "start": round(cut.start, 2),
+                "end": round(cut.end, 2),
+                "first": first,
+                "words": [
+                    [word, round(cut.start + timed.start, 3), round(cut.start + timed.end, 3)]
+                    for word, timed in zip(spoken, words, strict=True)
+                ],
+                "lines": band_lines(md, first),
+                "cues": cues_of(inputs, times, describes, number, words, first, cut.start),
+            }
+        )
+        first += len(spoken)
+    return rows
+
+
+def cues_of(
+    inputs: Inputs,
+    times: CueTimes,
+    describes: dict[str, list[str]],
+    section: int,
+    words: Sequence[Word],
+    first: int,
+    start: float,
+) -> list[dict]:
+    """One section's cues: where each lands in the film, which words it is written against, and what it shows."""
+    block = next((block for block in inputs.cues() if block.number == section), None)
+    rows = []
+    for cue in block.cues if block else ():
+        at = times.at(section, cue.cue)
+        index = find_phrase(words, cue.on, cue.occurrence, cue.case_sensitive)
+        if at is None or index is None:
+            sys.exit(f"{cue.cue} is not resolved against its words, so the page has no second for it")
+        rows.append(
+            {
+                "cue": cue.cue,
+                "on": cue.on,
+                "at": round(start + at, 2),
+                "first": first + index,
+                "n": len(cue.on.split()),
+                "describe": ". ".join(describes.get(cue.cue, [])),
+            }
+        )
+    return rows
+
+
+def _deck(inputs: Inputs) -> Path:
+    """The one page every section of this project plays, which is the deck the hero replays."""
+    return inputs.path(inputs.document.page_files[0])
+
+
+def offsets(result: VerifyResult) -> dict[str, int]:
+    """Every cue's landing in milliseconds, positive when the picture came after its word.
+
+    The page prints these as a measurement of a film that landed, so a film this stage is certain
+    about stops the run instead. An uncertain judgement is a reading for the author to weigh and
+    never a claim the page makes.
+    """
+    certain = [finding.code.value for finding in result.findings if finding.certainty is Certainty.CERTAIN]
+    if certain:
+        sys.exit(f"{result.film.as_posix()} is judged {', '.join(certain)}, and the page shows a clean measurement")
+    return {row.cue: round(row.offset * 1000) for row in result.cues if row.offset is not None}
+
+
+def beat_of(rows: Sequence[dict]) -> float:
+    """How long one word of this film lasts on average, which is what the page paces its glyphs at."""
+    starts = [word[1] for row in rows for word in row["words"]]
+    gaps = [later - earlier for earlier, later in zip(starts, starts[1:], strict=False)]
+    return round(sum(gaps) / len(gaps), 3)
+
+
+def take_words(project: Project, section: int) -> list[list[str | float]]:
+    """One take's own words, in take seconds, which is the clock the two clips of the edit play on."""
+    take = _take(project, section)
+    found = Words.read(project.inputs.workspace.takes_dir / words_file(take.hash))
+    if found is None:
+        sys.exit(f"the take of section {section} has no words file, so nothing says when it says them.")
+    return [[word.word, word.start, word.end] for word in found.words]
+
+
+def carried() -> dict[str, Any]:
+    """The committed page data, which a run that did not re-cut the clips carries parts of over."""
+    text = DATA.read_text(encoding="utf-8")
+    return json.loads(text[text.index("{") : text.rindex(";")])
+
+
+def hold_the_layout(rows: Sequence[dict], total: float) -> None:
+    """Refuse to carry the committed clips over a film whose sections have moved.
+
+    The clips are named by their own bytes and are not in git, so a name this run did not change is a
+    promise that the file on the CDN is still this film's. That promise is only true while every
+    section still starts and ends where it did when the clip was cut.
+    """
+    was = carried()["sections"]
+    now = [{"n": row["n"], "start": row["start"], "end": row["end"]} for row in rows]
+    same = [{"n": row["n"], "start": row["start"], "end": row["end"]} for row in was]
+    if now != same or round(total, 2) != carried()["total"]:
+        sys.exit(
+            "the film lays its sections out differently from the clips the page streams, so the clips "
+            "no longer fit it. Run this again with --media and upload the three names it prints."
+        )
+
+
+def document(film: Project, hero: Project, run: str | None, *, media: bool) -> dict:
+    """Everything the page reads, which is this film measured rather than anything written by hand."""
+    rows = sections_of(hero)
+    total = _cuts(hero).total_seconds
+    section = edited_section(film.inputs, hero.inputs)
+    take = _take(film, section)
+    price = film.inputs.settings.voice.price_per_1000_characters
+    run_id, events = the_rebuild(film, run)
+    measured = film.verify()
+    if media:
+        write_clips(hero, film, section)
+        write_poster_and_captions(film, _poster_at(rows))
+        clips = clip_names()
+        envelopes = {name: envelope(MEDIA / f"halfway-{stem}.mp3") for name, stem in CLIPS.items()}
+    else:
+        hold_the_layout(rows, total)
+        before = carried()
+        clips = before["media"]
+        envelopes = {name: before["envelope"][name] for name in CLIPS}
+    return {
+        "fps": _cuts(hero).fps,
+        "lead": hero.inputs.lead_seconds(rows[0]["n"]),
+        "tail": hero.inputs.tail_seconds(rows[0]["n"]),
+        "beat": beat_of(rows),
+        "total": round(total, 2),
+        "sections": rows,
+        "edit": {
+            "section": section,
+            "before": {
+                "hash": _take(hero, section).hash,
+                "md": written(one_section(hero.inputs, section)),
+                "words": take_words(hero, section),
+            },
+            "after": {
+                "hash": take.hash,
+                "md": written(one_section(film.inputs, section)),
+                "words": take_words(film, section),
+            },
+            "diff": edit_diff(hero.inputs, film.inputs, section),
+            "kept": len(_takes(film).sections) - 1,
+            "cost": {
+                "characters": take.characters,
+                "cached": len(_takes(film).sections) - 1,
+                "usd": round(take.characters / 1000 * price, 2),
+                "rate": price,
+            },
+            "run": run_id,
+            "log": stage_lines(events),
+            "lanes": lanes(events),
+            "film_seconds": round(measured.film_seconds, 2),
+            "verify": offsets(measured),
+        },
+        "verify": offsets(hero.verify()),
+        "media": clips,
+        "envelope": {"step": ENVELOPE_STEP, "floor": ENVELOPE_FLOOR, **envelopes},
+    }
+
+
+def _poster_at(rows: Sequence[dict]) -> float:
+    """The second of the film the card's picture is taken at, which is just after its cue has landed."""
+    return next(cue["at"] for row in rows for cue in row["cues"] if cue["cue"] == POSTER_CUE) + POSTER_AFTER_SECONDS
+
+
+def stage_document(hero: Project) -> dict:
+    """The deck as the hero replays it, which is enough of the page for the stage to draw itself."""
+    deck = read_deck(_deck(hero.inputs))
+    return {
+        "css": deck.css,
+        "scenes": deck.scenes,
+        "slides": deck.slides,
+        "entrances": entrances(),
+        "unwritten": unwritten(),
+    }
+
+
+# ---- the two files ------------------------------------------------------------------------------
+
+
+def render(name: str, what: str, payload: dict) -> str:
+    """One generated module: one line of provenance and one global."""
+    body = json.dumps(payload, separators=(",", ":"))
+    return (
+        f"/* Generated by scripts/{Path(__file__).name} from the Halfway build. {what} Do not edit. */\n"
+        f"window.{name} = {body};\n"
+    )
+
+
+def refuse_machine_paths(files: Iterable[tuple[Path, str]]) -> None:
+    """Nothing the page shows may name a machine path, which `tests/contract/test_site.py` also holds."""
+    for path, text in files:
+        found = MACHINE_PATH.search(text)
+        if found:
+            sys.exit(
+                f"{path.relative_to(ROOT)} would name a machine path ({found.group(0)}), which the page never shows"
+            )
+
+
+def committed(path: Path, name: str, what: str) -> str:
+    """One committed file re-rendered from its own content, which is the shape this script writes.
+
+    A machine without the film cannot compare the page against the film, and a check that always
+    fails for want of a file nobody has is a check somebody deletes. This one is still real: it holds
+    both files to the shape and the header the generator writes, which is what a hand edit breaks.
+    """
     text = path.read_text(encoding="utf-8")
-    rows = verify_rows(text)
-    missing = [c for c in cues if c not in rows]
-    if missing:
-        sys.exit(f"the hero build log has no verify row for {', '.join(missing)}")
-    findings = re.search(r"^stages 5, seconds [\d.]+ \| (\d+) certain", text, re.M)
-    if findings and int(findings.group(1)):
-        sys.exit("the hero build log reports a certain finding, and the page shows only a clean measurement")
-    return {c: rows[c] for c in cues}
+    return render(name, what, json.loads(text[text.index("{") : text.rindex(";")]))
+
+
+def check_the_shape() -> int:
+    """Hold the two committed files to the shape this script writes, having nothing to measure them against."""
+    stale = [path for path, name, what in FILES if path.read_text(encoding="utf-8") != committed(path, name, what)]
+    for path in stale:
+        print(STALE.format(path=path.relative_to(ROOT), script=Path(__file__).name))
+    return 1 if stale else 0
+
+
+FILES = (
+    (DATA, "HALFWAY", "Times are film seconds."),
+    (STAGE, "HALFWAY_STAGE", "The hero replays these scenes."),
+)
+"""Each generated file, against the global it declares and the sentence its header carries."""
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--project", type=Path, required=True, help="the hero cut's DeckTalk project")
-    ap.add_argument("--hero-log", type=Path, required=True, help="the captured log of the hero cut's own clean build")
-    ap.add_argument("--takes", type=Path, required=True, help="the narration directory with the voiced takes")
-    ap.add_argument("--film", type=Path, required=True, help="the full film's project, for its captions and poster")
-    ap.add_argument("--rebuild-log", type=Path, required=True, help="the captured log of the build after the edit")
-    args = ap.parse_args()
-    project, takes = args.project.resolve(), args.takes.resolve()
-    toml = tomllib.loads((project / "decktalk.toml").read_text(encoding="utf-8"))
-    lead, tail = toml["narration"]["lead_seconds"], toml["narration"]["min_tail_seconds"]
-    holds = {s["number"]: s.get("hold_seconds", 0.0) for s in toml["section"]}
-    price = toml["voice"]["price_per_1000_characters"]
-    cues_json = json.loads((project / "cues.json").read_text(encoding="utf-8"))["sections"]
-    css, scenes, describes = read_deck(project / "deck" / "index.html")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write site/data.js and site/stage.js")
+    action.add_argument("--check", action="store_true", help="exit 1 if either committed file would change")
+    parser.add_argument("--project", type=Path, default=DEFAULT_PROJECT, help=f"the film (default {DEFAULT_PROJECT})")
+    parser.add_argument("--run", help="the build whose stage lines the page prints (default the run data.js names)")
+    parser.add_argument("--media", action="store_true", help="also re-cut the clips, the poster and the captions")
+    args = parser.parse_args()
 
-    # The build's own cut list, when the project was built with voice, so the page's timeline is the film's.
-    cuts_path, cue_times_path = project / "build" / "out" / "cuts.json", project / "build" / "cue-times.json"
-    cuts = (
-        {c["section"]: c for c in json.loads(cuts_path.read_text(encoding="utf-8"))["sections"]}
-        if cuts_path.exists()
-        else {}
-    )
-    cue_times = (
-        json.loads(cue_times_path.read_text(encoding="utf-8")) if cue_times_path.exists() else {"estimated": True}
-    )
-    built = (
-        {} if cue_times["estimated"] else {c["cue"]: c["at"] for rows in cue_times["sections"].values() for c in rows}
-    )
+    if not (args.project / "decktalk.toml").exists():
+        if args.write:
+            sys.exit(f"there is no film at {args.project}. Name it with --project DIR.")
+        print(f"the film is not at {args.project}, so both files were held to their own shape alone.")
+        return check_the_shape()
 
-    sections, audio_inputs, audio_filters, t = [], [], [], 0.0
-    word_index = 0
-    for s in read_script(project / "script.md"):
-        words = script_words(s["md"])
-        mp3, take_words, first = find_take(takes, words)
-        clip = take_words[first]["start"]
-        end = sound_end(mp3, clip)
-        if s["n"] in cuts:
-            t, length = cuts[s["n"]]["start"], round(cuts[s["n"]]["end"] - cuts[s["n"]]["start"], 3)
-        else:
-            length = frames(lead + end + tail) + holds.get(s["n"], 0.0)
-        wl = [
-            [w, round(t + lead + tw["start"] - clip, 3), round(t + lead + tw["end"] - clip, 3)]
-            for w, tw in zip(words, take_words[first:], strict=True)
-        ]
-        cues = []
-        for c in cues_json[str(s["n"])]["cues"]:
-            phrase = [norm(w) for w in c["on"].split()]
-            keys = [norm(w) for w in words]
-            k = next(i for i in range(len(keys)) if keys[i : i + len(phrase)] == phrase)
-            cues.append(
-                {
-                    "cue": c["cue"],
-                    "on": c["on"],
-                    "at": round(t + built[c["cue"]], 2) if c["cue"] in built else round(wl[k][1], 2),
-                    "first": word_index + k,
-                    "n": len(phrase),
-                    "describe": ". ".join(describes.get(c["cue"], [])),
-                }
-            )
-        sections.append(
-            {
-                "n": s["n"],
-                "chapter": s["chapter"],
-                "md": s["md"],
-                "hash": mp3.stem,
-                "start": round(t, 2),
-                "end": round(t + length, 2),
-                "first": word_index,
-                "words": wl,
-                "lines": band_lines(s["md"], word_index),
-                "cues": cues,
-            }
-        )
-        i = len(audio_inputs) // 2
-        audio_inputs += ["-i", str(mp3)]
-        # The take is cut where its sound ends, so nothing of it bleeds into the silence before the next cut,
-        # and each section is brought to the film's loudness on its own before the takes are laid end to end.
-        audio_filters.append(
-            f"[{i}]atrim=start={clip}:end={clip + end},asetpts=PTS-STARTPTS,volume={section_gain(mp3, clip, end):.2f}dB,"
-            f"adelay={int(lead * 1000)}|{int(lead * 1000)},apad=whole_dur={length}[a{i}];"
-        )
-        word_index += len(words)
-        t += length
-
-    all_words = [w for s in sections for w in s["words"]]
-    gaps = [b[1] - a[1] for a, b in zip(all_words, all_words[1:], strict=False)]
-    beat = round(sum(gaps) / len(gaps), 3)
-
-    # The edit: section 3 before and after, from the two takes that say it.
-    edited = 3
-    before_md = next(s["md"] for s in sections if s["n"] == edited)
-    film_script = next(s for s in read_script(args.film / "script.md") if s["n"] == edited)
-    before_mp3, before_words, _ = find_take(takes, script_words(before_md))
-    after_mp3, after_words, _ = find_take(takes, script_words(film_script["md"]))
-    log = parse_rebuild_log(args.rebuild_log, args.film.resolve())
-    verify = hero_verify(args.hero_log, [c["cue"] for s in sections for c in s["cues"]])
-
-    MEDIA.mkdir(parents=True, exist_ok=True)
-    loudnorm(
-        "".join(audio_filters)
-        + "".join(f"[a{i}]" for i in range(len(sections)))
-        + f"concat=n={len(sections)}:v=0:a=1,",
-        audio_inputs,
-        MEDIA / "halfway-hero.mp3",
-    )
-    for name, mp3 in (("before", before_mp3), ("after", after_mp3)):
-        # Each take ends TAKE_TAIL seconds after its last sound, so the pair a visitor compares breathes alike.
-        end = sound_end(mp3, 0) + TAKE_TAIL
-        loudnorm(
-            f"[0]atrim=end={end:.3f},apad=whole_dur={end:.3f},adelay={int(lead * 1000)}|{int(lead * 1000)},",
-            ["-i", str(mp3)],
-            MEDIA / f"halfway-take-{name}.mp3",
-        )
-    # The name each clip is uploaded under, from its own bytes, so the page never plays a clip that is not this build's.
-    media = {
-        name: f"decktalk-halfway-{stem}-{hashlib.sha256((MEDIA / f'halfway-{stem}.mp3').read_bytes()).hexdigest()[:12]}.mp3"
-        for name, stem in (("hero", "hero"), ("before", "take-before"), ("after", "take-after"))
-    }
-    shutil.copy(args.film / "build" / "out" / "halfway.vtt", MEDIA / "halfway.vtt")
-    poster_at = next(c["at"] for s in sections for c in s["cues"] if c["cue"] == "1.1forty") + 0.6
-    from PIL import Image
-
-    frame = MEDIA / "halfway-poster.png"
-    ffmpeg(
-        "-ss",
-        f"{poster_at}",
-        "-i",
-        str(args.film / "build" / "out" / "halfway.mp4"),
-        "-frames:v",
-        "1",
-        "-vf",
-        "scale=960:-1",
-        str(frame),
-    )
-    Image.open(frame).save(MEDIA / "halfway-poster.webp", quality=82, method=6)
-    frame.unlink()
-
-    data = {
-        "fps": FPS,
-        "lead": lead,
-        "beat": beat,
-        "total": round(t, 2),
-        "sections": sections,
-        "edit": {
-            "section": edited,
-            "before": {
-                "hash": before_mp3.stem,
-                "md": before_md,
-                "words": [[w["word"], w["start"], w["end"]] for w in before_words],
-            },
-            "after": {
-                "hash": after_mp3.stem,
-                "md": film_script["md"],
-                "words": [[w["word"], w["start"], w["end"]] for w in after_words],
-            },
-            "diff": edit_diff(project, args.film.resolve(), edited, (before_md, film_script["md"])),
-            "price": price,
-            "kept": log["kept"],
-            "cost": log["cost"],
-            "log": log["lines"],
-            "verify": log["verify"],
-        },
-        "verify": verify,
-        "media": media,
-        "envelope": {
-            "step": ENVELOPE_STEP,
-            "floor": ENVELOPE_FLOOR,
-            "hero": envelope(MEDIA / "halfway-hero.mp3"),
-            "before": envelope(MEDIA / "halfway-take-before.mp3"),
-            "after": envelope(MEDIA / "halfway-take-after.mp3"),
-        },
-    }
-    data_js = (
-        "/* Generated by scripts/build_homepage_data.py from the Halfway build. Times are film seconds. Do not edit. */\n"
-        f"window.HALFWAY = {json.dumps(data, separators=(',', ':'))};\n"
-    )
-    stage_js = (
-        "/* Generated by scripts/build_homepage_data.py from the Halfway deck. The hero replays these scenes. Do not edit. */\n"
-        f"window.HALFWAY_STAGE = {json.dumps({'css': css, 'scenes': scenes}, separators=(',', ':'))};\n"
-    )
-    # Nothing the page shows may name a machine path. tests/test_site.py checks the committed files the same way.
-    for name, text in (("data.js", data_js), ("stage.js", stage_js)):
-        if m := HOME_PATH.search(text):
-            sys.exit(f"site/{name} would name a machine path ({m.group(0)}...), which the page must never show")
-    (SITE / "data.js").write_text(data_js, encoding="utf-8")
-    (SITE / "stage.js").write_text(stage_js, encoding="utf-8")
-    print(
-        f"wrote site/data.js ({len(all_words)} words, {sum(len(s['cues']) for s in sections)} cues, {t:.2f} s, beat {beat} s), site/stage.js, site/media/"
-    )
-    print("upload to media.decktalk.ai, each under the name the page now asks for:")
-    for name, stem in (("hero", "hero"), ("before", "take-before"), ("after", "take-after")):
-        print(f"  site/media/halfway-{stem}.mp3  ->  {media[name]}")
+    film = decktalk.open(args.project)
+    hero = decktalk.open(args.project / HERO)
+    with ffmpeg.using_tools(film.inputs.settings.tools):
+        payload = document(film, hero, args.run, media=args.media)
+    written_now = {DATA: payload, STAGE: stage_document(hero)}
+    files = [(path, render(name, what, written_now[path])) for path, name, what in FILES]
+    refuse_machine_paths(files)
+    if args.check:
+        stale = [path for path, text in files if not path.exists() or path.read_text(encoding="utf-8") != text]
+        for path in stale:
+            print(STALE.format(path=path.relative_to(ROOT), script=Path(__file__).name))
+        return 1 if stale else 0
+    for path, text in files:
+        path.write_text(text, encoding="utf-8")
+    words = sum(len(row["words"]) for row in payload["sections"])
+    cues = sum(len(row["cues"]) for row in payload["sections"])
+    print(f"wrote site/data.js ({words} words, {cues} cues, {payload['total']:.2f} s, beat {payload['beat']} s)")
+    print("wrote site/stage.js")
+    if args.media:
+        print("upload to media.decktalk.ai, each under the name the page now asks for:")
+        for name, stem in CLIPS.items():
+            print(f"  site/media/halfway-{stem}.mp3  ->  {payload['media'][name]}")
     return 0
 
 

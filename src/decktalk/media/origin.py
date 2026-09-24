@@ -7,11 +7,13 @@ request routing answers every request under that origin from the project directo
 and no port is chosen, `*.localhost` is a secure context in Chromium, and a relative URL in a page
 resolves the way the author wrote it.
 
-One rule decides what may leave the project directory, and `served_file` is that rule, which both
-halves of this module call: a request is answered only from the file it resolves to, under the
-project root, whose path holds no name beginning with a dot. That keeps `.env`, which holds the
-speech key, out of reach of a page the recorder drives and out of reach of anyone who can see the
-author's preview server.
+One rule decides what may leave the project directory, and `Allowed` is that rule, which both halves
+of this module apply. A request is answered only when the names it asks for are the ones a project
+declared or sit under a directory it declared, and only when the file those names open is inside the
+project and carries no name that begins with a dot. Everything else in a project is refused, which
+is the change this release makes: the script, the cues, the build directory and the `.env` holding
+the speech key are beside the deck and are not part of it, and a page that could fetch them could
+put them on screen or send them to whoever it liked.
 
 The router also keeps the project-relative path of every file it served, which is what lets `record`
 key a section on the assets its page actually loaded rather than on the page file alone.
@@ -23,21 +25,25 @@ server, so this module also runs one from the standard library, bound to 127.0.0
 from __future__ import annotations
 
 import errno
+import io
 import ipaddress
 import logging
 import mimetypes
 import os
 import socket
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from http import HTTPStatus
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import BinaryIO
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
+from playwright.sync_api import BrowserContext, Page, Request, Route
+
 from ..errors import ToolError
+from ..page import Q
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +54,9 @@ INDEX = "index.html"
 OUTSIDE = "that path is outside the project directory"
 HIDDEN = "a name beginning with a dot is never served"
 UNUSABLE = "that path is not a usable file name"
+UNDECLARED = "that path is not in the deck directory and the project declares no such asset"
+TEXT = "text/plain; charset=utf-8"
+"""What a refusal is answered as, because a page that asked for a file is given a sentence instead."""
 # A type the standard table gets wrong or does not know, and which a deck loads often enough to matter.
 EXTRA_TYPES = {
     ".js": "text/javascript; charset=utf-8",
@@ -72,20 +81,44 @@ def content_type(path: Path) -> str:
     return guessed or "application/octet-stream"
 
 
-def page_url(page: str | Path, query: Mapping[str, str] | None = None) -> str:
+def page_url(page: str | Path, query: Mapping[Q, str] | None = None) -> str:
     """The origin URL of a project-relative page, with its query string.
 
     The path is the page as `decktalk.toml` spells it, so `deck/index.html` is served at
-    `http://project.localhost/deck/index.html` and every relative URL inside it still resolves.
+    `http://project.localhost/deck/index.html` and every relative URL inside it still resolves. The
+    keys are the contract's own query vocabulary, so a key a page does not read cannot be written
+    here, which is what the six hand-spelled query strings became.
     """
     rel = Path(page).as_posix().lstrip("/")
     url = f"{ORIGIN}/{quote(rel)}"
-    return f"{url}?{urlencode(query)}" if query else url
+    if not query:
+        return url
+    return f"{url}?{urlencode({key.value: value for key, value in query.items()})}"
 
 
 def path_names(rel: str) -> list[str]:
     """Every name in a request path, with the empty ones dropped."""
     return [part for part in rel.split("/") if part]
+
+
+def project_path(rel: str) -> str | None:
+    """A request path folded to the names it opens under the project, or None when it climbs out.
+
+    The folding is over the names alone, because whether two spellings are one file is what a
+    filesystem answers and what this rule may never ask it. `.` says to stay and `..` says to go
+    back, so a path that goes back further than the project is not a path under it at all.
+    """
+    names: list[str] = []
+    for name in path_names(rel):
+        if name == ".":
+            continue
+        if name == "..":
+            if not names:
+                return None
+            names.pop()
+            continue
+        names.append(name)
+    return "/".join(names)
 
 
 def hidden_name(parts: list[str]) -> bool:
@@ -114,32 +147,90 @@ class Target:
         return self.path is not None or bool(self.refused)
 
 
-def served_file(root: Path, rel: str) -> Target:
-    """The file a project-relative request path is answered from, or the reason it is refused.
+@dataclass(frozen=True)
+class Allowed:
+    """What one project's origin may answer with, which is the deck directory and its declared assets.
 
-    The tests are applied to the file that is opened rather than to the name that was asked for, so
-    the path is resolved and a directory's `index.html` is appended before they run.
+    A project is a directory of things a person wrote, and only some of them are the page. Serving
+    the rest gave a deck, and anyone who could reach an author's preview server, the script, the
+    cues, everything under `build/` and every key in `.env`.
     """
-    try:
+
+    root: Path  # the project directory, which every served path is named relative to
+    served: tuple[str, ...]  # each declared directory or file, as the project spells it under the root
+
+    @classmethod
+    def of(cls, root: Path, declared: Iterable[Path | str]) -> Allowed:
+        """The rule for one project: its root, and the name of each directory or file it declares.
+
+        A declaration is kept as the name it was written with rather than as the file that name
+        opens, because a request is compared against the declaration and a filesystem that folds two
+        spellings into one file would otherwise widen the rule to a spelling nobody wrote down.
+
+        A declared path outside the project is dropped rather than refused at request time, because a
+        rule that names a place the project does not own is a mistake in the project file and this
+        module answers requests rather than reporting on `decktalk.toml`.
+        """
         base = root.resolve()
-        target = (base / rel).resolve() if rel else base
-        target = (target / INDEX).resolve() if target.is_dir() else target
-        contained = target.is_relative_to(base)
-    except (OSError, ValueError):
-        return Target(refused=UNUSABLE)
-    if not contained:
-        return Target(refused=OUTSIDE)
-    if hidden_name(path_names(rel)) or hidden_name(list(target.relative_to(base).parts)):
-        return Target(refused=HIDDEN)
-    return Target(path=target)
+        inside: list[str] = []
+        for path in declared:
+            spelled = Path(path)
+            candidate = (base / spelled).resolve()
+            if not candidate.is_relative_to(base):
+                continue
+            # A declaration made as an absolute path is named from the root, which is the only way
+            # to say where it sits under the project. A relative one already says it.
+            named = candidate.relative_to(base).as_posix() if spelled.is_absolute() else spelled.as_posix()
+            place = project_path(named)
+            if place is not None:
+                inside.append(place)
+        return cls(root=base, served=tuple(dict.fromkeys(inside)))
+
+    def declares(self, asked: str) -> bool:
+        """Whether a request names a declared file, or a name under a declared directory.
+
+        The comparison is over the names rather than over the files they open, because a declaration
+        names a spelling and only the filesystem knows whether two spellings open one file. A
+        declared directory is a place, so every name under it is declared with it, and a project that
+        declares its own root declares everything in it.
+        """
+        return any(not place or asked == place or asked.startswith(f"{place}/") for place in self.served)
+
+    def target(self, rel: str) -> Target:
+        """The file a project-relative request path is answered from, or the reason it is refused.
+
+        The declaration is answered over the names the request asks for, so a spelling nobody
+        declared is refused on a folding filesystem exactly as it is on a case-sensitive one. The
+        other three refusals are about the file that is opened rather than about the name that was
+        asked for, so the path is resolved and a directory's `index.html` is appended before they run.
+        """
+        asked = project_path(rel)
+        if asked is None:
+            return Target(refused=OUTSIDE)
+        try:
+            named = (self.root / asked).resolve() if asked else self.root
+            directory = named.is_dir()
+            opened = (named / INDEX).resolve() if directory else named
+            contained = opened.is_relative_to(self.root)
+        except (OSError, ValueError):
+            return Target(refused=UNUSABLE)
+        if not contained:
+            return Target(refused=OUTSIDE)
+        if hidden_name(path_names(rel)) or hidden_name(list(opened.relative_to(self.root).parts)):
+            return Target(refused=HIDDEN)
+        # A directory is served as its index, so the name the declaration is asked about is the name
+        # the request really opens.
+        if not self.declares(f"{asked}/{INDEX}".lstrip("/") if directory else asked):
+            return Target(refused=UNDECLARED)
+        return Target(path=opened)
 
 
-def local_target(root: Path, url: str) -> Target:
+def local_target(allowed: Allowed, url: str) -> Target:
     """The file an origin URL names, the reason it is refused, or neither when it names another host."""
     parts = urlsplit(url)
     if f"{parts.scheme}://{parts.netloc}" != ORIGIN:
         return Target()
-    return served_file(root, unquote(parts.path).lstrip("/"))
+    return allowed.target(unquote(parts.path).lstrip("/"))
 
 
 @dataclass
@@ -152,6 +243,9 @@ class Assets:
     # Every other origin the page reached for, as scheme and host, in the order first asked for. A
     # recording that depends on one depends on a host the project does not own.
     external: list[str] = field(default_factory=list)
+    # Every path the origin refused, with the reason, so a page that reached for the script or for
+    # `.env` is a fact the recording carries rather than a 403 only the page ever saw.
+    refused: list[str] = field(default_factory=list)
 
     def reached(self, url: str) -> None:
         """Note an origin that is not this project's, which `record` reports as a CDN asset."""
@@ -168,36 +262,55 @@ class Assets:
         if rel not in where:
             where.append(rel)
 
+    def turned_away(self, url: str, why: str) -> None:
+        """Note a request this origin would not answer, as the path it asked for and the reason."""
+        asked = f"{unquote(urlsplit(url).path).lstrip('/')} ({why})"
+        if asked not in self.refused:
+            self.refused.append(asked)
 
-def route_pages(target: Any, root: Path) -> Assets:
-    """Answer every request under the origin from `root`, and return the record of what was served.
+
+def route_pages(
+    target: Page | BrowserContext, allowed: Allowed, documents: Mapping[str, bytes] | None = None
+) -> Assets:
+    """Answer every request under the origin from what `allowed` names, and return what was served.
 
     `target` is a Playwright page or browser context. A request to any other origin is left alone, so
     a page that reaches for a CDN still does what it would do in a browser and `record` can report it.
     Every route is answered, because a route left unanswered hangs the page that made it.
-    """
-    assets = Assets(root=root)
 
-    def handler(route: Any, request: Any) -> None:
+    `documents` are the paths a caller answers itself, such as the cue times a run resolved, which no
+    file on disk holds. They are answered from memory as JSON and never recorded as assets, because a
+    recording keyed on them would be keyed on its own output.
+    """
+    assets = Assets(root=allowed.root)
+    answered = dict(documents or {})
+
+    def handler(route: Route, request: Request) -> None:
         try:
-            wanted = local_target(root, request.url)
+            asked = unquote(urlsplit(request.url).path)
+            if asked in answered and urlsplit(request.url).netloc == urlsplit(ORIGIN).netloc:
+                route.fulfill(status=HTTPStatus.OK, content_type=EXTRA_TYPES[".json"], body=answered[asked])
+                return
+            wanted = local_target(allowed, request.url)
             if not wanted.mine:
                 assets.reached(request.url)
                 route.continue_()
                 return
             if wanted.refused or wanted.path is None:
-                route.fulfill(status=403, content_type="text/plain; charset=utf-8", body=wanted.refused)
+                assets.turned_away(request.url, wanted.refused or OUTSIDE)
+                route.fulfill(status=HTTPStatus.FORBIDDEN, content_type=TEXT, body=wanted.refused)
                 return
             if not wanted.path.is_file():
                 assets.record(wanted.path, found=False)
                 body = f"no such file: {wanted.path.name}"
-                route.fulfill(status=404, content_type="text/plain; charset=utf-8", body=body)
+                route.fulfill(status=HTTPStatus.NOT_FOUND, content_type=TEXT, body=body)
                 return
             assets.record(wanted.path, found=True)
-            route.fulfill(status=200, content_type=content_type(wanted.path), body=wanted.path.read_bytes())
-        except Exception as exc:  # the page must learn that its request failed rather than wait for it
+            route.fulfill(status=HTTPStatus.OK, content_type=content_type(wanted.path), body=wanted.path.read_bytes())
+        except Exception as exc:  # noqa: BLE001  (the page must learn its request failed rather than wait for it)
             log.warning("could not answer %s (%s)", request.url, exc)
-            route.fulfill(status=500, content_type="text/plain; charset=utf-8", body="the origin could not answer")
+            broke = HTTPStatus.INTERNAL_SERVER_ERROR
+            route.fulfill(status=broke, content_type=TEXT, body="the origin could not answer")
 
     target.route("**/*", handler)
     return assets
@@ -207,48 +320,78 @@ def route_pages(target: Any, root: Path) -> Assets:
 
 
 class _Handler(SimpleHTTPRequestHandler):
-    """A quiet file server for the project, under the same rule the router applies, and never cached."""
+    """A quiet file server for the project, under the same rule the router applies, and never cached.
 
-    # The base class opens a directory's index itself, so it may open only the name `served_file`
+    The rule is bound to the handler rather than read from anywhere, because the base class builds
+    one handler per request and a handler with no rule would answer from the whole directory.
+    """
+
+    # The base class opens a directory's index itself, so it may open only the name the rule
     # approved. Its own default also tries `index.htm`, which would answer from a file the one rule
     # never saw.
     index_pages = (INDEX,)
+
+    def __init__(
+        self,
+        allowed: Allowed,
+        documents: Mapping[str, bytes],
+        request: socket.socket,
+        client_address: tuple[str, int],
+        server: HTTPServer,
+    ) -> None:
+        self.allowed = allowed
+        self.documents = documents
+        super().__init__(request, client_address, server, directory=str(allowed.root))
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
-    def log_message(self, format: str, *args: Any) -> None:
+    def log_message(self, format: str, *args: object) -> None:
         log.debug("[serve] " + format, *args)
 
     def guess_type(self, path: str | os.PathLike[str]) -> str:
         return content_type(Path(path))
 
-    def list_directory(self, path: str | os.PathLike[str]) -> Any:
+    def list_directory(self, path: str | os.PathLike[str]) -> io.BytesIO | None:  # noqa: ARG002  (nothing to list)
         """A directory with no index is not a listing, because a listing names every file there is."""
         self.send_error(HTTPStatus.NOT_FOUND, "no such file")
         return None
 
-    def send_head(self) -> Any:
-        """Answer only what `served_file` allows, so both halves of this module refuse the same file.
+    def send_head(self) -> io.BytesIO | BinaryIO | None:
+        """Answer only what the one rule allows, so both halves of this module refuse the same file.
 
         The base class opens the file a second time below, so a name swapped for a link between the
         two lookups is served, which only someone who can already write into the project can do.
         """
-        wanted = served_file(Path(self.directory), unquote(urlsplit(self.path).path).lstrip("/"))
+        asked = unquote(urlsplit(self.path).path)
+        body = self.documents.get(asked)
+        if body is not None:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", EXTRA_TYPES[".json"])
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return io.BytesIO(body)
+        wanted = self.allowed.target(asked.lstrip("/"))
         if wanted.path is None:
             self.send_error(HTTPStatus.FORBIDDEN, wanted.refused or OUTSIDE)
             return None
         return super().send_head()
 
 
-def open_server(root: Path, host: str, port: int) -> ThreadingHTTPServer:
+def open_server(
+    allowed: Allowed, host: str, port: int, documents: Mapping[str, bytes] | None = None
+) -> ThreadingHTTPServer:
     """A stopped-in-a-context HTTP server for the project directory, bound to `host` and `port`.
 
     The address family comes from the host, so the safest address an author can ask for, the IPv6
     loopback, binds as readily as the IPv4 one.
+
+    `documents` are the paths the caller answers itself, which are the same ones the router answers
+    for a recorded page. An author previewing a deck reads its cue times from the origin exactly as
+    the recorder does, so a page that works in the preview is the page that is recorded.
     """
-    handler = partial(_Handler, directory=str(root))
+    handler = partial(_Handler, allowed, dict(documents or {}))
     try:
         family = socket.getaddrinfo(host or None, port, type=socket.SOCK_STREAM)[0][0]
     except OSError as exc:

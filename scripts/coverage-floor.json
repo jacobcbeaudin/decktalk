@@ -1,0 +1,5 @@
+{
+  "_comment": "What a complete run of every measuring suite scored, written by scripts/check_coverage.py --write and gated by --check, which allows 1 point under it. The number is a whole percent rounded down and only ever rises. Never lower it to make a run pass: write the test it is asking for.",
+  "measured_on": "linux",
+  "total": 95
+}

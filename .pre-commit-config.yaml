@@ -13,18 +13,21 @@ repos:
 
   # Same lint + format rules CI enforces (config in pyproject.toml).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.7
+    rev: v0.16.8
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
-  # JavaScript lint + format, as CI does (config in biome.json). Keep rev in step with the version
-  # pinned in biome.json's $schema and in ci.yml.
-  - repo: https://github.com/biomejs/pre-commit
-    rev: v2.5.13
+  # JavaScript and TypeScript lint plus format, as CI does, run from the copy `npm ci` installed so
+  # that package-lock.json is the one home of the Biome version. Run `npm ci` once before committing.
+  - repo: local
     hooks:
       - id: biome-check
+        name: biome check
+        language: system
+        entry: node_modules/.bin/biome check --write --no-errors-on-unmatched
+        types_or: [javascript, ts, json]
 
   # The same check CI runs over site/install.sh. shellcheck-py ships the binary as a wheel, so the hook
   # needs no docker; -s sh holds the installer to POSIX sh, as tests/test_installer.py does.

@@ -1,40 +1,110 @@
 ---
 title: AGENTS.md
-description: The short file that tells any coding agent it is standing in a DeckTalk project.
+description: The short file decktalk init writes so a coding agent knows where it stands, and the four calls that tell it everything else.
 ---
 
-`AGENTS.md` is a plain Markdown file that a coding agent loads at the start of every session. It is
-stewarded by the Agentic AI Foundation, and Codex, Cursor, Copilot, VS Code, Zed, Aider and many
-others read it. It is the one agent surface that costs context in every session, so it stays short.
+`AGENTS.md` is a plain Markdown file that a coding agent loads at the start of every session. Codex,
+Cursor, Copilot, VS Code, Zed, Aider and many others read it. It is the one agent surface that costs
+context in every session, so DeckTalk's is three short paragraphs and points at the instruction set
+rather than repeating it.
 
-`decktalk init` writes a ten-line `AGENTS.md` when the project has none. It never overwrites one
-that is already there, so a project with its own `AGENTS.md` keeps it.
+The reason is the shape of the product. The command line is the instruction set, the settings and
+the page attributes are the knobs, and the agent is the implementer. A fact copied into `AGENTS.md`
+is a fact that can disagree with the tool, and a fact the agent reads from `decktalk schema` cannot.
 
-## What DeckTalk writes
+## What `decktalk init` writes
 
-The generated file says four things and stops.
+`decktalk init DIR` writes `AGENTS.md` only when the directory has none, and it never replaces one
+that is already there. The project's title fills the heading.
 
-- This folder is a DeckTalk project.
-- The four input files are `script.md`, `decktalk.toml`, `cues.json` and the deck page.
-- `decktalk status --json` is the first command to run, because it reports what the four files say,
-  what is built and what is stale.
-- The skills are in `.agents/skills/`, and they hold the procedures.
+```markdown AGENTS.md
+# My Lesson
 
-Procedures do not belong in `AGENTS.md`. A procedure that is loaded in every session is paid for in
-every session, and the skills exist so that an agent loads a procedure only when it needs one. Keep
-`AGENTS.md` to orientation, and put the steps in a skill.
+A DeckTalk project: `script.md` is what the voice says, `decktalk.toml` lists one `[[section]]` per
+script section, `cues.json` says which spoken phrase each moment lands on, and `deck/` holds the
+pages. The section number, the scene its `[[section]]` names and the slide ids of its cues agree.
 
-## Adding DeckTalk to an AGENTS.md you already have
+`decktalk --help` is the instruction set. `decktalk schema` prints every command, flag, finding and
+result, `decktalk schema settings` and `decktalk schema page` print the two knob tables, and
+`decktalk config explain KEY` explains one knob. Every command takes `--json` and prints one object.
+`decktalk status` says where the project stands.
 
-Add the same four lines to your own file under a heading of their own, and leave the rest alone. The
-file is read as plain Markdown, so a heading and a short list are enough.
+The craft a command line cannot teach is in `.agents/skills/`: writing for the ear, spoken math, cue
+phrases, slide patterns, reading a finding, and the scope of a revision.
+```
+
+The first paragraph orients. The second names the calls. The third says where the craft lives. There
+is no procedure in it, because a procedure loaded in every session is paid for in every session, and
+that is what the packaged skills are for.
+
+## The four calls that tell an agent everything
+
+Every fact about DeckTalk is published by one of these four calls, and each of them prints JSON.
+
+| Call | What it answers |
+|---|---|
+| `decktalk --help` | The command tree, the global flags and the five exit codes. |
+| `decktalk schema` | Every command with every flag, its type and its default, plus the globals, the exit codes, the nine error codes, the fifty-one finding codes and the six stages, as one object. |
+| `decktalk schema settings` and `decktalk config explain KEY` | Every knob with its default, its safe range, its unit, the findings it moves and its hazard, and then one knob whole with the layer that set it. |
+| `decktalk status --json` and `decktalk doctor --json` | Where this project stands, and what this machine has installed. |
+
+Three more names narrow `decktalk schema` to one document: `decktalk schema page` prints the
+twenty-four page attributes, `decktalk schema project` prints the shape of `cues.json`, and
+`decktalk schema finding`, `error` and `event` print the three shared models. `decktalk schema NAME`
+also takes a command name and prints that command's result.
+
+## What an agent should do with it
+
+Read `AGENTS.md`, then run the four calls, then act. In practice that is one ordering.
+
+1. Run `decktalk status --json` to learn the project's name, its script, its cue file, every section
+   with what is voiced, recorded and cut, and the `next` field, which is the whole command to run
+   next.
+2. Run `decktalk check --json` before anything that spends. It judges the written files and the
+   pages, makes no film, and its `spend` object prices what a voiced build would cost.
+3. Dispatch on `findings[].code`, and read `location.file` and `location.line` to know what to open.
+4. Load a skill from `.agents/skills/` when the change needs craft rather than a flag.
+
+An agent that needs a knob reads `decktalk config explain KEY` rather than guessing, because the
+published range is the safe range and the loader refuses a value outside it, naming the file and the
+line.
+
+## Adding DeckTalk to an `AGENTS.md` you already have
+
+A project that already has an `AGENTS.md` keeps it untouched, so the DeckTalk lines are yours to
+add. Add a heading of your own and the three paragraphs above under it, and leave the rest alone.
+The file is read as plain Markdown, so a heading and a paragraph are enough.
+
+Keep the same discipline in your own file. Name the calls, and do not copy a flag, a default or a
+finding code into prose that nothing regenerates.
 
 ## Harnesses that read a different file
 
 Claude Code reads `CLAUDE.md` rather than `AGENTS.md`. The usual arrangement is a `CLAUDE.md` whose
-whole content is a reference to `AGENTS.md`, so one file stays the source. Gemini CLI reads
+whole content is a line pointing at `AGENTS.md`, so one file stays the source. Gemini CLI reads
 `GEMINI.md` by default and reads `AGENTS.md` when its context file setting names it.
 
-`AGENTS.md` also serves a harness that reads no skills at all. For that harness it is the only
-DeckTalk instruction in the session, which is why it names `decktalk status --json` rather than
-describing the pipeline.
+`AGENTS.md` also serves a harness that loads no skills at all. For that harness it is the only
+DeckTalk instruction in the session, which is why it names the calls rather than describing the
+pipeline. [The reference card](/reference/card) is the page to hand such a harness next.
+
+## The repository's own `AGENTS.md`
+
+The DeckTalk repository carries an `AGENTS.md` of its own, and it describes the tool's source rather
+than a project. It opens with the same four calls, and then it carries the command tree in a block
+between two markers, written as Markdown comments so that a reader never meets them. The opening one
+reads `commands: generated by scripts/build_agents_doc.py` and the closing one reads `end commands`,
+and the script refuses to run when either is missing.
+
+That block is written from the same walk over the parser that `decktalk schema` prints, so the list
+of commands in the file cannot drift from the list of commands in the code. Everything around the
+markers is prose written by hand. `uv run scripts/build_agents_doc.py --write` writes the block and
+`--check` exits 1 when the committed one would change, which is what the repository's own checks
+run. An agent working on DeckTalk itself edits the prose and never the block.
+
+## Related
+
+- [Agent skills](/agents/skills) for the six skills the third paragraph points at.
+- [Install the skills](/agents/install) for the folders they land in.
+- [The JSON contract](/agents/json) for what every `--json` call gives back.
+- [Reference card](/reference/card) for the whole contract on one page.

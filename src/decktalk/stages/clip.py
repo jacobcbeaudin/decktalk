@@ -1,303 +1,291 @@
-"""Clips and word times taken from a built section.
+"""A span of one built section, cut into its own file with its own sound and its own words.
 
-    decktalk clip N --start S --end E --out media/x.mp4   a span of build/sections/NN.mp4 with the section's take
-                                                          over the same span, and the words spoken inside it
-    decktalk words [--only N] [--json]                   each spoken section's words, in seconds after it starts
+    decktalk clip 3 --start 4 --end 9 --out media/answer.mp4
 
-Both read the section's own clock, the one `?words=` and `cue-times.json` use: 0 is the section start, which is
-narration t=0 of its recording and the first frame of its sections/NN.mp4. A section's `lead_seconds` of
-silence counts, so its first word starts after the lead.
+The picture is a run of whole frames of `build/sections/NN.mp4` and the sound is that section's take
+over the same span, so a clip is a piece of the film rather than a second render of it. The words
+file beside it lists every word wholly inside the span, in seconds after the clip starts, which is
+what a `[[section]]` playing this clip needs to caption it.
+
+The clock is the section's own: zero is where the section starts, and the silence a section's lead
+puts before its first word is part of the span like anything else. It is read through `words`, so
+the two commands can never disagree about where a word sits.
+
+One noun names a short video file whoever made it, so a clip an author supplies and a clip DeckTalk
+cuts are the same kind of thing under the same name.
 """
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-from ..artifacts import Takes, Word, write_words
-from ..captions import display_words
-from ..errors import ConfigError, MissingInputError
-from ..jsonio import relative
-from ..media import ffmpeg
-from ..media.encode import Encoder
-from ..model import PageSection, Project
-from ..verdicts import Finding, Findings, Verdict
+from decktalk.artifacts import WORDS_SUFFIX, Take, Takes, Words
+from decktalk.errors import InputError
+from decktalk.events import Level
+from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs.paths import at
+from decktalk.machine import Run
+from decktalk.media import ffmpeg
+from decktalk.media.encode import Encoder
+from decktalk.pipeline import Artifact
+from decktalk.results import ClipResult, SectionWords, Word
+from decktalk.stages import SECOND_DIGITS
+from decktalk.stages.words import section_words
 
-log = logging.getLogger(__name__)
+FRAME_SLACK = 0.5
+"""Truth: half a frame, which is the most a span may pass the last frame by and still name it."""
 
-EDGE_FADE_SECONDS = 0.01  # The clip's audio fades in and out over this long, so a cut inside a word never clicks.
-WORD_SLACK_SECONDS = 0.001  # A word that sits this close to an edge of the span still counts as inside it.
+EDGE_FADE_SECONDS = 0.01
+"""Calibration: how long the clip's sound fades at each edge, which is short enough not to be heard as a fade.
 
+A span cut inside a word ends on a sample that is not zero, and a cut straight to silence there is a
+click. Ten milliseconds is under the shortest sound a listener can place, so the fade removes the
+click without softening the word.
+"""
 
-def _takes(project: Project) -> Takes:
-    takes = project.takes()
-    if takes is None:
-        raise MissingInputError(
-            "The take index is not there, so no section has a start to cut from.",
-            hint="Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.",
-            path=project.takes_path,
-        )
-    return takes
+WORD_SLACK_SECONDS = 0.001
+"""Truth: how far outside the span a word may sit and still count as inside it, which is one millisecond.
 
+A span is rounded to whole frames and a word time is rounded to milliseconds, so a word that ends
+exactly where the span does can land a rounding step past it and would otherwise be dropped.
+"""
 
-@dataclass
-class SectionWords:
-    """One spoken section's words, in seconds after the section starts."""
+LEAST_AUDIO_SECONDS = 0.001
+"""Truth: the shortest stretch of a take the trim may ask for, so a span wholly inside the lead still reads.
 
-    key: str
-    title: str
-    lead_seconds: float
-    duration: float
-    estimated: bool
-    words: list[Word] = field(default_factory=list)  # as the voice returned them, with punctuation removed
-    texts: list[str] = field(default_factory=list)  # the same words with the script's punctuation and case
-
-    @property
-    def section(self) -> int:
-        return int(self.key)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "key": self.key,
-            "section": self.section,
-            "title": self.title,
-            "lead_seconds": self.lead_seconds,
-            "duration": self.duration,
-            "estimated": self.estimated,
-            "words": [
-                {"word": w.word, "text": text, "start": w.start, "end": w.end}
-                for w, text in zip(self.words, self.texts, strict=True)
-            ],
-        }
-
-
-@dataclass
-class WordsResult:
-    """Every spoken section's words, in seconds after the section starts."""
-
-    sections: list[SectionWords] = field(default_factory=list)
-
-    @property
-    def findings(self) -> Findings:
-        """None. `words` reads the narration clock and judges nothing."""
-        return Findings()
-
-    def to_dict(self, root: Path) -> dict[str, Any]:
-        return {"sections": [s.to_dict() for s in self.sections]}
-
-
-def words(project: Project, only: list[int] | None = None) -> WordsResult:
-    """Each spoken section's words from its take, in seconds after the section starts.
-
-    These are the times the recorder passes to a page as `?words=`, to three decimals. The script's
-    spelling comes from takes.json, so each word also has its punctuation and case.
-    """
-    takes = _takes(project)
-    keys = takes.keys
-    if only:
-        wanted = {f"{n:02d}" for n in only}
-        missing = sorted(wanted - set(keys))
-        if missing:
-            raise ConfigError(
-                f"section(s) {[int(k) for k in missing]} have no take in {project.takes_path.name}.",
-                hint=f"The spoken sections are {[int(k) for k in keys]}.",
-                path=project.takes_path,
-            )
-        keys = [k for k in keys if k in wanted]
-    out: list[SectionWords] = []
-    for key in keys:
-        entry = takes.sections[key]
-        words = project.section_words(key, entry.words_file)
-        shown = display_words(words, entry.spoken) if entry.spoken else words
-        out.append(
-            SectionWords(
-                key=key,
-                title=entry.chapter,
-                lead_seconds=entry.lead_seconds,
-                duration=takes.span(key) or 0.0,
-                estimated=not entry.voiced,
-                words=words,
-                texts=[w.word for w in shown],
-            )
-        )
-    return WordsResult(sections=out)
-
-
-@dataclass
-class ClipResult:
-    """What `clip` wrote."""
-
-    section: int
-    video: Path
-    words_file: Path
-    start: float  # The first frame's time in the section, in seconds.
-    end: float  # The time just after the last frame of the span, in seconds.
-    first_frame: int
-    last_frame: int
-    hold_seconds: float
-    duration: float  # The clip's length, with the hold.
-    gain_db: float
-    estimated: bool  # True when the words come from a build without voice.
-    words: list[Word] = field(default_factory=list)  # in seconds after the clip starts, with the script's spelling
-    cut_words: list[str] = field(default_factory=list)  # words the span cuts in two, left out of the words file
-
-    @property
-    def rows(self) -> list[Finding]:
-        """One judged row per word the span cuts in two, so a reader learns which word and where."""
-        return [
-            Finding(
-                verdict=Verdict.CUT_WORD,
-                section=self.section,
-                where=self.words_file.name,
-                detail=f"the span cuts the word {word!r} in two, so the words file leaves it out.",
-            )
-            for word in self.cut_words
-        ]
-
-    @property
-    def findings(self) -> Findings:
-        """Uncertain: a word the span cuts in two, which the words file leaves out."""
-        return Findings.of(row.verdict for row in self.rows)
-
-    def to_dict(self, root: Path) -> dict[str, Any]:
-        return {
-            "section": self.section,
-            "video": relative(self.video, root),
-            "words_file": relative(self.words_file, root),
-            "start": self.start,
-            "end": self.end,
-            "first_frame": self.first_frame,
-            "last_frame": self.last_frame,
-            "hold_seconds": self.hold_seconds,
-            "duration": self.duration,
-            "gain_db": self.gain_db,
-            "estimated": self.estimated,
-            "word_count": len(self.words),
-            "cut_words": list(self.cut_words),
-            "cuts": [row.to_dict() for row in self.rows],
-        }
+A trim whose end is its start outputs no samples at all, and the filter chain that follows it then
+has nothing to pad, so the clip would carry no sound track rather than a silent one.
+"""
 
 
 def clip(
-    project: Project,
-    number: int,
+    inputs: Inputs,
+    run: Run,
     *,
+    section: int,
     start: float,
     end: float,
-    out: Path | str,
-    words_out: Path | str | None = None,
+    out: Path,
     gain_db: float = 0.0,
     hold_seconds: float = 0.0,
 ) -> ClipResult:
-    """Cut a span of a built page section into a video file and a words file for a clip section.
+    """Cut the span from `start` to `end` of one built page section into `out`, with its words beside it.
 
-    The picture is frames `round(start * fps)` up to `round(end * fps)` of build/sections/NN.mp4. The
-    sound is the section's take over the same span, with `gain_db` applied and a 10 ms fade at each edge.
-    The part of the span inside the section's `lead_seconds` is silence. `hold_seconds` holds the last
-    frame in silence. The words file lists each word wholly inside the span, in seconds after the clip
-    starts, with the script's punctuation and case. Relative paths are relative to the project.
+    The span is rounded outward to whole frames, because a clip that began mid-frame would play its
+    first frame twice. `hold_seconds` holds the last frame in silence after the span, which is how a
+    clip ends on the picture it made rather than on the next thing the film did.
     """
-    sec = project.section(number)
-    if sec is None:
-        raise ConfigError(f"section {number} is not in decktalk.toml")
-    if not isinstance(sec, PageSection):
-        raise ConfigError(
-            f"section {number} is a clip section.",
-            hint="Cut a clip from a page section.",
+    played = _page_section(inputs, section)
+    video = _section_video(inputs, played)
+    take, source = _take_of(inputs, section)
+    settings = inputs.settings.video
+    fps = settings.output_fps
+    span = _span(inputs, video, start=start, end=end, hold_seconds=hold_seconds, fps=fps)
+    film = _out_path(inputs, out, video)
+    words_file = film.with_name(film.stem + WORDS_SUFFIX)
+
+    _render(inputs, video, source, film, span=span, lead=take.lead_seconds, gain_db=gain_db, fps=fps)
+    inside, cut = _clip_words(inputs, section, span.first_seconds, span.last_seconds)
+    for word in cut:
+        run.note(
+            f"The span from {span.first_seconds:g}s to {span.last_seconds:g}s cuts the word {word!r} in two, "
+            "so the words file leaves it out.",
+            level=Level.WARNING,
         )
+    if not take.voiced:
+        run.note(
+            f"Section {section} carries placeholder narration, so every word time in this clip is an estimate.",
+            level=Level.WARNING,
+        )
+    run.wrote(film)
+    run.wrote(Words(words=inside).write(words_file))
+    return run.result(
+        ClipResult,
+        section=section,
+        film=inputs.relative(film),
+        words=inputs.relative(words_file),
+        start=span.first_seconds,
+        end=span.last_seconds,
+        seconds=span.total_seconds,
+        hold_seconds=span.hold_seconds,
+        gain_db=gain_db,
+        estimated=not take.voiced,
+    )
+
+
+class _Span:
+    """The whole frames one clip plays, and the silence it holds after them."""
+
+    def __init__(self, first: int, last: int, hold: int, fps: int) -> None:
+        self.first = first
+        self.last = last
+        self.hold = hold
+        self.fps = fps
+
+    @property
+    def first_seconds(self) -> float:
+        """Where the clip's first frame sits in its section, in seconds."""
+        return round(self.first / self.fps, SECOND_DIGITS)
+
+    @property
+    def last_seconds(self) -> float:
+        """Where the clip's last frame ends in its section, which is where the next frame would start."""
+        return round(self.last / self.fps, SECOND_DIGITS)
+
+    @property
+    def hold_seconds(self) -> float:
+        """How long the last frame is held after the span, rounded to the frames it really holds."""
+        return round(self.hold / self.fps, SECOND_DIGITS)
+
+    @property
+    def total_seconds(self) -> float:
+        """How long the clip runs, which is its span and its hold together."""
+        return round((self.last - self.first + self.hold) / self.fps, SECOND_DIGITS)
+
+
+def _page_section(inputs: Inputs, number: int) -> PageSection:
+    """The page section this clip is cut from, or a refusal naming what that section really is."""
+    found = inputs.document.section(number)
+    if found is None:
+        raise InputError(
+            f"section {number} is not in {inputs.relative(inputs.root / 'decktalk.toml')}.",
+            hint=f"The sections are {sorted(section.number for section in inputs.document.sections)}.",
+        )
+    if not isinstance(found, PageSection):
+        raise InputError(
+            f"section {number} plays a clip the project already has, so there is nothing to cut out of it.",
+            hint="Cut a clip from a page section, which is one DeckTalk recorded.",
+        )
+    return found
+
+
+def _section_video(inputs: Inputs, section: PageSection) -> Path:
+    """The cut of one section, or a refusal naming the command that makes it."""
+    video = inputs.workspace.section_video(section.key)
+    if not video.is_file():
+        raise InputError(
+            f"section {section.number} has no cut at {inputs.relative(video)}.",
+            hint="Run `decktalk assemble` first.",
+            location=at(video, inputs.root, section=section.number),
+        )
+    return video
+
+
+def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
+    """One section's take and the file that holds it, or a refusal naming the command that makes it."""
+    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
+    take = takes.of(number)
+    if take is None:
+        raise InputError(
+            f"section {number} has no take in {inputs.relative(inputs.workspace.takes_path)}.",
+            hint="Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.",
+            location=at(inputs.workspace.takes_path, inputs.root, section=number),
+        )
+    source = inputs.workspace.takes_dir / take.file
+    if not source.is_file():
+        raise InputError(
+            f"section {number} names the take {take.file}, which is not on disk.",
+            hint="Run `decktalk narrate` again to write it.",
+            location=at(source, inputs.root, section=number),
+        )
+    return take, source
+
+
+def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds: float, fps: int) -> _Span:
+    """The whole frames the span names, refusing every span that names none."""
     if start < 0 or end <= start:
-        raise ConfigError(f"the span must start at 0 or later and end after it starts, got {start:g} to {end:g}")
+        raise InputError(
+            f"the span runs from {start:g}s to {end:g}s, which starts before zero or ends before it starts.",
+            hint="Write --start at 0 or later and --end after it.",
+        )
     if hold_seconds < 0:
-        raise ConfigError(f"--hold must be 0 or more, got {hold_seconds:g}")
-    video = project.section_video(sec)
-    if not video.exists():
-        raise MissingInputError(f"section {number} has no section video at {video}. Run `decktalk assemble` first.")
-    takes = _takes(project)
-    entry = takes.sections.get(sec.key)
-    if entry is None:
-        raise MissingInputError(f"section {number} has no narration yet. Run `decktalk narrate` first.")
-    take = project.takes_dir / entry.file
-    if not take.exists():
-        raise MissingInputError(f"section {number}'s take is missing: {take}. Run `decktalk narrate` first.")
-
-    v = project.settings.video
-    fps = v.fps
+        raise InputError(
+            f"--hold is {hold_seconds:g}s, which is less than no time at all.",
+            hint="Write --hold 0 or more.",
+        )
     length = ffmpeg.probe_duration(video)
-    if end > length + 0.5 / fps:
-        raise ConfigError(f"the span ends at {end:g} s, but section {number}'s video is {length:g} s long")
-    f0, f1 = round(start * fps), round(end * fps)
-    if f1 <= f0:
-        raise ConfigError(f"the span from {start:g} to {end:g} s holds no whole frame at {fps} fps")
-    t0, t1 = f0 / fps, f1 / fps
-    hold_frames = round(hold_seconds * fps)
-    span = t1 - t0
-    total = (f1 - f0 + hold_frames) / fps
+    if end > length + FRAME_SLACK / fps:
+        raise InputError(
+            f"the span ends at {end:g}s and {inputs.relative(video)} runs for {length:g}s.",
+            hint=f"Write --end {length:g} or earlier.",
+            location=at(video, inputs.root),
+        )
+    first, last = round(start * fps), round(end * fps)
+    if last <= first:
+        raise InputError(
+            f"the span from {start:g}s to {end:g}s holds no whole frame at {fps} frames per second.",
+            hint=f"Make the span at least {1 / fps:.2f}s long.",
+        )
+    return _Span(first, last, round(hold_seconds * fps), fps)
 
-    # The take starts after the section's lead, so a span that begins inside the lead starts with silence.
-    lead = entry.lead_seconds
-    head = max(0.0, lead - t0)
-    a0 = max(0.0, t0 - lead)
-    # A span wholly inside the lead still reads a millisecond, so atrim outputs a frame.
-    a1 = max(a0 + 0.001, t1 - lead)
-    head_samples = round(head * v.sample_rate)
-    fade_out_at = max(span - EDGE_FADE_SECONDS, 0.0)
-    audio = (
-        f"[1:a]aresample={v.sample_rate},atrim=start={a0:.6f}:end={a1:.6f},asetpts=PTS-STARTPTS,"
-        f"adelay=delays={head_samples}S:all=1,volume={gain_db:g}dB,"
+
+def _out_path(inputs: Inputs, out: Path, video: Path) -> Path:
+    """Where the clip is written, refusing a name that is the section cut it reads."""
+    film = inputs.path(out)
+    if film.resolve() == video.resolve():
+        raise InputError(
+            f"--out names {inputs.relative(video)}, which is the section cut this clip is read from.",
+            hint="Write the clip somewhere else, such as under media/.",
+            location=at(video, inputs.root),
+        )
+    film.parent.mkdir(parents=True, exist_ok=True)
+    return film
+
+
+def _render(
+    inputs: Inputs, video: Path, source: Path, film: Path, *, span: _Span, lead: float, gain_db: float, fps: int
+) -> None:
+    """Cut the picture and the sound of one span into one file, in a single pass.
+
+    The picture passes through the frame rate filter before the hold, because ffmpeg clones only two
+    frames after a trim otherwise, and the sound is the take moved to where the span starts so that
+    a span opening inside the section's lead opens on the silence the film has there.
+    """
+    settings = inputs.settings.video
+    head = max(0.0, lead - span.first_seconds)
+    begins = max(0.0, span.first_seconds - lead)
+    ends = max(begins + LEAST_AUDIO_SECONDS, span.last_seconds - lead)
+    played = span.last_seconds - span.first_seconds
+    fade_out_at = max(played - EDGE_FADE_SECONDS, 0.0)
+    total = span.total_seconds
+    sound = (
+        f"[1:a]aresample={settings.sample_rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,"
+        f"adelay=delays={round(head * settings.sample_rate)}S:all=1,volume={gain_db:g}dB,"
         f"afade=t=in:d={EDGE_FADE_SECONDS},afade=t=out:st={fade_out_at:.6f}:d={EDGE_FADE_SECONDS},"
         f"apad=whole_dur={total:.6f},atrim=duration={total:.6f}[a]"
     )
-    # Frames pass through fps before the hold, or ffmpeg 7.0's tpad clones only two frames after a trim.
     picture = (
-        f"[0:v]trim=start_frame={f0}:end_frame={f1},setpts=PTS-STARTPTS,fps={fps},"
-        f"tpad=stop_mode=clone:stop={hold_frames}[v]"
+        f"[0:v]trim=start_frame={span.first}:end_frame={span.last},setpts=PTS-STARTPTS,fps={fps},"
+        f"tpad=stop_mode=clone:stop={span.hold}[v]"
     )
-    dst = project.path(out)
-    words_dst = project.path(words_out) if words_out is not None else dst.with_suffix(".words.json")
-    if dst.resolve() == video.resolve():
-        raise ConfigError(f"--out names the section video it reads: {video}")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    enc = Encoder(v)
+    encoder = Encoder(settings)
     ffmpeg.run(
-        "-i", str(video), "-i", str(take),
-        "-filter_complex", f"{picture};{audio}",
-        "-map", "[v]", "-map", "[a]", "-r", str(fps), *enc.venc, *enc.aenc,
-        "-t", f"{total:.6f}", "-movflags", "+faststart", str(dst),
+        "-i", str(video), "-i", str(source),
+        "-filter_complex", f"{picture};{sound}",
+        "-map", "[v]", "-map", "[a]", "-r", str(fps), *encoder.venc, *encoder.aenc,
+        "-t", f"{total:.6f}", "-movflags", "+faststart", str(film),
     )  # fmt: skip
 
-    words, cut = _clip_words(project, sec.key, t0, t1)
-    for text in cut:
-        log.warning("section %s: the span cuts the word %r in two, so the words file leaves it out", sec.key, text)
-    if not entry.voiced:
-        log.warning("section %s: the narration is a silent placeholder, so the word times are estimates", sec.key)
-    write_words(words_dst, words)
-    return ClipResult(
-        section=number,
-        video=dst,
-        words_file=words_dst,
-        start=round(t0, 3),
-        end=round(t1, 3),
-        first_frame=f0,
-        last_frame=f1 - 1,
-        hold_seconds=round(hold_frames / fps, 3),
-        duration=round(total, 3),
-        gain_db=gain_db,
-        estimated=not entry.voiced,
-        words=words,
-        cut_words=cut,
-    )
 
-
-def _clip_words(project: Project, key: str, t0: float, t1: float) -> tuple[list[Word], list[str]]:
-    """(the words wholly inside the span, in seconds after t0 with the script's spelling, the words it cuts)."""
-    (section,) = [s for s in words(project, only=[int(key)]).sections if s.key == key]
+def _clip_words(inputs: Inputs, number: int, first: float, last: float) -> tuple[tuple[Word, ...], tuple[str, ...]]:
+    """(the words wholly inside the span, in seconds after it starts, the words the span cuts in two)."""
+    said: SectionWords | None = section_words(inputs, number)
+    if said is None:
+        return (), ()
     inside: list[Word] = []
     cut: list[str] = []
-    for w, text in zip(section.words, section.texts, strict=True):
-        if w.start >= t0 - WORD_SLACK_SECONDS and w.end <= t1 + WORD_SLACK_SECONDS:
-            inside.append(Word(text, round(max(0.0, w.start - t0), 3), round(min(t1, w.end) - t0, 3)))
-        elif w.start < t1 and w.end > t0:
-            cut.append(text)
-    return inside, cut
+    for word in said.words:
+        if word.start >= first - WORD_SLACK_SECONDS and word.end <= last + WORD_SLACK_SECONDS:
+            inside.append(
+                Word(
+                    word=word.word,
+                    start=round(max(0.0, word.start - first), SECOND_DIGITS),
+                    end=round(min(last, word.end) - first, SECOND_DIGITS),
+                )
+            )
+        elif word.start < last and word.end > first:
+            cut.append(word.word)
+    return tuple(inside), tuple(cut)
+
+
+__all__ = ["EDGE_FADE_SECONDS", "clip"]

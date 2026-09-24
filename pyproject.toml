@@ -38,7 +38,13 @@ classifiers = [
     "Topic :: Multimedia :: Video",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
-dependencies = ["playwright>=1.63.0,<2"]
+dependencies = [
+    "playwright>=1.63.0,<2",
+    "pydantic>=2.11",
+    "rich>=13",
+    "tomlkit>=0.13",
+    "typer>=0.15",
+]
 
 [project.urls]
 Homepage = "https://decktalk.ai"
@@ -55,13 +61,18 @@ requires = ["uv_build>=0.12.15,<0.13.0"]
 build-backend = "uv_build"
 
 # `uv build` reads the working tree, so a Finder sidecar next to the template would ship in a wheel
-# cut from a laptop. tests/test_wheel.py checks the built wheel against the files git tracks.
+# cut from a laptop. tests/contract/test_wheel.py checks the built wheel against the files git tracks.
+# The runtime ships as the two bundles the build writes, so the TypeScript they are built from and
+# the compiler's own configuration stay out of the wheel: a wheel carries what DeckTalk runs.
 [tool.uv.build-backend]
 source-exclude = ["**/.DS_Store"]
-wheel-exclude = ["**/.DS_Store"]
+wheel-exclude = ["**/.DS_Store", "**/runtime/src/**", "**/tsconfig.json"]
 
 [dependency-groups]
 dev = [
+    # `contract/test_results.py` validates every real output against the committed JSON Schema, so the
+    # validator is a development dependency rather than something the schema generator reimplements.
+    "jsonschema>=4.23",
     "pytest>=8",
     "pytest-cov>=6",
     "pytest-timeout>=2.3",
@@ -74,10 +85,35 @@ line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP"]
+select = [
+    "E", "F", "W", "I", "B", "UP",
+    "ANN401",   # a parameter typed Any accepts anything, so the caller learns nothing from the signature
+    "ARG",      # an argument nothing reads is either dead or a signature that no longer fits
+    "BLE001",   # a bare `except Exception` swallows the failure the error codes exist to name
+    "C901",     # a branch count above the default is a function that wants to be two
+    "PLC0415",  # an import inside a function hides a dependency from the layering guard
+    "PLR0915",  # a statement count above the default is a function that wants to be two
+    "PLW1510",  # a `subprocess.run` with no `check` ignores the return code, which is must 4
+    "RUF046",   # `int()` around a value that is already an int is a cast that means nothing
+]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["E501"]  # generated CSS and SVG strings
+# This one reads TOML, whose values are `Any` before they are checked. Typing the parameter as
+# anything narrower would be a claim the file has not made yet, which is what it exists to make.
+"src/decktalk/tomlmap.py" = ["ANN401"]
+# A test replaces a seam with a lambda of the real signature and reads only the arguments it judges,
+# so ARG005 there measures the seam rather than the test. ARG still holds over every other argument.
+"tests/**" = ["ARG005"]
+
+# `tests/support` is on the path as `support`, so it sorts beside `decktalk` rather than with the
+# third-party packages, which is where a reader looks for it.
+[tool.ruff.lint.isort]
+known-first-party = ["decktalk", "support"]
+
+[tool.ruff.lint.flake8-unused-arguments]
+# A fake of a third-party seam takes the arguments the real one takes, and reads the ones it judges.
+ignore-variadic-names = true
 
 [tool.ruff.format]
 quote-style = "double"
@@ -89,27 +125,34 @@ python-version = "3.12"
 testpaths = ["tests"]
 # Two modules of the tree are named plan.py, so their mirrored test files share a basename.
 consider_namespace_packages = true
-# tests/ is on the path, so a module that holds pages several test modules share is imported by name.
+# tests/ is on the path, so `tests/support/` is imported as `support.<module>` from anywhere in the suite.
 pythonpath = ["tests"]
+# Every marker names its tool in its first clause, so `pytest --markers` answers what a table used to.
 markers = [
-    "browser: needs headless Chromium (run `decktalk install` first)",
-    "media: runs the ffmpeg that `decktalk install` fetches",
-    "e2e: builds the pipeline fixture in tests/e2e with Chromium and ffmpeg, about a minute",
-    "scaffold: records and verifies every packaged project without a voice, about five minutes",
+    "browser: needs the headless Chromium that `decktalk install` fetches",
+    "media: needs the ffmpeg that `decktalk install` fetches",
+    "e2e: needs Chromium and ffmpeg, and builds the pipeline fixture in tests/e2e, about a minute",
+    "scaffold: needs Chromium and ffmpeg, and builds every packaged project without a voice, about five minutes",
+    "platform: needs the machine it runs on, whose filesystem and fetched toolchain are what it asserts",
 ]
-# A bare `pytest` runs the unit suite alone. Pass -m to pick the slower suites, as scripts/check.py does.
-addopts = "-m 'not browser and not media and not e2e and not scaffold' --strict-markers --import-mode=importlib"
+# Selection is `tests/conftest.py`'s collection hook rather than an `-m` here, because a person's own
+# `-m` replaces this line whole and would admit every suite it did not name.
+addopts = "--strict-markers --import-mode=importlib"
 filterwarnings = ["error"]
 
 [tool.coverage.run]
 source = ["decktalk"]
 # Playwright runs every synchronous call on a greenlet, so without this every line after the first
-# page call inside a browser test reads as dead and the floor below would be blind to the recorder.
+# page call inside a browser test reads as dead and the floor would be blind to the recorder.
 concurrency = ["thread", "greenlet"]
+# The e2e suite drives the command line as a subprocess, and a subprocess that starts coverage with
+# `COVERAGE_PROCESS_START` writes its own data file. Without a suffix per process those files would
+# be one name that every process overwrites, and `coverage combine` is what puts them back together.
+parallel = true
 
+# There is no `fail_under` here. The one floor is `scripts/coverage-floor.json`, which is measured
+# from a real run and gated by `scripts/check_coverage.py`, and a second floor typed into this file
+# would be a number nobody measured that fails `coverage report` on its own.
 [tool.coverage.report]
-# The floor is the whole suite with `-m 'not scaffold'`, rounded down, with one point of room for the
-# paths a platform takes and no more. Raise it when coverage grows.
-fail_under = 91
 show_missing = false
 skip_empty = true

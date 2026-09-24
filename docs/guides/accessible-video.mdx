@@ -1,116 +1,223 @@
 ---
 title: Accessible video
-description: What a DeckTalk build gives you for free, what you still owe a viewer, and how to check both.
+description: What a build writes for a viewer who cannot see or cannot hear the film, what is yours to write, and which findings hold each of them honest.
 ---
 
 Course platforms, company intranets and public sector sites often require captions and a transcript
-by law. A DeckTalk build writes most of what that takes without being asked, because it already
-knows the spoken words, where each one falls and what appeared on which second. Use this guide to
-see what arrives free, what is yours to write and how to check the result.
+by law. A DeckTalk build writes most of what that takes without being asked, because it already knows
+the spoken words, where each one falls and what appeared on which second.
+
+The parts it cannot write are the ones only you know: what a reveal meant, and what a picture is of.
+Each of those has a judgement behind it, so a description you did not write is reported rather than
+missed. This page is the whole of both halves.
 
 ## What every build writes
 
+Everything below lands in `build/final/`, beside the film, and `<name>` is `[project] name`.
+
 | File | What it is |
 |---|---|
-| `build/out/<name>.srt` and `build/out/<name>.vtt` | The captions, cut from the words the voice actually said, keeping the script's punctuation and case. |
-| `build/out/<name>.chapters.txt` | One chapter per section, named by the section's `chapter` value, which defaults to its script heading. |
-| `build/out/<name>-transcript.html` | The transcript page, with one heading per chapter, the section's span in the video, the spoken text, and a list of the reveals with their seconds. |
+| `<name>.srt` and `<name>.vtt` | The captions, in SubRip and WebVTT, cut from the words the voice really said and lent the script's own punctuation and case. |
+| `<name>.chapters.txt` | The chapter markers, one per section, named by the section's `chapter` and falling back to its script heading. |
+| `<name>-transcript.html` | The transcript page, which is the media alternative for a viewer who cannot see the film. |
+| `<name>-poster.png` | The film's opening slide with every one of its reveals fired, drawn by the page rather than taken from the mp4. |
 
-Set `language` in the `[project]` table to the language tag of the narration, such as `en`, which is
-the default. The transcript page takes it as its `lang` attribute, and the mp4's audio and video
-streams are tagged with its three-letter form, so a player names the audio from the project's own
-key. One value reaches everything a viewer picks from, and the tag cannot disagree with itself.
+The chapters are muxed into the mp4 as well, so a player shows them without the text file, and the
+text file is there for a platform that wants to be handed one.
 
-## Captions that carry the sound, not only the speech
+### One language, stated once
 
-Captions owe the audio and not only the dialogue. A viewer who cannot hear the ball bounce needs to
-be told that it bounced.
+`[project] language` is the language tag of the narration, and `en` is the default. The transcript
+page takes it as its `lang` attribute, and the mp4's audio and video streams are tagged with its
+three-letter form, which is the code the container takes rather than the tag a page carries. One
+value reaches both, so a player naming the audio and a reader opening the transcript cannot be told
+two different things.
 
-Give each cued sound a `caption` string, and the build merges it into the captions as a cue of its
-own.
+## Captions carry the whole soundtrack
+
+Captions owe the audio and not only the dialogue. A viewer who cannot hear the ball bounce has to be
+told that it bounced.
+
+Every cued sound takes a `caption` string, and the build writes it into the caption files as a cue of
+its own, wrapped in square brackets.
 
 ```toml decktalk.toml
-[[mix.sfx]]
-file = "build/sfx/bounce.mp3"
+[[mix.effects]]
+file = "build/soundscape/bounce.mp3"
 section = 2
-cue = "2.1ball"
+cue = "2.1:ball"
 caption = "ball bounces"
 ```
 
-A sound with no `caption` string is left out of the captions, and `assemble` reports it as
-`NO CAPTION?` on every run. It is uncertain, so it costs exit 1 only under `--strict`, and the row
-names the cue, which is how to find the `[[mix.sfx]]` table to give a line to.
+A sound with no `caption` is in the film and in no caption file, and `assemble` says so on every run,
+naming the file, the cue and the section. The frozen list of codes holds none that means this, so it
+is a sentence on the stream rather than a code that means something else.
+[Put a sound effect on a cue](/guides/effects-on-a-cue) is how a sound gets cued in the first place.
 
-A caption stays on screen for at least one second, except where a longer stay would overlap the cue
-after it, so a one-word caption never flashes past. Two captions are never on screen at once,
-because a sound that lands inside a speech cue joins that caption as a line of its own.
+A sound's caption stays on screen for one second. Two captions are never on screen at once, because a
+player draws overlapping cues twice or drops one of them, so a sound that lands inside a speech cue
+joins that caption as a line of its own and a sound that lands in the short gap before one joins the
+cue after it. Only a sound with a whole second to itself keeps a cue of its own.
 
-## The transcript, and the describe attribute
+A clip section captions its own speech when it names a words file with `words`, and nothing captions
+it otherwise, because the captions are built from the narration's word times and a clip's speech is
+not in the narration. [Add a clip section](/guides/clip-section) has the file's shape.
 
-The transcript page is the media alternative for a viewer who cannot see the video. Out of the box
-it carries the spoken text of every section, under one heading per chapter, with the section's span
-in the finished video.
+## The transcript, and the words a reveal is described in
 
-What it cannot carry is what a reveal meant, because nothing but you knows. Write that yourself, one
-sentence per reveal, in a `data-describe` attribute beside the cue. Every reveal that has one gets a
-line under its section, with the second it fired.
+The transcript page carries, for every chapter in the order it plays: a heading, the span in the
+finished film, the spoken text of each section under it, the speech inside a clip that names a words
+file, and a list of that chapter's described reveals with the second each one fired.
+
+What it cannot carry on its own is what a reveal meant. Three attributes are where you write that,
+and each one is read by the runtime and reported into the recording log, which is what the transcript
+is built from.
+
+| Attribute | Where | What it carries |
+|---|---|---|
+| `data-describe` | an element or a slide | The subject of the reveal. The runtime gives it a verb for each moment, so the phrase is a subject rather than a sentence. An empty phrase means the reveal is decorative. |
+| `data-describe-class` | an element or a container | What each class change means, written as `moment:phrase` pairs separated by a vertical bar. It is the partner of `data-class`. |
+| `data-describe-out` | an element | The departure sentence, for the case where a thing leaving means something of its own. |
 
 ```html
-<figure data-cue="3.2error" data-reveal="draw"
-        data-describe="The error curve falls steeply for the first ten steps and then flattens.">
+<figure data-in="error" data-describe="the error curve, falling steeply and then flattening">
 ```
 
-The transcript prints those sentences in cue order under their section, so a reader gets the
-diagram as prose. A described audio track can voice the same strings later, which is the second
-reason to write them as full sentences rather than as labels. The starter writes one on every cued
-element, so a first project's transcript already reads end to end.
+```html
+<li data-class="highlight:lit" data-describe-class="highlight:the second row is marked as the answer">
+```
 
-Describe the reveals that carry meaning. A decorative flourish needs no sentence, and a description
-of one only makes the transcript harder to read.
+Describe the reveals that carry meaning. A decorative flourish needs no phrase, and an empty
+`data-describe` is how you say so on purpose rather than by leaving the attribute off. A description
+of every flourish only makes the transcript harder to read.
+
+The starter writes a phrase on every cued element, so a first project's transcript already reads end
+to end. [The page contract](/concepts/page-contract) is every attribute in context, and
+`decktalk schema page` prints all twenty-four with their values, their defaults and their codes.
+
+## What holds each of them honest
+
+Every promise on this page has a judgement behind it, so nothing here depends on remembering to look.
+
+| What is missing | Code | Certainty | Reached by |
+|---|---|---|---|
+| An element changes the picture and describes nothing | [`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION) | certain | `decktalk check`, from the page's own catalog |
+| `data-class` names a class with no phrase in `data-describe-class` | [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED) | certain | any command that opens the page, reported by the runtime |
+| A class change declares no reduced form, so a reduced render would animate anyway | [`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED) | certain | any command that opens the page, reported by the runtime |
+| The mixed film misses the loudness it was mastered to | [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) | uncertain | `decktalk assemble`, measured on the finished mix |
+| A reveal did not land on the word it was cued to | [`CUE_OFF`](/reference/findings/CUE_OFF) | certain | `decktalk verify`, measured on the finished film |
+| A reveal cannot be told from the frame before it | [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE) | certain | `decktalk verify` and `decktalk check` |
+
+`--fail-on certain` is the default, so the certain ones fail a run already. `--fail-on any` adds the
+uncertain ones, which is how a project says it wants the second opinions too, and `--allow CODE`
+carries one code past the threshold and repeats.
+
+A cue that landed on the wrong word is an accessibility failure and not only a timing one: a viewer
+reading the captions meets the reveal at the wrong moment, and a viewer reading the transcript reads
+the wrong second beside it.
+
+## The loudness the mix is mastered to
+
+A film that is quieter than everything else on a platform is a film a hard-of-hearing viewer turns up
+and then gets startled by. The mix is therefore mastered rather than left where the layers landed.
+
+`assemble` measures the whole soundtrack, applies one gain to reach
+[`[mix.loudness] target_lufs`](/reference/configuration#mix-loudness), runs a true-peak limiter at
+`true_peak_max_dbtp`, and measures the result again. A plain gain keeps the mix's dynamics intact and
+the limiter touches only the peaks that would cross the ceiling, and it runs oversampled so that
+inter-sample peaks are caught, which is what a true-peak ceiling promises.
+
+| Key | Default | What it is |
+|---|---|---|
+| `target_lufs` | `-16.0` | The programme loudness the film is normalised to. |
+| `true_peak_max_dbtp` | `-1.5` | The highest true peak the normalised mix may reach. |
+| `range_max_lu` | `11.0` | The widest loudness range the normalised mix may hold. |
+
+The second measurement is reported, and a miss is `MIX_LOUDNESS`. It is uncertain, because the pass
+reports what it could not fix and a reader decides: a film whose range is wide because the speech is
+quiet under loud music is a different problem from one whose target was set wrong.
+
+## Reduced motion
+
+Some viewers ask their own machine for less motion, and some cannot watch a film that moves at all.
+DeckTalk renders that film rather than asking the viewer's player to.
+
+No flag duplicates a settings key, so both of these are `--set` on any command.
+
+```console
+decktalk build --set motion.reduce=true --no-voice
+```
+
+- `motion.reduce=true` renders every slide as its reduced-motion variant. Chromium is asked for
+  `prefers-reduced-motion`, which is a media feature rather than an attribute, so the film is exactly
+  what a person who asked their own machine for less motion would see in a preview. A class change
+  whose stylesheet animates anyway is reported as `PAGE_CLASS_NOT_REDUCED`, because a page can
+  declare reduced motion and then not honour it.
+- `motion.scale=N` multiplies every declared motion span and duration in the deck, from 0.25 to 4.
+  It is put on `:root` as `--dt-motion-scale`, which the deck's own stylesheet reads. A span slowed
+  past the half second a cue may still move is clamped at that ceiling rather than obeyed, because a
+  span that covers its own cue cannot be measured, and a span that overruns it is
+  [`PAGE_MOTION_OVERRUN`](/reference/findings/PAGE_MOTION_OVERRUN).
+
+Both keys are part of what a recording is keyed on, so a reduced build never reuses a full-motion
+recording and the calmer film is a second build rather than a second project. The film is written to
+the same name, so copy the one you want to keep out of `build/final/` before you build the other, or
+give the calm build its own `[project] build` directory.
 
 ## What the author still owes
 
-- **Keep cued elements out of the caption band.** A player draws captions across the bottom of the
-  frame, so anything in the bottom fifteen percent, which is 162 px of a 1080 px frame, can be
-  covered at the moment it appears. `preflight` reads the measured boxes and reports one as
-  `IN CAPTION BAND?`, which is uncertain because a deck may put something there on purpose, so
-  `--strict` is how a project says the band is reserved.
-  [Design a slide](/guides/design-a-slide#make-each-reveal-big-enough-to-measure) gives the numbers.
-- **Change lightness, not only hue.** `decktalk verify` compares luma alone, so a reveal that
-  changes colour without changing lightness fails the check and also fails a viewer with low vision.
-- **Give an image its alt text.** A slide image is ordinary HTML, and nothing writes its `alt`
+- **Give every image its alt text.** A slide image is ordinary HTML, and nothing writes its `alt`
   attribute for you.
-- **Read the contrast.** `decktalk screenshots` writes one PNG per slide, which is what to read for
-  small text over a busy background.
-- **Say the thing you show.** A reveal that the narration never names has no word to start on and no
-  place in the transcript, which is the same rule
-  [Writing for the ear](/guides/writing-for-the-ear) gives for a different reason.
+- **Change lightness, not only hue.** `decktalk verify` measures luma alone, so a reveal that changes
+  colour without changing lightness fails the check and also fails a viewer with low vision. The two
+  failures have one fix.
+- **Say the thing you show.** A reveal the narration never names has no word to start on and no place
+  in the transcript, which is the same rule [Writing for the ear](/guides/writing-for-the-ear) gives
+  for a different reason.
+- **Keep what matters out of the bottom of the frame.** A player draws captions across the bottom of
+  the picture, and DeckTalk does not measure that, so it is yours to watch for.
 
 ## How to check it
 
 <Steps>
-  <Step title="Run the checker">
-    `decktalk verify` reads the final video and reports every recording, section start, cut, seam
-    and cue landing. A reveal that did not land on its word is a reveal a caption reader will meet
-    at the wrong moment.
+  <Step title="Judge the pages before you build">
+    ```console
+    decktalk check --fail-on any
+    ```
+
+    `check` produces nothing and opens the pages, so this is where a missing description, an
+    undescribed class change and a class that animates under reduced motion are met. `--fail-on any`
+    adds the uncertain findings to the ones that already fail.
   </Step>
-  <Step title="Fail on the uncertain findings too">
-    `decktalk preflight --strict` and `decktalk verify --strict` turn an uncertain finding, such as a
-    reveal too thin to measure, into a failure rather than a note. A thin reveal is one a viewer with
-    low vision is likeliest to miss.
+  <Step title="Measure the finished film">
+    ```console
+    decktalk verify
+    ```
+
+    Every section start, every cut, every seam and every cue landing is measured against the clock
+    the earlier stages promised. A reveal that did not land on its word is a reveal a caption reader
+    meets at the wrong moment.
   </Step>
-  <Step title="Read the transcript page">
-    Open `build/out/<name>-transcript.html` and read it with the video closed. A section whose list of
-    reveals is short or missing is a section whose page needs `data-describe` sentences.
+  <Step title="Read the transcript with the film closed">
+    Open `build/final/<name>-transcript.html` and read it on its own. A chapter whose list of reveals
+    is short or missing is a chapter whose page needs its phrases written.
   </Step>
   <Step title="Watch it with the sound off">
-    Play the video with the captions on and the sound off. Anything you learn only from the audio is
-    a caption line that is missing.
+    Play the film with the captions on and the sound off. Anything you learn only from the audio is a
+    caption line that is not there.
   </Step>
 </Steps>
 
 ## Publishing
 
-Serve the video from a plain `<video>` element with a `<track>` for the captions, so the captions
-and the chapters stay under your control rather than a third-party player's. Link the transcript
-page next to the video, and give the link text that says what it is rather than "transcript".
+Serve the film from a plain `<video>` element with a `<track>` for the captions, so the captions and
+the chapters stay under your control rather than a third-party player's. Put the poster on the
+element, link the transcript page next to the film, and give that link text that says what it is
+rather than the word "transcript" on its own.
+
+## Related
+
+- **Read every page attribute:** [The page contract](/concepts/page-contract)
+- **Caption a cued sound:** [Put a sound effect on a cue](/guides/effects-on-a-cue)
+- **Read the loudness keys whole:** [Configuration](/reference/configuration#mix-loudness)
+- **See what the film is measured against:** [Verify](/reference/verify)

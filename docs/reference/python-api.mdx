@@ -1,280 +1,635 @@
 ---
 title: Python API
-description: Call the DeckTalk pipeline from Python, with each public name, its parameters, its result, and its errors.
+description: Call DeckTalk from Python: open a project, run a stage, read its findings, apply a fix, and watch its events.
 ---
 
-The `decktalk` package runs the same pipeline as the command line. This page lists every public name, with its
-signature, its result, and the errors it raises.
+`decktalk` is a library first and a command line second. The command line is the first client of
+exactly the surface this page documents, so anything `decktalk build` does, `project.build()` does
+the same way and returns the same object the command prints.
+
+Three rules hold over the whole package.
+
+- **Nothing in the library prints.** A run reports through its event stream, and a renderer
+  subscribes to it. There is no logger to attach and no output to capture.
+- **`Machine.from_environment()` is the only function that reads the environment, the per-machine
+  settings file or the working directory.** Everything below it takes what it needs as an argument,
+  so two projects held in one process cannot reach each other.
+- **Every path a result carries is relative to the project root**, spelled with forward slashes on
+  all three platforms, so `result.model_dump_json()` needs no root to be correct.
 
 ```python
 import decktalk
 
-project = decktalk.Project.load("my-lesson")       # reads and validates decktalk.toml
-result = decktalk.build(project, silent=True)
-print(result.assembly.final, result.verification.ok)
+project = decktalk.open("my-lesson")
+result = project.build(voice=decktalk.Voicing.PAID, max_cost=5.0)
+for finding in result.findings:
+    print(finding.code.name, finding.message, finding.location.where)
 ```
 
-Each stage function takes a `Project` and returns a typed result. It logs progress to the `decktalk` logger. It
-raises a `DeckTalkError` subclass when it fails, and it never calls `sys.exit`.
+## The whole public surface
 
-## Public names
+`decktalk.__all__` is the supported API and nothing else is. It is generated as the closure of every
+type reachable from an exported annotation, so a type a result can hand you is a type you can
+import. Any name not in it may move without notice.
 
-The package exports these names. Every other name is internal.
+```bash
+uv run python -c "import decktalk; print(sorted(decktalk.__all__))"
+```
 
-| Kind | Names |
-|---|---|
-| Project | `Project`, `Section`, `PageSection`, `ClipSection`, `Settings`, `load_settings` |
-| Project tables | `Voice`, `Transition`, `Mix`, `Loudness`, `Sfx`, `Soundscape`, `SoundSpec`, `MusicSpec` |
-| Artifacts | `Takes`, `CueTimes`, `Word`, `RecordingLog`, `Cuts` |
-| Stages | `narrate`, `align`, `preflight`, `record`, `assemble`, `verify`, `screenshots`, `soundscape`, `build`, `status`, `clip`, `words` |
-| Errors | `DeckTalkError`, `ConfigError`, `MissingInputError`, `ProviderError`, `ToolError` |
-| Vocabulary | `Stage`, `Verdict`, `Certainty`, `SkipReason`, `ErrorCode` |
-| Results | `NarrateResult`, `AlignResult`, `RecordResult`, `AssembleResult`, `VerifyResult`, `PreflightResult`, `ScreenshotsResult`, `WordsResult`, `ClipResult`, `StatusResult`, `SoundscapeResult`, `BuildResult` |
-| Speech | `SpeechProvider`, `SpeechRequest`, `register_speech_provider` |
-| Version | `__version__` |
+That list is the one authority. Check a name against it before you write it.
 
-Note: `Section` is the union `ClipSection | PageSection` rather than a class of its own, so
-`isinstance(section, decktalk.PageSection)` is how a caller tells the two apart.
-
-Note: `decktalk.__all__` is the whole supported Python API. One word names the command, the Python call, the type
-it returns and its `--json` key, so each command's result class sits in `__all__` beside the function that returns
-it. Everything under `decktalk.media`, `decktalk.artifacts`, `decktalk.model`, `decktalk.stages` and
-`decktalk.toolchain` is internal, so is everything under `decktalk.speech` except the three speech
-names, and so is every name whose first character is `_`. The row classes those results hold, such as
-`SectionRecording` and `CueCheck`, are read through the result that carries them.
-
-## `Project`
+## Opening a project
 
 ```python
-decktalk.Project.load(where=None, *, environ=None) -> Project
-decktalk.Project.from_toml(root, doc, *, environ=None) -> Project
+decktalk.open(path=None, *, machine=None, overrides=()) -> Project
 ```
-
-`Project.load` reads and validates `decktalk.toml`. `Project.from_toml` builds a project from a mapping you have
-already parsed.
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `where` | `DECKTALK_PROJECT`, then the current directory | Project directory, or the path of its `decktalk.toml`. |
-| `root` | required | Project directory, for `from_toml`. |
-| `doc` | required | Parsed `decktalk.toml`, for `from_toml`. |
-| `environ` | `os.environ` | Mapping that supplies the `DECKTALK_*` tuning variables. |
+| `path` | `DECKTALK_PROJECT`, then the directory the process started in | The project directory, or the path of its `decktalk.toml`. |
+| `machine` | a machine made from the environment | The `Machine` to open this project on, which is how two projects share one toolchain and one event stream. |
+| `overrides` | `()` | `table.key=value` strings, which are the top settings layer for every call on this project. |
 
-**Raises** `ConfigError` when `decktalk.toml` is missing, cannot be parsed, or fails validation. The message names
-the table and the field.
+A script that opens two projects should make one `Machine` itself and hand it to both, because the
+machine is what carries the shared toolchain and the shared stream.
+
+```python
+import decktalk
+
+machine = decktalk.Machine.from_environment()
+lesson = decktalk.open("lessons/averages", machine=machine, overrides=("motion.reduce=true",))
+demo = decktalk.open("demos/tour", machine=machine)
+print(lesson.settings.motion.reduce, demo.settings.motion.reduce)
+```
+
+`Project` carries these, each read from the files on disk.
 
 | Member | Kind | Meaning |
 |---|---|---|
-| `root`, `document`, `workspace`, `env`, `settings` | field | The project directory and the four parts it composes: the parsed `decktalk.toml`, the paths under `build/`, the secrets, and the tuning. |
-| `name`, `script`, `cues`, `build` | property | The project name and the paths from `[project]`, each read from the document. |
-| `sections` | property | Every `PageSection` and `ClipSection`, in number order. |
-| `voice`, `transition`, `mix`, `soundscape` | property | The project tables, as frozen dataclasses with the keys of [decktalk.toml](/reference/decktalk-toml). |
-| `build`, `narration_dir`, `takes_dir`, `recordings_dir`, `sections_dir`, `out_dir`, `screenshots_dir`, `preflight_dir` | property | The `build/` directory and its subdirectories. `takes_dir` is `narration_dir` unless `[narration] cache_dir` moves the take files out of `build/`. |
-| `takes_path`, `narration_path`, `cue_times_path`, `cuts_path`, `progress_path`, `final` | property | Paths of the take index, which is also the narration clock, the joined narration track, the cue times file, the cut list, the progress log, and the final mp4. |
-| `takes()`, `cue_times()`, `cuts()` | method | Loads the artifact. `takes()` and `cuts()` return `None` when the file does not exist, and `cue_times()` returns an empty `CueTimes`. |
-| `section(number)` | method | Returns the section with that number, or `None`. |
-| `page_sections`, `clip_sections`, `clip_numbers`, `page_files` | property | The page sections, the clip sections, the clip numbers, and the page files in first-use order. |
-| `recording(section)`, `recording_log(section)`, `section_video(section)` | method | Returns the path of the section's webm, of its recording log, or of its `sections/NN.mp4`. |
-| `recording_log_of(section)` | method | Loads that section's `RecordingLog`, or `None` when it has none. |
-| `stray_section_videos(keys)`, `stray_section_warnings(command)` | method | The `sections/NN.mp4` files that belong to no section, and one warning sentence per file. |
-| `lead_seconds(key)`, `tail_seconds(key)` | method | The silence placed before a section's first word and after its last sound: the section's own key, else `[narration] lead_seconds` or `min_tail_seconds`. A clip section has neither. |
-| `path(rel)` | method | Returns `rel` as an absolute path under `root`. |
-| `chapters()` | method | One chapter title per section: its own `chapter`, its script heading, or its number. |
-| `env.get(key)` | method | Returns the variable as an opaque value that prints as its own name. Call `reveal()` for the string. It is falsy when the value is unset or starts with `<`. |
-| `require_env(*keys)` | method | Returns those same opaque values in order. Raises `ConfigError` that names every missing key and no value. |
-| `section_words(key, words_file)`, `narration_words(key, words_file, *, at)` | method | A take's words in seconds after its section starts, or shifted to `at` on the narration clock. |
-| `script_sections()`, `cue_specs()`, `markers()` | method | Parses `script.md`, `cues.json` and the markers file, each checked against `decktalk.toml`. |
+| `root` | field | The project directory, resolved to an absolute path. |
+| `machine` | field | The machine this project was opened on. |
+| `inputs` | field | The project as it is written on disk, which is what a stage is handed. |
+| `events` | field | This project's view of the machine's stream, filtered to the runs this project opens. |
+| `document` | property | The parsed `decktalk.toml`, which says what this presentation is. |
+| `workspace` | property | Every path under the build directory, named once. |
+| `settings` | property | Every knob in force here, with all five layers already applied. |
+| `layers` | property | What every layer said about every key, which is where a knob's provenance is read from. |
 
-`load_settings(root=None, *, toml=None, environ=None, user=None)` builds a `Settings` from the defaults, the
-per-machine file, the project's tables, and the environment.
-
-## `build`
+To write a project rather than open one:
 
 ```python
-decktalk.build(project, *, silent=False, force=False, only=None, soundscape=True, loudness=True,
-               strict=False, allow_unresolved_cues=False, allow_unknown_cues=False,
-               from_stage=None, to_stage=None, progress_path=None, report=None) -> BuildResult
+decktalk.init(path, *, machine=None, name=None, example=None, skills=True, force=False) -> InitResult
 ```
 
-`build` runs the five stages in order: `narrate`, `align`, `record`, `assemble`, and `verify`.
+`init` is a machine call rather than a project one, because there is no project until it returns.
+`example` names a packaged project to write instead of the starter, and `skills` writes the six
+packaged skills into the new directory.
 
-| Parameter | Default | Meaning |
+`decktalk.section_numbers("3,5-7")` turns the one spelling a command line and a query string use
+into `(3, 5, 6, 7)`. The library itself always takes a run of numbers and never a string.
+
+## The twelve calls
+
+Every one of these opens a run, takes `cancel`, and returns the frozen result named after it.
+
+```python
+project.narrate(*, only=None, voice=Voicing.PLACEHOLDER, max_cost=None,
+                force=False, replace_voiced=False, cancel=None) -> NarrateResult
+project.cue(*, only=None, allow_unknown=False, cancel=None) -> CueResult
+project.record(*, only=None, force=False, cancel=None) -> RecordResult
+project.soundscape(*, only=None, voice=Voicing.PLACEHOLDER, max_cost=None,
+                   force=False, cancel=None) -> SoundscapeResult
+project.assemble(*, only=None, soundscape=True, loudness=True, strict=False,
+                 cancel=None) -> AssembleResult
+project.verify(*, only=None, cancel=None) -> VerifyResult
+project.build(*, stages=None, skip=(), only=None, voice=Voicing.PLACEHOLDER, max_cost=None,
+              force=False, replace_voiced=False, soundscape=True, loudness=True,
+              strict=False, allow_unknown=False, cancel=None) -> BuildResult
+project.status(*, cancel=None) -> StatusResult
+project.check(*paths, only=None, pages=True, frames=True, cancel=None) -> CheckResult
+project.words(*, only=None, cancel=None) -> WordsResult
+project.storyboard(*, only=None, slide=None, after=None, before=None, at=None,
+                   cancel=None) -> StoryboardResult
+project.clip(section, *, start, end, out, gain_db=0.0, hold_seconds=0.0,
+             cancel=None) -> ClipResult
+```
+
+`only` is a sequence of section numbers on every call that takes it. `Stage` is the enum the six
+stages are members of, in run order: `NARRATE`, `CUE`, `RECORD`, `SOUNDSCAPE`, `ASSEMBLE`, `VERIFY`.
+
+| Call | What it does | What it writes |
 |---|---|---|
-| `silent` | `False` | Uses a click track and estimated word times. Needs no API key. Raises `ConfigError` when `build/narration/takes.json` holds voiced takes, unless `force` is set. |
-| `force` | `False` | Voices every section again, and ignores the narration cache. With `silent`, replaces voiced takes. |
-| `only` | `None` | Section numbers for `record`. The other stages still use every section. |
-| `soundscape` | `True` | Mixes the music, the ambience bed, and the sound effects. `False` leaves them out. |
-| `loudness` | `True` | Runs the loudness pass. |
-| `strict` | `False` | Raises on a missing clip, a missing recording, or a loudness miss. A clip section with `optional = true` still plays its slate. |
-| `from_stage`, `to_stage` | `None` | The first and last `Stage` to run, both ends inclusive, such as `decktalk.Stage.RECORD`. |
-| `progress_path` | `None` | Where to write the progress log. The default is `build/progress.jsonl`. |
-| `allow_unresolved_cues` | `False` | Continues when a cue phrase is not found. |
-| `allow_unknown_cues` | `False` | Continues when a cue id appears nowhere in its page. |
-| `report` | `None` | A function that `build` calls as `report(stage, None)` when a stage opens and `report(stage, result)` when it closes. `stage` is a `Stage`. |
+| `narrate` | Speaks each section of the script and times every word in it. | `build/narrate/takes.json`, the takes and the words files beside it. |
+| `cue` | Turns each cue phrase into a second on its own section's clock. | `build/cue-times.json` |
+| `record` | Records each page section in headless Chromium, against the seconds the cues named. | `build/recordings/` |
+| `soundscape` | Generates the music, the ambience bed and the effects the project describes. | `build/soundscape/` |
+| `assemble` | Cuts, mixes and encodes the sections into one film. | `build/final/` |
+| `verify` | Measures the finished film: every start, every cut, every seam and every landing. | nothing |
+| `build` | Runs every stage in order, or the span `stages` names, less whatever `skip` names. | whatever the stages it ran write |
+| `status` | Reports what is written, what is built, what is stale and what to do next. | nothing |
+| `check` | Judges the script, the cue file and the pages before a build, and prices what a build costs. | `build/frames/` and `build/storyboard.html` when it opens pages |
+| `words` | Every spoken word with its start and its end, which is how a cue phrase is written. | nothing |
+| `storyboard` | Freezes every slide at every cue onto one page. | `build/storyboard/` and `build/storyboard.html` |
+| `clip` | Cuts a span of one built section into its own file. | the file `out` names, and its words file |
 
-**Returns** a `BuildResult` with `stages`, the `Stage` members this run executed, one field per stage in
-`narration`, `align`, `recordings`, `assembly` and `verification`, and `progress`, the path of the
-progress log. A field is `None` for a stage the run did not reach. Its `ran` lists the stages that
-produced a result, and its `ok` is true when the video was assembled and `verification.ok` is true.
-The verification runs all five checks, cues included.
+A call that writes holds a lock on the build directory for its whole length, so two writing runs
+cannot overwrite each other's work. A second writer meets `ProjectLocked`. `status`, `words` and
+`check(pages=False)` take nothing and run beside a build.
 
-**Raises**
+```python
+import decktalk
 
-| Error | When |
+project = decktalk.open("my-lesson")
+project.narrate()
+project.cue()
+for section in project.words().sections:
+    for word in section.words[:5]:
+        print(section.section, word.word, word.start, word.end)
+```
+
+### `check` without a browser
+
+`pages=False` judges the written files with no browser at all and says which judgements it could not
+reach, so a new deck gets its first rows without a download and a hook with no browser still runs.
+`frames=False` keeps the browser and drops the freeze comparison. A check that opens pages freezes
+frames into the build directory and draws the storyboard over them, so it holds the build lock for
+as long as a stage that produces would.
+
+```python
+import decktalk
+
+project = decktalk.open("my-lesson")
+result = project.check(pages=False)
+print(result.ok, result.judged, result.spend.ceiling_dollars)
+```
+
+### `storyboard` selectors
+
+`slide` names the slides, `after` and `before` name the state just after and just before one cue,
+which are the pair an author compares to see what a reveal changed, and `at` names a second of the
+section's own clock. Each one takes a sequence, and one that matches nothing draws nothing.
+
+```python
+import decktalk
+
+project = decktalk.open("my-lesson")
+result = project.storyboard(only=[2], after=["2.1:formula"])
+for panel in result.panels:
+    print(panel.slide, panel.cue, panel.at, panel.image)
+print(result.storyboard)
+```
+
+### `clip`
+
+```python
+import decktalk
+from pathlib import Path
+
+project = decktalk.open("my-lesson")
+result = project.clip(2, start=4.0, end=9.5, out=Path("build/final/formula.mp4"), hold_seconds=1.0)
+print(result.film, result.words, result.seconds, result.estimated)
+```
+
+## Voicing, `max_cost` and `ApprovalRequired`
+
+No library call buys anything without `voice=Voicing.PAID`. `Voicing` has two members,
+`PLACEHOLDER` and `PAID`, which is one gate rather than a pair of flags that could contradict each
+other. A run whose voicing is `PLACEHOLDER` writes a click track and a word clock for `narrate`, and
+reports the plan without buying it for `soundscape`.
+
+`max_cost` is a ceiling in US dollars, checked before the first paid request rather than counted
+down as the credits go. It is compared against `spend.ceiling_dollars`, which is the most the run
+can cost, and never against `spend.dollars`, because credits are consumed one request at a time and
+a cap that claimed to stop a run halfway would be a lie.
+
+`ApprovalRequired` is raised rather than spending, in three cases.
+
+| When | What the message says |
 |---|---|
-| `ConfigError` | A cue phrase is not found and `allow_unresolved_cues` is false. A page threw an error during its recording. An input file is not valid. |
-| `MissingInputError` | `strict` is true and a clip or recording is missing, or an earlier output is missing. `build --from` started at a stage past an artifact that is not there. |
-| `ToolError` | ffmpeg or Chromium failed, or `strict` is true and the loudness missed its target. |
-| `ProviderError` | The speech provider refused or failed a request. |
-
-Note: a cue id that appears nowhere in its page is an ordinary finding rather than an exception. The
-row carries the `UNKNOWN_CUE` verdict, `align` and `build` exit 1 on it, and `allow_unknown_cues`
-lets the run continue.
-
-## `verify`
+| The run would spend and no voicing approved it. | How much the run would spend on speech. |
+| `max_cost` is set and no layer above the default states what speech costs. | That the cap would guard a price nobody stated. |
+| The run's ceiling is over `max_cost`. | The ceiling, the cap, and the value that would let it through. |
 
 ```python
-decktalk.verify(project, checks=None, only=None) -> VerifyResult
+import decktalk
+
+project = decktalk.open("my-lesson")
+try:
+    result = project.narrate(voice=decktalk.Voicing.PAID, max_cost=0.01, force=True)
+except decktalk.ApprovalRequired as refused:
+    print(refused)          # this run can cost up to $0.14, which is over the $0.01 ceiling ...
+    print(refused.hint)     # Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
+    print(refused.code)     # ErrorCode.APPROVAL
 ```
 
-`verify` checks section starts, cuts, and cues on the final mp4. [Verify](/reference/verify) defines every
-measurement.
+`Spend` is the priced object every spending result carries and every `spend` event line reports.
 
-| Parameter | Default | Meaning |
+| Field | Meaning |
+|---|---|
+| `state` | `SpendState.ESTIMATE` for what the run would cost, `SpendState.CHARGED` for what it did. |
+| `sections` | The sections this price covers, in script order. |
+| `characters` | How many characters of script this price is for. |
+| `dollars` | The price at the stated rate. |
+| `ceiling_dollars` | The most this run can cost, which is what `max_cost` is compared against. |
+| `price_per_1000_characters` | The rate this price was worked out at. |
+| `price_layer` | Which layer set that rate. `Layer.DEFAULT` means nobody stated it. |
+
+Set the rate with `[voice] price_per_1000_characters` so that a ceiling guards a real number.
+
+## `Cancel`
+
+Every mutating call takes `cancel`. `Cancel` is thread safe, because the caller that stops a run is
+a terminal's interrupt handler or a renderer's own thread and never the thread doing the work. A
+stage checks the token between sections, so a cancelled run leaves whole artifacts behind rather
+than half of one, and raises `Cancelled`.
+
+```python
+import threading
+import decktalk
+
+project = decktalk.open("my-lesson")
+stop = decktalk.Cancel()
+threading.Timer(30.0, stop.cancel).start()
+try:
+    project.record(cancel=stop)
+except decktalk.Cancelled:
+    print("stopped between sections, and every finished recording is still on disk")
+```
+
+`Cancel` has `cancel()` to ask the run to stop, `is_set()` to ask whether it has been asked, and
+`check()`, which raises `Cancelled` and is what a stage calls.
+
+## What every result carries
+
+`Result` reserves four keys and every result has them. A result whose command opens a run also
+declares `run`, and one whose command writes files also declares `written`.
+
+| Key | Meaning |
+|---|---|
+| `schema` | The shape version of the object, which is always `2`. It is spelled `schema_` in Python and `schema` in JSON. |
+| `ok` | True when the command ran and judged nothing certain. |
+| `findings` | Every judgement this call made, certain first. |
+| `error` | An `ErrorInfo`, filled only when the command could not run at all. |
+| `run` | The id of the run this call opened, which names its events file. |
+| `written` | Every file this run wrote, project-relative, in the order it wrote them. |
+
+`written` is how an artifact is found without knowing a path.
+
+```python
+import decktalk
+
+project = decktalk.open("my-lesson")
+result = project.narrate()
+for path in result.written:
+    print(path)          # build/narrate/placeholder-4414cac18e.mp3, build/narrate/takes.json, ...
+print(result.takes)      # build/narrate/takes.json
+```
+
+Two class facts sit beside the fields rather than in them. `Result.reports_findings` is true when
+the command can report a judgement, and `Result.spends` is true when it can buy something. The
+command line derives its own flags from those two, which is why no list of commands lives beside the
+models.
+
+Every result is a frozen pydantic model, so `result.model_dump_json()` gives exactly what the
+command line prints under `--json`, and `uv run decktalk schema NAME` prints the schema of the
+result named after that command.
+
+## Findings and fixes
+
+A finding is a judgement about the film or about the files it is made from. It is never an error,
+because an error means DeckTalk could not run at all.
+
+| Field | Meaning |
+|---|---|
+| `code` | A member of `Code`, which is the closed list of every judgement DeckTalk can make. |
+| `message` | One sentence, with every measured number and its limit written into it. |
+| `certainty` | `Certainty.CERTAIN` or `Certainty.UNCERTAIN`, which the code owns. |
+| `location` | A `Location`, whose `where` names the object judged. |
+| `stage` | The `Stage` that raised it, or `None` when no stage did. |
+| `fix` | A change that resolves it, or `None` when none is known. |
+| `url` | The docs page for this code, which the code owns. |
+
+`Location` carries a required `where` plus `file`, `line`, `section` and `cue`, each of which is
+`None` when nothing knows it.
+
+A `Code` member carries more than its name. `code.sentence` is what the condition is,
+`code.certainty` is how sure it is, `code.raised_by` is `RaisedBy.RUNTIME` when the page reports it
+from the browser and `RaisedBy.PYTHON` when DeckTalk measures it, `code.decides` names the settings
+keys whose values decide it, and `code.url` is its page.
+
+```python
+import decktalk
+
+project = decktalk.open("my-lesson")
+for finding in project.check(pages=False).findings:
+    code = finding.code
+    print(code.name, finding.certainty.value, finding.location.where)
+    print("  ", finding.message)
+    print("  knobs that decide it:", code.decides)
+```
+
+A fix is one of three shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
+saying what applying it does, and an `applicability`.
+
+| `kind` | Class | What it changes |
 |---|---|---|
-| `checks` | `None` | `None` checks every cue in `cue-times.json` that `cues.json` does not opt out. An empty list checks no cue. A list of `SECTION:CUE` strings checks those cues, even opted-out ones. |
-| `only` | `None` | Section numbers whose cues to keep. Section starts, cuts, and cut continuity are always checked. |
+| `edit` | `EditFix` | `edits`, a run of `Edit` objects applied together or not at all. Each names exactly one of `pointer`, `key` or `line`. |
+| `setting` | `SettingFix` | `key` and `value`, in the same key space `config set` takes. |
+| `command` | `CommandFix` | `command`, the whole argv a caller may hand to a subprocess. |
 
-**Returns** a `VerifyResult`.
+`Applicability.SAFE` cannot lose the author's work. `Applicability.UNSAFE` can, so it is applied only
+when the caller asked for that. `Applicability.DISPLAY` is a change only a person can make, so it is
+reported and never applied.
+
+```python
+decktalk.Project.apply(fix, *, unsafe=False) -> ApplyResult
+```
+
+```python
+import decktalk
+
+project = decktalk.open("my-lesson")
+found = project.check()
+outcome = project.apply([f for f in found.findings if f.fix is not None])
+for row in outcome.fixes:
+    print(row.code.name, row.applied, row.files, row.why)
+```
+
+`apply` takes one finding or any iterable of them, and takes the fix from its finding rather than on
+its own, because what a fix resolves is the finding's own code. Each `FixOutcome` carries `code`,
+`title`, `applied`, `why` for one that was left alone, and `files` for the ones it changed.
+`Machine.apply` is the same call for a fix that turns a machine knob or runs a command.
+
+## Events
+
+`Machine.events` is the stream every run of every project writes to, and `Project.events` is its
+view filtered to the runs that project opened. The stream lives on the machine because `install` and
+`doctor` hold no project and would otherwise leave a renderer silent through the two commands that
+download two hundred megabytes.
+
+```python
+events.subscribe(listener, *, runs=None) -> Subscription
+```
+
+A project's view reads its run set when a line is delivered rather than when a renderer attaches, so
+a caller may subscribe before it makes the call it wants to watch. A `Subscription` detaches by
+`close()` or by leaving its `with`. A renderer that raises never stops a run: the failure becomes a
+`log` line at `Level.ERROR`.
+
+```python
+import decktalk
+from decktalk import Progress, SectionDone, SpendEvent
+
+project = decktalk.open("my-lesson")
+
+def render(event):
+    if isinstance(event, Progress):
+        print(f"{event.stage.value}: {event.done}/{event.total} {event.unit.value} {event.label}")
+    elif isinstance(event, SectionDone):
+        print(f"section {event.section} {event.outcome.value} in {event.seconds:.2f}s")
+    elif isinstance(event, SpendEvent):
+        print(f"{event.spend.state.value} ${event.spend.dollars:.2f}")
+
+with project.events.subscribe(render):
+    project.build()
+```
+
+Every line carries four fields the library mints, so an emitter states only what it measured.
+
+| Field | Meaning |
+|---|---|
+| `event` | The discriminator, which is what a reader dispatches on. |
+| `time` | When this happened, as an instant. |
+| `seq` | This line's place in its run, counting from zero. |
+| `run` | The id of the run this line belongs to. |
+
+There are eleven names and eleven models. Skip and fail are not names, because `stage.done` and
+`section.done` carry an `outcome` instead.
+
+| `event` | Class | What it carries beyond the four |
+|---|---|---|
+| `run.start` | `RunStart` | `events_path`, the file this run's lines are appended to, or null when no project holds one. |
+| `run.done` | `RunDone` | `outcome`, `seconds`. |
+| `stage.start` | `StageStart` | `stage`, `index` counting from one, `count` of stages the run planned. |
+| `stage.done` | `StageDone` | `stage`, `outcome`, `seconds`. |
+| `section.start` | `SectionStart` | `stage`, `section`. |
+| `section.done` | `SectionDone` | `stage`, `section`, `outcome`, `seconds`. |
+| `progress` | `Progress` | `stage`, `section` or null, `done`, `total`, `unit`, `label`. |
+| `finding` | `FindingEvent` | `finding`, in the same shape the result will carry. |
+| `spend` | `SpendEvent` | `spend`, with its state saying whether it is an estimate. |
+| `fetch` | `Fetch` | `tool`, `bytes`, `total_bytes` or null. |
+| `log` | `Log` | `level`, `message`. |
+
+`Outcome` is `OK`, `SKIPPED` or `FAILED`. `Unit` is `TAKE`, `SECTION`, `ASSET`, `PASS` or `PROBE`,
+so a renderer names the thing rather than a bare number: narrate counts takes, record counts
+sections, soundscape counts assets, assemble counts encoding passes and verify counts probes.
+`Level` is `DEBUG`, `INFO`, `WARNING` or `ERROR`.
+
+`JsonlSink` is the subscriber that appends one JSON line per event to a file. Every run of a project
+gets one, at `build/events/<run>.jsonl`, and `output.events_keep_runs` prunes the oldest.
+
+```python
+import decktalk
+from pathlib import Path
+
+project = decktalk.open("my-lesson")
+with project.events.subscribe(decktalk.JsonlSink(Path("run.jsonl"))):
+    project.cue()
+```
+
+`Line` is the discriminated union of the eleven models, so a reader parses a stored line by its
+`event` and never by trying each shape.
+
+```python
+import decktalk
+import pydantic
+
+reader = pydantic.TypeAdapter(decktalk.Line)
+for raw in open("my-lesson/build/events/a41e586449ed.jsonl", encoding="utf-8"):
+    print(reader.validate_json(raw))
+```
+
+## `serve` and `Origin`
+
+```python
+decktalk.Project.serve(*, host="127.0.0.1", port=0) -> Origin
+```
+
+`serve` hands back the origin rather than a result, because the caller holds it open. The origin
+answers only for the deck directory and the files the document declares, so a page the recorder
+drives and a preview an author leaves running reach the same short list and neither can read the
+credential beside it. It also answers one alias, which is where a previewed page reads the cue times
+the last run resolved.
 
 | Member | Meaning |
 |---|---|
-| `final`, `total_seconds`, `silent` | Path of the final mp4, its length, and whether the build carries placeholder narration. |
-| `recordings` | One `LoggedRecording` per recorded page section, with `key`, `verdicts`, `page_errors`, `t0_method`, `where`, and `ok`. `verify` repeats these rather than measuring them. |
-| `starts` | One `StartCheck` per section, with `key`, `start`, `probe_at`, `yavg`, `ymax`, `ok`, and `verdict`. |
-| `cuts` | One `CutCheck` per spoken section, with `key`, `cut_at`, `rms_db`, `ok`, `into`, `held`, and `verdict`. |
-| `seams` | One `SeamCheck` per section with `seamless = true`, with `key`, `cut_at`, `last_at`, `first_at`, `changed_percent`, `ok`, and `verdict`. |
-| `cues` | One `CueCheck` per cue row, with `check`, `section`, `cue`, `cue_seconds`, `final_seconds`, `changed_percent`, `control_percent`, `offset_ms`, `av_ms`, `ok`, `note`, `verdict`, `reason`, and `skipped`. |
-| `black_starts` | Count of section starts that read `BLACK`. |
-| `recorded_findings`, `film_findings`, `findings` | What the recording logs judged, what this run measured on the film, and the two added together. |
-| `ok` | True when every recording, start, cut, seam, and measured cue passed. A skipped row never counts against it. |
-| `to_dict(root)` | The result as JSON-ready data. |
+| `url` | Where the deck is served, which is what an author opens and a recorder drives. |
+| `port` | The port the origin listens on, which a caller reads when it asked for any free one. |
+| `wait()` | Block until the origin is closed, which is what a command with no other work to do does. |
+| `close()` | Stop serving, after which the URL answers nothing. |
+| `result` | The `ServeResult`, with `url`, `port` and `root`. |
+| `run` | The run this origin opened. |
 
-**Raises** `MissingInputError` when the section mp4s or the final mp4 are missing. **Raises** `ConfigError` when a
-check does not start with a section number.
-
-## Other stages
-
-These functions run one stage each, or read the project. Every result carries `findings`, the tally of what the
-run judged, and `to_dict(root)`, the same thing as JSON-ready data with every path relative to the project root.
-
-| Function | Returns | Raises |
-|---|---|---|
-| `narrate(project, *, only=None, force=False, allow_placeholders=False, silent=False, model=None, dry_run=False)` | `NarrateResult` with `plans`, each a `TakePlan`, and `voice`, `narration`, `rate`, `rows`, `note`, `takes`, `synthesized`, `cached` and the `segments` property. With `dry_run`, `takes` is `None` and nothing is written. | `ConfigError`, `MissingInputError`, `ProviderError` |
-| `align(project, *, allow_unknown_cues=False)` | `AlignResult` with `cue_times`, `sections`, `unresolved`, `estimated`, `unknown`, `uncued`, `cue_times_file`, `allow_unknown_cues`, and the `short`, `problems` and `unknown_problems` properties | `ConfigError`, `MissingInputError` |
-| `preflight(project, *, only=None, frames=True, model=None, allow_unknown_cues=False)` | `PreflightResult` with `voice`, `narration`, `takes`, `note`, `align`, `estimated`, `rate`, `cues`, `seams`, `frames`, `page_warnings`, `root`, `allow_unknown_cues`, and the `placeholders` and `short` properties | `ConfigError`, `MissingInputError`, `ToolError` |
-| `record(project, *, only=None, seconds=None, use_cues=True, opening=None, report=None)` | `RecordResult` with `sections`, each a `SectionRecording` with `section`, `path`, `log`, `kept`, and the `key`, `verdicts`, `ok` and `label` properties, plus the `kept_sections` and `page_errors` properties | `ConfigError`, `MissingInputError`, `ToolError` |
-| `assemble(project, *, soundscape=True, loudness=True, strict=False)` | `AssembleResult` with `final`, `stamped`, which is `None` unless `[output] timestamped_copy` is on, and `duration`, `sections`, `warnings`, `loudness`, `loudness_problems`, `cuts`, `cuts_file`, `captions_srt`, `captions_vtt`, `chapters`, `transcript`, `poster`, plus the `substituted`, `substitutions` and `written` properties | `ConfigError`, `MissingInputError`, `ToolError` |
-| `screenshots(project, *, pages=None, slides=None, section=None, at=None, cues=None)` | `ScreenshotsResult` with `files`, each a `Screenshot` with `path`, `page`, `slide`, `cue`, `section`, `at` and `page_errors`, plus the `paths` property for the written files alone | `ConfigError` |
-| `soundscape(project, *, only=None, force=False, dry_run=False)` | `SoundscapeResult` with `items`, each a `SoundscapeItem` with `name`, `out`, `endpoint`, `requests`, `status`, and `duration_seconds` | `ConfigError`, `ProviderError` |
-| `status(project)` | `StatusResult` with `root`, `name`, `script`, `script_exists`, `cues`, `cues_exists`, `sections`, `takes`, `cue_times_exists`, `cue_times_sections`, `final`, `final_exists`, `final_duration`, `outputs`, `problems` and `run`. It reads what exists and runs nothing. | none |
-| `words(project, only=None)` | `WordsResult` with `sections`, each a `SectionWords` with `key`, `title`, `lead_seconds`, `duration`, `estimated`, `words`, `texts` and the `section` property | `ConfigError`, `MissingInputError` |
-| `clip(project, number, *, start, end, out, words_out=None, gain_db=0.0, hold_seconds=0.0)` | `ClipResult` with `section`, `video`, `words_file`, `start`, `end`, `first_frame`, `last_frame`, `hold_seconds`, `duration`, `gain_db`, `estimated`, `words`, and `cut_words` | `ConfigError`, `MissingInputError`, `ToolError` |
-
-- `record` with `seconds` records every section for that long. With `use_cues=False`, the pages play in preview. One call records, measures and checks each section, and writes its whole log before it opens the next page.
-- `screenshots` with `section` takes frames from a playing section at each time in `at`, 0.5 s by default.
-- `screenshots` with `cues` needs exactly one slide in `slides`.
-- `words` gives each word in seconds after its section starts. `words` keeps the voice's spelling, and `texts`
-  gives the same words with the script's punctuation and case.
-- `clip` resolves a relative `out` or `words_out` against the project. `words_out` defaults to `out` with
-  `.words.json`. [`decktalk clip`](/reference/cli#decktalk-clip) describes the cut.
-
-Every result has `to_dict(root)`. It returns the data
-that the command line prints under `--json`. Numbers stay numbers, and paths are relative to `root` with forward
-slashes. Pass `project.root`.
+It is also a context manager, so the `with` form closes it.
 
 ```python
-import json
 import decktalk
 
-project = decktalk.Project.load("my-lesson")
-result = decktalk.verify(project)
-print(json.dumps(result.to_dict(project.root), indent=2))
+project = decktalk.open("my-lesson")
+with project.serve(port=0) as origin:
+    print(origin.url)     # http://127.0.0.1:64434
+    print(origin.port)    # 64434
+    origin.wait()
 ```
 
-## Vocabulary
+## Watching a project
 
-A verdict, its certainty, a skip reason, a stage and an error code are members of plain enums, so a
-string never compares equal to one. Compare a row with a member, as in
-`row.verdict is decktalk.Verdict.OFF_CUE`, and read a word from JSON into a member before comparing it.
+`Project.reload()` reads the project again from disk and returns a new `Project` on the same
+machine, with the same overrides. `Project.sections_touching(path)` says which sections a change to
+one file would change: a page belongs to the sections that play it, a clip to the section that plays
+it, and the script, the cue file and `decktalk.toml` each belong to every section at once.
 
-| Name | Members |
-|---|---|
-| `Verdict` | One member per verdict [Verify](/reference/verify) lists. `name` is the code, `label` is what a table prints, `certain` and `passing` say which kind of verdict it is, `to_dict()` gives the `{code, label, certain}` object every payload carries, and `Verdict.from_dict(data)` reads one back and raises `ValueError` on an object that names no verdict or disagrees with its code. |
-| `SkipReason` | Why a row measured nothing, such as `SkipReason.OPTED_OUT`. `value` is the code. |
-| `Stage` | The five stages, in the order a build runs them. `value` is the name that `--from`, `--to`, the progress log and the `build` payload use, and `Stage("record")` reads one. |
-| `Certainty` | How sure a verdict is, which `Verdict.certainty` holds: `CERTAIN`, `UNCERTAIN` or `PASSING`. |
-| `ErrorCode` | What an error's `code` is, such as `decktalk.ConfigError.code is decktalk.ErrorCode.CONFIG`. `value` is the code the command line prints and the envelope's `error.code`. |
+Those two are the whole of what a watch loop needs.
 
-A take plan's `status`, a soundscape item's `status`, and a `Cut`'s `kind` and `substitute` are
-members of plain enums too. Their enums are not exported, so read the word with `.value`, which is
-the word the JSON carries: `synthesize`, `cached` or `unknown`, `planned`, `unchanged` or
-`generated`, `page` or `clip`, and `slate` or `black`. A `Cut` with nothing standing in for it has
-`substitute` set to `None`.
+```python
+import decktalk
+from pathlib import Path
 
-## Artifacts
+project = decktalk.open("my-lesson")
 
-These classes read and write the files under `build/`. [Build artifacts](/reference/artifacts) gives every field,
-and names the files that no public class reads.
+def changed(path: Path) -> None:
+    global project
+    project = project.reload()
+    touched = project.sections_touching(path)
+    if touched:
+        project.record(only=touched)
+        project.assemble()
+```
 
-| Class | Members |
-|---|---|
-| `Word` | `word`, `start`, `end` |
-| `Takes` | The take index and the narration clock. `load(path)` returns `None` when the file does not exist, `save(path)`, `keys`, `voiced_keys`, `span(key)`, `start(key)`, `end(key)`, `starts`, and `speech_end(key)`. |
-| `CueTimes` | The resolved cues per section, as `CueTime` rows. `load(path)`, `save(path)`, `query(key)` for the `?cues=` string, `times(key)`, `get(key, cue)`, and `word_at(key, cue)`. |
-| `RecordingLog` | What the recorder did for one section. `load(path)` returns `None` when the file does not exist, `save(path)`, `trim_seconds`, and `worst_stall_ms`. |
-| `Cuts` | The cut list, as `Cut` rows. `load(path)` returns `None` when the file does not exist, `save(path)`, `to_dict()`, `substituted`, and `at(seconds)` for the section playing at a second of the film. |
+## Errors
 
-## Errors and logging
+Every refusal DeckTalk makes on purpose is a `DeckTalkError`, so `except DeckTalkError` catches an
+environment DeckTalk cannot work in and never catches a bug in DeckTalk itself.
 
-Every error that DeckTalk raises on purpose is a `DeckTalkError`.
+Each one carries `hint`, which is a whole command with its flags rather than a topic, and
+`location`, which is the place the reader should open. Either is `None` when nothing knows it.
 
-Each one carries `hint`, the smallest next action, `path`, the project file it is about, and `line`,
-the line inside that file, and each of the three is `None` when nothing knows it. The command line
-prints an error as `error[CODE]: <message>` on stderr and exits 3, and under `--json` it fills the
-envelope's `error` slot. `error.code` is an `ErrorCode`, and the table gives its `value`.
-
-| Error | `error.code` | Raised when |
+| Class | `code` | Raised when |
 |---|---|---|
-| `DeckTalkError` | `INTERNAL` | Base class of every error below. Raised on its own it is unplanned. |
-| `ConfigError` | `CONFIG` | `decktalk.toml`, `cues.json`, or `.env` is missing, cannot be parsed, or is not consistent. |
-| `MissingInputError` | `MISSING_INPUT` | A stage needs an output that an earlier stage has not written yet. |
-| `ProviderError` | `PROVIDER` | An external API, such as ElevenLabs, refused or failed a request. |
-| `ToolError` | `TOOL` | ffmpeg, ffprobe, or Chromium is not available or failed. |
+| `DeckTalkError` | `INTERNAL` | The base of every class below. It is never raised on its own. |
+| `InputError` | `INPUT` | A file the author writes is missing, unreadable or malformed. |
+| `NotBuiltError` | `NOT_BUILT` | A stage needs an artifact no earlier run produced. The hint names the command that makes it. |
+| `ProviderError` | `PROVIDER` | The voice could not be reached, refused the request, or failed it. |
+| `ToolError` | `TOOL` | ffmpeg, ffprobe or Chromium is unavailable, or one of them failed a call. |
+| `ProjectLocked` | `LOCKED` | Another writer holds this project's build directory. |
+| `ApprovalRequired` | `APPROVAL` | A run that spends money was not approved. |
+| `Cancelled` | `CANCELLED` | The caller stopped the run through its cancel token. |
 
-The stages log progress to the `decktalk` logger at the INFO level. Attach a handler to see it. `__version__` is
-the installed version string.
+`ProviderError` adds `retryable`, which is true when the same request may succeed later, and is what
+decides whether a caller waits.
 
-## Speech providers
+The count of classes is the count of distinct recoveries and not the count of codes. `ErrorCode` has
+nine members, and `USAGE` and `INTERNAL` are the two with no class: a command line the parser
+refused is the command line's own refusal, and anything DeckTalk did not mean to raise reaches the
+caller as it is.
 
-A speech provider returns audio and a start and end time for every word. ElevenLabs is the built-in provider.
+| `ErrorCode` | `exit_code` | What it means |
+|---|---|---|
+| `INPUT` | 3 | A file the author writes is missing, unreadable or malformed. |
+| `NOT_BUILT` | 3 | A file a stage needs was never built. |
+| `PROVIDER` | 3 | The voice could not be reached, refused the request, or failed it. |
+| `TOOL` | 3 | ffmpeg or Chromium is missing, or one of them failed. |
+| `LOCKED` | 3 | Another writer holds this project's build directory. |
+| `APPROVAL` | 2 | A spend needed an approval that no flag and no terminal gave. |
+| `CANCELLED` | 130 | The caller stopped the run. |
+| `USAGE` | 2 | The command line was refused, and a retry as written fails again. |
+| `INTERNAL` | 3 | A bug in DeckTalk. |
 
-| Name | Meaning |
+A member carries `value`, which is the code as JSON writes it, `sentence`, `exit_code` and `url`.
+
+```python
+import decktalk
+
+try:
+    decktalk.open("my-lesson").verify()
+except decktalk.NotBuiltError as missing:
+    print(missing.code.value, missing, missing.hint)
+except decktalk.DeckTalkError as refused:
+    print(refused.code.value, refused.code.exit_code, refused.code.url)
+```
+
+`ErrorInfo` is the same refusal as data, which is what a result's `error` holds. It carries `code`,
+`message`, `hint`, `location` and `docs`, and `ErrorInfo.of(error)` is the one place an exception
+becomes one.
+
+## The machine
+
+```python
+decktalk.Machine.from_environment(*, overrides=()) -> Machine
+```
+
+This is the only reading of the environment there is. `overrides` is an iterable of
+`(key, value)` pairs.
+
+| Member | Meaning |
 |---|---|
-| `SpeechProvider` | A protocol with `name`, `speak(request)`, and `cache_key(request)`. `speak` returns the audio bytes and a list of `Word`. `cache_key` returns everything except the text that changes the audio. |
-| `SpeechRequest` | A frozen dataclass with `text`, `model`, `voice_settings`, `output_format`, `previous_text`, and `next_text`. `text` holds break tags. |
-| `register_speech_provider(name, factory)` | Makes a provider selectable as `[voice] provider = "name"`. The factory receives a `VoiceContext`, which carries the settings and the project's secrets, and returns a provider. |
+| `environ` | The environment as this process found it. |
+| `tables` | The per-machine settings file as tables. |
+| `config_path` | Where that file is. |
+| `cwd` | The directory the process started in. |
+| `toolchain` | A `Toolchain`, with `tools`, `ffmpeg`, `ffprobe`, `cache_dir`, `complete`, `paths()` and `fetched()`. |
+| `events` | The stream every run on this machine writes to. |
+| `cache_dir` | Where this machine keeps the browser and the encoder it fetches. |
+| `voice_key` | True when the credential a paid run would use is set. It is asked and never revealed. |
+| `provider(name)` | The factory one `[voice] provider` name answers to, or an `InputError` naming the providers it knows. |
+| `install(*, cancel=None)` | Fetch the browser and the encoder, before a build asks for them. |
+| `doctor(*, measure=False, cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. |
+| `apply(fix, *, unsafe=False)` | Carry out the fixes a machine can make. |
 
-Registering a name again replaces the earlier factory. DeckTalk loads no plugins. For a provider that the command
-line can use, open a pull request that adds a module under `src/decktalk/speech/` and names it in the registry.
+`doctor(measure=True)` drives a browser to measure this host's presentation bias and writes it to
+the per-machine settings file, which is the one key a command measures rather than a person chooses.
 
-## Stability
+```python
+import decktalk
 
-The file formats and the page contract are the stable surface: `decktalk.toml`, `cues.json`, the build artifacts,
-and the page runtime. A change to them raises the minor version. The Python names can still change.
+machine = decktalk.Machine.from_environment()
+report = machine.doctor()
+for tool in report.tools:
+    print(tool.tool, tool.version, tool.path)
+print(report.python, report.platform, report.cache, report.voice_key)
+```
+
+## Settings
+
+`Project.settings` is a `Settings`, with one frozen config object per table. `Project.layers` says
+which of the five layers set each key.
+
+```python
+decktalk.explain(key, *, project=None, value=None) -> Explanation
+```
+
+`explain` reads one knob whole: its type, its unit, its safe range, the value in force, every layer
+that stated it, the variable that sets it, the stages that read it, the findings it decides, the
+published numbers it feeds, and what a candidate value would clamp in this project. Without
+`project` the answer is about the defaults and the machine alone, which is what an agent reading the
+instruction set before it has a project needs. `value` is a candidate spelled the way a command line
+spells it, held to the same safe range as a value that is written.
+
+```python
+import decktalk
+
+explained = decktalk.explain("motion.scale")
+print(explained.key, explained.value, explained.range, explained.environment)
+for layer in explained.layers:
+    print(" ", layer.layer.value, layer.value, layer.file, layer.line)
+```
+
+`Layer` is the five layers, lowest first: `DEFAULT`, `MACHINE`, `PROJECT`, `ENVIRONMENT`,
+`OVERRIDE`. `Scope` says which file a settings write lands in, `PROJECT` or `MACHINE`.
 
 ## Related
 
-- **Look up the files that the stages write:** [Build artifacts](/reference/artifacts)
-- **Look up a tuning field:** [Configuration](/reference/configuration)
-- **Run the same stages from a shell:** [CLI](/reference/cli)
+- **Run the same calls from a shell:** [CLI](/reference/cli)
+- **Look up a settings key, its range and its hazard:** [Configuration](/reference/configuration)
+- **Look up the files a run writes:** [Build artifacts](/reference/artifacts)
+- **Look up what a page may declare:** [Runtime](/reference/runtime)

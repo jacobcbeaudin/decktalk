@@ -3,8 +3,8 @@ title: Lessons
 description: Teach an idea where each part appears as it is spoken, with equations typeset on the page and nothing read ahead.
 ---
 
-A viewer follows an explanation in which each idea appears as it is spoken, so nothing is read
-ahead.
+A viewer follows an explanation in which each part of the picture appears as it is spoken, so
+nothing is read ahead.
 
 A lesson fails when the slide says everything at once. The room reads the whole slide, finishes
 before the teacher does, and stops listening. DeckTalk holds each part of a diagram back until the
@@ -12,11 +12,12 @@ voice reaches the word for it, so attention has nowhere else to go.
 
 ## What a viewer gets
 
-- One idea at a time, in the order the explanation needs, because a reveal waits for its word.
+- One idea at a time, in the order the explanation needs, because every moment waits for a phrase in
+  the script rather than for a second on a timeline.
 - Equations typeset on the page from a `data-tex` attribute, drawn as the voice says them and never
-  spelled out as symbols.
-- A sentence that appears word by word under the voice, through `data-text="spoken"`, when the
-  wording itself is the point.
+  read out as symbols.
+- A line shown word by word under the voice, through `data-words="appear"` or
+  `data-words="highlight"`, when the wording itself is the point.
 - Chapters a learner can jump between, a transcript page to read afterwards, and captions for a
   viewer who needs them.
 
@@ -24,43 +25,62 @@ voice reaches the word for it, so attention has nowhere else to go.
 
 | File | What it holds |
 |---|---|
-| `script.md` | The explanation, one heading per section, with a time budget that keeps a section to one idea. |
-| `decktalk.toml` | The sections and their chapter names, which default to the script headings. |
+| `script.md` | The explanation, one `## N. Title` heading per section, each section one idea. |
+| `decktalk.toml` | One `[[section]]` per section, with the chapter name a viewer sees. |
 | `cues.json` | The phrase each part of the diagram waits for. |
 | The deck page | The diagram, the equations and the chapter cards. |
 
-KaTeX ships inside the wheel, so an equation needs no download and no content delivery network. A
-diagram is plain HTML and CSS with `data-cue` and `data-reveal` attributes on the parts that appear,
-and `data-describe` gives each of those parts one sentence that the transcript prints.
+KaTeX ships inside the wheel and `decktalk init` copies it into `deck/katex/`, so an equation needs
+no download and no network origin. A diagram is plain HTML and CSS with a moment attribute on each
+part that appears, and `data-describe` gives each of those parts one subject that the transcript
+prints and the runtime gives a verb to. An element that changes the picture and describes nothing is
+reported as `PAGE_NO_DESCRIPTION`, so a lesson cannot quietly lose a step for a reader.
+
+A chapter may cover more than one section. Consecutive sections that carry the same `chapter` share
+one entry in the chapters file and one heading in the transcript, which is how a long idea is
+written as several short takes without giving a learner several headings for it.
 
 ## The workflow
 
 <Steps>
-  <Step title="Start a lesson project">
-    `decktalk init --example lesson` writes a worked lesson with an equation, which is the fastest
-    way to see the shape of one.
+  <Step title="Start from the worked lesson">
+    `decktalk init --example lesson my-lesson` writes a finished lesson about how a model learns,
+    whose one long scene is written in markup and which exercises every page attribute. It is the
+    fastest way to see the shape of one. `decktalk init my-lesson` writes the smaller starter
+    instead.
   </Step>
   <Step title="Write the explanation, then the diagram">
-    Say the thing, then draw the thing. Every reveal needs a word in `script.md` that names it,
+    Say the thing, then draw the thing. Every moment needs a phrase in `script.md` that names it,
     which is what [Writing for the ear](/guides/writing-for-the-ear) is about.
   </Step>
-  <Step title="Build it without voice">
-    `decktalk build --no-voice` paces the whole lesson with placeholder narration, so the timing is
+  <Step title="Judge it before you build it">
+    `decktalk check` reads the script, the cue file and the pages, freezes a frame either side of
+    every cue and prices the run. `decktalk words` prints every spoken word with its start and its
+    end, which is the clock a cue phrase is written against.
+  </Step>
+  <Step title="Draft it with no voice">
+    `decktalk build --no-voice` paces the whole lesson on placeholder narration, so the timing is
     settled before a credit is spent.
   </Step>
   <Step title="Check every landing">
-    `decktalk verify` reports each reveal that came late, early or not at all, and
-    `decktalk screenshots` writes a PNG per slide so the text contrast and the crowding can be read.
+    `decktalk verify` measures the finished film and reports each reveal that came late, early or
+    not at all. `decktalk storyboard` writes every slide at every cue onto one page, so the contrast
+    and the crowding can be read before anyone watches the film.
   </Step>
-  <Step title="Reteach one section">
-    A better sentence is an edit and `decktalk build --only 2`. The rest of the lesson keeps its
+  <Step title="Teach one section again">
+    A better sentence is an edit and `decktalk build --section 2`. The rest of the lesson keeps its
     takes.
   </Step>
 </Steps>
 
+## Where to start
+
 Read [Quickstart](/quickstart) for the first build, [Design a slide](/guides/design-a-slide) for the
-reveal effects and the camera, and [Accessible video](/guides/accessible-video) for the captions,
+moments and the entrance styles, and [Accessible video](/guides/accessible-video) for the captions,
 the chapters and the transcript a course platform asks for.
 
-The other two use cases with worked examples are
-[technical tutorials](/use-cases/technical-tutorials) and [product demos](/use-cases/product-demos).
+## Also fits
+
+Conference talks, onboarding material and revision videos run the same pipeline. The two use cases
+beside this one are [technical tutorials](/use-cases/technical-tutorials) and
+[product demos](/use-cases/product-demos).

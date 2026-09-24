@@ -1,275 +1,347 @@
-"""Stage 3: record each page section with headless Chromium, find narration t=0, and check the result.
+"""Stage 3: record each page section in a headless browser, find narration t=0, and judge the result.
 
 One command does the whole of it. It opens the page on the local origin with the section's resolved
 cues and spoken words, records it for its span in the narration, reads the webm to find where
-narration t=0 sits under the magenta cover, checks the frames and what the page reported, and writes
-all of that to `build/recordings/NN.json` before it moves on to the next section. The measurement
-therefore belongs to the recording beside it, and a long run can be read while it runs.
+narration t=0 sits under the cover, judges the frames and what the page reported, and writes all of
+that to `build/recordings/NN.json` before it moves on to the next section. The measurement therefore
+belongs to the recording beside it, and a long run can be read while it runs.
 
-A section whose scene, the page around it, its loaded assets, words and cues have not moved is kept
-rather than recorded again, because the run would produce the same pixels. The key is cut per scene,
-so an edit to one slide records the sections that play that scene and leaves the rest of the page's
-sections alone. A section named by `--only` is always recorded, which is how an author asks for a
-take again without editing anything.
-
-    capture.py   the page URL, and driving Chromium with its retries
+    capture.py   the page URL, what a recording is keyed on, and the page cut into its scenes
     start.py     where narration t=0 sits in one recording
-    checks.py    duration, luma, KaTeX and page-error verdicts
+    checks.py    the frames, the page's own codes and the origins it reached for
+
+A section whose scene, the page around it, its loaded assets, its words, its cues and the motion it
+renders with have not moved is kept rather than recorded again, because the run would produce the
+same pixels. The key is cut per scene, so an edit to one slide records the sections that play that
+scene and leaves the rest of the page's sections alone. A section named by `--section` is always
+recorded, which is how an author asks for another take of a page that has not changed.
+
+The order the recorder writes in is the whole of its safety. The log of the recording being replaced
+goes before anything is captured, the webm is placed next, and the log of what was just recorded is
+written last, so the pair on disk is complete or absent and a crash can never leave a new picture
+under an old narration t=0.
 """
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from contextlib import ExitStack
 from pathlib import Path
-from typing import Any
 
-from ...artifacts import RecordingLog
-from ...errors import ConfigError, MissingInputError
-from ...jsonio import relative
-from ...media.browser import chromium
-from ...model import PageSection, Project
-from ...verdicts import Finding, Findings, Verdict
-from .capture import Job, capture_section, plan_job, prev_words_query, scene_params, scene_url, words_query
-from .checks import check_recording, label
-from .start import find_start
+from playwright.sync_api import Browser
 
-log = logging.getLogger(__name__)
+from decktalk.artifacts import RecordingChecks, RecordingLog, Takes
+from decktalk.errors import InputError
+from decktalk.events import Level, SectionDone, SectionStart, Unit
+from decktalk.findings import Code, Finding, Location
+from decktalk.inputs import Inputs, PageSection
+from decktalk.machine import Run
+from decktalk.media import browser
+from decktalk.media.browser import Recording
+from decktalk.media.origin import Allowed
+from decktalk.page import CAPTURE_FPS
+from decktalk.pipeline import Artifact, Outcome, Stage
+from decktalk.results import RecordResult, SectionRecording
+from decktalk.stages import clock, judge, selects, since
+from decktalk.stages.record.capture import (
+    Job,
+    plan_job,
+    scene_params,
+    scene_url,
+    section_hash,
+    words_query,
+)
+from decktalk.stages.record.checks import check_recording, recording_findings
+from decktalk.stages.record.start import Start, find_start
 
-__all__ = [
-    "Job",
-    "RecordResult",
-    "SectionRecording",
-    "capture_section",
-    "stale_recording",
-    "plan_job",
-    "prev_words_query",
-    "record",
-    "scene_params",
-    "scene_url",
-    "words_query",
-]
-
-
-@dataclass
-class SectionRecording:
-    """One section's recording: the file, the log it was written with, and what the log judged."""
-
-    section: PageSection
-    path: Path
-    log: RecordingLog
-    kept: bool = False  # The recording was already made from these inputs, so this run left it alone.
-
-    @property
-    def key(self) -> str:
-        return self.section.key
-
-    @property
-    def verdicts(self) -> tuple[Verdict, ...]:
-        return self.log.checks.verdicts if self.log.checks else ()
-
-    @property
-    def ok(self) -> bool:
-        return not self.verdicts
-
-    @property
-    def label(self) -> str:
-        """Every verdict as one line, with the stall length beside STALLED, as the table prints it."""
-        return label(self.log.checks, self.log.worst_stall_ms)
-
-    @property
-    def detail(self) -> str | None:
-        """The one sentence a judged row carries, with the measured number a reader needs in it."""
-        if not self.verdicts:
-            return None
-        checks = self.log.checks
-        measured = "" if checks is None else f" It ran {checks.duration_seconds:.1f}s of {checks.wanted_seconds:.1f}s."
-        stall = f" The worst frame gap was {self.log.worst_stall_ms}ms." if self.log.worst_stall_ms else ""
-        outside = f" It loaded from {', '.join(self.log.external)}." if self.log.external else ""
-        return f"Section {self.key} recorded {self.label}.{measured}{stall}{outside}"
-
-    def to_dict(self, root: Path) -> dict[str, Any]:
-        """The row as JSON-ready data: what was recorded, where t=0 landed, and every verdict."""
-        checks = self.log.checks
-        return {
-            "key": self.key,
-            "file": relative(self.path, root),
-            "kept": self.kept,
-            "seconds": round(self.log.requested_seconds, 3),
-            "t0_seconds": self.log.t0_seconds,
-            "t0_method": self.log.t0_method,
-            "t0_guessed": self.log.t0_guessed,
-            "duration": None if checks is None else round(checks.duration_seconds, 3),
-            "wanted": None if checks is None else round(checks.wanted_seconds, 3),
-            "luma": None if checks is None else {k: round(v, 2) for k, v in vars(checks.luma).items()},
-            "verdicts": [v.to_dict() for v in self.verdicts],
-            "detail": self.detail,
-            "stall_ms": self.log.worst_stall_ms or None,
-            "page_errors": list(self.log.page_errors),
-            "assets": list(self.log.assets),
-            "external": list(self.log.external),
-        }
+SECOND_DIGITS = 3
+"""Truth: three decimal places of a second is one millisecond, which is finer than any frame."""
 
 
-@dataclass
-class RecordResult:
-    """Every section one `record` run touched, in the order it touched them."""
+class LogSink:
+    """Where one section's recording log is kept, cleared before the capture and written after it.
 
-    sections: list[SectionRecording] = field(default_factory=list)
-    # A section `--only` left out whose recording no longer matches the project. The run did not
-    # touch it, and the film it goes into would show the old picture, so it is reported rather than
-    # left for the author to notice by eye.
-    rows: list[Finding] = field(default_factory=list)
+    The media layer clears this before it captures anything and writes it once the webm is in place,
+    which is what keeps the pair on disk complete or absent. What it writes here is everything the
+    recorder knows, and the stage writes the log again with narration t=0, the frame measurements and
+    the judgements as soon as it has measured them, so a run stopped in between leaves a log with no
+    t=0 in it, which the next run reads as a section it has not finished recording.
+    """
 
-    @property
-    def kept_sections(self) -> list[SectionRecording]:
-        """The sections this run left alone because nothing they are recorded from had moved."""
-        return [row for row in self.sections if row.kept]
+    def __init__(self, inputs: Inputs, section: PageSection, url: str, seconds: float, path: Path) -> None:
+        self.inputs = inputs
+        self.section = section
+        self.url = url
+        self.seconds = seconds
+        self.path = path
+        self.recording: Recording | None = None
 
-    @property
-    def page_errors(self) -> list[SectionRecording]:
-        """The rows whose page threw or exposed no runtime catalog, which `build` stops on."""
-        return [row for row in self.sections if row.log.page_errors]
+    def clear(self) -> None:
+        """Delete the log of the recording that is about to be replaced, before anything is captured."""
+        self.path.unlink(missing_ok=True)
 
-    @property
-    def findings(self) -> Findings:
-        """Every verdict of every recording, and every section this run left behind out of date."""
-        return Findings.of(v for row in self.sections for v in row.verdicts) + Findings.of(r.verdict for r in self.rows)
+    def write(self, recording: Recording) -> None:
+        """Write what the recorder knows about the webm now on disk, before anything measures it."""
+        self.recording = recording
+        self.log(recording).write(self.path)
 
-    def to_dict(self, root: Path) -> dict[str, Any]:
-        return {
-            "recordings": [row.to_dict(root) for row in self.sections],
-            "stale": [row.to_dict() for row in self.rows],
-        }
+    def log(
+        self,
+        recording: Recording,
+        *,
+        start: Start | None = None,
+        checks: RecordingChecks | None = None,
+        findings: tuple[Finding, ...] = (),
+    ) -> RecordingLog:
+        """The log of one recording, with whatever the stage has measured of it so far.
 
-
-def jobs(project: Project, only: list[int] | None, seconds: float | None, *, use_cues: bool) -> list[Job]:
-    """One job per page section that has a length to record, in section order."""
-    takes = project.takes()
-    if takes is None and seconds is None:
-        raise MissingInputError(
-            f"{relative(project.takes_path, project.root)} is not there, so no section has a length to record.",
-            hint="Run `decktalk narrate` first, or pass --seconds.",
-            path=project.takes_path,
+        The digest is taken again over what the page really loaded, because the page may have asked
+        for a file the last run never saw and a key that did not count it would call the section
+        unchanged on the next run.
+        """
+        return RecordingLog(
+            section=self.section.number,
+            url=recording.url,
+            input_hash=section_hash(self.inputs, self.section, self.url, self.seconds, list(recording.assets)),
+            requested_seconds=recording.requested_seconds,
+            settle_seconds=recording.settle_seconds,
+            load_seconds=recording.load_seconds,
+            clock_start_seconds=recording.clock_start_seconds,
+            t0_seconds=None if start is None else start.seconds,
+            t0_method=None if start is None else start.method,
+            t0_guessed=start is not None and start.guessed,
+            assets=tuple(Path(name) for name in recording.assets),
+            external=recording.external,
+            findings=findings,
+            checks=checks,
+            report=recording.report,
         )
-    cue_times = project.cue_times() if use_cues else None
-    wanted = set(only) if only else None
-    planned: list[Job] = []
-    for section in project.page_sections:
-        if wanted is not None and section.number not in wanted:
-            continue
-        span = takes.span(section.key) if takes else None
-        length = seconds if seconds is not None else (span + section.record_margin_seconds if span else None)
-        if not length:
-            log.warning("section %s: there is no narration span yet, so it is skipped", section.key)
-            continue
-        planned.append(plan_job(project, section, cue_times, length))
-    if not planned:
-        raise ConfigError("nothing to record: no page sections matched")
-    return planned
 
 
-def stale_recording(project: Project, section: PageSection) -> str | None:
+def stale_recording(inputs: Inputs, section: PageSection) -> str | None:
     """Why the recording on disk for this section no longer matches the project, or None when it does.
 
     This is the one rule that decides whether a recording still stands, so what `record` skips and
-    what any other reader calls stale are the same question answered once, and neither compares file
-    times.
+    what `status` calls stale are the same question answered once, and neither compares file times.
     """
-    takes = project.takes()
-    span = takes.span(section.key) if takes else None
-    if not span:
-        return f"section {section.key} has no narration span yet"
-    cue_times = project.cue_times() if project.cue_times_path.exists() else None
-    job = plan_job(project, section, cue_times, span + section.record_margin_seconds)
+    takes = inputs.takes()
+    take = takes.of(section.number) if takes is not None else None
+    if take is None or not take.span_seconds:
+        return f"section {section.number} has no narration span yet"
+    cue_times = inputs.cue_times()
+    job = plan_job(inputs, section, cue_times, take.span_seconds + section.record_margin_seconds)
     if job.unchanged:
         return None
     if not job.out.exists():
-        return f"section {section.key} has no recording"
+        return f"section {section.number} has no recording"
     if job.previous is None or not job.previous.input_hash:
-        return f"section {section.key} was recorded before this project could tell what it was recorded from"
+        return f"section {section.number} was recorded before this project could tell what it was recorded from"
     return (
-        f"section {section.key}: its scene, the page around it, its assets, its words or its cues "
-        "changed since it was recorded"
+        f"section {section.number}: its scene, the page around it, its assets, its words, its cues or "
+        "the motion it renders with changed since it was recorded"
     )
 
 
-def record(
-    project: Project,
-    *,
-    only: list[int] | None = None,
-    seconds: float | None = None,
-    use_cues: bool = True,
-    opening: Callable[[PageSection], None] | None = None,
-    report: Callable[[SectionRecording], None] | None = None,
-) -> RecordResult:
-    """Record every page section, measure narration t=0 on each webm, and check what came out.
+def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
+    """One job per page section this run considers, in section order.
 
-    Each section's log is written as soon as that section is finished, so the measurement can never
-    belong to another take and an agent can read the run as it goes. `opening(section)` is called
-    before every section, whether it is recorded or kept, and `report(row)` the moment that section
-    is finished, which together are how `build` reports a stage that takes minutes per section.
+    A section with no span in the take index has no length to record, so it is named in one sentence
+    and left out rather than recorded for a length nobody stated.
     """
-    cfg = project.settings.record
-    named = set(only or ())
-    result = RecordResult()
-    planned = jobs(project, only, seconds, use_cues=use_cues)
-    # A section named by --only is recorded whatever its inputs say, because that is how an author
-    # asks for another take of a page that has not changed.
-    fresh = [job for job in planned if not job.unchanged or job.section.number in named]
-    # A run that names sections says nothing about the others, so each one it passed over is asked
-    # whether its recording still stands. A build assembles every section, not only the named ones.
-    for section in project.page_sections if named else []:
+    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
+    cue_times = inputs.cue_times()
+    wanted = selects(only)
+    planned: list[Job] = []
+    for section in inputs.document.page_sections:
+        if not wanted(section.number):
+            continue
+        take = takes.of(section.number)
+        if take is None or not take.span_seconds:
+            run.note(f"Section {section.number} has no narration span yet, so it is not recorded.", level=Level.WARNING)
+            continue
+        planned.append(plan_job(inputs, section, cue_times, take.span_seconds + section.record_margin_seconds))
+    if not planned:
+        raise InputError(
+            "no page section has a length to record.",
+            hint="Run `decktalk narrate` first, or name a section that plays a page.",
+        )
+    return planned
+
+
+def passed_over(inputs: Inputs, run: Run, only: Sequence[int] | None) -> None:
+    """Report every section this run did not name whose recording no longer matches the project.
+
+    A run that names sections says nothing about the others, and the film is assembled from all of
+    them, so a section left behind out of date is reported rather than left for a reader to notice
+    by eye.
+    """
+    if not only:
+        return
+    named = set(only)
+    for section in inputs.document.page_sections:
         if section.number in named:
             continue
-        why = stale_recording(project, section)
-        if why is not None:
-            result.rows.append(
-                Finding(
-                    verdict=Verdict.MISSING if "no recording" in why else Verdict.INCONSISTENT,
-                    section=section.number,
-                    where=relative(project.recording(section), project.root),
-                    detail=f"{why}, and --only did not name it, so the film keeps what was recorded before.",
+        why = stale_recording(inputs, section)
+        if why is None:
+            continue
+        where = inputs.relative(inputs.workspace.recording(section.key))
+        if not inputs.workspace.recording(section.key).exists():
+            run.found(
+                judge(
+                    Code.FILE_MISSING,
+                    f"section {section.number} has no recording at {where.as_posix()}, and this run did not "
+                    "name it, so the film would be cut from a picture that is not there.",
+                    Location(where=where.as_posix(), file=where, section=section.number),
+                    stage=Stage.RECORD,
                 )
             )
-    for job in planned:
-        if job not in fresh:
-            assert job.previous is not None
-            if opening:
-                opening(job.section)
-            log.info(
-                "[rec ] section %s  kept: its scene, the page around it, its assets, words and cues are unchanged",
-                job.section.key,
+            continue
+        run.note(
+            f"{why}, and this run did not name it, so the film keeps the picture recorded before.",
+            level=Level.WARNING,
+        )
+
+
+def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink) -> Recording:
+    """Record one section, retrying while its frames stall, and give back the recording that stuck.
+
+    A stalled page froze a reveal for a few frames, which no cut can repair, so the section is
+    recorded again while the machine is quieter.
+    """
+    settings = inputs.settings
+    # The local name is not `record`, because that is this module's own stage function.
+    recorder, video = settings.record, settings.video
+    allowed = Allowed.of(inputs.root, inputs.served_paths())
+    documents = inputs.documents()
+    recording: Recording | None = None
+    for attempt in range(1, recorder.retries + 2):
+        recording = browser.record_page(
+            opened,
+            job.url,
+            job.seconds,
+            job.out,
+            allowed=allowed,
+            log_sink=sink,
+            settle_seconds=recorder.settle_seconds,
+            min_cover_seconds=recorder.min_cover_seconds,
+            width=video.width,
+            height=video.height,
+            color_scheme=recorder.color_scheme,
+            motion=settings.motion,
+            documents=documents,
+        )
+        gap = recording.report.worst_gap_ms
+        if gap <= recorder.frame_gap_max_ms or attempt > recorder.retries:
+            break
+        run.note(
+            f"Section {job.section.number} stalled for {gap} ms, which is over the "
+            f"{recorder.frame_gap_max_ms} ms limit, so it is recorded again ({attempt} of {recorder.retries}).",
+            level=Level.WARNING,
+        )
+    if recording is None:  # pragma: no cover  (the loop runs at least once)
+        raise InputError(f"section {job.section.number} was not recorded.")
+    for name in recording.page_errors:
+        run.note(f"Section {job.section.number} threw while it was recorded: {name}", level=Level.ERROR)
+    return recording
+
+
+def recorded(inputs: Inputs, run: Run, opened: Browser, job: Job) -> SectionRecording:
+    """Record one section, measure it, and leave its log beside the webm with every judgement in it."""
+    sink = LogSink(inputs, job.section, job.url, job.seconds, job.log_path)
+    recording = capture(inputs, run, opened, job, sink)
+    start = find_start(job.out, recording.settle_seconds, inputs.settings.record)
+    checks = check_recording(job.out, recording)
+    page = inputs.relative(inputs.path(job.section.page)).as_posix()
+    where = inputs.relative(job.out)
+    found = recording_findings(
+        recording,
+        checks,
+        page=page,
+        where=where,
+        section=job.section.number,
+        settings=inputs.settings,
+    )
+    for finding in found:
+        run.found(finding)
+    if start.guessed:
+        run.note(
+            f"Section {job.section.number} shows no cover, so narration t=0 is a guess "
+            f"at {start.seconds:g}s ({start.method}), and every reveal in the section moves with it.",
+            level=Level.WARNING,
+        )
+    log = sink.log(recording, start=start, checks=checks, findings=found)
+    log.write(job.log_path)
+    run.wrote(job.out)
+    run.wrote(job.log_path)
+    return row(inputs, job, checks.duration_seconds, kept=False)
+
+
+def row(inputs: Inputs, job: Job, seconds: float, *, kept: bool) -> SectionRecording:
+    """One section's row of the result: the file, how long it runs and whether this run made it."""
+    return SectionRecording(
+        section=job.section.number,
+        key=job.section.key,
+        file=inputs.relative(job.out) if job.out.exists() else None,
+        seconds=round(seconds, SECOND_DIGITS),
+        frames=round(seconds * CAPTURE_FPS),
+        kept=kept,
+    )
+
+
+def kept_row(inputs: Inputs, run: Run, job: Job) -> SectionRecording:
+    """The row of a section this run left alone, with its own pair of lines on the stream.
+
+    A kept section is work the run decided not to do, so its `section.done` carries `skipped` rather
+    than `ok` and a renderer counts it apart from a section that was really recorded.
+    """
+    started = clock()
+    run.check()
+    number = job.section.number
+    run.emit(SectionStart, stage=Stage.RECORD, section=number)
+    previous = job.previous
+    seconds = previous.checks.duration_seconds if previous is not None and previous.checks is not None else 0.0
+    run.emit(SectionDone, stage=Stage.RECORD, section=number, outcome=Outcome.SKIPPED, seconds=since(started))
+    return row(inputs, job, seconds, kept=True)
+
+
+def record(
+    inputs: Inputs,
+    run: Run,
+    *,
+    only: Sequence[int] | None = None,
+    force: bool = False,
+) -> RecordResult:
+    """Record every page section this run names, and judge each one as soon as it is finished."""
+    started = clock()
+    planned = plan(inputs, run, only)
+    passed_over(inputs, run, only)
+    named = set(only or ())
+    rows: list[SectionRecording] = []
+    total = len(planned)
+    with ExitStack() as stack:
+        opened: Browser | None = None
+        for done, job in enumerate(planned, start=1):
+            again = force or job.section.number in named
+            if job.unchanged and not again:
+                rows.append(kept_row(inputs, run, job))
+            else:
+                if opened is None:
+                    opened = stack.enter_context(browser.chromium(inputs.settings.record.browser_path))
+                with run.section(Stage.RECORD, job.section.number):
+                    rows.append(recorded(inputs, run, opened, job))
+            label = f"section {job.section.number} of {inputs.document.name}"
+            run.progress(
+                Stage.RECORD, done=done, total=total, unit=Unit.SECTION, label=label, section=job.section.number
             )
-            kept = SectionRecording(job.section, job.out, job.previous, kept=True)
-            result.sections.append(kept)
-            if report:
-                report(kept)
-    if not fresh:
-        return result
-    with chromium(cfg.browser_path) as browser:
-        for job in fresh:
-            section = job.section
-            if opening:
-                opening(section)
-            log.info(
-                "[rec ] section %s (%s?scene=%s)  %.1fs ...", section.key, section.page, section.scene, job.seconds
-            )
-            recording_log = capture_section(project, browser, job)
-            start = find_start(job.out, recording_log.settle_seconds, cfg)
-            recording_log.t0_seconds, recording_log.t0_method = start.seconds, start.method
-            recording_log.t0_guessed = start.guessed
-            recording_log.checks = check_recording(job.out, recording_log, cfg)
-            recording_log.save(job.log_path)
-            row = SectionRecording(section=section, path=job.out, log=recording_log)
-            result.sections.append(row)
-            if report:
-                report(row)
-            if start.guessed:
-                log.warning("       no magenta cover was found, so narration t=0 is a guess (%s)", start.method)
-            log.info("       %s  (t=0 at %.3fs, %s)", relative(job.out, project.root), start.seconds, row.label)
-            for message in recording_log.page_errors:
-                log.warning("       page error: %s", message)
-    result.sections.sort(key=lambda row: row.key)
-    return result
+    return run.result(RecordResult, sections=tuple(rows), seconds=since(started))
+
+
+__all__ = [
+    "Job",
+    "LogSink",
+    "record",
+    "scene_params",
+    "scene_url",
+    "stale_recording",
+    "words_query",
+]

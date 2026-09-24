@@ -1,34 +1,46 @@
 ---
 title: Narrated presentations, cut to the word
 sidebarTitle: Overview
-description: Make a narrated video from a markdown script and HTML slides, where each reveal starts on its word.
+description: Make a narrated video from a markdown script and HTML slides, where every picture lands on its word.
 "og:image": "https://docs.decktalk.ai/images/og.png"
 ---
 
 <img className="dt-hero block dark:hidden" src="/images/hero-light.svg" width="1000" height="248" alt="A playhead moves along the narration “A bowl. A ball. One. Two, three.” with a tick under each word. A bowl and a ball appear on the slide on their words. On each count word, the ball steps down the bowl and a box fills with that word's start time: 4.49 s, 5.26 s, and 5.77 s." noZoom />
 <img className="dt-hero hidden dark:block" src="/images/hero-dark.svg" width="1000" height="248" alt="A playhead moves along the narration “A bowl. A ball. One. Two, three.” with a tick under each word. A bowl and a ball appear on the slide on their words. On each count word, the ball steps down the bowl and a box fills with that word's start time: 4.49 s, 5.26 s, and 5.77 s." noZoom />
 
+DeckTalk turns a markdown script, HTML slides and your voice into one narrated mp4. You write the
+words in `script.md` and the pictures in an HTML page. `cues.json` names the spoken phrase each
+picture lands on, and the finished film is measured against that promise before you are told it is
+built.
+
 ## Start here
 
-<div className="dt-start">
+Three pages take you from an empty machine to a section of your own.
 
-[Quickstart](/quickstart)<br />Install DeckTalk, build the starter without an API key, and then add your voice.
-
-[Your first deck](/guides/first-deck)<br />Write one section across `script.md`, `decktalk.toml`, `cues.json`, and a page. Then verify its reveals.
-
-[Requirements and costs](/requirements)<br />What DeckTalk needs on your machine, and which commands spend credits.
-
-</div>
+- [Quickstart](/quickstart) installs DeckTalk and builds the starter film with no account and no spend.
+- [Requirements and costs](/requirements) covers what a machine needs, what it downloads, and which commands spend money.
+- [Your first deck](/guides/first-deck) writes one section across the four files, then checks, builds and verifies it.
 
 ## Understand the model
 
-- [How it works](/concepts/how-it-works): the five stages, how DeckTalk finds narration t=0, and what `decktalk verify` checks.
-- [Cues](/concepts/cues): how a cue such as `1.1bowl` names the phrase a reveal starts on.
-- [Writing for the ear](/guides/writing-for-the-ear): give every reveal a word to start on.
-- [The page contract](/concepts/page-contract): how a slide talks to the recorder. [Design a slide](/guides/design-a-slide) covers slide size, reveal effects, and the camera push.
+- [How it works](/concepts/how-it-works) walks the six stages, from the spoken takes to the measured film.
+- [Cues](/concepts/cues) explains how a phrase from the script becomes a second on a section clock.
+- [The page contract](/concepts/page-contract) is how a slide tells the recorder what it is doing, and [Design a slide](/guides/design-a-slide) turns that into a slide worth watching.
+- [Writing for the ear](/guides/writing-for-the-ear) gives every picture a word worth landing on.
+- [Sound](/concepts/sound) covers the music, the ambience bed and the effects.
+
+## Look something up
+
+- [CLI reference](/reference/cli) lists every command, flag, exit code, error code and finding code.
+- [Configuration](/reference/configuration) lists every setting with its range, its unit and the failures it moves.
+- [Verify](/reference/verify) defines every measurement the finished film is judged by.
+- [What leaves your machine](/reference/what-leaves-your-machine) names every host DeckTalk contacts and what each request carries.
 
 <div className="dt-note">
 
-Building with an agent? The [reference card](/reference/card) puts every file, command, rule, and exit code in one place, and [`llms.txt`](https://docs.decktalk.ai/llms.txt) indexes every page.
+Building with an agent? The command line is the instruction set and it documents itself: `decktalk
+--help`, `decktalk schema`, `decktalk schema settings` and `decktalk status --json` answer most of
+it. [Skills](/agents/skills) covers the craft those four calls cannot say, and the [reference
+card](/reference/card) puts every file, command and rule on one page.
 
 </div>

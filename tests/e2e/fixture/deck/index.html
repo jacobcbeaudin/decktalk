@@ -5,8 +5,10 @@
 <title>Pipeline fixture</title>
 <link rel="stylesheet" href="./katex/katex.min.css">
 <script src="./katex/katex.min.js"></script>
+<script src="./decktalk-runtime.js"></script>
 <style>
-  /* No web fonts, no canvas, no SVG and no transitions: every reveal is a solid block that appears on its frame. */
+  /* No web fonts, no canvas, no SVG and no transitions: every reveal is a solid block that appears
+     on its own frame, because data-in-style="cut" declares no span at all. */
   html, body { margin: 0; background: #ffffff; color: #0a0a0a; font-family: Arial, sans-serif; }
   body { width: 100vw; height: 100vh; overflow: hidden; }
   .t-title { position: absolute; left: 120px; top: 80px; margin: 0; font: 700 64px/1.1 Arial, sans-serif; }
@@ -18,47 +20,47 @@
 </style>
 </head>
 <body>
-<script src="decktalk-runtime.js"></script>
-<script>
-const block = (cue, x, y, color) =>
-  `<div class="t-block" ${cue ? `data-cue="${cue}" data-reveal="instant"` : ""} style="left: ${x}px; top: ${y}px; background: ${color}"></div>`;
 
-// Scene 2 opens on scene 1's last frame, so its slide carries scene 1's picture as content with no
-// cue of its own. The runtime mounts the first slide of a section before the clock starts, so that
-// picture is already on the first recorded frame, and a frozen screenshot of the slide shows it too.
+<div data-scene="1" data-name="Blocks">
+  <template data-slide="1.1" data-hold="8" data-describe="three blocks, each on its own word">
+    <p class="t-title">Blocks</p>
+    <div class="t-block" style="left: 120px; top: 260px; background: #2c1fea"
+         data-in="first" data-in-style="cut" data-describe="the first block, on the left"></div>
+    <div class="t-block" style="left: 720px; top: 260px; background: #0a0a0a"
+         data-in="second" data-in-style="cut" data-describe="the second block, beside the first"></div>
+    <div class="t-block" style="left: 120px; top: 660px; background: #e5484d"
+         data-in="third" data-in-style="cut" data-describe="the third block, below the first"></div>
+  </template>
+</div>
 
-DeckTalk.scene(1, { name: "Blocks", slides: [
-  { id: "1.1", hold: 8, preview: { "1.1first": 1, "1.1second": 3, "1.1third": 5 }, render: () => `
-    <div class="slide">
-      <p class="t-title">Blocks</p>
-      ${block("1.1first", 120, 260, "#2c1fea")}
-      ${block("1.1second", 720, 260, "#0a0a0a")}
-      ${block("1.1third", 120, 660, "#e5484d")}
-    </div>` },
-]});
+<!-- Scene 2 opens on scene 1's last frame, so its slide carries scene 1's picture with no moment of
+     its own. The runtime mounts the first slide of a section before the clock starts, so that
+     picture is already on the first recorded frame, and a still of the slide shows it too. -->
+<div data-scene="2" data-name="Blocks">
+  <template data-slide="2.1" data-hold="8" data-describe="two more blocks joining the three already there">
+    <p class="t-title">Blocks</p>
+    <div class="t-block" style="left: 120px; top: 260px; background: #2c1fea"></div>
+    <div class="t-block" style="left: 720px; top: 260px; background: #0a0a0a"></div>
+    <div class="t-block" style="left: 120px; top: 660px; background: #e5484d"></div>
+    <div class="t-block" style="left: 1320px; top: 260px; background: #30a46c"
+         data-in="fourth" data-in-style="cut" data-describe="the fourth block, on the right"></div>
+    <div class="t-block" style="left: 720px; top: 660px; background: #f5a524"
+         data-in="fifth" data-in-style="cut" data-describe="the fifth block, below the second"></div>
+  </template>
+</div>
 
-DeckTalk.scene(2, { name: "Blocks", slides: [
-  { id: "2.1", hold: 8, preview: { "2.1fourth": 1, "2.1fifth": 3 }, render: () => `
-    <div class="slide">
-      <p class="t-title">Blocks</p>
-      ${block("", 120, 260, "#2c1fea")}
-      ${block("", 720, 260, "#0a0a0a")}
-      ${block("", 120, 660, "#e5484d")}
-      ${block("2.1fourth", 1320, 260, "#30a46c")}
-      ${block("2.1fifth", 720, 660, "#f5a524")}
-    </div>` },
-]});
+<div data-scene="3" data-name="Equation">
+  <template data-slide="3.1" data-hold="8" data-describe="one equation on a card, then a bar under it">
+    <p class="t-title">Equation</p>
+    <div class="t-card" data-in="eq" data-in-style="cut" data-describe="the integral of x squared from zero to one">
+      <span data-tex-display data-tex="\int_0^1 x^2 \, dx = \frac{1}{3}">
+        the integral of x squared from zero to one is one third
+      </span>
+    </div>
+    <div class="t-bar" style="top: 700px; background: #2c1fea"
+         data-in="bar" data-in-style="cut" data-describe="a bar under the equation"></div>
+  </template>
+</div>
 
-DeckTalk.scene(3, { name: "Equation", slides: [
-  { id: "3.1", hold: 8, preview: { "3.1eq": 1, "3.1bar": 3 }, render: () => `
-    <div class="slide">
-      <p class="t-title">Equation</p>
-      <div class="t-card" data-cue="3.1eq" data-reveal="instant">
-        <span data-tex="\\int_0^1 x^2 \\, dx = \\frac{1}{3}" data-tex-display>the integral of x squared from zero to one is one third</span>
-      </div>
-      <div class="t-bar" data-cue="3.1bar" data-reveal="instant" style="top: 700px; background: #2c1fea"></div>
-    </div>` },
-]});
-</script>
 </body>
 </html>

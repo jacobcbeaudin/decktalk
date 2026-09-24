@@ -11,7 +11,7 @@
 host = "api.elevenlabs.io"
 name = "Narration"
 sent_by = "`decktalk narrate`, and `decktalk build` on a voiced run"
-body = "The section's spoken text, the voice id, the model name and the audio format, together with up to `context_chars` characters of the previous section and up to `context_chars` of the next section as speaking context. The default for `context_chars` is 1500 characters, and `context_chars = 0` keeps the neighbouring sections on your machine."
+body = "The section's spoken text, the voice id, the model name and the audio format, together with up to `narration.context_chars` characters of the previous section and up to the same of the next section as speaking context. The default is 1500 characters, and `narration.context_chars = 0` keeps the neighbouring sections on your machine."
 credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header."
 note = "Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-voice` sends nothing at all."
 
@@ -19,7 +19,7 @@ note = "Rebuilding one section still sends that section's neighbours, because th
 host = "api.elevenlabs.io"
 name = "Sound effects and ambience"
 sent_by = "`decktalk soundscape`"
-body = "The prompt string written in a `[soundscape.ambience]` or `[soundscape.sfx.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent."
+body = "The prompt string written in the `[soundscape.ambience]` or a `[soundscape.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent."
 credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header."
 note = "The prompt is text you wrote in `decktalk.toml`, so you decide what it describes."
 

@@ -7,253 +7,375 @@ place where the arithmetic and the measurements meet.
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
-from ...media import audio, ffmpeg, frames
-from ...model import Project
-from ...model.document import frame_dip
-from ...settings import VerifyConfig
-from ...verdicts import SkipReason, Verdict
-from .plan import (
-    CueCheck,
+from decktalk.artifacts import CueTimes
+from decktalk.events import Unit
+from decktalk.findings import Code, Location
+from decktalk.inputs import Inputs
+from decktalk.inputs.document import frame_dip
+from decktalk.machine import Run
+from decktalk.media import audio, ffmpeg, frames
+from decktalk.pagescan import Measured
+from decktalk.pipeline import Stage
+from decktalk.results import CueCheck, SkipReason
+from decktalk.settings import CLICK_LEVEL_DBFS
+from decktalk.stages import judge
+from decktalk.stages.verify.plan import (
+    MILLISECONDS,
+    Neighbour,
+    block_size,
     control_spans,
-    onset_offset_ms,
+    frame_size,
+    onset_offset_seconds,
     probe_plan,
+    reference_lead,
     reference_time,
-    skipped,
     thin_change,
 )
 
-log = logging.getLogger(__name__)
+FULL_SCALE = 32767
+"""Truth: the largest magnitude a sixteen bit sample can carry, which every level is measured against."""
+
+DECIBEL_BASE = 10
+"""Truth: a decibel is a base ten ratio, so a level becomes an amplitude through ten to a power."""
+
+DECIBEL_RATIO = 20
+"""Truth: an amplitude ratio in decibels is twenty times its base ten logarithm."""
+
+HALF_FRAME = 0.5
+"""Truth: a tolerance of half a frame, so a limit written in frames is not failed by its own rounding."""
 
 
-def assembled_starts(project: Project) -> tuple[dict[str, float], float]:
-    """(where each section of decktalk.toml starts in the final file, the total length), probed from disk.
+def film_starts(inputs: Inputs, film: Path) -> tuple[dict[int, float], float]:
+    """(where each section starts in the film, how long the film runs), read from the cut list.
 
-    The lengths are read from `build/sections/NN.mp4`, so this is the same arithmetic the cut did,
-    measured again on the files it wrote. A section video of a section that is not in `decktalk.toml`
-    is never counted.
+    The cut list is the film's own record of its shape, so nothing here adds up section files a
+    second time and reaches a total the film does not have.
     """
-    starts: dict[str, float] = {}
-    t = 0.0
-    for sec in project.sections:
-        f = project.section_video(sec)
-        if not f.exists():
+    cuts = inputs.cuts()
+    if cuts is not None and cuts.sections:
+        return {cut.section: cut.start for cut in cuts.sections}, cuts.total_seconds
+    starts: dict[int, float] = {}
+    at = 0.0
+    for section in inputs.document.sections:
+        cut = inputs.workspace.section_video(section.key)
+        if not cut.exists():
             continue
-        starts[sec.key] = t
-        t += ffmpeg.probe_duration(f)
-    return starts, t
+        starts[section.number] = at
+        at += ffmpeg.probe_duration(cut)
+    return starts, at if starts else ffmpeg.probe_duration(film)
+
+
+def declared_spans(inputs: Inputs, section: int) -> dict[str, float]:
+    """How long each cue of one section keeps moving after it fires, from the catalog the page published.
+
+    The page declares the span of every effect it draws, and the recording log keeps that catalog
+    whole, so the forward half of the neighbour allowance is the neighbour's own arithmetic rather
+    than one constant that was wrong for a draw and wrong again for a cut.
+    """
+    found = inputs.document.section(section)
+    log = inputs.recording_log(f"{section:02d}")
+    scene = getattr(found, "scene", None)
+    if log is None or scene is None:
+        return {}
+    scale = inputs.settings.motion.scale
+    spans: dict[str, float] = {}
+    for entry in log.report.catalog:
+        if entry.scene != scene:
+            continue
+        for rows in entry.elements.values():
+            for row in rows:
+                measured = Measured(attrs=dict(row.attrs), moments=dict(row.moments), text=row.text)
+                cue = measured.cue
+                if cue is not None:
+                    spans[cue] = max(spans.get(cue, 0.0), measured.span(scale))
+    return spans
+
+
+def neighbours_of(times: dict[str, float], spans: dict[str, float], sec_start: float, cue: str) -> list[Neighbour]:
+    """Every other cue of this section, in the film's own clock, with the span each one declares."""
+    return [Neighbour(at=sec_start + at, span=spans.get(other, 0.0)) for other, at in times.items() if other != cue]
 
 
 def best_probe(
-    final: Path, before: float, floor: float, cue_at: float, delays: list[float], cfg: VerifyConfig
+    film: Path, before: float, floor: float, cue_at: float, delays: list[float], inputs: Inputs
 ) -> tuple[float, float, float, float] | None:
     """(margin, changed, control, probe time) of the probe with the largest margin, the earlier on a tie.
 
-    Each probe after the cue is compared with the reference, and the control is the quieter of
-    two spans of the same length that end at the reference. Motion that is always there shows in
-    both, while an earlier reveal still settling shows in one.
+    Each probe after the cue is compared with the reference, and the control is the quieter of two
+    spans of the same length that end at the reference. Motion that is always there shows in both,
+    while an earlier reveal still settling shows in one.
     """
-    size = {"level": cfg.diff_level, "width": cfg.probe_width, "height": cfg.probe_height}
+    size = {"level": inputs.settings.verify.probe_diff_luma, **frame_size(inputs.settings)}
     best: tuple[float, float, float, float] | None = None
     for delay in delays:
         after = cue_at + delay
-        chg = frames.changed_pixels_percent(final, before, after, **size)
+        changed = frames.changed_pixels_percent(film, before, after, **size)
         controls = [
-            frames.changed_pixels_percent(final, a, b, **size) for a, b in control_spans(before, after - before, floor)
+            frames.changed_pixels_percent(film, a, b, **size) for a, b in control_spans(before, after - before, floor)
         ]
-        ctl = min(controls) if controls else 0.0
-        margin = chg - ctl
+        control = min(controls) if controls else 0.0
+        margin = changed - control
         if best is None or margin > best[0]:
-            best = (margin, chg, ctl, after)
+            best = (margin, changed, control, after)
     return best
 
 
-def first_change_offset(
-    final: Path, before: float, after: float, cue_at: float, cfg: VerifyConfig, fps: int
-) -> int | None:
-    """Milliseconds from the cue to the first frame past the reference where the reveal begins.
+def first_change_seconds(film: Path, before: float, after: float, cue_at: float, inputs: Inputs) -> float | None:
+    """Seconds from the cue to the first frame past the reference where the reveal begins.
 
-    The frames up to the cue set a noise floor, so a camera push or an earlier reveal still
-    settling does not count as the onset.
-
-    x264 codes a still picture with a little ringing in the one or two frames before a change:
-    a few pixels, up to about 15 levels apart at probe_width, which at onset_diff_level read as
-    a reveal 40 to 100 ms early while the recording showed it on time. A second series at
-    block_width by block_height, where each pixel averages an 8 by 8 block of a 1080p frame,
-    cancels that zero-mean ringing, so a frame counts only when a block changed there too.
+    The frames up to the cue set a noise floor, so an earlier reveal still settling does not count as
+    the onset. A second series at one pixel per transform block cancels the encoder's ringing, which
+    otherwise reads as a reveal a frame or two early.
     """
+    verify = inputs.settings.verify
+    fps = inputs.settings.video.output_fps
     series, blocks = (
-        frames.changed_series(final, before, before, after, fps=fps, level=cfg.onset_diff_level, width=w, height=h)
-        for w, h in ((cfg.probe_width, cfg.probe_height), (cfg.block_width, cfg.block_height))
+        frames.changed_series(film, before, before, after, fps=fps, level=verify.onset_diff_luma, **size)
+        for size in (frame_size(inputs.settings), block_size(inputs.settings))
     )
-    return onset_offset_ms(
+    return onset_offset_seconds(
         series,
         before,
         cue_at,
-        cfg.onset_percent,
-        tolerance=(cfg.max_offset_frames + 0.5) / fps,
+        verify.onset_rise_points,
+        tolerance=(verify.cue_offset_max_ms / MILLISECONDS) + HALF_FRAME / fps,
         blocks=dict(blocks),
     )
 
 
-def click_offset_ms(
-    final: Path, expected: float, search: float, *, floor: float = 0.0, ceiling: float | None = None
-) -> int | None:
-    """Milliseconds from `expected` to the loudest sample within ±search seconds, or None when nothing is there.
+def click_seconds(
+    film: Path, expected: float, inputs: Inputs, *, floor: float = 0.0, ceiling: float | None = None
+) -> float | None:
+    """Where the click nearest `expected` sounds in the film, or None when nothing loud enough is there.
 
-    The window never reaches before `floor` or past `ceiling`, so the sound of a neighboring
-    section, such as the audio of a clip right before or after the cue's section, is never
-    taken for the click.
+    A build with placeholder narration carries a click at every word start, so the film's own audio
+    can be measured against its own picture. The window never reaches before `floor` or past
+    `ceiling`, so the sound of a neighbouring section is never taken for the click.
     """
-    rate = 48000
-    start = max(floor, expected - search)
-    stop = expected + search if ceiling is None else min(ceiling, expected + search)
+    verify = inputs.settings.verify
+    rate = inputs.settings.video.sample_rate
+    start = max(floor, expected - verify.click_search_seconds)
+    stop = (
+        expected + verify.click_search_seconds
+        if ceiling is None
+        else min(ceiling, expected + verify.click_search_seconds)
+    )
     if stop <= start:
         return None
-    samples = audio.pcm_span(final, start, stop - start, sample_rate=rate)
+    samples = audio.pcm_span(film, start, stop - start, sample_rate=rate)
     if not samples:
         return None
-    peak = max(range(len(samples)), key=lambda i: abs(samples[i]))
-    if abs(samples[peak]) < 400:  # about -38 dBFS: no click in the window
+    peak = max(range(len(samples)), key=lambda index: abs(samples[index]))
+    if abs(samples[peak]) < _amplitude(verify.click_floor_dbfs):
         return None
-    return int(round((start + peak / rate - expected) * 1000))
+    return round(start + peak / rate, 3)
+
+
+def _amplitude(dbfs: float) -> float:
+    """The sample magnitude one level in dBFS is, which is what a peak is compared against.
+
+    DeckTalk generates its own click at `CLICK_LEVEL_DBFS`, so a floor at or above that level would
+    find no click at all, which is what the key's own hazard sentence warns about.
+    """
+    return FULL_SCALE * DECIBEL_BASE ** (min(dbfs, CLICK_LEVEL_DBFS) / DECIBEL_RATIO)
 
 
 def cue_checks(
-    project: Project,
-    final: Path,
-    starts: dict[str, float],
+    inputs: Inputs,
+    run: Run,
+    film: Path,
+    starts: dict[int, float],
     total: float,
-    checks: list[str],
-    opt_out: set[tuple[str, str]],
-) -> list[CueCheck]:
-    """One row per named cue: where the picture changed, how far from the cue, and how far from its word."""
-    cfg = project.settings.verify
-    fps = project.settings.video.fps
-    flags = project.document.fade_flags
-    dip = frame_dip(project.transition.dip_seconds, fps)
-    cue_times = project.cue_times()
-    takes = project.takes()
+    checks: list[tuple[int, str]],
+    opted: set[tuple[int, str]],
+) -> tuple[CueCheck, ...]:
+    """One row per named cue: where the picture changed, how far from its word, and how much of it moved."""
+    cue_times = inputs.cue_times()
+    takes = inputs.takes()
     clicks = bool(takes and takes.estimated)
     rows: list[CueCheck] = []
-    for check in checks:
-        sec, cue = check.split(":", 1)
-        key = f"{int(sec):02d}"
-        cue_t = cue_times.get(key, cue)
-        if (key, cue) in opt_out:
-            rows.append(skipped(check, SkipReason.OPTED_OUT, 'cues.json sets "verify": false'))
-            continue
-        if cue_t is None:
-            detail = "UNRESOLVED: the cue is not in cue-times.json"
-            rows.append(CueCheck(check, None, None, None, None, False, detail, verdict=Verdict.UNRESOLVED))
-            continue
-        if key not in starts:
-            rows.append(skipped(check, SkipReason.SECTION_NOT_ASSEMBLED, f"no sections/{key}.mp4"))
-            continue
-        sec_start = starts[key]
-        sec_end = next((t for k, t in starts.items() if k > key), total)
-        fade_in = flags.get(key, (False, False))[0]
-        floor = sec_start + (dip if fade_in else 0.0)
-        # The reference frame sits just before the cue fires. Each probe after the cue is compared
-        # with it, and a control span of the same length that ends at the reference measures
-        # whatever else is moving (a camera push, an earlier reveal still settling).
-        before = reference_time(sec_start, cue_t, fade_in, dip, cfg, fps)
-        if before is None:
-            detail = f"the cue at {cue_t:.2f}s leaves no frame before it past the fade-in"
-            rows.append(skipped(check, SkipReason.REFERENCE_CLAMPED, detail))
-            continue
-        # Another cue close by would spoil a probe or its control, so the probes fit the gap instead.
-        neighbors = [sec_start + t for c, t in cue_times.times(key).items() if c != cue]
-        delays, fitted = probe_plan(sec_start + cue_t, before, floor, sec_end, neighbors, cfg, fps)
-        if fitted:
-            log.info(
-                "%s: another cue is close, so the probes are fitted to %s s after the cue",
-                check,
-                ", ".join(f"{d:g}" for d in delays),
-            )
-        best = best_probe(final, before, floor, sec_start + cue_t, delays, cfg)
-        if best is None:
-            rows.append(skipped(check, SkipReason.TOO_CLOSE_TO_END, "every probe falls past the section end"))
-            continue
-        rows.append(judge_cue(project, final, check, cue_t, sec_start, sec_end, floor, before, best, clicks=clicks))
-    return rows
+    for done, (section, cue) in enumerate(checks, start=1):
+        run.check()
+        run.progress(
+            Stage.VERIFY, done=done, total=len(checks), unit=Unit.PROBE, label=f"{section}:{cue}", section=section
+        )
+        rows.append(_one_cue(inputs, run, film, starts, total, cue_times, section, cue, opted, clicks=clicks))
+    return tuple(rows)
 
 
-def judge_cue(
-    project: Project,
-    final: Path,
-    check: str,
+def _one_cue(
+    inputs: Inputs,
+    run: Run,
+    film: Path,
+    starts: dict[int, float],
+    total: float,
+    cue_times: CueTimes | None,
+    section: int,
+    cue: str,
+    opted: set[tuple[int, str]],
+    *,
+    clicks: bool,
+) -> CueCheck:
+    """One cue measured on the finished film, or the one reason it could not be."""
+    at = None if cue_times is None else cue_times.at(section, cue)
+    sec_start = starts.get(section, 0.0)
+    spoken = round(sec_start + (at or 0.0), 3)
+    if (section, cue) in opted:
+        return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.OPTED_OUT)
+    if at is None:
+        return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.NO_CUES)
+    if section not in starts:
+        return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.NOT_ASSEMBLED)
+    verify = inputs.settings.verify
+    fps = inputs.settings.video.output_fps
+    flags = inputs.document.fade_flags
+    found = inputs.document.section(section)
+    key = found.key if found is not None else f"{section:02d}"
+    dip = frame_dip(inputs.document.transition.dip_seconds, fps)
+    fade_in = flags.get(key, (False, False))[0]
+    before = reference_time(sec_start, at, fade_in, dip, inputs.settings, fps)
+    if before is None:
+        return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.AT_SECTION_START)
+    floor = sec_start + (dip if fade_in else 0.0)
+    sec_end = min((t for t in starts.values() if t > sec_start), default=total)
+    times = cue_times.times(section) if cue_times is not None else {}
+    lead = reference_lead(inputs.settings)
+    delays, fitted = probe_plan(
+        spoken, before, floor, sec_end, neighbours_of(times, declared_spans(inputs, section), sec_start, cue),
+        verify, fps, lead=lead,
+    )  # fmt: skip
+    if fitted:
+        run.note(
+            f"another cue sits close to {section}:{cue}, so its probes were fitted to "
+            f"{', '.join(f'{delay:g}' for delay in delays)} seconds after it."
+        )
+    best = best_probe(film, before, floor, spoken, delays, inputs)
+    if best is None:
+        return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.TOO_CLOSE_TO_END)
+    return _judge(inputs, run, film, section, cue, at, sec_start, sec_end, before, best, clicks=clicks)
+
+
+def _judge(
+    inputs: Inputs,
+    run: Run,
+    film: Path,
+    section: int,
+    cue: str,
     cue_t: float,
     sec_start: float,
     sec_end: float,
-    floor: float,
     before: float,
     best: tuple[float, float, float, float],
     *,
     clicks: bool,
 ) -> CueCheck:
-    """The row for one cue whose best probe has been measured: the landing, the onset and the a/v value."""
-    cfg = project.settings.verify
-    fps = project.settings.video.fps
-    key = f"{int(check.split(':', 1)[0]):02d}"
-    cue = check.split(":", 1)[1]
-    margin, chg, ctl, after = best
-    at = sec_start + cue_t
-    if not (chg >= cfg.min_changed_percent and margin >= cfg.min_margin_percent):
-        note = (
-            f"{chg:.2f} percent of the frame changed against a {cfg.min_changed_percent:.2f} percent "
-            f"floor, with a margin of {margin:.2f} against {cfg.min_margin_percent:.2f}, so nothing "
-            "visibly happened at the cue."
+    """The row for one cue whose best probe has been measured: the landing, the onset and the word."""
+    verify = inputs.settings.verify
+    margin, changed, _control, after = best
+    at = round(sec_start + cue_t, 3)
+    where = Location(where=cue, file=inputs.relative(film), section=section, cue=cue)
+    if changed < verify.changed_share_min_percent or margin < verify.margin_min_points:
+        run.found(
+            judge(
+                Code.CUE_NO_CHANGE,
+                f"{changed:.2f} percent of the picture changed at {cue}, against the "
+                f"{verify.changed_share_min_percent:.2f} percent floor, with a margin of {margin:.2f} "
+                f"against {verify.margin_min_points:.2f}, so nothing visibly happened at the cue.",
+                where,
+                stage=Stage.VERIFY,
+            )
         )
-        return CueCheck(check, cue_t, at, chg, ctl, False, note, verdict=Verdict.NO_CHANGE)
-    # A pass by a thin margin is still a pass, but a slightly smaller reveal would fail. It is an
-    # uncertain finding rather than a passing row, so it carries its own sentence like any other.
-    thin = thin_change(chg, margin, cfg)
-    passed = Verdict.THIN_CHANGE if thin else Verdict.CHANGED
-    thin_note = (
-        f"the reveal at cue {cue!r} changed {chg:.2f} percent of the frame with a margin of "
-        f"{margin:.2f}, so a slightly smaller reveal would not have been measured at all."
-        if thin
-        else ""
-    )
-    offset_ms = first_change_offset(final, before, after, at, cfg, fps)
-    if offset_ms is None:
-        return CueCheck(check, cue_t, at, chg, ctl, True, thin_note, verdict=passed)
-    limit_ms = cfg.max_offset_frames * 1000 / fps
-    on_time = abs(offset_ms) <= limit_ms + 0.5
-    note = (
-        thin_note
-        if on_time
-        else (
-            f"the reveal at cue {cue!r} first changed {offset_ms:+d} ms from its cue, outside the "
-            f"{limit_ms:.0f} ms limit."
+        return CueCheck(section=section, cue=cue, spoken=at, change_percent=round(changed, 2))
+    if thin_change(changed, margin, verify):
+        run.found(
+            judge(
+                Code.CUE_THIN_CHANGE,
+                f"the reveal at {cue} changed {changed:.2f} percent of the picture with a margin of "
+                f"{margin:.2f}, which is under {verify.thin_change_factor:g} times the "
+                f"{verify.changed_share_min_percent:.2f} percent floor, so a slightly smaller reveal "
+                "would not have been measured at all.",
+                where,
+                stage=Stage.VERIFY,
+            )
         )
-    )
-    av_ms: int | None = None
-    reason: SkipReason | None = None
+    offset = first_change_seconds(film, before, after, at, inputs)
+    if offset is None:
+        run.found(
+            judge(
+                Code.CUE_NO_ONSET,
+                f"{changed:.2f} percent of the picture changed at {cue} and no frame rose by the "
+                f"{verify.onset_rise_points:.3f} percentage points an onset must, so its second is the "
+                "section's start rather than its word's.",
+                where,
+                stage=Stage.VERIFY,
+            )
+        )
+        return CueCheck(
+            section=section,
+            cue=cue,
+            spoken=at,
+            change_percent=round(changed, 2),
+            skipped=SkipReason.NO_ONSET,
+        )
+    shown = round(at + offset, 3)
+    word = at
     if clicks:
-        # A build without voice carries a click at every word start, so the finished file's audio can
-        # be measured against its picture: the click nearest the cue is the word.
-        word_t = project.cue_times().word_at(key, cue) or cue_t
-        click_ms = click_offset_ms(
-            final, sec_start + word_t, cfg.click_search_seconds, floor=sec_start, ceiling=sec_end
+        heard = click_seconds(film, at, inputs, floor=sec_start, ceiling=sec_end)
+        if heard is not None:
+            word = heard
+            _judge_click(inputs, run, cue, where, promised=at, heard=heard)
+    landed = round(shown - word, 3)
+    limit = verify.cue_offset_max_ms / MILLISECONDS
+    if abs(landed) > limit + HALF_FRAME / inputs.settings.video.output_fps:
+        run.found(
+            judge(
+                Code.CUE_OFF,
+                f"the reveal at {cue} first changed {landed * MILLISECONDS:+.0f} ms from the word it lands "
+                f"on, which is outside the {verify.cue_offset_max_ms:.0f} ms the offset limit allows.",
+                where,
+                stage=Stage.VERIFY,
+            )
         )
-        if click_ms is None:
-            reason = SkipReason.NO_CLICK
-        else:
-            # The picture's offset is measured from the cue and the click's from the cued word, so
-            # the difference already allows for the cue's own offset.
-            av_ms = offset_ms - click_ms
-            av_limit_ms = cfg.max_av_frames * 1000 / fps
-            if abs(av_ms) > av_limit_ms + 0.5:
-                on_time = False
-                note = (
-                    f"the reveal at cue {cue!r} is {av_ms:+d} ms from the word it lands on, outside "
-                    f"the {av_limit_ms:.0f} ms limit."
-                )
     return CueCheck(
-        check, cue_t, at, chg, ctl, on_time, note, offset_ms, av_ms,
-        verdict=passed if on_time else Verdict.OFF_CUE, reason=reason,
-    )  # fmt: skip
+        section=section,
+        cue=cue,
+        spoken=round(word, 3),
+        shown=shown,
+        offset=landed,
+        change_percent=round(changed, 2),
+    )
+
+
+def _judge_click(inputs: Inputs, run: Run, cue: str, where: Location, *, promised: float, heard: float) -> None:
+    """Report a click that sounds further from the second the cue was promised than the a/v limit allows.
+
+    An mp3 frame smears a transient and the encode adds its own, so the sound has its own wider limit
+    than the picture, which is what `av_offset_max_ms` is for.
+    """
+    verify = inputs.settings.verify
+    apart = (heard - promised) * MILLISECONDS
+    if abs(apart) <= verify.av_offset_max_ms:
+        return
+    run.found(
+        judge(
+            Code.CUE_OFF,
+            f"the word behind {cue} sounds {apart:+.0f} ms from the second it was promised, which is "
+            f"outside the {verify.av_offset_max_ms:.0f} ms the sound is allowed to drift, so the film's "
+            "own audio and its cue times disagree.",
+            where,
+            stage=Stage.VERIFY,
+        )
+    )
+
+
+__all__ = [
+    "best_probe",
+    "click_seconds",
+    "cue_checks",
+    "declared_spans",
+    "film_starts",
+    "first_change_seconds",
+    "neighbours_of",
+]

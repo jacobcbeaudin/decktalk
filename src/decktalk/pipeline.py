@@ -1,95 +1,160 @@
-"""The vocabulary of a run: the five stages in the order they run, the events a run records, and the
-closed values its files carry.
+"""The run declared once: the six stages in order, the artifacts they pass between them, and how a
+moment ended.
 
-A stage is a member of `Stage` and never its name as a string, so `build`, its progress log,
-`status` and the CLI's `--from` and `--to` share one closed list, and a misspelt stage fails where it
-is written rather than making a comparison quietly false. The members are declared in the order a
-build runs them, so the enum is the pipeline: `list(Stage)` is a whole run, and a run from one stage
-to another is a slice of it.
+The pipeline used to be described in three places, which were the stage order, an if-chain that
+worked out what a partial run still needed, and about ten sentences across the stages telling a
+reader to run an earlier command first. `PIPELINE` is the one declaration all three are read from,
+so the precondition check, the `--from` and `--to` validation, the hint a `NOT_BUILT` error carries
+and the next step `status` reports are one table a reader can see whole.
 
-The value of a member is how a build names the stage: the word a person passes to `--from` and
-`--to`, the command that runs that stage alone, the key its payload sits under in `build --json`,
-and the `stage` of a progress row. Nothing compares against that word except the reader that parses
-it into a member. `ProgressEvent` is the same kind of list for what a progress row says happened.
-
-The other closed words a run writes are enums here too, each with its JSON word as its value: what a
-run does with a take, what `soundscape` did with an item, and in `cuts.json` what kind of section
-plays and what stands in for one that is missing. A misspelt status then fails where it is written,
-as a misspelt stage does, rather than making a comparison quietly false.
+A stage is a member of `Stage` and never its name as a string, so a misspelt stage fails where it is
+written rather than making a comparison quietly false. The value of a member is the one word that
+names it everywhere: the command that runs it alone, the word `--from`, `--to` and `--skip` take,
+the `stage` of an event line and the key its row sits under in `build --json`.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path, PurePosixPath
 
 
 class Stage(Enum):
-    """One stage of the pipeline, declared in run order. The value is the name a build gives it."""
+    """One stage of the pipeline, declared in run order. The value is the word that names it."""
 
     NARRATE = "narrate"
-    ALIGN = "align"
+    CUE = "cue"
     RECORD = "record"
+    SOUNDSCAPE = "soundscape"
     ASSEMBLE = "assemble"
     VERIFY = "verify"
 
+    @property
+    def spec(self) -> StageSpec:
+        """What this stage reads, what it writes and why it runs where it does."""
+        return SPECS[self]
+
     @staticmethod
     def span(first: Stage | None, last: Stage | None) -> tuple[Stage, ...]:
-        """The stages from `first` to `last`, both inclusive, in run order. None is the pipeline's end."""
+        """The stages from `first` to `last`, both inclusive, in run order. None is the pipeline's own end."""
         stages = list(Stage)
         begin = stages.index(first) if first is not None else 0
         end = stages.index(last) if last is not None else len(stages) - 1
         return tuple(stages[begin : end + 1])
 
 
-class ProgressEvent(Enum):
-    """What one row of the progress log says happened to a stage or to one of its sections.
+class Outcome(Enum):
+    """How a stage or a section ended, which is the one field that replaces three event names.
 
-    Every stage and every section opens with `START` and closes with one of the other three, so a
-    log whose last row is a `START` is a run that is still working or one whose process died.
+    A caller reads one field to learn what happened, where `stage.done`, `stage.skip` and
+    `stage.fail` would make it branch three ways to learn the same fact.
     """
 
-    START = "start"
-    DONE = "done"
-    SKIP = "skip"
-    FAIL = "fail"
+    OK = "ok"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class Artifact(Enum):
+    """A file or a directory one stage writes and a later stage reads.
+
+    The value is the artifact's path under the project root, written with forward slashes, because
+    every path DeckTalk reports is project-relative and posix on all three platforms. `FINAL` is the
+    directory the deliverables are written into, because the film is named after the project.
+    """
+
+    TAKES = "build/narrate/takes.json"
+    CUE_TIMES = "build/cue-times.json"
+    RECORDINGS = "build/recordings"
+    SOUNDSCAPE = "build/soundscape"
+    FINAL = "build/final"
 
     @property
-    def closes(self) -> bool:
-        """True for the three events that end what a `START` opened."""
-        return self is not ProgressEvent.START
+    def path(self) -> PurePosixPath:
+        """The artifact's project-relative path."""
+        return PurePosixPath(self.value)
+
+    def under(self, root: Path) -> Path:
+        """The artifact's path under one project root, which is what a stage opens."""
+        return root.joinpath(*self.path.parts)
+
+    @property
+    def written_by(self) -> Stage | None:
+        """The stage that writes this artifact, or None when nothing in the pipeline does."""
+        return next((spec.stage for spec in PIPELINE if self in spec.writes), None)
 
 
-class TakeStatus(Enum):
-    """What a run does with one section's take, declared in the order the plan's totals print them.
+@dataclass(frozen=True)
+class StageSpec:
+    """One row of the pipeline: a stage, what it reads, what it writes and why it sits where it does."""
 
-    The value is the `status` of a take-plan row and the key its count sits under in the totals.
+    stage: Stage
+    reads: tuple[Artifact, ...]
+    writes: tuple[Artifact, ...]
+    why: str
+
+
+PIPELINE: tuple[StageSpec, ...] = (
+    StageSpec(
+        stage=Stage.NARRATE,
+        reads=(),
+        writes=(Artifact.TAKES,),
+        why="The script becomes spoken takes with a word clock, which every later stage measures against.",
+    ),
+    StageSpec(
+        stage=Stage.CUE,
+        reads=(Artifact.TAKES,),
+        writes=(Artifact.CUE_TIMES,),
+        why="Each cue phrase becomes a second on its section clock, which the recorder plays to.",
+    ),
+    StageSpec(
+        stage=Stage.RECORD,
+        reads=(Artifact.CUE_TIMES,),
+        writes=(Artifact.RECORDINGS,),
+        why="The pages are recorded against those seconds, so the picture lands on its word.",
+    ),
+    StageSpec(
+        stage=Stage.SOUNDSCAPE,
+        reads=(Artifact.TAKES,),
+        writes=(Artifact.SOUNDSCAPE,),
+        why="The music, the ambience and the effects are generated last of the paid work, so the unpaid "
+        "draft loop stops at record.",
+    ),
+    StageSpec(
+        stage=Stage.ASSEMBLE,
+        reads=(Artifact.TAKES, Artifact.RECORDINGS, Artifact.SOUNDSCAPE),
+        writes=(Artifact.FINAL,),
+        why="The recordings, the narration and the soundscape are cut, mixed and encoded into one film.",
+    ),
+    StageSpec(
+        stage=Stage.VERIFY,
+        reads=(Artifact.CUE_TIMES, Artifact.FINAL),
+        writes=(),
+        why="The finished film is measured against the clock the earlier stages promised.",
+    ),
+)
+"""Every stage in run order, with the artifacts it reads and writes and the reason it runs there."""
+
+SPECS: dict[Stage, StageSpec] = {spec.stage: spec for spec in PIPELINE}
+"""Each stage's row, so `Stage.spec` is one lookup rather than a scan."""
+
+
+def required(plan: tuple[Stage, ...]) -> tuple[Artifact, ...]:
+    """The artifacts a run of `plan` reads but does not write, which must be on disk before it starts.
+
+    A run that starts at `assemble` reads the recordings a skipped `record` would have made, so the
+    precondition check and the `NOT_BUILT` hint both read this rather than an if-chain of their own.
     """
-
-    SYNTHESIZE = "synthesize"  # The section is sent to the voice, which spends credits.
-    CACHED = "cached"  # The take of this exact text is on disk already.
-    UNKNOWN = "unknown"  # The provider could not be set up, so the content hash cannot be computed.
-
-
-class SoundscapeStatus(Enum):
-    """What `soundscape` did with one item. The value is the item's `status`."""
-
-    PLANNED = "planned"  # A dry run, which asked for nothing.
-    UNCHANGED = "unchanged"  # The file on disk was made from this exact request.
-    GENERATED = "generated"  # The provider made the file in this run.
+    written = {artifact for stage in plan for artifact in stage.spec.writes}
+    needed = [artifact for stage in plan for artifact in stage.spec.reads if artifact not in written]
+    return tuple(dict.fromkeys(needed))
 
 
-class SectionKind(Enum):
-    """What a section plays: a page recorded in the browser, or a video clip.
-
-    The value is the `kind` of a `cuts.json` row and of a section `status` reports.
-    """
-
-    PAGE = "page"
-    CLIP = "clip"
-
-
-class Substitute(Enum):
-    """What plays in place of a section whose file is missing. The value is a `cuts.json` row's `substitute`."""
-
-    SLATE = "slate"  # A clip section whose file is missing plays its titled slate.
-    BLACK = "black"  # A page section with no recording plays black for its span.
+__all__ = [
+    "PIPELINE",
+    "Artifact",
+    "Outcome",
+    "Stage",
+    "StageSpec",
+]

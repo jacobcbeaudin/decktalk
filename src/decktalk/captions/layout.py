@@ -1,7 +1,7 @@
 """Words become caption cues: where each cue starts and ends, and how its one or two lines break.
 
-    build/out/<name>.srt   the cues as SubRip
-    build/out/<name>.vtt   the same cues as WebVTT
+    build/final/<name>.srt   the cues as SubRip
+    build/final/<name>.vtt   the same cues as WebVTT
 
 A cue never spans a section boundary, so a caption is always the speech of one section. A cue stays
 on screen for at least `CAPTION_MIN_SECONDS`, unless the next cue begins before that.
@@ -13,15 +13,22 @@ import math
 import re
 from dataclasses import dataclass
 
-from ..artifacts.words import Word
+from ..results import Word
 
-CAPTION_MAX_CHARS = 42  # The longest line a cue may carry, in characters. A cue has at most two lines.
-CAPTION_MIN_SILENCE = 1.0  # A silence at least this long between two words always ends the cue.
-CAPTION_TAIL = 0.2  # Seconds a cue lingers after its last word, unless the next cue begins first.
-# The shortest a cue may stay on screen, unless the next cue needs the room. A caption held for less
-# than a second cannot be read, which is what WCAG success criterion 1.2.2 asks captions to be.
+CAPTION_MAX_CHARS = 42
+"""Truth: the longest line a viewer reads in one glance, and a cue holds at most two of them."""
+
+CAPTION_MIN_SILENCE = 1.0
+"""Truth: a pause this long between two words is heard as the end of a thought."""
+
+CAPTION_TAIL = 0.2
+"""Truth: a cue lingers this long after its last word, unless the next cue begins first."""
+
 CAPTION_MIN_SECONDS = 1.0
-CAPTION_MAX_UNITS = 8  # The most sentences one cue is ever considered to hold.
+"""Truth: a caption held for less than a second cannot be read, which is WCAG success criterion 1.2.2."""
+
+CAPTION_MAX_UNITS = 8
+"""Truth: the most sentences one cue is ever considered to hold, which bounds the grouping search."""
 
 # Short words a line should not end on and a split should not touch, so "billions of billions" stays whole.
 _FUNCTION_WORDS = frozenset("a an the of to in on at for and or but by with as is it its my your".split())
@@ -132,7 +139,7 @@ def display_words(words: list[Word], text: str) -> list[Word]:
         while k < len(tokens) and k < j + 3 and _letters(tokens[k]) != key:
             k += 1
         if k < len(tokens) and k < j + 3:
-            out.append(Word(tokens[k], w.start, w.end))
+            out.append(Word(word=tokens[k], start=w.start, end=w.end))
             j = k + 1
         else:
             return list(words)

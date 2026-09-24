@@ -1,10 +1,10 @@
 """The caption, chapter and transcript files `assemble` writes beside the final mp4.
 
-build/out/<name>.srt              the caption cues as SubRip
-build/out/<name>.vtt              the same cues as WebVTT
-build/out/<name>.chapters.txt     an ffmetadata file with one [CHAPTER] per section
-build/out/<name>-transcript.html  the whole film as a page: one heading per chapter, the spoken
-                                  text under it, and the description of each reveal
+build/final/<name>.srt              the caption cues as SubRip
+build/final/<name>.vtt              the same cues as WebVTT
+build/final/<name>.chapters.txt     an ffmetadata file with one [CHAPTER] per section
+build/final/<name>-transcript.html  the whole film as a page: one heading per chapter, the spoken
+                                    text under it, and the description of each reveal
 
 The transcript is the media alternative a viewer who cannot see or cannot hear the film reads
 instead. Captions carry speech alone, so the transcript is the only place the picture is written
@@ -21,7 +21,7 @@ from .layout import CaptionCue
 
 
 def _stamp(seconds: float, sep: str) -> str:
-    ms = int(round(seconds * 1000))
+    ms = round(seconds * 1000)
     h, rem = divmod(ms, 3_600_000)
     m, rem = divmod(rem, 60_000)
     s, ms = divmod(rem, 1000)
@@ -63,8 +63,8 @@ def write_chapters(path: Path, chapters: list[Chapter]) -> None:
             "",
             "[CHAPTER]",
             "TIMEBASE=1/1000",
-            f"START={int(round(ch.start * 1000))}",
-            f"END={int(round(ch.end * 1000))}",
+            f"START={round(ch.start * 1000)}",
+            f"END={round(ch.end * 1000)}",
             f"title={ffmetadata_escape(ch.title)}",
         ]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,7 +109,7 @@ TRANSCRIPT_CSS = (
 
 def clock(seconds: float) -> str:
     """A time a reader can find in a player: h:mm:ss, or m:ss under an hour."""
-    whole = int(round(seconds))
+    whole = round(seconds)
     h, rem = divmod(whole, 3600)
     m, s = divmod(rem, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"

@@ -1,303 +1,328 @@
-"""The whole pipeline in order: narrate, align, record, assemble, verify.
+"""The whole pipeline in order, or the span of it one run asked for.
 
-`build` runs the five stages, or the run of them `--from` and `--to` name, and writes what it is
-doing to `build/progress.jsonl` as it goes. Each line is one event, so an agent reads a file instead
-of tailing a log, and the file is truncated at the start of a run so it only ever describes the run
-in front of it.
+`build` runs the six stages narrate, cue, record, soundscape, assemble and verify, in that order,
+and reports each one on the event stream as it opens and closes. It writes no file of its own: the
+run's account of itself is the stream, its lines are appended to `build/events/<run>.jsonl` by the
+machine's own sink, and every file the stages wrote is already recorded on the run.
 
-The fifth stage is the real `verify`, cues and all. A build that exits 0 has therefore measured every
-reveal against its word, which is the promise the product makes, and not only checked that the
-sections start on a picture.
+Which stages a run performs is read from `PIPELINE` and never worked out here. `Stage.span` gives
+the run of stages between two ends, `required` gives the artifacts that run reads but does not
+write, and `Artifact.written_by` gives the stage that would have written each one, so a run that
+starts past a missing artifact is refused with the file and the command named, and this module
+carries no "run this first" sentence of its own.
 
-A stage that `--from` skips leaves the artifact it would have written to the run before it, so a run
-that starts past a missing artifact stops and names the file rather than assembling stale work.
+A voiced run draws the storyboard before it narrates, because the contact sheet is the checkpoint a
+person reads before any credit is bought, and a run that writes placeholders has nothing to check.
 """
 
 from __future__ import annotations
 
-import logging
-import os
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from types import ModuleType
 
-from ..artifacts import ProgressRow, append_row, start_log
-from ..errors import ConfigError, MissingInputError
-from ..jsonio import relative
-from ..model import PageSection, Project
-from ..pipeline import ProgressEvent, Stage
-from ..verdicts import Findings
-from .align import AlignResult, UnknownCueError, align
-from .assemble import AssembleResult, assemble
-from .narrate import NarrateResult, narrate
-from .record import RecordResult, SectionRecording, record
-from .verify import VerifyResult, verify
+from decktalk.errors import InputError, NotBuiltError
+from decktalk.events import StageDone
+from decktalk.findings import Certainty, Code, Finding
+from decktalk.inputs import Inputs
+from decktalk.machine import Run
+from decktalk.pipeline import Artifact, Outcome, Stage, required
+from decktalk.results import BuildResult, Layer, Result, Spend, SpendState, StageRun, Voicing
+from decktalk.stages import assemble, clock, cue, narrate, record, since, storyboard, verify
+from decktalk.stages import soundscape as soundscape_stage
+from decktalk.stages.narrate.plan import PRICE_KEY
 
-log = logging.getLogger(__name__)
+NOTHING = 0.0
+"""What a stage that never opened took, which is the elapsed time a skipped row reports."""
 
-Reporter = Callable[[Stage, Any], None]
-"""`report(stage, None)` opens a stage and `report(stage, result)` closes it with what it produced."""
+FIRST = 1
+"""Where a run's first stage sits in its own plan, because a person counts stages from one."""
 
+DOLLAR_DIGITS = 2
+"""Truth: a price is stated to the cent, which is what every spend in the product is rounded to."""
 
-@dataclass
-class Progress:
-    """The run's own account of itself, one JSON line per event, appended as the run goes.
+MODULES: dict[Stage, ModuleType] = {
+    Stage.NARRATE: narrate,
+    Stage.CUE: cue,
+    Stage.RECORD: record,
+    Stage.SOUNDSCAPE: soundscape_stage,
+    Stage.ASSEMBLE: assemble,
+    Stage.VERIFY: verify,
+}
+"""Each stage against the module that implements it, which is the one seam a test replaces.
 
-    The file is opened for truncation when the run starts and each line is flushed as it is written,
-    so a reader that opens the file mid-run sees every event that has happened and nothing else. Each
-    row carries the process that wrote it, which is how a reader tells a live run from a dead one.
-    """
+The module is held rather than the function, so the function is looked up when the stage is called
+and a test that replaces `decktalk.stages.record.record` is obeyed by a build exactly as it is by
+the facade. One word therefore names the stage, its module, its function and its event.
+"""
 
-    path: Path
-    stages: tuple[Stage, ...]
+OPTIONS: dict[Stage, tuple[str, ...]] = {
+    Stage.NARRATE: ("only", "force", "replace_voiced"),
+    Stage.CUE: ("only", "allow_unknown"),
+    Stage.RECORD: ("only", "force"),
+    Stage.SOUNDSCAPE: ("only", "force"),
+    Stage.ASSEMBLE: ("only", "soundscape", "loudness", "strict"),
+    Stage.VERIFY: ("only",),
+}
+"""Which of a build's options each stage takes, which is the whole of what a build passes on.
 
-    def start(self) -> None:
-        start_log(self.path)
+The options are selected per stage rather than passed whole, because a stage handed keywords it does
+not read would accept a flag that changes nothing, which is the false entry in the instruction set
+the founder's thesis exists to prevent.
+"""
 
-    def event(
-        self, stage: Stage, event: ProgressEvent, *, section: int | None = None, detail: str | None = None
-    ) -> None:
-        """Append one event. `detail` is one sentence, because a reader relays it to a person."""
-        row = ProgressRow(
-            ts=datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-            pid=os.getpid(),
-            stage=stage,
-            stage_index=self.stages.index(stage) + 1,
-            stage_count=len(self.stages),
-            section=section,
-            event=event,
-            detail=detail,
-        )
-        append_row(self.path, row)
+ARTIFACTS: dict[Artifact, str] = {
+    Artifact.TAKES: "takes_path",
+    Artifact.CUE_TIMES: "cue_times_path",
+    Artifact.RECORDINGS: "recordings_dir",
+    Artifact.SOUNDSCAPE: "soundscape_dir",
+    Artifact.FINAL: "film",
+}
+"""Each artifact against the workspace property that says where this project keeps it.
 
-
-def stopped_on(exc: BaseException) -> str:
-    """One sentence naming what ended a run, carrying the reason when the exception gives one.
-
-    A reader relays this row to a person, and the name of an exception class alone says nothing a
-    person can act on, so the first line of its message goes with it.
-    """
-    name = type(exc).__name__
-    first = next((line.strip() for line in str(exc).splitlines() if line.strip()), "")
-    return f"The run stopped on {name}: {first}" if first else f"The run stopped on {name}."
-
-
-def stage_plan(from_stage: Stage | None, to_stage: Stage | None) -> tuple[Stage, ...]:
-    """The stages this run executes, both ends inclusive, in the fixed order."""
-    plan = Stage.span(from_stage, to_stage)
-    if not plan:
-        assert from_stage is not None and to_stage is not None
-        raise ConfigError(f"the stage {from_stage.value} comes after the stage {to_stage.value}, so this run is empty")
-    return plan
-
-
-def required_inputs(project: Project, plan: tuple[Stage, ...]) -> list[Path]:
-    """The artifacts a skipped stage would have written, which this run reads instead of writing.
-
-    A run that starts at `assemble` needs the recordings a skipped `record` would have made, and a
-    run that starts anywhere past `narrate` needs the narration clock. Only a missing one matters.
-    """
-    ran = set(plan)
-    needed: list[Path] = []
-    if Stage.NARRATE not in ran and ran & {Stage.ALIGN, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY}:
-        needed.append(project.takes_path)
-    if Stage.ALIGN not in ran and ran & {Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY}:
-        needed.append(project.cue_times_path)
-    if Stage.RECORD not in ran and Stage.ASSEMBLE in ran:
-        needed += [project.recording(sec) for sec in project.page_sections]
-    if Stage.ASSEMBLE not in ran and Stage.VERIFY in ran:
-        needed.append(project.final)
-    return [path for path in needed if not path.exists()]
-
-
-@dataclass
-class BuildResult:
-    """What each stage of one run produced, in the order the run made them."""
-
-    stages: tuple[Stage, ...] = tuple(Stage)
-    narration: NarrateResult | None = None
-    align: AlignResult | None = None
-    recordings: RecordResult | None = None
-    assembly: AssembleResult | None = None
-    verification: VerifyResult | None = None
-    progress: Path | None = None
-
-    @property
-    def ran(self) -> tuple[tuple[Stage, Any], ...]:
-        """Each stage and the result it returned, in the order the stages run."""
-        results = (self.narration, self.align, self.recordings, self.assembly, self.verification)
-        return tuple(zip(Stage, results, strict=True))
-
-    @property
-    def ok(self) -> bool:
-        """True when every stage the run planned finished and none of them found anything at all.
-
-        The exit code is not this: an uncertain finding, such as a slate standing in for a clip the
-        project does not have, fails the run only under `--strict`, as it does on every command.
-        """
-        done = [result for stage, result in self.ran if stage in self.stages]
-        return all(result is not None for result in done) and self.findings == Findings()
-
-    @property
-    def findings(self) -> Findings:
-        """Every stage's findings, added, with each fault counted once. A stage that did not run adds nothing.
-
-        `verify` repeats what each recording log judged, which is the point of its `recordings` table
-        after a build someone else recorded. A log this run judged itself is counted once, through
-        `record`, and a log it did not, because `--only` named other sections or a section had no
-        narration span, is counted here through `verify`, which is the only stage that read it.
-        """
-        total = Findings()
-        for stage, result in self.ran:
-            if result is None:
-                continue
-            if stage is Stage.VERIFY and self.recordings is not None and self.verification is not None:
-                judged = {row.key for row in self.recordings.sections}
-                unjudged = (row for row in self.verification.recordings if row.key not in judged)
-                total = total + self.verification.film_findings
-                total = total + Findings.of(v for row in unjudged for v in row.verdicts)
-            else:
-                total = total + result.findings
-        return total
-
-    def to_dict(self, root: Path) -> dict[str, Any]:
-        """One entry per stage, under the name a build gives it, each the stage's own JSON-ready data."""
-        doc: dict[str, Any] = {
-            stage.value: None if result is None else result.to_dict(root) for stage, result in self.ran
-        }
-        doc["stages"] = [stage.value for stage in self.stages]
-        doc["progress"] = None if self.progress is None else relative(self.progress, root)
-        return doc
+`Artifact` publishes the path a project uses by default and `[project] build` may name another, so
+the workspace is asked where a file is and the pipeline is asked what it is for. `FINAL` is the film
+itself rather than the directory around it, because the film is what the stage after it reads.
+"""
 
 
 def build(
-    project: Project,
+    inputs: Inputs,
+    run: Run,
     *,
-    silent: bool = False,
+    stages: Sequence[Stage] | None = None,
+    skip: Sequence[Stage] = (),
+    only: Sequence[int] | None = None,
     force: bool = False,
-    only: list[int] | None = None,
+    replace_voiced: bool = False,
     soundscape: bool = True,
     loudness: bool = True,
     strict: bool = False,
-    allow_unresolved_cues: bool = False,
-    allow_unknown_cues: bool = False,
-    from_stage: Stage | None = None,
-    to_stage: Stage | None = None,
-    progress_path: Path | None = None,
-    report: Reporter | None = None,
+    allow_unknown: bool = False,
 ) -> BuildResult:
-    """Run the stages `from_stage` to `to_stage`, both inclusive. `report(stage, result)` sees each one.
+    """Run every stage of the pipeline, or the span of them `stages` names, in run order.
 
-    The build stops after align when a cue phrase is unresolved, unless `allow_unresolved_cues` is
-    set, and when a cue id appears nowhere in its page, unless `allow_unknown_cues` is set. It stops
-    after record when a page threw, because that section recorded nothing worth assembling.
+    Whether the run spends is the run's own voicing rather than a parameter, so one gate decides it
+    for the library, the command line and a service alike, and the storyboard is drawn first when it
+    does. A stage that judges something certain stops the run, because a cue whose phrase is never
+    spoken leaves a slide that never appears and a page that threw recorded an empty stage, and
+    carrying on would deliver a film that is wrong in a way the run already knows about.
     """
-    plan = stage_plan(from_stage, to_stage)
-    out = BuildResult(stages=plan, progress=progress_path or project.progress_path)
-    assert out.progress is not None
-    steps = Progress(path=out.progress, stages=plan)
-    steps.start()
-    missing = required_inputs(project, plan)
-    if missing:
-        names = ", ".join(relative(path, project.root) for path in missing)
-        steps.event(plan[0], ProgressEvent.FAIL, detail=f"The run needs {names}, which an earlier stage writes.")
-        raise MissingInputError(
-            f"this run starts at {plan[0].value} and needs {names}, which an earlier stage writes. "
-            "Run the earlier stage, or start the build further back with --from."
-        )
-    sections = [s for s in project.page_sections if not only or s.number in only]
-    running = plan[0]
-
-    def emit(stage: Stage, result: Any) -> None:
-        if report:
-            report(stage, result)
-
-    def run(stage: Stage, detail: str) -> bool:
-        nonlocal running
+    started = clock()
+    plan = _plan(stages, skip)
+    _require_what_the_plan_skips(inputs, plan, soundscape=soundscape)
+    options: dict[str, object] = {
+        "only": only,
+        "force": force,
+        "replace_voiced": replace_voiced,
+        "soundscape": soundscape,
+        "loudness": loudness,
+        "strict": strict,
+        "allow_unknown": allow_unknown,
+    }
+    board = _storyboard(inputs, run, only=only)
+    rows: list[StageRun] = []
+    spends: list[Spend] = []
+    film: Path | None = None
+    for stage in Stage:
         if stage not in plan:
-            return False
-        running = stage
-        # The reporter opens a stage on a result of None, which is what names the stage in every
-        # stderr line that follows and starts the clock the closing line reports.
-        emit(stage, None)
-        log.info("===== %s =====", stage.value)
-        steps.event(stage, ProgressEvent.START, detail=detail)
-        return True
+            rows.append(_skipped(run, stage))
+            continue
+        run.check()
+        opened = clock()
+        with run.stage(stage, index=plan.index(stage) + FIRST, count=len(plan)):
+            answer = _call(stage, inputs, run, options)
+        rows.append(StageRun(stage=stage, outcome=Outcome.OK, seconds=since(opened)))
+        spends += _spend_of(answer)
+        if stage is Stage.ASSEMBLE:
+            film = _film_of(answer)
+        if stage is not Stage.VERIFY:
+            _stop_on_what_is_certain(stage, answer, allow_unknown=allow_unknown)
+    return run.result(
+        BuildResult,
+        stages=tuple(rows),
+        voice=run.voice,
+        spend=_total(spends, inputs),
+        film=film,
+        storyboard=board,
+        seconds=since(started),
+    )
 
+
+def _plan(stages: Sequence[Stage] | None, skip: Sequence[Stage]) -> tuple[Stage, ...]:
+    """The stages this run performs, in the pipeline's own order, with the skipped ones removed.
+
+    `stages` is the span a caller asked for, which is every stage when it names none. A run left
+    with no stage at all is refused, because a build that did nothing and exited clean is a false
+    answer to the question the caller asked.
+    """
+    wanted = set(stages) if stages is not None else set(Stage)
+    plan = tuple(stage for stage in Stage if stage in wanted and stage not in set(skip))
+    if not plan:
+        asked = ", ".join(stage.value for stage in Stage if stage in wanted) or "no stage"
+        left_out = ", ".join(stage.value for stage in skip) or "nothing"
+        raise InputError(
+            f"this run plans no stage at all, because it asked for {asked} and skipped {left_out}.",
+            hint=f"Ask for at least one of {', '.join(stage.value for stage in Stage)}.",
+        )
+    return plan
+
+
+def _require_what_the_plan_skips(inputs: Inputs, plan: tuple[Stage, ...], *, soundscape: bool) -> None:
+    """Refuse a run that reads an artifact no stage of it writes and nothing has written yet.
+
+    The list comes from `PIPELINE`, so the precondition, the refusal's next step and the one
+    `status` reports are three readings of one table. The soundscape is the single artifact a
+    project may honestly have none of, so it is asked for only when the project declares one and the
+    run was not told to leave it out.
+    """
+    for artifact in required(plan):
+        if artifact is Artifact.SOUNDSCAPE and (not soundscape or inputs.document.soundscape.empty):
+            continue
+        where = _where(inputs, artifact)
+        if _present(where):
+            continue
+        raise NotBuiltError(
+            f"this run starts at {plan[0].value} and reads {inputs.relative(where).as_posix()}, "
+            "which an earlier stage writes.",
+            hint=_how_to_get(artifact),
+        )
+
+
+def _how_to_get(artifact: Artifact) -> str:
+    """The next step for an artifact nothing has written, read from the stage that writes it."""
+    writer = artifact.written_by
+    if writer is None:
+        return f"Nothing in the pipeline writes {artifact.value}."
+    return f"Run `decktalk {writer.value}` first, or start this build at it with --from {writer.value}."
+
+
+def _where(inputs: Inputs, artifact: Artifact) -> Path:
+    """Where this project keeps one artifact, asked of the workspace rather than of the pipeline."""
+    return getattr(inputs.workspace, ARTIFACTS[artifact])
+
+
+def _present(path: Path) -> bool:
+    """Whether an artifact is really there, which for a directory means it holds something.
+
+    A directory an earlier run made and left empty is as good as absent to the stage that reads it,
+    so a run that would assemble from no recording at all is refused here rather than left to fail
+    inside an encoder, where the reason would be an ffmpeg message instead of a next step.
+    """
+    if path.is_dir():
+        return any(path.iterdir())
+    return path.is_file()
+
+
+def _storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None) -> Path | None:
+    """The contact sheet a voiced run draws before it narrates, or None when nothing is bought.
+
+    The storyboard is the checkpoint before voice credits are spent, so a run that is going to spend
+    draws it first and a run that writes placeholders has nothing to check and draws none.
+    """
+    if run.voice is not Voicing.PAID:
+        return None
+    answer = storyboard.storyboard(inputs, run, only=only)
+    return None if answer.storyboard is None else Path(answer.storyboard)
+
+
+def _skipped(run: Run, stage: Stage) -> StageRun:
+    """Close a stage this run leaves out, so a renderer meets every stage of the pipeline once.
+
+    A skipped stage never opens, so it reports no start and one end carrying the outcome that says
+    why, which is the one field that replaces a second event name.
+    """
+    run.emit(StageDone, stage=stage, outcome=Outcome.SKIPPED, seconds=NOTHING)
+    return StageRun(stage=stage, outcome=Outcome.SKIPPED, seconds=NOTHING)
+
+
+def _call(stage: Stage, inputs: Inputs, run: Run, options: dict[str, object]) -> Result:
+    """Hand one stage its inputs, its run and the options it declares, and nothing else."""
+    taken = {name: options[name] for name in OPTIONS[stage]}
+    return getattr(MODULES[stage], stage.value)(inputs, run, **taken)
+
+
+def _spend_of(answer: Result) -> list[Spend]:
+    """The price one stage reported, or nothing at all from a stage that buys nothing."""
+    spent = getattr(answer, "spend", None)
+    return [spent] if isinstance(spent, Spend) else []
+
+
+def _film_of(answer: Result) -> Path | None:
+    """The film the assembling stage left behind, project-relative, or None when it made none."""
+    made = getattr(answer, "film", None)
+    return Path(made) if made is not None else None
+
+
+def _stop_on_what_is_certain(stage: Stage, answer: Result, *, allow_unknown: bool) -> None:
+    """Stop the run when the stage that just ran judged something certain about its own work.
+
+    A certain finding is a fact the run already holds, so carrying on would deliver a film that is
+    wrong in a way nobody has to watch it to discover. Only the findings that stage raised are
+    weighed, because one run carries every judgement made in it and an earlier stage's would
+    otherwise stop the run twice. `verify` is last and measures the finished film, so its findings
+    end the run rather than stop it, and they never reach here.
+    """
+    certain = [found for found in answer.findings if found.stage is stage and _stops(found, allow_unknown)]
+    if not certain:
+        return
+    listed = "\n  ".join(f"{found.code.name} at {found.location.where}: {found.message}" for found in certain)
+    raise InputError(
+        f"{stage.value} found {len(certain)} thing(s) that are certainly wrong, so the build stopped "
+        "there rather than carrying them into the film.",
+        hint=f"Fix these and run the build again:\n  {listed}",
+        location=certain[0].location,
+    )
+
+
+def _stops(found: Finding, allow_unknown: bool) -> bool:
+    """Whether one finding stops the run, which every certain one does but the one a flag forgives.
+
+    A cue row no page declares is the one certain finding an author may knowingly keep, because a
+    deck under construction lists the cues of slides it has not drawn yet, and
+    `--allow CUE_UNKNOWN` is what says so.
+    """
+    if found.certainty is not Certainty.CERTAIN:
+        return False
+    return not (allow_unknown and found.code is Code.CUE_UNKNOWN)
+
+
+def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
+    """What the whole run cost, which is every stage that priced anything added together.
+
+    A run where nothing was priced still reports a spend, because a reader that met a null there
+    would have to know which stages price and which do not before it could say the run cost nothing.
+    """
+    if not spends:
+        return Spend(
+            state=SpendState.ESTIMATE,
+            sections=(),
+            characters=0,
+            dollars=0.0,
+            ceiling_dollars=0.0,
+            price_per_1000_characters=inputs.settings.voice.price_per_1000_characters,
+            price_layer=_price_layer(inputs),
+        )
+    sections: list[int] = []
+    for spend in spends:
+        sections += [number for number in spend.sections if number not in sections]
+    return Spend(
+        state=SpendState.CHARGED if any(s.state is SpendState.CHARGED for s in spends) else SpendState.ESTIMATE,
+        sections=tuple(sorted(sections)),
+        characters=sum(spend.characters for spend in spends),
+        dollars=round(sum(spend.dollars for spend in spends), DOLLAR_DIGITS),
+        ceiling_dollars=round(sum(spend.ceiling_dollars for spend in spends), DOLLAR_DIGITS),
+        price_per_1000_characters=spends[0].price_per_1000_characters,
+        price_layer=spends[0].price_layer,
+    )
+
+
+def _price_layer(inputs: Inputs) -> Layer:
+    """Which layer stated the price, so a run that bought nothing still says where its rate came from."""
     try:
-        if run(Stage.NARRATE, "Narrating the script into one take per spoken section."):
-            out.narration = narrate(project, silent=silent, force=force)
-            wrote = len(out.narration.synthesized)
-            steps.event(Stage.NARRATE, ProgressEvent.DONE, detail=f"Wrote {wrote} take(s) and reused the rest.")
-            emit(Stage.NARRATE, out.narration)
-        if run(Stage.ALIGN, "Matching every cue phrase against the narrated words."):
-            # The flag passes straight through, and the align table still prints before the build stops.
-            try:
-                out.align = align(project, allow_unknown_cues=allow_unknown_cues)
-            except UnknownCueError as exc:
-                out.align = exc.result
-                nowhere = "A cue id appears nowhere in the page that plays it."
-                steps.event(Stage.ALIGN, ProgressEvent.FAIL, detail=nowhere)
-                emit(Stage.ALIGN, out.align)
-                raise
-            steps.event(Stage.ALIGN, ProgressEvent.DONE, detail=f"Left {out.align.unresolved} cue(s) unresolved.")
-            emit(Stage.ALIGN, out.align)
-            if out.align.unresolved and not allow_unresolved_cues:
-                missed = f"{out.align.unresolved} cue phrase(s) were not found."
-                steps.event(Stage.ALIGN, ProgressEvent.FAIL, detail=missed)
-                raise ConfigError(
-                    f"{out.align.unresolved} cue(s) could not be matched to the narration, and a slide whose "
-                    "cues are unresolved never appears.",
-                    hint="Fix these phrases in cues.json, or pass --allow-unresolved-cues:\n  "
-                    + "\n  ".join(out.align.problems),
-                )
-        if run(Stage.RECORD, f"Recording up to {len(sections)} section(s) with headless Chromium."):
+        return inputs.layers.winner(PRICE_KEY).layer
+    except KeyError:
+        return Layer.DEFAULT
 
-            def opening(section: PageSection) -> None:
-                where = 1 + [s.number for s in sections].index(section.number)
-                opened = f"Section {where} of {len(sections)}."
-                steps.event(Stage.RECORD, ProgressEvent.START, section=section.number, detail=opened)
 
-            def recorded(row: SectionRecording) -> None:
-                what = "Kept the recording on disk" if row.kept else "Recorded the section"
-                event = ProgressEvent.SKIP if row.kept else ProgressEvent.DONE
-                steps.event(Stage.RECORD, event, section=row.section.number, detail=f"{what}: {row.label}.")
-
-            out.recordings = record(project, only=only, opening=opening, report=recorded)
-            kept = len(out.recordings.kept_sections)
-            done = len(out.recordings.sections) - kept
-            steps.event(Stage.RECORD, ProgressEvent.DONE, detail=f"Recorded {done} section(s) and kept {kept}.")
-            emit(Stage.RECORD, out.recordings)
-            broken = out.recordings.page_errors
-            if broken:
-                # A page that threw recorded whatever was left on the stage, usually nothing, so the
-                # build stops here rather than delivering a blank section as if it were fine.
-                steps.event(Stage.RECORD, ProgressEvent.FAIL, detail=f"{len(broken)} section(s) hit a page error.")
-                raise ConfigError(
-                    f"{len(broken)} section(s) hit a page error while recording, so each recorded an empty stage.",
-                    hint="Fix these page errors and run `decktalk build` again:\n  "
-                    + "\n  ".join(f"section {r.key}: {e}" for r in broken for e in r.log.page_errors),
-                )
-        if run(Stage.ASSEMBLE, f"Cutting {len(project.sections)} section(s) and mixing the soundtrack."):
-            out.assembly = assemble(project, soundscape=soundscape, loudness=loudness, strict=strict)
-            wrote_film = f"Wrote {out.assembly.duration:.2f} seconds of film."
-            steps.event(Stage.ASSEMBLE, ProgressEvent.DONE, detail=wrote_film)
-            emit(Stage.ASSEMBLE, out.assembly)
-        if run(Stage.VERIFY, "Measuring every reveal on the finished film against its cue."):
-            # Every cue, so a build that exits 0 has measured each reveal against its word.
-            out.verification = verify(project)
-            found = out.verification.findings
-            steps.event(
-                Stage.VERIFY,
-                ProgressEvent.DONE,
-                detail=f"Found {found.certain} certain and {found.uncertain} uncertain finding(s).",
-            )
-            emit(Stage.VERIFY, out.verification)
-    except BaseException as exc:
-        # Whatever ends the run, the log closes on a row for the stage that was running, because a
-        # reader cannot tell a stage that is still working from one whose process died.
-        steps.event(running, ProgressEvent.FAIL, detail=stopped_on(exc))
-        raise
-    return out
+__all__ = ["build"]

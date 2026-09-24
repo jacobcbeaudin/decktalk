@@ -1,221 +1,284 @@
 ---
 title: Write a page by hand
-description: Write a page that follows the page contract without decktalk-runtime.js, for a page built with another framework.
+description: Build a deck page from an empty file: the skeleton, the scene wrapper, the slide templates, the DeckTalk object and the query keys.
 ---
 
-Most pages should include `decktalk-runtime.js` and skip this guide. Use this guide only when a page
-comes from another framework and cannot include the runtime. It lists what the recorder and
-`decktalk screenshots` need, and it shows a small page that does all of it.
+`decktalk init` writes a deck that already builds, and copying one of its pages is the shortest route
+to a second one. This guide is for the other case: a page written from an empty file, because the
+deck belongs to a design that neither packaged example fits.
 
-## Before you start
+Everything here is the same contract the starter obeys. A `[data-scene]` wrapper is one scene, each
+`<template data-slide>` inside it is one slide, an element has four moments and each moment is the
+local name of a cue. No attribute ever writes a second, because `cues.json` owns seconds.
 
-You need to write JavaScript. Read [The page contract](/concepts/page-contract) first.
+## The skeleton
 
-## Meet the needs of the recorder
-
-The recorder drives the page through its URL and a few globals. This table pairs each action of
-the recorder with what your page does.
-
-| What the recorder does | What your page does |
-|---|---|
-| The recorder opens `page.html?scene=N&cues=id@s,…&t0=signal`, with any `params` from the section. | The page reads `scene` and `cues`. It schedules cue `id` at `s` seconds after the clock starts. |
-| The recorder adds `&words=word@s,…` when the section's take has words. | The page can use the words to show text one word at a time, or it can ignore them. |
-| The recorder adds `&prevwords=word@s,…` when the section just before has words. | A page that opens on the previous section's last frame can read them, or it can ignore them. |
-| The recorder awaits `document.fonts.ready`, then `window.__decktalk.ready` when it is a Promise. | The page sets `window.__decktalk.ready` to a Promise that resolves when the page is ready. |
-| The recorder calls `window.DeckTalk.startClock()` one time, at narration t=0. | The page starts its clock in that call and nowhere else. |
-| The recorder reads `window.__decktalk.catalog` after the recording. | The page lists at least one scene in `catalog`. A missing or empty list is a page error. |
-| `preflight` freezes a slide at and before each cue. | Each catalog entry carries `slides`, the slide ids in page order, and `cues`, each slide id mapped to its cue ids in preview order. |
-| The recorder reads `window.__decktalk.warnings`, `frameGaps`, and `spokenLog`. | The page adds a string to `warnings` for anything it cannot do. `frameGaps` and `spokenLog` are optional. |
-| The recorder uses a browser window of `[video] width` by `height`. | The page draws at 1920 by 1080, or it scales a 1920 by 1080 element to fit the window. |
-
-The magenta cover belongs to the recorder, so a page needs no cover of its own.
-[How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains what the cover does.
-
-## Support decktalk screenshots
-
-`decktalk screenshots` uses the page in three ways:
-
-- It opens the page with no query and reads `window.__decktalk.catalog`. If the page has no catalog, `screenshots` warns and skips the page.
-- It opens `?slide=ID` for each slide id in the catalog. With `--after`, it opens `?slide=ID&after=CUE`.
-- In frame mode, `screenshots --section N --at S` opens the recorder's URL. It logs `window.__decktalk.fired` with each frame.
-
-`decktalk preflight` also reads `catalog[].cues`, which maps each slide id to its cue ids in preview order. It opens
-`?slide=ID&after=CUE` and `?slide=ID&before=CUE`. A scene whose entry carries no `cues` map gets every cue skipped as
-`NO_CATALOG`, and a cue that the map does not name is skipped as `NO_SLIDE`, because a freeze stops only at a
-listed cue. A page that answers neither parameter is not skipped: it shows every element both times, and each cue
-reads `NO CHANGE`.
-
-## Write the minimal page
-
-<Warning>Start the page clock only inside `DeckTalk.startClock()`. A page that starts its clock at
-`load` fires every cue early, and every reveal in the video comes before its word.</Warning>
-
-The page below follows the whole contract in about forty lines. It has one scene with one slide, and
-each cue shows the element with the matching `data-cue`. Its `ORDER` list is the one place the cue
-ids are written, which is what lets freeze mode answer `&after=` and `&before=`.
-
-```html deck/plain.html
+```html deck/mine.html
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
+<title>My lesson</title>
+
+<link rel="stylesheet" href="./katex/katex.min.css">
+<script src="./katex/katex.min.js"></script>
+<script src="./decktalk-runtime.js"></script>
+
 <style>
-  html, body { margin: 0; background: #15110e; color: #f5eee4; font: 44px/1.3 Inter, sans-serif; }
-  #stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; padding: 100px 160px; box-sizing: border-box; }
-  [data-cue] { opacity: 0; transition: opacity .35s; }
-  [data-cue].on { opacity: 1; }
-  .block { margin-top: 40px; width: 1200px; height: 220px; border-radius: 24px; background: #fbf6ee; }
+  :root { --ground: #ffffff; --ink: #0f0f12; --accent: #2c1fea;
+          --sans: ui-sans-serif, system-ui, sans-serif; }
+  html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); }
+  body { width: 100vw; height: 100vh; overflow: hidden; }
+  #dt-stage { background: var(--ground); }
 </style>
-<div id="stage">
-  <h1 data-cue="4.1a">A page by hand</h1>
-  <div class="block" data-cue="4.1b"></div>
+</head>
+
+<body>
+
+<div data-scene="1" data-name="Open">
+  <template data-slide="1.1" data-hold="10" data-describe="the opening title">
+    <h1 data-in="title" data-describe="the title, My lesson">My lesson</h1>
+  </template>
 </div>
-<script>
-  const ORDER = ["4.1a", "4.1b"];
-  const params = new URLSearchParams(location.search);
-  const state = { mode: "index", scene: params.get("scene"), slide: "4.1", cues: [], fired: [], warnings: [], origin: null,
-                  catalog: [{ scene: "4", name: "By hand", slides: ["4.1"], cues: { "4.1": ORDER } }],
-                  now: () => state.origin === null ? -Infinity : (performance.now() - state.origin) / 1000 };
-  window.__decktalk = state;
-  window.__decktalk.ready = document.fonts.ready;
 
-  const cues = (params.get("cues") || "").split(",").filter(Boolean).map((token) => {
-    const at = token.lastIndexOf("@");
-    return { id: token.slice(0, at), t: parseFloat(token.slice(at + 1)) };
-  });
-  state.cues = cues;
-  for (const c of cues) if (!document.querySelector(`[data-cue="${c.id}"]`)) state.warnings.push(`unknown cue id ${c.id}`);
-
-  function fire(id) {
-    state.fired.push(id);
-    document.querySelectorAll(`[data-cue="${id}"]`).forEach((el) => el.classList.add("on"));
-  }
-  function startClock() {
-    if (state.origin !== null) return;
-    state.origin = performance.now();
-    if (cues.length) state.mode = "cue";
-    for (const c of cues) setTimeout(() => fire(c.id), c.t * 1000);
-  }
-  window.DeckTalk = { startClock };
-
-  if (params.has("slide")) {
-    state.mode = "freeze";
-    const after = params.get("after"), before = params.get("before");
-    const last = after ? ORDER.indexOf(after) : before ? ORDER.indexOf(before) - 1 : ORDER.length - 1;
-    ORDER.slice(0, last + 1).forEach(fire);
-  } else if (params.get("t0") !== "signal") {
-    startClock();   // a browser preview starts at once
-  }
-</script>
+</body>
+</html>
 ```
 
-## Put the page in a project
+That is a complete page. It lists its scene when opened with no query, plays it with `?scene=1`, and
+records under the cue times a run resolves.
 
-These steps add the page as section 4 of the starter that `decktalk init` writes, so nothing already
-there has to change.
+### Loading the runtime and KaTeX
 
-<Steps>
-  <Step title="Save the page">
-    Save the page above as `deck/plain.html` in the project.
-  </Step>
+`decktalk init` copies two things into `deck/` beside the page: `decktalk-runtime.js`, the compiled
+runtime, and `katex/`, a pinned KaTeX release with its stylesheet, its licence and its font files.
+Load them with relative paths, as above.
 
-  <Step title="Add the section to decktalk.toml">
-    ```toml decktalk.toml
-    [[section]]
-    number = 4
-    chapter = "By hand"
-    page = "deck/plain.html"
-    scene = 4
-    ```
+KaTeX goes before the runtime, so the first slide is already typeset when the recorder starts the
+clock. The runtime waits for a typesetter a page asks for, and a page with `data-tex` on it and no
+KaTeX at all earns [`PAGE_KATEX_MISSING`](/reference/findings/PAGE_KATEX_MISSING). A page with no
+equations needs neither line.
 
-    The scene number, the section number and the cue id prefix agree, which is the rule every project follows.
-  </Step>
+<Warning>Load nothing from a network address. A recording that fetched a font, a stylesheet or a
+highlighter from somebody else's server is a film that depends on a host it does not own, which is
+[`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET). Copy the asset into `deck/` instead, which is
+what the lesson example does with its bundled OFL fonts.</Warning>
 
-  <Step title="Add the script and the cues">
-    <CodeGroup>
-    ```md script.md
-    ## 4. By hand
+### The stage
 
-    This page follows the contract with no runtime. [beat] It shows one block on its own word.
-    ```
+The runtime builds a stage element, `#dt-stage`, that is 1920 by 1080 CSS pixels, and scales it to
+fit the window. A page that declares its own `<div id="dt-stage">` keeps that element and the runtime
+builds around it, which is how a deck puts one background under all of its slides. Style it, and do
+not size it.
 
-    ```json cues.json
-    "4": { "cues": [
-      { "cue": "4.1a", "on": "This page" },
-      { "cue": "4.1b", "on": "one block" }
-    ] }
-    ```
-    </CodeGroup>
-  </Step>
+## The scene wrapper
 
-  <Step title="Resolve the cues">
-    ```console
-    decktalk narrate --no-voice
-    decktalk align
-    ```
+```html deck/mine.html
+<div data-scene="1" data-name="Open">
+```
 
-    {/* sample: decktalk align, the starter with this page as section 4, build without voice (section 04 row) */}
-    ```text
-    sec  speech   need  cues
-     04     7.6      -  4.1a@0.5,4.1b@4.94
-    ```
+`data-scene` is the id a `[[section]]` in `decktalk.toml` names in its `scene` key. `data-name` is the
+scene's name in the index page and in the catalog, and a scene with no name is called "Scene" and its
+id.
 
-    `align` finds each cue id in the page as a quoted literal, so `data-cue="4.1a"` and the `ORDER` list both count.
-  </Step>
+A wrapper holding no `<template data-slide>` is [`PAGE_SCENE_EMPTY`](/reference/findings/PAGE_SCENE_EMPTY).
+A moment attribute written on the wrapper itself, outside every template, has no slide to qualify it,
+so it is [`PAGE_MOMENT_UNKNOWN`](/reference/findings/PAGE_MOMENT_UNKNOWN).
 
-  <Step title="Check the frozen states">
-    ```console
-    decktalk screenshots --page deck/plain.html
-    decktalk preflight --only 4
-    ```
+## The slide templates
 
-    {/* sample: decktalk preflight --only 4, the starter with this page as section 4 */}
-    ```text
-    check              slide       cue   chg %  result
-    4:4.1a             4.1        0.50    1.12  changed
-    4:4.1b             4.1        4.94   12.69  changed
-    2 cue(s): 2 changed. Frozen frames in build/preflight
-    ```
+A slide is a `<template>` the runtime clones when the slide mounts. Four attributes belong to it.
 
-    A page that ignores `&after=` and `&before=` shows every element in freeze mode, so each pair of frames is
-    identical and every cue reads `NO CHANGE`. That is the check this page's `ORDER` list exists for.
-  </Step>
+| Attribute | Values | Default | What it does |
+|---|---|---|---|
+| `data-slide` | any id | required | Declares the slide. Its id qualifies every moment written inside it. |
+| `data-hold` | 1 to 60 seconds | 8 | How long a preview rests on this slide. No recording reads it. |
+| `data-enter` | `crossfade`, `cut` | `crossfade` | How this slide replaces the one before it. A crossfade is 0.24 s and a cut is instant. |
+| `data-owns` | local names, space separated | none | The cues only a handler serves, which no moment attribute mentions. |
 
-  <Step title="Record the section">
-    ```console
-    decktalk record --only 4
-    ```
+```html deck/mine.html
+<template data-slide="1.4" data-hold="20" data-enter="cut" data-owns="long short"
+          data-describe="the error drawn as a hill the model walks down">
+  <h1 data-in="hill" data-describe="the heading, picture the error as a hill">Picture the error as a hill.</h1>
+</template>
+```
 
-    {/* sample: decktalk record --only 4, the starter with this page as section 4 */}
-    ```text
-    [rec ] section 04 (deck/plain.html?scene=4)  9.2s ...
-           build/recordings/04.webm  (t=0 at 1.440s, ok)
-    sections 1, recorded 1, kept 0
-    ```
+Use `data-enter="cut"` where the picture changes completely, because a crossfade there reads as a
+dissolve rather than as a new idea. `data-describe` on the template is the slide's own subject, and
+`data-describe` on an element inside it is that element's.
 
-    The row reads `ok`, and `t0_method` in `build/recordings/04.json` starts with `cover`. A `NO COVER` there
-    means the page started its own clock instead of waiting for `DeckTalk.startClock()`.
-  </Step>
-</Steps>
+Four rules the reader checks before a pixel is drawn.
 
-The page has no preview timing. A browser preview with `?scene=4` shows nothing until you add
-`&cues=4.1a@1,4.1b@2` to the URL. Run `decktalk serve` and open the page from the URL it prints, because
-the recorder opens every page over http and not from a `file://` URL.
+- A template inside a scene with no `data-slide` is [`PAGE_SLIDE_NO_ID`](/reference/findings/PAGE_SLIDE_NO_ID).
+- Two templates claiming one id give every moment inside either of them two owners, which is
+  [`PAGE_SLIDE_DOUBLED`](/reference/findings/PAGE_SLIDE_DOUBLED).
+- A template nested inside a slide with no `data-slide` of its own is never mounted, which is
+  [`PAGE_TEMPLATE_IGNORED`](/reference/findings/PAGE_TEMPLATE_IGNORED).
+- A slide no recorded section ever mounts is [`PAGE_SLIDE_UNUSED`](/reference/findings/PAGE_SLIDE_UNUSED).
 
-## Compare with the runtime
+[Design a slide](/guides/design-a-slide) covers the element attributes, and
+[Slide recipes](/guides/slide-recipes) has a pattern for each thing they do.
 
-The runtime gives a page more than this minimal page does:
+## The DeckTalk object
 
-- an index of scenes and slides
-- preview timing from `hold` and `data-delay`
-- reveal effects, count-ups, typewriting, and word sync
-- KaTeX typesetting, with a wait for the library
-- a camera push
-- a warning for each mismatch between cues and slides
-- a list of gaps between animation frames
+`decktalk-runtime.js` publishes `window.DeckTalk`, which is everything a page may call. A page written
+only in markup calls none of it.
 
-[Runtime](/reference/runtime) lists all of it. A page by hand can add any of these features.
+| Member | What it is |
+|---|---|
+| `DeckTalk.version` | The runtime version this page carries. |
+| `DeckTalk.scene(id, definition)` | Declares one scene from script, for a slide built in code rather than written as a template. Returns `DeckTalk`, so calls chain. |
+| `DeckTalk.on(cue, fn)` | Runs `fn` at one cue, wherever in the deck that cue belongs. Returns `DeckTalk`. |
+| `DeckTalk.waitFor(promise)` | Holds the page's readiness until a promise of your own has settled. |
+| `DeckTalk.start()` | Reads the page and starts it, which a page that loads the runtime late may have to call itself. |
+| `DeckTalk.startClock()` | Starts the narration clock. The recorder sends this once its cover has come off, and a page has no reason to call it. |
+| `DeckTalk.scenes` | Every scene the page declared, as a Map keyed by scene id. |
+| `DeckTalk.params` | The page's own query, as `URLSearchParams`. |
+| `DeckTalk.findSlide(id)` | The scene and slide one slide id names, or null. |
+| `DeckTalk.buildSlide(scene, slide)` | One slide's element, built and not yet wired. |
+
+`window.__decktalk` is the same page read back: the mode, the scene, the slide, the cues, the
+warnings and the measured catalog. The recorder and every check read the page through it, and a page
+never writes to it.
+
+### A cue a handler serves
+
+```js deck/mine.html
+const step = (left) => (slide) => {
+  const thumb = slide.querySelector(".l-thumb");
+  if (thumb) thumb.style.left = left;
+};
+DeckTalk.on("1.5:long", step("1500px")).on("1.5:short", step("90px"));
+```
+
+<Note>`DeckTalk.on` takes a wire id, which is the slide id, a colon and the local name, because a
+handler may be registered anywhere in the deck and nothing around the call says which slide it means.
+A slide's own `owns` and `on` keys are local names, because the slide they belong to already says
+which slide that is.</Note>
+
+A handler receives the mounted slide element, or null when no slide is mounted, and a context of
+`id`, the wire id of the cue, `at`, the second on the page clock, `frozen`, whether the page is a
+still, and `slideId`. A handler that throws earns
+[`PAGE_HANDLER_THREW`](/reference/findings/PAGE_HANDLER_THREW), and the moment does nothing rather
+than the page failing.
+
+List in `data-owns` every cue a handler serves that no moment attribute names. That is what makes
+the slide the owner of the cue, and ownership is what decides when the slide is mounted. A cue in
+`cues.json` that no slide owns is [`PAGE_NO_OWNER`](/reference/findings/PAGE_NO_OWNER), and a cue that
+fires and finds neither a moment nor a handler is
+[`PAGE_CUE_UNKNOWN`](/reference/findings/PAGE_CUE_UNKNOWN).
+
+### A slide built in code
+
+`DeckTalk.scene` declares a scene whose slides build their own markup. A scene declared in script and
+a `[data-scene]` wrapper with the same id are one scene, so a deck may be half markup and half code,
+and a slide that defines `render` keeps it rather than taking the markup of a template with its id.
+
+```js deck/mine.html
+DeckTalk.scene("2", {
+  name: "How it works",
+  slides: [
+    {
+      id: "2.1",
+      hold: 14,
+      enter: "crossfade",
+      owns: ["sweep"],
+      render: ({ frozen }) => `<h1 data-in="heading" data-describe="the heading">The average</h1>`,
+      entered: (el, ctx) => { /* the slide has just mounted */ },
+      on: { sweep: (el, ctx) => { /* the local name, not the wire id */ } },
+    },
+  ],
+});
+```
+
+A `render` returns the slide's inner HTML and is given the scene, the slide and whether the page is
+frozen. It throws into [`PAGE_RENDER_THREW`](/reference/findings/PAGE_RENDER_THREW), `entered` throws
+into [`PAGE_ENTER_THREW`](/reference/findings/PAGE_ENTER_THREW) and a handler in `on` throws into
+[`PAGE_SLIDE_HANDLER_THREW`](/reference/findings/PAGE_SLIDE_HANDLER_THREW), and in every case the
+slide is drawn as its markup stands rather than the page failing.
+
+<Warning>Inside the backticks of a `render`, every backslash has to be written twice, because the
+markup is a JavaScript string. In a `<template>` a backslash is written once. That alone is reason
+enough to write an equation as a template.</Warning>
+
+### Waiting for something of your own
+
+```js deck/mine.html
+const image = new Image();
+image.src = "./media/status.png";
+DeckTalk.waitFor(image.decode());
+```
+
+`DeckTalk.waitFor` holds the page's readiness until the promise settles, so the recorder does not
+start the clock on a page that is still loading. The budget is five seconds. A promise that rejects
+is [`PAGE_WAIT_REJECTED`](/reference/findings/PAGE_WAIT_REJECTED), one that never settles is
+[`PAGE_WAIT_UNSETTLED`](/reference/findings/PAGE_WAIT_UNSETTLED), and the page is drawn either way, so
+a missing file never hangs a build.
+
+## The query keys the runtime reads
+
+One URL decides which of four things the page is doing: it lists its scenes, it previews one, it
+plays one against the narration clock, or it freezes one slide.
+
+| Key | What it asks the page for |
+|---|---|
+| `scene` | Play this scene from its first slide. |
+| `slide` | Freeze this slide with its cues already fired, which is what a still opens. |
+| `cues` | The cue times to fire at, as `id@seconds` pairs separated by a comma. |
+| `words` | The spoken words to sync a line against, as `word@seconds` pairs separated by a comma. |
+| `t0` | The narration second the page starts at, or `signal` when the recorder starts the clock. |
+| `speed` | Multiply the preview clock, so a long section is reviewed quickly. The slowest it goes is 0.05. |
+| `hud` | Set it to `1` to draw the on-page clock and cue list, which is for an author and never for a recording. |
+| `after` | Freeze after this cue, so the cues up to and including it fire and later ones stay hidden. |
+| `before` | Freeze just before this cue, so it and every later cue stay hidden. |
+
+`after` and `before` are answered by the probe that `decktalk check` and `decktalk storyboard` inject
+into the page. A page you open yourself with `?slide=1.1` freezes that slide with every one of its
+cues fired, and a cue those two keys name that the slide does not declare is
+[`PAGE_FREEZE_CUE_UNKNOWN`](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN).
+
+## Open the page yourself
+
+The recorder opens every page over http, so open yours the same way rather than from a `file://` URL.
+
+```console
+decktalk serve
+```
+
+It serves the deck directory and the files `decktalk.toml` declares, and nothing else. It prints
+where the deck is served and then closes its output, so a caller that captured it reads one object
+and is not left waiting on a stream that never ends. `--host` and `--port` choose the interface and
+the port, and a port of 0 takes any free one.
+
+From the URL it prints:
+
+- The page with no query lists every scene and every slide, and links a preview and a still of each.
+- `?scene=1` previews that scene. Once `decktalk cue` has run, the preview asks the origin for the
+  cue times that run resolved and plays the film's own timing. With none to find, it fires each cue
+  a second apart so a deck whose cues have never been resolved still shows its whole self.
+- `?scene=1&speed=4&hud=1` reviews a long scene quickly with the clock and the cue list on screen.
+- `?slide=1.1` freezes one slide with its cues fired.
+
+## Put the page in the project
+
+```toml decktalk.toml
+[[section]]
+number = 1
+chapter = "Open"
+page = "deck/mine.html"
+scene = "1"
+```
+
+The section number, the scene its `[[section]]` names and the slide ids of its cues agree, which is
+the shape every DeckTalk project follows. Then write the section's narration in `script.md` and one
+row per moment in `cues.json`, and judge the three together:
+
+```console
+decktalk check
+```
 
 ## Next
 
-- **Learn how a page plays:** [The page contract](/concepts/page-contract)
-- **Look up the runtime's fields:** [Runtime](/reference/runtime#window-__decktalk)
-- **Write a page with the runtime:** [Your first deck](/guides/first-deck)
+- **Make each reveal survive a check:** [Design a slide](/guides/design-a-slide)
+- **Copy a pattern that already ships:** [Slide recipes](/guides/slide-recipes)
+- **Look up every attribute and finding:** run `decktalk schema page`

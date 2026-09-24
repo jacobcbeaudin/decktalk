@@ -9,10 +9,11 @@ the cue phrases in `cues.json` match spoken words.
 
 ## 1. Open
 
-[Scene 1. The title, then a card for each of the two files, then the promise.]
+[Scene 1. The title and the count of files, then the two files you write.]
 
-This is DeckTalk. [beat] You write what you will say, [beat] and you write the slides that go with it.
-[beat] Then every picture waits for its own word.
+This is DeckTalk. [beat] Four files sit in one folder, and you write two of them. [beat]
+You write what you will say, [beat] and you write the slides that go with it. [beat]
+Then every picture waits for its own word.
 
 ## 2. How it works
 

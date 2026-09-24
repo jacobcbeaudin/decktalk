@@ -1,11 +1,13 @@
-"""ElevenLabs, the default speech provider: text read aloud with a time for every word.
+"""ElevenLabs, the only speech provider: text read aloud with a time for every word.
 
 The `/text-to-speech` endpoint returns the audio and a start and an end time per character, which
 `words_from_alignment` groups into words, and that is the whole reason DeckTalk can cut on a word.
-The same key buys the sound effects and the music that `decktalk soundscape` generates.
+The same key buys the sound effects and the music that the soundscape generates.
 
 The key travels in a header to whatever host `[elevenlabs] api_base` names, so the base is checked
-once when the provider is built, and the key is a `Secret` that only the header builder reveals.
+once when the provider is built, and the key is a `Secret` that only the header builder reveals. The
+voice id is not a secret: it names which voice reads the script, the way a model name names which
+model does, and it arrives in the request rather than being read from the environment here.
 """
 
 from __future__ import annotations
@@ -17,10 +19,9 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
-from ..artifacts import Word
-from ..errors import ConfigError
+from ..errors import InputError, ProviderError
+from ..results import Word
 from ..secret import Secret
-from ..settings import ElevenLabsConfig
 from . import SpeechRequest, VoiceContext
 from .http import post_bytes, post_json
 
@@ -47,9 +48,9 @@ def check_api_base(api_base: str, environ: Mapping[str, str] | None = None) -> s
         return api_base
     # The value is not quoted, because it may be set from the environment and reaches an error
     # that a --json payload carries, and only the switch that lifts this check may be printed.
-    raise ConfigError(
-        f"[elevenlabs] api_base must be an https URL on {ELEVENLABS_DOMAIN}. "
-        f"Set {ALLOW_ANY_API_BASE}=1 to send the key to another host on purpose."
+    raise InputError(
+        f"[elevenlabs] api_base must be an https URL on {ELEVENLABS_DOMAIN}.",
+        hint=f"Set {ALLOW_ANY_API_BASE}=1 to send the key to another host on purpose.",
     )
 
 
@@ -86,94 +87,101 @@ def words_from_alignment(chars: list[str], starts: list[float], ends: list[float
 
 @dataclass
 class ElevenLabs:
-    """Speech with word timestamps, sound effects and music. The default SpeechProvider.
+    """Speech with word timestamps, sound effects and music, which is the one provider DeckTalk ships.
 
-    Both values this provider reads from `.env` are `Secret`s, so no log line, error, `repr` or
-    JSON payload that reaches the provider can print the key or the voice id, and `http.redact`
-    takes the voice id out of every URL and every message besides. The base URL is checked once,
-    when the provider is built.
+    The key is a `Secret`, so no log line, error, `repr` or JSON payload that reaches this provider
+    can print it, and `_headers` is the one place it is revealed. The base URL is checked once, when
+    the provider is built.
     """
 
     api_key: Secret
-    cfg: ElevenLabsConfig
-    voice: Secret = field(default_factory=lambda: Secret("", "ELEVENLABS_VOICE_ID"))
-    context_chars: int = 1500
-    timeout: int = 180
+    api_base: str
+    context_chars: int  # [narration] context_chars
+    speech_timeout_seconds: int  # [narration] timeout_seconds
+    sound_timeout_seconds: int  # [elevenlabs] timeout_seconds
     name: str = "elevenlabs"
-    api_base: str = field(init=False)
+    checked_base: str = field(init=False)
 
     def __post_init__(self) -> None:
-        # Every URL is built from the base that passed the check, and never from the table again.
-        object.__setattr__(self, "api_base", check_api_base(self.cfg.api_base).rstrip("/"))
+        # Every URL is built from the base that passed the check, and never from the setting again.
+        object.__setattr__(self, "checked_base", check_api_base(self.api_base).rstrip("/"))
 
     @classmethod
     def for_context(cls, context: VoiceContext) -> ElevenLabs:
-        """The provider one project asks for: its key, its voice and its narration settings."""
-        api_key, voice = context.secrets.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
-        narration = context.settings.narration
+        """The provider one project asks for: its key, and the tuning that shapes its requests."""
+        (api_key,) = context.secrets.require("ELEVENLABS_API_KEY")
         return cls(
-            api_key,
-            context.settings.elevenlabs,
-            voice=voice,
-            context_chars=narration.context_chars,
-            timeout=narration.timeout_seconds,
+            api_key=api_key,
+            api_base=context.api_base,
+            context_chars=context.context_chars,
+            speech_timeout_seconds=context.speech_timeout_seconds,
+            sound_timeout_seconds=context.sound_timeout_seconds,
         )
 
     def cache_key(self, request: SpeechRequest) -> str:
         """Everything but the text that changes the audio. The voice id is part of the take hash."""
-        return f"{self.name}\n{self.voice.reveal()}\n{request.model}\n{request.output_format}"
+        return f"{self.name}\n{request.voice_id}\n{request.model}\n{request.output_format}"
 
     def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
-        return self.synthesize(
-            request.text,
-            voice_id=self.voice.reveal(),
-            model=request.model,
-            voice_settings=request.voice_settings,
-            output_format=request.output_format,
-            previous_text=request.previous_text,
-            next_text=request.next_text,
-            context_chars=self.context_chars,
-            timeout=self.timeout,
-        )
+        return self.synthesize(request)
 
     def _headers(self) -> dict[str, str]:
         """The one place the key is revealed, which is the request that is allowed to carry it."""
         return {"xi-api-key": self.api_key.reveal(), "Content-Type": "application/json", "Accept": "audio/mpeg"}
 
-    def synthesize(
-        self,
-        text: str,
-        *,
-        voice_id: str,
-        model: str,
-        voice_settings: dict[str, Any],
-        output_format: str,
-        previous_text: str | None = None,
-        next_text: str | None = None,
-        context_chars: int = 1500,
-        timeout: int = 180,
-    ) -> tuple[bytes, list[Word]]:
-        """One section read aloud, returned as the mp3 bytes and a start and an end time per word."""
-        url = f"{self.api_base}/text-to-speech/{voice_id}/with-timestamps?output_format={output_format}"
-        payload: dict[str, Any] = {"text": text, "model_id": model, "voice_settings": voice_settings}
-        if previous_text:
-            payload["previous_text"] = previous_text[-context_chars:]
-        if next_text:
-            payload["next_text"] = next_text[:context_chars]
-        reply = post_json(url, payload, self._headers(), timeout=timeout)
-        audio = base64.b64decode(reply["audio_base64"])
+    def synthesize(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+        """One section read aloud, as the mp3 bytes and a start and an end time per word.
+
+        The neighbouring sections travel with the request so the voice carries its prosody across a
+        cut, trimmed to the characters the tuning allows, and the alignment that comes back is what
+        every later stage measures against.
+        """
+        url = f"{self.checked_base}/text-to-speech/{request.voice_id}/with-timestamps"
+        payload: dict[str, Any] = {
+            "text": request.text,
+            "model_id": request.model,
+            "voice_settings": request.voice_settings,
+        }
+        if request.previous_text:
+            payload["previous_text"] = request.previous_text[-self.context_chars :]
+        if request.next_text:
+            payload["next_text"] = request.next_text[: self.context_chars]
+        reply = post_json(
+            f"{url}?output_format={request.output_format}",
+            payload,
+            self._headers(),
+            timeout=self.speech_timeout_seconds,
+        )
+        return self._audio(reply), self._words(reply)
+
+    def _audio(self, reply: Mapping[str, Any]) -> bytes:
+        """The mp3 the reply carries, refused as a provider failure when it carries none.
+
+        A reply with no audio in it is the service answering something other than speech, and
+        letting it through would write an empty take that every later stage measures as silence.
+        """
+        encoded = reply.get("audio_base64")
+        if not isinstance(encoded, str) or not encoded:
+            raise ProviderError("the voice answered with no audio in it.", retryable=True)
+        return base64.b64decode(encoded)
+
+    def _words(self, reply: Mapping[str, Any]) -> list[Word]:
+        """The word times the reply carries, which is what the whole cut is measured against.
+
+        The normalised alignment is the fallback, because a service that could not align the text as
+        written still aligned what it spoke.
+        """
         alignment = reply.get("alignment") or reply.get("normalized_alignment") or {}
-        words = words_from_alignment(
+        return words_from_alignment(
             alignment.get("characters", []),
             alignment.get("character_start_times_seconds", []),
             alignment.get("character_end_times_seconds", []),
         )
-        return audio, words
 
     def sound_effect(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.api_base}/sound-generation?output_format={output_format}"
-        return post_bytes(url, body, self._headers(), timeout=self.cfg.timeout_seconds)
+        url = f"{self.checked_base}/sound-generation?output_format={output_format}"
+        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds)
 
     def music(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.api_base}/music?output_format={output_format}"
-        return post_bytes(url, body, self._headers(), timeout=self.cfg.timeout_seconds)
+        url = f"{self.checked_base}/music?output_format={output_format}"
+        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds)

@@ -1,30 +1,74 @@
 ---
 title: Install the skills
-description: Where the skills land, which folders each coding agent reads, and what DeckTalk has actually tested.
+description: Where decktalk init puts the six skills, which folder each coding agent reads, and how to leave them out.
 ---
 
-`decktalk init` installs the six skills into a new project by default. Pass `--no-skills` to leave
-them out.
+The six packaged skills arrive with a project. `decktalk init DIR` writes them by default, and there
+is no separate command that installs them, because a skill is read from the project an agent is
+working in.
 
 ```console
-decktalk init my-video
+decktalk init my-lesson
 ```
 
-## The folders
+The skills live inside the Python package, so the skills a project gets always match the CLI that
+wrote them. `decktalk init --json` reports which way it went in its `skills` field, and every file
+it wrote in `written`.
 
-The skills are written once, into one generic folder, and a second folder points at it.
+## The two folders
+
+The skills are written once into one generic folder, and a second folder points at it.
 
 | Path | What it is |
 |---|---|
-| `.agents/skills/decktalk-<name>/SKILL.md` | The skills themselves, in the folder the Agent Skills format names for sharing between clients. |
-| `.claude/skills` | A link to `.agents/skills`, because Claude Code reads its own folder and not the generic one. |
+| `.agents/skills/decktalk-<name>/SKILL.md` | The six skills themselves, in the folder the Agent Skills format names for sharing between clients. |
+| `.claude/skills` | A relative link to `.agents/skills`, because Claude Code reads its own folder and not the generic one. |
+
+The six folders are `decktalk-script`, `decktalk-slide`, `decktalk-cues`, `decktalk-build`,
+`decktalk-fix` and `decktalk-revise`, in the order an author meets them.
 
 On a machine where a link cannot be made, which is usually Windows without the privilege for one,
 `init` writes a copy instead of a link. The copy holds the same files, and it has to be written
 again when the skills change.
 
 Do not commit a second copy of a skill under another name. Several harnesses read both folders, and
-two copies of one skill is the case where a harness has to guess.
+two copies of one skill is the case where a harness has to guess which one it is loading.
+
+## Leaving the skills out
+
+`decktalk init DIR --no-skills` writes neither folder. Nothing else about the project changes, so a
+project written that way still builds, and `skills` is `false` in the result.
+
+Use it when your repository installs skills its own way, or when the project is built by a person
+and read by no agent at all.
+
+## Getting newer skills into a project that already has one
+
+Nothing upgrades in place. `decktalk init` refuses a directory that already holds files, with the
+error code `APPROVAL` and a hint naming the flag that would answer it.
+
+```json
+{
+  "schema": 2,
+  "ok": false,
+  "findings": [],
+  "error": {
+    "code": "APPROVAL",
+    "message": "my-lesson already holds files, and writing a project over them could lose work.",
+    "hint": "Run decktalk init my-lesson --overwrite to write into it anyway.",
+    "location": null,
+    "docs": "https://docs.decktalk.ai/reference/errors/APPROVAL"
+  }
+}
+```
+
+`--overwrite` writes the whole packaged project over what is there, which replaces `script.md`,
+`cues.json`, `decktalk.toml` and the deck. It is not a way to refresh the skills alone. The one file
+it leaves untouched is `AGENTS.md`, because a file the author wrote is theirs.
+
+To take newer skills into a project you care about, write a fresh project in an empty directory and
+copy `.agents/skills/` across, or install DeckTalk's newer version and write the new project
+somewhere else first and compare.
 
 ## Which harness reads which folder
 
@@ -43,29 +87,32 @@ a project.
 | Amp | `.agents/skills/`, `.claude/skills/` |
 | Goose | `.agents/skills/`, `.goose/skills/`, `.claude/skills/` |
 
-The two folders that `init` writes reach every harness in that table. `.agents/skills/` reaches
-eight of them, and `.claude/skills` reaches Claude Code, which is the one harness that does not read
-the generic folder.
+The two folders `init` writes reach every harness in that table. `.agents/skills/` reaches eight of
+them, and `.claude/skills` reaches the one harness that does not read the generic folder.
 
 <Warning>
-  DeckTalk tests its skills on Claude Code alone. The release test is a trigger run over Claude Code
-  and a build made from the skills alone. Every other harness in the table is supported through the
-  generic folder and is untested, because the founder does not run it. A skill that misfires on
-  another harness is worth a GitHub Discussions post, and it is not a case DeckTalk can reproduce.
+  One harness is tested here and the rest are documented as untested. The skills are held to the
+  open format so that any of them can load the files, and a skill that misfires on a harness the
+  founder does not run is worth a GitHub Discussions post rather than a bug report, because it
+  cannot be reproduced here.
 </Warning>
 
-## Why the skills use no harness-specific fields
+## Why the skills carry no harness-specific field
 
-DeckTalk skills use only the fields the open format defines, which are `name`, `description`,
-`license`, `compatibility` and `metadata`. Several harnesses add fields of their own, and a field
-that one harness honours and another ignores gives one skill two behaviours. Some services also
-reject a skill whose front matter carries a key they do not know.
+A packaged skill's front matter carries only `name`, `description`, `compatibility` and `metadata`,
+and the repository's own test refuses any key outside `name`, `description`, `license`,
+`compatibility` and `metadata`. Several harnesses add fields of their own, and a field that one
+harness honours and another ignores gives one skill two behaviours. Some services also reject a
+skill whose front matter carries a key they do not know.
 
-The cost of that choice is that no front-matter field can mark a skill as user-only, so the guards
+The same test refuses a vendor, model or harness name anywhere in a skill, for the same reason: the
+files ship to whoever reads them.
+
+The cost of the choice is that no front-matter field can mark a skill as user-only, so the guards
 against spending live in the skill text and in the CLI. [Agent skills](/agents/skills) lists them.
 
-## Install the skills without installing DeckTalk
+## Related
 
-The repository carries a `skills` folder at its root that points at the same files, so a generic
-skill installer can read the skills straight from the repository before DeckTalk is on the machine.
-The skills drive a CLI, so they are only useful once that CLI exists.
+- [Agent skills](/agents/skills) for what each of the six skills covers.
+- [AGENTS.md](/agents/agents-md) for the file `init` writes beside them.
+- [Reference card](/reference/card) for the page to hand an agent that loads no skill at all.

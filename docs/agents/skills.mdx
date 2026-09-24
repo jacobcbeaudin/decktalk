@@ -1,12 +1,20 @@
 ---
 title: Agent skills
-description: The six packaged skills that teach a coding agent to write, build and repair a DeckTalk video.
+description: The six packaged skills that carry the craft a command line cannot teach, and the guards that keep an agent from spending your money.
 ---
 
 DeckTalk ships six agent skills. A skill is a folder with a `SKILL.md` file, written in the Agent
-Skills open format, that a coding agent loads when a task matches its description. The skills turn
-the CLI into something an agent can drive on its own, and they carry the rules that a person would
-otherwise learn from these docs.
+Skills open format, that a coding agent loads when a task matches its description.
+
+The skills carry only what a command line cannot say. The CLI is the instruction set and it
+documents itself, so a skill never repeats a flag, a default or a code. What is left is craft:
+writing for the ear, spoken symbols, cue phrases, slide patterns, reading a finding, and the scope
+of a revision.
+
+That rule is enforced rather than intended. The repository's own tests refuse a skill that names a
+command outside the final vocabulary, that spells a command line or a flag, or that names a vendor,
+a model or a harness. A skill that pointed at something the tool does not have would fail the suite,
+exactly like a test that lies.
 
 The skills live inside the Python package, so every installation carries the skills that match its
 own CLI. `decktalk init` writes them into a new project, and
@@ -19,38 +27,52 @@ own CLI. `decktalk init` writes them into a new project, and
 
 | Skill | It starts when | It ends with |
 |---|---|---|
-| `decktalk-script` | someone asks for a new narrated video, explainer, tutorial, product demo or lesson, adds a section, or changes what the voice says. | `script.md` written to a time budget, with a table of every spoken phrase and the symbols it stands for. |
-| `decktalk-slide` | a narrated video needs a new slide or scene, when maths or code has to appear on screen, when a picture must be added to an existing section, or when a reveal is too small, overlapping or off frame. | Markup that obeys the page contract, checked against the PNGs that `decktalk screenshots` writes. |
-| `decktalk-cues` | a script, a page or a reveal changes, when align reports an unresolved or unknown cue, when a picture appears early, late or not at all, or when a reveal is too small for the checker to see. | Every `data-cue` matched to `cues.json` in both directions, with the gaps inside their thresholds. |
-| `decktalk-build` | someone asks to build, render, export, preview or check a narrated video, an explainer, a tutorial or a lesson, or after any edit to script.md, cues.json, decktalk.toml or a deck page. | A verified build, with the frames shown to you before the work is called done. |
-| `decktalk-fix` | preflight, align, record, verify or build exits non-zero with error set to null, when a cue is unresolved or unknown, when a reveal lands off cue or shows no change, when a recording stalls or starts black, or when preflight skips every cue. | The smallest edit that clears the finding, and the failing command run again with `--only`. |
-| `decktalk-revise` | someone says a demo, tutorial, explainer or lesson is out of date, asks for this week's update, or names a release that changed what the video claims. | The fewest edits, a build of the changed sections alone, and a change note with the sections and the dollars. |
+| `decktalk-script` | someone asks for a new narrated video, explainer, tutorial, product demo or lesson, adds a section, or changes what the voice says. | A script written for the ear, and a table of every spoken phrase beside the symbol it stands for. |
+| `decktalk-slide` | a narrated video needs a new slide or scene, when maths or code has to appear on screen, when a picture must be added to an existing section, or when a reveal is too small, overlapping or off frame. | Markup that obeys the page contract, with every reveal large enough to be seen and described for a reader. |
+| `decktalk-cues` | a script, a page or a reveal changes, when a cue is reported as unresolved or unknown, or when a picture appears early, late or not at all. | Every moment on the page matched to a phrase, in both directions, with the gaps a viewer can follow. |
+| `decktalk-build` | someone asks to build, render, export, preview or check a narrated video, an explainer, a tutorial or a lesson, or after any edit to the script, the cues, the project file or a deck page. | A verified film, and an author who saw the price and the frames before either was spent. |
+| `decktalk-fix` | a command reports a finding, when a cue is unresolved or unknown, when a reveal lands off its word or shows no change, when a recording stalls or opens black, or when a check could measure nothing at all. | The smallest edit that removes the cause, and the command that failed run again on what changed. |
+| `decktalk-revise` | someone says a demo, tutorial, explainer or lesson is out of date, asks for this week's update, or names a release that changed what the film claims. | The fewest edits, a rebuild of the changed sections alone, and a note saying what changed and what it cost. |
 {/* skills:end */}
+
+Each skill ends with a hand-off section that names the sibling a different job belongs to, so an
+agent that starts in the wrong one is sent to the right one rather than improvising. A rule two
+skills share is one file, byte for byte, in both.
 
 ## What the skills will not do on their own
 
 The skills are written so that an agent cannot spend your money or hide a failure.
 
-- A voiced run stops and asks. `decktalk-build` reports the sections a voiced run would voice, their
-  characters, the dollars and the host, and then waits for your approval.
-- No skill passes `--force`, `--exit-zero` or an `--allow-` flag, and no skill turns `verify` off.
-- No skill edits the `[voice]` table without asking.
-- `decktalk-fix` reads `findings.items[]` and fixes the project. On exit code 3 it stops and reports
-  the error to you, because exit code 3 means DeckTalk itself could not run.
+- A voiced run stops and asks. `decktalk-build` names every section a voiced run would voice and
+  why, the total, and the price the estimate is based on, and then waits for an answer. When nobody
+  can answer, it runs only what spends nothing.
+- No skill passes a flag that hides a finding, forces a run past a refusal or discards a paid take.
+- No skill changes the voice, the model or a voice setting without an answer, because each of those
+  re-voices every section that uses it.
+- No skill buys music or an effect without an answer of its own, because generated sound spends too.
+- `decktalk-fix` reads the findings out of the JSON rather than parsing a printed table, fixes the
+  cause rather than the measurement, and stops after three tries with a report instead of a fourth
+  guess.
+- No skill reports a film as done while a certain finding stands.
+- An error is not a finding. On an error the agent stops and tells you, because an error means
+  DeckTalk itself could not run.
 
 No portable field in the skill format stops a model from starting a skill on its own, so these
 guards live in the skill text and in the CLI rather than in front matter.
 
-## The other two agent surfaces
+## The other agent surfaces
 
 A skill is not the only thing to hand an agent.
 
-- [The reference card](/reference/card) puts every file, command, rule and exit code on one page.
-  Hand it to an agent that has no skills loaded.
+- [AGENTS.md](/agents/agents-md) is the short file `decktalk init` writes, which names the four calls
+  that tell an agent everything.
+- [The reference card](/reference/card) puts the install, the four input files, every command, the
+  JSON contract, the exit codes, the stages, the page vocabulary and the settings on one page. Hand
+  it to an agent that has no skills loaded.
+- [The JSON contract](/agents/json) is what an agent reads back after every command.
 - [`llms.txt`](https://docs.decktalk.ai/llms.txt) indexes every page on this site, and
   [`llms-full.txt`](https://docs.decktalk.ai/llms-full.txt) is the whole site as one file. Hand
   those to an agent that can fetch a URL.
-- [The JSON contract](/agents/json) is what an agent reads back after every command.
 
 DeckTalk ships no MCP server. The CLI with `--json` and its exit codes is the machine interface, and
 the skills teach an agent to use it.

@@ -227,7 +227,7 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .stage-deck { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; transform: scale(var(--s, 0.4)); overflow: hidden; background: #15110e; }
 .stage-deck .scene { position: absolute; inset: 0; }
 .stage-deck .scene[hidden] { display: none; }
-.stage-deck [data-cue] { will-change: opacity, transform; }
+.stage-deck [data-in] { will-change: opacity, transform; }
 
 .band { margin-top: 12px; min-height: 60px; font-family: var(--font-display); font-size: 20px; line-height: 1.4; letter-spacing: -0.01em; }
 .band p { min-height: 28px; }
@@ -312,25 +312,25 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .pinned .verify { font-family: var(--font-mono); font-size: 13px; color: var(--dt-text-2); min-height: 20px; }
 .pinned .verify b { font-weight: 500; color: var(--dt-text); }
 
-/* Chapters 4 and 5 write on the stage. At 4 each picture carries the `data-cue` it was authored with, the
+/* Chapters 4 and 5 write on the stage. At 4 each picture carries the `data-in` it was authored with, the
    attribute the panel beside it quotes, and at 5 the same badge carries what `decktalk verify` measured for
    that landing. Sizes are in the deck's own 1920 px space, so they scale with the frame like the deck's labels.
    Colours come from the stage's own palette, which is fixed dark whichever scheme the page is in.
    Where a badge sits is the picture's business, so each picture carries its own corner rather than the badge
    rule carrying a list of exceptions: the wordmark is a full-bleed row and hangs its badge under its middle. */
-.pinned .stage-deck .scene > [data-cue] { --tag-x: 0; --tag-y: -58px; --tag-shift: 0; }
+.pinned .stage-deck .scene > [data-in] { --tag-x: 0; --tag-y: -58px; --tag-shift: 0; }
 .pinned .stage-deck .scene > .mark { --tag-x: 50%; --tag-y: calc(100% + 10px); --tag-shift: -50%; }
-.pinned .stage-deck.named .scene > [data-cue]::after,
-.pinned .stage-deck.measured .scene > [data-cue][data-cue-ms]::after {
+.pinned .stage-deck.named .scene > [data-in]::after,
+.pinned .stage-deck.measured .scene > [data-in][data-cue-ms]::after {
   position: absolute; left: var(--tag-x); top: var(--tag-y); transform: translateX(var(--tag-shift)); z-index: 2;
   padding: 0 16px; height: 48px; border-radius: 10px;
   font: 500 34px/48px var(--dt-font-mono); letter-spacing: 0.02em; white-space: nowrap;
 }
-.pinned .stage-deck.named .scene > [data-cue]::after {
-  content: attr(data-cue);
+.pinned .stage-deck.named .scene > [data-in]::after {
+  content: attr(data-in);
   background: var(--dt-bg); color: var(--dt-text); box-shadow: 0 0 0 3px var(--dt-border);
 }
-.pinned .stage-deck.measured .scene > [data-cue][data-cue-ms]::after {
+.pinned .stage-deck.measured .scene > [data-in][data-cue-ms]::after {
   content: attr(data-cue-ms);
   background: var(--dt-paper); color: var(--dt-paper-ink); box-shadow: 0 0 0 3px var(--dt-bg);
 }

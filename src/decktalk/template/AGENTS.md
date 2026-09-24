@@ -1,11 +1,13 @@
 # __TITLE__
 
-A DeckTalk project: four files agree, and `decktalk build` turns them into a narrated video.
+A DeckTalk project: `script.md` is what the voice says, `decktalk.toml` lists one `[[section]]` per
+script section, `cues.json` says which spoken phrase each moment lands on, and `deck/` holds the
+pages. The section number, the scene its `[[section]]` names and the slide ids of its cues agree.
 
-- `script.md` is what the voice says. `## N. Title` starts section N.
-- `decktalk.toml` lists one `[[section]]` per script section, each naming a page and a scene.
-- `cues.json` says which spoken phrase each visual lands on. A cue id starts with its slide id.
-- `deck/` holds the pages. A slide is a `<template data-slide>` inside a `[data-scene]` wrapper, and reveals are attributes: `data-cue`, `data-reveal`, `data-tex`.
-- The section number, the scene and the cue id prefix are the same number. Keep the three in agreement.
+`decktalk --help` is the instruction set. `decktalk schema` prints every command, flag, finding and
+result, `decktalk schema settings` and `decktalk schema page` print the two knob tables, and
+`decktalk config explain KEY` explains one knob. Every command takes `--json` and prints one object.
+`decktalk status` says where the project stands.
 
-Build without voice first with `decktalk build --no-voice`, which spends nothing and needs no key. Ask before a voiced run, and never pass `--force`, `--exit-zero` or an `--allow-*` flag to make a check go green. Every command takes `--json` and prints one envelope on stdout. The six DeckTalk skills are in `.agents/skills/`.
+The craft a command line cannot teach is in `.agents/skills/`: writing for the ear, spoken math, cue
+phrases, slide patterns, reading a finding, and the scope of a revision.

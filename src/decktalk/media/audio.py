@@ -2,19 +2,48 @@
 
 The narration stages build silence, click tracks, padding and joins here, `assemble` measures and
 corrects loudness here, and `verify` reads the samples of one span here. Every call goes through
-`ffmpeg.run`, which checks the return code, so a failed edit says what ffmpeg said.
+`ffmpeg.run`, `ffmpeg.stderr` or `ffmpeg.raw`, each of which checks the return code, so a failed
+edit says what ffmpeg said rather than leaving an empty file behind.
+
+Every number a verdict depends on arrives as an argument. The sample rate comes from `[video]`, the
+two bounds that decide where a take stops sounding come from `[narration]`, the click level is the
+published number `verify.click_floor_dbfs` is derived from, and what is left here is a fact about
+audio rather than a choice about a film.
 """
 
 from __future__ import annotations
 
+import array
 import math
 import re
 import shutil
-import subprocess
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..settings import CLICK_LEVEL_DBFS
 from . import ffmpeg
+
+SILENCE_END_TOLERANCE_SECONDS = 0.06
+"""Truth: longer than one mp3 frame at every rate above 19.2 kHz, so it always covers encoder padding."""
+
+MP3_FRAME_SAMPLES = 1152
+"""Truth: the samples in one MPEG-1 Layer III frame."""
+
+RMS_SILENCE_DBFS = -120.0
+"""Truth: the level reported for a span that holds no sound at all."""
+
+DECLICK_FADE_SECONDS = 0.02
+"""Truth: under about five milliseconds a fade is itself a click, and over about fifty it is audible."""
+
+CLICK_HZ = 1000
+"""Truth: the centre of hearing, which is where a placeholder click is easiest to time by ear."""
+
+CLICK_SECONDS = 0.008
+"""Truth: short enough that a click reads as an event rather than as a tone."""
+
+PCM_BYTES_PER_SAMPLE = 2
+"""Truth: the width of one signed 16-bit sample, which is what the s16le calls below read and write."""
 
 
 def write_silence(out: Path, seconds: float, *, sample_rate: int, bitrate: str) -> None:
@@ -41,15 +70,11 @@ def rms_db(path: Path, start: float, seconds: float) -> float:
     )  # fmt: skip
     m = re.findall(r"RMS level dB: (-?[0-9.]+|-inf)", err)
     if not m:
-        return -120.0
-    return -120.0 if m[-1] == "-inf" else float(m[-1])
+        return RMS_SILENCE_DBFS
+    return RMS_SILENCE_DBFS if m[-1] == "-inf" else float(m[-1])
 
 
-SILENCE_END_TOLERANCE_SECONDS = 0.06  # A silence that ends this close to the end of the file runs to the end.
-MP3_FRAME_SAMPLES = 1152  # Samples in one MPEG-1 Layer III frame.
-
-
-def sound_end(path: Path, *, noise_db: int = -35, min_run: float = 0.05) -> float:
+def sound_end(path: Path, *, noise_dbfs: float, min_run_seconds: float) -> float:
     """Where the sound in an audio file ends: the start of the silence that runs to its end, or its length.
 
     It reads the file and nothing else, so the same bytes always give the same answer. The container
@@ -58,9 +83,13 @@ def sound_end(path: Path, *, noise_db: int = -35, min_run: float = 0.05) -> floa
     A silence that ends within one audio frame or SILENCE_END_TOLERANCE_SECONDS of the end, whichever
     is longer, counts as running to the end, and where it starts is measured on the decoded audio,
     which the padding never reaches.
+
+    `noise_dbfs` and `min_run_seconds` are `[narration] sound_end_noise_dbfs` and
+    `sound_end_min_run_seconds`, because between them they place every cut in the film.
     """
     duration = ffmpeg.probe_duration(path)
-    err = ffmpeg.stderr("-i", str(path), "-af", f"silencedetect=noise={noise_db}dB:d={min_run}", "-f", "null", "-")
+    detect = f"silencedetect=noise={noise_dbfs}dB:d={min_run_seconds}"
+    err = ffmpeg.stderr("-i", str(path), "-af", detect, "-f", "null", "-")
     starts = re.findall(r"silence_start: ([0-9.]+)", err)
     ends = re.findall(r"silence_end: ([0-9.]+)", err)
     if not starts:
@@ -73,53 +102,42 @@ def sound_end(path: Path, *, noise_db: int = -35, min_run: float = 0.05) -> floa
     return round(duration, 3)
 
 
-def write_clicks(
-    path: Path, duration: float, times: list[float], *, sample_rate: int, bitrate: str, level_db: float = -24.0
-) -> None:
+def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate: int, bitrate: str) -> None:
     """A placeholder track for builds without voice: silence with a soft click at each word start.
 
     The clicks let `verify` measure the finished file's audio against its picture, and
     they make a silent draft reviewable for pacing.
     """
-    import array
-    import wave
-
-    n = int(round(duration * sample_rate))
-    samples = array.array("h", bytes(2 * n))
-    amp = int(32767 * 10 ** (level_db / 20))
-    click = int(0.008 * sample_rate)
+    n = round(duration * sample_rate)
+    samples = array.array("h", bytes(PCM_BYTES_PER_SAMPLE * n))
+    amp = int(32767 * 10 ** (CLICK_LEVEL_DBFS / 20))
+    click = round(CLICK_SECONDS * sample_rate)
     for t in times:
-        start = int(round(t * sample_rate))
+        start = round(t * sample_rate)
         for i in range(click):
             j = start + i
             if 0 <= j < n:
                 env = math.sin(math.pi * i / click)
-                samples[j] = int(amp * env * math.sin(2 * math.pi * 1000 * i / sample_rate))
+                samples[j] = int(amp * env * math.sin(2 * math.pi * CLICK_HZ * i / sample_rate))
     wav = path.with_suffix(".clicks.wav")
     with wave.open(str(wav), "wb") as fh:
         fh.setnchannels(1)
-        fh.setsampwidth(2)
+        fh.setsampwidth(PCM_BYTES_PER_SAMPLE)
         fh.setframerate(sample_rate)
         fh.writeframes(samples.tobytes())
     ffmpeg.run("-i", str(wav), "-c:a", "libmp3lame", "-b:a", bitrate, str(path))
     wav.unlink()
 
 
-def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int = 48000) -> list[int]:
-    """Mono 16-bit samples of the audio between start and start + seconds."""
-    out = subprocess.run(
-        [ffmpeg.ffmpeg(), "-v", "error", "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", "-i", str(path), "-vn",
-         "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-"],
-        capture_output=True, check=True,
-    ).stdout  # fmt: skip
-    import array
-
-    a = array.array("h")
-    a.frombytes(out[: len(out) - len(out) % 2])
-    return list(a)
-
-
-CUT_FADE_SECONDS = 0.01  # A file cut short fades out over its last this long, so the cut never clicks.
+def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int) -> list[int]:
+    """Mono 16-bit samples of the audio between start and start + seconds, at `[video] sample_rate`."""
+    out = ffmpeg.raw(
+        "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", "-i", str(path), "-vn",
+        "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-",
+    )  # fmt: skip
+    samples = array.array("h")
+    samples.frombytes(out[: len(out) - len(out) % PCM_BYTES_PER_SAMPLE])
+    return list(samples)
 
 
 @dataclass(frozen=True)
@@ -136,7 +154,7 @@ def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate
     """Join audio files back to back, each placed by its `Placement`.
 
     A file plays for its `play` seconds and is cut there, fading out over its last
-    CUT_FADE_SECONDS, and a file shorter than that is followed by silence up to it. Its tail is
+    DECLICK_FADE_SECONDS, and a file shorter than that is followed by silence up to it. Its tail is
     silence after that, whatever the file holds past the cut. Where every file lands, and what sounds
     there, is therefore arithmetic over the placements and never depends on the files around it.
     """
@@ -147,9 +165,9 @@ def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate
     for i, part in enumerate(parts):
         chain = []
         if part.play is not None:
-            keep = int(round(part.play * sample_rate))
-            fade = min(keep, int(round(CUT_FADE_SECONDS * sample_rate)))
-            whole = int(round((part.play + part.tail) * sample_rate))
+            keep = round(part.play * sample_rate)
+            fade = min(keep, round(DECLICK_FADE_SECONDS * sample_rate))
+            whole = round((part.play + part.tail) * sample_rate)
             chain += [
                 f"aresample={sample_rate}",
                 f"atrim=end_sample={keep}",
@@ -157,8 +175,8 @@ def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate
                 f"apad=whole_len={whole}",
             ]
         elif part.tail > 0:
-            chain += [f"aresample={sample_rate}", f"apad=pad_len={int(round(part.tail * sample_rate))}"]
-        delay = int(round(part.lead * 1000))
+            chain += [f"aresample={sample_rate}", f"apad=pad_len={round(part.tail * sample_rate)}"]
+        delay = round(part.lead * 1000)
         if delay > 0:
             chain.append(f"adelay=delays={delay}:all=1")
         if chain:
@@ -202,6 +220,8 @@ def crossfade_join(parts: list[Path], out: Path, *, crossfade_seconds: float, bi
 
 @dataclass(frozen=True)
 class Loudness:
+    """What one loudnorm pass measured about a file, before anything is corrected."""
+
     i: float
     tp: float
     lra: float

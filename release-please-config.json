@@ -23,8 +23,7 @@
           "path": "uv.lock",
           "jsonpath": "$.package[?(@.name.value=='decktalk')].version"
         },
-        { "type": "generic", "path": "src/decktalk/runtime/decktalk-runtime.js" },
-        { "type": "generic", "path": "src/decktalk/runtime/decktalk-probe.js" }
+        { "type": "generic", "path": "src/decktalk/runtime/src/index.ts" }
       ],
       "exclude-paths": [
         ".github",

@@ -3,12 +3,51 @@
 A section render, a clip and the concatenated film all pass through `Encoder`, which means a
 frame that survives one of them survives all of them, and a change of quality is one change here.
 The language tag the final mp4 carries is mapped here for the same reason, because the container
-takes a code that `[project] language` does not spell.
+takes a code that `[project] language` does not spell, and the slate colour is converted here
+because a stylesheet and an encoder write one colour two ways.
 """
 
 from __future__ import annotations
 
-from ..settings import VideoConfig
+from typing import Protocol
+
+
+class VideoSettings(Protocol):
+    """What one output is made from, which is the whole of `[video]` this module reads.
+
+    The encoder names the keys it reads rather than importing the settings class, because what an
+    output is made from is a fact about encoding and a project is what supplies it. Every member is
+    read-only, because an encoder reads its settings and never writes them, and a frozen record of
+    the same keys therefore satisfies this without being cast to it.
+    """
+
+    @property
+    def width(self) -> int: ...
+
+    @property
+    def height(self) -> int: ...
+
+    @property
+    def output_fps(self) -> int: ...
+
+    @property
+    def crf(self) -> int: ...
+
+    @property
+    def preset(self) -> str: ...
+
+    @property
+    def sample_rate(self) -> int: ...
+
+    @property
+    def channels(self) -> int: ...
+
+    @property
+    def audio_bitrate(self) -> str: ...
+
+    @property
+    def slate_color(self) -> str: ...
+
 
 # An mp4 stream's language is an ISO 639-2 three-letter code, while `[project] language` is the BCP 47
 # tag the page and the caption files carry, so the primary subtag is mapped here. A language this
@@ -23,6 +62,21 @@ ISO_639_2 = {
 UNKNOWN_LANGUAGE = "und"
 
 
+FFMPEG_HEX_PREFIX = "0x"
+"""How ffmpeg writes a colour it is given as hex, which a stylesheet writes with a hash instead."""
+
+
+def css_color(value: str) -> str:
+    """The colour a `[video]` setting names, written the way a page's stylesheet reads it.
+
+    ffmpeg takes `0xRRGGBB` and a stylesheet takes `#RRGGBB`, and both take a colour name. The one
+    setting that says what a missing clip is drawn on is therefore spelled once, in the notation the
+    encoder reads, and converted here rather than restated in a second notation beside the page.
+    """
+    color = value.strip()
+    return "#" + color[len(FFMPEG_HEX_PREFIX) :] if color.lower().startswith(FFMPEG_HEX_PREFIX) else color
+
+
 def iso_639_2(tag: str) -> str:
     """The three-letter code an mp4 stream is tagged with, from a BCP 47 tag such as `en` or `pt-BR`.
 
@@ -31,6 +85,10 @@ def iso_639_2(tag: str) -> str:
     """
     primary = tag.strip().lower().split("-")[0]
     return ISO_639_2.get(primary, UNKNOWN_LANGUAGE)
+
+
+KEYFRAME_SECONDS = 2
+"""Truth: a player seeks to a keyframe, and two seconds is the longest wait a scrub should cost."""
 
 
 class Encoder:
@@ -43,14 +101,14 @@ class Encoder:
     those flags.
     """
 
-    def __init__(self, video: VideoConfig) -> None:
+    def __init__(self, video: VideoSettings) -> None:
         self.v = video
         self.fit = (
             f"scale={video.width}:{video.height}:force_original_aspect_ratio=decrease,"
-            f"pad={video.width}:{video.height}:(ow-iw)/2:(oh-ih)/2:color=black,fps={video.fps},format=yuv420p,"
+            f"pad={video.width}:{video.height}:(ow-iw)/2:(oh-ih)/2:color=black,fps={video.output_fps},format=yuv420p,"
             "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
         )
-        gop = str(2 * video.fps)
+        gop = str(KEYFRAME_SECONDS * video.output_fps)
         self.venc = [
             "-c:v", "libx264",
             "-preset", video.preset,
@@ -85,5 +143,5 @@ class Encoder:
             "-t",
             f"{seconds}",
             "-i",
-            f"color=c={color}:s={self.v.width}x{self.v.height}:r={self.v.fps}",
+            f"color=c={color}:s={self.v.width}x{self.v.height}:r={self.v.output_fps}",
         ]

@@ -1,0 +1,24 @@
+{
+  "files": {
+    "tests/contract/test_numbers.py": 3,
+    "tests/contract/test_probe.py": 2,
+    "tests/contract/test_results.py": 2,
+    "tests/contract/test_runtime.py": 27,
+    "tests/decktalk/media/test_browser.py": 2,
+    "tests/decktalk/media/test_encode.py": 2,
+    "tests/decktalk/media/test_pagereport.py": 1,
+    "tests/decktalk/stages/assemble/test_assemble.py": 2,
+    "tests/decktalk/stages/assemble/test_cut.py": 2,
+    "tests/decktalk/stages/assemble/test_loudness.py": 3,
+    "tests/decktalk/stages/assemble/test_mix.py": 1,
+    "tests/decktalk/stages/check/test_check.py": 1,
+    "tests/decktalk/stages/check/test_scan.py": 1,
+    "tests/decktalk/stages/narrate/test_takes.py": 2,
+    "tests/decktalk/stages/record/test_checks.py": 4,
+    "tests/decktalk/stages/record/test_record.py": 1,
+    "tests/decktalk/stages/test_build.py": 1,
+    "tests/decktalk/stages/test_status.py": 1,
+    "tests/e2e/test_pipeline.py": 1,
+    "tests/e2e/test_scaffold_build.py": 1
+  }
+}

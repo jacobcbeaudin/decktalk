@@ -1,40 +1,66 @@
 ---
 title: FAQ
-description: Answers about cost, lock-in, the voice, other tools, output files, and the lesson example.
+description: Answers about cost, the voice, other tools, what comes out of a build, and running DeckTalk where you work.
 ---
 
-This page answers common questions about DeckTalk. For a message that DeckTalk prints, see [Troubleshooting](/help/troubleshooting).
+This page answers the questions a stranger asks before trying DeckTalk. If a command has already
+printed a code at you, [Troubleshooting](/help/troubleshooting) takes that code to a fix.
 
 ## What does it cost?
 
-A build without voice costs nothing. A voiced build spends ElevenLabs credits for each section whose text changed.
+A build without a voice costs nothing at all. Two stages spend money, and both of them tell you the
+price before they start.
 
-- Every ElevenLabs plan can call the API, including the free plan. The free plan has limits for a video you publish.
-- `decktalk soundscape` also spends credits, because it generates music, an ambience bed, and sound effects.
-- A build without voice stops when the project has voiced takes, because it would empty the narration cache. [Rebuild one section](/guides/rebuild-one-section#a-build-without-voice-and-a-voiced-build) explains the cache.
+- `narrate` sends each section's text to ElevenLabs and is billed by the character. A section whose
+  text has not changed is served from the take on disk, so an edit to one sentence pays for one
+  section.
+- `soundscape` generates the music, the ambience bed and the effects the project describes, and is
+  billed by the second of audio. It runs after `record`, so a run that stops at the recorder never
+  reaches it.
+- `decktalk check` prices a voiced run before anything is bought, using
+  `[voice] price_per_1000_characters` from `decktalk.toml` as what your own plan charges.
+- No run spends without being told to. On the command line that is `--spend`, and `--max-cost N`
+  refuses the run before the first call if the most it could cost is over N US dollars. In the
+  library it is `voice=decktalk.Voicing.PAID`, and `ApprovalRequired` is raised rather than money
+  being spent.
 
-[What spends credits](/requirements#what-spends-credits) lists the plan limits and every command that spends credits.
+[Requirements and costs](/requirements) lists every command that spends.
 
-## Is there lock-in to ElevenLabs?
+## Do I need an account to try it?
 
-No. ElevenLabs is the built-in speech provider, because it returns word times.
+No. `decktalk init my-deck` and then `decktalk build --no-voice` writes a complete film with
+placeholder narration that carries a real word clock, so the pacing, the cues and the cuts are all
+real. Nothing contacts a speech service, and no key is read.
 
-- The speech provider is one module behind a two-method protocol. Any service that returns audio and word times can replace it.
-- A local speech provider with word timings is one such replacement.
-- A build without voice needs no speech provider, so the project files do not depend on any service.
+A voiced build needs an ElevenLabs API key in `.env` and a voice id. The voice id is a published
+name rather than a credential: it says which voice reads the script, the way a model name says which
+model answers.
 
-[Python API](/reference/python-api) documents the protocol.
+## Can I use a voice other than ElevenLabs?
+
+Not today. ElevenLabs is the one speech provider DeckTalk ships, and the seam above it is internal
+rather than an extension point. There is no plugin path and nothing is read from entry points.
+
+What that does not lock up is your project. `script.md`, `cues.json`, `decktalk.toml` and the deck
+pages name no service, and a build with `--no-voice` needs none, so the files outlive the choice.
+The one thing DeckTalk asks of any voice is a start and an end time for every word, because the cut
+is made on words, and that requirement is what a second provider would have to meet.
 
 ## How does the voice sound?
 
-It sounds like the ElevenLabs voice you pick. Any voice id works, including a clone of your own voice.
+It sounds like the ElevenLabs voice you pick. Any voice id works, including a clone of your own.
 
-- `[voice]` in `decktalk.toml` sets stability, similarity, style, and speed.
-- DeckTalk sends the text before and after each section with the request. The rhythm and tone of the voice then stay even across cuts.
+`[voice]` in `decktalk.toml` sets `stability`, `similarity_boost`, `style`, `speaker_boost` and
+`speed`. DeckTalk also sends up to `[narration] context_chars` of the text before and after each
+section with the request, so the rhythm and the tone stay even across a cut that the listener never
+hears as one.
 
-## Why not record the screen?
+## Why not just record the screen?
 
-A screen recording needs a new take after every edit. You would also time every reveal again by hand. DeckTalk times each reveal from the spoken words, so a reveal moves with its word. [Rebuild one section](/guides/rebuild-one-section) shows what a change runs again.
+A screen recording needs a new take after every edit, and you time every reveal again by hand.
+DeckTalk takes each reveal's second from the spoken words, so rewriting a sentence moves the
+pictures with it and nobody touches a timeline.
+[Rebuild one section](/guides/rebuild-one-section) shows what a change runs again.
 
 ## How is this different from the other tools?
 
@@ -42,64 +68,94 @@ DeckTalk takes its timing from the spoken words, and the slides are your own HTM
 
 | Tool | Timing comes from | Slides are | After you edit one sentence |
 |---|---|---|---|
-| **DeckTalk** | the spoken words, one time per word | your HTML | DeckTalk voices one section again. `build --only N` records only that section. |
+| **DeckTalk** | the spoken words, one time per word | your HTML | DeckTalk voices one section again. `build --section N` records only that section. |
 | Remotion, Motion Canvas | frame numbers or seconds in code, by default | code | You time the change again by hand and render again. |
 | Manim | seconds in code, or bookmarks in the narration with manim-voiceover | code | With manim-voiceover, bookmarks follow the new text. You still render the scene again in Python. |
 | reveal.js plus a text-to-speech track | a fixed delay per slide, or a timing track you make by hand | your HTML | You time every slide again after the change. |
 | Descript | a recording you made | your screen | Overdub voices the new words. The screen recording does not move with them. |
 | Synthesia, HeyGen | the avatar's speech | their avatar and scenes | You generate the video again. |
 
-Choose DeckTalk when the timing must come from the words and the slides are yours. Other tools fit other jobs:
+Choose DeckTalk when the timing must come from the words and the slides are yours. Other tools fit
+other jobs.
 
-- For frame-by-frame animation, use Remotion, Motion Canvas, or Manim.
+- For frame-by-frame animation, use Remotion, Motion Canvas or Manim.
 - To edit a recording you already made, use Descript.
 - For an avatar on screen, use Synthesia or HeyGen.
 
 ## Is generated music required?
 
-No. Each part of the soundscape is off until `[mix]` in `decktalk.toml` names its file.
-
-- You can bring your own audio files.
-- `decktalk soundscape` generates the parts from a prompt, and it spends credits.
-- If a named file is missing, the build prints a warning and continues without that part.
-
-[Sound](/concepts/sound) explains both ways.
+No. Every part of the soundscape is off until the project asks for it. `[soundscape.music]`,
+`[soundscape.ambience]` and `[soundscape.effects.<name>]` describe what `decktalk soundscape`
+generates, and `[mix]` names the files that are mixed under the voice. You can point `[mix]` at
+audio files of your own and never run that stage at all. [Sound](/concepts/sound) explains both
+ways.
 
 ## What comes out besides the video?
 
-Every build writes captions and chapters beside the video.
+Every build writes the deliverables beside the film in `build/final/`.
 
-- The `.srt` and `.vtt` captions come from the word times, with the script's punctuation.
-- An ffmetadata chapters file has one chapter per section. Consecutive sections with the same title share one chapter.
-- The mp4 holds the same chapters, so video players show the section titles.
+| File | What it is |
+|---|---|
+| `<name>.mp4` | The film, with its chapters written into the container. |
+| `<name>.srt` and `<name>.vtt` | Captions built from the word times, with the script's punctuation. |
+| `<name>.chapters.txt` | An ffmetadata chapters file. Consecutive sections with the same chapter share one entry. |
+| `<name>-transcript.html` | The whole film as a page: one heading per chapter, the speech, and what each reveal showed. |
+| `<name>-poster.png` | A still frame for a player or a thumbnail. |
 
-`decktalk status` lists all three files. [Build artifacts](/reference/artifacts) gives their formats.
+`decktalk status` reports where the film is and what is stale.
+[Build artifacts](/reference/artifacts) gives every format.
 
 ## Does another HTML framework work?
 
 Yes. A page can be any HTML that follows the [page contract](/concepts/page-contract).
 
-- [Write a page by hand](/guides/page-by-hand) shows the minimum page.
-- The runtime is one file with no dependencies. It adds only the stage element to your markup.
-- KaTeX is optional. `decktalk init` copies the packaged KaTeX into `deck/katex/`, and a page that needs no equations can drop its two tags.
+- [Write a page by hand](/guides/page-by-hand) shows the smallest page that records.
+- The runtime is one file with no dependencies, and it adds only its own stage element to your
+  markup.
+- KaTeX is optional. `decktalk init` copies the packaged KaTeX into `deck/katex/`, and a page that
+  needs no equations can drop its two tags.
+
+A page that loads an asset from another origin still records, and `PAGE_CDN_ASSET` reports each
+origin it reached for, because a film that depends on somebody else's server cannot be rebuilt the
+same way in a year.
 
 ## Does it run on Windows?
 
-Yes. DeckTalk runs on Linux, macOS, and Windows.
+Yes. DeckTalk runs on Linux, macOS and Windows.
 
-- Paths in `decktalk.toml` use forward slashes on every platform.
-- Chromium goes in `%LOCALAPPDATA%\ms-playwright`, fetched by the first command that needs it or by `decktalk install`. If a corporate proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents.
-- CI runs the full build on Windows for a `v*` tag that a person pushes, and on request. [What CI runs](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md#what-ci-runs) lists every platform and trigger.
+- The one-line installer covers Linux and macOS. On Windows, install with uv or pipx, which needs
+  Python 3.12 or later.
+- Paths in `decktalk.toml` use forward slashes on every platform, and every path DeckTalk reports
+  back is project-relative with forward slashes.
+- What DeckTalk fetches goes under `%LOCALAPPDATA%` on Windows, and `[tools] cache_dir` moves it.
+  Chromium is fetched by the first command that needs it, or up front by `decktalk install`. If a
+  proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents, or point
+  `[record] browser_path` at a browser the machine already has.
+- The groups that drive a real browser or a real ffmpeg run on macOS and Windows when a change
+  merges and when a release is cut.
+  [What CI runs](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md#what-ci-runs)
+  names every leg.
+
+## Can an agent drive it?
+
+That is what it is built for. The command line is the instruction set and it documents itself, so
+four calls tell an agent everything: `decktalk --help`, `decktalk schema`, `decktalk schema settings`
+beside `decktalk config explain KEY`, and `decktalk status --json` beside `decktalk doctor --json`.
+Every command under `--json` prints one flat object with the same four reserved keys. `decktalk
+init` also writes six skills into the project, which hold the craft a help screen cannot say.
+[The agent path](/agents/json) is the whole story, and DeckTalk ships no MCP server.
 
 ## What does the lesson example mean by error?
 
-The "error" in `decktalk init --example lesson` is what machine learning calls the loss. The lesson uses "error" because the everyday word already says that lower is better.
+The "error" in `decktalk init --example lesson` is what machine learning calls the loss. The lesson
+uses "error" because the everyday word already says that lower is better.
 
-- **One guess.** A loss function scores one guess. For a category guess, such as seal or otter, the usual loss is cross-entropy. It is large when the model gives the right answer a low probability.
-- **The height of the bowl.** Training lowers the average loss over many examples. Gradient descent moves the knobs down the slope of that average.
-- **Not the error rate.** The error rate is the share of wrong guesses. It changes in jumps, so it has no useful slope to follow.
-
-[The examples](/quickstart#the-examples) says what each packaged project is.
+- **One guess.** A loss function scores one guess. For a category guess, such as seal or otter, the
+  usual loss is cross-entropy. It is large when the model gives the right answer a low probability.
+- **The height of the bowl.** Training lowers the average loss over many examples. Gradient descent
+  moves the knobs down the slope of that average.
+- **Not the error rate.** The error rate is the share of wrong guesses. It changes in jumps, so it
+  has no useful slope to follow.
 
 ## Where does the name come from?
 
@@ -107,6 +163,6 @@ A deck is the slides, and the talk is the narration. DeckTalk times the deck to 
 
 ## Related
 
-- **Fix a message that DeckTalk prints:** [Troubleshooting](/help/troubleshooting)
+- **Take a code to a fix:** [Troubleshooting](/help/troubleshooting)
 - **Check what a build needs and costs:** [Requirements and costs](/requirements)
 - **Look up a term:** [Glossary](/reference/glossary)

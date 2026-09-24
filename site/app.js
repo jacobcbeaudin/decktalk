@@ -124,7 +124,7 @@
 
   /* The page lights the city grid dimly from frame 0, so the opening frame reads as a night map before
      "one city" brings it up to full. The film's cue still lands on its word, from this ground rather than from nothing. */
-  const GROUND = { "1.1city": 0.38 };
+  const GROUND = { "1.1:city": 0.38 };
 
   /* The runtime's curve: cubic-bezier(.2,.7,.2,1), solved for x. */
   const ease = (() => {
@@ -158,15 +158,14 @@
       })
       .join("");
     const reveals = [];
-    for (const el of $$("[data-cue]", root)) {
-      const cue = cueAt[el.dataset.cue];
+    for (const el of $$("[data-in]", root)) {
+      // A slide names each moment by its own local word, and the id cues.json carries is that word
+      // under the slide it was written in, which is what stage.js publishes beside every scene.
+      const cue = cueAt[`${S.slides[el.closest("[data-scene]").dataset.scene]}:${el.dataset.in}`];
       if (!cue) continue;
-      const mode = (el.dataset.text || "").split(/\s+/)[0] || null;
-      let type = el.dataset.reveal || (mode === "spoken" ? "instant" : "rise");
-      const dur =
-        Number.parseFloat(el.dataset.duration) ||
-        { rise: 0.3, fade: 0.35, draw: 0.5, drop: 0.35, instant: 0 }[type] ||
-        0.3;
+      const mode = "words" in el.dataset ? "words" : el.dataset.count ? "count" : null;
+      let type = el.dataset.inStyle || (mode === "words" ? "cut" : S.unwritten["data-in-style"]);
+      const dur = Number.parseFloat(el.dataset.inSeconds) || S.entrances[type];
       const r = { el, at: cue.at, type, dur, mode, ground: GROUND[cue.cue] ?? 0 };
       if (mode === "count") {
         const full = el.textContent;
@@ -176,12 +175,12 @@
         r.prefix = full.slice(0, m.index);
         r.suffix = full.slice(m.index + m[1].length);
       }
-      if (mode === "spoken") {
+      if (mode === "words") {
         const spoken = el.textContent.trim().split(/\s+/);
         el.innerHTML = spoken.map((w) => `<span class="sw">${w}</span> `).join("");
         r.spans = $$(".sw", el);
         r.times = spoken.map((_, k) => words[cue.first + k]?.start ?? cue.at);
-        type = "instant";
+        type = "cut";
         r.type = type;
       }
       if (type === "draw") el.style.strokeDasharray = "1";
@@ -224,14 +223,18 @@
             st.opacity = on ? "1" : "0";
             st.strokeDashoffset = String(on ? 1 - (RM ? 1 : p) : 1);
             break;
-          case "drop":
+          case "settle":
             st.opacity = String(e);
-            st.transform = `translateY(${-24 * (1 - e)}px)`;
+            st.transform = `translateY(${4 * (1 - e)}px)`;
             break;
-          case "instant":
+          case "pop":
+            st.opacity = String(e);
+            st.transform = `scale(${1 + 0.04 * Math.sin(Math.PI * e)})`;
+            break;
+          case "cut":
             st.opacity = on ? "1" : "0";
             break;
-          default: // rise: a 10 px rise over 0.3 s on the runtime's curve
+          default: // rise: a 10 px rise on the runtime's curve
             st.opacity = String(e);
             st.transform = `translateY(${10 * (1 - e)}px)`;
         }
@@ -685,9 +688,9 @@
         claimTheVoice();
         hero.toggleSound();
       });
-    // Reduced motion: the hero opens on the `1.1forty` frame and plays only on press. Otherwise it plays once, silently.
+    // Reduced motion: the hero opens on the `1.1:forty` frame and plays only on press. Otherwise it plays once, silently.
     if (RM) {
-      hero.seek(cueAt["1.1forty"].at + 0.6);
+      hero.seek(cueAt["1.1:forty"].at + 0.6);
     } else {
       hero.autoplaying = true;
       hero.play({ silent: true });
@@ -872,7 +875,7 @@
     });
     buildTranscript(picked);
 
-    /* The five chapters follow one line, "Twenty minutes for her. Twenty minutes for you.": cues 2.1her and 2.1you.
+    /* The five chapters follow one line, "Twenty minutes for her. Twenty minutes for you.": cues 2.1:her and 2.1:you.
        Native scroll alone decides the chapter; the stage draws that chapter's moment when nobody is playing it.
 
        Each chapter owns a moment no other chapter shows, so the pinned stage answers every scroll:
@@ -881,15 +884,15 @@
                                 the script names has been drawn yet: a script is all that exists at this step.
          2  the voiced words    the middle of the section, on the word "pin". The transcript below the stage
                                 divides at the same word, and the clock reads the seconds that word was given.
-         3  the cue             40 ms before 2.1her. The cue's phrase is lit in the transcript and its picture is
+         3  the cue             40 ms before 2.1:her. The cue's phrase is lit in the transcript and its picture is
                                 not on the stage: this is the waiting the chapter describes.
-         4  the slide           2.1her has landed. Every picture in the frame now carries the cue it was written
-                                with, the same `data-cue` the panel beside it quotes.
+         4  the slide           2.1:her has landed. Every picture in the frame now carries the cue it was written
+                                with, the same `data-in` the panel beside it quotes.
          5  the measured film   2.1you has landed too, and each badge turns into what `decktalk verify` measured
                                 for that landing. The frame stops being a picture of the film and becomes its report. */
-    const her = cueAt["2.1her"];
-    const you = cueAt["2.1you"];
-    const pin = cueAt["2.1pin"];
+    const her = cueAt["2.1:her"];
+    const you = cueAt["2.1:you"];
+    const pin = cueAt["2.1:pin"];
     const sec2 = D.sections[1];
     // 0.32 s after a cue is far enough into a 0.3 s reveal to read as landed, and near enough to light the cue's
     // own tick in the transcript, which holds for 0.35 s either side.
@@ -897,14 +900,14 @@
     const take = (i) => (words[i].start - sec2.start - D.lead).toFixed(3);
     const panels = {
       script: `<span class="fn">script.md</span><pre>## 2. Halfway\n\n<span class="t">…at a place worth the trip. [beat]</span>\n<span class="hl">Twenty minutes for her.</span> <span class="t">[beat]</span> <span class="hl">Twenty minutes for you.</span>\n\n<span class="t">## 2. begins section 2 of 4. [beat] is a short pause and is not spoken.</span></pre>`,
-      words: `<span class="fn">build/narration/${sec2.hash}.words.json</span><pre>${[...Array(8).keys()]
+      words: `<span class="fn">build/narrate/${sec2.hash}.words.json</span><pre>${[...Array(8).keys()]
         .map((k) => {
           const i = her.first + k;
           return `{ "word": "${words[i].text.replace(/[.,]$/, "")}", "start": ${take(i)}, "end": ${(words[i].end - sec2.start - D.lead).toFixed(3)} }`;
         })
         .join("\n")}</pre>`,
-      cues: `<span class="fn">cues.json → build/cue-times.json</span><pre>{ "cue": "<span class="cue">2.1her</span>", "on": "<span class="hl">Twenty minutes for her</span>" }\n<span class="t">→ ${(her.at - sec2.start).toFixed(2)} s into the section. The recording starts ${D.lead} s after the section begins, so words.json says ${take(her.first)}.</span>\n{ "cue": "<span class="cue">2.1you</span>", "on": "<span class="hl">Twenty minutes for you</span>" }\n<span class="t">→ ${(you.at - sec2.start).toFixed(2)} s into the section.</span></pre>`,
-      slide: `<span class="fn">deck/index.html</span><pre>&lt;div class="pill" <span class="cue">data-cue="2.1her"</span> data-describe="${esc(her.describe)}"&gt;20 min&lt;/div&gt;\n&lt;div class="pill" <span class="cue">data-cue="2.1you"</span> data-describe="${esc(you.describe)}"&gt;20 min&lt;/div&gt;\n<span class="t">&lt;!-- decktalk-runtime.js shows each data-cue element at its cue's second. data-describe is the sentence this reveal writes into the transcript the build publishes beside the film. --&gt;</span></pre>`,
+      cues: `<span class="fn">cues.json → build/cue-times.json</span><pre>{ "cue": "<span class="cue">2.1:her</span>", "on": "<span class="hl">Twenty minutes for her</span>" }\n<span class="t">→ ${(her.at - sec2.start).toFixed(2)} s into the section. The recording starts ${D.lead} s after the section begins, so words.json says ${take(her.first)}.</span>\n{ "cue": "<span class="cue">2.1:you</span>", "on": "<span class="hl">Twenty minutes for you</span>" }\n<span class="t">→ ${(you.at - sec2.start).toFixed(2)} s into the section.</span></pre>`,
+      slide: `<span class="fn">deck/index.html</span><pre>&lt;div class="pill" <span class="cue">data-in="her"</span> data-describe="${esc(her.describe)}"&gt;20 min&lt;/div&gt;\n&lt;div class="pill" <span class="cue">data-in="you"</span> data-describe="${esc(you.describe)}"&gt;20 min&lt;/div&gt;\n<span class="t">&lt;!-- decktalk-runtime.js shows each data-in element at its cue's second. data-describe is the sentence this reveal writes into the transcript the build publishes beside the film. --&gt;</span></pre>`,
       verify: `<span class="fn">decktalk verify</span><pre>${sec2.cues
         .map(
           (c) =>
@@ -917,7 +920,7 @@
     for (const [name, html] of Object.entries(panels)) $(`[data-panel="${name}"]`).innerHTML = html;
 
     /* Chapters 4 and 5 label the pictures on the stage itself. The cue name is already on the element:
-       it is the slide's own `data-cue`, which chapter 4's panel quotes, so only the measured landing
+       it is the slide's own `data-in`, which chapter 4's panel quotes, so only the measured landing
        needs writing on. The badges are drawn by the stylesheet from these two attributes.
 
        They are also why the verify line under the frame no longer waits for chapter 5 to appear. It used to
@@ -925,8 +928,8 @@
        three lines taller at exactly the scroll position where sticky could least afford it. It now reads as
        what it is, a property of the section you picked, from the first chapter on, and chapter 5's reward
        is on the pictures, where each number belongs to the landing it measures. */
-    for (const el of $$(".scene > [data-cue]", hiwStage)) {
-      const ms = D.verify[el.dataset.cue];
+    for (const el of $$(".scene > [data-in]", hiwStage)) {
+      const ms = D.verify[`${S.slides[el.closest("[data-scene]").dataset.scene]}:${el.dataset.in}`];
       if (ms !== undefined) el.dataset.cueMs = `${ms >= 0 ? "+" : "−"}${Math.abs(ms)} ms`;
     }
 
@@ -1039,27 +1042,28 @@
     // line of a log behind a disclosure.
     const C = E.cost;
     $("[data-cost]").innerHTML =
-      `The rebuild cost <b>about $${C.usd.toFixed(2)}</b>: ${C.sent} characters sent to the voice, ${C.spoken} of them spoken, at $${C.rate.toFixed(2)} per 1,000 characters, the price set in <code>decktalk.toml</code>. The other ${num(C.cached)} sections cost nothing.`;
+      `The rebuild cost <b>about $${C.usd.toFixed(2)}</b>: ${C.characters} characters sent to the voice, at $${C.rate.toFixed(2)} per 1,000 characters, the price set in <code>decktalk.toml</code>. The other ${num(C.cached)} sections cost nothing.`;
     // Each line is its own block, so a line longer than the box wraps under a hanging indent instead
     // of running off the right edge of a phone with the evidence on it.
+    // The stage lines the rebuild really printed, and the one stage it did the work in.
+    const redone = (E.lanes.find((l) => l.stage === "record") ?? { sections: [] }).sections.filter(
+      (s) => s.outcome === "ok",
+    );
     const log = $("[data-log]");
     const logLines = [`<span class="ln"><span class="p">$</span> decktalk build</span>`];
     for (const ln of E.log) {
-      const isLive = / 03 |section 03/.test(ln);
+      const isLive = redone.length === 1 && /^\s*Record\s/.test(ln);
       logLines.push(`<span class="ln${isLive ? " live" : ""}">${esc(ln)}</span>`);
     }
-    const tail = E.log.map((ln) => ln.match(/tail ([\d.]+)s/)).find(Boolean);
-    const film = E.log.map((ln) => ln.match(/done: .*\(([\d.]+)s\)/)).find(Boolean);
-    if (tail && film)
-      logLines.push(
-        `<span class="ln gloss">Each section is its take plus the ${D.lead} s lead and ${tail[1]} s tail, so ${num(D.sections.length)} takes make a ${Math.round(Number(film[1]))} s film.</span>`,
-      );
+    logLines.push(
+      `<span class="ln gloss">Each section is its take plus the ${D.lead} s lead and ${D.tail} s tail, so ${num(D.sections.length)} takes make a ${Math.round(E.film_seconds)} s film.</span>`,
+    );
     log.innerHTML = logLines.join("");
     // The claim under the log is the rebuilt film's own measurement: every cue verify measured, and the largest offset.
     const offsets = Object.values(E.verify);
-    if (offsets.length && film)
+    if (offsets.length)
       $("[data-verify-sum]").textContent =
-        `: ${offsets.length} cues in the full ${fmt(Number(film[1]))} film, none more than ${Math.max(...offsets.map(Math.abs))} ms off.`;
+        `: ${offsets.length} cues in the full ${fmt(E.film_seconds)} film, none more than ${Math.max(...offsets.map(Math.abs))} ms off.`;
   });
 
   /* ---------------------------------------------------------------- cuts */
