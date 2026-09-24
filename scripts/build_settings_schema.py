@@ -3,8 +3,8 @@
 # ///
 """Generate the JSON Schema for decktalk.toml, and the per-machine filter of it.
 
-    uv run scripts/build_settings_schema.py            # write both schemas
-    uv run scripts/build_settings_schema.py --check    # exit 1 if either committed schema would change
+    uv run scripts/build_settings_schema.py            # write both schemas and their published copies
+    uv run scripts/build_settings_schema.py --check    # exit 1 if either committed file would change
 
 One schema describes the whole project file, its document tables and its tuning tables together,
 because an editor binds one schema to one file and `#:schema` is a single directive. Every property
@@ -19,6 +19,11 @@ about which keys a machine may hold.
 The `v1` in the path is the version of the file shape these two schemas describe, which is the shape
 of `decktalk.toml` and of the per-machine settings file beside it. A change that an existing project
 file would not survive is a new directory rather than a new revision of this one.
+
+Each schema is written twice, once into `schemas/v1/` and once into `site/schemas/v1/`, because the
+`#:schema` line in every project file names a URL and a URL has to be served by something. The two
+copies are the same bytes under one `--check`, so the address an editor fetches cannot fall behind
+the schema the repository holds.
 """
 
 from __future__ import annotations
@@ -47,6 +52,7 @@ DRAFT = "https://json-schema.org/draft/2020-12/schema"
 PROJECT_NAME = "decktalk.json"
 MACHINE_NAME = "machine.json"
 SCHEMAS = ROOT / "schemas" / "v1"
+PUBLISHED = ROOT / "site" / "schemas" / "v1"
 
 TITLE = "DeckTalk project file"
 MACHINE_TITLE = "DeckTalk per-machine settings file"
@@ -205,14 +211,22 @@ def render(*, machine: bool) -> str:
     return json.dumps(document(machine=machine), indent=2) + "\n"
 
 
+def documents() -> dict[Path, str]:
+    """Every file this generator owns, which is each schema and the copy of it the site serves."""
+    out: dict[Path, str] = {}
+    for name, machine in ((PROJECT_NAME, False), (MACHINE_NAME, True)):
+        text = render(machine=machine)
+        out[SCHEMAS / name] = text
+        out[PUBLISHED / name] = text
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="exit 1 if either committed schema would change")
+    ap.add_argument("--check", action="store_true", help="exit 1 if either committed file would change")
     args = ap.parse_args()
     stale = False
-    for name, machine in ((PROJECT_NAME, False), (MACHINE_NAME, True)):
-        target = SCHEMAS / name
-        text = render(machine=machine)
+    for target, text in documents().items():
         if args.check:
             if not target.exists() or target.read_text(encoding="utf-8") != text:
                 print(f"stale: {target.relative_to(ROOT)}. Run `uv run scripts/build_settings_schema.py`.")
