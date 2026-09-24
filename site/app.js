@@ -900,7 +900,7 @@
     const take = (i) => (words[i].start - sec2.start - D.lead).toFixed(3);
     const panels = {
       script: `<span class="fn">script.md</span><pre>## 2. Halfway\n\n<span class="t">…at a place worth the trip. [beat]</span>\n<span class="hl">Twenty minutes for her.</span> <span class="t">[beat]</span> <span class="hl">Twenty minutes for you.</span>\n\n<span class="t">## 2. begins section 2 of 4. [beat] is a short pause and is not spoken.</span></pre>`,
-      words: `<span class="fn">build/narration/${sec2.hash}.words.json</span><pre>${[...Array(8).keys()]
+      words: `<span class="fn">build/narrate/${sec2.hash}.words.json</span><pre>${[...Array(8).keys()]
         .map((k) => {
           const i = her.first + k;
           return `{ "word": "${words[i].text.replace(/[.,]$/, "")}", "start": ${take(i)}, "end": ${(words[i].end - sec2.start - D.lead).toFixed(3)} }`;

@@ -27,8 +27,11 @@ HOME_PATH = re.compile(r"(/Users/|/home/|/root/|[A-Za-z]:\\Users\\|/private/tmp/
 SPOKEN_COMMAND = re.compile(r"\bdecktalk ([a-z][a-z-]*)")
 """A command the site prints, which is the first thing a stranger copies out of a page."""
 
-SPOKEN_PATH = re.compile(r"\bbuild/[a-z][a-z-]*")
-"""A path under the build directory that the site names, which a reader expects to find on disk."""
+SPOKEN_PATH = re.compile(r"\bbuild/[a-z][a-z-]*(?:\.[a-z]+)?")
+"""A path under the build directory that the site names, which a reader expects to find on disk.
+
+The file's own extension is part of the match, because `Artifact` names a file where it writes one
+and a match that stopped at the directory would hold `build/cue-times` against nothing."""
 
 
 def pages() -> list[Path]:
@@ -37,8 +40,14 @@ def pages() -> list[Path]:
 
 
 def page_text() -> str:
-    """Every page at once, because a claim is held wherever it is written."""
-    return "\n".join(path.read_text(encoding="utf-8") for path in pages())
+    """Every page and every script it loads, because a claim is held wherever it is written.
+
+    The scripts are here because the panels a reader spends the longest on are written by `app.js`
+    out of `data.js`, so a path or a command that only the script prints reaches a visitor exactly
+    as one written into the markup does.
+    """
+    read = [*pages(), *sorted(SITE.glob("*.js"))]
+    return "\n".join(path.read_text(encoding="utf-8") for path in read)
 
 
 def site_text_files() -> list[Path]:

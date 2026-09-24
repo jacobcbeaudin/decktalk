@@ -365,3 +365,22 @@ def test_only_one_voice_plays_at_a_time(page: object) -> None:
             pg.wait_for_timeout(350)  # type: ignore[attr-defined]
         playing = pg.evaluate("[...window.__playing]")  # type: ignore[attr-defined]
         assert len(playing) <= 1, f"{first} then {second} left {len(playing)} voices playing: {playing}"
+
+
+def test_chapter_four_labels_each_picture_with_the_cue_it_was_authored_with(page: object) -> None:
+    """The badge is drawn by the stylesheet from the attribute the stage writes, and the two were
+    spelled differently, so chapter 4's whole reward rendered as nothing on a page that threw
+    nothing and failed no other test."""
+    pg = page
+    pg.goto(f"{pg.origin}/how", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    pg.wait_for_function("() => document.querySelector('.stage-deck .scene > [data-in]')", timeout=15000)  # type: ignore[attr-defined]
+    pg.evaluate("document.querySelector('.stage-deck').classList.add('named')")  # type: ignore[attr-defined]
+    badge = pg.evaluate(  # type: ignore[attr-defined]
+        """() => {
+            const el = document.querySelector('.pinned .stage-deck .scene > [data-in]');
+            const after = getComputedStyle(el, '::after');
+            return {cue: el.dataset.in, content: after.content, height: after.height};
+        }"""
+    )
+    assert badge["content"] == f'"{badge["cue"]}"', badge
+    assert badge["height"] != "auto" and badge["height"] != "0px", badge
