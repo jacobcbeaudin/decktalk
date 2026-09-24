@@ -100,6 +100,12 @@ jobs:
       - name: Run the group
         # check.py opens its own log with the group name and the one local command that reproduces
         # it, so a reader who finds this job red never has to open a workflow file.
+        #
+        # The shell is named because the default on a Windows runner is PowerShell, where `$GROUP`
+        # is not a reference to an environment variable and expands to nothing. Every Windows leg
+        # therefore asked for no group at all and ran every group that gates the current moment,
+        # starting with a lint group that is a Linux row.
+        shell: bash
         env:
           GROUP: ${{ matrix.group }}
         run: uv run scripts/check.py --group "$GROUP"
