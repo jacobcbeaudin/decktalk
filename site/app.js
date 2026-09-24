@@ -912,7 +912,7 @@
         )
         .join(
           "\n",
-        )}\n<span class="t">${cues.length} cues in the ${Math.floor(D.total)}-second film above, every picture within ${Math.max(...cues.map((c) => Math.abs(D.verify[c.cue] ?? 0)))} ms of its word. +20 ms means the picture appeared 20 ms after its cue's second, −20 ms before it. "changed" is verify's word for a picture that appeared at its cue.</span></pre>`,
+        )}\n<span class="t">${cues.length} cues in the ${Math.floor(D.total)}-second cut this stage replays, every picture within ${Math.max(...cues.map((c) => Math.abs(D.verify[c.cue] ?? 0)))} ms of its word. +20 ms means the picture appeared 20 ms after its cue's second, −20 ms before it. "changed" is verify's word for a picture that appeared at its cue.</span></pre>`,
     };
     for (const [name, html] of Object.entries(panels)) $(`[data-panel="${name}"]`).innerHTML = html;
 

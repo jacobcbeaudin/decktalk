@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DeckTalk: narrated video from a script, in your own voice</title>
-<meta name="description" content="Narrated video from a markdown script, plain HTML slides and your own voice. Change a sentence, and only that section is voiced again. Open source, Apache-2.0.">
+<meta name="description" content="Narrated video from a markdown script, plain HTML slides and your own voice. Change a sentence, and only that section is voiced and recorded again. Open source, Apache-2.0.">
 <link rel="canonical" href="https://decktalk.ai/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="DeckTalk">
 <meta property="og:title" content="DeckTalk: every picture lands on its word">
-<meta property="og:description" content="Narrated video from a script, in your own voice. Change a sentence, and only that section is voiced again.">
+<meta property="og:description" content="Narrated video from a script, in your own voice. Change a sentence, and only that section is voiced and recorded again.">
 <meta property="og:url" content="https://decktalk.ai">
 <meta property="og:image" content="https://decktalk.ai/og.png">
 <meta property="og:image:width" content="1200">
@@ -67,8 +67,8 @@
   <div class="wrap">
     <p class="kicker">Narrated video from a script, in your own voice.</p>
     <h1 id="hero-h">Every picture lands on its word.</h1>
-    <p class="sub">Change a sentence, and only that section is voiced again.</p>
-    <p class="caption">Made with DeckTalk from <a href="/films/halfway">this script</a> · <span data-total>0:35</span> · a fictional pitch</p>
+    <p class="sub">Change a sentence, and only that section is voiced and recorded again.</p>
+    <p class="caption">Halfway, a fictional pitch made with DeckTalk from <a href="/films/halfway">this script</a> · a <span data-total>0:35</span> cut of the full 0:38 film</p>
 
     <figure class="stage" id="hero" aria-label="Halfway, a 35-second fictional pitch made with DeckTalk, replayed from its slides and its recorded voice">
       <!-- The film is the unmute control. A separate button for sound is the thing people trip on:
@@ -106,7 +106,7 @@
 <section class="block films" id="films" aria-labelledby="films-h">
   <div class="wrap">
     <p class="kicker cut">Now showing</p>
-    <h2 id="films-h" class="cut">Made with DeckTalk.</h2>
+    <h2 id="films-h" class="cut">Two films, and the scripts that made them.</h2>
     <ul class="reel cut">
       <li><a class="card" href="/films/uv-tutorial#film">
         <img src="media/uv-tutorial-poster.webp" width="960" height="540" loading="lazy" alt="">
@@ -138,36 +138,39 @@
 <section class="block" id="install" aria-labelledby="install-h">
   <div class="wrap">
     <p class="kicker cut">Install</p>
-    <h2 id="install-h" class="cut">Four lines to a first film.</h2>
-    <p class="lead cut">The first line brings its own Python, so there is nothing to install before it, and nothing to sign up for. Chromium and ffmpeg come with <code>decktalk install</code>. The last line writes an mp4.</p>
+    <h2 id="install-h" class="cut">Three lines to a first film.</h2>
+    <p class="lead cut">The first line brings its own Python, so there is nothing to install before it, and nothing to sign up for. Chromium and ffmpeg arrive on the first build, which says so before it downloads them. The last line writes an mp4.</p>
     <!-- The steps carry no .cut. Every .cut on the page starts at opacity 0 and is revealed by
          app.js, and 03d27fc is what that costs when a script throws: a page with no way to install
-         anywhere on it. These four lines are the only reason a stranger scrolled this far, so like
-         the button to /how they are never a thing a script can take away. -->
+         anywhere on it. These three lines are the last thing on the page and the one thing on it a
+         reader cannot get anywhere else, so they are never a thing a script can take away. -->
     <p class="steps-label">Once per machine</p>
     <ol class="steps">
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code><span class="copy"></span></div>
-        <span>Installs uv, then DeckTalk. It never runs sudo, and it is served from a URL so you can <a href="install.sh">read it first</a>.</span>
-      </li>
-      <li>
-        <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk install</span></code><span class="copy"></span></div>
-        <span>Fetches Chromium and ffmpeg, once per machine. On Linux it asks for sudo, for Chromium's system libraries. If the command is not found, open a new shell.</span>
+        <span>Installs uv, then DeckTalk. It never runs sudo, and it is served from a URL so you can <a href="install.sh">read it first</a>. If the command is not found afterwards, open a new shell.</span>
       </li>
     </ol>
     <p class="steps-label">For each film</p>
     <ol class="steps">
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>decktalk init my-pitch</span></code><span class="copy"></span></div>
-        <span>Writes a starter script, cues, a slide page, <code>decktalk.toml</code> and <code>.env.example</code>.</span>
+        <!-- The old list named five of the sixteen paths init writes, which undersold the one
+             thing that separates a good starter from a bad one. `decktalk init` prints `files 16`
+             and the six skills are fourteen files, not six. -->
+        <span>Writes a whole working project rather than a stub: a three-section script, the cues, the slide page, <code>decktalk.toml</code>, <code>.env.example</code>, a <code>.gitignore</code>, the runtime and the KaTeX the page loads, an <code>AGENTS.md</code>, and six skills linked into <code>.claude/skills</code> so a coding agent can drive all of it. Nothing in it has to be deleted first.</span>
       </li>
       <li>
         <div class="pill"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>cd my-pitch &amp;&amp; <span class="nb">decktalk build --no-voice</span></span></code><span class="copy"></span></div>
-        <span>Records in real time, so about a minute later: <code>build/out/my-pitch.mp4</code>, with placeholder narration and no key.</span>
+        <!-- "About a minute later" read as though the mp4 were a minute long. The minute is the
+             build; the starter's film is 44 seconds. An unattributed round number is also a
+             benchmark with no machine under it, and docs/requirements.mdx names the machine. -->
+        <span>Recording runs in real time, so the build takes about as long as the film and a little more: 64 seconds on one M5 Pro, for the starter's 44 second video. It ends on the path of <code>build/out/my-pitch.mp4</code>, with placeholder narration and no key.</span>
       </li>
     </ol>
-    <p class="install-note cut">For your own voice, copy <code>.env.example</code> to <code>.env</code>, add an ElevenLabs key and a voice id, and build again. Any ElevenLabs voice works, including a clone of your own.</p>
-    <p class="install-note cut">If you already have uv, <code>uv tool install decktalk</code> is the same install. Every project ships with six skill files that teach a coding agent DeckTalk. <a href="https://docs.decktalk.ai/quickstart">Start with the quickstart.</a></p>
+    <p class="install-note cut">For your own voice, copy <code>.env.example</code> to <code>.env</code>, add an ElevenLabs key and a voice id, and build again. Any ElevenLabs voice works, including a clone of your own. ElevenLabs bills narration by the character, and <a href="/how#edit">the how page</a> shows what one rebuild cost.</p>
+    <p class="install-note cut">Chromium and ffmpeg are fetched by the build that needs them, one time per machine. <code>decktalk install</code> fetches them up front instead, for a Docker layer, a CI cache or a machine about to go offline, and on Linux it installs Chromium's system libraries, which is the one thing here that asks for sudo.</p>
+    <p class="install-note cut">If you already have uv, <code>uv tool install decktalk</code> is the same install. Every project carries six skills, in fourteen files, one skill each for the script, the slides, the cues, the build, the fixes and a revision, so a coding agent can write the files, read the JSON every command prints, and fix what it finds. <a href="https://docs.decktalk.ai/quickstart">Start with the quickstart.</a></p>
   </div>
 </section>
 
@@ -179,7 +182,7 @@
     <span>Made by Jacob Beaudin</span>
     <span class="links">
       <a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE">Apache-2.0</a>
-      <a href="https://pypi.org/project/decktalk/">PyPI 0.4.0</a>
+      <a href="https://pypi.org/project/decktalk/">PyPI</a>
       <a href="https://github.com/jacobcbeaudin/decktalk">GitHub · Open source</a>
       <a href="https://docs.decktalk.ai/changelog">Changelog</a>
       <a href="https://docs.decktalk.ai">Docs</a>
