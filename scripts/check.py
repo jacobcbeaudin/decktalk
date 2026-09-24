@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -440,7 +441,15 @@ def run(command: tuple[str, ...], extra: tuple[tuple[str, str], ...] = ()) -> bo
     # uv runs this script in an environment of its own, and a nested `uv run` would warn about it.
     env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
     env.update(extra)
-    code = subprocess.call(command, cwd=ROOT, env=env)
+    # The tool is looked up rather than handed to the process table, because Windows spells npm as
+    # npm.cmd and a name it cannot resolve is a traceback out of subprocess rather than a sentence
+    # about a tool this machine does not have.
+    program = shutil.which(command[0], path=env.get("PATH"))
+    if program is None:
+        print(f"{command[0]} is not on this machine's PATH, so nothing ran. Install it and run this group again.")
+        print(f"FAILED (no {command[0]}) in {time.monotonic() - started:.1f}s", flush=True)
+        return False
+    code = subprocess.call((program, *command[1:]), cwd=ROOT, env=env)
     print(f"{'ok' if code == 0 else f'FAILED (exit {code})'} in {time.monotonic() - started:.1f}s", flush=True)
     return code == 0
 
