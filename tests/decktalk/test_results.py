@@ -63,34 +63,50 @@ EXAMPLES: dict[type[BaseModel], BaseModel] = {
 }
 
 
+SCALARS: dict[object, object] = {
+    bool: True,
+    int: 1,
+    float: 1.5,
+    str: "one",
+    datetime: datetime(2026, 9, 24, 3, 0, tzinfo=UTC),
+}
+"""One value per type that stands on its own, which is every field a sampler fills without recursing."""
+
+
 def value(annotation: object) -> object:
     """One value of the given type, which is all a round-trip needs the field to hold."""
     if hasattr(annotation, "__metadata__"):
         return value(typing.get_args(annotation)[0])
     if annotation in EXAMPLES:
         return EXAMPLES[annotation]  # type: ignore[index]
-    if annotation is bool:
-        return True
-    if annotation is int:
-        return 1
-    if annotation is float:
-        return 1.5
-    if annotation is str:
-        return "one"
-    if annotation is datetime:
-        return datetime(2026, 9, 24, 3, 0, tzinfo=UTC)
-    if isinstance(annotation, type) and issubclass(annotation, Path):
+    if annotation in SCALARS:
+        return SCALARS[annotation]  # type: ignore[index]
+    if isinstance(annotation, type):
+        return of_class(annotation)
+    return of_generic(annotation)
+
+
+def of_class(annotation: type) -> object:
+    """One value of a class the package declares, which is a path, a member or a model of its own."""
+    if issubclass(annotation, Path):
         return Path("build/final/demo.mp4")
-    if isinstance(annotation, type) and issubclass(annotation, Enum):
+    if issubclass(annotation, Enum):
         return next(iter(annotation))
-    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+    if issubclass(annotation, BaseModel):
         return sample(annotation)
+    return "one"
+
+
+def of_generic(annotation: object) -> object:
+    """One value of an annotation that names other annotations, filled from the first one it names."""
     origin = typing.get_origin(annotation)
     arguments = typing.get_args(annotation)
     if origin is typing.Literal:
         return arguments[0]
     if origin is tuple:
         return (value(arguments[0]),)
+    if origin is dict:
+        return {value(arguments[0]): value(arguments[1])}
     if origin in (typing.Union, types.UnionType):
         return None if type(None) in arguments else value(arguments[0])
     return "one"

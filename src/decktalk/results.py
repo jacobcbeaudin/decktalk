@@ -395,6 +395,31 @@ class SettingValue(BaseModel):
     file: ProjectPath | None = Field(None, description="The file that set it, or null when no file did.")
 
 
+class LayerValue(BaseModel):
+    """One layer's answer for one key, whether or not that layer is the one in force."""
+
+    model_config = MODEL
+
+    layer: Layer = Field(description="Which of the five layers this row is.")
+    value: JsonValue = Field(description="The value this layer states, or the default when it is the default.")
+    file: ProjectPath | None = Field(None, description="The file this layer read, or null when it is not a file.")
+    line: int | None = Field(None, ge=1, description="The line in that file, or null.")
+
+
+class NumberView(BaseModel):
+    """One published number a key feeds, with its inputs at the values in force."""
+
+    model_config = MODEL
+
+    id: str = Field(description="The number's name, which is the key it replaced or the constant it is.")
+    formula: str = Field(description="The expression this number is, which is what it is published as.")
+    reads: dict[str, JsonValue] = Field(description="Every key and constant the formula reads, at its value here.")
+    value: JsonValue = Field(description="What the formula works out to at the values in force.")
+    candidate: JsonValue | None = Field(None, description="What it would work out to at the candidate, or null.")
+    unit: str | None = Field(None, description="The number's true unit, or null when it has none.")
+    sentence: str = Field(description="Why this number is not a knob, which opens with its nature.")
+
+
 class FixOutcome(BaseModel):
     """What happened to one fix a caller asked to apply."""
 
@@ -533,6 +558,8 @@ class ConfigSetResult(Result):
     previous: JsonValue = Field(description="The value that file held before, or null when it held none.")
     scope: Scope = Field(description="Which file the write landed in.")
     file: ProjectPath = Field(description="The file that was written, project-relative.")
+    effective: JsonValue = Field(description="The value in force once this call is done, which a higher layer may set.")
+    layer: Layer = Field(description="Which layer the value in force comes from, so a shadowed write says it is one.")
     dry_run: bool = Field(description="True when the call reported the change and wrote nothing.")
 
 
@@ -558,9 +585,12 @@ class ConfigExplainResult(Result):
     layer: Layer = Field(description="Which layer set the value in force.")
     file: ProjectPath | None = Field(None, description="The file that set it, or null when no file did.")
     line: int | None = Field(None, ge=1, description="The line in that file, or null.")
+    layers: tuple[LayerValue, ...] = Field(description="Every layer that stated this key, lowest first.")
     environment: str = Field(description="The environment variable that sets this key.")
     stages: tuple[Stage, ...] = Field((), description="The stages that read this key.")
     decides: tuple[Code, ...] = Field((), description="The findings whose verdict this key moves.")
+    numbers: tuple[NumberView, ...] = Field((), description="The published numbers this key feeds, worked out here.")
+    clamped: tuple[str, ...] = Field((), description="Every cue in this project the value in force clamps.")
     hazard: str | None = Field(None, description="What a value at the edge of the range risks, or null.")
     docs: str = Field(description="The docs page for this key.")
 
@@ -718,9 +748,11 @@ __all__ = [
     "InstallResult",
     "InstalledTool",
     "Layer",
+    "LayerValue",
     "LiveRun",
     "Loudness",
     "NarrateResult",
+    "NumberView",
     "Panel",
     "RecordResult",
     "RenderedSection",

@@ -390,6 +390,54 @@
       "title": "Layer",
       "type": "string"
     },
+    "LayerValue": {
+      "additionalProperties": false,
+      "description": "One layer's answer for one key, whether or not that layer is the one in force.",
+      "properties": {
+        "layer": {
+          "$ref": "#/$defs/Layer",
+          "description": "Which of the five layers this row is."
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue",
+          "description": "The value this layer states, or the default when it is the default."
+        },
+        "file": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The file this layer read, or null when it is not a file.",
+          "title": "File"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The line in that file, or null.",
+          "title": "Line"
+        }
+      },
+      "required": [
+        "layer",
+        "value"
+      ],
+      "title": "LayerValue",
+      "type": "object"
+    },
     "Location": {
       "additionalProperties": false,
       "description": "Where a finding is, as the five facts that travel together into a renderer and into a fix.\n\n`where` is never null, because the object a finding judges is what tells a reader which side of\nthe spend it came from, and the other four are filled by whoever knows them.",
@@ -459,6 +507,73 @@
         "where"
       ],
       "title": "Location",
+      "type": "object"
+    },
+    "NumberView": {
+      "additionalProperties": false,
+      "description": "One published number a key feeds, with its inputs at the values in force.",
+      "properties": {
+        "id": {
+          "description": "The number's name, which is the key it replaced or the constant it is.",
+          "title": "Id",
+          "type": "string"
+        },
+        "formula": {
+          "description": "The expression this number is, which is what it is published as.",
+          "title": "Formula",
+          "type": "string"
+        },
+        "reads": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "description": "Every key and constant the formula reads, at its value here.",
+          "title": "Reads",
+          "type": "object"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue",
+          "description": "What the formula works out to at the values in force."
+        },
+        "candidate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What it would work out to at the candidate, or null."
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The number's true unit, or null when it has none.",
+          "title": "Unit"
+        },
+        "sentence": {
+          "description": "Why this number is not a knob, which opens with its nature.",
+          "title": "Sentence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "formula",
+        "reads",
+        "value",
+        "sentence"
+      ],
+      "title": "NumberView",
       "type": "object"
     },
     "SettingFix": {
@@ -624,6 +739,14 @@
       "description": "The line in that file, or null.",
       "title": "Line"
     },
+    "layers": {
+      "description": "Every layer that stated this key, lowest first.",
+      "items": {
+        "$ref": "#/$defs/LayerValue"
+      },
+      "title": "Layers",
+      "type": "array"
+    },
     "environment": {
       "description": "The environment variable that sets this key.",
       "title": "Environment",
@@ -645,6 +768,24 @@
         "$ref": "#/$defs/Code"
       },
       "title": "Decides",
+      "type": "array"
+    },
+    "numbers": {
+      "default": [],
+      "description": "The published numbers this key feeds, worked out here.",
+      "items": {
+        "$ref": "#/$defs/NumberView"
+      },
+      "title": "Numbers",
+      "type": "array"
+    },
+    "clamped": {
+      "default": [],
+      "description": "Every cue in this project the value in force clamps.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Clamped",
       "type": "array"
     },
     "hazard": {
@@ -675,6 +816,7 @@
     "default",
     "range",
     "layer",
+    "layers",
     "environment",
     "docs"
   ],

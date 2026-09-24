@@ -18,11 +18,10 @@ from pydantic import BaseModel, Field, JsonValue
 
 from .errors import InputError
 from .findings import DOCS, MODEL, Code
-from .results import Layer, Scope
+from .results import Layer, LayerValue, NumberView, Scope
 from .settings import (
     BY_ID,
     NUMBERS,
-    LayerValue,
     Loaded,
     Settings,
     load,
@@ -32,20 +31,6 @@ from .tomlmap import Key, Nature, Source, did_you_mean
 
 CUE_TIMES = Path("build") / "cue-times.json"
 """Where `cue` writes the resolved times the explainer reads, project-relative."""
-
-
-class NumberView(BaseModel):
-    """One derived number this key feeds, with its inputs at the values in force."""
-
-    model_config = MODEL
-
-    id: str = Field(description="The number's name, which is the key it replaced or the constant it is.")
-    formula: str = Field(description="The expression this number is, which is what it is published as.")
-    reads: dict[str, JsonValue] = Field(description="Every key and constant the formula reads, at its value here.")
-    value: JsonValue = Field(description="What the formula works out to at the values in force.")
-    candidate: JsonValue | None = Field(None, description="What it would work out to at the candidate, or null.")
-    unit: str | None = Field(None, description="The number's true unit, or null when it has none.")
-    sentence: str = Field(description="Why this number is not a knob, which opens with its nature.")
 
 
 class Explanation(BaseModel):
@@ -251,4 +236,4 @@ def _json(value: object) -> JsonValue:
     return cast("JsonValue", value)
 
 
-__all__ = ["Explanation", "NumberView", "explain"]
+__all__ = ["Explanation", "explain"]

@@ -40,7 +40,7 @@ from .errors import InputError
 from .findings import MODEL, Code, Location, ProjectPath
 from .locate import locate, refused_line
 from .page import CAPTURE_FPS, MEASURABLE_SPAN_SECONDS
-from .results import Layer, Scope
+from .results import Layer, LayerValue, Scope
 from .tomlmap import (
     A_LUMA,
     A_PERCENT,
@@ -1004,17 +1004,6 @@ NUMBERS: tuple[Number, ...] = (
 NUMBERS_BY_ID: dict[str, Number] = {number.id: number for number in NUMBERS}
 
 
-class LayerValue(BaseModel):
-    """One layer's answer for one key, whether or not that layer is the one in force."""
-
-    model_config = MODEL
-
-    layer: Layer = Field(description="Which of the five layers this row is.")
-    value: JsonValue = Field(description="The value this layer states, or the default when it is the default.")
-    file: ProjectPath | None = Field(None, description="The file this layer read, or null when it is not a file.")
-    line: int | None = Field(None, ge=1, description="The line in that file, or null.")
-
-
 class Layers(BaseModel):
     """What every layer said about every key, which is the record `config explain` renders.
 
@@ -1543,7 +1532,6 @@ __all__ = [
     "AudioConfig",
     "ElevenLabsConfig",
     "HostConfig",
-    "LayerValue",
     "Layers",
     "Loaded",
     "LoudnessConfig",

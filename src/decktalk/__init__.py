@@ -75,7 +75,7 @@ from .events import (
     Subscription,
     Unit,
 )
-from .explain import Explanation, NumberView, explain
+from .explain import Explanation, explain
 from .findings import (
     Applicability,
     Certainty,
@@ -145,9 +145,11 @@ from .results import (
     InstalledTool,
     InstallResult,
     Layer,
+    LayerValue,
     LiveRun,
     Loudness,
     NarrateResult,
+    NumberView,
     Panel,
     RecordResult,
     RenderedSection,
@@ -180,7 +182,6 @@ from .results import (
     Word,
     WordsResult,
 )
-from .settings import LayerValue
 from .tomlmap import Nature, Source
 
 try:

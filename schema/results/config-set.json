@@ -378,6 +378,18 @@
       "type": "object"
     },
     "JsonValue": {},
+    "Layer": {
+      "description": "Which of the five layers set a settings value, lowest first.\n\nA key with no override is set by `default`, which is also what refuses `--max-cost` on a price\nnobody has stated: DeckTalk would be capping a spend against a number it made up.",
+      "enum": [
+        "default",
+        "machine",
+        "project",
+        "environment",
+        "override"
+      ],
+      "title": "Layer",
+      "type": "string"
+    },
     "Location": {
       "additionalProperties": false,
       "description": "Where a finding is, as the five facts that travel together into a renderer and into a fix.\n\n`where` is never null, because the object a finding judges is what tells a reader which side of\nthe spend it came from, and the other four are filled by whoever knows them.",
@@ -581,6 +593,14 @@
       "title": "File",
       "type": "string"
     },
+    "effective": {
+      "$ref": "#/$defs/JsonValue",
+      "description": "The value in force once this call is done, which a higher layer may set."
+    },
+    "layer": {
+      "$ref": "#/$defs/Layer",
+      "description": "Which layer the value in force comes from, so a shadowed write says it is one."
+    },
     "dry_run": {
       "description": "True when the call reported the change and wrote nothing.",
       "title": "Dry Run",
@@ -594,6 +614,8 @@
     "previous",
     "scope",
     "file",
+    "effective",
+    "layer",
     "dry_run"
   ],
   "title": "ConfigSetResult",
