@@ -49,6 +49,7 @@ from .events import (
     Subscription,
     Unit,
 )
+from .explain import Explanation, NumberView, explain
 from .findings import (
     Applicability,
     Certainty,
@@ -120,6 +121,8 @@ from .results import (
     Word,
     WordsResult,
 )
+from .settings import LayerValue
+from .tomlmap import Nature, Source
 
 try:
     __version__ = version("decktalk")
@@ -158,6 +161,7 @@ __all__ = [
     "ErrorResult",
     "Event",
     "Events",
+    "Explanation",
     "Fetch",
     "Finding",
     "FindingEvent",
@@ -169,6 +173,7 @@ __all__ = [
     "InstalledTool",
     "JsonlSink",
     "Layer",
+    "LayerValue",
     "Level",
     "Line",
     "LiveRun",
@@ -176,7 +181,9 @@ __all__ = [
     "Log",
     "Loudness",
     "NarrateResult",
+    "Nature",
     "NotBuiltError",
+    "NumberView",
     "Outcome",
     "PIPELINE",
     "Panel",
@@ -207,6 +214,7 @@ __all__ = [
     "SoundKind",
     "SoundStatus",
     "SoundscapeResult",
+    "Source",
     "Spend",
     "SpendEvent",
     "SpendState",
@@ -228,4 +236,5 @@ __all__ = [
     "Word",
     "WordsResult",
     "__version__",
+    "explain",
 ]

@@ -1538,6 +1538,7 @@ __all__ = [
     "NUMBERS",
     "NUMBERS_BY_ID",
     "PROJECT_FILE",
+    "SHARED_TABLES",
     "STANDALONE_ENV",
     "AudioConfig",
     "ElevenLabsConfig",
