@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, model_validator
 
@@ -294,7 +294,7 @@ class Code(Enum):
         "A frozen slide draws less of the picture than a change must cross to be seen.",
         Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
-        ("verify.changed_share_min_percent",),
+        ("verify.changed_share_min_percent", "video.crf"),
     )
     PAGE_NO_DESCRIPTION = (
         "PAGE_NO_DESCRIPTION",
@@ -313,19 +313,21 @@ class Code(Enum):
         "The picture held still for longer than a recorded section ever should.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
+        ("record.frame_gap_max_ms",),
     )
     PAGE_BLACK = (
         "PAGE_BLACK",
         "A recorded frame is black, so the film shows nothing at that moment.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        ("verify.black_max_luma",),
+        ("verify.after_dip_seconds", "verify.black_max_luma"),
     )
     PAGE_TRUNCATED = (
         "PAGE_TRUNCATED",
         "A recording stopped before its section's clock ran out, so the film is short of picture.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
+        ("record.truncated_slack_seconds",),
     )
     PAGE_CDN_ASSET = (
         "PAGE_CDN_ASSET",
@@ -358,27 +360,49 @@ class Code(Enum):
         "The change lands further from its word than the offset limit allows.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        ("verify.cue_offset_max_ms", "verify.reference_lead_extra_ms"),
+        (
+            "host.presentation_bias_ms",
+            "verify.av_offset_max_ms",
+            "verify.click_floor_dbfs",
+            "verify.click_search_seconds",
+            "verify.cue_offset_max_ms",
+            "verify.onset_diff_luma",
+            "verify.onset_rise_points",
+            "verify.reference_lead_extra_ms",
+        ),
     )
     CUE_NO_ONSET = (
         "CUE_NO_ONSET",
         "The cue resolved with no measured onset, so its second is the section's start and not its word's.",
         Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
+        ("verify.onset_diff_luma", "verify.onset_rise_points"),
     )
     CUE_NO_CHANGE = (
         "CUE_NO_CHANGE",
         "Nothing in the picture changed at the cue's second, so the reveal never happened.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        ("verify.changed_share_min_percent",),
+        (
+            "verify.changed_share_min_percent",
+            "verify.margin_min_points",
+            "verify.probe_delays_seconds",
+            "verify.probe_diff_luma",
+            "video.crf",
+        ),
     )
     CUE_THIN_CHANGE = (
         "CUE_THIN_CHANGE",
         "Less of the picture changed at the cue than a visible reveal must cross.",
         Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
-        ("verify.changed_share_min_percent",),
+        (
+            "verify.changed_share_min_percent",
+            "verify.margin_min_points",
+            "verify.probe_diff_luma",
+            "verify.thin_change_factor",
+            "video.crf",
+        ),
     )
     CUE_OVERLAP = (
         "CUE_OVERLAP",
@@ -403,18 +427,27 @@ class Code(Enum):
         "Speech is still sounding at a section cut, so the film slices a word in two.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
+        (
+            "narration.sound_end_min_run_seconds",
+            "narration.sound_end_noise_dbfs",
+            "narration.tail_min_seconds",
+            "verify.cut_max_dbfs",
+            "verify.cut_window_seconds",
+        ),
     )
     CUT_POP = (
         "CUT_POP",
         "The waveform steps at a section cut, so the film pops on the seam.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
+        ("verify.cut_change_max_percent",),
     )
     MIX_LOUDNESS = (
         "MIX_LOUDNESS",
         "The mixed film misses the loudness it was mastered to.",
         Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
+        ("mix.loudness.range_max_lu", "mix.loudness.target_lufs", "mix.loudness.true_peak_max_dbtp"),
     )
     FILE_MISSING = (
         "FILE_MISSING",
@@ -521,22 +554,27 @@ class Finding(BaseModel):
 
     `certainty` and `url` are the code's own and are written into the object rather than left for a
     reader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them
-    out and the code fills them, and a value that disagrees with the code is refused.
+    out and the code fills them, and a value that disagrees with the code is refused. Both therefore
+    carry a declared default, which says in the signature and in the schema that a raiser names the
+    code and nothing else. Neither default is ever the value in force, because the code fills both
+    before this model is built and refuses any finding whose code it does not know.
     """
 
     model_config = MODEL
 
     code: Code = Field(description="The stable code a caller dispatches on, such as CUE_OFF.")
     message: str = Field(description="One sentence, with every measured number and its limit written into it.")
-    certainty: Certainty = Field(description="Whether this is wrong for sure or only probably wrong.")
+    certainty: Certainty = Field(
+        Certainty.CERTAIN, description="Whether this is wrong for sure or only probably wrong."
+    )
     location: Location = Field(description="The object this judges, with its file, line, section and cue.")
     stage: Stage | None = Field(None, description="The stage that raised it, or null when no stage did.")
     fix: Fix | None = Field(None, description="A change that resolves it, or null when none is known.")
-    url: str = Field(description="The docs page for this code.")
+    url: str = Field("", description="The docs page for this code.")
 
     @model_validator(mode="before")
     @classmethod
-    def _fill_from_code(cls, data: Any) -> Any:
+    def _fill_from_code(cls, data: object) -> object:
         """The code owns the certainty and the page, so a raiser names the code and nothing else."""
         if not isinstance(data, dict):
             return data

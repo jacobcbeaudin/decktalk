@@ -418,7 +418,7 @@
     },
     "Finding": {
       "additionalProperties": false,
-      "description": "One judgement, in the shape every renderer, every schema and every agent receives.\n\n`certainty` and `url` are the code's own and are written into the object rather than left for a\nreader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them\nout and the code fills them, and a value that disagrees with the code is refused.",
+      "description": "One judgement, in the shape every renderer, every schema and every agent receives.\n\n`certainty` and `url` are the code's own and are written into the object rather than left for a\nreader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them\nout and the code fills them, and a value that disagrees with the code is refused. Both therefore\ncarry a declared default, which says in the signature and in the schema that a raiser names the\ncode and nothing else. Neither default is ever the value in force, because the code fills both\nbefore this model is built and refuses any finding whose code it does not know.",
       "properties": {
         "code": {
           "$ref": "#/$defs/Code",
@@ -431,6 +431,7 @@
         },
         "certainty": {
           "$ref": "#/$defs/Certainty",
+          "default": "certain",
           "description": "Whether this is wrong for sure or only probably wrong."
         },
         "location": {
@@ -481,6 +482,7 @@
           "title": "Fix"
         },
         "url": {
+          "default": "",
           "description": "The docs page for this code.",
           "title": "Url",
           "type": "string"
@@ -489,9 +491,7 @@
       "required": [
         "code",
         "message",
-        "certainty",
-        "location",
-        "url"
+        "location"
       ],
       "title": "Finding",
       "type": "object"
