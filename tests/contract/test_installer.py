@@ -95,9 +95,11 @@ def run(
     args: list[str], env: dict[str, str] | None = None, script: str | None = None
 ) -> subprocess.CompletedProcess[str]:
     if script is None:
-        return subprocess.run(["/bin/sh", str(SCRIPT), *args], capture_output=True, text=True, env=env, timeout=60)
+        return subprocess.run(
+            ["/bin/sh", str(SCRIPT), *args], capture_output=True, text=True, env=env, timeout=60, check=False
+        )
     return subprocess.run(
-        ["/bin/sh", "-s", "--", *args], input=script, capture_output=True, text=True, env=env, timeout=60
+        ["/bin/sh", "-s", "--", *args], input=script, capture_output=True, text=True, env=env, timeout=60, check=False
     )
 
 
@@ -109,7 +111,7 @@ def test_it_parses_under_every_posix_shell_here(shell: str) -> None:
     argument: `busybox -n file` asks for an applet called `-n` and exits 127.
     """
     argv = [shell, "sh", "-n", str(SCRIPT)] if shell.endswith("busybox") else [shell, "-n", str(SCRIPT)]
-    done = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+    done = subprocess.run(argv, capture_output=True, text=True, timeout=30, check=False)
     assert done.returncode == 0, done.stderr
 
 
@@ -186,7 +188,9 @@ def test_an_unknown_option_is_refused_rather_than_ignored(tmp_path: Path, source
 
 @pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck is not installed")
 def test_shellcheck_is_clean() -> None:
-    done = subprocess.run(["shellcheck", "-s", "sh", str(SCRIPT)], capture_output=True, text=True, timeout=60)
+    done = subprocess.run(
+        ["shellcheck", "-s", "sh", str(SCRIPT)], capture_output=True, text=True, timeout=60, check=False
+    )
     assert done.returncode == 0, done.stdout
 
 
@@ -292,13 +296,8 @@ def test_the_plain_path_still_names_every_step(tmp_path: Path, source: str) -> N
 # pty on stdout would leave the child's controlling terminal pointing at pytest's own.
 
 
-def run_pty(
-    args: list[str],
-    env: dict[str, str],
-    interrupt_after: float | None = None,
-    timeout: float = 30.0,
-) -> tuple[int, str]:
-    """Run install.sh under a pty. Returns (exit status, everything it wrote)."""
+def _child(args: list[str], env: dict[str, str]) -> tuple[int, int]:
+    """Fork install.sh under a pty of its own, and give back its pid and the master end."""
     import pty  # noqa: PLC0415 - termios is not on Windows, which is what pytestmark refuses this file on
 
     pid, fd = pty.fork()
@@ -307,35 +306,56 @@ def run_pty(
             os.execvpe("/bin/sh", ["sh", str(SCRIPT), *args], env)
         finally:
             os._exit(127)
+    return pid, fd
+
+
+def _drain(pid: int, fd: int, interrupt_after: float | None, timeout: float) -> tuple[bytes, int, bool]:
+    """Read everything the run writes, interrupting it where asked, until it closes or exits."""
     out = b""
-    reaped = False
-    status = 0
+    status, reaped, interrupted = 0, False, False
     started = time.monotonic()
-    interrupted = False
-    try:
-        while True:
-            if time.monotonic() - started > timeout:
-                raise AssertionError(f"install.sh did not finish in {timeout}s:\n{out.decode(errors='replace')}")
-            if interrupt_after is not None and not interrupted and time.monotonic() - started >= interrupt_after:
-                # Ctrl-C reaches the whole foreground process group, not just the shell.
-                os.killpg(os.getpgid(pid), signal.SIGINT)
-                interrupted = True
-            ready, _, _ = select.select([fd], [], [], 0.2)
-            if ready:
-                try:
-                    chunk = os.read(fd, 4096)
-                except OSError:
-                    # The last process holding the slave closed it: EIO here means the run is over,
-                    # not that it went wrong, so the status still has to be collected below.
-                    chunk = b""
-                if not chunk:
-                    break
-                out += chunk
-                continue
-            done, got = os.waitpid(pid, os.WNOHANG)
-            if done:
-                status, reaped = got, True
+    while True:
+        if time.monotonic() - started > timeout:
+            raise AssertionError(f"install.sh did not finish in {timeout}s:\n{out.decode(errors='replace')}")
+        if interrupt_after is not None and not interrupted and time.monotonic() - started >= interrupt_after:
+            # Ctrl-C reaches the whole foreground process group, not just the shell.
+            os.killpg(os.getpgid(pid), signal.SIGINT)
+            interrupted = True
+        ready, _, _ = select.select([fd], [], [], 0.2)
+        if ready:
+            chunk = _read(fd)
+            if not chunk:
                 break
+            out += chunk
+            continue
+        done, got = os.waitpid(pid, os.WNOHANG)
+        if done:
+            status, reaped = got, True
+            break
+    return out, status, reaped
+
+
+def _read(fd: int) -> bytes:
+    """One chunk from the master end, where the end of the run reaches this side as an error."""
+    try:
+        return os.read(fd, 4096)
+    except OSError:
+        # The last process holding the slave closed it: EIO here means the run is over, not that it
+        # went wrong, so the status still has to be collected by the caller.
+        return b""
+
+
+def run_pty(
+    args: list[str],
+    env: dict[str, str],
+    interrupt_after: float | None = None,
+    timeout: float = 30.0,
+) -> tuple[int, str]:
+    """Run install.sh under a pty. Returns (exit status, everything it wrote)."""
+    pid, fd = _child(args, env)
+    reaped = False
+    try:
+        out, status, reaped = _drain(pid, fd, interrupt_after, timeout)
         if not reaped:
             _, status = os.waitpid(pid, 0)
             reaped = True

@@ -77,13 +77,11 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     # check rehearses what the stages downstream of it would judge, without producing any of it.
     ("stages.check", "stages.narrate"): "by design",
     ("stages.check", "stages.cue"): "by design",
-    ("stages.check", "stages.record"): "by design",
     ("stages.check", "stages.storyboard"): "by design",
     ("stages.check", "stages.verify"): "by design",
-    # The recorder owns the paths a page may load and the query a page is opened at, so the two
-    # stages that open the same page read that one rule rather than spelling it a second time.
-    ("stages.storyboard", "stages.record"): "the page URL and the allowed paths the recorder owns",
-    ("stages.assemble", "stages.record"): "the page URL and the allowed paths the recorder owns",
+    # The recorder owns the query a page section is opened at, so the storyboard opens the same page
+    # by reading that one rule rather than spelling it a second time.
+    ("stages.storyboard", "stages.record"): "the page URL the recorder owns",
     # One rule decides whether a recording still matches the project, and the report that names a
     # stale one asks the stage that wrote it rather than comparing file times of its own.
     ("stages.status", "stages.record"): "the rule that decides a recording is stale",

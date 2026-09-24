@@ -31,7 +31,7 @@ def ignored(rules: Path, names: list[str], tmp_path: Path) -> set[str]:
     subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
     shutil.copyfile(rules, repo / ".gitignore")
     proc = subprocess.run(
-        ["git", "-C", str(repo), "check-ignore", "--no-index", *names], capture_output=True, text=True
+        ["git", "-C", str(repo), "check-ignore", "--no-index", *names], capture_output=True, text=True, check=False
     )
     assert proc.returncode in (0, 1), proc.stderr
     return set(proc.stdout.split())
@@ -47,6 +47,10 @@ def test_the_repository_tracks_its_env_example():
     if shutil.which("git") is None:
         pytest.skip("git is not on PATH")
     proc = subprocess.run(
-        ["git", "ls-files", "src/decktalk/template/starter/env.example"], cwd=ROOT, capture_output=True, text=True
+        ["git", "ls-files", "src/decktalk/template/starter/env.example"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert proc.stdout.strip() == "src/decktalk/template/starter/env.example"
