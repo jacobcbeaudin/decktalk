@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Films made with DeckTalk</title>
+<meta name="description" content="Two films made with DeckTalk, each with the script it was built from: Halfway, a fictional 38-second product pitch, and uv, end to end, a 3:16 technical tutorial.">
+<link rel="canonical" href="https://decktalk.ai/films">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="DeckTalk">
+<meta property="og:title" content="Films made with DeckTalk">
+<meta property="og:description" content="Two films and the scripts that made them: a fictional 38-second pitch and a 3:16 tutorial about uv.">
+<meta property="og:url" content="https://decktalk.ai/films">
+<meta property="og:image" content="https://decktalk.ai/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://decktalk.ai/og.png">
+<meta name="theme-color" content="#15110e">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preload" href="fonts/bricolage-grotesque-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preconnect" href="https://media.decktalk.ai" crossorigin>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="styles.css">
+<script>document.documentElement.classList.replace("no-js", "js");</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 32 32">
+    <rect x="6" y="7.5" width="20" height="11.25" rx="1.25" fill="var(--dt-mark-picture)"/>
+    <rect x="6" y="21.5" width="9" height="3" rx="1.5" fill="var(--dt-voice)"/>
+  </symbol>
+  <symbol id="i-play" viewBox="0 0 16 16"><path d="M4.5 2.8v10.4L13 8z" fill="currentColor"/></symbol>
+</svg>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="DeckTalk, home"><svg aria-hidden="true"><use href="#mark"/></svg>DeckTalk</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="/films" aria-current="page">Films</a></li>
+        <li><a href="/how">How it works</a></li>
+        <li><a href="https://docs.decktalk.ai">Docs</a></li>
+        <li><a href="https://github.com/jacobcbeaudin/decktalk">GitHub<small>Open source</small></a></li>
+      </ul>
+    </nav>
+    <a class="btn install" href="#install">Install</a>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="block films" id="films" aria-labelledby="films-h">
+  <div class="wrap">
+    <p class="kicker">Now showing</p>
+    <h1 id="films-h">Made with DeckTalk.</h1>
+    <p class="lead">Two films so far, each with the script it was built from. Halfway is a fictional product pitch: thirty-eight seconds in four sections, with twenty-one cues, and the front page plays a shorter cut of it. <i>uv, end to end</i> is a technical tutorial about a tool you may already use: three and a quarter minutes in seven sections.</p>
+    <!-- No .cut on this page. It loads app.js for the copy button alone, and a catalogue of two
+         films has nothing to reveal on the way down. -->
+    <ul class="reel">
+      <li><a class="card" href="/films/uv-tutorial#film">
+        <img src="media/uv-tutorial-poster.webp" width="960" height="540" loading="lazy" alt="">
+        <b>uv, end to end</b><span class="lbl">Technical tutorial</span><span class="dur">3:16</span><span class="from">Film and script</span>
+      </a></li>
+      <li><a class="card" href="/films/halfway#film">
+        <img src="media/halfway-poster.webp" width="960" height="540" loading="lazy" alt="">
+        <b>Halfway</b><span class="lbl">Product pitch, fictional · full film</span><span class="dur">0:38</span><span class="from">Film and script</span>
+      </a></li>
+    </ul>
+  </div>
+</section>
+
+<section class="block make" id="install" aria-labelledby="install-h">
+  <div class="wrap">
+    <p class="kicker">Make one</p>
+    <h2 id="install-h">One line to install.</h2>
+    <div class="cta-band">
+      <div class="pill" role="group" aria-label="Install command"><code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code><span class="copy"></span></div>
+      <p class="fine">It installs uv, then DeckTalk, and never runs sudo. <a href="/#install">Three more lines</a> make a first film, with placeholder narration and no key.</p>
+    </div>
+    <p class="next">Next: <a href="/how">how it works</a>, chapter by chapter on one line of Halfway, or <a href="https://docs.decktalk.ai/quickstart">the quickstart</a>.</p>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span class="brand"><svg aria-hidden="true"><use href="#mark"/></svg>DeckTalk</span>
+    <span>Made by Jacob Beaudin</span>
+    <span class="links">
+      <a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE">Apache-2.0</a>
+      <a href="https://pypi.org/project/decktalk/">PyPI</a>
+      <a href="https://github.com/jacobcbeaudin/decktalk">GitHub · Open source</a>
+      <a href="https://docs.decktalk.ai/changelog">Changelog</a>
+      <a href="https://docs.decktalk.ai">Docs</a>
+    </span>
+  </div>
+</footer>
+
+<div class="sr" aria-live="polite" data-live></div>
+
+<script src="app.js"></script>
+</body>
+</html>

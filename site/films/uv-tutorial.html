@@ -8,54 +8,40 @@
 <link rel="canonical" href="https://decktalk.ai/films/uv-tutorial">
 <meta property="og:title" content="uv, end to end, a tutorial made with DeckTalk">
 <meta property="og:description" content="A seven-section technical tutorial on uv, made with DeckTalk, with its script.">
+<meta property="og:type" content="video.other">
+<meta property="og:site_name" content="DeckTalk">
+<meta property="og:url" content="https://decktalk.ai/films/uv-tutorial">
 <meta property="og:image" content="https://decktalk.ai/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://decktalk.ai/og.png">
 <meta name="theme-color" content="#15110e">
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="preload" href="../fonts/bricolage-grotesque-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preconnect" href="https://media.decktalk.ai" crossorigin>
 <link rel="stylesheet" href="../tokens.css">
 <link rel="stylesheet" href="../styles.css">
-<style>
-  /* The film and the command share one screen: a visitor who clicked a poster lands on the film, and the
-     line that makes one is the first thing under it, still in view when the film ends. */
-  .film-page { padding: 20px 0 64px; display: grid; gap: 18px; }
-  .film-page .head { display: grid; gap: 4px; }
-  .film-page video { width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: var(--dt-surface); box-shadow: 0 0 0 1px rgba(251, 246, 238, 0.15); }
-  .film-page .under { display: grid; gap: 12px; }
-  .film-page .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
-  /* The install command, reusing the homepage's pill. The prompt is not selectable, so a hand-selection
-     yields a line that runs, and the pill wraps rather than clipping on a phone. */
-  .cta-band { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
-  .cta-band .pill { grid-area: auto; margin-top: 0; max-width: 100%; height: auto; min-height: 44px; padding: 6px 6px 6px 16px; }
-  .cta-band .pill code { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
-  .cta-band .pill .p { user-select: none; -webkit-user-select: none; }
-  .cta-band .fine { flex: 1 1 24ch; }
-  /* Under 860px the band wraps and the pill sits alone on its line, so fill it. The hero's pill
-     stretches at the same width; a pill that stopped at its content stopped short of every
-     paragraph under it. */
-  @media (max-width: 860px) { .cta-band .pill { width: 100%; } }
-  .script { margin-top: 26px; display: grid; gap: 24px; max-width: 64ch; }
-  .script h2 { font-size: var(--dt-size-xl); display: flex; gap: 12px; align-items: baseline; }
-  .script h2 .t { font-family: var(--font-mono); font-size: 13px; font-weight: 400; color: var(--dt-text-3); letter-spacing: 0; }
-  .script p { font-family: var(--font-display); font-size: 19px; line-height: 1.6; letter-spacing: -0.01em; color: var(--dt-text-2); }
-  .script p .beat { color: var(--dt-text-3); font-family: var(--font-mono); font-size: 12px; margin: 0 4px; }
-  .note { color: var(--dt-text-2); max-width: 64ch; }
-  .note a { color: var(--dt-text); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
-  .next { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--dt-border); max-width: none; }
-</style>
+<script>document.documentElement.classList.replace("no-js", "js");</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="nav">
   <div class="wrap">
     <a class="brand" href="../" aria-label="DeckTalk, home"><svg aria-hidden="true" viewBox="0 0 32 32"><rect x="6" y="7.5" width="20" height="11.25" rx="1.25" fill="var(--dt-mark-picture)"/><rect x="6" y="21.5" width="9" height="3" rx="1.5" fill="var(--dt-voice)"/></svg>DeckTalk</a>
-    <nav aria-label="Primary"><ul><li><a href="/#films">Films</a></li><li><a href="/#how">How it works</a></li><li><a href="https://docs.decktalk.ai">Docs</a></li><li><a href="https://github.com/jacobcbeaudin/decktalk">GitHub<small>Open source</small></a></li></ul></nav>
-      <a class="btn install" href="/#install">Install</a>
+    <nav aria-label="Primary"><ul><li><a href="/films" aria-current="true">Films</a></li><li><a href="/how">How it works</a></li><li><a href="https://docs.decktalk.ai">Docs</a></li><li><a href="https://github.com/jacobcbeaudin/decktalk">GitHub<small>Open source</small></a></li></ul></nav>
+      <a class="btn install" href="#install">Install</a>
   </div>
 </header>
 <main id="main" class="wrap film-page">
   <div class="head">
     <p class="kicker">Now showing · a technical tutorial</p>
-    <h1 style="font-size:clamp(32px,4vw,48px)">uv, end to end</h1>
+    <h1>uv, end to end</h1>
+    <p class="sub">Install uv, start a project, add and remove packages, lock and sync, run tools and scripts. Seven sections, made with DeckTalk from the script below.</p>
   </div>
   <video id="film" controls preload="metadata" playsinline width="1920" height="1080" poster="../media/uv-tutorial-poster.webp"
          src="https://media.decktalk.ai/decktalk-uv-tutorial-f2407eccdfd4.mp4" aria-label="uv, end to end, the film">
@@ -65,86 +51,68 @@
     <div class="cta-band" id="install">
       <p class="kicker">Make one like it</p>
       <div class="pill" role="group" aria-label="Install command">
-        <code><span class="p" aria-hidden="true">$</span> <span id="cmd">curl -LsSf https://decktalk.ai/install.sh | sh</span></code>
-        <span id="copy"></span>
+        <code><span class="p" aria-hidden="true">$ </span><span data-cmd>curl -LsSf https://decktalk.ai/install.sh | sh</span></code><span class="copy"></span>
       </div>
-      <p class="fine">One line: it installs uv, then DeckTalk. Open source, and the first build needs no key.</p>
+      <p class="fine">It installs uv, then DeckTalk, and never runs sudo. <a href="/#install">Three more lines</a> make a first film, with placeholder narration and no key.</p>
     </div>
-    <p class="sub">Install uv, start a project, add and remove packages, lock and sync, run tools and scripts. Seven sections, made with DeckTalk from the script below.</p>
     <p class="meta"><span>3:16</span><span>7 sections</span><span>1920 × 1080, 25 fps</span><span>voice, words and cue times from one build</span></p>
   </div>
 
   <section class="script" aria-labelledby="script-h">
-    <h2 id="script-h" style="font-size:var(--dt-size-2xl)">script.md</h2>
-    <p class="note" style="font-family:var(--font-text);font-size:16px">Each <code>## N.</code> heading is one cut of the film. A <code>[beat]</code> is a short pause and is not spoken. Numbers and symbols are written the way the voice says them.</p>
+    <h2 id="script-h">script.md</h2>
+    <p class="note about">Each <code>## N.</code> heading is one cut of the film. A <code>[beat]</code> is a short pause and is not spoken. Numbers and symbols are written the way the voice says them.</p>
     <article>
-      <h2>1. What uv is <span class="t">0:00</span></h2>
+      <h3>1. What uv is <span class="t">0:00</span></h3>
       <p>uv is one program that replaces a whole shelf of Python tools. <span class="beat">[beat]</span> It installs packages, it builds virtual environments, it resolves a lockfile, and it installs Python itself. <span class="beat">[beat]</span> It is written in Rust, and it keeps one cache for your whole machine, so a wheel you have already downloaded is linked into a new project rather than fetched twice. <span class="beat">[beat]</span> That is why a cold install finishes in seconds.</p>
     </article>
     <article>
-      <h2>2. Install uv <span class="t">0:26</span></h2>
+      <h3>2. Install uv <span class="t">0:26</span></h3>
       <p>Before any of that, uv has to be on your machine. <span class="beat">[beat]</span> Install it with the standalone installer, which needs no Python on the machine first. <span class="beat">[beat]</span> On macOS and Linux, pipe the script from astral dot sh into your shell. <span class="beat">[beat]</span> On Windows, run the same script through powershell. <span class="beat">[beat]</span> Homebrew and pip ex both carry uv as well, and either one is fine. <span class="beat">[beat]</span> From then on, uv self update moves you to the newest release.</p>
     </article>
     <article>
-      <h2>3. Start a project <span class="t">0:52</span></h2>
+      <h3>3. Start a project <span class="t">0:52</span></h3>
       <p>With uv installed, the next step is a project. <span class="beat">[beat]</span> Run uv init and give your project a name. <span class="beat">[beat]</span> uv writes four files: a pyproject dot toml that declares the project, a read me, a starter module, and a dot python dash version file that pins the interpreter this project wants. <span class="beat">[beat]</span> Nothing is installed yet, and there is no virtual environment yet either. <span class="beat">[beat]</span> uv builds one for you the first time you ask it to run something.</p>
     </article>
     <article>
-      <h2>4. Add and remove dependencies <span class="t">1:24</span></h2>
+      <h3>4. Add and remove dependencies <span class="t">1:24</span></h3>
       <p>An empty project needs packages, so add your first one. <span class="beat">[beat]</span> uv add httpx is how a package joins your project. <span class="beat">[beat]</span> It resolves the dependency, writes it into pyproject dot toml, updates the lockfile, and installs it into the environment, all in one step. <span class="beat">[beat]</span> For a package you need only while developing, name the group, so uv add dash dash group dev pytest records pytest under the dependency groups table. <span class="beat">[beat]</span> uv remove takes a package back out, and the lockfile and the environment both follow it.</p>
     </article>
     <article>
-      <h2>5. Lock and sync <span class="t">1:57</span></h2>
+      <h3>5. Lock and sync <span class="t">1:57</span></h3>
       <p>Every one of those steps touched the lockfile. <span class="beat">[beat]</span> uv lock writes a lockfile that pins every package, for every platform your project claims to support. <span class="beat">[beat]</span> uv sync then makes your environment match that lockfile exactly, installing what is missing and removing whatever does not belong. <span class="beat">[beat]</span> Commit the lockfile, because it is what makes the install reproducible for everybody else. <span class="beat">[beat]</span> In continuous integration, pass the frozen flag, so uv installs straight from the lockfile and never resolves it again.</p>
     </article>
     <article>
-      <h2>6. Run tools and scripts <span class="t">2:29</span></h2>
+      <h3>6. Run tools and scripts <span class="t">2:29</span></h3>
       <p>With everything in sync, it is time to run something. <span class="beat">[beat]</span> uv run runs a command inside your project's environment, and it syncs before it starts, so what runs is always what the lockfile says. <span class="beat">[beat]</span> uvx runs a tool once without installing it anywhere at all. <span class="beat">[beat]</span> uv tool install keeps a tool on your path for good. <span class="beat">[beat]</span> And a single file script can declare its own dependencies in a comment header at the top, so running it builds an environment just for that file and throws it away afterwards.</p>
     </article>
     <article>
-      <h2>7. The whole workflow <span class="t">2:58</span></h2>
+      <h3>7. The whole workflow <span class="t">2:58</span></h3>
       <p>So that is uv, and your project fits on one card. <span class="beat">[beat]</span> uv init starts it, uv add grows it, uv lock pins it, uv sync matches it, and uv run uses it. <span class="beat">[beat]</span> Five commands, one tool. <span class="beat">[beat]</span> Go clear the shelf.</p>
     </article>
   </section>
 
-  <p class="note next">Next: <a href="#install">install DeckTalk</a>, read <a href="https://docs.decktalk.ai/quickstart">the quickstart</a>, or watch <a href="/films/halfway">Halfway</a>, a 38-second pitch made the same way.</p>
+  <p class="note next">Next: <a href="/how">how it was made</a>, <a href="#install">install DeckTalk</a>, read <a href="https://docs.decktalk.ai/quickstart">the quickstart</a>, or watch <a href="/films/halfway">Halfway</a>, a 38-second pitch made the same way.</p>
 </main>
-<footer class="foot"><div class="wrap"><a href="../">decktalk.ai</a><span class="links"><a href="https://docs.decktalk.ai">Docs</a><a href="https://github.com/jacobcbeaudin/decktalk">GitHub · Open source</a></span></div></footer>
+<footer class="foot">
+  <div class="wrap">
+    <span class="brand"><svg aria-hidden="true" viewBox="0 0 32 32"><rect x="6" y="7.5" width="20" height="11.25" rx="1.25" fill="var(--dt-mark-picture)"/><rect x="6" y="21.5" width="9" height="3" rx="1.5" fill="var(--dt-voice)"/></svg>DeckTalk</span>
+    <span>Made by Jacob Beaudin</span>
+    <span class="links">
+      <a href="https://github.com/jacobcbeaudin/decktalk/blob/main/LICENSE">Apache-2.0</a>
+      <a href="https://pypi.org/project/decktalk/">PyPI</a>
+      <a href="https://github.com/jacobcbeaudin/decktalk">GitHub · Open source</a>
+      <a href="https://docs.decktalk.ai/changelog">Changelog</a>
+      <a href="https://docs.decktalk.ai">Docs</a>
+    </span>
+  </div>
+</footer>
+<script src="../app.js"></script>
 <script>
-  // The film pages load no app.js, so this is the whole of their behaviour. Both halves add to working
-  // markup rather than reveal it: with the script gone the command is still selectable text, and the film
-  // still has its own play control.
-  (() => {
-    const cmd = document.getElementById("cmd");
-    const slot = document.getElementById("copy");
-    if (cmd && slot) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = "Copy";
-      // The visible word is the whole accessible name, and polite live text announces the change.
-      b.setAttribute("aria-live", "polite");
-      let back = 0;
-      b.addEventListener("click", async () => {
-        clearTimeout(back);
-        try {
-          await navigator.clipboard.writeText(cmd.textContent);
-          b.textContent = "Copied";
-        } catch {
-          getSelection().selectAllChildren(cmd);
-          b.textContent = "Selected";
-        }
-        back = setTimeout(() => {
-          b.textContent = "Copy";
-        }, 1500);
-      });
-      slot.append(b);
-    }
-    // A film card that draws a play badge links to #film, so the click that looked like a play is one.
-    // Autoplay policy may refuse a film that arrives with no gesture on this page; then the hash has still
-    // scrolled it into view and its own control is the next press.
-    const film = document.getElementById("film");
-    if (film && location.hash === "#film") film.play().catch(() => {});
-  })();
+  // app.js makes the copy button. This is the one thing a film page adds: a film card that draws a play
+  // badge links to #film, so the click that looked like a play is one. Autoplay policy may refuse a
+  // film that arrives with no gesture on this page; then the hash has still scrolled it into view.
+  const film = document.getElementById("film");
+  if (film && location.hash === "#film") film.play().catch(() => {});
 </script>
 </body>
 </html>

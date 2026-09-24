@@ -103,7 +103,7 @@ p { margin: 0; }
    same size, so the sizes below did not move. */
 h1, h2, h3 { margin: 0; font-family: var(--font-title); font-weight: 400; letter-spacing: var(--dt-tracking-title); text-wrap: balance; }
 h1 { font-size: clamp(38px, 5.2vw, 64px); line-height: var(--dt-leading-tight); }
-h2 { font-size: clamp(28px, 3.2vw, var(--dt-size-3xl)); line-height: var(--dt-leading-snug); }
+h2, .block h1 { font-size: clamp(28px, 3.2vw, var(--dt-size-3xl)); line-height: var(--dt-leading-snug); }
 h3 { font-size: var(--dt-size-xl); line-height: var(--dt-leading-snug); }
 code, kbd, pre, .mono { font-family: var(--font-mono); font-feature-settings: "zero" 1; }
 code { font-size: 0.92em; }
@@ -153,15 +153,12 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 500; font-size: 19px; letter-spacing: -0.01em; }
 .brand svg { width: 24px; height: 24px; }
 .nav ul { display: flex; gap: 24px; margin: 0 0 0 12px; padding: 0; list-style: none; font-size: 15px; color: var(--dt-text-2); }
-.nav ul a:hover { color: var(--dt-text); }
+.nav ul a { white-space: nowrap; }
+.nav ul a:hover, .nav ul a[aria-current] { color: var(--dt-text); }
 .nav ul small { color: var(--dt-text-3); font-size: 12px; margin-left: 6px; }
 .nav .install { margin-left: auto; height: 36px; padding: 0 14px; }
 
-/* ---- hero. This used to fit from the top of the nav to the bottom of the transport inside 900 css px
-   at 1440 by 900, which was a rule for a stranger with eight seconds: everything the page might want to
-   say had to fit above a fold or be cut. It is written for someone who will read it now, and the subhead
-   that says what the problem is spends about 40 px of that budget knowingly. The phone rule it replaces
-   is the one that still matters and is still kept: the stage starts inside the first 300 css px at 390.
+/* ---- hero. Everything from the top of the nav to the bottom of the transport fits in 900 css px at 1440 by 900.
    Clipped, so the stage glow never widens the page on a phone. */
 .hero { padding: 16px 0 40px; overflow: clip; }
 .hero .wrap {
@@ -183,7 +180,6 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
   min-height: 44px; padding: 5px 6px 5px 16px; max-width: 100%;
   border: 1px solid var(--dt-border); border-radius: 12px; background: var(--dt-surface); font-family: var(--font-mono); font-size: 14px;
 }
-.hero .pill { grid-area: pill; }
 .pill code { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .pill .p { color: var(--dt-text-3); user-select: none; -webkit-user-select: none; }
 .pill .copy:empty { display: none; }
@@ -196,11 +192,6 @@ img, svg, video { display: block; max-width: 100%; height: auto; }
 .pill .view:hover { color: var(--dt-text); }
 .pill button { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--dt-surface-2); color: var(--dt-text); font-size: 13px; font-weight: 500; cursor: pointer; }
 .pill button:hover { background: var(--dt-border); }
-/* The loudest thing on the first screen is the one control that hands the product over. The chip is
-   var(--dt-surface-2) on var(--dt-surface), which is 1.13:1, under the 3:1 a non-text control owes
-   the eye, and it was the page's only conversion control while a mute button wore the paper. */
-.hero .pill button { background: var(--dt-paper); color: var(--dt-paper-ink); }
-.hero .pill button:hover { background: #fff; }
 .hero .caption { grid-area: caption; justify-self: start; width: 100%; max-width: var(--stage-w); margin-top: 14px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
 .hero .caption a { color: var(--dt-text-2); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
 .hero .caption a:hover { color: var(--dt-text); }
@@ -275,6 +266,9 @@ section.block::before {
   height: 1px; background: var(--dt-border);
 }
 section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch; }
+
+/* ---- the invitation that stands on the landing page where the explanation used to, and sends a reader to how.html. */
+.how-more .btn { margin-top: 24px; }
 
 /* ---- films: one row of small cards, each a link to the film's own page. */
 .films { padding-top: 40px; padding-bottom: 48px; }
@@ -439,6 +433,7 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .nb { white-space: nowrap; }
 /* The step's sentence, and only that: the spans inside the command component keep the component's own colours. */
 .steps li > span { color: var(--dt-text-2); }
+.install-note { max-width: 68ch; }
 .steps li > span a, .install-note a { color: var(--dt-text); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
 .install-note { margin-top: 24px; color: var(--dt-text-2); }
 
@@ -451,6 +446,42 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
 .foot .links { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
 
 /* ---- phones */
+
+/* ---- the film pages, and the install band that ends /how too. The film and the command share one
+   screen: a visitor who clicked a poster lands on the film, and the line that makes one is the first
+   thing under it, still in view when the film ends. Only the top and bottom pad, so .wrap's gutter
+   survives on a phone. */
+.film-page { padding-top: 20px; padding-bottom: 64px; display: grid; gap: 18px; }
+.film-page .head { display: grid; gap: 4px; }
+.film-page h1 { font-size: clamp(32px, 4vw, 48px); }
+.film-page video { width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: var(--dt-surface); box-shadow: 0 0 0 1px rgba(251, 246, 238, 0.15); }
+.film-page .under { display: grid; gap: 12px; }
+.film-page .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--dt-size-sm); color: var(--dt-text-3); }
+/* The one-line install, reusing the pill. The prompt is not selectable, so a hand-selection yields a
+   line that runs, and the pill wraps rather than clipping on a phone. */
+/* A nav Install that lands here leaves a breath above the band rather than a flush edge. */
+.cta-band { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; scroll-margin-top: 24px; }
+.make { scroll-margin-top: 24px; }
+.cta-band .pill { grid-area: auto; margin-top: 0; max-width: 100%; height: auto; min-height: 44px; padding: 6px 6px 6px 16px; }
+.cta-band .pill code { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.cta-band .pill .p { user-select: none; -webkit-user-select: none; }
+.cta-band .fine { flex: 1 1 24ch; }
+.make h2 { margin-bottom: 18px; }
+.script { margin-top: 26px; display: grid; gap: 24px; max-width: 64ch; }
+.script > h2 { font-size: var(--dt-size-2xl); }
+.script h3 { font-size: var(--dt-size-xl); display: flex; gap: 12px; align-items: baseline; }
+.script h3 .t { font-family: var(--font-mono); font-size: 13px; font-weight: 400; color: var(--dt-text-3); letter-spacing: 0; }
+.script p { font-family: var(--font-display); font-size: 20px; line-height: 1.6; letter-spacing: -0.01em; color: var(--dt-text-2); }
+.script p .beat { color: var(--dt-text-3); font-family: var(--font-mono); font-size: 12px; margin: 0 4px; }
+.script p mark { background: none; color: var(--dt-text); text-decoration: underline; text-decoration-color: var(--dt-border); text-decoration-thickness: 1.5px; text-underline-offset: 5px; }
+.note { color: var(--dt-text-2); max-width: 64ch; }
+.note.about { font-family: var(--font-text); font-size: 16px; }
+.note a, .next a { color: var(--dt-text); text-decoration: underline; text-decoration-color: var(--dt-border); text-underline-offset: 3px; }
+.edit h2 { font-size: var(--dt-size-2xl); margin-bottom: 12px; }
+.edit p + p { margin-top: 12px; }
+/* Every secondary page ends on the same line: where to go next, after the thing it came for. */
+.next { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--dt-border); max-width: none; color: var(--dt-text-2); }
+
 @media (max-width: 860px) {
   /* the file name and the cue each take their own line, so nothing truncates */
   .diff .file { grid-template-columns: 1fr; gap: 6px; }
@@ -475,10 +506,6 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
   .hero .sub { margin-top: 6px; font-size: 16px; line-height: 1.4; max-width: 34ch; }
   .hero .caption { margin-top: 8px; font-size: 13px; }
   .stage { margin-top: 8px; }
-  .hero .pill { margin-top: 20px; justify-self: stretch; }
-  /* The command is 45 characters and cannot share a line with the button at this width, so the
-     button takes the far edge of the row it wraps onto rather than sitting under the wrap. */
-  .hero .pill .copy { margin-left: auto; }
   /* The band holds one dimmed line and up to two current lines, so the transport never moves. */
   .band { font-size: 17px; min-height: 72px; }
   .band .prev { min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -504,11 +531,17 @@ section.block .lead { margin-top: 12px; color: var(--dt-text-2); max-width: 52ch
     background: var(--dt-bg); padding-bottom: 10px;
   }
   .catchup { order: 1; }
-  .pinned .verify { font-size: 11.5px; }
+  /* One line, always: the pin's height is what the chapters scroll under, and a verify line that
+     wrapped to two or three lines by section moved them 32 px on every pick. The line scrolls
+     sideways instead, so every landing is still reachable, and chapter 5 lists them all. */
+  .pinned .verify { font-size: 11.5px; white-space: nowrap; overflow-x: auto; }
+  .cta-band .pill { width: 100%; }
   .lanes { grid-template-columns: 64px repeat(4, 1fr); font-size: 11px; }
   .steps { gap: 20px; }
   .steps li { grid-template-columns: 1fr; align-items: start; }
-  .steps .pill { justify-self: stretch; }
+  /* One shape for every pill at this width: the command takes the row and the button the far
+     edge, top aligned, whether the command wraps to two lines or fits on one. */
+  .steps .pill, .cta-band .pill { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; justify-self: stretch; }
   section.block { padding: 48px 0; }
   .foot .links { display: grid; grid-template-columns: repeat(3, max-content); justify-content: start; gap: 10px 18px; margin-left: 0; }
 }

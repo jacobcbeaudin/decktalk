@@ -1,4 +1,4 @@
-/* decktalk.ai. One script over the one page, no library, no build step.
+/* decktalk.ai. One script over every page, no library, no build step.
    Everything that moves reads the Halfway build in data.js and stage.js: the words with their
    times, the cues with their times, and the deck's own scenes. The stage is a pure function of t,
    so the silent replay, the voice clock, the scrubber and the keyboard all draw the same frame. */
@@ -21,11 +21,10 @@
      script over each other, in the same cloned voice, which sounds like a fault in the product
      rather than in the page.
 
-     The hero was left out of this while it was alone on its own page. It is not any more: the
-     film, the chapters and the takes are three sources of the same cloned voice on one scroll,
-     and a tall window holds the hero and the first chapter at once. What a hero registers is a
-     mute rather than a stop, because the film is the picture as well as the voice: another press
-     takes its sound, never the thing it is showing. */
+     The hero registers too, although on the landing page it is the only voice: the sentence above
+     says every voice, and a page that one day holds the film beside a take must not rediscover the
+     fault. What a hero registers is a mute rather than a stop, because the film is the picture as
+     well as the voice: another press takes its sound, never the thing it is showing. */
   const voices = new Set();
   const addVoice = (stop) => voices.add(stop);
   const silenceOtherVoices = (mine) => {
@@ -93,11 +92,10 @@
   };
   for (const el of $$("[data-total]")) el.textContent = fmt(D.total);
 
-  /* The hero, the chapters and the edit section are one page now, and each part below still asks for
-     the element it needs before it runs. The guard is not bookkeeping for a second page: it is what
-     lets a section be cut from the markup without taking the rest of the page down with it, which is
-     how the explanation arrived here in the first place. The error guard above stays a guard, and
-     never has to fire on a page that is simply missing a section. */
+  /* Each page carries only part of this DOM: index.html has the hero, how.html has the chapters and
+     the edit section, and both have the cuts and the pills. Every part below asks for the element it
+     needs before it runs, so the other page runs none of it and neither page throws. The error guard
+     above stays a guard, and never has to fire on a page that is simply missing a section. */
   const onPage = (sel, part) => {
     const el = $(sel);
     if (el) part(el);

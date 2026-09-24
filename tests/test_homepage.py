@@ -1,15 +1,14 @@
-"""The page in a browser: what a visitor can still reach when the page's own script fails.
+"""The two pages in a browser: what a visitor can still reach when the page's own script fails.
 
-`tests/test_site.py` reads the committed files. This opens them. Every `.cut` starts at
+`tests/test_site.py` reads the committed files. This opens them. Every `.cut` on a page starts at
 `opacity: 0` and is revealed by an observer on the last line of `site/app.js`, which means a script
 that throws, or a `data.js` that did not load, used to leave the films, how it works, the edit
 section and the install commands invisible: the hero and the footer, and no way to install
 anywhere on the page. That is the failure this file exists to prevent.
 
-The explanation used to be a second page at `/how`, and these tests walked two of them. It is
-section two of the landing page now, so one scroll covers every section that the observer has to
-reveal. `site/app.js` still asks for each element before it uses it, so a section cut from the
-markup must not take the rest of the page down with it.
+The explanation now lives on `how.html` and the install command on `index.html`, so each page is
+walked for its own sections and each page is broken in both ways. `site/app.js` is still one script
+across both, and a page missing a section another page owns must not throw on the way past it.
 """
 
 from __future__ import annotations
@@ -25,13 +24,16 @@ import pytest
 pytestmark = [pytest.mark.browser, pytest.mark.timeout(120)]
 
 SITE = Path(__file__).resolve().parent.parent / "site"
-PAGE = "index.html"
-# The sections a visitor needs to be able to reach, in the order the page puts them.
-SECTIONS = ("how", "edit", "films", "install")
-# The one thing a broken script must never be able to hide. It is the install command: the
-# explanation above it is the reason to want the command, and the command is the only thing on the
-# page a visitor cannot get anywhere else.
-ESSENTIAL = "install"
+# The sections a visitor needs to be able to reach on each page, and the id each one carries.
+SECTIONS = {
+    "index.html": ("films", "how", "install"),
+    "how.html": ("how", "edit", "install"),
+    "films.html": ("films", "install"),
+}
+# The one thing on each page a broken script must never be able to hide: the install command on the
+# landing page, and on how.html the explanation that is the whole reason the page exists.
+ESSENTIAL = {"index.html": "install", "how.html": "how", "films.html": "install"}
+PAGES = list(SECTIONS)
 # The one line the whole site tells a stranger to run. It is one string in one component, and the
 # tests below are the reason it can never be a string a script is allowed to hide or to mangle.
 COMMAND = "curl -LsSf https://decktalk.ai/install.sh | sh"
@@ -46,13 +48,13 @@ def origin() -> Iterator[str]:
             super().__init__(*a, directory=str(SITE), **k)  # type: ignore[arg-type]
 
         def translate_path(self, path: str) -> str:
-            """`/films/halfway` is `site/films/halfway.html`, the way the deployment serves it.
+            """`/how` is `site/how.html`, the way the deployment serves it.
 
-            Cloudflare strips the extension and redirects the `.html` path to it, so the pages link
+            Cloudflare strips the extension and redirects `/how.html` to `/how`, so the pages link
             to the extensionless path and a link followed here has to land the same way.
             """
             local = super().translate_path(path)
-            return f"{local}.html" if not Path(local).exists() and Path(f"{local}.html").is_file() else local
+            return f"{local}.html" if not Path(local).is_file() and Path(f"{local}.html").is_file() else local
 
         def log_message(self, *a: object) -> None:
             return
@@ -82,7 +84,7 @@ def page(origin: str) -> Iterator[object]:
         browser.close()
 
 
-def walk(pg: object) -> None:
+def walk(pg: object, name: str) -> None:
     """Scroll the whole page the way a reader does, then wait for the reveal rather than guess at it.
 
     The observer reveals a section when it enters the viewport, so a jump to the bottom passes over
@@ -104,14 +106,14 @@ def walk(pg: object) -> None:
                 const cut = el.querySelector(".cut") ?? el;
                 return parseFloat(getComputedStyle(cut).opacity) > 0;
             })""",
-            arg=list(SECTIONS),
+            arg=list(SECTIONS[name]),
             timeout=15000,
         )
     except Exception:  # noqa: BLE001, the assertion that follows says which section it was
         pass
 
 
-def diagnosis(pg: object) -> str:
+def diagnosis(pg: object, name: str) -> str:
     """What the page actually looked like, for an assertion that fails on a machine nobody is sitting at.
 
     A bare "all False" says the reveal did not happen and nothing about why. This says whether the
@@ -133,11 +135,11 @@ def diagnosis(pg: object) -> str:
                  + ` scripts=[${scripts.join(',')}] height=${document.documentElement.scrollHeight}`
                  + ` reveal=${typeof window.HALFWAY} | ` + rows.join(' | ');
         }""",
-        list(SECTIONS),
+        list(SECTIONS[name]),
     )
 
 
-def visible_sections(pg: object) -> dict[str, bool]:
+def visible_sections(pg: object, name: str) -> dict[str, bool]:
     """Which of the page's sections a visitor can actually see, by computed opacity."""
     return pg.evaluate(  # type: ignore[attr-defined]
         """(ids) => Object.fromEntries(ids.map((id) => {
@@ -146,45 +148,47 @@ def visible_sections(pg: object) -> dict[str, bool]:
             const cut = el.querySelector(".cut") ?? el;
             return [id, parseFloat(getComputedStyle(cut).opacity) > 0];
         }))""",
-        list(SECTIONS),
+        list(SECTIONS[name]),
     )
 
 
-def test_every_section_is_visible_when_the_page_works(page: object) -> None:
+@pytest.mark.parametrize("name", PAGES)
+def test_every_section_is_visible_when_the_page_works(page: object, name: str) -> None:
     """The baseline, so the failure tests below cannot pass on a page that reveals nothing anyway.
 
-    It also holds the property that survived the merge: the hero, the chapters and the edit section
-    are one document now, three players and three audio elements deep, and the page may not throw
-    on the way through any of it.
+    It also holds the property the split depends on: one script drives both pages, each page has
+    only some of its DOM, and neither page may throw on the way past what it does not have.
     """
     thrown: list[str] = []
     page.on("pageerror", lambda e: thrown.append(str(e)))  # type: ignore[attr-defined]
-    page.goto(f"{page.origin}/{PAGE}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    page.goto(f"{page.origin}/{name}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
     # Walked rather than jumped: the observer reveals a section when it enters the viewport, so a
     # jump to the bottom passes over the middle ones without ever showing them.
-    walk(page)
-    assert not thrown, f"{PAGE} threw: {thrown}"
-    assert all(visible_sections(page).values()), diagnosis(page)
+    walk(page, name)
+    assert not thrown, f"{name} threw: {thrown}"
+    assert all(visible_sections(page, name).values()), diagnosis(page, name)
 
 
-def test_the_page_survives_a_data_file_that_did_not_load(page: object) -> None:
+@pytest.mark.parametrize("name", PAGES)
+def test_the_page_survives_a_data_file_that_did_not_load(page: object, name: str) -> None:
     """data.js 404s, so `window.HALFWAY` is undefined and the script returns on its eighth line."""
     page.route("**/data.js", lambda route: route.fulfill(status=404, body=""))  # type: ignore[attr-defined]
-    page.goto(f"{page.origin}/{PAGE}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
-    walk(page)
-    seen = visible_sections(page)
-    assert seen[ESSENTIAL], f"{ESSENTIAL} unreachable :: {diagnosis(page)}"
-    assert all(seen.values()), diagnosis(page)
+    page.goto(f"{page.origin}/{name}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    walk(page, name)
+    seen = visible_sections(page, name)
+    assert seen[ESSENTIAL[name]], f"{ESSENTIAL[name]} unreachable on {name} :: {diagnosis(page, name)}"
+    assert all(seen.values()), diagnosis(page, name)
 
 
-def test_the_page_survives_a_script_that_throws(page: object) -> None:
+@pytest.mark.parametrize("name", PAGES)
+def test_the_page_survives_a_script_that_throws(page: object, name: str) -> None:
     """The likelier failure: data.js loads but something below line eight throws, so the observer
     that reveals the page is never reached."""
     page.add_init_script("window.addEventListener('DOMContentLoaded', () => { null.boom; });")  # type: ignore[attr-defined]
-    page.goto(f"{page.origin}/{PAGE}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
-    walk(page)
-    seen = visible_sections(page)
-    assert seen[ESSENTIAL], f"{ESSENTIAL} unreachable :: {diagnosis(page)}"
+    page.goto(f"{page.origin}/{name}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    walk(page, name)
+    seen = visible_sections(page, name)
+    assert seen[ESSENTIAL[name]], f"{ESSENTIAL[name]} unreachable on {name} :: {diagnosis(page, name)}"
 
 
 def read_command(pg: object) -> dict[str, object]:
@@ -258,27 +262,30 @@ def test_every_command_the_page_shows_can_be_copied(page: object) -> None:
     assert page.evaluate("() => navigator.clipboard.readText()") == COMMAND  # type: ignore[attr-defined]
 
 
-def test_the_nav_reaches_the_explanation_and_the_command_without_a_second_load(page: object) -> None:
-    """This test used to follow a button to `/how` and a nav link back, which was the page costing
-    a reader two loads to read one argument. Both are scroll positions in one document now, so what
-    is worth holding is that the nav's two promises land on the sections they name and that neither
-    of them leaves the page.
-    """
-    page.goto(f"{page.origin}/{PAGE}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
-    for link, target in ((".nav a[href='#how']", "how"), (".nav a[href='#install']", "install")):
-        page.click(link)  # type: ignore[attr-defined]
-        page.wait_for_timeout(300)  # type: ignore[attr-defined]
-        landed = page.evaluate(  # type: ignore[attr-defined]
-            """(id) => {
-                const box = document.getElementById(id).getBoundingClientRect();
-                return { hash: location.hash, top: Math.round(box.top) };
-            }""",
-            target,
-        )
-        assert landed["hash"] == f"#{target}", landed
-        # The section's own top, at the top of the window: a hash that resolves to nothing scrolls
-        # nowhere and would still pass a test that only read location.hash.
-        assert abs(landed["top"]) < 80, f"#{target} is {landed['top']}px from the top: {landed}"
+def landed_on(page: object, selector: str) -> None:
+    """The element a link named is in view, not merely somewhere on the page. In view rather than at
+    the top, because the last section of a page cannot scroll higher than the footer under it lets it."""
+    top, height = page.evaluate(  # type: ignore[attr-defined]
+        f"() => [document.querySelector({selector!r}).getBoundingClientRect().top, window.innerHeight]"
+    )
+    assert -80 < top < height, f"{selector} is {top:.0f} px from the top after the link that named it"
+
+
+def test_a_reader_can_walk_from_the_landing_page_to_the_explanation_and_on_to_an_install(page: object) -> None:
+    """The explanation is its own page, so the landing page has to carry a reader to it, the how
+    page has to end on an install command of its own, and that band has to carry them to the four
+    lines on the landing page. Every route is followed rather than read, and every landing is
+    checked to be in view."""
+    page.goto(f"{page.origin}/index.html", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    page.click("#how a[href='/how']")  # type: ignore[attr-defined]
+    page.wait_for_url("**/how")  # type: ignore[attr-defined]
+    assert page.locator("#how").count() == 1  # type: ignore[attr-defined]
+    page.click(".nav a[href='#install']")  # type: ignore[attr-defined]
+    page.wait_for_url("**/how#install")  # type: ignore[attr-defined]
+    landed_on(page, "#install")
+    page.click("#install a[href='/#install']")  # type: ignore[attr-defined]
+    page.wait_for_url("**/#install")  # type: ignore[attr-defined]
+    landed_on(page, "#install")
 
 
 def test_a_voice_that_will_not_play_does_not_cost_the_viewer_the_film(page: object) -> None:
@@ -324,58 +331,35 @@ def test_the_hero_has_one_sound_control_whose_name_never_moves(page: object) -> 
     assert pg.evaluate(name) == before, "the control renamed itself when its state changed"  # type: ignore[attr-defined]
 
 
-VOICE_STUB = """
-window.__playing = new Set();
-const P = HTMLMediaElement.prototype;
-// The elements themselves, not their `src`: the hero and the chapter stage load the same clip, so
-// counting by URL made two voices over each other look like one.
-P.play = function () { window.__playing.add(this); return Promise.resolve(); };
-P.pause = function () { window.__playing.delete(this); };
-"""
-# Every pair of the page's three voices, in both orders. The film's control is the transport's
-# Sound button, the chapters' is Play from here, and the takes' are Before and After.
-VOICES = (".transport .sound", "[data-hiw-play]", "[data-take='before']")
-VOICE_PAIRS = [(a, b) for a in VOICES for b in VOICES if a != b]
-
-
-@pytest.mark.parametrize(("first", "second"), VOICE_PAIRS)
-def test_only_one_voice_plays_at_a_time(page: object, first: str, second: str) -> None:
-    """The three voices are built in separate `onPage` closures and cannot see each other, so each
-    registers a way to be silenced and every press clears the others first.
-
-    The hero was the one left out, because it was alone on its own page and had nothing to talk
-    over. Merging the explanation into the landing page put the film, the chapter stage and the two
-    takes on one scroll, all four reading the same script in the same cloned voice, and a window
-    tall enough to hold the hero and the first chapter at once is all it took to hear two of them.
-    The viewport here is that window rather than a contrivance.
+def test_only_one_voice_plays_at_a_time(page: object) -> None:
+    """The chapter stage and the two takes are built in separate `onPage` closures and could not
+    see each other, so the takes silenced only each other. Pressing a take while the chapters
+    played put two readings of the same script over each other, in the same cloned voice, which
+    sounds like a fault in the product rather than in the page.
 
     Counted by stubbing play and pause rather than by listening, because the clip is fetched from
     the media host and the fixture refuses it. The stub is also what makes this deterministic: the
     first attempt at this test clicked through Playwright, which scrolls the target into view, and
-    that scrolled a stage out of it, whose observer then paused its player. The bug was real and
-    the test said it was not.
+    that scrolled the pinned stage out of it, whose observer then paused the chapter player. The
+    bug was real and the test said it was not.
     """
     pg = page
-    pg.set_viewport_size({"width": 1280, "height": 2000})  # type: ignore[attr-defined]
-    pg.add_init_script(VOICE_STUB)  # type: ignore[attr-defined]
-    pg.goto(f"{pg.origin}/{PAGE}", wait_until="domcontentloaded")  # type: ignore[attr-defined]
-    pg.wait_for_function("() => document.querySelector('[data-take]')", timeout=15000)  # type: ignore[attr-defined]
-    # Read from the top, where both stages are on screen. Each player pauses itself when its own
-    # stage leaves the viewport, so a press from anywhere else would pass this test by having
-    # already silenced a voice for a reason that has nothing to do with the registry. The take
-    # buttons are far below the fold and own no observer, so they answer a click from here.
-    pg.evaluate("window.scrollTo(0, 0)")  # type: ignore[attr-defined]
-    pg.wait_for_timeout(400)  # type: ignore[attr-defined]
-    onscreen = pg.evaluate(  # type: ignore[attr-defined]
-        """() => ['#hero [data-stage]', '#catchup [data-stage]'].filter((s) => {
-            const b = document.querySelector(s).getBoundingClientRect();
-            return b.top < innerHeight && b.bottom > 0;
-        }).length"""
+    pg.add_init_script(  # type: ignore[attr-defined]
+        """
+        window.__playing = new Set();
+        const P = HTMLMediaElement.prototype;
+        P.play = function () { window.__playing.add(this.src); return Promise.resolve(); };
+        P.pause = function () { window.__playing.delete(this.src); };
+        """
     )
-    assert onscreen == 2, "the film and the chapter stage must share a screen for this to mean anything"
-    pg.evaluate("window.__playing.clear()")  # type: ignore[attr-defined]
-    for sel in (first, second):
-        pg.evaluate(f"document.querySelector({sel!r}).click()")  # type: ignore[attr-defined]
-        pg.wait_for_timeout(350)  # type: ignore[attr-defined]
-    playing = pg.evaluate("[...window.__playing].map((a) => a.src)")  # type: ignore[attr-defined]
-    assert len(playing) <= 1, f"{first} then {second} left {len(playing)} voices playing: {playing}"
+    pg.goto(f"{pg.origin}/how", wait_until="domcontentloaded")  # type: ignore[attr-defined]
+    pg.wait_for_function("() => document.querySelector('[data-take]')", timeout=15000)  # type: ignore[attr-defined]
+    pg.evaluate("document.querySelector('#edit').scrollIntoView()")  # type: ignore[attr-defined]
+    pg.wait_for_timeout(400)  # type: ignore[attr-defined]
+    for first, second in (("[data-hiw-play]", "[data-take='before']"), ("[data-take='before']", "[data-hiw-play]")):
+        pg.evaluate("window.__playing.clear()")  # type: ignore[attr-defined]
+        for sel in (first, second):
+            pg.evaluate(f"document.querySelector({sel!r}).click()")  # type: ignore[attr-defined]
+            pg.wait_for_timeout(350)  # type: ignore[attr-defined]
+        playing = pg.evaluate("[...window.__playing]")  # type: ignore[attr-defined]
+        assert len(playing) <= 1, f"{first} then {second} left {len(playing)} voices playing: {playing}"
