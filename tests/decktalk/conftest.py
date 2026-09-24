@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Word
 from decktalk.media import browser, ffmpeg
+from decktalk.results import Word
 from decktalk.speech import PROVIDERS, SpeechRequest
 
 FAKE_VOICE_NAME = "test-voice"
@@ -31,7 +31,6 @@ class FakeFfmpeg:
     calls: list[list[str]] = field(default_factory=list)
     stderr_text: str = ""
     duration_seconds: float = 1.0
-    decoded_seconds: float = 1.0
     sounds: bool = True
 
     def wrote(self, suffix: str) -> list[Path]:
@@ -57,9 +56,7 @@ def fake_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> FakeFfmpeg:
     monkeypatch.setattr(ffmpeg, "run", run)
     monkeypatch.setattr(ffmpeg, "stderr", stderr)
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: fake.duration_seconds)
-    monkeypatch.setattr(ffmpeg, "decoded_duration", lambda _path, **_kw: fake.decoded_seconds)
     monkeypatch.setattr(ffmpeg, "has_audio", lambda _path: fake.sounds)
-    monkeypatch.setattr(ffmpeg, "ffmpeg_paths", lambda: ("ffmpeg", "ffprobe"))
     return fake
 
 
@@ -125,7 +122,9 @@ class FakeVoice:
     name: str = FAKE_VOICE_NAME
     requests: list[SpeechRequest] = field(default_factory=list)
     audio: bytes = b"take"
-    words: list[Word] = field(default_factory=lambda: [Word("hello", 0.0, 0.5), Word("there", 0.5, 1.0)])
+    words: list[Word] = field(
+        default_factory=lambda: [Word(word="hello", start=0.0, end=0.5), Word(word="there", start=0.5, end=1.0)]
+    )
 
     def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
         self.requests.append(request)

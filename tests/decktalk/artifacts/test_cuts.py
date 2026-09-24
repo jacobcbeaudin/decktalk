@@ -1,74 +1,59 @@
-"""The cut list: where every section sits in the finished film, and what stands in for it."""
+"""The cut list: where every section sits in the finished film."""
 
 from __future__ import annotations
 
-import json
-
-import pytest
+from pathlib import Path
 
 from decktalk.artifacts.cuts import Cut, Cuts
-from decktalk.pipeline import SectionKind, Substitute
+from decktalk.results import SectionKind, Substitute
 
 
-def a_cuts() -> Cuts:
-    return Cuts(
-        fps=25,
-        total_seconds=9.5,
-        sections=[
-            Cut(1, SectionKind.PAGE, 0.0, 4.0, "build/recordings/01.webm", "Open", dip_out=True),
-            Cut(2, SectionKind.CLIP, 4.0, 6.5, "media/broll.mp4", "B-roll", dip_in=True),
-            Cut(3, SectionKind.PAGE, 6.5, 9.5, "build/recordings/03.webm", "Close", substitute=Substitute.BLACK),
-        ],
+def cut(section: int, start: float, end: float, *, substitute: Substitute | None = None) -> Cut:
+    return Cut(
+        section=section,
+        key=f"{section:02d}",
+        kind=SectionKind.PAGE,
+        start=start,
+        end=end,
+        source=Path(f"build/sections/{section:02d}.mp4"),
+        chapter=f"Section {section}",
+        substitute=substitute,
     )
 
 
-def test_a_row_knows_its_key_and_how_long_it_runs():
-    first, _clip, last = a_cuts().sections
-    assert (first.key, first.duration) == ("01", 4.0)
-    assert (last.key, last.duration) == ("03", 3.0)
+FILM = Cuts(fps=25, sections=(cut(1, 0.0, 3.2), cut(2, 3.2, 8.0, substitute=Substitute.SLATE)))
 
 
-def test_the_substituted_sections_are_the_ones_that_played_a_stand_in():
-    cuts = a_cuts()
-    assert [c.section for c in cuts.substituted] == [3]
-    cuts.sections[1] = Cut(2, SectionKind.CLIP, 4.0, 6.5, "media/broll.mp4", "B-roll", substitute=Substitute.SLATE)
-    assert [c.substitute for c in cuts.substituted] == [Substitute.SLATE, Substitute.BLACK]
+def test_a_cut_runs_from_its_start_to_its_end() -> None:
+    assert FILM.sections[0].seconds == 3.2
 
 
-def test_a_second_of_the_film_names_the_section_playing_there():
-    cuts = a_cuts()
-    assert cuts.at(0.0).section == 1
-    assert cuts.at(4.0).section == 2  # the boundary belongs to the section that starts there
-    assert cuts.at(9.4).section == 3
-    assert cuts.at(9.5) is None
+def test_the_film_ends_where_its_last_section_does() -> None:
+    assert FILM.total_seconds == 8.0
+    assert Cuts(fps=25).total_seconds == 0.0
 
 
-def test_the_file_round_trips_and_is_plain_json(tmp_path):
-    path = tmp_path / "cuts.json"
-    a_cuts().save(path)
-    data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["fps"] == 25 and data["total_seconds"] == 9.5
-    assert data["sections"][0] == {
-        "section": 1,
-        "kind": SectionKind.PAGE.value,
-        "start": 0.0,
-        "end": 4.0,
-        "source": "build/recordings/01.webm",
-        "substitute": None,
-        "chapter": "Open",
-        "dip_in": False,
-        "dip_out": True,
-    }
-    again = Cuts.load(path)
-    assert again is not None and again.to_dict() == a_cuts().to_dict()
-    assert Cuts.load(tmp_path / "nothing.json") is None
+def test_the_section_playing_at_a_second_is_found_and_past_the_end_there_is_none() -> None:
+    assert FILM.at(0.0).section == 1
+    assert FILM.at(3.2).section == 2
+    assert FILM.at(8.0) is None
 
 
-def test_a_row_reads_its_kind_and_its_substitute_as_members_and_refuses_any_other_word():
-    """A misspelt word in the file fails where it is read, rather than making every comparison false."""
-    row = a_cuts().sections[2].to_dict()
-    assert Cut.from_dict(row).substitute is Substitute.BLACK and Cut.from_dict(row).kind is SectionKind.PAGE
-    with pytest.raises(ValueError):
-        Cut.from_dict({**row, "kind": "movie"})
-    with pytest.raises(ValueError):
-        Cut.from_dict({**row, "substitute": "grey"})
+def test_a_section_is_found_by_its_number() -> None:
+    assert FILM.of(2).chapter == "Section 2"
+    assert FILM.of(9) is None
+
+
+def test_the_substituted_sections_are_the_ones_a_strict_run_refuses() -> None:
+    assert [row.section for row in FILM.substituted] == [2]
+
+
+def test_the_cut_list_round_trips_through_its_own_file(tmp_path: Path) -> None:
+    path = FILM.write(tmp_path / "cuts.json")
+    assert Cuts.read(path) == FILM
+
+
+def test_a_path_is_written_with_forward_slashes(tmp_path: Path) -> None:
+    """Three platforms read the same bytes, so a cut list never carries a backslash."""
+    path = FILM.write(tmp_path / "cuts.json")
+    assert "build/sections/01.mp4" in path.read_text(encoding="utf-8")

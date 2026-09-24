@@ -1,134 +1,85 @@
-"""The recording log: what one section was recorded from, where t=0 landed, and how it checked out."""
+"""What `record` did for one section, and what it judged about the result."""
 
 from __future__ import annotations
 
-import json
+from pathlib import Path
 
-import pytest
-
-from decktalk.artifacts.recordings import (
-    Luma,
-    RecordingChecks,
-    RecordingLog,
-    file_digest,
-    gap_time,
-    input_hash,
-    text_digest,
-)
-from decktalk.verdicts import Verdict
+from decktalk.artifacts.recordings import GONE, RecordingLog, file_digest, input_hash, text_digest
+from decktalk.findings import Code, Finding, Location
+from decktalk.media.pagereport import FrameGap, PageReport
 
 
-def a_log(**fields) -> RecordingLog:
-    base = dict(url="u", requested_seconds=1.0, settle_seconds=0.0, load_seconds=0.0, clock_start_seconds=0.0)
+def log(**fields: object) -> RecordingLog:
+    base = {
+        "section": 3,
+        "url": "http://project.localhost/deck/index.html",
+        "input_hash": "abc",
+        "requested_seconds": 10.0,
+        "settle_seconds": 0.3,
+        "load_seconds": 0.4,
+        "clock_start_seconds": 0.8,
+        "report": PageReport(),
+    }
     return RecordingLog(**{**base, **fields})
 
 
-def test_the_trim_prefers_the_measured_start_over_the_recorders_estimate():
-    recording_log = a_log(requested_seconds=5, settle_seconds=0.5, load_seconds=0.1, clock_start_seconds=0.7)
-    assert recording_log.trim_seconds == 0.7
-    recording_log.t0_seconds = 0.2
-    assert recording_log.trim_seconds == 0.2
+def test_a_file_the_project_no_longer_has_digests_to_one_word(tmp_path: Path) -> None:
+    assert file_digest(tmp_path / "gone.png") == GONE
 
 
-def test_a_log_written_by_record_round_trips_with_its_checks(tmp_path):
-    path = tmp_path / "01.json"
-    checks = RecordingChecks(
-        duration_seconds=10.0415,
-        wanted_seconds=10.3,
-        luma=Luma(y10=50.0, y50=60.0, y90=70.0, max50=80.0),
-        verdicts=(Verdict.NO_COVER, Verdict.STALLED),
+def test_two_files_with_the_same_bytes_digest_alike(tmp_path: Path) -> None:
+    (tmp_path / "a").write_bytes(b"same")
+    (tmp_path / "b").write_bytes(b"same")
+    assert file_digest(tmp_path / "a") == file_digest(tmp_path / "b") == text_digest("same")
+
+
+def test_the_order_a_page_asked_for_its_files_in_is_not_part_of_the_key(tmp_path: Path) -> None:
+    (tmp_path / "a").write_bytes(b"one")
+    (tmp_path / "b").write_bytes(b"two")
+    first = input_hash(["url"], {"a": tmp_path / "a", "b": tmp_path / "b"})
+    second = input_hash(["url"], {"b": tmp_path / "b", "a": tmp_path / "a"})
+    assert first == second
+
+
+def test_swapping_one_picture_moves_the_key_although_no_markup_changed(tmp_path: Path) -> None:
+    picture = tmp_path / "hero.png"
+    picture.write_bytes(b"one")
+    before = input_hash(["url"], {"hero.png": picture})
+    picture.write_bytes(b"two")
+    assert input_hash(["url"], {"hero.png": picture}) != before
+
+
+def test_the_worst_stall_counts_only_what_a_viewer_can_see() -> None:
+    """Frames before the clock starts sit under the cover and are trimmed, so a scene may warm up."""
+    gaps = (FrameGap(at=None, ms=900), FrameGap(at=0.05, ms=400), FrameGap(at=2.0, ms=120))
+    stalls = log(report=PageReport(frameGaps=gaps))
+    assert stalls.worst_stall_milliseconds == 120
+
+
+def test_a_recording_with_no_gap_stalls_for_nothing() -> None:
+    assert log().worst_stall_milliseconds == 0
+
+
+def test_the_head_is_cut_at_the_cover_when_one_was_found_and_at_the_estimate_otherwise() -> None:
+    assert log(t0_seconds=1.1).trim_seconds == 1.1
+    assert log().trim_seconds == 0.8
+
+
+def test_every_judgement_the_recorder_made_is_one_list_of_findings() -> None:
+    """The page's own warnings and the checks over the frames are read by code, never as sentences."""
+    judged = log(
+        findings=(
+            Finding(
+                code=Code.PAGE_STALLED,
+                message="the page went 120 ms without drawing, which a viewer sees as a freeze.",
+                location=Location(where="deck/index.html", section=3),
+            ),
+        )
     )
-    a_log(assets=["deck/index.html", "media/panel.png"], input_hash="abc123", checks=checks, t0_seconds=1.2).save(path)
-    data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["checks"] == {
-        "duration_seconds": 10.041,
-        "wanted_seconds": 10.3,
-        "luma": {"y10": 50.0, "y50": 60.0, "y90": 70.0, "max50": 80.0},
-        "verdicts": [Verdict.NO_COVER.to_dict(), Verdict.STALLED.to_dict()],
-    }
-    again = RecordingLog.load(path)
-    assert again is not None and again.checks is not None
-    assert again.checks.verdicts == (Verdict.NO_COVER, Verdict.STALLED)
-    assert again.assets == ["deck/index.html", "media/panel.png"] and again.input_hash == "abc123"
-    assert not again.checks.ok
+    assert [found.code for found in judged.findings] == [Code.PAGE_STALLED]
 
 
-def test_a_log_from_a_run_that_wrote_no_checks_still_loads(tmp_path):
-    path = tmp_path / "01.json"
-    bare = {"url": "u", "requested_seconds": 1, "settle_seconds": 0, "load_seconds": 0, "clock_start_seconds": 0}
-    path.write_text(json.dumps(bare), encoding="utf-8")
-    recording_log = RecordingLog.load(path)
-    assert recording_log is not None
-    assert recording_log.checks is None and recording_log.warnings == [] and recording_log.assets == []
-    assert RecordingLog.load(tmp_path / "nothing.json") is None
-
-
-def test_the_worst_stall_counts_only_what_a_viewer_sees():
-    recording_log = a_log()
-    recording_log.frame_gaps = [(None, 900), (0.05, 216), (0.4, 120), (12.8, 132)]
-    # The first gap ended under the cover. The second began there and shows for 50 ms.
-    assert recording_log.worst_stall_ms == 132
-    recording_log.frame_gaps = [(None, 900), (0.05, 216)]
-    assert recording_log.worst_stall_ms == 50
-    recording_log.frame_gaps = [(None, 900)]
-    assert recording_log.worst_stall_ms == 0
-    recording_log.frame_gaps = []
-    assert recording_log.worst_stall_ms == 0
-
-
-def test_a_gap_before_the_clock_is_written_as_null(tmp_path):
-    path = tmp_path / "01.json"
-    recording_log = a_log()
-    recording_log.frame_gaps = [(float("-inf"), 900), (None, 400), (0.05, 216)]
-    recording_log.save(path)
-    text = path.read_text(encoding="utf-8")
-    assert "Infinity" not in text and "NaN" not in text
-    # Standard JSON parsers such as JSON.parse and jq reject the -Infinity token.
-    data = json.loads(text, parse_constant=lambda token: pytest.fail(f"non-standard JSON token {token}"))
-    assert data["frame_gaps"] == [[None, 900], [None, 400], [0.05, 216]]
-    again = RecordingLog.load(path)
-    assert again is not None and again.frame_gaps == [(None, 900), (None, 400), (0.05, 216)]
-    assert again.worst_stall_ms == 50
-
-
-def test_gap_time_turns_the_page_value_for_a_gap_before_the_clock_into_none():
-    # The page reports a gap that ended before narration t=0 at negative infinity, and the recorder
-    # is the boundary where that becomes None.
-    assert gap_time(float("-inf")) is None
-    assert gap_time(float("nan")) is None
-    assert gap_time(None) is None
-    assert gap_time(0.4) == 0.4
-    assert gap_time(0) == 0
-
-
-def test_a_file_hashes_to_its_content_and_a_missing_one_says_so(tmp_path):
-    page = tmp_path / "index.html"
-    page.write_text("<p>one</p>", encoding="utf-8")
-    first = file_digest(page)
-    assert len(first) == 16
-    page.write_text("<p>two</p>", encoding="utf-8")
-    assert file_digest(page) != first
-    assert file_digest(tmp_path / "nothing.png") == "gone"
-
-
-def test_a_slice_of_a_page_hashes_to_its_text(tmp_path):
-    """One scene's markup joins the key as a digest, because the key is a line of strings."""
-    assert len(text_digest('<div data-scene="1">one</div>')) == 16
-    assert text_digest("one") != text_digest("two")
-    assert text_digest("") == text_digest("")
-
-
-def test_the_input_hash_moves_when_an_asset_changes_and_not_when_the_order_does(tmp_path):
-    page = tmp_path / "index.html"
-    picture = tmp_path / "panel.png"
-    page.write_text("<img src=panel.png>", encoding="utf-8")
-    picture.write_bytes(b"first picture")
-    files = {"index.html": page, "panel.png": picture}
-    base = input_hash(["url"], files)
-    assert base == input_hash(["url"], {"panel.png": picture, "index.html": page})
-    assert base != input_hash(["other url"], files)
-    assert base != input_hash(["url"], {"index.html": page})
-
-    # The founder's own case: the page is untouched and only the picture beside it is replaced.
-    picture.write_bytes(b"second picture")
-    assert input_hash(["url"], files) != base
+def test_the_log_round_trips_through_its_own_file(tmp_path: Path) -> None:
+    written = log(assets=(Path("deck/index.html"),), external=("https://cdn.example",))
+    path = written.write(tmp_path / "03.json")
+    assert RecordingLog.read(path) == written

@@ -1,45 +1,67 @@
-"""The typed build artifacts and their JSON files under `build/`.
+"""The typed build artifacts and the files they are written to.
 
-These file shapes are part of the public contract: the page runtime and users' own scripts read
-them. Field names match the JSON keys, every file is written atomically through `jsonio`, and one
-module here owns each file.
+These shapes are part of the published contract, because a later stage, a user's own script and the
+page runtime all read them. One module owns each file, every model is frozen, every field name is
+the JSON key, and `Stored` is the one place a file is read from disk or written to it.
 
-    build/narration/<hash>.words.json   words.py       the time base everything shares
-    build/narration/takes.json          takes.py       the take index and the narration clock
-    build/cue-times.json                cue_times.py   every cue resolved against the words
-    build/recordings/NN.json            recordings.py  what `record` did, judged and measured
-    build/out/cuts.json                 cuts.py        where every section sits in the finished film
-    build/progress.jsonl                progress.py    what a running build has done so far
+    build/narrate/<hash>.words.json   words.py       the time base everything shares
+    build/narrate/takes.json          takes.py       the take index and the narration clock
+    build/cue-times.json              cue_times.py   every cue resolved against those words
+    build/recordings/NN.json          recordings.py  what `record` did, judged and measured
+    build/final/cuts.json             cuts.py        where every section sits in the finished film
+
+What a run is doing while it does it is not an artifact. That is the event stream, and a run's
+lines are appended to `build/events/<run>.jsonl` by a subscriber rather than written here.
 """
 
 from __future__ import annotations
 
-from .cue_times import CueTime, CueTimes
-from .cuts import Cut, Cuts
-from .progress import ProgressRow, append_row, read_rows, start_log
-from .recordings import Luma, RecordingChecks, RecordingLog, file_digest, gap_time, input_hash, text_digest
-from .takes import Take, Takes
-from .words import Word, read_words, write_words
+from decktalk.artifacts.cue_times import CUE_AT, CUE_SEPARATOR, PREVIEW_ALIAS, CueTimes
+from decktalk.artifacts.cuts import Cut, Cuts
+from decktalk.artifacts.recordings import (
+    Luma,
+    RecordingChecks,
+    RecordingLog,
+    file_digest,
+    input_hash,
+    text_digest,
+)
+from decktalk.artifacts.stored import Stored
+from decktalk.artifacts.takes import (
+    PLACEHOLDER_PREFIX,
+    TAKE_DIGITS,
+    PlaceholderInputs,
+    Take,
+    TakeInputs,
+    Takes,
+    is_placeholder,
+    take_file,
+)
+from decktalk.artifacts.words import WORDS_SUFFIX, Words, words_file
 
 __all__ = [
-    "CueTime",
-    "CueTimes",
+    "CUE_AT",
+    "CUE_SEPARATOR",
+    "PLACEHOLDER_PREFIX",
+    "PREVIEW_ALIAS",
+    "TAKE_DIGITS",
+    "WORDS_SUFFIX",
     "Cut",
+    "CueTimes",
     "Cuts",
     "Luma",
-    "ProgressRow",
+    "PlaceholderInputs",
     "RecordingChecks",
     "RecordingLog",
+    "Stored",
     "Take",
+    "TakeInputs",
     "Takes",
-    "Word",
-    "append_row",
+    "Words",
     "file_digest",
-    "gap_time",
     "input_hash",
-    "read_rows",
-    "read_words",
-    "start_log",
+    "is_placeholder",
+    "take_file",
     "text_digest",
-    "write_words",
+    "words_file",
 ]
