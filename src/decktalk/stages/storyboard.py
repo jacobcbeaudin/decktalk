@@ -35,7 +35,7 @@ from decktalk.media.pagereport import PageReport, SceneCatalog
 from decktalk.page import Q
 from decktalk.results import Panel, StoryboardResult
 from decktalk.stages import SECOND_DIGITS, selects
-from decktalk.stages.record.capture import as_query, served_paths, words_query
+from decktalk.stages.record.capture import as_query, words_query
 
 SLIDES_FIELD = "slides"
 """What the catalog entry calls the slides of a scene, in the order the page declares them."""
@@ -237,7 +237,7 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection]) -> list[Pan
     with chromium(cfg.browser_path) as browser:
         page, _assets = open_page(
             browser,
-            Allowed.of(inputs.root, served_paths(inputs)),
+            Allowed.of(inputs.root, inputs.served_paths()),
             width=video.width,
             height=video.height,
             color_scheme=cfg.color_scheme,

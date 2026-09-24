@@ -610,11 +610,31 @@ def _edit(edit: Edit, *, root: Path, scope: Scope) -> Path:
             hint="Make the change by hand, or run the command the finding names.",
             location=at(path, root),
         )
-    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    lines = _lines_under(edit, path, root)
     index = (edit.line or 1) - 1
     lines[index : index + (1 if edit.old is not None else 0)] = [edit.new + "\n"] if edit.new else []
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(lines), encoding="utf-8")
     return path
+
+
+def _lines_under(edit: Edit, path: Path, root: Path) -> list[str]:
+    """The lines one edit works on, which is an empty file when the edit is the one that writes it.
+
+    A fix that writes a whole file states itself as an insert of the whole text at line one, as the
+    cue file's does, so a file that is not there yet is that edit's starting point. Every other line
+    edit needs the lines it names, and a caller who cannot be given them is told so in a sentence it
+    can print rather than in an operating system error nothing above here would catch.
+    """
+    if path.exists():
+        return path.read_text(encoding="utf-8").splitlines(keepends=True)
+    if edit.old is None and (edit.line or 1) == 1:
+        return []
+    raise InputError(
+        f"{edit.file} is not there, so it has no line {edit.line or 1} to change.",
+        hint="Write the file first, or run the command the finding names.",
+        location=at(path, root),
+    )
 
 
 def fixes_of(given: Finding | Iterable[Finding]) -> tuple[tuple[Code, Fix], ...]:

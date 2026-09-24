@@ -25,7 +25,6 @@ from decktalk.stages.record.capture import (
     scene_params,
     scene_url,
     section_hash,
-    served_paths,
     words_param,
 )
 from support.projects import write_project
@@ -129,18 +128,6 @@ def test_a_word_never_carries_the_separators_the_query_uses() -> None:
 
 def test_no_words_is_no_query_value() -> None:
     assert words_param(()) is None
-
-
-def test_the_origin_serves_the_deck_and_the_declared_assets_alone(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path)
-    assert served_paths(inputs) == (
-        "deck",
-        "media/broll.mp4",
-        "media/broll.words.json",
-        "media/bed.mp3",
-        "media/slate.png",
-        "media/chime.wav",
-    )
 
 
 def test_a_page_is_cut_into_the_scene_a_section_plays_and_the_part_every_scene_shares() -> None:

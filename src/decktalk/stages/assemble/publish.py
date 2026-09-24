@@ -44,7 +44,6 @@ from decktalk.page import Q
 from decktalk.results import SectionKind, Word
 from decktalk.stages import SECOND_DIGITS
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
-from decktalk.stages.record.capture import served_paths
 
 SOUND_CAPTION_SECONDS = 1.0
 """Calibration: how long a sound's caption stays on screen, which is what SC 1.2.2 expects of one."""
@@ -367,7 +366,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
         with browser.chromium(inputs.settings.record.browser_path) as chrome:
             page, _assets = browser.open_page(
                 chrome,
-                Allowed.of(inputs.root, served_paths(inputs)),
+                Allowed.of(inputs.root, inputs.served_paths()),
                 width=video.width,
                 height=video.height,
                 color_scheme=inputs.settings.record.color_scheme,

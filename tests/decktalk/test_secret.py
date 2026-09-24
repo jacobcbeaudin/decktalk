@@ -11,8 +11,9 @@ import traceback
 from dataclasses import asdict, dataclass
 
 import pytest
+from pydantic_core import PydanticSerializationError
 
-from decktalk.jsonio import as_json, write_json
+from decktalk.artifacts import Stored
 from decktalk.secret import Secret
 
 VALUE = "sk_sentinel_key_that_must_never_print"
@@ -24,6 +25,13 @@ class Holder:
 
     name: str
     key: Secret
+
+
+class Leak(Stored):
+    """An artifact that tried to carry one, which is the one door every file under `build/` goes through."""
+
+    name: str
+    key: object
 
 
 def test_the_value_is_readable_only_through_reveal():
@@ -55,7 +63,7 @@ def test_a_secret_prints_as_the_variable_it_came_from():
         pprint.pformat,
         lambda s: json.dumps(s, default=str),
         lambda s: repr(Holder("eleven", s)),
-        lambda s: json.dumps(as_json(Holder("eleven", s)), default=str),
+        lambda s: json.dumps({"name": "eleven", "key": s}, default=str),
     ],
 )
 def test_no_ordinary_way_of_showing_a_value_shows_this_one(show):
@@ -81,12 +89,12 @@ def test_a_secret_refuses_every_copy_protocol():
 
 
 def test_a_secret_is_not_json_and_is_refused_rather_than_written(tmp_path):
-    """A writer that met one would write it, so `write_json` raises instead."""
+    """The artifact writer is how every build file reaches the disk, so one holding a secret raises instead."""
     with pytest.raises(TypeError):
-        json.dumps(as_json(Secret(VALUE)))
+        json.dumps({"key": Secret(VALUE)})
     out = tmp_path / "leak.json"
-    with pytest.raises(TypeError):
-        write_json(out, as_json(Holder("eleven", Secret(VALUE))))
+    with pytest.raises(PydanticSerializationError):
+        Leak(name="eleven", key=Secret(VALUE)).write(out)
     assert not out.exists()
     assert not list(tmp_path.iterdir())
 

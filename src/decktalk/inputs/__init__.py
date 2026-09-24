@@ -259,6 +259,27 @@ class Inputs:
         scenes = {section.number: section.scene for section in self.document.page_sections}
         return resolved.preview(scenes)
 
+    def served_paths(self) -> tuple[str, ...]:
+        """Every project-relative path the local origin may answer for, in the order the document names them.
+
+        The origin serves the deck directory, the files the document declares and the files the
+        soundscape generates, and nothing else, so a recorded page and a preview an author leaves
+        running both reach their own pictures and their own modules while the script, the cue file,
+        the build directory and the credential beside them stay out of reach. A recorder and a
+        preview reading two lists would be two answers to one security question.
+        """
+        document = self.document
+        named: list[str] = [Path(page).parent.as_posix() for page in document.page_files]
+        named += [section.clip for section in document.clip_sections]
+        named += [section.words for section in document.clip_sections if section.words]
+        mix = document.mix
+        named += [name for name in (mix.music, mix.ambience, mix.slate, mix.music_markers) if name]
+        named += [effect.file for effect in mix.effects]
+        soundscape = document.soundscape
+        generated = (soundscape.ambience, soundscape.music, *soundscape.effects.values())
+        named += [item.out for item in generated if item is not None and item.out]
+        return tuple(dict.fromkeys(name.lstrip("./") for name in named if name))
+
     def documents(self) -> dict[str, bytes]:
         """Every path the origin answers from memory rather than from a file, as the bytes it sends.
 

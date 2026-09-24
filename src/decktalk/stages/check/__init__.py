@@ -55,7 +55,6 @@ from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
 from decktalk.stages.narrate.plan import VOICE_VARIABLE, voice_id_of
-from decktalk.stages.record.capture import served_paths
 from decktalk.stages.storyboard import Slides, reports_of, slide_cues, write_page
 from decktalk.stages.verify import opted_out
 
@@ -265,7 +264,7 @@ def _look(
     looked = Look()
     if not files:
         return looked
-    allowed = Allowed.of(inputs.root, served_paths(inputs))
+    allowed = Allowed.of(inputs.root, inputs.served_paths())
     with chromium(cfg.browser_path) as browser:
         opened: dict[str, Page] = {}
         for page in files:

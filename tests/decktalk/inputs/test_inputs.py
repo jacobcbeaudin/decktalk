@@ -365,3 +365,47 @@ def test_the_preview_document_names_the_scene_each_section_plays(tmp_path):
     assert inputs.preview_cues() == {
         "sections": [{"key": "01", "scene": "1", "cues": [{"cue": "1.1:open", "at": 1.5}]}]
     }
+
+
+SERVED_TOML = """
+[project]
+name = "demo"
+
+[[section]]
+number = 1
+page = "deck/one.html"
+
+[[section]]
+number = 2
+clip = "media/broll.mp4"
+words = "media/broll.words.json"
+
+[mix]
+music = "media/bed.mp3"
+slate = "media/slate.png"
+
+[[mix.effects]]
+file = "media/chime.wav"
+section = 1
+cue = "1.1:open"
+"""
+
+
+def test_the_origin_serves_the_deck_and_the_files_the_document_declares(tmp_path):
+    """The recorder and a preview an author leaves running read this one list, so it is asked once."""
+    inputs = Inputs.load(write_project(tmp_path, SERVED_TOML), environ={})
+    assert inputs.served_paths() == (
+        "deck",
+        "media/broll.mp4",
+        "media/broll.words.json",
+        "media/bed.mp3",
+        "media/slate.png",
+        "media/chime.wav",
+    )
+
+
+def test_the_origin_never_offers_the_project_file_the_credential_or_the_build(tmp_path):
+    served = Inputs.load(write_project(tmp_path, SERVED_TOML), environ={}).served_paths()
+    assert "decktalk.toml" not in served
+    assert ".env" not in served
+    assert "build" not in served

@@ -133,32 +133,6 @@ def stage_call(name: str) -> Callable[..., Any]:
     return getattr(import_module(f"{STAGES}.{name}"), name)
 
 
-def allowed_paths(inputs: Inputs) -> tuple[str, ...]:
-    """Every project-relative path the local origin may answer for, in the order the document names them.
-
-    The origin serves the deck directory and the files the document declares, and nothing else. A
-    page the recorder drives and a preview an author leaves running are both answered from this
-    list, so a project's credential, its notes and its build directory are out of reach of anything
-    that can reach the origin.
-    """
-    document = inputs.document
-    named: list[str] = [str(Path(page).parent.as_posix()) for page in document.page_files]
-    named += [section.clip for section in document.clip_sections]
-    named += [section.words for section in document.clip_sections if section.words]
-    mix = document.mix
-    named += [name for name in (mix.music, mix.ambience, mix.slate, mix.music_markers) if name]
-    named += [effect.file for effect in mix.effects]
-    named += list(_generated(inputs))
-    return tuple(dict.fromkeys(name.lstrip("./") for name in named if name))
-
-
-def _generated(inputs: Inputs) -> tuple[str, ...]:
-    """Where the soundscape writes what it generates, which the origin serves once it is there."""
-    soundscape = inputs.document.soundscape
-    items = (soundscape.ambience, soundscape.music, *soundscape.effects.values())
-    return tuple(item.out for item in items if item is not None and item.out)
-
-
 class ProjectEvents(Events):
     """This project's view of the machine's stream, which follows the runs the project opens.
 
@@ -380,8 +354,12 @@ class Project:
         judgements it could not reach, so a new deck gets its first cue rows without a download and
         a hook that has no browser can still run. `frames` set to false keeps the browser and drops
         the freeze comparison.
+
+        A check that opens pages freezes frames into the build directory and draws the storyboard
+        over them, so it holds the build lock for as long as a stage that produces would. A check
+        with no pages reads and judges alone, so it takes nothing and runs beside a build.
         """
-        return self._call("check", CheckResult, cancel=cancel, writes=False, paths=tuple(paths), only=only,
+        return self._call("check", CheckResult, cancel=cancel, writes=pages, paths=tuple(paths), only=only,
                           pages=pages, frames=frames)  # fmt: skip
 
     def words(self, *, only: Sequence[int] | None = None, cancel: Cancel | None = None) -> WordsResult:
@@ -436,7 +414,7 @@ class Project:
         from decktalk.media.origin import Allowed, bound_host, open_server  # noqa: PLC0415
 
         with self._open(writes=False) as run:
-            server = open_server(Allowed.of(self.root, allowed_paths(self.inputs)), host, port)
+            server = open_server(Allowed.of(self.root, self.inputs.served_paths()), host, port)
             address = f"{bound_host(server)}:{server.server_address[1]}"
             result = run.result(
                 ServeResult,

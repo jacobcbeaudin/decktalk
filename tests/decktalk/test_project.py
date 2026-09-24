@@ -22,9 +22,10 @@ from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Locat
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain
 from decktalk.pipeline import Stage
-from decktalk.project import LOCK_FILE, Origin, Project, allowed_paths, section_numbers, stage_call
+from decktalk.project import LOCK_FILE, Origin, Project, section_numbers, stage_call
 from decktalk.results import (
     BuildResult,
+    CheckResult,
     CueResult,
     NarrateResult,
     RecordResult,
@@ -36,29 +37,6 @@ from decktalk.results import (
 )
 from decktalk.results import Layer as SettingLayer
 from support.projects import MINIMAL_TOML, write_project
-
-TOML = """
-[project]
-name = "demo"
-
-[[section]]
-number = 1
-page = "deck/one.html"
-
-[[section]]
-number = 2
-clip = "media/broll.mp4"
-words = "media/broll.words.json"
-
-[mix]
-music = "media/bed.mp3"
-slate = "media/slate.png"
-
-[[mix.effects]]
-file = "media/chime.wav"
-section = 1
-cue = "1.1:open"
-"""
 
 
 def a_machine(tmp_path: Path, **environ: str) -> Machine:
@@ -94,6 +72,7 @@ def fake_stages(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Call]]:
         "record": RecordResult,
         "build": BuildResult,
         "status": StatusResult,
+        "check": CheckResult,
     }
 
     def make(name: str, model: type[Result]) -> Callable[..., Result]:
@@ -127,6 +106,7 @@ def _filler(name: str) -> dict[str, Any]:
         "record": {"sections": (), "seconds": 0.0},
         "build": {"stages": (), "voice": Voicing.PLACEHOLDER, "spend": priced, "seconds": 0.0},
         "status": {"name": "t", "script": Path("script.md"), "cues": Path("cues.json"), "sections": ()},
+        "check": {"judged": (), "pages": True, "frames": True, "spend": priced},
     }[name]
 
 
@@ -285,6 +265,18 @@ def test_a_reporting_call_takes_no_lock_and_a_writing_call_does(tmp_path: Path) 
 
 
 @pytest.mark.usefixtures("fake_stages")
+def test_a_check_that_opens_pages_holds_the_build_and_one_that_reads_alone_does_not(tmp_path: Path) -> None:
+    """A check with pages freezes frames and draws the storyboard, which is a writer's work."""
+    project = a_project(tmp_path)
+    lock = project.workspace.build / LOCK_FILE
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("1 abc\n", encoding="utf-8")
+    project.check(pages=False)
+    with pytest.raises(ProjectLocked):
+        project.check()
+
+
+@pytest.mark.usefixtures("fake_stages")
 def test_a_second_writer_is_refused_while_the_first_holds_the_build(tmp_path: Path) -> None:
     """The trigger is a build run by hand under a live watch loop, not a service."""
     project = a_project(tmp_path)
@@ -358,6 +350,34 @@ def test_a_safe_edit_that_replaces_a_line_puts_its_own_there(tmp_path: Path) -> 
     assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "one\nthree\n"
 
 
+def test_a_safe_edit_at_line_one_writes_the_file_the_fix_exists_to_create(tmp_path: Path) -> None:
+    """The cue file's own fix writes the whole of one, so the file it names is not there to be read."""
+    project = a_project(tmp_path)
+    fix = EditFix(
+        title="Write the cue file.",
+        applicability=Applicability.SAFE,
+        edits=(Edit(file=Path("cues.json"), line=1, new='{"sections": {}}'),),
+    )
+    found = Finding(code=Code.CUE_MISSING, message="x", location=Location(where="cues.json"), fix=fix)
+    result = project.apply(found)
+    assert result.fixes[0].applied and result.fixes[0].files == (Path("cues.json"),)
+    assert (tmp_path / "cues.json").read_text(encoding="utf-8") == '{"sections": {}}\n'
+
+
+def test_an_edit_into_a_file_that_is_not_there_says_so_rather_than_raising(tmp_path: Path) -> None:
+    """A fix that changes a line needs the lines, and a caller is told that in a sentence it can print."""
+    project = a_project(tmp_path)
+    fix = EditFix(
+        title="Repair the row.",
+        applicability=Applicability.SAFE,
+        edits=(Edit(file=Path("notes.txt"), line=4, old="two", new="three"),),
+    )
+    found = Finding(code=Code.CUE_MISSING, message="x", location=Location(where="notes.txt"), fix=fix)
+    outcome = project.apply(found).fixes[0]
+    assert not outcome.applied and "notes.txt" in outcome.why
+    assert not (tmp_path / "notes.txt").exists()
+
+
 def test_a_finding_with_no_fix_is_nothing_to_apply(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     found = Finding(code=Code.CUE_MISSING, message="x", location=Location(where="cues.json"))
@@ -365,26 +385,6 @@ def test_a_finding_with_no_fix_is_nothing_to_apply(tmp_path: Path) -> None:
 
 
 # ---- the origin ---------------------------------------------------------------------------------
-
-
-def test_the_origin_serves_the_deck_and_the_files_the_document_declares(tmp_path: Path) -> None:
-    """A page the recorder drives and a preview an author leaves running reach the same short list."""
-    project = a_project(tmp_path, TOML)
-    assert allowed_paths(project.inputs) == (
-        "deck",
-        "media/broll.mp4",
-        "media/broll.words.json",
-        "media/bed.mp3",
-        "media/slate.png",
-        "media/chime.wav",
-    )
-
-
-def test_the_origin_never_offers_the_project_file_or_the_credential(tmp_path: Path) -> None:
-    allowed = allowed_paths(a_project(tmp_path, TOML).inputs)
-    assert "decktalk.toml" not in allowed
-    assert ".env" not in allowed
-    assert "build" not in allowed
 
 
 def test_an_origin_is_closed_by_leaving_the_block_it_was_opened_in(tmp_path: Path) -> None:

@@ -49,7 +49,6 @@ from decktalk.stages.record.capture import (
     scene_params,
     scene_url,
     section_hash,
-    served_paths,
     words_query,
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
@@ -212,7 +211,7 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink) 
     settings = inputs.settings
     # The local name is not `record`, because that is this module's own stage function.
     recorder, video = settings.record, settings.video
-    allowed = Allowed.of(inputs.root, served_paths(inputs))
+    allowed = Allowed.of(inputs.root, inputs.served_paths())
     documents = inputs.documents()
     recording: Recording | None = None
     for attempt in range(1, recorder.retries + 2):

@@ -113,26 +113,6 @@ def scene_url(inputs: Inputs, section: PageSection, params: dict[Q, str]) -> str
     return page_url(section.page, query)
 
 
-def served_paths(inputs: Inputs) -> tuple[str, ...]:
-    """Every project-relative path the local origin may answer for, in the order the document names them.
-
-    The origin serves the deck directory and the files the document declares, and nothing else, so a
-    recorded page reaches its own pictures and its own modules while the script, the cues, the build
-    directory and the credential beside them stay out of reach.
-    """
-    document = inputs.document
-    named: list[str] = [Path(page).parent.as_posix() for page in document.page_files]
-    named += [section.clip for section in document.clip_sections]
-    named += [section.words for section in document.clip_sections if section.words]
-    mix = document.mix
-    named += [name for name in (mix.music, mix.ambience, mix.slate, mix.music_markers) if name]
-    named += [effect.file for effect in mix.effects]
-    soundscape = document.soundscape
-    generated = (soundscape.ambience, soundscape.music, *soundscape.effects.values())
-    named += [item.out for item in generated if item is not None and item.out]
-    return tuple(dict.fromkeys(name.lstrip("./") for name in named if name))
-
-
 # ---- the page, cut into the scene one section plays and the part every scene shares -----------
 
 VOID_TAGS = frozenset("area base br col embed hr img input link meta param source track wbr".split())
@@ -333,7 +313,6 @@ __all__ = [
     "scene_params",
     "scene_url",
     "section_hash",
-    "served_paths",
     "spoken_words",
     "words_param",
     "words_query",
