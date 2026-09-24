@@ -2,10 +2,10 @@
 
 Location answers what a test is about and the marker answers what it needs, so the marker decides
 selection and nothing else does. A bare `pytest` runs everything that needs no tool, and each of the
-four suite markers is reached by naming it: `pytest -m browser`, `pytest -m media`, `pytest -m e2e`,
-`pytest -m scaffold`. The rule lives in a hook rather than in `addopts` because an `-m` written in
-`addopts` is replaced whole by the `-m` a person types, so `-m "not e2e"` used to admit the
-five-minute scaffold build and `-m unit` used to select nothing and exit green.
+five suite markers is reached by naming it: `pytest -m browser`, `pytest -m media`, `pytest -m e2e`,
+`pytest -m scaffold`, `pytest -m platform`. The rule lives in a hook rather than in `addopts`
+because an `-m` written in `addopts` is replaced whole by the `-m` a person types, so `-m "not e2e"`
+used to admit the five-minute scaffold build and `-m unit` used to select nothing and exit green.
 """
 
 from __future__ import annotations
@@ -14,8 +14,13 @@ import pytest
 
 pytest_plugins = ["pytester"]
 
-SUITE_MARKERS = ("browser", "media", "e2e", "scaffold")
-"""The markers that name a tool a test needs. Every one is registered in `pyproject.toml`."""
+SUITE_MARKERS = ("browser", "media", "e2e", "scaffold", "platform")
+"""The markers that name what a test needs beyond Python. Every one is registered in `pyproject.toml`.
+
+`platform` is the machine itself rather than a tool: those tests assert what this filesystem and
+this fetched toolchain really do, so a runner that has fetched nothing would fail them and the
+default suite may not collect them.
+"""
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

@@ -276,7 +276,7 @@ GROUPS: tuple[Group, ...] = (
         name="platform",
         why="The short list only macOS or Windows can prove, plus the two commands every machine runs.",
         commands=(
-            (*UV, "pytest", "-q", "tests/platform"),
+            (*UV, "pytest", "-q", "-m", "platform"),
             (*UV, "decktalk", "install"),
             (*UV, "decktalk", "doctor"),
         ),

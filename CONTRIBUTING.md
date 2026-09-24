@@ -80,7 +80,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `browser-platforms` | `uv run pytest -q -m browser --cov --cov-report=` | uv, chromium | macOS, Windows | main, release |
 | `media-platforms` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | macOS, Windows | main, release |
 | `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | macOS, Windows | main, release |
-| `platform` | `uv run pytest -q tests/platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
+| `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
 | `generated` | `uv run python scripts/build_runtime.py --check`, and 14 more | uv, npm, chromium | Linux | pr, main, release |
 | `coverage` | `uv run coverage combine`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |

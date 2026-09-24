@@ -14,6 +14,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.platform
+"""Every test here is about this machine, so only the group that names this platform runs one."""
+
+
 WINDOWS = os.name == "nt"
 """Whether this is the platform whose filesystem refuses the unlink, asked once and named here."""
 

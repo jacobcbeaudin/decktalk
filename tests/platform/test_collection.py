@@ -15,7 +15,13 @@ from __future__ import annotations
 
 import collections
 
+import pytest
+
 from support.paths import TESTS
+
+pytestmark = pytest.mark.platform
+"""Every test here is about this machine, so only the group that names this platform runs one."""
+
 
 MIRROR = TESTS / "decktalk"
 

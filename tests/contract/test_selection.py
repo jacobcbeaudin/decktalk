@@ -7,21 +7,19 @@ the real marker list, copied into a throwaway project.
 
 from __future__ import annotations
 
+import tomllib
+
 import pytest
 
 from support.paths import TESTS
 
 CONFTEST = (TESTS / "conftest.py").read_text(encoding="utf-8")
 
-INI = """
-[pytest]
-addopts = --strict-markers
-markers =
-    browser: needs the headless Chromium that `decktalk install` fetches
-    media: needs the ffmpeg that `decktalk install` fetches
-    e2e: needs Chromium and ffmpeg, and builds the pipeline fixture in tests/e2e, about a minute
-    scaffold: needs Chromium and ffmpeg, and builds every packaged project without a voice
-"""
+PROJECT = tomllib.loads((TESTS.parent / "pyproject.toml").read_text(encoding="utf-8"))
+REGISTERED = PROJECT["tool"]["pytest"]["ini_options"]["markers"]
+"""The marker list the suite really runs under, read rather than copied so this file cannot rot."""
+
+INI = "[pytest]\naddopts = --strict-markers\nmarkers =\n" + "".join(f"    {row}\n" for row in REGISTERED)
 
 SUITE = """
 import pytest
@@ -40,6 +38,10 @@ def test_needs_chromium():
 @pytest.mark.scaffold
 def test_builds_every_example():
     pass
+
+@pytest.mark.platform
+def test_asks_this_machine():
+    pass
 """
 
 
@@ -53,19 +55,24 @@ def suite(pytester):
 
 
 def test_a_bare_run_is_the_tests_that_need_no_tool(suite):
-    suite.runpytest().assert_outcomes(passed=1, deselected=3)
+    suite.runpytest().assert_outcomes(passed=1, deselected=4)
 
 
 def test_a_suite_is_reached_by_naming_its_marker(suite):
-    suite.runpytest("-m", "media").assert_outcomes(passed=1, deselected=3)
+    suite.runpytest("-m", "media").assert_outcomes(passed=1, deselected=4)
+
+
+def test_the_platform_suite_is_reached_the_same_way_every_other_one_is(suite):
+    """A bare run on a fresh machine used to collect it and fail on a tool nobody had fetched."""
+    suite.runpytest("-m", "platform").assert_outcomes(passed=1, deselected=4)
 
 
 def test_naming_one_marker_never_admits_another(suite):
     """`-m "not e2e"` used to collect every other suite, including the five-minute scaffold build."""
-    suite.runpytest("-m", "not e2e").assert_outcomes(passed=1, deselected=3)
+    suite.runpytest("-m", "not e2e").assert_outcomes(passed=1, deselected=4)
 
 
 def test_an_empty_selection_is_an_error_naming_the_markers(suite):
     result = suite.runpytest("-m", "browser", "-k", "nothing_matches_this")
     assert result.ret != 0
-    result.stderr.fnmatch_lines(["*no test was selected*browser, media, e2e, scaffold*"])
+    result.stderr.fnmatch_lines(["*no test was selected*browser, media, e2e, scaffold, platform*"])

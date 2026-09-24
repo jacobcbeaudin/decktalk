@@ -74,8 +74,8 @@ ALLOW = {
 }
 """Every test file that belongs to no source module, and the repository artifact it holds instead."""
 
-SUITE_MARKERS = {"browser", "media", "e2e", "scaffold"}
-"""The markers that name a tool. `tests/conftest.py` selects by them and nothing else may be one."""
+SUITE_MARKERS = {"browser", "media", "e2e", "scaffold", "platform"}
+"""The markers that name what a run needs. `tests/conftest.py` selects by them and nothing else is one."""
 
 PLATFORM_BRANCH_EXEMPT = {
     "decktalk/toolchain/test_ffmpeg_fetch.py": "T6 owes the pair: the unpack policy on Linux, the run on the platform.",
@@ -193,7 +193,7 @@ def test_nothing_under_support_collects():
     assert files == [], f"tests/support/ holds what several modules share and collects nothing, but holds {files}."
 
 
-def test_the_project_registers_exactly_the_four_markers_that_name_a_tool():
+def test_the_project_registers_exactly_the_markers_that_name_what_a_run_needs():
     config = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
     rows = config["tool"]["pytest"]["ini_options"]["markers"]
     assert {row.split(":", 1)[0] for row in rows} == SUITE_MARKERS
@@ -224,7 +224,7 @@ def test_no_marker_is_a_second_spelling_of_a_directory(pytestconfig):
         unknown = applied_markers(path) - known
         assert unknown == set(), (
             f"{path.relative_to(REPO).as_posix()} applies {sorted(unknown)}, which is registered nowhere. "
-            "A marker names a tool a test needs, and a directory already answers what a test is about."
+            "A marker names what a test needs, and a directory already answers what a test is about."
         )
 
 

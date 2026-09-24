@@ -17,7 +17,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from decktalk.media.origin import UNDECLARED, Allowed
+
+pytestmark = pytest.mark.platform
+"""Every test here is about this machine, so only the group that names this platform runs one."""
 
 
 def folds_case(root: Path) -> bool:

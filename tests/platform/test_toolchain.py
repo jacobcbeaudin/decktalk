@@ -16,7 +16,13 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 from decktalk.machine import Machine
+
+pytestmark = pytest.mark.platform
+"""Every test here is about this machine, so only the group that names this platform runs one."""
+
 
 EXPECTED_TOOLS = ("chromium", "ffmpeg", "ffprobe", "katex")
 """Every tool a machine needs, which `doctor` reports a row for whether it has been fetched or not."""

@@ -24,6 +24,10 @@ import pytest
 from decktalk.toolchain.cache import cache_dir
 from decktalk.toolchain.ffmpeg_fetch import _exe, _unpack, install_dir, pinned_build, platform_key
 
+pytestmark = pytest.mark.platform
+"""Every test here is about this machine, so only the group that names this platform runs one."""
+
+
 WINDOWS = os.name == "nt"
 """Whether this is the platform that names an executable with a suffix and cannot run a shell stub."""
 

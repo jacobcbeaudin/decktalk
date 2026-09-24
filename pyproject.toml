@@ -133,6 +133,7 @@ markers = [
     "media: needs the ffmpeg that `decktalk install` fetches",
     "e2e: needs Chromium and ffmpeg, and builds the pipeline fixture in tests/e2e, about a minute",
     "scaffold: needs Chromium and ffmpeg, and builds every packaged project without a voice, about five minutes",
+    "platform: needs the machine it runs on, whose filesystem and fetched toolchain are what it asserts",
 ]
 # Selection is `tests/conftest.py`'s collection hook rather than an `-m` here, because a person's own
 # `-m` replaces this line whole and would admit every suite it did not name.
