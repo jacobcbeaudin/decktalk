@@ -1,357 +1,394 @@
 ---
 title: Build artifacts
-description: Look up the path, time base, and fields of every file that DeckTalk writes under build/.
+description: Every file DeckTalk writes under build/, what each one is for, and the exact shape of each JSON file.
 ---
 
-DeckTalk writes every generated file under `build/`, and your own tools can read any of them. This page lists
-each file, its time base, and its fields.
+Everything a run generates lives under one directory. `[project] build` names it, and it is `build/`
+unless the project says otherwise. Nothing under it is written by hand, and deleting the whole of it
+costs only the time to make it again, with one exception: the takes are the only bytes anybody paid
+for, and `[narration] cache_dir` moves them somewhere a `build/` that is deleted cannot take them.
 
-Field names in the JSON files match the dataclasses in `decktalk.artifacts`. The file shapes are part of the
-stable surface that the [changelog](/changelog) tracks.
+Every file a stage writes a shape for is a frozen model, so the field names below are the JSON keys
+and the model both reads and writes the file. A file is written under a temporary name in the same
+directory and renamed over the target, which is atomic on every platform DeckTalk ships on, so a
+reader never opens a half-written artifact and an interrupted run leaves the previous file whole. An
+artifact that is there and will not parse is reported as one that was never built, because the
+recovery is the same.
 
-```text
-build/
-  narration/     <hash>.mp3, <hash>.words.json, takes.json, narration.mp3
-  cue-times.json
-  recordings/    NN.webm, NN.json
-  sections/      NN.mp4
-  out/           <name>.mp4, <name>.srt, <name>.vtt, <name>.chapters.txt,
-                 cuts.json, <name>-transcript.html, <name>-poster.png,
-                 slates/NN-slate.png
-  screenshots/   [<page>/]slide-<id>.png, [<page>/]slide-<id>-after-<cue>.png, section-NN-at-<S>s.png
-  preflight/     the frozen frames that `decktalk preflight` compares
-  progress.jsonl
-  sfx/           ambience.mp3, <name>.mp3, and a manifest file next to each
-  music/         music.mp3, its chunk files, and its manifest file
+## Finding an artifact without knowing a path
+
+Every result whose command writes files declares `written`, which carries the project-relative path
+of each file that run wrote, in the order it wrote them. That is how a caller finds an artifact
+rather than by spelling a path.
+
+```bash
+uv run decktalk narrate --json | python -c "import json,sys; print(json.load(sys.stdin)['written'])"
 ```
 
-`NN` is the two-digit section number. `<hash>` is the content hash of a take, which is what identifies it:
-`takes.json` says which section plays which take. `<name>` is `[project] name` in `decktalk.toml`. A clip
-section has no take, words file, or recording.
+```python
+import decktalk
 
-## Time bases
-
-Each time in these files counts from a fixed starting point, its time base. Read the time base before you
-compare times from two files.
-
-| Value | Counts from |
-|---|---|
-| `<hash>.words.json` `start` and `end` | The start of that take's mp3, which holds no silence of its own. |
-| `takes.json` section starts and ends | The start of `narration.mp3`, which holds the spoken sections back to back. |
-| `cue-times.json`, `?cues=`, `?words=`, `decktalk words`, `decktalk clip --start` and `--end` | The section's own start, which is narration t=0 of its recording. |
-| A words file that `decktalk clip` writes | The start of that clip. |
-| RecordingLog `t0_seconds` | The start of the webm. |
-| RecordingLog `frame_gaps` seconds | Narration t=0 of that recording, or `null` for a gap that ended before t=0. |
-| `.srt`, `.vtt`, `.chapters.txt`, and the verify `at` and `cut at` columns | The start of the final mp4. |
-
-A clip section adds its length to the final mp4, but not to `narration.mp3`. After a clip between two page
-sections, a time in the final mp4 is the narration time plus the length of every earlier clip. A clip before
-the first page section shifts every time. Page sections are cut on whole frames, so the two times can also
-differ by up to one frame.
-
-Example: a page section that follows a 4.36 s clip starts 4.36 s later in the final mp4 than it does in the
-narration, and the whole-frame cuts before it move it by up to one more frame. `decktalk status` prints
-narration times, and `build/out/cuts.json` prints final-mp4 times, so comparing the two rows for one section
-gives the offset for that section.
-
-## `build/narration/<hash>.words.json`
-
-A words file lists each spoken word of one take, with its times in that take's mp3. The take carries no
-silence of its own, so the first word can start at 0. Silence before a section is joined in when the takes
-are joined, and [`decktalk words`](/reference/cli#decktalk-words) and `cue-times.json` include it.
-
-{/* sample: build/narration/silent-504cb8ea7d.words.json, build without voice of a fresh starter, first two words */}
-```json
-[
- {
-  "word": "This",
-  "start": 0.0,
-  "end": 0.461
- },
- {
-  "word": "is",
-  "start": 0.481,
-  "end": 0.942
- },
+project = decktalk.open("my-lesson")
+result = project.narrate()
+for path in result.written:
+    print(path)
 ```
 
-| Field | Type | Meaning |
-|---|---|---|
-| `word` | string | The spoken word, with punctuation removed. |
-| `start` | number | Start of the word, in seconds. |
-| `end` | number | End of the word, in seconds. |
+The same rule holds everywhere: a path DeckTalk publishes is relative to the project root and
+spelled with forward slashes on all three platforms.
 
-Note: A build without voice writes estimated words, spaced evenly at `silent_words_per_minute`. Each estimated word
-ends 0.02 s before the next one starts.
+## The tree
 
-Note: [`decktalk words`](/reference/cli#decktalk-words) prints the same words in seconds after the section starts,
-with the script's punctuation and case.
+```
+my-lesson/build/
+  narrate/
+    takes.json                  which section plays which take, and the clock the join makes
+    <hash>.mp3                  one take, named by the content that produced it
+    <hash>.words.json           that take's words, in seconds after the take starts
+    narration.mp3               the takes joined into one track, which assemble mixes under the picture
+  cue-times.json                every cue resolved to a second on its own section's clock
+  recordings/
+    NN.webm                     one section as the browser recorded it
+    NN.json                     what record did for that section, judged and measured
+  soundscape/
+    music.mp3                   the music bed, when the project declares one
+    ambience.mp3                the ambience bed, when the project declares one
+    <name>.mp3                  one file per declared effect
+    ledger.json                 what this project has already bought, keyed by the request that made it
+  sections/
+    NN.mp4                      one section cut to its own span, which assemble concatenates
+  frames/
+    NN/<state>.png              the frozen slides check compares either side of a cue
+  storyboard/
+    NN/<state>.png              the stills the storyboard page lays out
+  storyboard.html               the contact sheet a person reads before any credit is spent
+  final/
+    <name>.mp4                  the film
+    <name>.srt                  the captions, as SubRip
+    <name>.vtt                  the captions, as WebVTT
+    <name>.chapters.txt         the chapter markers, as ffmetadata
+    <name>-transcript.html      the whole film as one page, which is the media alternative
+    <name>-poster.png           the opening slide as a lossless PNG
+    cuts.json                   where every section sits in the finished film
+  events/
+    <run>.jsonl                 one JSON line per event of one run
+  .lock                         held by the one run that is writing, and removed when it ends
+```
 
-## `build/narration/takes.json`
+`<name>` is `[project] name`, which is what the film is named after. `NN` is a section's key, which
+is its number padded to two digits, so section 3 is `03`. `<run>` is the twelve hex characters that
+name one run.
 
-The take index says which take each section plays. A take is identified by the content hash of everything
-that changes its audio, and its mp3 is named by that hash, so inserting a section, renumbering one, or
-retitling one moves no file and voices nothing. Two sections with the same words share one take.
+Three of those are not artifacts in the sense of a file a later stage reads. `frames/` and
+`storyboard/` are pictures for a person and for a comparison. `events/<run>.jsonl` is what a run said
+while it ran, appended by a subscriber to the event stream rather than written by a stage.
 
-The cache is the narration directory itself: a take whose mp3 and words file are on disk is a hit.
-[`[narration] cache_dir`](/reference/configuration#narration) puts the take files alone outside `build/`,
-where a fresh clone and a second worktree find them again, and where several projects may share them
-because a hash names each one. `takes.json` and `narration.mp3` stay here, because they belong to one
-project.
+## `build/narrate/takes.json`
 
-The index is also the narration clock. A section runs for its lead, its take up to where the take's sound
-ends, and its tail, which is `lead_seconds` plus `sound_end_seconds` plus `tail_seconds`, and the sections are
-joined in key order. Each of the three depends on the take and the section's own keys alone, so a section
-keeps its length when a neighbour changes. Where each one sits in `narration.mp3` is therefore arithmetic over the rows: its start is the
-sum of every earlier section's length, and its end is that plus its own. `decktalk status` prints those
-times, and `decktalk words` prints each section's words against its own start.
+The take index is the time base every later stage measures against. It says which section plays
+which take, and the rows are enough to work out where each section sits in the joined narration, so
+the file cannot hold a total that disagrees with what it lists.
 
-{/* sample: build/narration/takes.json, build without voice of a fresh starter, first section */}
-```json
+```json build/narrate/takes.json
 {
   "script": "script.md",
   "model": "eleven_multilingual_v2",
   "output_format": "mp3_44100_128",
-  "estimated": true,
-  "estimate_basis": "150 wpm + declared pauses",
-  "sections": {
-    "01": {
-      "index": 1,
+  "sections": [
+    {
+      "section": 1,
+      "key": "01",
       "chapter": "Open",
-      "file": "silent-504cb8ea7d.mp3",
-      "words_file": "silent-504cb8ea7d.words.json",
-      "hash": "silent-504cb8ea7d",
-      "word_count": 26,
-      "estimated_seconds": 11.1,
-      "duration_seconds": 12.6,
-      "voiced": false,
-      "target_seconds": null,
-      "speech_end_seconds": 12.48,
-      "sound_end_seconds": 12.487,
+      "hash": "9f2c1ab7d4e60518",
+      "voiced": true,
+      "word_count": 38,
+      "characters": 200,
+      "estimated_seconds": 16.3,
+      "duration_seconds": 18.1,
+      "speech_end_seconds": 17.98,
+      "sound_end_seconds": 17.987,
       "lead_seconds": 0.5,
       "tail_seconds": 1.3,
-      "spoken": "This is DeckTalk. You write what you will say, and you write the slides that go with it. Then every picture waits for its own word."
+      "spoken": "This is DeckTalk. Four files sit in one folder, and you write two of them."
     }
-  },
-  "total_seconds": 43.361
+  ]
 }
 ```
 
-| Field | Type | Meaning |
-|---|---|---|
-| `script` | string | Path of the script, relative to the project. |
-| `model` | string | Speech model the project voices with. |
-| `output_format` | string | Audio format that the speech provider returned. |
-| `estimated` | boolean | True when any row is a placeholder take, so the times are guesses. |
-| `estimate_basis` | string | Pacing of a build without voice, such as `150 wpm + declared pauses`. Empty after a voiced build. |
-| `sections` | table | One entry per spoken section, keyed by `NN`. |
-| `sections.NN.index` | integer | Section number. |
-| `sections.NN.chapter` | string | The chapter title: the section's own `chapter` key, else its `## N.` script heading, else `Section N`. |
-| `sections.NN.file` | string | Name of the take's mp3, which is its hash. |
-| `sections.NN.words_file` | string | Name of the take's words file, which is its hash. |
-| `sections.NN.hash` | string | The take's content hash, and its identity. A placeholder take's hash starts with `silent-`. |
-| `sections.NN.word_count` | integer | Word count of the spoken text. |
-| `sections.NN.estimated_seconds` | number | Length estimate at `words_per_minute`. |
-| `sections.NN.duration_seconds` | number | Real length of the mp3, which holds none of the silence placed around it. |
-| `sections.NN.voiced` | boolean | False on the placeholder take that `--no-voice` wrote. |
-| `sections.NN.target_seconds` | number or null | Time budget from the time range in the heading, or `null` when the heading has none. |
-| `sections.NN.speech_end_seconds` | number or null | End of the last spoken word. |
-| `sections.NN.sound_end_seconds` | number or null | Where the take's sound ends, measured from the mp3's own bytes: the start of the silence that runs to its end. |
-| `sections.NN.lead_seconds` | number | Silence placed before this take when the takes are joined: the section's `lead_seconds`, else `[narration] lead_seconds`. It is not in the mp3. |
-| `sections.NN.tail_seconds` | number | Silence placed after `sound_end_seconds`: the section's `tail_seconds`, else `[narration] min_tail_seconds`. The join cuts the take at `sound_end_seconds` and places this silence after it, and the mp3 is not changed. |
-| `sections.NN.spoken` | string | The words sent to the voice, with the script's punctuation and case, and without break tags. |
-| `total_seconds` | number | Every section's lead, take to its sound end, and tail, which is the length of `narration.mp3`. |
+| Field | Meaning |
+|---|---|
+| `script` | The script these takes were made from, project-relative. |
+| `model` | The provider model every voiced row was spoken by. |
+| `output_format` | The audio format every row was asked for in. |
+| `sections[].section` | The section this row is about, as the author numbered it. |
+| `sections[].key` | The section's key, which names its files under the build directory. |
+| `sections[].chapter` | The section's title, which the film's chapter marker carries. |
+| `sections[].hash` | The digest of the inputs this take was made from, which names its files. |
+| `sections[].voiced` | True when a provider spoke this take, false on a placeholder. |
+| `sections[].word_count` | How many words this take speaks. |
+| `sections[].characters` | How many characters were sent to the voice, which is what is billed. |
+| `sections[].estimated_seconds` | How long the script said this take would run. |
+| `sections[].duration_seconds` | How long the audio file runs, measured from its own bytes. |
+| `sections[].speech_end_seconds` | Where the last word ends, or null. |
+| `sections[].sound_end_seconds` | Where the take's sound ends, or null. |
+| `sections[].lead_seconds` | Silence placed before the take, which is not in the file. |
+| `sections[].tail_seconds` | Silence placed after the take's sound, which is also not in the file. |
+| `sections[].spoken` | The words the voice says, with the script's punctuation, which the captions borrow. |
 
-Note: The section span runs from a section's start to its end in `narration.mp3`, and its length is
-`lead_seconds + sound_end_seconds + tail_seconds`. The spoken span runs from that start to the end of the
-last word, which is the start plus `lead_seconds` plus `speech_end_seconds`.
+A section runs for its lead, then its take up to where the take's sound ends, then its tail, and the
+sections run in section order. Where each one sits in the joined narration is therefore arithmetic
+over the rows rather than a second file that can disagree with them. Each of those three numbers is
+a pure function of the take's own bytes and its own section's settings, so a section lands the same
+way whether this run voiced its take or found it cached.
 
-Note: Captions take their spelling from `spoken`, so they match the audio even after the script changes. A
-take index without `spoken` falls back to the current script. [Rebuild one section](/guides/rebuild-one-section#the-narration-cache)
-explains what the hash covers.
+### A take is named by a hash of its inputs
+
+A take is identified by its content hash and by nothing else. The index maps a section to a piece of
+content and never the other way round, so renumbering a section rewrites one row and moves no file,
+and two sections with the same words share one take.
+
+The digest of a voiced take is taken over exactly these, joined by newlines in this order.
+
+| Input | Why it changes the audio |
+|---|---|
+| `provider` | Two services reading one sentence are two different takes. |
+| `voice` | Two voices reading one sentence are two different takes. The voice id is a published name rather than a secret, so it is written into the file a reader can see. |
+| `model` | A model changes how the same words are read. |
+| `output_format` | The bytes asked for. |
+| `settings` | The provider's voice settings, as compact JSON with its keys sorted. |
+| `text` | The exact text sent to the voice, with its pause tags. |
+
+**This is why an edit voices only the sections whose words changed.** Edit one paragraph of
+`script.md` and only that section's text moves, so only that section's digest moves, so `narrate`
+sends one request and every other section is found on disk under the name it already had. Change the
+voice id or the model and every digest moves, because every take really would sound different.
+Adding a field to that list or changing its order would re-voice every project there is, which is
+what the digest test in the repository holds it to.
+
+A placeholder take is named the same way over its own three inputs, which are the pace it is sized
+at, how long a declared pause is held, and the text it stands in for. Its digest carries the prefix
+`placeholder-`, so a run that writes placeholders can never overwrite a take somebody paid for.
+
+## `build/narrate/<hash>.words.json`
+
+Beside every take sits its words file, under the same digest. This is the smallest artifact and the
+one every other reads: a cue resolves against it, the captions are built from it, and the clicks of
+a placeholder take sit at each `start`.
+
+```json build/narrate/9f2c1ab7d4e60518.words.json
+{
+  "words": [
+    { "word": "This", "start": 0.0, "end": 0.454 },
+    { "word": "is", "start": 0.474, "end": 0.927 },
+    { "word": "DeckTalk", "start": 0.947, "end": 1.401 }
+  ]
+}
+```
+
+Each row is the same `Word` a result carries, so the file a stage writes and the JSON a caller reads
+are one shape. `start` and `end` are seconds after that take starts, which is not the same clock as
+the section: the section's own clock begins at its lead.
 
 ## `build/cue-times.json`
 
-The cue times file holds every resolved cue of each section as an object. A section with no resolved cue is not in
-the file.
+One block per section, each holding every cue that section declares, resolved against the words it
+speaks.
 
-{/* sample: build/cue-times.json, build without voice of a fresh starter, first section */}
-```json
+```json build/cue-times.json
 {
-  "estimated": true,
-  "sections": {
-    "01": [
-      { "cue": "1.1title", "on": "This is DeckTalk", "at": 0.5, "word_at": 0.5 },
-      { "cue": "1.1script", "on": "what you will say", "at": 2.9, "word_at": 2.9 },
-      { "cue": "1.1deck", "on": "the slides", "at": 6.27, "word_at": 6.27 },
-      { "cue": "1.1word", "on": "its own word", "at": 11.56, "word_at": 11.56 }
-    ]
+  "sections": [
+    {
+      "section": 1,
+      "key": "01",
+      "estimated": true,
+      "cues": [
+        { "cue": "1.1:title", "phrase": "This is DeckTalk", "seconds": 0.5, "offset": 0.0 },
+        { "cue": "1.1:files", "phrase": "Four files", "seconds": 1.921, "offset": 0.0 }
+      ]
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `sections[].estimated` | True when the seconds come from estimated words rather than a voiced take. |
+| `sections[].cues[].cue` | The cue's wire id, which is its slide, a colon and the local name the page writes. |
+| `sections[].cues[].phrase` | The phrase in the script this cue lands on. |
+| `sections[].cues[].seconds` | When it lands, in seconds after its section starts, or null when it did not resolve. |
+| `sections[].cues[].offset` | The author's own nudge in seconds, which is already inside `seconds`. |
+
+The recorder passes these seconds to the page as the `cues` query, so a cue with no second behind it
+is left out of that value rather than passed as a null the page would have to reason about. A page
+previewed in a browser has no such URL, so the local origin answers one alias from this file
+instead.
+
+## `build/recordings/`
+
+`record` writes two files per page section, both named by the section's key.
+
+`NN.webm` is the recording as the browser produced it. `NN.json` is the recorder's whole account of
+that section, written when that section is finished, so a reader of a long run sees each section's
+log as soon as that section is done and a measurement always belongs to the recording beside it.
+
+```json build/recordings/01.json
+{
+  "section": 1,
+  "url": "http://127.0.0.1:53211/deck/index.html?scene=1&cues=1.1%3Atitle%400.5&t0=signal",
+  "input_hash": "4b1d90a7c3e2f085",
+  "requested_seconds": 17.67,
+  "settle_seconds": 0.4,
+  "load_seconds": 0.62,
+  "clock_start_seconds": 1.04,
+  "t0_seconds": 1.08,
+  "t0_method": "the first frame after the cover came off",
+  "t0_guessed": false,
+  "assets": ["deck/index.html", "deck/decktalk-runtime.js"],
+  "external": [],
+  "findings": [
+    {
+      "code": "PAGE_NO_DESCRIPTION",
+      "message": "The element at cue 1.1:title has no text and no data-tex, so give it data-describe or an empty one.",
+      "certainty": "certain",
+      "location": { "where": "1.1:title", "file": "deck/index.html", "line": null, "section": 1, "cue": "1.1:title" },
+      "stage": "record",
+      "fix": null,
+      "url": "https://docs.decktalk.ai/reference/findings/PAGE_NO_DESCRIPTION"
+    }
+  ],
+  "checks": {
+    "duration_seconds": 17.7,
+    "wanted_seconds": 17.67,
+    "luma": { "at_tenth": 31.2, "at_half": 44.9, "at_nine_tenths": 45.1, "peak_at_half": 238.0 }
+  },
+  "report": {
+    "version": "<the runtime that drew the page>",
+    "mode": "cue",
+    "scene": "1",
+    "slide": "1.2",
+    "warnings": [],
+    "catalog": [],
+    "cues": [],
+    "words": [],
+    "frameGaps": [],
+    "longFrames": [],
+    "unreadable": []
   }
 }
 ```
 
-| Field | Type | Meaning |
-|---|---|---|
-| `estimated` | boolean | True when the times come from the estimated words of a build without voice. |
-| `sections` | table | One array per spoken section, keyed by `NN`, in the order `align` resolved the cues. |
-| `sections.NN[].cue` | string | The cue id the page understands, as `cues.json` writes it. |
-| `sections.NN[].on` | string | The phrase the cue was matched against, `$start` or `$end`. |
-| `sections.NN[].at` | number | The cue time in seconds after the section starts, which is the `@` value of `?cues=`. |
-| `sections.NN[].word_at` | number or null | Where the matched word begins, before the cue's `offset` key. |
+| Field | Meaning |
+|---|---|
+| `section` | The section this recording plays. |
+| `url` | The page URL the recorder opened, with its cues and its words. |
+| `input_hash` | The digest of what this section was recorded from, which is what a skip is keyed on. |
+| `requested_seconds` | How long the recorder asked the page to play for. |
+| `settle_seconds` | How long the page was left to settle before the clock started. |
+| `load_seconds` | How long the page took to load. |
+| `clock_start_seconds` | The recorder's own estimate of where narration t=0 is. |
+| `t0_seconds` | The first clean frame after the cover, or null. |
+| `t0_method` | How t=0 was found, in one sentence, or null. |
+| `t0_guessed` | True when no cover was found, so every reveal in the section moves. |
+| `assets` | Every project file the page loaded, project-relative. |
+| `external` | Every other origin the page reached for while recording. |
+| `findings` | Every judgement the page and the frames made, each a whole finding. |
+| `checks` | What the frames measured, or null when none were. |
+| `report` | What the page said about itself, read once as it was recorded. |
 
-The recorder joins the rows of one section into the `?cues=` value, as `cue id@at` items separated
-by commas, and the page parser splits each item at the last `@`. A cue id starts with the id of the
-slide that owns it, so section `01` above plays a scene whose one slide is `1.1`.
+Every judgement the recorder makes is a finding, so the page's own warnings, the exceptions it threw
+and the checks over the frames are one list a reader dispatches on by code.
 
-Note: A cue with no `offset` key has the same `at` and `word_at`. `verify` uses `word_at` after a build without
-voice to find the click at the cued word, which
-[the a/v value](/reference/verify#the-a/v-value) explains.
+`input_hash` is what decides whether a section is recorded again. It is taken over the page URL with
+its cues and its words, the frame geometry, the markup of the one scene the section plays, the rest
+of its page, which every scene shares, and the content of every file the page loaded. A section
+whose digest is unchanged would be recorded again for nothing, so it is kept.
 
-## `build/recordings/NN.json`
+`report` is what the page answered `window.__dtprobe.report()` with, kept whole.
+[Runtime](/reference/runtime) gives every field of it.
 
-The recording log lists what `record` did for one page section, where narration t=0 sits in the webm, and how
-the recording checked out. `record` writes the whole file once, when that section is finished, so the
-measurement always belongs to the recording beside it and a long run can be read while it runs.
+## `build/soundscape/`
 
-{/* sample: build/recordings/01.json, build without voice of a fresh starter */}
-```json
+One audio file per item the `[soundscape]` table declares, named after the item unless the table
+sends it elsewhere. The ambience bed is `ambience.mp3`, the music bed is `music.mp3`, and each
+effect is named after the key it is declared under.
+
+Beside them is `ledger.json`, which is what this project has already bought.
+
+```json build/soundscape/ledger.json
 {
-  "url": "http://project.localhost/deck/index.html?scene=1&cues=1.1title%400.5%2C1.1script%402.9%2C1.1deck%406.27%2C1.1word%4011.56&words=This%400.50%2Cis%400.98%2CDeckTalk%401.46%2CYou%401.94%2Cwrite%402.42%2Cwhat%402.90%2Cyou%403.38%2Cwill%403.87%2Csay%404.35%2Cand%404.83%2Cyou%405.31%2Cwrite%405.79%2Cthe%406.27%2Cslides%406.75%2Cthat%407.23%2Cgo%407.71%2Cwith%408.19%2Cit%408.67%2CThen%409.15%2Cevery%409.63%2Cpicture%4010.12%2Cwaits%4010.60%2Cfor%4011.08%2Cits%4011.56%2Cown%4012.04%2Cword%4012.52&t0=signal",
-  "requested_seconds": 14.587,
-  "settle_seconds": 1.449,
-  "load_seconds": 0.054,
-  "clock_start_seconds": 1.504,
-  "assets": [
-    "deck/index.html",
-    "deck/katex/katex.min.css",
-    "deck/katex/katex.min.js",
-    "deck/decktalk-runtime.js"
-  ],
-  "external": [],
-  "input_hash": "844a36af16cf6e9a",
-  "t0_seconds": 1.44,
-  "t0_method": "cover (36 magenta frames)",
-  "t0_guessed": false,
-  "checks": {
-    "duration_seconds": 17.0,
-    "wanted_seconds": 14.587,
-    "luma": {
-      "y10": 234.95,
-      "y50": 199.75,
-      "y90": 184.5,
-      "max50": 243.0
-    },
-    "verdicts": []
-  },
-  "warnings": [],
-  "page_errors": [],
-  "frame_gaps": [],
-  "spoken_log": [],
-  "cue_log": [
+  "items": [
     {
-      "id": "1.1title",
-      "due": 0.5,
-      "ran": 0.5,
-      "frame": 0.5,
-      "describe": "the title, This is DeckTalk",
-      "next": 0.508,
-      "after": 0.517
-    },
-    {
-      "id": "1.1script",
-      "due": 2.9,
-      "ran": 2.905,
-      "frame": 2.905,
-      "describe": "a card for script.md, the file that holds what you say",
-      "next": 2.913,
-      "after": 2.921
-    },
-    {
-      "id": "1.1deck",
-      "due": 6.27,
-      "ran": 6.271,
-      "frame": 6.271,
-      "describe": "a card for deck/index.html, the file that holds the slides",
-      "next": 6.28,
-      "after": 6.287
-    },
-    {
-      "id": "1.1word",
-      "due": 11.56,
-      "ran": 11.567,
-      "frame": 11.567,
-      "describe": "a band reading: every picture waits for its own word",
-      "next": 11.575,
-      "after": 11.583
+      "name": "music",
+      "kind": "music",
+      "digest": "7c04a1ee39b2d5f8",
+      "file": "build/soundscape/music.mp3",
+      "seconds": 96.0,
+      "parts": ["3ab1d0f27c845e69", "9de2b61840cf37a5"],
+      "request": "{\"chunks\":[{\"prompt\":\"a slow warm pad\"}],\"crossfade_seconds\":1.5}"
     }
-  ],
-  "long_frames": []
+  ]
 }
 ```
 
-| Field | Type | Meaning |
-|---|---|---|
-| `url` | string | Page URL that the recorder opened on the local origin, with `scene`, `cues`, `words`, `prevwords`, `t0=signal`, and any section `params`. |
-| `requested_seconds` | number | Recording length after narration t=0: the section span plus `record_margin_seconds`. |
-| `settle_seconds` | number | Wall-clock seconds from the page's `load` event to narration t=0. |
-| `load_seconds` | number | Wall-clock seconds from the recorder's start to the page's `load` event. |
-| `clock_start_seconds` | number | Wall-clock seconds from the recorder's start to narration t=0. Not the same as `[verify] reference_lead_seconds`. |
-| `assets` | array of strings | Every project file the page loaded, project-relative, in the order the page asked for it. |
-| `external` | array of strings | Every other origin the page reached for while it recorded. |
-| `input_hash` | string | The digest of the page URL, the frame geometry, the markup of the one `[data-scene]` element this section plays, the rest of that page file, which every scene shares, and the content of every file in `assets`. `record` skips a section whose hash has not moved, so an edit inside one scene records the sections that play it and no others. |
-| `t0_seconds` | number or null | Time of the first frame after the magenta cover, in the webm. `record` writes it, and `assemble` trims there. |
-| `t0_method` | string or null | One sentence naming how `record` found `t0_seconds`, for a reader of the log. |
-| `t0_guessed` | boolean | True when no magenta cover was found, so `t0_seconds` is an estimate and the section carries the `NO COVER` verdict. |
-| `checks` | table or null | `{duration_seconds, wanted_seconds, luma, verdicts}`, what the frames were judged on. Each verdict is the `{code, label, certain}` object every `--json` payload carries, such as `{"code": "TRUNCATED", "label": "TRUNCATED", "certain": true}`. |
-| `warnings` | array of strings | `window.__decktalk.warnings`, read after the recording, such as an unknown cue id. |
-| `page_errors` | array of strings | One line per uncaught exception, plus one line when the page has no runtime catalog. |
-| `frame_gaps` | array | `[seconds, ms]` pairs from `window.__decktalk.frameGaps`, one per long gap between two page frames. |
-| `spoken_log` | array of tables | One `{ text, cue_at, run_at, words, first_shown }` table per `data-text="spoken"` element that matched. The page reports these fields in camelCase and the recorder is the boundary where they turn snake_case. |
-| `cue_log` | array of tables | One `{ id, due, ran, frame, describe, next, after }` table per cue, from `window.__decktalk.cueLog`. Times are seconds after narration t=0, and `describe` is what the reveals of that cue say they show, or null. |
-| `long_frames` | array of tables | One `{ start, ms, render, presented }` table per page frame over 50 ms after t=0, from `window.__decktalk.longFrames`. |
+| Field | Meaning |
+|---|---|
+| `items[].name` | What the author calls this item in `decktalk.toml`. |
+| `items[].kind` | `music`, `ambience` or `effect`. |
+| `items[].digest` | The digest of the request this file was made from, which is the endpoint and the body. |
+| `items[].file` | The audio this request produced, project-relative. |
+| `items[].seconds` | How long that audio runs, or null when unmeasured. |
+| `items[].parts` | The digest of each music part, in the order they are joined, and empty for a single request. |
+| `items[].request` | The request body as compact JSON with its keys sorted, so a reader sees what was asked for. |
 
-Note: `record` reports `PAGE ERROR` for any entry in `page_errors`, and `decktalk build` stops. It reports
-`STALLED` when the part of a frame gap after t=0 is longer than `[record] stall_ms`.
+Every request is paid for, so the one question this file answers is whether the audio on disk was
+made from the request the project asks for now. A row whose digest still matches is kept rather than
+bought again. It is one file for the whole soundscape rather than a cache file beside every output,
+because the outputs may sit wherever `decktalk.toml` sends them and a run has to read the whole
+record before it prices anything. A ledger that is there and will not parse is refused rather than
+read as a project that has bought nothing, because deleting it is a decision about money and so it
+is the author's to take.
 
 ## `build/sections/`
 
-One mp4 per section, cut to its span, at the project's frame size and with no audio. `assemble`
-writes them and `verify` adds them up to find where each section starts in the final video. Both
-read only the files of sections in `decktalk.toml`, and both warn about any other file named like a
-section video, which is what a build before a renumbering leaves behind.
+One mp4 per section, cut to the span the take index gives it, which is what `assemble` concatenates
+into the film. A cut left behind by a renumbering belongs to no section, and `assemble` names each
+such file rather than folding it into a film nobody asked for.
 
-## `build/out/`
+## `build/final/`
 
-The out directory holds everything a viewer receives: the final video, its captions, its chapters,
-its cut list, its transcript page and its poster.
+Everything a viewer receives. `<name>` is the project name.
 
-| File | Meaning |
+| File | What it is |
 |---|---|
-| `<name>.mp4` | The final video, with one chapter per section, and both streams tagged with `[project] language`. Consecutive sections with the same chapter share one chapter. The container takes the ISO 639-2 three-letter code of that tag, and a language DeckTalk cannot map is written `und`. |
-| `<name>-YYYYMMDD-HHMM.mp4` | A timestamped copy of the final video, written when `[output] timestamped_copy` is on. |
-| `<name>.srt`, `<name>.vtt` | Captions from the word times, in final mp4 time, with the script's punctuation and case. A cue stays on screen for at least one second unless the next cue begins before that, no cue runs into the cue after it, and a cued sound that names a caption joins the cue it lands in, or the cue it has no second of room before, as a line of its own. |
-| `<name>.chapters.txt` | An ffmetadata file with one `[CHAPTER]` per section, titled from `decktalk.toml`. Consecutive sections with the same chapter share one `[CHAPTER]`. |
-| `<name>-transcript.html` | The whole video as one plain page: one heading per chapter, one paragraph per section under it in the order those sections play, and each reveal the page described. A clip that names a words file carries what is spoken inside it, and a section that spoke nothing carries a line saying what plays there instead. It is the media alternative for a viewer who cannot see or cannot hear the video. |
-| `<name>-poster.png` | A lossless PNG of the video's opening slide with every one of its reveals fired, drawn by the page in freeze mode and never taken from the mp4. |
-| `cuts.json` | The cut list: where every section plays, what it was cut from, and what stands in for it. |
-| `slates/NN-slate.png` | The slate image of a clip section whose file is missing. |
+| `<name>.mp4` | The film, written under a work name and renamed into place only once it is whole. |
+| `<name>.srt` | The captions as SubRip, built from the words files with a bracketed line for each sound the mix adds. |
+| `<name>.vtt` | The same captions as WebVTT. |
+| `<name>.chapters.txt` | The chapter markers as ffmetadata, muxed into the film. Two sections sharing one chapter share one marker. |
+| `<name>-transcript.html` | The media alternative: one page with a heading per chapter, what was said, and the description of each reveal the page reported. |
+| `<name>-poster.png` | The opening slide as a lossless PNG, drawn by the page rather than taken out of the mp4. |
+| `cuts.json` | Where every section sits in the finished film. |
 
-### `cuts.json`
+`output.timestamped_copy` writes a second copy of the film beside the first, named with the date and
+the minute the copy was taken.
 
-{/* sample: build/out/cuts.json, build without voice of a fresh starter, first section */}
-```json
+### `build/final/cuts.json`
+
+This is the one record of the shape of a film. The transcript page, a caption reader and anything
+that wants to jump to a section read it instead of adding section files up.
+
+```json build/final/cuts.json
 {
   "fps": 25,
-  "total_seconds": 44.88,
   "sections": [
     {
       "section": 1,
+      "key": "01",
       "kind": "page",
       "start": 0.0,
-      "end": 14.28,
+      "end": 17.67,
       "source": "build/recordings/01.webm",
-      "substitute": null,
       "chapter": "Open",
+      "substitute": null,
       "dip_in": false,
       "dip_out": false
     }
@@ -359,114 +396,76 @@ its cut list, its transcript page and its poster.
 }
 ```
 
-| Field | Type | Meaning |
-|---|---|---|
-| `fps` | integer | Frames per second of the final video, from `[video] fps`. |
-| `total_seconds` | number | Length of the final video, the sum of every row. |
-| `sections[].section` | integer | The section number, as `decktalk.toml` writes it. |
-| `sections[].kind` | string | `page` or `clip`. |
-| `sections[].start`, `end` | number | Where the section plays in the final video. |
-| `sections[].source` | string | The recording or the clip this section was cut from, relative to the project. |
-| `sections[].substitute` | string or null | `slate` when a missing clip played its slate, `black` when a missing recording played black, null otherwise. |
-| `sections[].chapter` | string | The chapter title of the section. |
-| `sections[].dip_in`, `dip_out` | boolean | Whether the section fades in from, or out to, the transition dip. |
-
-Captions break at sentence ends.
-
-- A caption never spans two sections.
-- A cued sound that sets `caption` under `[[mix.sfx]]` gets its own one-second cue, such as `[ball bounces]`, because captions carry the whole soundtrack and not only the dialogue.
-- No caption covers a clip section, unless the section sets `words`. Those captions come from the clip's words file.
-- A caption also ends before any silence of 1 s or more.
-- Whole sentences share a caption when they fit. A sentence too long for one caption splits at the comma
-  nearest its middle, or else between two words that are not short words like "of" or "the". Each part keeps at
-  least three words.
-- A caption holds at most two lines of 42 characters. The line break goes after a sentence end or a comma when the
-  two lines stay balanced.
-- No caption and no line is a single word, unless that word is a whole sentence.
-- A caption starts at its first word and ends 0.2 s after its last word, or when the next caption starts.
-
-{/* sample: build/out/my-lesson.srt, build without voice of a fresh starter, first two captions */}
-```text build/out/my-lesson.srt
-1
-00:00:00,500 --> 00:00:01,942
-This is DeckTalk.
-
-2
-00:00:01,942 --> 00:00:09,154
-You write what you will say,
-and you write the slides that go with it.
-```
-
-{/* sample: build/out/my-lesson.chapters.txt, build without voice of a fresh starter, first chapter */}
-```text build/out/my-lesson.chapters.txt
-;FFMETADATA1
-
-[CHAPTER]
-TIMEBASE=1/1000
-START=0
-END=14280
-title=Open
-```
-
-## `build/progress.jsonl`
-
-`decktalk build` truncates this file when a run starts and appends one JSON object per line as it
-goes, so a reader that opens it mid-run sees everything that has happened and nothing else.
-`--progress PATH` writes it somewhere else.
-
-```json
-{"ts": "2026-09-19T01:58:52.241Z", "pid": 14207, "stage": "narrate", "stage_index": 1, "stage_count": 5, "section": null, "event": "start", "detail": "Narrating the script into one take per spoken section."}
-{"ts": "2026-09-19T01:58:52.517Z", "pid": 14207, "stage": "narrate", "stage_index": 1, "stage_count": 5, "section": null, "event": "done", "detail": "Wrote 3 take(s) and reused the rest."}
-```
-
-| Field | Type | Meaning |
-|---|---|---|
-| `ts` | string | The event time, ISO 8601 in UTC. |
-| `pid` | integer | The process that wrote the row, which is how a reader tells a live run from a dead one. |
-| `stage` | string | One of `narrate`, `align`, `record`, `assemble` and `verify`. |
-| `stage_index` | integer | The stage's place in this run, counting from 1. |
-| `stage_count` | integer | How many stages this run executes, which `--from` and `--to` decide. |
-| `section` | integer or null | The section the event is about, or null for a whole-stage event. |
-| `event` | string | `start`, `done`, `skip` or `fail`. A section `record` kept unchanged is a `skip`. Every stage and every section writes a `start` row and a closing row, so a log whose last row is a `start` is a run that is still working or one whose process died. |
-| `detail` | string | One sentence, such as how many sections a stage will work through or what a section's recording was judged to be. |
-
-## `build/screenshots/`
-
-`decktalk screenshots` writes screenshots here. With two or more pages, it writes one folder per page, named after the
-page file.
-
-{/* sample: decktalk screenshots, build without voice of a fresh starter */}
-```text
-wrote build/screenshots/slide-1.1.png
-wrote build/screenshots/slide-2.1.png
-wrote build/screenshots/slide-3.1.png
-```
-
-| File | Written by |
+| Field | Meaning |
 |---|---|
-| `slide-<id>.png` | `decktalk screenshots`, one per slide |
-| `slide-<id>-after-<cue>.png` | `decktalk screenshots --slide ID --after CUE`, one per cue |
-| `section-NN-at-<S>s.png` | `decktalk screenshots --section N --at S`, one per time |
+| `fps` | The rate the film was encoded at. |
+| `sections[].kind` | `page` for a recorded page, `clip` for a video file the author supplied. |
+| `sections[].start` | When this section starts in the film, in seconds. |
+| `sections[].end` | When this section ends in the film, in seconds. |
+| `sections[].source` | The recording or the clip this section was cut from. |
+| `sections[].chapter` | The section's title, which the film's chapter marker carries. |
+| `sections[].substitute` | `slate` or `black` when the real thing was missing, and null otherwise. |
+| `sections[].dip_in` | True when the picture dips to black on the way into this section. |
+| `sections[].dip_out` | True when the picture dips to black on the way out of it. |
 
-Note: a project with one page, such as the starter above, writes no page folder. `--page` with one
-page file writes none either, and a `--section` frame never goes in a page folder.
+`substitute` says plainly where a slate or a black frame stood in for something the project does not
+have. A run with `strict` set refuses such a section outright unless the section declares
+`optional = true`.
 
-## How files are written
+## `build/events/<run>.jsonl`
 
-DeckTalk writes files so that a reader never sees half of one.
+Every run of a project appends one JSON object per line to its own file, named by its run id. One
+file per run, never truncated, so a watch loop running beside a build by hand cannot overwrite what
+the other is writing. `--events` prints the same lines on stderr as they happen.
 
-- Stages run one after another, and one build runs one Chromium.
-- `takes.json`, `cue-times.json`, each words file, and each recording log go to a temporary file first.
-  A rename then puts each one in place.
-- The final mp4 is written to a work file, then renamed to `build/out/<name>.mp4`. The timestamped copy, when
-  `[output] timestamped_copy` is on, comes after the rename.
-- `narrate` saves the take index after each paid request, so an interrupted voiced run keeps the sections it paid
-  for.
-- An error is a `DeckTalkError` subclass that names the file or field. The command line prints it as
-  `error[CODE]: …` on stderr and exits 3, and under `--json` it fills the envelope's `error` slot.
+```jsonl build/events/a41e586449ed.jsonl
+{"event":"run.start","time":"2026-09-24T10:23:12.275730Z","seq":0,"run":"a41e586449ed","events_path":"build/events/a41e586449ed.jsonl"}
+{"event":"section.start","time":"2026-09-24T10:23:12.278702Z","seq":1,"run":"a41e586449ed","stage":"cue","section":1}
+{"event":"section.done","time":"2026-09-24T10:23:12.281044Z","seq":2,"run":"a41e586449ed","stage":"cue","section":1,"outcome":"ok","seconds":0.002}
+{"event":"run.done","time":"2026-09-24T10:23:12.301882Z","seq":9,"run":"a41e586449ed","outcome":"ok","seconds":0.026}
+```
+
+`event` is the discriminator and there are eleven names. `time`, `seq` and `run` are on every line,
+and `seq` counts per run rather than per machine, so a reader can tell a gap from a lost line.
+[Python API](/reference/python-api) gives every field of every line.
+
+A directory of every run a project ever made would grow without limit, and the runs a caller wants
+are the recent ones, so `output.events_keep_runs` prunes the oldest. It defaults to 20 and the
+pruning happens as a run opens.
+
+```bash
+uv run decktalk config set output.events_keep_runs 50
+```
+
+`decktalk status --json` reports every run whose events file is still open, which is how a caller
+finds a build running in the background and follows its lines.
+
+## `build/frames/` and `build/storyboard.html`
+
+`check` freezes each slide either side of a cue and compares the two pictures, which is how it says
+whether a reveal really changes anything before a single credit is spent. Those pictures are written
+to `build/frames/<key>/<state>.png`, where `<state>` names the URL that drew it, such as
+`slide-2.1-after-2.1_formula.png`. Each state is drawn once however many cues are measured against
+it, because the same URL is the same picture.
+
+`storyboard` writes its own stills under `build/storyboard/<key>/` with the same naming.
+
+Both commands lay their panels out on one page, `build/storyboard.html`. It sits beside the stills
+rather than among them, so a reader opens one file and a rebuild replaces the whole sheet, and one
+writer draws it whichever command froze the frames, because two contact sheets of one deck would be
+two answers to one question. It is a plain page that needs nothing to open it, with one figure per
+panel captioned with its section, its slide, its moment and its second.
+
+## `build/.lock`
+
+A run that writes holds this file for its whole length, and removes it however the run ends. It
+holds the process id and the run id, so a second writer is refused with a sentence that names whose
+run is in the way. A lock left behind by a process that is gone is broken and reported rather than
+refused, because a caller cannot clear a file it was never told about.
 
 ## Related
 
-- **See how the stages use these files:** [How it works](/concepts/how-it-works)
-- **Check the final video:** [Verify](/reference/verify)
-- **Read the files from Python:** [Python API](/reference/python-api)
+- **Read these files from Python:** [Python API](/reference/python-api)
+- **Run the stages that write them:** [CLI](/reference/cli)
+- **Move the take cache or prune the event files:** [Configuration](/reference/configuration)
+- **Look up what the page reports into a recording log:** [Runtime](/reference/runtime)

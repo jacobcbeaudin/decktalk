@@ -1,48 +1,34 @@
 ---
 title: cues.json
-description: Look up the shape and every key of the cue file, which names the spoken phrase for each cue.
+description: Every key of the cue file, which names the spoken phrase each moment on the page lands on.
 ---
 
-`cues.json` is the cue file. It names the spoken phrase for each cue id, section by section. It is
-optional. A project without it plays every page with the page's own preview timing. This page lists
-every key.
+`cues.json` is the cue file. It says which spoken phrase each moment the deck declares lands on,
+section by section. The file owns seconds and the page owns moments: the page says what a thing
+looks like and what it means, this file says when it happens, and neither ever writes the other's
+half. That is why no attribute in the markup carries a second and no row here carries a class or a
+style.
 
 {/* input: src/decktalk/template/starter/cues.json, sections 1 and 2 */}
+
 ```json cues.json
 {
   "sections": {
     "1": {
       "cues": [
-        { "cue": "1.1title", "on": "This is DeckTalk", "occurrence": 1 },
-        { "cue": "1.1script", "on": "what you will say", "occurrence": 1 },
-        { "cue": "1.1deck", "on": "the slides", "occurrence": 1 },
-        { "cue": "1.1word", "on": "its own word", "occurrence": 1 }
+        { "cue": "1.1:title", "on": "This is DeckTalk", "occurrence": 1 },
+        { "cue": "1.1:files", "on": "Four files", "occurrence": 1 },
+        { "cue": "1.2:script", "on": "what you will say", "occurrence": 1 },
+        { "cue": "1.2:deck", "on": "the slides", "occurrence": 1 },
+        { "cue": "1.2:word", "on": "its own word", "occurrence": 1 }
       ]
     },
     "2": {
       "cues": [
-        { "cue": "2.1average", "on": "the average", "occurrence": 1 },
-        { "cue": "2.1formula", "on": "the formula", "occurrence": 1 },
-        { "cue": "2.1code", "on": "in code", "occurrence": 1 },
-        { "cue": "2.1waited", "on": "waited", "occurrence": 1 }
-      ]
-    }
-  }
-}
-```
-
-Section 1 of the starter plays scene 1 of its page, and the scene holds one slide with the id `1.1`,
-so every cue id of that section starts with `1.1`. A section can play a scene with another number,
-and the cue ids follow the slide rather than the section. The block below is a shape, not the
-starter's values. It shows the optional keys.
-
-```json cues.json
-{
-  "sections": {
-    "<section number>": {
-      "min_seconds": 30,
-      "cues": [
-        { "cue": "<cue id>", "on": "<phrase>", "offset": 0.2, "occurrence": 2, "case_sensitive": false, "verify": true }
+        { "cue": "2.1:average", "on": "the average", "occurrence": 1 },
+        { "cue": "2.1:formula", "on": "the formula", "occurrence": 1 },
+        { "cue": "2.1:code", "on": "in code", "occurrence": 1 },
+        { "cue": "2.1:waited", "on": "waited", "occurrence": 1 }
       ]
     }
   }
@@ -51,64 +37,145 @@ starter's values. It shows the optional keys.
 
 ## Shape
 
-The file is one object with a `sections` key. The load ignores every other top-level key, such as
-`_comment`. Each key of `sections` is a section number as a string, and it must name a
-`[[section]]` in `decktalk.toml`. Each section is an object with an optional `min_seconds` and a
-`cues` list.
+The file is one JSON object with a `sections` key. Every other key at the top level is read by
+nothing, which is where the starter keeps its `_comment`. Each key of `sections` is a section number
+written as a string, and it must name a `[[section]]` in `decktalk.toml`. Each section is an object
+with a `cues` array and an optional `min_seconds`.
 
-Every cue id must appear in its page as a quoted literal, such as `data-cue="1.1title"` or a key of
-a slide's `preview` object. [Cue mismatches](/concepts/cues#cue-mismatches) says what happens when an
-id is missing.
+The file is optional. A project without it resolves no cues at all, and the deck earns one
+`CUE_MISSING` finding counting every moment it declares, whose fix writes the whole file with a row
+for each of them.
 
-## Section keys
+| Section key | Type | Default | Meaning |
+|---|---|---|---|
+| `cues` | array | `[]` | Every cue of this section, in any order. |
+| `min_seconds` | number | none | How many seconds of speech this section's visuals need. A section that speaks for less earns no finding: `cue` says so on its stream, because the code list holds no code for it. |
+
+The load refuses a file that is not valid JSON, a file with no top-level `sections` object, a section
+key that is not a number, a section number that `decktalk.toml` does not declare, a section whose
+value is not an object, a row with a key no cue reads, and a row whose `cue` or `on` is empty. Each
+refusal names the file, and a JSON syntax error names the line as well.
+
+## The keys of one row
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `cues` | array | `[]` | These are the cues of the section. |
-| `min_seconds` | number | none | This is how many seconds of speech the visuals need. Shorter speech is an uncertain finding. |
+| `cue` | string | required | The wire id of the moment this row times. |
+| `on` | string | required | A word or a short phrase from that section of `script.md`, or the anchor `$start` or `$end`. |
+| `occurrence` | integer | `1` | Which match of the phrase to take, counting from 1. |
+| `case_sensitive` | boolean | `false` | Compare the phrase with the case as written. |
+| `offset` | number | `0` | Seconds added to the matched moment. It may be negative. |
+| `verify` | boolean | `true` | `false` leaves this cue out of `decktalk verify`, for a reveal too small or too slow for a frame difference to see. |
+| `_comment` | any | none | The one key a row may carry that DeckTalk reads nothing from. |
 
-Note: for short speech, `decktalk align` prints the note
-`speech <S>s is <D>s shorter than the visuals need`. `align --strict` exits 1 on it.
+Any other key is refused by name, so a typo can never move a cue in silence.
 
-## Cue keys
+### `cue`, the wire id
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `cue` | string | required | This is the cue id. |
-| `on` | string | required | This is a word or a short phrase from the section's script, `$start`, or `$end`. |
-| `offset` | number | `0` | This is the offset key. It adds seconds to the match, and it can be negative. |
-| `occurrence` | integer | `1` | This picks which match of the phrase to use. When the phrase occurs more than once and this key is not set, `align` warns. |
-| `case_sensitive` | boolean | `false` | The match reads case as written when this is true. |
-| `verify` | boolean | `true` | `false` leaves the cue out of a plain `decktalk verify`, which shows the row as `skipped` with `OPTED_OUT`. |
+A wire id is the slide id, a colon, and the local name the page wrote. An element on the page names
+its moments locally, and the runtime qualifies each local name with the slide it is written in, so
+`data-in="expand"` inside `<template data-slide="4.1">` is the wire id `4.1:expand`, and that is
+what this file carries.
 
-Note: a cue id must not contain a comma, because commas separate the pairs in `?cues=`. DeckTalk
-does not check this. An `@` in an id still works, because the page splits each pair at its last `@`.
-Avoid `@` anyway, so ids stay easy to read.
+The slide id, not the section number, is the first half. A section can play a scene whose slides are
+numbered differently, and the wire id follows the slide. Section 1 of the starter plays scene 1,
+whose two slides are `1.1` and `1.2`, which is why its rows begin with both.
 
-Note: `decktalk verify` still checks a `"verify": false` cue that you name as `SECTION:CUE`.
+Each of the four moments an element declares is a wire id of its own: `data-in` when it arrives,
+`data-back` when it steps back, `data-front` when it comes forward, and `data-out` when it leaves.
+`decktalk schema page` prints every attribute that declares a moment.
 
-Note: a key that no cue reads is ignored in silence, so check a spelling here against this table.
+### `on`, the phrase
 
-## Anchors
+The phrase is matched against the words of that section and nothing else, which `narrate` wrote
+beside the take as `<hash>.words.json`, each with its start and its end in seconds
+after the section starts. `decktalk words` prints them. Matching normalises each word by dropping every
+character that is not a letter, a digit or an apostrophe, and then lowercasing it unless the row sets
+`case_sensitive`. The phrase matches where its normalised words equal a run of normalised spoken
+words.
 
-| Anchor | Cue time |
+Two consequences are worth writing down. A phrase with punctuation in it matches the same words the
+plain phrase does, because the punctuation is dropped from both sides. A phrase that normalises to
+one token can only ever match one spoken word, which is why a cue on `decktalk.ai` matches nothing
+when the script says "decktalk dot AI".
+
+`occurrence` picks which match, counting from 1. When a phrase occurs more than once and the row
+names no occurrence, the cue takes the first and `cue` says so on its stream, naming every second the
+phrase occurs at.
+
+### `offset`, in seconds
+
+`offset` is added to the matched moment, and it may be negative. The result is never allowed before
+the section's own start: a cue that would resolve earlier than zero lands at zero instead, which is
+the case `CUE_NO_ONSET` names, because a second that is the section's start rather than a word's has
+nothing to measure an onset against.
+
+`offset` is not the offset of a sound effect. A `[[mix.effects]]` row in `decktalk.toml` carries its
+own `offset`, which shifts the sound and not the picture.
+
+### The two anchors
+
+| `on` | Resolves to |
 |---|---|
-| `$start` | The cue time is 0.0 s after the section start, plus the offset key. A negative result stays negative, and the page fires the cue at t=0. |
-| `$end` | The cue time is the end of the section's last spoken word, plus the offset key. It is not the end of the section's audio file. |
+| `$start` | 0.0 seconds, which is where the section's own clock begins. With no offset this earns `CUE_NO_ONSET`. |
+| `$end` | The end of the last word the section speaks, which is not the end of the section's audio. The tail of silence after it belongs to the section, not to the words. |
 
-Note: `decktalk verify` skips a `$start` cue with no offset key, as `REFERENCE_CLAMPED`.
+Both anchors are literal strings, so a phrase is never mistaken for one. Neither is affected by
+`occurrence` or `case_sensitive`.
 
-Note: a section's `lead_seconds` moves every word, and so every phrase cue and `$end`, that much
-later. `$start` stays at 0. [Skipped rows](/reference/verify#skipped-rows) explains why.
+A second counts from the start of its own section, and the section starts where its silence starts.
+A section's `lead_seconds` therefore moves every word, and so every phrase cue and `$end`, that much
+later, while `$start` stays at zero.
 
-## Output files
+## What resolves a cue
 
-`decktalk align` writes `build/cue-times.json`, with one row per resolved cue: the cue id, the
-phrase it matched, its cue time, and the word start before the offset key.
-[Build artifacts](/reference/artifacts#build-cue-times-json) has the shape of the file.
+`decktalk cue` reads the words each section speaks off the take index and writes
+`build/cue-times.json`, one row per cue with the wire id, the phrase it matched, the second it fires
+and the offset that was added. That file is what `record`, `assemble` and `verify` read, and no stage
+works a second out from `cues.json` again.
+
+Three findings come out of that pass.
+
+| Code | Certainty | Cause |
+|---|---|---|
+| `CUE_UNRESOLVED` | certain | The phrase is not spoken in that section, or the section has no take at all, so there is no second to place the cue at and the film never plays it. A section that plays a clip is skipped in silence instead, because the voice never reads one. |
+| `CUE_NO_ONSET` | uncertain | The cue resolved to the section's own start rather than to a word. |
+| `CUE_OVERLAP` | uncertain | One cue fires while the moment before it is still playing, measured against the span that moment's own effect declares. |
+
+## The two files read against each other
+
+A cue and the moment it fires are one thing written in two places, so each is read against the other.
+The page's side is the catalog its runtime publishes, which names every slide of a scene and every
+moment its elements declare, already qualified into a wire id. It is read from that catalog and never
+from a scan of the markup, because `data-steps`, `data-class` and `data-owns` all declare moments no
+text scan can see.
+
+`decktalk check` makes the comparison against a catalog it reads live, and names every moment that
+this file has no row for.
+
+{/* sample: decktalk check --no-frames, starter with the 2.1:formula row deleted */}
+
+```text
+cues.json: CUE_MISSING section 2 declares 1 moment(s) that cues.json does not list, which is 2.1:formula, so nothing gives them a second.
+  fix (safe): Add 1 row(s) to section 2 of cues.json, each waiting for the phrase you write in its `on`.
+Found 1 finding, 1 certain. 1 fixable with --fix.
+```
+
+`decktalk check --fix` applies that fix, and `Project.apply(finding)` applies it from the library.
+The fix only ever adds: it writes one row per moment nothing lists, it never rewrites a phrase you
+wrote and it never deletes a row, so applying it a second time adds nothing, because by then every
+moment of that section is listed. The row it writes leaves `on` empty, because the phrase a cue
+lands on is your line and not DeckTalk's, and an empty `on` is refused at load, so write the phrase
+before the next command reads the file.
+
+A row whose wire id no page declares is the mirror of it, `CUE_UNKNOWN`. It is named rather than
+deleted. When exactly one unlisted row sits beside exactly one undeclared moment in the same section,
+the two are read as a rename, because the phrase is what survives a rename, and the fix changes the
+id alone.
 
 ## Related
 
-- **Learn the matching rules:** [Cues](/concepts/cues#matching-rules)
+- **Understand what a cue is:** [Cues](/concepts/cues)
+- **See which slide owns a moment:** [The page contract](/concepts/page-contract)
 - **Write phrases that time well:** [Writing for the ear](/guides/writing-for-the-ear)
-- **Learn which slide owns a cue:** [The page contract](/concepts/page-contract#cue-ownership)
+- **Read what `cue` wrote:** [Build artifacts](/reference/artifacts)
