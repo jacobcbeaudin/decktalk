@@ -1,11 +1,18 @@
-# Release: release-please keeps a "release PR" open against main. It bumps the version in
-# pyproject.toml and uv.lock, writes CHANGELOG.md, and picks the semver bump from the
-# Conventional Commits landed since the last release. Merging that PR creates the vX.Y.Z tag
-# and GitHub release; this same workflow run then builds the wheel and sdist, publishes them
-# to PyPI through trusted publishing (no API token stored anywhere), and attaches the files
-# to the release. Config: release-please-config.json and .release-please-manifest.json.
+# Release: release-please keeps a release pull request open against `main`. It bumps the version in
+# pyproject.toml, uv.lock and the runtime's TypeScript source, writes CHANGELOG.md, and picks the
+# semver bump from the Conventional Commits landed since the last release. Merging that pull request
+# creates the vX.Y.Z tag and the GitHub release, and this workflow then builds the wheel and the
+# sdist from that tag, publishes them to PyPI through trusted publishing, and attaches them to the
+# release. Config: release-please-config.json and .release-please-manifest.json.
 # (The uv.lock entry there uses `@.name.value` because release-please parses TOML into tagged
-# {value,start,end} nodes; a plain `@.name` filter silently matches nothing.)
+# {value,start,end} nodes, and a plain `@.name` filter silently matches nothing.)
+#
+# This workflow runs no check of its own. It starts from a completed run of `ci` and releases only
+# when that run was green, was a push and was on `main`, so what ships is what ci judged. A
+# `workflow_dispatch` run on `main` is also a success, which is why the event is checked too.
+#
+# The changelog page is not written here. ci.yml regenerates docs/changelog.mdx on release-please's
+# own pull request branch, so the merge commit already carries it and no bot ever writes to `main`.
 #
 # One-time setup on PyPI (before the first release):
 #   pypi.org -> your account -> Publishing -> "Add a new pending publisher":
@@ -13,25 +20,44 @@
 #     Owner: jacobcbeaudin   Repository: decktalk
 #     Workflow name: release.yml   Environment name: pypi
 # One-time setup on GitHub:
-#   Settings -> Environments -> New environment "pypi" (optionally require your own approval)
+#   Settings -> Environments -> New environment "pypi", with yourself as a required reviewer,
+#     because a PyPI version can never be re-uploaded and this is the one step with no undo.
 #   Settings -> Actions -> General -> Workflow permissions ->
 #     tick "Allow GitHub Actions to create and approve pull requests"
 #
-# Cutting a release: merge the release PR. That is the whole procedure. The workflow file name release.yml
-# and the environment name pypi are registered with PyPI's trusted publisher, so neither may be renamed.
-# To force a specific version (e.g. the jump to 1.0.0), put `Release-As: 1.0.0` in a commit body.
+# Cutting a release: merge the release pull request. That is the whole procedure. The workflow file
+# name release.yml and the environment name pypi are registered with PyPI's trusted publisher, so
+# neither may be renamed. To name a version, put `Release-As: 0.5.0-rc1` in a commit body, with the
+# hyphen, because release-please parses semver and would silently drop a bare `rc1` suffix.
 name: release
 
-on:
-  push:
-    branches: [main]
+# `workflow_run` is the trigger this design needs and the usual objection to it does not apply here.
+# The objection is that a run started by an untrusted pull request inherits write permissions, so
+# the first job below refuses anything but a successful push on `main`, no job checks out a ref that
+# a contributor controls, and the only artifact published is built from the tag.
+on: # zizmor: ignore[dangerous-triggers]
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
 
 # Every job reads the repository. A job that needs a write grants it itself.
 permissions:
   contents: read
 
+# Two releases never run at once, and a queued one is never cancelled, because cancelling a run that
+# has already reached PyPI would leave a version published and no release to attach it to.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release-please:
+    # All three conditions are load bearing. A green ci is not enough: a manual run and a run on a
+    # pull request branch are both green runs that must not release.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -40,81 +66,93 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # release-please reads the history of `main` through the API and needs no checkout of its own.
+      # `workflow_run` runs the default branch's copy of this file and github.sha is that tip rather
+      # than the commit ci tested, so no job below reads github.sha and every checkout names a ref.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
-
-  changelog-page:
-    # CHANGELOG.md changed with the release, so regenerate the docs changelog page from it.
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
-          persist-credentials: true # the step below pushes the regenerated page
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-      - run: uv run scripts/build_changelog.py
-      - name: Commit the regenerated page
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/changelog.mdx
-          git diff --cached --quiet || git commit -m "docs: regenerate the changelog page for ${{ needs.release-please.outputs.tag_name }}"
-          git push
+          target-branch: main
 
   build:
+    # The artifact that goes to PyPI is built from the tag and from nothing else.
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.tag.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-      - name: Tag must match pyproject version
+        with:
+          enable-cache: true
+      - id: tag
+        name: The tag and the package version are the same version
+        # The tag is semver and the package is PEP 440, so `v0.5.0-rc1` and `0.5.0rc1` are one
+        # version spelled two ways and a string comparison would refuse every release candidate.
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          version="$(uv version --short)"
-          tag="${TAG#v}"
-          if [ "$version" != "$tag" ]; then
-            echo "pyproject version $version does not match tag $tag" >&2
-            exit 1
-          fi
-      - run: uv sync --locked --group dev
-      - run: uv run ruff check src tests && uv run ty check src && uv run pytest -q
+          PACKAGED="$(uv version --short)" uv run --isolated --no-project --with packaging python - <<'PY'
+          import os
+          import sys
+          from packaging.version import Version
+
+          tag = Version(os.environ["TAG"].removeprefix("v"))
+          packaged = Version(os.environ["PACKAGED"])
+          if tag != packaged:
+              sys.exit(f"the tag is {tag} and the package is {packaged}, so the wheel would carry the wrong version")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"prerelease={str(tag.is_prerelease).lower()}\n")
+          PY
       - run: uv build
-      - name: Smoke-test the built wheel from a clean environment
-        run: uv run --isolated --no-project --with dist/decktalk-*.whl -- decktalk init /tmp/wheelcheck --name wheelcheck
+      - name: Open the built wheel on a machine that has only the wheel
+        run: uv run --isolated --no-project --with dist/decktalk-*.whl -- decktalk init "${RUNNER_TEMP}/wheelcheck"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/
 
-  cross-platform:
-    # The browser, media and pipeline suites on macOS and Windows, so a platform regression stops the publish.
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    uses: ./.github/workflows/cross-platform.yml
-
   publish:
-    needs: [release-please, build, cross-platform]
+    # The one job that talks to PyPI holds the OIDC token and nothing else, because this is the only
+    # step in the system with no undo.
+    needs: [release-please, build]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write   # trusted publishing
-      contents: write   # attach files to the GitHub release
+      id-token: write
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-      - name: Attach wheel and sdist to the GitHub release
+
+  attach:
+    # Attaching the files and flagging a prerelease are repository writes, so they sit in a job that
+    # holds no PyPI credential of any kind.
+    needs: [release-please, build, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - name: Attach the wheel and the sdist, and flag a release candidate
+        # release-please-action v5 exposes no prerelease output, so the flag is derived from the tag
+        # the build job already parsed.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" dist/* --clobber
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          gh release upload "$TAG" dist/* --clobber
+          if [ "$PRERELEASE" = "true" ]; then
+            gh release edit "$TAG" --prerelease
+          fi

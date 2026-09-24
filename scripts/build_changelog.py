@@ -3,11 +3,16 @@
 # ///
 """Generate docs/changelog.mdx from CHANGELOG.md, which release-please writes.
 
-    uv run scripts/build_changelog.py            # write the page
+    uv run scripts/build_changelog.py --write    # write the page
     uv run scripts/build_changelog.py --check    # exit 1 if the committed page would change
 
-Each release heading becomes a Mintlify Update component, so the docs site shows the
-changelog with a table of contents per release and serves an RSS feed at /changelog/rss.xml.
+Each release becomes a Mintlify Update component, so the docs site shows the changelog with a table
+of contents per release and serves an RSS feed at /changelog/rss.xml.
+
+A release candidate is a release of the same version. `Release-As: 0.5.0-rc1` cuts `0.5.0-rc1`, and
+the series ends at `0.5.0`, so CHANGELOG.md carries a heading for each of them and keeps the machine
+record of what was tagged. A reader of the docs wants one entry per version, so every `X.Y.Z-rcN`
+section is folded into the `X.Y.Z` entry and the page names the version without its suffix.
 """
 
 from __future__ import annotations
@@ -38,41 +43,97 @@ A project keeps the `deck/decktalk-runtime.js` it was created with. To move a pr
 runtime, create a new project with the new DeckTalk and copy the deck pages across.
 """
 
-RELEASE_RE = re.compile(r"^## \[?(?P<version>\d+\.\d+\.\d+)\]?(?:\([^)]*\))? \((?P<date>\d{4}-\d{2}-\d{2})\)\s*$")
+# A heading names a version, optionally a prerelease suffix such as `-rc1`, optionally a compare
+# link, and the date it was tagged. The suffix is matched rather than ignored, because a pattern
+# that ignores it reads `0.5.0-rc1` as `0.5.0` and blesses a pin that resolves to nothing.
+RELEASE_RE = re.compile(
+    r"^## \[?(?P<base>\d+\.\d+\.\d+)(?P<suffix>-[0-9A-Za-z.]+)?\]?(?:\([^)]*\))? \((?P<date>\d{4}-\d{2}-\d{2})\)\s*$"
+)
 SECTION_RE = re.compile(r"^### (?P<name>.+?)\s*$")
 TAGS = {"Features": "feature", "Bug Fixes": "fix", "Documentation": "docs", "Performance Improvements": "performance"}
 
+PREAMBLE = ""
+"""The key the lines above a release's first `###` heading are collected under."""
 
-def parse(text: str) -> list[dict]:
-    releases: list[dict] = []
-    current: dict | None = None
+STALE = "{path} is out of date. Run: uv run scripts/build_changelog.py --write"
+"""The one sentence every generator fails with, naming the file and the command that fixes it."""
+
+
+class Release:
+    """One version of DeckTalk, with every section its releases wrote, newest release first."""
+
+    def __init__(self, base: str, date: str) -> None:
+        self.base = base
+        self.date = date
+        self.sections: dict[str, list[str]] = {}
+
+    @property
+    def tags(self) -> list[str]:
+        """The Mintlify tags this version carries, which is one per kind of change it made."""
+        return [TAGS[name] for name in self.sections if name in TAGS]
+
+    def add(self, name: str, lines: list[str]) -> None:
+        """Keep these lines under their section, after anything a newer release of this version wrote.
+
+        The blank lines around a chunk are dropped, because two cuts of one version write two
+        chunks under one heading and the reader should meet one list rather than two.
+        """
+        kept = "\n".join(lines).strip("\n")
+        self.sections.setdefault(name, [])
+        if kept:
+            self.sections[name].append(kept)
+
+
+def parse(text: str) -> list[Release]:
+    """Every version in CHANGELOG.md, newest first, with its release candidates folded into it.
+
+    The file is newest first, so a version's own release is read before its candidates and its
+    sections come first inside the merged entry.
+    """
+    releases: list[Release] = []
+    by_base: dict[str, Release] = {}
+    current: Release | None = None
+    section, chunk = PREAMBLE, []
     for line in text.splitlines():
-        m = RELEASE_RE.match(line)
-        if m:
-            current = {"version": m["version"], "date": m["date"], "lines": [], "tags": []}
-            releases.append(current)
-            continue
-        if current is None:
-            continue
-        s = SECTION_RE.match(line)
-        if s:
-            tag = TAGS.get(s["name"])
-            if tag and tag not in current["tags"]:
-                current["tags"].append(tag)
-            current["lines"].append(f"**{s['name']}**")
-            continue
-        current["lines"].append(line)
+        heading = RELEASE_RE.match(line)
+        named = SECTION_RE.match(line)
+        if current is not None and (heading or named):
+            current.add(section, chunk)
+            chunk = []
+        if heading:
+            base, date = heading["base"], heading["date"]
+            if base not in by_base:
+                by_base[base] = Release(base, date)
+                releases.append(by_base[base])
+            current, section = by_base[base], PREAMBLE
+        elif named and current is not None:
+            section = named["name"]
+        elif current is not None:
+            chunk.append(line)
+    if current is not None:
+        current.add(section, chunk)
     return releases
 
 
-def render(releases: list[dict]) -> str:
+def body(release: Release) -> str:
+    """One release's sections as Markdown, with each section named once however many cuts wrote it."""
+    parts: list[str] = []
+    for name, lines in release.sections.items():
+        block = "\n".join(lines).strip("\n")
+        if name == PREAMBLE:
+            parts.append(block)
+            continue
+        parts.append(f"**{name}**\n\n{block}" if block else f"**{name}**")
+    return re.sub(r"\n{3,}", "\n\n", "\n\n".join(part for part in parts if part).strip("\n"))
+
+
+def render(releases: list[Release]) -> str:
     parts = [HEADER]
-    for r in releases:
-        body = "\n".join(r["lines"]).strip("\n")
-        body = re.sub(r"\n{3,}", "\n\n", body)
-        tags = ", ".join(f'"{t}"' for t in r["tags"]) or '"release"'
+    for release in releases:
+        tags = ", ".join(f'"{tag}"' for tag in release.tags) or '"release"'
         parts.append(
-            f'<Update label="{r["version"]}" description="{r["date"]}" tags={{[{tags}]}}>\n\n{body}\n\n</Update>\n'
+            f'<Update label="{release.base}" description="{release.date}" tags={{[{tags}]}}>\n\n'
+            f"{body(release)}\n\n</Update>\n"
         )
     return "\n".join(parts).rstrip() + "\n"
 
@@ -80,15 +141,17 @@ def render(releases: list[dict]) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
+    ap.add_argument("--write", action="store_true", help="write the page from CHANGELOG.md")
     args = ap.parse_args()
-    text = render(parse(SOURCE.read_text(encoding="utf-8")))
+    page = render(parse(SOURCE.read_text(encoding="utf-8")))
     if args.check:
-        if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != text:
-            print(f"stale: {TARGET.relative_to(ROOT)}")
+        if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != page:
+            print(STALE.format(path=TARGET.relative_to(ROOT).as_posix()))
             return 1
+        print(f"{TARGET.relative_to(ROOT).as_posix()} is up to date.")
         return 0
-    TARGET.write_text(text, encoding="utf-8")
-    print(f"wrote {TARGET.relative_to(ROOT)}")
+    TARGET.write_text(page, encoding="utf-8")
+    print(f"wrote {TARGET.relative_to(ROOT).as_posix()}")
     return 0
 
 

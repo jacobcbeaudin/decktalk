@@ -1,9 +1,17 @@
+# The only workflow that runs a check. Every check DeckTalk has is a row in the `GROUPS` table in
+# scripts/check.py, and this file reads that table at runtime, so a workflow cannot disagree with it
+# and no check is spelled twice. The table decides which groups gate at which moment, which runner
+# each one needs and how long it may take, and nothing here adds a rule of its own.
 name: ci
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
+  schedule:
+    # The container installer runs and the scaffold build runs once a week, because both judge the
+    # world outside this repository and both are too slow to gate a pull request.
+    - cron: "0 7 * * 1"
   workflow_dispatch:
 
 # Every workflow reads the repository and nothing more. A job that needs a write grants it itself.
@@ -12,129 +20,201 @@ permissions:
 
 # One run per branch. A second push supersedes the first rather than racing it, which on a
 # public repository costs no money but does cost the wait for a green tick. `main` is never
-# cancelled: its runs are the record of what shipped.
+# cancelled: its runs are the record of what shipped, and release.yml consumes that record.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-
 jobs:
-  checks:
-    name: checks (${{ matrix.python-version }})
+  plan:
+    # The matrix is read from the check table rather than written here. `coverage` is emitted
+    # separately because it combines what the other legs produced and therefore has to run after
+    # them, which a single matrix cannot express.
+    name: plan
+    runs-on: ubuntu-latest
+    outputs:
+      groups: ${{ steps.table.outputs.groups }}
+      coverage: ${{ steps.table.outputs.coverage }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: true
+      - id: table
+        name: Read the check table
+        env:
+          # A pull request gates on `pr`, the weekly run gates on `schedule`, and a push to `main`
+          # and a manual run gate on `main`. There is no trigger for `release`, because a release
+          # runs no check of its own: release.yml consumes this run's verdict for the tip of `main`
+          # through `workflow_run`, so the `release` column of the table is the set a release must
+          # already have green rather than a second run of the same commit.
+          MOMENT: >-
+            ${{ github.event_name == 'pull_request' && 'pr'
+            || github.event_name == 'schedule' && 'schedule'
+            || 'main' }}
+        run: |
+          rows="$(uv run scripts/check.py --json --when "$MOMENT")"
+          echo "groups=$(printf '%s' "$rows" | jq -c '[.[] | select(.group != "coverage")]')" >> "$GITHUB_OUTPUT"
+          echo "coverage=$(printf '%s' "$rows" | jq -c '[.[] | select(.group == "coverage")]')" >> "$GITHUB_OUTPUT"
+          uv run scripts/check.py --list
+
+  run:
+    name: ${{ matrix.leg }}
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
-    runs-on: ubuntu-latest
+        include: ${{ fromJSON(needs.plan.outputs.groups) }}
+    runs-on: ${{ matrix['runs-on'] }}
+    timeout-minutes: ${{ matrix['timeout-minutes'] }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.python }}
           enable-cache: true
-      - run: uv lock --check
-      - run: uv sync --locked --group dev
-      - run: uv run ruff check src tests scripts
-      - run: uv run ruff format --check src tests scripts
-      - run: uv run ty check src
-      - run: uv run pytest -q
-
-  docs:
-    # Every generated page, and every link between the pages. A page whose source moved on without
-    # it fails here, so no pull request can leave the docs describing code that is gone.
-    name: docs (generated pages and links)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Node is installed on every leg rather than on the legs whose row lists it, because the
+      # matrix row carries no tool list and adding one would edit the table this file only reads.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-        with:
-          enable-cache: true
-      - run: uv sync --locked --group dev
-      - run: uv run scripts/build_cli_reference.py --check
-      - run: uv run scripts/build_settings_reference.py --check
-      - run: uv run scripts/build_outbound_reference.py --check
-      - run: uv run scripts/build_skills_list.py --check
-      - run: uv run scripts/build_contributing.py --check
-      - run: uv run scripts/build_changelog.py --check
-      - run: uv run scripts/check_docs_links.py --check
-
-  lint:
-    name: lint (JavaScript and shell)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # The same version as .pre-commit-config.yaml and biome.json.
-      - run: npx --yes @biomejs/biome@2.5.13 ci .
-      # The installer is `#!/bin/sh`, and -s sh is what makes shellcheck say so: without it a bashism
-      # passes here and fails on the busybox sh of whoever pasted the one-liner. The runner ships
-      # shellcheck, and .pre-commit-config.yaml runs the same check before the commit.
-      - run: shellcheck -s sh site/install.sh
-
-  e2e:
-    # The browser, media and pipeline suites on Linux, with coverage over the whole suite. The pipeline test
-    # builds tests/e2e/fixture silently in about a minute here and gates cue timing on this platform. macOS and
-    # Windows run the same suites in cross-platform.yml, on pushes to main and before a release is published.
-    name: e2e (ubuntu)
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-        with:
-          enable-cache: true
-      - run: uv sync --locked --group dev
+          node-version: "22"
+          cache: npm
       - name: Cache Chromium and ffmpeg
+        # The three platforms keep a per-user cache in three places, so all six are named and the
+        # ones this runner does not have are simply not there.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/ms-playwright
             ~/.cache/decktalk
+            ~/Library/Caches/ms-playwright
+            ~/Library/Caches/decktalk
+            ~/AppData/Local/ms-playwright
+            ~/AppData/Local/decktalk
           key: tools-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-      - run: uv run decktalk install
-      - run: uv run decktalk doctor
-      - name: Unit, browser, media and pipeline tests with coverage
-        run: uv run pytest -q -m "not scaffold" --cov --cov-report=term --cov-report=xml --durations=10 | tee pytest.log
-      - name: Coverage in the job summary
+      - name: Run the group
+        # check.py opens its own log with the group name and the one local command that reproduces
+        # it, so a reader who finds this job red never has to open a workflow file.
+        env:
+          GROUP: ${{ matrix.group }}
+        run: uv run scripts/check.py --group "$GROUP"
+      - name: Keep the coverage this leg measured
+        # Only the Linux legs reach the floor, and the coverage job selects them by name.
         if: always()
-        run: |
-          {
-            echo '## Coverage'
-            echo '```'
-            sed -n '/^---------- coverage/,$p' pytest.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-ubuntu
-          path: |
-            tests/out/e2e/pipeline/verify.json
-            tests/out/e2e/pipeline/build/recordings/*.json
-            tests/out/e2e/pipeline/build/narration/*.json
-            tests/out/e2e/pipeline/build/screenshots/
-            tests/out/e2e/pipeline/build/preflight/
-            tests/out/e2e/pipeline/build/out/*.mp4
-            tests/out/e2e/pipeline/build/out/*.srt
-            pytest.log
+          name: coverage-${{ matrix.group }}-${{ matrix['runs-on'] }}-${{ matrix.python }}
+          path: .coverage*
+          include-hidden-files: true
           if-no-files-found: ignore
 
-  cross-platform:
-    # A regression on macOS or Windows should land on one commit, not on the release, so the job runs on every
-    # push to main. Pull requests stay on Linux, which keeps them to about five minutes.
-    if: github.event_name != 'pull_request'
-    uses: ./.github/workflows/cross-platform.yml
+  coverage:
+    # One floor, measured on Linux, because three platforms with different skip sets give a floor
+    # nobody can satisfy and hide the platform-only branches inside a combined report.
+    name: ${{ matrix.leg }}
+    needs: [plan, run]
+    if: always() && needs.plan.outputs.coverage != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.coverage) }}
+    runs-on: ${{ matrix['runs-on'] }}
+    timeout-minutes: ${{ matrix['timeout-minutes'] }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-*-ubuntu-latest-*
+          path: coverage-legs
+          merge-multiple: false
+      - name: Gather what the Linux legs measured
+        run: find coverage-legs -name '.coverage*' -exec mv {} . \;
+      - name: Run the group
+        env:
+          GROUP: ${{ matrix.group }}
+        run: uv run scripts/check.py --group "$GROUP"
 
-  installer:
-    # site/install.sh installed for real in Debian, Ubuntu, Fedora and Alpine containers. Same rule as
-    # cross-platform: every push to main, not every pull request. A pull request that edits the installer
-    # runs the matrix from installer.yml's own paths filter, so the one that needs it still gets it.
-    if: github.event_name != 'pull_request'
-    uses: ./.github/workflows/installer.yml
+  regenerate:
+    # Everything release-please's own bump makes stale is regenerated on its pull request branch, so
+    # the merge commit already carries it, every `--check` is true on `main` at every instant and no
+    # bot ever writes to `main`. The push uses an app token because a push made with GITHUB_TOKEN
+    # starts no workflow, and the required check would then never report on the commit that merges.
+    # Two files are stale after a bump: the changelog page, which is generated from CHANGELOG.md,
+    # and the two runtime bundles, which compile the version literal release-please writes into
+    # `runtime/src/index.ts`.
+    name: regenerate what the version bump made stale
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          app-id: ${{ vars.CHANGELOG_APP_ID }}
+          private-key: ${{ secrets.CHANGELOG_APP_PRIVATE_KEY }}
+          # The token may write one file on one branch, so it is granted the contents scope alone.
+          permission-contents: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ steps.token.outputs.token }}
+          persist-credentials: true
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: uv run scripts/build_changelog.py --write
+      - run: uv run scripts/build_runtime.py --write
+      - name: Commit what the bump made stale
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          git config user.name "decktalk-changelog[bot]"
+          git config user.email "decktalk-changelog[bot]@users.noreply.github.com"
+          git add docs/changelog.mdx src/decktalk/runtime
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: regenerate the changelog page and the runtime bundles"
+          git push origin "HEAD:$BRANCH"
+
+  ci:
+    # A generated matrix cannot be a required check, because a ruleset names a check by literal
+    # string and `run (browser, macos-latest, 3.12)` does not exist until the plan job has run. This
+    # job is that literal string, and a `needs` on a matrix job aggregates every one of its legs, so
+    # requiring `ci` on `main` requires all of them.
+    name: ci
+    needs: [plan, run, coverage]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every group the table selected was run and passed
+        env:
+          GROUPS: ${{ needs.plan.outputs.groups }}
+          COVERAGE: ${{ needs.plan.outputs.coverage }}
+          RUN_RESULT: ${{ needs.run.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+        run: |
+          if [ "$(printf '%s' "$GROUPS" | jq 'length')" -eq 0 ]; then
+            echo "the check table selected no group, so this run proves nothing" >&2
+            exit 1
+          fi
+          if [ "$RUN_RESULT" != "success" ]; then
+            echo "the check groups ended in $RUN_RESULT" >&2
+            exit 1
+          fi
+          if [ "$(printf '%s' "$COVERAGE" | jq 'length')" -gt 0 ] && [ "$COVERAGE_RESULT" != "success" ]; then
+            echo "the coverage floor ended in $COVERAGE_RESULT" >&2
+            exit 1
+          fi
