@@ -250,6 +250,13 @@ where the deck is served and then closes its output, so a caller that captured i
 and is not left waiting on a stream that never ends. `--host` and `--port` choose the interface and
 the port, and a port of 0 takes any free one.
 
+The deck directory is every directory a `page` sits in, so every name under it is served however the
+page spells it. A file outside it, such as a clip, a words file or a sound, is served only by the
+spelling `decktalk.toml` gives it. Write the same name in the page, down to its case, because a
+request for `Media/Intro.mp4` is refused when the project declared `media/intro.mp4`, on every
+platform alike. The recorder opens the page under the same rule, so a page that previews cleanly
+records cleanly.
+
 From the URL it prints:
 
 - The page with no query lists every scene and every slide, and links a preview and a still of each.

@@ -132,8 +132,9 @@ disagree, and neither of them compares file times.
 
 ## Read it before you run it
 
-`decktalk status` reads the project, writes nothing, judges nothing and never exits 1. It is the one
-call that says what is on disk and whether that is still true.
+`decktalk status` reads the project and writes nothing. It is the one call that says what is on disk
+and whether that is still true. The one thing it judges is a file the project names and has not got,
+which is a certain [`FILE_MISSING`](/reference/findings/FILE_MISSING) and the only way it exits 1.
 
 ```console
 decktalk status

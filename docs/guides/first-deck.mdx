@@ -92,7 +92,7 @@ carries. Write the local name on the page and the wire id in `cues.json`.
     ```
 
     - A `[data-scene]` wrapper is a scene and never draws anything itself. `data-name` is what the scene index calls it.
-    - Each `<template data-slide>` inside it is one slide, cloned onto the stage when the slide mounts. `data-hold` is how long its last frame holds.
+    - Each `<template data-slide>` inside it is one slide, cloned onto the stage when the slide mounts. `data-hold` is how long the preview rests on the slide, and no recording reads it.
     - An element with `data-in` stays hidden until that cue fires. The local name is yours to choose, and it has to be unique within the slide.
     - `data-describe` says in one sentence what the moment shows. It is what the transcript reads and what a reviewer checks a reveal against, and a moment without one is reported.
     - Every element is placed absolutely on the 1920 by 1080 stage, so one thing arriving moves nothing else.
@@ -155,8 +155,8 @@ decktalk check --section 4 --no-frames --fix
 ```
 
 ```text
-error[INPUT]: cues.json: section 4, cue #1: 'on' must not be empty
-  docs: https://docs.decktalk.ai/reference/errors/INPUT
+cues.json: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'on' and it will have a second.
+Found 1 finding, 1 certain.
 ```
 
 The row is in the file:
@@ -171,8 +171,9 @@ The row is in the file:
 ```
 
 The fix writes the id, because DeckTalk knows the id, and leaves `on` empty, because the phrase is
-your line and not DeckTalk's. An empty phrase is not a loadable project, so the run stops on the
-reload and says so by name. Write the phrase and the section is complete.
+your line and not DeckTalk's. The run reads the project again after the fix and reports the empty
+phrase as [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED), so it still exits 1. Write the phrase
+and the section is complete.
 
 ```json cues.json
 { "cue": "4.1:waits", "on": "the picture waits" }
@@ -234,12 +235,12 @@ decktalk verify --section 4
 
 ```text
 Verifying build/final/my-lesson.mp4, 1:01 long.
-                                                 
- Section   Cue           Spoken   Shown   Offset 
- ─────────────────────────────────────────────── 
- 4         4.1:heading   51.77    51.80   +0.03  
- 4         4.1:waits     58.24    58.28   +0.04  
-                                                 
+
+ Section   Cue           Spoken   Shown   Offset
+ ───────────────────────────────────────────────
+ 4         4.1:heading   51.77    51.80   +0.03
+ 4         4.1:waits     58.24    58.28   +0.04
+
 ```
 
 `Spoken` is the second the cue phrase is said on the film's clock. `Shown` is the second the picture

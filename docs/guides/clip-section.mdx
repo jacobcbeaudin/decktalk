@@ -52,7 +52,8 @@ the line `Your clip goes here`, and the path to drop the file at. It is drawn on
 your own to use in its place.
 
 Nothing about a slate is silent about itself: `decktalk status` reports the missing file as a certain
-[`FILE_MISSING`](/reference/findings/FILE_MISSING), naming the section and the path.
+[`FILE_MISSING`](/reference/findings/FILE_MISSING), naming the section and the path. A section marked
+`optional` is the one exception, because it has said the slate is allowed.
 
 ### Putting one between two page sections
 
@@ -168,11 +169,14 @@ first word is part of the span like anything else.
     inside the span in seconds after the clip starts. A word the span cuts in two is left out and
     said aloud on the stream, so move `--end` into the silence beside the word to keep it.
 
-    {/* sample: the two lines decktalk clip writes when a span cuts a word and the narration is a placeholder */}
+    {/* sample: decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 on a starter built with --no-voice */}
     ```text
-    The span from 0.48s to 1.92s cuts the word 'DeckTalk.' in two, so the words file leaves it out.
     Section 1 carries placeholder narration, so every word time in this clip is an estimate.
+    Cut media/open-line.mp4, 1.9 seconds of section 1.
     ```
+
+    A span that cuts a word adds one line before those, such as `The span from 0.48s to 1.68s cuts
+    the word 'DeckTalk.' in two, so the words file leaves it out.`
   </Step>
 
   <Step title="Play it in a clip section">
