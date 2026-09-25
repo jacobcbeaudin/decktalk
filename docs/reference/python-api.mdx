@@ -456,9 +456,9 @@ decktalk.Project.serve(*, host="127.0.0.1", port=0) -> Origin
 ```
 
 `serve` hands back the origin rather than a result, because the caller holds it open. The origin
-answers only for the deck directory and the files the document declares, so a page the recorder
-drives and a preview an author leaves running reach the same short list and neither can read the
-credential beside it. It also answers one alias, which is where a previewed page reads the cue times
+answers only for the deck directory and the files the document declares, each by the spelling the
+document gives it, so a page the recorder drives and a preview an author leaves running reach the
+same short list and neither can read the credential beside it. It also answers one alias, which is where a previewed page reads the cue times
 the last run resolved.
 
 | Member | Meaning |

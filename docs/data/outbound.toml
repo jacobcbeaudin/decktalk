@@ -6,6 +6,10 @@
 #
 # `[[service]]` rows are requests that carry the project's own content to a service.
 # `[[download]]` rows are one-time fetches of a tool, and they carry nothing of the project.
+#
+# The `#:schema` line `decktalk init` writes names a file on raw.githubusercontent.com. DeckTalk never
+# fetches it, so it has no row here. An editor that understands the line fetches the schema on its
+# own, and that request carries nothing of the project.
 
 [[service]]
 host = "api.elevenlabs.io"
