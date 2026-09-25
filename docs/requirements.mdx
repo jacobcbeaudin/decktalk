@@ -118,7 +118,8 @@ is one setting, and none of them changes the project.
 
 Every setting has an environment variable of its own, spelled `DECKTALK_<TABLE>_<KEY>`, so
 `[tools] ffmpeg` is `DECKTALK_TOOLS_FFMPEG` and `[tools] cache_dir` is `DECKTALK_TOOLS_CACHE_DIR`.
-`decktalk config explain tools.ffmpeg` prints all five layers with the winner marked.
+`decktalk config explain tools.ffmpeg` prints the value that wins and the layer that set it, and its
+`--json` lists every layer that sets the key.
 
 If the machine already has an approved Chrome or Chromium, record with that one instead.
 
@@ -222,9 +223,9 @@ decktalk check --json
 - `price_layer` names which of the five settings layers set the rate, where `default` means nobody did.
 
 `dollars` and `ceiling_dollars` differ when a section's cache cannot be checked. With no
-`ELEVENLABS_VOICE_ID` set there is no voice to match a take on disk against, so no section can be
-called cached: each one's characters go into the ceiling and none of them into the price, and the
-same call then reports the figure a run certainly spends and the figure it can reach.
+`ELEVENLABS_API_KEY` set there is no voice to ask whether a take on disk is current, so no section
+can be called cached: each one's characters go into the ceiling and none of them into the price, and
+the same call then reports the figure a run certainly spends and the figure it can reach.
 
 ### The ceiling
 
