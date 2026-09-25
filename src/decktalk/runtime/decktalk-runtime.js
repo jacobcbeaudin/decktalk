@@ -2023,7 +2023,7 @@
    * the seam, and publishes `window.DeckTalk` for an author and `window.__decktalk` for whoever is
    * reading the page back. Nothing imports it, which is what keeps every other module testable.
    */
-  var VERSION = "0.5.0-rc1";
+  var VERSION = "0.5.0-rc2";
   var GATE_SECONDS = 5;
   var gates = [];
   function injected() {
