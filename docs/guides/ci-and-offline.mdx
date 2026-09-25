@@ -150,7 +150,7 @@ ELEVENLABS_VOICE_ID is not set, so no take on disk can be matched to the voice t
 there is no voice to ask, so the cache could not be checked and the whole run is priced as new. ELEVENLABS_API_KEY is not set.
 no page was opened, so these judgements were not reached: CUE_MISSING, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
 frames were asked for and no page was opened, so no frame was frozen either.
-Checking script.md, cues.json, deck/index.html.
+Checking script.md, cues.json.
 Voicing it costs about $0.00 at $0.30 per 1,000 characters, up to $0.14.
 ```
 
@@ -184,11 +184,11 @@ jobs:
   video:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - run: uv tool install decktalk
       - name: Cache Chromium and ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/ms-playwright
@@ -200,7 +200,7 @@ jobs:
       - run: decktalk build --no-voice --no-input --json > build.json
         env:
           DECKTALK_VIDEO_PRESET: veryfast
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: film
@@ -239,6 +239,16 @@ Every one of those keys publishes the range that is safe to turn it through, and
 value outside it, naming the file and the line.
 [Configuration](/reference/configuration#verify) states each range and what a value past it costs
 you.
+
+A runner whose job is to prove the project builds, rather than to judge its timing, can report a
+late reveal instead of failing on it. `--allow CUE_OFF` keeps the finding in the output and stops it
+counting toward the exit, and every other finding still counts. DeckTalk's own test suites make the
+same choice on hosted runners: Linux gates cue timing, and macOS and Windows report it, because their
+compositors present frames late.
+
+```console
+decktalk build --no-voice --no-input --allow CUE_OFF
+```
 
 ## Build offline
 
