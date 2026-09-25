@@ -132,7 +132,8 @@ Yes. DeckTalk runs on Linux, macOS and Windows.
   proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents, or point
   `[record] browser_path` at a browser the machine already has.
 - The groups that drive a real browser or a real ffmpeg run on macOS and Windows when a change
-  merges and when a release is cut.
+  merges and when a release is cut. Those legs report cue timing rather than fail on it, because a
+  hosted runner presents frames late, and the Linux legs hold every reveal to its word.
   [What CI runs](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md#what-ci-runs)
   names every leg.
 

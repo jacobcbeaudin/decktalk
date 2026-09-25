@@ -94,9 +94,9 @@ ever written.
 The count line tells you before you run it: `Found 1 finding, 1 certain. 1 fixable with --fix.`
 
 A safe fix does the boring part and leaves the judgement to you. `check --fix` on a project with no
-cue file writes every row the deck declares with an empty `on`, so the next run refuses with an
-`INPUT` error naming the first empty phrase. That is the fix working. Fill in the phrases and run it
-again.
+cue file writes every row the deck declares with an empty `on`, so the next `check` reports a
+`CUE_UNRESOLVED` for each empty phrase and a build refuses with an `INPUT` error that lists them. That
+is the fix working. Fill in the phrases and run it again.
 
 ## Carry on past a code, or change what fails a run
 
@@ -132,6 +132,8 @@ decktalk cue --json | jq '.findings'
 | A file the project names is not on disk | [FILE_MISSING](/reference/findings/FILE_MISSING) | [A missing toolchain](#a-missing-toolchain) |
 | The command exited 2 without doing anything | [USAGE](/reference/errors/USAGE) | [A refused command line](#a-refused-command-line) |
 | A run refused because it would have spent money | [APPROVAL](/reference/errors/APPROVAL) | [A refused command line](#a-refused-command-line) |
+| A stage said a file it reads has not been built | [NOT_BUILT](/reference/errors/NOT_BUILT) | [A stage run before the one it reads](#a-stage-run-before-the-one-it-reads) |
+| A voiced run stopped on an answer from ElevenLabs | [PROVIDER](/reference/errors/PROVIDER) | [A voice that did not answer](#a-voice-that-did-not-answer) |
 | A command said another writer holds the build directory | [LOCKED](/reference/errors/LOCKED) | [A locked project](#a-locked-project) |
 | A reveal never happened, and the message names a cue | [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED), [CUE_MISSING](/reference/findings/CUE_MISSING), [CUE_UNKNOWN](/reference/findings/CUE_UNKNOWN), [PAGE_CUE_UNKNOWN](/reference/findings/PAGE_CUE_UNKNOWN) | [An unresolved cue](#an-unresolved-cue) |
 | Two reveals ran into each other | [CUE_OVERLAP](/reference/findings/CUE_OVERLAP) | [An unresolved cue](#an-unresolved-cue) |
@@ -208,6 +210,35 @@ have answered, which is what makes a non-interactive run deterministic.
 In the library there is no terminal to ask, so nothing spends without `voice=decktalk.Voicing.PAID`,
 and `ApprovalRequired` is raised rather than money being spent.
 
+## A stage run before the one it reads
+
+**What you see.** `error[NOT_BUILT]`, naming the file that is not there and the command that writes it.
+
+```text
+error[NOT_BUILT]: build/narrate/takes.json has not been built.
+  hint: Run `decktalk narrate` first.
+  docs: https://docs.decktalk.ai/reference/errors/NOT_BUILT
+```
+
+Each stage reads what an earlier stage wrote, so a stage run on its own before that one fails here.
+Run the command the hint names, or run `decktalk build`, which runs every stage in order.
+`decktalk narrate --no-voice` writes the takes without spending anything. `decktalk status` names the
+next command to run.
+
+## A voice that did not answer
+
+**What you see.** `error[PROVIDER]`, with the HTTP status and the host when ElevenLabs answered, or
+the reason when it could not be reached.
+
+**What to do.**
+
+1. Read the status in the message. A 401 is a key ElevenLabs does not accept, and a 429 or a 5xx is
+   ElevenLabs being busy, which a later run usually gets past.
+2. Run the same command again. The take index is written after every section, so the sections
+   already voiced are found on disk and the run pays only for the rest.
+3. A key that is not set at all is not this code. It is an `INPUT` error naming
+   `ELEVENLABS_API_KEY`, raised before any request is sent.
+
 ## A locked project
 
 **What you see.** `error[LOCKED]`, naming the process and the run that holds the directory, with the
@@ -244,7 +275,7 @@ what `cues.json` carries in its `cue` field. Four codes say which half is missin
 speaks.
 
 ```text
-1.1:title: CUE_UNRESOLVED the cue 1.1:title waits for 'a phrase nobody says' and section 1 speaks 38 words, none of which is that phrase.
+cues.json: CUE_UNRESOLVED the cue 1.1:title waits for 'a phrase nobody says' and section 1 speaks 38 words, none of which is that phrase.
 ```
 
 Run `decktalk words --section 1` to see every spoken word with its start and its end, which is the
@@ -347,7 +378,11 @@ reports that itself, through the probe, as one of these:
 **What to do.**
 
 1. Run `decktalk serve` and open the page in your own browser. It serves the deck directory and the
-   files `decktalk.toml` declares, and nothing else, so what you see is what the recorder sees.
+   files `decktalk.toml` declares, and nothing else, so what you see is what the recorder sees. A
+   declared file is reached only by the spelling `decktalk.toml` gives it, on every platform, so a
+   page that asks for it with other capitals is refused.
+   [Browser preview and recording](/concepts/page-contract#browser-preview-and-recording) says what
+   the origin serves.
 2. Read the browser console. These six codes are the page's own report from the browser, so the
    detail behind each one is there.
 3. Run `decktalk check`, which opens the same page through the same probe without recording
@@ -434,8 +469,8 @@ ceiling and `mix.loudness.range_max_lu` as the widest loudness range allowed. Th
 2. A film that misses the target by a lot usually has a bed fighting the voice. `[mix] music_db`,
    `[mix] music_duck_db` and `[mix] ambience_db` are where that is settled.
 3. Change the target only when you are mastering for a platform that asks for a different one. Read
-   it whole first with `decktalk config explain mix.loudness.target_lufs`, which prints all five
-   layers with the winner marked.
+   it whole first with `decktalk config explain mix.loudness.target_lufs`, which prints its range and
+   the layer that set the value in force, and whose `--json` lists every layer that stated it.
 
 ## A page that loads an asset from a network origin
 
@@ -465,7 +500,7 @@ It is certain and it carries no fix, because only you can decide what the local 
 These come out whenever `record` or `check` opens the page. Most of them the page reports about
 itself, through the probe, and the rest DeckTalk reads off the catalog the page published. All of
 them are about markup rather than about timing, so all of them can be cleared before a single credit
-is spent. Two of them are marked uncertain in the table, and the rest are certain because the
+is spent. One of them, `PAGE_SWAP_APART`, is uncertain, and the rest are certain because the
 contract either declares a thing or it does not.
 
 | Code | The change that clears it |
