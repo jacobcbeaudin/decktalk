@@ -1,6 +1,6 @@
 [project]
 name = "decktalk"
-version = "0.4.1"
+version = "0.5.0-rc1"
 description = "Every picture lands on its word, and you edit the video like a doc. DeckTalk turns a markdown script, HTML slides, and your voice into one narrated mp4, for technical tutorials, product demos, and lessons."
 readme = "README.md"
 requires-python = ">=3.12"
