@@ -820,6 +820,20 @@ def check_the_shape() -> int:
     return 1 if stale else 0
 
 
+def write_the_shape(project: Path) -> int:
+    """Rewrite the two committed files in the shape this script writes, having no film to read.
+
+    `uv run scripts/check.py --group generated --write` runs every generator on a machine that has
+    no film, which is every machine but the founder's. Refusing there failed the release pull request
+    for a page the version bump never touches, so the write keeps the committed data and restores
+    the shape and the header, exactly the part `--check` can judge without the film.
+    """
+    for path, name, what in FILES:
+        path.write_text(committed(path, name, what), encoding="utf-8")
+    print(f"the film is not at {project}, so both files kept their committed data and were rewritten in shape.")
+    return 0
+
+
 FILES = (
     (DATA, "HALFWAY", "Times are film seconds."),
     (STAGE, "HALFWAY_STAGE", "The hero replays these scenes."),
@@ -838,8 +852,10 @@ def main() -> int:
     args = parser.parse_args()
 
     if not (args.project / "decktalk.toml").exists():
+        if args.media or args.run:
+            sys.exit(f"there is no film at {args.project} to cut or read a run from. Name it with --project DIR.")
         if args.write:
-            sys.exit(f"there is no film at {args.project}. Name it with --project DIR.")
+            return write_the_shape(args.project)
         print(f"the film is not at {args.project}, so both files were held to their own shape alone.")
         return check_the_shape()
 

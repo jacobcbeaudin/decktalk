@@ -1677,16 +1677,20 @@ def _first_difference(generated: list[str], committed: list[str]) -> str:
     return "the end of the file"
 
 
+def why_stale(path: Path, source: str) -> str | None:
+    """Why the file at `path` no longer says what `source` says, or None when it still does."""
+    if not path.exists():
+        return "it is not committed"
+    if measured(path):
+        return stale_reason(source, path.read_text(encoding="utf-8"))
+    return None if path.read_text(encoding="utf-8") == source else "it differs from its source"
+
+
 def report_stale(files: dict[Path, str]) -> int:
     """Print every committed file that no longer says what its source says, and return how many there are."""
     stale = 0
     for path, source in files.items():
-        if not path.exists():
-            reason: str | None = "it is not committed"
-        elif measured(path):
-            reason = stale_reason(source, path.read_text(encoding="utf-8"))
-        else:
-            reason = None if path.read_text(encoding="utf-8") == source else "it differs from its source"
+        reason = why_stale(path, source)
         if reason:
             print(f"stale: {path.relative_to(ROOT)}, because {reason}")
             stale += 1
@@ -1778,11 +1782,16 @@ def main() -> int:
     files = build()
     if args.check:
         return 1 if report_stale(files) else 0
-    changed = [p for p, s in files.items() if not p.exists() or p.read_text(encoding="utf-8") != s]
-    for p, s in files.items():
+    # A write rewrites only what the check calls stale. The release pull request regenerates on a
+    # Linux runner, which shapes every measured word a fraction of a pixel away from the author's
+    # machine, and rewriting within that tolerance would commit a churn of every figure to a release.
+    changed = [p for p, s in files.items() if why_stale(p, s)]
+    for p in changed:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(s, encoding="utf-8")
-        print(f"wrote {p.relative_to(ROOT)}  ({len(s) // 1024} KB)")
+        p.write_text(files[p], encoding="utf-8")
+        print(f"wrote {p.relative_to(ROOT)}  ({len(files[p]) // 1024} KB)")
+    if not changed:
+        print("every generated asset already says what its source says")
     # The social card and the favicons are also needed as PNGs. They are not part of --check because
     # raster bytes vary between Chromium builds, so they are only refreshed when their SVG source was rewritten.
     if ASSETS / "og.svg" in changed or not (ROOT / "site" / "og.png").exists():

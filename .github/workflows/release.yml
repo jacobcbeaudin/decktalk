@@ -11,8 +11,9 @@
 # when that run was green, was a push and was on `main`, so what ships is what ci judged. A
 # `workflow_dispatch` run on `main` is also a success, which is why the event is checked too.
 #
-# The changelog page is not written here. ci.yml regenerates docs/changelog.mdx on release-please's
-# own pull request branch, so the merge commit already carries it and no bot ever writes to `main`.
+# No generated file is written here. ci.yml regenerates every file the bump made stale on
+# release-please's own pull request branch, so the merge commit already carries them and no bot ever
+# writes to `main`.
 #
 # One-time setup on PyPI (before the first release):
 #   pypi.org -> your account -> Publishing -> "Add a new pending publisher":

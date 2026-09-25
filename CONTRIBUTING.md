@@ -193,8 +193,8 @@ gates it. These are the settings, which only the repository owner can apply.
 6. Leave **Bypass list** empty. This does mean you can no longer push to `main` directly, which is
    the point: every change to `main` then arrives through a pull request that `ci` judged.
 
-`release-please` opens its own pull request and it passes the same gate, which is why the changelog
-page and the runtime bundles are regenerated on that branch rather than pushed to `main` afterwards.
+`release-please` opens its own pull request and it passes the same gate, which is why every file its
+version bump makes stale is regenerated on that branch rather than pushed to `main` afterwards.
 
 ## Layout
 
@@ -399,8 +399,10 @@ People and agents read these docs. Write so that neither has to guess.
 - Use American spelling.
 
 Everything mechanical is generated. Do not edit a generated file. Change its source and run its
-script, which is what the `generated` group checks. Every generator takes `--check` and `--write`,
-and every one fails with the same sentence naming the file and the command that fixes it.
+script, which is what the `generated` group checks. Every generator requires one of `--check` and
+`--write`, and every one fails with the same sentence naming the file and the command that fixes it.
+`uv run scripts/check.py --group generated --write` runs every generator in the group in write mode,
+which is the one command that brings every generated file up to date at once.
 
 | What is generated | From | Command |
 |---|---|---|
@@ -445,8 +447,9 @@ docs: state the reveal floor in pixels
 release-please keeps a release pull request open against `main`. It bumps the version in
 `pyproject.toml`, `uv.lock` and `src/decktalk/runtime/src/index.ts`, writes `CHANGELOG.md`, and
 picks the bump from the commits since the last release. That pull request runs `ci` like any other,
-and a job in `ci.yml` regenerates `docs/changelog.mdx` and the two runtime bundles on its branch, so
-the merge commit already carries them and no bot ever writes to `main`.
+and a job in `ci.yml` runs `uv run scripts/check.py --group generated --write` on its branch and
+commits every file that changed, so the merge commit already carries them and no bot ever writes to
+`main`.
 
 The version answers for the wheel, and the wheel is `src/decktalk` alone, so `exclude-paths` in
 `release-please-config.json` lists the directories that ship to nobody: `site`, `docs`, `assets`,

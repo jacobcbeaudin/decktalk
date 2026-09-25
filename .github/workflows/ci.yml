@@ -175,9 +175,10 @@ jobs:
     # the merge commit already carries it, every `--check` is true on `main` at every instant and no
     # bot ever writes to `main`. The push uses an app token because a push made with GITHUB_TOKEN
     # starts no workflow, and the required check would then never report on the commit that merges.
-    # Two files are stale after a bump: the changelog page, which is generated from CHANGELOG.md,
-    # and the two runtime bundles, which compile the version literal release-please writes into
-    # `runtime/src/index.ts`.
+    #
+    # Every generator in the `generated` group runs in write mode, read from the same row the check
+    # reads, so this job cannot forget a file the bump made stale. Every tracked file that changed is
+    # committed, together with any new file in the directories those generators write.
     name: regenerate what the version bump made stale
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--')
     runs-on: ubuntu-latest
@@ -187,7 +188,7 @@ jobs:
         with:
           app-id: ${{ vars.CHANGELOG_APP_ID }}
           private-key: ${{ secrets.CHANGELOG_APP_PRIVATE_KEY }}
-          # The token may write one file on one branch, so it is granted the contents scope alone.
+          # The token writes to one branch, so it is granted the contents scope alone.
           permission-contents: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -201,18 +202,17 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - run: npm ci
-      - run: uv run scripts/build_changelog.py --write
-      - run: uv run scripts/build_runtime.py --write
+      - run: uv run scripts/check.py --group generated --write
       - name: Commit what the bump made stale
         env:
           BRANCH: ${{ github.head_ref }}
         run: |
           git config user.name "decktalk-changelog[bot]"
           git config user.email "decktalk-changelog[bot]@users.noreply.github.com"
-          git add docs/changelog.mdx src/decktalk/runtime
+          git add -u
+          git add assets docs schemas site src/decktalk
           git diff --cached --quiet && exit 0
-          git commit -m "chore: regenerate the changelog page and the runtime bundles"
+          git commit -m "chore: regenerate what the version bump made stale"
           git push origin "HEAD:$BRANCH"
 
   ci:

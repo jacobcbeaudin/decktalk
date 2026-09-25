@@ -7,6 +7,7 @@
     uv run scripts/check.py --fast           # lint and unit alone, in a few seconds
     uv run scripts/check.py --group browser  # one group, by name, repeatable and comma-separated
     uv run scripts/check.py --list           # the table, for a person
+    uv run scripts/check.py --group generated --write  # every generator in the group, writing
     uv run scripts/check.py --json --when pr # the matrix, for a workflow
 
 `GROUPS` below is the only place any check is written down. A workflow reads this table at runtime and
@@ -14,6 +15,11 @@ names no command of its own, so a workflow cannot disagree with it. There is no 
 check and no way to mark one advisory, because a knob that exists becomes permanent. A run that
 selects fewer groups than the full set prints the rows it did not run and why, so a short run is never
 mistaken for a complete one.
+
+`--write` turns a group's checks into the commands that fix them. Every `build_*.py --check` in the
+group runs as `--write` instead, the commands that prepare the machine run as they are, and a
+command that only judges is left out. The write commands are read from the same rows, so the one
+command that regenerates what a release made stale cannot forget a generator the check remembers.
 
 The first run may download headless Chromium and ffmpeg through `decktalk install`, once per machine.
 No check needs an ElevenLabs key, and after `decktalk install` no check needs the network.
@@ -166,6 +172,21 @@ def in_image(image: str, script: str) -> tuple[str, ...]:
     return ("docker", "run", "--rm", "-v", f"{ROOT / 'site'}:/site:ro", image, "sh", "-euc", script)
 
 
+NPM_CI = ("npm", "ci")
+"""The pinned Node toolchain, which the runtime generator compiles with and the linters run from."""
+
+FETCH_CHROMIUM = (*UV, "python", "-m", "playwright", "install", "chromium")
+"""The browser `build_assets.py` measures the hero in, fetched the way `media/browser.py` fetches it."""
+
+PREPARES = (NPM_CI, FETCH_CHROMIUM)
+"""The commands that prepare a machine rather than judge it, which a write needs as much as a check."""
+
+CHECK, WRITE = "--check", "--write"
+
+GENERATES = "build_"
+"""The prefix every generator's script carries, and the one thing that tells a generator from a check."""
+
+
 def generator(name: str) -> tuple[str, ...]:
     """A generated file held to its source. Every generator takes `--check` and `--write` alike.
 
@@ -174,7 +195,30 @@ def generator(name: str) -> tuple[str, ...]:
     read the package they generate from. The lockfile decides what a generator sees, the same way it
     decides what a test sees.
     """
-    return (*UV, "python", f"scripts/{name}.py", "--check")
+    return (*UV, "python", f"scripts/{name}.py", CHECK)
+
+
+def writing(command: tuple[str, ...]) -> tuple[str, ...] | None:
+    """The command that writes what `command` checks, the command itself when it prepares, or None.
+
+    A generator is a `scripts/build_*.py` run with `--check`, and its write is the same command with
+    `--write`, so a generator that needs `uv run --with` to check needs it to write as well. A check
+    that generates nothing, such as `check_docs_links.py` or `check_wheel.py`, has no write at all.
+    """
+    if command in PREPARES:
+        return command
+    generates = any(Path(part).name.startswith(GENERATES) for part in command)
+    if not generates or command[-1] != CHECK:
+        return None
+    return (*command[:-1], WRITE)
+
+
+def writer(group: Group) -> Group:
+    """The same group with every generator writing, every preparation kept and every check left out."""
+    commands = tuple(written for command in group.commands if (written := writing(command)) is not None)
+    if all(command in PREPARES for command in commands):
+        raise SystemExit(f"the group {group.name} generates nothing, so --write has nothing to write.")
+    return replace(group, why=f"{group.why} This run writes what those checks judge.", commands=commands)
 
 
 @dataclass(frozen=True)
@@ -291,7 +335,7 @@ GROUPS: tuple[Group, ...] = (
             (*UV, "ruff", "check", "src", "tests", "scripts"),
             (*UV, "ruff", "format", "--check", "src", "tests", "scripts"),
             (*UV, "ty", "check", "src"),
-            ("npm", "ci"),
+            NPM_CI,
             ("npm", "exec", "--no", "--", "biome", "ci", "."),
             ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "site/install.sh"),
             ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
@@ -320,7 +364,7 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="node",
         why="The runtime's pure functions over strings, under node --test, so no test framework is added.",
-        commands=(("npm", "ci"), ("node", "--test", RUNTIME_TESTS)),
+        commands=(NPM_CI, ("node", "--test", RUNTIME_TESTS)),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("npm",),
@@ -351,14 +395,14 @@ GROUPS: tuple[Group, ...] = (
         commands=(
             # The runtime bundles are compiled by the pinned TypeScript, so the group that judges
             # them installs it first, the way every other group that lists npm does.
-            ("npm", "ci"),
+            NPM_CI,
             # `build_assets.py` measures the hero's word widths in the real Chromium with the real
             # font, so this group needs a browser as much as the browser group does. The suites
             # fetch their own through `media/browser.py`, and a generator that launches Playwright
             # directly reaches nothing that would, so this row fetches it the way that module does.
             # Playwright resolves the revision from its own version and the call is a no-op on a
             # machine that already has it.
-            (*UV, "python", "-m", "playwright", "install", "chromium"),
+            FETCH_CHROMIUM,
             generator("build_runtime"),
             generator("build_result_schemas"),
             generator("build_settings_schema"),
@@ -518,9 +562,9 @@ def run(command: tuple[str, ...], extra: tuple[tuple[str, str], ...] = ()) -> bo
     return code == 0
 
 
-def run_group(group: Group) -> bool:
+def run_group(group: Group, mode: str = "") -> bool:
     """Run one group, opening with the name and the one local command that reproduces it."""
-    print(f"\n== {group.name}: uv run scripts/check.py --group {group.name}", flush=True)
+    print(f"\n== {group.name}: uv run scripts/check.py --group {group.name}{mode}", flush=True)
     print(f"   {group.why}", flush=True)
     for name, value in group.env:
         print(f"   {name}={value.replace(f'{ROOT}/', '')}", flush=True)
@@ -566,6 +610,11 @@ def main() -> int:
         help="run this group, repeatable and comma-separated",
     )
     parser.add_argument("--fast", action="store_true", help=f"an alias for --group {','.join(FAST)}")
+    parser.add_argument(
+        WRITE,
+        action="store_true",
+        help="run each named group's generators with --write instead of --check, and its other checks not at all",
+    )
     parser.add_argument("--list", action="store_true", help="print the table and run nothing")
     parser.add_argument("--json", action="store_true", help="print the matrix a workflow consumes, and run nothing")
     parser.add_argument(
@@ -578,12 +627,23 @@ def main() -> int:
     names = [name for value in args.group for name in value.split(",") if name]
     if args.fast:
         names = [*FAST, *names]
+    if args.write and not names:
+        parser.error("--write rewrites committed files, so it runs only the groups --group names.")
     groups = selected(names, args.when)
 
     # `--list` and `--json` are the same answer in two renderings, so asking for both is asking for
     # the listing a workflow reads rather than for the table and then nothing.
     if args.list or args.json:
         print(json.dumps(legs(groups)) if args.json else epilog())
+        return 0
+
+    if args.write:
+        writers = tuple(writer(group) for group in groups)
+        started = time.monotonic()
+        if not all(run_group(group, f" {WRITE}") for group in writers):
+            return 1
+        count = f"{len(writers)} group" + ("s" if len(writers) != 1 else "")
+        print(f"\nwrote every generated file of {count} in {time.monotonic() - started:.0f}s", flush=True)
         return 0
 
     started = time.monotonic()
