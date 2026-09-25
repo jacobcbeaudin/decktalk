@@ -425,9 +425,10 @@ which is the one command that brings every generated file up to date at once.
 | `assets/*.svg`, `assets/tokens.css` and `docs/images/` | `scripts/figure-data/` and the palette maps | `uv run scripts/build_assets.py --write` |
 | The coverage floor | A real run on Linux | `uv run scripts/check_coverage.py --write` |
 
-`uv run scripts/check_docs_links.py --check` checks the rest of the site: every internal link
-resolves, every page sits in exactly one navigation group in `docs/docs.json`, and every redirect
-points at a page that exists. It fetches nothing.
+`uv run scripts/check_docs_links.py --check` checks the rest of the site: every page opens with
+front matter that YAML parses into a title and a description, every internal link resolves, every
+page sits in exactly one navigation group in `docs/docs.json`, and every redirect points at a page
+that exists. It fetches nothing.
 
 ## Commits and releases
 

@@ -1,13 +1,17 @@
 # /// script
 # requires-python = ">=3.12"
+# dependencies = ["pyyaml>=6"]
 # ///
-"""Check every internal link in docs/ and the navigation in docs/docs.json.
+"""Check every page's front matter, every internal link in docs/ and the navigation in docs/docs.json.
 
     uv run scripts/check_docs_links.py            # print what was checked, and every problem
     uv run scripts/check_docs_links.py --check    # print the problems alone
 
-Both modes exit 1 when something is wrong. Three things are checked, and no network is used.
+Both modes exit 1 when something is wrong. Four things are checked, and no network is used.
 
+- Every page opens with front matter that YAML parses into a title and a description. The docs
+  host parses it the same way and refuses the whole deploy when one page fails, and a plain value
+  cannot hold a colon followed by a space, so a description with a colon in it is quoted.
 - Every internal link resolves: `/reference/cli` is a page, `/images/hero-light.svg` is a file,
   and `#a-heading` is a heading on the page that links to it.
 - Every page under docs/ appears exactly once in the navigation, and every navigation entry is a
@@ -29,6 +33,8 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
@@ -182,13 +188,46 @@ def asset_problems(nav: dict) -> list[str]:
     ]
 
 
+FRONT_MATTER_KEYS = ("title", "description")
+"""The keys every page's front matter carries, which the site shows as the heading and the summary."""
+
+
+def front_matter_problems() -> list[str]:
+    """Every page whose front matter is missing, does not parse as YAML, or lacks a title or a description."""
+    found: list[str] = []
+    for path in sorted(DOCS.rglob("*.mdx")):
+        name = path.relative_to(DOCS).as_posix()
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if not lines or lines[0] != "---" or "---" not in lines[1:]:
+            found.append(f"{name}: the page does not open with front matter between two --- lines")
+            continue
+        block = "\n".join(lines[1 : lines.index("---", 1)])
+        try:
+            data = yaml.safe_load(block)
+        except yaml.YAMLError as error:
+            where = getattr(error, "problem_mark", None)
+            at = f" at line {where.line + 2}" if where else ""
+            found.append(f"{name}: the front matter is not YAML{at}, so quote a value that holds a colon")
+            continue
+        if not isinstance(data, dict):
+            found.append(f"{name}: the front matter is not a set of keys")
+            continue
+        found.extend(
+            f"{name}: the front matter has no {key}"
+            for key in FRONT_MATTER_KEYS
+            if not isinstance(data.get(key), str) or not data[key].strip()
+        )
+    return found
+
+
 def problems() -> list[str]:
-    """Every broken link, every page outside the navigation, and every navigation entry with no page."""
+    """Every bad front matter, every broken link, every page outside the navigation, and every entry with no page."""
     pages = read_pages()
     nav = json.loads(NAV.read_text(encoding="utf-8"))
     redirects = {r["source"].strip("/"): r["destination"].strip("/") for r in nav.get("redirects", [])}
     return (
-        page_problems(pages, redirects)
+        front_matter_problems()
+        + page_problems(pages, redirects)
         + navigation_problems(pages, nav_slugs(nav))
         + redirect_problems(pages, redirects)
         + asset_problems(nav)
@@ -203,12 +242,14 @@ def main() -> int:
     for line in found:
         print(line)
     if found:
-        print(f"{len(found)} broken links or navigation problems in docs/.")
+        print(f"{len(found)} front matter, link or navigation problems in docs/.")
         return 1
     if not args.check:
         pages = read_pages()
         links = sum(len(p.links) for p in pages.values())
-        print(f"{len(pages)} pages, {links} links, every internal link and every navigation entry resolves.")
+        print(
+            f"{len(pages)} pages, {links} links, every front matter parses and every link and navigation entry resolves."
+        )
     return 0
 
 

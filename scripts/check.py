@@ -416,7 +416,7 @@ GROUPS: tuple[Group, ...] = (
             generator("build_contributing"),
             generator("build_changelog"),
             ("uv", "run", "--with", "fonttools[woff]>=4.50", "python", "scripts/build_assets.py", "--check"),
-            generator("check_docs_links"),
+            ("uv", "run", "--with", "pyyaml>=6", "python", "scripts/check_docs_links.py", "--check"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
