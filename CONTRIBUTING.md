@@ -14,6 +14,9 @@ Three things help most right now.
 
 Expect a reply within about a week.
 
+Everyone who takes part agrees to the [code of conduct](CODE_OF_CONDUCT.md). Report a vulnerability
+privately, as [SECURITY.md](SECURITY.md) says, and never in a public issue.
+
 ## Setup
 
 You need two tools.
