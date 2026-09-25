@@ -1,5 +1,8 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
+  - name: Question or something you made
+    url: https://github.com/jacobcbeaudin/decktalk/discussions
+    about: Ask how to do something, or share a film.
   - name: Documentation
     url: https://docs.decktalk.ai
     about: The project file, the page contract, the CLI, and the Python API.
