@@ -14,6 +14,81 @@ A change to a file format or to the page contract raises the minor version. The 
 A project keeps the `deck/decktalk-runtime.js` it was created with. To move a project onto a newer
 runtime, create a new project with the new DeckTalk and copy the deck pages across.
 
+<Update label="0.5.0" description="2026-09-25" tags={["feature", "fix"]}>
+
+**Features**
+
+* **agents:** AGENTS.md points at the instruction set rather than repeating it ([5ef668f](https://github.com/jacobcbeaudin/decktalk/commit/5ef668f6687ca932bd725a2f3f7c8e74f57bb2a6))
+* **api:** generate the exported surface as its reachable closure ([fafe20c](https://github.com/jacobcbeaudin/decktalk/commit/fafe20c22b3ec3dd2877778a551592926125f012))
+* **api:** the explainer joins the exported surface ([af3a57b](https://github.com/jacobcbeaudin/decktalk/commit/af3a57b3d729dca8184c94753e505a010efef366))
+* **api:** the facade and the shapes it hands back join the exported surface ([da6d6f7](https://github.com/jacobcbeaudin/decktalk/commit/da6d6f70e48f96a9e51477f4fb27f02b70b40f80))
+* **artifacts:** every build file is one frozen model that reads and writes itself ([d1f9c31](https://github.com/jacobcbeaudin/decktalk/commit/d1f9c316e4be21f8a6708ad30d9dd3afad9d76da))
+* **build:** six stages in one order, with the storyboard before any credit is spent ([5ae7b1e](https://github.com/jacobcbeaudin/decktalk/commit/5ae7b1e91335fbdc137348f92e5fd734c90b2cb7))
+* **catalog:** walk the library's own contract once, internally ([d8ece48](https://github.com/jacobcbeaudin/decktalk/commit/d8ece4807a6fdd45386b26eb48a299d176b09e75))
+* **errors:** nine codes, seven classes and one exit each ([3402c16](https://github.com/jacobcbeaudin/decktalk/commit/3402c1671c328a63d65253cf0ce4121673e1984d))
+* **events:** one stream of eleven moments, with the four fields minted ([fc49aae](https://github.com/jacobcbeaudin/decktalk/commit/fc49aaeb7b65f88e097bf3b907aad21b8b7010f7))
+* **findings:** one judgement with a code, a place and a fix ([16dd3ac](https://github.com/jacobcbeaudin/decktalk/commit/16dd3ac3acd27cce7dce1807b26c7a964db0eb05))
+* **machine:** a measured doctor keeps the number it measured ([93662a7](https://github.com/jacobcbeaudin/decktalk/commit/93662a7d8537ec8693ad2856c5e65523999aa9b5))
+* **machine:** one value for this computer, and the run every call opens on it ([722c6bf](https://github.com/jacobcbeaudin/decktalk/commit/722c6bf7e2af4f57357b98d09fd7d3a59669532a))
+* **media:** a render carries the motion its settings ask for ([064e503](https://github.com/jacobcbeaudin/decktalk/commit/064e5032d4ca5ba7f910da96061bb80a5d977c7d))
+* **media:** fetch Chromium on demand, the way ffmpeg already is ([e192bd7](https://github.com/jacobcbeaudin/decktalk/commit/e192bd7d026255e77094625d05e2215a13e37f4a))
+* **media:** the origin serves the deck and the assets a project declares ([d808cb9](https://github.com/jacobcbeaudin/decktalk/commit/d808cb91d76649467ec8c057a817e8548295eb31))
+* **media:** the recorder owns what it opens and reads the page once ([5bc87dc](https://github.com/jacobcbeaudin/decktalk/commit/5bc87dc1360a66c5eb6877d3d2c50505c987931e))
+* **page:** generate the bundle, the contract and the Python vocabulary ([01dc72e](https://github.com/jacobcbeaudin/decktalk/commit/01dc72e8fa10b4937711d6d411a19c1c2ab04518))
+* **page:** one home for every page attribute and every page code ([eaf0657](https://github.com/jacobcbeaudin/decktalk/commit/eaf06576ec351e518b89cefde387a0d5f1ee41c7))
+* **pipeline:** declare the six stages and the artifacts between them ([286d694](https://github.com/jacobcbeaudin/decktalk/commit/286d6945de6948296c97561be38b3edb8cb85b6f))
+* **project:** one object opens a directory and twelve calls move it forward ([4bc00e7](https://github.com/jacobcbeaudin/decktalk/commit/4bc00e725da22beaaaeab2f11a99993f6b463113))
+* **results:** one frozen result per command, with four reserved keys ([112e97e](https://github.com/jacobcbeaudin/decktalk/commit/112e97ec10d967138a985a4be07686979e29c3a5))
+* **results:** the two facts the command line derives its shared flags from ([8781df8](https://github.com/jacobcbeaudin/decktalk/commit/8781df88860e3b42e6875ba5e672e05bd8be6eea))
+* **runtime:** scenes, slides and the order declared ownership gives ([9258d87](https://github.com/jacobcbeaudin/decktalk/commit/9258d870f7ac9c7105f6ea75893ce3c9a6e10aea))
+* **runtime:** the clock, the warnings and the stage a deck is drawn on ([e9f2c7c](https://github.com/jacobcbeaudin/decktalk/commit/e9f2c7cf311a26a5a7e8b71206696d067f9060ef))
+* **runtime:** the four modes, the preview alias and the facade ([0ea5c0d](https://github.com/jacobcbeaudin/decktalk/commit/0ea5c0d9364597f5b3bdef5917d9866967c2b43a))
+* **runtime:** the four moments, the class, the swap and the transcript ([16d6a3c](https://github.com/jacobcbeaudin/decktalk/commit/16d6a3c72b654fe759d500665f7d1e5d008f606a))
+* **runtime:** the recorder's telemetry moves behind one seam into the probe ([aed15b1](https://github.com/jacobcbeaudin/decktalk/commit/aed15b1bb1a563151013f94ef11653815e421e7d))
+* **scripts:** one command regenerates every generated file ([e121ee1](https://github.com/jacobcbeaudin/decktalk/commit/e121ee13ca89478d33cf20d2d7d69709bff43eef))
+* **scripts:** rehearse the release bump on every pull request ([0f613a3](https://github.com/jacobcbeaudin/decktalk/commit/0f613a3d98b792514c4b76d3e94fd0384e2792ee))
+* **settings:** a refused value carries the line that set it ([a761feb](https://github.com/jacobcbeaudin/decktalk/commit/a761feb603a0708158e5fdf666d426d159abe6be))
+* **settings:** explain one knob against the project it would change ([717cbea](https://github.com/jacobcbeaudin/decktalk/commit/717cbeaeeb1f300e8f26cd08702f63ce6760ae27))
+* **settings:** the door a measurement writes a measured key through ([c1ef682](https://github.com/jacobcbeaudin/decktalk/commit/c1ef682f11836552bdec96aff0581cfe1742516d))
+* **settings:** the knob table rebuilt, with the published range enforced ([e5365c1](https://github.com/jacobcbeaudin/decktalk/commit/e5365c10e97fdffa50c878e73026fa1ed1a7558b))
+* **settings:** unset beside write, so a key can be taken back out ([d606563](https://github.com/jacobcbeaudin/decktalk/commit/d606563fad4da0f75553a1832a873b9daef037da))
+* **site:** the site serves the schema every project file names ([7de636e](https://github.com/jacobcbeaudin/decktalk/commit/7de636e427b460c277a072a1022606994c46938c))
+* **storyboard:** the four selectors that narrow the sheet to one moment ([ccb9202](https://github.com/jacobcbeaudin/decktalk/commit/ccb92026ab8b27bb636570fbd5457a23dece228c))
+* **template:** AGENTS.md points at the instruction set instead of repeating it ([f0088dd](https://github.com/jacobcbeaudin/decktalk/commit/f0088dd9fecd768a7c68c58ed26817243f844603))
+* **template:** the lesson example rewritten in markup, on the whole vocabulary ([290b41d](https://github.com/jacobcbeaudin/decktalk/commit/290b41dd032100646eb776ff877230f48fc302e3))
+* **template:** the starter deck written in moments and local cue names ([ff1a77f](https://github.com/jacobcbeaudin/decktalk/commit/ff1a77fc4325b5d89a68c36a9a5974b65f656664))
+* the 0.5.0 quality release ([8666520](https://github.com/jacobcbeaudin/decktalk/commit/8666520114fc5e9b4b6f5b88666e5bbe622b081c))
+* the 0.5.0 quality release ([#33](https://github.com/jacobcbeaudin/decktalk/issues/33)) ([8666520](https://github.com/jacobcbeaudin/decktalk/commit/8666520114fc5e9b4b6f5b88666e5bbe622b081c))
+* **toolchain:** a download announces itself to whoever is listening ([0d5e1b9](https://github.com/jacobcbeaudin/decktalk/commit/0d5e1b9f438be63dad55c37a722291c23f1aa9d9))
+
+**Bug Fixes**
+
+* **api:** the closure resolves an annotation instead of reading its source text ([41c9f55](https://github.com/jacobcbeaudin/decktalk/commit/41c9f553a04f0ba0f64a79219e49f12b947fd08f))
+* **assemble:** an optional clip's slate is what the project asked for ([26a8b07](https://github.com/jacobcbeaudin/decktalk/commit/26a8b076eaa9368d01c0cea1244145bb5135bdd8))
+* **ci:** cue timing reports rather than gates on a weak compositor ([89eafe2](https://github.com/jacobcbeaudin/decktalk/commit/89eafe2a2dea110412a11d1ce2a0e0580135b8a6))
+* **ci:** cue timing reports rather than gates on a weak compositor ([#37](https://github.com/jacobcbeaudin/decktalk/issues/37)) ([89eafe2](https://github.com/jacobcbeaudin/decktalk/commit/89eafe2a2dea110412a11d1ce2a0e0580135b8a6))
+* **cli:** a run says what it did rather than what it would have done ([d2af0d0](https://github.com/jacobcbeaudin/decktalk/commit/d2af0d01ae16dbe7c7385a05b6fab18aeee0fad7))
+* **cli:** every help link lands on the command's own section ([e711357](https://github.com/jacobcbeaudin/decktalk/commit/e7113577e014561cb37e85300c63385bd9560568))
+* **cue:** the file a fix writes is a file the next command reads ([fd0943f](https://github.com/jacobcbeaudin/decktalk/commit/fd0943f395918fc0de2b8b2d40e0249bbc9792b2))
+* **explain:** the resolved cues are read in the shape cue writes them ([de44d54](https://github.com/jacobcbeaudin/decktalk/commit/de44d54b3e7243cd1d07f2cc7672ec75a546b85c))
+* **findings:** a raiser names a code and a code names every key ([8632a7d](https://github.com/jacobcbeaudin/decktalk/commit/8632a7d32fde245b5ba7707b4d5b5ea150398034))
+* **findings:** one certainty per code across both registries ([e31e943](https://github.com/jacobcbeaudin/decktalk/commit/e31e9437b9b47fc6ade8bc3587855b6a5ce06836))
+* **findings:** the appear-too-long sentence names the condition it judges ([23ad13d](https://github.com/jacobcbeaudin/decktalk/commit/23ad13d8b18bcc916306d38ab9db07b21e5de123))
+* **media:** a path with an apostrophe in it survives the concat list ([e67a305](https://github.com/jacobcbeaudin/decktalk/commit/e67a3053cfea1ad81dd57d6bc4035b5afaa4154e))
+* **media:** the machine can measure itself and the preview serves what a run does ([a476082](https://github.com/jacobcbeaudin/decktalk/commit/a4760828eaa3dc5b515ea713f25c2907853fba9d))
+* **origin:** a declaration names a spelling rather than a file ([c63eeb3](https://github.com/jacobcbeaudin/decktalk/commit/c63eeb38af40f4fc52a27717e25f027619e31ecc))
+* **project:** the four asks T5 left on the project facade ([1359115](https://github.com/jacobcbeaudin/decktalk/commit/135911535cf6777b396a40af3eabcfb356faf304))
+* **prose:** the four semicolons the prose rule names ([ee2532d](https://github.com/jacobcbeaudin/decktalk/commit/ee2532d8b581de4d86076bc8f0976117b8a11f98))
+* **results:** a config answer carries the layers under it and the arithmetic above it ([5850e87](https://github.com/jacobcbeaudin/decktalk/commit/5850e87ae8de3015c14b06030f979f507e18bdd2))
+* **results:** a section may be numbered zero, and CUT_POP names the picture ([b5079c0](https://github.com/jacobcbeaudin/decktalk/commit/b5079c0d0773b550c08a49add22074a65fa0d2d7))
+* **runtime:** a frozen slide hides whatever has still to arrive ([9f67025](https://github.com/jacobcbeaudin/decktalk/commit/9f6702558666ed3046d5bc1e608b29121bc3213b))
+* **settings:** every sentence a knob prints names something that exists ([aacee04](https://github.com/jacobcbeaudin/decktalk/commit/aacee043021c38b81d9b5438f9dfea9c7e50ff80))
+* **settings:** the measured bias claims only what a run really does ([7f9799d](https://github.com/jacobcbeaudin/decktalk/commit/7f9799d6a5a693e2de1d7a94b57170d936500e7a))
+* **template:** the lesson example is summarised as what it is ([5df6e05](https://github.com/jacobcbeaudin/decktalk/commit/5df6e050c5a335c83b5e5dbd085e0b05676dd824))
+* **tomlmap:** a table hands its unknown keys back instead of writing them down ([9c1ea32](https://github.com/jacobcbeaudin/decktalk/commit/9c1ea32425230b1cd500ada0af53f6f4e2a66c07))
+
+</Update>
+
 <Update label="0.4.1" description="2026-09-23" tags={["feature", "fix"]}>
 
 **Features**
