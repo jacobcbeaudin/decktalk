@@ -53,8 +53,9 @@ for each of them.
 
 The load refuses a file that is not valid JSON, a file with no top-level `sections` object, a section
 key that is not a number, a section number that `decktalk.toml` does not declare, a section whose
-value is not an object, a row with a key no cue reads, and a row whose `cue` or `on` is empty. Each
-refusal names the file, and a JSON syntax error names the line as well.
+value is not an object, a row with a key no cue reads, a row with no `cue` or no `on`, and a row
+whose `cue` is empty. Each refusal names the file, and a JSON syntax error names the line as well. A
+row whose `on` is empty loads, and `CUE_UNRESOLVED` says it has no phrase yet.
 
 ## The keys of one row
 
@@ -138,7 +139,7 @@ Three findings come out of that pass.
 
 | Code | Certainty | Cause |
 |---|---|---|
-| `CUE_UNRESOLVED` | certain | The phrase is not spoken in that section, or the section has no take at all, so there is no second to place the cue at and the film never plays it. A section that plays a clip is skipped in silence instead, because the voice never reads one. |
+| `CUE_UNRESOLVED` | certain | The row has no phrase yet, the phrase is not spoken in that section, or the section has no take at all, so there is no second to place the cue at and the film never plays it. A section that plays a clip is skipped in silence instead, because the voice never reads one. |
 | `CUE_NO_ONSET` | uncertain | The cue resolved to the section's own start rather than to a word. |
 | `CUE_OVERLAP` | uncertain | One cue fires while the moment before it is still playing, measured against the span that moment's own effect declares. |
 
@@ -165,8 +166,8 @@ Found 1 finding, 1 certain. 1 fixable with --fix.
 The fix only ever adds: it writes one row per moment nothing lists, it never rewrites a phrase you
 wrote and it never deletes a row, so applying it a second time adds nothing, because by then every
 moment of that section is listed. The row it writes leaves `on` empty, because the phrase a cue
-lands on is your line and not DeckTalk's, and an empty `on` is refused at load, so write the phrase
-before the next command reads the file.
+lands on is your line and not DeckTalk's. The file still loads with an empty `on`, and the row raises
+`CUE_UNRESOLVED` until you write the phrase.
 
 A row whose wire id no page declares is the mirror of it, `CUE_UNKNOWN`. It is named rather than
 deleted. When exactly one unlisted row sits beside exactly one undeclared moment in the same section,

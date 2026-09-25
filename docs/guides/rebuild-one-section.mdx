@@ -14,9 +14,9 @@ is keyed on everything that decides what its pixels look like. Neither is a flag
 those two keys hold, how to read them before a run, and the three ways to ask for work you were not
 offered.
 
-<Frame caption="An edit to section 1: section 1 is voiced again, and --section 1 records section 1 and keeps the others.">
-  <img className="block dark:hidden" src="/images/rebuild-lanes-light.svg" alt="Three section columns cross three lanes. Every section is a page section in every lane. In the narrate lane, section 1 is voiced and sections 2 and 3 are cached. A plain build records every page section that changed. A build with --section 1 records section 1 and keeps the other recordings. The assemble bar spans every section." />
-  <img className="hidden dark:block" src="/images/rebuild-lanes-dark.svg" alt="Three section columns cross three lanes. Every section is a page section in every lane. In the narrate lane, section 1 is voiced and sections 2 and 3 are cached. A plain build records every page section that changed. A build with --section 1 records section 1 and keeps the other recordings. The assemble bar spans every section." />
+<Frame caption="An edit to one sentence of section 2: a plain build voices and records section 2, keeps the take and the recording of sections 1 and 3, and joins every section into one mp4.">
+  <img className="block dark:hidden" src="/images/edit-cycle-light.svg" alt="Three section columns of one project. In script.md, the word &quot;average&quot; in section 2 becomes &quot;mean&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
+  <img className="hidden dark:block" src="/images/edit-cycle-dark.svg" alt="Three section columns of one project. In script.md, the word &quot;average&quot; in section 2 becomes &quot;mean&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
 </Frame>
 
 ## Name the sections with `--section`
@@ -132,8 +132,9 @@ disagree, and neither of them compares file times.
 
 ## Read it before you run it
 
-`decktalk status` reads the project, writes nothing, judges nothing and never exits 1. It is the one
-call that says what is on disk and whether that is still true.
+`decktalk status` reads the project and writes nothing. It is the one call that says what is on disk
+and whether that is still true. The one thing it judges is a file the project names and has not got,
+which is a certain [`FILE_MISSING`](/reference/findings/FILE_MISSING) and the only way it exits 1.
 
 ```console
 decktalk status

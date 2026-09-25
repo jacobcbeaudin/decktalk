@@ -262,11 +262,15 @@ A preview and a recording differ in three places.
 `record`, `storyboard` and `check` open every page at `http://project.localhost/`, and answer each
 request under that origin from your project directory. A page may therefore `fetch()` a file beside
 it and load an ES module, neither of which works from a `file://` URL, and a relative URL resolves
-exactly as the author wrote it. A request is answered only from a directory the project declared, so
-the script, the cues, the build directory and the `.env` holding the speech key are beside the deck
-and are not part of it. Nothing is downloaded and no port is opened. A page that loads an asset from
-another origin is [`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET), because the film would
-depend on a host the project does not own.
+exactly as the author wrote it. A request is answered only from the directory that holds each page
+and from the files `decktalk.toml` names, such as a clip, a music file or an effect, so the script,
+the cues, the build directory and the `.env` holding the speech key are beside the deck and are not
+part of it. A declared file is reached only by the spelling `decktalk.toml` gives it, so a request
+that spells it with other capitals is refused on every platform alike. A declared directory is a
+place, so a file inside it is served however the page spells its name. Nothing is
+downloaded and no port is opened. A page that loads an asset from another origin is
+[`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET), because the film would depend on a host the
+project does not own.
 
 To open a page in your own browser the same way, run `decktalk serve` and follow the URL it prints.
 
