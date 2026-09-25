@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0-rc2](https://github.com/jacobcbeaudin/decktalk/compare/v0.5.0-rc1...v0.5.0-rc2) (2026-09-25)
+
+
+### Bug Fixes
+
+* **docs:** every page's front matter parses, and the link check holds it ([2aa8b0b](https://github.com/jacobcbeaudin/decktalk/commit/2aa8b0b94db6db122e7dd979cc2f5e0fda10ee24))
+* **docs:** every page's front matter parses, and the link check holds it ([5360438](https://github.com/jacobcbeaudin/decktalk/commit/53604388b5cc6fec6475eea2aed04850504c4b39))
+
 ## [0.5.0-rc1](https://github.com/jacobcbeaudin/decktalk/compare/v0.4.1...v0.5.0-rc1) (2026-09-25)
 
 

@@ -14,7 +14,35 @@ A change to a file format or to the page contract raises the minor version. The 
 A project keeps the `deck/decktalk-runtime.js` it was created with. To move a project onto a newer
 runtime, create a new project with the new DeckTalk and copy the deck pages across.
 
-<Update label="0.5.0" description="2026-09-25" tags={["feature", "fix"]}>
+<Update label="0.5.0" description="2026-09-25" tags={["fix", "feature"]}>
+
+**Bug Fixes**
+
+* **docs:** every page's front matter parses, and the link check holds it ([2aa8b0b](https://github.com/jacobcbeaudin/decktalk/commit/2aa8b0b94db6db122e7dd979cc2f5e0fda10ee24))
+* **docs:** every page's front matter parses, and the link check holds it ([5360438](https://github.com/jacobcbeaudin/decktalk/commit/53604388b5cc6fec6475eea2aed04850504c4b39))
+* **api:** the closure resolves an annotation instead of reading its source text ([41c9f55](https://github.com/jacobcbeaudin/decktalk/commit/41c9f553a04f0ba0f64a79219e49f12b947fd08f))
+* **assemble:** an optional clip's slate is what the project asked for ([26a8b07](https://github.com/jacobcbeaudin/decktalk/commit/26a8b076eaa9368d01c0cea1244145bb5135bdd8))
+* **ci:** cue timing reports rather than gates on a weak compositor ([89eafe2](https://github.com/jacobcbeaudin/decktalk/commit/89eafe2a2dea110412a11d1ce2a0e0580135b8a6))
+* **ci:** cue timing reports rather than gates on a weak compositor ([#37](https://github.com/jacobcbeaudin/decktalk/issues/37)) ([89eafe2](https://github.com/jacobcbeaudin/decktalk/commit/89eafe2a2dea110412a11d1ce2a0e0580135b8a6))
+* **cli:** a run says what it did rather than what it would have done ([d2af0d0](https://github.com/jacobcbeaudin/decktalk/commit/d2af0d01ae16dbe7c7385a05b6fab18aeee0fad7))
+* **cli:** every help link lands on the command's own section ([e711357](https://github.com/jacobcbeaudin/decktalk/commit/e7113577e014561cb37e85300c63385bd9560568))
+* **cue:** the file a fix writes is a file the next command reads ([fd0943f](https://github.com/jacobcbeaudin/decktalk/commit/fd0943f395918fc0de2b8b2d40e0249bbc9792b2))
+* **explain:** the resolved cues are read in the shape cue writes them ([de44d54](https://github.com/jacobcbeaudin/decktalk/commit/de44d54b3e7243cd1d07f2cc7672ec75a546b85c))
+* **findings:** a raiser names a code and a code names every key ([8632a7d](https://github.com/jacobcbeaudin/decktalk/commit/8632a7d32fde245b5ba7707b4d5b5ea150398034))
+* **findings:** one certainty per code across both registries ([e31e943](https://github.com/jacobcbeaudin/decktalk/commit/e31e9437b9b47fc6ade8bc3587855b6a5ce06836))
+* **findings:** the appear-too-long sentence names the condition it judges ([23ad13d](https://github.com/jacobcbeaudin/decktalk/commit/23ad13d8b18bcc916306d38ab9db07b21e5de123))
+* **media:** a path with an apostrophe in it survives the concat list ([e67a305](https://github.com/jacobcbeaudin/decktalk/commit/e67a3053cfea1ad81dd57d6bc4035b5afaa4154e))
+* **media:** the machine can measure itself and the preview serves what a run does ([a476082](https://github.com/jacobcbeaudin/decktalk/commit/a4760828eaa3dc5b515ea713f25c2907853fba9d))
+* **origin:** a declaration names a spelling rather than a file ([c63eeb3](https://github.com/jacobcbeaudin/decktalk/commit/c63eeb38af40f4fc52a27717e25f027619e31ecc))
+* **project:** the four asks T5 left on the project facade ([1359115](https://github.com/jacobcbeaudin/decktalk/commit/135911535cf6777b396a40af3eabcfb356faf304))
+* **prose:** the four semicolons the prose rule names ([ee2532d](https://github.com/jacobcbeaudin/decktalk/commit/ee2532d8b581de4d86076bc8f0976117b8a11f98))
+* **results:** a config answer carries the layers under it and the arithmetic above it ([5850e87](https://github.com/jacobcbeaudin/decktalk/commit/5850e87ae8de3015c14b06030f979f507e18bdd2))
+* **results:** a section may be numbered zero, and CUT_POP names the picture ([b5079c0](https://github.com/jacobcbeaudin/decktalk/commit/b5079c0d0773b550c08a49add22074a65fa0d2d7))
+* **runtime:** a frozen slide hides whatever has still to arrive ([9f67025](https://github.com/jacobcbeaudin/decktalk/commit/9f6702558666ed3046d5bc1e608b29121bc3213b))
+* **settings:** every sentence a knob prints names something that exists ([aacee04](https://github.com/jacobcbeaudin/decktalk/commit/aacee043021c38b81d9b5438f9dfea9c7e50ff80))
+* **settings:** the measured bias claims only what a run really does ([7f9799d](https://github.com/jacobcbeaudin/decktalk/commit/7f9799d6a5a693e2de1d7a94b57170d936500e7a))
+* **template:** the lesson example is summarised as what it is ([5df6e05](https://github.com/jacobcbeaudin/decktalk/commit/5df6e050c5a335c83b5e5dbd085e0b05676dd824))
+* **tomlmap:** a table hands its unknown keys back instead of writing them down ([9c1ea32](https://github.com/jacobcbeaudin/decktalk/commit/9c1ea32425230b1cd500ada0af53f6f4e2a66c07))
 
 **Features**
 
@@ -60,32 +88,6 @@ runtime, create a new project with the new DeckTalk and copy the deck pages acro
 * the 0.5.0 quality release ([8666520](https://github.com/jacobcbeaudin/decktalk/commit/8666520114fc5e9b4b6f5b88666e5bbe622b081c))
 * the 0.5.0 quality release ([#33](https://github.com/jacobcbeaudin/decktalk/issues/33)) ([8666520](https://github.com/jacobcbeaudin/decktalk/commit/8666520114fc5e9b4b6f5b88666e5bbe622b081c))
 * **toolchain:** a download announces itself to whoever is listening ([0d5e1b9](https://github.com/jacobcbeaudin/decktalk/commit/0d5e1b9f438be63dad55c37a722291c23f1aa9d9))
-
-**Bug Fixes**
-
-* **api:** the closure resolves an annotation instead of reading its source text ([41c9f55](https://github.com/jacobcbeaudin/decktalk/commit/41c9f553a04f0ba0f64a79219e49f12b947fd08f))
-* **assemble:** an optional clip's slate is what the project asked for ([26a8b07](https://github.com/jacobcbeaudin/decktalk/commit/26a8b076eaa9368d01c0cea1244145bb5135bdd8))
-* **ci:** cue timing reports rather than gates on a weak compositor ([89eafe2](https://github.com/jacobcbeaudin/decktalk/commit/89eafe2a2dea110412a11d1ce2a0e0580135b8a6))
-* **ci:** cue timing reports rather than gates on a weak compositor ([#37](https://github.com/jacobcbeaudin/decktalk/issues/37)) ([89eafe2](https://github.com/jacobcbeaudin/decktalk/commit/89eafe2a2dea110412a11d1ce2a0e0580135b8a6))
-* **cli:** a run says what it did rather than what it would have done ([d2af0d0](https://github.com/jacobcbeaudin/decktalk/commit/d2af0d01ae16dbe7c7385a05b6fab18aeee0fad7))
-* **cli:** every help link lands on the command's own section ([e711357](https://github.com/jacobcbeaudin/decktalk/commit/e7113577e014561cb37e85300c63385bd9560568))
-* **cue:** the file a fix writes is a file the next command reads ([fd0943f](https://github.com/jacobcbeaudin/decktalk/commit/fd0943f395918fc0de2b8b2d40e0249bbc9792b2))
-* **explain:** the resolved cues are read in the shape cue writes them ([de44d54](https://github.com/jacobcbeaudin/decktalk/commit/de44d54b3e7243cd1d07f2cc7672ec75a546b85c))
-* **findings:** a raiser names a code and a code names every key ([8632a7d](https://github.com/jacobcbeaudin/decktalk/commit/8632a7d32fde245b5ba7707b4d5b5ea150398034))
-* **findings:** one certainty per code across both registries ([e31e943](https://github.com/jacobcbeaudin/decktalk/commit/e31e9437b9b47fc6ade8bc3587855b6a5ce06836))
-* **findings:** the appear-too-long sentence names the condition it judges ([23ad13d](https://github.com/jacobcbeaudin/decktalk/commit/23ad13d8b18bcc916306d38ab9db07b21e5de123))
-* **media:** a path with an apostrophe in it survives the concat list ([e67a305](https://github.com/jacobcbeaudin/decktalk/commit/e67a3053cfea1ad81dd57d6bc4035b5afaa4154e))
-* **media:** the machine can measure itself and the preview serves what a run does ([a476082](https://github.com/jacobcbeaudin/decktalk/commit/a4760828eaa3dc5b515ea713f25c2907853fba9d))
-* **origin:** a declaration names a spelling rather than a file ([c63eeb3](https://github.com/jacobcbeaudin/decktalk/commit/c63eeb38af40f4fc52a27717e25f027619e31ecc))
-* **project:** the four asks T5 left on the project facade ([1359115](https://github.com/jacobcbeaudin/decktalk/commit/135911535cf6777b396a40af3eabcfb356faf304))
-* **prose:** the four semicolons the prose rule names ([ee2532d](https://github.com/jacobcbeaudin/decktalk/commit/ee2532d8b581de4d86076bc8f0976117b8a11f98))
-* **results:** a config answer carries the layers under it and the arithmetic above it ([5850e87](https://github.com/jacobcbeaudin/decktalk/commit/5850e87ae8de3015c14b06030f979f507e18bdd2))
-* **results:** a section may be numbered zero, and CUT_POP names the picture ([b5079c0](https://github.com/jacobcbeaudin/decktalk/commit/b5079c0d0773b550c08a49add22074a65fa0d2d7))
-* **runtime:** a frozen slide hides whatever has still to arrive ([9f67025](https://github.com/jacobcbeaudin/decktalk/commit/9f6702558666ed3046d5bc1e608b29121bc3213b))
-* **settings:** every sentence a knob prints names something that exists ([aacee04](https://github.com/jacobcbeaudin/decktalk/commit/aacee043021c38b81d9b5438f9dfea9c7e50ff80))
-* **settings:** the measured bias claims only what a run really does ([7f9799d](https://github.com/jacobcbeaudin/decktalk/commit/7f9799d6a5a693e2de1d7a94b57170d936500e7a))
-* **template:** the lesson example is summarised as what it is ([5df6e05](https://github.com/jacobcbeaudin/decktalk/commit/5df6e050c5a335c83b5e5dbd085e0b05676dd824))
-* **tomlmap:** a table hands its unknown keys back instead of writing them down ([9c1ea32](https://github.com/jacobcbeaudin/decktalk/commit/9c1ea32425230b1cd500ada0af53f6f4e2a66c07))
 
 </Update>
 
