@@ -81,7 +81,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `media-platforms` | `uv run pytest -q -m media --cov --cov-report= --timing=report` | uv, ffmpeg | macOS, Windows | main, release |
 | `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report= --timing=report` | uv, chromium, ffmpeg | macOS, Windows | main, release |
 | `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
-| `generated` | `npm ci`, and 16 more | uv, npm, chromium | Linux | pr, main, release |
+| `generated` | `npm ci`, and 15 more | uv, npm, chromium | Linux | pr, main, release |
 | `rehearsal` | `uv run python scripts/rehearse_release.py` | uv, npm, chromium | Linux | pr, main, release |
 | `coverage` | `uv run coverage combine --keep`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
@@ -332,7 +332,6 @@ tests/support/    what several modules share, and which collects nothing
 scripts/          check.py, the generators and the asset generator
 docs/             the Mintlify site at docs.decktalk.ai
 docs/decisions/   one note per choice the code cannot explain, for readers of the tree
-site/             the landing page at decktalk.ai
 assets/           the generated graphics the README and the site use
 ```
 
@@ -410,7 +409,7 @@ which is the one command that brings every generated file up to date at once.
 |---|---|---|
 | `src/decktalk/runtime/*.js` and `contract.json` | `src/decktalk/runtime/src/**` | `uv run scripts/build_runtime.py --write` |
 | `schemas/v1/results/*.json` | The result models in `src/decktalk/results.py` | `uv run scripts/build_result_schemas.py --write` |
-| `schemas/v1/*.json` and the copies under `site/schemas/v1/` | The key table in `src/decktalk/settings.py` | `uv run scripts/build_settings_schema.py --write` |
+| `schemas/v1/*.json` | The key table in `src/decktalk/settings.py` | `uv run scripts/build_settings_schema.py --write` |
 | `docs/reference/configuration.mdx` | The published settings schema | `uv run scripts/build_settings_reference.py --write` |
 | `docs/reference/cli.mdx` | The Typer app in `src/decktalk/cli/` | `uv run scripts/build_cli_reference.py --write` |
 | `src/decktalk/__init__.py` | The public modules, as a reachable closure | `uv run scripts/build_api.py --write` |
@@ -421,7 +420,6 @@ which is the one command that brings every generated file up to date at once.
 | The two blocks in `CONTRIBUTING.md` | `src/decktalk` and the `GROUPS` table | `uv run scripts/build_contributing.py --write` |
 | `docs/changelog.mdx` | `CHANGELOG.md`, which release-please writes | `uv run scripts/build_changelog.py --write` |
 | `assets/*.svg`, `assets/tokens.css` and `docs/images/` | `scripts/figure-data/` and the palette maps | `uv run scripts/build_assets.py --write` |
-| `site/data.js` and `site/stage.js` | The built Halfway project | `uv run scripts/build_homepage_data.py --write` |
 | The coverage floor | A real run on Linux | `uv run scripts/check_coverage.py --write` |
 
 `uv run scripts/check_docs_links.py --check` checks the rest of the site: every internal link
@@ -464,13 +462,13 @@ It reads the files to bump from the config, so an extra file added there is rehe
 pull request, and it never commits or pushes anything.
 
 The version answers for the wheel, and the wheel is `src/decktalk` alone, so `exclude-paths` in
-`release-please-config.json` lists the directories that ship to nobody: `site`, `docs`, `assets`,
-`scripts`, `tests` and `.github`. A commit confined to those is read as no change and bumps nothing.
+`release-please-config.json` lists the directories that ship to nobody: `docs`, `assets`, `scripts`,
+`tests` and `.github`. A commit confined to those is read as no change and bumps nothing.
 A commit that touches one of them and `src/decktalk` as well still counts in full, under its own
 type, because release-please drops a commit only when every file in it sits under an excluded path.
 The option matches directory prefixes only, so a file at the repository root such as `README.md` or
 `biome.json` cannot be excluded, and a `feat:` that edits one bumps the minor version even when the
-rest of the commit is site work.
+rest of the commit is docs work.
 
 To release:
 

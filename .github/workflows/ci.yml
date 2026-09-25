@@ -212,7 +212,7 @@ jobs:
           git config user.name "decktalk-changelog[bot]"
           git config user.email "decktalk-changelog[bot]@users.noreply.github.com"
           git add -u
-          git add assets docs schemas site src/decktalk
+          git add assets docs schemas src/decktalk
           git diff --cached --quiet && exit 0
           git commit -m "chore: regenerate what the version bump made stale"
           git push origin "HEAD:$BRANCH"

@@ -56,7 +56,6 @@ ALLOW = {
     ),
     "contract/test_docs_claims.py": "The claims in `docs/` that a reader can act on.",
     "contract/test_env_ignore.py": "`.gitignore` and the wheel's exclude list, judged with git itself.",
-    "contract/test_homepage.py": "`site/`, opened in a browser rather than read as files.",
     "contract/test_imports.py": "The layer rank of every module in `src/decktalk`.",
     "contract/test_installer.py": "`install.sh`, the one-line installer.",
     "contract/test_layout.py": "This mirror rule, which belongs to the suite rather than to a module.",
@@ -66,7 +65,6 @@ ALLOW = {
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
     "contract/test_selection.py": "The collection hook in `tests/conftest.py`.",
-    "contract/test_site.py": "The committed files under `site/`.",
     "contract/test_take_hash.py": "`tests/data/take_hash.json`, the golden digests of the founder's film.",
     "contract/test_timing_policy.py": "`tests/support/timing_policy.py`, the suite's own timing rule.",
     "contract/test_vocabulary.py": (

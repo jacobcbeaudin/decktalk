@@ -8,8 +8,8 @@ PlexMono.woff2 is the Medium (500) face cut the same way; scripts/build_assets.p
 
 Instrument Serif, Copyright 2022 The Instrument Serif Project Authors.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
-InstrumentSerif.woff2 is the regular face cut the same way; scripts/build_assets.py embeds it in the
-two diagrams that carry a headline, and site/fonts/instrument-serif.woff2 is the same cut for the page.
+InstrumentSerif.woff2 is the regular face cut the same way. scripts/build_assets.py embeds it in the
+two diagrams that carry a headline, and the homepage serves the same cut from its own repository.
 
 Bricolage Grotesque, Copyright 2023 The Bricolage Grotesque Project Authors.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
