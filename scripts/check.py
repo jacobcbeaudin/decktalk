@@ -427,6 +427,20 @@ GROUPS: tuple[Group, ...] = (
         wall_seconds=0,
     ),
     Group(
+        name="rehearsal",
+        why="The version bump release-please makes, rehearsed in a copy, then every generator written and checked.",
+        # The release path otherwise runs only on release-please's own pull request, which is where
+        # every failure of the first release candidate surfaced. The script bumps a throwaway copy of
+        # the checkout, so a contributor who runs this row locally keeps the tree they had.
+        commands=((*UV, "python", "scripts/rehearse_release.py"),),
+        runners=(LINUX,),
+        pythons=(FLOOR,),
+        tools=("uv", "npm", "chromium"),
+        timeout=20,
+        when=("pr", "main", "release"),
+        wall_seconds=15,
+    ),
+    Group(
         name="coverage",
         why="One floor, measured on Linux, failing when a suite it combines never reported.",
         commands=(
