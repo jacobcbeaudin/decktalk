@@ -39,7 +39,8 @@ that is what the packaged skills are for.
 
 ## The four calls that tell an agent everything
 
-Every fact about DeckTalk is published by one of these four calls, and each of them prints JSON.
+Every fact about DeckTalk is published by one of these four calls. The first prints the help as
+text, and the other three print JSON.
 
 | Call | What it answers |
 |---|---|
@@ -100,7 +101,8 @@ That block is written from the same walk over the parser that `decktalk schema` 
 of commands in the file cannot drift from the list of commands in the code. Everything around the
 markers is prose written by hand. `uv run scripts/build_agents_doc.py --write` writes the block and
 `--check` exits 1 when the committed one would change, which is what the repository's own checks
-run. An agent working on DeckTalk itself edits the prose and never the block.
+run. `uv run scripts/check.py --group generated --write` runs it with every other generator, in one
+command. An agent working on DeckTalk itself edits the prose and never the block.
 
 ## Related
 
