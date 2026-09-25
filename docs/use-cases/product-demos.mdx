@@ -35,10 +35,10 @@ the captions carry those words too, and `seamless = true` says the clip continue
 section's picture, which `verify` then measures at the seam.
 
 An effect lands on a cue through a `[[mix.effects]]` row, which names a `file`, a `section`, a `cue`
-and an optional `caption` and `db`. `decktalk soundscape` is what generates those files, along with
-the music bed and the ambience, from the prompts in `[soundscape.music]`,
-`[soundscape.ambience]` and `[soundscape.effects.<name>]`. That stage spends, so it runs last and a
-draft loop that stops at `record` never reaches it.
+and an optional `caption`, `db` and `offset`. `decktalk soundscape` is what generates those files,
+along with the music bed and the ambience, from the prompts in `[soundscape.music]`,
+`[soundscape.ambience]` and `[soundscape.effects.<name>]`. That stage spends, so it runs after
+`record` and a draft loop that stops at `record` never reaches it.
 
 ## The workflow
 

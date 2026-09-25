@@ -193,9 +193,9 @@ sizes and the cache paths.
 
     The middle lines are the run explaining itself. The starter declares no soundscape, so that stage
     has nothing to do. The loudness pass is skipped because normalising a click track to a broadcast
-    target would teach you nothing about the mix your voice will make. The four `verify` lines say
-    that two cues sat close enough together that the probes either side of the first were fitted into
-    the gap.
+    target would teach you nothing about the mix your voice will make. The four `verify` lines each
+    name a cue that sits close to another one, so the probes after it were fitted into the gap
+    between the two.
 
     If this machine has never run DeckTalk before, the download comes first and the run names it.
   </Step>
@@ -243,19 +243,20 @@ sizes and the cache paths.
     ```text
      Section   Key   Plays                     Voiced   Recorded   Cut   Stale
      ─────────────────────────────────────────────────────────────────────────
-     1         01    deck/index.html?scene=1   yes      yes        yes   no
-     2         02    deck/index.html?scene=2   yes      yes        yes   no
-     3         03    deck/index.html?scene=3   yes      yes        yes   no
+     1         01    deck/index.html?scene=1   no       yes        yes   no
+     2         02    deck/index.html?scene=2   no       yes        yes   no
+     3         03    deck/index.html?scene=3   no       yes        yes   no
 
     Film   build/final/my-lesson.mp4, 0:50 long
     Next   decktalk verify
     ```
 
-    One row per section, with the scene of the page it plays. `Voiced` is true when a take of that
-    section's current text is on disk, which a build without voice writes as a placeholder, so it
-    reads `yes` here. `Stale` is the column that matters after an edit: it marks a section whose
-    inputs have moved since the film was cut. `status` judges nothing and never exits 1, so it is a
-    reading of the project rather than a third opinion beside `check` and `verify`.
+    One row per section, with the scene of the page it plays. `Voiced` is true when a voice spoke a
+    take of that section's current text. A build without voice writes a placeholder take instead, so
+    it reads `no` here while `Recorded` and `Cut` read `yes`. `Stale` is the column that matters
+    after an edit: it marks a section whose inputs have moved since the film was cut. `status` is a
+    reading of the project rather than a third opinion beside `check` and `verify`, and the one thing
+    it judges is a file the project names and has not got, which is a certain `FILE_MISSING`.
 
     Before the first build the same table reads `no` in every column, and `Next` reads
     `decktalk narrate --no-voice`.
@@ -344,8 +345,8 @@ film.
     decktalk check --json
     ```
 
-    The result is one flat object carrying `judged`, `pages`, `frames`, `storyboard`, `written` and
-    `findings` beside the four keys every result reserves. Its `spend` is the price:
+    The result is one flat object carrying `run`, `written`, `judged`, `pages`, `frames`, `spend` and
+    `storyboard` beside the four keys every result reserves. Its `spend` is the price:
 
     ```json
     {
