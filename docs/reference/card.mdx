@@ -103,7 +103,7 @@ name. `data-in="expand"` inside `<template data-slide="4.1">` is the wire id `4.
 is what `cues.json` carries. No attribute writes a second.
 
 Twenty-four attributes are published by `decktalk schema page`, with each one's values, default,
-range, warning code and motion span. They fall on four rows.
+range, warning code and motion span. They fall on three rows.
 
 | Row | Attributes |
 |---|---|
@@ -236,9 +236,10 @@ flags that answer that command's prompts. Every prompt DeckTalk asks has a flag 
 blanket yes would be a flag that agreed to things nobody named.
 
 **The scope flags** narrow what a command works on. `--section N` takes `3`, `3,5` or `7-9` and
-repeats, and it is on `check`, `words`, `storyboard`, `clip` and every stage command. `build` adds
-`--from`, `--to` and `--skip`, `assemble` adds `--skip`, `storyboard` adds `--slide`, `--after`,
-`--before` and `--at`, and `check` takes deck pages as positional arguments beside the project's own.
+repeats, and it is on `check`, `words`, `storyboard`, `build`, `clip` and every stage command.
+`build` adds `--from`, `--to` and `--skip`, `assemble` adds `--skip`, `storyboard` adds `--slide`,
+`--after`, `--before` and `--at`, and `check` takes deck pages as positional arguments beside the
+project's own.
 
 **The spend flags** are on the three commands that can buy something, which are `narrate`,
 `soundscape` and `build`. `--no-voice` writes placeholder narration and needs no API key.
@@ -254,8 +255,8 @@ refuses with the error code `APPROVAL` unless `--spend` or `--no-voice` is passe
 applies every safe fix and `--no-fix` applies none, on `doctor`, `check` and `build`.
 
 **`--set KEY=VALUE`** overrides one setting for one run, repeats, and is on `status`, `check`,
-`words`, `storyboard`, `serve`, `clip` and every stage command. No flag duplicates a settings key,
-so reduced motion is `--set motion.reduce=true` and not a flag of its own.
+`words`, `storyboard`, `serve`, `build`, `clip` and every stage command. No flag duplicates a
+settings key, so reduced motion is `--set motion.reduce=true` and not a flag of its own.
 
 ## The JSON contract
 
