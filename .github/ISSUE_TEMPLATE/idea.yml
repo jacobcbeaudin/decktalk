@@ -1,6 +1,6 @@
 name: Idea
 description: Something DeckTalk should do, or should do differently.
-labels: [idea]
+labels: [enhancement]
 body:
   - type: textarea
     id: video
