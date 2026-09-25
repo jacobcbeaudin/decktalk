@@ -139,7 +139,7 @@ wheels = [
 
 [[package]]
 name = "decktalk"
-version = "0.5.0-rc1"
+version = "0.5.0-rc2"
 source = { editable = "." }
 dependencies = [
     { name = "playwright" },
