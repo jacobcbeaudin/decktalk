@@ -3,7 +3,7 @@
 # dependencies = ["playwright>=1.50", "fonttools[woff]>=4.50"]
 # ///
 """Generate every graphic from one source. The graphics are the hero, how-it-works (wide and
-stacked), the pipeline, narration zero, the verify probes and onset, the rebuild lanes, the narration
+stacked), the pipeline, narration zero, the verify probes and onset, the edit cycle, the narration
 split, the duck lane, the cue offset, the mark and its lockups, the favicon set, the social card
 and the brand's CSS tokens. Every number a figure prints comes from scripts/figure-data/*.json, and
 each of those files names in its own `source` block the release, the command and the project it was
@@ -19,7 +19,9 @@ Every variant (light/dark, wide/stacked) comes from the same builders and one pa
 they cannot drift. The palette is the brand's: a warm near-black or warm paper as the ground, one
 tungsten gold for the voice that marks only the word being spoken, a cue and a live tick, and paper for
 every picture. The copies in assets/ have a transparent background so they sit on whatever ground
-GitHub and PyPI paint. The copies in docs/images/ carry their own background rect. Instrument Sans
+GitHub and PyPI paint, and the README picks the light or the dark one with <picture>. The one
+exception is assets/edit-cycle.svg, which the README shows in a plain <img> because PyPI strips
+<picture>, so it carries the dark ground. The copies in docs/images/ carry their own background rect. Instrument Sans
 and IBM Plex Mono subsets (OFL, assets/fonts/) are embedded as base64 in the diagrams so GitHub
 and PyPI render the intended faces, and the two diagrams that carry a headline add Instrument Serif,
 the face the headings are set in.
@@ -1330,14 +1332,14 @@ def cue_offset(pal: dict[str, str], background: bool) -> str:
     return _svg(w, h, "The offset key moves a cue time", desc, css, pal, background, body)
 
 
-# ---- rebuild lanes ----------------------------------------------------------------------------
+# ---- edit cycle ----------------------------------------------------------------------------------
 
-EDITED_SECTION = 1  # the starter's own edit: one word changes in section 1
+EDITED_SECTION = 2  # one sentence of the starter's middle section is edited
+EDIT = ("average", "mean")  # the word that changes in that section's first sentence
 LANES = (
-    # lane, the page sections that run in it, the text on those, the text on the other page sections
-    ("narrate", {EDITED_SECTION}, "voiced", "cached"),
-    ("record, plain build", None, "recorded", ""),  # None: every page section
-    (f"record, --section {EDITED_SECTION}", {EDITED_SECTION}, "recorded", "kept"),
+    # lane, the text on the edited section, the text on every other page section
+    ("narrate", "voiced", "cached"),
+    ("record", "recorded", "kept"),
 )
 
 
@@ -1363,73 +1365,138 @@ def hatch(pal: dict[str, str], pid: str = "hatch") -> str:
     )
 
 
-def rebuild_lanes(pal: dict[str, str], background: bool) -> str:
-    """What runs again after section 1 is edited, in narration and in the two kinds of build."""
-    sections = starter_sections()
-    w, h = 1200, 332
-    left, col0, gap = 60, 244, 10
-    col_w = (w - left - col0 + gap) / len(sections)
-    cell_w = col_w - gap
+def edited_sentence() -> str:
+    """The first sentence the starter's script speaks in the edited section, with the edit made."""
+    script = (ROOT / "src" / "decktalk" / "template" / "starter" / "script.md").read_text(encoding="utf-8")
+    m = re.search(rf"^##\s+{EDITED_SECTION}\.[^\n]*\n(.*?)(?=^##\s|\Z)", script, re.M | re.S)
+    if m is None:
+        sys.exit(f"the starter's script has no section {EDITED_SECTION}, which the edit-cycle figure edits.")
+    spoken = re.sub(r"\[[^\]]*\]", " ", m.group(1))
+    first = re.match(r"\s*([^.]+\.)", spoken)
+    if first is None or EDIT[0] not in first.group(1):
+        sys.exit(f'section {EDITED_SECTION} of the starter no longer opens with a sentence that says "{EDIT[0]}".')
+    return " ".join(first.group(1).split())
+
+
+def edit_cycle_css(pal: dict[str, str]) -> list[str]:
+    """The edit cycle's classes, which are the lane cells and the one edited line of script."""
     css = [font_face()]
     css.append(f".lab{{font:500 12px {MONO};fill:{pal['mute']};letter-spacing:.14em}}")
     css.append(f".ti{{font:600 14px {SANS};fill:{pal['ink']}}}")
     css.append(f".ln{{font:500 14px {MONO};fill:{pal['ink']}}}")
     css.append(f".ct{{font:500 13px {MONO};fill:{pal['mute']}}}.ct.on{{fill:{pal['on_accent']}}}")
     css.append(f".cell{{fill:{pal['block']};stroke:{pal['hair']};stroke-width:1}}.accent{{fill:{pal['accent']}}}")
+    css.append(
+        f".page{{fill:{pal['bg']};stroke:{pal['bar']};stroke-width:1}}.page.on{{stroke:{pal['accent']};stroke-width:2.5}}"
+    )
+    css.append(f".say{{font:400 13px {SANS};fill:{pal['ink']}}}.was{{fill:{pal['dim']};text-decoration:line-through}}")
+    css.append(f".now{{font-weight:600;fill:{pal['accent']}}}")
+    css.append(f".guide{{stroke:{pal['hair']};stroke-width:1}}")
     css.append(f".clip{{fill:url(#hatch);stroke:{pal['hair']};stroke-width:1}}")
     css.append(f".ct.cl{{fill:{pal['ink']}}}.chip{{fill:{pal['bg']}}}")
-    rows = [f'<text class="lab" x="{left}" y="40">LANE</text>']
+    return css
+
+
+def edit_cycle_desc(sections: list[tuple[int, str, bool]]) -> str:
+    """The edit cycle's description, which names every section the edit left alone."""
+    others = [str(n) for n, _t, clip in sections if not clip and n != EDITED_SECTION]
+    kept = others[0] if len(others) == 1 else f"{', '.join(others[:-1])} and {others[-1]}"
+    clips = [str(n) for n, _t, clip in sections if clip]
+    clip_text = (
+        ""
+        if not clips
+        else f" Section {clips[0]} is a clip, which is neither voiced nor recorded."
+        if len(clips) == 1
+        else f" Sections {', '.join(clips[:-1])} and {clips[-1]} are clips, which are neither voiced nor recorded."
+    )
+    count = (
+        ("One", "Two", "Three", "Four", "Five", "Six")[len(sections) - 1] if len(sections) <= 6 else str(len(sections))
+    )
+    return (
+        f'{count} section columns of one project. In script.md, the word "{EDIT[0]}" in section {EDITED_SECTION} '
+        f'becomes "{EDIT[1]}", which edits one sentence, and sections {kept} are unchanged.{clip_text} '
+        f"A plain build then runs three lanes. In the narrate lane, section {EDITED_SECTION} is voiced and sections "
+        f"{kept} are cached. In the record lane, section {EDITED_SECTION} is recorded and sections {kept} keep "
+        "their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4."
+    )
+
+
+def edit_cycle(pal: dict[str, str], background: bool) -> str:
+    """The edit cycle: one sentence of section 2 changes, and a plain build voices and records that section alone.
+
+    A take is named by the digest of its own text and a recording is keyed on its own scene, words and
+    cues, so the two sections the edit never reached keep their take and their recording. Assemble
+    always cuts and joins every section, because a film is always whole.
+    """
+    sections = starter_sections()
+    if EDITED_SECTION not in {n for n, _t, _c in sections}:
+        sys.exit(f"the starter has no section {EDITED_SECTION}, which the edit-cycle figure edits.")
+    w, h = 1200, 372
+    left, col0, gap = 60, 200, 10
+    col_w = (w - left - col0 + gap) / len(sections)
+    cell_w = col_w - gap
+    css = edit_cycle_css(pal)
+    sentence = edited_sentence()
+    before, after = sentence.split(EDIT[0], 1)
+    rows = [f'<text class="lab" x="{left}" y="36">EDIT ONE SENTENCE IN SECTION {EDITED_SECTION}, THEN BUILD</text>']
     for n, (number, title, _clip) in enumerate(sections):
         x = col0 + n * col_w
-        rows.append(f'<text class="lab" x="{x + 2:.1f}" y="40">SECTION {number}</text>')
-        rows.append(f'<text class="ti" x="{x + 2:.1f}" y="62">{title}</text>')
-    top, pitch = 82, 58
-    for i, (name, lit, on_text, off_text) in enumerate(LANES):
-        y = top + i * pitch
-        rows.append(f'<text class="ln" x="{left}" y="{y + 26}">{name}</text>')
+        rows.append(f'<text class="lab" x="{x + 2:.1f}" y="72">SECTION {number}</text>')
+        rows.append(f'<text class="ti" x="{x + 2:.1f}" y="94">{title}</text>')
+
+    def clip_cell(x: float, y: int) -> None:
+        rows.append(f'<rect class="clip" x="{x:.1f}" y="{y}" width="{cell_w:.1f}" height="40" rx="8"/>')
+        cx = x + cell_w / 2
+        rows.append(f'<rect class="chip" x="{cx - 22:.1f}" y="{y + 10}" width="44" height="20" rx="4"/>')
+        rows.append(f'<text class="ct cl" x="{cx:.1f}" y="{y + 25}" text-anchor="middle">clip</text>')
+
+    y = 112
+    rows.append(f'<text class="ln" x="{left}" y="{y + 26}">script.md</text>')
+    for n, (number, _title, clip) in enumerate(sections):
+        x = col0 + n * col_w
+        if clip:
+            clip_cell(x, y)
+            continue
+        edited = number == EDITED_SECTION
+        rows.append(
+            f'<rect class="page{" on" if edited else ""}" x="{x:.1f}" y="{y}" width="{cell_w:.1f}" height="40" rx="8"/>'
+        )
+        if edited:
+            rows.append(
+                f'<text class="say" x="{x + 14:.1f}" y="{y + 25}">{before}<tspan class="was">{EDIT[0]}</tspan> '
+                f'<tspan class="now">{EDIT[1]}</tspan>{after}</text>'
+            )
+        else:
+            rows.append(f'<text class="ct" x="{x + cell_w / 2:.1f}" y="{y + 25}" text-anchor="middle">unchanged</text>')
+    rows.append(f'<line class="guide" x1="{left}" y1="{y + 60}" x2="{w - left}" y2="{y + 60}"/>')
+    top, pitch = y + 80, 58
+    for i, (name, on_text, off_text) in enumerate(LANES):
+        ly = top + i * pitch
+        rows.append(f'<text class="ln" x="{left}" y="{ly + 26}">{name}</text>')
         for n, (number, _title, clip) in enumerate(sections):
             x = col0 + n * col_w
             if clip:
-                rows.append(f'<rect class="clip" x="{x:.1f}" y="{y}" width="{cell_w:.1f}" height="40" rx="8"/>')
-                cx = x + cell_w / 2
-                rows.append(f'<rect class="chip" x="{cx - 22:.1f}" y="{y + 10}" width="44" height="20" rx="4"/>')
-                rows.append(f'<text class="ct cl" x="{cx:.1f}" y="{y + 25}" text-anchor="middle">clip</text>')
+                clip_cell(x, ly)
                 continue
-            on = lit is None or number in lit
+            on = number == EDITED_SECTION
             rows.append(
-                f'<rect class="{"accent" if on else "cell"}" x="{x:.1f}" y="{y}" width="{cell_w:.1f}" height="40" rx="8"/>'
+                f'<rect class="{"accent" if on else "cell"}" x="{x:.1f}" y="{ly}" width="{cell_w:.1f}" height="40" rx="8"/>'
             )
-            text = on_text if on else off_text
-            if text:
-                rows.append(
-                    f'<text class="ct{" on" if on else ""}" x="{x + cell_w / 2:.1f}" y="{y + 25}" text-anchor="middle">{text}</text>'
-                )
-    y = top + len(LANES) * pitch + 10
-    rows.append(f'<text class="ln" x="{left}" y="{y + 26}">assemble</text>')
+            rows.append(
+                f'<text class="ct{" on" if on else ""}" x="{x + cell_w / 2:.1f}" y="{ly + 25}" text-anchor="middle">'
+                f"{on_text if on else off_text}</text>"
+            )
+    ay = top + len(LANES) * pitch
+    rows.append(f'<text class="ln" x="{left}" y="{ay + 26}">assemble</text>')
     rows.append(
-        f'<rect class="accent" x="{col0}" y="{y}" width="{(len(sections) - 1) * col_w + cell_w:.1f}" height="40" rx="8"/>'
+        f'<rect class="accent" x="{col0}" y="{ay}" width="{(len(sections) - 1) * col_w + cell_w:.1f}" height="40" rx="8"/>'
     )
     rows.append(
-        f'<text class="ct on" x="{col0 + 16}" y="{y + 25}">Every section is cut and joined into one mp4.</text>'
+        f'<text class="ct on" x="{col0 + 16}" y="{ay + 25}">Every section is cut and joined into one mp4.</text>'
     )
-    pages = [n for n, _t, clip in sections if not clip]
-    clips = [n for n, _t, clip in sections if clip]
-    others = ", ".join(str(n) for n in pages if n != EDITED_SECTION)
-    names = [str(n) for n in clips]
-    if not names:
-        clip_text = "Every section is a page section"
-    elif len(names) == 1:
-        clip_text = f"Section {names[0]} is a clip"
-    else:
-        clip_text = f"Sections {', '.join(names[:-1])} and {names[-1]} are clips"
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
-  <title id="t">What runs again after an edit to section {EDITED_SECTION}</title>
-  <desc id="d">{len(sections)} section columns and three lanes. {clip_text} in every lane. In the narrate lane, section {EDITED_SECTION} is voiced, and sections {others} are cached. A plain build records every page section. A build with --section {EDITED_SECTION} records section {EDITED_SECTION} and keeps the other recordings. The assemble bar spans every section.</desc>
-  <defs><style>{chr(10).join(css)}</style>{hatch(pal)}</defs>
-  {bg_rect(pal, w, h, background)}
-  {"".join(rows)}
-</svg>
-"""
+    desc = edit_cycle_desc(sections)
+    title = f"An edit to one sentence of section {EDITED_SECTION} voices and records that section alone"
+    return _svg(w, h, title, desc, css, pal, background, "".join(rows))
 
 
 # ---- wordmark ---------------------------------------------------------------------------------
@@ -1750,7 +1817,7 @@ def build() -> dict[Path, str]:
         out[docs / "images" / f"narration-split-{variant}.svg"] = narration_split(pal, background=True)
         out[docs / "images" / f"duck-lane-{variant}.svg"] = duck_lane(pal, background=True)
         out[docs / "images" / f"cue-offset-{variant}.svg"] = cue_offset(pal, background=True)
-        out[docs / "images" / f"rebuild-lanes-{variant}.svg"] = rebuild_lanes(pal, background=True)
+        out[docs / "images" / f"edit-cycle-{variant}.svg"] = edit_cycle(pal, background=True)
         out[docs / "logo" / f"{variant}.svg"] = wordmark(pal, name)
         for background, folder in ((False, ASSETS), (True, docs / "images")):
             out[folder / f"pipeline-{variant}.svg"] = pipeline(pal, background)
@@ -1766,6 +1833,9 @@ def build() -> dict[Path, str]:
         out[marks / f"lockup-{label}-{height}-mono.svg"] = wordmark(DARK, name, height, mono=True)
     # The favicon sits on the dark ground in both themes, so the gold beats read on any tab.
     out[docs / "favicon.svg"] = mark(DARK, size=32, background=True)
+    # The README shows the edit cycle in a plain <img>, because PyPI strips <picture>. The one copy carries the
+    # dark ground, as the favicon does, so it reads the same on GitHub light, GitHub dark and PyPI's white page.
+    out[ASSETS / "edit-cycle.svg"] = edit_cycle(DARK, background=True)
     out[ASSETS / "og.svg"] = og(DARK, og_xs)
     out[ASSETS / "tokens.css"] = tokens_css()
     return {k: _clean(v) for k, v in out.items()}
