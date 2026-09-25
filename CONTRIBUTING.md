@@ -420,7 +420,7 @@ which is the one command that brings every generated file up to date at once.
 | The table in `docs/agents/skills.mdx` | The front matter of each packaged skill | `uv run scripts/build_skills_list.py --write` |
 | The two blocks in `CONTRIBUTING.md` | `src/decktalk` and the `GROUPS` table | `uv run scripts/build_contributing.py --write` |
 | `docs/changelog.mdx` | `CHANGELOG.md`, which release-please writes | `uv run scripts/build_changelog.py --write` |
-| `assets/*.svg` and `docs/images/` | `scripts/figure-data/` | `uv run scripts/build_assets.py --write` |
+| `assets/*.svg`, `assets/tokens.css` and `docs/images/` | `scripts/figure-data/` and the palette maps | `uv run scripts/build_assets.py --write` |
 | `site/data.js` and `site/stage.js` | The built Halfway project | `uv run scripts/build_homepage_data.py --write` |
 | The coverage floor | A real run on Linux | `uv run scripts/check_coverage.py --write` |
 

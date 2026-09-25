@@ -142,7 +142,7 @@ def test_only_the_measured_figures_carry_the_tolerance() -> None:
     assert build_assets.measured(Path("assets/og.svg"))
     assert not build_assets.measured(Path("docs/logo/light.svg"))
     assert not build_assets.measured(Path("assets/mark/lockup-nav-24.svg"))
-    assert not build_assets.measured(Path("site/tokens.css"))
+    assert not build_assets.measured(Path("assets/tokens.css"))
 
 
 def test_a_committed_figure_matches_itself() -> None:
@@ -162,7 +162,7 @@ def test_a_digit_inside_an_embedded_font_is_never_a_number() -> None:
 def test_the_report_sends_each_file_to_the_comparison_it_belongs_to(capsys: pytest.CaptureFixture[str]) -> None:
     """A measured figure reaches the tolerance and every other generated file is held to the byte."""
     hero = REPO / "assets" / "hero-light.svg"
-    tokens = REPO / "site" / "tokens.css"
+    tokens = REPO / "assets" / "tokens.css"
     css = tokens.read_text(encoding="utf-8")
     assert build_assets.report_stale({hero: HERO, tokens: css}) == 0
     assert build_assets.report_stale({hero: nudge(HERO, "343.9", "346.9")}) == 0
@@ -170,4 +170,4 @@ def test_the_report_sends_each_file_to_the_comparison_it_belongs_to(capsys: pyte
     assert build_assets.report_stale({tokens: css.replace("--dt-size-xs: 12px", "--dt-size-xs: 13px", 1)}) == 1
     printed = capsys.readouterr().out
     assert "stale: assets/hero-light.svg" in printed
-    assert "stale: site/tokens.css, because it differs from its source" in printed
+    assert "stale: assets/tokens.css, because it differs from its source" in printed
