@@ -3,7 +3,7 @@
 # ///
 """Generate the JSON Schema for decktalk.toml, and the per-machine filter of it.
 
-    uv run scripts/build_settings_schema.py            # write both schemas and their published copies
+    uv run scripts/build_settings_schema.py --write    # write both schemas and their published copies
     uv run scripts/build_settings_schema.py --check    # exit 1 if either committed file would change
 
 One schema describes the whole project file, its document tables and its tuning tables together,
@@ -216,13 +216,15 @@ def documents() -> dict[Path, str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="exit 1 if either committed file would change")
+    action = ap.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write both schemas")
+    action.add_argument("--check", action="store_true", help="exit 1 if either committed file would change")
     args = ap.parse_args()
     stale = False
     for target, text in documents().items():
         if args.check:
             if not target.exists() or target.read_text(encoding="utf-8") != text:
-                print(f"stale: {target.relative_to(ROOT)}. Run `uv run scripts/build_settings_schema.py`.")
+                print(f"stale: {target.relative_to(ROOT)}. Run `uv run scripts/build_settings_schema.py --write`.")
                 stale = True
             continue
         target.parent.mkdir(parents=True, exist_ok=True)

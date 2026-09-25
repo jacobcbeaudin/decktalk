@@ -140,8 +140,9 @@ def render(releases: list[Release]) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
-    ap.add_argument("--write", action="store_true", help="write the page from CHANGELOG.md")
+    action = ap.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write the page from CHANGELOG.md")
+    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
     args = ap.parse_args()
     page = render(parse(SOURCE.read_text(encoding="utf-8")))
     if args.check:

@@ -3,7 +3,7 @@
 # ///
 """Generate the skills table in docs/agents/skills.mdx from the packaged SKILL.md front matter.
 
-    uv run scripts/build_skills_list.py            # write the table
+    uv run scripts/build_skills_list.py --write    # write the table
     uv run scripts/build_skills_list.py --check    # exit 1 if the committed page would change
 
 Each row is one packaged skill: its name, when it starts and what it leaves behind. The first two
@@ -88,7 +88,9 @@ def render(page: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
+    action = ap.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write the table")
+    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
     args = ap.parse_args()
     current = TARGET.read_text(encoding="utf-8")
     if START not in current or END not in current:
@@ -97,7 +99,7 @@ def main() -> int:
     page = render(current)
     if args.check:
         if current != page:
-            print(f"{TARGET.relative_to(ROOT)} is out of date. Run: uv run scripts/build_skills_list.py")
+            print(f"{TARGET.relative_to(ROOT)} is out of date. Run: uv run scripts/build_skills_list.py --write")
             return 1
         print(f"{TARGET.relative_to(ROOT)} is up to date.")
         return 0

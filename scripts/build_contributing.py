@@ -200,13 +200,14 @@ def render(page: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--check", action="store_true", help="exit 1 if either generated block would change")
-    parser.add_argument("--write", action="store_true", help="write both generated blocks")
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write both generated blocks")
+    action.add_argument("--check", action="store_true", help="exit 1 if either generated block would change")
     args = parser.parse_args()
 
     current = TARGET.read_text(encoding="utf-8")
     page = render(current)
-    if not args.write:
+    if args.check:
         if current != page:
             print(STALE.format(path=TARGET.relative_to(ROOT), script="build_contributing.py"))
             return 1

@@ -55,8 +55,9 @@ def written(current: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     """Write the block, or say that the committed one would change."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="exit 1 if the committed block would change")
-    parser.add_argument("--write", action="store_true", help="write the block")
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write the block")
+    action.add_argument("--check", action="store_true", help="exit 1 if the committed block would change")
     args = parser.parse_args(argv)
     current = TARGET.read_text(encoding="utf-8")
     fresh = written(current)

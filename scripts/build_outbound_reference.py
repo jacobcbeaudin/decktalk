@@ -3,7 +3,7 @@
 # ///
 """Generate docs/reference/what-leaves-your-machine.mdx from docs/data/outbound.toml.
 
-    uv run scripts/build_outbound_reference.py            # write the page
+    uv run scripts/build_outbound_reference.py --write    # write the page
     uv run scripts/build_outbound_reference.py --check    # exit 1 if the committed page would change
 
 Every host on the page comes from the data file, so the page is a complete list by construction.
@@ -147,13 +147,15 @@ def render(data: dict[str, Any]) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
+    action = ap.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write the page")
+    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
     args = ap.parse_args()
     page = render(tomllib.loads(SOURCE.read_text(encoding="utf-8")))
     if args.check:
         current = TARGET.read_text(encoding="utf-8") if TARGET.exists() else ""
         if current != page:
-            print(f"{TARGET.relative_to(ROOT)} is out of date. Run: uv run scripts/build_outbound_reference.py")
+            print(f"{TARGET.relative_to(ROOT)} is out of date. Run: uv run scripts/build_outbound_reference.py --write")
             return 1
         print(f"{TARGET.relative_to(ROOT)} is up to date.")
         return 0

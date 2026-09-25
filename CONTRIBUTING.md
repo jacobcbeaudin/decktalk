@@ -82,6 +82,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report= --timing=report` | uv, chromium, ffmpeg | macOS, Windows | main, release |
 | `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
 | `generated` | `npm ci`, and 16 more | uv, npm, chromium | Linux | pr, main, release |
+| `rehearsal` | `uv run python scripts/rehearse_release.py` | uv, npm, chromium | Linux | pr, main, release |
 | `coverage` | `uv run coverage combine --keep`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
 | `scaffold` | `uv run pytest -q -m scaffold --timing=report` | uv, chromium, ffmpeg | Linux | main, schedule |
@@ -101,6 +102,7 @@ uv run scripts/check.py --group media-platforms   # Frame and audio measurement 
 uv run scripts/check.py --group e2e-platforms     # The pipeline fixture built end to end, which samples the joint behaviour of every tool. This row is macOS and Windows, which gate a merge rather than a pull request.
 uv run scripts/check.py --group platform          # The short list only macOS or Windows can prove, plus the two commands every machine runs.
 uv run scripts/check.py --group generated         # Every generated file held to the source it is generated from, and every link in them.
+uv run scripts/check.py --group rehearsal         # The version bump release-please makes, rehearsed in a copy, then every generator written and checked.
 uv run scripts/check.py --group coverage          # One floor, measured on Linux, failing when a suite it combines never reported.
 uv run scripts/check.py --group wheel             # What `uv build` writes, opened on a machine that has only the wheel and the tag.
 uv run scripts/check.py --group scaffold          # Every packaged project recorded and verified without a voice, which is the scaffold's promise.
@@ -193,8 +195,8 @@ gates it. These are the settings, which only the repository owner can apply.
 6. Leave **Bypass list** empty. This does mean you can no longer push to `main` directly, which is
    the point: every change to `main` then arrives through a pull request that `ci` judged.
 
-`release-please` opens its own pull request and it passes the same gate, which is why the changelog
-page and the runtime bundles are regenerated on that branch rather than pushed to `main` afterwards.
+`release-please` opens its own pull request and it passes the same gate, which is why every file its
+version bump makes stale is regenerated on that branch rather than pushed to `main` afterwards.
 
 ## Layout
 
@@ -399,8 +401,10 @@ People and agents read these docs. Write so that neither has to guess.
 - Use American spelling.
 
 Everything mechanical is generated. Do not edit a generated file. Change its source and run its
-script, which is what the `generated` group checks. Every generator takes `--check` and `--write`,
-and every one fails with the same sentence naming the file and the command that fixes it.
+script, which is what the `generated` group checks. Every generator requires one of `--check` and
+`--write`, and every one fails with the same sentence naming the file and the command that fixes it.
+`uv run scripts/check.py --group generated --write` runs every generator in the group in write mode,
+which is the one command that brings every generated file up to date at once.
 
 | What is generated | From | Command |
 |---|---|---|
@@ -445,8 +449,19 @@ docs: state the reveal floor in pixels
 release-please keeps a release pull request open against `main`. It bumps the version in
 `pyproject.toml`, `uv.lock` and `src/decktalk/runtime/src/index.ts`, writes `CHANGELOG.md`, and
 picks the bump from the commits since the last release. That pull request runs `ci` like any other,
-and a job in `ci.yml` regenerates `docs/changelog.mdx` and the two runtime bundles on its branch, so
-the merge commit already carries them and no bot ever writes to `main`.
+and a job in `ci.yml` runs `uv run scripts/check.py --group generated --write` on its branch and
+commits every file that changed, so the merge commit already carries them and no bot ever writes to
+`main`.
+
+The release path runs for real only on that pull request, so every pull request rehearses it first.
+The `rehearsal` group runs `uv run scripts/rehearse_release.py`, which copies the checkout into a
+temporary directory and makes the bump release-please would make there: a throwaway prerelease of
+the next patch version in `.release-please-manifest.json`, `pyproject.toml`, `CHANGELOG.md` and every
+entry of `extra-files` in `release-please-config.json`, with `uv lock` bringing the lockfile along.
+It then runs `uv run scripts/check.py --group generated --write` and `--group generated` in the copy,
+and fails when a file cannot take the version, a generator cannot write, or anything is still stale.
+It reads the files to bump from the config, so an extra file added there is rehearsed on the same
+pull request, and it never commits or pushes anything.
 
 The version answers for the wheel, and the wheel is `src/decktalk` alone, so `exclude-paths` in
 `release-please-config.json` lists the directories that ship to nobody: `site`, `docs`, `assets`,
