@@ -60,6 +60,10 @@
         {
           "type": "generic",
           "path": "src/decktalk/runtime/src/index.ts"
+        },
+        {
+          "type": "generic",
+          "path": "README.md"
         }
       ],
       "exclude-paths": [
