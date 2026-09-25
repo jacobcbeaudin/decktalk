@@ -63,6 +63,7 @@ ALLOW = {
     "contract/test_numbers.py": "`tests/contract/numbers-baseline.json`, every number written outside settings.py.",
     "contract/test_probe.py": "`src/decktalk/runtime/decktalk-probe.js`, read as the compiled bundle.",
     "contract/test_prose.py": "Every tracked text file, judged by the two prose rules that are mechanical.",
+    "contract/test_release_versions.py": "Every version release-please writes, and the config it reads.",
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
     "contract/test_selection.py": "The collection hook in `tests/conftest.py`.",

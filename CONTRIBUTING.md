@@ -519,7 +519,9 @@ commits compute, which for the first candidate was a final 0.5.0.
 
 **The suffix takes a hyphen.** release-please parses semver with an unanchored pattern, so
 `Release-As: 0.5.0rc1` does not error: it matches `0.5.0`, drops the `rc1`, and cuts the final 0.5.0
-instead, which burns a version PyPI will never let you re-upload.
+instead, which burns a version PyPI will never let you re-upload. The contract test
+`tests/contract/test_release_versions.py` holds every version the release writes to one PEP 440
+version and to that spelling.
 
 The tag is semver and the package is PEP 440, so the tag is `v0.5.0-rc2`, the wheel is
 `decktalk-0.5.0rc2-py3-none-any.whl` and `uv version --short` prints `0.5.0rc2`. The release
