@@ -120,7 +120,7 @@ span, are published by `decktalk schema page`. Read that and write from it.
 |---|---|
 | An element or a container | `data-in`, `data-describe`, `data-tex`, `data-tex-display`, `data-in-style`, `data-back`, `data-front`, `data-out`, `data-words`, `data-count`, `data-class`, `data-describe-class`, `data-stagger`, `data-steps`, `data-in-seconds`, `data-out-style`, `data-swaps`, `data-describe-out` |
 | The scene wrapper | `data-scene`, `data-name` |
-| A slide template | `data-slide`, `data-hold`, `data-owns`, `data-enter` |
+| A slide template | `data-slide`, `data-hold`, `data-owns`, `data-enter`, `data-describe` |
 
 Three numbers bound every span a page may declare.
 
@@ -205,7 +205,8 @@ than save one.
 
 `window.__decktalk` is the live view whoever is reading the page back uses. Every field is a getter,
 so a reader sees the page as it stands: `version`, `ready`, `mode`, `scene`, `slide`, `cues`,
-`fired`, `warnings`, `catalog`, `frozen`, `signalled`, `now` and `started`.
+`fired`, `warnings`, `catalog`, `frozen` and `signalled`. `now()` and `started()` are the clock's own
+two functions, which say the narration second and whether the clock has begun.
 
 ## The probe
 
@@ -296,20 +297,20 @@ the catalog after the run, and a page that reported one of those would be a deck
 |---|---|
 | `PAGE_UNKNOWN_ATTR` | An element carries a data attribute the contract does not declare. |
 | `PAGE_BAD_VALUE` | An attribute's value is outside the range the contract publishes for it. |
-| `PAGE_MOMENT_UNKNOWN` | A slide names a moment that no element on it declares. |
-| `PAGE_MOMENT_ORDER` | An element's moments are declared out of the order they play. |
-| `PAGE_CUE_UNKNOWN` | A moment names a cue the runtime cannot qualify against the slide it sits on. |
-| `PAGE_NO_OWNER` | An element declares a moment and no slide owns it. |
-| `PAGE_SCENE_EMPTY` | A slide renders no element at all. |
+| `PAGE_MOMENT_UNKNOWN` | An element outside every slide template names a moment, which no slide can own. |
+| `PAGE_MOMENT_ORDER` | An element's exit is declared at or before its own entrance, so it never plays. |
+| `PAGE_CUE_UNKNOWN` | A cue fired that no reveal, no handler and no slide in the deck declares. |
+| `PAGE_NO_OWNER` | A cue the scene plays is owned by none of its slides, so nothing mounts for it. |
+| `PAGE_SCENE_EMPTY` | A scene declares no slide template. |
 | `PAGE_SLIDE_NO_ID` | A slide template carries no id. |
 | `PAGE_SLIDE_DOUBLED` | Two slide templates carry the same id. |
 | `PAGE_SLIDE_UNUSED` | No section plays this slide. |
-| `PAGE_TEMPLATE_IGNORED` | A template sits outside every slide. |
+| `PAGE_TEMPLATE_IGNORED` | A template inside a slide declares no slide of its own, so nothing mounts it. |
 | `PAGE_WORDS_NOT_FOUND` | An element syncs to words the transcript does not hold. |
 | `PAGE_KATEX_MISSING` | The page asks for KaTeX and the library is not loaded. |
-| `PAGE_KATEX_ERROR` | KaTeX refused a formula. |
+| `PAGE_KATEX_ERROR` | KaTeX refused a formula, so the element shows its readable fallback text. |
 | `PAGE_FREEZE_CUE_UNKNOWN` | A freeze was asked for a cue the slide does not declare. |
-| `PAGE_RENDER_THREW` | A slide's render threw. |
+| `PAGE_RENDER_THREW` | A slide's render threw, so the slide is drawn as its markup stands. |
 | `PAGE_ENTER_THREW` | A slide's enter threw. |
 | `PAGE_SLIDE_HANDLER_THREW` | A slide's own moment handler threw. |
 | `PAGE_HANDLER_THREW` | A moment handler threw. |
@@ -317,9 +318,9 @@ the catalog after the run, and a page that reported one of those would be a deck
 | `PAGE_WAIT_UNSETTLED` | A wait the page declared never settled inside its budget. |
 | `PAGE_CLASS_UNDESCRIBED` | An element changes class with no description. |
 | `PAGE_CLASS_NOT_REDUCED` | A class change declares no reduced form. |
-| `PAGE_SWAP_AMBIGUOUS` | Two elements claim the same swap. |
+| `PAGE_SWAP_AMBIGUOUS` | A swap finds no element or several elements leaving at its cue, so it cannot tell which one it replaces. |
 | `PAGE_PREVIEW_AMBIGUOUS` | Two sections name one scene, so a preview cannot choose whose cue times to play. |
-| `PAGE_APPEAR_TOO_LONG` | A line appears word by word over more words than one cue can carry. |
+| `PAGE_APPEAR_TOO_LONG` | A line shown with `data-words=appear` runs longer than eight words. |
 | `PAGE_STAGGER_EMPTY` | An element staggers its children and has none. |
 
 Each has its own page under `/reference/findings/`, and `code.url` on the Python member points at it.

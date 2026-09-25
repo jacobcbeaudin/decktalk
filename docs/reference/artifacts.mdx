@@ -234,14 +234,14 @@ log as soon as that section is done and a measurement always belongs to the reco
 ```json build/recordings/01.json
 {
   "section": 1,
-  "url": "http://127.0.0.1:53211/deck/index.html?scene=1&cues=1.1%3Atitle%400.5&t0=signal",
+  "url": "http://project.localhost/deck/index.html?scene=1&cues=1.1%3Atitle%400.5&t0=signal",
   "input_hash": "4b1d90a7c3e2f085",
   "requested_seconds": 17.67,
   "settle_seconds": 0.4,
   "load_seconds": 0.62,
   "clock_start_seconds": 1.04,
   "t0_seconds": 1.08,
-  "t0_method": "the first frame after the cover came off",
+  "t0_method": "the frame after the last of 37 cover frames",
   "t0_guessed": false,
   "assets": ["deck/index.html", "deck/decktalk-runtime.js"],
   "external": [],
@@ -409,8 +409,8 @@ that wants to jump to a section read it instead of adding section files up.
 | `sections[].dip_out` | True when the picture dips to black on the way out of it. |
 
 `substitute` says plainly where a slate or a black frame stood in for something the project does not
-have. A run with `strict` set refuses such a section outright unless the section declares
-`optional = true`.
+have. A Python call to `assemble` or `build` with `strict=True` refuses such a section outright,
+unless it is a clip whose section declares `optional = true`.
 
 ## `build/events/<run>.jsonl`
 

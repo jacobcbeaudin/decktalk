@@ -35,7 +35,7 @@ Five layers can set a settings key. Each overrides the ones before it.
 2. The same table in the per-machine settings file.
 3. The same table in this project's `decktalk.toml`.
 4. The environment variable the key publishes, such as `DECKTALK_VIDEO_PRESET`.
-5. `--set table.key=value`, on any command, for one run.
+5. `--set table.key=value`, on any command that builds or reports on the project, for one run.
 
 The fifth layer writes nothing. `--set` overrides a key for exactly the run it is given to, and the
 file on disk is untouched, which is what makes it the right way to try a value. It takes the same
@@ -43,8 +43,9 @@ spelling an environment variable takes, so a value cannot get in through one rou
 would refuse. No flag on any command duplicates a settings key, so reduced motion is
 `--set motion.reduce=true` and never a flag of its own.
 
-`decktalk config explain KEY` prints all five layers with the winner marked, along with what the key
-changes, what may be written into it and which findings it moves.
+`decktalk config explain KEY` prints the value that wins and the layer that set it, along with what
+the key changes, what may be written into it and which findings it moves. Its `--json` lists every
+layer that sets the key.
 
 `decktalk config set KEY VALUE` is how you write one into a file. It reads the value under the same
 range the loader enforces, edits the document in place rather than rewriting it, so the comments you
@@ -61,6 +62,7 @@ range it missed and the sentence saying what goes wrong at the edge.
 ```text
 error[INPUT]: video.crf: must be between 0 and 32, got 99
   hint: Above about 32 the encoder's own ringing is larger than a small reveal, so a cue that played reads as no change and the check that would have caught it passes instead.
+  docs: https://docs.decktalk.ai/reference/errors/INPUT
 ```
 
 ## Load rules
@@ -165,6 +167,14 @@ page = "deck/index.html"
 lead_seconds = 1.5    # the page shows for 1.5 seconds before the first word
 hold_seconds = 2      # the last frame stays 2 seconds before section 5
 ```
+
+A page may load only what this file declares. Every page is opened at a local origin that answers
+for the directory each `page` sits in and for the files the document names, which are each clip and
+its `words`, every `[mix]` file, every `[[mix.effects]]` file and every `[soundscape]` `out`. Every
+other file in the project is refused, so the script, the cue file, `build/` and `.env` stay out of a
+page's reach. A declared file is reached by the spelling written here and by no other, so
+`media/Theme.mp3` does not answer a request for `media/theme.mp3` on any platform. A declared
+directory is a place, so every name under it is served however the page spells it.
 
 ### A clip section
 
