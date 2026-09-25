@@ -86,7 +86,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `coverage` | `uv run coverage combine --keep`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
 | `scaffold` | `uv run pytest -q -m scaffold --timing=report` | uv, chromium, ffmpeg | Linux | main, schedule |
-| `installer` | `docker run --rm -v site:/site:ro debian:13-slim sh -euc <shell script>`, and 5 more | docker | Linux | main, schedule |
+| `installer` | `docker run --rm -v install.sh:/install.sh:ro debian:13-slim sh -euc <shell script>`, and 5 more | docker | Linux | main, schedule |
 
 Every group, one at a time:
 

@@ -58,7 +58,7 @@ ALLOW = {
     "contract/test_env_ignore.py": "`.gitignore` and the wheel's exclude list, judged with git itself.",
     "contract/test_homepage.py": "`site/`, opened in a browser rather than read as files.",
     "contract/test_imports.py": "The layer rank of every module in `src/decktalk`.",
-    "contract/test_installer.py": "`site/install.sh`, the one-line installer.",
+    "contract/test_installer.py": "`install.sh`, the one-line installer.",
     "contract/test_layout.py": "This mirror rule, which belongs to the suite rather than to a module.",
     "contract/test_numbers.py": "`tests/contract/numbers-baseline.json`, every number written outside settings.py.",
     "contract/test_probe.py": "`src/decktalk/runtime/decktalk-probe.js`, read as the compiled bundle.",

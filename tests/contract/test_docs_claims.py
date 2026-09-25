@@ -20,7 +20,7 @@ from decktalk.settings import KEYS
 from support.paths import REPO
 
 ROOT = REPO
-INSTALLER = ROOT / "site" / "install.sh"
+INSTALLER = ROOT / "install.sh"
 
 
 def slugify(heading: str) -> str:
