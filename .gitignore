@@ -14,6 +14,5 @@ tests/out/
 *.webm
 *.wav
 .claude/
-.wrangler/
 .coverage*
 coverage.xml

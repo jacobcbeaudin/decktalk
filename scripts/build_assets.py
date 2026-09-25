@@ -7,10 +7,12 @@ stacked), the pipeline, narration zero, the verify probes and onset, the rebuild
 split, the duck lane, the cue offset, the mark and its lockups, the favicon set, the social card
 and the brand's CSS tokens. Every number a figure prints comes from scripts/figure-data/*.json, and
 each of those files names in its own `source` block the release, the command and the project it was
-measured from. The README reads assets/, the docs site reads docs/images/ and docs/logo/, and the
-homepage reads site/tokens.css and site/favicon.svg.
+measured from. The README reads assets/, and the docs site reads docs/images/, docs/logo/ and
+docs/favicon.svg. The brand's tokens are assets/tokens.css. The homepage lives in a repository of its
+own, which copies assets/tokens.css, docs/favicon.svg and docs/images/og.png, so nothing here writes
+into it.
 
-    uv run scripts/build_assets.py --write    # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, the favicons, site/tokens.css
+    uv run scripts/build_assets.py --write    # writes assets/*.svg, assets/tokens.css, docs/images/*.svg, docs/logo/*.svg, docs/favicon.svg
     uv run scripts/build_assets.py --check    # exit 1 if a committed file no longer says what the source says
 
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
@@ -1577,7 +1579,7 @@ def colour_tokens(pal: dict[str, str]) -> str:
 
 
 def tokens_css() -> str:
-    """site/tokens.css: the brand's colour, type and motion tokens.
+    """assets/tokens.css: the brand's colour, type and motion tokens, which the homepage copies.
 
     Dark is the default and, at launch, the only theme. The paper theme is written so that it can
     ship later under data-theme="light".
@@ -1728,7 +1730,6 @@ def build() -> dict[Path, str]:
     name = glyph_outlines("DeckTalk", size=22, tracking=-0.01)
     out: dict[Path, str] = {}
     docs = ROOT / "docs"
-    site = ROOT / "site"
     for variant, pal in (("light", LIGHT), ("dark", DARK)):
         for background, folder in ((False, ASSETS), (True, docs / "images")):
             out[folder / f"hero-{variant}.svg"] = hero(pal, [x * HERO_PX / MEASURE_PX for x in hero_xs], background)
@@ -1764,10 +1765,9 @@ def build() -> dict[Path, str]:
         out[marks / f"lockup-{label}-{height}-light.svg"] = wordmark(LIGHT, name, height)
         out[marks / f"lockup-{label}-{height}-mono.svg"] = wordmark(DARK, name, height, mono=True)
     # The favicon sits on the dark ground in both themes, so the gold beats read on any tab.
-    for target in (docs / "favicon.svg", site / "favicon.svg"):
-        out[target] = mark(DARK, size=32, background=True)
+    out[docs / "favicon.svg"] = mark(DARK, size=32, background=True)
     out[ASSETS / "og.svg"] = og(DARK, og_xs)
-    out[site / "tokens.css"] = tokens_css()
+    out[ASSETS / "tokens.css"] = tokens_css()
     return {k: _clean(v) for k, v in out.items()}
 
 
@@ -1792,17 +1792,12 @@ def main() -> int:
         print(f"wrote {p.relative_to(ROOT)}  ({len(files[p]) // 1024} KB)")
     if not changed:
         print("every generated asset already says what its source says")
-    # The social card and the favicons are also needed as PNGs. They are not part of --check because
-    # raster bytes vary between Chromium builds, so they are only refreshed when their SVG source was rewritten.
-    if ASSETS / "og.svg" in changed or not (ROOT / "site" / "og.png").exists():
-        for target in (ROOT / "site" / "og.png", ROOT / "docs" / "images" / "og.png"):
-            render_png(files[ASSETS / "og.svg"], target, 1200, 630)
-            print(f"wrote {target.relative_to(ROOT)}")
-    favicon = ROOT / "site" / "favicon.svg"
-    if favicon in changed or not (ROOT / "site" / "apple-touch-icon.png").exists():
-        for name, size in (("favicon-32.png", 32), ("favicon-192.png", 192), ("apple-touch-icon.png", 180)):
-            render_png(mark(DARK, size=size, background=True), ROOT / "site" / name, size, size)
-            print(f"wrote site/{name}")
+    # The social card is also needed as a PNG for link previews. It is not part of --check because
+    # raster bytes vary between Chromium builds, so it is only refreshed when its SVG source was rewritten.
+    og_png = ROOT / "docs" / "images" / "og.png"
+    if ASSETS / "og.svg" in changed or not og_png.exists():
+        render_png(files[ASSETS / "og.svg"], og_png, 1200, 630)
+        print(f"wrote {og_png.relative_to(ROOT)}")
     return 0
 
 

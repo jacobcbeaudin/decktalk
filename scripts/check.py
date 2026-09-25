@@ -94,7 +94,7 @@ and the `test` script in `package.json` name.
 """
 
 
-# What `site/install.sh` has to survive: an image with nothing but curl on it. The installer's own
+# What `install.sh` has to survive: an image with nothing but curl on it. The installer's own
 # promise is that a machine that has never had DeckTalk ends with `decktalk --version` printing one,
 # so the whole check is that line, run in a shell the installer did not write.
 INSTALL_IN_A_BARE_IMAGE = """
@@ -103,7 +103,7 @@ INSTALL_IN_A_BARE_IMAGE = """
     else
       dnf install -y -q curl >/dev/null
     fi
-    sh /site/install.sh
+    sh /install.sh
     PATH="$HOME/.local/bin:$PATH"
     export PATH
     decktalk --version
@@ -114,7 +114,7 @@ INSTALL_IN_A_BARE_IMAGE = """
 REFUSE_MUSL = """
     apk add --no-cache curl >/dev/null
     set +e
-    out="$(sh /site/install.sh 2>&1)"
+    out="$(sh /install.sh 2>&1)"
     code=$?
     set -e
     printf "%s\\n" "$out"
@@ -135,7 +135,7 @@ REFUSE_MUSL = """
 # uv's own image carries uv and no curl, which also proves the installer needs no downloader of its
 # own once uv is there.
 KEEP_THE_UV_THAT_IS_ALREADY_THERE = """
-    out="$(sh /site/install.sh)"
+    out="$(sh /install.sh)"
     printf "%s\\n" "$out"
     case "$out" in
     *"is already installed"*) ;;
@@ -156,7 +156,7 @@ INSTALL_THE_PINNED_VERSION = f"""
       echo "no released version to pin to" >&2
       exit 1
     fi
-    sh /site/install.sh
+    sh /install.sh
     PATH="$HOME/.local/bin:$PATH"
     export PATH
     got="$(decktalk --version)"
@@ -168,8 +168,8 @@ INSTALL_THE_PINNED_VERSION = f"""
 
 
 def in_image(image: str, script: str) -> tuple[str, ...]:
-    """`script` run by POSIX sh inside `image`, with `site/` mounted read only and nothing else."""
-    return ("docker", "run", "--rm", "-v", f"{ROOT / 'site'}:/site:ro", image, "sh", "-euc", script)
+    """`script` run by POSIX sh inside `image`, with `install.sh` mounted read only and nothing else."""
+    return ("docker", "run", "--rm", "-v", f"{ROOT / 'install.sh'}:/install.sh:ro", image, "sh", "-euc", script)
 
 
 NPM_CI = ("npm", "ci")
@@ -337,7 +337,7 @@ GROUPS: tuple[Group, ...] = (
             (*UV, "ty", "check", "src"),
             NPM_CI,
             ("npm", "exec", "--no", "--", "biome", "ci", "."),
-            ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "site/install.sh"),
+            ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "install.sh"),
             ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
         ),
         runners=(LINUX,),
@@ -415,7 +415,6 @@ GROUPS: tuple[Group, ...] = (
             generator("build_skills_list"),
             generator("build_contributing"),
             generator("build_changelog"),
-            generator("build_homepage_data"),
             ("uv", "run", "--with", "fonttools[woff]>=4.50", "python", "scripts/build_assets.py", "--check"),
             generator("check_docs_links"),
         ),

@@ -1,4 +1,4 @@
-"""site/install.sh, the one-line installer, held to the promises its own comment makes.
+"""install.sh, the one-line installer, held to the promises its own comment makes.
 
 `curl … | sh` runs whatever bytes arrive, so the script is written with everything inside `main()`
 and `main "$@"` on the last line: a download cut off part way through then runs nothing at all
@@ -32,7 +32,7 @@ from support.paths import REPO
 # took the whole run down with it on a file whose tests were all deselected on that platform.
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="install.sh needs a POSIX shell and a pty")
 
-SCRIPT = REPO / "site" / "install.sh"
+SCRIPT = REPO / "install.sh"
 SHELLS = [sh for sh in ("/bin/sh", "/bin/dash", "/bin/busybox") if Path(sh).exists()]
 
 

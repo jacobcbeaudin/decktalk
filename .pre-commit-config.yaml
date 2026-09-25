@@ -29,8 +29,8 @@ repos:
         entry: node_modules/.bin/biome check --write --no-errors-on-unmatched
         types_or: [javascript, ts, json]
 
-  # The same check CI runs over site/install.sh. shellcheck-py ships the binary as a wheel, so the hook
-  # needs no docker; -s sh holds the installer to POSIX sh, as tests/test_installer.py does.
+  # The same check CI runs over install.sh. shellcheck-py ships the binary as a wheel, so the hook
+  # needs no docker, and -s sh holds the installer to POSIX sh, as tests/contract/test_installer.py does.
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
     hooks:
