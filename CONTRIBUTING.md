@@ -469,15 +469,19 @@ To release:
 
 ### Naming a version, and the release candidate series
 
-To name a version, put `Release-As: 0.5.0-rc1` in a commit body. **The suffix takes a hyphen.**
+To name a version, set `"release-as": "0.5.0-rc1"` on the package in `release-please-config.json`,
+merge that, merge the release pull request it produces, and then remove the key in the next pull
+request so the version after it is computed again. A `Release-As:` footer is not reliable here: an
+empty commit touches no path, so the package's path filter drops it before release-please reads it.
+**The suffix takes a hyphen.**
 release-please parses semver with an unanchored pattern, so `0.5.0rc1` does not error: it matches
 `0.5.0`, drops the `rc1`, and cuts the final 0.5.0 instead, which burns a version PyPI will never
 let you re-upload.
 
 **The suffix is sticky.** Every updater passes the prerelease through, so from `0.5.0-rc1` a `fix:`
 gives `0.5.1-rc1` and a `feat:` gives `0.6.0-rc1`. It never gives `0.5.1` and never gives
-`0.5.0-rc2`. So rc2 is another `Release-As: 0.5.0-rc2`, no commit may merge between without that
-footer, and **`Release-As: 0.5.0` is the only exit from the series**.
+`0.5.0-rc2`. So rc2 is `"release-as": "0.5.0-rc2"`, and **`"release-as": "0.5.0"` is the only exit from the
+series**.
 
 The tag is semver and the package is PEP 440, so the tag is `v0.5.0-rc1`, the wheel is
 `decktalk-0.5.0rc1-py3-none-any.whl` and `uv version --short` prints `0.5.0rc1`. The release

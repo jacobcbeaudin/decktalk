@@ -5,17 +5,50 @@
   "include-component-in-tag": false,
   "packages": {
     ".": {
+      "release-as": "0.5.0-rc1",
+      "prerelease": true,
       "changelog-sections": [
-        { "type": "feat", "section": "Features" },
-        { "type": "fix", "section": "Bug Fixes" },
-        { "type": "perf", "section": "Performance" },
-        { "type": "docs", "section": "Documentation", "hidden": true },
-        { "type": "ci", "hidden": true },
-        { "type": "chore", "hidden": true },
-        { "type": "refactor", "hidden": true },
-        { "type": "test", "hidden": true },
-        { "type": "style", "hidden": true },
-        { "type": "build", "hidden": true }
+        {
+          "type": "feat",
+          "section": "Features"
+        },
+        {
+          "type": "fix",
+          "section": "Bug Fixes"
+        },
+        {
+          "type": "perf",
+          "section": "Performance"
+        },
+        {
+          "type": "docs",
+          "section": "Documentation",
+          "hidden": true
+        },
+        {
+          "type": "ci",
+          "hidden": true
+        },
+        {
+          "type": "chore",
+          "hidden": true
+        },
+        {
+          "type": "refactor",
+          "hidden": true
+        },
+        {
+          "type": "test",
+          "hidden": true
+        },
+        {
+          "type": "style",
+          "hidden": true
+        },
+        {
+          "type": "build",
+          "hidden": true
+        }
       ],
       "extra-files": [
         {
@@ -23,7 +56,10 @@
           "path": "uv.lock",
           "jsonpath": "$.package[?(@.name.value=='decktalk')].version"
         },
-        { "type": "generic", "path": "src/decktalk/runtime/src/index.ts" }
+        {
+          "type": "generic",
+          "path": "src/decktalk/runtime/src/index.ts"
+        }
       ],
       "exclude-paths": [
         ".github",
