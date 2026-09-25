@@ -5,7 +5,8 @@
   "include-component-in-tag": false,
   "packages": {
     ".": {
-      "release-as": "0.5.0-rc1",
+      "versioning": "prerelease",
+      "prerelease-type": "rc",
       "prerelease": true,
       "changelog-sections": [
         {

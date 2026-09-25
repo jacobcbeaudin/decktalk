@@ -485,24 +485,47 @@ To release:
 
 ### Naming a version, and the release candidate series
 
-To name a version, set `"release-as": "0.5.0-rc1"` on the package in `release-please-config.json`,
-merge that, merge the release pull request it produces, and then remove the key in the next pull
-request so the version after it is computed again. A `Release-As:` footer is not reliable here: an
-empty commit touches no path, so the package's path filter drops it before release-please reads it.
-**The suffix takes a hyphen.**
-release-please parses semver with an unanchored pattern, so `0.5.0rc1` does not error: it matches
-`0.5.0`, drops the `rc1`, and cuts the final 0.5.0 instead, which burns a version PyPI will never
-let you re-upload.
+A release candidate series is a stretch of `main` whose every release is a prerelease of one
+version. Two settings of the package in `release-please-config.json` decide it: `versioning` picks
+how release-please computes the next version, and `prerelease` flags the GitHub release as a
+prerelease.
 
-**The suffix is sticky.** Every updater passes the prerelease through, so from `0.5.0-rc1` a `fix:`
-gives `0.5.1-rc1` and a `feat:` gives `0.6.0-rc1`. It never gives `0.5.1` and never gives
-`0.5.0-rc2`. So rc2 is `"release-as": "0.5.0-rc2"`, and **`"release-as": "0.5.0"` is the only exit from the
-series**.
+**Inside a series** the package carries `"versioning": "prerelease"`, `"prerelease-type": "rc"` and
+`"prerelease": true`. The prerelease strategy increments the last number of the prerelease part and
+keeps its spelling, so from `0.5.0-rc1` a `fix:` gives `0.5.0-rc2`, and so does a `feat:` or a
+breaking change while the version is below 1.0. Every candidate after the first names itself, and a
+fix inside the series never jumps to `0.5.1-rc1`. The strategy reads `prerelease-type` only when the
+current version is final, which never happens inside a series, because a series is always entered
+by naming its first candidate.
 
-The tag is semver and the package is PEP 440, so the tag is `v0.5.0-rc1`, the wheel is
-`decktalk-0.5.0rc1-py3-none-any.whl` and `uv version --short` prints `0.5.0rc1`. The release
+**Entering a series and leaving it are each one pull request.** That pull request changes the
+package's `versioning` and `prerelease` and names the version with a `Release-As:` footer:
+
+| Step | The package in `release-please-config.json` | The footer |
+|---|---|---|
+| Enter | `"versioning": "prerelease"`, `"prerelease-type": "rc"`, `"prerelease": true` | `Release-As: 0.6.0-rc1` |
+| Leave | `"prerelease": false`, with `versioning` and `prerelease-type` removed so the default strategy returns | `Release-As: 0.5.0` |
+
+The footer must sit on a commit that changes a file the package's path filter keeps. The config
+file sits at the repository root, outside every entry of `exclude-paths`, so the commit that edits
+it qualifies. A squash merge takes its message from the pull request's title and body, so the
+footer is the last line of the body. The pull request is titled `chore(release): ...`, and the
+footer alone makes release-please list that commit in the changelog and open the release pull
+request, even though `chore` is a hidden type.
+
+**An empty commit does not work.** release-please drops a commit when every file it changes sits
+under an excluded path, and a commit that changes no file passes that test vacuously. The empty
+commit is dropped before its body is read, and the release pull request proposes whatever the other
+commits compute, which for the first candidate was a final 0.5.0.
+
+**The suffix takes a hyphen.** release-please parses semver with an unanchored pattern, so
+`Release-As: 0.5.0rc1` does not error: it matches `0.5.0`, drops the `rc1`, and cuts the final 0.5.0
+instead, which burns a version PyPI will never let you re-upload.
+
+The tag is semver and the package is PEP 440, so the tag is `v0.5.0-rc2`, the wheel is
+`decktalk-0.5.0rc2-py3-none-any.whl` and `uv version --short` prints `0.5.0rc2`. The release
 workflow compares them as versions rather than as strings, which is right under either spelling.
 
 PyPI accepts a prerelease and excludes it from plain resolution, so `uv tool install decktalk` and
 the one-line installer keep serving the last final release while a candidate is out. To install a
-candidate, name it: `DECKTALK_VERSION=0.5.0rc1 sh install.sh`.
+candidate, name it: `DECKTALK_VERSION=0.5.0rc2 sh install.sh`.

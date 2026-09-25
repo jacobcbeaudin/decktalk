@@ -28,8 +28,9 @@
 #
 # Cutting a release: merge the release pull request. That is the whole procedure. The workflow file
 # name release.yml and the environment name pypi are registered with PyPI's trusted publisher, so
-# neither may be renamed. To name a version, put `Release-As: 0.5.0-rc1` in a commit body, with the
-# hyphen, because release-please parses semver and would silently drop a bare `rc1` suffix.
+# neither may be renamed. Entering or leaving a release candidate series is one pull request that
+# changes the package's versioning in release-please-config.json and carries a `Release-As:` footer,
+# as CONTRIBUTING.md describes under "Naming a version, and the release candidate series".
 name: release
 
 # `workflow_run` is the trigger this design needs and the usual objection to it does not apply here.
