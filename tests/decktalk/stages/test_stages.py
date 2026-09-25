@@ -53,6 +53,7 @@ def test_an_empty_selection_still_selects_every_section() -> None:
     assert selects([])(2)
 
 
-def test_a_stage_is_timed_in_milliseconds() -> None:
-    assert since(0.0) == pytest.approx(since(0.0), abs=1.0)
-    assert round(since(0.0), 3) == since(0.0)
+def test_a_stage_is_timed_in_milliseconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The clock is held still, because two readings of a running clock differ by the tick between them."""
+    monkeypatch.setattr("decktalk.stages.time.monotonic", lambda: 12.3456789)
+    assert since(2.0) == 10.346
