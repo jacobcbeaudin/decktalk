@@ -145,8 +145,9 @@ def _schema_names() -> str:
 def main(argv: list[str] | None = None) -> int:
     """Write the page, or say that the committed one would change."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
-    parser.add_argument("--write", action="store_true", help="write the page")
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write the page")
+    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
     args = parser.parse_args(argv)
     written = page()
     if args.check:

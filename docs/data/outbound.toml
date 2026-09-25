@@ -1,8 +1,8 @@
 # Every host DeckTalk contacts, and what each request carries.
 #
 # This file is the whole source of docs/reference/what-leaves-your-machine.mdx. Add a host here,
-# then run `uv run scripts/build_outbound_reference.py`. A host that is not in this file is a host
-# DeckTalk does not contact, and a reviewer reads the generated page as the complete list.
+# then run `uv run scripts/build_outbound_reference.py --write`. A host that is not in this file is
+# a host DeckTalk does not contact, and a reviewer reads the generated page as the complete list.
 #
 # `[[service]]` rows are requests that carry the project's own content to a service.
 # `[[download]]` rows are one-time fetches of a tool, and they carry nothing of the project.

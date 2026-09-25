@@ -3,7 +3,7 @@
 # ///
 """Generate the settings reference from the committed JSON Schema.
 
-    uv run scripts/build_settings_reference.py            # write the page
+    uv run scripts/build_settings_reference.py --write    # write the page
     uv run scripts/build_settings_reference.py --check    # exit 1 if the committed page would change
 
 The page is a rendering of the published schema by construction. It reads `schemas/v1/decktalk.json`
@@ -205,12 +205,14 @@ def render() -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
+    action = ap.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write the page")
+    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
     args = ap.parse_args()
     text = render()
     if args.check:
         if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != text:
-            print(f"stale: {TARGET.relative_to(ROOT)}. Run `uv run scripts/build_settings_reference.py`.")
+            print(f"stale: {TARGET.relative_to(ROOT)}. Run `uv run scripts/build_settings_reference.py --write`.")
             return 1
         return 0
     TARGET.write_text(text, encoding="utf-8")

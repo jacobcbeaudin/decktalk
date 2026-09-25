@@ -10,7 +10,7 @@ each of those files names in its own `source` block the release, the command and
 measured from. The README reads assets/, the docs site reads docs/images/ and docs/logo/, and the
 homepage reads site/tokens.css and site/favicon.svg.
 
-    uv run scripts/build_assets.py            # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, the favicons, site/tokens.css
+    uv run scripts/build_assets.py --write    # writes assets/*.svg, docs/images/*.svg, docs/logo/*.svg, the favicons, site/tokens.css
     uv run scripts/build_assets.py --check    # exit 1 if a committed file no longer says what the source says
 
 Every variant (light/dark, wide/stacked) comes from the same builders and one palette map, so
@@ -1769,7 +1769,9 @@ def build() -> dict[Path, str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument(
+    action = ap.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="write every generated asset")
+    action.add_argument(
         "--check", action="store_true", help="exit 1 if any committed file no longer says what its source says"
     )
     args = ap.parse_args()

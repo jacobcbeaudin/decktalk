@@ -4,7 +4,7 @@
 """Build the runtime bundles, contract.json and src/decktalk/page.py from the TypeScript sources.
 
     npm ci                                          # once, for the pinned esbuild, tsc and Biome
-    uv run scripts/build_runtime.py                 # type check, bundle, and write every artifact
+    uv run scripts/build_runtime.py --write         # type check, bundle, and write every artifact
     uv run scripts/build_runtime.py --check         # exit 1 if any committed artifact would change
 
 The page contract lives once, in `src/decktalk/runtime/src/contract.ts`. This script is the only
@@ -550,7 +550,9 @@ def compare(target: Path, built: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="exit 1 if any committed artifact would change")
+    action = ap.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true", help="type check, bundle, and write every artifact")
+    action.add_argument("--check", action="store_true", help="exit 1 if any committed artifact would change")
     args = ap.parse_args()
     typecheck()
     data = contract()
