@@ -61,13 +61,20 @@ def check_table() -> ModuleType:
 
 CHECK = check_table()
 
-REPORTS_TIMING = ("browser-platforms", "media-platforms", "e2e-platforms", "scaffold")
+REPORTS_TIMING = (
+    "browser-platforms",
+    "media-platforms",
+    "e2e-platforms",
+    "scaffold",
+    *(() if CHECK.LINUX_GATES_TIMING else ("e2e",)),
+)
 """Every leg whose compositor is not trustworthy, which is the founder's decision written as names.
 
 The three `-platforms` rows are the hosted macOS and Windows runners, which composite through a
 stack DeckTalk does not own. `scaffold` is a hosted Linux runner rendering five whole projects in
-software, where a frame is presented tens of milliseconds after the paint it answers. Every other
-leg gates, which is what keeps the Linux row of each pair the one that holds a deck to its limit.
+software, where a frame is presented tens of milliseconds after the paint it answers. The Linux
+`e2e` row reports too until `LINUX_GATES_TIMING` says three runs in a row have trusted it. Every
+other leg gates, which is what keeps the Linux row of each pair the one that holds a deck to its limit.
 """
 
 

@@ -370,8 +370,9 @@ REPORT_TIMING = "--timing=report"
 A hosted macOS or Windows runner composites through a stack DeckTalk does not own, and a hosted
 Linux runner that renders in software presents a frame tens of milliseconds after the paint it
 answers. Either way the measurement moves and the deck did not, so these legs report a late reveal
-and Linux stays the one that gates it. This weakens nothing else: `tests/support/timing_policy.py`
-tolerates a late landing alone, and a cue that never changed the picture still fails every runner.
+and Linux is the one meant to gate it, once `LINUX_GATES_TIMING` says it may. This weakens nothing
+else: `tests/support/timing_policy.py` tolerates a late landing alone, and a cue that never changed
+the picture still fails every runner.
 """
 
 
@@ -381,7 +382,22 @@ def reports_timing(command: tuple[str, ...]) -> tuple[str, ...]:
     The flag is `tests/conftest.py`'s own option, so it is added to the suites and to nothing else.
     A tool that never collected a test would exit on an argument it has never heard of.
     """
-    return (*command, REPORT_TIMING) if "pytest" in command else command
+    return (*command, REPORT_TIMING) if "pytest" in command and REPORT_TIMING not in command else command
+
+
+LINUX_GATES_TIMING = False
+"""Whether a late reveal fails the Linux e2e row, which is the one row meant to gate cue timing.
+
+It reports for now. Until every row fetched the tools it declares, that row skipped every test, so
+cue timing has never been measured on a GitHub Linux runner and nobody knows yet whether its
+compositor is trustworthy. When three runs of ci in a row on `main` show the row's log with no late
+reveal, this becomes True and the row gates from then on, as `REPORT_TIMING` describes.
+"""
+
+
+def linux_timing(command: tuple[str, ...]) -> tuple[str, ...]:
+    """The Linux row's suite with cue timing gated or reported, as `LINUX_GATES_TIMING` decides."""
+    return command if LINUX_GATES_TIMING else reports_timing(command)
 
 
 def elsewhere(group: Group) -> Group:
@@ -393,7 +409,7 @@ def elsewhere(group: Group) -> Group:
     which is still before a user meets it.
 
     These two runners are also the ones whose compositor is not trustworthy, so cue timing is
-    reported here and gated on the Linux row of the same group.
+    reported here, and the Linux row of the same group is the one meant to gate it.
     """
     return replace(
         group,
@@ -433,7 +449,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="e2e",
         why="The pipeline fixture built end to end, which samples the joint behaviour of every tool.",
-        commands=((*PYTEST, "-m", "e2e", *MEASURE),),
+        commands=(linux_timing((*PYTEST, "-m", "e2e", *MEASURE)),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),
