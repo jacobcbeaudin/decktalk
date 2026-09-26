@@ -20,6 +20,7 @@ import shutil
 import signal
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,12 @@ from support.paths import REPO
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="install.sh needs a POSIX shell and a pty")
 
 SCRIPT = REPO / "install.sh"
+
+POLL_SECONDS = 0.2
+"""How long one wait on the pty lasts before the run is asked whether it has exited."""
+
+Ready = Callable[[], bool]
+"""What a terminal test asks before it interrupts the run, which is whether the moment it tests has come."""
 SHELLS = [sh for sh in ("/bin/sh", "/bin/dash", "/bin/busybox") if Path(sh).exists()]
 
 
@@ -309,19 +316,24 @@ def _child(args: list[str], env: dict[str, str]) -> tuple[int, int]:
     return pid, fd
 
 
-def _drain(pid: int, fd: int, interrupt_after: float | None, timeout: float) -> tuple[bytes, int, bool]:
-    """Read everything the run writes, interrupting it where asked, until it closes or exits."""
+def _drain(pid: int, fd: int, interrupt_when: Ready | None, timeout: float) -> tuple[bytes, int, bool]:
+    """Read everything the run writes, interrupting it once `interrupt_when` holds, until it closes or exits.
+
+    The interrupt waits for the run to reach the moment it is about rather than for a fixed time,
+    because a wall-clock wait is a race with the machine's load: an interrupt that lands before the
+    script has set its traps tests nothing, and under a parallel suite it landed there in half the runs.
+    """
     out = b""
     status, reaped, interrupted = 0, False, False
     started = time.monotonic()
     while True:
         if time.monotonic() - started > timeout:
             raise AssertionError(f"install.sh did not finish in {timeout}s:\n{out.decode(errors='replace')}")
-        if interrupt_after is not None and not interrupted and time.monotonic() - started >= interrupt_after:
+        if interrupt_when is not None and not interrupted and interrupt_when():
             # Ctrl-C reaches the whole foreground process group, not just the shell.
             os.killpg(os.getpgid(pid), signal.SIGINT)
             interrupted = True
-        ready, _, _ = select.select([fd], [], [], 0.2)
+        ready, _, _ = select.select([fd], [], [], POLL_SECONDS)
         if ready:
             chunk = _read(fd)
             if not chunk:
@@ -348,14 +360,14 @@ def _read(fd: int) -> bytes:
 def run_pty(
     args: list[str],
     env: dict[str, str],
-    interrupt_after: float | None = None,
+    interrupt_when: Ready | None = None,
     timeout: float = 30.0,
 ) -> tuple[int, str]:
-    """Run install.sh under a pty. Returns (exit status, everything it wrote)."""
+    """Run install.sh under a pty, interrupted once `interrupt_when` holds, and return its status and output."""
     pid, fd = _child(args, env)
     reaped = False
     try:
-        out, status, reaped = _drain(pid, fd, interrupt_after, timeout)
+        out, status, reaped = _drain(pid, fd, interrupt_when, timeout)
         if not reaped:
             _, status = os.waitpid(pid, 0)
             reaped = True
@@ -391,8 +403,18 @@ def test_an_interrupt_puts_the_cursor_back_and_keeps_the_log(tmp_path: Path, sou
     with no cursor in it until the next `reset`, and threw away the log of what had happened."""
     del source
     log = tmp_path / "install.log"
-    env = fake_path(tmp_path, tmp_path / "called", slow=("uv",)) | {"DECKTALK_INSTALL_LOG": str(log)}
-    code, out = run_pty([], env, interrupt_after=1.5, timeout=30)
+    called = tmp_path / "called"
+    env = fake_path(tmp_path, called, slow=("uv",)) | {"DECKTALK_INSTALL_LOG": str(log)}
+
+    def installing() -> bool:
+        """Whether the slow stub has started, which is after the traps are set and inside the step.
+
+        The step's label is printed before its child is forked, and an interrupt that lands in that
+        gap reaches the shell alone, which holds the trap until the child it has not yet started ends.
+        """
+        return called.exists() and "uv tool install" in called.read_text(encoding="utf-8")
+
+    code, out = run_pty([], env, interrupt_when=installing, timeout=30)
     assert code == 130, f"an interrupt should exit 130, got {code}:\n{out}"
     assert "\033[?25h" in out, "the cursor was left hidden"
     assert log.exists(), "the log of an interrupted run was thrown away"
