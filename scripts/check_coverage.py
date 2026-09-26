@@ -21,6 +21,13 @@ broke. Each suite writes a data file named after itself, the combine keeps those
 one of them has to be there and to have measured something, so a silent leg is named as itself
 rather than as whichever module fell first.
 
+**Measuring something is not the same as running something.** A suite whose every test skipped
+still imports the package, so its data file measured the import-time lines and the leg counted as
+reporting. That is how the e2e leg passed this gate with all 32 tests skipped. So each suite also
+writes a JUnit report of what it ran, and a leg is silent when it wrote none, when one of its runs
+ran no test, or when a suite that names a marker skipped any test: the run named the marker, so it
+asked for every one of those tests to run.
+
 **The floor allows a point of margin.** A runner slower than the one the record was measured on
 takes a different branch here and there: a timeout that fires, a page that answers before it is
 asked. That is a fact about the machine rather than about the change, so the gate is the recorded
@@ -43,6 +50,7 @@ import json
 import math
 import platform
 import sys
+import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -66,20 +74,25 @@ STALE = "{path} is out of date. Run: uv run scripts/check_coverage.py --write"
 """The one sentence every generator in this repository fails with, naming the file and the command."""
 
 
-def reporting_legs() -> tuple[str, ...]:
+def suites() -> dict[str, check.Group]:
     """Every data file a group of the check table measures into, named as the suite that writes it.
 
     The table is read rather than copied here, because a list of suites kept in two places is a list
     that disagrees with itself on the day a suite is added. The three groups that also run on macOS
-    and Windows measure into the file their Linux row names, so the names are one per suite.
+    and Windows measure into the file their Linux row names, and the Linux row comes first in the
+    table, so each name maps to the row whose leg the coverage job gathers.
     """
-    named = {
-        Path(value).name.removeprefix(f"{DATA_FILE}.")
-        for group in check.GROUPS
-        for name, value in group.env
-        if name == "COVERAGE_FILE"
-    }
-    return tuple(sorted(named))
+    named: dict[str, check.Group] = {}
+    for group in check.GROUPS:
+        for name, value in group.env:
+            if name == "COVERAGE_FILE":
+                named.setdefault(Path(value).name.removeprefix(f"{DATA_FILE}."), group)
+    return named
+
+
+def reporting_legs() -> tuple[str, ...]:
+    """The name of every suite that measures, in a stable order."""
+    return tuple(sorted(suites()))
 
 
 def leg_files(leg: str) -> list[Path]:
@@ -102,9 +115,64 @@ def lines_measured(leg: str) -> int:
     return total
 
 
+def reports(leg: str) -> list[Path]:
+    """Every JUnit report one suite left behind, on this machine and as the coverage job renames them.
+
+    A local run writes `unit.xml`. The coverage job renames each after the leg it came from, so the
+    same suite arrives as `unit-<leg>.xml`, once per Python the group runs.
+    """
+    return sorted(check.REPORTS.glob(f"{leg}.xml")) + sorted(check.REPORTS.glob(f"{leg}-*.xml"))
+
+
+@dataclass(frozen=True)
+class Tally:
+    """What one run of a suite did, read from its JUnit report."""
+
+    tests: int
+    skipped: int
+
+    @classmethod
+    def read(cls, path: Path) -> Tally:
+        """The totals of every test suite element in one report, which pytest writes one of per run."""
+        root = ElementTree.parse(path).getroot()
+        suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+        return cls(
+            tests=sum(int(suite.get("tests", "0")) for suite in suites),
+            skipped=sum(int(suite.get("skipped", "0")) for suite in suites),
+        )
+
+    @property
+    def ran(self) -> int:
+        """How many tests ran rather than skipped."""
+        return self.tests - self.skipped
+
+
+def marker_of(leg: str) -> str | None:
+    """The marker the suite measuring into `leg` names, read from its row of the check table."""
+    commands = suites()[leg].commands
+    return next((marker for command in commands if (marker := check.selected_marker(command))), None)
+
+
+def why_silent(leg: str) -> str | None:
+    """Why one suite's leg did not really report, or None when it measured and ran what it was asked to."""
+    if not lines_measured(leg):
+        return "measured nothing"
+    found = reports(leg)
+    if not found:
+        return "wrote no report of the tests it ran"
+    tallies = [Tally.read(path) for path in found]
+    if any(tally.ran == 0 for tally in tallies):
+        return "ran no test"
+    skipped = sum(tally.skipped for tally in tallies)
+    marker = marker_of(leg)
+    if marker is not None and skipped:
+        return f"skipped {skipped} tests that -m {marker} selected"
+    return None
+
+
 def silent_legs() -> list[str]:
-    """Every suite that wrote no data file, or wrote one that measured nothing, named as itself."""
-    return [leg for leg in reporting_legs() if not lines_measured(leg)]
+    """Every suite that measured nothing, ran nothing or skipped what its marker selected, with the reason."""
+    return [f"{leg} ({reason})" for leg in reporting_legs() if (reason := why_silent(leg)) is not None]
 
 
 def measured_total() -> int:
@@ -172,7 +240,7 @@ def roll_call() -> int:
     silent = silent_legs()
     if silent:
         print(
-            f"these suites measured nothing, so their legs never reported: {', '.join(silent)}. "
+            f"these suites did not really report: {', '.join(silent)}. "
             "A leg that did not run is a failure rather than a lower floor, so find out which it "
             "was before touching this record."
         )

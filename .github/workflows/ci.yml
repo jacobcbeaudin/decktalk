@@ -133,13 +133,16 @@ jobs:
         env:
           GROUP: ${{ matrix.group }}
         run: uv run scripts/check.py --group "$GROUP"
-      - name: Keep the coverage this leg measured
-        # Only the Linux legs reach the floor, and the coverage job selects them by name.
+      - name: Keep the coverage this leg measured and the report of what it ran
+        # Only the Linux legs reach the floor, and the coverage job selects them by name. The report
+        # is kept beside the data because a suite whose every test skipped still measures lines.
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-${{ matrix.group }}-${{ matrix['runs-on'] }}-${{ matrix.python }}
-          path: .coverage*
+          path: |
+            .coverage*
+            tests/out/junit/*.xml
           include-hidden-files: true
           if-no-files-found: ignore
 
@@ -168,10 +171,12 @@ jobs:
           pattern: coverage-*-ubuntu-latest-*
           path: coverage-legs
           merge-multiple: false
-      - name: Gather what the Linux legs measured
+      - name: Gather what the Linux legs measured and ran
         # Each group names its own data file, so a whole run on one machine combines. Two legs of
         # one group differ only by the Python they ran, and a suite that spawned subprocesses may
         # have left more than one file, so each is renamed after the leg it came from and counted.
+        # A leg's one test report is renamed after the leg the same way, which is the name
+        # check_coverage.py looks for beside the suite's own.
         run: |
           gathered=""
           count=0
@@ -188,6 +193,12 @@ jobs:
             exit 1
           fi
           echo "gathered the coverage of:$gathered"
+          mkdir -p tests/out/junit
+          for path in coverage-legs/*/tests/out/junit/*.xml; do
+            [ -e "$path" ] || continue
+            leg="${path#coverage-legs/coverage-}"
+            mv "$path" "tests/out/junit/${leg%%/*}.xml"
+          done
       - name: Run the group
         env:
           GROUP: ${{ matrix.group }}

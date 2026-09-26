@@ -54,6 +54,26 @@ PYTEST = (*UV, "pytest", "-q", "-rs")
 MEASURE = ("--cov", "--cov-report=")
 """What a suite adds to measure itself, which is the data file and no report of its own."""
 
+REPORTS = ROOT / "tests" / "out" / "junit"
+"""Where every measuring suite writes the JUnit report of what it ran, one file named after the group.
+
+Coverage data says which lines a suite reached, and a suite whose every test skipped still reaches
+the lines its imports run, so the data alone called such a suite reporting. The report says how
+many tests ran and how many skipped, which is what `check_coverage.py` needs to call it silent.
+"""
+
+
+def measuring(name: str, *selection: str) -> tuple[str, ...]:
+    """The suite of the group `name`, measuring its coverage and writing the report of what it ran."""
+    return (*PYTEST, *selection, *MEASURE, f"--junitxml={REPORTS / f'{name}.xml'}")
+
+
+def selected_marker(command: tuple[str, ...]) -> str | None:
+    """The marker a suite's command names with `-m`, or None for the suite that needs no tool."""
+    if "pytest" not in command or "-m" not in command:
+        return None
+    return command[command.index("-m") + 1]
+
 
 def measured(name: str) -> tuple[tuple[str, str], ...]:
     """The data file one group writes, named after the group so that no two groups overwrite each other.
@@ -425,7 +445,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="browser",
         why="Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.",
-        commands=((*PYTEST, "-m", "browser", *MEASURE),),
+        commands=(measuring("browser", "-m", "browser"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("chromium",),
@@ -437,7 +457,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="media",
         why="Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.",
-        commands=((*PYTEST, "-m", "media", *MEASURE),),
+        commands=(measuring("media", "-m", "media"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("ffmpeg",),
@@ -449,7 +469,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="e2e",
         why="The pipeline fixture built end to end, which samples the joint behaviour of every tool.",
-        commands=(linux_timing((*PYTEST, "-m", "e2e", *MEASURE)),),
+        commands=(linux_timing(measuring("e2e", "-m", "e2e")),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),
@@ -492,7 +512,7 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="unit",
         why="Every test that needs no tool, which the collection hook makes the default suite.",
-        commands=((*PYTEST, *MEASURE),),
+        commands=(measuring("unit"),),
         runners=(LINUX,),
         pythons=EVERY_PYTHON,
         tools=(),
