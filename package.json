@@ -11,11 +11,11 @@
     "check": "biome ci ."
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.13",
+    "@biomejs/biome": "2.5.14",
     "@types/node": "26.6.2",
     "esbuild": "0.28.2",
     "release-please": "17.6.0",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   },
   "engines": {
     "node": ">=22.18"
