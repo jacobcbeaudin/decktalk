@@ -162,8 +162,11 @@ INSTALL_THE_PINNED_VERSION = f"""
     sh /install.sh
     PATH="$HOME/.local/bin:$PATH"
     export PATH
+    # 0.4 prints `decktalk 0.4.1` and 0.5 prints `0.5.0rc2`, and the pin is whichever release is
+    # second newest, so the name is dropped before the two versions are compared.
     got="$(decktalk --version)"
-    if [ "$got" != "decktalk $DECKTALK_VERSION" ]; then
+    got="${{got#decktalk }}"
+    if [ "$got" != "$DECKTALK_VERSION" ]; then
       echo "pinned $DECKTALK_VERSION, installed $got"
       exit 1
     fi
