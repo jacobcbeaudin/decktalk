@@ -85,7 +85,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report= --timing=report` | uv, chromium, ffmpeg | macOS, Windows | main, release |
 | `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
 | `generated` | `npm ci`, and 15 more | uv, npm, chromium | Linux | pr, main, release |
-| `rehearsal` | `uv run python scripts/rehearse_release.py` | uv, npm, chromium | Linux | pr, main, release |
+| `rehearsal` | `npm ci`, and 1 more | uv, npm, chromium, history | Linux | pr, main, release |
 | `coverage` | `uv run coverage combine --keep`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
 | `scaffold` | `uv run pytest -q -m scaffold --timing=report` | uv, chromium, ffmpeg | Linux | main, schedule |

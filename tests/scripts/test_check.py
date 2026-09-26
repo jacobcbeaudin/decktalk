@@ -76,3 +76,11 @@ def test_a_command_that_only_judges_has_no_write(command: tuple[str, ...]) -> No
 def test_a_group_that_generates_nothing_refuses_to_write(name: str) -> None:
     with pytest.raises(SystemExit, match="generates nothing"):
         check.writer(check.BY_NAME[name])
+
+
+def test_the_rehearsal_row_has_the_node_packages_and_the_history_it_reads() -> None:
+    # The rehearsal asks scripts/next_version.mjs, which imports release-please from node_modules and
+    # reads every commit since the last tag, so a fresh runner needs both before the script starts.
+    rehearsal = check.BY_NAME["rehearsal"]
+    assert rehearsal.commands[0] == check.NPM_CI
+    assert "history" in rehearsal.tools

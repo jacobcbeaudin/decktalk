@@ -9,7 +9,6 @@ follow the config, because a rehearsal that silently skipped a file would pass f
 
 from __future__ import annotations
 
-import datetime
 import importlib.util
 import json
 import re
@@ -36,8 +35,6 @@ def _load(name: str) -> ModuleType:
 rehearse = _load("rehearse_release")
 changelog = _load("build_changelog")
 
-TODAY = datetime.date(2026, 1, 2)
-
 LOCK = """version = 1
 
 [[package]]
@@ -54,20 +51,63 @@ dev = []
 """
 
 
-def test_the_rehearsal_version_is_the_next_patch_as_a_prerelease() -> None:
-    assert rehearse.rehearsal_version("0.4.1") == "0.4.2-rc.0"
-    assert rehearse.rehearsal_version("0.5.0-rc1") == "0.5.1-rc.0"
+NOTES = (
+    "## [0.5.0-rc3](https://github.com/o/r/compare/v0.5.0-rc2...v0.5.0-rc3) (2026-01-02)\n\n\n"
+    "### Bug Fixes\n\n* a fix\n"
+)
 
 
-def test_a_manifest_that_names_no_version_is_refused() -> None:
-    with pytest.raises(rehearse.Refused, match="not a version"):
-        rehearse.rehearsal_version("next")
+def report(**changes: object) -> dict[str, object]:
+    """What scripts/next_version.mjs reports for a tree on 0.5.0-rc2 with one fix since, with `changes` over it."""
+    base: dict[str, object] = {
+        "tree": "0.5.0-rc2",
+        "released": "0.5.0-rc2",
+        "next": "0.5.0-rc3",
+        "named": None,
+        "dropped": [],
+        "rehearse": "0.5.0-rc3",
+        "rehearseNotes": NOTES,
+    }
+    return base | changes
+
+
+def test_the_next_candidate_is_rehearsed() -> None:
+    assert rehearse.judged(".", report()) == "0.5.0-rc3"
+
+
+def test_a_final_version_a_footer_named_is_rehearsed() -> None:
+    assert rehearse.judged(".", report(next="0.5.0", rehearse="0.5.0", named="0.5.0")) == "0.5.0"
+
+
+def test_a_final_version_nobody_named_is_refused() -> None:
+    with pytest.raises(rehearse.Refused, match="no Release-As footer named it"):
+        rehearse.judged(".", report(next="0.5.0", rehearse="0.5.0"))
+
+
+def test_a_candidate_with_no_number_is_refused() -> None:
+    with pytest.raises(rehearse.Refused, match="no number"):
+        rehearse.judged(".", report(next="0.6.0-rc", rehearse="0.6.0-rc"))
+
+
+def test_a_footer_release_please_never_reads_is_refused() -> None:
+    dropped = [{"sha": "abcdef0123", "version": "0.5.0"}]
+    with pytest.raises(rehearse.Refused, match="touches only excluded paths"):
+        rehearse.judged(".", report(dropped=dropped))
+
+
+def test_the_release_pull_request_is_judged_and_left_alone() -> None:
+    assert rehearse.judged(".", report(tree="0.5.0-rc3")) is None
+
+
+def test_a_release_pull_request_that_disagrees_with_the_rules_is_refused() -> None:
+    with pytest.raises(rehearse.Refused, match="disagree"):
+        rehearse.judged(".", report(tree="0.5.0-rc4"))
 
 
 def test_the_generic_updater_bumps_a_marked_line_and_nothing_else() -> None:
     text = 'const VERSION = "0.4.1"; // x-release-please-version\nconst OTHER = "0.4.1";\n'
-    assert rehearse.bump_generic(text, "0.4.2-rc.0") == (
-        'const VERSION = "0.4.2-rc.0"; // x-release-please-version\nconst OTHER = "0.4.1";\n'
+    assert rehearse.bump_generic(text, "0.4.2-rc1") == (
+        'const VERSION = "0.4.2-rc1"; // x-release-please-version\nconst OTHER = "0.4.1";\n'
     )
 
 
@@ -79,10 +119,10 @@ def test_the_generic_updater_bumps_every_version_in_a_marked_block() -> None:
 
 
 def test_the_toml_updater_follows_the_lockfile_jsonpath_to_one_package() -> None:
-    bumped = rehearse.bump_toml(LOCK, "$.package[?(@.name.value=='decktalk')].version", "0.4.2-rc.0")
-    assert 'name = "decktalk"\nversion = "0.4.2-rc.0"' in bumped
+    bumped = rehearse.bump_toml(LOCK, "$.package[?(@.name.value=='decktalk')].version", "0.4.2-rc1")
+    assert 'name = "decktalk"\nversion = "0.4.2-rc1"' in bumped
     assert 'name = "click"\nversion = "8.1.0"' in bumped
-    assert bumped.replace("0.4.2-rc.0", "0.4.1") == LOCK
+    assert bumped.replace("0.4.2-rc1", "0.4.1") == LOCK
 
 
 def test_the_toml_updater_refuses_a_jsonpath_it_cannot_follow() -> None:
@@ -91,8 +131,8 @@ def test_the_toml_updater_refuses_a_jsonpath_it_cannot_follow() -> None:
 
 
 def test_the_json_updater_sets_the_field_the_jsonpath_names() -> None:
-    bumped = json.loads(rehearse.bump_json('{"meta": {"version": "0.4.1"}}', "$.meta.version", "0.4.2-rc.0"))
-    assert bumped == {"meta": {"version": "0.4.2-rc.0"}}
+    bumped = json.loads(rehearse.bump_json('{"meta": {"version": "0.4.1"}}', "$.meta.version", "0.4.2-rc1"))
+    assert bumped == {"meta": {"version": "0.4.2-rc1"}}
 
 
 def test_an_extra_file_of_a_type_the_rehearsal_does_not_know_is_refused() -> None:
@@ -104,25 +144,26 @@ def test_an_extra_file_of_a_type_the_rehearsal_does_not_know_is_refused() -> Non
 
 def test_the_pyproject_bump_touches_the_project_version_alone() -> None:
     text = '[project]\nname = "decktalk"\nversion = "0.4.1"\n\n[tool.other]\nversion = "3.0.0"\n'
-    bumped = rehearse.bump_pyproject(text, "0.4.2-rc.0")
-    assert 'version = "0.4.2-rc.0"' in bumped
+    bumped = rehearse.bump_pyproject(text, "0.4.2-rc1")
+    assert 'version = "0.4.2-rc1"' in bumped
     assert 'version = "3.0.0"' in bumped
 
 
-def test_the_changelog_section_is_a_release_the_changelog_generator_reads() -> None:
-    text = "# Changelog\n\n## [0.4.1](https://github.com/o/r/compare/v0.4.0...v0.4.1) (2026-01-01)\n\n* a\n"
-    bumped = rehearse.bump_changelog(text, "0.4.1", "0.4.2-rc.0", TODAY)
+def test_the_changelog_entry_is_a_release_the_changelog_generator_reads() -> None:
+    text = "# Changelog\n\n## [0.5.0-rc2](https://github.com/o/r/compare/v0.5.0-rc1...v0.5.0-rc2) (2026-01-01)\n\n* a\n"
+    bumped = rehearse.bump_changelog(text, NOTES)
     first = next(line for line in bumped.splitlines() if line.startswith("## "))
-    assert first == "## [0.4.2-rc.0](https://github.com/o/r/compare/v0.4.1...v0.4.2-rc.0) (2026-01-02)"
+    assert first == "## [0.5.0-rc3](https://github.com/o/r/compare/v0.5.0-rc2...v0.5.0-rc3) (2026-01-02)"
     heading = changelog.RELEASE_RE.match(first)
-    assert heading is not None and heading["base"] == "0.4.2" and heading["suffix"] == "-rc.0"
-    assert [release.base for release in changelog.parse(bumped)] == ["0.4.2", "0.4.1"]
+    assert heading is not None and heading["base"] == "0.5.0" and heading["suffix"] == "-rc3"
+    # The generator folds a version's candidates into one entry, so the new candidate joins its series.
+    assert [release.base for release in changelog.parse(bumped)] == ["0.5.0"]
 
 
 def test_a_file_the_bump_leaves_alone_is_refused(tmp_path: Path) -> None:
     (tmp_path / "index.ts").write_text('const VERSION = "0.4.1";\n', encoding="utf-8")
     with pytest.raises(rehearse.Refused, match="changed nothing in index.ts"):
-        rehearse.rewrite(tmp_path, "index.ts", lambda text: rehearse.bump_generic(text, "0.4.2-rc.0"))
+        rehearse.rewrite(tmp_path, "index.ts", lambda text: rehearse.bump_generic(text, "0.4.2-rc1"))
 
 
 def test_a_file_the_config_names_that_does_not_exist_is_refused(tmp_path: Path) -> None:
@@ -145,8 +186,10 @@ def release_files(tmp_path: Path) -> Path:
 
 def test_the_real_config_bumps_every_file_it_names(release_files: Path) -> None:
     manifest = json.loads((release_files / rehearse.MANIFEST).read_text(encoding="utf-8"))
-    expected = rehearse.rehearsal_version(manifest["."])
-    assert rehearse.bump(release_files, TODAY) == {".": expected}
+    current = manifest["."]
+    expected = "9.9.9-rc1"
+    reports = {".": report(tree=current, released=current, next=None, rehearse=expected)}
+    assert rehearse.bump(release_files, reports) == {".": expected}
     assert json.loads((release_files / rehearse.MANIFEST).read_text(encoding="utf-8")) == {".": expected}
     project = (release_files / "pyproject.toml").read_text(encoding="utf-8")
     assert re.search(rf'^version = "{re.escape(expected)}"$', project, re.MULTILINE)
