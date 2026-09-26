@@ -43,7 +43,7 @@ decktalk init my-lesson && cd my-lesson
 decktalk build --no-voice
 ```
 
-This page describes the release candidate 0.5.0-rc2, and the first line becomes a plain `uv tool install decktalk` at the final release.
+The first line pins 0.5.0-rc2, the release this page describes, and a plain `uv tool install decktalk` installs the latest final release.
 
 The same block runs on Windows, and `pipx install decktalk==0.5.0-rc2` works in place of uv.
 
