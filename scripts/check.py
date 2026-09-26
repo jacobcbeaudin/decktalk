@@ -42,6 +42,9 @@ ROOT = Path(__file__).resolve().parent.parent
 UV = ("uv", "run")
 """Every Python command runs in the project environment, so the lockfile decides what it runs."""
 
+PYTEST = (*UV, "pytest", "-q", "-rs")
+"""How every suite is run. `-rs` prints the reason of every skip, so a skipped test is never silent in a log."""
+
 MEASURE = ("--cov", "--cov-report=")
 """What a suite adds to measure itself, which is the data file and no report of its own."""
 
@@ -181,11 +184,42 @@ def in_image(image: str, script: str) -> tuple[str, ...]:
 NPM_CI = ("npm", "ci")
 """The pinned Node toolchain, which the runtime generator compiles with and the linters run from."""
 
-FETCH_CHROMIUM = (*UV, "python", "-m", "playwright", "install", "chromium")
-"""The browser `build_assets.py` measures the hero in, fetched the way `media/browser.py` fetches it."""
+INSTALL = (*UV, "decktalk", "install")
+"""Chromium and ffmpeg, fetched by the command a person runs, which is a no-op on a machine that has both."""
 
-PREPARES = (NPM_CI, FETCH_CHROMIUM)
-"""The commands that prepare a machine rather than judge it, which a write needs as much as a check."""
+
+@dataclass(frozen=True)
+class Need:
+    """One thing a group needs on its runner, and what provides it.
+
+    `prepare` is the command at the head of the row that provides it, or None when the workflow
+    provides it before the row starts, which ci.yml does by reading the need's name from the matrix.
+    A need that neither a command nor the workflow provides is a promise nothing keeps, which is how
+    the browser and e2e rows once passed in CI with every test skipped.
+    """
+
+    why: str
+    prepare: tuple[str, ...] | None = None
+
+
+NEEDS: dict[str, Need] = {
+    "npm": Need(
+        why="Node, which the workflow installs, and the pinned packages, which the row installs.",
+        prepare=NPM_CI,
+    ),
+    "chromium": Need(
+        why="The headless Chromium the recorder drives and `build_assets.py` measures the hero in.",
+        prepare=INSTALL,
+    ),
+    "ffmpeg": Need(
+        why="The pinned ffmpeg and ffprobe every media measurement runs through.",
+        prepare=INSTALL,
+    ),
+    "history": Need(
+        why="Every commit and tag since the last release, which the workflow's checkout fetches in full.",
+    ),
+}
+"""Every need a row may declare. uv is not one of them, because every row runs through it."""
 
 CHECK, WRITE = "--check", "--write"
 
@@ -205,14 +239,12 @@ def generator(name: str) -> tuple[str, ...]:
 
 
 def writing(command: tuple[str, ...]) -> tuple[str, ...] | None:
-    """The command that writes what `command` checks, the command itself when it prepares, or None.
+    """The command that writes what `command` checks, or None when it only judges.
 
     A generator is a `scripts/build_*.py` run with `--check`, and its write is the same command with
     `--write`, so a generator that needs `uv run --with` to check needs it to write as well. A check
     that generates nothing, such as `check_docs_links.py` or `check_wheel.py`, has no write at all.
     """
-    if command in PREPARES:
-        return command
     generates = any(Path(part).name.startswith(GENERATES) for part in command)
     if not generates or command[-1] != CHECK:
         return None
@@ -220,9 +252,12 @@ def writing(command: tuple[str, ...]) -> tuple[str, ...] | None:
 
 
 def writer(group: Group) -> Group:
-    """The same group with every generator writing, every preparation kept and every check left out."""
+    """The same group with every generator writing and every check left out.
+
+    The preparations stay where they are, because the row still declares the tools they fetch.
+    """
     commands = tuple(written for command in group.commands if (written := writing(command)) is not None)
-    if all(command in PREPARES for command in commands):
+    if not commands:
         raise SystemExit(f"the group {group.name} generates nothing, so --write has nothing to write.")
     return replace(group, why=f"{group.why} This run writes what those checks judge.", commands=commands)
 
@@ -236,11 +271,31 @@ class Group:
     commands: tuple[tuple[str, ...], ...]
     runners: tuple[str, ...]
     pythons: tuple[str, ...]
-    tools: tuple[str, ...]
+    tools: tuple[str, ...]  # names in NEEDS, each provided by a command at the head of the row or by the workflow
     timeout: int  # minutes, which is the CI job's timeout-minutes
     when: tuple[str, ...]
     wall_seconds: int  # measured on the author's machine, and 0 where nobody has measured it yet
     env: tuple[tuple[str, str], ...] = ()  # what this group's commands need in the environment
+
+    def __post_init__(self) -> None:
+        unknown = [tool for tool in self.tools if tool not in NEEDS]
+        if unknown:
+            raise ValueError(f"the group {self.name} needs {', '.join(unknown)}, which no row can provide.")
+
+    @property
+    def preparations(self) -> tuple[tuple[str, ...], ...]:
+        """The commands that provide what this row needs, once each, in the order the row names them."""
+        commands: list[tuple[str, ...]] = []
+        for tool in self.tools:
+            prepare = NEEDS[tool].prepare
+            if prepare is not None and prepare not in commands:
+                commands.append(prepare)
+        return tuple(commands)
+
+    @property
+    def steps(self) -> tuple[tuple[str, ...], ...]:
+        """Everything a run of this row executes, which is its preparations and then its checks."""
+        return (*self.preparations, *self.commands)
 
 
 REPORT_TIMING = "--timing=report"
@@ -288,10 +343,10 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="browser",
         why="Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.",
-        commands=((*UV, "pytest", "-q", "-m", "browser", *MEASURE),),
+        commands=((*PYTEST, "-m", "browser", *MEASURE),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "chromium"),
+        tools=("chromium",),
         timeout=25,
         when=("pr", "main", "release"),
         wall_seconds=52,
@@ -300,10 +355,10 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="media",
         why="Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.",
-        commands=((*UV, "pytest", "-q", "-m", "media", *MEASURE),),
+        commands=((*PYTEST, "-m", "media", *MEASURE),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "ffmpeg"),
+        tools=("ffmpeg",),
         timeout=25,
         when=("pr", "main", "release"),
         wall_seconds=9,
@@ -312,10 +367,10 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="e2e",
         why="The pipeline fixture built end to end, which samples the joint behaviour of every tool.",
-        commands=((*UV, "pytest", "-q", "-m", "e2e", *MEASURE),),
+        commands=((*PYTEST, "-m", "e2e", *MEASURE),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "chromium", "ffmpeg"),
+        tools=("chromium", "ffmpeg"),
         timeout=30,
         when=("pr", "main", "release"),
         wall_seconds=117,
@@ -341,14 +396,13 @@ GROUPS: tuple[Group, ...] = (
             (*UV, "ruff", "check", "src", "tests", "scripts"),
             (*UV, "ruff", "format", "--check", "src", "tests", "scripts"),
             (*UV, "ty", "check", "src"),
-            NPM_CI,
             ("npm", "exec", "--no", "--", "biome", "ci", "."),
             ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "install.sh"),
             ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "npm"),
+        tools=("npm",),
         timeout=10,
         when=("pr", "main", "release"),
         wall_seconds=0,
@@ -356,10 +410,10 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="unit",
         why="Every test that needs no tool, which the collection hook makes the default suite.",
-        commands=((*UV, "pytest", "-q", *MEASURE),),
+        commands=((*PYTEST, *MEASURE),),
         runners=(LINUX,),
         pythons=EVERY_PYTHON,
-        tools=("uv",),
+        tools=(),
         timeout=15,
         when=("pr", "main", "release"),
         wall_seconds=17,
@@ -370,7 +424,7 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="node",
         why="The runtime's pure functions and the release's next version, under node --test, with no framework.",
-        commands=(NPM_CI, ("node", "--test", RUNTIME_TESTS, SCRIPT_TESTS)),
+        commands=(("node", "--test", RUNTIME_TESTS, SCRIPT_TESTS),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("npm",),
@@ -383,14 +437,15 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="platform",
         why="The short list only macOS or Windows can prove, plus the two commands every machine runs.",
+        # `decktalk install` is this row's preparation, so every run of it proves the fetch works
+        # unattended on all three platforms before the suite asserts what the fetch left behind.
         commands=(
-            (*UV, "pytest", "-q", "-m", "platform"),
-            (*UV, "decktalk", "install"),
+            (*PYTEST, "-m", "platform"),
             (*UV, "decktalk", "doctor"),
         ),
         runners=EVERY_PLATFORM,
         pythons=(FLOOR,),
-        tools=("uv", "chromium", "ffmpeg"),
+        tools=("chromium", "ffmpeg"),
         timeout=20,
         when=("pr", "main", "release"),
         wall_seconds=0,
@@ -398,17 +453,11 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="generated",
         why="Every generated file held to the source it is generated from, and every link in them.",
+        # The runtime bundles are compiled by the pinned TypeScript, so the row needs npm.
+        # `build_assets.py` measures the hero's word widths in the real Chromium with the real font,
+        # and a generator that launches Playwright directly reaches nothing that would fetch it, so
+        # the row needs Chromium as much as the browser group does.
         commands=(
-            # The runtime bundles are compiled by the pinned TypeScript, so the group that judges
-            # them installs it first, the way every other group that lists npm does.
-            NPM_CI,
-            # `build_assets.py` measures the hero's word widths in the real Chromium with the real
-            # font, so this group needs a browser as much as the browser group does. The suites
-            # fetch their own through `media/browser.py`, and a generator that launches Playwright
-            # directly reaches nothing that would, so this row fetches it the way that module does.
-            # Playwright resolves the revision from its own version and the call is a no-op on a
-            # machine that already has it.
-            FETCH_CHROMIUM,
             generator("build_runtime"),
             generator("build_result_schemas"),
             generator("build_settings_schema"),
@@ -426,7 +475,7 @@ GROUPS: tuple[Group, ...] = (
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "npm", "chromium"),
+        tools=("npm", "chromium"),
         timeout=20,
         when=("pr", "main", "release"),
         wall_seconds=0,
@@ -440,10 +489,10 @@ GROUPS: tuple[Group, ...] = (
         # version is computed by release-please's own code from the history since the last tag, so
         # the row needs the Node packages in the checkout and the whole history, which `history`
         # asks the workflow's checkout for.
-        commands=(NPM_CI, (*UV, "python", "scripts/rehearse_release.py")),
+        commands=((*UV, "python", "scripts/rehearse_release.py"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "npm", "chromium", "history"),
+        tools=("npm", "chromium", "history"),
         timeout=20,
         when=("pr", "main", "release"),
         wall_seconds=15,
@@ -463,7 +512,7 @@ GROUPS: tuple[Group, ...] = (
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv",),
+        tools=(),
         timeout=10,
         when=("pr", "main", "release"),
         wall_seconds=0,
@@ -473,12 +522,12 @@ GROUPS: tuple[Group, ...] = (
         why="What `uv build` writes, opened on a machine that has only the wheel and the tag.",
         commands=(
             ("uv", "build"),
-            (*UV, "pytest", "-q", "tests/contract/test_wheel.py"),
+            (*PYTEST, "tests/contract/test_wheel.py"),
             (*UV, "scripts/check_wheel.py", "--check"),
         ),
         runners=EVERY_PLATFORM,
         pythons=(FLOOR,),
-        tools=("uv",),
+        tools=(),
         timeout=15,
         when=("pr", "main", "release"),
         wall_seconds=0,
@@ -491,10 +540,10 @@ GROUPS: tuple[Group, ...] = (
         # judged is that a project out of the wheel builds and verifies, which the cue timing of the
         # machine it was built on is no part of, so this row reports a late landing and fails on
         # every other finding exactly as the gated rows do.
-        commands=(reports_timing((*UV, "pytest", "-q", "-m", "scaffold")),),
+        commands=(reports_timing((*PYTEST, "-m", "scaffold")),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "chromium", "ffmpeg"),
+        tools=("chromium", "ffmpeg"),
         timeout=30,
         when=("main", "schedule"),
         wall_seconds=0,
@@ -512,7 +561,7 @@ GROUPS: tuple[Group, ...] = (
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("docker",),
+        tools=(),
         timeout=25,
         when=("main", "schedule"),
         wall_seconds=0,
@@ -590,19 +639,21 @@ def run_group(group: Group, mode: str = "") -> bool:
     print(f"   {group.why}", flush=True)
     for name, value in group.env:
         print(f"   {name}={value.replace(f'{ROOT}/', '')}", flush=True)
-    return all(run(command, group.env) for command in group.commands)
+    return all(run(command, group.env) for command in group.steps)
 
 
 def table() -> str:
-    """Every group with its first command, what it needs, its measured wall time and the job that calls it."""
+    """Every group with its first step, what it needs, its measured wall time and the job that calls it."""
     rows = []
     for group in GROUPS:
         measured = f"about {group.wall_seconds}s" if group.wall_seconds else "not measured yet"
-        more = f" and {len(group.commands) - 1} more" if len(group.commands) > 1 else ""
+        steps = group.steps
+        more = f" and {len(steps) - 1} more" if len(steps) > 1 else ""
+        needs = ", ".join(group.tools) or "nothing beyond uv"
         rows.append(
             f"  {group.name}\n"
-            f"      {shell(group.commands[0])}{more}\n"
-            f"      needs {', '.join(group.tools)} on {', '.join(group.runners)}, {measured}, "
+            f"      {shell(steps[0])}{more}\n"
+            f"      needs {needs} on {', '.join(group.runners)}, {measured}, "
             f"gates on {', '.join(group.when)}, run by ci / run ({group.name})\n"
             f"      {group.why}"
         )

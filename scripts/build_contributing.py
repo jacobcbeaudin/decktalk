@@ -156,6 +156,10 @@ def runner_names(runners: tuple[str, ...]) -> str:
     return ", ".join(words.get(name, name) for name in runners)
 
 
+NO_TOOLS = "nothing beyond uv"
+"""What the Needs column says for a group that fetches nothing, because an empty cell reads as a gap."""
+
+
 def render_checks() -> str:
     """The check table as a Markdown table and a command list, both read from `GROUPS`."""
     rows = groups()
@@ -167,7 +171,7 @@ def render_checks() -> str:
         first = shell(group.commands[0])
         more = f", and {len(group.commands) - 1} more" if len(group.commands) > 1 else ""
         lines.append(
-            f"| `{group.name}` | `{first}`{more} | {', '.join(group.tools)} | "
+            f"| `{group.name}` | `{first}`{more} | {', '.join(group.tools) or NO_TOOLS} | "
             f"{runner_names(group.runners)} | {', '.join(group.when)} |"
         )
     lines.append("")

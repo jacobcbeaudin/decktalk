@@ -296,28 +296,6 @@ class Project:
 # ---- the fixture, built once -----------------------------------------------------------------------
 
 
-NEEDED_TOOLS = ("chromium", "ffmpeg")
-"""What a build of this fixture reaches for, which `decktalk doctor` is the one command that reports."""
-
-
-def missing_tools(shim: Path) -> list[str]:
-    """Every tool this machine does not hold, asked of DeckTalk through its own doctor command.
-
-    Asking the CLI rather than importing Playwright keeps this file on the surface an author uses,
-    and it means a machine with no browser skips rather than failing halfway through a recording.
-
-    A tool is held when `doctor` reports its version. The browser has no path to report, because it
-    is asked for by launching it rather than by looking for a file, so a row read by its path
-    skipped this whole suite on every machine including one that had just installed everything.
-    """
-    done = subprocess.run(
-        [sys.executable, "-m", "decktalk", "doctor", "--json"], capture_output=True, text=True, check=False, cwd=shim
-    )
-    doc = json.loads(done.stdout)
-    held = {row["tool"]: row for row in doc["tools"]}
-    return [name for name in NEEDED_TOOLS if not (held.get(name) or {}).get("version")]
-
-
 def generate_media(root: Path) -> None:
     """The clip and the three beds, from ffmpeg's own sources, because no media file is tracked."""
     media = root / "media"
@@ -354,8 +332,6 @@ def built(pytestconfig: pytest.Config) -> Iterator[Project]:
     """Copy the fixture, add the runtime and KaTeX, generate the media, and build it with no voice."""
     assert katex_missing() == [], "the packaged KaTeX copy is incomplete"
     OUT.mkdir(parents=True, exist_ok=True)
-    if absent := missing_tools(OUT):
-        pytest.skip(f"{', '.join(absent)} is missing: run `decktalk install` first")
     lock = hold(OUT / "pipeline.lock")
     if lock is None:
         pytest.skip(f"another session is building under {OUT}: set E2E_OUT to build elsewhere")

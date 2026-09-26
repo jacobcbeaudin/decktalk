@@ -14,14 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import sync_playwright
 
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
-
-try:
-    from playwright.sync_api import Error as PlaywrightError
-    from playwright.sync_api import sync_playwright
-except ImportError:  # A checkout without the browser bindings skips every page below.
-    PlaywrightError = sync_playwright = None  # type: ignore[assignment, misc]
+from support.tools import absent
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -38,14 +35,15 @@ def chromium_page(instrument: Callable[[Page], object] | None = None) -> Iterato
 
     `instrument` is the hook a DeckTalk command uses to add decktalk-probe.js, and a module that
     passes none gets the page a person opens.
+
+    Only a test that carries the `browser` marker reaches this, and the marker is only collected when
+    a run names it, so a Chromium that will not launch fails the test rather than skipping it.
     """
-    if sync_playwright is None:
-        pytest.skip("playwright not installed")
     with sync_playwright() as pw:
         try:
             browser = pw.chromium.launch()
         except PlaywrightError as exc:
-            pytest.skip(f"Chromium unavailable: {str(exc).splitlines()[0]}")
+            pytest.fail(absent("chromium", str(exc).splitlines()[0]))
         page = browser.new_page(viewport={"width": 1920, "height": 1080})
         if instrument is not None:
             instrument(page)
