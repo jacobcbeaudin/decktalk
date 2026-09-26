@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "test": "node --test 'tests/decktalk/runtime/src/*.test.ts'",
+    "test": "node --test 'tests/decktalk/runtime/src/*.test.ts' 'tests/scripts/*.test.mjs'",
     "typecheck": "tsc --noEmit -p src/decktalk/runtime/tsconfig.json",
     "check": "biome ci ."
   },
@@ -14,6 +14,7 @@
     "@biomejs/biome": "2.5.13",
     "@types/node": "26.6.2",
     "esbuild": "0.28.2",
+    "release-please": "17.6.0",
     "typescript": "5.9.3"
   },
   "engines": {

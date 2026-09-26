@@ -25,3 +25,7 @@ updates:
     groups:
       node:
         patterns: ["*"]
+    # release-please is pinned to the version release-please-action bundles, so the next version the
+    # rehearsal computes is the one the release computes. It moves by hand with the action's pin.
+    ignore:
+      - dependency-name: release-please

@@ -1,4 +1,4 @@
-"""Every version the release writes names one version, spelled the way release-please reads it back.
+"""Every version the release writes names one version, read the way release-please reads it.
 
 release-please writes the version into the manifest, `pyproject.toml` and every entry of
 `extra-files` in `release-please-config.json`, and reads the manifest back on the next release. This
@@ -6,9 +6,13 @@ holds those files to one version under PEP 440, so a hand edit that moves one of
 its own pull request rather than in a wheel that reports a different version than its tag. The files
 are read from the config, so a new extra file is held here by being added there.
 
-release-please parses a version with an unanchored semver pattern, so `0.5.0rc1` does not error: it
-matches `0.5.0` and drops the prerelease. Every version the release writes, and every version the
-config names, is therefore held to the semver spelling with a hyphen before the prerelease part.
+A marked line is read the way release-please's generic updater reads it, with an unanchored semver
+pattern, so a PyPI spelling such as `0.5.0rc1` on a marked line reads as `0.5.0` and fails the one
+version rule. The spelling of a whole field, in `pyproject.toml` or `uv.lock`, is free, because
+release-please replaces the field entire and `uv lock` writes the PEP 440 spelling.
+
+The config is held to the candidate cycle CONTRIBUTING.md describes under "Releases": the package
+stays in the series, and a final release is named by a footer rather than by editing the config.
 
 `scripts/check_wheel.py` holds the tag to the built wheel at release time. This reads only the
 checkout, so the two never judge the same pair.
@@ -27,6 +31,8 @@ from packaging.version import InvalidVersion, Version
 from support.paths import REPO
 
 CONFIG = REPO / "release-please-config.json"
+PACKAGE_JSON = REPO / "package.json"
+DEPENDABOT = REPO / ".github" / "dependabot.yml"
 MANIFEST = REPO / ".release-please-manifest.json"
 PYPROJECT = REPO / "pyproject.toml"
 
@@ -115,11 +121,6 @@ def test_every_version_the_release_writes_is_one_version():
     assert len(set(parsed.values())) == 1, f"the release writes more than one version: {versions}"
 
 
-def test_every_version_the_release_writes_is_spelled_as_semver():
-    wrong = {place: spelled for place, spelled in written_versions().items() if not SEMVER.fullmatch(spelled)}
-    assert not wrong, f"release-please would read these as a different version, so spell them with a hyphen: {wrong}"
-
-
 def test_the_config_pins_no_version():
     # A pinned version is read on every release until someone removes it, so the release after it
     # proposes the same version again. A version is named with a Release-As footer instead.
@@ -130,14 +131,23 @@ def test_the_config_pins_no_version():
 
 
 @pytest.mark.parametrize("path", list(packages()))
-def test_a_series_is_entered_and_left_whole(path):
+def test_every_package_stays_in_the_candidate_series(path):
     package = packages()[path]
-    in_series = package.get("versioning") == PRERELEASE_VERSIONING
-    assert package.get("prerelease", False) == in_series, (
-        f"{path} sets prerelease and versioning apart, so its releases would be flagged against their numbering."
+    assert package.get("versioning") == PRERELEASE_VERSIONING and package.get("prerelease") is True, (
+        f"{path} leaves the candidate series. A final release is named with a Release-As footer instead."
     )
-    if "prerelease-type" in package:
-        assert in_series, f"{path} sets prerelease-type, which only the prerelease strategy reads."
-        assert SEMVER.fullmatch(f"0.0.0-{package['prerelease-type']}"), (
-            f"{path} sets a prerelease-type release-please would truncate."
-        )
+    kind = package.get("prerelease-type", "")
+    assert re.fullmatch(r"[a-z]+\d+", kind), (
+        f"{path} sets prerelease-type {kind!r}, and a series after a final release starts at its exact "
+        "spelling, so it names a type and a first number, such as rc1."
+    )
+
+
+def test_release_please_is_pinned_exactly_and_moves_with_the_action():
+    # scripts/next_version.mjs runs release-please's own code, which is only the release's answer
+    # while both run one version. A range or a separate Dependabot bump would let them part.
+    pinned = json.loads(PACKAGE_JSON.read_text(encoding="utf-8"))["devDependencies"]["release-please"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", pinned), f"package.json names release-please as {pinned!r}, not one version"
+    assert "dependency-name: release-please" in DEPENDABOT.read_text(encoding="utf-8"), (
+        "Dependabot would bump release-please apart from the action that bundles it"
+    )

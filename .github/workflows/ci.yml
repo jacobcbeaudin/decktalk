@@ -71,9 +71,12 @@ jobs:
     runs-on: ${{ matrix['runs-on'] }}
     timeout-minutes: ${{ matrix['timeout-minutes'] }}
     steps:
+      # A row that lists `history` reads the commits since the last release tag, so it gets the
+      # whole history and the tags. Every other row gets the one commit it checks.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: ${{ contains(matrix.tools, 'history') && '0' || '1' }}
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           python-version: ${{ matrix.python }}

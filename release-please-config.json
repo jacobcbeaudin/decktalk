@@ -6,7 +6,7 @@
   "packages": {
     ".": {
       "versioning": "prerelease",
-      "prerelease-type": "rc",
+      "prerelease-type": "rc1",
       "prerelease": true,
       "changelog-sections": [
         {

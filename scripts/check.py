@@ -93,6 +93,9 @@ pattern is expanded by the test runner on every version, so this one string is w
 and the `test` script in `package.json` name.
 """
 
+SCRIPT_TESTS = "tests/scripts/*.test.mjs"
+"""Every test of a Node script under `scripts/`, named the same way and run beside the runtime's."""
+
 
 # What `install.sh` has to survive: an image with nothing but curl on it. The installer's own
 # promise is that a machine that has never had DeckTalk ends with `decktalk --version` printing one,
@@ -363,8 +366,8 @@ GROUPS: tuple[Group, ...] = (
     ),
     Group(
         name="node",
-        why="The runtime's pure functions over strings, under node --test, so no test framework is added.",
-        commands=(NPM_CI, ("node", "--test", RUNTIME_TESTS)),
+        why="The runtime's pure functions and the release's next version, under node --test, with no framework.",
+        commands=(NPM_CI, ("node", "--test", RUNTIME_TESTS, SCRIPT_TESTS)),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("npm",),
@@ -430,11 +433,14 @@ GROUPS: tuple[Group, ...] = (
         why="The version bump release-please makes, rehearsed in a copy, then every generator written and checked.",
         # The release path otherwise runs only on release-please's own pull request, which is where
         # every failure of the first release candidate surfaced. The script bumps a throwaway copy of
-        # the checkout, so a contributor who runs this row locally keeps the tree they had.
-        commands=((*UV, "python", "scripts/rehearse_release.py"),),
+        # the checkout, so a contributor who runs this row locally keeps the tree they had. The next
+        # version is computed by release-please's own code from the history since the last tag, so
+        # the row needs the Node packages in the checkout and the whole history, which `history`
+        # asks the workflow's checkout for.
+        commands=(NPM_CI, (*UV, "python", "scripts/rehearse_release.py")),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "npm", "chromium"),
+        tools=("uv", "npm", "chromium", "history"),
         timeout=20,
         when=("pr", "main", "release"),
         wall_seconds=15,

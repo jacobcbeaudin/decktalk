@@ -9,10 +9,23 @@ The release path runs for real only on release-please's own pull request, so a g
 write, or a file the bump makes stale that nothing regenerates, used to surface on the release and
 nowhere earlier. This script makes the same bump on every pull request instead. It copies the
 checkout into a temporary directory, so the checkout itself is never touched and nothing is ever
-committed or pushed. In the copy it writes a throwaway prerelease version everywhere
+committed or pushed. In the copy it writes the version release-please would propose next everywhere
 release-please would write one, runs `uv run scripts/check.py --group generated --write`, and then
 runs `uv run scripts/check.py --group generated`. It fails when a file cannot take the version,
 when a generator cannot write, or when anything is still stale afterwards.
+
+The version comes from `node scripts/next_version.mjs`, which runs release-please's own code over
+the history since the last release tag. When nothing releasable has landed it is the version one fix
+would bring, so every pull request rehearses a real bump. Before any bump the version is held to the
+rules of the candidate cycle, and the rehearsal refuses three things.
+
+- A final version that no `Release-As` footer named, because a final release is a person's decision.
+- A candidate with no number, such as `0.6.0-rc`, which a `prerelease-type` without one produces.
+- A `Release-As` footer release-please never reads, because its commit touched only excluded paths.
+
+On release-please's own pull request the tree already carries the version it proposes. The rehearsal
+then checks that version against the same rules and bumps nothing, because the regenerate job in
+ci.yml writes that branch for real.
 
 Where the version goes is read from `release-please-config.json` and `.release-please-manifest.json`
 rather than listed here. Each package's manifest entry and its changelog are bumped, its release
@@ -22,7 +35,6 @@ type decides the project file, and every entry of its `extra-files` is bumped by
 
 from __future__ import annotations
 
-import datetime
 import json
 import os
 import re
@@ -38,9 +50,6 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = "release-please-config.json"
 MANIFEST = ".release-please-manifest.json"
-
-REHEARSAL_PRERELEASE = "rc.0"
-"""The prerelease the rehearsal bumps to. It is never committed, so it only has to differ from the tree's version."""
 
 SEMVER = re.compile(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 """A version as release-please's generic updater finds one on a marked line."""
@@ -60,19 +69,48 @@ written `@.name.value`. The `.value` is accepted and dropped, because here the f
 """
 
 GENERATED = ("uv", "run", "scripts/check.py", "--group", "generated")
+NEXT_VERSION = ("node", "scripts/next_version.mjs")
+PRERELEASE_NUMBER = re.compile(r"\d")
+"""A candidate's prerelease part carries a number, so the series counts rc1, rc2 rather than rc, rc.1."""
 
 
 class Refused(Exception):
     """A file release-please would bump and this rehearsal cannot, which is itself a failed rehearsal."""
 
 
-def rehearsal_version(current: str) -> str:
-    """The next patch version as a prerelease, which differs from every version the tree names."""
-    found = re.match(r"(\d+)\.(\d+)\.(\d+)", current)
-    if found is None:
-        raise Refused(f"the manifest names {current!r}, which is not a version")
-    major, minor, patch = (int(part) for part in found.groups())
-    return f"{major}.{minor}.{patch + 1}-{REHEARSAL_PRERELEASE}"
+def next_versions(root: Path) -> dict[str, dict[str, Any]]:
+    """What release-please would propose for each package, as scripts/next_version.mjs reports it."""
+    found = subprocess.run(NEXT_VERSION, cwd=root, capture_output=True, text=True, check=False)
+    if found.returncode != 0:
+        raise Refused(f"the next version cannot be computed: {found.stderr.strip()}")
+    return json.loads(found.stdout)
+
+
+def judged(path: str, report: dict[str, Any]) -> str | None:
+    """The version to rehearse for one package, or None on release-please's own pull request.
+
+    Raises Refused when the version breaks a rule of the candidate cycle.
+    """
+    for dropped in report["dropped"]:
+        raise Refused(
+            f"the Release-As: {dropped['version']} footer in {dropped['sha'][:7]} touches only excluded paths, "
+            "so release-please never reads it. Put the footer on a commit that changes an included file."
+        )
+    unreleased = report["tree"] != report["released"]
+    version = report["next"] if unreleased else report["rehearse"]
+    if unreleased and version != report["tree"]:
+        raise Refused(
+            f"{path} carries {report['tree']}, and release-please's rules give {version} for the commits since "
+            f"v{report['released']}, so the release pull request and this rehearsal disagree"
+        )
+    if "-" not in version and report["named"] != version:
+        raise Refused(
+            f"release-please would release {version} as a final version, and no Release-As footer named it. "
+            "A final release is named by a person with a Release-As footer."
+        )
+    if "-" in version and not PRERELEASE_NUMBER.search(version.split("-", 1)[1]):
+        raise Refused(f"{version} is a candidate with no number, so set a numbered prerelease-type such as rc1")
+    return None if unreleased else version
 
 
 def bump_generic(text: str, version: str) -> str:
@@ -146,19 +184,13 @@ def bump_pyproject(text: str, version: str) -> str:
     return head + marker + bumped
 
 
-COMPARE = re.compile(r"^## \[[^\]]+\]\((?P<repository>https://[^)]+?)/compare/", re.MULTILINE)
-"""The repository a changelog's newest compare link points into, which a new heading links into too."""
-
-
-def bump_changelog(text: str, previous: str, version: str, today: datetime.date) -> str:
-    """The changelog with a one-fix release above its newest one, headed the way release-please heads it."""
-    linked = COMPARE.search(text)
-    title = f"[{version}]({linked['repository']}/compare/v{previous}...v{version})" if linked else version
-    section = f"## {title} ({today.isoformat()})\n\n\n### Bug Fixes\n\n* rehearse the release path\n"
+def bump_changelog(text: str, notes: str) -> str:
+    """The changelog with release-please's entry for the next release above its newest one."""
     head, marker, rest = text.partition("\n## ")
+    entry = notes.strip("\n") + "\n"
     if not marker:
-        return text.rstrip("\n") + "\n\n" + section
-    return f"{head}\n{section}\n## {rest}"
+        return text.rstrip("\n") + "\n\n" + entry
+    return f"{head}\n{entry}\n## {rest}"
 
 
 def rewrite(base: Path, relative: str, bump: Callable[[str], str]) -> None:
@@ -174,18 +206,21 @@ def rewrite(base: Path, relative: str, bump: Callable[[str], str]) -> None:
     print(f"bumped {relative}")
 
 
-def bump_package(base: Path, package: dict[str, Any], previous: str, version: str, today: datetime.date) -> None:
+def bump_package(base: Path, package: dict[str, Any], version: str, notes: str) -> None:
     """Make in one package every edit release-please makes to it: the project file, the changelog, the extras."""
     rewrite(base, "pyproject.toml", lambda text: bump_pyproject(text, version))
     changelog = package.get("changelog-path", "CHANGELOG.md")
-    rewrite(base, changelog, lambda text: bump_changelog(text, previous, version, today))
+    rewrite(base, changelog, lambda text: bump_changelog(text, notes))
     for entry in package.get("extra-files", ()):
         relative = entry if isinstance(entry, str) else entry["path"]
         rewrite(base, relative, partial(bump_extra_file, entry=entry, version=version))
 
 
-def bump(tree: Path, today: datetime.date) -> dict[str, str]:
-    """Make in `tree` every edit release-please makes for a release, and return each package's new version."""
+def bump(tree: Path, reports: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """Make in `tree` every edit release-please makes for a release, and return each package's new version.
+
+    A package on release-please's own pull request is judged and left as it is.
+    """
     config = json.loads((tree / CONFIG).read_text(encoding="utf-8"))
     manifest = json.loads((tree / MANIFEST).read_text(encoding="utf-8"))
     bumped: dict[str, str] = {}
@@ -193,10 +228,15 @@ def bump(tree: Path, today: datetime.date) -> dict[str, str]:
         release_type = package.get("release-type", config.get("release-type"))
         if release_type != "python":
             raise Refused(f"the package {name} is released as {release_type}, and this rehearsal knows python alone")
-        bumped[name] = rehearsal_version(manifest[name])
-        bump_package(tree / name, package, manifest[name], bumped[name], today)
-    (tree / MANIFEST).write_text(json.dumps(manifest | bumped, indent=2) + "\n", encoding="utf-8")
-    print(f"bumped {MANIFEST}")
+        version = judged(name, reports[name])
+        if version is None:
+            print(f"{name} carries the unreleased {reports[name]['tree']}, which the regenerate job writes")
+            continue
+        bumped[name] = version
+        bump_package(tree / name, package, version, reports[name]["rehearseNotes"])
+    if bumped:
+        (tree / MANIFEST).write_text(json.dumps(manifest | bumped, indent=2) + "\n", encoding="utf-8")
+        print(f"bumped {MANIFEST}")
     return bumped
 
 
@@ -232,9 +272,12 @@ def main() -> int:
         copy_checkout(ROOT, tree)
         print(f"rehearsing in a copy of {ROOT} at {tree}")
         try:
-            versions = bump(tree, datetime.date.today())
+            versions = bump(tree, next_versions(ROOT))
         except Refused as refusal:
-            raise SystemExit(f"the rehearsal cannot bump the version: {refusal}") from None
+            raise SystemExit(f"the rehearsal refuses the release: {refusal}") from None
+        if not versions:
+            print("\nthe release pull request's version keeps the rules of the candidate cycle")
+            return 0
         # uv writes the lockfile's own spelling of the version, which is what `uv run` would
         # otherwise do unasked in the first generator it starts.
         run(("uv", "lock"), tree)

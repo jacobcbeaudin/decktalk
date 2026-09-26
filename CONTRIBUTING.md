@@ -85,7 +85,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report= --timing=report` | uv, chromium, ffmpeg | macOS, Windows | main, release |
 | `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
 | `generated` | `npm ci`, and 15 more | uv, npm, chromium | Linux | pr, main, release |
-| `rehearsal` | `uv run python scripts/rehearse_release.py` | uv, npm, chromium | Linux | pr, main, release |
+| `rehearsal` | `npm ci`, and 1 more | uv, npm, chromium, history | Linux | pr, main, release |
 | `coverage` | `uv run coverage combine --keep`, and 2 more | uv | Linux | pr, main, release |
 | `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
 | `scaffold` | `uv run pytest -q -m scaffold --timing=report` | uv, chromium, ffmpeg | Linux | main, schedule |
@@ -96,7 +96,7 @@ Every group, one at a time:
 ```console
 uv run scripts/check.py --group lint              # Style, types and shell held to one set of rules, so no review spends a comment on them.
 uv run scripts/check.py --group unit              # Every test that needs no tool, which the collection hook makes the default suite.
-uv run scripts/check.py --group node              # The runtime's pure functions over strings, under node --test, so no test framework is added.
+uv run scripts/check.py --group node              # The runtime's pure functions and the release's next version, under node --test, with no framework.
 uv run scripts/check.py --group browser           # Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.
 uv run scripts/check.py --group media             # Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.
 uv run scripts/check.py --group e2e               # The pipeline fixture built end to end, which samples the joint behaviour of every tool.
@@ -456,14 +456,18 @@ commits every file that changed, so the merge commit already carries them and no
 `main`.
 
 The release path runs for real only on that pull request, so every pull request rehearses it first.
-The `rehearsal` group runs `uv run scripts/rehearse_release.py`, which copies the checkout into a
-temporary directory and makes the bump release-please would make there: a throwaway prerelease of
-the next patch version in `.release-please-manifest.json`, `pyproject.toml`, `CHANGELOG.md` and every
-entry of `extra-files` in `release-please-config.json`, with `uv lock` bringing the lockfile along.
-It then runs `uv run scripts/check.py --group generated --write` and `--group generated` in the copy,
-and fails when a file cannot take the version, a generator cannot write, or anything is still stale.
-It reads the files to bump from the config, so an extra file added there is rehearsed on the same
-pull request, and it never commits or pushes anything.
+The `rehearsal` group runs `uv run scripts/rehearse_release.py`. It asks `node
+scripts/next_version.mjs` what release-please would propose next. That script reads the history
+since the last release tag and runs release-please's own code over it, pinned in `package.json` to
+the version the release workflow's action bundles. When nothing releasable has landed, the answer is
+the version one fix would bring. The rehearsal holds that version to the rules of the cycle below,
+copies the checkout into a temporary directory, and makes release-please's bump there: the version
+in `.release-please-manifest.json`, `pyproject.toml` and every entry of `extra-files`, and the
+changelog entry release-please would write. It then runs `uv run scripts/check.py --group generated
+--write` and `--group generated` in the copy, and fails when a file cannot take the version, a
+generator cannot write, or anything is still stale. It never commits or pushes anything. On
+release-please's own pull request it checks the version and bumps nothing, because the regenerate
+job writes that branch for real.
 
 The version answers for the wheel, and the wheel is `src/decktalk` alone, so `exclude-paths` in
 `release-please-config.json` lists the directories that ship to nobody: `docs`, `assets`, `scripts`,
@@ -482,52 +486,47 @@ To release:
 3. Approve the `pypi` environment. That reviewer exists because a PyPI version can never be
    re-uploaded and this is the only step in the system with no undo.
 4. Check PyPI. The workflow publishes through trusted publishing and attaches the files to the
-   GitHub release, flagging a prerelease when the tag carries one.
+   GitHub release. A candidate is flagged as a prerelease. A final release is marked the latest and
+   carries the notes of its whole series.
 
-### Naming a version, and the release candidate series
+### Releases
 
-A release candidate series is a stretch of `main` whose every release is a prerelease of one
-version. Two settings of the package in `release-please-config.json` decide it: `versioning` picks
-how release-please computes the next version, and `prerelease` flags the GitHub release as a
-prerelease.
+Every release is a candidate until a person names the final one. The package in
+`release-please-config.json` stays in the series for good, with `"versioning": "prerelease"`,
+`"prerelease-type": "rc1"` and `"prerelease": true`, and nobody edits those settings to release.
 
-**Inside a series** the package carries `"versioning": "prerelease"`, `"prerelease-type": "rc"` and
-`"prerelease": true`. The prerelease strategy increments the last number of the prerelease part and
-keeps its spelling, so from `0.5.0-rc1` a `fix:` gives `0.5.0-rc2`, and so does a `feat:` or a
-breaking change while the version is below 1.0. Every candidate after the first names itself, and a
-fix inside the series never jumps to `0.5.1-rc1`. The strategy reads `prerelease-type` only when the
-current version is final, which never happens inside a series, because a series is always entered
-by naming its first candidate.
+| On `main` since the last release | release-please proposes |
+|---|---|
+| Any fix, feature or breaking change after `0.5.0-rc2` | `0.5.0-rc3` |
+| A commit with a `Release-As: 0.5.0` footer | `0.5.0` |
+| A feature after the final `0.5.0` | `0.6.0-rc1` |
+| A fix after the final `0.5.0` | `0.5.1-rc1` |
+| A feature after `0.5.1-rc1` | `0.6.0-rc1` |
+| Only hidden types, such as `docs:` or `chore:` | nothing |
 
-**Entering a series and leaving it are each one pull request.** That pull request changes the
-package's `versioning` and `prerelease` and names the version with a `Release-As:` footer:
+`tests/scripts/next_version.test.mjs` runs each row through release-please's own code.
 
-| Step | The package in `release-please-config.json` | The footer |
-|---|---|---|
-| Enter | `"versioning": "prerelease"`, `"prerelease-type": "rc"`, `"prerelease": true` | `Release-As: 0.6.0-rc1` |
-| Leave | `"prerelease": false`, with `versioning` and `prerelease-type` removed so the default strategy returns | `Release-As: 0.5.0` |
+**A final release is one pull request.** Its commit carries a `Release-As: 0.5.0` footer as the last
+line of the message, and changes a file outside every entry of `exclude-paths`, such as `README.md`.
+The next release pull request is then `0.5.0`. On merge, the release workflow marks it the latest
+release and replaces its notes, which release-please wrote from the commits since the last
+candidate, with the notes of the whole series from `scripts/release_notes.py`.
 
-The footer must sit on a commit that changes a file the package's path filter keeps. The config
-file sits at the repository root, outside every entry of `exclude-paths`, so the commit that edits
-it qualifies. A squash merge takes its message from the pull request's title and body, so the
-footer is the last line of the body. The pull request is titled `chore(release): ...`, and the
-footer alone makes release-please list that commit in the changelog and open the release pull
-request, even though `chore` is a hidden type.
+The rehearsal refuses three mistakes on the pull request that makes them:
 
-**An empty commit does not work.** release-please drops a commit when every file it changes sits
-under an excluded path, and a commit that changes no file passes that test vacuously. The empty
-commit is dropped before its body is read, and the release pull request proposes whatever the other
-commits compute, which for the first candidate was a final 0.5.0.
-
-**The suffix takes a hyphen.** release-please parses semver with an unanchored pattern, so
-`Release-As: 0.5.0rc1` does not error: it matches `0.5.0`, drops the `rc1`, and cuts the final 0.5.0
-instead, which burns a version PyPI will never let you re-upload. The contract test
-`tests/contract/test_release_versions.py` holds every version the release writes to one PEP 440
-version and to that spelling.
+- **A final version nobody named.** A final release is a person's decision, so a version with no
+  prerelease part must match a `Release-As` footer.
+- **A candidate with no number.** A `prerelease-type` without a number starts the next series at
+  `0.6.0-rc`, and the one after at `0.6.0-rc.1`.
+- **A footer release-please never reads.** release-please drops a commit when every file it changes
+  sits under an excluded path, and a commit that changes no file passes that test vacuously. An
+  empty commit is dropped before its footer is read.
 
 The tag is semver and the package is PEP 440, so the tag is `v0.5.0-rc2`, the wheel is
 `decktalk-0.5.0rc2-py3-none-any.whl` and `uv version --short` prints `0.5.0rc2`. The release
 workflow compares them as versions rather than as strings, which is right under either spelling.
+`uv lock` writes the PEP 440 spelling into `uv.lock`, and release-please writes the semver one, and
+`tests/contract/test_release_versions.py` accepts both as long as every file names one version.
 
 PyPI accepts a prerelease and excludes it from plain resolution, so `uv tool install decktalk` and
 the one-line installer keep serving the last final release while a candidate is out. To install a

@@ -26,11 +26,11 @@
 #   Settings -> Actions -> General -> Workflow permissions ->
 #     tick "Allow GitHub Actions to create and approve pull requests"
 #
-# Cutting a release: merge the release pull request. That is the whole procedure. The workflow file
-# name release.yml and the environment name pypi are registered with PyPI's trusted publisher, so
-# neither may be renamed. Entering or leaving a release candidate series is one pull request that
-# changes the package's versioning in release-please-config.json and carries a `Release-As:` footer,
-# as CONTRIBUTING.md describes under "Naming a version, and the release candidate series".
+# Cutting a release: merge the release pull request. That is the whole procedure. Every release is a
+# candidate, 0.5.0-rc1, 0.5.0-rc2, until a pull request carries a `Release-As: 0.5.0` footer and the
+# next release pull request is the final one, as CONTRIBUTING.md describes under "Releases". The
+# workflow file name release.yml and the environment name pypi are registered with PyPI's trusted
+# publisher, so neither may be renamed.
 name: release
 
 # `workflow_run` is the trigger this design needs and the usual objection to it does not apply here.
@@ -146,20 +146,26 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
 
   attach:
-    # Attaching the files and flagging a prerelease are repository writes, so they sit in a job that
-    # holds no PyPI credential of any kind.
+    # Attaching the files and setting the release's flag and notes are repository writes, so they
+    # sit in a job that holds no PyPI credential of any kind.
     needs: [release-please, build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
-      - name: Attach the wheel and the sdist, and flag a release candidate
-        # release-please-action v5 exposes no prerelease output, so the flag is derived from the tag
-        # the build job already parsed.
+      - name: Attach the wheel and the sdist, and mark the release a candidate or the latest
+        # The tag decides the flag in both directions. release-please flags every release below 1.0
+        # as a prerelease, a final one included, and v5 of its action exposes no output that says
+        # which a release is. A final release also carries the notes of its whole series, because
+        # release-please wrote only what changed after the last candidate.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -168,5 +174,8 @@ jobs:
         run: |
           gh release upload "$TAG" dist/* --clobber
           if [ "$PRERELEASE" = "true" ]; then
-            gh release edit "$TAG" --prerelease
+            gh release edit "$TAG" --prerelease --latest=false
+          else
+            python3 scripts/release_notes.py "$TAG" > "$RUNNER_TEMP/notes.md"
+            gh release edit "$TAG" --prerelease=false --latest --notes-file "$RUNNER_TEMP/notes.md"
           fi
