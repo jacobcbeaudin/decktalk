@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/jacobcbeaudin/decktalk/compare/v0.5.0-rc2...v0.5.0) (2026-09-26)
+
+
+### Documentation
+
+* **readme:** the install line names the release the page describes ([a047026](https://github.com/jacobcbeaudin/decktalk/commit/a0470266dcb40db9f8aa98c98f3a8315c8639e06))
+
 ## [0.5.0-rc2](https://github.com/jacobcbeaudin/decktalk/compare/v0.5.0-rc1...v0.5.0-rc2) (2026-09-25)
 
 

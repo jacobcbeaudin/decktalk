@@ -30,7 +30,7 @@ import { type Recorder, setRecorder } from "./telemetry.ts";
 import { warn, warnings } from "./warn.ts";
 
 /** The version this page carries, which is the one version literal in the whole runtime. */
-const VERSION = "0.5.0-rc2"; // x-release-please-version
+const VERSION = "0.5.0"; // x-release-please-version
 
 /** How long the page waits for a promise its author handed it before it is drawn without it. */
 const GATE_SECONDS = 5;
