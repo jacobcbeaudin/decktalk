@@ -8,6 +8,7 @@
     uv run scripts/check.py --group browser  # one group, by name, repeatable and comma-separated
     uv run scripts/check.py --list           # the table, for a person
     uv run scripts/check.py --group generated --write  # every generator in the group, writing
+    uv run scripts/check.py --group e2e --prepare      # only what fetches the group's tools
     uv run scripts/check.py --json --when pr # the matrix, for a workflow
 
 `GROUPS` below is the only place any check is written down. A workflow reads this table at runtime and
@@ -21,6 +22,9 @@ group runs as `--write` instead, the commands that prepare the machine run as th
 command that only judges is left out. The write commands are read from the same rows, so the one
 command that regenerates what a release made stale cannot forget a generator the check remembers.
 
+`--prepare` runs only the commands at the head of a row, which fetch what the row declares it needs.
+CI runs it before it saves the tools cache, so a cache is only ever saved from a fetch that finished.
+
 The first run may download headless Chromium and ffmpeg through `decktalk install`, once per machine.
 No check needs an ElevenLabs key, and after `decktalk install` no check needs the network.
 """
@@ -28,12 +32,14 @@ No check needs an ElevenLabs key, and after `decktalk install` no check needs th
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import shutil
 import subprocess
 import sys
 import time
+import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -200,6 +206,7 @@ class Need:
 
     why: str
     prepare: tuple[str, ...] | None = None
+    cached: bool = False  # whether the workflow keeps what `prepare` downloaded, keyed by `tools_key`
 
 
 NEEDS: dict[str, Need] = {
@@ -210,10 +217,12 @@ NEEDS: dict[str, Need] = {
     "chromium": Need(
         why="The headless Chromium the recorder drives and `build_assets.py` measures the hero in.",
         prepare=INSTALL,
+        cached=True,
     ),
     "ffmpeg": Need(
         why="The pinned ffmpeg and ffprobe every media measurement runs through.",
         prepare=INSTALL,
+        cached=True,
     ),
     "history": Need(
         why="Every commit and tag since the last release, which the workflow's checkout fetches in full.",
@@ -221,7 +230,43 @@ NEEDS: dict[str, Need] = {
 }
 """Every need a row may declare. uv is not one of them, because every row runs through it."""
 
-CHECK, WRITE = "--check", "--write"
+LOCKFILE = ROOT / "uv.lock"
+FFMPEG_PIN = ROOT / "src" / "decktalk" / "toolchain" / "ffmpeg_fetch.py"
+FFMPEG_VERSION = "FFMPEG_VERSION"
+"""The name `ffmpeg_fetch.py` gives its pin, read from the source because this script imports no package."""
+
+
+def locked_version(package: str) -> str:
+    """The version of `package` the lockfile resolves, which decides the Chromium revision Playwright fetches."""
+    lock = tomllib.loads(LOCKFILE.read_text(encoding="utf-8"))
+    return next(str(entry["version"]) for entry in lock["package"] if entry["name"] == package)
+
+
+def ffmpeg_pin() -> str:
+    """The ffmpeg release `decktalk install` fetches, read from the assignment in `ffmpeg_fetch.py`."""
+    tree = ast.parse(FFMPEG_PIN.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == FFMPEG_VERSION for target in node.targets
+        ):
+            return str(ast.literal_eval(node.value))
+    raise SystemExit(f"{FFMPEG_PIN.relative_to(ROOT)} no longer assigns {FFMPEG_VERSION}, so no cache key can name it.")
+
+
+def tools_key(group: Group, runner: str) -> str:
+    """The cache key of the tools one leg fetches, or an empty string when the leg fetches nothing to keep.
+
+    The key names the leg and the two pins that decide what `decktalk install` downloads, and nothing
+    else. A key shared by every leg let whichever leg saved first decide the cache for every later
+    run, so one suite ran 102 tests on one run and 5 on the next. A key on the whole lockfile threw
+    the download away on every unrelated dependency bump.
+    """
+    if not any(NEEDS[tool].cached for tool in group.tools):
+        return ""
+    return f"tools-{group.name}-{runner}-playwright-{locked_version('playwright')}-ffmpeg-{ffmpeg_pin()}"
+
+
+CHECK, WRITE, PREPARE = "--check", "--write", "--prepare"
 
 GENERATES = "build_"
 """The prefix every generator's script carries, and the one thing that tells a generator from a check."""
@@ -598,6 +643,7 @@ def legs(groups: tuple[Group, ...]) -> list[dict[str, object]]:
                         "python": python,
                         "timeout-minutes": group.timeout,
                         "tools": list(group.tools),
+                        "cache": tools_key(group, runner),
                         "leg": f"{group.name} ({runner}, {python})",
                     }
                 )
@@ -669,7 +715,8 @@ def epilog() -> str:
     )
 
 
-def main() -> int:
+def arguments() -> argparse.ArgumentParser:
+    """The command line, whose two modes that change what a row runs cannot be combined."""
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -683,10 +730,16 @@ def main() -> int:
         help="run this group, repeatable and comma-separated",
     )
     parser.add_argument("--fast", action="store_true", help=f"an alias for --group {','.join(FAST)}")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         WRITE,
         action="store_true",
         help="run each named group's generators with --write instead of --check, and its other checks not at all",
+    )
+    mode.add_argument(
+        PREPARE,
+        action="store_true",
+        help="run only the commands that fetch what each named group needs, which is what CI caches",
     )
     parser.add_argument("--list", action="store_true", help="print the table and run nothing")
     parser.add_argument("--json", action="store_true", help="print the matrix a workflow consumes, and run nothing")
@@ -695,13 +748,52 @@ def main() -> int:
         choices=("pr", "main", "release", "schedule"),
         help=f"the groups that gate at this moment, default {DEFAULT_WHEN}",
     )
+    return parser
+
+
+def counted(groups: tuple[Group, ...]) -> str:
+    """How many groups a run covered, as a reader says it."""
+    return f"{len(groups)} group" + ("s" if len(groups) != 1 else "")
+
+
+def run_writes(groups: tuple[Group, ...]) -> int:
+    """Run every named group with its generators writing, which is what a release pull request needs."""
+    writers = tuple(writer(group) for group in groups)
+    started = time.monotonic()
+    if not all(run_group(group, f" {WRITE}") for group in writers):
+        return 1
+    print(f"\nwrote every generated file of {counted(writers)} in {time.monotonic() - started:.0f}s", flush=True)
+    return 0
+
+
+def run_preparations(groups: tuple[Group, ...]) -> int:
+    """Run only what fetches each named group's needs, which CI does before it saves the tools cache."""
+    preparing = tuple(replace(group, commands=()) for group in groups)
+    return 0 if all(run_group(group, f" {PREPARE}") for group in preparing) else 1
+
+
+def run_checks(groups: tuple[Group, ...]) -> int:
+    """Run every named group in order, stopping at the first that fails, and name the rows not run."""
+    started = time.monotonic()
+    for group in groups:
+        if not run_group(group):
+            return 1
+    print(f"\n{counted(groups)} passed in {time.monotonic() - started:.0f}s", flush=True)
+    for group in GROUPS:
+        if group not in groups:
+            print(f"not run: {group.name:<10} {group.why}", flush=True)
+    return 0
+
+
+def main() -> int:
+    parser = arguments()
     args = parser.parse_args()
 
     names = [name for value in args.group for name in value.split(",") if name]
     if args.fast:
         names = [*FAST, *names]
-    if args.write and not names:
-        parser.error("--write rewrites committed files, so it runs only the groups --group names.")
+    if (args.write or args.prepare) and not names:
+        parser.error("--write and --prepare change what a row runs, so they run only the groups --group names.")
     groups = selected(names, args.when)
 
     # `--list` and `--json` are the same answer in two renderings, so asking for both is asking for
@@ -709,26 +801,11 @@ def main() -> int:
     if args.list or args.json:
         print(json.dumps(legs(groups)) if args.json else epilog())
         return 0
-
+    if args.prepare:
+        return run_preparations(groups)
     if args.write:
-        writers = tuple(writer(group) for group in groups)
-        started = time.monotonic()
-        if not all(run_group(group, f" {WRITE}") for group in writers):
-            return 1
-        count = f"{len(writers)} group" + ("s" if len(writers) != 1 else "")
-        print(f"\nwrote every generated file of {count} in {time.monotonic() - started:.0f}s", flush=True)
-        return 0
-
-    started = time.monotonic()
-    for group in groups:
-        if not run_group(group):
-            return 1
-    count = f"{len(groups)} group" + ("s" if len(groups) != 1 else "")
-    print(f"\n{count} passed in {time.monotonic() - started:.0f}s", flush=True)
-    for group in GROUPS:
-        if group not in groups:
-            print(f"not run: {group.name:<10} {group.why}", flush=True)
-    return 0
+        return run_writes(groups)
+    return run_checks(groups)
 
 
 if __name__ == "__main__":

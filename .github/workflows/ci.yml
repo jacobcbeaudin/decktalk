@@ -88,19 +88,40 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - name: Cache Chromium and ffmpeg
-        # The three platforms keep a per-user cache in three places, so all six are named and the
-        # ones this runner does not have are simply not there.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The tools a leg fetches are cached per leg, under a key the table writes from the Playwright
+      # version and the ffmpeg pin, and saved only after the fetch succeeded. One key shared by every
+      # leg let whichever leg saved first decide what every later run found, so a suite ran all of
+      # its tests on one run and skipped most of them on the next. The three platforms keep a
+      # per-user cache in three places, so all six are named and the ones this runner lacks are
+      # simply not there.
+      - name: Restore Chromium and ffmpeg
+        id: tools
+        if: matrix.cache != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
+          path: &tool-paths |
             ~/.cache/ms-playwright
             ~/.cache/decktalk
             ~/Library/Caches/ms-playwright
             ~/Library/Caches/decktalk
             ~/AppData/Local/ms-playwright
             ~/AppData/Local/decktalk
-          key: tools-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          key: ${{ matrix.cache }}
+      - name: Fetch what the row needs
+        if: matrix.cache != ''
+        shell: bash
+        env:
+          GROUP: ${{ matrix.group }}
+        run: uv run scripts/check.py --group "$GROUP" --prepare
+      - name: Keep Chromium and ffmpeg
+        # A condition that names no status function also requires every earlier step to have
+        # succeeded, so a fetch that failed is never saved for the next run to trust. The paths are
+        # the restore step's own, through the anchor, so the two steps cannot disagree about them.
+        if: matrix.cache != '' && steps.tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *tool-paths
+          key: ${{ matrix.cache }}
       - name: Run the group
         # check.py opens its own log with the group name and the one local command that reproduces
         # it, so a reader who finds this job red never has to open a workflow file.

@@ -134,6 +134,29 @@ def test_a_row_that_names_a_need_nothing_provides_is_refused() -> None:
         )
 
 
+# ---- the tools cache belongs to one leg -----------------------------------------------------------
+
+
+def test_every_leg_that_fetches_a_tool_keeps_it_under_a_key_of_its_own() -> None:
+    rows = check.legs(check.GROUPS)
+    keyed = {(row["group"], row["runs-on"]): row["cache"] for row in rows if row["cache"]}
+    assert keyed, "no leg caches the tools it fetches"
+    assert len(set(keyed.values())) == len(keyed), "two legs share one tools cache"
+
+
+def test_a_leg_that_fetches_nothing_to_keep_has_no_cache() -> None:
+    for row in check.legs(check.GROUPS):
+        cached = any(check.NEEDS[tool].cached for tool in row["tools"])
+        assert bool(row["cache"]) == cached, row["leg"]
+
+
+def test_the_key_names_the_two_pins_that_decide_the_download() -> None:
+    key = check.tools_key(check.BY_NAME["e2e"], check.LINUX)
+    assert check.locked_version("playwright") in key
+    assert check.ffmpeg_pin() in key
+    assert "e2e" in key and check.LINUX in key
+
+
 # ---- a suite the run named fails when its tool is missing -----------------------------------------
 #
 # The rows above fetch every tool before a suite starts, and `tests/support/tools.py` is what makes a
