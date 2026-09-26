@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -332,36 +333,50 @@ def test_install_reports_the_browser_it_just_fetched_rather_than_a_blank_row(
 # ---- applying a fix ---------------------------------------------------------------------------
 
 
+INSTALL = ("decktalk", "install")
+"""The one command a fix may run, which these tests stand in for with a fake subprocess."""
+
+
 def a_finding(fix: object) -> Finding:
     return Finding(code=Code.FILE_MISSING, message="x", location=Location(where="a"), fix=fix)
 
 
+def exits(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
+    """Make every command a fix runs exit with `code`, so no test installs anything."""
+    monkeypatch.setattr(
+        "decktalk.machine.subprocess.run",
+        lambda argv, **_: subprocess.CompletedProcess(argv, code, "", ""),
+    )
+
+
 def test_a_fix_is_taken_from_the_finding_whose_code_it_resolves() -> None:
-    edit = CommandFix(title="t", applicability=Applicability.SAFE, command=("true",))
+    edit = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
     assert fixes_of(a_finding(edit)) == ((Code.FILE_MISSING, edit),)
     assert fixes_of([a_finding(None), a_finding(edit)]) == ((Code.FILE_MISSING, edit),)
 
 
 def test_a_fix_only_a_person_can_make_is_reported_and_never_applied(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
-    fix = CommandFix(title="t", applicability=Applicability.DISPLAY, command=("false",))
+    fix = CommandFix(title="t", applicability=Applicability.DISPLAY, command=INSTALL)
     with here.run() as run:
         outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
     assert not outcome.applied and "only a person" in (outcome.why or "")
 
 
-def test_a_fix_that_can_lose_work_is_applied_only_on_request(tmp_path: Path) -> None:
+def test_a_fix_that_can_lose_work_is_applied_only_on_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     here = a_machine(tmp_path)
-    fix = CommandFix(title="t", applicability=Applicability.UNSAFE, command=("true",))
+    exits(monkeypatch, 0)
+    fix = CommandFix(title="t", applicability=Applicability.UNSAFE, command=INSTALL)
     with here.run() as run:
         held = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
         asked = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=True)
     assert not held.applied and asked.applied
 
 
-def test_a_command_that_fails_is_reported_rather_than_raised(tmp_path: Path) -> None:
+def test_a_command_that_fails_is_reported_rather_than_raised(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     here = a_machine(tmp_path)
-    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=("false",))
+    exits(monkeypatch, 1)
+    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
     with here.run() as run:
         outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
     assert not outcome.applied and "exited 1" in (outcome.why or "")

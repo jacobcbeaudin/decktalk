@@ -21,7 +21,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
 from decktalk.pipeline import Stage
 
@@ -540,15 +540,38 @@ class SettingFix(BaseModel):
     value: str = Field(description="The value to set it to, spelled as a command line would spell it.")
 
 
+FIX_COMMANDS: frozenset[tuple[str, ...]] = frozenset({("decktalk", "install")})
+"""Every command a fix may run, which is a closed set of DeckTalk's own calls.
+
+A fix travels as JSON, and `apply` runs what it names. An open argv would let a fix built from JSON
+run any program on the machine that applies it, so the set is closed and a new command fix is added
+here by name.
+"""
+
+
 class CommandFix(BaseModel):
-    """A fix that runs a command, which is the whole argv a caller may hand to a subprocess."""
+    """A fix that runs one of DeckTalk's own commands, spelled as the argv a person would type."""
 
     model_config = MODEL
 
     kind: Literal["command"] = Field("command", description="The kind of fix, which is how a reader dispatches on it.")
     title: str = Field(description="One sentence saying what applying this fix does.")
     applicability: Applicability = Field(description="Whether this fix may be applied without asking.")
-    command: tuple[str, ...] = Field(description="The command to run, one argument per element.")
+    command: tuple[str, ...] = Field(
+        description="The command to run, one argument per element, and always one of DeckTalk's own calls."
+    )
+
+    @field_validator("command")
+    @classmethod
+    def _one_of_ours(cls, command: tuple[str, ...]) -> tuple[str, ...]:
+        """Refuse any command outside the closed set, so a fix read from JSON cannot name a program."""
+        if command not in FIX_COMMANDS:
+            allowed = ", ".join(" ".join(argv) for argv in sorted(FIX_COMMANDS))
+            raise ValueError(
+                f"a command fix runs only DeckTalk's own calls, which are {allowed}, "
+                f"and {' '.join(command)!r} is not one of them"
+            )
+        return command
 
 
 Fix = Annotated[EditFix | SettingFix | CommandFix, Field(discriminator="kind")]

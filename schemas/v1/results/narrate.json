@@ -82,7 +82,7 @@
     },
     "CommandFix": {
       "additionalProperties": false,
-      "description": "A fix that runs a command, which is the whole argv a caller may hand to a subprocess.",
+      "description": "A fix that runs one of DeckTalk's own commands, spelled as the argv a person would type.",
       "properties": {
         "kind": {
           "const": "command",
@@ -101,7 +101,7 @@
           "description": "Whether this fix may be applied without asking."
         },
         "command": {
-          "description": "The command to run, one argument per element.",
+          "description": "The command to run, one argument per element, and always one of DeckTalk's own calls.",
           "items": {
             "type": "string"
           },

