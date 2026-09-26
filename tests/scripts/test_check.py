@@ -255,6 +255,10 @@ def test_only_the_unit_row_runs_in_parallel() -> None:
     assert parallel == ["unit"]
 
 
+def test_the_scaffold_build_judges_a_release_after_it_is_cut() -> None:
+    assert check.BY_NAME["scaffold"].when == ("schedule",)
+
+
 # ---- a suite the run named fails when its tool is missing -----------------------------------------
 #
 # The rows above fetch every tool before a suite starts, and `tests/support/tools.py` is what makes a

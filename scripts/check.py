@@ -666,6 +666,10 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="scaffold",
         why="Every packaged project recorded and verified without a voice, which is the scaffold's promise.",
+        # The row judges what was already released rather than gating the release: it runs weekly,
+        # because seven minutes on every merge bought one answer that the template's own data tests
+        # give on every pull request. A release is never more than a week from its first scaffold run.
+        #
         # This row records five projects in one job, so the runner renders in software throughout and
         # presents a reveal tens of milliseconds after the frame it belongs on. The promise being
         # judged is that a project out of the wheel builds and verifies, which the cue timing of the
@@ -676,7 +680,7 @@ GROUPS: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),
         timeout=30,
-        when=("main", "schedule"),
+        when=("schedule",),
     ),
     Group(
         name="installer",
