@@ -1118,6 +1118,37 @@ def read_project_toml(root: Path) -> dict[str, Any]:
     return read_toml(root / PROJECT_FILE)
 
 
+WHERE_SCOPE_BELONGS = {
+    Scope.MACHINE: "this machine's file, where the machine that runs the build states what it runs",
+    Scope.PROJECT: f"the project's {PROJECT_FILE}, where the film that ships carries it",
+}
+"""Where each scope's keys are written, which is the sentence a refusal of a misplaced key ends on."""
+
+
+def refuse_off_scope(data: Mapping[str, Any], allowed: Scope, *, file: Path, text: str | None = None) -> None:
+    """Refuse the first key in `data` that belongs to a scope other than `allowed`.
+
+    The refusal is symmetric. A per-machine file cannot carry a key about the film, and a project
+    cannot carry a key about the machine, because those keys name executables and directories the
+    machine trusts. A project that someone else wrote would otherwise choose the program DeckTalk
+    launches as the browser, so a machine-scoped key in a project is refused rather than ignored.
+    """
+    for dotted, _value in _flatten(data):
+        key = BY_ID.get(dotted)
+        if key is None or key.scope is allowed:
+            continue
+        where = "machine" if key.scope is Scope.MACHINE else "project"
+        raise InputError(
+            f"{file.name}: '{dotted}' is {key.scope.value}-scoped, so it belongs in {WHERE_SCOPE_BELONGS[key.scope]}.",
+            hint=f"Remove it from {file.name} and run `decktalk config set {dotted} <value> --where {where}`.",
+            location=Location(
+                where=f"[{key.table}] {key.name}",
+                file=file,
+                line=locate(text, dotted) if text is not None else None,
+            ),
+        )
+
+
 def read_machine_toml(path: Path | None = None) -> dict[str, Any]:
     """The per-machine tuning tables, refusing any key that belongs in the project instead.
 
@@ -1139,17 +1170,7 @@ def read_machine_toml(path: Path | None = None) -> dict[str, Any]:
             hint=f"The tables the per-machine file may hold are {', '.join(sorted(tables))}.",
             location=Location(where=path.name, file=path),
         )
-    for dotted, _value in _flatten(data):
-        key = BY_ID.get(dotted)
-        if key is None:
-            continue
-        if key.scope is not Scope.MACHINE:
-            raise InputError(
-                f"{path.name}: '{dotted}' is {key.scope.value}-scoped, so it belongs in the project's "
-                f"{PROJECT_FILE} where the film that ships carries it.",
-                hint=f"Remove it from this file and run `decktalk config set {dotted} <value> --where project`.",
-                location=Location(where=f"[{key.table}] {key.name}", file=path, line=locate(text, dotted)),
-            )
+    refuse_off_scope(data, Scope.MACHINE, file=path, text=text)
     for message in key_warnings(data, path.name):
         log.warning(message)
     return data
@@ -1269,6 +1290,9 @@ def load(
     env = dict(os.environ if environ is None else environ)
     from_machine = dict(machine) if machine is not None else read_machine_toml(machine_path)
     from_project = dict(project) if project is not None else (read_project_toml(root) if root else {})
+    project_file = (root / PROJECT_FILE) if root else Path(PROJECT_FILE)
+    project_text = project_file.read_text(encoding="utf-8") if root and project_file.is_file() else None
+    refuse_off_scope(from_project, Scope.PROJECT, file=project_file, text=project_text)
     pairs = route(overrides)
     for message in env_warnings(env):
         log.warning(message)
@@ -1649,6 +1673,7 @@ __all__ = [
     "parse_value",
     "read_machine_toml",
     "read_project_toml",
+    "refuse_off_scope",
     "read_toml",
     "route",
     "scoped",

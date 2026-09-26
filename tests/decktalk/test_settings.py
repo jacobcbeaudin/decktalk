@@ -32,6 +32,7 @@ from decktalk.settings import (
     load,
     machine_config_path,
     read_machine_toml,
+    refuse_off_scope,
     route,
     scoped,
     unset,
@@ -268,6 +269,29 @@ class TestScope:
         path.write_text('[project]\nname = "x"\n', encoding="utf-8")
         with pytest.raises(InputError, match="not a tuning table"):
             read_machine_toml(path)
+
+    @pytest.mark.parametrize("key", [key for key in KEYS if key.scope is Scope.MACHINE], ids=lambda key: key.id)
+    def test_every_machine_key_in_a_project_is_refused(self, key: Key) -> None:
+        # A project someone else wrote must not choose what this machine runs or where it writes.
+        project: dict[str, Any] = {key.name: "/tmp/elsewhere"}
+        for table in reversed(key.table.split(".")):
+            project = {table: project}
+        with pytest.raises(InputError, match="machine-scoped") as caught:
+            load(project=project, machine={}, environ={})
+        assert caught.value.hint is not None
+        assert "--where machine" in caught.value.hint
+
+    def test_the_browser_path_in_a_project_file_is_refused_at_its_line(self, tmp_path: Path) -> None:
+        (tmp_path / "decktalk.toml").write_text(
+            '[project]\nname = "x"\n\n[record]\nbrowser_path = "/tmp/not-a-browser"\n', encoding="utf-8"
+        )
+        with pytest.raises(InputError, match="record.browser_path") as caught:
+            load(tmp_path, machine={}, environ={})
+        assert caught.value.location is not None
+        assert caught.value.location.line == 5
+
+    def test_a_project_key_in_a_project_is_read(self) -> None:
+        refuse_off_scope({"verify": {"cue_offset_max_ms": 400}}, Scope.PROJECT, file=Path("decktalk.toml"))
 
     def test_malformed_toml_is_refused_at_its_own_line(self, tmp_path: Path) -> None:
         path = tmp_path / "machine.toml"
