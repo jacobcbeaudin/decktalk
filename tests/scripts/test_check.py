@@ -250,6 +250,11 @@ def test_a_file_the_unit_suite_leaves_elsewhere_runs_in_its_row_alone(path: str)
     assert f"--ignore={path}" in unit
 
 
+def test_only_the_unit_row_runs_in_parallel() -> None:
+    parallel = [group.name for group in check.GROUPS for command in group.commands if "-n" in command]
+    assert parallel == ["unit"]
+
+
 # ---- a suite the run named fails when its tool is missing -----------------------------------------
 #
 # The rows above fetch every tool before a suite starts, and `tests/support/tools.py` is what makes a

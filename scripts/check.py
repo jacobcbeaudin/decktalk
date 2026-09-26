@@ -51,6 +51,13 @@ UV = ("uv", "run")
 PYTEST = (*UV, "pytest", "-q", "-rs")
 """How every suite is run. `-rs` prints the reason of every skip, so a skipped test is never silent in a log."""
 
+PARALLEL = ("-n", "auto")
+"""What a suite adds to run on every core, which pytest-xdist reads and only the unit row passes.
+
+The suites that drive a real tool stay serial, because a recording shares the machine's compositor
+and two at once is a timing measurement of the runner rather than of the deck.
+"""
+
 MEASURE = ("--cov", "--cov-report=")
 """What a suite adds to measure itself, which is the data file and no report of its own."""
 
@@ -539,7 +546,9 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="unit",
         why="Every test that needs no tool, which the collection hook makes the default suite.",
-        commands=(measuring("unit", *ignoring_elsewhere()),),
+        # The suite runs on every core the runner has, which halves the leg every push waits on.
+        # pytest-cov combines what each worker measured into the one data file the floor reads.
+        commands=(measuring("unit", *PARALLEL, *ignoring_elsewhere()),),
         runners=(LINUX,),
         pythons=EVERY_PYTHON,
         tools=(),
