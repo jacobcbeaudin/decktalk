@@ -37,7 +37,7 @@ from decktalk.pipeline import Outcome, Stage
 SCHEMA = 2
 """The shape version every result carries, which a reader checks before it reads anything else."""
 
-VOLATILE = {"volatile": True}
+VOLATILE: dict[str, JsonValue] = {"volatile": True}
 """What marks a field whose value differs between two otherwise identical runs."""
 
 Run = Annotated[
