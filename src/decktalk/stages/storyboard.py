@@ -243,10 +243,14 @@ def _figure(panel: Panel, build: Path | None) -> str:
     """One panel as a figure, with the picture above the moment it shows."""
     image = Path(panel.image)
     src = image.relative_to(build) if build is not None and image.is_relative_to(build) else image
+    # Every part of the caption is escaped, because a cue id and a slide id are whatever the project's
+    # author typed, and the storyboard is a page a person opens in a browser.
     moment = f"cue {panel.cue}" if panel.cue else "opening"
-    caption = f"section {panel.section} &middot; slide {panel.slide} &middot; {moment} &middot; {panel.at:.2f}s"
+    parts = (f"section {panel.section}", f"slide {panel.slide}", moment, f"{panel.at:.2f}s")
+    caption = " &middot; ".join(html.escape(part) for part in parts)
+    alt = " · ".join(parts)
     return (
-        f'<figure><img loading="lazy" src="{html.escape(src.as_posix())}" alt="{html.escape(caption)}">'
+        f'<figure><img loading="lazy" src="{html.escape(src.as_posix())}" alt="{html.escape(alt)}">'
         f"<figcaption>{caption}</figcaption></figure>"
     )
 

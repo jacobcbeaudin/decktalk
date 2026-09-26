@@ -212,6 +212,16 @@ def test_the_page_names_every_panel_and_points_at_it(tmp_path: Path) -> None:
     assert "cue 1.1:a" in text
 
 
+def test_markup_in_a_cue_or_a_slide_id_is_shown_as_text(tmp_path: Path) -> None:
+    # A cue id and a slide id are whatever the project's author typed, and the sheet opens in a browser.
+    inputs = a_project(tmp_path)
+    hostile = "<script>alert(1)</script>"
+    panels = [Panel(section=1, slide=f"1.1{hostile}", cue=f"1.1:{hostile}", at=1.0, image=Path("build/x.png"))]
+    text = write_page(inputs.workspace, panels, title=hostile).read_text(encoding="utf-8")
+    assert "<script>" not in text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
+
+
 def test_the_page_sits_beside_the_stills_it_lays_out(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     assert write_page(inputs.workspace, [], title="demo") == inputs.workspace.storyboard_path
