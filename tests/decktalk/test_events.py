@@ -4,13 +4,27 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import typing
 from datetime import UTC, datetime
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from decktalk.events import EVENTS, Event, Events, JsonlSink, Level, Line, Log, Progress, RunStart, StageStart, Unit
+from decktalk.events import (
+    EVENTS,
+    Event,
+    Events,
+    JsonlSink,
+    Level,
+    Line,
+    Log,
+    Progress,
+    RunDone,
+    RunStart,
+    StageStart,
+    Unit,
+)
 from decktalk.findings import Code, Finding, Location
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Layer, Spend, SpendState
@@ -143,6 +157,47 @@ def test_a_subscriber_that_raises_becomes_a_log_line_and_never_stops_the_run() -
     assert [event.event for event in seen] == ["stage.start", "log"]
     assert isinstance(seen[1], Log)
     assert seen[1].level is Level.ERROR
+
+
+RUNS_IN_A_LONG_LIFE = 1000
+"""How many runs a long-lived service opens on one machine in this test, which is enough to see a leak."""
+
+
+def test_two_threads_delivering_at_once_each_report_their_own_subscriber_failure() -> None:
+    stream = Events()
+    seen: list[Event] = []
+    both_inside = threading.Barrier(2)
+
+    def angry(event: Event) -> None:
+        if event.event == "log":
+            return
+        # Each thread waits inside its own delivery until the other is inside too, which is the
+        # moment one flag for the whole stream would make the second thread drop its failure line.
+        both_inside.wait(timeout=5)
+        raise RuntimeError("no")
+
+    stream.subscribe(angry)
+    stream.subscribe(seen.append)
+    threads = [
+        threading.Thread(
+            target=stream.emit, args=(run, StageStart), kwargs={"stage": Stage.RECORD, "index": 1, "count": 1}
+        )
+        for run in ("r1", "r2")
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sorted(event.run for event in seen if isinstance(event, Log)) == ["r1", "r2"]
+
+
+def test_a_finished_run_leaves_no_counter_behind() -> None:
+    stream = Events()
+    for number in range(RUNS_IN_A_LONG_LIFE):
+        run = f"r{number}"
+        stream.emit(run, RunStart)
+        stream.emit(run, RunDone, outcome=Outcome.OK, seconds=0.0)
+    assert stream._counters == {}
 
 
 def test_the_sink_appends_one_line_per_event_and_never_truncates(tmp_path) -> None:

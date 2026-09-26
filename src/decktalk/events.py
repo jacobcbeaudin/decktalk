@@ -19,6 +19,7 @@ from __future__ import annotations
 import itertools
 import threading
 from collections.abc import Callable, Iterable
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
@@ -215,6 +216,15 @@ EVENTS: dict[str, type[Event]] = {
 E = TypeVar("E", bound=Event)
 Listener = Callable[[Event], None]
 
+DELIVERING: ContextVar[bool] = ContextVar("decktalk_delivering", default=False)
+"""Whether this thread is already handing an event to the renderers, which only this thread can know.
+
+A subscriber that raises is reported by a second event emitted from inside the first delivery, and
+that second event must not report its own subscriber failures again. The flag is per thread and per
+context rather than one field on the stream, because two runs delivering on two threads at once
+would otherwise each see the other's delivery and drop their own failure lines.
+"""
+
 
 class Subscription:
     """One renderer attached to the stream, which detaches by closing or by leaving its `with`."""
@@ -258,7 +268,6 @@ class Events:
         self._subscriptions: list[Subscription] = []
         self._counters: dict[str, itertools.count[int]] = {}
         self._lock = threading.Lock()
-        self._delivering = False
 
     def view(self, runs: Iterable[str]) -> Events:
         """This stream filtered to the named runs, which is what a project hands its own callers."""
@@ -290,20 +299,29 @@ class Events:
 
         The event is returned so a caller that needs what it just reported, such as the run id and
         the sink path on `run.start`, reads it off the line rather than working it out a second time.
+
+        The counter of a run is dropped once its `run.done` line is delivered, because a service that
+        keeps one machine for its whole life opens runs without end and would otherwise hold one
+        counter for every run it ever made.
         """
-        with self._lock:
-            counter = self._counters.setdefault(run, itertools.count())
+        source = self._source
+        with source._lock:
+            counter = source._counters.setdefault(run, itertools.count())
             seq = next(counter)
         event = kind(time=datetime.now(UTC), seq=seq, run=run, **fields)
         self._deliver(event)
+        if isinstance(event, RunDone):
+            with source._lock:
+                source._counters.pop(run, None)
         return event
 
     def _deliver(self, event: Event) -> None:
         """Hand one event to every renderer that wants it, and never let one of them stop the run."""
-        with self._lock:
-            subscriptions = list(self._subscriptions)
-            outermost = not self._delivering
-            self._delivering = True
+        source = self._source
+        with source._lock:
+            subscriptions = list(source._subscriptions)
+        outermost = not DELIVERING.get()
+        token = DELIVERING.set(True)
         failures: list[str] = []
         try:
             for subscription in subscriptions:
@@ -314,9 +332,7 @@ class Events:
                 except Exception as failure:  # noqa: BLE001  (a renderer must never stop a run)
                     failures.append(f"A subscriber raised {type(failure).__name__} on a {event.event} line.")
         finally:
-            if outermost:
-                with self._lock:
-                    self._delivering = False
+            DELIVERING.reset(token)
         if outermost:
             for message in failures:
                 self.emit(event.run, Log, level=Level.ERROR, message=message)
