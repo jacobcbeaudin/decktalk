@@ -355,6 +355,13 @@ class Code(Enum):
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
+    CUE_STALE = (
+        "CUE_STALE",
+        "The cue times on disk were placed from a different cues.json than the project's, so the film "
+        "is judged against moments nobody asked for until the project is built again.",
+        Certainty.CERTAIN,
+        RaisedBy.PYTHON,
+    )
     CUE_OFF = (
         "CUE_OFF",
         "The change lands further from its word than the offset limit allows.",

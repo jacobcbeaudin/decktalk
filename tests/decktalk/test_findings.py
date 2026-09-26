@@ -66,6 +66,7 @@ PYTHON_OTHER_CODES = (
     "CUE_MISSING",
     "CUE_UNKNOWN",
     "CUE_UNRESOLVED",
+    "CUE_STALE",
     "CUE_OFF",
     "CUE_NO_ONSET",
     "CUE_NO_CHANGE",

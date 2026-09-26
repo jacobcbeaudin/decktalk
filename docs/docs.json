@@ -157,6 +157,7 @@
               "reference/findings/CUE_MISSING",
               "reference/findings/CUE_UNKNOWN",
               "reference/findings/CUE_UNRESOLVED",
+              "reference/findings/CUE_STALE",
               "reference/findings/CUE_OFF",
               "reference/findings/CUE_NO_ONSET",
               "reference/findings/CUE_NO_CHANGE",

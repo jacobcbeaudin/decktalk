@@ -99,6 +99,7 @@ A finding carries its code, its sentence, its certainty and often a fix an agent
 | `CUE_MISSING` | certain | The page declares a moment that cues.json does not list, so nothing gives it a second. |
 | `CUE_UNKNOWN` | certain | cues.json lists a cue no page declares, so nothing plays it. |
 | `CUE_UNRESOLVED` | certain | The cue's phrase is not spoken in its section, so there is no second to place it at. |
+| `CUE_STALE` | certain | The cue times on disk were placed from a different cues.json than the project's, so the film is judged against moments nobody asked for until the project is built again. |
 | `CUE_OFF` | certain | The change lands further from its word than the offset limit allows. |
 | `CUE_NO_ONSET` | uncertain | The cue resolved with no measured onset, so its second is the section's start and not its word's. |
 | `CUE_NO_CHANGE` | certain | Nothing in the picture changed at the cue's second, so the reveal never happened. |
