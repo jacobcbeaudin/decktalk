@@ -82,6 +82,9 @@ dev = [
     "pytest>=8",
     "pytest-cov>=6",
     "pytest-timeout>=2.3",
+    # `scripts/test_check.py` reads `ci.yml` against the check table, so the workflow is parsed as the
+    # YAML it is rather than searched as text.
+    "pyyaml>=6",
     "ruff>=0.16.8",
     "ty>=0.0.83",
 ]

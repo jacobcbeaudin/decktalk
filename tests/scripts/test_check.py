@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
+import yaml
 
 from support import tools
 from support.paths import REPO
@@ -155,6 +158,71 @@ def test_the_key_names_the_two_pins_that_decide_the_download() -> None:
     assert check.locked_version("playwright") in key
     assert check.ffmpeg_pin() in key
     assert "e2e" in key and check.LINUX in key
+
+
+# ---- the workflow reads the table and adds nothing of its own -------------------------------------
+
+WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
+TOOLS_READ = re.compile(r"contains\(matrix\.tools, '([^']+)'\)")
+MOMENT_CHOSEN = re.compile(r"(?:&&|\|\|) '([a-z]+)'")
+"""A moment the plan job's expression can yield, which is a quoted word after `&&` or `||`."""
+
+
+def workflow() -> dict[str, Any]:
+    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+
+
+def steps() -> list[dict[str, Any]]:
+    return [step for job in workflow()["jobs"].values() for step in job.get("steps", [])]
+
+
+def test_the_workflow_acts_on_exactly_the_needs_the_table_says_it_provides() -> None:
+    read = set(TOOLS_READ.findall(WORKFLOW.read_text(encoding="utf-8")))
+    assert read == {name for name, need in check.NEEDS.items() if need.workflow}
+
+
+def test_every_node_the_workflow_installs_is_the_tables() -> None:
+    versions = [step["with"]["node-version"] for step in steps() if "setup-node" in step.get("uses", "")]
+    assert versions, "the workflow installs no Node, so this test says nothing"
+    assert all(version in ("${{ matrix.node }}", check.NODE) for version in versions), versions
+    assert all(row["node"] == check.NODE for row in check.legs(check.GROUPS))
+
+
+def test_every_moment_the_workflow_computes_is_one_the_table_gates_at() -> None:
+    plan = workflow()["jobs"]["plan"]
+    moment = next(step for step in plan["steps"] if step.get("id") == "table")["env"]["MOMENT"]
+    assert set(MOMENT_CHOSEN.findall(moment)) == set(check.MOMENTS)
+    assert {when for group in check.GROUPS for when in group.when} <= set(check.MOMENTS)
+
+
+def test_every_runner_the_workflow_names_is_one_the_table_names() -> None:
+    labels = {job["runs-on"] for job in workflow()["jobs"].values() if not job["runs-on"].startswith("${{")}
+    assert labels == {check.LINUX}
+    pattern = next(step["with"]["pattern"] for step in steps() if "download-artifact" in step.get("uses", ""))
+    assert f"-{check.LINUX}-" in pattern
+
+
+def test_the_tools_cache_is_saved_to_the_key_it_is_restored_from() -> None:
+    caches = [step for step in steps() if "actions/cache/" in step.get("uses", "")]
+    assert [step["uses"].split("@")[0] for step in caches] == ["actions/cache/restore", "actions/cache/save"]
+    restore, save = caches
+    assert restore["with"] == save["with"]
+    assert restore["with"]["key"] == "${{ matrix.cache }}"
+
+
+def test_a_row_that_gates_at_a_moment_no_run_is_refused() -> None:
+    with pytest.raises(ValueError, match="no run of ci.yml is"):
+        check.Group(
+            name="x",
+            why="x.",
+            commands=(),
+            runners=(),
+            pythons=(),
+            tools=(),
+            timeout=1,
+            when=("release",),
+            wall_seconds=0,
+        )
 
 
 # ---- a suite the run named fails when its tool is missing -----------------------------------------

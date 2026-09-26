@@ -77,6 +77,9 @@ FLOOR = "3.12"
 
 EVERY_PYTHON = (FLOOR, "3.13", "3.14")
 
+NODE = "22"
+"""The Node every leg that lists npm runs, which is the floor `package.json` sets and ci.yml reads from the matrix."""
+
 TOOLS = {
     "ruff": "0.16.8",
     "biome": "2.5.13",
@@ -204,15 +207,21 @@ class Need:
     the browser and e2e rows once passed in CI with every test skipped.
     """
 
+    def __post_init__(self) -> None:
+        if self.prepare is None and not self.workflow:
+            raise ValueError(f"nothing provides the need described as: {self.why}")
+
     why: str
     prepare: tuple[str, ...] | None = None
     cached: bool = False  # whether the workflow keeps what `prepare` downloaded, keyed by `tools_key`
+    workflow: bool = False  # whether ci.yml acts on this need before the row starts
 
 
 NEEDS: dict[str, Need] = {
     "npm": Need(
         why="Node, which the workflow installs, and the pinned packages, which the row installs.",
         prepare=NPM_CI,
+        workflow=True,
     ),
     "chromium": Need(
         why="The headless Chromium the recorder drives and `build_assets.py` measures the hero in.",
@@ -226,9 +235,18 @@ NEEDS: dict[str, Need] = {
     ),
     "history": Need(
         why="Every commit and tag since the last release, which the workflow's checkout fetches in full.",
+        workflow=True,
     ),
 }
 """Every need a row may declare. uv is not one of them, because every row runs through it."""
+
+MOMENTS = ("pr", "main", "schedule")
+"""The moments a row can gate at, which are the three ci.yml computes from the event that started it.
+
+A pull request is `pr`, a push to `main` and a manual run are `main`, and the weekly run is
+`schedule`. A release runs no check of its own, because release.yml consumes the verdict of the run
+on the tip of `main`, so a release gates on exactly what `main` gates on and has no column here.
+"""
 
 LOCKFILE = ROOT / "uv.lock"
 FFMPEG_PIN = ROOT / "src" / "decktalk" / "toolchain" / "ffmpeg_fetch.py"
@@ -326,6 +344,9 @@ class Group:
         unknown = [tool for tool in self.tools if tool not in NEEDS]
         if unknown:
             raise ValueError(f"the group {self.name} needs {', '.join(unknown)}, which no row can provide.")
+        never = [moment for moment in self.when if moment not in MOMENTS]
+        if never:
+            raise ValueError(f"the group {self.name} gates at {', '.join(never)}, which no run of ci.yml is.")
 
     @property
     def preparations(self) -> tuple[tuple[str, ...], ...]:
@@ -380,7 +401,7 @@ def elsewhere(group: Group) -> Group:
         why=f"{group.why} This row is macOS and Windows, which gate a merge rather than a pull request.",
         commands=tuple(reports_timing(command) for command in group.commands),
         runners=(MACOS, WINDOWS),
-        when=("main", "release"),
+        when=("main",),
     )
 
 
@@ -393,7 +414,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=("chromium",),
         timeout=25,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=52,
         env=measured("browser"),
     ),
@@ -405,7 +426,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=("ffmpeg",),
         timeout=25,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=9,
         env=measured("media"),
     ),
@@ -417,7 +438,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),
         timeout=30,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=117,
         # This suite drives the command line as a subprocess, and a subprocess measures nothing
         # unless it is told where the configuration is. Without this the leg reports no coverage at
@@ -449,7 +470,7 @@ GROUPS: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=("npm",),
         timeout=10,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=0,
     ),
     Group(
@@ -460,7 +481,7 @@ GROUPS: tuple[Group, ...] = (
         pythons=EVERY_PYTHON,
         tools=(),
         timeout=15,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=17,
         # The floor is one number over every suite, and this is the suite that reaches most of the
         # package, so a floor combined without it is a floor no complete run could meet.
@@ -474,7 +495,7 @@ GROUPS: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=("npm",),
         timeout=10,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=0,
     ),
     *ON_A_REAL_TOOL,
@@ -492,7 +513,7 @@ GROUPS: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),
         timeout=20,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=0,
     ),
     Group(
@@ -522,7 +543,7 @@ GROUPS: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=("npm", "chromium"),
         timeout=20,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=0,
     ),
     Group(
@@ -539,7 +560,7 @@ GROUPS: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=("npm", "chromium", "history"),
         timeout=20,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=15,
     ),
     Group(
@@ -559,7 +580,7 @@ GROUPS: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=(),
         timeout=10,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=0,
     ),
     Group(
@@ -574,7 +595,7 @@ GROUPS: tuple[Group, ...] = (
         pythons=(FLOOR,),
         tools=(),
         timeout=15,
-        when=("pr", "main", "release"),
+        when=("pr", "main"),
         wall_seconds=0,
     ),
     Group(
@@ -643,6 +664,7 @@ def legs(groups: tuple[Group, ...]) -> list[dict[str, object]]:
                         "python": python,
                         "timeout-minutes": group.timeout,
                         "tools": list(group.tools),
+                        "node": NODE,
                         "cache": tools_key(group, runner),
                         "leg": f"{group.name} ({runner}, {python})",
                     }
@@ -745,7 +767,7 @@ def arguments() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="print the matrix a workflow consumes, and run nothing")
     parser.add_argument(
         "--when",
-        choices=("pr", "main", "release", "schedule"),
+        choices=MOMENTS,
         help=f"the groups that gate at this moment, default {DEFAULT_WHEN}",
     )
     return parser
