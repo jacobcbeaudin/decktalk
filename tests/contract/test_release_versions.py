@@ -9,6 +9,8 @@ are read from the config, so a new extra file is held here by being added there.
 release-please parses a version with an unanchored semver pattern, so `0.5.0rc1` does not error: it
 matches `0.5.0` and drops the prerelease. Every version the release writes, and every version the
 config names, is therefore held to the semver spelling with a hyphen before the prerelease part.
+The one exception is a file another tool rewrites in its own spelling and release-please never reads
+back, which `SPELLED_BY_ITS_TOOL` names. It is still held to the same PEP 440 version.
 
 `scripts/check_wheel.py` holds the tag to the built wheel at release time. This reads only the
 checkout, so the two never judge the same pair.
@@ -45,6 +47,11 @@ TOML_ROW = re.compile(
     r"\.(?P<field>[\w-]+)$"
 )
 """The one jsonpath shape the config uses for a TOML file: a field of the array rows one key picks."""
+
+SPELLED_BY_ITS_TOOL = {
+    "uv.lock": "uv writes the PEP 440 normal form, 0.5.0rc2, whenever it locks, and release-please only writes it",
+}
+"""The files whose spelling another tool owns, each with the reason the hyphen rule cannot hold it."""
 
 PRERELEASE_VERSIONING = "prerelease"
 """The versioning strategy that numbers the candidates of a series itself."""
@@ -116,8 +123,18 @@ def test_every_version_the_release_writes_is_one_version():
 
 
 def test_every_version_the_release_writes_is_spelled_as_semver():
-    wrong = {place: spelled for place, spelled in written_versions().items() if not SEMVER.fullmatch(spelled)}
+    wrong = {
+        place: spelled
+        for place, spelled in written_versions().items()
+        if place not in SPELLED_BY_ITS_TOOL and not SEMVER.fullmatch(spelled)
+    }
     assert not wrong, f"release-please would read these as a different version, so spell them with a hyphen: {wrong}"
+
+
+def test_every_file_spelled_by_its_tool_is_one_the_release_writes():
+    # An exemption for a file the release stopped writing would excuse nothing and hide the removal.
+    written = {extra["path"] for package in packages().values() for extra in package.get("extra-files", [])}
+    assert set(SPELLED_BY_ITS_TOOL) <= written, f"exempt but not written: {set(SPELLED_BY_ITS_TOOL) - written}"
 
 
 def test_the_config_pins_no_version():
