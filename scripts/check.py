@@ -71,8 +71,20 @@ def measuring(name: str, *selection: str) -> tuple[str, ...]:
 WHEEL_TEST = "tests/contract/test_wheel.py"
 """The test of the built wheel, which only the wheel group runs, right after `uv build` writes one."""
 
+LINT_TESTS = (
+    "tests/contract/test_prose.py",
+    "tests/contract/test_vocabulary.py",
+    "tests/contract/test_numbers.py",
+)
+"""The house rules for prose, vocabulary and numbers, which read the repository's files as text.
+
+They are lint rather than behaviour, so they run once in the lint row. In the unit suite they ran
+on three Pythons for one answer and counted as a fifth of the tests the suite claimed.
+"""
+
 ELSEWHERE: dict[str, str] = {
     WHEEL_TEST: "wheel",
+    **dict.fromkeys(LINT_TESTS, "lint"),
 }
 """Every test file the unit suite leaves to another row, and the row that runs it instead.
 
@@ -516,6 +528,7 @@ GROUPS: tuple[Group, ...] = (
             ("npm", "exec", "--no", "--", "biome", "ci", "."),
             ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "install.sh"),
             ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
+            (*PYTEST, *LINT_TESTS),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
