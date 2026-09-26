@@ -133,7 +133,6 @@ def test_a_row_that_names_a_need_nothing_provides_is_refused() -> None:
             tools=("docker",),
             timeout=1,
             when=(),
-            wall_seconds=0,
         )
 
 
@@ -221,7 +220,6 @@ def test_a_row_that_gates_at_a_moment_no_run_is_refused() -> None:
             tools=(),
             timeout=1,
             when=("release",),
-            wall_seconds=0,
         )
 
 

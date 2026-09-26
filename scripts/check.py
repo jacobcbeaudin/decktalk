@@ -4,7 +4,7 @@
 """Every check DeckTalk runs, in one table, spelled once.
 
     uv run scripts/check.py                  # every group a pull request runs, in order
-    uv run scripts/check.py --fast           # lint and unit alone, in a few seconds
+    uv run scripts/check.py --fast           # lint and unit alone, the two a change most often fails
     uv run scripts/check.py --group browser  # one group, by name, repeatable and comma-separated
     uv run scripts/check.py --list           # the table, for a person
     uv run scripts/check.py --group generated --write  # every generator in the group, writing
@@ -357,7 +357,6 @@ class Group:
     tools: tuple[str, ...]  # names in NEEDS, each provided by a command at the head of the row or by the workflow
     timeout: int  # minutes, which is the CI job's timeout-minutes
     when: tuple[str, ...]
-    wall_seconds: int  # measured on the author's machine, and 0 where nobody has measured it yet
     env: tuple[tuple[str, str], ...] = ()  # what this group's commands need in the environment
 
     def __post_init__(self) -> None:
@@ -451,7 +450,6 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
         tools=("chromium",),
         timeout=25,
         when=("pr", "main"),
-        wall_seconds=52,
         env=measured("browser"),
     ),
     Group(
@@ -463,7 +461,6 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
         tools=("ffmpeg",),
         timeout=25,
         when=("pr", "main"),
-        wall_seconds=9,
         env=measured("media"),
     ),
     Group(
@@ -475,7 +472,6 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
         tools=("chromium", "ffmpeg"),
         timeout=30,
         when=("pr", "main"),
-        wall_seconds=117,
         # This suite drives the command line as a subprocess, and a subprocess measures nothing
         # unless it is told where the configuration is. Without this the leg reports no coverage at
         # all, which reads exactly like a leg that passed.
@@ -507,7 +503,6 @@ GROUPS: tuple[Group, ...] = (
         tools=("npm",),
         timeout=10,
         when=("pr", "main"),
-        wall_seconds=0,
     ),
     Group(
         name="unit",
@@ -518,7 +513,6 @@ GROUPS: tuple[Group, ...] = (
         tools=(),
         timeout=15,
         when=("pr", "main"),
-        wall_seconds=17,
         # The floor is one number over every suite, and this is the suite that reaches most of the
         # package, so a floor combined without it is a floor no complete run could meet.
         env=measured("unit"),
@@ -532,7 +526,6 @@ GROUPS: tuple[Group, ...] = (
         tools=("npm",),
         timeout=10,
         when=("pr", "main"),
-        wall_seconds=0,
     ),
     *ON_A_REAL_TOOL,
     *(elsewhere(group) for group in ON_A_REAL_TOOL),
@@ -550,7 +543,6 @@ GROUPS: tuple[Group, ...] = (
         tools=("chromium", "ffmpeg"),
         timeout=20,
         when=("pr", "main"),
-        wall_seconds=0,
     ),
     Group(
         name="generated",
@@ -580,7 +572,6 @@ GROUPS: tuple[Group, ...] = (
         tools=("npm", "chromium"),
         timeout=20,
         when=("pr", "main"),
-        wall_seconds=0,
     ),
     Group(
         name="rehearsal",
@@ -597,7 +588,6 @@ GROUPS: tuple[Group, ...] = (
         tools=("npm", "chromium", "history"),
         timeout=20,
         when=("pr", "main"),
-        wall_seconds=15,
     ),
     Group(
         name="coverage",
@@ -617,7 +607,6 @@ GROUPS: tuple[Group, ...] = (
         tools=(),
         timeout=10,
         when=("pr", "main"),
-        wall_seconds=0,
     ),
     Group(
         name="wheel",
@@ -632,7 +621,6 @@ GROUPS: tuple[Group, ...] = (
         tools=(),
         timeout=15,
         when=("pr", "main"),
-        wall_seconds=0,
     ),
     Group(
         name="scaffold",
@@ -648,7 +636,6 @@ GROUPS: tuple[Group, ...] = (
         tools=("chromium", "ffmpeg"),
         timeout=30,
         when=("main", "schedule"),
-        wall_seconds=0,
     ),
     Group(
         name="installer",
@@ -666,7 +653,6 @@ GROUPS: tuple[Group, ...] = (
         tools=(),
         timeout=25,
         when=("main", "schedule"),
-        wall_seconds=0,
     ),
 )
 
@@ -747,17 +733,21 @@ def run_group(group: Group, mode: str = "") -> bool:
 
 
 def table() -> str:
-    """Every group with its first step, what it needs, its measured wall time and the job that calls it."""
+    """Every group with its first step, what it needs and the job that calls it.
+
+    No wall time is printed. A time typed into this table was a number nothing checked, and every one
+    that was measured against CI was wrong by a factor of two or more, so the time a group takes is
+    read from the job that ran it rather than from here.
+    """
     rows = []
     for group in GROUPS:
-        measured = f"about {group.wall_seconds}s" if group.wall_seconds else "not measured yet"
         steps = group.steps
         more = f" and {len(steps) - 1} more" if len(steps) > 1 else ""
         needs = ", ".join(group.tools) or "nothing beyond uv"
         rows.append(
             f"  {group.name}\n"
             f"      {shell(steps[0])}{more}\n"
-            f"      needs {needs} on {', '.join(group.runners)}, {measured}, "
+            f"      needs {needs} on {', '.join(group.runners)}, "
             f"gates on {', '.join(group.when)}, run by ci / run ({group.name})\n"
             f"      {group.why}"
         )
