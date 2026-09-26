@@ -140,7 +140,7 @@ rather than on a project, because installing a toolchain and reporting on a mach
 and a project-only stream would leave `--events` silent on the two commands that download two
 hundred megabytes. A project's `events` is that stream filtered to the runs the project opened.
 
-There are eleven event names and the discriminator is `event`. The library mints `event`, `time`,
+There are twelve event names and the discriminator is `event`. The library mints `event`, `time`,
 `seq` and `run` onto every line, and `run.start` carries the path the lines are being appended to, so
 the stream and the file can never disagree. Skip and fail are not event names: `stage.done` and
 `section.done` carry an `outcome`, because three names for one moment forces three branches where one

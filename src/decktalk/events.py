@@ -1,11 +1,11 @@
-"""One stream of progress: eleven moments, the four fields the library mints onto each, and the
+"""One stream of progress: twelve moments, the four fields the library mints onto each, and the
 subscribers that render them.
 
 Every call opens a run and writes to this stream. The Rich live region, the JSON lines `--events`
 prints on stderr, the per-run file under `build/events/` and any later dashboard are all subscribers
 to it, so a renderer never computes a fraction and there is only one channel to keep in step.
 
-`event` is the discriminator and there are eleven names. Skip and fail are not names: `stage.done`
+`event` is the discriminator and there are twelve names. Skip and fail are not names: `stage.done`
 and `section.done` carry an `outcome`, because three names for one moment would force three branches
 where one field read will do.
 
@@ -31,7 +31,7 @@ from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Elapsed, Run, SectionNumber, Spend
 
 MOMENT = "Which moment this line reports, which is what a reader dispatches on."
-"""The one sentence the discriminator publishes, so all eleven names describe themselves alike."""
+"""The one sentence the discriminator publishes, so all twelve names describe themselves alike."""
 
 
 class Unit(Enum):
@@ -147,6 +147,21 @@ class SpendEvent(Event):
     spend: Spend = Field(description="The price, with its state saying whether it is an estimate.")
 
 
+class TakeCharged(Event):
+    """The voice provider was paid for one take, which is the line a ledger of real spending reads.
+
+    A spend event prices a whole run, before or after it. This one is written at the moment a take
+    is bought, once per take, so a host that keeps its own ledger can record every charge as it
+    happens and can tell by the take's hash that a retried run did not buy the same take twice.
+    """
+
+    event: Literal["take.charged"] = Field("take.charged", description=MOMENT)
+    section: SectionNumber
+    take: str = Field(pattern=r"^[0-9a-f]+$", description="The take's content hash, which names its file in the cache.")
+    characters: int = Field(ge=0, description="How many characters were sent for this take.")
+    dollars: float = Field(ge=0, description="What this take cost at the price in force, in US dollars.")
+
+
 class Fetch(Event):
     """A tool is being downloaded, which is the one moment a run stops for the network."""
 
@@ -174,6 +189,7 @@ Line = Annotated[
     | Progress
     | FindingEvent
     | SpendEvent
+    | TakeCharged
     | Fetch
     | Log,
     Field(discriminator="event"),
@@ -190,6 +206,7 @@ EVENTS: dict[str, type[Event]] = {
     "progress": Progress,
     "finding": FindingEvent,
     "spend": SpendEvent,
+    "take.charged": TakeCharged,
     "fetch": Fetch,
     "log": Log,
 }
@@ -353,6 +370,7 @@ __all__ = [
     "SectionDone",
     "SectionStart",
     "SpendEvent",
+    "TakeCharged",
     "StageDone",
     "StageStart",
     "Subscription",

@@ -282,9 +282,9 @@ is `certain` or `uncertain`. `location` carries a required `where` naming the ob
 `Project.apply(finding)` applies one.
 
 `--events` prints one JSON line per event on stderr as it happens, and every run of a project also
-appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are eleven names:
+appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are twelve names:
 `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`, `section.done`, `progress`,
-`finding`, `spend`, `fetch` and `log`. `run.done`, `stage.done` and `section.done` carry an
+`finding`, `spend`, `take.charged`, `fetch` and `log`. `run.done`, `stage.done` and `section.done` carry an
 `outcome` of `ok`, `skipped` or `failed`.
 
 Whole contract: [The JSON contract](/agents/json).

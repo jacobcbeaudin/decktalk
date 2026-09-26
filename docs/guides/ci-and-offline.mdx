@@ -80,8 +80,9 @@ stderr with neither in the other's way.
 {"event":"run.done","time":"2026-09-24T10:24:34.649525Z","seq":1,"run":"200d55f26212","outcome":"ok","seconds":0.007681916933506727}
 ```
 
-`event` is the discriminator, and there are eleven names: `run.start`, `run.done`, `stage.start`,
-`stage.done`, `section.start`, `section.done`, `progress`, `finding`, `spend`, `fetch` and `log`. A
+`event` is the discriminator, and there are twelve names: `run.start`, `run.done`, `stage.start`,
+`stage.done`, `section.start`, `section.done`, `progress`, `finding`, `spend`, `take.charged`, `fetch`
+and `log`. A
 `stage.done` and a `section.done` each carry an `outcome` of `ok`, `skipped` or `failed`, so a job
 can tell work that was done from work that was kept.
 

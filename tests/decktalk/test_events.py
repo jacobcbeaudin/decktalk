@@ -25,6 +25,7 @@ NAMES = (
     "progress",
     "finding",
     "spend",
+    "take.charged",
     "fetch",
     "log",
 )
@@ -50,12 +51,13 @@ PAYLOADS: dict[str, dict[str, object]] = {
     "progress": {"stage": Stage.NARRATE, "done": 1, "total": 3, "unit": Unit.TAKE, "label": "section 1"},
     "finding": {"finding": FINDING},
     "spend": {"spend": SPEND},
+    "take.charged": {"section": 2, "take": "0f3a9c1e", "characters": 118, "dollars": 0.04},
     "fetch": {"tool": "ffmpeg", "bytes": 1024, "total_bytes": 4096},
     "log": {"level": Level.INFO, "message": "One sentence."},
 }
 
 
-def test_the_eleven_names_are_the_ones_the_design_named() -> None:
+def test_the_twelve_names_are_the_ones_the_design_named() -> None:
     assert list(EVENTS) == list(NAMES)
 
 

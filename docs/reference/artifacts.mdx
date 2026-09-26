@@ -425,7 +425,7 @@ the other is writing. `--events` prints the same lines on stderr as they happen.
 {"event":"run.done","time":"2026-09-24T10:23:12.301882Z","seq":9,"run":"a41e586449ed","outcome":"ok","seconds":0.026}
 ```
 
-`event` is the discriminator and there are eleven names. `time`, `seq` and `run` are on every line,
+`event` is the discriminator and there are twelve names. `time`, `seq` and `run` are on every line,
 and `seq` counts per run rather than per machine, so a reader can tell a gap from a lost line.
 [Python API](/reference/python-api) gives every field of every line.
 

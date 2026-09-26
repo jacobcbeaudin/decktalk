@@ -569,8 +569,8 @@ Some things are not judgements. Use the stream.
 
 - `--events` prints one JSON line per event on stderr as it happens, and every run also appends
   `build/events/<run>.jsonl` whether you passed it or not. The discriminator key is `event` and
-  there are eleven names: `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`,
-  `section.done`, `progress`, `finding`, `spend`, `fetch` and `log`.
+  there are twelve names: `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`,
+  `section.done`, `progress`, `finding`, `spend`, `take.charged`, `fetch` and `log`.
 - `stage.done` and `section.done` carry an `outcome` of `ok`, `skipped` or `failed`, so a run that
   stopped early still says what it did not reach rather than leaving you to infer it from a shorter
   list.

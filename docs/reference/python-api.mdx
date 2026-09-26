@@ -403,7 +403,7 @@ Every line carries four fields the library mints, so an emitter states only what
 | `seq` | This line's place in its run, counting from zero. |
 | `run` | The id of the run this line belongs to. |
 
-There are eleven names and eleven models. Skip and fail are not names, because `stage.done` and
+There are twelve names and twelve models. Skip and fail are not names, because `stage.done` and
 `section.done` carry an `outcome` instead.
 
 | `event` | Class | What it carries beyond the four |
@@ -417,6 +417,7 @@ There are eleven names and eleven models. Skip and fail are not names, because `
 | `progress` | `Progress` | `stage`, `section` or null, `done`, `total`, `unit`, `label`. |
 | `finding` | `FindingEvent` | `finding`, in the same shape the result will carry. |
 | `spend` | `SpendEvent` | `spend`, with its state saying whether it is an estimate. |
+| `take.charged` | `TakeCharged` | `section`, `take`, `characters` and `dollars` for one take the provider was paid for. |
 | `fetch` | `Fetch` | `tool`, `bytes`, `total_bytes` or null. |
 | `log` | `Log` | `level`, `message`. |
 

@@ -56,7 +56,7 @@ document about schemas is unreadable. Every other command under `--json` prints 
 ```console
 decktalk schema finding     # the Finding model, with its fixes and its codes
 decktalk schema error       # the error object
-decktalk schema event       # the eleven event lines
+decktalk schema event       # the twelve event lines
 decktalk schema settings    # every knob, its default, its range, its unit and its hazard
 decktalk schema page        # the twenty-four page attributes
 decktalk schema project     # the shape of cues.json
@@ -451,6 +451,7 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `progress` | How far through its own work a stage is. | `stage`, `section`, `done`, `total`, `unit`, `label` |
 | `finding` | A judgement was made, carried as it was found. | `finding` |
 | `spend` | A price was worked out. | `spend` |
+| `take.charged` | The provider was paid for one take. | `section`, `take`, `characters`, `dollars` |
 | `fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
 | `log` | One sentence the library would have printed. | `level`, `message` |
 
