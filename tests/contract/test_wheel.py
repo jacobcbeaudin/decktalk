@@ -1,10 +1,10 @@
 """The wheel's file list: it holds exactly the files the package means to ship, and nothing rides along.
 
 `uv build` reads the working tree, so a Finder metadata file or a stale cache next to the template
-would ship in a wheel cut from a laptop. This builds the wheel and compares its contents with the
-files git tracks under `src/decktalk`, minus the patterns `pyproject.toml` excludes, which is read
-from that file rather than repeated here so the exclusion is written down once. It needs uv and git
-on PATH and a checkout to run in, and skips otherwise.
+would ship in a wheel cut from a laptop. This opens the wheel the wheel row's own `uv build` wrote
+into `dist/`, which is the file that ships, and compares its contents with the files git tracks
+under `src/decktalk`, minus the patterns `pyproject.toml` excludes, which is read from that file
+rather than repeated here so the exclusion is written down once. It needs git and a checkout.
 """
 
 from __future__ import annotations
@@ -55,16 +55,18 @@ def excluded() -> tuple[str, ...]:
     return tuple(config["tool"]["uv"]["build-backend"]["wheel-exclude"])
 
 
+DIST = REPO / "dist"
+"""Where `uv build` writes, which the wheel row runs just before this file."""
+
+
 @pytest.fixture(scope="module")
 def entries() -> list[str]:
-    """The file entries of a freshly built wheel, directories left out."""
-    uv = shutil.which("uv")
-    if uv is None:
-        pytest.skip("uv is not on PATH")
-    out = REPO / "tests" / "out" / "wheel"
-    shutil.rmtree(out, ignore_errors=True)
-    _run(uv, "build", "--wheel", "--out-dir", str(out))
-    with zipfile.ZipFile(next(out.glob("*.whl"))) as wheel:
+    """The file entries of the wheel `uv build` wrote for this version, directories left out."""
+    config = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    version = config["project"]["version"]
+    wheels = sorted(DIST.glob(f"decktalk-{version}-*.whl"))
+    assert wheels, f"dist/ holds no wheel of decktalk {version}: run `uv build` first, as the wheel row does"
+    with zipfile.ZipFile(wheels[-1]) as wheel:
         return [name for name in wheel.namelist() if not name.endswith("/")]
 
 

@@ -68,6 +68,25 @@ def measuring(name: str, *selection: str) -> tuple[str, ...]:
     return (*PYTEST, *selection, *MEASURE, f"--junitxml={REPORTS / f'{name}.xml'}")
 
 
+WHEEL_TEST = "tests/contract/test_wheel.py"
+"""The test of the built wheel, which only the wheel group runs, right after `uv build` writes one."""
+
+ELSEWHERE: dict[str, str] = {
+    WHEEL_TEST: "wheel",
+}
+"""Every test file the unit suite leaves to another row, and the row that runs it instead.
+
+A contract held by two rows runs twice for one answer, and the wheel test built a wheel of its own in
+unit on three Pythons and again in the wheel row on three platforms, which was nine builds per pull
+request. Each file named here runs in its row alone, and a test holds every name to that row.
+"""
+
+
+def ignoring_elsewhere() -> tuple[str, ...]:
+    """What the unit suite passes so that it leaves every file in `ELSEWHERE` to the row that owns it."""
+    return tuple(f"--ignore={path}" for path in ELSEWHERE)
+
+
 def selected_marker(command: tuple[str, ...]) -> str | None:
     """The marker a suite's command names with `-m`, or None for the suite that needs no tool."""
     if "pytest" not in command or "-m" not in command:
@@ -507,7 +526,7 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="unit",
         why="Every test that needs no tool, which the collection hook makes the default suite.",
-        commands=(measuring("unit"),),
+        commands=(measuring("unit", *ignoring_elsewhere()),),
         runners=(LINUX,),
         pythons=EVERY_PYTHON,
         tools=(),
@@ -613,7 +632,7 @@ GROUPS: tuple[Group, ...] = (
         why="What `uv build` writes, opened on a machine that has only the wheel and the tag.",
         commands=(
             ("uv", "build"),
-            (*PYTEST, "tests/contract/test_wheel.py"),
+            (*PYTEST, WHEEL_TEST),
             (*UV, "scripts/check_wheel.py", "--check"),
         ),
         runners=EVERY_PLATFORM,

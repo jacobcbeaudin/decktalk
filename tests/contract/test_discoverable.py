@@ -12,17 +12,16 @@ one place that sentence is a test rather than an intention.
 Four surfaces are walked and each is total in both directions. The command line has to publish a
 command for every result the library returns and help for every command and every option it takes.
 The settings tree has to publish, for every key, a sentence, a default, a safe range, a unit, a
-scope and a nature, and the committed schema has to carry the same keys. The finding codes and the
-error codes have to publish a sentence, a certainty where one applies and a documentation address
-that follows the published pattern. The page contract has to publish, for every attribute, what it
+scope and a nature. `tests/decktalk/test_settings.py` holds that record, the generator check
+`build_settings_schema.py --check` holds the committed schema to the same keys, and this file holds
+only the range rule neither of them does. The finding codes and the error codes have to publish a
+sentence, a certainty where one applies and a documentation address that follows the published
+pattern. The page contract has to publish, for every attribute, what it
 is written on, what values it takes, its default, the code that names it and what it affects, or
 name it in the exemption list with the sentence saying why no value of it can change a verdict.
 """
 
 from __future__ import annotations
-
-import json
-from typing import Any
 
 import pytest
 
@@ -35,41 +34,12 @@ from support.paths import REPO
 
 SCHEMA = REPO / "schemas" / "v1"
 RESULT_SCHEMAS = SCHEMA / "results"
-SETTINGS_SCHEMA = SCHEMA / "decktalk.json"
-MACHINE_SCHEMA = SCHEMA / "machine.json"
 
 DOCS = "https://docs.decktalk.ai"
 """Where every published address resolves, which is the one host a printed URL may name."""
 
 SCHEMA_VERSION = 2
 """The shape version every result publishes, which is the founder's decided contract."""
-
-DOCUMENT = "document"
-"""What the schema marks a table of the author's own content with, which holds no knob to turn."""
-
-
-def settings_schema() -> dict[str, Any]:
-    return json.loads(SETTINGS_SCHEMA.read_text(encoding="utf-8"))
-
-
-def schema_keys(document: dict[str, Any], prefix: str = "") -> set[str]:
-    """Every dotted key the published settings schema names, which is what an agent reads.
-
-    A property that holds properties of its own is a table rather than a key, so the walk descends
-    into it and never counts the table itself as something a value could be written to. A table the
-    schema marks as document is the author's own content rather than a knob, and it is open by
-    design, so it names no key at all.
-    """
-    found: set[str] = set()
-    for name, definition in document.get("properties", {}).items():
-        dotted = f"{prefix}{name}"
-        if not isinstance(definition, dict) or definition.get("x-kind") == DOCUMENT:
-            continue
-        if definition.get("properties"):
-            found |= schema_keys(definition, f"{dotted}.")
-        else:
-            found.add(dotted)
-    return found
 
 
 # ---- the settings, which are the knobs a project turns --------------------------------------
@@ -85,27 +55,15 @@ ratio and a factor are dimensionless and their range is what says how far they m
 """
 
 
-@pytest.mark.parametrize("key", KEYS, ids=[key.id for key in KEYS])
-def test_every_settings_key_publishes_what_an_agent_needs_to_turn_it(key):
-    """A knob with no sentence, no default, no scope or no nature is a knob nobody can turn safely."""
-    assert key.description and key.description.endswith("."), key.id
-    assert key.default is not None, key.id
-    assert key.scope is not None, key.id
-    assert key.nature is not None, key.id
-    if key.annotation in NUMERIC:
-        assert key.bounds is not None, f"{key.id} publishes no safe range, so no value of it is known to be safe."
+def test_every_numeric_settings_key_publishes_a_safe_range():
+    """A number with no range is a knob an agent cannot turn safely, because nothing says how far is too far.
 
-
-@pytest.mark.parametrize("key", KEYS, ids=[key.id for key in KEYS])
-def test_every_settings_key_is_in_the_published_schema(key):
-    """The schema is what an agent reads without running anything, so a key absent from it is invisible."""
-    assert key.id in schema_keys(settings_schema()), f"{key.id} is a key and the published schema does not name it."
-
-
-def test_the_schema_names_no_key_the_settings_tree_does_not_have():
-    """The other direction: a schema entry nothing answers is an instruction an agent cannot follow."""
-    extra = sorted(schema_keys(settings_schema()) - {key.id for key in KEYS})
-    assert extra == [], extra
+    The rest of each key's record, its sentence, default, scope and nature, is held once in
+    `tests/decktalk/test_settings.py`, and the published schema is held to the keys by
+    `build_settings_schema.py --check`. This is the one rule of the record that neither holds.
+    """
+    unranged = sorted(key.id for key in KEYS if key.annotation in NUMERIC and key.bounds is None)
+    assert unranged == [], f"these numeric keys publish no safe range: {unranged}"
 
 
 @pytest.mark.parametrize("number", NUMBERS, ids=[number.id for number in NUMBERS])

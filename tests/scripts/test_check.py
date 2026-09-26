@@ -238,6 +238,18 @@ def test_every_row_that_runs_on_another_platform_reports_timing_once() -> None:
                 assert command.count(check.REPORT_TIMING) == 1, group.name
 
 
+# ---- one row per contract ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", sorted(check.ELSEWHERE))
+def test_a_file_the_unit_suite_leaves_elsewhere_runs_in_its_row_alone(path: str) -> None:
+    assert (REPO / path).is_file(), f"{path} is left to another row and is not there any more"
+    runs = [group.name for group in check.GROUPS for command in group.commands if path in command]
+    assert runs == [check.ELSEWHERE[path]], runs
+    (unit,) = check.BY_NAME["unit"].commands
+    assert f"--ignore={path}" in unit
+
+
 # ---- a suite the run named fails when its tool is missing -----------------------------------------
 #
 # The rows above fetch every tool before a suite starts, and `tests/support/tools.py` is what makes a
