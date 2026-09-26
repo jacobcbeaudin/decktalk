@@ -11,7 +11,7 @@ DeckTalk turns a markdown script and plain HTML slides into one narrated mp4, vo
 
 <!-- x-release-please-start-version -->
 
-[![A frame of the film Halfway. On a dark city map, a white route runs from 14 Elm Street to a pin at Cafe Meridian, and a teal route runs on to 9 Harbour Road, each leg labelled 20 min.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.5.0-rc2/assets/halfway-frame.webp)](https://decktalk.ai/films/halfway)
+[![A frame of the film Halfway. On a dark city map, a white route runs from 14 Elm Street to a pin at Cafe Meridian, and a teal route runs on to 9 Harbour Road, each leg labelled 20 min.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.5.0/assets/halfway-frame.webp)](https://decktalk.ai/films/halfway)
 
 <!-- x-release-please-end -->
 
@@ -29,7 +29,7 @@ Edit one sentence and only its section is voiced and recorded again, so a fix co
 
 <!-- x-release-please-start-version -->
 
-![The edit cycle. One sentence changes in script.md, and only its section is voiced and recorded again, while every other section comes back from the cache.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.5.0-rc2/assets/edit-cycle.svg)
+![The edit cycle. One sentence changes in script.md, and only its section is voiced and recorded again, while every other section comes back from the cache.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.5.0/assets/edit-cycle.svg)
 
 <!-- x-release-please-end -->
 
@@ -38,16 +38,16 @@ Edit one sentence and only its section is voiced and recorded again, so a fix co
 <!-- x-release-please-start-version -->
 
 ```console
-uv tool install decktalk==0.5.0-rc2
+uv tool install decktalk==0.5.0
 decktalk init my-lesson && cd my-lesson
 decktalk build --no-voice
 ```
 
-The first line pins 0.5.0-rc2, the release this page describes.
+The first line pins 0.5.0, the release this page describes.
 
-The same block runs on Windows, and `pipx install decktalk==0.5.0-rc2` works in place of uv.
+The same block runs on Windows, and `pipx install decktalk==0.5.0` works in place of uv.
 
-On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECKTALK_VERSION=0.5.0-rc2 sh` puts uv on the machine first, and uv brings its own Python. [Read the script](https://github.com/jacobcbeaudin/decktalk/blob/main/install.sh) before you run it.
+On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECKTALK_VERSION=0.5.0 sh` puts uv on the machine first, and uv brings its own Python. [Read the script](https://github.com/jacobcbeaudin/decktalk/blob/main/install.sh) before you run it.
 
 <!-- x-release-please-end -->
 
