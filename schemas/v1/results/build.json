@@ -725,6 +725,18 @@
       "description": "The storyboard this run wrote, or null.",
       "title": "Storyboard"
     },
+    "stopped_at": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Stage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The stage whose certain findings stopped the run before the film, or null when it ran through."
+    },
     "seconds": {
       "description": "How long this call took, in seconds.",
       "minimum": 0,
