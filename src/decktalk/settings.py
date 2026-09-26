@@ -70,6 +70,9 @@ X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium"
 COLOR_SCHEMES = ("light", "dark", "no-preference")
 """Truth: the values Chromium reports for `prefers-color-scheme`."""
 
+PAGE_POLICIES = ("trusted", "untrusted")
+"""The two ways `record` treats a page: as the author's own work, or as a stranger's that may be hostile."""
+
 BLOCK_PX = 8
 """Truth: the H.264 transform block the block-averaged copy of a frame cancels ringing over."""
 
@@ -161,6 +164,21 @@ class NarrationConfig:
     )
     output_format: str = tune(
         "mp3_44100_128", "Audio format that the speech provider returns. It is part of the narration cache key."
+    )
+    concurrency: int = tune(
+        2,
+        "How many sections `narrate` voices at once.",
+        bounds=Bounds(ge=1, le=8),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard="A voice provider limits requests per account, and a busy answer is retried rather than paid twice.",
+    )
+    retries: int = tune(
+        3,
+        "How many more times `narrate` asks again when the voice provider answers that it is busy or failed.",
+        bounds=Bounds(ge=0, le=10),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
     )
     mp3_bitrate: str = tune(
         "128k",
@@ -274,6 +292,30 @@ class RecordConfig:
         "light",
         "Color scheme that Chromium reports to the page.",
         bounds=Bounds(enum=COLOR_SCHEMES),
+    )
+    page_policy: str = tune(
+        "trusted",
+        "How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as "
+        "a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not "
+        "for the project's own origin, through every channel a page can open.",
+        bounds=Bounds(enum=PAGE_POLICIES),
+        hazard=(
+            "A service that renders pages other people wrote sets `untrusted`, because a trusted page can "
+            "reach anything the machine can, including a cloud metadata endpoint."
+        ),
+    )
+    concurrency: int = tune(
+        0,
+        "How many page sections `record` records at once. Zero chooses from the CPU this process may use, "
+        "which inside a container is its quota rather than the host's core count.",
+        bounds=Bounds(ge=0, le=16),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "Each recording needs about two dedicated CPUs to present its frames on time, and a starved "
+            "recording stalls or lands its reveals late, so a number above the machine's share costs "
+            "correctness rather than only speed."
+        ),
     )
     retries: int = tune(
         2,
@@ -764,6 +806,14 @@ class ToolsConfig:
         "",
         "ffprobe executable. It is empty for the build DeckTalk fetches itself.",
         unit="path",
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+    )
+    timeout_seconds: float = tune(
+        600.0,
+        "Longest one ffmpeg or ffprobe call may run before DeckTalk stops it.",
+        unit="seconds",
+        bounds=Bounds(ge=10, le=7200),
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
     )

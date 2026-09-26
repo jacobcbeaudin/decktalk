@@ -10,6 +10,31 @@
       "description": "These keys govern how the script is turned into audio.",
       "x-kind": "tuning",
       "properties": {
+        "concurrency": {
+          "description": "How many sections `narrate` voices at once.",
+          "type": "integer",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 8,
+          "x-range": "must be between 1 and 8",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A voice provider limits requests per account, and a busy answer is retried rather than paid twice.",
+          "x-environment": "DECKTALK_NARRATION_CONCURRENCY"
+        },
+        "retries": {
+          "description": "How many more times `narrate` asks again when the voice provider answers that it is busy or failed.",
+          "type": "integer",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 10,
+          "x-range": "must be between 0 and 10",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_NARRATION_RETRIES"
+        },
         "cache_dir": {
           "description": "Directory that holds the take files and their words files, each named by its content hash. It is empty for `build/narrate/` inside the project, and a path here keeps the voiced takes when `build/` is deleted and lets many projects share one cache.",
           "type": "string",
@@ -42,6 +67,19 @@
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-environment": "DECKTALK_RECORD_BROWSER_PATH"
+        },
+        "concurrency": {
+          "description": "How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 16,
+          "x-range": "must be between 0 and 16",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "Each recording needs about two dedicated CPUs to present its frames on time, and a starved recording stalls or lands its reveals late, so a number above the machine's share costs correctness rather than only speed.",
+          "x-environment": "DECKTALK_RECORD_CONCURRENCY"
         }
       },
       "additionalProperties": false
@@ -72,6 +110,19 @@
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-environment": "DECKTALK_TOOLS_FFPROBE"
+        },
+        "timeout_seconds": {
+          "description": "Longest one ffmpeg or ffprobe call may run before DeckTalk stops it.",
+          "type": "number",
+          "default": 600.0,
+          "minimum": 10,
+          "maximum": 7200,
+          "x-range": "must be between 10 and 7200",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_TOOLS_TIMEOUT_SECONDS"
         },
         "cache_dir": {
           "description": "Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache.",

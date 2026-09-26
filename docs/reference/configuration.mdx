@@ -92,6 +92,8 @@ These keys govern how the script is turned into audio.
 |---|---|---|---|---|---|---|
 | `model` | string | `"eleven_multilingual_v2"` | takes any value of its type |  |  | Speech model. `[voice] model` and `--set narration.model` override it. |
 | `output_format` | string | `"mp3_44100_128"` | takes any value of its type |  |  | Audio format that the speech provider returns. It is part of the narration cache key. |
+| `concurrency` | integer | `2` | must be between 1 and 8 |  |  | How many sections `narrate` voices at once. |
+| `retries` | integer | `3` | must be between 0 and 10 |  |  | How many more times `narrate` asks again when the voice provider answers that it is busy or failed. |
 | `mp3_bitrate` | string | `"128k"` | must be one of 64k, 96k, 128k, 160k, 192k, 256k |  |  | Bitrate of the mp3 files that DeckTalk writes, which are the click tracks and the joined narration. |
 | `words_per_minute` | integer | `140` | must be between 60 and 300 | words per minute |  | Pacing of the estimated length in the narrate table. |
 | `silent_words_per_minute` | integer | `150` | must be between 60 and 300 | words per minute |  | Pacing of the click track in a build without voice. |
@@ -105,6 +107,8 @@ These keys govern how the script is turned into audio.
 | `sound_end_min_run_seconds` | number | `0.05` | must be between 0.02 and 0.5 | seconds | `CUT_SPEECH` | Shortest run under the noise level that counts as the end of a take's sound. |
 
 <Warning>
+**`narration.concurrency`** A voice provider limits requests per account, and a busy answer is retried rather than paid twice.
+
 **`narration.sound_end_noise_dbfs`** Above about -25 dBFS the scan calls quiet speech silence, so the take is placed early and the cut that follows it lands on a word.
 
 </Warning>
@@ -119,6 +123,8 @@ These keys tune the headless Chromium recording and how narration t=0 is found i
 | `min_cover_seconds` | number | `1.5` | must be between 0 and 30 | seconds |  | Shortest time from the start of the recorder to narration t=0. |
 | `browser_path` | string | `""` | takes any value of its type | path |  | Chromium executable that `record` drives. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another. |
 | `color_scheme` | string | `"light"` | must be one of light, dark, no-preference |  |  | Color scheme that Chromium reports to the page. |
+| `page_policy` | string | `"trusted"` | must be one of trusted, untrusted |  |  | How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. |
+| `concurrency` | integer | `0` | must be between 0 and 16 |  |  | How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count. |
 | `retries` | integer | `2` | must be between 0 and 10 |  |  | How many more times `record` records a section whose frames stalled. |
 | `screenshot_settle_seconds` | number | `0.4` | must be between 0 and 10 | seconds |  | Seconds that `storyboard` waits before each slide panel. |
 | `cover_scan_seconds` | number | `4.0` | must be between 0 and 30 | seconds |  | Seconds at the start of each recording that `record` scans for the magenta cover. |
@@ -132,6 +138,10 @@ These keys tune the headless Chromium recording and how narration t=0 is found i
 | `frame_gap_max_ms` | integer | `150` | must be between 100 and 2000 | milliseconds | `PAGE_STALLED` | Longest gap between two presented frames after narration t=0. A longer gap makes `record` try again. |
 
 <Warning>
+**`record.page_policy`** A service that renders pages other people wrote sets `untrusted`, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.
+
+**`record.concurrency`** Each recording needs about two dedicated CPUs to present its frames on time, and a starved recording stalls or lands its reveals late, so a number above the machine's share costs correctness rather than only speed.
+
 **`record.frame_gap_max_ms`** The runtime reports a gap no finer than its own reporting floor, so a limit under that floor makes every section stall and every retry spend the recording again.
 
 </Warning>
@@ -275,6 +285,7 @@ These keys name the tools DeckTalk drives, for a machine that supplies its own.
 |---|---|---|---|---|---|---|
 | `ffmpeg` | string | `""` | takes any value of its type | path |  | ffmpeg executable. It is empty for the build DeckTalk fetches itself. |
 | `ffprobe` | string | `""` | takes any value of its type | path |  | ffprobe executable. It is empty for the build DeckTalk fetches itself. |
+| `timeout_seconds` | number | `600.0` | must be between 10 and 7200 | seconds |  | Longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
 | `cache_dir` | string | `""` | takes any value of its type | path |  | Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache. |
 
 ## `[host]`
