@@ -51,7 +51,17 @@ from decktalk.events import (
 )
 from decktalk.events import FindingEvent as FindingLine
 from decktalk.events import SpendEvent as SpendLine
-from decktalk.findings import Applicability, Certainty, Code, CommandFix, Edit, Finding, Location, SettingFix
+from decktalk.findings import (
+    FIX_COMMANDS,
+    Applicability,
+    Certainty,
+    Code,
+    CommandFix,
+    Edit,
+    Finding,
+    Location,
+    SettingFix,
+)
 from decktalk.inputs.paths import at, relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
 from decktalk.media.ffmpeg import installed_paths, using_tools
@@ -98,6 +108,9 @@ CHROMIUM = "chromium"
 FFMPEG = "ffmpeg"
 FFPROBE = "ffprobe"
 KATEX = "katex"
+
+FIX_TIMEOUT_SECONDS = 1800.0
+"""The longest a command fix may run, which fetches a browser and an encoder in minutes and never in an hour."""
 
 BIAS_KEY = "host.presentation_bias_ms"
 """The one key a command measures rather than a person chooses, which `doctor --measure` writes."""
@@ -589,7 +602,7 @@ def apply_fix(run: Run, code: Code, fix: Fix, *, root: Path, scope: Scope, unsaf
         why = "this fix can lose work, so it was applied only on request."
         return FixOutcome(code=code, title=fix.title, applied=False, why=why)
     try:
-        files = _carry_out(fix, root=root, scope=scope)
+        files = _carry_out(run, fix, root=root, scope=scope)
     except DeckTalkError as refused:
         return FixOutcome(code=code, title=fix.title, applied=False, why=str(refused))
     for path in files:
@@ -598,24 +611,79 @@ def apply_fix(run: Run, code: Code, fix: Fix, *, root: Path, scope: Scope, unsaf
     return FixOutcome(code=code, title=fix.title, applied=True, files=changed)
 
 
-def _carry_out(fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, ...]:
-    """Make the change one fix describes, and give back every file it changed."""
+def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, ...]:
+    """Make the change one fix describes, and give back every file it changed.
+
+    Every edit is checked before any is made, so a fix whose second edit is refused has not already
+    written its first.
+    """
     if isinstance(fix, SettingFix):
         return (write(_settings_file(root, scope), fix.key, fix.value, scope=scope).file,)
     if isinstance(fix, CommandFix):
-        finished = subprocess.run(fix.command, cwd=root, check=False, capture_output=True, text=True)
-        if finished.returncode != 0:
-            raise ToolError(
-                f"{fix.command[0]} exited {finished.returncode}.",
-                hint=f"Run `{' '.join(fix.command)}` by hand to see what it says.",
-            )
+        _run_command(run, fix, root=root)
         return ()
-    return tuple(dict.fromkeys(_edit(edit, root=root, scope=scope) for edit in fix.edits))
+    targets = [(edit, _inside(root, edit.file)) for edit in fix.edits]
+    return tuple(dict.fromkeys(_edit(edit, path, root=root, scope=scope) for edit, path in targets))
 
 
-def _edit(edit: Edit, *, root: Path, scope: Scope) -> Path:
+def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
+    """Run one of DeckTalk's own commands as this interpreter's DeckTalk, bounded in time.
+
+    The set is checked again here, because a model can be built without validation and a fix is the
+    one value that decides what this process launches. The command runs as `python -m decktalk`
+    under the interpreter making the call rather than as whatever `decktalk` is first on `PATH`,
+    which may be another install, and it sees the machine's own environment rather than the
+    process's, so a host that built its machine by hand is the one that decides what it reads.
+    """
+    if fix.command not in FIX_COMMANDS:
+        raise InputError(
+            f"`{' '.join(fix.command)}` is not one of DeckTalk's own commands, so a fix may not run it.",
+            hint="Run the command by hand if you mean it.",
+        )
+    argv = [sys.executable, "-m", *fix.command]
+    try:
+        finished = subprocess.run(
+            argv,
+            cwd=root,
+            env=dict(run.machine.environ),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=FIX_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as late:
+        raise ToolError(
+            f"`{' '.join(fix.command)}` ran for {FIX_TIMEOUT_SECONDS:.0f} seconds and was stopped.",
+            hint=f"Run `{' '.join(fix.command)}` by hand to see where it waits.",
+        ) from late
+    if finished.returncode != 0:
+        raise ToolError(
+            f"{fix.command[0]} exited {finished.returncode}.",
+            hint=f"Run `{' '.join(fix.command)}` by hand to see what it says.",
+        )
+
+
+def _inside(root: Path, named: Path) -> Path:
+    """The file an edit names, refused unless it resolves inside the root once every link is followed.
+
+    A fix can arrive as JSON from anywhere, so its path is the one part of it an attacker chooses.
+    The check is made on the resolved path, because `..`, an absolute path and a symbolic link that
+    points out of the project all spell a file inside it until they are resolved. The path handed
+    back is spelled under the root the caller gave, so every result still names it relative to that.
+    """
+    home = root.resolve()
+    resolved = (home / named).resolve()
+    if not resolved.is_relative_to(home):
+        raise InputError(
+            f"{Path(named).as_posix()} is outside the project, so a fix may not change it.",
+            hint="A fix only ever changes files inside the project it was made for.",
+            location=Location(where=Path(named).as_posix()),
+        )
+    return root / resolved.relative_to(home)
+
+
+def _edit(edit: Edit, path: Path, *, root: Path, scope: Scope) -> Path:
     """Make one change to one file, addressed by the one locator the edit names."""
-    path = root / edit.file
     if edit.key is not None:
         return write(_settings_file(root, scope), edit.key, edit.new, scope=scope).file
     if edit.pointer is not None:
@@ -626,10 +694,27 @@ def _edit(edit: Edit, *, root: Path, scope: Scope) -> Path:
         )
     lines = _lines_under(edit, path, root)
     index = (edit.line or 1) - 1
+    if edit.old is not None:
+        _still_reads(edit, lines, index, path, root)
     lines[index : index + (1 if edit.old is not None else 0)] = [edit.new + "\n"] if edit.new else []
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(lines), encoding="utf-8")
     return path
+
+
+def _still_reads(edit: Edit, lines: list[str], index: int, path: Path, root: Path) -> None:
+    """Refuse a replacement whose line no longer reads what the fix was made against.
+
+    A fix is computed from the file as it was when the finding was raised. A file edited since then
+    has moved its lines, and replacing line n by number would overwrite whatever line n holds now.
+    """
+    found = lines[index].rstrip("\r\n") if index < len(lines) else None
+    if found != edit.old:
+        raise InputError(
+            f"line {edit.line} of {edit.file} no longer reads what this fix was made against, so it was left alone.",
+            hint="Run the command that raised the finding again for a fix made against the file as it is now.",
+            location=at(path, root),
+        )
 
 
 def _lines_under(edit: Edit, path: Path, root: Path) -> list[str]:

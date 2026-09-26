@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,8 +12,27 @@ import pytest
 from decktalk import machine as machine_module
 from decktalk.errors import ApprovalRequired, Cancel, Cancelled, ErrorCode
 from decktalk.events import Event, Level, Log, RunDone, RunStart, StageDone, StageStart
-from decktalk.findings import Applicability, Certainty, Code, CommandFix, Finding, Location, SettingFix
-from decktalk.machine import CHROMIUM, InstalledTool, Machine, Toolchain, apply_fix, fixes_of, init
+from decktalk.findings import (
+    Applicability,
+    Certainty,
+    Code,
+    CommandFix,
+    Edit,
+    EditFix,
+    Finding,
+    Location,
+    SettingFix,
+)
+from decktalk.machine import (
+    CHROMIUM,
+    FIX_TIMEOUT_SECONDS,
+    InstalledTool,
+    Machine,
+    Toolchain,
+    apply_fix,
+    fixes_of,
+    init,
+)
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Layer, Scope, Spend, SpendState, StatusResult, Voicing
@@ -380,6 +400,133 @@ def test_a_command_that_fails_is_reported_rather_than_raised(tmp_path: Path, mon
     with here.run() as run:
         outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
     assert not outcome.applied and "exited 1" in (outcome.why or "")
+
+
+def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_machines_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`decktalk` on `PATH` may be another install, and an unbounded command holds `apply` for ever."""
+    here = a_machine(tmp_path, ONLY_THIS="1")
+    asked: dict[str, object] = {}
+
+    def record(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        asked.update(options, argv=argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr("decktalk.machine.subprocess.run", record)
+    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
+    with here.run() as run:
+        assert apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False).applied
+    assert asked["argv"] == [sys.executable, "-m", "decktalk", "install"]
+    assert asked["timeout"] == FIX_TIMEOUT_SECONDS
+    assert asked["env"] == {"ONLY_THIS": "1"}
+
+
+def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    here = a_machine(tmp_path)
+
+    def hang(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(argv, FIX_TIMEOUT_SECONDS)
+
+    monkeypatch.setattr("decktalk.machine.subprocess.run", hang)
+    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
+    with here.run() as run:
+        outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    assert not outcome.applied and "was stopped" in (outcome.why or "")
+
+
+def test_a_command_built_without_validation_is_still_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The model refuses a foreign argv, and a model built past its validator meets the same refusal here."""
+    here = a_machine(tmp_path)
+    marker = tmp_path / "ran"
+
+    def run_it(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        marker.write_text(" ".join(argv), encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr("decktalk.machine.subprocess.run", run_it)
+    hostile = CommandFix.model_construct(
+        kind="command", title="t", applicability=Applicability.SAFE, command=("sh", "-c", f"touch {marker}")
+    )
+    with here.run() as run:
+        outcome = apply_fix(run, Code.FILE_MISSING, hostile, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    assert not outcome.applied and "not one of DeckTalk's own commands" in (outcome.why or "")
+    assert not marker.exists()
+
+
+def an_edit(file: str | Path, **locator: object) -> EditFix:
+    """A safe fix of one edit, which is the shape a finding read from JSON hands `apply`."""
+    edit = Edit.model_validate({"file": file, "new": "written by a fix", **locator})
+    return EditFix(title="t", applicability=Applicability.SAFE, edits=(edit,))
+
+
+def applied(here: Machine, fix: EditFix, root: Path) -> tuple[bool, str]:
+    with here.run() as run:
+        outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
+    return outcome.applied, outcome.why or ""
+
+
+@pytest.mark.parametrize("escape", ["../outside.txt", "deeper/../../outside.txt"])
+def test_an_edit_that_climbs_out_of_the_project_is_refused(tmp_path: Path, escape: str) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    done, why = applied(a_machine(tmp_path), an_edit(escape, line=1), root)
+    assert not done and "outside the project" in why
+    assert not (tmp_path / "outside.txt").exists()
+
+
+def test_an_edit_that_names_an_absolute_path_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    target = tmp_path / "elsewhere.txt"
+    done, why = applied(a_machine(tmp_path), an_edit(target, line=1), root)
+    assert not done and "outside the project" in why
+    assert not target.exists()
+
+
+def test_an_edit_through_a_link_that_leaves_the_project_is_refused(tmp_path: Path) -> None:
+    """A link spells a path inside the project and writes outside it, so the check follows the link."""
+    root = tmp_path / "project"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "notes.txt").write_text("mine\n", encoding="utf-8")
+    try:
+        (root / "shared").symlink_to(outside, target_is_directory=True)
+    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
+        pytest.skip("this machine does not let an unprivileged user make a link")
+    done, why = applied(a_machine(tmp_path), an_edit("shared/notes.txt", line=1, old="mine"), root)
+    assert not done and "outside the project" in why
+    assert (outside / "notes.txt").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_a_fix_with_one_refused_edit_writes_none_of_its_edits(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    fix = EditFix(
+        title="t",
+        applicability=Applicability.SAFE,
+        edits=(Edit(file=Path("inside.txt"), line=1, new="x"), Edit(file=Path("../outside.txt"), line=1, new="x")),
+    )
+    done, _why = applied(a_machine(tmp_path), fix, root)
+    assert not done
+    assert not (root / "inside.txt").exists()
+
+
+def test_a_line_that_no_longer_reads_what_the_fix_expected_is_left_alone(tmp_path: Path) -> None:
+    """A file edited after its finding was raised has moved its lines, and line n is now another line."""
+    (tmp_path / "notes.txt").write_text("one\ninserted\ntwo\n", encoding="utf-8")
+    done, why = applied(a_machine(tmp_path), an_edit("notes.txt", line=2, old="two"), tmp_path)
+    assert not done and "no longer reads" in why
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "one\ninserted\ntwo\n"
+
+
+def test_a_line_past_the_end_of_the_file_is_left_alone(tmp_path: Path) -> None:
+    (tmp_path / "notes.txt").write_text("one\n", encoding="utf-8")
+    done, why = applied(a_machine(tmp_path), an_edit("notes.txt", line=5, old="five"), tmp_path)
+    assert not done and "no longer reads" in why
 
 
 def test_a_knob_a_fix_names_is_written_into_the_machine_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
