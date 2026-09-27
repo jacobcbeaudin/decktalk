@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 import threading
 import time
@@ -11,6 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from decktalk.errors import Cancel, Cancelled, ToolError
 from decktalk.media import ffmpeg
@@ -158,10 +161,16 @@ def test_binding_the_tools_also_binds_where_a_fetch_is_kept(tmp_path):
         cache_dir()
 
 
-def test_a_concat_line_quotes_a_path_a_person_could_actually_write():
-    r"""An apostrophe inside a single-quoted path ends the quoting, so it is written as `'\''`."""
-    assert ffmpeg.concat_line("/films/a.mp4") == "file '/films/a.mp4'\n"
-    assert ffmpeg.concat_line("/jacob's films/a.mp4") == "file '/jacob'\\''s films/a.mp4'\n"
+@given(st.text().filter(lambda path: "\x00" not in path))
+def test_a_concat_line_quotes_any_path_a_person_could_actually_write(path):
+    r"""An apostrophe inside a single-quoted path ends the quoting, so it is written as `'\''`.
+
+    The demuxer reads the line the way a POSIX shell does, so `shlex` is the reader held to it.
+    """
+    assert shlex.split(ffmpeg.concat_line(path)) == ["file", path]
+
+
+def test_a_concat_list_is_one_line_per_file():
     assert ffmpeg.concat_list([Path("a.mp4"), Path("b.mp4")]) == "file 'a.mp4'\nfile 'b.mp4'\n"
 
 

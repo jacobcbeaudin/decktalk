@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import string
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from decktalk.errors import InputError
 from decktalk.inputs import cues as cues_module
@@ -65,21 +68,47 @@ SAID = Spoken.of(
 )
 
 
-def test_a_phrase_matches_without_case_or_punctuation_by_default() -> None:
-    assert SAID.matches("hello world") == [0, 2]
+WORD = st.text(string.ascii_letters + string.digits + "'", min_size=1, max_size=5).filter(
+    lambda word: word.strip("'") != ""
+)
+"""One spoken word as the matcher keeps it: letters, digits and the apostrophe of a contraction."""
+
+MARKS = st.text(',.;:!?"()-\u2014 ', max_size=2)
+"""What a provider writes around a word and the matcher ignores, space included."""
 
 
-def test_a_case_sensitive_phrase_matches_its_own_case_alone() -> None:
-    assert SAID.matches("hello world", case_sensitive=True) == [2]
+@given(st.lists(WORD, min_size=1, max_size=8), st.data())
+def test_a_phrase_matches_the_words_it_names_whatever_their_case_and_punctuation(
+    words: list[str], data: st.DataObject
+) -> None:
+    """Every occurrence is found by default, and a case-sensitive match finds the ones in its own case."""
+    start = data.draw(st.integers(min_value=0, max_value=len(words) - 1))
+    end = data.draw(st.integers(min_value=start + 1, max_value=len(words)))
+    cased = [data.draw(st.sampled_from((word, word.upper(), word.lower(), word.title()))) for word in words]
+    said = Spoken.of(
+        tuple(
+            Word(word=data.draw(MARKS) + word + data.draw(MARKS), start=float(i), end=i + 0.5)
+            for i, word in enumerate(cased)
+        )
+    )
+    phrase, width = words[start:end], end - start
+
+    def found(spoken: list[str], asked: list[str]) -> list[int]:
+        return [i for i in range(len(spoken) - width + 1) if spoken[i : i + width] == asked]
+
+    assert said.matches(" ".join(phrase)) == found([w.lower() for w in cased], [w.lower() for w in phrase])
+    assert said.matches(" ".join(phrase), case_sensitive=True) == found(cased, phrase)
+    assert start in said.matches(" ".join(cased[start:end]), case_sensitive=True)
+
+
+@given(MARKS)
+def test_a_phrase_of_punctuation_alone_matches_nothing(phrase: str) -> None:
+    assert SAID.matches(phrase) == []
 
 
 def test_the_nth_occurrence_is_found_and_one_past_the_last_is_none() -> None:
     assert SAID.find("hello", occurrence=2) == 2
     assert SAID.find("hello", occurrence=3) is None
-
-
-def test_a_phrase_of_punctuation_alone_matches_nothing() -> None:
-    assert SAID.matches("...") == []
 
 
 def test_the_words_are_normalised_once_when_they_are_read(monkeypatch: pytest.MonkeyPatch) -> None:

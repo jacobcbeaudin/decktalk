@@ -76,6 +76,9 @@ wheel-exclude = ["**/.DS_Store", "**/runtime/src/**", "**/tsconfig.json"]
 
 [dependency-groups]
 dev = [
+    # A property test states a rule over every input and draws the examples, where a list of cases
+    # names the ones its author thought of. `tests/conftest.py` fixes the seed, so every run agrees.
+    "hypothesis>=6.168",
     # `contract/test_results.py` validates every real output against the committed JSON Schema, so the
     # validator is a development dependency rather than something the schema generator reimplements.
     "jsonschema>=4.23",

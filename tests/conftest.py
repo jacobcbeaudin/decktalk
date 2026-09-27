@@ -11,8 +11,16 @@ used to admit the five-minute scaffold build and `-m unit` used to select nothin
 from __future__ import annotations
 
 import pytest
+from hypothesis import settings
 
 pytest_plugins = ["pytester"]
+
+# A property test draws its examples from a seed derived from the test itself and keeps no example
+# database, so every machine and every CI run tries the same examples in the same order and a
+# failure seen once is seen again. No deadline is set, because under `-n auto` a slow worker would
+# turn the time an example took into a failure that says nothing about the code.
+settings.register_profile("decktalk", derandomize=True, database=None, deadline=None, print_blob=True)
+settings.load_profile("decktalk")
 
 SUITE_MARKERS = ("browser", "media", "e2e", "scaffold", "platform")
 """The markers that name what a test needs beyond Python. Every one is registered in `pyproject.toml`.

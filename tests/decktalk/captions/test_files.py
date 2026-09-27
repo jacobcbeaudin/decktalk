@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from hypothesis import given
+from hypothesis import strategies as st
+
 from decktalk.captions import CaptionCue, Chapter, Said, TranscriptSection, write_chapters, write_srt, write_vtt
 from decktalk.captions.files import clock, ffmetadata_escape, write_transcript
 
@@ -26,10 +29,22 @@ def test_vtt_opens_with_its_header_and_stamps_with_a_full_stop(tmp_path):
     assert text.startswith("WEBVTT\n\n00:00:00.500 --> 00:00:02.250\n")
 
 
-def test_a_chapter_title_survives_the_ffmetadata_escape(tmp_path):
-    assert ffmetadata_escape("a=b;c#d") == "a\\=b\\;c\\#d"
-    # A backslash is escaped too, or the escape of the next character would be read as part of it.
-    assert ffmetadata_escape("a=b;c#d\\e") == "a\\=b\\;c\\#d\\\\e"
+def ffmetadata_read(escaped: str) -> str:
+    """What ffmpeg reads back from one escaped value, refusing a special character left bare."""
+    read, rest = [], iter(escaped)
+    for char in rest:
+        assert char not in "=;#\n", f"{char!r} is bare in {escaped!r}"
+        read.append(next(rest) if char == "\\" else char)
+    return "".join(read)
+
+
+@given(st.text())
+def test_any_title_survives_the_ffmetadata_escape(title):
+    """A backslash is escaped too, or the escape of the next character would be read as part of it."""
+    assert ffmetadata_read(ffmetadata_escape(title)) == title
+
+
+def test_a_chapter_title_is_written_escaped(tmp_path):
     path = tmp_path / "f.txt"
     write_chapters(path, [Chapter(0.0, 2.0, "One = two")])
     text = path.read_text(encoding="utf-8")

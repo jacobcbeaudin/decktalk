@@ -9,13 +9,17 @@ here needs audio, a network or a credential, because a digest is arithmetic over
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from decktalk.artifacts.takes import (
     PLACEHOLDER_PREFIX,
     TAKE_DIGITS,
+    TAKE_HASH,
     PlaceholderInputs,
     Take,
     TakeInputs,
@@ -167,9 +171,27 @@ def test_a_take_is_named_by_its_digest() -> None:
     assert take(1, seconds=1.0).file == take_file(f"{1:016x}")
 
 
-@pytest.mark.parametrize("hostile", ["../../../etc/passwd", "/etc/passwd", "ABCDEF0123456789", "0123", ""])
+DIGEST = st.from_regex(TAKE_HASH, fullmatch=True)
+"""Every name a take may have, paid or placeholder, drawn from the pattern the model enforces,
+which is what a near miss is built from."""
+
+NEAR_MISS = (
+    st.text()
+    | DIGEST.map(str.upper)
+    | DIGEST.map(lambda digest: digest[:-1])
+    | DIGEST.map(lambda digest: digest + "0")
+    | DIGEST.map(lambda digest: f"../{digest}")
+).filter(lambda name: re.fullmatch(TAKE_HASH, name) is None)
+"""Anything that is not a digest, weighted toward the names that are one character away from one."""
+
+
+@given(hostile=NEAR_MISS)
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_a_take_index_that_names_a_file_by_anything_but_a_digest_is_refused(tmp_path: Path, hostile: str) -> None:
-    """The digest becomes a file name under the take directory, so a path in it would read anywhere."""
+    """The digest becomes a file name under the take directory, so a path in it would read anywhere.
+
+    One index file is written over again for every example, which is why the shared directory is safe.
+    """
     row = take(1, seconds=1.0).model_dump(mode="json") | {"hash": hostile}
     index = INDEX.model_dump(mode="json") | {"sections": [row]}
     path = tmp_path / "takes.json"

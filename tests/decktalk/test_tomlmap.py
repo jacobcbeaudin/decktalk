@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from decktalk.errors import InputError
 from decktalk.findings import Code
@@ -27,6 +29,9 @@ from decktalk.tomlmap import (
     unknown_key_message,
     unknown_key_warnings,
 )
+
+FINITE = st.floats(allow_nan=False, allow_infinity=False)
+"""Every finite number, which is what a range is written in and what its edges are."""
 
 
 @dataclass(frozen=True)
@@ -68,23 +73,19 @@ class Outer:
 class TestBounds:
     """The range is data, so the loader and the schema read one statement rather than two."""
 
-    @pytest.mark.parametrize(
-        ("bounds", "value", "held"),
-        [
-            (Bounds(ge=0, le=100), 0, True),
-            (Bounds(ge=0, le=100), -0.001, False),
-            (Bounds(ge=0, le=100), 100, True),
-            (Bounds(ge=0, le=100), 100.001, False),
-            (Bounds(gt=0), 0, False),
-            (Bounds(lt=1), 1, False),
-            (Bounds(enum=("a", "b")), "c", False),
-            (Bounds(min_items=1, items=Bounds(gt=0)), (), False),
-            (Bounds(min_items=1, items=Bounds(gt=0)), (0.5, -1), False),
-            (Bounds(min_items=1, items=Bounds(gt=0)), (0.5,), True),
-        ],
-    )
-    def test_a_bound_holds_exactly_at_its_own_edge(self, bounds: Bounds, value: object, held: bool) -> None:
-        assert bounds.holds(value) is held
+    @given(st.data(), FINITE, FINITE)
+    def test_a_bound_holds_exactly_at_its_own_edge(self, data: st.DataObject, one: float, other: float) -> None:
+        """The value is drawn from the two edges as often as from anywhere else, which is where a bound slips."""
+        low, high = sorted((one, other))
+        value = data.draw(st.sampled_from((low, high)) | FINITE)
+        assert Bounds(ge=low, le=high).holds(value) is (low <= value <= high)
+        assert Bounds(gt=low, lt=high).holds(value) is (low < value < high)
+        assert Bounds(enum=(low, high)).holds(value) is (value in (low, high))
+
+    @given(st.lists(FINITE, max_size=4), st.integers(min_value=0, max_value=3))
+    def test_an_array_holds_when_it_is_long_enough_and_every_item_holds(self, values: list[float], least: int) -> None:
+        held = len(values) >= least and all(value > 0 for value in values)
+        assert Bounds(min_items=least, items=Bounds(gt=0)).holds(tuple(values)) is held
 
     def test_a_range_says_itself_in_words(self) -> None:
         assert Bounds(ge=0, le=100).sentence == "must be between 0 and 100"

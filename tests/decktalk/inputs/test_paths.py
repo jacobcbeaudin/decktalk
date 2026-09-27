@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from decktalk.errors import ErrorCode, InputError
 from decktalk.inputs.paths import at, confined, contained, relative
@@ -31,8 +35,25 @@ def test_a_location_carries_whatever_else_the_caller_knew(tmp_path: Path) -> Non
     assert place.file == Path("deck/index.html")
 
 
-def test_a_file_inside_the_project_is_joined_to_its_root(tmp_path: Path) -> None:
-    assert contained(tmp_path, "deck/index.html") == tmp_path / "deck" / "index.html"
+ROOT = Path(tempfile.gettempdir()).resolve() / "decktalk-containment" / "project"
+"""A project that is never created, because the lexical half of the rule needs no file to judge."""
+
+STEPS = st.lists(st.sampled_from(("deck", "index.html", ".", "..", ROOT.name)), min_size=1, max_size=6)
+"""A path a project could name, built from steps down, steps back up and the project's own name."""
+
+
+@given(STEPS, st.booleans())
+def test_a_path_is_joined_to_its_root_exactly_when_it_stays_inside_the_project(
+    steps: list[str], absolute: bool
+) -> None:
+    """A step back up may leave and come in again, so only where the whole path lands decides."""
+    named = Path(*steps) if not absolute else ROOT.parent / Path(*steps)
+    lands = Path(os.path.normpath(ROOT / named))
+    if lands.is_relative_to(ROOT):
+        assert contained(ROOT, named) == ROOT / named
+    else:
+        with pytest.raises(InputError):
+            contained(ROOT, named)
 
 
 def test_a_link_that_stays_inside_the_project_keeps_the_name_the_author_wrote(tmp_path: Path) -> None:
@@ -62,13 +83,6 @@ def test_a_directory_linked_out_of_the_project_refuses_every_file_under_it(tmp_p
     (root / "deck").symlink_to(outside, target_is_directory=True)
     with pytest.raises(InputError):
         contained(root, "deck/index.html")
-
-
-def test_an_absolute_path_outside_the_project_is_refused(tmp_path: Path) -> None:
-    root = tmp_path / "project"
-    root.mkdir()
-    with pytest.raises(InputError):
-        contained(root, tmp_path / "elsewhere.txt")
 
 
 def test_a_build_directory_that_is_not_there_yet_is_confined_as_it_stands(tmp_path: Path) -> None:

@@ -14,6 +14,8 @@ from typing import Any
 
 import jsonschema
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from decktalk.errors import InputError
 from decktalk.findings import Code
@@ -39,7 +41,7 @@ from decktalk.settings import (
     value_of,
     write,
 )
-from decktalk.tomlmap import Key, Nature, Source
+from decktalk.tomlmap import Bounds, Key, Nature, Source
 
 SCHEMA = Path(__file__).resolve().parents[2] / "schemas" / "v1" / "decktalk.json"
 
@@ -83,40 +85,53 @@ def loads(key_id: str, value: object) -> bool:
     return True
 
 
-def edges(key_id: str) -> list[object]:
-    """Every value worth judging at a key's edges, which is the sweep the panel asked for."""
-    bounds = BY_ID[key_id].bounds
-    if bounds is None:
-        return []
+def values(key_id: str) -> st.SearchStrategy[object]:
+    """Every value worth judging for a key, as its own type or as a TOML array of that type."""
+    key = BY_ID[key_id]
+    assert key.bounds is not None
+    if key.bounds.items is not None:
+        return st.lists(around(key.bounds.items, whole=False), max_size=3)
+    return around(key.bounds, whole=key.annotation is int, words=key.annotation is str)
+
+
+def around(bounds: Bounds, *, whole: bool, words: bool = False) -> st.SearchStrategy[object]:
+    """A range's edges exactly, and numbers of either type on each side of every edge.
+
+    A float key is also handed integers, because TOML writes both. An integer key is handed floats
+    with a fraction alone: JSON Schema counts `320.0` as an integer and the loader refuses it as a
+    float, which is a disagreement the track note records rather than one this sweep asserts.
+    """
     if bounds.enum is not None:
-        return [bounds.enum[0], bounds.enum[-1], "a word no set holds"]
-    step = 0.001
-    out: list[object] = []
-    if bounds.ge is not None:
-        out += [bounds.ge, bounds.ge - step]
-    if bounds.gt is not None:
-        out += [bounds.gt + step, bounds.gt]
-    if bounds.le is not None:
-        out += [bounds.le, bounds.le + step]
-    if bounds.lt is not None:
-        out += [bounds.lt - step, bounds.lt]
-    return out
+        members = st.sampled_from(bounds.enum)
+        if words:
+            return members | st.text()
+        return members | st.integers(min_value=min(bounds.enum) - 2, max_value=max(bounds.enum) + 2)
+    edges = [edge for edge in (bounds.ge, bounds.gt, bounds.le, bounds.lt) if edge is not None]
+    return st.sampled_from(edges).flatmap(
+        lambda edge: (
+            st.just(edge)
+            | st.floats(min_value=edge - 1, max_value=edge + 1).filter(lambda one: not (whole and one.is_integer()))
+            | st.integers(min_value=int(edge) - 2, max_value=int(edge) + 2)
+        )
+    )
 
 
-SWEPT = [key.id for key in KEYS if key.bounds is not None and key.annotation is not tuple]
-"""Every key whose range is a span or a set, which is every key the sweep can reach."""
+SWEEP_EXAMPLES = 40
+"""How many values each key is judged at, which reaches both sides of every edge of every key."""
+
+SWEPT = [key.id for key in KEYS if key.bounds is not None]
+"""Every key with a range, whether a span, a set or the range of each item of an array."""
 
 
 class TestThePublishedRangeIsTheEnforcedRange:
     """The one mechanism that keeps an agent's trust in a bound worth having."""
 
     @pytest.mark.parametrize("key_id", SWEPT)
-    def test_the_loader_and_the_schema_judge_every_edge_alike(self, key_id: str) -> None:
-        document = schema()
-        for value in edges(key_id):
-            if isinstance(value, str) and BY_ID[key_id].annotation is not str:
-                continue
-            assert loads(key_id, value) is accepts(document, key_id, value), f"{key_id} at {value!r}"
+    @settings(max_examples=SWEEP_EXAMPLES)
+    @given(data=st.data())
+    def test_the_loader_and_the_schema_judge_every_edge_alike(self, key_id: str, data: st.DataObject) -> None:
+        value = data.draw(values(key_id))
+        assert loads(key_id, value) is accepts(schema(), key_id, value), f"{key_id} at {value!r}"
 
     @pytest.mark.parametrize("key_id", SWEPT)
     def test_a_value_of_the_wrong_type_is_refused_by_both(self, key_id: str) -> None:
