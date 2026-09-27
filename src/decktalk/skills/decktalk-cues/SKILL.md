@@ -47,7 +47,8 @@ file and the patterns that work.
   and the author has seen a frame of it and agreed.
 - Never pass a flag that allows an unresolved or unknown cue through.
 - Change the phrase or the page before the script. A script change re-voices that section.
-- Never run a build without a voice in a project that already holds paid takes.
+- Never replace a paid take. In a project that already holds paid takes, rehearse without a voice
+  only on the sections nobody has paid for.
 
 ## What never fixes a late reveal
 

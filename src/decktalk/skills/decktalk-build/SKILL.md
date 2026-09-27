@@ -19,8 +19,9 @@ craft of a build is knowing which half you are in.
    whether a run is already going. Follow a run that is already going rather than starting a second.
 2. **Rehearse without a voice.** A project whose takes are placeholders costs nothing to build, and
    the film it gives has estimated timing. Say so whenever you show it.
-3. **Never replace a paid take.** Once real takes exist, a build without a voice is refused, and the
-   only way past throws them away. That is the refusal working, not an obstacle.
+3. **Never replace a paid take.** A build without a voice that reaches a section with a paid take
+   is refused, and the only way past throws that take away. That is the refusal working, not an
+   obstacle. A build limited to the sections nobody has paid for is the cheap rehearsal instead.
 4. **Judge before you spend.** `decktalk check` measures the project without producing anything and
    prices what a voiced run would cost. Stop on anything certain. Read the rows it could not measure
    as well as the rows it failed, because a skipped row proves nothing and still leaves a run green.
@@ -55,7 +56,8 @@ craft of a build is knowing which half you are in.
   changed. Work in the checkout that holds the build, or say what a full re-voice would cost.
 - When every section plans as new in a project that was voiced before, the cache is missing rather
   than the script changed. Stop and find out which.
-- Limiting a build to some sections limits what is recorded, not what is voiced.
+- Limiting a build to some sections limits what is voiced as well as what is recorded, so the price
+  of a limited run covers those sections alone.
 - A film built without a voice has no spoken landmark, so some cue measurements cannot be taken until
   it is voiced.
 
