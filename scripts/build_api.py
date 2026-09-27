@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate src/decktalk/__init__.py, whose `__all__` is the reachable closure of the public surface.
 
     uv run scripts/build_api.py --write    # write the package's __init__.py

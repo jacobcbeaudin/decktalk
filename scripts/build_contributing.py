@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate the module tree and the check table in CONTRIBUTING.md from the code itself.
 
     uv run scripts/build_contributing.py --write    # write both blocks

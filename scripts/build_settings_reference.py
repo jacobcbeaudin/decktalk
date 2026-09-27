@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate the settings reference from the committed JSON Schema.
 
     uv run scripts/build_settings_reference.py --write    # write the page

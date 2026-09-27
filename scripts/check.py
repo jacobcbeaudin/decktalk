@@ -351,10 +351,12 @@ GENERATES = "build_"
 def generator(name: str) -> tuple[str, ...]:
     """A generated file held to its source. Every generator takes `--check` and `--write` alike.
 
-    The script is named to the project's own interpreter rather than run as a file, because a file
-    run by `uv run` is resolved as a standalone script in an environment of its own and six of these
-    read the package they generate from. The lockfile decides what a generator sees, the same way it
-    decides what a test sees.
+    The script is named to the project's own interpreter rather than run as a file. No generator
+    carries an inline script header, so either form runs in the project environment today, and
+    naming the interpreter keeps it there even if one gains a header, because a file with a header
+    is resolved by `uv run` in an environment of its own and most generators read the package they
+    generate from. The lockfile decides what a generator sees, the same way it decides what a test
+    sees.
     """
     return (*UV, "python", f"scripts/{name}.py", CHECK)
 

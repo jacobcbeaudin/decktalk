@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate docs/changelog.mdx from CHANGELOG.md, which release-please writes.
 
     uv run scripts/build_changelog.py --write    # write the page

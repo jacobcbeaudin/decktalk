@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate one docs page per error code and per finding code, from the enums that declare them.
 
     uv run scripts/build_code_pages.py --write    # write every page

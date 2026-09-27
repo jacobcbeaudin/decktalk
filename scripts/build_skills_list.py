@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate the skills table in docs/agents/skills.mdx from the packaged SKILL.md front matter.
 
     uv run scripts/build_skills_list.py --write    # write the table

@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate the JSON Schema for decktalk.toml, and the per-machine filter of it.
 
     uv run scripts/build_settings_schema.py --write    # write both schemas and their published copies

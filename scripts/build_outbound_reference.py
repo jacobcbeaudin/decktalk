@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate docs/reference/what-leaves-your-machine.mdx from docs/data/outbound.toml.
 
     uv run scripts/build_outbound_reference.py --write    # write the page

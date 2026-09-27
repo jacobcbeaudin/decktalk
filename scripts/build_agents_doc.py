@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Keep the command tree in AGENTS.md equal to the command tree the code has.
 
     uv run scripts/build_agents_doc.py --write    # write the block

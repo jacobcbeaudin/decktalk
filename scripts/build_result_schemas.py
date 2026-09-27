@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate schemas/v1/results/*.json, one JSON Schema per command result, from the models.
 
     uv run scripts/build_result_schemas.py --write    # write every schema

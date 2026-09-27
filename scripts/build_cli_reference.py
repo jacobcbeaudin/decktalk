@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate docs/reference/cli.mdx from the command line itself.
 
     uv run scripts/build_cli_reference.py --write    # write the page
