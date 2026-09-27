@@ -630,7 +630,9 @@ This is the only reading of the environment there is. `overrides` is an iterable
 | `events` | The stream every run on this machine writes to. |
 | `cache_dir` | Where this machine keeps the browser and the encoder it fetches. |
 | `voice_key` | True when the credential a paid run would use is set. It is asked and never revealed. |
-| `provider(name)` | The factory one `[voice] provider` name answers to, or an `InputError` naming the providers it knows. |
+| `providers` | The voices this machine answers with by name, or None for the ones DeckTalk ships. A host's table replaces the shipped one rather than sitting over it. |
+| `dotenv` | Whether a project's `.env` is read. True from the environment, false from `Machine.of` unless the host says otherwise. |
+| `allow_any_api_base` | Whether `[elevenlabs] api_base` may name a host other than ElevenLabs. |
 | `install(*, cancel=None)` | Fetch the browser and the encoder, before a build asks for them. |
 | `doctor(*, measure=False, cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. |
 | `apply(fix, *, unsafe=False)` | Carry out the fixes a machine can make. |
@@ -646,6 +648,123 @@ report = machine.doctor()
 for tool in report.tools:
     print(tool.tool, tool.version, tool.path)
 print(report.python, report.platform, report.cache, report.voice_key)
+```
+
+## Running DeckTalk inside a service
+
+A service that renders other people's projects holds three things apart that an author's own machine
+holds together: the voice key, the pages, and the processes that touch each. This section is the
+contract a host builds on.
+
+### A machine the host builds
+
+```python
+decktalk.Machine.of(*, environ, config_path, cwd, cache_dir, providers=None, overrides=(),
+                    dotenv=False, allow_any_api_base=False) -> Machine
+```
+
+`Machine.from_environment()` reads the process. `Machine.of` reads nothing, so every value a job may
+see is one the host chose.
+
+| Parameter | Meaning |
+|---|---|
+| `environ` | Every variable a run on this machine may see. A render job passes none, and a voice job passes the key and the voice id. |
+| `config_path` | The per-machine settings file, read when it is there and where a machine fix lands. The host writes the machine-scoped keys it sets, such as `[record] concurrency`, here. |
+| `cwd` | The directory a relative project path is read from. |
+| `cache_dir` | Where the fetched Chromium and ffmpeg live. |
+| `providers` | The voices this machine answers with by name. It replaces the shipped table, so a machine built with a fake voice reaches no real one by a name the host left out. |
+| `overrides` | `(key, value)` pairs that override settings on this machine. A project opened with overrides of its own uses those instead, so a host that pins a project key puts its machine keys in `config_path`. |
+| `dotenv` | False by default, so a project's `.env` is never read and a tenant's upload cannot supply a credential. |
+| `allow_any_api_base` | False by default, so the key goes to ElevenLabs and nowhere else. |
+
+A project-scoped key the host pins, such as the page policy, goes to `decktalk.open` as an override,
+which is the top layer and wins over whatever the project file says.
+
+```python
+project = decktalk.open(work, machine=render, overrides=("record.page_policy=untrusted",))
+```
+
+### One call on one worker thread
+
+Every call is synchronous and blocks until its run is over. Chromium is driven through Playwright's
+synchronous API, which refuses to run on a thread whose asyncio loop is running, so an async host
+runs each call on a worker thread, for example with `asyncio.to_thread`. Each call opens and closes
+its own run, and the machine's toolchain, voices and `.env` rule are bound for that run alone, so two
+calls on two threads do not share them.
+
+A run checks its `Cancel` between sections, and `tools.timeout_seconds` stops any one ffmpeg call that
+runs longer than it allows.
+
+### Voice and render in separate processes
+
+The voice key must never share a process with a page, because a page is someone else's script and
+runs in a Chromium the process started. So a host runs the stages in two kinds of process, and the
+build directory is the only thing that moves between them.
+
+| Process | Calls | What it holds |
+|---|---|---|
+| Voice | `narrate` and `soundscape`, with `voice=Voicing.PAID` | The key and the voice id. It opens no page. |
+| Render | `check`, `storyboard`, `record`, `assemble` and `verify` | No key. Its pages run under `record.page_policy = "untrusted"`. |
+
+`cue` reads only files and opens no page, so it runs in either. `assemble` draws the poster from the
+page, which is why it belongs to the render side.
+
+A host never calls `build` on a voiced run. A voiced build draws the storyboard, narrates and records
+in one process, which puts the key and the page side by side.
+
+```python
+import decktalk
+from pathlib import Path
+
+work = Path("/jobs/1234")          # the project, and the build directory both jobs share
+cache = Path("/opt/decktalk-cache")
+
+# The voice job, in its own process. Only this machine sees the key.
+voice = decktalk.Machine.of(
+    environ={"ELEVENLABS_API_KEY": key, "ELEVENLABS_VOICE_ID": voice_id},
+    config_path=Path("/etc/decktalk/voice.toml"),
+    cwd=work,
+    cache_dir=cache,
+)
+decktalk.open(work, machine=voice).narrate(voice=decktalk.Voicing.PAID, max_cost=ceiling)
+
+# The render job, in another process whose environment holds no key at all.
+render = decktalk.Machine.of(environ={}, config_path=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache)
+project = decktalk.open(work, machine=render, overrides=("record.page_policy=untrusted",))
+project.cue()
+project.record()
+project.assemble()
+result = project.verify()
+```
+
+### A ledger of what was bought
+
+A `spend` line prices a whole run, before or after it. A `take.charged` line is written the moment
+the provider is paid for one take, once per take, after the provider answered and before anything
+that could fail writes the take. So a host that keeps its own ledger records every take it paid for,
+including one whose file never reached the disk, and a run that fails on its fourth take still leaves
+three lines.
+
+| Field | Meaning |
+|---|---|
+| `section` | The section the take voices. |
+| `take` | The take's content hash, which names its file in the cache. |
+| `characters` | How many characters of that section's text were sent. |
+| `dollars` | What the take cost at the price in force. |
+
+The hash is what makes a retry safe to meter. A take already on disk is read from the cache and never
+bought again, so it earns no line, and a ledger keyed on `take` sees at once when two runs bought
+the same words. `soundscape` writes no `take.charged` line, and its purchases are in its `spend`.
+
+```python
+import decktalk
+
+def meter(event):
+    if isinstance(event, decktalk.TakeCharged):
+        ledger.record(job=job_id, section=event.section, take=event.take, dollars=event.dollars)
+
+with project.events.subscribe(meter):
+    project.narrate(voice=decktalk.Voicing.PAID, max_cost=ceiling)
 ```
 
 ## Settings

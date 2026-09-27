@@ -202,6 +202,29 @@ until the page says it is ready, and the first frame after the cover is narratio
 holds something that always moves, so frames keep coming while a still page waits. Everything after
 that is arithmetic on frames, and no part of it reads a wall clock.
 
+## A host that runs other people's projects
+
+The library is also the engine of a service that renders decks strangers wrote, and three rules
+keep such a deck from reaching what the service holds.
+
+- **The host builds the machine.** `Machine.from_environment()` is the only reading of the process
+  environment, and `Machine.of` reads nothing, so a job sees exactly the variables, the settings
+  file, the cache and the voices its host chose. Such a machine reads no project's `.env`, and the key
+  goes to ElevenLabs and nowhere else unless the host says otherwise.
+- **An untrusted page is sealed.** Under `record.page_policy = "untrusted"` Chromium runs with its
+  sandbox on or not at all, every request off the project's origin is refused through every channel
+  a page can open, and under both policies the browser is handed a scrubbed environment rather than
+  the process's own.
+- **The key never shares a process with a page.** `narrate` and `soundscape` run in a voice process
+  that holds the key and opens no page. `check`, `storyboard`, `record`, `assemble` and `verify` run
+  in a render process that holds no key. The build directory is the only thing that moves between
+  them, and a host never runs a voiced `build`, which would put both in one process. Each paid take
+  is a `take.charged` line on the stream the moment it is bought, which is what a host's own ledger
+  reads.
+
+[The Python API](https://docs.decktalk.ai/reference/python-api#running-decktalk-inside-a-service)
+is the contract a host builds on.
+
 ## Two readers, one product
 
 An author reads the tables the command line prints on a terminal. An agent reads the JSON, the
