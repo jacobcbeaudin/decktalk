@@ -123,11 +123,10 @@ def test_the_sequence_counts_per_run_so_no_file_has_a_gap() -> None:
     assert [(event.run, event.seq) for event in seen] == [("r1", 0), ("r2", 0), ("r1", 1)]
 
 
-def test_a_project_view_yields_only_the_runs_that_project_opened() -> None:
+def test_a_subscription_to_named_runs_yields_only_those_runs() -> None:
     machine = Events()
-    project = machine.view(("r1",))
     seen: list[Event] = []
-    with project.subscribe(seen.append):
+    with machine.subscribe(seen.append, runs=("r1",)):
         machine.emit("r1", Log, level=Level.INFO, message="Mine.")
         machine.emit("r2", Log, level=Level.INFO, message="Somebody else's.")
     assert [event.message for event in seen] == ["Mine."]  # type: ignore[attr-defined]

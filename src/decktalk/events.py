@@ -262,25 +262,19 @@ class Events:
 
     The stream lives on the machine rather than on a project, because installing a toolchain and
     reporting on a machine hold no project and would otherwise leave `--events` silent on the two
-    commands that download two hundred megabytes. A project's own view is one of these filtered to
-    the runs that project opened.
+    commands that download two hundred megabytes. A project's own view is one of these that hands
+    every subscription to the machine's stream, filtered to the runs that project opened.
     """
 
-    def __init__(self, *, source: Events | None = None, runs: Iterable[str] | None = None) -> None:
+    def __init__(self, *, source: Events | None = None) -> None:
         self._source = source or self
-        self._runs = frozenset(runs) if runs is not None else None
         self._subscriptions: list[Subscription] = []
         self._counters: dict[str, itertools.count[int]] = {}
         self._lock = threading.Lock()
 
-    def view(self, runs: Iterable[str]) -> Events:
-        """This stream filtered to the named runs, which is what a project hands its own callers."""
-        return Events(source=self._source, runs=runs)
-
     def subscribe(self, listener: Listener, *, runs: Iterable[str] | None = None) -> Subscription:
-        """Attach a renderer, which receives every event of the runs this view covers."""
-        wanted = self._runs if runs is None else frozenset(runs)
-        subscription = Subscription(self._source, listener, wanted)
+        """Attach a renderer, which receives every event of the named runs, or of every run."""
+        subscription = Subscription(self._source, listener, None if runs is None else frozenset(runs))
         self._source.attach(subscription)
         return subscription
 
