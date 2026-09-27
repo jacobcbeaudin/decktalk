@@ -15,6 +15,7 @@ from decktalk.errors import ToolError
 from decktalk.media.browser import chromium, open_page
 from decktalk.media.origin import (
     HIDDEN,
+    OFF_ORIGIN,
     ORIGIN,
     OUTSIDE,
     UNDECLARED,
@@ -143,12 +144,16 @@ class _Route:
     def __init__(self) -> None:
         self.answer: dict[str, object] | None = None
         self.continued = False
+        self.aborted: str | None = None
 
     def fulfill(self, **kwargs: object) -> None:
         self.answer = kwargs
 
     def continue_(self) -> None:
         self.continued = True
+
+    def abort(self, error_code: str) -> None:
+        self.aborted = error_code
 
 
 class _Target:
@@ -170,7 +175,7 @@ def test_the_router_answers_a_project_file_and_leaves_every_other_origin_alone(t
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text("<p>hi</p>", encoding="utf-8")
     target = _Target()
-    assets = route_pages(target, whole(tmp_path))
+    assets = route_pages(target, whole(tmp_path), trusted=True)
 
     served = target.request(f"{ORIGIN}/deck/index.html")
     assert served.answer == {"status": 200, "content_type": "text/html", "body": b"<p>hi</p>"}
@@ -190,6 +195,32 @@ def test_the_router_answers_a_project_file_and_leaves_every_other_origin_alone(t
     climbed = target.request(f"{ORIGIN}/../../etc/passwd")
     assert climbed.answer is not None and climbed.answer["status"] == 403
     assert not climbed.continued, "an escape is refused rather than sent to the network"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cdn.example.com/katex.js",
+        "http://169.254.169.254/latest/meta-data/",
+        "https://project.localhost/deck/index.html",
+        "http://project.localhost:8080/deck/index.html",
+        "http://127.0.0.1:9000/admin?key=secret",
+    ],
+)
+def test_an_untrusted_page_reaches_no_origin_but_the_projects_own(tmp_path, url):
+    """0.5.0 sent every request for another origin to the network, whoever wrote the page."""
+    (tmp_path / "deck").mkdir()
+    (tmp_path / "deck" / "index.html").write_text("<p>hi</p>", encoding="utf-8")
+    target = _Target()
+    assets = route_pages(target, whole(tmp_path), trusted=False)
+    refused = target.request(url)
+    assert refused.aborted == "blockedbyclient"
+    assert not refused.continued and refused.answer is None
+    assert assets.refused == [f"{url.split('?')[0]} ({OFF_ORIGIN})"]
+    # The host is still named, so the recording says what the page reached for.
+    assert assets.external == [url.split("/")[0] + "//" + url.split("/")[2]]
+    served = target.request(f"{ORIGIN}/deck/index.html")
+    assert served.answer is not None and served.answer["status"] == 200
 
 
 def test_the_server_serves_the_project_and_names_every_page(tmp_path):
@@ -371,7 +402,7 @@ def test_a_declaration_outside_the_project_is_dropped_rather_than_opened(tmp_pat
 def test_the_router_records_what_it_turned_away(tmp_path):
     """A page reaching for the script is a fact the recording carries, not a 403 only the page saw."""
     target = _Target()
-    assets = route_pages(target, project(tmp_path))
+    assets = route_pages(target, project(tmp_path), trusted=True)
     refused = target.request(f"{ORIGIN}/script.md")
     assert refused.answer is not None and refused.answer["status"] == 403
     assert assets.refused == [f"script.md ({UNDECLARED})"]

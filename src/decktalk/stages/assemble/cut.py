@@ -127,6 +127,7 @@ def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None
             height=video.height,
             background=video.slate_color,
             browser_path=inputs.settings.record.browser_path,
+            policy=inputs.settings.record.page_policy,
         )
     except ToolError as refused:
         run.note(f"A slate could not be drawn ({refused}), so section {section.number} plays a plain frame.",

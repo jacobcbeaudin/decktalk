@@ -55,7 +55,7 @@ class FakeChromium:
         self.broken = broken
         self.launches: list[str | None] = []
 
-    def launch(self, executable_path: str | None = None) -> FakeBrowser:
+    def launch(self, executable_path: str | None = None, **_options: object) -> FakeBrowser:
         self.launches.append(executable_path)
         target = Path(executable_path or self.executable_path)
         if not target.is_file():

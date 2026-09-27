@@ -12,10 +12,12 @@ import pytest
 from decktalk.artifacts import Cut, Cuts, RecordingLog, Words
 from decktalk.captions import CaptionCue
 from decktalk.errors import ToolError
+from decktalk.inputs import Inputs
 from decktalk.media import browser
 from decktalk.media.pagereport import CueRow, MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
+from decktalk.settings import BY_ID
 from decktalk.stages.assemble.cut import cut_list
 from decktalk.stages.assemble.publish import (
     SOUND_CAPTION_SECONDS,
@@ -259,7 +261,7 @@ def test_a_refusal_from_the_media_layer_costs_the_film_nothing(tmp_path, write_p
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
 
-    def refuse(_path: str = "") -> None:
+    def refuse(_path: str = "", **_named: str) -> None:
         raise ToolError("could not launch a browser.")
 
     monkeypatch.setattr(browser, "chromium", refuse)
@@ -278,8 +280,8 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, write_proj
             return None
 
     @contextmanager
-    def chromium(_path: str = "") -> Iterator[object]:
-        launched.append("chromium")
+    def chromium(_path: str = "", *, policy: str) -> Iterator[object]:
+        launched.append(policy)
         yield object()
 
     def screenshot(_page: object, _url: str, out: Path, **_kwargs: object) -> None:
@@ -296,11 +298,11 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, write_proj
     assert render_poster(inputs, opened.run, out) == out
     out.unlink()
     assert render_poster(inputs, opened.run, out) == out
-    assert launched == ["chromium"]
+    assert launched == ["trusted"]
     assert out.read_bytes() == b"poster"
     (tmp_path / "deck" / "index.html").write_text("<html>edited</html>", encoding="utf-8")
     render_poster(inputs, opened.run, out)
-    assert launched == ["chromium", "chromium"]
+    assert launched == ["trusted", "trusted"]
 
 
 def test_a_project_with_no_page_section_draws_no_poster(tmp_path, write_project, open_run):
@@ -347,3 +349,19 @@ def test_the_cut_list_a_transcript_reads_carries_every_section(tmp_path, write_p
     cuts: Cuts = cut_list(inputs, rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}))
     assert len(cuts.sections) == 4
     assert cuts.at(2.5).section == 2
+
+
+def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, write_project, open_run, monkeypatch):
+    """The poster opens the author's page, so it is sandboxed exactly as the recording of that page is."""
+    write_project(tmp_path)
+    inputs = Inputs.load(tmp_path, environ={BY_ID["record.page_policy"].environment: "untrusted"})
+    opened = open_run(tmp_path)
+    launched: list[str] = []
+
+    def refuse(_path: str = "", *, policy: str) -> None:
+        launched.append(policy)
+        raise ToolError("could not launch a browser.")
+
+    monkeypatch.setattr(browser, "chromium", refuse)
+    render_poster(inputs, opened.run, tmp_path / "poster.png")
+    assert launched == ["untrusted"]

@@ -121,6 +121,7 @@ class Drawn:
     assets: FakeAssets
     reports: dict[str, PageReport] = field(default_factory=dict)
     shots: list[str] = field(default_factory=list)
+    policies: list[str] = field(default_factory=list)
     share: float = 5.0
 
     def report(self, page: str, *scenes: dict[str, Any], warnings: Sequence[dict[str, Any]] = ()) -> None:
@@ -134,7 +135,8 @@ def drawn(monkeypatch: pytest.MonkeyPatch) -> Drawn:
     made = Drawn(page=FakePage(), assets=FakeAssets())
 
     @contextmanager
-    def chromium(_browser_path: str = "") -> Iterator[object]:
+    def chromium(_browser_path: str = "", *, policy: str) -> Iterator[object]:
+        made.policies.append(policy)
         yield object()
 
     def open_page(*_args: object, **_kwargs: object) -> tuple[FakePage, FakeAssets]:

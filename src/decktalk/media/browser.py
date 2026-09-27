@@ -12,6 +12,15 @@ Two rules hold this module to a page it does not trust. Every call into the page
 because a deck's own script runs in the same thread and a page that never answers would otherwise
 hold a build for as long as it cared to. And the probe is sealed onto the window before any script
 of the page runs, so the measurements come from the instrumentation the recorder injected.
+
+`[record] page_policy` decides how far the page itself is trusted, and every launch reads it, so
+`check`, `storyboard` and the poster follow the same policy as `record`. A trusted page is the
+author's own work and reaches the network as it would in the author's browser. An untrusted page is
+a stranger's. Its Chromium runs with the sandbox on and refuses to start without it, its requests
+off the origin are aborted by the router, and its browser is pointed at a proxy that answers nothing,
+which closes the channels routing never sees: a WebSocket, a DNS lookup and a WebRTC probe. Under
+both policies the browser is given the environment `environment.py` builds rather than the
+process's own, so a key the host holds never reaches the process that runs a page's script.
 """
 
 from __future__ import annotations
@@ -23,21 +32,23 @@ import shutil
 import statistics
 import tempfile
 import time
+import weakref
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import InputError, ToolError
-from ..settings import COLOR_SCHEMES, MotionConfig
+from ..settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
 from . import MILLISECONDS, pagereport
 from .encode import css_color
+from .environment import browser_environment
 from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport, Recording
 
@@ -128,6 +139,72 @@ font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;overflow:hidden}}
 </div><div class="foot">{foot}</div></body></html>"""
 
 
+PagePolicy = Literal["trusted", "untrusted"]
+"""How far a page is trusted, which is the closed set `[record] page_policy` publishes."""
+
+TRUSTED: PagePolicy = "trusted"
+UNTRUSTED: PagePolicy = "untrusted"
+
+DEAD_PROXY = "http://127.0.0.1:9"
+"""Truth: the discard port on this machine, where no proxy answers, so a request sent to it goes nowhere.
+
+The router answers the project's origin before the network stack sees a request, so the proxy is
+reached only by what routing cannot stop, which is every channel an untrusted page must not have.
+"""
+
+EVERY_HOST = "<-loopback>"
+"""Truth: Chromium's word for taking loopback off its implicit bypass list, so no host skips the proxy."""
+
+UNTRUSTED_ARGS = ("--force-webrtc-ip-handling-policy=disable_non_proxied_udp",)
+"""What an untrusted page's Chromium is started with, which keeps WebRTC from sending UDP past the proxy."""
+
+SANDBOX_HINT = (
+    "An untrusted page runs only inside Chromium's sandbox. In a container that means a user other than "
+    "root and a seccomp profile that allows user namespaces."
+)
+"""What a machine that cannot start the sandbox is told, because the sandbox is a property of the machine."""
+
+
+def page_policy(value: str) -> PagePolicy:
+    """The policy a page is opened under, refused here rather than read as the weaker of the two.
+
+    An unknown value is a project file that says something untrue about the render, and reading it as
+    trusted would open the network to a page whose host meant to close it.
+    """
+    if value not in PAGE_POLICIES:
+        raise InputError(
+            f"[record] page_policy = {value!r} is not one of {', '.join(PAGE_POLICIES)}.",
+            hint=f"Set it to one of {', '.join(PAGE_POLICIES)}.",
+        )
+    return value  # type: ignore[return-value]  (the settings tuple and the type above are held equal by a test)
+
+
+def launch_options(policy: PagePolicy) -> dict[str, Any]:
+    """The keyword arguments a launch under `policy` passes to Playwright, beyond the executable.
+
+    The environment is scrubbed under both policies. The sandbox, the proxy and the WebRTC switch are
+    the untrusted policy's alone, because a trusted page is a deck on its author's own machine and
+    the machine's own proxy is the one it should use.
+    """
+    options: dict[str, Any] = {"env": browser_environment()}
+    if policy == UNTRUSTED:
+        options |= {
+            "chromium_sandbox": True,
+            "proxy": {"server": DEAD_PROXY, "bypass": EVERY_HOST},
+            "args": list(UNTRUSTED_ARGS),
+        }
+    return options
+
+
+_POLICIES: weakref.WeakKeyDictionary[Browser, PagePolicy] = weakref.WeakKeyDictionary()
+"""The policy each open browser was launched under, which every page it opens is routed by."""
+
+
+def trusts(browser: Browser) -> bool:
+    """Whether a browser was launched for a trusted page, which a browser this module never launched was not."""
+    return _POLICIES.get(browser) == TRUSTED
+
+
 class RecordingSink(Protocol):
     """Where the log of one recording is kept, which the recorder clears before it captures and fills after.
 
@@ -159,26 +236,29 @@ def driving(what: str) -> Iterator[None]:
 
 
 @contextmanager
-def chromium(browser_path: str = "") -> Iterator[Browser]:
-    """A launched headless Chromium, as the machine configures it, closed on exit.
+def chromium(browser_path: str = "", *, policy: str = TRUSTED) -> Iterator[Browser]:
+    """A launched headless Chromium, as the machine and the page policy configure it, closed on exit.
 
-    No proxy argument is passed. Request routing answers the local origin before the network stack
-    reaches it, so no proxy ever sees that host, and every other request a recorded page makes goes
-    the way the machine sends it, through its own proxy and its own logging.
+    Under the trusted policy no proxy argument is passed. Request routing answers the local origin
+    before the network stack reaches it, so no proxy ever sees that host, and every other request a
+    recorded page makes goes the way the machine sends it, through its own proxy and its own logging.
+    Under the untrusted policy the browser is sealed as `launch_options` says.
 
     `browser_path` is `[record] browser_path`, the executable a machine that manages its own
     Chromium names. It is empty on a machine DeckTalk fetches the browser for, which is where
-    `launch` fetches it.
+    `launch` fetches it. `policy` is `[record] page_policy`, which every caller that opens a
+    project's page passes on.
     """
     with sync_playwright() as pw:
-        browser = launch(pw, browser_path)
+        browser = launch(pw, browser_path, policy=policy)
+        _POLICIES[browser] = page_policy(policy)
         try:
             yield browser
         finally:
             browser.close()
 
 
-def launch(pw: Playwright, browser_path: str = "") -> Browser:
+def launch(pw: Playwright, browser_path: str = "", *, policy: str = TRUSTED) -> Browser:
     """A launched Chromium, fetching the build Playwright manages when this machine has not got it.
 
     This is the one place a browser starts, so every command gets the browser it needs without
@@ -189,26 +269,35 @@ def launch(pw: Playwright, browser_path: str = "") -> Browser:
     error says to run `decktalk install`, which is the one command that may ask for a password.
 
     A machine that names its own executable is told about that executable instead. Fetching would
-    not help it: the next launch would use the same path again.
+    not help it: the next launch would use the same path again. An untrusted page whose Chromium is
+    on disk and will not start is a machine that cannot run the sandbox, which a fetch does not
+    change either, so it is refused and never started without one.
     """
+    sealed = page_policy(policy)
+    options = launch_options(sealed)
     try:
-        return pw.chromium.launch(executable_path=browser_path or None)
+        return pw.chromium.launch(executable_path=browser_path or None, **options)
     except PlaywrightError as exc:
+        said = str(exc).splitlines()[0]
         if browser_path:
             raise ToolError(
-                f"could not launch the Chromium at {browser_path} ({str(exc).splitlines()[0]}).",
+                f"could not launch the Chromium at {browser_path} ({said}).",
                 hint="[record] browser_path names it. Clear that setting to use the build DeckTalk fetches.",
             ) from exc
+        if sealed == UNTRUSTED and chromium_fetch.installed_chromium(pw) is not None:
+            raise ToolError(f"could not launch Chromium with its sandbox on ({said}).", hint=SANDBOX_HINT) from exc
     # A launch that failed with no executable named falls through to here, which is the fetch.
     if chromium_fetch.installed_chromium(pw) is not None:
         log.info("Chromium is on this machine and did not launch, so the build is being fetched again")
     chromium_fetch.fetch_chromium()
     try:
-        return pw.chromium.launch()
+        return pw.chromium.launch(**options)
     except PlaywrightError as exc:
         raise ToolError(
             f"Chromium was fetched and still would not launch ({str(exc).splitlines()[0]}).",
-            hint="Run `decktalk install`, which also installs the system libraries Chromium needs and is the one "
+            hint=SANDBOX_HINT
+            if sealed == UNTRUSTED
+            else "Run `decktalk install`, which also installs the system libraries Chromium needs and is the one "
             "command that may ask for a password.",
         ) from exc
 
@@ -273,7 +362,7 @@ def open_page(
     instrument(page)
     for script in motion_scripts(motion):
         page.add_init_script(script)
-    return page, route_pages(page, allowed, documents)
+    return page, route_pages(page, allowed, documents, trusted=trusts(browser))
 
 
 def await_ready(page: Page) -> None:
@@ -397,7 +486,7 @@ def capturing(
                 record_video_size={"width": width, "height": height},
             )
         opened = time.monotonic()
-        assets = route_pages(context, allowed, documents)
+        assets = route_pages(context, allowed, documents, trusted=trusts(browser))
         capture = Capture(context=context, assets=assets, directory=directory, opened=opened)
         context.add_init_script(PROBE_JS)
         context.add_init_script(SEAL_JS)
@@ -590,6 +679,7 @@ def render_slate(
     height: int,
     background: str,
     browser_path: str = "",
+    policy: str = TRUSTED,
 ) -> Path:
     """A titled placeholder frame, for a section whose clip is missing.
 
@@ -606,7 +696,7 @@ def render_slate(
         foot=html.escape(foot),
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    with chromium(browser_path) as browser:
+    with chromium(browser_path, policy=policy) as browser:
         page = browser.new_page(viewport={"width": width, "height": height})
         page.set_content(doc)
         await_ready(page)

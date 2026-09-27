@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import InputError, NotBuiltError
-from decktalk.media import ffmpeg
+from decktalk.inputs import Inputs
+from decktalk.media import browser, ffmpeg
 from decktalk.results import SectionKind, Substitute
+from decktalk.settings import BY_ID
 from decktalk.stages.assemble.cut import (
     _judge_missing,
     concat,
@@ -17,6 +19,7 @@ from decktalk.stages.assemble.cut import (
     render_clip,
     render_sections,
     rendered_starts,
+    section_slate,
     section_targets,
     stray_cuts,
     vfades,
@@ -275,3 +278,15 @@ def test_a_clip_the_project_names_opens_as_one_file_and_follows_no_name_inside_i
     render_clip(inputs, open_run(tmp_path).run, make_encoder(inputs), slot, tmp_path / "out.mp4", 0.0, strict=True)
     opened = ffmpeg.source(inputs.path("media/clip.mp4"))
     assert any(call[: len(opened)] == opened for call in fake_ffmpeg.calls)
+
+
+def test_an_untrusted_project_draws_its_slate_untrusted(tmp_path, write_project, open_run, monkeypatch):
+    """A slate carries the project's own chapter title, so it launches under the project's policy."""
+    toml = "[project]\nname = 't'\n[[section]]\nnumber = 1\nclip = 'media/slot.mp4'\noptional = true\n"
+    write_project(tmp_path, toml)
+    inputs = Inputs.load(tmp_path, environ={BY_ID["record.page_policy"].environment: "untrusted"})
+    asked: list[object] = []
+    monkeypatch.setattr(browser, "render_slate", lambda out, **named: asked.append(named["policy"]) or out)
+    (slot,) = inputs.document.clip_sections
+    section_slate(inputs, open_run(tmp_path).run, slot)
+    assert asked == ["untrusted"]

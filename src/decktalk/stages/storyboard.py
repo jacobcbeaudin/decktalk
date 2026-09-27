@@ -344,7 +344,7 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Sel
     video, cfg = inputs.settings.video, inputs.settings.record
     times = inputs.cue_times()
     drawn: list[Panel] = []
-    with chromium(cfg.browser_path) as browser:
+    with chromium(cfg.browser_path, policy=cfg.page_policy) as browser:
         page, assets = open_page(
             browser,
             Allowed.of(inputs.root, inputs.served_paths()),

@@ -36,6 +36,7 @@ from decktalk.machine import (
     init,
 )
 from decktalk.media import ffmpeg as ffmpeg_module
+from decktalk.media.environment import browser_environment
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.project import open as open_project
@@ -189,6 +190,17 @@ def test_a_run_hands_its_pair_and_its_cancel_to_every_ffmpeg_call(tmp_path: Path
         assert bound is not None
         assert bound.cancel is run.cancel
         assert bound.paths() == (str(pair[0]), str(pair[1]))
+
+
+def test_a_browser_is_built_from_the_machines_environment_and_never_the_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LANG", "the-process-language")
+    here = a_machine(tmp_path, LANG="the-machines-language", ELEVENLABS_API_KEY="sk-not-a-key")
+    with here.run():
+        seen = browser_environment()
+    assert seen["LANG"] == "the-machines-language"
+    assert "ELEVENLABS_API_KEY" not in seen
 
 
 # ---- the run ------------------------------------------------------------------------------

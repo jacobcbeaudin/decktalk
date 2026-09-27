@@ -18,6 +18,11 @@ put them on screen or send them to whoever it liked.
 The router also keeps the project-relative path of every file it served, which is what lets `record`
 key a section on the assets its page actually loaded rather than on the page file alone.
 
+A request for another origin is where the two page policies part. A trusted page is the author's own
+work, so its request goes to the network the way it would in the author's browser and the recording
+names the host it reached. An untrusted page is a stranger's, so its request is refused before it
+leaves the browser, whatever its scheme, and the recording names the host it reached for all the same.
+
 `decktalk serve` is the other half: an author previewing a page in their own browser needs a real
 server, so this module also runs one from the standard library, bound to 127.0.0.1 by default.
 """
@@ -263,20 +268,37 @@ class Assets:
             where.append(rel)
 
     def turned_away(self, url: str, why: str) -> None:
-        """Note a request this origin would not answer, as the path it asked for and the reason."""
-        asked = f"{unquote(urlsplit(url).path).lstrip('/')} ({why})"
+        """Note a request this origin would not answer, as what it asked for and the reason.
+
+        A request under the origin is named by its project path. One for another origin is named by
+        its host and path, and never by its query, which is where a page would put what it meant to send.
+        """
+        parts = urlsplit(url)
+        path = unquote(parts.path).lstrip("/")
+        mine = f"{parts.scheme}://{parts.netloc}" == ORIGIN
+        asked = f"{path if mine else f'{parts.scheme}://{parts.netloc}/{path}'} ({why})"
         if asked not in self.refused:
             self.refused.append(asked)
 
 
+OFF_ORIGIN = "a page that is not trusted may reach no origin but the project's own"
+"""Why a request for another origin is refused under the untrusted policy, which the recording keeps."""
+
+
 def route_pages(
-    target: Page | BrowserContext, allowed: Allowed, documents: Mapping[str, bytes] | None = None
+    target: Page | BrowserContext,
+    allowed: Allowed,
+    documents: Mapping[str, bytes] | None = None,
+    *,
+    trusted: bool,
 ) -> Assets:
     """Answer every request under the origin from what `allowed` names, and return what was served.
 
-    `target` is a Playwright page or browser context. A request to any other origin is left alone, so
-    a page that reaches for a CDN still does what it would do in a browser and `record` can report it.
-    Every route is answered, because a route left unanswered hangs the page that made it.
+    `target` is a Playwright page or browser context. A request to any other origin is noted either
+    way. A trusted page's request then goes on, so a page that reaches for a CDN still does what it
+    would do in a browser and `record` can report it. An untrusted page's request is aborted, so
+    nothing it asks for off the origin ever reaches the network stack. Every route is answered,
+    because a route left unanswered hangs the page that made it.
 
     `documents` are the paths a caller answers itself, such as the cue times a run resolved, which no
     file on disk holds. They are answered from memory as JSON and never recorded as assets, because a
@@ -294,7 +316,11 @@ def route_pages(
             wanted = local_target(allowed, request.url)
             if not wanted.mine:
                 assets.reached(request.url)
-                route.continue_()
+                if trusted:
+                    route.continue_()
+                    return
+                assets.turned_away(request.url, OFF_ORIGIN)
+                route.abort("blockedbyclient")
                 return
             if wanted.refused or wanted.path is None:
                 assets.turned_away(request.url, wanted.refused or OUTSIDE)

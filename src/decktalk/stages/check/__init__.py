@@ -287,7 +287,7 @@ def _look(
     if not files:
         return looked
     allowed = Allowed.of(inputs.root, inputs.served_paths())
-    with chromium(cfg.browser_path) as browser:
+    with chromium(cfg.browser_path, policy=cfg.page_policy) as browser:
         opened: dict[str, tuple[Page, Assets]] = {}
         for page in files:
             if not inputs.path(page).exists():

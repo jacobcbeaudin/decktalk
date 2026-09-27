@@ -16,6 +16,7 @@ from decktalk.machine import Machine, Run, Toolchain
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import Panel, StoryboardResult
+from decktalk.settings import BY_ID
 from decktalk.stages import storyboard as stage
 from decktalk.stages.storyboard import (
     Freeze,
@@ -88,6 +89,7 @@ class Opened:
     urls: list[str] = field(default_factory=list)
     shots: list[Path] = field(default_factory=list)
     reports: dict[str, PageReport] = field(default_factory=dict)
+    policies: list[str] = field(default_factory=list)
 
     def publishes(self, page: str, *scenes: dict) -> None:
         self.reports[page] = PageReport.model_validate({"catalog": list(scenes)})
@@ -99,7 +101,8 @@ def opened(monkeypatch: pytest.MonkeyPatch) -> Opened:
     made = Opened()
 
     @contextmanager
-    def chromium(_browser_path: str = "") -> Iterator[object]:
+    def chromium(_browser_path: str = "", *, policy: str) -> Iterator[object]:
+        made.policies.append(policy)
         yield object()
 
     def open_page(*_args: object, **_kwargs: object) -> tuple[object, Served]:
@@ -338,3 +341,12 @@ def test_a_different_frame_size_is_a_different_still(tmp_path: Path) -> None:
     wide = Inputs.load(tmp_path, environ={}, overrides=("video.width=1280", "video.height=720"))
     page = inputs.document.page_sections[0].page
     assert inputs.still_key(page, "url", settle_ms=0) != wide.still_key(page, "url", settle_ms=0)
+
+
+def test_an_untrusted_project_draws_its_pages_untrusted(tmp_path: Path, opened: Opened) -> None:
+    """A page `record` would sandbox must not reach the network through the storyboard instead."""
+    a_project(tmp_path, cues=CUES)
+    inputs = Inputs.load(tmp_path, environ={BY_ID["record.page_policy"].environment: "untrusted"})
+    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
+    storyboard(inputs, a_run(tmp_path))
+    assert opened.policies == ["untrusted"]

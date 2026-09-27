@@ -69,6 +69,7 @@ from decktalk.findings import (
 from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.paths import at, relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
+from decktalk.media.environment import children_see
 from decktalk.media.ffmpeg import installed_paths, using_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
@@ -514,12 +515,14 @@ class Machine:
         self.events.emit(run.id, RunStart, events_path=relative(events_path, root) if events_path and root else None)
         outcome = Outcome.OK
         try:
-            # The toolchain, the download listener, the voices and the rule about `.env` are what this
-            # run renders, fetches, speaks and reads secrets with, and all of them sit below the event
-            # stream, so the run binds them for its own length rather than threading a machine through
-            # every filter, fetcher and provider lookup.
+            # The toolchain, the download listener, the voices, the rule about `.env` and the
+            # environment a launched browser is built from are what this run renders, fetches, speaks,
+            # reads secrets and opens pages with. All of them sit below the event stream, so the run
+            # binds them for its own length rather than threading a machine through every filter,
+            # fetcher, provider lookup and browser launch.
             with (
                 self.toolchain.bound(cancel=run.cancel),
+                children_see(self.environ),
                 announcing(run.fetching),
                 voicing(self.voices),
                 reading_dotenv(self.dotenv),

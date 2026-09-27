@@ -75,8 +75,8 @@ def a_take(section: int) -> Take:
     )
 
 
-def a_project(tmp_path: Path, *, takes: bool = True) -> Inputs:
-    write_project(tmp_path, TOML)
+def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "") -> Inputs:
+    write_project(tmp_path, TOML + extra)
     deck = tmp_path / "deck"
     deck.mkdir(exist_ok=True)
     (deck / "index.html").write_text(PAGE, encoding="utf-8")
@@ -113,10 +113,12 @@ class Driven:
         self.urls: list[str] = []
         self.order: list[str] = []
         self.launched = 0
+        self.policies: list[str] = []
 
     @contextmanager
-    def chromium(self, _browser_path: str = "") -> Iterator[object]:
+    def chromium(self, _browser_path: str = "", *, policy: str = "trusted") -> Iterator[object]:
         self.launched += 1
+        self.policies.append(policy)
         yield object()
 
     def record_page(
@@ -181,6 +183,12 @@ def test_every_page_section_is_recorded_and_reported_in_section_order(tmp_path: 
     assert [row.kept for row in result.sections] == [False, False]
     assert [row.file for row in result.sections] == [Path("build/recordings/01.webm"), Path("build/recordings/02.webm")]
     assert driven.launched == 1
+
+
+def test_a_host_that_marks_the_page_untrusted_records_it_under_that_policy(tmp_path: Path, driven: Driven) -> None:
+    inputs = a_project(tmp_path, extra='\n[record]\npage_policy = "untrusted"\n')
+    record(inputs, a_run(inputs))
+    assert driven.policies == ["untrusted"]
 
 
 @pytest.mark.usefixtures("driven")

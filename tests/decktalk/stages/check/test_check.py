@@ -12,6 +12,7 @@ from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain, apply_fix
 from decktalk.results import CheckResult, Scope, SpendState
+from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
 
 from .conftest import Drawn, a_project, a_run, catalog
@@ -217,3 +218,12 @@ def test_a_project_whose_pages_load_no_copy_of_the_runtime_is_told_nothing_about
     said = notes(run)
     check(inputs, run, pages=False)
     assert not any("decktalk-runtime.js" in line for line in said)
+
+
+def test_an_untrusted_project_opens_its_pages_untrusted(tmp_path: Path, drawn: Drawn) -> None:
+    """A page `record` would sandbox must not reach the network through `check` instead."""
+    a_project(tmp_path)
+    inputs = Inputs.load(tmp_path, environ={BY_ID["record.page_policy"].environment: "untrusted"})
+    drawn.report("deck/index.html", *SCENES)
+    check(inputs, a_run(tmp_path), frames=False)
+    assert drawn.policies == ["untrusted"]

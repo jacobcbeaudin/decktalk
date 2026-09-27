@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import socket
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import get_args
 
@@ -12,8 +16,9 @@ from playwright.sync_api import Error as PlaywrightError
 
 from decktalk.errors import InputError, ToolError
 from decktalk.media import browser
+from decktalk.media.environment import browser_environment
 from decktalk.media.origin import ORIGIN, Allowed, page_url
-from decktalk.settings import BY_ID, COLOR_SCHEMES, MotionConfig
+from decktalk.settings import BY_ID, COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 
 REPORTED = {
     "version": "0.5.0",
@@ -445,3 +450,163 @@ def test_this_machine_either_measures_a_bias_inside_the_published_range_or_says_
         assert "reports no presentation times" in str(refused)
         return
     assert bounds is not None and bounds.ge <= measured <= bounds.le
+
+
+# ---- the page policy ------------------------------------------------------------------------------
+
+
+def test_the_page_policies_this_module_accepts_are_the_ones_the_setting_publishes():
+    assert set(get_args(browser.PagePolicy)) == set(PAGE_POLICIES)
+    with pytest.raises(InputError, match="page_policy"):
+        browser.page_policy("mostly")
+
+
+class Launcher:
+    """Playwright's `chromium`, as far as a launch uses it: it records what it was asked and may refuse."""
+
+    def __init__(self, *, refuse: bool = False, installed: bool = True) -> None:
+        self.refuse = refuse
+        self.asked: list[dict[str, object]] = []
+        self.executable_path = __file__ if installed else "/nowhere/chromium"
+
+    def launch(self, **options: object) -> Launched:
+        self.asked.append(options)
+        if self.refuse:
+            raise PlaywrightError("No usable sandbox! Update your kernel.")
+        return Launched()
+
+
+class Launched:
+    """A launched browser that opens pages which carry nothing and closes without a sound."""
+
+    def new_page(self, **_kwargs: object) -> object:
+        return object()
+
+    def close(self) -> None:
+        """There is no process behind it to stop."""
+
+
+class Driver:
+    def __init__(self, launcher: Launcher) -> None:
+        self.chromium = launcher
+
+
+def test_an_untrusted_page_gets_the_sandbox_a_proxy_that_answers_nothing_and_no_webrtc_udp():
+    launcher = Launcher()
+    browser.launch(Driver(launcher), policy=browser.UNTRUSTED)  # type: ignore[arg-type]
+    asked = launcher.asked[0]
+    assert asked["chromium_sandbox"] is True
+    assert asked["proxy"] == {"server": browser.DEAD_PROXY, "bypass": browser.EVERY_HOST}
+    assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in asked["args"]  # type: ignore[operator]
+
+
+def test_a_trusted_page_keeps_the_machines_own_network_and_still_gets_a_scrubbed_environment():
+    launcher = Launcher()
+    browser.launch(Driver(launcher), policy=browser.TRUSTED)  # type: ignore[arg-type]
+    asked = launcher.asked[0]
+    assert "proxy" not in asked and "chromium_sandbox" not in asked
+    assert asked["env"] == browser_environment()
+
+
+def test_a_machine_that_cannot_run_the_sandbox_is_refused_and_never_falls_back(monkeypatch):
+    """A fetch cannot give a machine a sandbox, so the refusal says what the machine needs instead."""
+    monkeypatch.setattr(browser.chromium_fetch, "fetch_chromium", lambda: pytest.fail("must not fetch"))
+    launcher = Launcher(refuse=True)
+    with pytest.raises(ToolError, match="sandbox on") as raised:
+        browser.launch(Driver(launcher), policy=browser.UNTRUSTED)  # type: ignore[arg-type]
+    assert "seccomp" in (raised.value.hint or "")
+    assert len(launcher.asked) == 1, "the sandbox was never dropped for a second try"
+
+
+def test_every_page_a_browser_opens_is_routed_by_the_policy_it_was_launched_under(monkeypatch, tmp_path):
+    seen: list[bool] = []
+    monkeypatch.setattr(browser, "route_pages", lambda *_a, trusted, **_k: seen.append(trusted))
+    monkeypatch.setattr(browser, "instrument", lambda page: page)
+
+    @contextmanager
+    def playwright() -> Iterator[Driver]:
+        yield Driver(Launcher())
+
+    monkeypatch.setattr(browser, "sync_playwright", playwright)
+    allowed = Allowed.of(tmp_path, ["deck"])
+    for policy in (browser.TRUSTED, browser.UNTRUSTED):
+        with browser.chromium(policy=policy) as launched:
+            browser.open_page(launched, allowed, width=10, height=10)  # type: ignore[arg-type]
+    # A browser this module never launched is routed as a stranger's page.
+    browser.open_page(Launched(), allowed, width=10, height=10)  # type: ignore[arg-type]
+    assert seen == [True, False, False]
+
+
+@pytest.mark.browser
+def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_path):
+    """Routing alone let a WebSocket open and WebRTC send STUN packets, so each channel is tried here.
+
+    The listeners sit on this machine, so a channel that reached one is a channel that could reach a
+    cloud metadata address from a render host.
+    """
+    hits: list[str] = []
+
+    class Listener(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            hits.append(f"http {self.path}")
+            self.send_response(200)
+            self.end_headers()
+
+        do_POST = do_GET
+
+        def log_message(self, *_args: object) -> None:
+            """Quiet, because the list above is the whole report."""
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Listener)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.bind(("127.0.0.1", 0))
+    udp.settimeout(0.2)
+
+    def stun() -> None:
+        while True:
+            try:
+                udp.recvfrom(2048)
+                hits.append("udp")
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+
+    threading.Thread(target=stun, daemon=True).start()
+    at = f"127.0.0.1:{server.server_address[1]}"
+    stun_at = f"127.0.0.1:{udp.getsockname()[1]}"
+    deck = tmp_path / "deck"
+    deck.mkdir()
+    deck.joinpath("index.html").write_text(
+        f"""<!doctype html><meta charset=utf-8><title>t</title><script>
+window.tried = (async () => {{
+  try {{ await fetch('http://{at}/fetch'); }} catch (e) {{}}
+  await new Promise(ok => {{ const i = new Image(); i.onload = i.onerror = ok; i.src = 'http://{at}/img'; }});
+  try {{ navigator.sendBeacon('http://{at}/beacon', 'x'); }} catch (e) {{}}
+  await new Promise(ok => {{ try {{ const w = new WebSocket('ws://{at}/ws');
+    w.onopen = w.onerror = () => ok(); setTimeout(ok, 1500); }} catch (e) {{ ok(); }} }});
+  await new Promise(ok => {{ const src = "fetch('http://{at}/worker').then(() => postMessage(1), () => postMessage(0))";
+    const w = new Worker(URL.createObjectURL(new Blob([src], {{ type: 'text/javascript' }})));
+    w.onmessage = ok; setTimeout(ok, 2000); }});
+  await new Promise(ok => {{ try {{
+    const pc = new RTCPeerConnection({{ iceServers: [{{ urls: 'stun:{stun_at}' }}] }});
+    pc.createDataChannel('x'); pc.createOffer().then(o => pc.setLocalDescription(o)); setTimeout(ok, 2000);
+  }} catch (e) {{ ok(); }} }});
+  return true;
+}})();
+</script>""",
+        encoding="utf-8",
+    )
+    try:
+        with browser.chromium(policy=browser.UNTRUSTED) as real:
+            page, assets = browser.open_page(real, Allowed.of(tmp_path, ["deck"]), width=400, height=300)
+            page.goto(page_url("deck/index.html"), wait_until="load")
+            assert page.evaluate("() => window.tried") is True
+            time.sleep(0.5)
+    finally:
+        server.shutdown()
+        server.server_close()
+        udp.close()
+    assert hits == []
+    assert f"http://{at}" in assets.external

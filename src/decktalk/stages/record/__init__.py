@@ -326,7 +326,8 @@ def record(
                 rows.append(kept_row(inputs, run, job))
             else:
                 if opened is None:
-                    opened = stack.enter_context(browser.chromium(inputs.settings.record.browser_path))
+                    recorder = inputs.settings.record
+                    opened = stack.enter_context(browser.chromium(recorder.browser_path, policy=recorder.page_policy))
                 with run.section(Stage.RECORD, job.section.number):
                     rows.append(recorded(inputs, run, opened, job))
             label = f"section {job.section.number} of {inputs.document.name}"

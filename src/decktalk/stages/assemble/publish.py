@@ -372,7 +372,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
         shutil.copyfile(kept, out)
         return out
     try:
-        with browser.chromium(inputs.settings.record.browser_path) as chrome:
+        with browser.chromium(inputs.settings.record.browser_path, policy=inputs.settings.record.page_policy) as chrome:
             page, assets = browser.open_page(
                 chrome,
                 Allowed.of(inputs.root, inputs.served_paths()),
