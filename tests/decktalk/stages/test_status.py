@@ -135,6 +135,67 @@ def test_a_project_with_everything_built_is_told_to_measure_it(tmp_path: Path) -
     assert next_command(inputs) == f"decktalk {Stage.VERIFY.value}"
 
 
+def everything_built(inputs: Inputs) -> None:
+    """Every artifact on disk, with the take speaking what the script says now."""
+    a_take(inputs)
+    inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
+    inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.recording("01").write_bytes(b"")
+    inputs.workspace.film.parent.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.film.write_bytes(b"film")
+
+
+def measured(inputs: Inputs) -> None:
+    """The record a build leaves after it assembled this film and verified it."""
+    options: dict[str, object] = {"only": None}
+    made = stage.assemble_key(inputs, options)  # type: ignore[arg-type]
+    film = inputs.relative(inputs.workspace.film).as_posix()
+    stage.write_kept(
+        inputs,
+        stage.Kept(
+            assemble=stage.KeptStage(
+                key=made, options={"only": None}, outputs={film: stage.digest_of(inputs.workspace.film)}
+            ),
+            verify=stage.KeptStage(key=stage.verify_key(inputs, made, {"only": None}), options={"only": None}),
+        ),
+    )
+
+
+def test_a_film_the_last_build_measured_leaves_nothing_next(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """After a build that verified, there is nothing to do, and saying verify again would be false."""
+    # The recording here has no log beside it, so the recorder's own rule is told it still stands.
+    monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: None)
+    inputs = a_project(tmp_path)
+    everything_built(inputs)
+    measured(inputs)
+    assert next_command(inputs) is None
+    assert status(inputs, a_run(tmp_path)).next is None
+
+
+def test_a_script_edit_after_the_build_names_build(tmp_path: Path) -> None:
+    """A take of older words is stale, and verify would measure a film its inputs no longer describe."""
+    inputs = a_project(tmp_path)
+    everything_built(inputs)
+    measured(inputs)
+    (tmp_path / "script.md").write_text(SCRIPT.replace("again", "once more"), encoding="utf-8")
+    assert next_command(inputs) == "decktalk build"
+
+
+def test_a_stale_recording_names_build(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path)
+    everything_built(inputs)
+    assert next_command(inputs, stale=True) == "decktalk build"
+
+
+def test_a_film_changed_since_the_build_names_build(tmp_path: Path) -> None:
+    """A film rewritten outside the build is not the one the record vouches for."""
+    inputs = a_project(tmp_path)
+    everything_built(inputs)
+    measured(inputs)
+    inputs.workspace.film.write_bytes(b"another film")
+    assert next_command(inputs) == "decktalk build"
+
+
 # ---- the sections ------------------------------------------------------------------------------
 
 

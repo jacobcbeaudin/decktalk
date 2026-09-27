@@ -12,7 +12,9 @@ about one problem at a time, and the point of asking is to learn all of them at 
 
 What to do next is read from `PIPELINE` and never from a chain of tests of its own. Each stage
 declares the artifact it writes, so the first artifact that is not on disk names the stage that
-writes it, and a stage added to the pipeline reaches this report with no line changed here.
+writes it, and a stage added to the pipeline reaches this report with no line changed here. Once
+everything is on disk, anything that moved since it was built names `build`, which keeps what did
+not move and redoes the rest.
 
 Whether a recording still stands is `record`'s rule, asked of `record`, because one rule decides
 what a run skips and what this report calls stale and neither compares file times.
@@ -20,7 +22,8 @@ what a run skips and what this report calls stale and neither compares file time
 Whether the film and its measurement still stand is this module's rule, and `build` asks it. A build
 leaves `kept.json` under the build directory, which holds a digest of everything `assemble` and
 `verify` read the last time they ran, what they wrote and what they found. A build whose digest
-matches keeps both stages rather than repeating them. The digests are over file contents and never
+matches keeps both stages rather than repeating them, and this report names nothing next once the
+film on disk is the one the last build measured. The digests are over file contents and never
 over file times, because a copy or a checkout moves every time and changes no byte.
 """
 
@@ -52,6 +55,9 @@ from decktalk.stages.record import stale_recording
 
 LINE = TypeAdapter(Line)
 """The one reader of an event file, so a line this library cannot read is never taken for a run."""
+
+BUILD = "build"
+"""The command a stale project runs, which redoes what moved and keeps every stage whose inputs did not."""
 
 DRAFT = {Stage.NARRATE: "--no-voice"}
 """The flag that makes a stage's first move the cheap one, which is the unpaid draft of the voice.
@@ -253,12 +259,16 @@ def _holds(directory: Path) -> bool:
     return directory.is_dir() and any(directory.iterdir())
 
 
-def next_command(inputs: Inputs) -> str:
-    """The whole command to run next, read off the pipeline rather than worked out here.
+def next_command(inputs: Inputs, *, stale: bool = False) -> str | None:
+    """The whole command to run next, read off the pipeline rather than worked out here, or None.
 
     The stages run in a fixed order and each declares what it writes, so the first artifact that is
-    not on disk names the stage that writes it. A project with everything built is told to measure
-    it, because the last thing to do with a finished film is to check that it kept its promises.
+    not on disk names the stage that writes it. Once everything is on disk, a project where anything
+    has moved since it was built is told to build, because a build keeps every stage whose inputs
+    did not move and redoes the rest, and a lone `verify` would measure a film its inputs no longer
+    describe. `stale` is what the section rows already found, so the recordings are judged once.
+    A film the last build made and measured from exactly these inputs leaves nothing to do, and a
+    film nobody has measured yet is told to be measured.
     """
     for spec in PIPELINE:
         for artifact in spec.writes:
@@ -266,7 +276,28 @@ def next_command(inputs: Inputs) -> str:
                 stage = artifact.written_by or spec.stage
                 flag = DRAFT.get(stage)
                 return f"decktalk {stage.value} {flag}" if flag else f"decktalk {stage.value}"
+    kept = read_kept(inputs)
+    made = assembled(inputs, kept)
+    if stale or _words_moved(inputs) or (kept.assemble is not None and made is None):
+        return f"decktalk {BUILD}"
+    measured = kept.verify
+    if made is not None and measured is not None and verify_key(inputs, made, measured.options) == measured.key:
+        return None
     return f"decktalk {Stage.VERIFY.value}"
+
+
+def _words_moved(inputs: Inputs) -> bool:
+    """Whether any spoken section's take says other words than the script does now, or is missing."""
+    takes = inputs.takes()
+    if takes is None:
+        return True
+    for section, said in voiced_text(inputs).items():
+        if section in inputs.document.clip_numbers:
+            continue
+        take = takes.of(section)
+        if take is None or take.spoken != said:
+            return True
+    return False
 
 
 def source_of(section: Section) -> str:
@@ -436,6 +467,7 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
     about its own bytes and the cut list beside it is a record of what a run meant to write.
     """
     judgements(inputs, run)
+    rows = section_rows(inputs, run)
     film = inputs.workspace.film
     built = film.is_file()
     return run.result(
@@ -443,11 +475,11 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
         name=inputs.document.name,
         script=inputs.relative(inputs.script_path),
         cues=inputs.relative(inputs.cues_path),
-        sections=section_rows(inputs, run),
+        sections=rows,
         film=inputs.relative(film) if built else None,
         film_seconds=ffmpeg.probe_duration(film) if built else None,
         runs=live_runs(inputs, run),
-        next=next_command(inputs),
+        next=next_command(inputs, stale=any(row.stale for row in rows)),
     )
 
 
