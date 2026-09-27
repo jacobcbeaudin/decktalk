@@ -23,6 +23,13 @@ def test_status_never_fails_on_a_finding_because_it_takes_no_threshold(run) -> N
     assert "--fail-on" not in run("status", "--help").out
 
 
+def test_status_help_says_the_one_thing_it_exits_1_for(run) -> None:
+    """status raises a certain FILE_MISSING, so its help cannot promise that it never exits 1."""
+    said = " ".join(run("status", "--help").out.split())
+    assert "never exits 1" not in said
+    assert "exits 1 only then" in said
+
+
 def test_check_judges_the_written_files_and_prices_a_voiced_run(run, project, answers) -> None:
     made = project(check=answers["check"])
     ran = run("check", "--json")

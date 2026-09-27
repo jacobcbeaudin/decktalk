@@ -44,6 +44,14 @@ def test_every_parameter_publishes_what_an_agent_writes_after_it() -> None:
             assert set(param) >= set(PARAM_KEYS)
 
 
+def test_an_argument_says_whether_it_is_required_and_whether_it_repeats() -> None:
+    rows = {row["command"]: row for row in catalog.walk()}
+    (paths,) = [param for param in rows["check"]["params"] if param["opts"] == ["paths"]]
+    (key,) = [param for param in rows["config get"]["params"] if param["opts"] == ["key"]]
+    assert (paths["required"], paths["repeatable"]) == (False, True)
+    assert (key["required"], key["repeatable"]) == (True, False)
+
+
 def test_the_globals_are_walked_from_the_root_callback() -> None:
     flags = {opt for param in catalog.globals_() for opt in param["opts"]}
     assert {"-p", "--json", "--events", "--color", "--no-input", "-v", "-q", "--version"} <= flags

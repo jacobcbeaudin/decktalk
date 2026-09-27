@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 import typer
 
@@ -70,6 +72,24 @@ def test_every_published_result_answers_both_questions_about_its_command() -> No
         assert isinstance(model.reports_findings, bool)
         assert isinstance(model.spends, bool)
     assert InitResult.reports_findings is False
+
+
+def test_a_command_can_give_a_shared_flag_its_own_sentence() -> None:
+    """A flag that means something narrower on one command says so there and nowhere else."""
+    (mine,) = [param for param in shared_for(BuildResult, {"spend": "Buy it."}) if param.name == "spend"]
+    (theirs,) = [param for param in shared_for(BuildResult) if param.name == "spend"]
+    assert _help(mine.annotation) == "Buy it."
+    assert _help(theirs.annotation) != "Buy it."
+
+
+def test_a_sentence_for_a_flag_the_command_does_not_share_is_refused() -> None:
+    with pytest.raises(TypeError, match="spend"):
+        shared_for(WordsResult, {"spend": "Buy it."})
+
+
+def _help(annotation: object) -> str:
+    """The help sentence an Annotated flag carries, which is what its help row prints."""
+    return next(meta.help for meta in get_args(annotation)[1:] if hasattr(meta, "help"))
 
 
 def test_a_threshold_names_the_least_certain_finding_a_build_stops_on() -> None:

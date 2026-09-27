@@ -19,7 +19,7 @@ import functools
 import inspect
 import itertools
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -222,18 +222,19 @@ def command[F: Callable[..., object]](
     to: typer.Typer | None = None,
     epilog: str = "",
     short_help: str = "",
+    helps: Mapping[str, str] | None = None,
 ) -> Callable[[F], F]:
     """Register one command, whose parameters are its own and whose shared flags are derived.
 
     `eval_str` is load bearing: the modules are written under postponed annotations, so the return
     annotation is the string `"BuildResult"` until it is evaluated, and the shared flags are chosen
-    from the model it names.
+    from the model it names. `helps` gives a shared flag this command's own sentence.
     """
 
     def register(fn: F) -> F:
         signature = inspect.signature(fn, eval_str=True)
         result = signature.return_annotation
-        parameters = [*signature.parameters.values(), *shared_for(result)]
+        parameters = [*signature.parameters.values(), *shared_for(result, helps)]
         wrapper = _client(fn, name or str(getattr(fn, "__name__", "")))
         wrapper.__signature__ = signature.replace(  # ty: ignore[unresolved-attribute]
             parameters=parameters, return_annotation=inspect.Signature.empty

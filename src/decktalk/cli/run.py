@@ -19,6 +19,7 @@ from decktalk.cli import session as sessions
 from decktalk.cli import watch as watching
 from decktalk.cli.app import command, docs_for
 from decktalk.cli.options import (
+    BuildForce,
     Fix,
     Force,
     Group,
@@ -66,6 +67,49 @@ ToStage = Annotated[
     Stage | None,
     typer.Option("--to", metavar="STAGE", rich_help_panel=Panel.SCOPE.value, help="Stop after this stage, inclusive."),
 ]
+# The flags below share a name with a family in `options.py` and mean something narrower on the one
+# command that declares them, so each says what it does there rather than what the family does.
+SkipSoundscape = Annotated[
+    Stage | None,
+    typer.Option(
+        "--skip",
+        metavar="STAGE",
+        rich_help_panel=Panel.SCOPE.value,
+        help="Mix without this stage's audio. soundscape is the one stage assemble can leave out.",
+    ),
+]
+OneSection = Annotated[
+    str | None,
+    typer.Option(
+        "--section",
+        metavar="N",
+        rich_help_panel=Panel.SCOPE.value,
+        help="The one section to cut the clip from, such as 3.",
+    ),
+]
+RecordAgain = Annotated[
+    bool,
+    typer.Option(
+        "--force",
+        rich_help_panel=Panel.REDOING.value,
+        help="Record every section again, even one whose recording still matches its page.",
+    ),
+]
+BuyAgain = Annotated[
+    bool,
+    typer.Option(
+        "--force",
+        rich_help_panel=Panel.REDOING.value,
+        help="Buy every item again, even one the ledger already holds, which spends again.",
+    ),
+]
+
+SOUNDSCAPE_SPENDING = {
+    "no_voice": "Buy nothing: report the plan and write nothing.",
+    "spend": "Buy what needs it without asking first.",
+}
+"""The spending flags as `soundscape` means them, where the thing bought is sound rather than a voice."""
+
 Watch = Annotated[
     bool,
     typer.Option(
@@ -123,7 +167,7 @@ def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueRe
 
 
 @command(group=Group.STAGE, epilog=f"The JSON object carries run, sections and written. Docs: {docs_for('record')}")
-def record(ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None) -> RecordResult:
+def record(ctx: Context, section: Sections = None, force: RecordAgain = False, set_: Overrides = None) -> RecordResult:
     """Record each page section in headless Chromium.
 
     The pages are played against the seconds the cues named, so the picture lands on its word before
@@ -135,9 +179,13 @@ def record(ctx: Context, section: Sections = None, force: Force = False, set_: O
         return project.record(only=sections_of(section), force=force, cancel=session.cancel)
 
 
-@command(group=Group.STAGE, epilog=f"The JSON object carries run, items and spend. Docs: {docs_for('soundscape')}")
+@command(
+    group=Group.STAGE,
+    epilog=f"The JSON object carries run, items and spend. Docs: {docs_for('soundscape')}",
+    helps=SOUNDSCAPE_SPENDING,
+)
 def soundscape(
-    ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None
+    ctx: Context, section: Sections = None, force: BuyAgain = False, set_: Overrides = None
 ) -> SoundscapeResult:
     """Generate the music, the ambience bed and the effects.
 
@@ -160,7 +208,9 @@ def soundscape(
 @command(
     group=Group.STAGE, epilog=f"The JSON object carries run, film, sections and loudness. Docs: {docs_for('assemble')}"
 )
-def assemble(ctx: Context, section: Sections = None, skip: Skip = None, set_: Overrides = None) -> AssembleResult:
+def assemble(
+    ctx: Context, section: Sections = None, skip: SkipSoundscape = None, set_: Overrides = None
+) -> AssembleResult:
     """Cut, mix and encode the sections into one mp4.
 
     It is the editing room's word for joining shots into a cut, where render, encode and mix each
@@ -171,20 +221,18 @@ def assemble(ctx: Context, section: Sections = None, skip: Skip = None, set_: Ov
     with session.watching(project.events):
         return project.assemble(
             only=sections_of(section),
-            soundscape=Stage.SOUNDSCAPE not in _skipped_here(skip),
+            soundscape=_skipped_here(skip) is not Stage.SOUNDSCAPE,
             cancel=session.cancel,
         )
 
 
-def _skipped_here(skip: Sequence[Stage] | None) -> tuple[Stage, ...]:
-    """The stages `--skip` names on a command that runs one stage, which is the soundscape alone."""
-    named = tuple(skip or ())
-    wrong = [stage.value for stage in named if stage is not Stage.SOUNDSCAPE]
-    if wrong:
+def _skipped_here(skip: Stage | None) -> Stage | None:
+    """The stage `--skip` names on a command that runs one stage, which is the soundscape alone."""
+    if skip is not None and skip is not Stage.SOUNDSCAPE:
         raise typer.BadParameter(
-            f"assemble runs one stage, so --skip names soundscape alone and not {wrong[0]}.", param_hint="--skip"
+            f"assemble runs one stage, so --skip names soundscape alone and not {skip.value}.", param_hint="--skip"
         )
-    return named
+    return skip
 
 
 @command(
@@ -211,7 +259,7 @@ def build(
     skip: Skip = None,
     section: Sections = None,
     fix: Fix = None,
-    force: Force = False,
+    force: BuildForce = False,
     replace_voiced: ReplaceVoiced = False,
     set_: Overrides = None,
     watch: Watch = False,
@@ -271,10 +319,13 @@ def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, 
 @command(group=Group.WHOLE, epilog=f"The JSON object carries run, film, words and written. Docs: {docs_for('clip')}")
 def clip(
     ctx: Context,
-    section: Sections = None,
+    section: OneSection = None,
     start: Annotated[float, typer.Option("--start", metavar="SECONDS", help="Where the clip starts.")] = 0.0,
     end: Annotated[float, typer.Option("--end", metavar="SECONDS", help="Where the clip ends.")] = 0.0,
-    out: Annotated[Path | None, typer.Option("--out", metavar="FILE", help="Where to write the clip.")] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", metavar="FILE", help="Where to write the clip. Default: clip-N.mp4, for section N."),
+    ] = None,
     gain_db: Annotated[float, typer.Option("--gain-db", metavar="DB", help="Lift or cut the clip's audio.")] = 0.0,
     hold_seconds: Annotated[
         float, typer.Option("--hold-seconds", metavar="SECONDS", help="Hold the last frame this long.")
@@ -288,7 +339,7 @@ def clip(
     """
     session = sessions.of(ctx)
     project = _opened(session, set_)
-    chosen = one_section(section)
+    chosen = one_section((section,) if section else None)
     with session.watching(project.events):
         return project.clip(
             chosen,

@@ -37,7 +37,7 @@ BUILD_SENTENCES = (
     "Only these sections: 3, 3,5 or 7-9. Repeats.",
     "certain fails on a certain finding, any fails on any finding, never fails on none. Default",
     "Carry on past this finding code. Repeats.",
-    "Build again from nothing, keeping every voiced take.",
+    "Build again from nothing, keeping every voiced take, and measure the film again.",
     "Override one setting here. Repeats. See config explain.",
     "Stay running, rebuild the changed section, never spend.",
     "-p, --json, --events, --color, --no-input, -v and -q work on every command.",

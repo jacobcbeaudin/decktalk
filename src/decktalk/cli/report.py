@@ -1,9 +1,9 @@
 """The five commands that read a project and spend nothing.
 
 They open the project, report what they found and buy nothing, which is why they sit in one group
-and why none of them takes a spending flag. `status` judges nothing at all, so it never takes
-`--fail-on` either: a third judge beside `check` and `verify` would be a third answer to one
-question.
+and why none of them takes a spending flag. `status` judges one thing alone, a file the project
+names and does not have, so it never takes `--fail-on` either: a third judge beside `check` and
+`verify` would be a third answer to one question.
 """
 
 from __future__ import annotations
@@ -89,8 +89,9 @@ At = Annotated[
 def status(ctx: Context, set_: Overrides = None) -> StatusResult:
     """Report what is written, what is built and what is stale.
 
-    It judges nothing and never exits 1, so it is a reading of the project rather than a third
-    verdict beside `check` and `verify`.
+    It judges one thing, a file the project names and does not have, and exits 1 only then.
+    Everything else it reports is a reading of the project rather than a third verdict beside
+    `check` and `verify`.
     """
     session = sessions.of(ctx)
     session.overriding(pairs(set_))

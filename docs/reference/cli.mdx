@@ -12,7 +12,9 @@ commands that open a run or write a file.
 
 ## Global options
 
-These work with every command, before or after the command name.
+These work with every command, before the command name or after the whole command, as in
+`decktalk --json status` or `decktalk config list --json`. `--version` is the one exception, and it
+works before a command name alone.
 
 | Option | Meaning |
 |---|---|
@@ -182,7 +184,7 @@ It answers with the `status` result: `decktalk schema status`.
 Judge script.md, cues.json and the pages before a build.
 
 ```text
-decktalk check [OPTIONS] PATH
+decktalk check [OPTIONS] [PATH...]
 ```
 
 It answers with the `check` result: `decktalk schema check`.
@@ -256,7 +258,7 @@ It answers with the `serve` result: `decktalk schema serve`.
 Print the JSON Schema of a command, a setting or an event.
 
 ```text
-decktalk schema [OPTIONS] NAME
+decktalk schema [OPTIONS] [NAME]
 ```
 
 | Option | Meaning |
@@ -268,7 +270,7 @@ decktalk schema [OPTIONS] NAME
 Print every key, its value and the layer that set it.
 
 ```text
-decktalk config list [OPTIONS] TABLE
+decktalk config list [OPTIONS] [TABLE]
 ```
 
 It answers with the `config-list` result: `decktalk schema config-list`.
@@ -389,7 +391,7 @@ It answers with the `record` result: `decktalk schema record`.
 | Option | Meaning |
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
-| `--force` | Build again from nothing, keeping every voiced take. |
+| `--force` | Record every section again, even one whose recording still matches its page. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -407,10 +409,10 @@ It answers with the `soundscape` result: `decktalk schema soundscape`.
 | Option | Meaning |
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
-| `--force` | Build again from nothing, keeping every voiced take. |
+| `--force` | Buy every item again, even one the ledger already holds, which spends again. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
-| `--no-voice` | Placeholder narration: no API key and no spend. |
-| `--spend` | Voice what needs it without asking first. |
+| `--no-voice` | Buy nothing: report the plan and write nothing. |
+| `--spend` | Buy what needs it without asking first. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -428,7 +430,7 @@ It answers with the `assemble` result: `decktalk schema assemble`.
 | Option | Meaning |
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
-| `--skip` `STAGE` | Run every stage but this one. Repeats. |
+| `--skip` `STAGE` | Mix without this stage's audio. soundscape is the one stage assemble can leave out. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -469,7 +471,7 @@ It answers with the `build` result: `decktalk schema build`.
 | `--skip` `STAGE` | Run every stage but this one. Repeats. |
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
 | `--fix`, `--no-fix` | Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied. |
-| `--force` | Build again from nothing, keeping every voiced take. |
+| `--force` | Build again from nothing, keeping every voiced take, and measure the film again. |
 | `--replace-voiced` | Voice a section again and discard the take it replaces, which is the one flag here that destroys money. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--watch` | Stay running, rebuild the changed section, never spend. |
@@ -491,10 +493,10 @@ It answers with the `clip` result: `decktalk schema clip`.
 
 | Option | Meaning |
 |---|---|
-| `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
+| `--section` `N` | The one section to cut the clip from, such as 3. |
 | `--start` `SECONDS` | Where the clip starts. |
 | `--end` `SECONDS` | Where the clip ends. |
-| `--out` `FILE` | Where to write the clip. |
+| `--out` `FILE` | Where to write the clip. Default: clip-N.mp4, for section N. |
 | `--gain-db` `DB` | Lift or cut the clip's audio. |
 | `--hold-seconds` `SECONDS` | Hold the last frame this long. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |

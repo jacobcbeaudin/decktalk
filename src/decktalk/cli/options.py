@@ -18,11 +18,12 @@ every one of them and a new code, stage or knob costs no help row at all.
 
 from __future__ import annotations
 
+import copy
 import inspect
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, get_args
 
 import typer
 
@@ -225,6 +226,14 @@ Force = Annotated[
         help="Build again from nothing, keeping every voiced take.",
     ),
 ]
+BuildForce = Annotated[
+    bool,
+    typer.Option(
+        "--force",
+        rich_help_panel=Panel.REDOING.value,
+        help="Build again from nothing, keeping every voiced take, and measure the film again.",
+    ),
+]
 ReplaceVoiced = Annotated[
     bool,
     typer.Option(
@@ -263,11 +272,13 @@ SHARED: frozenset[str] = frozenset(name for name, _, _ in (*GLOBALS, *FINDING_FA
 """Every parameter name the wrapper takes off a command's own call, so a command reads none of them."""
 
 
-def shared_for(result: object) -> list[inspect.Parameter]:
+def shared_for(result: object, helps: Mapping[str, str] | None = None) -> list[inspect.Parameter]:
     """The parameters this command shares with others, read off the result its signature returns.
 
     The families come first so that they sit in their own panels above the hidden globals, and the
     globals come last because a reader who wants them reads the line that names them all at once.
+    `helps` rewords a shared flag for one command, because a flag that means something narrower
+    there has to say so on the one help screen a reader of that command sees.
     """
     families = list(GLOBALS)
     if isinstance(result, type) and issubclass(result, Result):
@@ -275,10 +286,27 @@ def shared_for(result: object) -> list[inspect.Parameter]:
             families = [*FINDING_FAMILY, *families]
         if result.spends:
             families = [*SPEND_FAMILY, *families]
+    known = {name for name, _, _ in families}
+    stray = sorted(set(helps or {}) - known)
+    if stray:
+        raise TypeError(f"help was reworded for {', '.join(stray)}, which this command does not share")
     return [
-        inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, annotation=annotation, default=default)
+        inspect.Parameter(
+            name,
+            inspect.Parameter.KEYWORD_ONLY,
+            annotation=reworded(annotation, helps[name]) if helps and name in helps else annotation,
+            default=default,
+        )
         for name, annotation, default in families
     ]
+
+
+def reworded(annotation: object, sentence: str) -> object:
+    """The same flag with one command's own sentence, leaving the shared declaration untouched."""
+    base, info, *rest = get_args(annotation)
+    mine = copy.copy(info)
+    mine.help = sentence
+    return Annotated[base, mine, *rest]
 
 
 def sections_of(values: Sequence[str] | None) -> tuple[int, ...] | None:
@@ -333,6 +361,7 @@ __all__ = [
     "Fail",
     "FailOn",
     "Fix",
+    "BuildForce",
     "Force",
     "Group",
     "Json",
@@ -354,6 +383,7 @@ __all__ = [
     "allowed",
     "one_section",
     "pairs",
+    "reworded",
     "sections_of",
     "shared_for",
 ]

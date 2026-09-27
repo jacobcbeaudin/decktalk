@@ -43,7 +43,9 @@ commands that open a run or write a file.
 GLOBALS = """
 ## Global options
 
-These work with every command, before or after the command name.
+These work with every command, before the command name or after the whole command, as in
+`decktalk --json status` or `decktalk config list --json`. `--version` is the one exception, and it
+works before a command name alone.
 """
 
 EXITS = """
@@ -92,9 +94,15 @@ def _command(row: dict[str, Any]) -> str:
 
 
 def _usage(row: dict[str, Any]) -> str:
-    """The usage line, which names the arguments a command takes and nothing it does not."""
-    arguments = [param["metavar"] or param["opts"][0].upper() for param in row["params"] if _positional(param)]
-    return " ".join(["decktalk", row["command"], "[OPTIONS]", *arguments])
+    """The usage line, which names the arguments a command takes and brackets the ones it can do without."""
+    return " ".join(["decktalk", row["command"], "[OPTIONS]", *map(_argument, filter(_positional, row["params"]))])
+
+
+def _argument(param: dict[str, Any]) -> str:
+    """One positional argument as a usage line writes it, bracketed when optional and dotted when it repeats."""
+    name = param["metavar"] or param["opts"][0].upper()
+    name = f"{name}..." if param["repeatable"] else name
+    return name if param["required"] else f"[{name}]"
 
 
 def _positional(param: dict[str, Any]) -> bool:

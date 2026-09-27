@@ -87,6 +87,21 @@ def test_assemble_refuses_a_skip_that_names_a_stage_it_does_not_run(run, project
     assert "soundscape alone" in ran.err
 
 
+def test_soundscape_says_what_its_spending_flags_buy(run) -> None:
+    """The spending family is shared, and on soundscape the thing bought is sound rather than a voice."""
+    said = run("soundscape", "--help").out
+    assert "Placeholder narration" not in said
+    assert "Buy nothing" in said
+    assert "Placeholder narration" in run("narrate", "--help").out
+
+
+def test_assemble_and_clip_describe_the_narrower_flags_they_take(run) -> None:
+    assert "Run every stage but this one" not in run("assemble", "--help").out
+    clip = " ".join(run("clip", "--help").out.split())
+    assert "--section N The one section to cut the clip from, such as 3." in clip
+    assert "clip-N.mp4" in clip
+
+
 def test_verify_measures_the_film(run, project) -> None:
     made = project(verify=VERIFY)
     ran = run("verify")
