@@ -60,7 +60,7 @@ advisory, because a knob that exists becomes permanent.
 
 ```console
 uv run scripts/check.py          # every group a pull request gates on, in order
-uv run scripts/check.py --fast   # an alias for --group lint,unit, in a few seconds
+uv run scripts/check.py --fast   # an alias for --group lint,unit
 uv run scripts/check.py --list   # the table, with what each group needs and what calls it
 uv run scripts/check.py --group browser,media
 ```
