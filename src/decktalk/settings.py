@@ -452,6 +452,7 @@ class VerifyConfig:
         "Extra lead added to the reference frame beyond the one the offset limit implies.",
         unit="milliseconds",
         bounds=Bounds(ge=0, le=80),
+        decides=(Code.CUE_OFF,),
         hazard=(
             "The lead is already the offset limit plus the grid guard, so extra lead is only ever the "
             "escape hatch for a deck whose reference frame is still inside its own reveal. Above about 80 "
@@ -486,7 +487,7 @@ class VerifyConfig:
         unit="percent",
         bounds=Bounds(ge=0.001, le=5),
         typed=A_PERCENT,
-        decides=(Code.CUE_NO_CHANGE, Code.CUE_THIN_CHANGE),
+        decides=(Code.CUE_NO_CHANGE, Code.CUE_THIN_CHANGE, Code.PAGE_THIN_DRAW),
         hazard=(
             "Above about 5 percent only a change across most of the slide passes, so every small reveal in "
             "the deck reports a failure it cannot fix."
@@ -680,10 +681,9 @@ class LoudnessConfig:
     )
     range_max_lu: float = tune(
         11.0,
-        "Widest loudness range the normalised mix may hold.",
+        "The loudness range the measurement is made against. It is not a limit, and no mix fails on it.",
         unit="LU",
         bounds=Bounds(ge=1, le=20),
-        decides=(Code.MIX_LOUDNESS,),
     )
 
 
@@ -709,7 +709,7 @@ class MotionConfig:
         1.0,
         "Multiplier on every declared motion span and duration in the deck.",
         bounds=Bounds(ge=0.25, le=4.0),
-        decides=(Code.PAGE_MOTION_OVERRUN,),
+        decides=(Code.PAGE_MOTION_OVERRUN, Code.PAGE_STAGGER_OVERRUN),
         hazard=(
             "A scale above one slows motion down, and a span slowed past the measurable ceiling makes its "
             "own cue unmeasurable, so each scaled span is clamped at that ceiling rather than obeyed."

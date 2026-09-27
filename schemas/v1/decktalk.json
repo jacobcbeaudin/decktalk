@@ -745,6 +745,9 @@
             "verify.cue_offset_max_ms",
             "verify.reference_lead_seconds"
           ],
+          "x-decides": [
+            "CUE_OFF"
+          ],
           "x-environment": "DECKTALK_VERIFY_REFERENCE_LEAD_EXTRA_MS"
         },
         "probe_delays_seconds": {
@@ -811,7 +814,8 @@
           ],
           "x-decides": [
             "CUE_NO_CHANGE",
-            "CUE_THIN_CHANGE"
+            "CUE_THIN_CHANGE",
+            "PAGE_THIN_DRAW"
           ],
           "x-environment": "DECKTALK_VERIFY_CHANGED_SHARE_MIN_PERCENT"
         },
@@ -1174,7 +1178,7 @@
               "x-environment": "DECKTALK_MIX_LOUDNESS_TRUE_PEAK_MAX_DBTP"
             },
             "range_max_lu": {
-              "description": "Widest loudness range the normalised mix may hold.",
+              "description": "The loudness range the measurement is made against. It is not a limit, and no mix fails on it.",
               "type": "number",
               "default": 11.0,
               "minimum": 1,
@@ -1184,9 +1188,6 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-decides": [
-                "MIX_LOUDNESS"
-              ],
               "x-environment": "DECKTALK_MIX_LOUDNESS_RANGE_MAX_LU"
             }
           },
@@ -1232,7 +1233,8 @@
             "MEASURABLE_SPAN_SECONDS"
           ],
           "x-decides": [
-            "PAGE_MOTION_OVERRUN"
+            "PAGE_MOTION_OVERRUN",
+            "PAGE_STAGGER_OVERRUN"
           ],
           "x-environment": "DECKTALK_MOTION_SCALE"
         }

@@ -49,16 +49,17 @@ have a code and want the candidates before you run anything.
 |---|---|
 | `CUE_NO_CHANGE` | `video.crf`, `verify.probe_delays_seconds`, `verify.probe_diff_luma`, `verify.changed_share_min_percent`, `verify.margin_min_points` |
 | `CUE_NO_ONSET` | `verify.onset_rise_points`, `verify.onset_diff_luma` |
-| `CUE_OFF` | `verify.onset_rise_points`, `verify.onset_diff_luma`, `verify.click_search_seconds`, `verify.click_floor_dbfs`, `verify.cue_offset_max_ms`, `verify.av_offset_max_ms` |
+| `CUE_OFF` | `verify.reference_lead_extra_ms`, `verify.onset_rise_points`, `verify.onset_diff_luma`, `verify.click_search_seconds`, `verify.click_floor_dbfs`, `verify.cue_offset_max_ms`, `verify.av_offset_max_ms` |
 | `CUE_THIN_CHANGE` | `video.crf`, `verify.probe_diff_luma`, `verify.changed_share_min_percent`, `verify.margin_min_points`, `verify.thin_change_factor` |
 | `CUT_POP` | `verify.cut_change_max_percent` |
 | `CUT_SPEECH` | `narration.tail_min_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds`, `verify.cut_window_seconds`, `verify.cut_max_dbfs` |
-| `MIX_LOUDNESS` | `mix.loudness.target_lufs`, `mix.loudness.true_peak_max_dbtp`, `mix.loudness.range_max_lu` |
+| `MIX_LOUDNESS` | `mix.loudness.target_lufs`, `mix.loudness.true_peak_max_dbtp` |
 | `PAGE_BLACK` | `verify.after_dip_seconds`, `verify.black_max_luma` |
 | `PAGE_CLASS_NOT_REDUCED` | `motion.reduce` |
 | `PAGE_MOTION_OVERRUN` | `motion.scale` |
+| `PAGE_STAGGER_OVERRUN` | `motion.scale` |
 | `PAGE_STALLED` | `record.frame_gap_max_ms` |
-| `PAGE_THIN_DRAW` | `video.crf` |
+| `PAGE_THIN_DRAW` | `video.crf`, `verify.changed_share_min_percent` |
 | `PAGE_TRUNCATED` | `record.truncated_slack_seconds` |
 
 ## `[video]`
@@ -165,10 +166,10 @@ These keys are the limits `verify` judges the assembled mp4 against.
 | Key | Type | Default | Safe range | Unit | Decides | Meaning |
 |---|---|---|---|---|---|---|
 | `after_dip_seconds` | number | `0.2` | must be between 0 and 2 | seconds | `PAGE_BLACK` | Seconds after a section start to the frame that the start check reads. |
-| `reference_lead_extra_ms` | number | `0.0` | must be between 0 and 80 | milliseconds |  | Extra lead added to the reference frame beyond the one the offset limit implies. |
+| `reference_lead_extra_ms` | number | `0.0` | must be between 0 and 80 | milliseconds | `CUE_OFF` | Extra lead added to the reference frame beyond the one the offset limit implies. |
 | `probe_delays_seconds` | array | `[0.7, 1.5]` | must hold at least 1 and must hold values that each must be above 0 and must be at most 10 | seconds | `CUE_NO_CHANGE` | Seconds after the cue time for each probe. The later probe catches a slow reveal. |
 | `probe_diff_luma` | integer | `40` | must be between 4 and 200 | luma | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE` | Luma difference a pixel must exceed to count as changed, for the probes and the control shares. |
-| `changed_share_min_percent` | number | `0.1` | must be between 0.001 and 5 | percent | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE` | Smallest share of the frame, in percent, that the reported probe must find changed. |
+| `changed_share_min_percent` | number | `0.1` | must be between 0.001 and 5 | percent | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE`, `PAGE_THIN_DRAW` | Smallest share of the frame, in percent, that the reported probe must find changed. |
 | `margin_min_points` | number | `0.1` | must be between 0.001 and 5 | percentage points | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE` | Smallest margin, in percentage points, between the reported probe and its control. |
 | `thin_change_factor` | number | `3.0` | must be between 1 and 10 |  | `CUE_THIN_CHANGE` | A passing cue whose changed share or margin is under this many times its floor is uncertain rather than clean. A value of 1 turns that second opinion off. |
 | `onset_rise_points` | number | `0.01` | must be between 0.001 and 1 | percentage points | `CUE_OFF`, `CUE_NO_ONSET` | Rise in the changed share from one frame to the next that marks the onset, in percentage points. |
@@ -229,7 +230,7 @@ These keys are the programme loudness the final mp4 is normalised to and judged 
 |---|---|---|---|---|---|---|
 | `target_lufs` | number | `-16.0` | must be between -30 and -9 | LUFS | `MIX_LOUDNESS` | Programme loudness the final mp4 is normalised to. |
 | `true_peak_max_dbtp` | number | `-1.5` | must be between -9 and -0.1 | dBTP | `MIX_LOUDNESS` | Highest true peak the normalised mix may reach. |
-| `range_max_lu` | number | `11.0` | must be between 1 and 20 | LU | `MIX_LOUDNESS` | Widest loudness range the normalised mix may hold. |
+| `range_max_lu` | number | `11.0` | must be between 1 and 20 | LU |  | The loudness range the measurement is made against. It is not a limit, and no mix fails on it. |
 
 <Warning>
 **`mix.loudness.true_peak_max_dbtp`** Four times oversampling under-reads a true peak and the AAC encode overshoots on top of that, so a ceiling above about -1 dBTP reports a clean mix that clips on a listener's decoder.
@@ -243,7 +244,7 @@ These keys decide how much motion a build renders, which changes the film it pro
 | Key | Type | Default | Safe range | Unit | Decides | Meaning |
 |---|---|---|---|---|---|---|
 | `reduce` | boolean | `false` | takes any value of its type |  | `PAGE_CLASS_NOT_REDUCED` | Render every slide as the reduced-motion variant, which is the film a viewer who asks for less motion should be given. |
-| `scale` | number | `1.0` | must be between 0.25 and 4 |  | `PAGE_MOTION_OVERRUN` | Multiplier on every declared motion span and duration in the deck. |
+| `scale` | number | `1.0` | must be between 0.25 and 4 |  | `PAGE_MOTION_OVERRUN`, `PAGE_STAGGER_OVERRUN` | Multiplier on every declared motion span and duration in the deck. |
 
 <Warning>
 **`motion.scale`** A scale above one slows motion down, and a span slowed past the measurable ceiling makes its own cue unmeasurable, so each scaled span is clamped at that ceiling rather than obeyed.
