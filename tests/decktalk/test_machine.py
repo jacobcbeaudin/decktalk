@@ -445,6 +445,15 @@ def test_the_machines_switch_is_stamped_on_every_voice_it_builds(tmp_path: Path)
     assert seen[0].allow_any_api_base is True
 
 
+def test_the_machines_retries_are_stamped_on_every_voice_it_builds(tmp_path: Path) -> None:
+    """A busy voice is asked again as often as the machine says, which no project may change."""
+    seen: list[VoiceContext] = []
+    here = a_host(tmp_path, providers={"elevenlabs": seen.append}, overrides=(("narration.retries", "5"),))
+    with here.run():
+        get_provider("elevenlabs", a_context())
+    assert seen[0].retries == 5
+
+
 @pytest.mark.usefixtures("no_network")
 def test_a_tenants_env_file_is_never_read_under_a_host_machine(tmp_path: Path) -> None:
     """An upload could carry a `.env`, and the key it names would then pay for the tenant's take."""

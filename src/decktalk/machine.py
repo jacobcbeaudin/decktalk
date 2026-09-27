@@ -448,10 +448,17 @@ class Machine:
 
     @property
     def voices(self) -> Voices:
-        """The voices this machine answers with, and where its key may go, as one run binds them."""
+        """The voices this machine answers with, where its key may go and how often it asks again.
+
+        The retries are a machine-scoped key, so the machine's own file, environment and overrides
+        decide them whole and no project can.
+        """
+        mine = scoped(route(self.overrides), SettingScope.MACHINE)
+        tuned = load(project={}, machine=self.tables, environ=self.environ, overrides=_pairs(mine)).settings
         return Voices(
             factories=PROVIDERS if self.providers is None else self.providers,
             allow_any_api_base=self.allow_any_api_base,
+            retries=tuned.narration.retries,
         )
 
     def child_environ(self) -> dict[str, str]:

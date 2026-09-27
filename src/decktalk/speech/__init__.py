@@ -72,6 +72,8 @@ class VoiceContext:
     context_chars: int  # [narration] context_chars
     speech_timeout_seconds: int  # [narration] timeout_seconds
     sound_timeout_seconds: int  # [elevenlabs] timeout_seconds
+    retries: int = 0
+    """How many more times a busy or failed request is sent, which the machine sets from `[narration] retries`."""
     allow_any_api_base: bool = False
     """Whether `api_base` may name a host other than ElevenLabs, which the machine alone decides.
 
@@ -115,10 +117,11 @@ class Voices:
 
     factories: Mapping[str, ProviderFactory]
     allow_any_api_base: bool = False
+    retries: int = 0
 
 
 SHIPPED = Voices(factories=PROVIDERS)
-"""What a caller that holds no machine is answered with: the shipped table, with the key kept on ElevenLabs."""
+"""What a caller that holds no machine is answered with: the shipped table, the key on ElevenLabs, no retry."""
 
 BOUND: ContextVar[Voices | None] = ContextVar("decktalk_voices", default=None)
 """The voices of the machine whose run is in progress, which `voicing` sets and `get_provider` reads."""
@@ -137,8 +140,9 @@ def voicing(voices: Voices) -> Iterator[None]:
 def get_provider(name: str, context: VoiceContext) -> SpeechProvider:
     """The provider the running machine registers under `name`, built for this context.
 
-    The machine's own decision about where its key may go replaces whatever the context says, so a
-    stage cannot widen it and a context built without asking the machine cannot either.
+    The machine's own decisions about where its key may go and how often a busy request is sent
+    again replace whatever the context says, so a stage cannot widen the first and a context built
+    without asking the machine cannot either.
     """
     voices = BOUND.get() or SHIPPED
     factory = voices.factories.get(name)
@@ -147,4 +151,4 @@ def get_provider(name: str, context: VoiceContext) -> SpeechProvider:
             f"[voice] provider = {name!r} is not a voice this machine answers for.",
             hint=f"The providers it knows are {', '.join(sorted(voices.factories))}.",
         )
-    return factory(replace(context, allow_any_api_base=voices.allow_any_api_base))
+    return factory(replace(context, allow_any_api_base=voices.allow_any_api_base, retries=voices.retries))

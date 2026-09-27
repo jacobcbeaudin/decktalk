@@ -212,6 +212,14 @@ def test_a_service_that_asked_for_a_slower_pace_is_worth_trying_again(monkeypatc
     assert caught.value.retryable is True
 
 
+def test_a_busy_voice_is_asked_again_as_often_as_the_provider_was_told(monkeypatch):
+    monkeypatch.setattr(_http, "pause", lambda _seconds: None)
+    asked = answers(monkeypatch, b'{"detail": "busy"}', status=429)
+    with pytest.raises(ProviderError):
+        provider(retries=2).synthesize(request())
+    assert len(asked) == 3
+
+
 def test_the_key_is_revealed_in_one_place_and_survives_no_printing_of_the_provider():
     speech = provider()
     for shown in (repr(speech), str(speech), repr(speech.api_key), str(speech.api_key)):

@@ -97,6 +97,8 @@ class ElevenLabs:
     speech_timeout_seconds: int  # [narration] timeout_seconds
     sound_timeout_seconds: int  # [elevenlabs] timeout_seconds
     name: str = "elevenlabs"
+    retries: int = 0
+    """How many more times a busy or failed request is sent, which is the machine's `[narration] retries`."""
     allow_any_api_base: bool = False
     """Whether `api_base` may name any host, which only the machine decides and which is off unless it says so."""
     checked_base: str = field(init=False)
@@ -116,6 +118,7 @@ class ElevenLabs:
             context_chars=context.context_chars,
             speech_timeout_seconds=context.speech_timeout_seconds,
             sound_timeout_seconds=context.sound_timeout_seconds,
+            retries=context.retries,
             allow_any_api_base=context.allow_any_api_base,
         )
 
@@ -152,6 +155,7 @@ class ElevenLabs:
             payload,
             self._headers(),
             timeout=self.speech_timeout_seconds,
+            retries=self.retries,
         )
         return self._audio(reply), self._words(reply)
 
@@ -181,8 +185,8 @@ class ElevenLabs:
 
     def sound_effect(self, body: dict[str, Any], *, output_format: str) -> bytes:
         url = f"{self.checked_base}/sound-generation?output_format={output_format}"
-        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds)
+        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds, retries=self.retries)
 
     def music(self, body: dict[str, Any], *, output_format: str) -> bytes:
         url = f"{self.checked_base}/music?output_format={output_format}"
-        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds)
+        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds, retries=self.retries)

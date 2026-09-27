@@ -13,11 +13,19 @@ reader could act on.
 
 Every call takes a timeout. A provider that stopped answering would otherwise hold a build open for
 as long as the socket stayed up.
+
+Every call also takes a number of retries. A service that answers that it is busy or failed, or that
+could not be reached, is asked again after a wait that doubles each time, or after the wait its own
+`Retry-After` names, up to that many more times. A voice account limits how many requests run at
+once, so without this the first busy answer to one of several concurrent sections failed the run
+after the others had already been paid for. A refusal that says the request itself is wrong is
+never repeated, because it would be refused again.
 """
 
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -38,6 +46,12 @@ BODY_CHARS = 500
 
 RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 """Truth: the replies that say to try again, which are a slower pace or a failure on the service's side."""
+
+FIRST_WAIT_SECONDS = 1.0
+"""How long the first retry waits, which is doubled for each one after it."""
+
+LONGEST_WAIT_SECONDS = 30.0
+"""The longest any one retry waits, whatever the doubling or the service's `Retry-After` asks for."""
 
 
 def origin(url: str) -> tuple[str, str, int]:
@@ -111,21 +125,49 @@ def _unreachable(url: str, exc: urllib.error.URLError, headers: Mapping[str, str
     return ProviderError(f"could not reach {shown(url)}: {scrub(str(exc.reason), headers)}", retryable=True)
 
 
-def post_bytes(url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: int) -> bytes:
-    """One POST, with its reply as bytes, and any failure as a `PROVIDER` error that quotes no key."""
-    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST", headers=headers)
-    try:
-        with urlopen(req, timeout=timeout) as resp:
-            return resp.read()
-    except urllib.error.HTTPError as exc:
-        raise _http_error(url, exc, headers) from exc
-    except urllib.error.URLError as exc:
-        raise _unreachable(url, exc, headers) from exc
+def pause(seconds: float) -> None:
+    """Wait before asking again, which is the one place a retry sleeps and so the one a test replaces."""
+    time.sleep(seconds)
 
 
-def post_json(url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: int) -> dict[str, Any]:
+def wait_before(attempt: int, asked: str | None) -> float:
+    """How long to wait before retry number `attempt`, counted from zero.
+
+    A service that says how long to wait in `Retry-After` seconds is taken at its word, because it
+    knows its own limit. Otherwise the wait doubles from the first one. Both are held under the
+    longest wait, so a service cannot park a build for as long as it likes.
+    """
+    stated = float(asked) if asked is not None and asked.strip().isdigit() else None
+    wanted = stated if stated is not None else FIRST_WAIT_SECONDS * 2**attempt
+    return min(wanted, LONGEST_WAIT_SECONDS)
+
+
+def post_bytes(url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: int, retries: int) -> bytes:
+    """One POST, with its reply as bytes, and any failure as a `PROVIDER` error that quotes no key.
+
+    A failure the service marks as worth trying again is tried again up to `retries` more times,
+    and the last failure is the one raised.
+    """
+    data = json.dumps(body).encode()
+    attempt = 0
+    while True:
+        req = urllib.request.Request(url, data=data, method="POST", headers=headers)
+        try:
+            with urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as exc:
+            failure, asked, cause = _http_error(url, exc, headers), exc.headers.get("Retry-After"), exc
+        except urllib.error.URLError as exc:
+            failure, asked, cause = _unreachable(url, exc, headers), None, exc
+        if not failure.retryable or attempt >= retries:
+            raise failure from cause
+        pause(wait_before(attempt, asked))
+        attempt += 1
+
+
+def post_json(url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: int, retries: int) -> dict[str, Any]:
     """One POST whose reply is a JSON object, which is every call a provider makes but the two sound ones."""
-    reply = post_bytes(url, body, headers, timeout=timeout) or b"{}"
+    reply = post_bytes(url, body, headers, timeout=timeout, retries=retries) or b"{}"
     try:
         answered = json.loads(reply)
     except json.JSONDecodeError as exc:
