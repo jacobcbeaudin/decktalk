@@ -140,6 +140,65 @@ before you trust those limits on it.
 owner can read what a recording will launch before it launches. [What leaves your
 machine](/reference/what-leaves-your-machine) is the whole list of hosts DeckTalk contacts.
 
+## A page someone else wrote
+
+A deck is a web page, and its script runs in the Chromium that records it. On your own machine that
+page is your own work, so by default it is trusted: it reaches the network the way it would in your
+browser, and a font or a library it loads from another origin is reported as
+[`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET) rather than stopped.
+
+A service that renders pages other people wrote cannot extend that trust, because a trusted page
+reaches anything the machine can reach, a cloud metadata endpoint included. `[record] page_policy`
+says how far a page is trusted.
+
+| Value | What the page may do |
+|---|---|
+| `trusted` | The default. The page reaches the network as a browser would, through the machine's own proxy. |
+| `untrusted` | Chromium runs with its sandbox on, and every request that is not for the project's own origin is refused, through every channel a page can open. |
+
+```console
+decktalk config set record.page_policy untrusted --where project
+```
+
+Under `untrusted`, three things hold at once.
+
+- **The sandbox is on, or nothing runs.** A Chromium that cannot start its sandbox is refused with a
+  `TOOL` error. The run never falls back to a browser without one.
+- **No request leaves the origin.** The page is served at the project's own origin, and a request for
+  any other one is aborted before it reaches the network, whatever its scheme. The browser is also
+  pointed at a proxy that answers nothing, and WebRTC may not send UDP past it, which closes the
+  channels request routing never sees: a WebSocket, a DNS lookup and a WebRTC probe. The recording
+  still names every host the page reached for, as `PAGE_CDN_ASSET`.
+- **The browser environment is scrubbed.** Chromium is handed only the variables that say where a
+  file, a display, a locale or a proxy is, so a key the host holds never reaches the process that runs
+  a page's script. This holds under `trusted` too.
+
+The policy is read by every launch that opens a project's page, which is `record`, `check`,
+`storyboard` and the poster `assemble` draws.
+
+### The sandbox in a Linux container
+
+Chromium's sandbox needs user namespaces. In a Linux container that takes two things, and a container
+missing either one refuses an untrusted run.
+
+- **A user other than root.** Chromium refuses its sandbox to root, so run the render as an ordinary
+  user.
+- **A seccomp profile that allows user namespaces.** Docker's default profile blocks the calls the
+  sandbox makes. A render running as an ordinary user under the default profile is still refused, and
+  the same render under a profile that allows those calls launches.
+
+The refusal names both:
+
+```text
+error[TOOL]: could not launch Chromium with its sandbox on (...).
+  hint: An untrusted page runs only inside Chromium's sandbox. In a container that means a user other than root and a seccomp profile that allows user namespaces.
+  docs: https://docs.decktalk.ai/reference/errors/TOOL
+```
+
+The engine's refusal is defence in depth. A service that renders strangers' pages still runs each
+render in a network namespace with no egress of its own, because the machine is where the boundary
+belongs.
+
 ## What a voiced run needs
 
 A build without voice needs no account, no API key and no network once the tools are on the machine.

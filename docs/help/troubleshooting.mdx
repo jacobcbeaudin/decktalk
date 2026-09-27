@@ -145,6 +145,7 @@ decktalk cue --json | jq '.findings'
 | A cut slices a word, or the picture pops at a seam | [CUT_SPEECH](/reference/findings/CUT_SPEECH), [CUT_POP](/reference/findings/CUT_POP) | [A late landing](#a-late-landing) |
 | The film is too quiet, too loud or too peaky | [MIX_LOUDNESS](/reference/findings/MIX_LOUDNESS) | [A loudness miss](#a-loudness-miss) |
 | The page fetched something from another server | [PAGE_CDN_ASSET](/reference/findings/PAGE_CDN_ASSET) | [A page that loads an asset from a network origin](#a-page-that-loads-an-asset-from-a-network-origin) |
+| Chromium would not start with its sandbox on | [TOOL](/reference/errors/TOOL) | [A sandbox that will not start](#a-sandbox-that-will-not-start) |
 | An attribute or a value the contract does not declare | [PAGE_UNKNOWN_ATTR](/reference/findings/PAGE_UNKNOWN_ATTR), [PAGE_BAD_VALUE](/reference/findings/PAGE_BAD_VALUE) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A slide, a scene or a template is wrong in the markup | [PAGE_SLIDE_NO_ID](/reference/findings/PAGE_SLIDE_NO_ID), [PAGE_SLIDE_DOUBLED](/reference/findings/PAGE_SLIDE_DOUBLED), [PAGE_SLIDE_UNUSED](/reference/findings/PAGE_SLIDE_UNUSED), [PAGE_TEMPLATE_IGNORED](/reference/findings/PAGE_TEMPLATE_IGNORED), [PAGE_SCENE_EMPTY](/reference/findings/PAGE_SCENE_EMPTY) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A moment has no owner, no element or the wrong order | [PAGE_MOMENT_UNKNOWN](/reference/findings/PAGE_MOMENT_UNKNOWN), [PAGE_MOMENT_ORDER](/reference/findings/PAGE_MOMENT_ORDER), [PAGE_NO_OWNER](/reference/findings/PAGE_NO_OWNER), [PAGE_FREEZE_CUE_UNKNOWN](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN) | [A page the contract refuses](#a-page-the-contract-refuses) |
@@ -497,6 +498,29 @@ It is certain and it carries no fix, because only you can decide what the local 
 4. Keep the code if you mean it. `--allow PAGE_CDN_ASSET` carries a run past it, and it is worth
    writing down why, because a film that cannot be rebuilt in a year is what the code is warning
    about.
+
+## A sandbox that will not start
+
+**What you see.** `error[TOOL]: could not launch Chromium with its sandbox on`, on a project whose
+`[record] page_policy` is `untrusted`.
+
+An untrusted page runs only inside Chromium's sandbox, and a machine that cannot start it is refused
+rather than given a browser without one. The sandbox is a property of the machine, so no edit to the
+project clears this.
+
+**What to do.**
+
+1. In a Linux container, run the render as a user other than root, because Chromium refuses its
+   sandbox to root.
+2. Give that container a seccomp profile that allows user namespaces. Docker's default profile does
+   not, and a render as an ordinary user under it is still refused.
+3. If the project is your own work, it does not need the policy. `trusted` is the default, and
+   `decktalk config unset record.page_policy --where project` returns to it.
+
+Under `untrusted`, a request for another origin is refused rather than sent, so a page that loads a
+font or a library from a CDN renders without it. The run still names that host as `PAGE_CDN_ASSET`,
+and the fix is the one above: put the file beside the page.
+[A page someone else wrote](/requirements#a-page-someone-else-wrote) says what the policy does.
 
 ## A page the contract refuses
 
