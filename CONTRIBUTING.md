@@ -53,10 +53,8 @@ You need no ElevenLabs key. No check calls the speech API, and no key is a CI se
 
 ## Checks
 
-One table holds every check DeckTalk has. It lives in `scripts/check.py`, and it is the only place
-any check is written down: a workflow reads it at runtime and names no command of its own, so a
-workflow cannot disagree with it. There is no switch that skips a check and no way to mark one
-advisory, because a knob that exists becomes permanent.
+Every check DeckTalk has is one row of the `GROUPS` table in `scripts/check.py`, whose docstring
+says why a workflow names no command of its own and why no check can be skipped.
 
 ```console
 uv run scripts/check.py          # every group a pull request gates on, in order
@@ -388,8 +386,7 @@ Everything mechanical is generated. Do not edit a generated file. Change its sou
 script, which is what the `generated` group checks. Every generator runs through
 `scripts/generated.py`, so every one requires one of `--check` and `--write`, writes only what is
 stale, and fails with the same sentence naming the file, why it is stale and the command that fixes it.
-`uv run scripts/check.py --group generated --write` runs every generator in the group in write mode,
-which is the one command that brings every generated file up to date at once.
+`uv run scripts/check.py --group generated --write` brings every generated file up to date at once.
 
 | What is generated | From | Command |
 |---|---|---|
@@ -438,19 +435,9 @@ and a job in `ci.yml` runs `uv run scripts/check.py --group generated --write` o
 commits every file that changed, so the merge commit already carries them and no bot ever writes to
 `main`.
 
-The release path runs for real only on that pull request, so every pull request rehearses it first.
-The `rehearsal` group runs `uv run scripts/rehearse_release.py`. It asks `node
-scripts/next_version.mjs` what release-please would propose next. That script reads the history
-since the last release tag and runs release-please's own code over it, pinned in `package.json` to
-the version the release workflow's action bundles. When nothing releasable has landed, the answer is
-the version one fix would bring. The rehearsal holds that version to the rules of the cycle below,
-copies the checkout into a temporary directory, and makes release-please's bump there: the version
-in `.release-please-manifest.json`, `pyproject.toml` and every entry of `extra-files`, and the
-changelog entry release-please would write. It then runs `uv run scripts/check.py --group generated
---write` and `--group generated` in the copy, and fails when a file cannot take the version, a
-generator cannot write, or anything is still stale. It never commits or pushes anything. On
-release-please's own pull request it checks the version and bumps nothing, because the regenerate
-job writes that branch for real.
+The release path runs for real only on that pull request, so the `rehearsal` group runs it first on
+every pull request, in a copy of the checkout, with release-please's own code. The docstring of
+`scripts/rehearse_release.py` says what it bumps, what it refuses and why.
 
 The version answers for the wheel, and the wheel is `src/decktalk` alone, so `exclude-paths` in
 `release-please-config.json` lists the directories that ship to nobody: `docs`, `assets`, `scripts`,
@@ -495,19 +482,11 @@ The next release pull request is then `0.5.0`. On merge, the release workflow ma
 release and replaces its notes, which release-please wrote from the commits since the last
 candidate, with the notes of the whole series from `scripts/release_notes.py`.
 
-The rehearsal refuses three mistakes on the pull request that makes them:
-
-- **A final version nobody named.** A final release is a person's decision, so a version with no
-  prerelease part must match a `Release-As` footer.
-- **A candidate with no number.** A `prerelease-type` without a number starts the next series at
-  `0.6.0-rc`, and the one after at `0.6.0-rc.1`.
-- **A footer release-please never reads.** release-please drops a commit when every file it changes
-  sits under an excluded path, and a commit that changes no file passes that test vacuously. An
-  empty commit is dropped before its footer is read.
+The rehearsal refuses a final version nobody named, a candidate with no number and a footer
+release-please never reads, on the pull request that makes the mistake.
 
 The tag is semver and the package is PEP 440, so the tag is `v0.5.0-rc2`, the wheel is
-`decktalk-0.5.0rc2-py3-none-any.whl` and `uv version --short` prints `0.5.0rc2`. The release
-workflow compares them as versions rather than as strings, which is right under either spelling.
+`decktalk-0.5.0rc2-py3-none-any.whl` and `uv version --short` prints `0.5.0rc2`.
 `uv lock` writes the PEP 440 spelling into `uv.lock`, and release-please writes the semver one, and
 `tests/contract/test_release_versions.py` accepts both as long as every file names one version.
 
