@@ -98,6 +98,7 @@ A finding carries its code, its sentence, its certainty and often a fix an agent
 | `PAGE_BLACK` | certain | A recorded frame is black, so the film shows nothing at that moment. |
 | `PAGE_TRUNCATED` | certain | A recording stopped before its section's clock ran out, so the film is short of picture. |
 | `PAGE_CDN_ASSET` | certain | The page loads an asset from a network origin, so the film depends on somebody else's server. |
+| `PAGE_RUNTIME_STALE` | certain | The project's copy of the runtime is not the one this engine ships, so its pages play a contract this engine does not measure. |
 | `CUE_MISSING` | certain | The page declares a moment that cues.json does not list, so nothing gives it a second. |
 | `CUE_UNKNOWN` | certain | cues.json lists a cue no page declares, so nothing plays it. |
 | `CUE_UNRESOLVED` | certain | The cue's phrase is not spoken in its section, so there is no second to place it at. |

@@ -154,6 +154,7 @@
               "reference/findings/PAGE_BLACK",
               "reference/findings/PAGE_TRUNCATED",
               "reference/findings/PAGE_CDN_ASSET",
+              "reference/findings/PAGE_RUNTIME_STALE",
               "reference/findings/CUE_MISSING",
               "reference/findings/CUE_UNKNOWN",
               "reference/findings/CUE_UNRESOLVED",

@@ -203,21 +203,21 @@ def test_a_phrase_an_edit_moved_is_repaired_by_the_fix_its_finding_carries(tmp_p
     assert Code.CUE_UNRESOLVED not in {one.code for one in again.findings}
 
 
-def test_a_runtime_copy_an_older_engine_wrote_is_said_before_anything_is_priced(tmp_path: Path) -> None:
+def test_a_runtime_copy_an_older_engine_wrote_is_a_certain_finding_at_the_copy(tmp_path: Path) -> None:
+    """A copy an older engine wrote plays a contract this engine does not measure, which fails the check."""
     inputs = a_project(tmp_path, cues=CUES)
     (tmp_path / "deck" / "decktalk-runtime.js").write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
-    run = a_run(tmp_path)
-    said = notes(run)
-    check(inputs, run, pages=False)
-    assert any("deck/decktalk-runtime.js carries version 0.4.0" in line for line in said)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    (found,) = [one for one in result.findings if one.code is Code.PAGE_RUNTIME_STALE]
+    assert "deck/decktalk-runtime.js carries version 0.4.0" in found.message
+    assert found.location is not None and found.location.file == Path("deck/decktalk-runtime.js")
+    assert result.ok is False
 
 
 def test_a_project_whose_pages_load_no_copy_of_the_runtime_is_told_nothing_about_one(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, cues=CUES)
-    run = a_run(tmp_path)
-    said = notes(run)
-    check(inputs, run, pages=False)
-    assert not any("decktalk-runtime.js" in line for line in said)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    assert Code.PAGE_RUNTIME_STALE not in {one.code for one in result.findings}
 
 
 def test_an_untrusted_project_opens_its_pages_untrusted(tmp_path: Path, drawn: Drawn) -> None:

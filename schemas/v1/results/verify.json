@@ -61,6 +61,7 @@
         "PAGE_BLACK",
         "PAGE_TRUNCATED",
         "PAGE_CDN_ASSET",
+        "PAGE_RUNTIME_STALE",
         "CUE_MISSING",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",

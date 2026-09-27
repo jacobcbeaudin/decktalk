@@ -244,6 +244,12 @@
       certainty: "certain",
       raisedBy: "python",
     },
+    PAGE_RUNTIME_STALE: {
+      message:
+        "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
+      certainty: "certain",
+      raisedBy: "python",
+    },
   };
   var READ_FROM_THE_PAGE = null;
   var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };

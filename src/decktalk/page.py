@@ -399,6 +399,14 @@ class PageWarning(Enum):
         True,
         RaisedBy.PYTHON,
     )
+    PAGE_RUNTIME_STALE = (
+        (
+            "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine "
+            "does not measure."
+        ),
+        True,
+        RaisedBy.PYTHON,
+    )
 
 
 class Frozen(BaseModel):

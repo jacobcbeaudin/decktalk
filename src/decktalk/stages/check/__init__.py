@@ -30,10 +30,10 @@ from pathlib import Path
 from playwright.sync_api import Page
 
 from decktalk.errors import InputError
-from decktalk.events import Level
 from decktalk.findings import Code, Finding, Location, ProjectPath
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
+from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
 from decktalk.machine import Run
 from decktalk.media.browser import chromium, open_page
@@ -144,7 +144,7 @@ def _markdown(inputs: Inputs) -> str:
 
 
 def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
-    """Say which of the project's copies of the runtime are not the one this engine ships.
+    """Judge each of the project's copies of the runtime that is not the one this engine ships.
 
     `decktalk init` copies the runtime beside the pages, and a copy an older engine wrote keeps
     playing the older contract, so a reveal can pass on the author's machine and read differently to
@@ -154,9 +154,10 @@ def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
     pages = [*inputs.document.page_files, *extra]
     for folder in dict.fromkeys(Path(page).parent for page in pages):
         named = folder / RUNTIME_FILE
-        stale = stale_runtime(inputs.path(named), named)
+        copy = inputs.path(named)
+        stale = stale_runtime(copy, named)
         if stale is not None:
-            run.note(stale.sentence, level=Level.WARNING)
+            run.found(judge(Code.PAGE_RUNTIME_STALE, stale.sentence, at(copy, inputs.root)))
 
 
 def _segments(inputs: Inputs, run: Run) -> list[Segment]:

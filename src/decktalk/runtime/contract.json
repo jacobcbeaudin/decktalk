@@ -737,6 +737,11 @@
       "message": "The page loaded {value} from another origin, so the film depends on a host it does not own.",
       "certainty": "certain",
       "raisedBy": "python"
+    },
+    "PAGE_RUNTIME_STALE": {
+      "message": "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
+      "certainty": "certain",
+      "raisedBy": "python"
     }
   },
   "query": {

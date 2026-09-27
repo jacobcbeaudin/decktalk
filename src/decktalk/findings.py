@@ -328,6 +328,13 @@ class Code(Enum):
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
+    PAGE_RUNTIME_STALE = (
+        "PAGE_RUNTIME_STALE",
+        "The project's copy of the runtime is not the one this engine ships, so its pages play a contract "
+        "this engine does not measure.",
+        Certainty.CERTAIN,
+        RaisedBy.PYTHON,
+    )
 
     # Measured in Python, about the script, the cues, the cut and the files.
     CUE_MISSING = (

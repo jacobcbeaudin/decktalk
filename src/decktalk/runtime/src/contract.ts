@@ -342,6 +342,12 @@ export const CODES = {
     certainty: "certain",
     raisedBy: "python",
   },
+  PAGE_RUNTIME_STALE: {
+    message:
+      "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
+    certainty: "certain",
+    raisedBy: "python",
+  },
 } as const satisfies Record<string, CodeRow>;
 
 export type Code = keyof typeof CODES;
