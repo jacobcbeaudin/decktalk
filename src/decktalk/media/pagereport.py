@@ -194,6 +194,7 @@ class Recording(BaseModel):
     url: str = Field(description="The page URL that was recorded, with its query.")
     assets: tuple[str, ...] = Field(description="Every project file the page loaded, project-relative.")
     external: tuple[str, ...] = Field(description="Every other origin the page reached for while recording.")
+    missing: tuple[str, ...] = Field((), description="Every project file the page asked for that is not there.")
     requested_seconds: float = Field(ge=0, description="How long the page was recorded for after the clock started.")
     load_seconds: float = Field(ge=0, description="How long the page took to load.")
     settle_seconds: float = Field(ge=0, description="How long the page was left to settle after it loaded.")

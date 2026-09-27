@@ -17,7 +17,7 @@ import pytest
 
 from decktalk.artifacts import RecordingLog, Take, Takes
 from decktalk.errors import Cancel, NotBuiltError
-from decktalk.events import Event, Progress
+from decktalk.events import Event, Level, Log, Progress
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain
@@ -118,6 +118,7 @@ class Driven:
         self.order: list[str] = []
         self.launched = 0
         self.policies: list[str] = []
+        self.missing: tuple[str, ...] = ()
         # When set, no launch returns until every party has launched, so no worker can finish first.
         self.launches_together: threading.Barrier | None = None
         # Launches released together count at once, and an unguarded increment could lose one.
@@ -156,6 +157,7 @@ class Driven:
             url=url,
             assets=("deck/index.html",),
             external=(),
+            missing=self.missing,
             requested_seconds=seconds,
             load_seconds=0.2,
             settle_seconds=0.5,
@@ -342,3 +344,13 @@ def test_sections_recorded_at_once_come_back_in_order_with_their_own_pair_of_lin
         paired = [type(line).__name__ for line in lines if getattr(line, "section", None) == number]
         assert paired[0] == "SectionStart" and "SectionDone" in paired, paired
     assert [(line.done, line.section) for line in lines if isinstance(line, Progress)] == [(1, 1), (2, 2)]
+
+
+def test_a_file_the_page_asked_for_and_the_project_lacks_is_said_on_the_stream(tmp_path: Path, driven: Driven) -> None:
+    """It went to a warning log the command line never showed, and never reached `--json` or a host."""
+    inputs = a_project(tmp_path)
+    driven.missing = ("media/gone.png",)
+    lines: list[Event] = []
+    record(inputs, a_run(inputs, lines), only=[1])
+    said = [line.message for line in lines if isinstance(line, Log) and line.level is Level.WARNING]
+    assert said == ["Section 1 asked for media/gone.png, which the project does not have."]

@@ -334,7 +334,8 @@ def route_pages(
             assets.record(wanted.path, found=True)
             route.fulfill(status=HTTPStatus.OK, content_type=content_type(wanted.path), body=wanted.path.read_bytes())
         except Exception as exc:  # noqa: BLE001  (the page must learn its request failed rather than wait for it)
-            log.warning("could not answer %s (%s)", request.url, exc)
+            # The query is left out, because it is where a page puts what it means to send somewhere.
+            log.debug("could not answer %s (%s)", request.url.split("?", 1)[0], exc)
             broke = HTTPStatus.INTERNAL_SERVER_ERROR
             route.fulfill(status=broke, content_type=TEXT, body="the origin could not answer")
 

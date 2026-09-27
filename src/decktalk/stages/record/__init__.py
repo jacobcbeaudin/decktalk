@@ -250,6 +250,10 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, 
         raise InputError(f"section {job.section.number} was not recorded.")
     for name in recording.page_errors:
         run.note(f"Section {job.section.number} threw while it was recorded: {name}", level=Level.ERROR)
+    for name in recording.missing:
+        run.note(
+            f"Section {job.section.number} asked for {name}, which the project does not have.", level=Level.WARNING
+        )
     return recording
 
 

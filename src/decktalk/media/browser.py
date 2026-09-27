@@ -416,7 +416,7 @@ def page_errors(page: Page, caught: list[str], label: str) -> list[str]:
     except ToolError:
         errors.append(NO_CATALOG)
     for e in errors:
-        log.warning("[page] %s  page error: %s", label, e)
+        log.debug("[page] %s  page error: %s", label, e)
     return errors
 
 
@@ -432,9 +432,9 @@ def read_report(page: Page, label: str) -> PageReport:
         return pagereport.read(None).model_copy(update={"unreadable": (str(refused),)})
     report = pagereport.read(answer)
     for row in report.warnings:
-        log.warning("[page] %s  %s: %s", label, row.code.name, row.message)
+        log.debug("[page] %s  %s: %s", label, row.code.name, row.message)
     for line in report.unreadable:
-        log.warning("[page] %s  %s", label, line)
+        log.debug("[page] %s  %s", label, line)
     return report
 
 
@@ -582,6 +582,7 @@ def record_page(
             url=url,
             assets=tuple(capture.assets.paths),
             external=tuple(capture.assets.external),
+            missing=tuple(capture.assets.missing),
             requested_seconds=round(seconds, 3),
             load_seconds=round(loaded - capture.opened, 3),
             settle_seconds=round(started - loaded, 3),
@@ -592,8 +593,6 @@ def record_page(
         _log_what_the_page_reported(recording, out.stem)
         capture.place(out)
     log_sink.write(recording)
-    for name in capture.assets.missing:
-        log.warning("[page] %s  the page asked for %s and the project has no such file", out.stem, name)
     return recording
 
 
@@ -626,7 +625,7 @@ def _log_what_the_page_reported(recording: Recording, label: str) -> None:
     after_start = [gap for gap in recording.report.frame_gaps if gap.at is not None and gap.at > 0]
     if after_start:
         worst = max(gap.ms for gap in after_start)
-        log.warning("[page] %s  %d frame stall(s) after narration t=0, worst %d ms", label, len(after_start), worst)
+        log.debug("[page] %s  %d frame stall(s) after narration t=0, worst %d ms", label, len(after_start), worst)
     under_cover = len(recording.report.frame_gaps) - len(after_start)
     if under_cover:
         log.debug("[page] %s  %d frame stall(s) under the cover", label, under_cover)
