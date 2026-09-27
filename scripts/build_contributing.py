@@ -22,17 +22,16 @@ added without a sentence about it.
 from __future__ import annotations
 
 import ast
-import importlib.util
 import re
 import sys
 from pathlib import Path
 
+import check
 import generated
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "decktalk"
 IMPORT_TEST = ROOT / "tests" / "contract" / "test_imports.py"
-CHECK_SCRIPT = ROOT / "scripts" / "check.py"
 TARGET = ROOT / "CONTRIBUTING.md"
 
 LAYOUT = ("<!-- layout:start -->", "<!-- layout:end -->")
@@ -65,18 +64,6 @@ def layers() -> dict[str, tuple[str, int]]:
         if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "LAYERS" and node.value:
             return ast.literal_eval(node.value)
     raise SystemExit(f"{IMPORT_TEST.relative_to(ROOT)} has no LAYERS table to read the import order from.")
-
-
-def groups() -> tuple[object, ...]:
-    """The frozen `GROUPS` table, imported from the one file that spells a check."""
-    spec = importlib.util.spec_from_file_location("decktalk_check_table", CHECK_SCRIPT)
-    if spec is None or spec.loader is None:
-        raise SystemExit(f"{CHECK_SCRIPT.relative_to(ROOT)} could not be read, so no check table exists.")
-    module = importlib.util.module_from_spec(spec)
-    # A frozen dataclass looks its own module up while it is being built, so it has to be registered.
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return tuple(module.GROUPS)
 
 
 def summary(path: Path) -> str:
@@ -139,12 +126,6 @@ def render_tree() -> str:
     return "\n".join(lines)
 
 
-def shell(command: tuple[str, ...]) -> str:
-    """One command as a person types it, with this checkout's own path and any script left out."""
-    parts = ["<shell script>" if "\n" in part else part.replace(f"{ROOT}/", "") for part in command]
-    return " ".join(parts)
-
-
 def runner_names(runners: tuple[str, ...]) -> str:
     """The runners of one row, as the words a contributor uses rather than the labels GitHub uses."""
     words = {"ubuntu-latest": "Linux", "macos-latest": "macOS", "windows-latest": "Windows"}
@@ -156,30 +137,14 @@ NO_TOOLS = "nothing beyond uv"
 
 
 def render_checks() -> str:
-    """The check table as a Markdown table and a command list, both read from `GROUPS`."""
-    rows = groups()
-    lines = [
-        "| Group | What it runs | Needs | Where | Gates on |",
-        "|---|---|---|---|---|",
-    ]
-    for group in rows:
-        first = shell(group.commands[0])
+    """The check table as a Markdown table, one row per entry of `GROUPS`."""
+    lines = ["| Group | What it runs | Needs | Where | Gates on |", "|---|---|---|---|---|"]
+    for group in check.GROUPS:
         more = f", and {len(group.commands) - 1} more" if len(group.commands) > 1 else ""
         lines.append(
-            f"| `{group.name}` | `{first}`{more} | {', '.join(group.tools) or NO_TOOLS} | "
+            f"| `{group.name}` | `{check.shell(group.commands[0])}`{more} | {', '.join(group.tools) or NO_TOOLS} | "
             f"{runner_names(group.runners)} | {', '.join(group.when)} |"
         )
-    lines.append("")
-    lines.append("Every group, one at a time:")
-    lines.append("")
-    lines.append("```console")
-    # The comment column is measured from the longest row rather than typed, so a group whose name
-    # grows still leaves a space between the command and the sentence that explains it.
-    calls = [f"uv run scripts/check.py --group {group.name}" for group in rows]
-    column = max(len(call) for call in calls) + 1
-    for call, group in zip(calls, rows, strict=True):
-        lines.append(call.ljust(column) + f"# {group.why}")
-    lines.append("```")
     return "\n".join(lines)
 
 
