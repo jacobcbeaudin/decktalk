@@ -21,6 +21,8 @@ from decktalk.media.environment import child_environment
 from decktalk.media.origin import ORIGIN, Allowed, page_url
 from decktalk.settings import BY_ID, COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 
+from ..conftest import FakeVideo
+
 REPORTED = {
     "version": "0.5.0",
     "mode": "cue",
@@ -34,14 +36,6 @@ REPORTED = {
     "longFrames": [],
 }
 """What the page answers `window.__dtprobe.report()` with, in the shape the contract names."""
-
-
-class FakeVideo:
-    def __init__(self, path: Path) -> None:
-        self._path = path
-
-    def path(self) -> str:
-        return str(self._path)
 
 
 class FakePage:

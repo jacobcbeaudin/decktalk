@@ -7,14 +7,13 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import Cancelled
-from decktalk.events import Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Run, apply_fix
+from decktalk.machine import apply_fix
 from decktalk.results import CheckResult, Scope, SpendState
 from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
-from support.runs import a_run
+from support.runs import a_run, notes
 
 from .conftest import Drawn, a_project, catalog
 
@@ -29,13 +28,6 @@ SCENES = (
     catalog("2", {"2.1": ["2.1:a"]}),
 )
 """What the demo deck publishes, which is two scenes with one slide each."""
-
-
-def notes(run: Run) -> list[str]:
-    """Every sentence a run said, which is where a reading that is not a judgement goes."""
-    said: list[str] = []
-    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
-    return said
 
 
 def test_a_run_with_no_pages_judges_the_script_and_opens_nothing(tmp_path: Path) -> None:

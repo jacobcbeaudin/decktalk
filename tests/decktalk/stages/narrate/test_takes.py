@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from decktalk.artifacts import Take, Takes, Words, take_file, words_file
+from decktalk.artifacts import Takes, Words, take_file, words_file
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.media import audio
@@ -22,7 +22,7 @@ from decktalk.stages.narrate.takes import (
 )
 from support.runs import Watched
 
-from .conftest import VOICE_ID
+from .conftest import VOICE_ID, a_paid_take
 
 
 @pytest.fixture(autouse=True)
@@ -33,21 +33,6 @@ def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
     through, and every placement test measures the arithmetic rather than ffmpeg.
     """
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
-
-
-def a_take(section: int = 1, *, digest: str = "0000000000000abc", seconds: float = 1.0) -> Take:
-    return Take(
-        section=section,
-        key=f"{section:02d}",
-        chapter="Open",
-        hash=digest,
-        voiced=True,
-        word_count=2,
-        characters=8,
-        estimated_seconds=1.0,
-        duration_seconds=seconds,
-        spoken="A bowl.",
-    )
 
 
 def test_estimated_words_space_the_section_evenly_and_drop_its_punctuation() -> None:
@@ -66,7 +51,7 @@ def test_a_section_that_says_nothing_has_no_estimated_words() -> None:
 def test_placing_a_take_reads_its_own_bytes_and_its_own_section(inputs: Inputs) -> None:
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     (inputs.workspace.takes_dir / take_file("0000000000000abc")).write_bytes(b"")
-    placed = place(inputs, 1, a_take())
+    placed = place(inputs, 1, a_paid_take())
     assert placed.sound_end_seconds == pytest.approx(0.8)
     assert placed.lead_seconds == pytest.approx(0.5)
     assert placed.tail_seconds == pytest.approx(0.7)
@@ -77,7 +62,7 @@ def test_a_row_that_carries_its_sound_end_keeps_it(inputs: Inputs) -> None:
     """The file its hash names holds the same bytes it was measured on, so it is measured once."""
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     (inputs.workspace.takes_dir / take_file("0000000000000abc")).write_bytes(b"")
-    assert place(inputs, 1, a_take().model_copy(update={"sound_end_seconds": 0.25})).sound_end_seconds == 0.25
+    assert place(inputs, 1, a_paid_take().model_copy(update={"sound_end_seconds": 0.25})).sound_end_seconds == 0.25
 
 
 def test_a_placeholder_take_writes_its_audio_and_its_words(inputs: Inputs, fake_ffmpeg: object) -> None:
@@ -151,10 +136,10 @@ def test_the_narration_is_joined_in_the_order_the_index_holds(
         model="m",
         output_format="mp3_44100_128",
         sections=(
-            a_take(1, digest="0000000000000001").model_copy(
+            a_paid_take(1, digest="0000000000000001").model_copy(
                 update={"sound_end_seconds": 0.8, "lead_seconds": 0.5, "tail_seconds": 0.7}
             ),
-            a_take(2, digest="0000000000000002").model_copy(
+            a_paid_take(2, digest="0000000000000002").model_copy(
                 update={"sound_end_seconds": 0.4, "lead_seconds": 0.1, "tail_seconds": 0.2}
             ),
         ),

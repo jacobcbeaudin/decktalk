@@ -8,12 +8,11 @@ import pytest
 
 from decktalk.artifacts import Words, words_file
 from decktalk.errors import InputError, NotBuiltError
-from decktalk.events import Log
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.results import ClipResult, Word
 from decktalk.stages.clip import clip
-from support.runs import a_run
+from support.runs import a_run, notes
 from support.takes import a_take, write_takes
 
 TOML = """
@@ -70,12 +69,6 @@ def cut_a_clip(inputs: Inputs, run: Run, **options: object) -> ClipResult:
     settings: dict[str, object] = {"section": 1, "start": 0.0, "end": 0.8, "out": Path("media/answer.mp4")}
     settings.update(options)
     return clip(inputs, run, **settings)  # type: ignore[arg-type]  (the test names the same keywords)
-
-
-def notes(run: Run) -> list[str]:
-    said: list[str] = []
-    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
-    return said
 
 
 # ---- what it writes ------------------------------------------------------------------------------

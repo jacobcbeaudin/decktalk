@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from decktalk.errors import Cancel
-from decktalk.events import Event
+from decktalk.events import Event, Log
 from decktalk.machine import Machine, Run, Toolchain
 from decktalk.results import Voicing
 from decktalk.settings import ToolsConfig
@@ -51,3 +51,10 @@ class Watched:
     def of(self, event: str) -> list[Event]:
         """Every line of one kind, in the order the stage emitted them."""
         return [line for line in self.lines if line.event == event]
+
+
+def notes(run: Run) -> list[str]:
+    """Every sentence the run puts on the stream from now on, which is where a reading that is not a code goes."""
+    said: list[str] = []
+    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
+    return said

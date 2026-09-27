@@ -11,13 +11,12 @@ from decktalk.artifacts import Take
 from decktalk.events import Level, Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
 from decktalk.page import Q
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, StatusResult
 from decktalk.stages import status as stage
 from decktalk.stages.status import BUILT, next_command, source_of, status
-from support.runs import a_run
+from support.runs import a_run, notes
 from support.takes import a_take, write_takes
 
 TOML = """
@@ -61,13 +60,6 @@ def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: 
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     (inputs.workspace.takes_dir / take.file).write_bytes(b"")
     return take
-
-
-def notes(run: Run) -> list[str]:
-    """Every sentence this run put on the stream, which is where a reading that is not a code goes."""
-    said: list[str] = []
-    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
-    return said
 
 
 # ---- what to do next ---------------------------------------------------------------------------

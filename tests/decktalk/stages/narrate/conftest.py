@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pytest
 
+from decktalk.artifacts import Take
 from decktalk.inputs import Inputs
+from support.takes import a_take
 
 VOICE_ID = "voice-under-test"
 """The voice every project here is read in, which is one of the inputs a take's digest is over."""
@@ -91,3 +93,18 @@ def inputs(make_inputs: Callable[..., Inputs]) -> Inputs:
 def run_environ() -> dict[str, str]:
     """The credential and the voice name, which every narrate run finds on its machine."""
     return ENVIRON
+
+
+def a_paid_take(section: int = 1, *, digest: str = "0000000000000abc", seconds: float = 1.0) -> Take:
+    """A take index row a provider was paid for, whose voice nobody on this machine can name."""
+    return a_take(
+        section,
+        seconds=seconds,
+        chapter="Open",
+        hash=digest,
+        characters=8,
+        estimated_seconds=1.0,
+        speech_end_seconds=None,
+        sound_end_seconds=None,
+        spoken="A bowl.",
+    )

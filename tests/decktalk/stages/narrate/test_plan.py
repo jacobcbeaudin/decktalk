@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Take, TakeInputs, Takes, take_file, words_file
+from decktalk.artifacts import TakeInputs, Takes, take_file, words_file
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.results import Layer, SpendState, TakeStatus
@@ -24,7 +24,7 @@ from decktalk.stages.narrate.plan import (
 )
 from support.paths import DATA
 
-from .conftest import TOML, VOICE_ID
+from .conftest import TOML, VOICE_ID, a_paid_take
 
 GOLDEN = json.loads((DATA / "take_hash.json").read_text(encoding="utf-8"))
 """The two films the founder has really paid for, with the digest of every take he bought."""
@@ -167,22 +167,6 @@ def test_a_voiced_plan_prices_what_it_will_send_and_what_it_can_cost(inputs: Inp
     assert spend.price_per_1000_characters == pytest.approx(0.30)
     assert spend.price_layer is Layer.PROJECT
     assert spend.sections == (1, 2, 3)
-
-
-def a_paid_take(section: int) -> Take:
-    """A take index row a provider was paid for, whose voice nobody on this machine can name."""
-    return Take(
-        section=section,
-        key=f"{section:02d}",
-        chapter="Open",
-        hash="0000000000000abc",
-        voiced=True,
-        word_count=2,
-        characters=8,
-        estimated_seconds=1.0,
-        duration_seconds=1.0,
-        spoken="A bowl.",
-    )
 
 
 def test_a_paid_take_the_cache_could_not_be_checked_for_is_priced_into_the_ceiling_alone(
