@@ -102,7 +102,7 @@ and ask me before any run that spends money.
 
 The agent reads `decktalk --help` for the commands, `decktalk schema build` for one command's flags and result, and `decktalk config explain KEY` for one setting. Every command prints one JSON object under `--json`, and `--events` streams progress as JSON lines. Exit 0 means nothing was found, 1 a finding, 2 a refused command line and 3 that DeckTalk could not run. The [reference card](https://docs.decktalk.ai/reference/card) puts the whole contract on one page.
 
-Without a terminal, a voiced build refuses to spend unless `--spend` is passed, so an agent left alone cannot buy speech by accident. This is the whole answer from `decktalk --json build` in the starter, which exits 2.
+Without a terminal, a voiced build refuses to spend unless `--spend` is passed, so an agent left alone cannot buy speech by accident. This is the whole answer from `decktalk --json build` in the starter with a voice named, which exits 2.
 
 ```json
 {
@@ -111,7 +111,7 @@ Without a terminal, a voiced build refuses to spend unless `--spend` is passed, 
   "findings": [],
   "error": {
     "code": "APPROVAL",
-    "message": "Voicing 3 sections costs up to $0.14, and no terminal is here to approve it.",
+    "message": "This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.",
     "hint": "Run decktalk build --spend to approve that spend, or decktalk build --no-voice to finish with placeholder narration.",
     "location": null,
     "docs": "https://docs.decktalk.ai/reference/errors/APPROVAL"

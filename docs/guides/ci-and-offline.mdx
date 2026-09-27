@@ -47,9 +47,9 @@ agent cannot answer and a flag that does not exist are the same failure.
 
 The refusal is the whole of what a caller needs.
 
-{/* sample: decktalk narrate --no-input on a starter with no --spend and no --no-voice */}
+{/* sample: decktalk narrate --no-input on a starter with a voice id set, and no --spend and no --no-voice */}
 ```text
-error[APPROVAL]: Voicing 3 sections costs up to $0.14, and no terminal is here to approve it.
+error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
   hint: Run decktalk narrate --spend to approve that spend, or decktalk narrate --no-voice to finish with placeholder narration.
   docs: https://docs.decktalk.ai/reference/errors/APPROVAL
 ```
@@ -149,14 +149,13 @@ decktalk check --no-pages
 build would cost. `--no-pages` drops the browser entirely and says which judgements it could not
 reach, so a docs-only job, a pre-commit hook and a container with no Chromium can all still run it.
 
-{/* sample: the stderr of decktalk check --no-pages on a starter with no ElevenLabs key */}
+{/* sample: the output of decktalk check --no-pages on a starter with no ElevenLabs key and no voice id */}
 ```text
-ELEVENLABS_VOICE_ID is not set, so no take on disk can be matched to the voice that made it.
-there is no voice to ask, so the cache could not be checked and the whole run is priced as new. ELEVENLABS_API_KEY is not set.
+No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
 no page was opened, so these judgements were not reached: CUE_MISSING, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
 frames were asked for and no page was opened, so no frame was frozen either.
 Checking script.md, cues.json.
-Voicing it costs about $0.00 at $0.30 per 1,000 characters, up to $0.14.
+The takes on disk could not be matched to a voice, so this run costs up to $0.14 at $0.30 per 1,000 characters.
 ```
 
 The run is never quiet about what it skipped, so a hook that runs `--no-pages` cannot be mistaken for

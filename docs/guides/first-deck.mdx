@@ -138,10 +138,9 @@ decktalk check --section 4 --no-frames
 ```
 
 ```text
-ELEVENLABS_VOICE_ID is not set, so no take on disk can be matched to the voice that made it.
-there is no voice to ask, so the cache could not be checked and the whole run is priced as new. ELEVENLABS_API_KEY is not set.
+No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
-Voicing it costs about $0.00 at $0.30 per 1,000 characters, up to $0.03.
+The takes on disk could not be matched to a voice, so this run costs up to $0.03 at $0.30 per 1,000 characters.
 cues.json: CUE_MISSING section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
   fix (safe): Add 1 row(s) to section 4 of cues.json, each waiting for the phrase you write in its `on`.
 Found 1 finding, 1 certain. 1 fixable with --fix.
@@ -156,7 +155,7 @@ decktalk check --section 4 --no-frames --fix
 ```
 
 ```text
-cues.json: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'on' and it will have a second.
+cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'on' and it will have a second.
 Found 1 finding, 1 certain.
 ```
 
@@ -185,15 +184,16 @@ decktalk check --section 4 --no-frames
 ```
 
 ```text
-ELEVENLABS_VOICE_ID is not set, so no take on disk can be matched to the voice that made it.
-there is no voice to ask, so the cache could not be checked and the whole run is priced as new. ELEVENLABS_API_KEY is not set.
+No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
-Voicing it costs about $0.00 at $0.30 per 1,000 characters, up to $0.03.
+The takes on disk could not be matched to a voice, so this run costs up to $0.03 at $0.30 per 1,000 characters.
 ```
 
-Nothing found, and it exits 0. The two lines about the voice are the price explaining itself: with no
-key there is no voice to ask, so no take on disk can be matched and the whole section is priced as
-new.
+Nothing found, and it exits 0. The two lines about the voice are the price explaining itself: with
+no voice id named, no take on disk can be matched to the voice that made it, so the section counts
+toward the most the run can cost rather than toward what it certainly costs. Set
+`ELEVENLABS_VOICE_ID` and the same line states one figure: `This run costs $0.03 for 111 characters
+at $0.30 per 1,000 characters.`
 
 <Tip>Run `decktalk check` with no flags before a build. It opens the pages, freezes every slide
 either side of every cue, and reports a reveal too small to be measured, which is the judgement
