@@ -13,7 +13,8 @@ process cannot read each other's, and the machine stays the only reader of `os.e
 Whether `.env` is read at all is the machine's decision, bound for each run through `reading_dotenv`.
 A machine built from the process reads it, because it belongs to the author at the keyboard. A
 machine a host built by hand does not, because a tenant's upload could otherwise carry a `.env` that
-supplies a key, a voice id or a switch the host never gave it.
+supplies a key, a voice id or a switch the host never gave it. A caller outside any run reads none,
+so a host that reaches this layer without a machine gets the host's rule and never the author's.
 """
 
 from __future__ import annotations
@@ -36,8 +37,11 @@ PLACEHOLDER_MARK = "<"
 COMMENT_MARK = " #"
 """What ends an unquoted value, so a trailing note never becomes part of a credential."""
 
-DOTENV: ContextVar[bool] = ContextVar("decktalk_dotenv", default=True)
-"""Whether the machine whose run is in progress reads a project's `.env`, which `reading_dotenv` sets."""
+DOTENV: ContextVar[bool] = ContextVar("decktalk_dotenv", default=False)
+"""Whether the machine whose run is in progress reads a project's `.env`, which `reading_dotenv` sets.
+
+It is false until a machine says otherwise, so a read with no run in progress fails closed.
+"""
 
 
 @contextmanager

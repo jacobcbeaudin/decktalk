@@ -13,6 +13,7 @@ from decktalk.artifacts import CueTimes, Words
 from decktalk.artifacts.words import words_file
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
+from decktalk.inputs.env import reading_dotenv
 from decktalk.results import CueTime, SectionCues, Word
 from support.projects import MINIMAL_TOML, write_project
 
@@ -138,12 +139,13 @@ def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch
     root = write_project(tmp_path)
     (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nELEVENLABS_VOICE_ID='abc' # comment\n", encoding="utf-8")
     p = Inputs.load(root, environ={})
-    assert not p.env.get("ELEVENLABS_API_KEY")  # the placeholder counts as unset
-    assert p.env.get("ELEVENLABS_VOICE_ID").reveal() == "abc"
-    # A secret is named by its variable and never by its value, in a repr as in an error.
-    assert repr(p.env.get("ELEVENLABS_VOICE_ID")) == "<secret ELEVENLABS_VOICE_ID>"
-    with pytest.raises(InputError, match="ELEVENLABS_API_KEY") as info:
-        p.env.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
+    with reading_dotenv(True):
+        assert not p.env.get("ELEVENLABS_API_KEY")  # the placeholder counts as unset
+        assert p.env.get("ELEVENLABS_VOICE_ID").reveal() == "abc"
+        # A secret is named by its variable and never by its value, in a repr as in an error.
+        assert repr(p.env.get("ELEVENLABS_VOICE_ID")) == "<secret ELEVENLABS_VOICE_ID>"
+        with pytest.raises(InputError, match="ELEVENLABS_API_KEY") as info:
+            p.env.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
     assert "abc" not in str(info.value)
 
 
