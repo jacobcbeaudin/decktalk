@@ -36,7 +36,7 @@ from decktalk.errors import DeckTalkError, ToolError
 from decktalk.events import Level
 from decktalk.inputs import ClipSection, Inputs, PageSection
 from decktalk.machine import Run
-from decktalk.media import MILLISECONDS, browser, ffmpeg
+from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import iso_639_2
 from decktalk.media.origin import Allowed, page_url
 from decktalk.media.pagereport import MeasuredScene
@@ -364,8 +364,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
     if section is None:
         return None
     video = inputs.settings.video
-    settle = int(inputs.settings.record.screenshot_settle_seconds * MILLISECONDS)
-    key = inputs.still_key(section.page, POSTER_MARK, section.scene, settle_ms=settle)
+    key = inputs.still_key(section.page, POSTER_MARK, section.scene)
     kept = inputs.stills.find(key)
     if kept is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -388,7 +387,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
                 run.note(f"{section.page} declares no slide for scene {section.scene}, so no poster is written.",
                          level=Level.WARNING)  # fmt: skip
                 return None
-            browser.screenshot(page, page_url(section.page, query), out, settle_ms=settle)
+            browser.screenshot(page, page_url(section.page, query), out)
             inputs.stills.keep(key, out, assets.paths)
     except DeckTalkError as refused:
         run.note(f"The poster could not be drawn ({refused}), so the film is published without one.",

@@ -642,3 +642,18 @@ def test_the_slices_of_a_wait_add_up_to_the_span_exactly():
 
     browser.waited(Clock(), 2.5, lambda: None)  # type: ignore[arg-type]
     assert waits == [1000.0, 1000.0, 500.0]
+
+
+def test_a_frozen_frame_is_taken_once_the_page_is_ready_and_has_painted_twice(tmp_path):
+    """A fixed 400 ms settle was most of `check`, and ready() and two frames are what a frame needs."""
+    waits: list[float] = []
+
+    class Timed(FakePage):
+        def wait_for_timeout(self, ms: float) -> None:
+            waits.append(ms)
+
+    page = Timed(FakeContext(tmp_path))
+    browser.screenshot(page, page_url("deck/index.html"), tmp_path / "a.png")  # type: ignore[arg-type]
+    order = [script for script in page.scripts if browser.READY_JS in script or browser.PAINTED_JS in script]
+    assert [browser.READY_JS in script for script in order] == [True, False]
+    assert waits == [], "no fixed settle is spent on top of ready() and two painted frames"

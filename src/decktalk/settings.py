@@ -322,12 +322,6 @@ class RecordConfig:
         bounds=Bounds(ge=0, le=10),
         see_also=("record.frame_gap_max_ms",),
     )
-    screenshot_settle_seconds: float = tune(
-        0.4,
-        "Seconds that `storyboard` waits before each slide panel.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=10),
-    )
     cover_scan_seconds: float = tune(
         4.0,
         "Seconds at the start of each recording that `record` scans for the magenta cover.",

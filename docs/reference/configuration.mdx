@@ -137,7 +137,6 @@ These keys tune the headless Chromium recording and how narration t=0 is found i
 | `page_policy` | string | `"trusted"` | must be one of trusted, untrusted |  | project |  | How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. |
 | `concurrency` | integer | `0` | must be between 0 and 16 |  | machine |  | How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count. |
 | `retries` | integer | `2` | must be between 0 and 10 |  | project |  | How many more times `record` records a section whose frames stalled. |
-| `screenshot_settle_seconds` | number | `0.4` | must be between 0 and 10 | seconds | project |  | Seconds that `storyboard` waits before each slide panel. |
 | `cover_scan_seconds` | number | `4.0` | must be between 0 and 30 | seconds | project |  | Seconds at the start of each recording that `record` scans for the magenta cover. |
 | `fallback_first_paint_seconds` | number | `1.1` | must be between 0 and 10 | seconds | project |  | Guessed first paint when `record` finds no cover and no painted frame. `record` adds `settle_seconds` to it. |
 | `cover_luma_min` | number | `70.0` | must be between 40 and 120 | luma | project |  | A cover frame has an average luma above this. |

@@ -26,7 +26,7 @@ from decktalk.stages.check.scan import (
     share_message,
     static_findings,
 )
-from decktalk.stages.storyboard import Freeze, settle_milliseconds, slide_cues
+from decktalk.stages.storyboard import Freeze, slide_cues
 
 from .conftest import BOX, FakeAssets, a_project, a_report, a_run, catalog
 
@@ -242,11 +242,6 @@ def test_every_slide_keeps_the_state_it_opens_on_as_a_panel(tmp_path: Path, froz
 def test_the_pages_judged_are_the_sections_pages_and_the_ones_a_caller_named(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     assert judged_pages(inputs.document.page_sections, ["deck/other.html"]) == ("deck/index.html", "deck/other.html")
-
-
-def test_the_settle_is_read_from_the_key_that_states_it_in_seconds(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path)
-    assert settle_milliseconds(inputs) == int(inputs.settings.record.screenshot_settle_seconds * 1000)
 
 
 def test_a_scene_declares_its_slides_and_their_cues() -> None:

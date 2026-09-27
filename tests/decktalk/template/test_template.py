@@ -246,9 +246,10 @@ RETIRED = (
     "data-cue", "data-reveal", "data-duration", "data-text", "data-delay", "data-preview",
     "data-camera", "data-ease", "data-distance", "data-sync-lead", "min_tail_seconds",
     "max_offset_frames", "true_peak_db", "mix.sfx", "soundscape.sfx", "video.fps", "screenshot_settle_ms",
+    "screenshot_settle_seconds",
     "DECKTALK_FFMPEG", "DECKTALK_FFPROBE", "DECKTALK_CACHE_DIR", "preflight", "screenshots",
 )  # fmt: skip
-"""Every name 0.5.0 retired, which no file a reader receives from the wheel may still carry."""
+"""Every name a release retired, which no file a reader receives from the wheel may still carry."""
 
 
 def carried(path: Path) -> list[str]:

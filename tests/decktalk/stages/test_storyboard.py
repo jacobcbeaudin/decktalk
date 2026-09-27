@@ -340,7 +340,7 @@ def test_a_different_frame_size_is_a_different_still(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, cues=CUES)
     wide = Inputs.load(tmp_path, environ={}, overrides=("video.width=1280", "video.height=720"))
     page = inputs.document.page_sections[0].page
-    assert inputs.still_key(page, "url", settle_ms=0) != wide.still_key(page, "url", settle_ms=0)
+    assert inputs.still_key(page, "url") != wide.still_key(page, "url")
 
 
 def test_an_untrusted_project_draws_its_pages_untrusted(tmp_path: Path, opened: Opened) -> None:

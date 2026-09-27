@@ -485,19 +485,6 @@
           ],
           "x-environment": "DECKTALK_RECORD_RETRIES"
         },
-        "screenshot_settle_seconds": {
-          "description": "Seconds that `storyboard` waits before each slide panel.",
-          "type": "number",
-          "default": 0.4,
-          "minimum": 0,
-          "maximum": 10,
-          "x-range": "must be between 0 and 10",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_SCREENSHOT_SETTLE_SECONDS"
-        },
         "cover_scan_seconds": {
           "description": "Seconds at the start of each recording that `record` scans for the magenta cover.",
           "type": "number",

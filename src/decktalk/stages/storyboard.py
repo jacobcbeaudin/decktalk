@@ -31,7 +31,6 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.workspace import Workspace
 from decktalk.machine import Run
-from decktalk.media import MILLISECONDS
 from decktalk.media.browser import await_ready, chromium, open_page, read_report, screenshot
 from decktalk.media.origin import Allowed, Assets, page_url
 from decktalk.media.pagereport import MeasuredScene, PageReport
@@ -175,21 +174,15 @@ def still(inputs: Inputs, page: Page, assets: Assets, section: PageSection, free
     state was drawn now, and false means it was read back from the frames the project keeps.
     """
     url = freeze_url(inputs, section, freeze)
-    settle = settle_milliseconds(inputs)
-    key = inputs.still_key(section.page, url, settle_ms=settle, documents=inputs.documents())
+    key = inputs.still_key(section.page, url, documents=inputs.documents())
     target.parent.mkdir(parents=True, exist_ok=True)
     kept = inputs.stills.find(key)
     if kept is not None:
         shutil.copyfile(kept, target)
         return False
-    screenshot(page, url, target, settle_ms=settle)
+    screenshot(page, url, target)
     inputs.stills.keep(key, target, assets.paths)
     return True
-
-
-def settle_milliseconds(inputs: Inputs) -> int:
-    """How long a page is left to draw itself before its frame is taken, in the unit Chromium waits in."""
-    return int(inputs.settings.record.screenshot_settle_seconds * MILLISECONDS)
 
 
 def freeze_url(inputs: Inputs, section: PageSection, freeze: Freeze) -> str:
@@ -413,7 +406,6 @@ __all__ = [
     "reports_of",
     "freeze_url",
     "panels_of",
-    "settle_milliseconds",
     "slide_cues",
     "still",
     "storyboard",

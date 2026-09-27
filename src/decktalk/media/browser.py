@@ -85,6 +85,9 @@ MOTION_JS = """(() => {
 # Remove the cover, then start the page clock on the next animation frame.
 START_JS = "() => window.__dtprobe.lift()"
 READY_JS = "() => window.__dtprobe.ready()"
+# Two animation frames after the page is ready, so what the page drew in answer to ready() has been
+# through layout and paint before a frozen frame is taken.
+PAINTED_JS = "() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))"
 REPORT_JS = "() => window.__dtprobe.report()"
 # Whether the runtime is present and the page registered at least one scene.
 HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
@@ -376,6 +379,21 @@ def await_ready(page: Page) -> None:
         log.debug("the page did not answer __dtprobe.ready(), so it is taken as ready")
 
 
+def await_painted(page: Page) -> None:
+    """Wait until the page is ready and has painted two frames since, which is when a frozen frame is final.
+
+    `ready()` is the contract for a frozen frame: a page that is ready has its fonts, its scene and its
+    freeze in place, and the two frames after it carry what that state drew to the screen. A fixed
+    settle of 400 ms was six of every eight seconds `check` took, and the frames it waited for were
+    byte for byte the frames this takes without it.
+    """
+    await_ready(page)
+    try:
+        evaluate(page, PAINTED_JS)
+    except ToolError:
+        log.debug("the page painted no frame on request, so the frame is taken as it stands")
+
+
 def page_error_text(err: object) -> str:
     """One line for an uncaught page exception: the message, and the file and line when Chromium gives them."""
     message = str(getattr(err, "message", None) or err).strip().splitlines()[0] if str(err).strip() else "error"
@@ -614,12 +632,15 @@ def _log_what_the_page_reported(recording: Recording, label: str) -> None:
         log.debug("[page] %s  %d frame stall(s) under the cover", label, under_cover)
 
 
-def screenshot(page: Page, url: str, out: Path, *, settle_ms: int) -> PageReport:
-    """Write one PNG of `url`, and give back what the page reported while it was open."""
+def screenshot(page: Page, url: str, out: Path) -> PageReport:
+    """Write one PNG of `url` once it has painted, and give back what the page reported while it was open.
+
+    The frame is taken once the page says it is ready and two frames have painted after that, which
+    is everything a page that keeps the contract draws, so no fixed wait is spent on top of it.
+    """
     with driving(f"could not load {url}"):
         page.goto(url)
-    await_ready(page)
-    page.wait_for_timeout(settle_ms)
+    await_painted(page)
     out.parent.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(out))
     return read_report(page, out.stem)
@@ -720,6 +741,6 @@ def render_slate(
     with chromium(browser_path, policy=policy) as browser:
         page = browser.new_page(viewport={"width": width, "height": height})
         page.set_content(doc)
-        await_ready(page)
+        await_painted(page)
         page.screenshot(path=str(out))
     return out
