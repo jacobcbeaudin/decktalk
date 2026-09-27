@@ -12,11 +12,18 @@ went on to load, because a picture or a module the page reached for is part of t
 
 A frame is kept only when its key matches and every file its manifest names still has the digest it
 had, which is the same rule the recorder trusts for a whole section.
+
+Every edit to a page gives its frames new keys, so the store would grow for as long as a project is
+worked on. A frame that is found is touched, and a frame nobody has asked for in `IDLE_SECONDS` is
+removed whenever another is kept, which bounds the store without any caller knowing what another
+caller still needs. A frame removed too early costs one redraw and is never wrong.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +39,9 @@ IMAGE_SUFFIX = ".png"
 
 MANIFEST_SUFFIX = ".json"
 """What the manifest beside a kept frame is called after its key."""
+
+IDLE_SECONDS = 14 * 24 * 60 * 60
+"""Calibration: a fortnight, which outlives any pause in work on one deck and still bounds the store."""
 
 
 def still_key(parts: Sequence[str]) -> str:
@@ -69,8 +79,10 @@ class Stills:
             return None
         if kept is None:
             return None
-        moved = any(file_digest(self.root / name) != digest for name, digest in kept.files.items())
-        return None if moved else image
+        if any(file_digest(self.root / name) != digest for name, digest in kept.files.items()):
+            return None
+        os.utime(image)
+        return image
 
     def keep(self, key: str, drawn: Path, loaded: Sequence[str]) -> Path:
         """Keep one frame just drawn under its key, with the files the page had loaded to draw it.
@@ -83,7 +95,16 @@ class Stills:
         shutil.copyfile(drawn, self.image(key))
         files = {name: file_digest(self.root / name) for name in dict.fromkeys(loaded)}
         StillManifest(files=files).write(self.manifest(key))
+        self._prune()
         return self.image(key)
+
+    def _prune(self) -> None:
+        """Remove every frame nobody has found or kept for `IDLE_SECONDS`, its manifest first."""
+        idle = time.time() - IDLE_SECONDS
+        for image in self.directory.glob(f"*{IMAGE_SUFFIX}"):
+            if image.stat().st_mtime < idle:
+                self.manifest(image.stem).unlink(missing_ok=True)
+                image.unlink(missing_ok=True)
 
 
 __all__ = ["IMAGE_SUFFIX", "MANIFEST_SUFFIX", "StillManifest", "Stills", "still_key"]

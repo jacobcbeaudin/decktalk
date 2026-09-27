@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -67,3 +68,28 @@ def test_the_key_moves_with_every_part_and_with_the_engine(monkeypatch: pytest.M
     assert still_key(("url", "1280x720")) != before
     monkeypatch.setattr(module, "ENGINE_VERSION", "999.0.0")
     assert still_key(("url", "1920x1080")) != before
+
+
+def idle(path: Path) -> None:
+    """Age one kept frame past the idle window, as a fortnight without a question about it would."""
+    past = path.stat().st_mtime - module.IDLE_SECONDS - 1
+    os.utime(path, (past, past))
+
+
+def test_a_frame_nobody_asked_for_is_removed_when_another_is_kept(tmp_path: Path) -> None:
+    """Every edit gives a page's frames new keys, so the old ones would otherwise stay forever."""
+    store = a_store(tmp_path)
+    old = store.keep("old", drawn(tmp_path), [])
+    idle(old)
+    store.keep("new", drawn(tmp_path), [])
+    assert not old.exists() and not store.manifest("old").exists()
+    assert store.find("new") is not None
+
+
+def test_a_frame_that_is_found_is_kept_however_old_it_was(tmp_path: Path) -> None:
+    store = a_store(tmp_path)
+    used = store.keep("used", drawn(tmp_path), [])
+    idle(used)
+    assert store.find("used") == used
+    store.keep("new", drawn(tmp_path), [])
+    assert store.find("used") == used
