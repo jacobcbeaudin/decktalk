@@ -84,6 +84,18 @@ class Artifact(Enum):
         """The stage that writes this artifact, or None when nothing in the pipeline does."""
         return next((spec.stage for spec in PIPELINE if self in spec.writes), None)
 
+    @property
+    def next_step(self) -> str:
+        """The one sentence that tells a reader how to get this artifact built, read from its writer.
+
+        Every refusal that meets a missing artifact carries this sentence, so a renamed command or a
+        moved stage changes the advice in one place rather than in every stage that reads the file.
+        """
+        writer = self.written_by
+        if writer is None:
+            return f"Nothing in the pipeline writes {self.value}."
+        return f"Run `decktalk {writer.value}` first."
+
 
 @dataclass(frozen=True)
 class StageSpec:

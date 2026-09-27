@@ -319,9 +319,23 @@ def test_a_project_with_no_soundscape_may_still_assemble_without_one(
     (inputs.workspace.narrate_dir).mkdir(parents=True)
     inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
     inputs.workspace.recordings_dir.mkdir(parents=True)
-    (inputs.workspace.recordings_dir / "01.webm").write_bytes(b"")
+    for section in inputs.document.page_sections:
+        inputs.workspace.recording(section.key).write_bytes(b"")
     build(inputs, watched.run, stages=[Stage.ASSEMBLE])
     assert calls.names == ["assemble"]
+
+
+def test_a_run_that_starts_past_a_partial_recording_is_refused(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    """A build and the status report read one rule, so neither calls half a record stage finished."""
+    inputs.workspace.narrate_dir.mkdir(parents=True)
+    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    inputs.workspace.recordings_dir.mkdir(parents=True)
+    first = inputs.document.page_sections[0]
+    inputs.workspace.recording(first.key).write_bytes(b"")
+    with pytest.raises(NotBuiltError) as refused:
+        build(inputs, watched.run, stages=[Stage.ASSEMBLE])
+    assert "decktalk record" in (refused.value.hint or "")
+    assert calls.names == []
 
 
 def test_a_paid_run_draws_the_storyboard_before_it_narrates(

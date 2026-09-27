@@ -7,9 +7,10 @@ machine's own sink, and every file the stages wrote is already recorded on the r
 
 Which stages a run performs is read from `PIPELINE` and never worked out here. `Stage.span` gives
 the run of stages between two ends, `required` gives the artifacts that run reads but does not
-write, and `Artifact.written_by` gives the stage that would have written each one, so a run that
-starts past a missing artifact is refused with the file and the command named, and this module
-carries no "run this first" sentence of its own.
+write, and `Artifact.next_step` gives the sentence that names the stage that would have written each one, so a
+run that starts past a missing artifact is refused with the file and the command named, and this
+module carries no "run this first" sentence of its own. Whether an artifact is built is `status`'s
+rule, asked of `status`, so a build never goes ahead on a directory the report calls unfinished.
 
 A voiced run draws the storyboard before it narrates, because the contact sheet is the checkpoint a
 person reads before any credit is bought, and a run that writes placeholders has nothing to check.
@@ -31,6 +32,7 @@ from decktalk.results import BuildResult, Layer, Result, Spend, SpendState, Stag
 from decktalk.stages import assemble, clock, cue, narrate, record, since, storyboard, verify
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.narrate.plan import PRICE_KEY
+from decktalk.stages.status import BUILT
 
 NOTHING = 0.0
 """What a stage that never opened took, which is the elapsed time a skipped row reports."""
@@ -171,47 +173,36 @@ def _plan(stages: Sequence[Stage] | None, skip: Sequence[Stage]) -> tuple[Stage,
 def _require_what_the_plan_skips(inputs: Inputs, plan: tuple[Stage, ...], *, soundscape: bool) -> None:
     """Refuse a run that reads an artifact no stage of it writes and nothing has written yet.
 
-    The list comes from `PIPELINE`, so the precondition, the refusal's next step and the one
-    `status` reports are three readings of one table. The soundscape is the single artifact a
-    project may honestly have none of, so it is asked for only when the project declares one and the
-    run was not told to leave it out.
+    The list comes from `PIPELINE` and the test of each artifact from `BUILT`, so the precondition,
+    the refusal's next step and the one `status` reports are three readings of one table. A
+    recordings directory that holds some sections and not others is refused here, because the
+    encoder would otherwise meet the gap and report it as an ffmpeg message instead of a next step.
+    The soundscape is the single artifact a project may honestly have none of, so it is asked for
+    only when the project declares one and the run was not told to leave it out.
     """
     for artifact in required(plan):
-        if artifact is Artifact.SOUNDSCAPE and (not soundscape or inputs.document.soundscape.empty):
+        if artifact is Artifact.SOUNDSCAPE and not soundscape:
             continue
-        where = _where(inputs, artifact)
-        if _present(where):
+        if BUILT[artifact](inputs):
             continue
+        where = inputs.relative(_where(inputs, artifact)).as_posix()
         raise NotBuiltError(
-            f"this run starts at {plan[0].value} and reads {inputs.relative(where).as_posix()}, "
-            "which an earlier stage writes.",
+            f"this run starts at {plan[0].value} and reads {where}, which an earlier stage writes.",
             hint=_how_to_get(artifact),
         )
 
 
 def _how_to_get(artifact: Artifact) -> str:
-    """The next step for an artifact nothing has written, read from the stage that writes it."""
+    """The next step for an artifact nothing has written, with the span that would write it too."""
     writer = artifact.written_by
     if writer is None:
-        return f"Nothing in the pipeline writes {artifact.value}."
-    return f"Run `decktalk {writer.value}` first, or start this build at it with --from {writer.value}."
+        return artifact.next_step
+    return f"{artifact.next_step} A build can also start there with --from {writer.value}."
 
 
 def _where(inputs: Inputs, artifact: Artifact) -> Path:
     """Where this project keeps one artifact, asked of the workspace rather than of the pipeline."""
     return getattr(inputs.workspace, ARTIFACTS[artifact])
-
-
-def _present(path: Path) -> bool:
-    """Whether an artifact is really there, which for a directory means it holds something.
-
-    A directory an earlier run made and left empty is as good as absent to the stage that reads it,
-    so a run that would assemble from no recording at all is refused here rather than left to fail
-    inside an encoder, where the reason would be an ffmpeg message instead of a next step.
-    """
-    if path.is_dir():
-        return any(path.iterdir())
-    return path.is_file()
 
 
 def _storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None) -> Path | None:
