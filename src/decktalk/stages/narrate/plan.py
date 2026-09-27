@@ -8,6 +8,12 @@ digest of its own.
 The plan is also the approval stop. Nothing is bought until `Run.approve` has seen the price, and a
 section whose cache could not be checked is priced apart, so the gate is given the figure the run
 certainly spends and the figure it can reach, and never a small number that hides a large one.
+
+A price needs no credential. The digest is over the provider's name, the voice id, the model, the
+output format, the voice settings and the text, and none of those is a secret, so the plan reads
+the provider's name from `[voice] provider` and never builds the provider to price a run. A
+service can therefore price an edit on a machine that holds no key, and a one-section edit is priced
+as one section rather than as the whole film.
 """
 
 from __future__ import annotations
@@ -17,14 +23,13 @@ from pathlib import Path
 from typing import Any
 
 from decktalk.artifacts import PlaceholderInputs, TakeInputs, Takes, take_file, words_file
-from decktalk.errors import DeckTalkError
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import Segment
 from decktalk.results import Layer, Spend, SpendState, TakeStatus
 from decktalk.settings import VoiceConfig
 from decktalk.speech import SpeechProvider, SpeechRequest, VoiceContext, get_provider
 
-WITHOUT_A_VOICE = "the voice is not set up, so the cache cannot be checked"
+WITHOUT_A_VOICE = "no voice is named, so the cache cannot be checked"
 """Why a section's take is unknown, which is the one state a plan cannot resolve on its own."""
 
 PRICE_KEY = "voice.price_per_1000_characters"
@@ -227,26 +232,35 @@ def plan_takes(
 
 
 def _unchecked_plan(previous: Takes | None, segment: Segment, chapter: str, request: SpeechRequest | None) -> TakePlan:
-    """The plan for one section when there is no voice to ask what its digest would be."""
+    """The plan for one section when there is no voice to ask what its digest would be.
+
+    Only a paid take is in doubt, because only a paid take could turn out to be the one this run
+    would ask for. A section with no take, or with a take without voice, needs a paid take whatever
+    the voice is, so it is priced as certain rather than counted into the ceiling alone.
+    """
     row = previous.of(segment.index) if previous is not None else None
     if row is not None and row.voiced:
         return TakePlan(segment, TakeStatus.VOICED, WITHOUT_A_VOICE, chapter=chapter, request=request, unchecked=True)
     why = "only a take without voice exists" if row is not None else "no take yet"
-    return TakePlan(segment, TakeStatus.VOICED, why, chapter=chapter, request=request, unchecked=True)
+    return TakePlan(segment, TakeStatus.VOICED, why, chapter=chapter, request=request)
 
 
 def voiced_plan(
-    inputs: Inputs, targets: list[Segment], *, model: str, voice_id: str, force: bool = False
+    inputs: Inputs, targets: list[Segment], *, model: str, voice_id: str | None, force: bool = False
 ) -> tuple[list[TakePlan], str | None]:
-    """(what a voiced run would do, why the provider could not be set up), spending nothing."""
-    requests = requests_for(inputs, targets, model=model, voice_id=voice_id)
-    try:
-        provider = speech_provider(inputs)
-    except DeckTalkError as refused:
-        return plan_takes(inputs, targets, None, requests=requests, force=force), str(refused)
-    name = getattr(provider, "name", inputs.document.voice.provider)
+    """(what a voiced run would do, why the cache could not be checked), spending nothing.
+
+    The provider is named by `[voice] provider` and is never built here, because building one needs
+    the credential and a price does not. The one input a plan cannot do without is the voice id, and
+    a project that names none is planned with every section it has paid for unchecked.
+    """
+    requests = requests_for(inputs, targets, model=model, voice_id=voice_id or "")
+    if not voice_id:
+        why = f"{WITHOUT_A_VOICE.capitalize()}, because {VOICE_VARIABLE} is not set."
+        return plan_takes(inputs, targets, None, requests=requests, force=force), why
+    provider = inputs.document.voice.provider
     digests = {
-        segment.index: take_inputs(inputs, segment, provider=name, voice_id=voice_id, model=model).digest
+        segment.index: take_inputs(inputs, segment, provider=provider, voice_id=voice_id, model=model).digest
         for segment in targets
     }
     return plan_takes(inputs, targets, digests, requests=requests, force=force), None
