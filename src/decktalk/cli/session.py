@@ -143,13 +143,15 @@ class Session:
     # ---- the stream -------------------------------------------------------------------------
 
     @contextmanager
-    def watching(self, events: Events, *, opening: bool = False) -> Iterator[None]:
+    def watching(self, events: Events, *, opening: bool = False, heard: set[str] | None = None) -> Iterator[None]:
         """Render this call's events for as long as it runs, and leave the stream as it was found.
 
         `opening` names the run and its events file on the first line of stderr, which is what lets
-        an agent that backgrounds a build name its own events file while the run is live.
+        an agent that backgrounds a build name its own events file while the run is live. `heard` is
+        the set of notes already printed by an earlier call of the same command, which are not
+        printed again.
         """
-        renderers: list[Any] = [output.Notes(self.err, verbose=self.flags.verbose, quiet=self.flags.quiet)]
+        renderers: list[Any] = [output.Notes(self.err, verbose=self.flags.verbose, quiet=self.flags.quiet, heard=heard)]
         if opening:
             renderers.append(output.Opening(self.err))
         if self.terminal.events:

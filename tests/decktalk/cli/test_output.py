@@ -132,6 +132,15 @@ def test_a_warning_survives_quiet() -> None:
     assert "a debug line" in console.file.getvalue()  # ty: ignore[unresolved-attribute]
 
 
+def test_a_note_one_command_already_printed_is_not_printed_by_its_second_judgement() -> None:
+    """`check --fix` judges twice, and the second judgement says what the first already said."""
+    console = Console(file=io.StringIO(), width=100, no_color=True)
+    heard: set[str] = set()
+    for _ in range(2):
+        output.Notes(console, verbose=False, quiet=False, heard=heard)(_log(Level.INFO))
+    assert console.file.getvalue().count("a debug line") == 1  # ty: ignore[unresolved-attribute]
+
+
 def test_the_opening_line_names_the_run_and_its_events_file_once() -> None:
     console = Console(file=io.StringIO(), width=100, no_color=True)
     opening = output.Opening(console)

@@ -163,12 +163,17 @@ class Jsonl:
 
 
 class Notes:
-    """The log lines the library would have printed, written at the level `-v` and `-q` choose."""
+    """The log lines the library would have printed, written at the level `-v` and `-q` choose.
 
-    def __init__(self, console: Console, *, verbose: bool, quiet: bool) -> None:
+    `heard` is shared by the renderers of one command that runs the same judgement twice, as
+    `check --fix` does, so a sentence the first run said is not printed again by the second.
+    """
+
+    def __init__(self, console: Console, *, verbose: bool, quiet: bool, heard: set[str] | None = None) -> None:
         self._console = console
         self._verbose = verbose
         self._quiet = quiet
+        self._heard = heard
 
     def open(self) -> None:
         """Nothing is held open."""
@@ -185,6 +190,10 @@ class Notes:
             return
         if self._quiet and level in ("debug", "info"):
             return
+        if self._heard is not None:
+            if event.message in self._heard:
+                return
+            self._heard.add(event.message)
         self._console.print(Text(event.message, style=QUIET_STYLE if level in ("debug", "info") else "yellow"))
 
 

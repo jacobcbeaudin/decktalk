@@ -82,6 +82,25 @@ def test_check_fix_applies_the_safe_fixes_and_judges_again(run, project) -> None
     assert [name for name, _, _ in project_calls] == ["check", "apply", "reload", "check"]
 
 
+def test_the_second_judgement_after_a_fix_keeps_the_sections_it_was_asked_about(run, project) -> None:
+    """A re-check that widened to the whole project priced sections the caller never named."""
+    judged = CheckResult(
+        ok=False,
+        findings=(finding(fix=True),),
+        run="r",
+        judged=(Path("cues.json"),),
+        pages=False,
+        frames=False,
+        spend=spend(),
+    )
+    made = Fake(check=judged, apply=ApplyResult(ok=True, run="r", fixes=()))
+    _install(project, made)
+    run("check", "--section", "4", "--no-pages", "--fix")
+    first, again = [keywords for name, _, keywords in made.calls if name == "check"]
+    assert again["only"] == first["only"] == (4,)
+    assert again["pages"] is first["pages"] is False
+
+
 def _install(project, fake: Fake) -> None:
     """Put one prepared fake behind the seam, rather than the fixture's own fresh one."""
     made = project()

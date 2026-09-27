@@ -9,7 +9,7 @@ names and does not have, so it never takes `--fail-on` either: a third judge bes
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from typer._click import Context
@@ -124,22 +124,29 @@ def check(
     session = sessions.of(ctx)
     session.overriding(pairs(set_))
     project = session.project()
-    with session.watching(project.events):
-        judged = project.check(
-            *(paths or ()),
-            only=sections_of(section),
-            pages=not no_pages,
-            frames=not no_frames,
-            cancel=session.cancel,
-        )
-    return _fixed(session, judged, fix)
+    asked = {"only": sections_of(section), "pages": not no_pages, "frames": not no_frames}
+    heard: set[str] = set()
+    with session.watching(project.events, heard=heard):
+        judged = project.check(*(paths or ()), **asked, cancel=session.cancel)
+    return _fixed(session, judged, fix, paths=tuple(paths or ()), asked=asked, heard=heard)
 
 
-def _fixed(session: sessions.Session, judged: CheckResult, fix: bool | None) -> CheckResult:
+def _fixed(
+    session: sessions.Session,
+    judged: CheckResult,
+    fix: bool | None,
+    *,
+    paths: tuple[Path, ...],
+    asked: dict[str, Any],
+    heard: set[str],
+) -> CheckResult:
     """Apply the safe fixes when the caller asked, and judge again so the result is what is true now.
 
     Without a terminal and without the flag nothing is applied and every fix is reported, so an
-    agent applies them itself from the objects it already holds.
+    agent applies them itself from the objects it already holds. The second judgement is asked
+    exactly what the first was, with the same pages and the same sections, because a re-check that
+    widened to the whole project priced sections the caller never named. A note the first judgement
+    printed is in `heard` and is not printed again, because the second judgement says it too.
     """
     offered = [found for found in judged.findings if found.fix is not None]
     if not offered:
@@ -150,8 +157,8 @@ def _fixed(session: sessions.Session, judged: CheckResult, fix: bool | None) -> 
     project = session.project()
     project.apply(offered)
     fresh = project.reload()
-    with session.watching(fresh.events):
-        return fresh.check(pages=judged.pages, frames=judged.frames, cancel=session.cancel)
+    with session.watching(fresh.events, heard=heard):
+        return fresh.check(*paths, **asked, cancel=session.cancel)
 
 
 @command(group=Group.PROJECT, epilog=WORDS_EPILOG)
