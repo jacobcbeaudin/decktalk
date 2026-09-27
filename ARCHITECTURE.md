@@ -127,7 +127,9 @@ because a closed enum publishes each value with its own sentence where an adject
 publishes nothing.
 
 `--fail-on certain|any|never` names a threshold rather than a field value, and `--allow CODE` carries
-on past one code.
+on past one code. `build` reads the same threshold to decide when to stop: a stage whose findings
+reach it ends the run before the next stage, and the result still comes back with its findings, its
+spend and `stopped_at`, because a finding is a judgement the caller reads and never an error.
 
 Errors are the other thing entirely. An error means DeckTalk could not run, so nothing was judged.
 There are nine codes and seven classes, one mapping table, and a test that exactly `USAGE` and

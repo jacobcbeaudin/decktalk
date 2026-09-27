@@ -95,8 +95,8 @@ The count line tells you before you run it: `Found 1 finding, 1 certain. 1 fixab
 
 A safe fix does the boring part and leaves the judgement to you. `check --fix` on a project with no
 cue file writes every row the deck declares with an empty `on`, so the next `check` reports a
-`CUE_UNRESOLVED` for each empty phrase and a build refuses with an `INPUT` error that lists them. That
-is the fix working. Fill in the phrases and run it again.
+`CUE_UNRESOLVED` for each empty phrase and a build stops at `cue` on them. That is the fix working.
+Fill in the phrases and run it again.
 
 ## Carry on past a code, or change what fails a run
 
@@ -110,17 +110,42 @@ is the fix working. Fill in the phrases and run it again.
 Both work on every command that judges, which is `doctor`, `check`, `storyboard`, `narrate`, `cue`,
 `record`, `soundscape`, `assemble`, `verify` and `build`.
 
-`build` is stricter than its parts, and this catches people out. When a stage inside a build judges
-something certain about its own work, the build stops there and reports an `INPUT` error whose hint
-lists those codes, because carrying on would deliver a film that is wrong in a way nobody has to
-watch it to discover. `--fail-on never` does not lift that, and `--allow` lifts it for exactly one
-code, `CUE_UNKNOWN`, which is the one certain judgement an author may knowingly keep while a deck is
-under construction.
+`build` also stops on what fails it. When a stage inside a build judges something at the `--fail-on`
+threshold, the build stops after that stage rather than carry the finding into the film, because a
+film that is wrong in a way nobody has to watch it to discover is not worth recording. The stages it
+did not reach are reported as skipped, and the run still returns everything it knows: it exits 1,
+its findings are printed and in the JSON, the money narrate already spent is in `spend`, and
+`stopped_at` names the stage it stopped after.
 
-So when a build stops on a code, run that stage alone to get the findings back as data:
+{/* sample: decktalk build --no-voice on a built starter whose cue 3.1:idea waits for a phrase nobody says */}
 
-```bash
-decktalk cue --json | jq '.findings'
+```text
+     Narrate    0:00
+         Cue    0:00
+Cue made one finding that the build stops on, so the build stopped before record rather than carry it into the film.
+      Record    0:00
+  Soundscape    0:00
+    Assemble    0:00
+      Verify    0:00
+     Stopped at cue, $0.00, 1 finding
+cues.json:30: CUE_UNRESOLVED the cue 3.1:idea waits for 'a phrase nobody says' and section 3 speaks 25 words, none of which is that phrase.
+Found 1 finding, 1 certain.
+```
+
+The two flags that decide what fails a run decide what stops a build, because a build that carried
+on past a finding its exit fails on would spend on a film already called wrong.
+
+- `--allow CODE` carries the build past that code, and it works for every code. The finding is still
+  printed and still in the JSON, and it no longer stops the build or counts toward the exit.
+- `--fail-on any` stops on an uncertain finding as well, and `--fail-on never` runs every stage
+  whatever it finds.
+
+`verify` is the last stage, so its findings end a build rather than stop it. Reach for `--allow` only
+for a code you mean to keep, and say why, because the film it lets through carries that finding.
+A cue a deck under construction has not drawn yet is the usual case:
+
+```console
+decktalk build --no-voice --allow CUE_UNKNOWN
 ```
 
 ## From a symptom to a code
@@ -307,8 +332,8 @@ into, the fix is `display` instead and prints the rows for you to paste.
 
 **Reading `CUE_UNKNOWN`.** When DeckTalk can see which cue the row was probably meant to be, it
 offers an `unsafe` rename fix, which is unsafe because renaming an id the author typed is a reading
-rather than a fact. `--allow CUE_UNKNOWN` is the one way to carry a certain code through a build,
-because a deck under construction lists the cues of slides nobody has drawn yet.
+rather than a fact. `--allow CUE_UNKNOWN` carries a build past it, which is the usual choice for a
+deck under construction that lists the cues of slides nobody has drawn yet.
 
 **Which command sees what.** The `cue` stage compares `cues.json` against the catalog the page
 published into its recordings, so a section whose page has never been recorded is left unjudged

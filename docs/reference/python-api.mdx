@@ -103,8 +103,8 @@ project.assemble(*, only=None, soundscape=True, loudness=True, strict=False,
                  cancel=None) -> AssembleResult
 project.verify(*, only=None, cancel=None) -> VerifyResult
 project.build(*, stages=None, skip=(), only=None, voice=Voicing.PLACEHOLDER, max_cost=None,
-              force=False, replace_voiced=False, soundscape=True, loudness=True,
-              strict=False, allow_unknown=False, cancel=None) -> BuildResult
+              force=False, replace_voiced=False, loudness=True, strict=False,
+              allow=(), stop_on=Certainty.CERTAIN, cancel=None) -> BuildResult
 project.status(*, cancel=None) -> StatusResult
 project.check(*paths, only=None, pages=True, frames=True, cancel=None) -> CheckResult
 project.words(*, only=None, cancel=None) -> WordsResult
@@ -141,11 +141,28 @@ stages are members of, in run order: `NARRATE`, `CUE`, `RECORD`, `SOUNDSCAPE`, `
 | `only` | every call but `status` and `clip` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. |
 | `force` | `narrate`, `record`, `soundscape`, `build` | Does the work again where what is on disk still matches. A paid take is kept unless `replace_voiced` is true as well, and on `soundscape` every item is bought again, which spends again. |
 | `replace_voiced` | `narrate`, `build` | Voices a section again and discards the paid take it replaces. Without it, a run that would replace a paid take raises `InputError`, which names the unpaid sections to rehearse instead. |
-| `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it. |
-| `soundscape` | `assemble`, `build` | False leaves the soundscape's audio out of the mix. |
+| `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it, and a build whose `skip` names `Stage.SOUNDSCAPE` also leaves the soundscape's audio out of the mix. |
+| `soundscape` | `assemble` | False leaves the soundscape's audio out of the mix. |
 | `loudness` | `assemble`, `build` | False skips the loudness pass, so the soundtrack is encoded as it was mixed. A placeholder narration skips it in any case. |
 | `strict` | `assemble`, `build` | True raises `ToolError` when the mix misses the loudness it was mastered to, rather than reporting `MIX_LOUDNESS` and writing the film. |
-| `allow_unknown` | `cue`, `build` | True keeps a cue that no page declares out of the findings. |
+| `allow_unknown` | `cue` | True keeps a cue that no page declares out of the findings. |
+| `stop_on` | `build` | The least certain finding that stops the run: `Certainty.CERTAIN`, the default, stops on a certain one, `Certainty.UNCERTAIN` on any, and None never stops. |
+| `allow` | `build` | Codes that never stop the run, whatever their certainty. They are still reported. |
+
+A build that stops is not an error. It returns its `BuildResult` with `ok` false, every finding the
+stages that ran made, the spend so far, the stages it did not reach as `skipped`, and `stopped_at`
+naming the stage it stopped after. `stopped_at` is None on a build that ran through.
+
+```python
+import decktalk
+
+project = decktalk.open("my-lesson")
+result = project.build(allow=[decktalk.Code.CUE_UNKNOWN])
+if result.stopped_at is not None:
+    print(f"stopped after {result.stopped_at.value}, spent ${result.spend.dollars:.2f}")
+    for finding in result.findings:
+        print(finding.code.name, finding.message)
+```
 
 ### What a call raises
 

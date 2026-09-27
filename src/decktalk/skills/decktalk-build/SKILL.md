@@ -60,6 +60,8 @@ craft of a build is knowing which half you are in.
   of a limited run covers those sections alone.
 - A film built without a voice has no spoken landmark, so some cue measurements cannot be taken until
   it is voiced.
+- A build that stops on a finding exits 1 and still returns its findings, what it spent and the stage
+  it stopped at. No film came out of it, so hand the findings off rather than building again.
 
 ## Hand off
 

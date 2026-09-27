@@ -217,6 +217,35 @@ judgements about the project rather than a reason the command could not run.
 }
 ```
 
+## A build that stopped
+
+A build stops after the stage whose findings reach the threshold, and the stages after it are
+`skipped`. It is still a result and not an error, so it exits 1, `error` is null, and `stopped_at`
+names the stage. This is `decktalk build --no-voice --json` on a starter whose cue waits for a phrase
+the script does not speak, cut to the keys a build adds.
+
+```json
+{
+  "schema": 2,
+  "ok": false,
+  "error": null,
+  "stages": [
+    {"stage": "narrate", "outcome": "ok", "seconds": 0.308},
+    {"stage": "cue", "outcome": "ok", "seconds": 0.004},
+    {"stage": "record", "outcome": "skipped", "seconds": 0.0},
+    {"stage": "soundscape", "outcome": "skipped", "seconds": 0.0},
+    {"stage": "assemble", "outcome": "skipped", "seconds": 0.0},
+    {"stage": "verify", "outcome": "skipped", "seconds": 0.0}
+  ],
+  "film": null,
+  "stopped_at": "cue"
+}
+```
+
+`stopped_at` is null on a build that ran through, whatever it found. `--allow CODE` carries a build
+past a code, and `--fail-on` moves the threshold, so both decide what stops a build exactly as they
+decide what fails it.
+
 ## A result that could not run
 
 `decktalk words --json` before anything has been narrated. `findings` is empty and `error` is

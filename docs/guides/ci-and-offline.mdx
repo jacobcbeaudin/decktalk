@@ -115,6 +115,10 @@ The codes above 1 come from the error's own code, so a caller that wants to know
 The rule an agent follows is one line. A non-zero exit with `error` null is a finding, and the job may
 fix the project and run again. A non-null `error` is an error, and the job stops and says so.
 
+A build that stops on a finding follows the same rule. It exits 1 with `error` null, and its result
+carries `stopped_at`, the stage it stopped after, beside its findings and the spend so far. A job
+reads `stopped_at` to learn that the build stopped short, in which case `film` is null.
+
 ### Choose what fails the pipeline
 
 Two flags decide which findings count, on every command that reports them.
