@@ -3,24 +3,24 @@
 Everything about a key that can be looked up is in the published schema, so this module is only
 what has to be computed. Three things are: which of the five layers actually set the value here,
 what the derived numbers this key feeds work out to at the values in force, and which cues in this
-project a candidate value would clamp. The last one is why the explainer sits above the settings
-layer rather than inside it, because naming a cue means reading the project's own resolved times.
+project a candidate value would clamp. The last one is why the explainer sits in the SDK layer
+beside the machine rather than inside the settings, because naming a cue means reading the project's
+own resolved times, through the artifact that holds them and the build directory the project names.
 """
 
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 from pydantic import BaseModel, Field, JsonValue
 
-from .errors import InputError
+from .errors import DeckTalkError, InputError
 from .findings import DOCS, MODEL, Code
+from .inputs import Inputs
 from .machine import Machine
-from .results import Layer, LayerValue, NumberView, Scope
+from .results import Layer, LayerValue, NumberView, Scope, SectionCues
 from .settings import (
     BY_ID,
     NUMBERS,
@@ -30,9 +30,6 @@ from .settings import (
     value_of,
 )
 from .tomlmap import Key, Nature, Source, did_you_mean
-
-CUE_TIMES = Path("build") / "cue-times.json"
-"""Where `cue` writes the resolved times the explainer reads, project-relative."""
 
 
 class Explanation(BaseModel):
@@ -99,9 +96,14 @@ def explain(
             hint="Run `decktalk schema settings` for every key DeckTalk reads.",
         )
     on = machine or Machine.from_environment()
-    here = load(project, machine=on.tables, machine_path=on.config_path, environ=on.environ)
+    opened = _opened(project, on) if project else None
+    here = (
+        Loaded(settings=opened.settings, layers=opened.layers)
+        if opened
+        else load(project, machine=on.tables, machine_path=on.config_path, environ=on.environ)
+    )
     candidate = _candidate(known, here, value)
-    cues = _cues(project) if project else ()
+    cues = _cues(opened) if opened else ()
     return Explanation(
         key=known.id,
         description=known.description,
@@ -128,6 +130,19 @@ def explain(
         measured=bool(cues),
         docs=f"{DOCS}/configuration#{known.id.rsplit('.', 1)[0].replace('.', '-')}",
     )
+
+
+def _opened(project: Path, machine: Machine) -> Inputs | None:
+    """The project whole, or None while its document does not parse yet.
+
+    A knob is explainable in a project whose sections are still being written, so a document the
+    loader refuses costs the answer its cues and nothing else. A refused setting is not swallowed,
+    because the settings-only load that follows meets the same refusal and raises it.
+    """
+    try:
+        return Inputs.load(project, environ=machine.environ, machine=machine.tables)
+    except InputError:
+        return None
 
 
 def _candidate(key: Key, here: Loaded, value: str | None) -> Settings | None:
@@ -201,32 +216,27 @@ def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[_Cue, ..
     return tuple(out)
 
 
-def _cues(project: Path) -> tuple[tuple[str, tuple[_Cue, ...]], ...]:
+def _cues(project: Inputs) -> tuple[tuple[str, tuple[_Cue, ...]], ...]:
     """Every resolved cue of this project in section order, or nothing when the stage has not run.
 
-    The file is `cue`'s own artifact, so it is one block per section, in section order, and each
-    block holds the rows that section resolved. A row whose second is null was never resolved
-    against a word, so it is left out rather than read as a cue at zero. The file is read leniently
-    and by hand, because a project that has never been cued is the common case, a knob is
-    explainable without one, and the artifact layer sits above this module rather than below it.
+    The times are read through `CueTimes`, the model `cue` writes them with, from the build directory
+    the project names, so a moved build directory is read where it is. A row whose second is null was
+    never resolved against a word, so it is left out rather than read as a cue at zero. A file that is
+    there and cannot be read explains nothing about cues, because a knob is explainable without them.
     """
-    path = project / CUE_TIMES
-    if not path.exists():
-        return ()
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-        blocks = [_block(one) for one in document["sections"]]
-    except (OSError, ValueError, KeyError, TypeError):
+        resolved = project.cue_times()
+    except DeckTalkError:
         return ()
-    return tuple(blocks)
+    if resolved is None:
+        return ()
+    return tuple(_block(block) for block in resolved.sections)
 
 
-def _block(section: Mapping[str, Any]) -> tuple[str, tuple[_Cue, ...]]:
+def _block(section: SectionCues) -> tuple[str, tuple[_Cue, ...]]:
     """One section of the artifact as the explainer reads it, which is its key and its resolved cues."""
-    rows = tuple(
-        _Cue(id=str(row["cue"]), at=float(row["seconds"])) for row in section["cues"] if row["seconds"] is not None
-    )
-    return str(section["key"]), tuple(sorted(rows, key=lambda row: row.at))
+    rows = tuple(_Cue(id=row.cue, at=row.seconds) for row in section.cues if row.seconds is not None)
+    return section.key, tuple(sorted(rows, key=lambda row: row.at))
 
 
 def _type_name(key: Key) -> str:

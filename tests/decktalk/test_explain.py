@@ -8,8 +8,10 @@ import pytest
 
 from decktalk.artifacts.cue_times import CueTimes
 from decktalk.errors import InputError
-from decktalk.explain import explain
+from decktalk.explain import Explanation
+from decktalk.explain import explain as explained
 from decktalk.findings import Code
+from decktalk.machine import Machine, Toolchain
 from decktalk.results import CueTime, Layer, Scope, SectionCues
 from decktalk.settings import BY_ID
 from decktalk.tomlmap import Nature, Source
@@ -36,17 +38,34 @@ file by hand and a fixture written by hand could agree with the reader while bot
 """
 
 
-@pytest.fixture(autouse=True)
-def _no_machine_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Point the per-machine file at nothing, so the machine running the suite never sets a key."""
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path_factory.mktemp("machine") / "decktalk.toml"))
+PROJECT_TOML = """[verify]
+cue_offset_max_ms = 100
+
+[project]
+build = "out"
+
+[[section]]
+number = 1
+page = "deck/index.html"
+scene = "1"
+"""
+"""A project that states one key on its second line and moves its build directory, as an author may."""
+
+
+MACHINE = Machine(environ={}, tables={}, config_path=Path("unread.toml"), cwd=Path(), toolchain=Toolchain())
+"""A machine that read nothing, so the machine running the suite sets no key in any explanation."""
+
+
+def explain(key: str, **asked: object) -> Explanation:
+    """The explainer as every test here calls it, on the machine above rather than this process's own."""
+    return explained(key, machine=MACHINE, **asked)  # type: ignore[arg-type]
 
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
-    """A project that states one key and has been cued once."""
-    (tmp_path / "decktalk.toml").write_text("[verify]\ncue_offset_max_ms = 100\n", encoding="utf-8")
-    CUES.write(tmp_path / "build" / "cue-times.json")
+    """A project that states one key and has been cued once, into the build directory it names."""
+    (tmp_path / "decktalk.toml").write_text(PROJECT_TOML, encoding="utf-8")
+    CUES.write(tmp_path / "out" / "cue-times.json")
     return tmp_path
 
 
@@ -147,5 +166,31 @@ class TestTheCuesACandidateWouldClamp:
         assert "1.1:never" not in explain("verify.cue_offset_max_ms", project=project, value="300").clamped
 
     def test_a_cue_file_that_will_not_parse_costs_nothing(self, project: Path) -> None:
-        (project / "build" / "cue-times.json").write_text("{", encoding="utf-8")
+        (project / "out" / "cue-times.json").write_text("{", encoding="utf-8")
         assert explain("verify.cue_offset_max_ms", project=project).measured is False
+
+
+class TestWhereTheExplainerReads:
+    """The cue times come through their artifact from the project's own build directory, on a named machine."""
+
+    def test_the_times_are_read_from_the_build_directory_the_project_names(self, project: Path) -> None:
+        (project / "out" / "cue-times.json").unlink()
+        CUES.write(project / "build" / "cue-times.json")
+        assert explain("verify.cue_offset_max_ms", project=project).measured is False
+
+    def test_a_project_whose_sections_are_not_written_yet_still_explains_its_knobs(self, tmp_path: Path) -> None:
+        (tmp_path / "decktalk.toml").write_text("[verify]\ncue_offset_max_ms = 100\n", encoding="utf-8")
+        found = explain("verify.cue_offset_max_ms", project=tmp_path)
+        assert found.winner is Layer.PROJECT and found.measured is False
+
+    def test_the_machine_layer_is_the_machine_the_caller_named(self, tmp_path: Path) -> None:
+        here = Machine(
+            environ={"DECKTALK_TOOLS_TIMEOUT_SECONDS": "40"},
+            tables={"tools": {"timeout_seconds": 30}},
+            config_path=tmp_path / "machine.toml",
+            cwd=tmp_path,
+            toolchain=Toolchain(),
+        )
+        found = explained("tools.timeout_seconds", machine=here)
+        assert [row.layer for row in found.layers] == [Layer.DEFAULT, Layer.MACHINE, Layer.ENVIRONMENT]
+        assert found.value == 40.0
