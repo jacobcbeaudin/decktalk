@@ -24,9 +24,10 @@ generated from that home.
 
 Three commands make the whole instruction set readable without running a stage. `decktalk --help`
 gives the tree, the global flags and the exit codes. `decktalk schema` gives every command, every
-flag with its type and default, every error code, every finding code, every event and every page
-attribute as one JSON object. `decktalk schema settings` gives every knob with its default, its safe
-range, its unit and its hazard, and `decktalk config explain KEY` gives one of them whole.
+flag with its type and default, the exit codes, every error code, every finding code and the stages
+as one JSON object, and `decktalk schema event` and `decktalk schema page` give every event line and
+every page attribute. `decktalk schema settings` gives every knob with its default, its safe range,
+its unit and its hazard, and `decktalk config explain KEY` gives one of them whole.
 
 ## The four files an author writes
 
@@ -74,9 +75,9 @@ takes are the only expensive thing in the tree, and caching them by content is w
 edit cheap.
 
 `tests/contract/test_imports.py` names every import that points sideways between stages, each with
-the reason it exists, so an exception is designed rather than acquired. There are twelve of them and
-every one is either `build` and `check` calling the stages they orchestrate, or a stage asking its
-neighbour for a rule that neighbour owns.
+the reason it exists, so an exception is designed rather than acquired. Every one is either `build`
+and `check` calling the stages they orchestrate, or a stage asking its neighbour for a rule that
+neighbour owns.
 
 ## The five layers
 
