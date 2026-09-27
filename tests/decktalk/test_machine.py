@@ -38,6 +38,7 @@ from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Layer, Scope, Spend, SpendState, StatusResult, Voicing
 from decktalk.settings import ToolsConfig
 from decktalk.toolchain.announce import announce
+from decktalk.toolchain.cache import cache_dir, standard_cache_dir
 
 
 def a_machine(tmp_path: Path, **environ: str) -> Machine:
@@ -71,11 +72,47 @@ def test_a_toolchain_takes_what_the_settings_name(tmp_path: Path) -> None:
     named = ToolsConfig(ffmpeg=str(tmp_path / "ff"), ffprobe=str(tmp_path / "fp"))
     for path in (tmp_path / "ff", tmp_path / "fp"):
         path.write_bytes(b"")
-    assert Toolchain.of(named).ffmpeg == tmp_path / "ff"
+    assert Toolchain.of(named, cache=tmp_path / "cache").ffmpeg == tmp_path / "ff"
 
 
 def test_the_cache_a_run_fetches_into_is_the_one_its_keys_name(tmp_path: Path) -> None:
-    assert Toolchain.of(ToolsConfig(cache_dir=str(tmp_path / "elsewhere"))).cache_dir == tmp_path / "elsewhere"
+    named = ToolsConfig(cache_dir=str(tmp_path / "elsewhere"))
+    assert Toolchain.of(named, cache=tmp_path / "standard").cache_dir == tmp_path / "elsewhere"
+
+
+def test_the_cache_is_the_machines_own_when_no_key_moves_it(tmp_path: Path) -> None:
+    here = Machine(
+        environ={},
+        tables={},
+        config_path=tmp_path / "config.toml",
+        cwd=tmp_path,
+        toolchain=Toolchain(cache=tmp_path / "standard"),
+    )
+    with here.run():
+        assert cache_dir() == tmp_path / "standard"
+    assert here.cache_dir == tmp_path / "standard"
+
+
+def test_a_fetch_that_no_machine_bound_is_refused_rather_than_guessed() -> None:
+    """A directory worked out from the process would put a host's tools where the host never said."""
+    with pytest.raises(machine_module.ToolError, match="no machine named a directory"):
+        cache_dir()
+
+
+@pytest.mark.parametrize(
+    ("platform", "environ", "expected"),
+    [
+        ("darwin", {"XDG_CACHE_HOME": "/ignored"}, "home/Library/Caches/decktalk"),
+        ("linux", {}, "home/.cache/decktalk"),
+        ("linux", {"XDG_CACHE_HOME": "/xdg"}, "/xdg/decktalk"),
+        ("win32", {"LOCALAPPDATA": "/local"}, "/local/decktalk"),
+        ("win32", {}, "home/AppData/Local/decktalk"),
+    ],
+)
+def test_the_standard_cache_is_worked_out_from_the_environment_the_machine_holds(
+    platform: str, environ: dict[str, str], expected: str
+) -> None:
+    assert standard_cache_dir(environ, Path("home"), platform) == Path(expected)
 
 
 def test_a_toolchain_that_is_not_there_names_the_command_that_fetches_it() -> None:

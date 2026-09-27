@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from decktalk.machine import Machine
 from decktalk.media import frames
 from support.media_cards import FPS, PANEL_PERCENT, H, W, write_card
 
@@ -15,7 +16,12 @@ pytestmark = pytest.mark.media
 
 @pytest.fixture(scope="module")
 def card(tmp_path_factory) -> Path:
-    return write_card(tmp_path_factory.mktemp("media") / "card.mp4")
+    """The card every test here reads, written once under the machine's own tools.
+
+    A module fixture is set up before the per-test binding in `conftest.py`, so it binds for itself.
+    """
+    with Machine.from_environment().toolchain.bound():
+        return write_card(tmp_path_factory.mktemp("media") / "card.mp4")
 
 
 def _grid(t: float) -> float:

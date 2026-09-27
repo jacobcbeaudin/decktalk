@@ -92,7 +92,7 @@ from decktalk.settings import (
 from decktalk.settings import Scope as SettingScope
 from decktalk.toolchain import assets, chromium_fetch
 from decktalk.toolchain.announce import announcing
-from decktalk.toolchain.cache import cache_dir
+from decktalk.toolchain.cache import caching_in, standard_cache_dir
 from decktalk.toolchain.ffmpeg_fetch import FFMPEG_VERSION, fetch_ffmpeg
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -123,25 +123,30 @@ def new_run() -> str:
 
 @dataclass(frozen=True)
 class Toolchain:
-    """What this machine renders with: the keys that name it, and the pair those keys resolve to.
+    """What this machine renders with: the keys that name it, the pair they resolve to, and its cache.
 
     The pair is a field rather than a cached lookup, so the first project opened in a process cannot
     pin the toolchain for every project after it, which is what a module-level cache over the
     environment did. The keys travel with it because a run binds them for the length of the run, and
-    every call between the machine and an audio filter reads them from there.
+    every call between the machine and an audio filter reads them from there. The cache is the
+    directory the machine worked out from its own environment, so a fetch lands where this machine
+    keeps its tools rather than where the process that happens to run it would.
     """
 
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     ffmpeg: Path | None = None
     ffprobe: Path | None = None
+    cache: Path | None = None
+    """The standard per-user directory this machine keeps its tools in, when `[tools] cache_dir` names none."""
 
     @classmethod
-    def of(cls, tools: ToolsConfig) -> Toolchain:
+    def of(cls, tools: ToolsConfig, *, cache: Path) -> Toolchain:
         """The toolchain these keys resolve to, resolved once and without fetching anything."""
-        with using_tools(tools):
+        named = cls(tools=tools, cache=cache)
+        with named.bound():
             found = installed_paths(tools)
-        return cls(
-            tools=tools,
+        return replace(
+            named,
             ffmpeg=Path(found[0]) if found else None,
             ffprobe=Path(found[1]) if found else None,
         )
@@ -149,8 +154,25 @@ class Toolchain:
     @property
     def cache_dir(self) -> Path:
         """Where this machine keeps what it fetches, which `[tools] cache_dir` moves."""
-        with using_tools(self.tools):
-            return cache_dir()
+        if self.tools.cache_dir:
+            return Path(self.tools.cache_dir)
+        if self.cache is not None:
+            return self.cache
+        raise ToolError(
+            "this machine names no directory to keep fetched tools in.",
+            hint="Set tools.cache_dir on this machine, or build the machine with Machine.from_environment().",
+        )
+
+    @contextmanager
+    def bound(self) -> Iterator[None]:
+        """Bind the keys and the cache directory below the machine while this is open.
+
+        A toolchain built by hand for a test may name no cache at all, and it binds only its keys,
+        so a run that fetches nothing never asks where a fetch would land.
+        """
+        known = self.tools.cache_dir or (str(self.cache) if self.cache is not None else "")
+        with caching_in(known), using_tools(self.tools):
+            yield
 
     @property
     def complete(self) -> bool:
@@ -170,7 +192,7 @@ class Toolchain:
         """This toolchain with the pinned build downloaded when it was not already there."""
         if self.complete:
             return self
-        with using_tools(self.tools):
+        with self.bound():
             ffmpeg, ffprobe = fetch_ffmpeg()
         return replace(self, ffmpeg=Path(ffmpeg), ffprobe=Path(ffprobe))
 
@@ -343,6 +365,7 @@ class Machine:
     def from_environment(cls, *, overrides: Iterable[tuple[str, str]] = ()) -> Machine:
         """This machine as the process found it, which is the only reading of the environment there is."""
         environ = dict(os.environ)
+        home = Path.home()
         config = machine_config_path()
         tables = read_machine_toml(config)
         pairs = tuple(f"{key}={value}" for key, value in overrides)
@@ -353,7 +376,7 @@ class Machine:
             tables=tables,
             config_path=config,
             cwd=Path.cwd(),
-            toolchain=Toolchain.of(loaded.settings.tools),
+            toolchain=Toolchain.of(loaded.settings.tools, cache=standard_cache_dir(environ, home)),
             overrides=pairs,
         )
 
@@ -426,7 +449,7 @@ class Machine:
             # The toolchain and the download listener are what this run renders and fetches with, and
             # both sit below the event stream, so the run binds them for its own length rather than
             # threading a machine through every filter and every fetcher.
-            with using_tools(self.toolchain.tools), announcing(run.fetching):
+            with self.toolchain.bound(), announcing(run.fetching):
                 yield run
         except BaseException:
             outcome = Outcome.FAILED

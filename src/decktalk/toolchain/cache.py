@@ -1,26 +1,43 @@
 """The per-user cache directory, which is where every tool DeckTalk fetches for a machine lives.
 
 One directory per user holds the pinned ffmpeg build, beside the folder Playwright keeps Chromium
-in, so a second project on the same machine downloads nothing. `[tools] cache_dir` moves it, and it
-arrives through `caching_in` because this layer sits below the settings it would otherwise read.
+in, so a second project on the same machine downloads nothing. The machine works out which directory
+that is from its own environment, or takes the one `[tools] cache_dir` names, and binds it for every
+run through `caching_in`, because this layer sits below the machine and the settings it would
+otherwise have to read.
+
+Nothing here reads the process environment. A fetch outside any binding is refused rather than sent
+to a directory worked out from whatever process it happens to run in, because a host that built its
+machine by hand has already said where its tools live.
 """
 
 from __future__ import annotations
 
-import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+from decktalk.errors import ToolError
+
 ELSEWHERE: ContextVar[str] = ContextVar("decktalk_cache_dir", default="")
-"""Where this run keeps what it fetches, which is empty for the standard per-user directory."""
+"""Where this run keeps what it fetches, which is empty until a machine binds its directory."""
+
+CACHE_NAME = "decktalk"
+"""The folder DeckTalk keeps inside the per-user cache root, beside Playwright's ms-playwright."""
 
 
 @contextmanager
 def caching_in(directory: str) -> Iterator[None]:
-    """Keep what is fetched under `directory` while this is open, or under the standard one when it is empty."""
+    """Keep what is fetched under `directory` while this is open.
+
+    An empty directory leaves the binding already in force, which is how `[tools] cache_dir` left
+    unset falls through to the directory the machine worked out for itself.
+    """
+    if not directory:
+        yield
+        return
     token = ELSEWHERE.set(directory)
     try:
         yield
@@ -29,13 +46,25 @@ def caching_in(directory: str) -> Iterator[None]:
 
 
 def cache_dir() -> Path:
-    """The directory this run keeps fetched tools in, next to Playwright's own ms-playwright folder."""
-    if elsewhere := ELSEWHERE.get():
-        return Path(elsewhere)
-    if sys.platform == "darwin":
-        root = Path.home() / "Library" / "Caches"
-    elif sys.platform == "win32":
-        root = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    """The directory this run keeps fetched tools in, or a `TOOL` refusal when no machine bound one."""
+    if bound := ELSEWHERE.get():
+        return Path(bound)
+    raise ToolError(
+        "no machine named a directory to keep fetched tools in.",
+        hint="Open a run on a machine, which binds its cache directory, before fetching a tool.",
+    )
+
+
+def standard_cache_dir(environ: Mapping[str, str], home: Path, platform: str = sys.platform) -> Path:
+    """The per-user cache directory this platform's conventions name, worked out from values passed in.
+
+    The environment and the home directory are arguments, so the machine that owns them decides
+    where its tools live and a second machine in the same process can decide differently.
+    """
+    if platform == "darwin":
+        root = home / "Library" / "Caches"
+    elif platform == "win32":
+        root = Path(environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
     else:
-        root = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
-    return root / "decktalk"
+        root = Path(environ.get("XDG_CACHE_HOME") or home / ".cache")
+    return root / CACHE_NAME

@@ -120,7 +120,8 @@ def test_binding_the_tools_also_binds_where_a_fetch_is_kept(tmp_path):
     """One call says which ffmpeg a run renders with, and a cache directory is part of that answer."""
     with ffmpeg.using_tools(ToolsConfig(cache_dir=str(tmp_path / "elsewhere"))):
         assert cache_dir() == tmp_path / "elsewhere"
-    assert cache_dir() != tmp_path / "elsewhere"
+    with pytest.raises(ToolError, match="no machine named a directory"):
+        cache_dir()
 
 
 def test_a_concat_line_quotes_a_path_a_person_could_actually_write():

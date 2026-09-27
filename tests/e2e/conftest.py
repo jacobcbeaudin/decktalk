@@ -7,8 +7,11 @@ with the command that fetches it rather than skipping a suite the run asked for.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 
+from decktalk.machine import Machine
 from support.tools import require
 
 NEEDED = ("chromium", "ffmpeg")
@@ -19,3 +22,10 @@ NEEDED = ("chromium", "ffmpeg")
 def tools_present(tmp_path_factory: pytest.TempPathFactory) -> None:
     """Fail the session before any build starts when this machine lacks a tool a build needs."""
     require(NEEDED, tmp_path_factory.mktemp("doctor"))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def machine_tools() -> Iterator[None]:
+    """Bind this process's machine's cache and tools for the session, because the fixture runs ffmpeg outside a run."""
+    with Machine.from_environment().toolchain.bound():
+        yield
