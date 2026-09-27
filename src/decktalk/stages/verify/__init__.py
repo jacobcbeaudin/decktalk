@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from decktalk.errors import NotBuiltError
-from decktalk.findings import Code, Location
+from decktalk.findings import Code, Finding, Location
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.media import ffmpeg, frames
@@ -57,7 +57,7 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
     wanted = selects(only)
     kept = {number: at for number, at in starts.items() if wanted(number)}
     _repeat_recorded(inputs, run, wanted)
-    _unresolved(inputs, run, wanted)
+    _placed(inputs, run, wanted)
     cues = planned_cues(inputs, run, starts, total, default_checks(inputs.cue_times(), list(kept)), opted_out(inputs))
     seams = planned_seams(inputs, kept)
     wanted = frames.Wanted()
@@ -92,31 +92,50 @@ def _repeat_recorded(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) ->
             run.found(found)
 
 
-def _unresolved(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
-    """One judgement per cue `cues.json` lists that no run could give a second to.
+def _placed(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
+    """One judgement per cue whose second on disk is missing, or was placed from another `cues.json`.
 
-    A cue with no second was never played, so the film shows nothing where the author wrote a
-    reveal, and that is worth saying against the finished film as well as against the cue file.
+    The cue times are compared with the cue file row by row. A cue whose phrase or nudge differs from
+    the one its second was placed from, a cue the times do not list, and a second placed for a cue the
+    file no longer declares all mean the times are older than the file, which a build puts right. Only
+    a cue whose own phrase was matched and found nowhere is one the script does not speak. Telling the
+    two apart matters, because blaming the script for a phrase it speaks sends an author to edit a
+    sentence that was never wrong.
     """
     times = inputs.cue_times()
+    where = inputs.relative(inputs.cues_path)
     for block in inputs.cues():
         if not wanted(block.number):
             continue
-        resolved = times.times(block.number) if times is not None else {}
+        rows = {row.cue: row for row in times.rows(block.number)} if times is not None else {}
         for cue in block.cues:
-            if cue.cue in resolved:
-                continue
-            run.found(
-                judge(
-                    Code.CUE_UNRESOLVED,
-                    f"the cue {cue.cue} lands on the phrase {cue.on!r}, which section {block.number} does not "
-                    "speak, so there is no second to place it at and the film never plays it.",
-                    Location(
-                        where=cue.cue,
-                        file=inputs.relative(inputs.cues_path),
-                        section=block.number,
-                        cue=cue.cue,
-                    ),
-                    stage=Stage.VERIFY,
+            row = rows.get(cue.cue)
+            here = Location(where=cue.cue, file=where, section=block.number, cue=cue.cue)
+            if times is not None and (row is None or row.phrase != cue.on or row.offset != cue.offset):
+                placed = "no second at all" if row is None else f"a second placed for {row.phrase!r}"
+                run.found(_stale(f"cues.json asks for {cue.cue} on {cue.on!r} and the cue times hold {placed}", here))
+            elif row is None or row.seconds is None:
+                run.found(
+                    judge(
+                        Code.CUE_UNRESOLVED,
+                        f"the cue {cue.cue} lands on the phrase {cue.on!r}, which section {block.number} does "
+                        "not speak, so there is no second to place it at and the film never plays it.",
+                        here,
+                        stage=Stage.VERIFY,
+                    )
                 )
-            )
+        declared = {cue.cue for cue in block.cues}
+        for gone in sorted(set(rows) - declared):
+            here = Location(where=gone, file=where, section=block.number, cue=gone)
+            run.found(_stale(f"the cue times hold a second for {gone}, which cues.json no longer declares", here))
+
+
+def _stale(what: str, where: Location) -> Finding:
+    """The judgement that the cue times on disk are older than `cues.json`, which names the way out."""
+    return judge(
+        Code.CUE_STALE,
+        f"{what}, so the cue times are older than cues.json and the film was cut to moments nobody asks for "
+        "now. Run `decktalk build` to place them again.",
+        where,
+        stage=Stage.VERIFY,
+    )
