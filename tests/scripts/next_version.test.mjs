@@ -3,10 +3,15 @@
 // CONTRIBUTING.md under "Releases".
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
-import { nextRelease } from "../../scripts/next_version.mjs";
+import { nextRelease, packageConfig, rewrite, updates } from "../../scripts/next_version.mjs";
+
+const { Version } = createRequire(import.meta.url)("release-please/build/src/version.js");
 
 const config = JSON.parse(readFileSync(new URL("../../release-please-config.json", import.meta.url), "utf8"));
 
@@ -80,4 +85,41 @@ test("the notes carry the commits release-please would list", async () => {
   const result = await next("0.5.0-rc2", commit("fix(cue): match a phrase over two lines"));
   assert.match(result.notes, /### Bug Fixes/);
   assert.match(result.notes, /match a phrase over two lines/);
+});
+
+// The bump a rehearsal makes is release-please's own updaters, chosen from the same config.
+
+const VERSION = Version.parse("9.9.9-rc1");
+
+test("every file the config names takes the version", () => {
+  for (const [path, updater] of updates(packageConfig(config, "."), VERSION, "## [9.9.9-rc1] (2026-01-01)\n")) {
+    const before = readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+    const after = updater.updateContent(before);
+    assert.notEqual(after, before, `${path} kept its version`);
+    assert.match(after, /9\.9\.9-rc1/, path);
+  }
+});
+
+test("an extra file of a type the rehearsal does not know is refused", () => {
+  const settings = { "release-type": "python", "extra-files": [{ type: "yaml", path: "a.yml", jsonpath: "$.v" }] };
+  assert.throws(() => updates(settings, VERSION, ""), /names no type/);
+});
+
+test("a file the bump would leave as it was is refused", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bump-"));
+  writeFileSync(join(dir, "index.ts"), 'const VERSION = "0.4.1";\n');
+  const [, generic] = updates(
+    { "release-type": "python", "extra-files": [{ type: "generic", path: "index.ts" }] },
+    VERSION,
+    "",
+  )[2];
+  assert.throws(() => rewrite(dir, "index.ts", generic), /changed nothing in index.ts/);
+});
+
+test("a file the config names that does not exist is refused", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bump-"));
+  assert.throws(
+    () => rewrite(dir, "gone.ts", updates(packageConfig(config, "."), VERSION, "")[0][1]),
+    /does not exist/,
+  );
 });

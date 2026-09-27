@@ -1,6 +1,7 @@
 // The version release-please would propose next, computed by release-please's own code.
 //
-//     node scripts/next_version.mjs          # print what the next release pull request would carry, as JSON
+//     node scripts/next_version.mjs                    # print what the next release pull request would carry, as JSON
+//     node scripts/next_version.mjs --bump DIR PATH... # write that version into the copy at DIR, as release-please would
 //
 // release-please reads the history through the GitHub API, so what it will do is otherwise known
 // only once its pull request opens. This reads the same history from git and hands it to the same
@@ -10,9 +11,14 @@
 //
 // It needs the history back to the last release tag, so a shallow clone fails with the command
 // that fixes it. It reads nothing from the network.
+//
+// `--bump` makes the edits release-please's python release makes, with release-please's own updaters:
+// the project file, the changelog, every entry of `extra-files` by the updater its `type` names, and
+// the manifest. It refuses a file that is missing or that the bump would leave as it was, because a
+// rehearsal that silently skipped a file would pass for the wrong reason.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +31,12 @@ const { DefaultVersioningStrategy } = require("release-please/build/src/versioni
 const { DefaultChangelogNotes } = require("release-please/build/src/changelog-notes/default.js");
 const { Version } = require("release-please/build/src/version.js");
 const { setLogger } = require("release-please/build/src/util/logger.js");
+const { Changelog } = require("release-please/build/src/updaters/changelog.js");
+const { Generic } = require("release-please/build/src/updaters/generic.js");
+const { GenericJson } = require("release-please/build/src/updaters/generic-json.js");
+const { GenericToml } = require("release-please/build/src/updaters/generic-toml.js");
+const { PyProjectToml } = require("release-please/build/src/updaters/python/pyproject-toml.js");
+const { ReleasePleaseManifest } = require("release-please/build/src/updaters/release-please-manifest.js");
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const QUIET = { error() {}, warn() {}, info() {}, debug() {}, trace() {} };
@@ -108,6 +120,42 @@ export async function nextRelease({ released, commits, config, path = ".", owner
   };
 }
 
+/** The updater release-please runs on one entry of `extra-files`, chosen by the `type` the entry names. */
+function extraFile(entry, version) {
+  const updaters = {
+    generic: () => new Generic({ version }),
+    json: () => new GenericJson(entry.jsonpath, version),
+    toml: () => new GenericToml(entry.jsonpath, version),
+  };
+  const make = updaters[entry.type];
+  if (!make) throw new Error(`the extra file ${JSON.stringify(entry)} names no type among generic, json and toml`);
+  return [entry.path, make()];
+}
+
+/** Every file release-please rewrites in one python package, each with the updater it rewrites it by. */
+export function updates(settings, version, notes) {
+  if (settings["release-type"] !== "python") {
+    throw new Error(`a ${settings["release-type"]} release is not one this rehearsal knows, so teach it first`);
+  }
+  return [
+    ["pyproject.toml", new PyProjectToml({ version })],
+    [settings["changelog-path"] ?? "CHANGELOG.md", new Changelog({ version, changelogEntry: notes })],
+    ...(settings["extra-files"] ?? []).map((entry) => extraFile(entry, version)),
+  ];
+}
+
+/** One file rewritten by its updater, refused when it is missing or when the updater leaves it as it was. */
+export function rewrite(dir, path, updater) {
+  const file = join(dir, path);
+  if (!existsSync(file)) throw new Error(`${path} does not exist, and release-please would bump it`);
+  const before = readFileSync(file, "utf8");
+  const after = updater.updateContent(before, QUIET);
+  if (after === before)
+    throw new Error(`the bump changed nothing in ${path}, so release-please would leave its version behind`);
+  writeFileSync(file, after);
+  process.stdout.write(`bumped ${path}\n`);
+}
+
 function git(...args) {
   return execFileSync("git", args, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
@@ -152,7 +200,7 @@ function commitsSince(tag) {
     });
 }
 
-async function main() {
+async function main([flag, dir, ...bumped]) {
   const config = JSON.parse(readFileSync(join(ROOT, "release-please-config.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(ROOT, ".release-please-manifest.json"), "utf8"));
   const report = {};
@@ -163,11 +211,21 @@ async function main() {
     const result = await nextRelease({ released, commits, config, path, ...origin() });
     report[path] = { tree, ...result };
   }
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (flag !== "--bump") {
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    return;
+  }
+  const versions = new Map(bumped.map((path) => [path, Version.parse(report[path].rehearse)]));
+  for (const [path, version] of versions) {
+    for (const [file, updater] of updates(packageConfig(config, path), version, report[path].rehearseNotes)) {
+      rewrite(join(dir, path), file, updater);
+    }
+  }
+  rewrite(dir, ".release-please-manifest.json", new ReleasePleaseManifest({ versionsMap: versions }));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
+  main(process.argv.slice(2)).catch((error) => {
     process.stderr.write(`${error.message}\n`);
     process.exit(1);
   });
