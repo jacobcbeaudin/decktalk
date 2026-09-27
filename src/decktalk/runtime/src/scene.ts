@@ -31,6 +31,7 @@ import {
   SECOND_DIGITS,
   SLIDE_ENTRANCES,
   type SlideEntrance,
+  staggerSpan,
   WORD_STYLES,
   type WordStyle,
   wireId,
@@ -365,14 +366,14 @@ function spanOf(el: Element, attr: Attr): number {
 /**
  * The span an arrival declares, which is the longest of the entrance, the stagger, the count and the line.
  *
- * A staggered container's own span is exact arithmetic, the last child starting one step per earlier
- * child after the cue and then playing its own entrance, which is why its overrun is a certain finding.
+ * A staggered container's own span is the contract's `staggerSpan`, the arithmetic the Python scan
+ * judges `PAGE_STAGGER_OVERRUN` with, so the catalog and the finding cannot disagree. A container
+ * that staggers no children moves nothing, because the entrance plays on the children alone.
  */
 function arrivalSpan(el: Element): number {
   const entrance = entranceSeconds(el);
   const step = staggerSeconds(el);
-  const children = step === null ? 0 : el.children.length;
-  const spread = step === null ? entrance : step * Math.max(0, children - 1) + entrance;
+  const spread = step === null ? entrance : staggerSpan(step, el.children.length, entrance);
   const count = countOf(el) === null ? 0 : COUNTS[countOf(el) as Count].seconds;
   const line = flagged(el, ATTR.words) ? WORD_STYLES[wordStyleOf(el)].seconds : 0;
   return Math.max(spread, count, line);

@@ -579,6 +579,9 @@
     }
     return value.trim() ? null : "a value";
   }
+  function staggerSpan(step, children, entrance) {
+    return children > 0 ? step * (children - 1) + entrance : 0;
+  }
   function scaled(span2, scale2) {
     return Math.min(span2 * scale2, PLAYABLE_SPAN_SECONDS);
   }
@@ -855,8 +858,7 @@
   function arrivalSpan(el) {
     const entrance = entranceSeconds(el);
     const step = staggerSeconds(el);
-    const children = step === null ? 0 : el.children.length;
-    const spread = step === null ? entrance : step * Math.max(0, children - 1) + entrance;
+    const spread = step === null ? entrance : staggerSpan(step, el.children.length, entrance);
     const count2 = countOf(el) === null ? 0 : COUNTS[countOf(el)].seconds;
     const line2 = flagged(el, ATTR.words) ? WORD_STYLES[wordStyleOf(el)].seconds : 0;
     return Math.max(spread, count2, line2);
