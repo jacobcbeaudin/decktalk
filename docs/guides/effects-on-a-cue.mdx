@@ -180,8 +180,9 @@ viewer who cannot see or cannot hear it.
 
 ## What ducks and what does not
 
-The music bed plays at `[mix] music_db` and ducks to `[mix] music_duck_db` under every span that
-carries speech, ramped in and out over `[audio] duck_ramp_seconds` at each edge. A span that carries
+The music bed plays at `[mix] music_db` and ducks by `[mix] music_duck_db` under every span that
+carries speech, ramped in and out over `[audio] duck_ramp_seconds` at each edge.
+[Sound](/concepts/sound#ducking) owns the whole rule. A span that carries
 speech is a spoken section from its start to its last word, and a clip section for the whole of its
 own length.
 

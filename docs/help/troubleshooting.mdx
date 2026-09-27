@@ -455,8 +455,9 @@ boundary be an ordinary cut, which `[transition]` dips through.
 **What you see.** `MIX_LOUDNESS`, which is uncertain, with the measured numbers in the message.
 
 The mix is mastered to `mix.loudness.target_lufs`, with `mix.loudness.true_peak_max_dbtp` as the peak
-ceiling and `mix.loudness.range_max_lu` as the widest loudness range allowed. The defaults are
--16 LUFS, -1.5 dBTP and 11 LU, which are ordinary values for video on the web.
+ceiling. The defaults are -16 LUFS and -1.5 dBTP, which are ordinary values for video on the web.
+`mix.loudness.range_max_lu` is the loudness range the measurement is made against, and no mix fails
+on it. [Sound](/concepts/sound#loudness) says exactly when `MIX_LOUDNESS` is raised.
 
 **What to do.**
 

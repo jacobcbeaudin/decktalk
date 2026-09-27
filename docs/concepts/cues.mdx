@@ -182,8 +182,9 @@ decktalk check --fix   # open every page, judge it, and add the row for every mi
 decktalk build --fix   # the same, as part of a run that goes on to make the film
 ```
 
-`--fix` lives on `check` and on `build`, which are the two commands that apply a fix. `cue` reports
-the same codes and applies nothing.
+`--fix` lives on `check` and on `build`, which are the two commands that apply a fix to a project's
+files, and `doctor --fix` applies the fixes a machine offers. `cue` reports the same codes and
+applies nothing.
 
 Both comparisons read the moments off the catalog the page itself published rather than off a scan of
 its markup, because `data-steps`, `data-class` and `data-owns` all declare moments no text scan can

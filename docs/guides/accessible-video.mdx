@@ -131,11 +131,11 @@ inter-sample peaks are caught, which is what a true-peak ceiling promises.
 |---|---|---|
 | `target_lufs` | `-16.0` | The programme loudness the film is normalised to. |
 | `true_peak_max_dbtp` | `-1.5` | The highest true peak the normalised mix may reach. |
-| `range_max_lu` | `11.0` | The widest loudness range the normalised mix may hold. |
+| `range_max_lu` | `11.0` | The loudness range the measurement is made against. It is not a limit, and no mix fails on it. |
 
-The second measurement is reported, and a miss is `MIX_LOUDNESS`. It is uncertain, because the pass
-reports what it could not fix and a reader decides: a film whose range is wide because the speech is
-quiet under loud music is a different problem from one whose target was set wrong.
+The second measurement is reported, and a true peak over the ceiling or a programme loudness away
+from the target is `MIX_LOUDNESS`. It is uncertain, because the pass reports what it could not fix
+and a reader decides. [Sound](/concepts/sound#loudness) says exactly when it is raised.
 
 ## Reduced motion
 
