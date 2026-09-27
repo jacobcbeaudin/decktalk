@@ -773,6 +773,23 @@ export const PAIR_MARK = ":";
 /** The separator between a slide id and a local moment name in the wire id that cues.json carries. */
 export const WIRE_MARK = ":";
 
+/** What joins a cue's wire id, or a spoken word, to its second in `?cues=` and `?words=`. */
+export const TIME_MARK = "@";
+
+/** What separates two entries of `?cues=` and of `?words=`. */
+export const LIST_SEPARATOR = ",";
+
+/**
+ * The path a previewed page asks its own origin for, which answers with the cue times the last run resolved.
+ *
+ * A recorded page is handed its seconds in its URL, and an author previewing in a browser is not, so
+ * the origin answers this one alias from the build directory and the page plays the film's timing.
+ */
+export const PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json";
+
+/** The custom property on the root element that carries `motion.scale` into a page, from the recorder or the author. */
+export const MOTION_SCALE_PROPERTY = "--dt-motion-scale";
+
 // ---- the pure readers -----------------------------------------------------------------------
 
 /** The wire id of a local moment, which is the slide it was written in and the name the author wrote. */
@@ -873,6 +890,10 @@ export const CONTRACT = {
   pairSeparator: PAIR_SEPARATOR,
   pairMark: PAIR_MARK,
   wireMark: WIRE_MARK,
+  timeMark: TIME_MARK,
+  listSeparator: LIST_SEPARATOR,
+  previewCueTimes: PREVIEW_CUE_TIMES,
+  motionScaleProperty: MOTION_SCALE_PROPERTY,
   frameStepMs: FRAME_STEP_MS,
   measurableSpanSeconds: MEASURABLE_SPAN_SECONDS,
   playableSpanSeconds: PLAYABLE_SPAN_SECONDS,

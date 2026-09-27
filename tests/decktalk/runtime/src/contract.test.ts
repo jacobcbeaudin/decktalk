@@ -8,6 +8,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -22,17 +23,24 @@ import {
   EXITS,
   FRAME_STEP_MS,
   known,
+  LIST_SEPARATOR,
   MEASURABLE_SPAN_SECONDS,
   MOMENT_SELECTOR,
   MOMENTS,
+  MOTION_SCALE_PROPERTY,
   measurable,
   message,
+  PAIR_MARK,
+  PAIR_SEPARATOR,
   PLAYABLE_SPAN_SECONDS,
+  PREVIEW_CUE_TIMES,
   pairs,
   refuse,
   SLIDE_ENTRANCES,
   scaled,
   staggerSpan,
+  TIME_MARK,
+  WIRE_MARK,
   WORD_STYLES,
   wireId,
 } from "../../../../src/decktalk/runtime/src/contract.ts";
@@ -151,4 +159,43 @@ test("every word set publishes a default that is one of its own words", () => {
     if (row.default === null || row.values.length === 0) continue;
     assert.ok(row.values.includes(row.default as never), `${name} defaults to a word it does not admit`);
   }
+});
+
+/** One row of the shared case table, which pytest reads as well, against the generated page module. */
+type Case = { args: (string | number)[]; want: string | number | boolean };
+
+/** The case table both languages answer, in `tests/data` because neither suite owns it alone. */
+const CASES = JSON.parse(
+  readFileSync(new URL("../../../data/contract_cases.json", import.meta.url), "utf-8"),
+) as Record<string, Case[]> & { tolerance: number };
+
+/** Each function of the table under the name its row carries, which is the Python spelling. */
+const FUNCTIONS: Record<string, (...args: never[]) => string | number | boolean> = {
+  wire_id: wireId,
+  stagger_span: staggerSpan,
+  measurable,
+  scaled,
+};
+
+test("the contract's functions answer the case table the Python module answers", () => {
+  for (const [name, fn] of Object.entries(FUNCTIONS)) {
+    const rows = CASES[name];
+    assert.ok(rows?.length, `the case table has no rows for ${name}`);
+    for (const row of rows) {
+      const got = fn(...(row.args as never[]));
+      const where = `${name}(${row.args.join(", ")})`;
+      if (typeof row.want === "number") {
+        assert.ok(Math.abs((got as number) - row.want) < CASES.tolerance, `${where} gave ${got}`);
+      } else assert.equal(got, row.want, where);
+    }
+  }
+});
+
+test("every string a URL, a route or a stylesheet is spelled with is published once", () => {
+  const spelled = [WIRE_MARK, PAIR_MARK, PAIR_SEPARATOR, TIME_MARK, LIST_SEPARATOR];
+  for (const mark of spelled) assert.equal(mark.length, 1, `${mark} is not one character`);
+  assert.notEqual(TIME_MARK, LIST_SEPARATOR);
+  assert.notEqual(TIME_MARK, WIRE_MARK);
+  assert.ok(PREVIEW_CUE_TIMES.startsWith("/"));
+  assert.ok(MOTION_SCALE_PROPERTY.startsWith("--"));
 });

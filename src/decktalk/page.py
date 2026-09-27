@@ -35,12 +35,15 @@ __all__ = [
     "Effect",
     "FRAME_STEP_MS",
     "Kind",
+    "LIST_SEPARATOR",
     "MEASURABLE_SPAN_SECONDS",
     "MOMENTS",
+    "MOTION_SCALE_PROPERTY",
     "ONSET_FIRST_FRAME_PERCENT",
     "PAIR_MARK",
     "PAIR_SEPARATOR",
     "PLAYABLE_SPAN_SECONDS",
+    "PREVIEW_CUE_TIMES",
     "PageWarning",
     "Q",
     "QUERY",
@@ -49,6 +52,7 @@ __all__ = [
     "Range",
     "SLIDE_ENTRANCES",
     "Subject",
+    "TIME_MARK",
     "WIRE_MARK",
     "WORD_STYLES",
     "measurable",
@@ -88,6 +92,18 @@ PAIR_MARK = ":"
 
 WIRE_MARK = ":"
 """What joins a slide id to a local moment name in the id `cues.json` carries."""
+
+TIME_MARK = "@"
+"""What joins a cue's wire id, or a spoken word, to its second in the query a recorded page reads."""
+
+LIST_SEPARATOR = ","
+"""What separates two entries of that query."""
+
+PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json"
+"""The path a previewed page asks its origin for, which answers with the last run's cue times."""
+
+MOTION_SCALE_PROPERTY = "--dt-motion-scale"
+"""The custom property on the root element that carries `motion.scale` into a page."""
 
 
 class Subject(Enum):

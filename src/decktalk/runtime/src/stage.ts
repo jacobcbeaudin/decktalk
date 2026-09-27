@@ -19,6 +19,7 @@ import {
   type Entrance,
   EXITS,
   type Exit,
+  MOTION_SCALE_PROPERTY,
   SLIDE_ENTRANCES,
   type SlideEntrance,
   scaled,
@@ -41,9 +42,6 @@ const POP_OVERSHOOT_AT = 60;
 
 /** How far `fall` travels as it leaves, which is the short distance `rise` already arrives across. */
 const FALL_PIXELS = ENTRANCES.rise.liftPixels;
-
-/** The custom property a reduced render writes the page's motion scale into, on the root element. */
-const SCALE_PROPERTY = "--dt-motion-scale";
 
 /** The custom property each element's own motion length is set through, which the sheet reads. */
 const SPAN_PROPERTY = "--dt-span";
@@ -228,7 +226,7 @@ export function reduced(): boolean {
  * the point where its own cues stop being measurable.
  */
 export function motionScale(): number {
-  const written = getComputedStyle(document.documentElement).getPropertyValue(SCALE_PROPERTY).trim();
+  const written = getComputedStyle(document.documentElement).getPropertyValue(MOTION_SCALE_PROPERTY).trim();
   const scale = Number.parseFloat(written);
   return Number.isFinite(scale) && scale > 0 ? scale : 1;
 }

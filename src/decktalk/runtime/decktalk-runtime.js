@@ -544,6 +544,10 @@
   var PAIR_SEPARATOR = "|";
   var PAIR_MARK = ":";
   var WIRE_MARK = ":";
+  var TIME_MARK = "@";
+  var LIST_SEPARATOR = ",";
+  var PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json";
+  var MOTION_SCALE_PROPERTY = "--dt-motion-scale";
   function wireId(slide, local) {
     return `${slide}${WIRE_MARK}${local}`;
   }
@@ -1113,7 +1117,6 @@
   var POP_ENTRY_SCALE = 0.7;
   var POP_OVERSHOOT_AT = 60;
   var FALL_PIXELS = ENTRANCES.rise.liftPixels;
-  var SCALE_PROPERTY = "--dt-motion-scale";
   var SPAN_PROPERTY = "--dt-span";
   var CLASS = {
     slide: "dt-slide",
@@ -1241,7 +1244,7 @@
     return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
   }
   function motionScale2() {
-    const written2 = getComputedStyle(document.documentElement).getPropertyValue(SCALE_PROPERTY).trim();
+    const written2 = getComputedStyle(document.documentElement).getPropertyValue(MOTION_SCALE_PROPERTY).trim();
     const scale2 = Number.parseFloat(written2);
     return Number.isFinite(scale2) && scale2 > 0 ? scale2 : 1;
   }
@@ -1670,7 +1673,6 @@
   var SIGNAL = "signal";
   var ON = "1";
   var SLOWEST = 0.05;
-  var CUE_TIMES = "/__decktalk/cue-times.json";
   var PREVIEW_STEP_SECONDS = 1;
   var DONE = "1";
   var state = {
@@ -1779,11 +1781,11 @@
   }
   function parseCues(raw) {
     return raw
-      .split(",")
+      .split(LIST_SEPARATOR)
       .map((token) => token.trim())
       .filter(Boolean)
       .map((token) => {
-        const mark = token.lastIndexOf("@");
+        const mark = token.lastIndexOf(TIME_MARK);
         return { id: token.slice(0, mark), at: Number.parseFloat(token.slice(mark + 1)) };
       })
       .filter((cue) => cue.id && !Number.isNaN(cue.at))
@@ -1791,9 +1793,9 @@
   }
   function parseWords(raw) {
     return raw
-      .split(",")
+      .split(LIST_SEPARATOR)
       .map((item) => {
-        const mark = item.lastIndexOf("@");
+        const mark = item.lastIndexOf(TIME_MARK);
         return { key: key(item.slice(0, mark)), at: Number.parseFloat(item.slice(mark + 1)) };
       })
       .filter((word2) => word2.key && !Number.isNaN(word2.at));
@@ -1859,7 +1861,7 @@
   async function resolvedCues(sceneId) {
     let document_;
     try {
-      const answer = await fetch(CUE_TIMES);
+      const answer = await fetch(PREVIEW_CUE_TIMES);
       if (!answer.ok) return null;
       document_ = await answer.json();
     } catch {

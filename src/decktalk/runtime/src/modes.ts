@@ -11,7 +11,16 @@
  */
 
 import { frameAt, now, round, run, schedule, start } from "./clock.ts";
-import { FRAME_STEP_MS, MILLISECONDS, type Q, SLIDE_ENTRANCES, wireId } from "./contract.ts";
+import {
+  FRAME_STEP_MS,
+  LIST_SEPARATOR,
+  MILLISECONDS,
+  PREVIEW_CUE_TIMES,
+  type Q,
+  SLIDE_ENTRANCES,
+  TIME_MARK,
+  wireId,
+} from "./contract.ts";
 import { typeset, ready as typesetterReady } from "./katex.ts";
 import { fire, type Mounted, prepare } from "./reveal.ts";
 import {
@@ -65,9 +74,6 @@ const ON = "1";
 
 /** The slowest a preview may be played, which is slow enough to read a cue and fast enough to end. */
 const SLOWEST = 0.05;
-
-/** The router alias a project answers with the cue times its last run resolved. */
-const CUE_TIMES = "/__decktalk/cue-times.json";
 
 /** How long a preview without cue times rests before its first cue, and between two of them. */
 const PREVIEW_STEP_SECONDS = 1;
@@ -238,11 +244,11 @@ function fireCue(cue: string, due: number): void {
 /** `?cues=` as the recorder writes it, which is a wire id and a second, sorted by the second. */
 function parseCues(raw: string): { id: string; at: number }[] {
   return raw
-    .split(",")
+    .split(LIST_SEPARATOR)
     .map((token) => token.trim())
     .filter(Boolean)
     .map((token) => {
-      const mark = token.lastIndexOf("@");
+      const mark = token.lastIndexOf(TIME_MARK);
       return { id: token.slice(0, mark), at: Number.parseFloat(token.slice(mark + 1)) };
     })
     .filter((cue) => cue.id && !Number.isNaN(cue.at))
@@ -252,9 +258,9 @@ function parseCues(raw: string): { id: string; at: number }[] {
 /** `?words=` as `narrate` wrote it, which is every spoken word and the second the voice reaches it. */
 function parseWords(raw: string): Spoken[] {
   return raw
-    .split(",")
+    .split(LIST_SEPARATOR)
     .map((item) => {
-      const mark = item.lastIndexOf("@");
+      const mark = item.lastIndexOf(TIME_MARK);
       return { key: key(item.slice(0, mark)), at: Number.parseFloat(item.slice(mark + 1)) };
     })
     .filter((word) => word.key && !Number.isNaN(word.at));
@@ -349,7 +355,7 @@ type TimedSection = { scene?: string; cues?: { cue?: string; at?: number }[] };
 async function resolvedCues(sceneId: string): Promise<{ id: string; at: number }[] | null> {
   let document_: { sections?: TimedSection[] };
   try {
-    const answer = await fetch(CUE_TIMES);
+    const answer = await fetch(PREVIEW_CUE_TIMES);
     if (!answer.ok) return null;
     document_ = await answer.json();
   } catch {

@@ -384,12 +384,15 @@ def page_module(data: dict[str, Any]) -> str:
         "Effect",
         "FRAME_STEP_MS",
         "Kind",
+        "LIST_SEPARATOR",
         "MEASURABLE_SPAN_SECONDS",
+        "MOTION_SCALE_PROPERTY",
         "MOMENTS",
         "ONSET_FIRST_FRAME_PERCENT",
         "PAIR_MARK",
         "PAIR_SEPARATOR",
         "PLAYABLE_SPAN_SECONDS",
+        "PREVIEW_CUE_TIMES",
         "Q",
         "QUERY",
         "REPORT",
@@ -397,6 +400,7 @@ def page_module(data: dict[str, Any]) -> str:
         "RaisedBy",
         "SLIDE_ENTRANCES",
         "Subject",
+        "TIME_MARK",
         "WIRE_MARK",
         "WORD_STYLES",
         "PageWarning",
@@ -428,6 +432,13 @@ def page_module(data: dict[str, Any]) -> str:
         f'PAIR_MARK = {data["pairMark"]!r}\n"""What separates a pair\'s moment from its value."""\n',
         f"WIRE_MARK = {data['wireMark']!r}\n"
         '"""What joins a slide id to a local moment name in the id `cues.json` carries."""\n',
+        f"TIME_MARK = {data['timeMark']!r}\n"
+        '"""What joins a cue\'s wire id, or a spoken word, to its second in the query a recorded page reads."""\n',
+        f'LIST_SEPARATOR = {data["listSeparator"]!r}\n"""What separates two entries of that query."""\n',
+        f"PREVIEW_CUE_TIMES = {data['previewCueTimes']!r}\n"
+        '"""The path a previewed page asks its origin for, which answers with the last run\'s cue times."""\n',
+        f"MOTION_SCALE_PROPERTY = {data['motionScaleProperty']!r}\n"
+        '"""The custom property on the root element that carries `motion.scale` into a page."""\n',
         word_enum(
             "Subject",
             "What an attribute is written on. A container is an element whose children carry moments.",
