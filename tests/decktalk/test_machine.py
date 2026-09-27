@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import socket
 import subprocess
 import sys
@@ -768,6 +769,56 @@ def test_a_fix_with_one_refused_edit_writes_none_of_its_edits(tmp_path: Path) ->
     done, _why = applied(a_machine(tmp_path), fix, root)
     assert not done
     assert not (root / "inside.txt").exists()
+
+
+def test_a_fix_whose_second_edit_is_stale_leaves_its_first_file_whole(tmp_path: Path) -> None:
+    """Every edit is checked before any file is written, so a fix changes all of its files or none."""
+    (tmp_path / "first.txt").write_text("one\n", encoding="utf-8")
+    (tmp_path / "second.txt").write_text("moved\n", encoding="utf-8")
+    fix = EditFix(
+        title="t",
+        applicability=Applicability.SAFE,
+        edits=(
+            Edit(file=Path("first.txt"), line=1, old="one", new="changed"),
+            Edit(file=Path("second.txt"), line=1, old="two", new="changed"),
+        ),
+    )
+    done, why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert not done and "no longer reads" in why
+    assert (tmp_path / "first.txt").read_text(encoding="utf-8") == "one\n"
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.endswith(".fixing")) == []
+
+
+def test_two_edits_to_one_file_are_made_in_order_and_written_once(tmp_path: Path) -> None:
+    (tmp_path / "notes.txt").write_text("one\ntwo\n", encoding="utf-8")
+    fix = EditFix(
+        title="t",
+        applicability=Applicability.SAFE,
+        edits=(
+            Edit(file=Path("notes.txt"), line=1, old="one", new="first"),
+            Edit(file=Path("notes.txt"), line=2, old="two", new="second"),
+        ),
+    )
+    done, _why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert done
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "first\nsecond\n"
+
+
+def test_a_link_planted_where_a_fix_writes_its_draft_is_never_written_through(tmp_path: Path) -> None:
+    """A project may carry any file, so the draft a fix writes beside its target is always a new one."""
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "notes.txt").write_text("one\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere.txt"
+    elsewhere.write_text("mine\n", encoding="utf-8")
+    try:
+        (root / f".notes.txt.{os.getpid()}.fixing").symlink_to(elsewhere)
+    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
+        pytest.skip("this machine does not let an unprivileged user make a link")
+    with pytest.raises(FileExistsError):
+        applied(a_machine(tmp_path), an_edit("notes.txt", line=1, old="one"), root)
+    assert elsewhere.read_text(encoding="utf-8") == "mine\n"
+    assert (root / "notes.txt").read_text(encoding="utf-8") == "one\n"
 
 
 def test_a_line_that_no_longer_reads_what_the_fix_expected_is_left_alone(tmp_path: Path) -> None:

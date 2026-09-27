@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -720,17 +721,54 @@ def apply_fix(run: Run, code: Code, fix: Fix, *, root: Path, scope: Scope, unsaf
 def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, ...]:
     """Make the change one fix describes, and give back every file it changed.
 
-    Every edit is checked before any is made, so a fix whose second edit is refused has not already
-    written its first.
+    Every edit is checked and made in memory before any file is touched, and every file is written
+    under a temporary name before any of them replaces its target, so a fix whose second edit is
+    refused has not already written its first and a fix that stops halfway leaves every file whole.
     """
     if isinstance(fix, SettingFix):
-        written = write(_settings_file(run, root, scope), fix.key, fix.value, scope=scope, environ=run.machine.environ)
-        return (written.file,)
+        return (_write_key(run, fix.key, fix.value, root=root, scope=scope),)
     if isinstance(fix, CommandFix):
         _run_command(run, fix, root=root)
         return ()
     targets = [(edit, _inside(root, edit.file)) for edit in fix.edits]
-    return tuple(dict.fromkeys(_edit(run, edit, path, root=root, scope=scope) for edit, path in targets))
+    staged: dict[Path, list[str]] = {}
+    keys: list[tuple[str, str]] = []
+    changed: list[Path] = []
+    for edit, path in targets:
+        if edit.key is not None:
+            keys.append((edit.key, edit.new))
+            changed.append(_write_key(run, edit.key, edit.new, root=root, scope=scope, dry_run=True))
+            continue
+        lines = staged[path] if path in staged else _lines_under(edit, path, root)
+        staged[path] = _edited(edit, lines, path, root)
+        changed.append(path)
+    _replace_all({path: "".join(lines) for path, lines in staged.items()})
+    for key, value in keys:
+        _write_key(run, key, value, root=root, scope=scope)
+    return tuple(dict.fromkeys(changed))
+
+
+def _replace_all(texts: Mapping[Path, str]) -> None:
+    """Write every text under a temporary name beside its file, then move each over its file.
+
+    A failure while writing leaves every target as it was, and the moves that follow cannot be
+    refused for anything a fix said, so the files change together. Each temporary file is created
+    fresh, so a link a project planted under that name is refused rather than written through, and it
+    takes the mode of the file it replaces, so a fix never changes who may read a file.
+    """
+    temporary = {path: path.with_name(f".{path.name}.{os.getpid()}.fixing") for path in texts}
+    try:
+        for path, text in texts.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with temporary[path].open("x", encoding="utf-8") as handle:
+                handle.write(text)
+            if path.exists():
+                shutil.copymode(path, temporary[path])
+        for path, written in temporary.items():
+            written.replace(path)
+    finally:
+        for written in temporary.values():
+            written.unlink(missing_ok=True)
 
 
 def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
@@ -789,26 +827,26 @@ def _inside(root: Path, named: Path) -> Path:
     return root / resolved.relative_to(home)
 
 
-def _edit(run: Run, edit: Edit, path: Path, *, root: Path, scope: Scope) -> Path:
-    """Make one change to one file, addressed by the one locator the edit names."""
-    if edit.key is not None:
-        return write(
-            _settings_file(run, root, scope), edit.key, edit.new, scope=scope, environ=run.machine.environ
-        ).file
+def _write_key(run: Run, key: str, value: str, *, root: Path, scope: Scope, dry_run: bool = False) -> Path:
+    """Set one settings key, or only check that it could be set, and name the file it lands in."""
+    file = _settings_file(run, root, scope)
+    return write(file, key, value, scope=scope, environ=run.machine.environ, dry_run=dry_run).file
+
+
+def _edited(edit: Edit, lines: list[str], path: Path, root: Path) -> list[str]:
+    """The lines of one file after one edit, addressed by the one locator the edit names."""
     if edit.pointer is not None:
         raise InputError(
             f"a pointer edit into {edit.file} has no applier yet.",
             hint="Make the change by hand, or run the command the finding names.",
             location=at(path, root),
         )
-    lines = _lines_under(edit, path, root)
     index = (edit.line or 1) - 1
     if edit.old is not None:
         _still_reads(edit, lines, index, path, root)
-    lines[index : index + (1 if edit.old is not None else 0)] = [edit.new + "\n"] if edit.new else []
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(lines), encoding="utf-8")
-    return path
+    edited = list(lines)
+    edited[index : index + (1 if edit.old is not None else 0)] = [edit.new + "\n"] if edit.new else []
+    return edited
 
 
 def _still_reads(edit: Edit, lines: list[str], index: int, path: Path, root: Path) -> None:
