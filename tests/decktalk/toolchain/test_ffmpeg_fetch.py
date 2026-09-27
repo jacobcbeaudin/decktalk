@@ -5,11 +5,14 @@ Nothing here touches the network. The archives are built in the test and served 
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import io
 import re
 import sys
 import tarfile
+import threading
+import time
 import urllib.error
 import zipfile
 from pathlib import Path
@@ -89,6 +92,16 @@ def isolated(tmp_path, monkeypatch):
     ff._resolve.cache_clear()
 
 
+def is_lock(path: Path) -> bool:
+    """Whether a file is the lock two fetches take turns under, which stays beside the build on purpose."""
+    return path.name.endswith(".lock")
+
+
+def scratch_left(dest: Path) -> list[str]:
+    """Every scratch directory a fetch left beside the install directory, which must be none."""
+    return [p.name for p in dest.parent.iterdir() if p.is_dir() and p != dest]
+
+
 # ---- the table ---------------------------------------------------------------------------------
 
 
@@ -140,7 +153,7 @@ def test_fetch_verifies_each_archive_and_installs_both_executables(monkeypatch):
     if sys.platform != "win32":
         assert (dest / "ffmpeg").stat().st_mode & 0o111 == 0o111
     assert fetch.installed_pinned() == paths
-    assert not dest.with_name(f".{dest.name}.tmp").exists()
+    assert scratch_left(dest) == []
 
 
 def test_fetch_takes_one_executable_per_archive_from_zip_roots(monkeypatch):
@@ -167,7 +180,7 @@ def test_a_digest_mismatch_discards_the_download_and_installs_nothing(tmp_path, 
         fetch.fetch_ffmpeg()
     cache = tmp_path / "cache"
     assert not fetch.install_dir().exists()
-    assert [p for p in cache.rglob("*") if p.is_file()] == []
+    assert [p for p in cache.rglob("*") if p.is_file() and not is_lock(p)] == []
     # A mismatch is the one failure that never falls back to PATH, even when one exists.
     monkeypatch.setattr(ff.shutil, "which", lambda name: f"/usr/bin/{name}")
     with pytest.raises(ToolError, match="does not match the SHA-256"):
@@ -203,7 +216,7 @@ def test_only_the_named_members_leave_the_archive(tmp_path, monkeypatch):
     pin(monkeypatch, "test-escape", build)
     serve(monkeypatch, {url: archive})
     fetch.fetch_ffmpeg()
-    written = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file())
+    written = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file() and not is_lock(p))
     prefix = f"cache/ffmpeg/{fetch.FFMPEG_VERSION}-test-escape/"
     assert written == [f"{prefix}{exe('ffmpeg')}", f"{prefix}{exe('ffprobe')}"]
 
@@ -299,3 +312,33 @@ def test_a_download_nobody_is_listening_to_says_nothing_and_still_arrives(monkey
     """The listener is what a machine sets for a run, so a caller that sets none downloads as before."""
     pinned_tar(monkeypatch, "test-silent")
     assert fetch.fetch_ffmpeg() == fetch.installed_pinned()
+
+
+def test_two_cold_fetches_take_turns_and_the_second_downloads_nothing(monkeypatch):
+    """Two first builds in one process used to share one scratch directory and delete each other's download."""
+    pinned_tar(monkeypatch, "test-race")
+    real = fetch._download_verified
+    downloads: list[str] = []
+    both_started = threading.Barrier(2)
+
+    def slow(asset, into):
+        downloads.append(asset.url)
+        time.sleep(0.05)
+        return real(asset, into)
+
+    monkeypatch.setattr(fetch, "_download_verified", slow)
+    context = contextvars.copy_context()
+    answers: list[tuple[str, str]] = []
+
+    def one() -> None:
+        both_started.wait()
+        answers.append(context.copy().run(fetch.fetch_ffmpeg))
+
+    threads = [threading.Thread(target=one) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(downloads) == 1
+    assert answers[0] == answers[1] == fetch.installed_pinned()
+    assert scratch_left(fetch.install_dir()) == []
