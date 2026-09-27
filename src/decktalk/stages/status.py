@@ -368,9 +368,6 @@ def judgements(inputs: Inputs, run: Run) -> None:
                 Location(where=named, file=inputs.relative(path), section=section.number),
             )
         )
-    for stray in inputs.stray_section_videos():
-        gone = inputs.relative(stray)
-        run.note(f"{gone} is a cut of a section this project no longer has, so no film uses it.", level=Level.WARNING)
 
 
 def _judge_input(inputs: Inputs, run: Run, path: Path, load: Callable[[], object], *, missing: bool) -> None:

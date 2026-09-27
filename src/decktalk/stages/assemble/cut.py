@@ -380,14 +380,10 @@ def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:
     return filters
 
 
-def stray_cuts(inputs: Inputs, run: Run) -> None:
-    """Say which leftover section cuts this film leaves out, which is what a renumbering leaves behind."""
-    for path in inputs.stray_section_videos():
-        run.note(
-            f"{inputs.relative(path).as_posix()} is a cut of a section decktalk.toml no longer declares, "
-            "so it is left out of the film.",
-            level=Level.WARNING,
-        )
+def remove_stray_cuts(inputs: Inputs) -> None:
+    """Remove the cuts and keys of sections `decktalk.toml` no longer declares, which a renumbering leaves."""
+    for path in inputs.workspace.stray_cuts(tuple(s.key for s in inputs.document.sections)):
+        path.unlink(missing_ok=True)
 
 
 __all__ = [
@@ -403,6 +399,6 @@ __all__ = [
     "rendered_starts",
     "section_slate",
     "section_targets",
-    "stray_cuts",
+    "remove_stray_cuts",
     "vfades",
 ]

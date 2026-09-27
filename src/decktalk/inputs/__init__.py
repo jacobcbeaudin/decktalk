@@ -333,10 +333,6 @@ class Inputs:
             )
         )
 
-    def stray_section_videos(self) -> tuple[Path, ...]:
-        """Cuts in the sections directory whose section is no longer in `decktalk.toml`."""
-        return self.workspace.stray_section_videos(tuple(s.key for s in self.document.sections))
-
     # ---- what a changed file touches --------------------------------------------------------
 
     def sections_touching(self, path: Path) -> tuple[int, ...]:

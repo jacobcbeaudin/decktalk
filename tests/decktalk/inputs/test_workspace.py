@@ -58,11 +58,11 @@ def test_a_section_names_its_recording_its_log_and_its_cut() -> None:
 def test_a_cut_left_by_a_renumbering_is_found_and_the_ones_still_declared_are_not(tmp_path: Path) -> None:
     space = Workspace(root=tmp_path, build=tmp_path / "build", name="demo")
     space.sections_dir.mkdir(parents=True)
-    for name in ("01.mp4", "02.mp4", "09.mp4", "notes.txt"):
+    for name in ("01.mp4", "01.json", "02.mp4", "09.mp4", "09.json", "notes.txt"):
         (space.sections_dir / name).write_bytes(b"")
-    assert [path.name for path in space.stray_section_videos(("01", "02"))] == ["09.mp4"]
+    assert [path.name for path in space.stray_cuts(("01", "02"))] == ["09.json", "09.mp4"]
 
 
 def test_a_project_that_has_never_been_built_has_no_stray_cut(tmp_path: Path) -> None:
     space = Workspace(root=tmp_path, build=tmp_path / "build", name="demo")
-    assert space.stray_section_videos(()) == ()
+    assert space.stray_cuts(()) == ()

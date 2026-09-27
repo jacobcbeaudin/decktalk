@@ -26,8 +26,8 @@ from pathlib import Path
 
 from decktalk.inputs.paths import confined
 
-SECTION_VIDEO = re.compile(r"\d+\.mp4")
-"""What a section's cut is called, which is how a cut left over from a renumbering is spotted."""
+SECTION_CUT = re.compile(r"(\d+)\.(?:mp4|json)")
+"""What a section's cut and the key beside it are called, which is how a pair a renumbering left is spotted."""
 
 EVENTS_SUFFIX = ".jsonl"
 """What a run's event file is called after its run id, which is one JSON object per line."""
@@ -148,17 +148,16 @@ class Workspace:
     def section_video(self, key: str) -> Path:
         return self.sections_dir / f"{key}.mp4"
 
-    def stray_section_videos(self, keys: tuple[str, ...]) -> tuple[Path, ...]:
-        """Cuts in the sections directory whose section is no longer in `decktalk.toml`.
+    def stray_cuts(self, keys: tuple[str, ...]) -> tuple[Path, ...]:
+        """Cuts and cut keys in the sections directory whose section is no longer in `decktalk.toml`.
 
         A build made before the sections were renumbered or one was removed leaves such files
-        behind, and a later run would otherwise cut them into a film nobody asked for.
+        behind, and nothing reads them again.
         """
         if not self.sections_dir.is_dir():
             return ()
-        listed = {self.section_video(key).name for key in keys}
-        found = self.sections_dir.iterdir()
-        return tuple(sorted(f for f in found if SECTION_VIDEO.fullmatch(f.name) and f.name not in listed))
+        found = ((f, SECTION_CUT.fullmatch(f.name)) for f in self.sections_dir.iterdir())
+        return tuple(sorted(f for f, cut in found if cut and cut[1] not in keys))
 
 
 __all__ = ["EVENTS_SUFFIX", "Workspace"]

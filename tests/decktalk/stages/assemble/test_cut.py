@@ -16,12 +16,12 @@ from decktalk.stages.assemble.cut import (
     concat,
     cut_list,
     page_target,
+    remove_stray_cuts,
     render_clip,
     render_sections,
     rendered_starts,
     section_slate,
     section_targets,
-    stray_cuts,
     vfades,
 )
 from decktalk.stages.assemble.cut import encoder as make_encoder
@@ -255,15 +255,14 @@ def test_the_fades_a_section_carries_are_the_dips_at_its_own_cuts():
     assert vfades(10.0, False, True, 0.16) == ",fade=t=out:st=9.840:d=0.16"
 
 
-def test_a_leftover_cut_of_a_section_nobody_declares_is_said_and_left_out(tmp_path, write_project, open_run):
+def test_a_leftover_cut_and_key_of_a_section_nobody_declares_are_removed(tmp_path, write_project):
     inputs = write_project(tmp_path)
-    opened = open_run(tmp_path)
-    inputs.workspace.sections_dir.mkdir(parents=True)
-    inputs.workspace.section_video("09").write_bytes(b"")
-    stray_cuts(inputs, opened.run)
-    assert opened.notes() == [
-        "build/sections/09.mp4 is a cut of a section decktalk.toml no longer declares, so it is left out of the film."
-    ]
+    sections = inputs.workspace.sections_dir
+    sections.mkdir(parents=True)
+    for name in ("01.mp4", "01.json", "09.mp4", "09.json"):
+        (sections / name).write_bytes(b"")
+    remove_stray_cuts(inputs)
+    assert sorted(path.name for path in sections.iterdir()) == ["01.json", "01.mp4"]
 
 
 def test_a_clip_the_project_names_opens_as_one_file_and_follows_no_name_inside_it(
