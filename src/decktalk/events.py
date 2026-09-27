@@ -23,7 +23,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self, TypeVar
+from typing import Annotated, Any, Literal, Self, TypeVar, get_args
 
 from pydantic import BaseModel, Field
 
@@ -201,21 +201,8 @@ Line = Annotated[
 ]
 """One line of the stream, which a reader parses by its `event` and never by trying each shape."""
 
-EVENTS: dict[str, type[Event]] = {
-    "run.start": RunStart,
-    "run.done": RunDone,
-    "stage.start": StageStart,
-    "stage.done": StageDone,
-    "section.start": SectionStart,
-    "section.done": SectionDone,
-    "progress": Progress,
-    "finding": FindingEvent,
-    "spend": SpendEvent,
-    "take.charged": TakeCharged,
-    "fetch": Fetch,
-    "log": Log,
-}
-"""Every event by its name, which is the closed list `decktalk schema event` prints."""
+EVENTS: dict[str, type[Event]] = {kind.model_fields["event"].default: kind for kind in get_args(get_args(Line)[0])}
+"""Every event by its name, which is the closed list `decktalk schema event` prints, read off `Line`."""
 
 E = TypeVar("E", bound=Event)
 Listener = Callable[[Event], None]
