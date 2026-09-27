@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import Field
 
-from decktalk.artifacts.stored import Stored
+from decktalk.artifacts.stored import ENGINE_VERSION, Stored, engine_version
 from decktalk.errors import ErrorCode, NotBuiltError
 from decktalk.pipeline import Artifact
 
@@ -60,3 +60,7 @@ def test_an_artifact_is_frozen() -> None:
     tiny = Tiny(count=1)
     with pytest.raises(ValueError, match="frozen"):
         tiny.count = 2
+
+
+def test_the_engine_names_the_version_it_was_installed_as() -> None:
+    assert ENGINE_VERSION == engine_version() != ""

@@ -28,7 +28,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from decktalk.artifacts.stored import Stored
+from decktalk.artifacts.stored import ENGINE_VERSION, Stored
 from decktalk.findings import MODEL, Finding, ProjectPath
 from decktalk.media.pagereport import PageReport
 
@@ -59,13 +59,15 @@ def text_digest(text: str) -> str:
 
 
 def input_hash(parts: Sequence[str], files: Mapping[str, Path]) -> str:
-    """The digest of what a section is recorded from: these strings, and the content of these files.
+    """The digest of what a section is recorded from: these strings, the content of these files, and the engine.
 
     `files` maps each project-relative name to the file on disk, so a page that swaps one picture for
     another moves the digest although no line of markup changed. The names are sorted, so the order
-    the page happened to ask for them in is not part of the key.
+    the page happened to ask for them in is not part of the key. The engine's version is part of it
+    too, because a recording carries the recorder, the probe and the runtime contract that made it,
+    and a newer engine keeping an older engine's recording would measure a film it did not make.
     """
-    lines = [*parts, *(f"{name}:{file_digest(files[name])}" for name in sorted(files))]
+    lines = [f"engine:{ENGINE_VERSION}", *parts, *(f"{name}:{file_digest(files[name])}" for name in sorted(files))]
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:HASH_DIGITS]
 
 

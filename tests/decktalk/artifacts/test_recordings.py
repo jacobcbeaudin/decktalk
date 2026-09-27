@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from decktalk.artifacts import recordings
 from decktalk.artifacts.recordings import GONE, RecordingLog, file_digest, input_hash, text_digest
 from decktalk.findings import Code, Finding, Location
 from decktalk.media.pagereport import FrameGap, PageReport
@@ -46,6 +49,17 @@ def test_swapping_one_picture_moves_the_key_although_no_markup_changed(tmp_path:
     picture.write_bytes(b"one")
     before = input_hash(["url"], {"hero.png": picture})
     picture.write_bytes(b"two")
+    assert input_hash(["url"], {"hero.png": picture}) != before
+
+
+def test_a_newer_engine_records_again_what_an_older_one_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recording carries the recorder, the probe and the contract that made it, so an upgrade moves the key."""
+    picture = tmp_path / "hero.png"
+    picture.write_bytes(b"one")
+    before = input_hash(["url"], {"hero.png": picture})
+    monkeypatch.setattr(recordings, "ENGINE_VERSION", "999.0.0")
     assert input_hash(["url"], {"hero.png": picture}) != before
 
 

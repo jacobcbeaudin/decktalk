@@ -17,6 +17,7 @@ no module here spells a "run this first" sentence of its own.
 from __future__ import annotations
 
 import json
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Self
 
@@ -28,6 +29,25 @@ from decktalk.pipeline import Artifact
 
 INDENT = 2
 """How the artifacts are indented, which keeps a diff of one readable in a terminal."""
+
+UNINSTALLED = "0+unknown"
+"""The engine version a checkout that was never installed reports, which is still one fixed name."""
+
+
+def engine_version() -> str:
+    """The version of the engine writing the artifacts, which a cache key carries.
+
+    An artifact kept across an upgrade was made by the older engine's recorder, probe and encoder, so
+    every key that decides whether to keep one names the engine that would keep it.
+    """
+    try:
+        return version("decktalk")
+    except PackageNotFoundError:
+        return UNINSTALLED
+
+
+ENGINE_VERSION = engine_version()
+"""The version of the engine this process runs, read once, because it cannot change under a run."""
 
 
 class Stored(BaseModel):
@@ -82,4 +102,4 @@ def _first_line(error: Exception) -> str:
     return next((line.strip() for line in str(error).splitlines() if line.strip()), type(error).__name__)
 
 
-__all__ = ["Stored"]
+__all__ = ["ENGINE_VERSION", "Stored", "engine_version"]
