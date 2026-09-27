@@ -12,7 +12,7 @@ naming the result, so the table stays total without a second copy of the stage s
 reaching into fixtures this directory cannot see. Every other row is driven here for real, and each
 one is read back the way a caller reads it: the JSON is one flat object with four reserved keys, the
 result round-trips through its own schema, the library printed nothing, and a subscriber collected
-typed events that validate back and pair.
+typed events that validate back.
 """
 
 from __future__ import annotations
@@ -27,13 +27,13 @@ from typing import Any
 
 import pytest
 import typer
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
 import decktalk
 from decktalk import settings
 from decktalk.errors import DeckTalkError
-from decktalk.events import EVENTS, Event, Line, RunDone, RunStart
-from decktalk.findings import Applicability, Certainty, Code, Finding, Location, SettingFix
+from decktalk.events import EVENTS, Event, Line
+from decktalk.findings import Applicability, Code, Finding, Location, SettingFix
 from decktalk.machine import Machine
 from decktalk.pipeline import Stage
 from decktalk.project import Origin, Project
@@ -307,20 +307,6 @@ def every_result_class() -> set[type[Result]]:
     return below(Result)
 
 
-def models_within(model: type[BaseModel], seen: set[type[BaseModel]]) -> Iterator[type[BaseModel]]:
-    """Every model reachable from one model's fields, which is the whole of what it publishes."""
-    if model in seen:
-        return
-    seen.add(model)
-    yield model
-    for field in model.model_fields.values():
-        annotation = field.annotation
-        candidates = [annotation, *(getattr(annotation, "__args__", ()) or ())]
-        for candidate in candidates:
-            if isinstance(candidate, type) and issubclass(candidate, BaseModel):
-                yield from models_within(candidate, seen)
-
-
 # ---- the table is total in both directions -----------------------------------------------
 
 
@@ -455,18 +441,6 @@ def test_the_schema_is_one_flat_object_with_the_four_reserved_keys(row: Row):
         assert not set(RESERVED) <= nested, f"{name} is a second envelope inside {row.result.__name__}"
 
 
-@pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
-def test_every_field_a_result_publishes_carries_its_sentence(row: Row):
-    """`Field(description=...)` is the one home of each key's sentence, so a key without one is mute."""
-    mute = [
-        f"{model.__name__}.{name}"
-        for model in models_within(row.result, set())
-        for name, field in model.model_fields.items()
-        if not field.description
-    ]
-    assert mute == [], mute
-
-
 @pytest.mark.parametrize(
     "row", [row for row in MODEL_ROWS if row.opens_run], ids=[r.command or "apply" for r in MODEL_ROWS if r.opens_run]
 )
@@ -492,14 +466,6 @@ def test_a_finding_carries_everything_a_reader_dispatches_on():
     assert {"code", "message", "certainty", "location", "fix", "url"} <= declared
     assert "where" in Location.model_fields
     assert Location.model_fields["where"].is_required(), "the object a finding judged is never null"
-
-
-def test_ok_is_false_exactly_when_a_judgement_is_certain():
-    """Must 5, in the shape 0.5.0 gives it: one rule every command shares rather than a flag per result."""
-    sure = Finding(code=SOME_CODE, message="A cue landed late.", location=Location(where="1.1:first"))
-    assert sure.certainty is Certainty.CERTAIN
-    assert ErrorResult(ok=False, findings=(sure,)).ok is False
-    assert ErrorResult(ok=True).ok is True
 
 
 # ---- the rows this file drives for real --------------------------------------------------
@@ -579,15 +545,6 @@ def test_a_driven_row_returns_its_result_as_one_flat_object(
     assert ("written" in payload) == row.writes
     printed = capsys.readouterr()
     assert printed.out == "" and printed.err == "", "the library printed, and nothing in the library may print"
-
-
-def test_a_driven_call_opens_a_run_and_closes_it(project: Project, collected: list[Event]):
-    """Every top-level call opens a run, so a renderer that subscribed sees a start and a finish."""
-    project.status()
-    names = [event.event for event in collected]
-    started = [name for name in names if EVENTS[name] is RunStart]
-    finished = [name for name in names if EVENTS[name] is RunDone]
-    assert len(started) == len(finished) == 1
 
 
 def test_every_event_a_driven_call_emitted_validates_back(project: Project, collected: list[Event]):

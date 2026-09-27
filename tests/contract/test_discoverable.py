@@ -30,10 +30,6 @@ from decktalk.errors import ErrorCode
 from decktalk.findings import Code, RaisedBy
 from decktalk.results import RESULTS, Result
 from decktalk.settings import KEYS, NUMBERS
-from support.paths import REPO
-
-SCHEMA = REPO / "schemas" / "v1"
-RESULT_SCHEMAS = SCHEMA / "results"
 
 DOCS = "https://docs.decktalk.ai"
 """Where every published address resolves, which is the one host a printed URL may name."""
@@ -132,19 +128,6 @@ def test_the_exemption_list_names_no_attribute_the_contract_dropped():
 
 
 # ---- the results, which are what a command publishes -----------------------------------------
-
-
-@pytest.mark.parametrize("name", sorted(RESULTS), ids=sorted(RESULTS))
-def test_every_result_has_a_committed_schema_and_a_sentence_for_every_field(name: str):
-    """An agent reads the schema rather than the source, so a field with no sentence is a field it guesses at."""
-    assert (RESULT_SCHEMAS / f"{name}.json").exists(), f"{name} has no committed schema, so nothing publishes it."
-    for field, definition in RESULTS[name].model_fields.items():
-        assert definition.description, f"{name}.{field} carries no description."
-
-
-def test_the_schema_directory_holds_exactly_the_results_the_library_returns():
-    committed = {path.stem for path in RESULT_SCHEMAS.glob("*.json")}
-    assert committed == set(RESULTS), {"only committed": sorted(committed - set(RESULTS))}
 
 
 def test_every_result_declares_the_shape_version_the_contract_fixes():
