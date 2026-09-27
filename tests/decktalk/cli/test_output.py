@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from inline_snapshot import snapshot
 from rich.console import Console
 
 from decktalk.cli import output
@@ -17,21 +18,16 @@ from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     RESULTS,
     BuildResult,
-    CheckResult,
-    ClipResult,
-    ConfigGetResult,
-    ConfigListResult,
     ConfigSetResult,
     ConfigUnsetResult,
     CueCheck,
     ErrorResult,
     Layer,
     Scope,
-    SettingValue,
-    StatusResult,
     VerifyResult,
     Voicing,
 )
+from support.samples import sample
 
 from .conftest import finding, spend
 
@@ -79,9 +75,182 @@ def test_an_uncertain_finding_is_not_counted_as_certain() -> None:
     assert "0 certain" in written(output.finding_lines, (soft,))
 
 
-@pytest.mark.parametrize("name", sorted(output.RENDERERS, key=lambda model: model.__name__))
-def test_every_renderer_is_for_a_published_result(name) -> None:
-    assert name in set(RESULTS.values())
+@pytest.mark.parametrize("model", sorted(output.RENDERERS, key=lambda model: model.__name__))
+def test_every_renderer_is_for_a_published_result_and_writes_what_it_wrote(model) -> None:
+    """One of every result, every field filled from its type, held to the whole text a terminal showed."""
+    assert model in set(RESULTS.values())
+    assert recorded(sample(model, every=True)) == SHOWN[model.__name__]
+
+
+SHOWN = snapshot(
+    {
+        "AssembleResult": """\
+Built build/final/demo.mp4, 0:02 long.
+Loudness 1.5 LUFS against 1.5.
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "BuildResult": """\
+     Stopped at narrate, $1.50, 1 finding
+        Next open build/final/demo.mp4
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "CheckResult": """\
+Checking build/final/demo.mp4.
+This run costs $1.50 for 1 characters at $1.50 per 1,000 characters.
+Storyboard build/final/demo.mp4
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "ClipResult": """\
+Cut build/final/demo.mp4, 1.5 seconds of section 1.
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "ConfigExplainResult": """\
+one = one (default)
+  one
+  type one, default one, one
+  unit one
+  hazard one
+  decides PAGE_UNKNOWN_ATTR
+  docs one
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "ConfigGetResult": """\
+one = one (default)
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "ConfigListResult": """\
+
+ Key   Value   Layer     Default
+ ───────────────────────────────
+ one   one     default   one
+
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "ConfigSetResult": """\
+build/final/demo.mp4 would set one = one
+The default layer still decides it, at one.
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "ConfigUnsetResult": """\
+build/final/demo.mp4 no longer sets one.
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "CueResult": """\
+
+ Section   Cue   Phrase   Seconds
+ ───────────────────────────────────
+ 1         one   one      unresolved
+
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "DoctorResult": """\
+
+ Tool   Version   Where
+ ──────────────────────
+ one    missing
+
+Python    one
+Platform  one
+Voice key yes
+Bias      2 ms
+Wrote     build/final/demo.mp4
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "InitResult": """\
+Wrote build/final/demo.mp4 from the one example, 1 files.
+Next   cd build/final/demo.mp4 && decktalk build --no-voice
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "InstallResult": """\
+
+ Tool   Version   Where
+ ──────────────────────
+ one    missing
+
+Cache  build/final/demo.mp4
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "NarrateResult": """\
+
+ Section   Take     Characters   Seconds
+ ───────────────────────────────────────
+ 1         voiced   1            0.0
+
+Spent $1.50 on placeholder narration.
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "RecordResult": """\
+
+ Section   File   Seconds   Frames   Kept
+ ────────────────────────────────────────
+ 1                1.5       1        yes
+
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "ServeResult": """\
+Serving build/final/demo.mp4 on one
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "SoundscapeResult": """\
+
+ Item   Kind    Status    Seconds
+ ────────────────────────────────
+ one    music   planned   0.0
+
+Would spend $1.50 on the soundscape.
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "StatusResult": """\
+
+ Section   Key   Plays   Voiced   Recorded   Cut   Stale
+ ───────────────────────────────────────────────────────
+ 1         one   one     yes      yes        yes   yes
+
+Film   build/final/demo.mp4, 0:02 long
+Live   one writing build/final/demo.mp4
+Next   one
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "StoryboardResult": """\
+Wrote build/final/demo.mp4, 1 panels.
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "VerifyResult": """\
+Verifying build/final/demo.mp4, 0:02 long.
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+        "WordsResult": """\
+
+ Section 1   Start   End
+ ────────────────────────
+ one         1.50    1.50
+
+2.1:formula: CUE_OFF It lands 340 ms late.
+Found 1 finding, 1 certain.
+""",
+    }
+)
+"""What every renderer writes for the sampled result of its model, keyed by the model's name."""
 
 
 def test_a_result_with_no_renderer_still_prints_its_findings() -> None:
@@ -150,15 +319,6 @@ def test_the_opening_line_names_the_run_and_its_events_file_once() -> None:
     assert console.file.getvalue().count("run abc") == 1  # ty: ignore[unresolved-attribute]
 
 
-def test_a_status_table_names_every_column_a_reader_scans() -> None:
-    console = Console(file=io.StringIO(), width=120, no_color=True)
-    output.render(
-        StatusResult(ok=True, run="r", name="demo", script=Path("script.md"), cues=Path("cues.json"), sections=()),
-        console,
-    )
-    assert "Section" in console.file.getvalue()  # ty: ignore[unresolved-attribute]
-
-
 def _stage_done() -> StageDone:
     """One stage that ended, which is the moment both stage renderers print."""
     return StageDone(
@@ -176,16 +336,20 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-# What a person reads in a terminal. Each test feeds one result or one stream of events into a
-# recording console and asserts the rows and the words a reader scans, never the whole text, so a
-# change of spacing is not a failure and a lost column or a wrong count is.
+# What a person reads in a terminal. The snapshot above holds the whole text of every renderer for
+# one filled result, and each test below feeds one result or one stream of events that takes a
+# branch the filled result does not, and asserts the words that branch writes.
 
 
 def recorded(result: object, width: int = 120) -> str:
-    """One result as a terminal would show it, read back from a recording console."""
+    """One result as a terminal would show it, read back from a recording console.
+
+    The padding a table pads its cells out with is cut from every line, because a reader never sees
+    it and a snapshot would otherwise carry it as escapes.
+    """
     console = Console(record=True, width=width, no_color=True, file=io.StringIO())
     output.render(result, console)  # ty: ignore[invalid-argument-type]
-    return console.export_text()
+    return "\n".join(line.rstrip() for line in console.export_text().splitlines()) + "\n"
 
 
 def test_the_live_region_shows_each_stage_its_progress_and_its_time() -> None:
@@ -269,35 +433,6 @@ def test_verify_prints_a_row_per_measured_cue_with_its_signed_offset() -> None:
     assert "2:skipped" not in said
 
 
-def test_a_clip_says_its_file_its_length_and_its_section() -> None:
-    cut = ClipResult(
-        ok=True,
-        run="r",
-        section=3,
-        film=Path("clip-3.mp4"),
-        words=Path("clip-3.words.json"),
-        start=0.5,
-        end=2.0,
-        seconds=2.0,
-        hold_seconds=0.5,
-        gain_db=0.0,
-        estimated=True,
-    )
-    assert "Cut clip-3.mp4, 2.0 seconds of section 3." in recorded(cut)
-
-
-def test_the_config_readings_name_the_key_its_value_and_its_layer() -> None:
-    listed = ConfigListResult(
-        ok=True,
-        keys=(SettingValue(key="video.crf", value=20, default=18, layer=Layer.PROJECT, file=Path("decktalk.toml")),),
-    )
-    said = recorded(listed)
-    assert "video.crf" in said
-    assert "project" in said
-    got = ConfigGetResult(ok=True, key=SettingValue(key="video.crf", value=20, default=18, layer=Layer.PROJECT))
-    assert "video.crf = 20 (project)" in recorded(got)
-
-
 def test_a_write_that_a_higher_layer_shadows_says_so() -> None:
     shadowed = ConfigSetResult(
         ok=True,
@@ -328,10 +463,3 @@ def test_an_unset_names_every_key_the_file_no_longer_sets() -> None:
         file=Path("decktalk.toml"),
     )
     assert "decktalk.toml no longer sets video.crf, video.preset." in recorded(gone)
-
-
-def test_check_states_the_price_in_the_one_sentence_the_price_writes() -> None:
-    """The price owns its sentence, so the check summary prints it rather than a second wording."""
-    judged = CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=spend())
-    said = " ".join(recorded(judged).split())
-    assert spend().sentence in said
