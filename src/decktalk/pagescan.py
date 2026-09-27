@@ -57,6 +57,7 @@ class Measured(BaseModel):
     moments: dict[str, str] = Field(description="The wire id of each moment this element names, by attribute.")
     text: str = Field("", description="The words this element draws, which a synced line is judged on.")
     box: tuple[int, int, int, int] | None = Field(None, description="Its box in stage pixels, or null when unlaid.")
+    children: int = Field(0, ge=0, description="How many children it staggers, which is zero when it staggers none.")
 
     @property
     def cue(self) -> str | None:
@@ -85,13 +86,14 @@ class Measured(BaseModel):
         judgement that tells an author the scale they chose has made their own cues unmeasurable.
         A staggered container's span is its step times the children after the first plus one
         entrance, which is exact arithmetic rather than an estimate, so its judgement is certain.
+        The number of children is what the probe counted on the page, because `data-steps` is a flag
+        that says the children step, and a flag carries no count.
         """
         entrance = self.entrance * scale
         step = self.attrs.get(Attr.STAGGER.value)
         if not step:
             return entrance
-        children = int(self.attrs.get(Attr.STEPS.value) or 0)
-        return stagger_span(float(step) * scale, children, entrance)
+        return stagger_span(float(step) * scale, self.children, entrance)
 
 
 def motion_findings(rows: Iterable[Measured], *, where: str, section: int | None, scale: float) -> list[Finding]:

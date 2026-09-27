@@ -35,10 +35,21 @@ def test_a_motion_past_the_ceiling_makes_its_own_cue_unmeasurable() -> None:
 
 def test_a_staggered_container_is_judged_by_its_own_exact_arithmetic() -> None:
     """The last child starts one step per earlier child after the cue and then plays its entrance."""
-    container = row(**{"data-stagger": "0.12", "data-steps": "5", "data-in-seconds": "0.24"})
+    container = row(**{"data-stagger": "0.12", "data-steps": "", "data-in-seconds": "0.24"})
+    container = container.model_copy(update={"children": 5})
     (found,) = pagescan.motion_findings([container], where=PAGE, section=1, scale=NONE)
     assert found.code is Code.PAGE_STAGGER_OVERRUN
     assert found.certainty is Code.PAGE_STAGGER_OVERRUN.certainty
+
+
+def test_the_steps_flag_is_never_read_as_a_count_of_children() -> None:
+    """`data-steps` is a flag, so a page that writes it as `true` is a stepped stagger and not a crash."""
+    container = row(**{"data-stagger": "0.12", "data-steps": "true", "data-in-seconds": "0.24"})
+    assert pagescan.motion_findings([container], where=PAGE, section=1, scale=NONE) == []
+    counted = container.model_copy(update={"children": 5})
+    assert [one.code for one in pagescan.motion_findings([counted], where=PAGE, section=1, scale=NONE)] == [
+        Code.PAGE_STAGGER_OVERRUN
+    ]
 
 
 def test_a_reduced_render_that_slows_a_motion_past_the_ceiling_is_judged_for_it() -> None:
