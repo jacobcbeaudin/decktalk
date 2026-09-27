@@ -1,6 +1,6 @@
 """Generate the JSON Schema for decktalk.toml, and the per-machine filter of it.
 
-    uv run scripts/build_settings_schema.py --write    # write both schemas and their published copies
+    uv run scripts/build_settings_schema.py --write    # write both schemas
     uv run scripts/build_settings_schema.py --check    # exit 1 if either committed file would change
 
 One schema describes the whole project file, its document tables and its tuning tables together,
@@ -24,7 +24,6 @@ fall behind it.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
@@ -32,6 +31,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+
+import generated  # noqa: E402
 
 from decktalk.results import Scope  # noqa: E402  (after sys.path, so a checkout needs no install)
 from decktalk.settings import (  # noqa: E402
@@ -211,24 +212,5 @@ def documents() -> dict[Path, str]:
     return {SCHEMAS / name: render(machine=machine) for name, machine in ((PROJECT_NAME, False), (MACHINE_NAME, True))}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write both schemas")
-    action.add_argument("--check", action="store_true", help="exit 1 if either committed file would change")
-    args = ap.parse_args()
-    stale = False
-    for target, text in documents().items():
-        if args.check:
-            if not target.exists() or target.read_text(encoding="utf-8") != text:
-                print(f"stale: {target.relative_to(ROOT)}. Run `uv run scripts/build_settings_schema.py --write`.")
-                stale = True
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
-        print(f"wrote {target.relative_to(ROOT)}")
-    return 1 if stale else 0
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))

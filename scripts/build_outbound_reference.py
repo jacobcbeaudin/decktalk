@@ -9,10 +9,12 @@ Add a host to docs/data/outbound.toml, then run this.
 
 from __future__ import annotations
 
-import argparse
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
+
+import generated
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "docs" / "data" / "outbound.toml"
@@ -144,24 +146,10 @@ def render(data: dict[str, Any]) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write the page")
-    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
-    args = ap.parse_args()
-    page = render(tomllib.loads(SOURCE.read_text(encoding="utf-8")))
-    if args.check:
-        current = TARGET.read_text(encoding="utf-8") if TARGET.exists() else ""
-        if current != page:
-            print(f"{TARGET.relative_to(ROOT)} is out of date. Run: uv run scripts/build_outbound_reference.py --write")
-            return 1
-        print(f"{TARGET.relative_to(ROOT)} is up to date.")
-        return 0
-    TARGET.write_text(page, encoding="utf-8")
-    print(f"wrote {TARGET.relative_to(ROOT)}")
-    return 0
+def documents() -> dict[Path, str]:
+    """The page of every host DeckTalk contacts, written from the data file that lists them."""
+    return {TARGET: render(tomllib.loads(SOURCE.read_text(encoding="utf-8")))}
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(generated.run(documents))

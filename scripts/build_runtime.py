@@ -21,7 +21,6 @@ JavaScript and the project's ruff for Python, so a generated file is as clean as
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import subprocess
@@ -62,10 +61,6 @@ BANNER = "/*! {mark} {version} */"
 # The browsers a bundle must run in are the ones Playwright drives and the ones an author previews
 # in, so the output is the newest syntax level every current engine parses.
 TARGET = "es2022"
-
-
-class Stale(Exception):
-    """A committed artifact differs from what the sources say it should be."""
 
 
 def tool(name: str) -> Path:
@@ -110,7 +105,7 @@ def banner(data: dict[str, Any]) -> str:
     return BANNER.format(mark=data["runtimeMark"], version=engine_version())
 
 
-def bundle(entry: Path, out: Path, first_line: str | None = None) -> None:
+def bundle(entry: Path, name: str, first_line: str | None = None) -> str:
     """One entry point as a formatted script, which is what a page loads and what git holds."""
     cmd: list[str | Path] = [
         tool("esbuild"),
@@ -123,7 +118,7 @@ def bundle(entry: Path, out: Path, first_line: str | None = None) -> None:
     ]
     if first_line is not None:
         cmd.append(f"--banner:js={first_line}")
-    out.write_text(biome(run(cmd), out.name), encoding="utf-8")
+    return biome(run(cmd), name)
 
 
 def biome(text: str, name: str) -> str:
@@ -560,76 +555,40 @@ def check_codes(data: dict[str, Any]) -> None:
     generator writing another module's file, so this is the check that keeps the two lists one list.
     """
     sys.path.insert(0, str(ROOT / "src"))
-    try:
-        from decktalk.findings import Code  # noqa: PLC0415  (absent until the models land)
-    except ImportError:
-        print("skipped the code list, because decktalk.findings is not there yet")
-        return
+    # The package is imported here alone, because every other step of this script reads TypeScript and
+    # JSON, and a module-level import would make the runtime depend on the Python it generates.
+    from decktalk.findings import Code  # noqa: PLC0415
+
     written = {name for name in Code.__members__ if name.startswith("PAGE_")}
     published = set(data["codes"])
     if written != published:
         missing = "\n".join(sorted(published - written)) or "none"
         extra = "\n".join(sorted(written - published)) or "none"
-        raise Stale(
+        raise SystemExit(
             f"findings.Code and the page contract disagree.\n"
             f"missing from Code:\n{missing}\nnot in the contract:\n{extra}\n"
             f"the block to paste:\n{code_block(data)}"
         )
 
 
-# ---- writing and checking ------------------------------------------------------------------------
+# ---- the command line ----------------------------------------------------------------------------
 
 
-def first_difference(old: str, new: str) -> str:
-    """The first line that differs between a committed artifact and a freshly built one."""
-    was, now = old.splitlines(), new.splitlines()
-    for number, (before, after) in enumerate(zip(was, now, strict=False), start=1):
-        if before != after:
-            return f"line {number}\n  committed: {before}\n  built:     {after}"
-    return f"the committed file has {len(was)} lines and the built one has {len(now)}"
-
-
-def compare(target: Path, built: str) -> None:
-    """One artifact, held to what the sources say it should be."""
-    if not target.exists():
-        raise Stale(f"{target.relative_to(ROOT)} is missing")
-    old = target.read_text(encoding="utf-8")
-    if old != built:
-        raise Stale(f"{target.relative_to(ROOT)} is stale at {first_difference(old, built)}")
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="type check, bundle, and write every artifact")
-    action.add_argument("--check", action="store_true", help="exit 1 if any committed artifact would change")
-    args = ap.parse_args()
+def documents() -> dict[Path, str]:
+    """Every artifact, built from the sources after the type check and the code list hold."""
     typecheck()
     data = contract()
-    try:
-        check_codes(data)
-        if args.check:
-            with tempfile.TemporaryDirectory() as tmp:
-                for name, entry in BUNDLES.items():
-                    built = Path(tmp) / name
-                    bundle(entry, built, banner(data) if name == BANNERED else None)
-                    compare(RUNTIME / name, built.read_text(encoding="utf-8"))
-            compare(CONTRACT_JSON, contract_text(data))
-            compare(PAGE_MODULE, page_module(data))
-            print("the runtime, the contract and the page vocabulary are what the sources say")
-            return 0
-    except Stale as stale:
-        print(stale)
-        return 1
-    for name, entry in BUNDLES.items():
-        bundle(entry, RUNTIME / name, banner(data) if name == BANNERED else None)
-        print(f"wrote {(RUNTIME / name).relative_to(ROOT)}")
-    CONTRACT_JSON.write_text(contract_text(data), encoding="utf-8")
-    print(f"wrote {CONTRACT_JSON.relative_to(ROOT)}")
-    PAGE_MODULE.write_text(page_module(data), encoding="utf-8")
-    print(f"wrote {PAGE_MODULE.relative_to(ROOT)}")
-    return 0
+    check_codes(data)
+    files = {
+        RUNTIME / name: bundle(entry, name, banner(data) if name == BANNERED else None)
+        for name, entry in BUNDLES.items()
+    }
+    return files | {CONTRACT_JSON: contract_text(data), PAGE_MODULE: page_module(data)}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # The runner is imported here rather than above, because the suite loads this file by its path to
+    # reach `page_module`, and that load has no `scripts/` on the import path.
+    import generated
+
+    sys.exit(generated.run(documents))

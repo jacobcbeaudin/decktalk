@@ -9,31 +9,19 @@ follow the config, because a rehearsal that silently skipped a file would pass f
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
 import shutil
 import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
 from support.paths import REPO
 
-
-def _load(name: str) -> ModuleType:
-    """A script under `scripts/` as a module, which is the only way to reach a file outside the package."""
-    spec = importlib.util.spec_from_file_location(name, REPO / "scripts" / f"{name}.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-rehearse = _load("rehearse_release")
-changelog = _load("build_changelog")
+sys.path.insert(0, str(REPO / "scripts"))
+import build_changelog as changelog  # noqa: E402
+import rehearse_release as rehearse  # noqa: E402
 
 LOCK = """version = 1
 

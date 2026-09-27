@@ -406,8 +406,9 @@ People and agents read these docs. Write so that neither has to guess.
 - Use American spelling.
 
 Everything mechanical is generated. Do not edit a generated file. Change its source and run its
-script, which is what the `generated` group checks. Every generator requires one of `--check` and
-`--write`, and every one fails with the same sentence naming the file and the command that fixes it.
+script, which is what the `generated` group checks. Every generator runs through
+`scripts/generated.py`, so every one requires one of `--check` and `--write`, writes only what is
+stale, and fails with the same sentence naming the file, why it is stale and the command that fixes it.
 `uv run scripts/check.py --group generated --write` runs every generator in the group in write mode,
 which is the one command that brings every generated file up to date at once.
 

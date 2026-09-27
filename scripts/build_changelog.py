@@ -14,10 +14,11 @@ section is folded into the `X.Y.Z` entry and the page names the version without 
 
 from __future__ import annotations
 
-import argparse
 import re
 import sys
 from pathlib import Path
+
+import generated
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "CHANGELOG.md"
@@ -53,9 +54,6 @@ TAGS = {"Features": "feature", "Bug Fixes": "fix", "Documentation": "docs", "Per
 
 PREAMBLE = ""
 """The key the lines above a release's first `###` heading are collected under."""
-
-STALE = "{path} is out of date. Run: uv run scripts/build_changelog.py --write"
-"""The one sentence every generator fails with, naming the file and the command that fixes it."""
 
 
 class Release:
@@ -155,23 +153,10 @@ def render(releases: list[Release]) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write the page from CHANGELOG.md")
-    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
-    args = ap.parse_args()
-    page = render(parse(SOURCE.read_text(encoding="utf-8")))
-    if args.check:
-        if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != page:
-            print(STALE.format(path=TARGET.relative_to(ROOT).as_posix()))
-            return 1
-        print(f"{TARGET.relative_to(ROOT).as_posix()} is up to date.")
-        return 0
-    TARGET.write_text(page, encoding="utf-8")
-    print(f"wrote {TARGET.relative_to(ROOT).as_posix()}")
-    return 0
+def documents() -> dict[Path, str]:
+    """The docs changelog, written from the one release-please keeps."""
+    return {TARGET: render(parse(SOURCE.read_text(encoding="utf-8")))}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))

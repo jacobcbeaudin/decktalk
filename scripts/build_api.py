@@ -14,7 +14,6 @@ nothing, which is how the stages and the command line stay private.
 
 from __future__ import annotations
 
-import argparse
 import enum
 import importlib
 import inspect
@@ -26,11 +25,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+import generated  # noqa: E402
 from pydantic import BaseModel  # noqa: E402  (after sys.path, so a checkout needs no install)
 
 TARGET = ROOT / "src" / "decktalk" / "__init__.py"
 PACKAGE = "decktalk"
-STALE = "stale: {path}. Run `uv run scripts/{script} --write` to bring it up to date."
 LINE_LENGTH = 120
 """The line ruff wraps at, which decides whether a module's imports fit on one line."""
 
@@ -156,23 +155,10 @@ def render(exported: dict[str, list[str]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write the package's __init__.py")
-    action.add_argument("--check", action="store_true", help="exit 1 if the committed file would change")
-    args = parser.parse_args()
-
-    text = render(closure())
-    if args.check:
-        if not TARGET.exists() or TARGET.read_text("utf-8") != text:
-            print(STALE.format(path=TARGET.relative_to(ROOT), script=Path(__file__).name))
-            return 1
-        return 0
-    TARGET.write_text(text, encoding="utf-8")
-    print(f"wrote {TARGET.relative_to(ROOT)}")
-    return 0
+def documents() -> dict[Path, str]:
+    """The package's __init__.py, which is the one file this generator owns."""
+    return {TARGET: render(closure())}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))

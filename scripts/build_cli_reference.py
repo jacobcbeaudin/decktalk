@@ -11,13 +11,14 @@ then run this.
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+
+import generated  # noqa: E402
 
 from decktalk.cli import catalog  # noqa: E402  (after sys.path, so a checkout needs no install)
 from decktalk.cli.options import Group  # noqa: E402
@@ -147,25 +148,10 @@ def _schema_names() -> str:
     return f"\n## The contract\n\n`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes {names}.\n"
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Write the page, or say that the committed one would change."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write the page")
-    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
-    args = parser.parse_args(argv)
-    written = page()
-    if args.check:
-        current = TARGET.read_text(encoding="utf-8") if TARGET.exists() else ""
-        if current != written:
-            print(f"{TARGET.relative_to(ROOT)} is out of date. Run `uv run scripts/build_cli_reference.py --write`.")
-            return 1
-        return 0
-    TARGET.parent.mkdir(parents=True, exist_ok=True)
-    TARGET.write_text(written, encoding="utf-8")
-    print(f"Wrote {TARGET.relative_to(ROOT)}.")
-    return 0
+def documents() -> dict[Path, str]:
+    """The CLI reference, which is the one file this generator owns."""
+    return {TARGET: page()}
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(generated.run(documents))

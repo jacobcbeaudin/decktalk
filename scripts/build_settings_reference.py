@@ -16,11 +16,12 @@ lookup an agent makes is for a knob that does not exist.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
 from typing import Any
+
+import generated
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / "schemas" / "v1" / "decktalk.json"
@@ -216,22 +217,10 @@ def render() -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write the page")
-    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
-    args = ap.parse_args()
-    text = render()
-    if args.check:
-        if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != text:
-            print(f"stale: {TARGET.relative_to(ROOT)}. Run `uv run scripts/build_settings_reference.py --write`.")
-            return 1
-        return 0
-    TARGET.write_text(text, encoding="utf-8")
-    print(f"wrote {TARGET.relative_to(ROOT)}")
-    return 0
+def documents() -> dict[Path, str]:
+    """The settings reference, which is the one file this generator owns."""
+    return {TARGET: render()}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))

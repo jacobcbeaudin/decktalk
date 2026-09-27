@@ -39,7 +39,6 @@ start over the last few percent instead of snapping.
 
 from __future__ import annotations
 
-import argparse
 import base64
 import json
 import math
@@ -49,6 +48,7 @@ import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
+import generated
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1747,23 +1747,15 @@ def _first_difference(generated: list[str], committed: list[str]) -> str:
 
 
 def why_stale(path: Path, source: str) -> str | None:
-    """Why the file at `path` no longer says what `source` says, or None when it still does."""
-    if not path.exists():
-        return "it is not committed"
-    if measured(path):
+    """Why the file at `path` no longer says what `source` says, or None when it still does.
+
+    A measured figure is held within the tolerance, and every other file is held to the byte. A write
+    rewrites only what this calls stale, because the release pull request regenerates on a Linux
+    runner, and rewriting every measured figure within the tolerance would commit a churn of them.
+    """
+    if measured(path) and path.exists():
         return stale_reason(source, path.read_text(encoding="utf-8"))
-    return None if path.read_text(encoding="utf-8") == source else "it differs from its source"
-
-
-def report_stale(files: dict[Path, str]) -> int:
-    """Print every committed file that no longer says what its source says, and return how many there are."""
-    stale = 0
-    for path, source in files.items():
-        reason = why_stale(path, source)
-        if reason:
-            print(f"stale: {path.relative_to(ROOT)}, because {reason}")
-            stale += 1
-    return stale
+    return generated.differs(path, source)
 
 
 # ---- entry ------------------------------------------------------------------------------------
@@ -1841,35 +1833,17 @@ def build() -> dict[Path, str]:
     return {k: _clean(v) for k, v in out.items()}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write every generated asset")
-    action.add_argument(
-        "--check", action="store_true", help="exit 1 if any committed file no longer says what its source says"
-    )
-    args = ap.parse_args()
-    files = build()
-    if args.check:
-        return 1 if report_stale(files) else 0
-    # A write rewrites only what the check calls stale. The release pull request regenerates on a
-    # Linux runner, which shapes every measured word a fraction of a pixel away from the author's
-    # machine, and rewriting within that tolerance would commit a churn of every figure to a release.
-    changed = [p for p, s in files.items() if why_stale(p, s)]
-    for p in changed:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(files[p], encoding="utf-8")
-        print(f"wrote {p.relative_to(ROOT)}  ({len(files[p]) // 1024} KB)")
-    if not changed:
-        print("every generated asset already says what its source says")
-    # The social card is also needed as a PNG for link previews. It is not part of --check because
-    # raster bytes vary between Chromium builds, so it is only refreshed when its SVG source was rewritten.
-    og_png = ROOT / "docs" / "images" / "og.png"
-    if ASSETS / "og.svg" in changed or not og_png.exists():
-        render_png(files[ASSETS / "og.svg"], og_png, 1200, 630)
+def refresh_card(written: set[Path]) -> None:
+    """Rasterize the social card again when its source was rewritten, because a link preview needs a PNG.
+
+    The PNG is not held to its source, because raster bytes vary between Chromium builds, so it is only
+    refreshed when its SVG was rewritten or when it is missing.
+    """
+    card, og_png = ASSETS / "og.svg", ROOT / "docs" / "images" / "og.png"
+    if card in written or not og_png.exists():
+        render_png(card.read_text(encoding="utf-8"), og_png, 1200, 630)
         print(f"wrote {og_png.relative_to(ROOT)}")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(build, why_stale=why_stale, wrote=refresh_card))

@@ -14,27 +14,15 @@ number, an identifier that ends in a digit, a colour and an embedded font.
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
 from support.paths import REPO
 
-
-def _generator() -> ModuleType:
-    """`scripts/build_assets.py` as a module, which is the only way to reach a file outside the package."""
-    spec = importlib.util.spec_from_file_location("build_assets", REPO / "scripts" / "build_assets.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-build_assets = _generator()
+sys.path.insert(0, str(REPO / "scripts"))
+import build_assets  # noqa: E402
 
 FONT = "data:font/woff2;base64,d09GMgABAAAAAAr4ABAAAAAAFjQAAAqfAAEAAAAAAAAAAAAA1234567890+/=="
 FIGURE = (
@@ -159,15 +147,13 @@ def test_a_digit_inside_an_embedded_font_is_never_a_number() -> None:
     assert build_assets.stale_reason(HERO.replace(body, swapped, 1), HERO) == "the embedded fonts differ"
 
 
-def test_the_report_sends_each_file_to_the_comparison_it_belongs_to(capsys: pytest.CaptureFixture[str]) -> None:
+def test_each_file_reaches_the_comparison_it_belongs_to() -> None:
     """A measured figure reaches the tolerance and every other generated file is held to the byte."""
     hero = REPO / "assets" / "hero-light.svg"
     tokens = REPO / "assets" / "tokens.css"
     css = tokens.read_text(encoding="utf-8")
-    assert build_assets.report_stale({hero: HERO, tokens: css}) == 0
-    assert build_assets.report_stale({hero: nudge(HERO, "343.9", "346.9")}) == 0
-    assert build_assets.report_stale({hero: nudge(HERO, "343.9", "353.9")}) == 1
-    assert build_assets.report_stale({tokens: css.replace("--dt-size-xs: 12px", "--dt-size-xs: 13px", 1)}) == 1
-    printed = capsys.readouterr().out
-    assert "stale: assets/hero-light.svg" in printed
-    assert "stale: assets/tokens.css, because it differs from its source" in printed
+    assert build_assets.why_stale(hero, HERO) is None
+    assert build_assets.why_stale(tokens, css) is None
+    assert build_assets.why_stale(hero, nudge(HERO, "343.9", "346.9")) is None
+    assert build_assets.why_stale(hero, nudge(HERO, "343.9", "353.9")) is not None
+    assert build_assets.why_stale(tokens, css.replace("--dt-size-xs: 12px", "--dt-size-xs: 13px", 1)) is not None

@@ -21,21 +21,19 @@ added without a sentence about it.
 
 from __future__ import annotations
 
-import argparse
 import ast
 import importlib.util
 import re
 import sys
 from pathlib import Path
 
+import generated
+
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "decktalk"
 IMPORT_TEST = ROOT / "tests" / "contract" / "test_imports.py"
 CHECK_SCRIPT = ROOT / "scripts" / "check.py"
 TARGET = ROOT / "CONTRIBUTING.md"
-
-STALE = "stale: {path}. Run `uv run scripts/{script} --write` to bring it up to date."
-"""The one sentence every generator fails with, naming the file and the command that fixes it."""
 
 LAYOUT = ("<!-- layout:start -->", "<!-- layout:end -->")
 CHECKS = ("<!-- checks:start -->", "<!-- checks:end -->")
@@ -185,39 +183,13 @@ def render_checks() -> str:
     return "\n".join(lines)
 
 
-def fill(page: str, markers: tuple[str, str], block: str) -> str:
-    """One generated block written between its markers, with the note that says not to edit it."""
-    start, end = markers
-    if start not in page or end not in page:
-        raise SystemExit(f"{TARGET.name} has no {start} ... {end} block to fill.")
-    head, _, rest = page.partition(start)
-    _, _, tail = rest.partition(end)
-    return f"{head}{start}\n{NOTE}\n\n{block}\n{end}{tail}"
-
-
-def render(page: str) -> str:
-    return fill(fill(page, LAYOUT, render_tree()), CHECKS, render_checks())
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write both generated blocks")
-    action.add_argument("--check", action="store_true", help="exit 1 if either generated block would change")
-    args = parser.parse_args()
-
-    current = TARGET.read_text(encoding="utf-8")
-    page = render(current)
-    if args.check:
-        if current != page:
-            print(STALE.format(path=TARGET.relative_to(ROOT), script="build_contributing.py"))
-            return 1
-        print(f"{TARGET.name} is up to date.")
-        return 0
-    TARGET.write_text(page, encoding="utf-8")
-    print(f"wrote {TARGET.name}")
-    return 0
+def documents() -> dict[Path, str]:
+    """CONTRIBUTING.md with both generated blocks written, each under the note that says not to edit it."""
+    page = TARGET.read_text(encoding="utf-8")
+    for markers, block in ((LAYOUT, render_tree()), (CHECKS, render_checks())):
+        page = generated.splice(page, markers, f"\n{NOTE}\n\n{block}\n", where=TARGET)
+    return {TARGET: page}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))
