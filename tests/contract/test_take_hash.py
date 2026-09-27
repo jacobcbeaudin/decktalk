@@ -10,9 +10,8 @@ secret, so it sits in the data file beside the digests it produced, and the dige
 every paid take are proved on every machine and in CI rather than on the founder's laptop alone.
 Nothing here needs audio, a network or a credential, because a digest is arithmetic over text.
 
-`tests/decktalk/artifacts/test_takes.py` holds the same digests against `TakeInputs` alone. This file
-is the other half of the pair, and the half that reads the markdown, because a take is bought over
-what the parser makes of what the author wrote.
+This file is the one place the golden digests are held, and it reads the markdown rather than the
+text, because a take is bought over what the parser makes of what the author wrote.
 """
 
 from __future__ import annotations
