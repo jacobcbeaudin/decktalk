@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from decktalk.errors import InputError
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs, MusicSpec, SoundSpec
@@ -51,7 +52,7 @@ from decktalk.results import (
     Voicing,
 )
 from decktalk.settings import ElevenLabsConfig
-from decktalk.speech import VoiceContext
+from decktalk.speech import VoiceContext, get_provider
 from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import clock, judge, selects, since
 from decktalk.stages.soundscape.ledger import (
@@ -73,6 +74,9 @@ SOUND_PATH = "/sound-generation"
 
 MUSIC_PATH = "/music"
 """Where a music request goes on the service, which is the other endpoint a row may be keyed by."""
+
+SOUND_PROVIDER = "elevenlabs"
+"""The voice the soundscape buys from, which is the one provider that also makes sounds and music."""
 
 PRICE_KEY = "voice.price_per_1000_characters"
 """The key that states what speech costs, which is the only rate this project publishes."""
@@ -267,17 +271,28 @@ def spend_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | Non
 
 
 def client_for(inputs: Inputs) -> ElevenLabs:
-    """The sound service this project buys from, built from its own settings and its own `.env`."""
+    """The sound service this project buys from, which is the ElevenLabs voice the running machine answers with.
+
+    It is looked up in the machine's voices like narrate's, so a host that handed its machine another
+    voice is never billed through the shipped one, and the machine's switch and retries apply here too.
+    """
     settings = inputs.settings
-    return ElevenLabs.for_context(
+    client = get_provider(
+        SOUND_PROVIDER,
         VoiceContext(
             secrets=inputs.env,
             api_base=settings.elevenlabs.api_base,
             context_chars=settings.narration.context_chars,
             speech_timeout_seconds=settings.narration.timeout_seconds,
             sound_timeout_seconds=settings.elevenlabs.timeout_seconds,
-        )
+        ),
     )
+    if not isinstance(client, ElevenLabs):
+        raise InputError(
+            f"this machine's {SOUND_PROVIDER!r} voice cannot make sounds, so the soundscape has nothing to buy from.",
+            hint="Skip the soundscape stage on this machine, or give it the shipped ElevenLabs voice.",
+        )
+    return client
 
 
 def _keep(ledger: Ledger, path: Path, entry: SoundEntry) -> Ledger:
