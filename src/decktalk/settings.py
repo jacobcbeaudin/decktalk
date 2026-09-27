@@ -1356,7 +1356,9 @@ def load(
     pairs = route(overrides)
     for message in env_warnings(env):
         log.warning(message)
-    if project is not None or root:
+    # A caller that parsed the project file itself holds its warnings and reports them on its run,
+    # which is what a project does with `Inputs.notes`, so only a file this call read is warned here.
+    if project is None and root is not None:
         for message in key_warnings(from_project, PROJECT_FILE):
             log.warning(message)
     base = merge_tables(from_machine, from_project)

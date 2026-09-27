@@ -165,9 +165,8 @@ def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, mon
         f"decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?){page}",
         f"decktalk.toml: [mix]: ignoring unknown key 'music_dbb' (did you mean 'music_db'?){page}",
         f"decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'seconds'?){page}",
-        f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",
     ]
-    # A tuning table's own misspelling is also a note the caller reports, because the library never prints.
+    # A tuning table's own misspelling is a note the caller reports on its run, because the library never prints.
     assert p.notes == (f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",)
     # A warning, not an error: the load succeeds and every misspelled key keeps its default.
     assert p.settings.voice.stability == 0.55

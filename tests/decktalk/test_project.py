@@ -240,6 +240,21 @@ def test_a_call_opens_a_run_on_the_project_view_of_the_stream(tmp_path: Path) ->
 
 
 @pytest.mark.usefixtures("fake_stages")
+def test_what_the_load_noticed_is_a_warning_on_every_run(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A misspelled key in a log line never reached `--json` or the events file, so it is a line of the run."""
+    write_project(tmp_path, MINIMAL_TOML + "\n[video]\npresett = 'veryfast'\n")
+    with caplog.at_level("WARNING", logger="decktalk"):
+        project = decktalk.open(tmp_path, machine=a_machine(tmp_path))
+    seen: list[Event] = []
+    with project.events.subscribe(seen.append):
+        project.cue()
+    warned = [line.message for line in seen if isinstance(line, Log) and line.level is Level.WARNING]
+    assert tuple(warned) == project.inputs.notes
+    assert any("presett" in note for note in warned)
+    assert not [record for record in caplog.records if "presett" in record.getMessage()], "said once, on the run"
+
+
+@pytest.mark.usefixtures("fake_stages")
 def test_one_project_never_sees_another_project_lines(tmp_path: Path) -> None:
     machine = a_machine(tmp_path)
     for name in ("a", "b"):
