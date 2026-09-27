@@ -92,9 +92,11 @@ and none of them is a DeckTalk feature you have to wait for.
 - **Build with no voice and no key.** `decktalk build --no-voice` writes placeholder narration and
   makes a complete video. It contacts no service, so you can show a finished internal video before
   any approval comes back.
-- **Use the browser the machine already has.** Set `[record] browser_path` in `decktalk.toml`, or
-  point `PLAYWRIGHT_BROWSERS_PATH` at a location your administrators have already filled. The
-  pinned build is the reference, and a managed browser is supported and unverified.
+- **Use the browser the machine already has.** Set `record.browser_path` with
+  `decktalk config set record.browser_path PATH --where machine`, or point
+  `PLAYWRIGHT_BROWSERS_PATH` at a location your administrators have already filled. It is a machine
+  key, so a project file that sets it is refused. The pinned build is the reference, and a managed
+  browser is supported and unverified.
 - **Use the ffmpeg the machine already has.** `[tools] ffmpeg` and `[tools] ffprobe` name
   executables directly, and a build that finds them downloads nothing from the second table. Both
   are machine keys, so they belong in this machine's settings file rather than in a project that

@@ -73,9 +73,10 @@ Nothing else is in it, and each absence is a decision you can rely on.
   twice.
 
 A take file is named by its digest, so `narrate` sends nothing for a section whose take and words
-file are both on disk. Set [`[narration] cache_dir`](/reference/configuration#narration) to keep
+file are both on disk. Set [`narration.cache_dir`](/reference/configuration#narration) to keep
 those files outside `build/`, where a fresh clone and a second worktree find them again and several
-projects may share one directory. The take index and the joined narration stay under
+projects may share one directory. It is a machine key, so it is set with
+`decktalk config set narration.cache_dir DIR --where machine` and never in `decktalk.toml`. The take index and the joined narration stay under
 `build/narrate/`, because they belong to one project.
 
 A section that is voiced again costs the characters of its whole text and not only the changed

@@ -179,7 +179,9 @@ fetches both the first time a command needs them and keeps them in a per-user ca
 
 **The knobs.** `[tools] ffmpeg` and `[tools] ffprobe` name binaries the machine already has.
 `[tools] cache_dir` moves what DeckTalk fetches. `[record] browser_path` records with a browser the
-machine already has and skips the Chromium download entirely. Set
+machine already has and skips the Chromium download entirely. All four are machine keys, so set them
+with `decktalk config set KEY VALUE --where machine`, because a `decktalk.toml` that sets one is
+refused. Set
 `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror when a proxy blocks Playwright's own host, and
 `PLAYWRIGHT_BROWSERS_PATH` when the home directory is read-only or the browser is shared.
 

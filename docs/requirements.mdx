@@ -71,7 +71,7 @@ home connection for the first run.
 | DeckTalk | `$XDG_CACHE_HOME/decktalk`, else `~/.cache/decktalk` | `~/Library/Caches/decktalk` | `%LOCALAPPDATA%\decktalk` |
 
 Both are per user, so a second project on the same machine downloads nothing. Move DeckTalk's with
-`[tools] cache_dir`, and move Playwright's with `PLAYWRIGHT_BROWSERS_PATH`, which Playwright reads on
+`tools.cache_dir`, and move Playwright's with `PLAYWRIGHT_BROWSERS_PATH`, which Playwright reads on
 the download and on every launch.
 
 ### What `decktalk install` is for
@@ -116,6 +116,11 @@ is one setting, and none of them changes the project.
 | The ffmpeg download | `[tools] ffmpeg` and `[tools] ffprobe`, naming two executables from one build. They override every other source, so nothing downloads a build. |
 | A write to DeckTalk's cache | `[tools] cache_dir`. |
 
+The `[tools]` keys and `record.browser_path` are
+[machine keys](/reference/configuration#keys-only-a-machine-may-set). They describe this machine, so
+they go in its own settings file through `decktalk config set KEY VALUE --where machine`, and a
+`decktalk.toml` that sets one is refused by name.
+
 Every setting has an environment variable of its own, spelled `DECKTALK_<TABLE>_<KEY>`, so
 `[tools] ffmpeg` is `DECKTALK_TOOLS_FFMPEG` and `[tools] cache_dir` is `DECKTALK_TOOLS_CACHE_DIR`.
 `decktalk config explain tools.ffmpeg` prints the value that wins and the layer that set it, and its
@@ -123,9 +128,8 @@ Every setting has an environment variable of its own, spelled `DECKTALK_<TABLE>_
 
 If the machine already has an approved Chrome or Chromium, record with that one instead.
 
-```toml decktalk.toml
-[record]
-browser_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+```console
+decktalk config set record.browser_path "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --where machine
 ```
 
 The pinned Playwright build is the reference build, and DeckTalk's timing limits are measured against

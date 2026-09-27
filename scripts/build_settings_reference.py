@@ -8,9 +8,10 @@ rather than the dataclasses, so a reader of the page and a machine reading the s
 same thing by the same bytes, and a key that reached the page without reaching the schema is
 impossible rather than merely unlikely.
 
-It opens with the index from a verdict to the keys that move it, because that is the lookup an
-agent makes after a failure, and it ends with the numbers that are deliberately not knobs, because
-the second lookup an agent makes is for a knob that does not exist.
+It names the keys only a machine may set, because a project file that sets one is refused. It then
+gives the index from a verdict to the keys that move it, because that is the lookup an agent makes
+after a failure, and it ends with the numbers that are deliberately not knobs, because the second
+lookup an agent makes is for a knob that does not exist.
 """
 
 from __future__ import annotations
@@ -62,6 +63,7 @@ work out which one is in force.
 
 The per-machine settings file holds machine keys alone. A key about the film in that file is
 refused by name, because the file that ships has to carry whatever the machine running it believes.
+`DECKTALK_CONFIG` names a different per-machine file.
 
 | Linux | macOS | Windows |
 |---|---|---|
@@ -79,6 +81,14 @@ INDEX_LEAD = """## Which key moves which failure
 
 A finding names the key that decided it. This is the same index in reverse, for the case where you
 have a code and want the candidates before you run anything.
+"""
+
+MACHINE_LEAD = """## Keys only a machine may set
+
+These keys describe the machine rather than the film: where a tool or a cache lives, and how hard
+this machine may be driven. A project file that sets one is refused by name, because a project
+travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
+machine's file with `decktalk config set KEY VALUE --where machine`, or set its environment variable.
 """
 
 NUMBERS_LEAD = """## The numbers that are not knobs
@@ -143,6 +153,12 @@ def index(rows: list[tuple[str, str, dict[str, Any]]]) -> list[str]:
     return [*out, ""]
 
 
+def machine(rows: list[tuple[str, str, dict[str, Any]]]) -> list[str]:
+    """The keys a project file may not set, which is the list a refused `config set` points at."""
+    found = [f"`{table}.{name}`" for table, name, prop in rows if prop["x-scope"] == "machine"]
+    return [MACHINE_LEAD, ", ".join(found[:-1]) + f" and {found[-1]}." if len(found) > 1 else f"{found[0]}.", ""]
+
+
 def tables(document: dict[str, Any], rows: list[tuple[str, str, dict[str, Any]]]) -> list[str]:
     """One section per table, each a row per key with everything the schema publishes about it."""
     out: list[str] = []
@@ -150,13 +166,13 @@ def tables(document: dict[str, Any], rows: list[tuple[str, str, dict[str, Any]]]
         body = _table(document, table)
         out.append(f"## `[{table}]`\n")
         out.append(f"{body['description']}\n")
-        out.append("| Key | Type | Default | Safe range | Unit | Decides | Meaning |")
-        out.append("|---|---|---|---|---|---|---|")
+        out.append("| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |")
+        out.append("|---|---|---|---|---|---|---|---|")
         for name, prop in ((name, prop) for t, name, prop in rows if t == table):
             decides = ", ".join(f"`{code}`" for code in prop.get("x-decides", []))
             out.append(
                 f"| `{name}` | {prop['type']} | `{toml_value(prop['default'])}` | {cell(prop['x-range'])} "
-                f"| {prop.get('x-unit', '')} | {decides} | {cell(prop['description'])} |"
+                f"| {prop.get('x-unit', '')} | {prop['x-scope']} | {decides} | {cell(prop['description'])} |"
             )
         out.append("")
         out += hazards(table, rows)
@@ -196,7 +212,7 @@ def render() -> str:
     """The whole page, which is the header, the index, one section per table, the numbers and the links."""
     document = schema()
     rows = keys(document)
-    parts = [HEADER, *index(rows), *tables(document, rows), *numbers(document), FOOTER]
+    parts = [HEADER, *machine(rows), *index(rows), *tables(document, rows), *numbers(document), FOOTER]
     return "\n".join(parts).rstrip() + "\n"
 
 
