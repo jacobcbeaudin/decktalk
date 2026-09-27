@@ -8,6 +8,7 @@ section again rather than trimming a new picture at an old moment.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -24,7 +25,7 @@ from decktalk.media import browser, ffmpeg, frames
 from decktalk.media.browser import Recording, RecordingSink
 from decktalk.media.pagereport import PageReport
 from decktalk.results import Voicing
-from decktalk.stages.record import record, stale_recording
+from decktalk.stages.record import pool, record, stale_recording
 from support.projects import write_project
 
 TOML = """
@@ -56,6 +57,9 @@ COVER_CHROMA = 200.0
 
 BRIGHT_LUMA = 200.0
 """A luma bright enough that no frame of a test recording reads as black."""
+
+LAUNCH_WAIT_SECONDS = 10.0
+"""How long a launch waits for the other worker's, which only a pool that never starts one runs out."""
 
 
 def a_take(section: int) -> Take:
@@ -114,10 +118,17 @@ class Driven:
         self.order: list[str] = []
         self.launched = 0
         self.policies: list[str] = []
+        # When set, no launch returns until every party has launched, so no worker can finish first.
+        self.launches_together: threading.Barrier | None = None
+        # Launches released together count at once, and an unguarded increment could lose one.
+        self.counting = threading.Lock()
 
     @contextmanager
     def chromium(self, _browser_path: str = "", *, policy: str = "trusted") -> Iterator[object]:
-        self.launched += 1
+        if self.launches_together is not None:
+            self.launches_together.wait()
+        with self.counting:
+            self.launched += 1
         self.policies.append(policy)
         yield object()
 
@@ -161,6 +172,8 @@ class Driven:
 def driven(monkeypatch: pytest.MonkeyPatch) -> Driven:
     """The media layer replaced at the two seams `record` reaches it through, and no ffmpeg behind it."""
     fake = Driven()
+    # One recording at a time, so the order a test reads is the order a single recorder writes in.
+    monkeypatch.setattr(pool, "available_cpus", lambda: float(pool.CPUS_PER_RECORDING))
     monkeypatch.setattr(browser, "chromium", fake.chromium)
     monkeypatch.setattr(browser, "record_page", fake.record_page)
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: SPAN_SECONDS)
@@ -311,3 +324,21 @@ def test_one_rule_decides_whether_a_recording_still_stands(tmp_path: Path) -> No
     assert stale_recording(inputs, section) is None
     (tmp_path / "deck" / "index.html").write_text(PAGE.replace("one</p>", "one more</p>"), encoding="utf-8")
     assert "changed since it was recorded" in (stale_recording(Inputs.load(tmp_path, environ={}), section) or "")
+
+
+def test_sections_recorded_at_once_come_back_in_order_with_their_own_pair_of_lines(
+    tmp_path: Path, driven: Driven, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Record waited for every section in turn, so a film took as long to record as it runs."""
+    monkeypatch.setattr(pool, "available_cpus", lambda: 8.0)
+    # One worker could otherwise take both sections before the other worker takes its first.
+    driven.launches_together = threading.Barrier(2, timeout=LAUNCH_WAIT_SECONDS)
+    inputs = a_project(tmp_path)
+    lines: list[Event] = []
+    result = record(inputs, a_run(inputs, lines))
+    assert [row.section for row in result.sections] == [1, 2]
+    assert driven.launched == 2, "each worker drives a Chromium of its own"
+    for number in (1, 2):
+        paired = [type(line).__name__ for line in lines if getattr(line, "section", None) == number]
+        assert paired[0] == "SectionStart" and "SectionDone" in paired, paired
+    assert [(line.done, line.section) for line in lines if isinstance(line, Progress)] == [(1, 1), (2, 2)]

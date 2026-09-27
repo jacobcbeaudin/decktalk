@@ -9,6 +9,12 @@ belongs to the recording beside it, and a long run can be read while it runs.
     capture.py   the page URL, what a recording is keyed on, and the page cut into its scenes
     start.py     where narration t=0 sits in one recording
     checks.py    the frames, the page's own codes and the origins it reached for
+    pool.py      how many sections record at once, and the workers that record them
+
+Sections are recorded several at a time, each worker with a Chromium of its own, because a
+recording waits for its span in real time and the sections of a film share nothing but the project.
+The rows, the progress lines and the result come back in section order whatever order the workers
+finish in.
 
 A section whose scene, the page around it, its loaded assets, its words, its cues and the motion it
 renders with have not moved is kept rather than recorded again, because the run would produce the
@@ -24,7 +30,7 @@ under an old narration t=0.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -52,6 +58,7 @@ from decktalk.stages.record.capture import (
     words_query,
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
+from decktalk.stages.record.pool import Halt, Pool, automatic
 from decktalk.stages.record.start import Start, find_start
 
 SECOND_DIGITS = 3
@@ -202,7 +209,7 @@ def passed_over(inputs: Inputs, run: Run, only: Sequence[int] | None) -> None:
         )
 
 
-def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink) -> Recording:
+def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, check: Callable[[], None]) -> Recording:
     """Record one section, retrying while its frames stall, and give back the recording that stuck.
 
     A stalled page froze a reveal for a few frames, which no cut can repair, so the section is
@@ -229,6 +236,7 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink) 
             color_scheme=recorder.color_scheme,
             motion=settings.motion,
             documents=documents,
+            check=check,
         )
         gap = recording.report.worst_gap_ms
         if gap <= recorder.frame_gap_max_ms or attempt > recorder.retries:
@@ -245,10 +253,13 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink) 
     return recording
 
 
-def recorded(inputs: Inputs, run: Run, opened: Browser, job: Job) -> SectionRecording:
-    """Record one section, measure it, and leave its log beside the webm with every judgement in it."""
+def recorded(inputs: Inputs, run: Run, opened: Browser, job: Job, check: Callable[[], None]) -> SectionRecording:
+    """Record one section, measure it, and leave its log beside the webm with every judgement in it.
+
+    `check` raises when the section should stop, which the recorder asks while it waits.
+    """
     sink = LogSink(inputs, job.section, job.url, job.seconds, job.log_path)
-    recording = capture(inputs, run, opened, job, sink)
+    recording = capture(inputs, run, opened, job, sink, check)
     start = find_start(job.out, recording.settle_seconds, inputs.settings.record)
     checks = check_recording(job.out, recording)
     page = inputs.relative(inputs.path(job.section.page)).as_posix()
@@ -311,29 +322,35 @@ def record(
     only: Sequence[int] | None = None,
     force: bool = False,
 ) -> RecordResult:
-    """Record every page section this run names, and judge each one as soon as it is finished."""
+    """Record every page section this run names, and judge each one as soon as it is finished.
+
+    The sections that must be recorded go to a pool of workers as `[record] concurrency` allows, and
+    the sections that are kept are reported by this thread, so every row is in section order.
+    """
     started = clock()
     planned = plan(inputs, run, only)
     passed_over(inputs, run, only)
     named = set(only or ())
+    todo = [job for job in planned if force or job.section.number in named or not job.unchanged]
+    by_number = {job.section.number: job for job in todo}
+    recorder = inputs.settings.record
+
+    def opening(stack: ExitStack) -> Browser:
+        return stack.enter_context(browser.chromium(recorder.browser_path, policy=recorder.page_policy))
+
+    def one(opened: Browser, number: int, halt: Halt) -> SectionRecording:
+        with run.section(Stage.RECORD, number):
+            return recorded(inputs, run, opened, by_number[number], halt.check)
+
     rows: list[SectionRecording] = []
     total = len(planned)
-    with ExitStack() as stack:
-        opened: Browser | None = None
+    workers = automatic(recorder.concurrency, len(todo))
+    with Pool(list(by_number), workers, opening, one, run.cancel) as pool:
         for done, job in enumerate(planned, start=1):
-            again = force or job.section.number in named
-            if job.unchanged and not again:
-                rows.append(kept_row(inputs, run, job))
-            else:
-                if opened is None:
-                    recorder = inputs.settings.record
-                    opened = stack.enter_context(browser.chromium(recorder.browser_path, policy=recorder.page_policy))
-                with run.section(Stage.RECORD, job.section.number):
-                    rows.append(recorded(inputs, run, opened, job))
-            label = f"section {job.section.number} of {inputs.document.name}"
-            run.progress(
-                Stage.RECORD, done=done, total=total, unit=Unit.SECTION, label=label, section=job.section.number
-            )
+            number = job.section.number
+            rows.append(pool.result(number) if number in by_number else kept_row(inputs, run, job))
+            label = f"section {number} of {inputs.document.name}"
+            run.progress(Stage.RECORD, done=done, total=total, unit=Unit.SECTION, label=label, section=number)
     return run.result(RecordResult, sections=tuple(rows), seconds=since(started))
 
 

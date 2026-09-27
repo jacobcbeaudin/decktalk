@@ -33,7 +33,7 @@ import statistics
 import tempfile
 import time
 import weakref
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,6 +89,9 @@ REPORT_JS = "() => window.__dtprobe.report()"
 # Whether the runtime is present and the page registered at least one scene.
 HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
 NO_CATALOG = "no window.__decktalk.catalog (is decktalk-runtime.js included, and does the page register a scene?)"
+
+CHECK_SECONDS = 1.0
+"""Calibration: how often a recording asks whether it should stop, which is as long as a person waits on a stop."""
 
 DEADLINE_SECONDS = 15.0
 """Calibration: many times the longest a probe call measures, so only a page that stopped answering hits it."""
@@ -526,6 +529,7 @@ def record_page(
     color_scheme: str,
     motion: MotionConfig,
     documents: Mapping[str, bytes] | None = None,
+    check: Callable[[], None] = lambda: None,
 ) -> Recording:
     """Record `url` for `seconds` after the narration clock starts, and leave the webm beside its log.
 
@@ -535,6 +539,9 @@ def record_page(
     The order is the whole point of `log_sink`. The old log goes before anything is captured, the
     webm is replaced next, and the log of what was just recorded is written last, so the pair on
     disk is either complete or absent and a crash can never leave a new picture under an old t=0.
+
+    `check` raises when the recording should stop, and the section's span is waited for in slices so
+    it is asked at least once a second. A recording stopped that way places nothing and writes no log.
     """
     log_sink.clear()
     with capturing(
@@ -550,7 +557,7 @@ def record_page(
         page.wait_for_timeout(wait * MILLISECONDS)
         evaluate(page, START_JS)
         started = time.monotonic()
-        page.wait_for_timeout(seconds * MILLISECONDS)
+        waited(page, seconds, check)
         report = read_report(page, out.stem)
         errors = page_errors(page, caught, out.stem)
         recording = Recording(
@@ -570,6 +577,20 @@ def record_page(
     for name in capture.assets.missing:
         log.warning("[page] %s  the page asked for %s and the project has no such file", out.stem, name)
     return recording
+
+
+def waited(page: Page, seconds: float, check: Callable[[], None]) -> None:
+    """Wait `seconds` in slices of at most `CHECK_SECONDS`, asking `check` before each one.
+
+    The slices add up to the span exactly, so the recording is as long as one wait made it, and each
+    costs one call to the browser, which is a millisecond against a second.
+    """
+    left = seconds
+    while left > 0:
+        check()
+        step = min(left, CHECK_SECONDS)
+        page.wait_for_timeout(step * MILLISECONDS)
+        left -= step
 
 
 def _log_what_the_page_reported(recording: Recording, label: str) -> None:

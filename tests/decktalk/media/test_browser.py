@@ -14,7 +14,7 @@ from typing import get_args
 import pytest
 from playwright.sync_api import Error as PlaywrightError
 
-from decktalk.errors import InputError, ToolError
+from decktalk.errors import Cancelled, InputError, ToolError
 from decktalk.media import browser
 from decktalk.media.environment import browser_environment
 from decktalk.media.origin import ORIGIN, Allowed, page_url
@@ -610,3 +610,35 @@ window.tried = (async () => {{
         udp.close()
     assert hits == []
     assert f"http://{at}" in assets.external
+
+
+def test_a_recording_asks_whether_to_stop_at_least_once_a_second_and_stops_whole(tmp_path):
+    """A recording slept its whole span, so a stopped run waited for every section already recording."""
+    asked: list[int] = []
+
+    def check() -> None:
+        asked.append(1)
+        if len(asked) == 3:
+            raise Cancelled("the caller stopped this run")
+
+    out = tmp_path / "01.webm"
+    sink = Sink(out)
+    with pytest.raises(Cancelled):
+        browser.record_page(
+            FakeBrowser(), page_url("deck/index.html"), 10.0, out, allowed=Allowed.of(tmp_path, ["."]),
+            log_sink=sink, settle_seconds=0.0, min_cover_seconds=0.0, width=960, height=540,
+            color_scheme="no-preference", motion=MotionConfig(), check=check,
+        )  # fmt: skip
+    assert len(asked) == 3
+    assert not out.exists() and sink.moments == [("clear", False)], "nothing is placed and no log is written"
+
+
+def test_the_slices_of_a_wait_add_up_to_the_span_exactly():
+    waits: list[float] = []
+
+    class Clock:
+        def wait_for_timeout(self, ms: float) -> None:
+            waits.append(ms)
+
+    browser.waited(Clock(), 2.5, lambda: None)  # type: ignore[arg-type]
+    assert waits == [1000.0, 1000.0, 500.0]
