@@ -104,7 +104,8 @@ carries. Write the local name on the page and the wire id in `cues.json`.
 
   <Step title="Add one cue row to cues.json">
     Add a `"4"` entry under `"sections"`, with a row for the heading alone. The second moment is left
-    out on purpose.
+    out on purpose. Put a comma after the closing brace of section `"3"` first, because JSON
+    separates one entry from the next with a comma.
 
     ```json cues.json
     "4": {

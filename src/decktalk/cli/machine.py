@@ -18,6 +18,7 @@ from decktalk.cli import session as sessions
 from decktalk.cli.app import command, docs_for
 from decktalk.cli.options import Fix, Group
 from decktalk.results import DoctorResult, InitResult, InstallResult
+from decktalk.template import STARTER, listed_names
 
 INIT_EPILOG = f"""\
 Writes decktalk.toml, script.md, cues.json and a deck that builds with no
@@ -40,7 +41,8 @@ def init(
     directory: Annotated[Path, typer.Argument(metavar="DIR", help="Where to write the project.")],
     name: Annotated[str | None, typer.Option("--name", metavar="NAME", help="The project's name.")] = None,
     example: Annotated[
-        str | None, typer.Option("--example", metavar="NAME", help="The packaged example to write.")
+        str | None,
+        typer.Option("--example", metavar="NAME", help=f"The packaged example to write: {listed_names()}."),
     ] = None,
     no_skills: Annotated[bool, typer.Option("--no-skills", help="Leave the packaged skills out.")] = False,
     defaults: Annotated[bool, typer.Option("--defaults", help="Take every default and ask nothing.")] = False,
@@ -82,10 +84,6 @@ def _guided(
     ask: bool,
 ) -> tuple[str, str | None, bool]:
     """The three answers `init` needs, asked on a terminal and taken from the flags without one."""
-    # The packaged examples ride in the wheel beside the skills, so the list is read by the one
-    # command that offers them rather than by every import of the command line.
-    from decktalk.template import STARTER, listed_names  # noqa: PLC0415
-
     chosen, picked, skills = name or root.name, example, not no_skills
     if not ask or not session.asks:
         return chosen, picked, skills

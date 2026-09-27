@@ -63,7 +63,7 @@ To hear your own voice, copy `.env.example` to `.env`, fill in your ElevenLabs A
 
 ## A short tour
 
-### The four files you write
+### The four files in a project
 
 | File | What it holds |
 |---|---|

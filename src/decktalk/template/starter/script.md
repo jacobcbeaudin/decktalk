@@ -1,4 +1,4 @@
-# __TITLE__ — narration script
+# __TITLE__: narration script
 
 Each "## N." section is one cut of the video. Bracketed directions are not spoken: `[beat]` is a
 short pause, `[pause 4]` is a four second pause, and anything else in brackets is a note to

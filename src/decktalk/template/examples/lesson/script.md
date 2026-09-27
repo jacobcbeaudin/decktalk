@@ -1,4 +1,4 @@
-# __TITLE__ — narration script
+# __TITLE__: narration script
 
 One section, about two minutes. Bracketed directions are not spoken: `[beat]` is a short pause and
 `[pause 2]` is a two second pause. Every number is written the way the voice must say it, because a
