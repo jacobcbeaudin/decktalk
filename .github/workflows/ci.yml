@@ -121,6 +121,13 @@ jobs:
         with:
           path: *tool-paths
           key: ${{ matrix.cache }}
+      # The browser row launches Chromium under the untrusted policy, which requires its sandbox and
+      # never falls back. Ubuntu 23.10 and later refuse the unprivileged user namespace that sandbox
+      # needs, and Playwright's Chromium carries no setuid helper, so the Linux leg turns the switch
+      # off for its own run. No other row launches an untrusted page.
+      - name: Let the Chromium sandbox start
+        if: matrix.group == 'browser'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Run the group
         # check.py opens its own log with the group name and the one local command that reproduces
         # it, so a reader who finds this job red never has to open a workflow file.
