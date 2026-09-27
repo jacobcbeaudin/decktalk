@@ -8,7 +8,19 @@ import pytest
 
 from decktalk import template
 from decktalk.errors import ErrorCode, InputError
-from decktalk.template import EXAMPLES, SKILL_NAMES, STARTER, example, listed_names, title_from, write_project
+from decktalk.template import (
+    DECK_DIR,
+    EXAMPLES,
+    SKILL_NAMES,
+    STARTER,
+    example,
+    listed_names,
+    runtime_version,
+    stale_runtime,
+    title_from,
+    write_project,
+)
+from decktalk.toolchain import assets
 
 
 def test_every_example_is_named_once_and_a_reserved_one_says_so() -> None:
@@ -103,3 +115,38 @@ def test_writing_the_skills_again_replaces_them_rather_than_merging(tmp_path: Pa
 
 def test_the_starter_is_the_default_and_is_not_itself_an_example() -> None:
     assert STARTER not in {found.name for found in EXAMPLES}
+
+
+# ---- a project's copy of the runtime ------------------------------------------------------------
+
+
+def test_the_copy_init_writes_is_the_runtime_this_engine_ships(tmp_path: Path) -> None:
+    write_project(tmp_path, name="demo", example_name=None, skills=False, force=False)
+    assert stale_runtime(tmp_path / DECK_DIR / assets.RUNTIME_FILE) is None
+
+
+def test_a_copy_an_older_engine_wrote_names_both_versions(tmp_path: Path) -> None:
+    copy = tmp_path / assets.RUNTIME_FILE
+    copy.write_text('(() => {\n  var VERSION = "0.4.0";\n})();\n', encoding="utf-8")
+    stale = stale_runtime(copy, Path("deck") / assets.RUNTIME_FILE)
+    shipped = runtime_version(assets.runtime_path().read_text(encoding="utf-8"))
+    assert stale is not None and (stale.version, stale.shipped) == ("0.4.0", shipped)
+    assert "deck/decktalk-runtime.js carries version 0.4.0" in stale.sentence
+    assert f"ships version {shipped}" in stale.sentence
+
+
+def test_an_edited_copy_is_stale_although_it_names_the_same_version(tmp_path: Path) -> None:
+    """An engine built between two releases ships a runtime that still carries the last release's version."""
+    copy = tmp_path / assets.RUNTIME_FILE
+    copy.write_text(assets.runtime_path().read_text(encoding="utf-8") + "\n// edited\n", encoding="utf-8")
+    stale = stale_runtime(copy)
+    assert stale is not None and stale.version == stale.shipped
+    assert "although both say version" in stale.sentence
+
+
+def test_a_project_with_no_copy_has_nothing_stale(tmp_path: Path) -> None:
+    assert stale_runtime(tmp_path / assets.RUNTIME_FILE) is None
+
+
+def test_the_shipped_runtime_carries_a_version_this_engine_can_read() -> None:
+    assert runtime_version(assets.runtime_path().read_text(encoding="utf-8")) is not None

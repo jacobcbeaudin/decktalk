@@ -197,3 +197,20 @@ def test_a_phrase_an_edit_moved_is_repaired_by_the_fix_its_finding_carries(tmp_p
     assert outcome.applied
     again = check(Inputs.load(tmp_path, environ={}), a_run(tmp_path), pages=False)
     assert Code.CUE_UNRESOLVED not in {one.code for one in again.findings}
+
+
+def test_a_runtime_copy_an_older_engine_wrote_is_said_before_anything_is_priced(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, cues=CUES)
+    (tmp_path / "deck" / "decktalk-runtime.js").write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
+    run = a_run(tmp_path)
+    said = notes(run)
+    check(inputs, run, pages=False)
+    assert any("deck/decktalk-runtime.js carries version 0.4.0" in line for line in said)
+
+
+def test_a_project_whose_pages_load_no_copy_of_the_runtime_is_told_nothing_about_one(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, cues=CUES)
+    run = a_run(tmp_path)
+    said = notes(run)
+    check(inputs, run, pages=False)
+    assert not any("decktalk-runtime.js" in line for line in said)

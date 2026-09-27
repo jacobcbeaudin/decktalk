@@ -30,6 +30,7 @@ from pathlib import Path
 from playwright.sync_api import Page
 
 from decktalk.errors import InputError
+from decktalk.events import Level
 from decktalk.findings import Code, Finding, Location, ProjectPath
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
@@ -57,6 +58,8 @@ from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_pl
 from decktalk.stages.narrate.plan import VOICE_VARIABLE, voice_id_of
 from decktalk.stages.storyboard import Slides, reports_of, slide_cues, write_page
 from decktalk.stages.verify import opted_out
+from decktalk.template import stale_runtime
+from decktalk.toolchain.assets import RUNTIME_FILE
 
 NEEDS_A_PAGE: tuple[Code, ...] = (
     Code.CUE_MISSING,
@@ -108,11 +111,12 @@ def check(
     for found in script_findings(_markdown(inputs), spoken, script=script):
         run.found(found)
 
+    extra = _named_pages(inputs, paths)
+    _runtime_copies(inputs, run, extra)
     plans = _plan(inputs, run, spoken)
     spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
     resolved, times = _resolve(inputs, run, plans, wanted)
     sections = [one for one in inputs.document.page_sections if wanted(one.number)]
-    extra = _named_pages(inputs, paths)
 
     looked = _look(inputs, run, sections, extra, times, frames=frames) if pages else _unreached(run, frames=frames)
     if pages:
@@ -140,6 +144,22 @@ def _markdown(inputs: Inputs) -> str:
     """The script as it is written, or nothing at all when the project has not got one."""
     path = inputs.script_path
     return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
+    """Say which of the project's copies of the runtime are not the one this engine ships.
+
+    `decktalk init` copies the runtime beside the pages, and a copy an older engine wrote keeps
+    playing the older contract, so a reveal can pass on the author's machine and read differently to
+    this engine's recorder and verify. The copy that matters is the one beside each page, which is
+    the one a page loads.
+    """
+    pages = [*inputs.document.page_files, *extra]
+    for folder in dict.fromkeys(Path(page).parent for page in pages):
+        named = folder / RUNTIME_FILE
+        stale = stale_runtime(inputs.path(named), named)
+        if stale is not None:
+            run.note(stale.sentence, level=Level.WARNING)
 
 
 def _segments(inputs: Inputs, run: Run) -> list[Segment]:
