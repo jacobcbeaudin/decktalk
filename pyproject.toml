@@ -45,6 +45,7 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
+    "filelock>=3.16",
     "playwright>=1.63.0,<2",
     "pydantic>=2.11",
     "rich>=13",

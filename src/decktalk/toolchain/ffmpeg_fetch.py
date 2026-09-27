@@ -18,13 +18,12 @@ import stat
 import sys
 import tarfile
 import tempfile
-import time
 import urllib.request
 import zipfile
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+
+from filelock import FileLock
 
 from ..errors import ToolError
 from .announce import announce
@@ -245,51 +244,15 @@ def _unpack(archive: Path, asset: FfmpegAsset, into: Path) -> None:
         out.chmod(out.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-LOCK_POLL_SECONDS = 0.1
-"""Calibration: how often a fetch waiting on another one asks again, which costs nothing beside a download."""
-
-
-@contextmanager
-def held(lock: Path) -> Iterator[None]:
-    """Hold an operating system lock on `lock` while this is open, waiting for whoever holds it first.
-
-    The lock is on the open file, so the operating system releases it when its holder dies, and a
-    fetch killed half way never leaves the next one waiting on a lock nobody holds.
-    """
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    with lock.open("a+b") as handle:
-        if sys.platform == "win32":
-            import msvcrt  # noqa: PLC0415  (the module exists only on Windows)
-
-            while True:
-                try:
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                    break
-                except OSError:
-                    time.sleep(LOCK_POLL_SECONDS)
-            try:
-                yield
-            finally:
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl  # noqa: PLC0415  (the module exists only off Windows)
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
-
 def fetch_ffmpeg(key: str | None = None) -> tuple[str, str]:
     """Download the pinned build for a platform into install_dir() and return its (ffmpeg, ffprobe).
 
     Every archive is verified before it is opened, the executables are unpacked into a scratch
     directory of this fetch's own, and that directory replaces the install directory only once both
-    are in place. Two fetches of one build take turns under a lock beside it, and the second finds
-    the build the first installed and downloads nothing, so two cold first builds in one process or
-    in two can never delete each other's download.
+    are in place. Two fetches of one build take turns under an operating system lock beside it,
+    which the system releases if its holder dies, and the second finds the build the first installed
+    and downloads nothing, so two cold first builds in one process or in two can never delete each
+    other's download.
     """
     key = key or platform_key()
     build = pinned_build(key)
@@ -300,7 +263,7 @@ def fetch_ffmpeg(key: str | None = None) -> tuple[str, str]:
         )
     dest = install_dir(key)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with held(dest.with_name(f".{dest.name}.lock")):
+    with FileLock(dest.with_name(f".{dest.name}.lock")):
         if installed := installed_pinned(key):
             return installed
         scratch = Path(tempfile.mkdtemp(prefix=f".{dest.name}.", dir=dest.parent))

@@ -7,17 +7,16 @@ the lock it holds, the arguments it hands down and the result it insists on.
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import types
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pytest
+from filelock import FileLock, Timeout
 
 import decktalk
 from decktalk import project as project_module
@@ -27,7 +26,7 @@ from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Locat
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain
 from decktalk.pipeline import Stage
-from decktalk.project import LOCK_FILE, Origin, Project, section_numbers, stage_call
+from decktalk.project import LOCK_FILE, OWNER_FILE, Origin, Project, section_numbers, stage_call
 from decktalk.results import (
     BuildResult,
     CheckResult,
@@ -320,45 +319,38 @@ def test_a_build_directory_that_is_itself_a_link_out_of_the_project_is_refused(t
 
 
 @contextmanager
-def held(lock: Path, owner: str = "1 abc\n") -> Iterator[None]:
-    """The build lock taken by another writer, on a handle of its own, for as long as the block runs."""
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    with lock.open("a+", encoding="utf-8") as handle:
-        assert project_module._hold(handle)
-        project_module._write_owner(handle, owner)
-        try:
-            yield
-        finally:
-            project_module._release(handle)
+def held(build: Path, owner: str = "1 abc\n") -> Iterator[None]:
+    """The build lock taken by another writer, with its note, for as long as the block runs."""
+    with FileLock(build / LOCK_FILE):
+        project_module._write_owner(build / OWNER_FILE, owner)
+        yield
 
 
-def free(lock: Path) -> bool:
+def free(build: Path) -> bool:
     """Whether nobody holds the build lock now, asked by taking it and giving it straight back."""
-    with lock.open("a+", encoding="utf-8") as handle:
-        taken = project_module._hold(handle)
-        if taken:
-            project_module._release(handle)
-        return taken
+    try:
+        with FileLock(build / LOCK_FILE, blocking=False):
+            return True
+    except Timeout:
+        return False
 
 
 @pytest.mark.usefixtures("fake_stages")
 def test_a_reporting_call_takes_no_lock_and_a_writing_call_does(tmp_path: Path) -> None:
     project = a_project(tmp_path)
-    lock = project.workspace.build / LOCK_FILE
+    build = project.workspace.build
     project.status()
-    assert not lock.exists()
+    assert not (build / LOCK_FILE).exists()
     project.cue()
-    # The file stays, because removing it while a writer waits would let a third lock a new one.
-    assert lock.read_text(encoding="utf-8") == ""
-    assert free(lock)  # the lock is released however the call ends
+    assert not (build / OWNER_FILE).exists()
+    assert free(build)  # the lock is released however the call ends
 
 
 @pytest.mark.usefixtures("fake_stages")
 def test_a_check_that_opens_pages_holds_the_build_and_one_that_reads_alone_does_not(tmp_path: Path) -> None:
     """A check with pages freezes frames and draws the storyboard, which is a writer's work."""
     project = a_project(tmp_path)
-    lock = project.workspace.build / LOCK_FILE
-    with held(lock):
+    with held(project.workspace.build):
         project.check(pages=False)
         with pytest.raises(ProjectLocked):
             project.check()
@@ -368,32 +360,50 @@ def test_a_check_that_opens_pages_holds_the_build_and_one_that_reads_alone_does_
 def test_a_second_writer_is_refused_while_the_first_holds_the_build(tmp_path: Path) -> None:
     """The trigger is a build run by hand under a live watch loop, not a service."""
     project = a_project(tmp_path)
-    lock = project.workspace.build / LOCK_FILE
-    with held(lock), pytest.raises(ProjectLocked) as refused:
+    with held(project.workspace.build), pytest.raises(ProjectLocked) as refused:
         project.cue()
     assert refused.value.code is ErrorCode.LOCKED
     assert "process 1, run abc" in str(refused.value)
 
 
 @pytest.mark.usefixtures("fake_stages")
-def test_a_lock_file_nobody_holds_is_taken_and_reported(tmp_path: Path) -> None:
+def test_a_note_nobody_holds_is_taken_and_reported(tmp_path: Path) -> None:
     """A caller cannot clear a file it was never told about, so this is a line and not a refusal."""
     project = a_project(tmp_path)
-    lock = project.workspace.build / LOCK_FILE
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text("999999 gone\n", encoding="utf-8")
+    note = project.workspace.build / OWNER_FILE
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text("999999 gone\n", encoding="utf-8")
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
     assert any(isinstance(line, Log) and line.level is Level.WARNING for line in seen)
+    assert not note.exists()
+
+
+@pytest.mark.usefixtures("fake_stages")
+def test_a_note_that_is_a_link_is_never_followed(tmp_path: Path) -> None:
+    """A project may ship its build directory, so a note it planted cannot quote or overwrite a file elsewhere."""
+    project = a_project(tmp_path)
+    elsewhere = tmp_path / "elsewhere.txt"
+    elsewhere.write_text("7 secret\n", encoding="utf-8")
+    note = project.workspace.build / OWNER_FILE
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.symlink_to(elsewhere)
+    with pytest.raises(InputError, match="leads outside the build directory") as refused:
+        project.cue()
+    assert "secret" not in str(refused.value)
+    assert elsewhere.read_text(encoding="utf-8") == "7 secret\n"
 
 
 HOLDER = """
 import os, sys
-from decktalk.project import _hold, _write_owner
-handle = open(sys.argv[1], "a+", encoding="utf-8")
-assert _hold(handle)
-_write_owner(handle, f"{os.getpid()} crashed\\n")
+from pathlib import Path
+from filelock import FileLock
+from decktalk.project import LOCK_FILE, OWNER_FILE, _write_owner
+build = Path(sys.argv[1])
+lock = FileLock(build / LOCK_FILE)
+lock.acquire()
+_write_owner(build / OWNER_FILE, f"{os.getpid()} crashed\\n")
 print("held", flush=True)
 sys.stdin.read()
 """
@@ -404,9 +414,9 @@ sys.stdin.read()
 def test_the_system_frees_the_lock_of_a_writer_that_was_killed(tmp_path: Path) -> None:
     """A killed holder releases nothing itself, and the operating system releases the lock for it."""
     project = a_project(tmp_path)
-    lock = project.workspace.build / LOCK_FILE
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    command = [sys.executable, "-c", HOLDER, str(lock)]
+    build = project.workspace.build
+    build.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, "-c", HOLDER, str(build)]
     with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as holder:
         try:
             assert holder.stdout is not None
@@ -418,36 +428,7 @@ def test_the_system_frees_the_lock_of_a_writer_that_was_killed(tmp_path: Path) -
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    assert any(isinstance(line, Log) and LOCK_FILE in line.message for line in seen)
-
-
-@dataclass
-class FakeMsvcrt:
-    """Windows' byte-range lock, kept as a set of held offsets so the Windows path runs anywhere."""
-
-    LK_NBLCK: int = 2
-    LK_UNLCK: int = 0
-    held: set[tuple[int, int]] = field(default_factory=set)
-
-    def locking(self, fd: int, mode: int, nbytes: int, /) -> None:
-        region = (os.lseek(fd, 0, os.SEEK_CUR), nbytes)
-        if mode == self.LK_UNLCK:
-            self.held.discard(region)
-            return
-        if region in self.held:
-            raise OSError("the region is locked")
-        self.held.add(region)
-
-
-def test_the_windows_lock_refuses_a_second_holder_and_frees_on_release(tmp_path: Path) -> None:
-    """Windows locks a byte range, so the lock is the first byte and a held one refuses at once."""
-    msvcrt = FakeMsvcrt()
-    lock = tmp_path / LOCK_FILE
-    with lock.open("a+", encoding="utf-8") as first, lock.open("a+", encoding="utf-8") as second:
-        assert project_module._hold_windows(first, msvcrt)
-        assert not project_module._hold_windows(second, msvcrt)
-        project_module._release_windows(first, msvcrt)
-        assert project_module._hold_windows(second, msvcrt)
+    assert any(isinstance(line, Log) and OWNER_FILE in line.message for line in seen)
 
 
 def test_a_cancel_token_reaches_the_stage_that_checks_it(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
