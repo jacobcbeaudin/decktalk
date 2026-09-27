@@ -8,13 +8,19 @@ JSON payload, because a secret is named by its variable name and never by its va
 this module hands back is a `Secret` that has to be revealed on purpose.
 
 The environment is an argument rather than something this module reaches for, so two projects in one
-process cannot read each other's, and `Machine.from_environment` stays the only place `os.environ` is
-read at all.
+process cannot read each other's, and the machine stays the only reader of `os.environ`.
+
+Whether `.env` is read at all is the machine's decision, bound for each run through `reading_dotenv`.
+A machine built from the process reads it, because it belongs to the author at the keyboard. A
+machine a host built by hand does not, because a tenant's upload could otherwise carry a `.env` that
+supplies a key, a voice id or a switch the host never gave it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -28,6 +34,19 @@ PLACEHOLDER_MARK = "<"
 
 COMMENT_MARK = " #"
 """What ends an unquoted value, so a trailing note never becomes part of a credential."""
+
+DOTENV: ContextVar[bool] = ContextVar("decktalk_dotenv", default=True)
+"""Whether the machine whose run is in progress reads a project's `.env`, which `reading_dotenv` sets."""
+
+
+@contextmanager
+def reading_dotenv(allowed: bool) -> Iterator[None]:
+    """Read a project's `.env` or leave it unread while this is open, as the running machine decided."""
+    token = DOTENV.set(allowed)
+    try:
+        yield
+    finally:
+        DOTENV.reset(token)
 
 
 def read_dotenv(path: Path) -> dict[str, str]:
@@ -83,8 +102,13 @@ class Env:
         return cast("dict[str, str]", values)
 
     def get(self, name: str) -> Secret:
-        """The value of one variable, or an empty `Secret` when it is unset or still a placeholder."""
-        value = self.environ.get(name) or self.file_values.get(name, "")
+        """The value of one variable, or an empty `Secret` when it is unset or still a placeholder.
+
+        The machine's decision about `.env` is asked at every lookup rather than when the project was
+        opened, because a project is opened before the run whose machine decides it.
+        """
+        stated = self.file_values if DOTENV.get() else {}
+        value = self.environ.get(name) or stated.get(name, "")
         return Secret("" if value.startswith(PLACEHOLDER_MARK) else value, name)
 
     def has(self, *names: str) -> bool:
@@ -104,4 +128,4 @@ class Env:
         return values
 
 
-__all__ = ["Env", "read_dotenv"]
+__all__ = ["Env", "read_dotenv", "reading_dotenv"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from decktalk import machine as machine_module
-from decktalk.errors import ApprovalRequired, Cancel, Cancelled, ErrorCode
+from decktalk.errors import ApprovalRequired, Cancel, Cancelled, ErrorCode, InputError
 from decktalk.events import Event, Level, Log, RunDone, RunStart, StageDone, StageStart
 from decktalk.findings import (
     Applicability,
@@ -36,11 +37,15 @@ from decktalk.machine import (
 )
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
+from decktalk.project import open as open_project
 from decktalk.results import Layer, Scope, Spend, SpendState, StatusResult, Voicing
-from decktalk.settings import ToolsConfig
+from decktalk.settings import BY_ID, ToolsConfig
+from decktalk.speech import VoiceContext, get_provider
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
 from support.paths import REPO
+
+from .conftest import FakeVoice
 
 
 def a_machine(tmp_path: Path, **environ: str) -> Machine:
@@ -338,20 +343,138 @@ def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest
     assert here.tables == {}
 
 
-def test_a_provider_a_caller_supplied_answers_before_the_shipped_one(tmp_path: Path) -> None:
-    """The map is a field, so two projects in one process cannot swap each other's voice."""
-    mine = object()
-    here = a_machine(tmp_path)
-    assert object.__getattribute__(here, "providers") == {}
-    swapped = Machine(
-        environ={},
-        tables={},
-        config_path=tmp_path / "c.toml",
-        cwd=tmp_path,
-        toolchain=Toolchain(),
-        providers={"elevenlabs": mine},
+# ---- a machine a host builds -----------------------------------------------------------------
+
+HOST_SECRETS = {"ELEVENLABS_API_KEY": "sk-host-owned", "ELEVENLABS_VOICE_ID": "house-voice"}
+"""What a host hands its voice job: the key and the voice, and nothing else from its own process."""
+
+
+def a_host(tmp_path: Path, **choices: object) -> Machine:
+    """A machine a host built from values it chose, with the voice job's two variables by default."""
+    values: dict[str, object] = {
+        "environ": HOST_SECRETS,
+        "config_path": tmp_path / "host" / "machine.toml",
+        "cwd": tmp_path,
+        "cache_dir": tmp_path / "host" / "cache",
+        **choices,
+    }
+    return Machine.of(**values)  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail the test the moment anything opens a connection or looks up a host name."""
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("a host-supplied voice must never reach the network")
+
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket.socket, "connect_ex", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+
+
+def a_starter(tmp_path: Path, here: Machine) -> Path:
+    root = tmp_path / "tenant"
+    init(root, machine=here, skills=False)
+    return root
+
+
+def test_a_host_machine_reads_nothing_from_the_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "the-process-file.toml"))
+    monkeypatch.setenv("DECKTALK_ALLOW_ANY_API_BASE", "1")
+    monkeypatch.setenv("DECKTALK_TOOLS_TIMEOUT_SECONDS", "11")
+    here = a_host(tmp_path)
+    assert here.environ == HOST_SECRETS
+    assert here.config_path == tmp_path / "host" / "machine.toml"
+    assert here.cache_dir == tmp_path / "host" / "cache"
+    assert here.allow_any_api_base is False and here.dotenv is False
+    assert here.toolchain.tools.timeout_seconds == BY_ID["tools.timeout_seconds"].default
+
+
+def test_a_project_opened_on_a_host_machine_keeps_the_hosts_overrides(tmp_path: Path) -> None:
+    """A host enforces the page policy through its machine, so a caller's own override must not drop it."""
+    here = a_host(tmp_path, overrides=[("record.page_policy", "untrusted")])
+    project = open_project(a_starter(tmp_path, here), machine=here, overrides=["video.crf=20"])
+    assert project.settings.record.page_policy == "untrusted"
+    assert project.settings.video.crf == 20
+
+
+@pytest.mark.usefixtures("no_network", "fake_ffmpeg")
+def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> None:
+    """A host that hands its machine a fake voice must never have a request reach the real one."""
+    voice = FakeVoice()
+    contexts: list[VoiceContext] = []
+
+    def build(context: VoiceContext) -> FakeVoice:
+        contexts.append(context)
+        return voice
+
+    here = a_host(tmp_path, providers={"elevenlabs": build})
+    project = open_project(a_starter(tmp_path, here), machine=here)
+    result = project.narrate(voice=Voicing.PAID)
+    assert result.ok
+    assert voice.requests, "the host's voice was never asked for a take"
+    assert {request.voice_id for request in voice.requests} == {"house-voice"}
+    assert [context.allow_any_api_base for context in contexts] == [False] * len(contexts)
+
+
+@pytest.mark.usefixtures("no_network")
+def test_a_host_machine_answers_no_voice_its_host_left_out(tmp_path: Path) -> None:
+    here = a_host(tmp_path, providers={"house": lambda _context: FakeVoice()})
+    with here.run(), pytest.raises(InputError, match="not a voice this machine answers for"):
+        get_provider("elevenlabs", a_context())
+
+
+def test_two_machines_in_one_process_answer_with_their_own_voices(tmp_path: Path) -> None:
+    first, second = FakeVoice(name="first"), FakeVoice(name="second")
+    one = a_host(tmp_path, providers={"elevenlabs": lambda _context: first})
+    two = a_host(tmp_path, providers={"elevenlabs": lambda _context: second})
+    with one.run():
+        with two.run():
+            assert get_provider("elevenlabs", a_context()) is second
+        assert get_provider("elevenlabs", a_context()) is first
+
+
+def test_the_machines_switch_is_stamped_on_every_voice_it_builds(tmp_path: Path) -> None:
+    """A stage cannot widen where the key goes, and neither can a context built without the machine."""
+    seen: list[VoiceContext] = []
+    here = a_host(tmp_path, providers={"elevenlabs": seen.append}, allow_any_api_base=True)
+    with here.run():
+        get_provider("elevenlabs", a_context())
+    assert seen[0].allow_any_api_base is True
+
+
+@pytest.mark.usefixtures("no_network")
+def test_a_tenants_env_file_is_never_read_under_a_host_machine(tmp_path: Path) -> None:
+    """An upload could carry a `.env`, and the key it names would then pay for the tenant's take."""
+    here = a_host(tmp_path, environ={}, providers={"elevenlabs": lambda _context: FakeVoice()})
+    root = a_starter(tmp_path, here)
+    (root / ".env").write_text("ELEVENLABS_API_KEY=sk-tenant\nELEVENLABS_VOICE_ID=tenant-voice\n", encoding="utf-8")
+    project = open_project(root, machine=here)
+    with pytest.raises(InputError, match="ELEVENLABS_VOICE_ID is not set"):
+        project.narrate(voice=Voicing.PAID)
+
+
+@pytest.mark.usefixtures("no_network", "fake_ffmpeg")
+def test_the_authors_own_env_file_is_read_under_a_machine_that_allows_it(tmp_path: Path) -> None:
+    voice = FakeVoice()
+    here = a_host(tmp_path, environ={}, providers={"elevenlabs": lambda _context: voice}, dotenv=True)
+    root = a_starter(tmp_path, here)
+    (root / ".env").write_text("ELEVENLABS_API_KEY=sk-author\nELEVENLABS_VOICE_ID=author-voice\n", encoding="utf-8")
+    assert open_project(root, machine=here).narrate(voice=Voicing.PAID).ok
+    assert {request.voice_id for request in voice.requests} == {"author-voice"}
+
+
+def a_context() -> VoiceContext:
+    """A context no machine stamped, which is what a stage builds from its project's values."""
+    return VoiceContext(
+        secrets=None,  # type: ignore[arg-type]
+        api_base="https://api.elevenlabs.io/v1",
+        context_chars=1,
+        speech_timeout_seconds=1,
+        sound_timeout_seconds=1,
     )
-    assert swapped.provider("elevenlabs") is mine
 
 
 def test_an_override_reaches_the_machine_by_its_own_scope(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -493,7 +616,11 @@ def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_ma
         assert apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False).applied
     assert asked["argv"] == [sys.executable, "-m", "decktalk", "install"]
     assert asked["timeout"] == FIX_TIMEOUT_SECONDS
-    assert asked["env"] == {"ONLY_THIS": "1"}
+    assert asked["env"] == {
+        "ONLY_THIS": "1",
+        "DECKTALK_CONFIG": str(here.config_path),
+        "DECKTALK_TOOLS_CACHE_DIR": str(here.cache_dir),
+    }
 
 
 def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(

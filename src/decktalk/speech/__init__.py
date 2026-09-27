@@ -13,14 +13,23 @@ A provider is built from a `VoiceContext`, which carries values and never a proj
 knows nothing about `decktalk.toml`, the build directory or the stages, and a provider is built in a
 test from four numbers and a source of secrets.
 
+The registry a name is looked up in belongs to the machine. `PROVIDERS` is the table DeckTalk ships,
+and a machine a host built by hand may carry its own table instead. The machine binds its table for
+the length of every run it opens, through `voicing`, so a stage that asks `get_provider` for a voice
+gets the one the machine running it answers with, and two machines in one process cannot swap each
+other's voice. The same binding carries the machine's decision about where its key may go, which is
+stamped onto every context a provider is built from.
+
 The voice id is a published name rather than a credential. It names which voice reads the script,
 the way a model name names which model does, and it travels in the request and in the take hash.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from ..errors import InputError
@@ -93,19 +102,49 @@ def _elevenlabs(context: VoiceContext) -> SpeechProvider:
 
 
 PROVIDERS: dict[str, ProviderFactory] = {"elevenlabs": _elevenlabs}
-"""The providers a `[voice] provider` value may name, which is internal and never an extension point.
+"""The providers DeckTalk ships, which is the table a machine answers with unless its host gave another.
 
 The list is written out rather than filled by an import for its side effect, so the whole of it is
 readable here, and a test replaces one entry to run a stage without spending anything.
 """
 
 
+@dataclass(frozen=True)
+class Voices:
+    """The voices one machine answers with, and whether its key may go to a host other than ElevenLabs."""
+
+    factories: Mapping[str, ProviderFactory]
+    allow_any_api_base: bool = False
+
+
+SHIPPED = Voices(factories=PROVIDERS)
+"""What a caller that holds no machine is answered with: the shipped table, with the key kept on ElevenLabs."""
+
+BOUND: ContextVar[Voices | None] = ContextVar("decktalk_voices", default=None)
+"""The voices of the machine whose run is in progress, which `voicing` sets and `get_provider` reads."""
+
+
+@contextmanager
+def voicing(voices: Voices) -> Iterator[None]:
+    """Answer every provider lookup from these voices while this is open, which a machine's run does."""
+    token = BOUND.set(voices)
+    try:
+        yield
+    finally:
+        BOUND.reset(token)
+
+
 def get_provider(name: str, context: VoiceContext) -> SpeechProvider:
-    """The provider registered under `name`, built for this context."""
-    factory = PROVIDERS.get(name)
+    """The provider the running machine registers under `name`, built for this context.
+
+    The machine's own decision about where its key may go replaces whatever the context says, so a
+    stage cannot widen it and a context built without asking the machine cannot either.
+    """
+    voices = BOUND.get() or SHIPPED
+    factory = voices.factories.get(name)
     if factory is None:
         raise InputError(
-            f"[voice] provider = {name!r} is not a voice DeckTalk knows.",
-            hint=f"The providers it knows are {', '.join(sorted(PROVIDERS))}.",
+            f"[voice] provider = {name!r} is not a voice this machine answers for.",
+            hint=f"The providers it knows are {', '.join(sorted(voices.factories))}.",
         )
-    return factory(context)
+    return factory(replace(context, allow_any_api_base=voices.allow_any_api_base))

@@ -88,6 +88,10 @@ def open(
 
     The machine is made once when a caller passes none, so a script that opens two projects should
     make one itself and hand it to both, which is what keeps the toolchain and the stream shared.
+
+    A machine a host built may carry overrides of its own, such as the page policy it enforces on
+    every project. A project opened on it starts from those, and `overrides` come after them, so a
+    caller adds to what the machine says rather than silently replacing it.
     """
     pairs = tuple(overrides)
     here = machine or Machine.from_environment(overrides=_split(pairs))
@@ -96,7 +100,7 @@ def open(
     root = root if root.is_absolute() else here.cwd / root
     if root.is_file():
         root = root.parent
-    return Project(here, root, overrides=pairs or here.overrides)
+    return Project(here, root, overrides=pairs if machine is None else (*here.overrides, *pairs))
 
 
 def _split(overrides: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
