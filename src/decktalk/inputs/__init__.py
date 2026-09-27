@@ -24,7 +24,8 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -71,9 +72,6 @@ class Inputs:
     layers: Layers
     notes: tuple[str, ...] = ()
     """Every sentence the load wanted to say, which a caller reports as a line rather than printing."""
-
-    _script: list[tuple[Segment, ...]] = field(default_factory=list, repr=False, compare=False)
-    """The parsed script, kept in a one-slot list so a frozen value can still read the file once."""
 
     @classmethod
     def load(
@@ -158,15 +156,18 @@ class Inputs:
 
     def script(self) -> tuple[Segment, ...]:
         """Every section of `script.md`, checked against `decktalk.toml`, parsed once per project."""
-        if not self._script:
-            written, _spoken = read_script(
-                self.script_path,
-                self.root,
-                declared={section.number for section in self.document.sections},
-                clips=self.document.clip_numbers,
-            )
-            self._script.append(tuple(written))
-        return self._script[0]
+        return self._parsed
+
+    @cached_property
+    def _parsed(self) -> tuple[Segment, ...]:
+        """The script as `script` answers it, kept on this value alone so a replaced one reads it afresh."""
+        written, _spoken = read_script(
+            self.script_path,
+            self.root,
+            declared={section.number for section in self.document.sections},
+            clips=self.document.clip_numbers,
+        )
+        return tuple(written)
 
     def spoken(self) -> tuple[Segment, ...]:
         """Every section the voice reads, which is every one that does not play a clip."""

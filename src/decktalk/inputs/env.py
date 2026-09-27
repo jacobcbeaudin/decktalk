@@ -22,6 +22,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import cast
 
@@ -85,21 +86,16 @@ class Env:
     def __init__(self, file: Path, environ: Mapping[str, str]) -> None:
         object.__setattr__(self, "file", file)
         object.__setattr__(self, "_environ", environ)
-        object.__setattr__(self, "_file_values", None)
 
     @property
     def environ(self) -> Mapping[str, str]:
         """The environment this project reads, which is whatever the machine was built from."""
         return cast("Mapping[str, str]", object.__getattribute__(self, "_environ"))
 
-    @property
+    @cached_property
     def file_values(self) -> dict[str, str]:
         """What `.env` holds, parsed on the first question and kept, so the file is read once."""
-        values = object.__getattribute__(self, "_file_values")
-        if values is None:
-            values = read_dotenv(self.file)
-            object.__setattr__(self, "_file_values", values)
-        return cast("dict[str, str]", values)
+        return read_dotenv(self.file)
 
     def get(self, name: str) -> Secret:
         """The value of one variable, or an empty `Secret` when it is unset or still a placeholder.

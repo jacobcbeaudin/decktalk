@@ -18,6 +18,7 @@ import sys
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -120,7 +121,6 @@ class Session:
             events=flags.events,
             quiet=flags.quiet,
         )
-        self._machine: Machine | None = None
         self._overrides: tuple[str, ...] = ()
 
     # ---- what the command opens -------------------------------------------------------------
@@ -129,12 +129,10 @@ class Session:
         """Hold this run's `--set` pairs, which are validated by the loader the first call opens."""
         self._overrides = tuple(overrides)
 
-    @property
+    @cached_property
     def machine(self) -> Machine:
         """This machine, read once, which is the only reading of the environment there is."""
-        if self._machine is None:
-            self._machine = Machine.from_environment(overrides=_split(self._overrides))
-        return self._machine
+        return Machine.from_environment(overrides=_split(self._overrides))
 
     def project(self) -> Project:
         """The project this run is about, opened on this machine with this run's overrides."""
