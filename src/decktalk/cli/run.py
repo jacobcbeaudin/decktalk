@@ -236,7 +236,6 @@ def build(
             max_cost=session.max_cost,
             force=force,
             replace_voiced=_replacing(session, replace_voiced),
-            soundscape=Stage.SOUNDSCAPE not in (skip or ()),
             allow=session.allowed,
             stop_on=session.fail_on.stops_on,
             cancel=session.cancel,

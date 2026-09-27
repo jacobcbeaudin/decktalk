@@ -114,6 +114,7 @@ def test_build_stops_where_the_exit_code_would_fail_and_carries_on_past_what_is_
     asked = made.called("build")
     assert asked["allow"] == frozenset({Code.CUE_UNKNOWN})
     assert asked["stop_on"] is Certainty.CERTAIN
+    assert "soundscape" not in asked
 
 
 @pytest.mark.parametrize(("flag", "stops"), [(FailOn.ANY, Certainty.UNCERTAIN), (FailOn.NEVER, None)])

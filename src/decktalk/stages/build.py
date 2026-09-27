@@ -102,7 +102,6 @@ def build(
     only: Sequence[int] | None = None,
     force: bool = False,
     replace_voiced: bool = False,
-    soundscape: bool = True,
     loudness: bool = True,
     strict: bool = False,
     allow: Collection[Code] = (),
@@ -121,9 +120,14 @@ def build(
     certain finding, `Certainty.UNCERTAIN` stops on any finding, and None lets every stage run so
     that `verify` measures what the earlier stages made. The stages after a stop are reported as
     skipped and the result names the stage in `stopped_at`.
+
+    Whether the film carries the soundscape is read from `skip`, because a run told to leave the
+    stage out is a run that does not want its sound, and a second knob for the same decision would
+    let a caller skip the stage and still be refused for the file it never asked for.
     """
     started = clock()
     plan = _plan(stages, skip)
+    soundscape = Stage.SOUNDSCAPE not in skip
     _require_what_the_plan_skips(inputs, plan, soundscape=soundscape)
     options: dict[str, object] = {
         "only": only,

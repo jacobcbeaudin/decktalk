@@ -327,7 +327,6 @@ class Project:
         max_cost: float | None = None,
         force: bool = False,
         replace_voiced: bool = False,
-        soundscape: bool = True,
         loudness: bool = True,
         strict: bool = False,
         allow: Collection[Code] = (),
@@ -338,11 +337,12 @@ class Project:
 
         A stage whose findings reach `stop_on` stops the run, unless their code is in `allow`, and
         the result still comes back with its findings, its spend and the stage it stopped after in
-        `stopped_at`. None as `stop_on` runs every stage whatever it finds.
+        `stopped_at`. None as `stop_on` runs every stage whatever it finds. The film carries the
+        soundscape unless `skip` names that stage, which is the one knob for that decision.
         """
         return self._call("build", BuildResult, cancel=cancel, voice=voice, max_cost=max_cost, stages=stages, skip=skip,
-                          only=only, force=force, replace_voiced=replace_voiced, soundscape=soundscape,
-                          loudness=loudness, strict=strict, allow=frozenset(allow), stop_on=stop_on)  # fmt: skip
+                          only=only, force=force, replace_voiced=replace_voiced, loudness=loudness, strict=strict,
+                          allow=frozenset(allow), stop_on=stop_on)  # fmt: skip
 
     # ---- the six that report or cut ---------------------------------------------------------
 

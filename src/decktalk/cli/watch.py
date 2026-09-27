@@ -86,7 +86,6 @@ def _once(
                 only=only,
                 voice=Voicing.PLACEHOLDER,
                 force=force,
-                soundscape=Stage.SOUNDSCAPE not in skip,
                 allow=session.allowed,
                 stop_on=session.fail_on.stops_on,
                 cancel=session.cancel,

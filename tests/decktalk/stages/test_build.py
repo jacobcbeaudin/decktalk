@@ -343,6 +343,33 @@ def test_a_run_that_starts_past_a_partial_recording_is_refused(inputs: Inputs, w
     assert calls.names == []
 
 
+def _with_a_soundscape(inputs: Inputs) -> Inputs:
+    """The same project with one generated ambience bed declared and nothing generated yet."""
+    toml = inputs.root / "decktalk.toml"
+    toml.write_text(TOML + '\n[soundscape.ambience]\ntext = "a quiet room"\n', encoding="utf-8")
+    inputs.workspace.narrate_dir.mkdir(parents=True)
+    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    inputs.workspace.recordings_dir.mkdir(parents=True)
+    for section in inputs.document.page_sections:
+        inputs.workspace.recording(section.key).write_bytes(b"")
+    return Inputs.load(inputs.root, environ={})
+
+
+def test_a_run_that_skips_the_soundscape_assembles_without_it(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    """One knob decides the sound: a run told to skip the stage neither needs its files nor mixes them."""
+    declared = _with_a_soundscape(inputs)
+    build(declared, watched.run, stages=[Stage.ASSEMBLE], skip=[Stage.SOUNDSCAPE])
+    assert calls.options("assemble")["soundscape"] is False
+
+
+def test_a_run_that_does_not_skip_the_soundscape_needs_it(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    declared = _with_a_soundscape(inputs)
+    with pytest.raises(NotBuiltError) as refused:
+        build(declared, watched.run, stages=[Stage.ASSEMBLE])
+    assert "decktalk soundscape" in (refused.value.hint or "")
+    assert calls.names == []
+
+
 def test_a_paid_run_draws_the_storyboard_before_it_narrates(
     inputs: Inputs, make_run: Callable[..., Watched], calls: Calls
 ) -> None:
