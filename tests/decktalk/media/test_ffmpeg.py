@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -232,23 +233,52 @@ def hostile_playlist(root: Path, *, absolute: bool) -> tuple[Path, Path]:
 @pytest.mark.media
 @pytest.mark.parametrize("absolute", [True, False])
 def test_a_clip_that_is_a_playlist_naming_another_tenants_film_is_refused(tmp_path, absolute):
-    """0.5.0 probed the playlist and read the other tenant's film through it, which is a cross-tenant read."""
+    """0.5.0 probed the playlist and read the other tenant's film through it, which is a cross-tenant read.
+
+    The refusal is the measure: 0.5.0 answered with the film's length, where this answers with no length.
+    """
     clip, _outside = hostile_playlist(tmp_path, absolute=absolute)
-    with pytest.raises(ToolError, match="not on whitelist"):
+    with pytest.raises(ToolError):
         ffmpeg.probe_duration(clip)
-    with pytest.raises(ToolError, match="not on whitelist"):
+    with pytest.raises(ToolError):
         ffmpeg.stderr(*ffmpeg.source(clip), "-f", "null", "-")
 
 
 @pytest.mark.media
-def test_a_playlist_that_names_a_host_is_refused_before_anything_is_asked_of_it(tmp_path):
+def test_a_playlist_that_names_a_host_reaches_nothing(tmp_path):
+    """The segment is a `.ts` on a listener this test holds, so what is measured is the request that never came.
+
+    ffmpeg's own rule already keeps a playlist read from a file off the network, which 0.5.0 relied on.
+    The closed set of demuxers refuses the playlist before that rule is asked, and this holds it there.
+    """
+    asked: list[str] = []
+
+    class Listener(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            asked.append(self.path)
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *_args: object) -> None:
+            """Quiet, because the list above is the whole report."""
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Listener)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
     clip = tmp_path / "music.m3u8"
     clip.write_text(
-        "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:1.0,\nhttp://169.254.169.254/latest/meta-data\n#EXT-X-ENDLIST\n",
+        f"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:1.0,\n"
+        f"http://127.0.0.1:{server.server_address[1]}/segment.ts\n#EXT-X-ENDLIST\n",
         encoding="utf-8",
     )
-    with pytest.raises(ToolError, match="not on whitelist"):
-        ffmpeg.probe_duration(clip)
+    try:
+        with pytest.raises(ToolError):
+            ffmpeg.probe_duration(clip)
+        with pytest.raises(ToolError):
+            ffmpeg.stderr(*ffmpeg.source(clip), "-f", "null", "-")
+        assert asked == []
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 # ---- a call that has to stop ------------------------------------------------------------------------

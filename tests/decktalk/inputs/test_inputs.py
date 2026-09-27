@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -457,10 +458,14 @@ def test_a_script_linked_out_of_the_project_is_refused_before_a_line_is_read(tmp
 
 
 def test_a_cue_file_linked_out_of_the_project_is_refused(tmp_path: Path) -> None:
-    root, secret = _outside(tmp_path)
-    (root / "cues.json").symlink_to(secret)
-    with pytest.raises(InputError, match="outside the project"):
+    """The file it links to is a valid cue file, so the refusal is the link's and not the parser's."""
+    root, _secret = _outside(tmp_path)
+    elsewhere = tmp_path / "host-cues.json"
+    elsewhere.write_text(json.dumps({"sections": {"1": {"cues": []}}}), encoding="utf-8")
+    (root / "cues.json").symlink_to(elsewhere)
+    with pytest.raises(InputError) as refused:
         Inputs.load(root, environ={}).cues()
+    assert refused.value.location is not None and refused.value.location.file == Path("cues.json")
 
 
 def test_a_page_linked_out_of_the_project_is_refused(tmp_path: Path) -> None:

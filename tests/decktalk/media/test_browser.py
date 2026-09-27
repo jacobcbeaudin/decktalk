@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import get_args
+from typing import Any, get_args
 
 import pytest
 from playwright.sync_api import Error as PlaywrightError
@@ -545,25 +545,48 @@ def test_no_launch_has_a_page_policy_to_fall_back_on(opener):
     assert inspect.signature(opener).parameters["policy"].default is inspect.Parameter.empty
 
 
+LATE_SECONDS = 2.0
+"""How long a channel is given to land after the page has tried it, which the trusted control always meets."""
+
+LOCAL_NETWORK_ACCESS_OFF = "--disable-features=LocalNetworkAccessChecks"
+"""The switch that stops Chromium refusing a loopback address on its own, so the policy is what refuses it.
+
+With Chromium's own check on, a page at the project's origin reaches no listener on this machine
+under either policy, and a test of the policy would pass with the policy switched off.
+"""
+
+CHANNELS = {"/fetch", "/img", "/beacon", "/ws", "/worker", "udp"}
+"""What the listeners record for each channel the page opens, one name per channel."""
+
+
 @pytest.mark.browser
-def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_path):
+@pytest.mark.parametrize("policy", ["trusted", "untrusted"])
+def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_path, monkeypatch, policy):
     """Routing alone let a WebSocket open and WebRTC send STUN packets, so each channel is tried here.
 
     The listeners sit on this machine, so a channel that reached one is a channel that could reach a
-    cloud metadata address from a render host.
+    cloud metadata address from a render host. The trusted page is the control: every channel reaches
+    its listener there, so a channel the untrusted page does not reach is one the policy refused.
     """
-    hits: list[str] = []
+    launched = browser.launch_options
+
+    def unchecked(chosen: str) -> dict[str, Any]:
+        options = launched(chosen)
+        return options | {"args": [*options.get("args", []), LOCAL_NETWORK_ACCESS_OFF]}
+
+    monkeypatch.setattr(browser, "launch_options", unchecked)
+    hits: set[str] = set()
 
     class Listener(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            hits.append(f"http {self.path}")
+            hits.add(self.path)
             self.send_response(200)
             self.end_headers()
 
         do_POST = do_GET
 
         def log_message(self, *_args: object) -> None:
-            """Quiet, because the list above is the whole report."""
+            """Quiet, because the set above is the whole report."""
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Listener)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -575,7 +598,7 @@ def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_p
         while True:
             try:
                 udp.recvfrom(2048)
-                hits.append("udp")
+                hits.add("udp")
             except TimeoutError:
                 continue
             except OSError:
@@ -607,16 +630,19 @@ window.tried = (async () => {{
         encoding="utf-8",
     )
     try:
-        with browser.chromium(policy=browser.UNTRUSTED) as real:
+        with browser.chromium(policy=policy) as real:
             page, assets = browser.open_page(real, Allowed.of(tmp_path, ["deck"]), width=400, height=300)
             page.goto(page_url("deck/index.html"), wait_until="load")
             assert page.evaluate("() => window.tried") is True
-            time.sleep(0.5)
+            # A beacon and a STUN packet may land after the page is done, so both sides wait as long.
+            deadline = time.monotonic() + LATE_SECONDS
+            while hits != CHANNELS and time.monotonic() < deadline:
+                time.sleep(0.05)
     finally:
         server.shutdown()
         server.server_close()
         udp.close()
-    assert hits == []
+    assert hits == (CHANNELS if policy == "trusted" else set())
     assert f"http://{at}" in assets.external
 
 
