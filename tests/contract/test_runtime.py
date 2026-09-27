@@ -207,14 +207,6 @@ def test_wait_for_holds_ready_until_the_pages_own_condition(page, tmp_path):
     assert not page.errors
 
 
-def test_ready_survives_a_page_promise_that_rejects(page, tmp_path):
-    """A page's own readiness is the page's own business, so a rejection is a warning and not a stall."""
-    body = "<script>DeckTalk.waitFor(Promise.reject(new Error('nope')));</script>"
-    page.goto(deck(tmp_path, "reject.html", body + MARKUP_SCENE))
-    assert page.evaluate("() => window.__decktalk.ready") is True
-    assert "PAGE_WAIT_REJECTED" in codes_of(page)
-
-
 # ---- slides written as markup ------------------------------------------------------------------
 
 
@@ -309,18 +301,6 @@ def test_a_class_moment_joins_the_cue_order_and_declares_its_span(page, tmp_path
     assert entry["cues"]["3.1"] == ["3.1:show", "3.1:cancel"]
     assert entry["spans"]["3.1:cancel"] == pytest.approx(0.3)
     assert warnings_of(page) == []
-
-
-def test_a_class_with_no_phrase_for_it_loses_its_line(page, tmp_path):
-    """The transcript is the reason a class may ship at all, so a class with no phrase is refused."""
-    scene = """
-    <div data-scene="3">
-      <template data-slide="3.1"><p data-in="show" data-class="cancel:stale">h over h</p></template>
-    </div>
-    """
-    page.goto(write_page(tmp_path, "undescribed.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
-    assert "PAGE_CLASS_UNDESCRIBED" in codes_of(page)
 
 
 # ---- the modes -------------------------------------------------------------------------------
@@ -495,18 +475,6 @@ def test_a_staggered_container_spreads_one_cue_across_its_children(page, tmp_pat
     assert span > MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1000
 
 
-def test_a_container_that_staggers_nothing_is_a_mistake(page, tmp_path):
-    """A stagger over no children spreads one entrance over nothing, which is never what was meant."""
-    scene = """
-    <div data-scene="6">
-      <template data-slide="6.1"><p data-in="tiles" data-stagger="0.08" data-describe="nothing">x</p></template>
-    </div>
-    """
-    page.goto(write_page(tmp_path, "empty-stagger.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
-    assert "PAGE_STAGGER_EMPTY" in codes_of(page)
-
-
 def test_steps_brings_each_child_forward_and_steps_the_ones_before_it_back(page, tmp_path):
     """A stepped list is written once and lands in the catalog as though every moment were typed."""
     scene = """
@@ -542,18 +510,6 @@ def test_a_swap_holds_what_it_replaces_until_it_has_arrived(page, tmp_path):
     assert page.evaluate("() => getComputedStyle(document.querySelector('.wrong')).opacity") == "1"
     page.wait_for_function("() => Number(getComputedStyle(document.querySelector('.wrong')).opacity) < 0.5")
     assert warnings_of(page) == []
-
-
-def test_a_swap_with_nothing_to_replace_is_reported(page, tmp_path):
-    """Zero candidates and two candidates are both guesses, and the page refuses to make either."""
-    scene = """
-    <div data-scene="8">
-      <template data-slide="8.1"><p data-in="fix" data-swaps data-describe="the right answer">three</p></template>
-    </div>
-    """
-    page.goto(write_page(tmp_path, "lonely-swap.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
-    assert "PAGE_SWAP_AMBIGUOUS" in codes_of(page)
 
 
 def test_the_crossfade_holds_the_outgoing_slide_at_full_opacity(page, tmp_path):
@@ -793,79 +749,12 @@ def test_a_value_outside_its_published_set_is_reported(page, tmp_path):
     assert {row["attr"] for row in rows} == {"data-in-style", "data-in-seconds"}
 
 
-def test_a_moment_outside_a_slide_names_a_cue_nothing_owns(page, tmp_path):
-    """A moment is qualified by the template it is written in, so one written outside has no owner."""
-    scene = """
-    <div data-scene="14">
-      <p data-in="loose" data-describe="a line outside every slide">loose</p>
-      <template data-slide="14.1"><p data-in="show" data-describe="the line">a line</p></template>
-    </div>
-    """
-    page.goto(write_page(tmp_path, "loose.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
-    assert "PAGE_MOMENT_UNKNOWN" in codes_of(page)
-
-
-def test_an_exit_at_or_before_its_own_entrance_never_plays(page, tmp_path):
-    """The declared order makes the comparison exact, so this is a certain finding and not a guess."""
-    scene = """
-    <div data-scene="14">
-      <template data-slide="14.1">
-        <p data-in="show" data-out="show" data-describe="the line">a line</p>
-      </template>
-    </div>
-    """
-    page.goto(write_page(tmp_path, "order.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
-    assert "PAGE_MOMENT_ORDER" in codes_of(page)
-
-
-def test_a_scene_with_no_template_and_a_template_with_no_id_are_reported(page, tmp_path):
-    """A scene that declares no slide and a slide that declares no id both reach no recording."""
-    scene = '<div data-scene="15"></div><div data-scene="16"><template></template></div>'
-    page.goto(write_page(tmp_path, "empty.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
-    assert set(codes_of(page)) >= {"PAGE_SCENE_EMPTY", "PAGE_SLIDE_NO_ID"}
-
-
-def test_two_templates_claiming_one_slide_id_are_reported(page, tmp_path):
-    """Every moment local to a doubled id has two owners, which no wire id can tell apart."""
-    scene = """
-    <div data-scene="17">
-      <template data-slide="17.1"><p data-in="a" data-describe="one">one</p></template>
-      <template data-slide="17.1"><p data-in="b" data-describe="two">two</p></template>
-    </div>
-    """
-    page.goto(write_page(tmp_path, "doubled.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
-    assert "PAGE_SLIDE_DOUBLED" in codes_of(page)
-
-
-def test_a_template_inside_a_slide_with_no_id_is_reported(page, tmp_path):
-    """A template nothing ever mounts is markup an author believes is on screen and is not."""
-    scene = """
-    <div data-scene="18">
-      <template data-slide="18.1"><template><p>never mounted</p></template></template>
-    </div>
-    """
-    page.goto(write_page(tmp_path, "nested.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
-    assert "PAGE_TEMPLATE_IGNORED" in codes_of(page)
-
-
 def test_a_slide_that_owns_no_listed_cue_is_reported(page, tmp_path):
     """A slide with no cue in the list never appears, so nothing it declares reaches the recording."""
     page.goto(f"{deck(tmp_path, 'unused.html')}?scene=1&t0=0&cues=1.1:ball@0.1")
     page.wait_for_function("() => window.__decktalk.fired.length === 1")
     rows = [row for row in warnings_of(page) if row["code"] == "PAGE_SLIDE_UNUSED"]
     assert {row["slide"] for row in rows} == {"1.2", "1.3"}
-
-
-def test_a_listed_cue_no_slide_owns_is_reported(page, tmp_path):
-    """A cue nothing owns mounts nothing, which is the one failure that empties a whole recording."""
-    page.goto(f"{deck(tmp_path, 'orphan.html')}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:nobody@0.3")
-    page.wait_for_function("() => window.__decktalk.fired.length === 2")
-    assert "PAGE_NO_OWNER" in codes_of(page)
 
 
 def test_katex_refusing_a_value_leaves_the_readable_text(page, tmp_path):
@@ -887,16 +776,82 @@ def test_katex_refusing_a_value_leaves_the_readable_text(page, tmp_path):
     assert page.evaluate("() => document.querySelector('.bad').textContent") == "one over"
 
 
-def test_a_page_that_wants_katex_and_never_gets_it_says_so(page, tmp_path):
-    """A recording of plain TeX is a recording nobody can use, so the page reports the missing typesetter."""
-    scene = """
-    <div data-scene="19">
-      <template data-slide="19.1"><p data-in="show" data-tex="x^2" data-describe="x squared">x squared</p></template>
-    </div>
-    """
-    page.goto(write_page(tmp_path, "katex-missing.html", scene))
+MISTAKES = {
+    # The transcript is the reason a class may ship at all, so a class with no phrase is refused.
+    "class-undescribed": (
+        {"PAGE_CLASS_UNDESCRIBED"},
+        '<template data-slide="3.1"><p data-in="show" data-class="cancel:stale">h over h</p></template>',
+    ),
+    # A stagger over no children spreads one entrance over nothing, which is never what was meant.
+    "stagger-empty": (
+        {"PAGE_STAGGER_EMPTY"},
+        '<template data-slide="3.1"><p data-in="tiles" data-stagger="0.08" data-describe="nothing">x</p></template>',
+    ),
+    # Zero candidates and two candidates are both guesses, and the page refuses to make either.
+    "swap-ambiguous": (
+        {"PAGE_SWAP_AMBIGUOUS"},
+        '<template data-slide="3.1"><p data-in="fix" data-swaps data-describe="the right answer">three</p></template>',
+    ),
+    # A moment is qualified by the template it is written in, so one written outside has no owner.
+    "moment-unknown": (
+        {"PAGE_MOMENT_UNKNOWN"},
+        '<p data-in="loose" data-describe="a line outside every slide">loose</p>'
+        '<template data-slide="3.1"><p data-in="show" data-describe="the line">a line</p></template>',
+    ),
+    # The declared order makes the comparison exact, so this is a certain finding and not a guess.
+    "moment-order": (
+        {"PAGE_MOMENT_ORDER"},
+        '<template data-slide="3.1"><p data-in="show" data-out="show" data-describe="the line">a line</p></template>',
+    ),
+    # A scene that declares no slide and a slide that declares no id both reach no recording.
+    "scene-empty": ({"PAGE_SCENE_EMPTY"}, ""),
+    "slide-no-id": ({"PAGE_SLIDE_NO_ID"}, "<template></template>"),
+    # Every moment local to a doubled id has two owners, which no wire id can tell apart.
+    "slide-doubled": (
+        {"PAGE_SLIDE_DOUBLED"},
+        '<template data-slide="3.1"><p data-in="a" data-describe="one">one</p></template>'
+        '<template data-slide="3.1"><p data-in="b" data-describe="two">two</p></template>',
+    ),
+    # A template nothing ever mounts is markup an author believes is on screen and is not.
+    "template-ignored": (
+        {"PAGE_TEMPLATE_IGNORED"},
+        '<template data-slide="3.1"><template><p>never mounted</p></template></template>',
+    ),
+    # A recording of plain TeX is a recording nobody can use, so the page reports the missing typesetter.
+    "katex-missing": (
+        {"PAGE_KATEX_MISSING"},
+        '<template data-slide="3.1"><p data-in="show" data-tex="x^2" data-describe="x squared">x</p></template>',
+    ),
+}
+"""Every mistake a page can make in its markup alone, as the codes it is reported under and the scene 3
+that makes it. The reason each is a mistake is the comment above its row."""
+
+
+@pytest.mark.parametrize(("codes", "scene"), MISTAKES.values(), ids=MISTAKES.keys())
+def test_a_mistake_in_the_markup_is_reported_under_its_own_code(page, tmp_path, codes, scene):
+    page.goto(write_page(tmp_path, "mistake.html", f'<div data-scene="3">{scene}</div>'))
     page.evaluate("() => window.__decktalk.ready")
-    assert "PAGE_KATEX_MISSING" in codes_of(page)
+    assert set(codes_of(page)) >= codes
+
+
+def test_a_listed_cue_nothing_owns_or_draws_is_reported(page, tmp_path):
+    """A cue nothing owns mounts nothing, which is the one failure that empties a whole recording, and
+    a cue that drifted between the page and the project file is almost never a cue anyone meant."""
+    page.goto(f"{deck(tmp_path, 'orphan.html')}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:nobody@0.3")
+    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+    assert set(codes_of(page)) >= {"PAGE_NO_OWNER", "PAGE_CUE_UNKNOWN"}
+
+
+@pytest.mark.parametrize(
+    ("promise", "code"),
+    [("Promise.reject(new Error('nope'))", "PAGE_WAIT_REJECTED"), ("new Promise(() => {})", "PAGE_WAIT_UNSETTLED")],
+)
+def test_a_page_promise_that_rejects_or_never_settles_does_not_hold_the_page(page, tmp_path, promise, code):
+    """A page's own readiness is the page's own business, and a recording that waited forever would
+    cost more than a page drawn without one condition, so either is a warning and not a stall."""
+    page.goto(deck(tmp_path, "waited.html", f"<script>DeckTalk.waitFor({promise});</script>" + MARKUP_SCENE))
+    assert page.evaluate("() => window.__decktalk.ready") is True
+    assert code in codes_of(page)
 
 
 # ---- the reduced-motion render ------------------------------------------------------------------
@@ -976,18 +931,3 @@ def test_a_class_that_still_animates_under_reduced_motion_is_reported(quiet, tmp
     reported = quiet.evaluate("() => window.__decktalk.warnings")
     assert [row["code"] for row in reported] == ["PAGE_CLASS_NOT_REDUCED"]
     assert reported[0]["cue"] == "21.1:cancel"
-
-
-def test_a_cue_that_draws_nothing_and_runs_nothing_is_reported(page, tmp_path):
-    """A cue that drifted between the page and the project file is almost never a cue anyone meant."""
-    page.goto(f"{deck(tmp_path, 'nothing.html')}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:nobody@0.3")
-    page.wait_for_function("() => window.__decktalk.fired.length === 2")
-    assert "PAGE_CUE_UNKNOWN" in codes_of(page)
-
-
-def test_a_promise_that_never_settles_does_not_hold_the_page(page, tmp_path):
-    """A recording that waited forever would cost more than a page drawn without one condition."""
-    body = "<script>DeckTalk.waitFor(new Promise(() => {}));</script>"
-    page.goto(deck(tmp_path, "unsettled.html", body + MARKUP_SCENE))
-    assert page.evaluate("() => window.__decktalk.ready") is True
-    assert "PAGE_WAIT_UNSETTLED" in codes_of(page)
