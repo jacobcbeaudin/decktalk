@@ -8,15 +8,18 @@ person can see the whole deck before a single second of speech is bought. One pa
 is still a storyboard, which is why the name survives a run that asks for one section.
 
 This module also owns the vocabulary of a frozen state, because a frozen state is what a panel is:
-`Freeze` names one, `slide_cues` reads what a scene declares off the catalog the page published, and
-`write_page` lays a set of panels out. `check` freezes the same states to compare them, so it reads
-all three from here rather than keeping a second spelling of any of them.
+`Freeze` names one, `slide_cues` reads what a scene declares off the catalog the page published,
+`still` draws one or reads it back from the frames the project keeps, and `write_page` lays a set of
+panels out. `check` freezes the same states to compare them, so it reads all four from here rather
+than keeping a second spelling of any of them, and a state either command drew is one the other
+reads back rather than draws again.
 """
 
 from __future__ import annotations
 
 import html
 import re
+import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +33,7 @@ from decktalk.inputs.workspace import Workspace
 from decktalk.machine import Run
 from decktalk.media import MILLISECONDS
 from decktalk.media.browser import await_ready, chromium, open_page, read_report, screenshot
-from decktalk.media.origin import Allowed, page_url
+from decktalk.media.origin import Allowed, Assets, page_url
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import Panel, StoryboardResult
@@ -162,6 +165,31 @@ def reports_of(page: Page, inputs: Inputs, files: Sequence[str]) -> dict[str, Pa
         await_ready(page)
         out[named] = read_report(page, Path(named).stem)
     return out
+
+
+def still(inputs: Inputs, page: Page, assets: Assets, section: PageSection, freeze: Freeze, target: Path) -> bool:
+    """Write one frozen state of one section to `target`, drawing it only when no kept frame is current.
+
+    The frame is keyed on its URL and on everything else that decides how the page draws, and a kept
+    frame is trusted only while every file the page loaded to draw it is unchanged. True means the
+    state was drawn now, and false means it was read back from the frames the project keeps.
+    """
+    url = freeze_url(inputs, section, freeze)
+    settle = settle_milliseconds(inputs)
+    key = inputs.still_key(section.page, url, settle_ms=settle, documents=inputs.documents())
+    target.parent.mkdir(parents=True, exist_ok=True)
+    kept = inputs.stills.find(key)
+    if kept is not None:
+        shutil.copyfile(kept, target)
+        return False
+    screenshot(page, url, target, settle_ms=settle)
+    inputs.stills.keep(key, target, assets.paths)
+    return True
+
+
+def settle_milliseconds(inputs: Inputs) -> int:
+    """How long a page is left to draw itself before its frame is taken, in the unit Chromium waits in."""
+    return int(inputs.settings.record.screenshot_settle_seconds * MILLISECONDS)
 
 
 def freeze_url(inputs: Inputs, section: PageSection, freeze: Freeze) -> str:
@@ -314,11 +342,10 @@ def storyboard(
 def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Selection) -> list[Panel]:
     """Every panel of every named section, drawn by one browser holding one page open."""
     video, cfg = inputs.settings.video, inputs.settings.record
-    settle = int(cfg.screenshot_settle_seconds * MILLISECONDS)
     times = inputs.cue_times()
     drawn: list[Panel] = []
     with chromium(cfg.browser_path) as browser:
-        page, _assets = open_page(
+        page, assets = open_page(
             browser,
             Allowed.of(inputs.root, inputs.served_paths()),
             width=video.width,
@@ -339,26 +366,25 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Sel
                 )
                 continue
             resolved = times.times(section.number) if times is not None else {}
-            drawn += _section_panels(inputs, run, page, section, slides, resolved, chosen, settle=settle)
+            drawn += _section_panels(inputs, run, (page, assets), section, slides, resolved, chosen)
     return drawn
 
 
 def _section_panels(
     inputs: Inputs,
     run: Run,
-    page: Page,
+    opened: tuple[Page, Assets],
     section: PageSection,
     slides: Slides,
     times: Mapping[str, float],
     chosen: Selection,
-    *,
-    settle: int,
 ) -> list[Panel]:
     """Every panel of one section, each still written under that section's own directory."""
     out: list[Panel] = []
+    page, assets = opened
     for freeze, wire, at in panels_of(slides, times, chosen):
         target = inputs.workspace.storyboard_dir / section.key / f"{freeze.label}.png"
-        screenshot(page, freeze_url(inputs, section, freeze), target, settle_ms=settle)
+        still(inputs, page, assets, section, freeze, target)
         run.wrote(target)
         out.append(
             Panel(section=section.number, slide=freeze.slide, cue=wire, at=at, image=inputs.relative(target)),
@@ -387,7 +413,9 @@ __all__ = [
     "reports_of",
     "freeze_url",
     "panels_of",
+    "settle_milliseconds",
     "slide_cues",
+    "still",
     "storyboard",
     "write_page",
 ]

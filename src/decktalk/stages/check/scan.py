@@ -24,8 +24,8 @@ from decktalk.findings import Code, Finding, Location
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
 from decktalk.machine import Run
-from decktalk.media import MILLISECONDS, frames
-from decktalk.media.browser import screenshot
+from decktalk.media import frames
+from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Attr
 from decktalk.pagescan import asset_findings, slide_findings
@@ -34,7 +34,7 @@ from decktalk.settings import Settings
 from decktalk.stages import SECOND_DIGITS, judge
 from decktalk.stages.check.freeze import FramePair, first_state, last_state, plan_frames
 from decktalk.stages.cue.catalog import measured_rows
-from decktalk.stages.storyboard import Freeze, Slides, freeze_url
+from decktalk.stages.storyboard import Freeze, Slides, freeze_url, still
 from decktalk.stages.verify import thin_change
 from decktalk.stages.verify.plan import frame_size
 
@@ -60,17 +60,17 @@ class Sheet:
 
     inputs: Inputs
     run: Run
-    pages: Mapping[str, Page]
-    settle_ms: int
+    pages: Mapping[str, tuple[Page, Assets]]
     drawn: dict[str, Path] = field(default_factory=dict)
     panels: list[Panel] = field(default_factory=list)
 
     def frozen(self, section: PageSection, freeze: Freeze) -> Path:
-        """The file holding one frozen state of one section, drawn now unless it is already there."""
+        """The file holding one frozen state of one section, drawn now or read back from the kept frames."""
         url = freeze_url(self.inputs, section, freeze)
         if url not in self.drawn:
             target = self.inputs.workspace.frames_dir / section.key / f"{freeze.label}.png"
-            screenshot(self.pages[section.page], url, target, settle_ms=self.settle_ms)
+            page, assets = self.pages[section.page]
+            still(self.inputs, page, assets, section, freeze, target)
             self.run.wrote(target)
             self.drawn[url] = target
         return self.drawn[url]
@@ -89,11 +89,6 @@ class Sheet:
                 image=self.inputs.relative(image),
             )
         )
-
-
-def settle_milliseconds(inputs: Inputs) -> int:
-    """How long a page is left to draw itself before its frame is taken, in the unit Chromium waits in."""
-    return int(inputs.settings.record.screenshot_settle_seconds * MILLISECONDS)
 
 
 def share_code(share: float, settings: Settings, *, drawn: bool) -> Code | None:
@@ -298,7 +293,6 @@ __all__ = [
     "origin_findings",
     "page_findings",
     "seam_findings",
-    "settle_milliseconds",
     "share_code",
     "share_message",
     "static_findings",

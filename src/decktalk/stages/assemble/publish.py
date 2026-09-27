@@ -54,6 +54,9 @@ MILLISECONDS = 1000
 WORK_MARK = "."
 """What a work file's name opens with, so nothing a viewer can open is written until the film is whole."""
 
+POSTER_MARK = "poster"
+"""What a poster's still is keyed under before its scene, so it never shares a key with a frozen state."""
+
 STAMP_FORMAT = "%Y%m%d-%H%M"
 """How a timestamped copy is named, which is the date and the minute the copy was taken."""
 
@@ -354,17 +357,25 @@ def poster_query(catalog: tuple[MeasuredScene, ...], section: PageSection) -> di
 def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
     """The film's opening slide as a lossless PNG, drawn by the page rather than taken from the mp4.
 
-    Nothing here may cost a film that is already written, so every refusal the media layer raises is
-    one sentence on the stream and no poster.
+    A poster drawn before from the same page, the same settings and the same loaded files is read
+    back from the frames the project keeps, so an unchanged build opens no browser for it. Nothing
+    here may cost a film that is already written, so every refusal the media layer raises is one
+    sentence on the stream and no poster.
     """
     section = next((s for s in inputs.document.sections if isinstance(s, PageSection)), None)
     if section is None:
         return None
     video = inputs.settings.video
     settle = int(inputs.settings.record.screenshot_settle_seconds * MILLISECONDS)
+    key = inputs.still_key(section.page, POSTER_MARK, section.scene, settle_ms=settle)
+    kept = inputs.stills.find(key)
+    if kept is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(kept, out)
+        return out
     try:
         with browser.chromium(inputs.settings.record.browser_path) as chrome:
-            page, _assets = browser.open_page(
+            page, assets = browser.open_page(
                 chrome,
                 Allowed.of(inputs.root, inputs.served_paths()),
                 width=video.width,
@@ -380,6 +391,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
                          level=Level.WARNING)  # fmt: skip
                 return None
             browser.screenshot(page, page_url(section.page, query), out, settle_ms=settle)
+            inputs.stills.keep(key, out, assets.paths)
     except DeckTalkError as refused:
         run.note(f"The poster could not be drawn ({refused}), so the film is published without one.",
                  level=Level.WARNING)  # fmt: skip

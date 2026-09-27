@@ -22,6 +22,7 @@ from decktalk.errors import Cancel
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain
 from decktalk.media.pagereport import PageReport
+from decktalk.stages import storyboard
 from decktalk.stages.check import scan
 
 TOML = """
@@ -106,8 +107,9 @@ class FakePage:
 
 @dataclass
 class FakeAssets:
-    """What the router recorded, which is the other origins a page reached for."""
+    """What the router recorded, which is the files it served and the other origins a page reached for."""
 
+    paths: list[str] = field(default_factory=list)
     external: list[str] = field(default_factory=list)
 
 
@@ -149,6 +151,6 @@ def drawn(monkeypatch: pytest.MonkeyPatch) -> Drawn:
     monkeypatch.setattr(stage, "chromium", chromium)
     monkeypatch.setattr(stage, "open_page", open_page)
     monkeypatch.setattr(stage, "reports_of", reports_of)
-    monkeypatch.setattr(scan, "screenshot", screenshot)
+    monkeypatch.setattr(storyboard, "screenshot", screenshot)
     monkeypatch.setattr(scan.frames, "changed_images_percent", lambda *_a, **_k: made.share)
     return made

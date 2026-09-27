@@ -36,7 +36,7 @@ from decktalk.inputs.document import PageSection
 from decktalk.inputs.script import Segment
 from decktalk.machine import Run
 from decktalk.media.browser import chromium, open_page
-from decktalk.media.origin import Allowed
+from decktalk.media.origin import Allowed, Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.results import CheckResult, Panel, SectionCues, SpendState
 from decktalk.stages import judge, selects
@@ -48,7 +48,6 @@ from decktalk.stages.check.scan import (
     origin_findings,
     page_findings,
     seam_findings,
-    settle_milliseconds,
     static_findings,
 )
 from decktalk.stages.check.script import script_findings
@@ -271,7 +270,7 @@ def _look(
         return looked
     allowed = Allowed.of(inputs.root, inputs.served_paths())
     with chromium(cfg.browser_path) as browser:
-        opened: dict[str, Page] = {}
+        opened: dict[str, tuple[Page, Assets]] = {}
         for page in files:
             if not inputs.path(page).exists():
                 continue
@@ -284,7 +283,7 @@ def _look(
                 motion=inputs.settings.motion,
                 documents=inputs.documents(),
             )
-            opened[page] = drawn
+            opened[page] = (drawn, assets)
             report = reports_of(drawn, inputs, [page]).get(page)
             looked.findings += _page_judgements(report, assets.external, where=page)
             if report is not None and report.catalog:
@@ -306,11 +305,11 @@ def _sections(
     times: Mapping[int, Mapping[str, float]],
     *,
     looked: Look,
-    opened: Mapping[str, Page],
+    opened: Mapping[str, tuple[Page, Assets]],
     frames: bool,
 ) -> None:
     """Judge every named section from the catalog its page published, and freeze its frames when asked."""
-    sheet = Sheet(inputs, run, opened, settle_milliseconds(inputs))
+    sheet = Sheet(inputs, run, opened)
     slides: dict[int, Slides] = {}
     skipped = opted_out(inputs)
     for section in sections:

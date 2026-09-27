@@ -74,9 +74,17 @@ def catalog(scene: str, moments: dict[str, list[str]]) -> dict:
 
 
 @dataclass
+class Served:
+    """The project files the router answered the page with, which is what a kept still is checked against."""
+
+    paths: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Opened:
     """Every URL a run pointed a page at, and what each page of the project publishes."""
 
+    served: Served = field(default_factory=Served)
     urls: list[str] = field(default_factory=list)
     shots: list[Path] = field(default_factory=list)
     reports: dict[str, PageReport] = field(default_factory=dict)
@@ -94,8 +102,8 @@ def opened(monkeypatch: pytest.MonkeyPatch) -> Opened:
     def chromium(_browser_path: str = "") -> Iterator[object]:
         yield object()
 
-    def open_page(*_args: object, **_kwargs: object) -> tuple[object, object]:
-        return object(), object()
+    def open_page(*_args: object, **_kwargs: object) -> tuple[object, Served]:
+        return object(), made.served
 
     def reports_of(_page: object, _inputs: Inputs, files: Sequence[str]) -> dict[str, PageReport]:
         return {name: made.reports[name] for name in dict.fromkeys(files) if name in made.reports}
@@ -285,3 +293,48 @@ def test_every_still_it_wrote_is_reported(tmp_path: Path, opened: Opened) -> Non
     result = storyboard(inputs, a_run(tmp_path))
     assert Path("build/storyboard.html") in result.written
     assert all(str(one).startswith("build/") for one in result.written)
+
+
+# ---- frames kept by what drew them -------------------------------------------------------------
+
+
+def test_a_second_storyboard_reads_every_still_back_and_draws_none(tmp_path: Path, opened: Opened) -> None:
+    """A repeat storyboard with nothing changed falls to the catalog read, which is all a page must do."""
+    inputs = a_project(tmp_path, cues=CUES)
+    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
+    first = storyboard(inputs, a_run(tmp_path))
+    drawn = len(opened.shots)
+    again = storyboard(inputs, a_run(tmp_path))
+    assert len(opened.shots) == drawn
+    assert again.panels == first.panels
+    assert all((tmp_path / panel.image).is_file() for panel in again.panels)
+
+
+def test_an_edited_page_is_drawn_again(tmp_path: Path, opened: Opened) -> None:
+    inputs = a_project(tmp_path, cues=CUES)
+    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}))
+    storyboard(inputs, a_run(tmp_path), only=[1])
+    drawn = len(opened.shots)
+    (tmp_path / "deck" / "index.html").write_text("<div data-scene='1'>edited</div>", encoding="utf-8")
+    storyboard(inputs, a_run(tmp_path), only=[1])
+    assert len(opened.shots) == 2 * drawn
+
+
+def test_a_changed_file_the_page_loaded_draws_its_stills_again(tmp_path: Path, opened: Opened) -> None:
+    """The page's own markup is unchanged, and the picture it loaded is what moved."""
+    inputs = a_project(tmp_path, cues=CUES)
+    (tmp_path / "deck" / "hero.png").write_bytes(b"one")
+    opened.served.paths.append("deck/hero.png")
+    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}))
+    storyboard(inputs, a_run(tmp_path), only=[1])
+    drawn = len(opened.shots)
+    (tmp_path / "deck" / "hero.png").write_bytes(b"two")
+    storyboard(inputs, a_run(tmp_path), only=[1])
+    assert len(opened.shots) == 2 * drawn
+
+
+def test_a_different_frame_size_is_a_different_still(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, cues=CUES)
+    wide = Inputs.load(tmp_path, environ={}, overrides=("video.width=1280", "video.height=720"))
+    page = inputs.document.page_sections[0].page
+    assert inputs.still_key(page, "url", settle_ms=0) != wide.still_key(page, "url", settle_ms=0)

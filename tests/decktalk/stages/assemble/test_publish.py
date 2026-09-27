@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -262,6 +265,42 @@ def test_a_refusal_from_the_media_layer_costs_the_film_nothing(tmp_path, write_p
     monkeypatch.setattr(browser, "chromium", refuse)
     assert render_poster(inputs, opened.run, tmp_path / "poster.png") is None
     assert any("could not be drawn" in note for note in opened.notes())
+
+
+def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, write_project, open_run, monkeypatch):
+    """A build with nothing changed should not launch Chromium to draw the same picture again."""
+    inputs = write_project(tmp_path)
+    opened = open_run(tmp_path)
+    launched: list[str] = []
+
+    class Page:
+        def goto(self, _url: str) -> None:
+            return None
+
+    @contextmanager
+    def chromium(_path: str = "") -> Iterator[object]:
+        launched.append("chromium")
+        yield object()
+
+    def screenshot(_page: object, _url: str, out: Path, **_kwargs: object) -> None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"poster")
+
+    catalog = (MeasuredScene.model_validate({"scene": "1", "elements": {}, "slides": ["1.1"]}),)
+    monkeypatch.setattr(browser, "chromium", chromium)
+    monkeypatch.setattr(browser, "open_page", lambda *_a, **_k: (Page(), SimpleNamespace(paths=["deck/index.html"])))
+    monkeypatch.setattr(browser, "await_ready", lambda _page: None)
+    monkeypatch.setattr(browser, "read_report", lambda *_a: PageReport(catalog=catalog))
+    monkeypatch.setattr(browser, "screenshot", screenshot)
+    out = inputs.workspace.deliverables()["poster"]
+    assert render_poster(inputs, opened.run, out) == out
+    out.unlink()
+    assert render_poster(inputs, opened.run, out) == out
+    assert launched == ["chromium"]
+    assert out.read_bytes() == b"poster"
+    (tmp_path / "deck" / "index.html").write_text("<html>edited</html>", encoding="utf-8")
+    render_poster(inputs, opened.run, out)
+    assert launched == ["chromium", "chromium"]
 
 
 def test_a_project_with_no_page_section_draws_no_poster(tmp_path, write_project, open_run):

@@ -6,6 +6,8 @@
     build/soundscape/   the music, the ambience bed and the effects
     build/sections/     one mp4 per section, cut to its span, and the key it was cut from
     build/frames/       the frozen slides `check` compares
+    build/stills/       every frozen frame kept by what drew it, which check, storyboard
+                        and the poster all read before they draw one
     build/storyboard/   one still per panel, under the page that lays them out
     build/final/        the deliverables: the film, its captions, chapters, cut list,
                         transcript page and poster
@@ -77,6 +79,11 @@ class Workspace:
     def frames_dir(self) -> Path:
         """The frozen slides `check` compares, which are pictures rather than a deliverable."""
         return self.build / "frames"
+
+    @property
+    def stills_dir(self) -> Path:
+        """Every frozen frame kept by what drew it, so one state of a page is drawn once."""
+        return self.build / "stills"
 
     @property
     def storyboard_dir(self) -> Path:

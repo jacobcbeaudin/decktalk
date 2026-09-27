@@ -21,13 +21,15 @@ a project, so a stage can parse one file without loading a whole project.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from decktalk.artifacts import PREVIEW_ALIAS, CueTimes, Cuts, RecordingLog, Takes, Words
+from decktalk.artifacts import PREVIEW_ALIAS, CueTimes, Cuts, RecordingLog, Takes, Words, file_digest
+from decktalk.artifacts.stills import Stills, still_key
 from decktalk.artifacts.words import words_file
 from decktalk.errors import InputError
 from decktalk.inputs.cues import CuedSection, load_cues
@@ -290,6 +292,36 @@ class Inputs:
         counts them among the assets a section was recorded from.
         """
         return {PREVIEW_ALIAS: json.dumps(self.preview_cues()).encode("utf-8")}
+
+    # ---- frozen frames -------------------------------------------------------------------------
+
+    @property
+    def stills(self) -> Stills:
+        """The frozen frames this project keeps, which check, storyboard and the poster share."""
+        return Stills(self.workspace.stills_dir, self.root)
+
+    def still_key(self, page: str, *identity: str, settle_ms: int, documents: Mapping[str, bytes] | None = None) -> str:
+        """The name of one frozen frame of `page`, from everything that decides how it looks before it loads.
+
+        `identity` is what the caller asks the page for, which is the URL of a frozen state or the
+        section a poster stands for. The frame size, the colour scheme, the motion and the page file
+        itself decide the picture as surely as the URL does, and so does anything the origin answers
+        from memory. The files the page loads once it is open are named by the manifest beside the
+        frame rather than here, because nobody knows them until the page has asked.
+        """
+        video, record, motion = self.settings.video, self.settings.record, self.settings.motion
+        served = sorted((documents or {}).items())
+        return still_key(
+            (
+                *identity,
+                f"{video.width}x{video.height}",
+                record.color_scheme,
+                f"motion:{motion.reduce}:{motion.scale:g}",
+                f"settle:{settle_ms}",
+                f"page:{page}:{file_digest(self.path(page))}",
+                *(f"served:{name}:{hashlib.sha256(body).hexdigest()}" for name, body in served),
+            )
+        )
 
     def stray_section_videos(self) -> tuple[Path, ...]:
         """Cuts in the sections directory whose section is no longer in `decktalk.toml`."""
