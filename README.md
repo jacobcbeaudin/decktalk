@@ -177,7 +177,8 @@ The docs are at [docs.decktalk.ai](https://docs.decktalk.ai), and agents can rea
 
 DeckTalk is alpha, a minor release can still break things, and one person maintains it. CI runs every check on Linux, macOS and Windows. Every release is published from CI by trusted publishing, and every file on PyPI carries a provenance attestation.
 
-- Report bugs, ask questions and show what you made in [Issues](https://github.com/jacobcbeaudin/decktalk/issues).
+- Report bugs and ask questions in [Issues](https://github.com/jacobcbeaudin/decktalk/issues).
+- Show what you made in [Discussions](https://github.com/jacobcbeaudin/decktalk/discussions).
 - Report a vulnerability privately, as [SECURITY.md](https://github.com/jacobcbeaudin/decktalk/blob/main/SECURITY.md) explains.
 - Read what changed in the [changelog](https://github.com/jacobcbeaudin/decktalk/blob/main/CHANGELOG.md).
 - Work on DeckTalk itself by starting with [CONTRIBUTING.md](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md).
