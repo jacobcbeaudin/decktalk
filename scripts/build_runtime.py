@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Build the runtime bundles, contract.json and src/decktalk/page.py from the TypeScript sources.
 
     npm ci                                          # once, for the pinned esbuild, tsc and Biome
