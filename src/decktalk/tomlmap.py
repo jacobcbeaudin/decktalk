@@ -525,11 +525,11 @@ def _checked(annotation: Any, raw: Any, *, where: str, field: Any, from_env: boo
         value = _coerce(annotation, raw) if from_env else _as_written(annotation, raw)
     except (TypeError, ValueError) as exc:
         wanted = getattr(annotation, "__name__", str(annotation))
-        raise InputError(f"{where}: expected {wanted}, got {raw!r} ({exc})") from exc
+        raise InputError(f"{where}: expected {wanted}, got {raw!r} ({exc}).") from exc
     bounds = field.metadata.get("bounds")
     if bounds is not None and not bounds.holds(value):
         hazard = field.metadata.get("hazard")
-        raise InputError(f"{where}: {bounds.sentence}, got {value!r}", hint=hazard)
+        raise InputError(f"{where}: {bounds.sentence}, got {value!r}.", hint=hazard)
     return value
 
 

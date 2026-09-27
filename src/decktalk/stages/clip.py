@@ -200,8 +200,8 @@ def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds
         )
     if hold_seconds < 0:
         raise InputError(
-            f"--hold is {hold_seconds:g}s, which is less than no time at all.",
-            hint="Write --hold 0 or more.",
+            f"--hold-seconds is {hold_seconds:g}s, which is less than no time at all.",
+            hint="Write --hold-seconds 0 or more.",
         )
     length = ffmpeg.probe_duration(video)
     if end > length + FRAME_SLACK / fps:

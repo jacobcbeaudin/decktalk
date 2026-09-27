@@ -94,7 +94,7 @@ def loudness_findings(inputs: Inputs, run: Run, after: audio.Loudness) -> list[F
             run.found(
                 judge(
                     Code.MIX_LOUDNESS,
-                    f"the true peak is {after.tp:.1f} dBTP, which is above the "
+                    f"The true peak is {after.tp:.1f} dBTP, which is above the "
                     f"{loudness.true_peak_max_dbtp:.1f} dBTP ceiling the mix was mastered to.",
                     where,
                     stage=Stage.ASSEMBLE,
@@ -107,7 +107,7 @@ def loudness_findings(inputs: Inputs, run: Run, after: audio.Loudness) -> list[F
             run.found(
                 judge(
                     Code.MIX_LOUDNESS,
-                    f"the integrated loudness is {after.i:.1f} LUFS, which is {off:.1f} LU from the "
+                    f"The integrated loudness is {after.i:.1f} LUFS, which is {off:.1f} LU from the "
                     f"{loudness.target_lufs:.1f} LUFS target and over the {LOUDNESS_TOLERANCE_LU:.1f} LU "
                     "a mix may sit from it.",
                     where,

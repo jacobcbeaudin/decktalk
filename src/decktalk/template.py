@@ -169,7 +169,7 @@ def example(name: str) -> Example:
         if found.name == name:
             return found
     raise InputError(
-        f"there is no example called {name!r}.",
+        f"There is no example called {name!r}.",
         hint=f"The examples are {listed_names()}.",
     )
 

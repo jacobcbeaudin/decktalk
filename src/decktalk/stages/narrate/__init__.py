@@ -176,7 +176,7 @@ def _refuse_over_paid(inputs: Inputs, previous: Takes | None, targets: list[Segm
         else "Every section of this project is voiced already, so rehearse in a copy of it."
     )
     raise InputError(
-        f"the take index holds paid takes for section(s) {', '.join(str(number) for number in paid)}, and a run "
+        f"The take index holds paid takes for section(s) {', '.join(str(number) for number in paid)}, and a run "
         "without voice would replace them, so the next voiced build would buy all of them again.",
         hint=f"{advice} Pass --replace-voiced to replace them anyway.",
         location=_at_takes(inputs),
