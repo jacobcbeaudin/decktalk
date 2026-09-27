@@ -32,14 +32,12 @@ SECOND_DIGITS = 2
 
 
 def measure_luma(webm: Path, duration: float) -> Luma:
-    """The recording's brightness at a tenth, a half and nine tenths of its length."""
-    tenth, half, nine_tenths = (frames.luma_at(webm, duration * point)[0] for point in LUMA_POINTS)
-    return Luma(
-        at_tenth=tenth,
-        at_half=half,
-        at_nine_tenths=nine_tenths,
-        peak_at_half=frames.luma_at(webm, duration * LUMA_POINTS[1])[1],
-    )
+    """The recording's brightness at a tenth, a half and nine tenths of its length.
+
+    One read of each frame gives both its mean and its peak, so the middle frame is decoded once.
+    """
+    (tenth, _), (half, peak), (nine_tenths, _) = (frames.luma_at(webm, duration * point) for point in LUMA_POINTS)
+    return Luma(at_tenth=tenth, at_half=half, at_nine_tenths=nine_tenths, peak_at_half=peak)
 
 
 def check_recording(webm: Path, recording: Recording) -> RecordingChecks:

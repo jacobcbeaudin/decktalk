@@ -76,7 +76,8 @@ def test_the_luma_is_read_at_a_tenth_a_half_and_nine_tenths(monkeypatch: pytest.
 
     monkeypatch.setattr(frames, "luma_at", luma_at)
     measured = measure_luma(tmp_path / "01.webm", 10.0)
-    assert read[:3] == [1.0, 5.0, 9.0]
+    # The middle frame gives its mean and its peak in one read, so it is decoded once.
+    assert read == [1.0, 5.0, 9.0]
     assert measured.peak_at_half == 210.0
 
 

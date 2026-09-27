@@ -133,3 +133,11 @@ def test_luma_at_reads_the_frame_it_was_asked_for_and_not_the_one_the_jump_lande
     """The card holds one keyframe and reveals at 5.00 s, so a frame either side of it reads differently."""
     yavg, _ymax = frames.luma_at(card, t)
     assert (yavg < 225.0) is revealed, (t, yavg)
+
+
+def test_the_cover_scan_reads_a_scaled_copy_of_each_frame(monkeypatch):
+    """A full 1080p frame cost three times the scan and changed no verdict the scan makes."""
+    argv: list[list[str]] = []
+    monkeypatch.setattr(frames.ffmpeg, "stderr", lambda *a: argv.append(list(a)) or "")
+    frames.frame_stats(Path("a.webm"), 4.0)
+    assert graph(argv[0]).startswith(f"scale={frames.STATS_WIDTH}:{frames.STATS_HEIGHT},signalstats")

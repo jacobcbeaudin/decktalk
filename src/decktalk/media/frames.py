@@ -31,11 +31,22 @@ class FrameStats:
     vavg: float
 
 
+STATS_WIDTH = 480
+"""Calibration: the width a frame's statistics are read at, a quarter of 1080p's, as `STATS_HEIGHT` says why."""
+
+STATS_HEIGHT = 270
+"""Calibration: the height a frame's statistics are read at, a quarter of 1080p's.
+
+Averages barely move under the scale, and on the starter's recordings every frame read as a cover or
+as painted exactly as it did at full size, while the scan took a third of the time. The brightest
+pixel falls by a few levels, far inside the thresholds it is compared against.
+"""
+
+
 def frame_stats(path: Path, seconds: float) -> list[FrameStats]:
-    """Per-frame signalstats for the first `seconds` of the file."""
-    out = ffmpeg.stderr(
-        "-t", str(seconds), *ffmpeg.source(path), "-vf", "signalstats,metadata=print", "-f", "null", "-"
-    )
+    """Per-frame signalstats for the first `seconds` of the file, read on a scaled copy of each frame."""
+    vf = f"scale={STATS_WIDTH}:{STATS_HEIGHT},signalstats,metadata=print"
+    out = ffmpeg.stderr("-t", str(seconds), *ffmpeg.source(path), "-vf", vf, "-f", "null", "-")
     frames: list[FrameStats] = []
     cur: dict[str, float] = {}
     for line in out.splitlines():
