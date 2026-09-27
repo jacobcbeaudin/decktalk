@@ -76,15 +76,18 @@ def test_project_loads_sections_in_order(tmp_path):
     "toml, message",
     [
         ("[[section]]\nnumber = 1\n", "needs 'page'"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\nclip = 'b.mp4'\n", "either 'clip' or 'page'"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 1\npage = 'a.html'\n", "duplicate"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\nlead_seconds = -1\n", "'lead_seconds' must be 0 or more, got -1"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\nhold_seconds = -0.5\n", "'hold_seconds' must be 0 or more"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\nrecord_margin_seconds = 'lots'\n", "must be"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\n[transition]\ndips = [[1, 9]]\n", "does not exist"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\n[bogus]\nx = 1\n", "unknown table"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nclip = 'b.mp4'\n", "either 'clip' or 'page'"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[section]]\nnumber = 1\npage = 'deck/a.html'\n", "duplicate"),
         (
-            "[[section]]\nnumber = 1\npage = 'a.html'\n[[mix.effects]]\nfile = 'x.mp3'\nsection = 1\n",
+            "[[section]]\nnumber = 1\npage = 'deck/a.html'\nlead_seconds = -1\n",
+            "'lead_seconds' must be 0 or more, got -1",
+        ),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nhold_seconds = -0.5\n", "'hold_seconds' must be 0 or more"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nrecord_margin_seconds = 'lots'\n", "must be"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[transition]\ndips = [[1, 9]]\n", "does not exist"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[bogus]\nx = 1\n", "unknown table"),
+        (
+            "[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[mix.effects]]\nfile = 'x.mp3'\nsection = 1\n",
             "'cue' is required and is not there.",
         ),
     ],
@@ -96,8 +99,8 @@ def test_project_validation_messages(tmp_path, toml, message):
 
 def test_project_allows_clips_at_both_edges(tmp_path):
     toml = (
-        "[[section]]\nnumber = 0\nclip = 'open.mp4'\n[[section]]\nnumber = 1\npage = 'a.html'\n"
-        "[[section]]\nnumber = 2\npage = 'a.html'\n[[section]]\nnumber = 9\nclip = 'close.mp4'\n"
+        "[[section]]\nnumber = 0\nclip = 'open.mp4'\n[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'deck/a.html'\n[[section]]\nnumber = 9\nclip = 'close.mp4'\n"
     )
     p = Inputs.load(write_project(tmp_path, toml), environ={})
     assert p.document.clip_numbers == {0, 9} and [s.number for s in p.document.page_sections] == [1, 2]
@@ -105,8 +108,8 @@ def test_project_allows_clips_at_both_edges(tmp_path):
 
 def test_project_allows_clips_between_page_sections(tmp_path):
     toml = (
-        "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\nclip = 'broll.mp4'\n"
-        "[[section]]\nnumber = 3\nclip = 'more.mp4'\n[[section]]\nnumber = 4\npage = 'a.html'\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[section]]\nnumber = 2\nclip = 'broll.mp4'\n"
+        "[[section]]\nnumber = 3\nclip = 'more.mp4'\n[[section]]\nnumber = 4\npage = 'deck/a.html'\n"
         "hold_seconds = 1\n"
     )
     p = Inputs.load(write_project(tmp_path, toml), environ={})
@@ -148,7 +151,7 @@ def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, mon
     toml = (
         "[project]\nname = 't'\nscirpt = 'script.md'\n"
         "[voice]\nstabilty = 0.4\n"
-        "[[section]]\nnumber = 1\npage = 'a.html'\nscnee = 2\nslate_seconds = 3\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\nscnee = 2\nslate_seconds = 3\n"
         "[[section]]\nnumber = 2\nclip = 'b.mp4'\nzebra = 1\n"
         "[mix]\nmusic_dbb = -20\n"
         "[soundscape.music]\nprompt = 'calm'\nsecond = 60\n"
@@ -180,8 +183,8 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path, caplog):
         "[project]\nname = 't'\nscript = 'script.md'\ncues = 'cues.json'\nbuild = 'build'\nlanguage = 'fr'\n"
         "[voice]\nprovider = 'elevenlabs'\nmodel = 'm'\nstability = 0.5\nprice_per_1000_characters = 0.3\n"
         "[transition]\ndips = [[1, 2]]\ndip_seconds = 0.2\npage_fades_in = true\n"
-        "[[section]]\nnumber = 1\npage = 'a.html'\n"
-        "[[section]]\nnumber = 2\npage = 'b.html'\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'deck/b.html'\n"
         "[mix]\nmusic_db = -20\n"
         "[mix.loudness]\ntarget_lufs = -16\ntrue_peak_max_dbtp = -1.5\nrange_max_lu = 9\n"
         "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\noffset = 0.1\ncaption = 'a chime'\n"
@@ -205,8 +208,8 @@ def test_a_section_with_no_chapter_is_titled_by_its_script_heading(tmp_path):
     """The author already wrote a heading, so the mp4's chapter carries it rather than a number."""
     toml = (
         "[project]\nname = 't'\n"
-        "[[section]]\nnumber = 1\npage = 'a.html'\n"
-        "[[section]]\nnumber = 2\npage = 'b.html'\nchapter = 'Its own'\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'deck/b.html'\nchapter = 'Its own'\n"
     )
     root = write_project(tmp_path, toml)
     (root / "script.md").write_text("## 1. What a cue is\n\nOne.\n\n## 2. The edit\n\nTwo.\n", encoding="utf-8")
@@ -218,14 +221,14 @@ def test_a_section_with_no_chapter_is_titled_by_its_script_heading(tmp_path):
 
 def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
     toml = (
-        "[[section]]\nnumber = 1\npage = 'a.html'\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
         "[[section]]\nnumber = 2\nclip = 'b.mp4'\nseamless = true\n"
-        "[[section]]\nnumber = 3\npage = 'a.html'\nseamless = true\n"
+        "[[section]]\nnumber = 3\npage = 'deck/a.html'\nseamless = true\n"
     )
     with caplog.at_level("WARNING", logger="decktalk"):
         p = Inputs.load(write_project(tmp_path, toml), environ={})
     assert [s.seamless for s in p.document.sections] == [False, True, True] and not caplog.records
-    first = toml.replace("number = 1\npage = 'a.html'\n", "number = 1\npage = 'a.html'\nseamless = true\n")
+    first = toml.replace("number = 1\npage = 'deck/a.html'\n", "number = 1\npage = 'deck/a.html'\nseamless = true\n")
     with pytest.raises(InputError, match="number=1: seamless is set on the first section"):
         Inputs.load(write_project(tmp_path, first), environ={})
     with pytest.raises(InputError, match="'seamless' must be bool"):
@@ -242,7 +245,7 @@ def test_a_clip_section_reads_its_words_key(tmp_path):
 def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(logging.getLogger("decktalk"), "propagate", True)
     toml = (
-        "[[section]]\nnumber = 1\npage = 'a.html'\nlead_seconds = 1.5\ntail_seconds = 2\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\nlead_seconds = 1.5\ntail_seconds = 2\n"
         "[[section]]\nnumber = 2\nclip = 'c.mp4'\nlead_seconds = 1\n"
     )
     with caplog.at_level(logging.WARNING, logger="decktalk"):
@@ -408,6 +411,22 @@ def test_the_origin_never_offers_the_project_file_the_credential_or_the_build(tm
     assert "decktalk.toml" not in served
     assert ".env" not in served
     assert "build" not in served
+
+
+@pytest.mark.parametrize("page", ["index.html", "./index.html"])
+def test_a_page_at_the_project_root_is_refused_because_its_directory_is_the_whole_project(tmp_path, page):
+    """The origin serves a page's directory, and this one holds the script, the cues, `.env` and `build/`."""
+    toml = SERVED_TOML.replace('page = "deck/one.html"', f'page = "{page}"')
+    with pytest.raises(InputError, match="sits at the project root"):
+        Inputs.load(write_project(tmp_path, toml), environ={})
+
+
+def test_a_declared_name_that_folds_to_the_project_root_is_never_offered(tmp_path):
+    toml = SERVED_TOML.replace('music = "media/bed.mp3"', 'music = "./"').replace(
+        'slate = "media/slate.png"', 'slate = "./media/slate.png"'
+    )
+    served = Inputs.load(write_project(tmp_path, toml), environ={}).served_paths()
+    assert served == ("deck", "media/broll.mp4", "media/broll.words.json", "media/slate.png", "media/chime.wav")
 
 
 # ---- every path the project names stays inside it ----------------------------------------------

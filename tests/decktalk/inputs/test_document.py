@@ -34,7 +34,11 @@ def test_frame_dip_quantizes_to_whole_frames():
 def test_a_project_that_writes_no_value_gets_the_default_its_field_declares() -> None:
     """The parse call and the field used to spell every default twice, so the two could disagree."""
     doc = Document.from_toml(
-        {"section": [{"number": 1, "clip": "a.mp4"}, {"number": 2, "page": "a.html"}], "mix": {}, "transition": {}},
+        {
+            "section": [{"number": 1, "clip": "a.mp4"}, {"number": 2, "page": "deck/a.html"}],
+            "mix": {},
+            "transition": {},
+        },
         default_name="t",
     )
     clip, page = doc.sections

@@ -152,7 +152,7 @@ def record(
         page_url("deck/index.html"),
         0.5,
         out,
-        allowed=Allowed.of(tmp_path, ["."]),
+        allowed=Allowed.of(tmp_path, ["deck"]),
         log_sink=sink,
         settle_seconds=0.0,
         min_cover_seconds=0.0,
@@ -208,7 +208,7 @@ def test_the_recording_carries_what_the_page_said_and_what_it_loaded(tmp_path):
 def test_the_temporary_directory_and_the_context_go_however_the_recording_ends(tmp_path):
     """A page that never loads used to leave a context and a webm behind and surface as a bug in DeckTalk."""
     fake = FakeBrowser()
-    allowed = Allowed.of(tmp_path, ["."])
+    allowed = Allowed.of(tmp_path, ["deck"])
     with pytest.raises(PlaywrightError):
         with browser.capturing(
             fake, allowed, width=960, height=540, color_scheme="dark", motion=MotionConfig()
@@ -238,7 +238,7 @@ def test_every_call_into_the_page_carries_a_deadline(tmp_path):
     out = tmp_path / "01.webm"
     fake = FakeBrowser()
     browser.record_page(
-        fake, page_url("deck/index.html"), 0.1, out, allowed=Allowed.of(tmp_path, ["."]), log_sink=Sink(out),
+        fake, page_url("deck/index.html"), 0.1, out, allowed=Allowed.of(tmp_path, ["deck"]), log_sink=Sink(out),
         settle_seconds=0.0, min_cover_seconds=0.0, width=960, height=540, color_scheme="dark", motion=MotionConfig(),
     )  # fmt: skip
     page = fake.contexts[0].page
@@ -345,7 +345,7 @@ def test_a_document_the_caller_answers_itself_is_never_a_recorded_asset(tmp_path
     fake = FakeBrowser()
     out = tmp_path / "01.webm"
     browser.record_page(
-        fake, page_url("deck/index.html"), 0.1, out, allowed=Allowed.of(tmp_path, ["."]), log_sink=Sink(out),
+        fake, page_url("deck/index.html"), 0.1, out, allowed=Allowed.of(tmp_path, ["deck"]), log_sink=Sink(out),
         settle_seconds=0.0, min_cover_seconds=0.0, width=960, height=540, color_scheme="dark",
         motion=MotionConfig(), documents={"/__decktalk/cue-times.json": b'{"sections": []}'},
     )  # fmt: skip
@@ -625,7 +625,7 @@ def test_a_recording_asks_whether_to_stop_at_least_once_a_second_and_stops_whole
     sink = Sink(out)
     with pytest.raises(Cancelled):
         browser.record_page(
-            FakeBrowser(), page_url("deck/index.html"), 10.0, out, allowed=Allowed.of(tmp_path, ["."]),
+            FakeBrowser(), page_url("deck/index.html"), 10.0, out, allowed=Allowed.of(tmp_path, ["deck"]),
             log_sink=sink, settle_seconds=0.0, min_cover_seconds=0.0, width=960, height=540,
             color_scheme="no-preference", motion=MotionConfig(), check=check,
         )  # fmt: skip

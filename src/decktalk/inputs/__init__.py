@@ -25,7 +25,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words, file_digest
@@ -289,7 +289,10 @@ class Inputs:
         soundscape = document.soundscape
         generated = (soundscape.ambience, soundscape.music, *soundscape.effects.values())
         named += [item.out for item in generated if item is not None and item.out]
-        return tuple(dict.fromkeys(name.lstrip("./") for name in named if name))
+        # A name is folded as a path rather than stripped as text, and one that folds to the root
+        # itself is dropped, because a declared root would declare the whole project.
+        spelled = (PurePosixPath(name).as_posix() for name in named if name)
+        return tuple(dict.fromkeys(name for name in spelled if name != "."))
 
     def documents(self) -> dict[str, bytes]:
         """Every path the origin answers from memory rather than from a file, as the bytes it sends.

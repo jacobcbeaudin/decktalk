@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from typing import Any
 
 from decktalk.errors import InputError
@@ -325,6 +326,14 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
     if "page" not in raw:
         raise InputError(f"{t.where}: needs 'page' (an HTML file) or 'clip' (a video file)")
     warn_section_keys(t, clip=False)
+    page = t.get_path("page", "")
+    # The origin serves a page's whole directory, so a page at the root would be handed the
+    # script, the cue file, the build directory and everything else the project holds.
+    if PurePosixPath(page.replace("\\", "/")).parent == PurePosixPath("."):
+        raise InputError(
+            f"{t.where}: 'page' sits at the project root, and a page is served with its whole directory.",
+            hint="Move the page into a directory of its own, such as deck/index.html, and name that path.",
+        )
     params_raw = t.get_table("params") or {}
     scene = raw.get("scene", number)
     if isinstance(scene, bool) or not isinstance(scene, (int, str)):
@@ -335,7 +344,7 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
             raise InputError(f"{t.where}: '{key}' must be 0 or more, got {value:g}")
     return PageSection(
         number=number,
-        page=t.get_path("page", ""),
+        page=page,
         scene=str(scene),
         chapter=chapter,
         record_margin_seconds=t.get_num("record_margin_seconds", default_of(PageSection, "record_margin_seconds")),

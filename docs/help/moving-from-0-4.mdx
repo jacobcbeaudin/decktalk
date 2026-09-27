@@ -24,6 +24,9 @@ that meets one is told by name on its first run.
 - **A symbolic link that leads out of the project is refused.** A script, a cue file, a page, an asset
   or a clip that resolves outside the project directory is not read, with an `INPUT` error that names
   the path.
+- **A page at the project root is refused.** The origin serves a page's whole directory, so a
+  `page = "index.html"` served the script, the cue file and the build directory to the page. Move
+  the page into a directory of its own, such as `deck/index.html`.
 - **A build directory with a link out of it is refused**, from 0.5.1 on. Every run resolves what is
   under the build directory before it writes there, and a link that leads outside it, or a file hard
   linked to another name, stops the run with an `INPUT` error that names the entry. Delete the build

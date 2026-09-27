@@ -174,7 +174,9 @@ class Allowed:
 
         A declared path outside the project is dropped rather than refused at request time, because a
         rule that names a place the project does not own is a mistake in the project file and this
-        module answers requests rather than reporting on `decktalk.toml`.
+        module answers requests rather than reporting on `decktalk.toml`. A declaration of the root
+        itself is dropped for the same reason, because the root holds the script, the cue file, the
+        build directory and the credential, which no page may reach.
         """
         base = root.resolve()
         inside: list[str] = []
@@ -187,7 +189,7 @@ class Allowed:
             # to say where it sits under the project. A relative one already says it.
             named = candidate.relative_to(base).as_posix() if spelled.is_absolute() else spelled.as_posix()
             place = project_path(named)
-            if place is not None:
+            if place:
                 inside.append(place)
         return cls(root=base, served=tuple(dict.fromkeys(inside)))
 
@@ -196,10 +198,10 @@ class Allowed:
 
         The comparison is over the names rather than over the files they open, because a declaration
         names a spelling and only the filesystem knows whether two spellings open one file. A
-        declared directory is a place, so every name under it is declared with it, and a project that
-        declares its own root declares everything in it.
+        declared directory is a place, so every name under it is declared with it. An empty place
+        declares nothing, because the name it would stand for is the project root.
         """
-        return any(not place or asked == place or asked.startswith(f"{place}/") for place in self.served)
+        return any(place and (asked == place or asked.startswith(f"{place}/")) for place in self.served)
 
     def target(self, rel: str) -> Target:
         """The file a project-relative request path is answered from, or the reason it is refused.

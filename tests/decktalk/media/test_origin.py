@@ -31,10 +31,13 @@ from decktalk.media.origin import (
 )
 from decktalk.page import Q
 
+WHOLE = ("deck", "envlink", "pub", "escape", "leak", "away", "leakhtm")
+"""Every name the tests about the other rules ask for, declared so that those rules are what refuse."""
+
 
 def whole(root: Path) -> Allowed:
-    """The rule of a project that declared its whole directory, for the tests about the other rules."""
-    return Allowed.of(root, ["."])
+    """The rule of a project that declared every name these tests reach, for the tests about the other rules."""
+    return Allowed.of(root, WHOLE)
 
 
 FETCH_PAGE = """<!doctype html><meta charset="utf-8"><title>fetch</title>
@@ -96,7 +99,20 @@ def test_a_path_that_is_not_a_usable_file_name_is_refused_rather_than_raised(tmp
 def test_a_directory_is_served_as_its_index(tmp_path):
     (tmp_path / "deck").mkdir()
     assert local_target(whole(tmp_path), f"{ORIGIN}/deck/").path == tmp_path / "deck" / "index.html"
-    assert local_target(whole(tmp_path), f"{ORIGIN}/").path == tmp_path / "index.html"
+    assert local_target(whole(tmp_path), f"{ORIGIN}/").refused == UNDECLARED
+
+
+@pytest.mark.parametrize("root", [".", "", "./", "deck/.."])
+def test_a_declaration_of_the_project_root_declares_nothing(tmp_path, root):
+    """The root holds the script, the cue file, the build directory and the credential."""
+    for name in ("script.md", "cues.json", "build/narrate/takes.json"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+    allowed = Allowed.of(tmp_path, [root])
+    assert allowed.served == ()
+    for name in ("script.md", "cues.json", "build/narrate/takes.json"):
+        assert local_target(allowed, f"{ORIGIN}/{name}").refused == UNDECLARED
+    assert not Allowed(root=tmp_path, served=("",)).declares("script.md")
 
 
 def test_a_directory_whose_index_is_a_link_to_a_dot_name_is_refused(tmp_path):
