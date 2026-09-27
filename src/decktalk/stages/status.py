@@ -37,8 +37,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
-from decktalk.artifacts.stored import ENGINE_VERSION
-from decktalk.errors import DeckTalkError
+from decktalk.artifacts.stored import ENGINE_VERSION, Stored
+from decktalk.errors import DeckTalkError, NotBuiltError
 from decktalk.events import Level, Line, StageStart
 from decktalk.findings import MODEL, Code, Finding, Location
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
@@ -111,10 +111,8 @@ class KeptStage(BaseModel):
     )
 
 
-class Kept(BaseModel):
+class Kept(Stored):
     """The record a build leaves of the two stages it can keep, read by the next build and by status."""
-
-    model_config = MODEL
 
     assemble: KeptStage | None = None
     verify: KeptStage | None = None
@@ -126,19 +124,10 @@ def read_kept(inputs: Inputs) -> Kept:
     A record this version cannot read keeps nothing, which costs one assemble and one verify and is
     never wrong, so it is not worth a refusal.
     """
-    path = kept_path(inputs)
     try:
-        return Kept.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, ValidationError):
+        return Kept.read(kept_path(inputs)) or Kept()
+    except NotBuiltError:
         return Kept()
-
-
-def write_kept(inputs: Inputs, kept: Kept) -> Path:
-    """Write the record a build leaves, and give back where it went."""
-    path = kept_path(inputs)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(kept.model_dump_json(indent=2) + "\n", encoding="utf-8")
-    return path
 
 
 def kept_path(inputs: Inputs) -> Path:
@@ -485,5 +474,4 @@ __all__ = [
     "source_of",
     "status",
     "verify_key",
-    "write_kept",
 ]

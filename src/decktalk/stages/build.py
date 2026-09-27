@@ -53,10 +53,10 @@ from decktalk.stages.status import (
     assembled,
     holds_film,
     intact,
+    kept_path,
     outputs_of,
     read_kept,
     verify_key,
-    write_kept,
 )
 
 NOTHING = 0.0
@@ -193,7 +193,7 @@ def build(
         if stage is not Stage.VERIFY and _stopped(stage, findings, run, plan, allow=allow, stop_on=stop_on):
             stopped_at = stage
     if fresh:
-        run.wrote(write_kept(inputs, _kept_after(kept, fresh)))
+        run.wrote(_kept_after(kept, fresh).write(kept_path(inputs)))
     stopped = {"ok": False} if stopped_at is not None else {}
     return run.result(
         BuildResult,

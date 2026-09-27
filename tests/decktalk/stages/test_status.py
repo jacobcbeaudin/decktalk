@@ -124,15 +124,12 @@ def measured(inputs: Inputs) -> None:
     options: dict[str, object] = {"only": None}
     made = stage.assemble_key(inputs, options)  # type: ignore[arg-type]
     film = inputs.relative(inputs.workspace.film).as_posix()
-    stage.write_kept(
-        inputs,
-        stage.Kept(
-            assemble=stage.KeptStage(
-                key=made, options={"only": None}, outputs={film: stage.digest_of(inputs.workspace.film)}
-            ),
-            verify=stage.KeptStage(key=stage.verify_key(inputs, made, {"only": None}), options={"only": None}),
+    stage.Kept(
+        assemble=stage.KeptStage(
+            key=made, options={"only": None}, outputs={film: stage.digest_of(inputs.workspace.film)}
         ),
-    )
+        verify=stage.KeptStage(key=stage.verify_key(inputs, made, {"only": None}), options={"only": None}),
+    ).write(stage.kept_path(inputs))
 
 
 def test_a_film_the_last_build_measured_leaves_nothing_next(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
