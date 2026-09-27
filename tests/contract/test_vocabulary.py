@@ -287,34 +287,22 @@ def baseline() -> dict[str, int]:
     return dict(json.loads(BASELINE.read_text(encoding="utf-8"))["files"])
 
 
-def test_no_file_outside_the_baseline_spells_a_word_of_the_vocabulary():
-    """A file with no entry uses the enum member, which is the whole rule for new code."""
-    excused = baseline()
-    added = {name: count for name, count in measured().items() if name not in excused}
-    assert not added, (
-        "these files spell a closed vocabulary as a string: "
-        + ", ".join(f"{name} ({count})" for name, count in sorted(added.items()))
-        + ". Use the enum member, and `.value` where the word is written into text."
-    )
+def test_the_baseline_only_shrinks():
+    """A file off the list spells no word, a file on it never grows, and a beaten count is written down.
 
-
-def test_no_file_on_the_baseline_spells_more_than_it_did():
-    """The list only shrinks, so a change that adds a literal to a file already on it is refused."""
-    found = measured()
-    grown = {name: (count, found[name]) for name, count in baseline().items() if found.get(name, 0) > count}
-    assert not grown, "these files grew a literal: " + ", ".join(
-        f"{name} {was} to {now}" for name, (was, now) in sorted(grown.items())
-    )
-
-
-def test_a_baseline_entry_no_file_needs_any_more_is_removed():
-    """A count the code has beaten is a debt list rather than a rule, so it is written down as zero."""
-    found = measured()
-    stale = {name: count for name, count in baseline().items() if found.get(name, 0) < count}
-    assert not stale, (
-        "these files spell fewer words than the baseline excuses, so the baseline is stale: "
-        + ", ".join(f"{name} {count} to {found.get(name, 0)}" for name, count in sorted(stale.items()))
-        + ". Run `uv run python tests/contract/test_vocabulary.py --write`."
+    One walk of the tree answers all three, so the message names every kind of drift at once.
+    """
+    found, excused = measured(), baseline()
+    added = [f"{name} ({count})" for name, count in sorted(found.items()) if name not in excused]
+    grown = [f"{name} {was} to {found[name]}" for name, was in sorted(excused.items()) if found.get(name, 0) > was]
+    stale = [
+        f"{name} {was} to {found.get(name, 0)}" for name, was in sorted(excused.items()) if found.get(name, 0) < was
+    ]
+    assert not (added or grown or stale), (
+        f"These files spell a closed vocabulary as a string and are not excused: {added}. Use the enum "
+        f"member, and `.value` where the word is written into text. These files grew a literal: {grown}. "
+        f"These files spell fewer words than the baseline excuses: {stale}. Run "
+        "`uv run python tests/contract/test_vocabulary.py --write` to lower a beaten count."
     )
 
 

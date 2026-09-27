@@ -283,35 +283,23 @@ def test_the_typescript_scan_finds_the_cap_a_python_walk_cannot_see(tmp_path: Pa
     assert [bare.value for bare in bare_typescript(path)] == ["100"]
 
 
-def test_no_file_outside_the_baseline_holds_a_bare_number() -> None:
-    """A file with no entry has to go through a door, which is the whole rule for new code."""
-    excused = baseline()
-    added = {name: count for name, count in measured().items() if name not in excused}
-    assert not added, (
-        "these files hold a number that went through no door: "
-        + ", ".join(f"{name} ({count})" for name, count in sorted(added.items()))
-        + ". Make it a settings key, write it as the expression it is, or bind it to a module-level "
-        "upper-case name with one sentence opening with truth, derived or calibration."
-    )
+def test_the_baseline_only_shrinks() -> None:
+    """A file off the list holds no bare number, a file on it never grows, and a beaten count is written down.
 
-
-def test_no_file_on_the_baseline_holds_more_than_it_did() -> None:
-    """The list only shrinks, so a release that adds a literal to a file already on it is refused."""
-    found = measured()
-    grown = {name: (count, found[name]) for name, count in baseline().items() if found.get(name, 0) > count}
-    assert not grown, "these files grew a number: " + ", ".join(
-        f"{name} {was} to {now}" for name, (was, now) in sorted(grown.items())
-    )
-
-
-def test_a_baseline_entry_no_file_needs_any_more_is_removed() -> None:
-    """A count the code has beaten is a debt list rather than a rule, so it is written down as zero."""
-    found = measured()
-    stale = {name: count for name, count in baseline().items() if found.get(name, 0) < count}
-    assert not stale, (
-        "these files hold fewer numbers than the baseline excuses, so the baseline is stale: "
-        + ", ".join(f"{name} {count} to {found.get(name, 0)}" for name, count in sorted(stale.items()))
-        + ". Run `uv run python tests/contract/test_numbers.py --write`."
+    One walk of the tree answers all three, so the message names every kind of drift at once.
+    """
+    found, excused = measured(), baseline()
+    added = [f"{name} ({count})" for name, count in sorted(found.items()) if name not in excused]
+    grown = [f"{name} {was} to {found[name]}" for name, was in sorted(excused.items()) if found.get(name, 0) > was]
+    stale = [
+        f"{name} {was} to {found.get(name, 0)}" for name, was in sorted(excused.items()) if found.get(name, 0) < was
+    ]
+    assert not (added or grown or stale), (
+        f"These files hold a number that went through no door: {added}. Make it a settings key, write "
+        "it as the expression it is, or bind it to a module-level upper-case name with one sentence "
+        f"opening with truth, derived or calibration. These files grew a number: {grown}. These files "
+        f"hold fewer numbers than the baseline excuses: {stale}. Run "
+        "`uv run python tests/contract/test_numbers.py --write` to lower a beaten count."
     )
 
 
