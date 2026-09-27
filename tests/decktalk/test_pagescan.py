@@ -5,6 +5,7 @@ from __future__ import annotations
 from decktalk import page, pagescan
 from decktalk.findings import Code
 from decktalk.pagescan import Measured
+from decktalk.settings import KEYS
 
 PAGE = "deck/index.html"
 NONE = 1.0
@@ -46,7 +47,7 @@ def test_a_reduced_render_that_slows_a_motion_past_the_ceiling_is_judged_for_it(
     assert pagescan.motion_findings([slowed], where=PAGE, section=1, scale=NONE) == []
     (found,) = pagescan.motion_findings([slowed], where=PAGE, section=1, scale=3.0)
     assert found.code is Code.PAGE_MOTION_OVERRUN
-    assert "motion.scale" in Code.PAGE_MOTION_OVERRUN.decides
+    assert Code.PAGE_MOTION_OVERRUN in next(key for key in KEYS if key.id == "motion.scale").decides
 
 
 def test_an_element_that_names_no_moment_is_never_judged_for_motion() -> None:

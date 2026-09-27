@@ -6,9 +6,10 @@ exists so that the sentence a code, a key or a field publishes has one home in t
 declares it, and so that two renderings of the same contract cannot disagree.
 
 What it publishes is what the library owns, which is every result's schema, every finding code with
-its sentence and the keys that decide it, every error code with its exit code, every event and every
-stage of the pipeline. The command and flag table belongs to the command line and is joined onto
-this by `decktalk schema`, which is the only place the two halves meet.
+its sentence, every error code with its exit code, every event and every stage of the pipeline. The
+command and flag table belongs to the command line and is joined onto this by `decktalk schema`,
+which is the only place the two halves meet. The settings keys that move a finding are joined on
+there too, because each key declares the codes it decides and the keys sit above this module.
 """
 
 from __future__ import annotations
@@ -57,7 +58,6 @@ def finding_codes() -> list[dict[str, Any]]:
             "sentence": code.sentence,
             "certainty": code.certainty.value,
             "raised_by": code.raised_by.value,
-            "decides": list(code.decides),
             "docs": code.url,
         }
         for code in Code

@@ -26,6 +26,7 @@ from decktalk import page
 from decktalk import settings as knobs
 from decktalk.cli.app import PROGRAM, app
 from decktalk.errors import ErrorCode
+from decktalk.findings import Code
 from decktalk.results import RESULTS, Result
 from decktalk.tomlmap import PUBLISHED, Key
 
@@ -125,6 +126,21 @@ def exits() -> list[dict[str, Any]]:
     return [{"exit": code, "sentence": sentence} for code, sentence in EXITS]
 
 
+def deciding(code: Code) -> tuple[str, ...]:
+    """The settings keys whose value moves one code's verdict, read in reverse off each key's own list.
+
+    A key names the codes it decides beside its range, and that is the one declaration of the
+    relation, so the finding page, `decktalk schema` and `config explain` cannot give an agent two
+    different answers about which knob to read.
+    """
+    return tuple(key.id for key in knobs.KEYS if code in key.decides)
+
+
+def findings() -> list[dict[str, Any]]:
+    """Every finding code as the library publishes it, with the keys that decide it joined on."""
+    return [{**row, "decides": list(deciding(Code(row["code"])))} for row in library.document()["findings"]]
+
+
 def document() -> dict[str, Any]:
     """The whole instruction set in one object, which is what bare `decktalk schema` prints."""
     published = library.document()
@@ -133,7 +149,7 @@ def document() -> dict[str, Any]:
         "globals": globals_(),
         "exits": exits(),
         "errors": published["errors"],
-        "findings": published["findings"],
+        "findings": findings(),
         "stages": published["stages"],
     }
 
@@ -246,4 +262,15 @@ def codes() -> tuple[str, ...]:
     return tuple(code.value for code in ErrorCode)
 
 
-__all__ = ["document", "globals_", "named", "names", "page_schema", "project_schema", "settings_schema", "walk"]
+__all__ = [
+    "deciding",
+    "document",
+    "findings",
+    "globals_",
+    "named",
+    "names",
+    "page_schema",
+    "project_schema",
+    "settings_schema",
+    "walk",
+]

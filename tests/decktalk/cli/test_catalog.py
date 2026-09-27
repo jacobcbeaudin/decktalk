@@ -11,12 +11,16 @@ from decktalk.cli import catalog
 from decktalk.errors import ErrorCode
 from decktalk.findings import Code
 from decktalk.results import RESULTS
+from decktalk.settings import KEYS
 
 SCHEMA_DIR = Path(__file__).resolve().parents[3] / "schemas" / "v1"
 """Where the committed schemas sit, which the rendered settings document is held equal to."""
 
 ROW_KEYS = ("command", "group", "purpose", "result", "params")
 """What one command row publishes, which is what an agent reads before it writes a command line."""
+
+BY_ID = {key.id: key for key in KEYS}
+"""Every settings key by its dotted id, which is how a finding row names it."""
 
 PARAM_KEYS = ("opts", "type", "metavar", "default", "repeatable", "envvar", "help", "hidden")
 """What one parameter row publishes, which is what an agent writes after the flag."""
@@ -53,6 +57,17 @@ def test_the_document_joins_the_two_halves() -> None:
     written = catalog.document()
     assert {row["code"] for row in written["errors"]} == {code.value for code in ErrorCode}
     assert {row["code"] for row in written["findings"]} == {code.value for code in Code}
+
+
+def test_a_finding_names_the_keys_that_declare_they_decide_it() -> None:
+    """The relation is declared once, on the keys, so every finding row reads it in reverse."""
+    rows = {row["code"]: row["decides"] for row in catalog.findings()}
+    for key in KEYS:
+        for code in key.decides:
+            assert key.id in rows[code.value], f"{key.id} decides {code.value} and the row omits it"
+    for code, keys in rows.items():
+        for key in keys:
+            assert Code(code) in BY_ID[key].decides, f"{code} names {key}, which does not decide it"
 
 
 def test_every_result_name_is_answerable() -> None:

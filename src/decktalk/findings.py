@@ -5,7 +5,7 @@ because an error means DeckTalk could not run at all. Every judgement in the pro
 these, so a reader dispatches on a code and never on the absence of one.
 
 `Code` is the closed list of every judgement DeckTalk can make. A member carries its own sentence,
-its certainty and the settings keys that decide it, so those sentences live once and the docs page,
+its certainty and the side that raises it, so those sentences live once and the docs page,
 the JSON Schema and the printed line are three renderings of one row. A code never spells its own
 certainty, because an agent dispatching on a code would then meet two codes for one condition and
 have to know that one is the other's hedge.
@@ -66,18 +66,20 @@ class RaisedBy(Enum):
 
 
 class Code(Enum):
-    """Every judgement DeckTalk can make, with its sentence, its certainty and what decides it.
+    """Every judgement DeckTalk can make, with its sentence, its certainty and who raises it.
 
     The member name is the code an agent dispatches on and passes to `--allow`. The prefix is the
     subject the finding judges, which groups the codes for sorting, for `--allow` and for the docs
-    URL. `decides` names the settings keys whose values move the verdict, so an agent that meets a
-    code knows which knob to read without a second call.
+    URL.
+
+    A code does not list the settings that move it. Each settings key names the codes it decides,
+    beside its range, and every rendering that shows a code's keys reads that one declaration in
+    reverse, because two lists of one relation had drifted apart.
     """
 
     sentence: str
     certainty: Certainty
     raised_by: RaisedBy
-    decides: tuple[str, ...]
 
     def __new__(
         cls,
@@ -85,14 +87,12 @@ class Code(Enum):
         sentence: str,
         certainty: Certainty,
         raised_by: RaisedBy,
-        decides: tuple[str, ...] = (),
     ) -> Code:
         member = object.__new__(cls)
         member._value_ = code
         member.sentence = sentence
         member.certainty = certainty
         member.raised_by = raised_by
-        member.decides = decides
         return member
 
     def __repr__(self) -> str:
@@ -241,7 +241,6 @@ class Code(Enum):
         "A class change declares no reduced form, so a reduced render would animate anyway.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
-        ("motion.reduce",),
     )
     PAGE_SWAP_AMBIGUOUS = (
         "PAGE_SWAP_AMBIGUOUS",
@@ -274,14 +273,12 @@ class Code(Enum):
         "A motion span runs past the measurable ceiling, so the cue it carries cannot be verified.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        ("motion.scale",),
     )
     PAGE_STAGGER_OVERRUN = (
         "PAGE_STAGGER_OVERRUN",
         "A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        ("motion.scale",),
     )
     PAGE_WORD_LATE = (
         "PAGE_WORD_LATE",
@@ -294,7 +291,6 @@ class Code(Enum):
         "A frozen slide draws less of the picture than a change must cross to be seen.",
         Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
-        ("verify.changed_share_min_percent", "video.crf"),
     )
     PAGE_NO_DESCRIPTION = (
         "PAGE_NO_DESCRIPTION",
@@ -313,21 +309,18 @@ class Code(Enum):
         "The picture held still for longer than a recorded section ever should.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        ("record.frame_gap_max_ms",),
     )
     PAGE_BLACK = (
         "PAGE_BLACK",
         "A recorded frame is black, so the film shows nothing at that moment.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        ("verify.after_dip_seconds", "verify.black_max_luma"),
     )
     PAGE_TRUNCATED = (
         "PAGE_TRUNCATED",
         "A recording stopped before its section's clock ran out, so the film is short of picture.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        ("record.truncated_slack_seconds",),
     )
     PAGE_CDN_ASSET = (
         "PAGE_CDN_ASSET",
@@ -367,48 +360,24 @@ class Code(Enum):
         "The change lands further from its word than the offset limit allows.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        (
-            "verify.av_offset_max_ms",
-            "verify.click_floor_dbfs",
-            "verify.click_search_seconds",
-            "verify.cue_offset_max_ms",
-            "verify.onset_diff_luma",
-            "verify.onset_rise_points",
-            "verify.reference_lead_extra_ms",
-        ),
     )
     CUE_NO_ONSET = (
         "CUE_NO_ONSET",
         "The cue resolved with no measured onset, so its second is the section's start and not its word's.",
         Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
-        ("verify.onset_diff_luma", "verify.onset_rise_points"),
     )
     CUE_NO_CHANGE = (
         "CUE_NO_CHANGE",
         "Nothing in the picture changed at the cue's second, so the reveal never happened.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        (
-            "verify.changed_share_min_percent",
-            "verify.margin_min_points",
-            "verify.probe_delays_seconds",
-            "verify.probe_diff_luma",
-            "video.crf",
-        ),
     )
     CUE_THIN_CHANGE = (
         "CUE_THIN_CHANGE",
         "Less of the picture changed at the cue than a visible reveal must cross.",
         Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
-        (
-            "verify.changed_share_min_percent",
-            "verify.margin_min_points",
-            "verify.probe_diff_luma",
-            "verify.thin_change_factor",
-            "video.crf",
-        ),
     )
     CUE_OVERLAP = (
         "CUE_OVERLAP",
@@ -433,27 +402,18 @@ class Code(Enum):
         "Speech is still sounding at a section cut, so the film slices a word in two.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        (
-            "narration.sound_end_min_run_seconds",
-            "narration.sound_end_noise_dbfs",
-            "narration.tail_min_seconds",
-            "verify.cut_max_dbfs",
-            "verify.cut_window_seconds",
-        ),
     )
     CUT_POP = (
         "CUT_POP",
         "The picture steps at a section cut, so the film pops on the seam.",
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
-        ("verify.cut_change_max_percent",),
     )
     MIX_LOUDNESS = (
         "MIX_LOUDNESS",
         "The mixed film misses the loudness it was mastered to.",
         Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
-        ("mix.loudness.range_max_lu", "mix.loudness.target_lufs", "mix.loudness.true_peak_max_dbtp"),
     )
     FILE_MISSING = (
         "FILE_MISSING",

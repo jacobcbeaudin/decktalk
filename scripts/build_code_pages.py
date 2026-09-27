@@ -8,7 +8,8 @@
 
 Every error block and every finding line prints a docs URL, so the page for a code lands with the
 code and resolves from the first run. The sentence, the certainty, the exit code and the settings
-keys a code depends on come from the enum member, so a page cannot say something the code does not.
+keys a code depends on come from the enum member and from the keys that name it, so a page cannot
+say something the code does not.
 
 It also writes the table of the codes the page raises into the runtime reference, between two
 markers, because that table was once typed by hand and described eleven codes differently from the
@@ -24,7 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from decktalk.errors import ErrorCode  # noqa: E402  (after sys.path, so a checkout needs no install)
+from decktalk.cli import catalog  # noqa: E402  (after sys.path, so a checkout needs no install)
+from decktalk.errors import ErrorCode  # noqa: E402
 from decktalk.findings import Code, RaisedBy  # noqa: E402
 
 RUNTIME = ROOT / "docs" / "reference" / "runtime.mdx"
@@ -59,7 +61,7 @@ def error_page(code: ErrorCode) -> str:
 
 def finding_page(code: Code) -> str:
     """The page for one finding code, which is what the printed finding line links to."""
-    decides = ", ".join(f"`{key}`" for key in code.decides)
+    decides = ", ".join(f"`{key}`" for key in catalog.deciding(code))
     body = [
         code.sentence,
         "",

@@ -314,8 +314,9 @@ because an error means DeckTalk could not run at all.
 
 A `Code` member carries more than its name. `code.sentence` is what the condition is,
 `code.certainty` is how sure it is, `code.raised_by` is `RaisedBy.RUNTIME` when the page reports it
-from the browser and `RaisedBy.PYTHON` when DeckTalk measures it, `code.decides` names the settings
-keys whose values decide it, and `code.url` is its page.
+from the browser and `RaisedBy.PYTHON` when DeckTalk measures it, and `code.url` is its page. The
+settings keys that move a code are declared on the keys themselves, and `decktalk.explain(KEY)`
+lists the codes one key decides.
 
 ```python
 import decktalk
@@ -325,7 +326,7 @@ for finding in project.check(pages=False).findings:
     code = finding.code
     print(code.name, finding.certainty.value, finding.location.where)
     print("  ", finding.message)
-    print("  knobs that decide it:", code.decides)
+    print("  read more:", code.url)
 ```
 
 A fix is one of three shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
