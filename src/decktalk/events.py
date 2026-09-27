@@ -5,9 +5,9 @@ Every call opens a run and writes to this stream. The Rich live region, the JSON
 prints on stderr, the per-run file under `build/events/` and any later dashboard are all subscribers
 to it, so a renderer never computes a fraction and there is only one channel to keep in step.
 
-`event` is the discriminator and there are twelve names. Skip and fail are not names: `stage.done`
-and `section.done` carry an `outcome`, because three names for one moment would force three branches
-where one field read will do.
+`event` is the discriminator and there are twelve names. Skip, keep and fail are not names:
+`stage.done` and `section.done` carry an `outcome`, because four names for one moment would force four
+branches where one field read will do.
 
 The library mints `event`, `time`, `seq` and `run`, so an emitter states only what it measured.
 `seq` counts per run rather than per machine, because a machine-wide counter would leave gaps in
@@ -96,7 +96,9 @@ class StageDone(Event):
 
     event: Literal["stage.done"] = Field("stage.done", description=MOMENT)
     stage: Stage = Field(description="The stage this line is about.")
-    outcome: Outcome = Field(description="Whether the stage ran, was skipped, or failed.")
+    outcome: Outcome = Field(
+        description="Whether the stage ran, was skipped, kept what an earlier run made, or failed."
+    )
     seconds: Elapsed
 
 
@@ -114,7 +116,9 @@ class SectionDone(Event):
     event: Literal["section.done"] = Field("section.done", description=MOMENT)
     stage: Stage = Field(description="The stage this line is about.")
     section: SectionNumber
-    outcome: Outcome = Field(description="Whether the section ran, was skipped, or failed.")
+    outcome: Outcome = Field(
+        description="Whether the section ran, was skipped, kept what an earlier run made, or failed."
+    )
     seconds: Elapsed
 
 
