@@ -220,7 +220,7 @@ src/decktalk/
       audio.py           Audio work on top of ffmpeg, so nothing above this module spells an audio filter by hand.
       browser.py         Headless Chromium through Playwright: recording a page, taking screenshots and drawing slates.
       encode.py          The settings and the tags every output shares, so each file DeckTalk writes is made the same way.
-      environment.py     The environment a browser DeckTalk launches is given, which is never the one the process holds.
+      environment.py     The environment a browser or an encoder DeckTalk starts is given, which is never the one the process holds.
       ffmpeg.py          Finding ffmpeg and ffprobe for this machine, running them, and probing what they read.
       frames.py          Frame statistics on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
       origin.py          The local origin every page is opened at, its request routing, and the server `decktalk serve` runs.

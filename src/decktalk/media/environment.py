@@ -1,13 +1,16 @@
-"""The environment a browser DeckTalk launches is given, which is never the one the process holds.
+"""The environment a browser or an encoder DeckTalk starts is given, which is never the one the process holds.
 
-Playwright starts Chromium with a copy of the process environment unless it is handed another, so a
-speech key, a cloud credential or any other secret the host holds would sit in the environment of the
-very process that runs a page's script. DeckTalk's own secret discipline never sees that path. So
-every launch is handed an environment built here, from the names in `BROWSER_KEYS` alone.
+Playwright starts Chromium with a copy of the process environment unless it is handed another, and
+so does a plain subprocess, so a speech key, a cloud credential or any other secret the host holds
+would sit in the environment of the process that runs a page's script, and of the ffmpeg that opens
+a file someone else supplied. DeckTalk's own secret discipline never sees that path. So every
+Chromium launch and every ffmpeg and ffprobe call is handed an environment built here, from the
+names in `CHILD_KEYS` alone.
 
 The values come from the machine rather than from the process, because only the machine reads the
-environment. A run binds the machine's own mapping through `children_see`, and a launch outside any
-run is handed the temporary directory and nothing else, which is enough for Chromium to start.
+environment. A run binds the machine's own mapping through `children_see`, and a child started
+outside any run is handed the temporary directory and nothing else, which is enough for Chromium to
+start and for ffmpeg to work.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-BROWSER_KEYS = (
+CHILD_KEYS = (
     "HOME",
     "PATH",
     "LANG",
@@ -50,13 +53,14 @@ BROWSER_KEYS = (
     "ALL_PROXY",
     "NO_PROXY",
 )
-"""The names a browser may see, each of which says where a file or a display is or how to print a date.
+"""The names a child process may see, each of which says where a file or a display is or how to print a date.
 
 None of them is where a credential is kept. The locale and the time zone are here so a trusted page
 formats a number or a date the way the author's own browser does, the proxy names so it reaches the
 network the way the machine does, and the Windows names because a Windows process started without
 them cannot load its own system libraries. An untrusted page's Chromium is handed a proxy of its own
-on the command line, which wins over any proxy named here.
+on the command line, which wins over any proxy named here, and ffmpeg opens files alone, so a proxy
+named here reaches nothing through it.
 """
 
 TEMP_KEYS = ("TMPDIR", "TMP", "TEMP")
@@ -68,7 +72,7 @@ MACHINE: ContextVar[Mapping[str, str] | None] = ContextVar("decktalk_machine_env
 
 @contextmanager
 def children_see(environ: Mapping[str, str]) -> Iterator[None]:
-    """Build every browser environment from `environ` while this is open, which the machine opens for a run."""
+    """Build every child environment from `environ` while this is open, which the machine opens for a run."""
     token = MACHINE.set(environ)
     try:
         yield
@@ -76,14 +80,14 @@ def children_see(environ: Mapping[str, str]) -> Iterator[None]:
         MACHINE.reset(token)
 
 
-def browser_environment() -> dict[str, str]:
-    """The environment a launched browser is given: the machine's values for `BROWSER_KEYS`, and no others.
+def child_environment() -> dict[str, str]:
+    """The environment a launched browser or encoder is given: the machine's values for `CHILD_KEYS`, and no others.
 
     Names are matched without regard to case, because Windows spells `SystemRoot` as it likes and
     reads it either way. The temporary directory is always present, because Chromium writes its
     profile there and a machine that named none still has one.
     """
-    wanted = {key.upper() for key in BROWSER_KEYS}
+    wanted = {key.upper() for key in CHILD_KEYS}
     bound = MACHINE.get() or {}
     kept = {name: value for name, value in bound.items() if name.upper() in wanted}
     if not any(name.upper() in TEMP_KEYS for name in kept):
@@ -92,4 +96,4 @@ def browser_environment() -> dict[str, str]:
     return kept
 
 
-__all__ = ["BROWSER_KEYS", "browser_environment", "children_see"]
+__all__ = ["CHILD_KEYS", "child_environment", "children_see"]

@@ -64,9 +64,9 @@ that meets one is told by name on its first run.
   film on disk is the one the last build measured. A reader that dispatched on three outcomes or on
   a non-null `next` reads the new values.
 - **`build/.lock` stays on disk.** It is an operating system lock now, and the empty file is expected.
-- **Chromium never inherits the process environment.** It is handed only the variables that say
-  where a file, a display, a locale or a proxy is, so a machine that passed Chromium anything else
-  through its own environment passes it no longer.
+- **Chromium, ffmpeg and ffprobe never inherit the process environment.** Each is handed only the
+  variables that say where a file, a display, a locale or a proxy is, so a machine that passed one of
+  them anything else through its own environment passes it no longer.
 
 **The command line**
 

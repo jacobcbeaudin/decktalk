@@ -46,6 +46,7 @@ from ..findings import Location
 from ..settings import ToolsConfig
 from ..toolchain import ffmpeg_fetch
 from ..toolchain.cache import caching_in
+from .environment import child_environment
 
 log = logging.getLogger(__name__)
 
@@ -132,8 +133,14 @@ Sink = Callable[[bytes], None]
 
 
 def _spawn(cmd: list[str]) -> subprocess.Popen[bytes]:
-    """Start one tool with both outputs piped and no input, so it can neither wait on a terminal nor block on one."""
-    return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    """Start one tool with both outputs piped and no input, so it can neither wait on a terminal nor block on one.
+
+    The tool is handed the scrubbed environment a browser is handed, never the process's own, so a
+    credential a host left in its environment does not reach a program that opens other people's files.
+    """
+    return subprocess.Popen(
+        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_environment()
+    )
 
 
 class _Reader(threading.Thread):

@@ -36,7 +36,7 @@ from decktalk.machine import (
     init,
 )
 from decktalk.media import ffmpeg as ffmpeg_module
-from decktalk.media.environment import browser_environment
+from decktalk.media.environment import child_environment
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.project import open as open_project
@@ -198,7 +198,7 @@ def test_a_browser_is_built_from_the_machines_environment_and_never_the_process(
     monkeypatch.setenv("LANG", "the-process-language")
     here = a_machine(tmp_path, LANG="the-machines-language", ELEVENLABS_API_KEY="sk-not-a-key")
     with here.run():
-        seen = browser_environment()
+        seen = child_environment()
     assert seen["LANG"] == "the-machines-language"
     assert "ELEVENLABS_API_KEY" not in seen
 

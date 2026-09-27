@@ -16,7 +16,7 @@ from playwright.sync_api import Error as PlaywrightError
 
 from decktalk.errors import Cancelled, InputError, ToolError
 from decktalk.media import browser
-from decktalk.media.environment import browser_environment
+from decktalk.media.environment import child_environment
 from decktalk.media.origin import ORIGIN, Allowed, page_url
 from decktalk.settings import BY_ID, COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 
@@ -505,7 +505,7 @@ def test_a_trusted_page_keeps_the_machines_own_network_and_still_gets_a_scrubbed
     browser.launch(Driver(launcher), policy=browser.TRUSTED)  # type: ignore[arg-type]
     asked = launcher.asked[0]
     assert "proxy" not in asked and "chromium_sandbox" not in asked
-    assert asked["env"] == browser_environment()
+    assert asked["env"] == child_environment()
 
 
 def test_a_machine_that_cannot_run_the_sandbox_is_refused_and_never_falls_back(monkeypatch):

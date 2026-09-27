@@ -104,7 +104,7 @@ from decktalk.media import browser
 
 root, out = Path(sys.argv[1]), Path(sys.argv[2])
 launched = []
-chosen = browser.browser_environment
+chosen = browser.child_environment
 
 
 def watched():
@@ -113,7 +113,7 @@ def watched():
     return given
 
 
-browser.browser_environment = watched
+browser.child_environment = watched
 project = decktalk.open(root)
 stages = [(name, getattr(project, name)()) for name in ("cue", "record", "assemble", "verify")]
 out.write_text(

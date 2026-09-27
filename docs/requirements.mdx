@@ -204,7 +204,7 @@ Under `untrusted`, three things hold at once.
   still names every host the page reached for, as `PAGE_CDN_ASSET`.
 - **The browser environment is scrubbed.** Chromium is handed only the variables that say where a
   file, a display, a locale or a proxy is, so a key the host holds never reaches the process that runs
-  a page's script. This holds under `trusted` too.
+  a page's script. ffmpeg and ffprobe are handed the same set. This holds under `trusted` too.
 
 The policy is read by every launch that opens a project's page, which is `record`, `check`,
 `storyboard` and the poster `assemble` draws.

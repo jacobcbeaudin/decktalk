@@ -49,7 +49,7 @@ from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
 from . import MILLISECONDS, pagereport
 from .encode import css_color
-from .environment import browser_environment
+from .environment import child_environment
 from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport, Recording
 
@@ -193,7 +193,7 @@ def launch_options(policy: PagePolicy) -> dict[str, Any]:
     the untrusted policy's alone, because a trusted page is a deck on its author's own machine and
     the machine's own proxy is the one it should use.
     """
-    options: dict[str, Any] = {"env": browser_environment()}
+    options: dict[str, Any] = {"env": child_environment()}
     if policy == UNTRUSTED:
         options |= {
             "chromium_sandbox": True,

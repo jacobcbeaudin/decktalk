@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tempfile
 
-from decktalk.media.environment import BROWSER_KEYS, browser_environment, children_see
+from decktalk.media.environment import CHILD_KEYS, child_environment, children_see
 
 
 def test_a_browser_sees_the_machines_paths_and_locale_and_nothing_else():
@@ -18,26 +18,26 @@ def test_a_browser_sees_the_machines_paths_and_locale_and_nothing_else():
         "DECKTALK_ALLOW_ANY_API_BASE": "1",
     }
     with children_see(machine):
-        seen = browser_environment()
+        seen = child_environment()
     assert seen == {"HOME": "/home/author", "LANG": "fr_FR.UTF-8", "TZ": "Europe/Paris", "TMPDIR": "/scratch"}
 
 
 def test_a_trusted_page_reaches_the_network_through_the_machines_own_proxy():
     """Chromium on Linux reads its proxy from the environment, so scrubbing it cut a trusted deck off."""
     with children_see({"https_proxy": "http://proxy.corp:3128", "NO_PROXY": "localhost"}):
-        assert browser_environment()["https_proxy"] == "http://proxy.corp:3128"
+        assert child_environment()["https_proxy"] == "http://proxy.corp:3128"
 
 
 def test_a_name_windows_spells_its_own_way_is_still_carried():
     with children_see({"SystemRoot": r"C:\Windows", "Path": r"C:\Windows\system32"}):
-        assert browser_environment()["SystemRoot"] == r"C:\Windows"
+        assert child_environment()["SystemRoot"] == r"C:\Windows"
 
 
 def test_a_launch_outside_any_run_gets_a_temporary_directory_and_nothing_of_the_process():
-    seen = browser_environment()
+    seen = child_environment()
     assert set(seen) == {"TMPDIR", "TMP", "TEMP"}
     assert set(seen.values()) == {tempfile.gettempdir()}
 
 
 def test_no_name_a_browser_may_see_is_one_a_credential_is_kept_under():
-    assert not [key for key in BROWSER_KEYS if any(word in key for word in ("KEY", "TOKEN", "SECRET", "PASS"))]
+    assert not [key for key in CHILD_KEYS if any(word in key for word in ("KEY", "TOKEN", "SECRET", "PASS"))]

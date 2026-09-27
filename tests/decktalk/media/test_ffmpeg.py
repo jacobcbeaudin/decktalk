@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sys
 import threading
 import time
@@ -11,6 +13,7 @@ import pytest
 
 from decktalk.errors import Cancel, Cancelled, ToolError
 from decktalk.media import ffmpeg
+from decktalk.media.environment import children_see
 from decktalk.settings import ToolsConfig
 from decktalk.toolchain.cache import cache_dir
 
@@ -40,10 +43,25 @@ def answer(
 
     def fake(cmd: list[str]):
         seen.append(cmd)
-        return SPAWN([sys.executable, "-c", script])
+        # The stand-in is Python, which on Windows cannot start without the system names a run binds.
+        with children_see(os.environ):
+            return SPAWN([sys.executable, "-c", script])
 
     monkeypatch.setattr(ffmpeg, "_spawn", fake)
     return seen
+
+
+def test_a_tool_sees_the_machines_scrubbed_environment_and_never_the_process(monkeypatch):
+    """ffmpeg opens files someone else supplied, so a credential the host left in its environment stays there."""
+    machine = {**os.environ, "ELEVENLABS_API_KEY": "sk-not-a-key", "LANG": "the-machines-language"}
+    monkeypatch.setenv("DECKTALK_TEST_PROCESS_ONLY", "the-process-value")
+    show = "import json, os, sys; sys.stdout.write(json.dumps(dict(os.environ)))"
+    with children_see(machine), SPAWN([sys.executable, "-c", show]) as proc:
+        out, _err = proc.communicate()
+    seen = json.loads(out)
+    assert seen["LANG"] == "the-machines-language"
+    assert "ELEVENLABS_API_KEY" not in seen
+    assert "DECKTALK_TEST_PROCESS_ONLY" not in seen
 
 
 COMPLAINT = b"\n".join(b"line %d" % n for n in range(1, 10)) + b"\nno such file or directory\n"
