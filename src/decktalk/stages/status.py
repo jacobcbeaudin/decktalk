@@ -33,11 +33,11 @@ import dataclasses
 import hashlib
 import json
 from collections.abc import Callable, Iterable, Mapping
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
+from decktalk.artifacts.stored import ENGINE_VERSION
 from decktalk.errors import DeckTalkError
 from decktalk.events import Level, Line, StageStart
 from decktalk.findings import MODEL, Code, Finding, Location
@@ -86,9 +86,6 @@ build` may put the whole build directory somewhere else and the workspace is wha
 
 KEPT_FILE = "kept.json"
 """What the record of the last assemble and verify is called, under the project's build directory."""
-
-PACKAGE = "decktalk"
-"""The distribution whose version every digest carries, so a new engine never keeps an old engine's film."""
 
 DIGEST = "blake2b"
 """The hash every kept digest is taken with, which is fast on large files and in the standard library."""
@@ -158,7 +155,7 @@ def assemble_key(inputs: Inputs, options: Mapping[str, JsonValue]) -> str:
     input would ship a film the inputs no longer describe, and one that reads too much costs only a
     repeated assemble.
     """
-    fields = [_engine(), json.dumps(dataclasses.asdict(inputs.settings), sort_keys=True, default=str)]
+    fields = [ENGINE_VERSION, json.dumps(dataclasses.asdict(inputs.settings), sort_keys=True, default=str)]
     fields.append(json.dumps(options, sort_keys=True))
     for path in _assemble_reads(inputs):
         fields += [inputs.relative(path).as_posix(), digest_of(path) if path.is_file() else ""]
@@ -223,14 +220,6 @@ def _digest(fields: Iterable[str]) -> str:
         hashed.update(text.encode("utf-8"))
         hashed.update(FIELD_END)
     return hashed.hexdigest()
-
-
-def _engine() -> str:
-    """This engine's version, or a word that keeps nothing when the package is not installed."""
-    try:
-        return version(PACKAGE)
-    except PackageNotFoundError:
-        return "unknown"
 
 
 def _assemble_reads(inputs: Inputs) -> list[Path]:
