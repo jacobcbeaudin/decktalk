@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from decktalk.errors import InputError
@@ -43,11 +43,22 @@ class Cue:
     offset: float = 0.0
     verify: bool = True  # False leaves the cue out of a plain `decktalk verify`.
     occurrence_set: bool = False  # cues.json names the occurrence, so a repeated phrase is not ambiguous.
+    line: int | None = None  # The line of cues.json the row's phrase is written on, when it could be found.
 
 
-# Every key a cue row may hold, which is every field of `Cue` but `occurrence_set`, this module's own and
-# never written by an author, and `_comment`, the one key a row may carry that DeckTalk reads nothing from.
-CUE_KEYS = {f.name for f in fields(Cue) if f.name != "occurrence_set"} | {"_comment"}
+READ_HERE = frozenset({"occurrence_set", "line"})
+"""The fields of `Cue` this module works out for itself, which an author never writes in a row."""
+
+# Every key a cue row may hold, which is every field of `Cue` but the ones this module works out, and
+# `_comment`, the one key a row may carry that DeckTalk reads nothing from.
+CUE_KEYS = {f.name for f in fields(Cue) if f.name not in READ_HERE} | {"_comment"}
+
+PHRASE_KEY = re.compile(r'"on"\s*:\s*("(?:[^"\\]|\\.)*")')
+"""Where a row writes its phrase in the file's own text, which is how the line of each row is found.
+
+A quote inside a JSON string is escaped, so this spelling can only be the key of a row and never a
+piece of some string's value.
+"""
 
 
 @dataclass(frozen=True)
@@ -67,8 +78,9 @@ def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...
     """
     if not path.exists():
         return ()
+    text = path.read_text(encoding="utf-8")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise InputError(
             f"{path.name} is not valid JSON: {exc.msg}.",
@@ -83,6 +95,7 @@ def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...
             location=at(path, root),
         )
     out: list[CuedSection] = []
+    lines = iter(phrase_lines(text))
     for num_raw, spec in sections_raw.items():
         try:
             number = int(num_raw)
@@ -106,11 +119,34 @@ def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...
             )
         section = Table(spec, f"{path.name}: section {number}")
         cues = [
-            parse_cue(raw, f"{path.name}: section {number}, cue #{i + 1}", at(path, root))
+            _placed(parse_cue(raw, f"{path.name}: section {number}, cue #{i + 1}", at(path, root)), next(lines, None))
             for i, raw in enumerate(section.get_tables("cues"))
         ]
         out.append(CuedSection(number=number, cues=tuple(cues), min_seconds=section.get_num("min_seconds")))
     return tuple(sorted(out, key=lambda s: s.number))
+
+
+def phrase_lines(text: str) -> list[tuple[str, int]]:
+    """(the phrase, the line it is written on) for every row of a cue file, in the order the file writes them.
+
+    JSON keeps the order of an object's members and of an array's items, so the rows the parser
+    hands back come in exactly this order, and the n-th phrase here is the n-th row's.
+    """
+    found: list[tuple[str, int]] = []
+    for match in PHRASE_KEY.finditer(text):
+        try:
+            phrase = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        found.append((phrase, text.count("\n", 0, match.start()) + 1))
+    return found
+
+
+def _placed(cue: Cue, written: tuple[str, int] | None) -> Cue:
+    """The row with the line its phrase is written on, when the text agrees with what was parsed."""
+    if written is None or written[0] != cue.on:
+        return cue
+    return replace(cue, line=written[1])
 
 
 def parse_cue(raw: dict[str, object], where: str, location: Location | None = None) -> Cue:

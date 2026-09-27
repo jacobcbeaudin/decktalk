@@ -94,3 +94,21 @@ def test_the_words_are_normalised_once_when_they_are_read(monkeypatch: pytest.Mo
     for _ in range(10):
         said.matches("a b")
     assert len(calls) - before == 20
+
+
+def test_each_row_knows_the_line_its_phrase_is_written_on(tmp_path: Path) -> None:
+    text = (
+        '{"sections": {\n'
+        '  "1": {"cues": [{"cue": "1.1:a", "on": "Hello"},\n'
+        '                 {"cue": "1.1:b",\n'
+        '                  "on": "say \\"there\\""}]},\n'
+        '  "2": {"cues": [{"cue": "2.1:a", "on": "again", "_comment": "\\"on\\": \\"decoy\\""}]}\n'
+        "}}\n"
+    )
+    (tmp_path / "cues.json").write_text(text, encoding="utf-8")
+    loaded = load_cues(tmp_path / "cues.json", tmp_path, {1, 2})
+    assert [(cue.on, cue.line) for block in loaded for cue in block.cues] == [
+        ("Hello", 2),
+        ('say "there"', 4),
+        ("again", 5),
+    ]

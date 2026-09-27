@@ -9,8 +9,9 @@ import pytest
 from decktalk.errors import Cancel, Cancelled
 from decktalk.events import Log
 from decktalk.findings import Code
-from decktalk.machine import Machine, Run, Toolchain
-from decktalk.results import CheckResult, SpendState
+from decktalk.inputs import Inputs
+from decktalk.machine import Machine, Run, Toolchain, apply_fix
+from decktalk.results import CheckResult, Scope, SpendState
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
 
 from .conftest import Drawn, a_project, a_run, catalog
@@ -181,3 +182,18 @@ def test_a_cancelled_run_stops_inside_the_section_it_was_in(tmp_path: Path, draw
     run = Run(machine, id="r1", cancel=token, root=tmp_path)
     with pytest.raises(Cancelled):
         check(inputs, run, frames=True)
+
+
+def test_a_phrase_an_edit_moved_is_repaired_by_the_fix_its_finding_carries(tmp_path: Path) -> None:
+    """The script was edited from "there again" to "there once again", and the cue kept the old phrase."""
+    edited = {"1": {"cues": [{"cue": "1.1:a", "on": "there agian"}]}}
+    inputs = a_project(tmp_path, cues=edited)
+    run = a_run(tmp_path)
+    result = check(inputs, run, pages=False)
+    (found,) = [one for one in result.findings if one.code is Code.CUE_UNRESOLVED]
+    assert found.location.file == Path("cues.json") and found.location.line is not None
+    assert found.fix is not None
+    outcome = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=True)
+    assert outcome.applied
+    again = check(Inputs.load(tmp_path, environ={}), a_run(tmp_path), pages=False)
+    assert Code.CUE_UNRESOLVED not in {one.code for one in again.findings}

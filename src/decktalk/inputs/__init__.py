@@ -192,6 +192,11 @@ class Inputs:
         """Every section's cues from `cues.json`, checked against `decktalk.toml`."""
         return load_cues(self.cues_path, self.root, {section.number for section in self.document.sections})
 
+    def cues_text(self) -> str:
+        """`cues.json` as it is written, which a fix that rewrites one row is worked out on, or nothing."""
+        path = self.cues_path
+        return path.read_text(encoding="utf-8") if path.is_file() else ""
+
     def markers(self) -> Markers | None:
         """The parsed `[mix] music_markers` file, or None when the project names none."""
         if not self.document.mix.music_markers:

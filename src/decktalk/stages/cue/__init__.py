@@ -60,6 +60,7 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None, allow_un
         clips=inputs.document.clip_numbers,
         estimated=estimated,
         cues_file=inputs.relative(inputs.cues_path),
+        cues_text=inputs.cues_text(),
         stage=Stage.CUE,
     )
     for block in cued:

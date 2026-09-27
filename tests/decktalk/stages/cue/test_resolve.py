@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Applicability, Certainty, Code, EditFix
 from decktalk.inputs.cues import Cue, CuedSection, Spoken
 from decktalk.pipeline import Stage
 from decktalk.results import Word
 from decktalk.stages.cue.resolve import (
     ambiguity,
     anchor_time,
+    nearest_phrase,
     resolve_cue,
     resolve_sections,
     short_section,
@@ -137,3 +138,48 @@ def test_a_cue_whose_phrase_is_not_written_yet_says_so_rather_than_naming_an_emp
     (judged,) = found
     assert judged.code is Code.CUE_UNRESOLVED
     assert "has no phrase yet" in judged.message and "''" not in judged.message
+
+
+# ---- the nearest phrase, offered as a fix -------------------------------------------------------
+
+CUES_TEXT = '{"sections": {"1": {"cues": [\n  {"cue": "1.1:a", "on": "in tin"}\n]}}}\n'
+"""A cue file whose one row waits for a phrase an edit moved one letter away from."""
+
+
+def test_an_edited_phrase_is_offered_the_nearest_phrase_its_section_speaks() -> None:
+    assert nearest_phrase(Cue(cue="1.1:a", on="in tin"), SPOKEN) == "in ten"
+
+
+def test_a_phrase_the_section_never_came_near_is_offered_nothing() -> None:
+    assert nearest_phrase(Cue(cue="1.1:a", on="quantum chromodynamics"), SPOKEN) is None
+
+
+def test_the_offered_phrase_keeps_the_case_it_was_spoken_in_so_a_case_sensitive_cue_resolves() -> None:
+    cue = Cue(cue="1.1:a", on="Helo", case_sensitive=True)
+    offered = nearest_phrase(cue, SPOKEN)
+    assert offered == "Hello"
+    assert resolve_cue(Cue(cue="1.1:a", on=offered, case_sensitive=True), SPOKEN) == 0.5
+
+
+def test_an_unresolved_cue_names_its_line_and_carries_the_edit_that_resolves_it() -> None:
+    block = CuedSection(number=1, cues=(Cue(cue="1.1:a", on="in tin", line=2),))
+    _sections, (found,) = resolve_sections(
+        [block], {1: WORDS}, clips=set(), estimated=set(), cues_file=Path("cues.json"), cues_text=CUES_TEXT
+    )
+    assert found.code is Code.CUE_UNRESOLVED
+    assert found.location.line == 2
+    assert "'in ten'" in found.message
+    assert isinstance(found.fix, EditFix) and found.fix.applicability is Applicability.UNSAFE
+    (edit,) = found.fix.edits
+    assert (edit.line, edit.old) == (2, '  {"cue": "1.1:a", "on": "in tin"}')
+    assert edit.new == '  {"cue": "1.1:a", "on": "in ten"}'
+
+
+def test_no_edit_is_offered_when_the_row_is_not_on_the_line_it_was_read_from() -> None:
+    """A fix worked out against a file that has since moved would rewrite the wrong line."""
+    block = CuedSection(number=1, cues=(Cue(cue="1.1:a", on="in tin", line=1),))
+    _sections, (found,) = resolve_sections(
+        [block], {1: WORDS}, clips=set(), estimated=set(), cues_file=Path("cues.json"), cues_text=CUES_TEXT
+    )
+    assert found.fix is None
+    assert "'in ten'" in found.message

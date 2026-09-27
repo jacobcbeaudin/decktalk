@@ -205,6 +205,7 @@ def _resolve(
         clips=inputs.document.clip_numbers,
         estimated=estimated,
         cues_file=inputs.relative(inputs.cues_path),
+        cues_text=inputs.cues_text(),
     )
     for one in found:
         run.found(one)
