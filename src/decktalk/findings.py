@@ -118,31 +118,31 @@ class Code(Enum):
     )
     PAGE_MOMENT_UNKNOWN = (
         "PAGE_MOMENT_UNKNOWN",
-        "A slide names a moment that no element on it declares, so nothing happens when it comes.",
+        "An element outside every slide template names a moment, so no slide owns its cue and it never plays.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
     PAGE_MOMENT_ORDER = (
         "PAGE_MOMENT_ORDER",
-        "An element's moments are declared out of the order they play, which is in, back, front and out.",
+        "An element's exit is declared at or before its own entrance, so the exit never plays.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
     PAGE_CUE_UNKNOWN = (
         "PAGE_CUE_UNKNOWN",
-        "A moment names a cue the runtime cannot qualify against the slide it sits on.",
+        "A cue fired that no reveal, no handler and no slide in the deck declares, so nothing answered it.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
     PAGE_NO_OWNER = (
         "PAGE_NO_OWNER",
-        "An element declares a moment and no slide owns it, so nothing decides when it plays.",
+        "A cue the scene plays is owned by none of its slides, so nothing is mounted for it.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
     PAGE_SCENE_EMPTY = (
         "PAGE_SCENE_EMPTY",
-        "A slide renders no element at all, so its section would play an empty picture.",
+        "A scene holds no slide template, so its section has no slide to show.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
@@ -166,7 +166,7 @@ class Code(Enum):
     )
     PAGE_TEMPLATE_IGNORED = (
         "PAGE_TEMPLATE_IGNORED",
-        "A template sits outside every slide, so the runtime never instantiates it.",
+        "A template nested inside a slide declares no slide of its own, so nothing ever mounts it.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
@@ -184,7 +184,7 @@ class Code(Enum):
     )
     PAGE_KATEX_ERROR = (
         "PAGE_KATEX_ERROR",
-        "KaTeX refused a formula, so that element shows an error where the maths should be.",
+        "KaTeX refused a formula, so the element shows the readable text the author wrote in its place.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
@@ -196,7 +196,7 @@ class Code(Enum):
     )
     PAGE_RENDER_THREW = (
         "PAGE_RENDER_THREW",
-        "A slide's render threw, so the slide is not on screen.",
+        "A slide's render threw, so the slide is drawn without what the render would have written.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
@@ -245,19 +245,19 @@ class Code(Enum):
     )
     PAGE_SWAP_AMBIGUOUS = (
         "PAGE_SWAP_AMBIGUOUS",
-        "Two elements claim the same swap, so the runtime cannot tell which one leaves.",
+        "A swap finds no element or several elements leaving at its cue, so it cannot tell which one it replaces.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
     PAGE_PREVIEW_AMBIGUOUS = (
         "PAGE_PREVIEW_AMBIGUOUS",
-        "Two elements claim the same preview, so preview mode cannot choose between them.",
+        "Two sections name one scene, so a preview cannot choose whose cue times to play.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
     PAGE_APPEAR_TOO_LONG = (
         "PAGE_APPEAR_TOO_LONG",
-        "A line appears word by word over more words than one cue can carry, so it runs past its own cue.",
+        "A line shown with data-words=appear holds more words than one cue can carry one at a time.",
         Certainty.CERTAIN,
         RaisedBy.RUNTIME,
     )
