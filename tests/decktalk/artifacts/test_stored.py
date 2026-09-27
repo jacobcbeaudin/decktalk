@@ -64,3 +64,11 @@ def test_an_artifact_is_frozen() -> None:
 
 def test_the_engine_names_the_version_it_was_installed_as() -> None:
     assert ENGINE_VERSION == engine_version() != ""
+
+
+def test_a_refusal_names_the_file_it_looked_for_and_never_the_default_build_directory(tmp_path: Path) -> None:
+    """A project may move its build directory, and a refusal naming `build/` would send a reader elsewhere."""
+    with pytest.raises(NotBuiltError) as refused:
+        Stored.require(tmp_path / "out" / "narrate" / "takes.json", Artifact.TAKES)
+    assert str(refused.value) == "takes.json has not been built."
+    assert refused.value.hint == Artifact.TAKES.next_step

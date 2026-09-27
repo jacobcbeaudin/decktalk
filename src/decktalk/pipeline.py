@@ -97,6 +97,10 @@ class Artifact(Enum):
         writer = self.written_by
         if writer is None:
             return f"Nothing in the pipeline writes {self.value}."
+        if writer is Stage.NARRATE:
+            # The one stage that spends money on every run has a way to make its artifact for nothing,
+            # and a reader stopped by a missing take index should not have to find that flag elsewhere.
+            return f"Run `decktalk {writer.value}` first, or `decktalk {writer.value} --no-voice` to spend nothing."
         return f"Run `decktalk {writer.value}` first."
 
 

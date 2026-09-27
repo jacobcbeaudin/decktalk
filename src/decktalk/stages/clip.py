@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from decktalk.artifacts import WORDS_SUFFIX, Take, Takes, Words
-from decktalk.errors import InputError
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
 from decktalk.inputs import Inputs, PageSection
 from decktalk.inputs.paths import at
@@ -163,9 +163,9 @@ def _section_video(inputs: Inputs, section: PageSection) -> Path:
     """The cut of one section, or a refusal naming the command that makes it."""
     video = inputs.workspace.section_video(section.key)
     if not video.is_file():
-        raise InputError(
+        raise NotBuiltError(
             f"section {section.number} has no cut at {inputs.relative(video)}.",
-            hint="Run `decktalk assemble` first.",
+            hint=Artifact.FINAL.next_step,
             location=at(video, inputs.root, section=section.number),
         )
     return video
@@ -176,16 +176,16 @@ def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
     takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
     take = takes.of(number)
     if take is None:
-        raise InputError(
+        raise NotBuiltError(
             f"section {number} has no take in {inputs.relative(inputs.workspace.takes_path)}.",
-            hint="Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.",
+            hint=Artifact.TAKES.next_step,
             location=at(inputs.workspace.takes_path, inputs.root, section=number),
         )
     source = inputs.workspace.takes_dir / take.file
     if not source.is_file():
-        raise InputError(
+        raise NotBuiltError(
             f"section {number} names the take {take.file}, which is not on disk.",
-            hint="Run `decktalk narrate` again to write it.",
+            hint=Artifact.TAKES.next_step,
             location=at(source, inputs.root, section=number),
         )
     return take, source

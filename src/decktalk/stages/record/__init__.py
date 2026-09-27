@@ -163,7 +163,7 @@ def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
     if not planned:
         raise InputError(
             "no page section has a length to record.",
-            hint="Run `decktalk narrate` first, or name a section that plays a page.",
+            hint=f"{Artifact.TAKES.next_step} Or name a section that plays a page.",
         )
     return planned
 

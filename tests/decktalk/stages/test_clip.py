@@ -224,7 +224,7 @@ def test_an_out_that_names_the_section_cut_is_refused(tmp_path: Path) -> None:
 
 
 def test_a_section_with_no_cut_names_the_command_that_makes_one(tmp_path: Path) -> None:
-    with pytest.raises(InputError, match="has no cut at") as refused:
+    with pytest.raises(NotBuiltError, match="has no cut at") as refused:
         cut_a_clip(a_project(tmp_path, cut=False), a_run(tmp_path))
     assert refused.value.hint == "Run `decktalk assemble` first."
 
@@ -237,5 +237,5 @@ def test_a_project_with_no_take_index_names_the_command_that_writes_one(tmp_path
 
 
 def test_a_take_the_index_names_and_the_project_has_not_got_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(InputError, match="which is not on disk"):
+    with pytest.raises(NotBuiltError, match="which is not on disk"):
         cut_a_clip(a_project(tmp_path, take_on_disk=False), a_run(tmp_path))

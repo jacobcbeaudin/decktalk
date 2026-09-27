@@ -28,7 +28,7 @@ from decktalk.inputs.markers import Marker
 from decktalk.inputs.timeline import narration_offsets, narration_runs
 from decktalk.machine import Run
 from decktalk.media import ffmpeg
-from decktalk.pipeline import Stage
+from decktalk.pipeline import Artifact, Stage
 from decktalk.stages import SECOND_DIGITS, judge
 from decktalk.stages.assemble.cut import Rendered, concat, encoder, rendered_starts
 
@@ -269,7 +269,7 @@ def _music(chain: Chain, inputs: Inputs, run: Run, takes: Takes, starts: Mapping
         return
     path = inputs.path(mix.music)
     if not path.exists():
-        _missing_sound(inputs, run, mix.music, "music", "Run `decktalk soundscape` to make it.")
+        _missing_sound(inputs, run, mix.music, "music", Artifact.SOUNDSCAPE.next_step)
         return
     volume = f"{gain(mix.music_db):.5f}*" + "*".join(_music_shape(inputs, run, takes, starts, speech))
     chain.layer(
@@ -290,7 +290,7 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
         return
     path = inputs.path(mix.ambience)
     if not path.exists():
-        _missing_sound(inputs, run, mix.ambience, "ambience", "Run `decktalk soundscape` to make it.")
+        _missing_sound(inputs, run, mix.ambience, "ambience", Artifact.SOUNDSCAPE.next_step)
         return
     audio = inputs.settings.audio
     pad = audio.ambience_pad_seconds

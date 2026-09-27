@@ -30,7 +30,7 @@ from decktalk.inputs.document import frame_dip
 from decktalk.machine import Run
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import Encoder
-from decktalk.pipeline import Stage
+from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
 from decktalk.stages import SECOND_DIGITS, judge, selects
 
@@ -199,8 +199,7 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
     if not webm.exists():
         if strict:
             raise NotBuiltError(
-                f"section {section.number} has no recording at {source}.",
-                hint="Run `decktalk record` first.",
+                f"section {section.number} has no recording at {source}.", hint=Artifact.RECORDINGS.next_step
             )
         run.note(f"{source} is not there, so section {section.number} plays black.", level=Level.WARNING)
         encode(out, (
@@ -230,10 +229,7 @@ def page_target(takes: Takes, section: PageSection, fps: int) -> float:
     """How long one page section runs in the film, which is its span in the narration plus its hold."""
     span = section_targets(takes, fps).get(section.number, 0.0)
     if span <= 0:
-        raise NotBuiltError(
-            f"section {section.number} has no span in the take index.",
-            hint="Run `decktalk narrate` first.",
-        )
+        raise NotBuiltError(f"section {section.number} has no span in the take index.", hint=Artifact.TAKES.next_step)
     # The narration pauses for a hold exactly as it pauses for a clip, so the hold is picture alone.
     return round(span + section.hold_seconds, SECOND_DIGITS)
 

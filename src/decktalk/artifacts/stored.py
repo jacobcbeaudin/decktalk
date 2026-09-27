@@ -10,8 +10,10 @@ is atomic on every platform DeckTalk ships on, so a reader never opens a half-wr
 a run interrupted mid-write leaves the previous file whole.
 
 An artifact that will not parse is reported as one that was never built, because the recovery is
-the same: run the stage that writes it again. The hint names that stage, read from `PIPELINE`, so
-no module here spells a "run this first" sentence of its own.
+the same: run the stage that writes it again. The hint names that stage, read from `PIPELINE`
+through `Artifact.next_step`, so no stage spells a "run this first" sentence of its own. A refusal names the
+file it looked for rather than the artifact's default path, because a project may move its build
+directory.
 """
 
 from __future__ import annotations
@@ -67,7 +69,7 @@ class Stored(BaseModel):
         """The artifact at `path`, or a `NOT_BUILT` refusal naming the stage that writes it."""
         found = cls.read(path)
         if found is None:
-            raise NotBuiltError(f"{artifact.value} has not been built.", hint=_rebuild(artifact))
+            raise NotBuiltError(f"{path.name} has not been built.", hint=artifact.next_step)
         return found
 
     @classmethod
@@ -89,12 +91,6 @@ class Stored(BaseModel):
         temporary.write_text(text + "\n", encoding="utf-8")
         temporary.replace(path)
         return path
-
-
-def _rebuild(artifact: Artifact) -> str:
-    """The command that writes this artifact, which is the one next step a reader needs."""
-    stage = artifact.written_by
-    return f"Run `decktalk {stage.value}` first." if stage else f"Nothing in the pipeline writes {artifact.value}."
 
 
 def _first_line(error: Exception) -> str:

@@ -17,13 +17,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from decktalk.artifacts import Cuts, Takes
-from decktalk.errors import NotBuiltError, ToolError
+from decktalk.errors import ToolError
 from decktalk.events import Unit
 from decktalk.inputs import Inputs
 from decktalk.inputs.timeline import narration_offsets
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
-from decktalk.pipeline import Stage
+from decktalk.pipeline import Artifact, Stage
 from decktalk.results import AssembleResult, RenderedSection
 from decktalk.stages import SECOND_DIGITS, clock, since
 from decktalk.stages.assemble.cut import Rendered, cut_list, render_sections, rendered_starts, stray_cuts
@@ -133,13 +133,7 @@ def assemble(
 
 def _takes(inputs: Inputs) -> Takes:
     """The take index, or the refusal that names the stage which writes it."""
-    takes = inputs.takes()
-    if takes is None:
-        raise NotBuiltError(
-            "the take index is not there, so no section has a length to cut to.",
-            hint="Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing.",
-        )
-    return takes
+    return Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
 
 
 def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *, loudness: bool, strict: bool

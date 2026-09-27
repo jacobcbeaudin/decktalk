@@ -48,7 +48,15 @@ def test_the_next_step_names_the_stage_that_writes_the_artifact() -> None:
     for artifact in Artifact:
         writer = artifact.written_by
         assert writer is not None, artifact
-        assert artifact.next_step == f"Run `decktalk {writer.value}` first."
+        assert artifact.next_step.startswith(f"Run `decktalk {writer.value}` first"), artifact
+
+
+def test_the_one_stage_that_spends_names_the_way_to_spend_nothing() -> None:
+    """A reader stopped by a missing take index should not have to look up the free way to make one."""
+    assert (
+        Artifact.TAKES.next_step == "Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing."
+    )
+    assert Artifact.RECORDINGS.next_step == "Run `decktalk record` first."
 
 
 def test_no_stage_reads_an_artifact_a_later_stage_writes() -> None:
