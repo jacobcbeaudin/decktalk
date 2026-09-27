@@ -161,3 +161,24 @@ def test_the_page_codes_carry_the_same_certainty_the_finding_codes_carry():
     for name, warning in PageWarning.__members__.items():
         certain = findings.Code[name].certainty is findings.Certainty.CERTAIN
         assert warning.certain == certain, f"{name} is certain in one registry and uncertain in the other"
+
+
+CONTRACT_CASES = ROOT / "tests" / "data" / "contract_cases.json"
+"""The table of cases both languages answer, which node runs against the TypeScript and this runs against Python."""
+
+
+def contract_cases() -> list[tuple[str, list[object], object]]:
+    """Every row of the shared case table, named by the function it calls."""
+    table = json.loads(CONTRACT_CASES.read_text(encoding="utf-8"))
+    return [(name, row["args"], row["want"]) for name, rows in table.items() if isinstance(rows, list) for row in rows]
+
+
+@pytest.mark.parametrize(("name", "args", "want"), contract_cases())
+def test_the_contract_cases_hold(name: str, args: list[object], want: object) -> None:
+    """The generated Python answers every case the TypeScript answers, so the two cannot drift apart."""
+    tolerance = json.loads(CONTRACT_CASES.read_text(encoding="utf-8"))["tolerance"]
+    got = getattr(page, name)(*args)
+    if isinstance(want, bool | str):
+        assert got == want
+    else:
+        assert got == pytest.approx(want, abs=tolerance)

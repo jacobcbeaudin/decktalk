@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from decktalk.artifacts import PREVIEW_ALIAS, CueTimes, Cuts, RecordingLog, Takes, Words, file_digest
+from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words, file_digest
 from decktalk.artifacts.stills import Stills, still_key
 from decktalk.artifacts.words import words_file
 from decktalk.errors import InputError
@@ -51,6 +51,7 @@ from decktalk.inputs.markers import Markers, load_markers
 from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.script import Segment, read_script
 from decktalk.inputs.workspace import Workspace
+from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import Word
 from decktalk.settings import PROJECT_FILE, Layers, Settings, key_warnings, load, read_project_toml
 
@@ -296,7 +297,7 @@ class Inputs:
         A recording keyed on one of these would be keyed on its own output, so the origin never
         counts them among the assets a section was recorded from.
         """
-        return {PREVIEW_ALIAS: json.dumps(self.preview_cues()).encode("utf-8")}
+        return {PREVIEW_CUE_TIMES: json.dumps(self.preview_cues()).encode("utf-8")}
 
     # ---- frozen frames -------------------------------------------------------------------------
 

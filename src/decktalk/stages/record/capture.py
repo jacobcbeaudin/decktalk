@@ -32,7 +32,7 @@ from decktalk.artifacts import CueTimes, RecordingLog, input_hash, text_digest
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
-from decktalk.page import Q
+from decktalk.page import LIST_SEPARATOR, TIME_MARK, Q
 from decktalk.results import Word
 
 SIGNAL = "signal"
@@ -75,14 +75,13 @@ def scene_params(section: PageSection, cue_times: CueTimes | None) -> dict[Q, st
 def words_param(words: tuple[Word, ...]) -> str | None:
     """A section's words as word@seconds pairs, in seconds after that section starts.
 
-    A comma separates two pairs and an at sign separates a word from its second, so neither may
-    appear inside a word that is written into the value.
+    The contract's list separator divides two pairs and its time mark divides a word from its
+    second, so neither may appear inside a word that is written into the value.
     """
     if not words:
         return None
-    return ",".join(
-        f"{word.word.replace(',', '').replace('@', '')}@{max(0.0, word.start):.{WORD_DIGITS}f}" for word in words
-    )
+    pairs = ((word.word.replace(LIST_SEPARATOR, "").replace(TIME_MARK, ""), max(0.0, word.start)) for word in words)
+    return LIST_SEPARATOR.join(f"{said}{TIME_MARK}{start:.{WORD_DIGITS}f}" for said, start in pairs)
 
 
 def spoken_words(inputs: Inputs, section: int) -> tuple[Word, ...]:

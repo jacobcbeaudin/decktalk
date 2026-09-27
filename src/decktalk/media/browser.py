@@ -43,6 +43,7 @@ from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import InputError, ToolError
+from ..page import MOTION_SCALE_PROPERTY
 from ..settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
@@ -76,7 +77,7 @@ MOTION_JS = """(() => {
   const add = () => {
     const style = document.createElement("style");
     style.id = "dt-motion";
-    style.textContent = ":root{--dt-motion-scale:%s}";
+    style.textContent = ":root{%s:%s}";
     (document.head || document.documentElement).appendChild(style);
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add, { once: true });
@@ -115,7 +116,7 @@ def motion_scripts(motion: MotionConfig) -> list[str]:
     scale is a custom property, because it multiplies every length the sheet plays and no query key
     could carry it.
     """
-    return [] if motion.scale == UNSCALED else [MOTION_JS % f"{motion.scale:g}"]
+    return [] if motion.scale == UNSCALED else [MOTION_JS % (MOTION_SCALE_PROPERTY, f"{motion.scale:g}")]
 
 
 def scheme(value: str) -> ColorScheme:
