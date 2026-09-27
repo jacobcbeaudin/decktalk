@@ -149,3 +149,70 @@ def test_ffmpeg_concatenates_files_under_a_directory_with_an_apostrophe_in_its_n
     joined = films / "joined.mp4"
     ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(joined))
     assert ffmpeg.probe_duration(joined) == pytest.approx(0.8, abs=0.1)
+
+
+# ---- a file a project supplies ----------------------------------------------------------------------
+
+
+def test_an_opened_input_allows_the_file_protocol_and_the_closed_demuxers_alone():
+    """The restriction sits ahead of `-i`, where ffmpeg applies it to that input and to nothing else."""
+    argv = ffmpeg.source(Path("clips/intro.mp4"))
+    assert argv[-2:] == ["-i", "clips/intro.mp4"]
+    assert argv[argv.index("-protocol_whitelist") + 1] == ffmpeg.SOURCE_PROTOCOLS
+    assert "," not in ffmpeg.SOURCE_PROTOCOLS, "one protocol, and it is the one that reads a local file"
+    formats = argv[argv.index("-format_whitelist") + 1].split(",")
+    assert formats == list(ffmpeg.SOURCE_FORMATS)
+    assert not {"hls", "dash", "concat", "image2"} & set(formats)
+
+
+@pytest.mark.usefixtures("tools")
+@pytest.mark.parametrize("probe", [ffmpeg.probe_duration, ffmpeg.has_audio])
+def test_every_probe_opens_its_file_through_the_one_restricted_input(monkeypatch, probe):
+    seen = answer(monkeypatch, code=0, out=b"1.0\n")
+    probe(Path("clips/intro.mp4"))
+    assert seen[0][-len(ffmpeg.source("x")) :][:-1] == ffmpeg.source("x")[:-1]
+    assert seen[0][-1] == "clips/intro.mp4"
+
+
+def hostile_playlist(root: Path, *, absolute: bool) -> tuple[Path, Path]:
+    """A project clip that is an HLS playlist naming a film outside the project, and that film.
+
+    The pinned ffmpeg refuses a segment that climbs with `..` on its own, and reads one named by an
+    absolute path, so both spellings are tried.
+    """
+    outside = root / "tenant-b" / "film.mp4"
+    outside.parent.mkdir(parents=True)
+    ffmpeg.run(
+        "-f", "lavfi", "-i", "color=c=black:s=64x64:r=25:d=1",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(outside),
+    )  # fmt: skip
+    clip = root / "tenant-a" / "clips" / "intro.m3u8"
+    clip.parent.mkdir(parents=True)
+    segment = outside.resolve().as_posix() if absolute else "../../tenant-b/film.mp4"
+    clip.write_text(
+        f"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:1.0,\n{segment}\n#EXT-X-ENDLIST\n",
+        encoding="utf-8",
+    )
+    return clip, outside
+
+
+@pytest.mark.media
+@pytest.mark.parametrize("absolute", [True, False])
+def test_a_clip_that_is_a_playlist_naming_another_tenants_film_is_refused(tmp_path, absolute):
+    """0.5.0 probed the playlist and read the other tenant's film through it, which is a cross-tenant read."""
+    clip, _outside = hostile_playlist(tmp_path, absolute=absolute)
+    with pytest.raises(ToolError, match="not on whitelist"):
+        ffmpeg.probe_duration(clip)
+    with pytest.raises(ToolError, match="not on whitelist"):
+        ffmpeg.stderr(*ffmpeg.source(clip), "-f", "null", "-")
+
+
+@pytest.mark.media
+def test_a_playlist_that_names_a_host_is_refused_before_anything_is_asked_of_it(tmp_path):
+    clip = tmp_path / "music.m3u8"
+    clip.write_text(
+        "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:1.0,\nhttp://169.254.169.254/latest/meta-data\n#EXT-X-ENDLIST\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ToolError, match="not on whitelist"):
+        ffmpeg.probe_duration(clip)

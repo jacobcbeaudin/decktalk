@@ -142,7 +142,7 @@ def render_clip(inputs: Inputs, run: Run, enc: Encoder, section: ClipSection, ou
     if clip.exists():
         total = ffmpeg.probe_duration(clip)
         encode(out, (
-            "-i", str(clip),
+            *ffmpeg.source(clip),
             "-filter_complex", f"[0:v]{enc.fit}{vfades(total, *fades, dip)}[v]",
             "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", str(out),
         ), (clip,))  # fmt: skip
@@ -170,7 +170,7 @@ def _render_slate_section(
     configured = inputs.path(inputs.document.mix.slate) if inputs.document.mix.slate else None
     png = configured if configured is not None and configured.exists() else section_slate(inputs, run, section)
     source = (
-        ["-loop", "1", "-framerate", str(enc.v.output_fps), "-t", f"{seconds}", "-i", str(png)]
+        ["-loop", "1", "-framerate", str(enc.v.output_fps), "-t", f"{seconds}", *ffmpeg.source(png)]
         if png
         else enc.color_source(enc.v.slate_color, seconds)
     )
@@ -216,7 +216,7 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
     lead = "" if log is None else f"trim=start={log.trim_seconds},setpts=PTS-STARTPTS,"
     note = webm.name if log is None else f"{webm.name} (t0 {log.trim_seconds}s trimmed)"
     encode(out, (
-        "-i", str(webm),
+        *ffmpeg.source(webm),
         "-filter_complex",
         f"[0:v]{lead}{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},"
         f"setpts=PTS-STARTPTS{vfades(total, *fades, dip)}[v]",

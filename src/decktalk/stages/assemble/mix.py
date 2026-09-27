@@ -57,12 +57,17 @@ class MixInput:
     path: str
 
     def args(self, total: float) -> list[str]:
-        """The ffmpeg input arguments for this layer, in the order the filter graph indexes them."""
+        """The ffmpeg input arguments for this layer, in the order the filter graph indexes them.
+
+        A file layer is a sound the project names or the soundscape wrote, so it opens through
+        `ffmpeg.source`, which reads that one file and follows no name inside it. The generated
+        anchor is the one input that is not a file.
+        """
         if self.mode == LOOP:
-            return ["-stream_loop", "-1", "-i", self.path]
+            return ["-stream_loop", "-1", *ffmpeg.source(self.path)]
         if self.mode == LAVFI:
             return ["-f", "lavfi", "-t", f"{total:.3f}", "-i", self.path]
-        return ["-i", self.path]
+        return ffmpeg.source(self.path)
 
 
 @dataclass(frozen=True)

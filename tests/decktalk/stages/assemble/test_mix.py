@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from decktalk.inputs.markers import Marker
+from decktalk.media import ffmpeg
 from decktalk.stages.assemble.mix import (
     LAVFI,
     LOOP,
@@ -221,6 +222,13 @@ def test_the_input_arguments_follow_the_order_the_graph_indexes_them():
     )
     assert mix_input_args(plan) == [
         "-f", "lavfi", "-t", "3.500", "-i", "anullsrc",
-        "-i", "a.mp3",
-        "-stream_loop", "-1", "-i", "bed.mp3",
+        *ffmpeg.source("a.mp3"),
+        "-stream_loop", "-1", *ffmpeg.source("bed.mp3"),
     ]  # fmt: skip
+
+
+def test_a_sound_the_project_names_opens_as_one_file_and_follows_no_name_inside_it():
+    """A music bed that is a playlist would otherwise read files and hosts the project never named."""
+    for layer in (MixInput(ONCE, "music.m3u8"), MixInput(LOOP, "music.m3u8")):
+        opened = ffmpeg.source("music.m3u8")
+        assert layer.args(1.0)[-len(opened) :] == opened

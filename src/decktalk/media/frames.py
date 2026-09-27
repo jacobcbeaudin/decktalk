@@ -27,7 +27,9 @@ class FrameStats:
 
 def frame_stats(path: Path, seconds: float) -> list[FrameStats]:
     """Per-frame signalstats for the first `seconds` of the file."""
-    out = ffmpeg.stderr("-t", str(seconds), "-i", str(path), "-vf", "signalstats,metadata=print", "-f", "null", "-")
+    out = ffmpeg.stderr(
+        "-t", str(seconds), *ffmpeg.source(path), "-vf", "signalstats,metadata=print", "-f", "null", "-"
+    )
     frames: list[FrameStats] = []
     cur: dict[str, float] = {}
     for line in out.splitlines():
@@ -97,7 +99,7 @@ def luma_at(path: Path, t: float, *, crop: str | None = None) -> tuple[float, fl
     """(YAVG, YMAX) of the frame at t, optionally after crop=w:h:x:y."""
     seek = frame_seek(t)
     vf = f"{seek.trim()}," + (f"crop={crop}," if crop else "") + "signalstats,metadata=print"
-    err = ffmpeg.stderr(*seek.before, "-i", str(path), "-vf", vf, "-frames:v", "1", "-f", "null", "-")
+    err = ffmpeg.stderr(*seek.before, *ffmpeg.source(path), "-vf", vf, "-frames:v", "1", "-f", "null", "-")
     yavg = re.search(r"YAVG=([0-9.]+)", err)
     ymax = re.search(r"YMAX=([0-9.]+)", err)
     return (float(yavg.group(1)) if yavg else 0.0, float(ymax.group(1)) if ymax else 0.0)
@@ -112,7 +114,7 @@ def write_luma_frame(path: Path, t: float, target: Path, *, width: int, height: 
     """
     seek = frame_seek(t)
     vf = f"{seek.trim()},scale={width}:{height},format=gray"
-    ffmpeg.run(*seek.before, "-i", str(path), "-vf", vf, "-frames:v", "1", str(target))
+    ffmpeg.run(*seek.before, *ffmpeg.source(path), "-vf", vf, "-frames:v", "1", str(target))
 
 
 def _changed_mask(level: int) -> str:
@@ -131,7 +133,7 @@ def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, widt
         for t, target in ((t1, a), (t2, b)):
             write_luma_frame(path, t, target, width=width, height=height)
         err = ffmpeg.stderr(
-            "-i", str(a), "-i", str(b), "-filter_complex",
+            *ffmpeg.source(a), *ffmpeg.source(b), "-filter_complex",
             f"[0:v]format=gray[a];[1:v]format=gray[b];[a][b]blend=all_mode=difference,{_changed_mask(level)}",
             "-frames:v", "1", "-f", "null", "-",
         )  # fmt: skip
@@ -145,7 +147,7 @@ def changed_images_percent(a: Path, b: Path, *, level: int, width: int, height: 
     Both images are scaled to width x height and read as luma, as the frames of changed_pixels_percent are.
     """
     err = ffmpeg.stderr(
-        "-i", str(a), "-i", str(b), "-filter_complex",
+        *ffmpeg.source(a), *ffmpeg.source(b), "-filter_complex",
         f"[0:v]scale={width}:{height},format=gray[a];[1:v]scale={width}:{height},format=gray[b];"
         f"[a][b]blend=all_mode=difference,{_changed_mask(level)}",
         "-frames:v", "1", "-f", "null", "-",
@@ -178,8 +180,8 @@ def changed_series(
             f"[r][b]blend=all_mode=difference:shortest=1,{_changed_mask(level)}"
         )
         err = ffmpeg.stderr(
-            "-loop", "1", "-framerate", str(fps), "-t", f"{span + LOOP_TAIL_SECONDS:.3f}", "-i", str(ref),
-            *seek.before, "-i", str(path),
+            "-loop", "1", "-framerate", str(fps), "-t", f"{span + LOOP_TAIL_SECONDS:.3f}", *ffmpeg.source(ref),
+            *seek.before, *ffmpeg.source(path),
             "-filter_complex", fc, "-f", "null", "-",
         )  # fmt: skip
     first = math.ceil(start * fps - 1e-6) / fps

@@ -264,7 +264,7 @@ def _render(
     )
     encoder = Encoder(settings)
     ffmpeg.run(
-        "-i", str(video), "-i", str(source),
+        *ffmpeg.source(video), *ffmpeg.source(source),
         "-filter_complex", f"{picture};{sound}",
         "-map", "[v]", "-map", "[a]", "-r", str(fps), *encoder.venc, *encoder.aenc,
         "-t", f"{total:.6f}", "-movflags", "+faststart", str(film),

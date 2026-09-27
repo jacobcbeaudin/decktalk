@@ -16,6 +16,11 @@ mistake this module exists to prevent.
 
 `audio.py` and `frames.py` build on the five calls here: `run`, `stderr`, `raw`, `probe_duration`
 and `has_audio`.
+
+A file a project supplies is untrusted input. A clip or a music bed is a container that can name
+other files and other hosts, as an HLS playlist or a concat list does, and ffmpeg follows those names
+by default. So every input a caller opens goes through `source`, which allows the file protocol alone
+and a closed set of demuxers that read one file and name nothing else.
 """
 
 from __future__ import annotations
@@ -88,6 +93,47 @@ def _checked(cmd: list[str], what: str, *, location: Location | None = None) -> 
     if proc.returncode != 0:
         raise ToolError(f"{what} failed: {_tail(proc.stderr)}", location=location)
     return proc
+
+
+SOURCE_PROTOCOLS = "file"
+"""The one protocol an opened input may use, so no file can make ffmpeg reach a host, a pipe or a subfile."""
+
+SOURCE_FORMATS = (
+    "mov",
+    "matroska",
+    "avi",
+    "mp3",
+    "wav",
+    "ogg",
+    "flac",
+    "aac",
+    "png_pipe",
+    "jpeg_pipe",
+    "webp_pipe",
+)
+"""The demuxers an opened input may be read by, each of which reads one file and follows no name inside it.
+
+`mov` also answers for mp4 and m4a, and `matroska` for webm, because ffmpeg matches a demuxer by any
+of its names. The playlist and list demuxers, `hls`, `dash`, `concat` and `image2` among them, are
+absent on purpose, because each of them opens files or hosts that the project never named.
+"""
+
+
+def source(path: Path | str) -> list[str]:
+    """The arguments that open one input, allowing the file protocol and the demuxers in `SOURCE_FORMATS` alone.
+
+    Every caller that hands ffmpeg or ffprobe a file uses this in place of a bare `-i`, and the
+    options it returns apply to that one input, so a caller may still put its own input options,
+    such as a seek, ahead of it.
+    """
+    return [
+        "-protocol_whitelist",
+        SOURCE_PROTOCOLS,
+        "-format_whitelist",
+        ",".join(SOURCE_FORMATS),
+        "-i",
+        str(path),
+    ]
 
 
 def _at(path: Path | str) -> Location:
@@ -267,7 +313,7 @@ def probe_duration(path: Path | str) -> float:
         "format=duration",
         "-of",
         "default=noprint_wrappers=1:nokey=1",
-        str(path),
+        *source(path),
     ]
     proc = _checked(cmd, f"ffprobe on {Path(path).name}", location=_at(path))
     text = proc.stdout.decode(errors="replace").strip()
@@ -296,7 +342,7 @@ def has_audio(path: Path | str) -> bool:
         "stream=codec_type",
         "-of",
         "csv=p=0",
-        str(path),
+        *source(path),
     ]
     proc = _checked(cmd, f"ffprobe on {Path(path).name}", location=_at(path))
     return bool(proc.stdout.decode(errors="replace").strip())

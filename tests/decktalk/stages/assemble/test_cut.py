@@ -261,3 +261,17 @@ def test_a_leftover_cut_of_a_section_nobody_declares_is_said_and_left_out(tmp_pa
     assert opened.notes() == [
         "build/sections/09.mp4 is a cut of a section decktalk.toml no longer declares, so it is left out of the film."
     ]
+
+
+def test_a_clip_the_project_names_opens_as_one_file_and_follows_no_name_inside_it(
+    tmp_path, write_project, open_run, fake_ffmpeg
+):
+    """A clip that is a playlist would otherwise read files and hosts the project never named."""
+    toml = "[project]\nname = 't'\n[[section]]\nnumber = 1\nclip = 'media/clip.mp4'\n"
+    inputs = write_project(tmp_path, toml)
+    (tmp_path / "media").mkdir()
+    (tmp_path / "media" / "clip.mp4").write_bytes(b"")
+    (slot,) = inputs.document.clip_sections
+    render_clip(inputs, open_run(tmp_path).run, make_encoder(inputs), slot, tmp_path / "out.mp4", 0.0, strict=True)
+    opened = ffmpeg.source(inputs.path("media/clip.mp4"))
+    assert any(call[: len(opened)] == opened for call in fake_ffmpeg.calls)
