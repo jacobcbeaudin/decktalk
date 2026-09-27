@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from support.paths import REPO
 
 sys.path.insert(0, str(REPO / "scripts"))
+import build_changelog  # noqa: E402
 import release_notes  # noqa: E402
 
 CHANGELOG = """# Changelog
@@ -60,3 +62,10 @@ def test_a_candidate_keeps_the_notes_release_please_wrote() -> None:
 def test_a_version_the_changelog_never_released_is_refused() -> None:
     with pytest.raises(SystemExit, match="no entry for 0.6.0"):
         release_notes.notes(CHANGELOG, "0.6.0")
+
+
+def test_every_section_the_changelog_shows_carries_a_docs_tag() -> None:
+    """A heading the config shows and the docs page cannot tag would publish a release with no tag."""
+    config = json.loads((REPO / "release-please-config.json").read_text(encoding="utf-8"))
+    shown = {row["section"] for row in config["packages"]["."]["changelog-sections"] if not row.get("hidden")}
+    assert shown <= set(build_changelog.TAGS)
