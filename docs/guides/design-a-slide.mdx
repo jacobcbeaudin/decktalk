@@ -120,17 +120,17 @@ length.
 | `settle` | 0.28 s | up 4 px | A large block, where 10 px reads as a jump. |
 | `fade` | 0.24 s | none | Code, tables and grids, where any travel reads as a layout shift. |
 | `pop` | 0.20 s | 4 percent overshoot | The one result a section builds to. Use it once a slide. |
-| `draw` | 0.48 s | none | An SVG stroke, drawn at a constant speed. |
+| `draw` | 0.44 s | none | An SVG stroke, drawn at a constant speed. |
 | `cut` | 0 s | none | A cursor or a highlight that must be there on the frame of its cue. |
 
-`data-in-seconds` overrides that length. It runs from 0.12 to 0.48 in steps of 0.04, which is three
-to twelve captured frames at 25 fps, and a value off that grid earns
+`data-in-seconds` overrides that length. It runs from 0.12 to 0.44 in steps of 0.04, which is three
+to eleven captured frames at 25 fps, and a value off that grid earns
 [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE). It governs the entrance alone and never when
 the entrance starts.
 
 An element whose measured motion still runs past 0.5 seconds earns
 [`PAGE_MOTION_OVERRUN`](/reference/findings/PAGE_MOTION_OVERRUN), which is certain. Since the longest
-entrance a page may write is 0.48 seconds, the two ways to reach it are `motion.scale` above one and
+entrance a page may write is 0.44 seconds, the two ways to reach it are `motion.scale` above one and
 a staggered container.
 
 ### The stagger
@@ -157,7 +157,7 @@ The lesson example staggers four tiles at 0.04 with a `fade` entrance, so its to
 </div>
 ```
 
-The same four tiles at 0.2 with a `draw` entrance would total 0.2 × 3 + 0.48, which is 1.08 seconds,
+The same four tiles at 0.2 with a `draw` entrance would total 0.2 × 3 + 0.44, which is 1.04 seconds,
 and DeckTalk measures that exactly and reports
 [`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN) as a certain finding. Fix it by
 shortening the step, choosing a shorter entrance, or splitting the container across two cues.
@@ -174,7 +174,7 @@ is [`PAGE_STAGGER_EMPTY`](/reference/findings/PAGE_STAGGER_EMPTY).
 | `data-out` with `data-out-style` of `fade` or `fall` | 0.20 s |
 | `data-enter` with `crossfade` | 0.24 s, and `cut` is 0 s |
 | `data-words` with `highlight` or `appear` | 0.12 s per word |
-| `data-count` with `last` or `first` | 0.48 s |
+| `data-count` with `last` or `first` | 0.44 s |
 
 `data-words="appear"` shows a line one word at a time from nothing, and a line of more than eight
 words takes longer than one cue can carry, which earns
