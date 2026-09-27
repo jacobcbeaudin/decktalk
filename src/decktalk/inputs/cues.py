@@ -143,22 +143,47 @@ def parse_cue(raw: dict[str, object], where: str, location: Location | None = No
     )
 
 
+UNMATCHED = re.compile(r"[^0-9A-Za-z']")
+"""Every character the matcher ignores, which is everything but a letter, a digit and an apostrophe."""
+
+
 def norm(token: str, case_sensitive: bool = False) -> str:
     """One word with its punctuation dropped, as the matcher compares it."""
-    token = re.sub(r"[^0-9A-Za-z']", "", token)
+    token = UNMATCHED.sub("", token)
     return token if case_sensitive else token.lower()
 
 
-def phrase_matches(words: Sequence[Word], phrase: str, case_sensitive: bool = False) -> list[int]:
-    """Index of the first word of every occurrence of phrase, in order."""
-    target = [t for t in (norm(t, case_sensitive) for t in phrase.split()) if t]
-    if not target:
-        return []
-    normalized = [norm(w.word, case_sensitive) for w in words]
-    return [i for i in range(len(normalized) - len(target) + 1) if normalized[i : i + len(target)] == target]
+@dataclass(frozen=True)
+class Spoken:
+    """One section's words, with the form the matcher compares each of them in worked out once.
 
+    A section is matched against once per cue, and a long section with many cues would otherwise
+    normalise every one of its words again for each of them, so the two forms are made here when the
+    words are read and every phrase is matched against these.
+    """
 
-def find_phrase(words: Sequence[Word], phrase: str, occurrence: int = 1, case_sensitive: bool = False) -> int | None:
-    """Index of the first word of the n-th occurrence of phrase, or None."""
-    matches = phrase_matches(words, phrase, case_sensitive)
-    return matches[occurrence - 1] if 1 <= occurrence <= len(matches) else None
+    words: tuple[Word, ...]
+    folded: tuple[str, ...]
+    """Every word as a match without case compares it."""
+
+    exact: tuple[str, ...]
+    """Every word as a case-sensitive match compares it."""
+
+    @classmethod
+    def of(cls, words: Sequence[Word]) -> Spoken:
+        """These words with both of their matched forms worked out once."""
+        exact = tuple(norm(word.word, case_sensitive=True) for word in words)
+        return cls(words=tuple(words), folded=tuple(one.lower() for one in exact), exact=exact)
+
+    def matches(self, phrase: str, case_sensitive: bool = False) -> list[int]:
+        """Index of the first word of every occurrence of phrase, in order."""
+        target = [t for t in (norm(t, case_sensitive) for t in phrase.split()) if t]
+        if not target:
+            return []
+        said, width = self.exact if case_sensitive else self.folded, len(target)
+        return [i for i in range(len(said) - width + 1) if list(said[i : i + width]) == target]
+
+    def find(self, phrase: str, occurrence: int = 1, case_sensitive: bool = False) -> int | None:
+        """Index of the first word of the n-th occurrence of phrase, or None."""
+        found = self.matches(phrase, case_sensitive)
+        return found[occurrence - 1] if 1 <= occurrence <= len(found) else None

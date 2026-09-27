@@ -15,7 +15,7 @@ from collections.abc import Container, Mapping, Sequence
 from pathlib import Path
 
 from decktalk.findings import Code, Finding, Location
-from decktalk.inputs.cues import Cue, CuedSection, find_phrase, phrase_matches
+from decktalk.inputs.cues import Cue, CuedSection, Spoken
 from decktalk.pipeline import Stage
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages import SECOND_DIGITS, judge
@@ -33,29 +33,30 @@ REPEATS_MIN = 2
 """How many times a phrase has to occur before a cue that names no occurrence is ambiguous."""
 
 
-def anchor_time(cue: Cue, words: Sequence[Word]) -> float | None:
+def anchor_time(cue: Cue, spoken: Spoken) -> float | None:
     """The moment this cue is anchored to, before its own nudge, or None when its phrase is not spoken."""
+    words = spoken.words
     if cue.on == SECTION_START:
         return SECTION_START_SECONDS
     if cue.on == SECTION_END:
         return words[-1].end if words else None
-    found = find_phrase(words, cue.on, cue.occurrence, cue.case_sensitive)
+    found = spoken.find(cue.on, cue.occurrence, cue.case_sensitive)
     return None if found is None else words[found].start
 
 
-def resolve_cue(cue: Cue, words: Sequence[Word]) -> float | None:
+def resolve_cue(cue: Cue, spoken: Spoken) -> float | None:
     """The second this cue fires, which is its anchor plus its own nudge, never before the section starts.
 
     A nudge that would pull a cue in front of its own section has nowhere to go, so it lands on the
     section's start, which is the case `CUE_NO_ONSET` names.
     """
-    anchor = anchor_time(cue, words)
+    anchor = anchor_time(cue, spoken)
     if anchor is None:
         return None
     return max(SECTION_START_SECONDS, round(anchor + cue.offset, SECOND_DIGITS))
 
 
-def ambiguity(cue: Cue, words: Sequence[Word]) -> str | None:
+def ambiguity(cue: Cue, spoken: Spoken) -> str | None:
     """The sentence for a phrase that occurs more than once on a cue that names no occurrence, or None.
 
     It is a sentence and not a judgement because the cue does resolve: it takes the first occurrence,
@@ -64,10 +65,10 @@ def ambiguity(cue: Cue, words: Sequence[Word]) -> str | None:
     """
     if cue.occurrence_set or cue.on in (SECTION_START, SECTION_END):
         return None
-    matches = phrase_matches(words, cue.on, cue.case_sensitive)
+    matches = spoken.matches(cue.on, cue.case_sensitive)
     if len(matches) < REPEATS_MIN:
         return None
-    times = ", ".join(f"{words[found].start:.2f}s" for found in matches)
+    times = ", ".join(f"{spoken.words[found].start:.2f}s" for found in matches)
     return (
         f"{cue.on!r} occurs {len(matches)} times in section {cue.cue.split(':', 1)[0]}, at {times}, and the cue "
         'takes the first. Set "occurrence" on the cue to choose another.'
@@ -112,10 +113,11 @@ def resolve_sections(
     found: list[Finding] = []
     for block in sorted(cued, key=lambda one: one.number):
         words = words_by_section.get(block.number)
+        spoken = None if words is None else Spoken.of(words)
         rows: list[CueTime] = []
         for cue in block.cues:
             place = Location(where=cue.cue, file=cues_file, section=block.number, cue=cue.cue)
-            seconds = None if words is None else resolve_cue(cue, words)
+            seconds = None if spoken is None else resolve_cue(cue, spoken)
             rows.append(CueTime(cue=cue.cue, phrase=cue.on, seconds=seconds, offset=cue.offset))
             if seconds is None:
                 found += _unresolved(cue, block, words, place, clips=clips, stage=stage)

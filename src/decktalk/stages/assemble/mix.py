@@ -23,7 +23,7 @@ from decktalk.errors import InputError
 from decktalk.events import Level
 from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs, PageSection
-from decktalk.inputs.cues import find_phrase
+from decktalk.inputs.cues import Spoken
 from decktalk.inputs.markers import Marker
 from decktalk.inputs.timeline import narration_offsets, narration_runs
 from decktalk.machine import Run
@@ -169,7 +169,7 @@ def resolve_marker_time(marker: Marker, starts: Mapping[int, float], takes: Take
     words = inputs.words(marker.section, take.hash)
     if marker.on == "$end":
         return starts[marker.section] + words[-1].end + marker.offset if words else None
-    found = find_phrase(words, marker.on, marker.occurrence, marker.case_sensitive)
+    found = Spoken.of(words).find(marker.on, marker.occurrence, marker.case_sensitive)
     return None if found is None else starts[marker.section] + words[found].start + marker.offset
 
 

@@ -139,7 +139,8 @@ def cue_findings(
     renames = _renames(declared, listed)
     found: list[Finding] = []
     for number in sorted(declared):
-        missing = [wire for wire in declared[number] if wire not in _rows_of(listed, number)]
+        rows = _rows_of(listed, number)
+        missing = [wire for wire in declared[number] if wire not in rows]
         scaffold = [wire for wire in missing if wire not in renames.get(number, {}).values()]
         if not missing:
             continue
@@ -220,8 +221,9 @@ def _renames(declared: Mapping[int, Sequence[str]], listed: Mapping[int, CuedSec
         block = listed.get(number)
         if block is None:
             continue
-        stale = [row for row in block.cues if row.cue not in wires and row.on]
-        gained = [wire for wire in wires if wire not in {row.cue for row in block.cues}]
+        listed_ids, wanted = {row.cue for row in block.cues}, set(wires)
+        stale = [row for row in block.cues if row.cue not in wanted and row.on]
+        gained = [wire for wire in wires if wire not in listed_ids]
         if len(stale) == 1 and len(gained) == 1:
             out[number] = {stale[0].cue: gained[0]}
     return out

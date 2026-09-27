@@ -27,6 +27,7 @@ from decktalk.artifacts import CueTimes, Takes
 from decktalk.events import Level
 from decktalk.findings import Finding
 from decktalk.inputs import CuedSection, Inputs
+from decktalk.inputs.cues import Spoken
 from decktalk.machine import Run
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import overlap_findings
@@ -88,8 +89,9 @@ def _say_what_was_chosen(run: Run, block: CuedSection, words: Sequence[Word]) ->
     both readings rather than judgements, so each is a line on the stream and no code is invented
     for it.
     """
+    spoken = Spoken.of(words)
     for row in block.cues:
-        said = ambiguity(row, words)
+        said = ambiguity(row, spoken)
         if said:
             run.note(said, level=Level.WARNING)
     short = short_section(block, words)

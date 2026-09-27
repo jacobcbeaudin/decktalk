@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from decktalk.findings import Certainty, Code
-from decktalk.inputs.cues import Cue, CuedSection
+from decktalk.inputs.cues import Cue, CuedSection, Spoken
 from decktalk.pipeline import Stage
 from decktalk.results import Word
 from decktalk.stages.cue.resolve import (
@@ -25,28 +25,31 @@ WORDS = (
 )
 """One section's words, which every case here resolves against."""
 
+SPOKEN = Spoken.of(WORDS)
+"""The same words with their matched forms worked out once, which is what one cue is resolved against."""
+
 
 def test_a_phrase_resolves_to_the_start_of_the_word_it_names() -> None:
-    assert anchor_time(Cue(cue="1.1:a", on="in ten"), WORDS) == 1.3
-    assert resolve_cue(Cue(cue="1.1:a", on="in ten", offset=0.1), WORDS) == 1.4
+    assert anchor_time(Cue(cue="1.1:a", on="in ten"), SPOKEN) == 1.3
+    assert resolve_cue(Cue(cue="1.1:a", on="in ten", offset=0.1), SPOKEN) == 1.4
 
 
 def test_an_occurrence_chooses_between_two_of_the_same_phrase() -> None:
-    assert resolve_cue(Cue(cue="1.1:a", on="one", occurrence=2), WORDS) == 2.1
+    assert resolve_cue(Cue(cue="1.1:a", on="one", occurrence=2), SPOKEN) == 2.1
 
 
 def test_the_two_edges_are_the_section_start_and_the_last_word() -> None:
-    assert resolve_cue(Cue(cue="1.1:a", on="$start"), WORDS) == 0.0
-    assert resolve_cue(Cue(cue="1.1:a", on="$end"), WORDS) == 2.3
+    assert resolve_cue(Cue(cue="1.1:a", on="$start"), SPOKEN) == 0.0
+    assert resolve_cue(Cue(cue="1.1:a", on="$end"), SPOKEN) == 2.3
 
 
 def test_a_phrase_that_is_not_spoken_resolves_to_nothing() -> None:
-    assert resolve_cue(Cue(cue="1.1:a", on="missing phrase"), WORDS) is None
+    assert resolve_cue(Cue(cue="1.1:a", on="missing phrase"), SPOKEN) is None
 
 
 def test_a_nudge_never_pulls_a_cue_in_front_of_its_own_section() -> None:
     """A second before the section starts has nowhere to play, so it lands on the section's start."""
-    assert resolve_cue(Cue(cue="1.1:a", on="Hello", offset=-9.0), WORDS) == 0.0
+    assert resolve_cue(Cue(cue="1.1:a", on="Hello", offset=-9.0), SPOKEN) == 0.0
 
 
 def test_a_cue_on_the_section_start_is_an_uncertain_finding_with_its_second_in_it() -> None:
@@ -110,11 +113,11 @@ def test_a_finding_carries_the_cue_file_it_is_about_when_the_caller_names_one() 
 
 
 def test_a_repeated_phrase_is_ambiguous_only_when_the_cue_names_no_occurrence() -> None:
-    said = ambiguity(Cue(cue="1.1:a", on="one"), WORDS)
+    said = ambiguity(Cue(cue="1.1:a", on="one"), SPOKEN)
     assert said is not None and "occurs 2 times" in said and "1.00s, 2.10s" in said
-    assert ambiguity(Cue(cue="1.1:a", on="one", occurrence=1, occurrence_set=True), WORDS) is None
-    assert ambiguity(Cue(cue="1.1:a", on="ten"), WORDS) is None
-    assert ambiguity(Cue(cue="1.1:a", on="$start"), WORDS) is None
+    assert ambiguity(Cue(cue="1.1:a", on="one", occurrence=1, occurrence_set=True), SPOKEN) is None
+    assert ambiguity(Cue(cue="1.1:a", on="ten"), SPOKEN) is None
+    assert ambiguity(Cue(cue="1.1:a", on="$start"), SPOKEN) is None
 
 
 def test_a_section_shorter_than_its_visuals_need_is_said_once_with_both_numbers() -> None:
