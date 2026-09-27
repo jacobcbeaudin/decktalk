@@ -16,7 +16,6 @@ bound the other does not have.
 from __future__ import annotations
 
 import difflib
-import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
@@ -478,18 +477,18 @@ def from_mapping[T](
     *,
     base: Mapping[str, Any] | None = None,
     prefixes: list[str] | None = None,
-    environ: Mapping[str, str] | None = None,
+    environ: Mapping[str, str],
 ) -> T:
     """Build a dataclass tree from its own defaults, a nested mapping, and the environment.
 
     Precedence, lowest to highest: the field's default, `base` (a nested mapping keyed by field
-    name, such as a parsed TOML file with one table per nested dataclass), then the environment
-    variable named PREFIX_FIELD, upper case, with nested names joined by `_`. `environ`
-    replaces os.environ, for tests.
+    name, such as a parsed TOML file with one table per nested dataclass), then the variable in
+    `environ` named PREFIX_FIELD, upper case, with nested names joined by `_`. `environ` is
+    required and never the process's own, because the machine is the one reader of the process.
     """
     names = prefixes or []
     table = base or {}
-    env = os.environ if environ is None else environ
+    env = environ
     hints = get_type_hints(cls)
     args: dict[str, Any] = {}
     for f in fields(cast("Any", cls)):

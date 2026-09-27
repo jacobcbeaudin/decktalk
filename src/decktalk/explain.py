@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, JsonValue
 
 from .errors import InputError
 from .findings import DOCS, MODEL, Code
+from .machine import Machine
 from .results import Layer, LayerValue, NumberView, Scope
 from .settings import (
     BY_ID,
@@ -78,11 +79,15 @@ class _Cue:
     at: float
 
 
-def explain(key: str, *, project: Path | None = None, value: str | None = None) -> Explanation:
+def explain(
+    key: str, *, project: Path | None = None, value: str | None = None, machine: Machine | None = None
+) -> Explanation:
     """One knob, its layers, the numbers it feeds and what a candidate would clamp in this project.
 
     `project` is a project directory. Without one the answer is about the defaults and the machine
     alone, which is what an agent reading the instruction set before it has a project needs.
+    `machine` is the machine whose file and environment are the layers under and over the project,
+    which is this process's own when none is given, as it is for `init`.
     `value` is a candidate spelled the way a command line spells it, held to the same safe range as
     a value that is written, because an explanation of a value the loader would refuse is a lie
     with arithmetic in it.
@@ -93,7 +98,8 @@ def explain(key: str, *, project: Path | None = None, value: str | None = None) 
             f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
             hint="Run `decktalk schema settings` for every key DeckTalk reads.",
         )
-    here = load(project)
+    on = machine or Machine.from_environment()
+    here = load(project, machine=on.tables, machine_path=on.config_path, environ=on.environ)
     candidate = _candidate(known, here, value)
     cues = _cues(project) if project else ()
     return Explanation(

@@ -603,7 +603,14 @@ def test_every_event_a_driven_call_emitted_validates_back(project: Project, coll
 def test_the_settings_writer_reports_what_a_config_set_would_change(project: Project, capsys):
     """`config set` is the writer's record rendered, so the writer is what this row really drives."""
     capsys.readouterr()
-    written = settings.write(project.root / "decktalk.toml", "video.width", "1280", scope=Scope.PROJECT, dry_run=True)
+    written = settings.write(
+        project.root / "decktalk.toml",
+        "video.width",
+        "1280",
+        scope=Scope.PROJECT,
+        environ=project.machine.environ,
+        dry_run=True,
+    )
     assert written.key == "video.width"
     assert written.dry_run is True
     assert set(ConfigSetResult.model_fields) >= set(type(written).model_fields) - {"line", "shadowed"}
@@ -613,7 +620,9 @@ def test_the_settings_writer_reports_what_a_config_set_would_change(project: Pro
 
 def test_the_settings_remover_reports_what_a_config_unset_would_change(project: Project):
     """`config unset` takes the layer below back, and writing a validated file is library work."""
-    removed = settings.unset(project.root / "decktalk.toml", "video.width", scope=Scope.PROJECT)
+    removed = settings.unset(
+        project.root / "decktalk.toml", "video.width", scope=Scope.PROJECT, environ=project.machine.environ
+    )
     assert removed.keys == ("video.width",)
     assert set(ConfigUnsetResult.model_fields) >= {"keys", "scope", "file"}
 

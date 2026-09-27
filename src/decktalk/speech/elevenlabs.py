@@ -13,7 +13,6 @@ model does, and it arrives in the request rather than being read from the enviro
 from __future__ import annotations
 
 import base64
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,25 +21,23 @@ from urllib.parse import urlsplit
 from ..errors import InputError, ProviderError
 from ..results import Word
 from ..secret import Secret
+from ..settings import ALLOW_ANY_API_BASE
 from . import SpeechRequest, VoiceContext
 from .http import post_bytes, post_json
 
 PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 ELEVENLABS_DOMAIN = "elevenlabs.io"
-# Set this to let `[elevenlabs] api_base` name any host, for a local mock of the API. The
-# environment is the user's own machine and a project file is not, so the file alone can never
-# redirect the key. Any value but an empty string, `0`, `no` or `false` turns the check off.
-ALLOW_ANY_API_BASE = "DECKTALK_ALLOW_ANY_API_BASE"
 
 
-def check_api_base(api_base: str, environ: Mapping[str, str] | None = None) -> str:
-    """`api_base` when it is an https URL on an ElevenLabs host or the override is set, and otherwise an error.
+def check_api_base(api_base: str, *, allow_any: bool) -> str:
+    """`api_base` when it is an https URL on an ElevenLabs host or the machine allows any, and otherwise an error.
 
     The key travels in a header to whatever host `api_base` names, so the value is checked here,
-    before the first request, wherever it came from.
+    before the first request, wherever it came from. Whether any host is allowed is the machine's
+    own field, passed in, so a project file can never lift the check and a host that built its
+    machine by hand decides it rather than the process it runs in.
     """
-    env = os.environ if environ is None else environ
-    if env.get(ALLOW_ANY_API_BASE, "").lower() not in ("false", "0", "no", ""):
+    if allow_any:
         return api_base
     parts = urlsplit(api_base)
     host = (parts.hostname or "").lower()
@@ -100,11 +97,14 @@ class ElevenLabs:
     speech_timeout_seconds: int  # [narration] timeout_seconds
     sound_timeout_seconds: int  # [elevenlabs] timeout_seconds
     name: str = "elevenlabs"
+    allow_any_api_base: bool = False
+    """Whether `api_base` may name any host, which only the machine decides and which is off unless it says so."""
     checked_base: str = field(init=False)
 
     def __post_init__(self) -> None:
         # Every URL is built from the base that passed the check, and never from the setting again.
-        object.__setattr__(self, "checked_base", check_api_base(self.api_base).rstrip("/"))
+        checked = check_api_base(self.api_base, allow_any=self.allow_any_api_base)
+        object.__setattr__(self, "checked_base", checked.rstrip("/"))
 
     @classmethod
     def for_context(cls, context: VoiceContext) -> ElevenLabs:
@@ -116,6 +116,7 @@ class ElevenLabs:
             context_chars=context.context_chars,
             speech_timeout_seconds=context.speech_timeout_seconds,
             sound_timeout_seconds=context.sound_timeout_seconds,
+            allow_any_api_base=context.allow_any_api_base,
         )
 
     def cache_key(self, request: SpeechRequest) -> str:

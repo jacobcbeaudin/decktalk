@@ -63,6 +63,12 @@ class VoiceContext:
     context_chars: int  # [narration] context_chars
     speech_timeout_seconds: int  # [narration] timeout_seconds
     sound_timeout_seconds: int  # [elevenlabs] timeout_seconds
+    allow_any_api_base: bool = False
+    """Whether `api_base` may name a host other than ElevenLabs, which the machine alone decides.
+
+    It is off unless the machine that runs the call turns it on, so a context built without asking
+    the machine sends the key to ElevenLabs and nowhere else.
+    """
 
 
 class SpeechProvider(Protocol):

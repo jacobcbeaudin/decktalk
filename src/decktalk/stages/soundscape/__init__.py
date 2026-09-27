@@ -52,7 +52,7 @@ from decktalk.results import (
 )
 from decktalk.settings import ElevenLabsConfig
 from decktalk.speech import VoiceContext
-from decktalk.speech.elevenlabs import ElevenLabs, check_api_base
+from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import clock, judge, selects, since
 from decktalk.stages.soundscape.ledger import (
     LEDGER_FILE,
@@ -162,12 +162,13 @@ def plan_items(inputs: Inputs) -> list[Planned]:
     """Every item the `[soundscape]` table declares, in the order the table declares them.
 
     Nothing here reads the disk or the network, so what a run would ask for can be read without
-    asking for it, which is what prices a run before it spends.
+    asking for it, which is what prices a run before it spends. The base names each request in its
+    digest and is sent nothing, so it is checked where a request is made, when the client is built.
     """
     spec = inputs.document.soundscape
     mix = inputs.document.mix
     cfg = inputs.settings.elevenlabs
-    base = check_api_base(cfg.api_base, inputs.env.environ).rstrip("/")
+    base = cfg.api_base.rstrip("/")
     sound, music = base + SOUND_PATH, base + MUSIC_PATH
     items: list[Planned] = []
     if spec.ambience is not None:

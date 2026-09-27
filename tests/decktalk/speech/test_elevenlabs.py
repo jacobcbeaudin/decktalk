@@ -15,9 +15,10 @@ import pytest
 
 from decktalk.errors import InputError, ProviderError
 from decktalk.secret import Secret
+from decktalk.settings import ALLOW_ANY_API_BASE
 from decktalk.speech import PROVIDERS, SpeechRequest, VoiceContext, get_provider
 from decktalk.speech import http as _http
-from decktalk.speech.elevenlabs import ALLOW_ANY_API_BASE, ElevenLabs, check_api_base, words_from_alignment
+from decktalk.speech.elevenlabs import ElevenLabs, check_api_base, words_from_alignment
 
 SENTINEL = "sk_sentinel_key_that_must_never_print"
 VOICE = "Xb7hH8MSUJpSbSDYk0k2"
@@ -102,7 +103,7 @@ def request(**over: object) -> SpeechRequest:
     ],
 )
 def test_an_https_elevenlabs_host_passes(base):
-    assert check_api_base(base, environ={}) == base
+    assert check_api_base(base, allow_any=False) == base
 
 
 @pytest.mark.parametrize(
@@ -120,26 +121,30 @@ def test_an_https_elevenlabs_host_passes(base):
 )
 def test_anything_else_is_an_input_error_that_names_the_override(base):
     with pytest.raises(InputError) as caught:
-        check_api_base(base, environ={})
+        check_api_base(base, allow_any=False)
     assert ALLOW_ANY_API_BASE in f"{caught.value} {caught.value.hint}"
 
 
-def test_the_environment_override_allows_any_base():
-    assert check_api_base("http://127.0.0.1:8000/v1", environ={ALLOW_ANY_API_BASE: "1"}) == "http://127.0.0.1:8000/v1"
-    for off in ("", "0", "false", "no"):
-        with pytest.raises(InputError):
-            check_api_base("http://127.0.0.1:8000/v1", environ={ALLOW_ANY_API_BASE: off})
+def test_the_machines_switch_allows_any_base():
+    assert check_api_base("http://127.0.0.1:8000/v1", allow_any=True) == "http://127.0.0.1:8000/v1"
+    with pytest.raises(InputError):
+        check_api_base("http://127.0.0.1:8000/v1", allow_any=False)
 
 
-def test_the_provider_refuses_a_foreign_base_before_any_request(monkeypatch):
+def test_the_provider_refuses_a_foreign_base_before_any_request():
     """The refusal names the rule and the switch, and never the value, which may hold a path token."""
-    monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
     with pytest.raises(InputError) as caught:
         provider(api_base="https://evil.test/v1/SUPERSECRETTOKEN")
     said = f"{caught.value} {caught.value.hint}"
     assert "evil.test" not in said and "SUPERSECRETTOKEN" not in said
+    assert provider(api_base="https://evil.test/v1", allow_any_api_base=True).checked_base.endswith("/v1")
+
+
+def test_the_switch_set_in_the_process_does_not_redirect_the_key(monkeypatch):
+    """Only the machine decides, so a host that set nothing on its machine keeps the key on ElevenLabs."""
     monkeypatch.setenv(ALLOW_ANY_API_BASE, "1")
-    assert provider(api_base="https://evil.test/v1").checked_base.endswith("/v1")
+    with pytest.raises(InputError):
+        provider(api_base="https://evil.test/v1")
 
 
 # ---- the real synthesize ------------------------------------------------------------------------
@@ -147,7 +152,6 @@ def test_the_provider_refuses_a_foreign_base_before_any_request(monkeypatch):
 
 def test_one_section_read_aloud_comes_back_as_audio_and_a_time_for_every_word(monkeypatch):
     """The whole reason DeckTalk can cut on a word: the reply's character alignment becomes words."""
-    monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
     asked = answers(monkeypatch, REPLY)
     audio, words = provider().synthesize(request(previous_text="before" * 5, next_text="after" * 5))
     assert audio == AUDIO
@@ -167,7 +171,6 @@ def test_one_section_read_aloud_comes_back_as_audio_and_a_time_for_every_word(mo
 
 def test_the_voice_id_is_a_plain_name_in_the_request_the_url_and_the_hash(monkeypatch):
     """It says which voice read the script, the way a model name says which model did."""
-    monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
     asked = answers(monkeypatch, REPLY)
     speech = provider()
     speech.speak(request())
@@ -179,7 +182,6 @@ def test_the_voice_id_is_a_plain_name_in_the_request_the_url_and_the_hash(monkey
 
 def test_the_normalised_alignment_is_read_when_the_written_one_is_absent(monkeypatch):
     """A service that could not align the text as written still aligned what it spoke."""
-    monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
     answers(monkeypatch, {"audio_base64": base64.b64encode(AUDIO).decode(), "normalized_alignment": alignment("Hi")})
     _audio, words = provider().synthesize(request())
     assert [w.word for w in words] == ["Hi"]
@@ -187,7 +189,6 @@ def test_the_normalised_alignment_is_read_when_the_written_one_is_absent(monkeyp
 
 def test_a_reply_with_no_audio_in_it_is_a_provider_failure_rather_than_an_empty_take(monkeypatch):
     """An empty take reads as silence in every later stage, so it is refused where it arrives."""
-    monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
     answers(monkeypatch, {"alignment": alignment("Hi")})
     with pytest.raises(ProviderError) as caught:
         provider().synthesize(request())
@@ -196,7 +197,6 @@ def test_a_reply_with_no_audio_in_it_is_a_provider_failure_rather_than_an_empty_
 
 def test_a_refusal_quotes_the_service_and_never_the_key(monkeypatch):
     """The body is written by whatever host `api_base` names, so it is scrubbed before it is quoted."""
-    monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
     answers(monkeypatch, json.dumps({"detail": f"invalid api key {SENTINEL}"}).encode(), status=401)
     with pytest.raises(ProviderError) as caught:
         provider().synthesize(request())
@@ -206,7 +206,6 @@ def test_a_refusal_quotes_the_service_and_never_the_key(monkeypatch):
 
 
 def test_a_service_that_asked_for_a_slower_pace_is_worth_trying_again(monkeypatch):
-    monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
     answers(monkeypatch, b'{"detail": "slow down"}', status=429)
     with pytest.raises(ProviderError) as caught:
         provider().synthesize(request())
@@ -240,8 +239,7 @@ def _columns(text: str) -> tuple[list[str], list[float], list[float]]:
 # ---- the registry -------------------------------------------------------------------------------
 
 
-def test_the_registry_builds_the_one_provider_decktalk_ships(monkeypatch):
-    monkeypatch.delenv(ALLOW_ANY_API_BASE, raising=False)
+def test_the_registry_builds_the_one_provider_decktalk_ships():
 
     class Env:
         def require(self, *names: str) -> list[Secret]:

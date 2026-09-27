@@ -80,6 +80,7 @@ from decktalk.results import (
     Voicing,
 )
 from decktalk.settings import (
+    ALLOW_ANY_API_BASE,
     PROJECT_FILE,
     ToolsConfig,
     load,
@@ -111,6 +112,9 @@ KATEX = "katex"
 
 FIX_TIMEOUT_SECONDS = 1800.0
 """The longest a command fix may run, which fetches a browser and an encoder in minutes and never in an hour."""
+
+SWITCHED_OFF = frozenset(("", "0", "no", "false"))
+"""The spellings of a switch variable that leave it off, so any other value turns it on."""
 
 BIAS_KEY = "host.presentation_bias_ms"
 """The one key a command measures rather than a person chooses, which `doctor --measure` writes."""
@@ -360,13 +364,20 @@ class Machine:
     overrides: tuple[str, ...] = ()
     providers: Mapping[str, Any] = field(default_factory=dict, repr=False, compare=False)
     """Provider factories a caller supplied, which sit over the shipped ones under the same names."""
+    allow_any_api_base: bool = False
+    """Whether `[elevenlabs] api_base` may name a host other than ElevenLabs, which only a machine decides.
+
+    It is a field rather than a variable the speech layer reads, so a host that built its machine by
+    hand decides it, and a key is never sent elsewhere because the process that runs a call happened
+    to have the switch set.
+    """
 
     @classmethod
     def from_environment(cls, *, overrides: Iterable[tuple[str, str]] = ()) -> Machine:
         """This machine as the process found it, which is the only reading of the environment there is."""
         environ = dict(os.environ)
         home = Path.home()
-        config = machine_config_path()
+        config = machine_config_path(environ, home)
         tables = read_machine_toml(config)
         pairs = tuple(f"{key}={value}" for key, value in overrides)
         mine = scoped(route(pairs), SettingScope.MACHINE)
@@ -378,6 +389,7 @@ class Machine:
             cwd=Path.cwd(),
             toolchain=Toolchain.of(loaded.settings.tools, cache=standard_cache_dir(environ, home)),
             overrides=pairs,
+            allow_any_api_base=environ.get(ALLOW_ANY_API_BASE, "").lower() not in SWITCHED_OFF,
         )
 
     @property
@@ -572,7 +584,7 @@ class Machine:
         # the module is loaded by the one caller that asks for it rather than by every report.
         measured = import_module("decktalk.media.browser").measure_presentation_bias
         bias = float(measured())
-        write(self.config_path, BIAS_KEY, str(bias), scope=SettingScope.MACHINE, measured=True)
+        write(self.config_path, BIAS_KEY, str(bias), scope=SettingScope.MACHINE, environ=self.environ, measured=True)
         run.wrote(self.config_path)
         return bias
 
@@ -641,12 +653,13 @@ def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, .
     written its first.
     """
     if isinstance(fix, SettingFix):
-        return (write(_settings_file(root, scope), fix.key, fix.value, scope=scope).file,)
+        written = write(_settings_file(run, root, scope), fix.key, fix.value, scope=scope, environ=run.machine.environ)
+        return (written.file,)
     if isinstance(fix, CommandFix):
         _run_command(run, fix, root=root)
         return ()
     targets = [(edit, _inside(root, edit.file)) for edit in fix.edits]
-    return tuple(dict.fromkeys(_edit(edit, path, root=root, scope=scope) for edit, path in targets))
+    return tuple(dict.fromkeys(_edit(run, edit, path, root=root, scope=scope) for edit, path in targets))
 
 
 def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
@@ -705,10 +718,12 @@ def _inside(root: Path, named: Path) -> Path:
     return root / resolved.relative_to(home)
 
 
-def _edit(edit: Edit, path: Path, *, root: Path, scope: Scope) -> Path:
+def _edit(run: Run, edit: Edit, path: Path, *, root: Path, scope: Scope) -> Path:
     """Make one change to one file, addressed by the one locator the edit names."""
     if edit.key is not None:
-        return write(_settings_file(root, scope), edit.key, edit.new, scope=scope).file
+        return write(
+            _settings_file(run, root, scope), edit.key, edit.new, scope=scope, environ=run.machine.environ
+        ).file
     if edit.pointer is not None:
         raise InputError(
             f"a pointer edit into {edit.file} has no applier yet.",
@@ -790,9 +805,13 @@ def _missing_findings(tools: tuple[InstalledTool, ...]) -> tuple[Finding, ...]:
     )
 
 
-def _settings_file(root: Path, scope: Scope) -> Path:
-    """The file a settings write lands in, which is the project's own or this machine's."""
-    return root / PROJECT_FILE if scope is Scope.PROJECT else machine_config_path()
+def _settings_file(run: Run, root: Path, scope: Scope) -> Path:
+    """The file a settings write lands in, which is the project's own or the one this machine was built from.
+
+    The machine's file is the one it holds, and never the one the process environment would name,
+    so a fix applied through a machine a host built by hand lands in that host's file.
+    """
+    return root / PROJECT_FILE if scope is Scope.PROJECT else run.machine.config_path
 
 
 def _pairs(overrides: Mapping[str, str]) -> tuple[str, ...]:

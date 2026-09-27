@@ -24,7 +24,6 @@ reader who cannot find a knob learns the number is deliberately not one.
 from __future__ import annotations
 
 import logging
-import os
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Mapping, MutableMapping
@@ -882,7 +881,18 @@ DOCUMENT_TABLES = ("project", "section", "transition", "soundscape")
 the document owns, so neither is wholly one thing.
 """
 
-STANDALONE_ENV = frozenset(("DECKTALK_PROJECT", "DECKTALK_CONFIG", "DECKTALK_ALLOW_ANY_API_BASE"))
+CONFIG_VARIABLE = "DECKTALK_CONFIG"
+"""The variable that names a per-machine settings file other than the standard one."""
+
+ALLOW_ANY_API_BASE = "DECKTALK_ALLOW_ANY_API_BASE"
+"""The variable that lets `[elevenlabs] api_base` name a host other than ElevenLabs, for a local mock.
+
+The machine reads it when it is built from the process environment and carries the answer as a
+field, because the environment is the user's own machine and a project file is not, so the file
+alone can never redirect the key.
+"""
+
+STANDALONE_ENV = frozenset(("DECKTALK_PROJECT", CONFIG_VARIABLE, ALLOW_ANY_API_BASE))
 """The three variables DeckTalk reads that name no key. Every other DECKTALK_ name is a key or a typo."""
 
 
@@ -1134,17 +1144,21 @@ class SettingUnset(BaseModel):
     layer: Layer = Field(description="Which layer decides this key now that the file has stopped stating it.")
 
 
-def machine_config_path() -> Path:
-    """The per-machine settings file. DECKTALK_CONFIG names a different one."""
-    override = os.environ.get("DECKTALK_CONFIG")
+def machine_config_path(environ: Mapping[str, str], home: Path, platform: str = sys.platform) -> Path:
+    """The per-machine settings file this environment names, which DECKTALK_CONFIG moves.
+
+    The environment and the home directory are arguments, because the machine that owns them is the
+    one reader of the process, and a host that builds its machine by hand names its own file.
+    """
+    override = environ.get(CONFIG_VARIABLE)
     if override:
         return Path(override)
-    if sys.platform == "darwin":
-        root = Path.home() / "Library" / "Application Support"
-    elif sys.platform == "win32":
-        root = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    if platform == "darwin":
+        root = home / "Library" / "Application Support"
+    elif platform == "win32":
+        root = Path(environ.get("APPDATA") or home / "AppData" / "Roaming")
     else:
-        root = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        root = Path(environ.get("XDG_CONFIG_HOME") or home / ".config")
     return root / "decktalk" / PROJECT_FILE
 
 
@@ -1199,7 +1213,7 @@ def refuse_off_scope(data: Mapping[str, Any], allowed: Scope, *, file: Path, tex
         )
 
 
-def read_machine_toml(path: Path | None = None) -> dict[str, Any]:
+def read_machine_toml(path: Path) -> dict[str, Any]:
     """The per-machine tuning tables, refusing any key that belongs in the project instead.
 
     The file is restricted by key and not by table, because a limit is a statement about the film
@@ -1207,7 +1221,6 @@ def read_machine_toml(path: Path | None = None) -> dict[str, Any]:
     name rather than warned about, since a warning would put a correctly spelled key in a weaker
     class than a typo and a reader of the JSON never sees a log line at all.
     """
-    path = path or machine_config_path()
     data = read_toml(path)
     if not data:
         return {}
@@ -1242,17 +1255,16 @@ def key_warnings(doc: Mapping[str, Any], where: str) -> list[str]:
     return out
 
 
-def env_warnings(environ: Mapping[str, str] | None = None) -> list[str]:
+def env_warnings(environ: Mapping[str, str]) -> list[str]:
     """One warning per DECKTALK_ variable DeckTalk does not read, naming the closest one it does.
 
     A variable DeckTalk does not read has no effect, so the warning is what tells a reader that a
     typed name never took hold.
     """
-    env = os.environ if environ is None else environ
     known = env_names(Settings, ENV_PREFIX) | STANDALONE_ENV
     return [
         unknown_key_message(name, known, "environment")
-        for name in sorted(n for n in env if n.startswith("DECKTALK_") and n not in known)
+        for name in sorted(n for n in environ if n.startswith("DECKTALK_") and n not in known)
     ]
 
 
@@ -1328,7 +1340,7 @@ def load(
     project: Mapping[str, Any] | None = None,
     machine: Mapping[str, Any] | None = None,
     machine_path: Path | None = None,
-    environ: Mapping[str, str] | None = None,
+    environ: Mapping[str, str],
     overrides: tuple[str, ...] = (),
 ) -> Loaded:
     """Every key resolved through the five layers, with the record of which layer set each one.
@@ -1336,9 +1348,13 @@ def load(
     An override is spelled the way an environment variable is, a string the key's own type reads,
     so one conversion serves both and an override cannot be admitted by a route the environment is
     refused by. It sits above the environment because it is given for one run on purpose.
+
+    The environment is required and never read from the process, because the machine is the one
+    reader of the process and a host that built its machine by hand chose what it holds. The machine
+    layer is the tables given, or the file at `machine_path`, or nothing when neither is named.
     """
-    env = dict(os.environ if environ is None else environ)
-    from_machine = dict(machine) if machine is not None else read_machine_toml(machine_path)
+    env = dict(environ)
+    from_machine = dict(machine) if machine is not None else (read_machine_toml(machine_path) if machine_path else {})
     from_project = dict(project) if project is not None else (read_project_toml(root) if root else {})
     project_file = (root / PROJECT_FILE) if root else Path(PROJECT_FILE)
     project_text = project_file.read_text(encoding="utf-8") if root and project_file.is_file() else None
@@ -1354,7 +1370,7 @@ def load(
     settings = from_mapping(Settings, base=base, prefixes=[ENV_PREFIX], environ=env_and_overrides)
     _require(settings)
     files = {
-        Layer.MACHINE: machine_path or (machine_config_path() if machine is None else None),
+        Layer.MACHINE: machine_path,
         Layer.PROJECT: (root / PROJECT_FILE) if root else None,
     }
     return Loaded(settings=settings, layers=_layers(settings, from_machine, from_project, env, pairs, files))
@@ -1495,6 +1511,7 @@ def write(
     value: str,
     *,
     scope: Scope,
+    environ: Mapping[str, str],
     dry_run: bool = False,
     measured: bool = False,
 ) -> SettingWrite:
@@ -1510,6 +1527,9 @@ def write(
     refused by hand because a number typed into it is a guess, and the command that measured it is
     holding the only honest value there is, so the refusal has to have exactly one exception and it
     has to be named at the call rather than assumed from the key.
+
+    `environ` is the machine's environment, which is the layer over the file that decides whether
+    the value written is the value in force.
     """
     known = BY_ID.get(key)
     if known is None:
@@ -1550,11 +1570,11 @@ def write(
         file=path,
         line=locate(text, key),
         dry_run=dry_run,
-        **_after(path, key, scope, typed),
+        **_after(path, key, scope, typed, environ),
     )
 
 
-def unset(path: Path, key: str, *, scope: Scope) -> SettingUnset:
+def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> SettingUnset:
     """Take one key out of one file, so the layer below it decides again.
 
     This is the writer's opposite and it is built the same way: the would-be file is loaded whole
@@ -1584,7 +1604,7 @@ def unset(path: Path, key: str, *, scope: Scope) -> SettingUnset:
         text = tomlkit.dumps(document)
         _validate(text, path, scope)
         path.write_text(text, encoding="utf-8")
-    tree = _in_force(path, scope, {})
+    tree = _in_force(path, scope, {}, environ)
     return SettingUnset(
         keys=(key,),
         previous=None if previous is _ABSENT else _json(previous),
@@ -1643,7 +1663,7 @@ def _machine_scope(data: Mapping[str, Any], path: Path) -> None:
             )
 
 
-def _in_force(path: Path, scope: Scope, stated: Mapping[str, object]) -> Loaded:
+def _in_force(path: Path, scope: Scope, stated: Mapping[str, object], environ: Mapping[str, str]) -> Loaded:
     """The whole tree as it stands once a write or a removal has landed in the named file.
 
     Only the key the call touched is handed back to the loader, because no other key in that file
@@ -1655,16 +1675,17 @@ def _in_force(path: Path, scope: Scope, stated: Mapping[str, object]) -> Loaded:
         machine=_nested(stated) if scope is Scope.MACHINE else {},
         project=_nested(stated) if scope is Scope.PROJECT else {},
         machine_path=path if scope is Scope.MACHINE else None,
+        environ=environ,
     )
 
 
-def _after(path: Path, key: str, scope: Scope, typed: object) -> dict[str, Any]:
+def _after(path: Path, key: str, scope: Scope, typed: object, environ: Mapping[str, str]) -> dict[str, Any]:
     """The value in force once this write lands, and whether a higher layer still decides the key.
 
     A write that a higher layer shadows changes the file and not the run, so the call says so
     rather than reporting a new value the next command will not use.
     """
-    tree = _in_force(path, scope, {key: typed})
+    tree = _in_force(path, scope, {key: typed}, environ)
     winner = tree.layers.winner(key)
     own = Layer.MACHINE if scope is Scope.MACHINE else Layer.PROJECT
     return {
@@ -1687,7 +1708,9 @@ def _nested(flat: Mapping[str, object]) -> dict[str, Any]:
 
 
 __all__ = [
+    "ALLOW_ANY_API_BASE",
     "BY_ID",
+    "CONFIG_VARIABLE",
     "DOCUMENT_TABLES",
     "ENV_PREFIX",
     "KEYS",

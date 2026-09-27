@@ -110,7 +110,7 @@ def set_key(
     session = sessions.of(ctx)
     path = _file(session, where)
     try:
-        written = knobs.write(path, key, value, scope=_scope(where), dry_run=dry_run)
+        written = knobs.write(path, key, value, scope=_scope(where), environ=session.machine.environ, dry_run=dry_run)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
     return ConfigSetResult(
@@ -153,7 +153,7 @@ def unset_key(
         )
     scope = _scope(where)
     going = _stating(path, key, asked=_asked(session, key, whole=whole))
-    removed = tuple(knobs.unset(path, one, scope=scope) for one in going)
+    removed = tuple(knobs.unset(path, one, scope=scope, environ=session.machine.environ) for one in going)
     first = removed[0]
     return ConfigUnsetResult(
         ok=True,
@@ -185,7 +185,7 @@ def explain_key(
     root = session.flags.project or Path.cwd()
     here = root if (root / knobs.PROJECT_FILE).exists() else None
     try:
-        read = explained(key, project=here, value=value)
+        read = explained(key, project=here, value=value, machine=session.machine)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
     winner = next((layer for layer in read.layers if layer.layer is read.winner), None)
@@ -252,7 +252,13 @@ def _known(key: str) -> KeyRecord:
 def _loaded(session: sessions.Session) -> knobs.Loaded:
     """Every layer resolved for this directory, which answers about the machine when no project is here."""
     root = session.flags.project or Path.cwd()
-    return knobs.load(root if (root / knobs.PROJECT_FILE).exists() else None)
+    machine = session.machine
+    return knobs.load(
+        root if (root / knobs.PROJECT_FILE).exists() else None,
+        machine=machine.tables,
+        machine_path=machine.config_path,
+        environ=machine.environ,
+    )
 
 
 def _asked(session: sessions.Session, key: str, *, whole: bool) -> bool:
@@ -309,7 +315,7 @@ def _json(value: object) -> JsonValue:
 def _file(session: sessions.Session, where: Where) -> Path:
     """The file a write lands in, which is the project's own or this machine's."""
     if where is Where.MACHINE:
-        return knobs.machine_config_path()
+        return session.machine.config_path
     return (session.flags.project or Path.cwd()) / knobs.PROJECT_FILE
 
 

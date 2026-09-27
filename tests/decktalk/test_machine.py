@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,7 @@ from decktalk.results import Layer, Scope, Spend, SpendState, StatusResult, Voic
 from decktalk.settings import ToolsConfig
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
+from support.paths import REPO
 
 
 def a_machine(tmp_path: Path, **environ: str) -> Machine:
@@ -62,6 +64,41 @@ def spend(dollars: float, ceiling: float, *, layer: Layer = Layer.PROJECT) -> Sp
         price_per_1000_characters=0.3,
         price_layer=layer,
     )
+
+
+# ---- the one reader of the environment -------------------------------------------------------
+
+SRC = REPO / "src" / "decktalk"
+
+READERS = ("machine.py", "cli")
+"""Where the process environment and the home directory may be read: the machine, and its first client."""
+
+
+PROCESS_READS = {("os", "environ"), ("os", "getenv"), ("Path", "home")}
+"""The three ways a module reaches past its arguments for the process's environment or home directory."""
+
+
+def reads_the_process(path: Path) -> bool:
+    """Whether one module names any of the three process reads, as an attribute or as an import."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            if (node.value.id, node.attr) in PROCESS_READS:
+                return True
+        if isinstance(node, ast.ImportFrom) and node.module == "os":
+            if any(("os", alias.name) in PROCESS_READS for alias in node.names):
+                return True
+    return False
+
+
+def test_only_the_machine_and_the_command_line_read_the_process() -> None:
+    """A setting, a switch or a directory read from the process follows the host rather than the tenant."""
+    offenders = {
+        path.relative_to(SRC).as_posix()
+        for path in SRC.rglob("*.py")
+        if path.relative_to(SRC).parts[0] not in READERS and reads_the_process(path)
+    }
+    assert offenders == set()
 
 
 # ---- the toolchain ------------------------------------------------------------------------
@@ -566,13 +603,33 @@ def test_a_line_past_the_end_of_the_file_is_left_alone(tmp_path: Path) -> None:
     assert not done and "no longer reads" in why
 
 
-def test_a_knob_a_fix_names_is_written_into_the_machine_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_knob_a_fix_names_is_written_into_the_file_the_machine_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The process may name another file, and the machine a host built by hand is the one being fixed."""
     here = a_machine(tmp_path)
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "machine.toml"))
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "the-process-file.toml"))
     fix = SettingFix(title="t", applicability=Applicability.SAFE, key="tools.ffmpeg", value="/usr/bin/ffmpeg")
     result = here.apply(a_finding(fix))
     assert result.fixes[0].applied, result.fixes[0].why
-    assert "/usr/bin/ffmpeg" in (tmp_path / "machine.toml").read_text(encoding="utf-8")
+    assert "/usr/bin/ffmpeg" in here.config_path.read_text(encoding="utf-8")
+    assert not (tmp_path / "the-process-file.toml").exists()
+
+
+@pytest.mark.parametrize(("spelled", "allowed"), [("1", True), ("yes", True), ("0", False), ("false", False)])
+def test_the_api_base_switch_is_read_once_into_a_field_of_the_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelled: str, allowed: bool
+) -> None:
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "machine.toml"))
+    monkeypatch.setenv("DECKTALK_ALLOW_ANY_API_BASE", spelled)
+    assert Machine.from_environment().allow_any_api_base is allowed
+
+
+def test_a_machine_built_by_hand_keeps_the_key_on_elevenlabs_whatever_the_process_says(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DECKTALK_ALLOW_ANY_API_BASE", "1")
+    assert a_machine(tmp_path, DECKTALK_ALLOW_ANY_API_BASE="1").allow_any_api_base is False
 
 
 def test_a_subscriber_that_raises_becomes_a_line_and_never_stops_the_run(tmp_path: Path) -> None:

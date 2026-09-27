@@ -107,12 +107,6 @@ SWEPT = [key.id for key in KEYS if key.bounds is not None and key.annotation is 
 """Every key whose range is a span or a set, which is every key the sweep can reach."""
 
 
-@pytest.fixture(autouse=True)
-def _no_machine_file(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Point the per-machine file at nothing, so the machine running the suite never sets a key."""
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path_factory.mktemp("machine") / "decktalk.toml"))
-
-
 class TestThePublishedRangeIsTheEnforcedRange:
     """The one mechanism that keeps an agent's trust in a bound worth having."""
 
@@ -242,8 +236,30 @@ class TestTheFiveLayers:
             key.id.replace(".", "_") for key in KEYS
         }
 
-    def test_the_per_machine_file_has_a_place_on_every_platform(self) -> None:
-        assert machine_config_path().name == "decktalk.toml"
+    @pytest.mark.parametrize(
+        ("platform", "environ", "expected"),
+        [
+            ("darwin", {}, "home/Library/Application Support/decktalk/decktalk.toml"),
+            ("linux", {}, "home/.config/decktalk/decktalk.toml"),
+            ("linux", {"XDG_CONFIG_HOME": "/xdg"}, "/xdg/decktalk/decktalk.toml"),
+            ("win32", {"APPDATA": "/roaming"}, "/roaming/decktalk/decktalk.toml"),
+            ("win32", {}, "home/AppData/Roaming/decktalk/decktalk.toml"),
+            ("linux", {"DECKTALK_CONFIG": "/named.toml"}, "/named.toml"),
+        ],
+    )
+    def test_the_per_machine_file_has_a_place_on_every_platform_from_the_environment_passed_in(
+        self, platform: str, environ: dict[str, str], expected: str
+    ) -> None:
+        assert machine_config_path(environ, Path("home"), platform) == Path(expected)
+
+    def test_no_machine_file_is_read_unless_one_is_named(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """The process's own file is the machine's to read, and a loader handed none reads none."""
+        planted = tmp_path / "planted.toml"
+        planted.write_text("[tools]\ntimeout_seconds = 30\n", encoding="utf-8")
+        monkeypatch.setenv("DECKTALK_CONFIG", str(planted))
+        monkeypatch.setenv("DECKTALK_TOOLS_TIMEOUT_SECONDS", "31")
+        here = load(project={}, environ={})
+        assert here.layers.winner("tools.timeout_seconds").layer is Layer.DEFAULT
 
 
 class TestScope:
@@ -377,7 +393,7 @@ class TestTheWriter:
     def test_a_write_keeps_every_comment_and_reports_the_layer_it_wins_from(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
         path.write_text("# my project\n[verify]\n# how late\ncue_offset_max_ms = 100\n", encoding="utf-8")
-        written = write(path, "verify.cue_offset_max_ms", "120", scope=Scope.PROJECT)
+        written = write(path, "verify.cue_offset_max_ms", "120", scope=Scope.PROJECT, environ={})
         assert "# my project" in path.read_text(encoding="utf-8")
         assert "# how late" in path.read_text(encoding="utf-8")
         assert (written.previous, written.value, written.effective) == (100, 120.0, 120.0)
@@ -387,12 +403,12 @@ class TestTheWriter:
 
     def test_a_write_into_a_file_that_does_not_exist_yet_creates_the_table(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
-        write(path, "video.preset", "veryfast", scope=Scope.PROJECT)
+        write(path, "video.preset", "veryfast", scope=Scope.PROJECT, environ={})
         assert path.read_text(encoding="utf-8") == '[video]\npreset = "veryfast"\n'
 
     def test_a_dry_run_reports_the_change_and_writes_nothing(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
-        written = write(path, "video.preset", "veryfast", scope=Scope.PROJECT, dry_run=True)
+        written = write(path, "video.preset", "veryfast", scope=Scope.PROJECT, dry_run=True, environ={})
         assert written.dry_run is True
         assert not path.exists()
 
@@ -400,39 +416,41 @@ class TestTheWriter:
         path = tmp_path / "decktalk.toml"
         path.write_text("[verify]\ncue_offset_max_ms = 100\n", encoding="utf-8")
         with pytest.raises(InputError, match="must be between 0.001 and 1"):
-            write(path, "verify.onset_rise_points", "20", scope=Scope.PROJECT)
+            write(path, "verify.onset_rise_points", "20", scope=Scope.PROJECT, environ={})
         assert path.read_text(encoding="utf-8") == "[verify]\ncue_offset_max_ms = 100\n"
 
     def test_a_key_nobody_knows_is_refused_with_the_nearest_one(self, tmp_path: Path) -> None:
         with pytest.raises(InputError, match="Did you mean 'verify.cue_offset_max_ms'"):
-            write(tmp_path / "decktalk.toml", "verify.cue_offset_maks_ms", "120", scope=Scope.PROJECT)
+            write(tmp_path / "decktalk.toml", "verify.cue_offset_maks_ms", "120", scope=Scope.PROJECT, environ={})
 
     def test_a_machine_key_written_to_the_project_file_names_the_other_flag(self, tmp_path: Path) -> None:
         with pytest.raises(InputError, match="machine-scoped") as caught:
-            write(tmp_path / "decktalk.toml", "tools.ffmpeg", "/opt/ffmpeg", scope=Scope.PROJECT)
+            write(tmp_path / "decktalk.toml", "tools.ffmpeg", "/opt/ffmpeg", scope=Scope.PROJECT, environ={})
         assert caught.value.hint is not None
         assert "--where machine" in caught.value.hint
 
     def test_a_measured_key_is_refused_and_the_command_that_takes_it_is_named(self, tmp_path: Path) -> None:
         with pytest.raises(InputError, match="measured rather than chosen") as caught:
-            write(tmp_path / "machine.toml", "host.presentation_bias_ms", "5", scope=Scope.MACHINE)
+            write(tmp_path / "machine.toml", "host.presentation_bias_ms", "5", scope=Scope.MACHINE, environ={})
         assert caught.value.hint == "Run `decktalk doctor --measure`."
 
     def test_the_measuring_command_writes_a_measured_key_through_its_own_door(self, tmp_path: Path) -> None:
         """The one exception to the refusal above, which is the command holding the only honest value."""
         path = tmp_path / "machine.toml"
-        written = write(path, "host.presentation_bias_ms", "5", scope=Scope.MACHINE, measured=True)
+        written = write(path, "host.presentation_bias_ms", "5", scope=Scope.MACHINE, measured=True, environ={})
         assert written.value == 5.0
         assert path.read_text(encoding="utf-8") == "[host]\npresentation_bias_ms = 5.0\n"
 
     def test_a_chosen_key_is_refused_through_the_measuring_door(self, tmp_path: Path) -> None:
         """The door opens one way only, so nothing dresses a preference up as a measurement."""
         with pytest.raises(InputError, match="chosen rather than measured"):
-            write(tmp_path / "decktalk.toml", "video.preset", "veryfast", scope=Scope.PROJECT, measured=True)
+            write(
+                tmp_path / "decktalk.toml", "video.preset", "veryfast", scope=Scope.PROJECT, measured=True, environ={}
+            )
 
-    def test_a_write_a_higher_layer_shadows_says_so(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("DECKTALK_VIDEO_PRESET", "slow")
-        written = write(tmp_path / "decktalk.toml", "video.preset", "veryfast", scope=Scope.PROJECT)
+    def test_a_write_a_higher_layer_shadows_says_so(self, tmp_path: Path) -> None:
+        environ = {"DECKTALK_VIDEO_PRESET": "slow"}
+        written = write(tmp_path / "decktalk.toml", "video.preset", "veryfast", scope=Scope.PROJECT, environ=environ)
         assert written.shadowed is True
         assert written.layer is Layer.ENVIRONMENT
         assert written.effective == "slow"
@@ -444,7 +462,7 @@ class TestTheRemover:
     def test_a_removal_keeps_every_comment_and_reports_the_layer_below(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
         path.write_text("# my project\n[verify]\n# how late\ncue_offset_max_ms = 100\n", encoding="utf-8")
-        removed = unset(path, "verify.cue_offset_max_ms", scope=Scope.PROJECT)
+        removed = unset(path, "verify.cue_offset_max_ms", scope=Scope.PROJECT, environ={})
         text = path.read_text(encoding="utf-8")
         assert "# my project" in text and "# how late" in text
         assert "cue_offset_max_ms" not in text
@@ -456,30 +474,27 @@ class TestTheRemover:
     def test_the_table_the_key_sat_in_stays_where_it_was(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
         path.write_text('# the encoder\n[video]\npreset = "veryfast"\n', encoding="utf-8")
-        unset(path, "video.preset", scope=Scope.PROJECT)
+        unset(path, "video.preset", scope=Scope.PROJECT, environ={})
         assert path.read_text(encoding="utf-8") == "# the encoder\n[video]\n"
 
     def test_a_key_the_file_never_stated_leaves_the_file_alone(self, tmp_path: Path) -> None:
         """The call is idempotent, because an agent that cannot read the file has to be able to call it twice."""
         path = tmp_path / "decktalk.toml"
         path.write_text('[video]\npreset = "veryfast"\n', encoding="utf-8")
-        removed = unset(path, "video.crf", scope=Scope.PROJECT)
+        removed = unset(path, "video.crf", scope=Scope.PROJECT, environ={})
         assert removed.keys == ("video.crf",)
         assert removed.previous is None
         assert path.read_text(encoding="utf-8") == '[video]\npreset = "veryfast"\n'
 
     def test_a_removal_from_a_file_that_is_not_there_writes_no_file(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
-        assert unset(path, "video.crf", scope=Scope.PROJECT).previous is None
+        assert unset(path, "video.crf", scope=Scope.PROJECT, environ={}).previous is None
         assert not path.exists()
 
-    def test_an_environment_variable_that_was_shadowing_the_file_is_reported(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("DECKTALK_VIDEO_PRESET", "slow")
+    def test_an_environment_variable_that_was_shadowing_the_file_is_reported(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
         path.write_text('[video]\npreset = "veryfast"\n', encoding="utf-8")
-        removed = unset(path, "video.preset", scope=Scope.PROJECT)
+        removed = unset(path, "video.preset", scope=Scope.PROJECT, environ={"DECKTALK_VIDEO_PRESET": "slow"})
         assert removed.layer is Layer.ENVIRONMENT
         assert removed.effective == "slow"
 
@@ -488,23 +503,23 @@ class TestTheRemover:
         path = tmp_path / "machine.toml"
         path.write_text('[video]\npreset = "slow"\n[tools]\nffmpeg = "/opt/ffmpeg"\n', encoding="utf-8")
         with pytest.raises(InputError, match="project-scoped and does not belong in this file"):
-            unset(path, "tools.ffmpeg", scope=Scope.MACHINE)
+            unset(path, "tools.ffmpeg", scope=Scope.MACHINE, environ={})
         assert "ffmpeg" in path.read_text(encoding="utf-8")
 
     def test_a_key_nobody_knows_is_refused_with_the_nearest_one(self, tmp_path: Path) -> None:
         with pytest.raises(InputError, match="Did you mean 'verify.cue_offset_max_ms'"):
-            unset(tmp_path / "decktalk.toml", "verify.cue_offset_maks_ms", scope=Scope.PROJECT)
+            unset(tmp_path / "decktalk.toml", "verify.cue_offset_maks_ms", scope=Scope.PROJECT, environ={})
 
     def test_a_machine_key_taken_out_of_the_project_file_names_the_other_flag(self, tmp_path: Path) -> None:
         with pytest.raises(InputError, match="machine-scoped") as caught:
-            unset(tmp_path / "decktalk.toml", "tools.ffmpeg", scope=Scope.PROJECT)
+            unset(tmp_path / "decktalk.toml", "tools.ffmpeg", scope=Scope.PROJECT, environ={})
         assert caught.value.hint is not None
         assert "--where machine" in caught.value.hint
 
     def test_a_measured_key_may_be_taken_out_although_it_may_not_be_written(self, tmp_path: Path) -> None:
         path = tmp_path / "machine.toml"
         path.write_text("[host]\npresentation_bias_ms = 5.0\n", encoding="utf-8")
-        removed = unset(path, "host.presentation_bias_ms", scope=Scope.MACHINE)
+        removed = unset(path, "host.presentation_bias_ms", scope=Scope.MACHINE, environ={})
         assert removed.keys == ("host.presentation_bias_ms",)
         assert removed.layer is Layer.DEFAULT
 
