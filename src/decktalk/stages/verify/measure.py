@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import CueTimes
-from decktalk.events import Unit
+from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
@@ -237,6 +237,19 @@ def planned_cues(
     return [_planned(inputs, run, starts, total, cue_times, section, cue, opted) for section, cue in checks]
 
 
+def fitted_note(section: int, cue: str, delays: list[float]) -> str:
+    """The line that says a cue was measured at delays fitted between its neighbours.
+
+    It is a detail of how verify measured, and it says nothing is wrong, so it is written for a
+    reader who asked for detail and names what each number is.
+    """
+    seconds = " and ".join(f"{delay:g} s" for delay in delays)
+    return (
+        f"Cue {cue} in section {section} sits close to another cue, so verify compared the picture {seconds} "
+        "after its word instead of at the usual delays. This is how a close pair is measured, not a problem."
+    )
+
+
 def want_cues(inputs: Inputs, planned: list[CueCheck | Probed], wanted: Wanted) -> None:
     """Add every frame the planned cues could read to the film's one plan."""
     probe, blocks = probe_size(inputs), blocks_size(inputs)
@@ -301,10 +314,7 @@ def _planned(
         verify, fps, lead=lead,
     )  # fmt: skip
     if fitted:
-        run.note(
-            f"another cue sits close to {section}:{cue}, so its probes were fitted to "
-            f"{', '.join(f'{delay:g}' for delay in delays)} seconds after it."
-        )
+        run.note(fitted_note(section, cue, delays), level=Level.DEBUG)
     return Probed(
         section=section, cue=cue, at=at, sec_start=sec_start, sec_end=sec_end, spoken=spoken, before=before,
         floor=floor, delays=tuple(delays),
@@ -445,6 +455,7 @@ __all__ = [
     "declared_spans",
     "film_starts",
     "first_change_seconds",
+    "fitted_note",
     "neighbours_of",
     "planned_cues",
     "probe_size",

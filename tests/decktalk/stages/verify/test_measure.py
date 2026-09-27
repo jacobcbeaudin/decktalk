@@ -7,6 +7,7 @@ from collections.abc import Callable
 import pytest
 
 from decktalk.artifacts import RecordingLog
+from decktalk.events import Event, Level, Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
@@ -22,6 +23,7 @@ from decktalk.stages.verify.measure import (
     cue_checks,
     declared_spans,
     film_starts,
+    fitted_note,
     neighbours_of,
     planned_cues,
 )
@@ -232,3 +234,23 @@ def test_a_cue_the_author_opted_out_of_is_skipped_and_never_measured(assembled: 
         rows = checked(inputs, run, {(1, "1.1:a")})
         assert run.findings == []
     assert rows[0].skipped is SkipReason.OPTED_OUT
+
+
+def test_a_cue_fitted_between_its_neighbours_is_a_detail_that_says_nothing_is_wrong(
+    assembled: Callable[..., Inputs],
+) -> None:
+    """Four such lines on the clean starter read to a first-time user as four problems."""
+    inputs = assembled({1: {"1.1:a": 2.0, "1.1:b": 2.3}})
+    lines: list[Event] = []
+    with opened(inputs.root) as run, run.machine.events.subscribe(lines.append):
+        planned_cues(inputs, run, STARTS, 2 * SECTION_SECONDS, [(1, "1.1:a")], set())
+    notes = [line for line in lines if isinstance(line, Log)]
+    assert notes and all(line.level is Level.DEBUG for line in notes)
+    assert notes[0].message[0].isupper()
+    assert "s after its word" in notes[0].message and "not a problem" in notes[0].message
+
+
+def test_the_fitted_line_names_each_delay_as_seconds():
+    said = fitted_note(1, "1.1:title", [0.7, 1.281])
+    assert said.startswith("Cue 1.1:title in section 1 ")
+    assert "0.7 s and 1.281 s after its word" in said

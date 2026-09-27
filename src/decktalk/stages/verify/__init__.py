@@ -53,7 +53,7 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
             hint="Run `decktalk assemble` first.",
         )
     if inputs.cuts() is None:
-        run.note("there is no cut list, so the section starts were probed from the section files instead.")
+        run.note("The film has no cut list, so verify read where each section starts from the section files.")
     wanted = selects(only)
     kept = {number: at for number, at in starts.items() if wanted(number)}
     _repeat_recorded(inputs, run, wanted)
