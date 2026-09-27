@@ -7,15 +7,20 @@ the lock it holds, the arguments it hands down and the result it insists on.
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 import decktalk
+from decktalk import project as project_module
 from decktalk.errors import Cancel, ErrorCode, InputError, ProjectLocked
 from decktalk.events import Event, Level, Log
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
@@ -254,6 +259,28 @@ def test_a_run_writes_its_own_lines_beside_the_build(tmp_path: Path) -> None:
     assert (project.workspace.events_dir / f"{result.run}.jsonl").exists()
 
 
+@contextmanager
+def held(lock: Path, owner: str = "1 abc\n") -> Iterator[None]:
+    """The build lock taken by another writer, on a handle of its own, for as long as the block runs."""
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with lock.open("a+", encoding="utf-8") as handle:
+        assert project_module._hold(handle)
+        project_module._write_owner(handle, owner)
+        try:
+            yield
+        finally:
+            project_module._release(handle)
+
+
+def free(lock: Path) -> bool:
+    """Whether nobody holds the build lock now, asked by taking it and giving it straight back."""
+    with lock.open("a+", encoding="utf-8") as handle:
+        taken = project_module._hold(handle)
+        if taken:
+            project_module._release(handle)
+        return taken
+
+
 @pytest.mark.usefixtures("fake_stages")
 def test_a_reporting_call_takes_no_lock_and_a_writing_call_does(tmp_path: Path) -> None:
     project = a_project(tmp_path)
@@ -261,7 +288,9 @@ def test_a_reporting_call_takes_no_lock_and_a_writing_call_does(tmp_path: Path) 
     project.status()
     assert not lock.exists()
     project.cue()
-    assert not lock.exists()  # the lock is released however the call ends
+    # The file stays, because removing it while a writer waits would let a third lock a new one.
+    assert lock.read_text(encoding="utf-8") == ""
+    assert free(lock)  # the lock is released however the call ends
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -269,11 +298,10 @@ def test_a_check_that_opens_pages_holds_the_build_and_one_that_reads_alone_does_
     """A check with pages freezes frames and draws the storyboard, which is a writer's work."""
     project = a_project(tmp_path)
     lock = project.workspace.build / LOCK_FILE
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text("1 abc\n", encoding="utf-8")
-    project.check(pages=False)
-    with pytest.raises(ProjectLocked):
-        project.check()
+    with held(lock):
+        project.check(pages=False)
+        with pytest.raises(ProjectLocked):
+            project.check()
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -281,15 +309,14 @@ def test_a_second_writer_is_refused_while_the_first_holds_the_build(tmp_path: Pa
     """The trigger is a build run by hand under a live watch loop, not a service."""
     project = a_project(tmp_path)
     lock = project.workspace.build / LOCK_FILE
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text("1 abc\n", encoding="utf-8")
-    with pytest.raises(ProjectLocked) as refused:
+    with held(lock), pytest.raises(ProjectLocked) as refused:
         project.cue()
     assert refused.value.code is ErrorCode.LOCKED
+    assert "process 1, run abc" in str(refused.value)
 
 
 @pytest.mark.usefixtures("fake_stages")
-def test_a_lock_left_by_a_run_that_is_gone_is_broken_and_reported(tmp_path: Path) -> None:
+def test_a_lock_file_nobody_holds_is_taken_and_reported(tmp_path: Path) -> None:
     """A caller cannot clear a file it was never told about, so this is a line and not a refusal."""
     project = a_project(tmp_path)
     lock = project.workspace.build / LOCK_FILE
@@ -299,6 +326,68 @@ def test_a_lock_left_by_a_run_that_is_gone_is_broken_and_reported(tmp_path: Path
     with project.events.subscribe(seen.append):
         project.cue()
     assert any(isinstance(line, Log) and line.level is Level.WARNING for line in seen)
+
+
+HOLDER = """
+import os, sys
+from decktalk.project import _hold, _write_owner
+handle = open(sys.argv[1], "a+", encoding="utf-8")
+assert _hold(handle)
+_write_owner(handle, f"{os.getpid()} crashed\\n")
+print("held", flush=True)
+sys.stdin.read()
+"""
+"""A writer in another process that takes the lock the way DeckTalk does and then waits to be killed."""
+
+
+@pytest.mark.usefixtures("fake_stages")
+def test_the_system_frees_the_lock_of_a_writer_that_was_killed(tmp_path: Path) -> None:
+    """A killed holder releases nothing itself, and the operating system releases the lock for it."""
+    project = a_project(tmp_path)
+    lock = project.workspace.build / LOCK_FILE
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, "-c", HOLDER, str(lock)]
+    with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as holder:
+        try:
+            assert holder.stdout is not None
+            assert holder.stdout.readline().strip() == "held"
+            with pytest.raises(ProjectLocked, match="run crashed"):
+                project.cue()
+        finally:
+            holder.kill()
+    seen: list[Event] = []
+    with project.events.subscribe(seen.append):
+        project.cue()
+    assert any(isinstance(line, Log) and LOCK_FILE in line.message for line in seen)
+
+
+@dataclass
+class FakeMsvcrt:
+    """Windows' byte-range lock, kept as a set of held offsets so the Windows path runs anywhere."""
+
+    LK_NBLCK: int = 2
+    LK_UNLCK: int = 0
+    held: set[tuple[int, int]] = field(default_factory=set)
+
+    def locking(self, fd: int, mode: int, nbytes: int, /) -> None:
+        region = (os.lseek(fd, 0, os.SEEK_CUR), nbytes)
+        if mode == self.LK_UNLCK:
+            self.held.discard(region)
+            return
+        if region in self.held:
+            raise OSError("the region is locked")
+        self.held.add(region)
+
+
+def test_the_windows_lock_refuses_a_second_holder_and_frees_on_release(tmp_path: Path) -> None:
+    """Windows locks a byte range, so the lock is the first byte and a held one refuses at once."""
+    msvcrt = FakeMsvcrt()
+    lock = tmp_path / LOCK_FILE
+    with lock.open("a+", encoding="utf-8") as first, lock.open("a+", encoding="utf-8") as second:
+        assert project_module._hold_windows(first, msvcrt)
+        assert not project_module._hold_windows(second, msvcrt)
+        project_module._release_windows(first, msvcrt)
+        assert project_module._hold_windows(second, msvcrt)
 
 
 def test_a_cancel_token_reaches_the_stage_that_checks_it(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:

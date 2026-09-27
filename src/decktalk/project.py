@@ -25,13 +25,14 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import threading
 from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from contextlib import contextmanager, nullcontext
 from http.server import ThreadingHTTPServer
 from importlib import import_module
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, TextIO, cast
 
 from decktalk.errors import Cancel, InputError, ProjectLocked
 from decktalk.events import Event, Events, Level, Subscription
@@ -505,53 +506,123 @@ class Project:
     def _lock(self, run: Run) -> Iterator[None]:
         """Hold this project's build directory for the length of one writing run.
 
-        The trigger is not a service, it is a build run by hand under a live watch loop. A lock left
-        by a process that is gone is broken and reported rather than refused, because a caller
-        cannot clear a file it was never told about.
+        The trigger is not a service, it is a build run by hand under a live watch loop. The lock is
+        the operating system's own, held on the open file, so the system releases it the moment the
+        holder dies however it dies, and two writers that race for it cannot both win. The file
+        itself stays, because a file removed while another writer waits on it would let a third one
+        lock a new file beside the old. What it says is who holds it, which a refusal reports and a
+        crashed holder leaves behind, and a run that finds that note under a lock nobody holds says
+        so rather than refusing, because a caller cannot clear a file it was never told about.
         """
         path = self.workspace.build / LOCK_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
-        held = _read_lock(path)
-        if held is not None and not _alive(held[0]):
-            gone = f"A run that is no longer there left {LOCK_FILE} behind, so this run took it."
-            run.note(gone, level=Level.WARNING)
-            path.unlink(missing_ok=True)
-        try:
-            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError as clash:
-            owner = _read_lock(path)
-            whose = f" (process {owner[0]}, run {owner[1]})" if owner else ""
-            raise ProjectLocked(
-                f"another writer holds this build directory{whose}.",
-                hint="Wait for that run to finish, or stop it and run this again.",
-                location=at(path, self.root),
-            ) from clash
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as sink:
-                sink.write(f"{os.getpid()} {run.id}\n")
-            yield
-        finally:
-            path.unlink(missing_ok=True)
+        with path.open("a+", encoding="utf-8") as handle:
+            if not _hold(handle):
+                owner = _read_lock(path)
+                whose = f" (process {owner[0]}, run {owner[1]})" if owner else ""
+                raise ProjectLocked(
+                    f"another writer holds this build directory{whose}.",
+                    hint="Wait for that run to finish, or stop it and run this again.",
+                    location=at(path, self.root),
+                )
+            try:
+                handle.seek(0)
+                if _owner(handle.read()) is not None:
+                    gone = f"A run that is no longer there left {LOCK_FILE} behind, so this run took it."
+                    run.note(gone, level=Level.WARNING)
+                _write_owner(handle, f"{os.getpid()} {run.id}\n")
+                yield
+            finally:
+                _write_owner(handle, "")
+                _release(handle)
+
+
+class Locking(Protocol):
+    """The part of Windows' `msvcrt` the lock uses, named so the Windows path is a function of it."""
+
+    LK_NBLCK: int
+    LK_UNLCK: int
+
+    def locking(self, fd: int, mode: int, nbytes: int, /) -> None: ...
+
+
+LOCKED_BYTES = 1
+"""Truth: Windows locks a range of bytes, and one byte is enough to stand for the whole file."""
+
+LOCKED_AT = 1 << 20
+"""Truth: where the locked byte sits, past any line the file holds, since Windows refuses a read of a locked byte.
+
+The holder's line stays readable there, so a writer that is refused can still be told whose run is
+in the way. Windows lets a range past the end of a file be locked, so the file never grows to it.
+"""
+
+
+def _hold(handle: TextIO) -> bool:
+    """Take the operating system's lock on an open file without waiting, and say whether it was free."""
+    if sys.platform == "win32":
+        import msvcrt  # noqa: PLC0415
+
+        return _hold_windows(handle, msvcrt)
+    import fcntl  # noqa: PLC0415
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _release(handle: TextIO) -> None:
+    """Give the lock back before the file is closed, which closing it would also do."""
+    if sys.platform == "win32":
+        import msvcrt  # noqa: PLC0415
+
+        _release_windows(handle, msvcrt)
+        return
+    import fcntl  # noqa: PLC0415
+
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _hold_windows(handle: TextIO, msvcrt: Locking) -> bool:
+    """Take the lock on Windows, where a lock is a byte range and a held range refuses at once."""
+    handle.seek(LOCKED_AT)
+    try:
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, LOCKED_BYTES)
+    except OSError:
+        return False
+    return True
+
+
+def _release_windows(handle: TextIO, msvcrt: Locking) -> None:
+    """Give the byte range back on Windows, from the same offset it was taken at."""
+    handle.seek(LOCKED_AT)
+    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, LOCKED_BYTES)
+
+
+def _write_owner(handle: TextIO, owner: str) -> None:
+    """Replace what the lock file says about its holder, which is one line or nothing at all."""
+    handle.seek(0)
+    handle.truncate()
+    handle.write(owner)
+    handle.flush()
 
 
 def _read_lock(path: Path) -> tuple[int, str] | None:
     """Who holds the lock, as a process and a run, or None when nobody does or the file says nothing."""
     try:
-        pid, _, run = path.read_text(encoding="utf-8").strip().partition(" ")
-        return int(pid), run
-    except (OSError, ValueError):
+        return _owner(path.read_text(encoding="utf-8"))
+    except OSError:
         return None
 
 
-def _alive(pid: int) -> bool:
-    """Whether a process is still there, asked without touching it."""
+def _owner(text: str) -> tuple[int, str] | None:
+    """The process and the run one lock file names, or None when it names nobody."""
+    pid, _, run = text.strip().partition(" ")
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return True
-    return True
+        return int(pid), run
+    except ValueError:
+        return None
 
 
 __all__ = ["Origin", "Project", "open", "section_numbers"]
