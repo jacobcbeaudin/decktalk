@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -12,7 +14,7 @@ from rich.console import Console
 
 from decktalk.cli import output
 from decktalk.errors import ErrorCode, ErrorInfo, InputError
-from decktalk.events import Level, Log, Progress, RunStart, StageDone, StageStart
+from decktalk.events import Event, Level, Log, Progress, RunStart, StageDone, StageStart
 from decktalk.findings import Certainty, Code
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
@@ -36,6 +38,15 @@ def written(render, *args: object) -> str:
     """Whatever one renderer put on its console, as plain text."""
     console = Console(file=io.StringIO(), width=100, no_color=True)
     render(*args, console)
+    return console.file.getvalue()  # ty: ignore[unresolved-attribute]
+
+
+def heard(sink: Callable[[Console], Callable[[Event], None]], *events: Event) -> str:
+    """Whatever one stream renderer, opened on a console, put there for these events, as plain text."""
+    console = Console(file=io.StringIO(), width=100, no_color=True)
+    listen = sink(console)
+    for event in events:
+        listen(event)
     return console.file.getvalue()  # ty: ignore[unresolved-attribute]
 
 
@@ -254,16 +265,13 @@ Found 1 finding, 1 certain.
 
 
 def test_a_result_with_no_renderer_still_prints_its_findings() -> None:
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-    output.render(ErrorResult(ok=False, findings=(finding(),)), console)
-    assert Code.CUE_UNRESOLVED.value in console.file.getvalue()  # ty: ignore[unresolved-attribute]
+    assert Code.CUE_UNRESOLVED.value in written(output.render, ErrorResult(ok=False, findings=(finding(),)))
 
 
 def test_the_plain_lines_renderer_writes_one_line_per_stage_that_ended() -> None:
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-    lines = output.Lines(console)
-    lines(_stage_done())
-    lines(
+    said = heard(
+        output.Lines,
+        _stage_done(),
         Progress(
             event="progress",
             time=_now(),
@@ -274,31 +282,23 @@ def test_the_plain_lines_renderer_writes_one_line_per_stage_that_ended() -> None
             total=3,
             unit="section",
             label="a section",
-        )
-    )  # ty: ignore[invalid-argument-type]
-    assert console.file.getvalue().count("\n") == 1  # ty: ignore[unresolved-attribute]
-    assert "Record" in console.file.getvalue()  # ty: ignore[unresolved-attribute]
+        ),
+    )
+    assert said.count("\n") == 1
+    assert "Record" in said
 
 
 def test_the_events_renderer_writes_the_library_s_own_line() -> None:
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-    output.Jsonl(console)(_stage_done())
-    assert '"event":"stage.done"' in console.file.getvalue()  # ty: ignore[unresolved-attribute]
+    assert '"event":"stage.done"' in heard(output.Jsonl, _stage_done())
 
 
 def test_a_debug_line_is_written_under_verbose_alone() -> None:
-    quiet = Console(file=io.StringIO(), width=100, no_color=True)
-    output.Notes(quiet, verbose=False, quiet=False)(_log(Level.DEBUG))
-    assert quiet.file.getvalue() == ""  # ty: ignore[unresolved-attribute]
-    loud = Console(file=io.StringIO(), width=100, no_color=True)
-    output.Notes(loud, verbose=True, quiet=False)(_log(Level.DEBUG))
-    assert "a debug line" in loud.file.getvalue()  # ty: ignore[unresolved-attribute]
+    assert heard(partial(output.Notes, verbose=False, quiet=False), _log(Level.DEBUG)) == ""
+    assert "a debug line" in heard(partial(output.Notes, verbose=True, quiet=False), _log(Level.DEBUG))
 
 
 def test_a_warning_survives_quiet() -> None:
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-    output.Notes(console, verbose=False, quiet=True)(_log(Level.WARNING))
-    assert "a debug line" in console.file.getvalue()  # ty: ignore[unresolved-attribute]
+    assert "a debug line" in heard(partial(output.Notes, verbose=False, quiet=True), _log(Level.WARNING))
 
 
 def test_a_note_one_command_already_printed_is_not_printed_by_its_second_judgement() -> None:
@@ -311,12 +311,8 @@ def test_a_note_one_command_already_printed_is_not_printed_by_its_second_judgeme
 
 
 def test_the_opening_line_names_the_run_and_its_events_file_once() -> None:
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-    opening = output.Opening(console)
     line = RunStart(event="run.start", time=_now(), seq=0, run="abc", events_path=Path("build/events/abc.jsonl"))
-    opening(line)
-    opening(line)
-    assert console.file.getvalue().count("run abc") == 1  # ty: ignore[unresolved-attribute]
+    assert heard(output.Opening, line, line).count("run abc") == 1
 
 
 def _stage_done() -> StageDone:
@@ -370,7 +366,7 @@ def test_the_live_region_shows_each_stage_its_progress_and_its_time() -> None:
             unit="section",
             label="section 2",
         )
-    )  # ty: ignore[invalid-argument-type]
+    )
     region.close()
     shown = console.export_text()
     assert "Narrate" in shown
