@@ -44,13 +44,14 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
     if not film.exists():
         raise NotBuiltError(
             f"{inputs.relative(film)} is not there, so there is nothing to measure.",
-            hint="Run `decktalk assemble` first.",
+            hint=Artifact.FINAL.next_step,
         )
     starts, total = film_starts(inputs, film)
     if not starts:
         raise NotBuiltError(
-            f"{Artifact.FINAL.value} holds no cut list and no section was cut, so the film has no shape to read.",
-            hint="Run `decktalk assemble` first.",
+            f"{inputs.relative(inputs.workspace.final_dir).as_posix()} holds no cut list and no section was cut, "
+            "so the film has no shape to read.",
+            hint=Artifact.FINAL.next_step,
         )
     if inputs.cuts() is None:
         run.note("The film has no cut list, so verify read where each section starts from the section files.")

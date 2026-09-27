@@ -16,7 +16,7 @@ from decktalk.results import CueTime, SectionCues, VerifyResult
 from decktalk.stages import judge
 from decktalk.stages.verify import verify
 
-from .conftest import SECTION_SECONDS, Measurements, opened, write_log
+from .conftest import PAGES_TOML, SECTION_SECONDS, Measurements, opened, write_log
 
 CUES = {1: {"1.1:a": 2.0}}
 """One cue, well inside its section."""
@@ -47,6 +47,16 @@ def test_a_project_with_no_cut_list_and_no_section_files_is_refused(assembled: C
     for section in inputs.document.sections:
         inputs.workspace.section_video(section.key).unlink()
     with pytest.raises(NotBuiltError):
+        measure(inputs)
+
+
+def test_the_refusal_names_the_build_directory_the_project_chose(assembled: Callable[..., Inputs]) -> None:
+    """The message spelled `build/final` whatever `[project] build` said."""
+    inputs = assembled(CUES, toml=PAGES_TOML.replace('name = "t"', 'name = "t"\nbuild = "out"'))
+    inputs.workspace.cuts_path.unlink()
+    for section in inputs.document.sections:
+        inputs.workspace.section_video(section.key).unlink()
+    with pytest.raises(NotBuiltError, match="^out/final holds no cut list"):
         measure(inputs)
 
 
