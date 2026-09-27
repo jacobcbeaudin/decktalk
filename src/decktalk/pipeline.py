@@ -45,13 +45,16 @@ class Stage(Enum):
 
 
 class Outcome(Enum):
-    """How a stage or a section ended, which is the one field that replaces three event names.
+    """How a stage or a section ended, which is the one field that replaces four event names.
 
-    A caller reads one field to learn what happened, where `stage.done`, `stage.skip` and
-    `stage.fail` would make it branch three ways to learn the same fact.
+    A caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`
+    and `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the
+    run planned and did not repeat, because nothing it reads had changed since it last ran, and
+    `skipped` is a stage the run did not plan at all.
     """
 
     OK = "ok"
+    KEPT = "kept"
     SKIPPED = "skipped"
     FAILED = "failed"
 

@@ -170,6 +170,8 @@ class Answers:
     narrate_dollars: float = 0.0
     soundscape_dollars: float = 0.0
     storyboard_page: str | None = "build/storyboard.html"
+    film: bytes | None = None
+    """What the faked assemble writes as the film, or None when it writes nothing, as most tests want."""
 
 
 def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
@@ -260,6 +262,9 @@ def calls(monkeypatch: pytest.MonkeyPatch, answers: Answers) -> Iterator[Calls]:
         def fake(_inputs: Inputs, _run: Run, _name: str = name, **options: object) -> Result:
             seen.made.append((_name, options))
             answer = made[_name]()
+            if _name == "assemble" and answers.film is not None:
+                _inputs.workspace.film.parent.mkdir(parents=True, exist_ok=True)
+                _inputs.workspace.film.write_bytes(answers.film)
             # A real stage reports each judgement through its run as it makes it, which is what
             # fills the build's own result, so the fake does the same.
             for found in answer.findings:
@@ -563,3 +568,80 @@ def test_every_artifact_of_the_pipeline_knows_where_this_project_keeps_it(inputs
     """`Artifact` says what a file is for and the workspace says where it is, which is one home each."""
     for artifact, name in build_module.ARTIFACTS.items():
         assert isinstance(getattr(inputs.workspace, name), Path), artifact
+
+
+# ---- keeping what has not changed --------------------------------------------------------------
+
+
+def _built_once(inputs: Inputs, answers: Answers, make_run: Callable[..., Watched]) -> None:
+    """A first build whose assemble writes a film and whose verify finds a late cue."""
+    answers.film = b"film"
+    answers.verify.append(judged(Code.CUE_OFF, Stage.VERIFY))
+    build(inputs, make_run(inputs).run)
+
+
+def test_an_unchanged_build_keeps_assemble_and_verify(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+) -> None:
+    """Nothing either stage reads has moved, so the film and its measurement already stand."""
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    again = make_run(inputs)
+    result = build(inputs, again.run)
+    assert "assemble" not in calls.names
+    assert "verify" not in calls.names
+    outcomes = {row.stage: row.outcome for row in result.stages}
+    assert outcomes[Stage.ASSEMBLE] is Outcome.KEPT
+    assert outcomes[Stage.VERIFY] is Outcome.KEPT
+    assert result.film == Path("build/final/t.mp4")
+    # What verify found is still true of the film, so the kept run reports it again.
+    assert [found.code for found in result.findings] == [Code.CUE_OFF]
+    kept = [line for line in again.of("stage.done") if line.outcome is Outcome.KEPT]  # type: ignore[attr-defined]
+    assert [line.stage for line in kept] == [Stage.ASSEMBLE, Stage.VERIFY]  # type: ignore[attr-defined]
+
+
+def test_force_measures_again(inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls) -> None:
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    build(inputs, make_run(inputs).run, force=True)
+    assert calls.names[-2:] == ["assemble", "verify"]
+
+
+def test_a_changed_input_assembles_and_measures_again(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+) -> None:
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    inputs.script_path.write_text(SCRIPT.replace("A ball.", "A ball rolls."), encoding="utf-8")
+    build(inputs, make_run(inputs).run)
+    assert calls.names[-2:] == ["assemble", "verify"]
+
+
+def test_a_film_rewritten_outside_the_build_is_made_again(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+) -> None:
+    """A stage run on its own rewrites the film without the record, so the record no longer vouches for it."""
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    inputs.workspace.film.write_bytes(b"another film")
+    build(inputs, make_run(inputs).run)
+    assert "assemble" in calls.names
+
+
+def test_a_new_film_is_measured_again_even_when_its_inputs_are_old(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+) -> None:
+    """Verify is kept on the film's own bytes, so a film assembled with other options is measured."""
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    answers.film = b"a louder film"
+    build(inputs, make_run(inputs).run, loudness=False)
+    assert calls.names[-2:] == ["assemble", "verify"]
+
+
+def test_a_run_that_makes_no_film_keeps_nothing(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    """An assemble that left no film behind has nothing a later build could keep."""
+    build(inputs, watched.run)
+    calls.made.clear()
+    build(inputs, watched.run)
+    assert calls.names[-2:] == ["assemble", "verify"]

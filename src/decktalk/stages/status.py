@@ -16,19 +16,28 @@ writes it, and a stage added to the pipeline reaches this report with no line ch
 
 Whether a recording still stands is `record`'s rule, asked of `record`, because one rule decides
 what a run skips and what this report calls stale and neither compares file times.
+
+Whether the film and its measurement still stand is this module's rule, and `build` asks it. A build
+leaves `kept.json` under the build directory, which holds a digest of everything `assemble` and
+`verify` read the last time they ran, what they wrote and what they found. A build whose digest
+matches keeps both stages rather than repeating them. The digests are over file contents and never
+over file times, because a copy or a checkout moves every time and changes no byte.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
 from decktalk.errors import DeckTalkError
 from decktalk.events import Level, Line, StageStart
-from decktalk.findings import Code, Location
+from decktalk.findings import MODEL, Code, Finding, Location
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.paths import at
 from decktalk.inputs.workspace import EVENTS_SUFFIX
@@ -37,6 +46,7 @@ from decktalk.media import ffmpeg
 from decktalk.page import Q
 from decktalk.pipeline import PIPELINE, Artifact, Stage
 from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult
+from decktalk.settings import PROJECT_FILE
 from decktalk.stages import judge
 from decktalk.stages.record import stale_recording
 
@@ -66,6 +76,176 @@ BUILT: dict[Artifact, Callable[[Inputs], bool]] = {
 The path comes from the workspace rather than from the artifact's own value, because `[project]
 build` may put the whole build directory somewhere else and the workspace is what knows where.
 """
+
+
+KEPT_FILE = "kept.json"
+"""What the record of the last assemble and verify is called, under the project's build directory."""
+
+PACKAGE = "decktalk"
+"""The distribution whose version every digest carries, so a new engine never keeps an old engine's film."""
+
+DIGEST = "blake2b"
+"""The hash every kept digest is taken with, which is fast on large files and in the standard library."""
+
+FIELD_END = b"\0"
+"""What ends each field of a digest, which no path, no version and no JSON text contains."""
+
+
+class KeptStage(BaseModel):
+    """What one stage read, what it wrote and what it found the last time a build ran it."""
+
+    model_config = MODEL
+
+    key: str = Field(description="The digest of everything the stage read, with the options it was run with.")
+    options: dict[str, JsonValue] = Field(description="The options the stage was run with, as the build passed them.")
+    outputs: dict[str, str] = Field(
+        default_factory=dict,
+        description="Each file the stage wrote, project-relative, against the digest of its bytes.",
+    )
+    findings: tuple[Finding, ...] = Field(
+        default=(),
+        description="What the stage found, which a run that keeps the stage reports again.",
+    )
+
+
+class Kept(BaseModel):
+    """The record a build leaves of the two stages it can keep, read by the next build and by status."""
+
+    model_config = MODEL
+
+    assemble: KeptStage | None = None
+    verify: KeptStage | None = None
+
+
+def read_kept(inputs: Inputs) -> Kept:
+    """The record the last build left, or an empty one when there is none or it cannot be read.
+
+    A record this version cannot read keeps nothing, which costs one assemble and one verify and is
+    never wrong, so it is not worth a refusal.
+    """
+    path = kept_path(inputs)
+    try:
+        return Kept.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValidationError):
+        return Kept()
+
+
+def write_kept(inputs: Inputs, kept: Kept) -> Path:
+    """Write the record a build leaves, and give back where it went."""
+    path = kept_path(inputs)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(kept.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def kept_path(inputs: Inputs) -> Path:
+    """Where this project keeps its record, which is under the build directory the project names."""
+    return inputs.workspace.build / KEPT_FILE
+
+
+def assemble_key(inputs: Inputs, options: Mapping[str, JsonValue]) -> str:
+    """The digest of everything `assemble` reads, with the options a build runs it with.
+
+    The list is deliberately wide: the project file, the script, the cue file, every file the local
+    origin serves, the take index and the joined narration, the cue times, every recording and every
+    generated sound, every setting in force and the engine's own version. A digest that missed an
+    input would ship a film the inputs no longer describe, and one that reads too much costs only a
+    repeated assemble.
+    """
+    fields = [_engine(), json.dumps(dataclasses.asdict(inputs.settings), sort_keys=True, default=str)]
+    fields.append(json.dumps(options, sort_keys=True))
+    for path in _assemble_reads(inputs):
+        fields += [inputs.relative(path).as_posix(), digest_of(path) if path.is_file() else ""]
+    return _digest(fields)
+
+
+def verify_key(inputs: Inputs, assembled: str, options: Mapping[str, JsonValue]) -> str:
+    """The digest of what `verify` measures: the film's own bytes, what made it, and the options.
+
+    What made the film is the assemble digest, which already carries every setting and every file
+    the measurement is judged against, so the film is the only input added here.
+    """
+    film = inputs.workspace.film
+    return _digest([assembled, digest_of(film) if film.is_file() else "", json.dumps(options, sort_keys=True)])
+
+
+def outputs_of(inputs: Inputs, paths: Iterable[Path]) -> dict[str, str]:
+    """Each of these files that is on disk, project-relative, against the digest of its bytes."""
+    return {inputs.relative(path).as_posix(): digest_of(path) for path in paths if path.is_file()}
+
+
+def intact(inputs: Inputs, stage: KeptStage) -> bool:
+    """Whether every file a kept stage wrote is still on disk with the bytes it wrote.
+
+    A stage run on its own after the build, such as `decktalk assemble --no-loudness`, rewrites the
+    film without touching the record, and this is what stops the next build keeping that film.
+    """
+    return all(
+        (inputs.root / name).is_file() and digest_of(inputs.root / name) == digest
+        for name, digest in stage.outputs.items()
+    )
+
+
+def assembled(inputs: Inputs, kept: Kept) -> str | None:
+    """The assemble digest of the film on disk, or None when that film no longer stands.
+
+    The film stands when the last build's assemble read exactly what is on disk now and wrote
+    exactly the files that are there, which is the one question both a keeping build and this
+    report ask before they trust a measurement of it.
+    """
+    record = kept.assemble
+    if record is None or not holds_film(inputs, record):
+        return None
+    return record.key if assemble_key(inputs, record.options) == record.key else None
+
+
+def holds_film(inputs: Inputs, record: KeptStage) -> bool:
+    """Whether a kept assemble wrote the film on disk, byte for byte, along with everything beside it."""
+    return inputs.relative(inputs.workspace.film).as_posix() in record.outputs and intact(inputs, record)
+
+
+def digest_of(path: Path) -> str:
+    """The digest of one file's bytes, read in blocks so a long film is never held in memory."""
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, DIGEST).hexdigest()
+
+
+def _digest(fields: Iterable[str]) -> str:
+    """The digest of several fields, each ended by a byte no field holds so two cannot run together."""
+    hashed = hashlib.new(DIGEST)
+    for text in fields:
+        hashed.update(text.encode("utf-8"))
+        hashed.update(FIELD_END)
+    return hashed.hexdigest()
+
+
+def _engine() -> str:
+    """This engine's version, or a word that keeps nothing when the package is not installed."""
+    try:
+        return version(PACKAGE)
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _assemble_reads(inputs: Inputs) -> list[Path]:
+    """Every file `assemble` may read, each once, in an order that depends on nothing but their names."""
+    workspace = inputs.workspace
+    named = [inputs.root / PROJECT_FILE, inputs.script_path, inputs.cues_path]
+    named += [inputs.root / served for served in inputs.served_paths()]
+    named += [workspace.takes_path, workspace.narration_path, workspace.cue_times_path]
+    named += [workspace.recordings_dir, workspace.soundscape_dir]
+    files: dict[Path, None] = {}
+    for path in named:
+        for found in _files(path):
+            files[found] = None
+    return sorted(files, key=lambda path: path.as_posix())
+
+
+def _files(path: Path) -> list[Path]:
+    """The files one named path stands for, which is itself, everything under it, or nothing."""
+    if path.is_dir():
+        return [found for found in path.rglob("*") if found.is_file()]
+    return [path]
 
 
 def _holds(directory: Path) -> bool:
@@ -271,4 +451,18 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
     )
 
 
-__all__ = ["BUILT", "live_runs", "next_command", "section_rows", "source_of", "status"]
+__all__ = [
+    "BUILT",
+    "Kept",
+    "KeptStage",
+    "assemble_key",
+    "assembled",
+    "live_runs",
+    "next_command",
+    "read_kept",
+    "section_rows",
+    "source_of",
+    "status",
+    "verify_key",
+    "write_kept",
+]

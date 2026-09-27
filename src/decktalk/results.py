@@ -425,7 +425,7 @@ class StageRun(BaseModel):
     model_config = MODEL
 
     stage: Stage = Field(description="The stage this row is about.")
-    outcome: Outcome = Field(description="Whether the stage ran, was skipped, or failed.")
+    outcome: Outcome = Field(description="Whether the stage ran, was kept from the last run, was skipped, or failed.")
     seconds: Elapsed
 
 

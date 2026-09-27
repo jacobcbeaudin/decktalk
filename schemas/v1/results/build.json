@@ -462,9 +462,10 @@
       "type": "object"
     },
     "Outcome": {
-      "description": "How a stage or a section ended, which is the one field that replaces three event names.\n\nA caller reads one field to learn what happened, where `stage.done`, `stage.skip` and\n`stage.fail` would make it branch three ways to learn the same fact.",
+      "description": "How a stage or a section ended, which is the one field that replaces four event names.\n\nA caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`\nand `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the\nrun planned and did not repeat, because nothing it reads had changed since it last ran, and\n`skipped` is a stage the run did not plan at all.",
       "enum": [
         "ok",
+        "kept",
         "skipped",
         "failed"
       ],
@@ -602,7 +603,7 @@
         },
         "outcome": {
           "$ref": "#/$defs/Outcome",
-          "description": "Whether the stage ran, was skipped, or failed."
+          "description": "Whether the stage ran, was kept from the last run, was skipped, or failed."
         },
         "seconds": {
           "description": "How long this call took, in seconds.",

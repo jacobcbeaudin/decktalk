@@ -74,7 +74,7 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.build", "stages.assemble"): "by design",
     ("stages.build", "stages.verify"): "by design",
     ("stages.build", "stages.storyboard"): "the checkpoint drawn before any credit is spent",
-    ("stages.build", "stages.status"): "a build asks status whether an artifact is built, so the two agree",
+    ("stages.build", "stages.status"): "an unchanged build keeps what the kept record says it already made",
     # check rehearses what the stages downstream of it would judge, without producing any of it.
     ("stages.check", "stages.narrate"): "by design",
     ("stages.check", "stages.cue"): "by design",
