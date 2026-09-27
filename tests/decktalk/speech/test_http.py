@@ -13,6 +13,10 @@ from decktalk.errors import ProviderError
 from decktalk.speech import http as _http
 
 SENTINEL = "sk_sentinel_key_that_must_never_print"
+STOP_POLL_SECONDS = 0.05
+"""How often the loopback service checks whether it was asked to stop, where the default half second
+made every test that used it wait that long to finish."""
+
 # The reply the loopback service sends, as one format so a test can place the key at an exact offset.
 _ECHO_PREFIX = '{"detail": "%sinvalid api key '
 
@@ -121,7 +125,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 @pytest.fixture
 def server():
     srv = _Server(("127.0.0.1", 0), _Handler)
-    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread = threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": STOP_POLL_SECONDS}, daemon=True)
     thread.start()
     try:
         yield srv
