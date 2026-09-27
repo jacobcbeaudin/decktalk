@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,7 @@ from decktalk.explain import explain as explained
 from decktalk.findings import Code
 from decktalk.machine import Machine, Toolchain
 from decktalk.results import CueTime, Layer, Scope, SectionCues
-from decktalk.settings import BY_ID
+from decktalk.settings import BY_ID, NUMBERS_BY_ID, load
 from decktalk.tomlmap import Nature, Source
 
 CUES = CueTimes(
@@ -38,8 +39,11 @@ file by hand and a fixture written by hand could agree with the reader while bot
 """
 
 
-PROJECT_TOML = """[verify]
-cue_offset_max_ms = 100
+STATED = 100.0
+"""The value the project below states for `verify.cue_offset_max_ms`, which is not its default."""
+
+PROJECT_TOML = f"""[verify]
+cue_offset_max_ms = {STATED:g}
 
 [project]
 build = "out"
@@ -54,6 +58,12 @@ scene = "1"
 
 MACHINE = Machine(environ={}, tables={}, config_path=Path("unread.toml"), cwd=Path(), toolchain=Toolchain())
 """A machine that read nothing, so the machine running the suite sets no key in any explanation."""
+
+
+def lead_at(offset_ms: float) -> float:
+    """The reference lead the published formula gives at one cue limit, which is what the explainer must show."""
+    settings = load(project={"verify": {"cue_offset_max_ms": offset_ms}}, environ={}).settings
+    return float(NUMBERS_BY_ID["verify.reference_lead_seconds"].at(settings))  # type: ignore[arg-type]
 
 
 def explain(key: str, **asked: object) -> Explanation:
@@ -77,7 +87,7 @@ class TestTheKeyItself:
         key = BY_ID["verify.cue_offset_max_ms"]
         assert found.description == key.description
         assert found.hazard == key.hazard
-        assert found.range == "must be between 20 and 400"
+        assert found.range == key.range
         assert found.unit == "milliseconds"
         assert found.decides == (Code.CUE_OFF,)
         assert found.scope is Scope.PROJECT
@@ -88,8 +98,10 @@ class TestTheKeyItself:
 
     def test_a_key_with_a_wider_type_range_publishes_both(self) -> None:
         found = explain("verify.onset_rise_points")
-        assert found.range == "must be between 0.001 and 1"
-        assert found.typed_range == "must be between 0 and 100"
+        key = BY_ID["verify.onset_rise_points"]
+        assert key.typed is not None
+        assert found.range == key.range
+        assert found.typed_range == key.typed.sentence != key.range
 
     def test_a_key_nobody_knows_is_refused_with_the_nearest_one(self) -> None:
         with pytest.raises(InputError, match="Did you mean 'verify.cue_offset_max_ms'"):
@@ -97,7 +109,7 @@ class TestTheKeyItself:
 
     def test_a_knob_is_explainable_before_a_project_exists(self) -> None:
         found = explain("video.output_fps")
-        assert found.value == 25
+        assert found.value == BY_ID["video.output_fps"].default
         assert found.winner is Layer.DEFAULT
         assert found.measured is False
 
@@ -109,8 +121,8 @@ class TestTheLayerView:
         found = explain("verify.cue_offset_max_ms", project=project)
         assert [row.layer for row in found.layers] == [Layer.DEFAULT, Layer.PROJECT]
         assert found.winner is Layer.PROJECT
-        assert found.value == 100.0
-        assert found.default == 80.0
+        assert found.value == STATED
+        assert found.default == BY_ID["verify.cue_offset_max_ms"].default
 
     def test_the_row_of_a_file_carries_the_file_and_the_line(self, project: Path) -> None:
         row = explain("verify.cue_offset_max_ms", project=project).layers[-1]
@@ -124,21 +136,21 @@ class TestTheNumbersTheKeyFeeds:
     def test_each_derived_number_is_shown_with_its_inputs_at_their_effective_values(self, project: Path) -> None:
         found = explain("verify.cue_offset_max_ms", project=project)
         lead = next(number for number in found.numbers if number.id == "verify.reference_lead_seconds")
-        assert lead.reads["verify.cue_offset_max_ms"] == 100.0
-        assert lead.value == pytest.approx(0.16)
+        assert lead.reads["verify.cue_offset_max_ms"] == STATED
+        assert lead.value == pytest.approx(lead_at(STATED))
         assert lead.sentence.startswith("Derived:")
 
     def test_a_candidate_recomputes_every_number_the_key_feeds(self, project: Path) -> None:
         found = explain("verify.cue_offset_max_ms", project=project, value="300")
         lead = found.numbers[0]
         assert found.candidate == 300.0
-        assert lead.candidate == pytest.approx(0.36)
+        assert lead.candidate == pytest.approx(lead_at(300))
 
     def test_a_key_that_feeds_nothing_shows_no_arithmetic(self, project: Path) -> None:
         assert explain("video.preset", project=project).numbers == ()
 
     def test_a_candidate_outside_the_safe_range_is_refused_rather_than_computed(self, project: Path) -> None:
-        with pytest.raises(InputError, match="must be between 20 and 400"):
+        with pytest.raises(InputError, match=re.escape(BY_ID["verify.cue_offset_max_ms"].range)):
             explain("verify.cue_offset_max_ms", project=project, value="5000")
 
 
