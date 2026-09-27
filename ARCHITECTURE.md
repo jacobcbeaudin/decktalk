@@ -91,16 +91,9 @@ neighbour owns.
 
 ## The five layers
 
-`src/decktalk` is five layers deep. A module may import from a strictly lower rank, or from inside
-its own package, and from nothing else.
-
-| Layer | Holds | Knows about |
-|---|---|---|
-| vocabulary | `pipeline`, `findings`, `errors`, `locate`, `secret`, `page` | nothing but each other |
-| models | `results`, `events`, `catalog`, `tomlmap`, `settings`, `explain` | the words, and no project |
-| leaves | `toolchain`, `captions`, `speech`, `media`, `pagescan`, `template`, `artifacts` | one job each, and no project |
-| sdk | `inputs`, `machine`, `stages`, `project` | a project, and the stages it drives |
-| cli | `cli`, `__init__`, `__main__` | every call, and nothing a call does not return |
+`src/decktalk` is five layers deep: vocabulary, models, leaves, sdk and cli. A module may import from
+a strictly lower rank, or from inside its own package, and from nothing else. The module tree in
+[CONTRIBUTING.md](CONTRIBUTING.md#layout) lists every module under its layer.
 
 The layers are wide enough to be ranked among themselves, so one table gives every top-level module
 one rank and one comparison enforces both the layer and the order inside it. The walk reads the AST
