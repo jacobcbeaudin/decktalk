@@ -118,6 +118,7 @@ class ElementRow(BaseModel):
     attrs: dict[str, str] = Field(default_factory=dict, description="Every contract attribute the element carries.")
     moments: dict[str, str] = Field(default_factory=dict, description="Each moment attribute against its wire id.")
     text: str = Field("", description="The element's text, collapsed and cut to the contract's length.")
+    children: int = Field(0, ge=0, description="How many children a staggered element reveals one after another.")
     box: Box
 
 

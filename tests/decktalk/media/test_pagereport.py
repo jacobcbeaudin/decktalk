@@ -114,3 +114,10 @@ def test_a_code_decktalk_measures_itself_is_refused_when_a_page_reports_it():
     report = pagereport.read({**REPORTED, "warnings": [{"code": measured.name, "message": "not mine to say"}]})
     assert report.warnings == ()
     assert report.unreadable and "warnings[0]" in report.unreadable[0]
+
+
+def test_an_element_row_carries_the_child_count_its_stagger_reveals():
+    """The catalog reads a stagger's span from its child count, which a row without it could not give."""
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+    assert pagereport.ElementRow.model_validate({"box": box, "children": 4}).children == 4
+    assert pagereport.ElementRow.model_validate({"box": box}).children == 0

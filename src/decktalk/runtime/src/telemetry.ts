@@ -94,6 +94,8 @@ export type ElementRow = {
   moments: Record<string, string>;
   text: string;
   box: Box;
+  /** How many children a staggered element reveals one after another, which is zero for any other element. */
+  children: number;
 };
 
 /** One scene as the catalog publishes it, which is what every static check reads the deck from. */

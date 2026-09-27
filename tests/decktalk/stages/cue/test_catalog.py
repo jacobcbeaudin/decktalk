@@ -68,6 +68,14 @@ def test_a_catalog_row_becomes_the_row_pagescan_judges() -> None:
     assert row.cue == "1.1:a" and row.box == (0, 0, 10, 10)
 
 
+def test_a_staggered_row_carries_the_count_of_children_the_probe_measured() -> None:
+    """A stagger's span is judged from its children, so the count must reach the row that is judged."""
+    staggered = {"attrs": {"data-stagger": "0.08"}, "moments": {"data-in": "1.1:a"}, "text": "", "box": BOX}
+    scene = MeasuredScene.model_validate({"scene": "1", "elements": {"1.1": [{**staggered, "children": 4}]}})
+    (row,) = measured_rows(scene)
+    assert row.children == 4
+
+
 def test_a_section_whose_page_published_nothing_is_left_unjudged() -> None:
     """An absent page is absent from the map, which is what tells it apart from a scene declaring none."""
     catalogs = {"deck/index.html": [entry("1", {"1.1": ["1.1:a"]})]}

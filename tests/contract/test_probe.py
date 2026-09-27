@@ -156,6 +156,24 @@ def test_the_catalog_measures_every_cued_element(page, tmp_path):
     assert not page.errors
 
 
+def test_a_staggered_container_publishes_how_many_children_it_reveals(page, tmp_path):
+    """The static span of a stagger is its count of children, and no attribute carries that count."""
+    scene = """
+    <div data-scene="6">
+      <template data-slide="6.1">
+        <ul data-in="tiles" data-stagger="0.08" data-describe="the three tiles"><li>a</li><li>b</li><li>c</li></ul>
+        <p data-in="line" data-describe="a line">x</p>
+      </template>
+    </div>
+    """
+    page.goto(write_page(tmp_path, "stagger-count.html", scene))
+    page.evaluate("() => window.__decktalk.ready")
+    rows = page.evaluate("() => window.__decktalk.catalog[0].elements['6.1']")
+    counts = {row["moments"].get("data-in"): row["children"] for row in rows}
+    assert counts == {"6.1:tiles": 3, "6.1:line": 0}
+    assert not page.errors
+
+
 def test_measuring_leaves_nothing_on_the_stage(page, tmp_path):
     """The measuring layer is hidden while it is used and gone when the index page shows."""
     page.goto(deck(tmp_path, "clean.html"))

@@ -74,6 +74,7 @@ def measured_rows(entry: MeasuredScene) -> list[Measured]:
             moments=dict(row.moments),
             text=row.text,
             box=(int(row.box.x), int(row.box.y), int(row.box.w), int(row.box.h)),
+            children=row.children,
         )
         for slide in entry.elements.values()
         for row in slide

@@ -494,6 +494,7 @@
   var ELEMENT_ATTRS = Object.keys(ATTRS).filter((name) =>
     ATTRS[name].on.some((subject) => subject === "element" || subject === "container"),
   );
+  var STAGGER = "data-stagger";
   var MOMENT_ATTRS = ELEMENT_ATTRS.filter((name) => ATTRS[name].kind === "moment");
   function boxOf(el, frame, scale) {
     const rect = el.getBoundingClientRect();
@@ -520,6 +521,9 @@
       moments,
       text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, TEXT_MAX),
       box: boxOf(el, frame, scale),
+      // The count a stagger's span is worked out from, which no attribute carries, because the flag
+      // that says the children step says nothing about how many of them there are.
+      children: el.hasAttribute(STAGGER) ? el.children.length : 0,
     };
   }
   function rowsFor(slideEl, slideId, frame, scale) {

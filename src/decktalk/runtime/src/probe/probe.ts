@@ -238,6 +238,9 @@ const ELEMENT_ATTRS: Attr[] = (Object.keys(ATTRS) as Attr[]).filter((name) =>
   ATTRS[name].on.some((subject) => subject === "element" || subject === "container"),
 );
 
+/** The attribute that makes a container stagger its children, typed as a contract row so a rename fails to compile. */
+const STAGGER: Attr = "data-stagger";
+
 /** The moment attributes alone, which are the rows that qualify into a wire id. */
 const MOMENT_ATTRS: Attr[] = ELEMENT_ATTRS.filter((name) => ATTRS[name].kind === "moment");
 
@@ -267,6 +270,9 @@ function rowFor(el: Element, slideId: string, frame: DOMRect, scale: number): Se
     moments,
     text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, TEXT_MAX),
     box: boxOf(el, frame, scale),
+    // The count a stagger's span is worked out from, which no attribute carries, because the flag
+    // that says the children step says nothing about how many of them there are.
+    children: el.hasAttribute(STAGGER) ? el.children.length : 0,
   };
 }
 
