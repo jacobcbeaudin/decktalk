@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from decktalk.errors import ToolError
-from decktalk.media.browser import chromium, open_page
+from decktalk.media.browser import TRUSTED, chromium, open_page
 from decktalk.media.origin import (
     HIDDEN,
     OFF_ORIGIN,
@@ -330,7 +330,7 @@ def test_a_page_fetches_a_file_beside_it_from_the_origin(tmp_path):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "facts.json").write_text(json.dumps({"answer": 42}), encoding="utf-8")
     (tmp_path / "page.html").write_text(FETCH_PAGE, encoding="utf-8")
-    with chromium() as browser:
+    with chromium(policy=TRUSTED) as browser:
         allowed = Allowed.of(tmp_path, ["page.html", "data"])
         page, assets = open_page(browser, allowed, width=400, height=300)
         page.goto(page_url("page.html"), wait_until="load")

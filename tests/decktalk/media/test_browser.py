@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import socket
 import threading
 import time
@@ -301,7 +302,7 @@ def test_a_deck_cannot_take_the_probes_name_on_a_real_page(tmp_path):
         "<script>window.__dtprobe = { report: () => ({ taken: true }) };</script>",
         encoding="utf-8",
     )
-    with browser.chromium() as real:
+    with browser.chromium(policy=browser.TRUSTED) as real:
         page, _assets = browser.open_page(real, Allowed.of(tmp_path, ["deck"]), width=400, height=300)
         page.goto(page_url("deck/index.html"), wait_until="load")
         assert page.evaluate("() => typeof window.__dtprobe.report") == "function"
@@ -372,7 +373,7 @@ BARE = "<!doctype html><meta charset=utf-8><title>t</title><p>no runtime here</p
 def test_a_page_that_throws_and_a_page_with_no_runtime_both_leave_page_errors(tmp_path):
     """The two ways a deck fails silently, which the recording log names so `verify` can judge them."""
     allowed = deck_of(tmp_path, {"broken.html": THROWS, "bare.html": BARE})
-    with browser.chromium() as real:
+    with browser.chromium(policy=browser.TRUSTED) as real:
         thrown = record_real(real, allowed, tmp_path, "broken.html")
         assert any("ReferenceError: notDefinedAnywhere" in said for said in thrown.page_errors), thrown.page_errors
         assert any("(broken.html:3)" in said for said in thrown.page_errors), thrown.page_errors
@@ -396,7 +397,7 @@ def record_real(real, allowed: Allowed, tmp_path: Path, page: str) -> browser.Re
 def test_the_probe_travels_with_a_page_across_every_url_it_is_driven_through(tmp_path):
     """An init script belongs to the page and not to a navigation, which is what `screenshots` relies on."""
     allowed = deck_of(tmp_path, {"one.html": BARE, "two.html": BARE})
-    with browser.chromium() as real:
+    with browser.chromium(policy=browser.TRUSTED) as real:
         page, _assets = browser.open_page(real, allowed, width=320, height=240)
         for name in ("one.html", "two.html"):
             page.goto(page_url(f"deck/{name}"), wait_until="load")
@@ -408,7 +409,8 @@ def measuring(monkeypatch, presented: list[float]) -> None:
     fake = FakeBrowser()
 
     @contextmanager
-    def chromium(_browser_path: str = "") -> Iterator[FakeBrowser]:
+    def chromium(_browser_path: str = "", *, policy: str) -> Iterator[FakeBrowser]:
+        assert policy == browser.TRUSTED, "the bias page is DeckTalk's own"
         yield fake
 
     def new_page(**_kwargs: object) -> FakePage:
@@ -535,6 +537,12 @@ def test_every_page_a_browser_opens_is_routed_by_the_policy_it_was_launched_unde
     # A browser this module never launched is routed as a stranger's page.
     browser.open_page(Launched(), allowed, width=10, height=10)  # type: ignore[arg-type]
     assert seen == [True, False, False]
+
+
+@pytest.mark.parametrize("opener", [browser.chromium, browser.launch, browser.render_slate])
+def test_no_launch_has_a_page_policy_to_fall_back_on(opener):
+    """A default would be the policy of a caller that forgot one, which is the caller most likely to be wrong."""
+    assert inspect.signature(opener).parameters["policy"].default is inspect.Parameter.empty
 
 
 @pytest.mark.browser

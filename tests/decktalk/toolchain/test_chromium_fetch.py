@@ -104,7 +104,7 @@ def test_a_missing_chromium_is_fetched_rather_than_refused(monkeypatch, on_disk)
     to go and run `decktalk install`, while ffmpeg had been downloading itself all along."""
     pw = FakePlaywright(FakeChromium(on_disk))
     commands = fake_fetch(monkeypatch, on_disk)
-    launched = browser.launch(pw)
+    launched = browser.launch(pw, policy=browser.TRUSTED)
     assert isinstance(launched, FakeBrowser)
     assert len(commands) == 1, f"the browser was not fetched: {commands}"
     assert pw.chromium.launches == [None, None], "the launch was not tried again after the fetch"
@@ -117,7 +117,7 @@ def test_the_fetch_a_build_runs_never_asks_for_the_system_libraries(monkeypatch,
     reappear anywhere between here and the subprocess."""
     pw = FakePlaywright(FakeChromium(on_disk))
     commands = fake_fetch(monkeypatch, on_disk)
-    browser.launch(pw)
+    browser.launch(pw, policy=browser.TRUSTED)
     assert commands, "nothing was fetched, so this asserts nothing"
     for cmd in commands:
         assert chromium_fetch.WITH_DEPS not in cmd, f"a build asked for the libraries that need sudo: {cmd}"
@@ -130,7 +130,7 @@ def test_a_launch_that_still_fails_after_the_fetch_names_the_install_command(mon
     pw = FakePlaywright(FakeChromium(on_disk, broken=True))
     commands = fake_fetch(monkeypatch, on_disk)
     with pytest.raises(ToolError) as caught:
-        browser.launch(pw)
+        browser.launch(pw, policy=browser.TRUSTED)
     assert commands, "it refused without even trying to fetch the browser"
     said = f"{caught.value} {caught.value.hint}"
     assert "decktalk install" in said, said
@@ -151,7 +151,7 @@ def test_the_download_is_announced_before_it_starts(monkeypatch, on_disk) -> Non
 
     monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
     with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
-        browser.launch(pw)
+        browser.launch(pw, policy=browser.TRUSTED)
     # Playwright reports its own progress to its own output, so the start is all this download knows.
     assert heard == [(chromium_fetch.TOOL, 0, None)], heard
 
@@ -162,7 +162,7 @@ def test_a_browser_that_is_already_there_is_launched_without_a_fetch(monkeypatch
     on_disk.write_text("#!/bin/sh\n", encoding="utf-8")
     pw = FakePlaywright(FakeChromium(on_disk))
     commands = fake_fetch(monkeypatch, on_disk)
-    browser.launch(pw)
+    browser.launch(pw, policy=browser.TRUSTED)
     assert commands == [], f"a machine with Chromium fetched it again: {commands}"
     assert pw.chromium.launches == [None]
 
@@ -174,7 +174,7 @@ def test_a_machine_that_names_its_own_chromium_is_never_sent_to_download_one(mon
     pw = FakePlaywright(FakeChromium(on_disk))
     commands = fake_fetch(monkeypatch, on_disk)
     with pytest.raises(ToolError) as caught:
-        browser.launch(pw, str(named))
+        browser.launch(pw, str(named), policy=browser.TRUSTED)
     assert commands == [], f"a named executable triggered a download: {commands}"
     said = f"{caught.value} {caught.value.hint}"
     assert str(named) in said, said
@@ -185,7 +185,7 @@ def test_a_fetch_that_fails_is_a_tool_error_rather_than_a_return_code(monkeypatc
     pw = FakePlaywright(FakeChromium(on_disk))
     fake_fetch(monkeypatch, on_disk, code=1)
     with pytest.raises(ToolError, match=re.escape("playwright install failed: line 1 | ERROR: host unreachable")):
-        browser.launch(pw)
+        browser.launch(pw, policy=browser.TRUSTED)
 
 
 def test_a_fetch_that_never_finishes_is_stopped_and_refused(monkeypatch) -> None:
@@ -203,7 +203,7 @@ def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, 
     pw = FakePlaywright(FakeChromium(on_disk))
     commands = fake_fetch(monkeypatch, on_disk)
     monkeypatch.setattr(browser, "sync_playwright", lambda: contextlib.nullcontext(pw))
-    with browser.chromium() as opened:
+    with browser.chromium(policy=browser.TRUSTED) as opened:
         assert isinstance(opened, FakeBrowser)
     assert opened.closed, "the browser was left running"
     assert len(commands) == 1, commands

@@ -243,7 +243,7 @@ def driving(what: str) -> Iterator[None]:
 
 
 @contextmanager
-def chromium(browser_path: str = "", *, policy: str = TRUSTED) -> Iterator[Browser]:
+def chromium(browser_path: str = "", *, policy: str) -> Iterator[Browser]:
     """A launched headless Chromium, as the machine and the page policy configure it, closed on exit.
 
     Under the trusted policy no proxy argument is passed. Request routing answers the local origin
@@ -254,7 +254,8 @@ def chromium(browser_path: str = "", *, policy: str = TRUSTED) -> Iterator[Brows
     `browser_path` is `[record] browser_path`, the executable a machine that manages its own
     Chromium names. It is empty on a machine DeckTalk fetches the browser for, which is where
     `launch` fetches it. `policy` is `[record] page_policy`, which every caller that opens a
-    project's page passes on.
+    project's page passes on. It has no default, because a default would be the policy a caller that
+    forgot it gets, and a caller that forgot it is the one most likely to open a stranger's page.
     """
     with sync_playwright() as pw:
         browser = launch(pw, browser_path, policy=policy)
@@ -265,7 +266,7 @@ def chromium(browser_path: str = "", *, policy: str = TRUSTED) -> Iterator[Brows
             browser.close()
 
 
-def launch(pw: Playwright, browser_path: str = "", *, policy: str = TRUSTED) -> Browser:
+def launch(pw: Playwright, browser_path: str = "", *, policy: str) -> Browser:
     """A launched Chromium, fetching the build Playwright manages when this machine has not got it.
 
     This is the one place a browser starts, so every command gets the browser it needs without
@@ -696,7 +697,8 @@ def measure_presentation_bias() -> float:
     It measures the browser this machine launches by default, which is the browser `doctor` reports
     on, rather than one a project names: a bias belongs to the machine and not to a deck.
     """
-    with chromium() as browser:
+    # The page is DeckTalk's own and loads nothing, so it is trusted whatever the projects are.
+    with chromium(policy=TRUSTED) as browser:
         page = browser.new_page()
         page.set_content("<!doctype html><title>bias</title>")
         answer = evaluate(page, bias_script(MEASURED_FRAMES, MEASURED_FRAME_MS))
@@ -721,7 +723,7 @@ def render_slate(
     height: int,
     background: str,
     browser_path: str = "",
-    policy: str = TRUSTED,
+    policy: str,
 ) -> Path:
     """A titled placeholder frame, for a section whose clip is missing.
 
