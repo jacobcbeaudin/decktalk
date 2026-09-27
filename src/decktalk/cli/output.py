@@ -347,11 +347,7 @@ def _status(result: StatusResult) -> Iterable[RenderableType]:
 
 def _check(result: CheckResult) -> Iterable[RenderableType]:
     yield Text(f"Checking {', '.join(path.as_posix() for path in result.judged)}.")
-    rate = _money(result.spend.price_per_1000_characters)
-    yield Text(
-        f"Voicing it costs about {_money(result.spend.dollars)} at {rate} per 1,000 characters, "
-        f"up to {_money(result.spend.ceiling_dollars)}."
-    )
+    yield Text(result.spend.sentence)
     if result.storyboard is not None:
         yield Text(f"Storyboard {result.storyboard.as_posix()}", style=QUIET_STYLE)
 

@@ -219,7 +219,7 @@ class Session:
         if storyboard:
             self.say(self.storyboard_line(project))
         if priced is not None:
-            self.say(f"Voicing costs up to ${priced.ceiling_dollars:.2f} at ${priced.dollars:.2f} for what changed.")
+            self.say(priced.sentence)
         if self.confirm("Spend that now?"):
             return Voicing.PAID
         return Voicing.PLACEHOLDER
@@ -320,11 +320,7 @@ def _spend_sentence(spend: Spend | None) -> str:
     """The sentence an approval refusal carries, with the price in it whenever the price is known."""
     if spend is None:
         return "this run would voice narration and no terminal is here to approve it."
-    sends = f"sends {spend.characters} characters and " if spend.characters else ""
-    return (
-        f"voicing {len(spend.sections)} sections {sends}costs up to ${spend.ceiling_dollars:.2f}, "
-        "and no terminal is here to approve it."
-    )
+    return f"{spend.sentence} No terminal is here to approve it."
 
 
 def _spend_hint(command: str) -> str:

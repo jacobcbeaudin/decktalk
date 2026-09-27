@@ -176,6 +176,40 @@ class Spend(BaseModel):
     price_per_1000_characters: float = Field(ge=0, description="The rate this price was worked out at.")
     price_layer: Layer = Field(description="Which layer set that rate, where default means nobody stated it.")
 
+    @property
+    def sentence(self) -> str:
+        """This price in one sentence, which tells the figure a run certainly spends from its ceiling.
+
+        A take that could not be matched to a voice may already be on disk, so it counts toward the
+        ceiling and never toward the price. When the two differ the sentence says which is which,
+        because "about $0.00, up to $0.14" reads as a contradiction to anyone not holding the rule.
+        Every surface that states a price states this sentence, so the rule is written once.
+        """
+        rate = f"{_money(self.price_per_1000_characters)} per 1,000 characters"
+        if self.state is SpendState.CHARGED:
+            if self.dollars == self.ceiling_dollars == 0:
+                return "This run bought nothing."
+            return f"This run spent {_money(self.dollars)} on {self.characters:,} characters at {rate}."
+        if self.ceiling_dollars == 0:
+            return "This run buys nothing."
+        if self.dollars == self.ceiling_dollars:
+            return f"This run costs {_money(self.dollars)} for {self.characters:,} characters at {rate}."
+        if self.dollars == 0:
+            return (
+                "The takes on disk could not be matched to a voice, so this run costs up to "
+                f"{_money(self.ceiling_dollars)} at {rate}."
+            )
+        return (
+            f"This run costs {_money(self.dollars)} for the sections that certainly need a take, and up to "
+            f"{_money(self.ceiling_dollars)} if the takes that could not be matched to a voice need one too, "
+            f"at {rate}."
+        )
+
+
+def _money(dollars: float) -> str:
+    """An amount in US dollars as a price is written, to the cent."""
+    return f"${dollars:.2f}"
+
 
 class Word(BaseModel):
     """One spoken word with its span, in seconds after its section starts."""

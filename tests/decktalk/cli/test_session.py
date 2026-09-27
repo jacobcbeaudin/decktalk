@@ -114,7 +114,7 @@ def test_a_spend_with_no_terminal_refuses_and_names_both_flags() -> None:
     fake = Fake(check=_check())
     with pytest.raises(ApprovalRequired) as refused:
         made.voicing(fake)  # ty: ignore[invalid-argument-type]
-    assert "no terminal is here to approve it" in str(refused.value)
+    assert "No terminal is here to approve it." in str(refused.value)
     assert refused.value.hint is not None
     assert "--spend" in refused.value.hint
     assert "--no-voice" in refused.value.hint
