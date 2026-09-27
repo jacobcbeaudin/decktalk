@@ -300,11 +300,11 @@ def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spe
         dollars=round(dollars_for(characters, inputs), DOLLAR_DIGITS),
         ceiling_dollars=round(dollars_for(ceiling, inputs), DOLLAR_DIGITS),
         price_per_1000_characters=rate,
-        price_layer=_price_layer(inputs),
+        price_layer=price_layer(inputs),
     )
 
 
-def _price_layer(inputs: Inputs) -> Layer:
+def price_layer(inputs: Inputs) -> Layer:
     """Which layer stated the price, because a ceiling may not guard a price nobody has stated."""
     try:
         return inputs.layers.winner(PRICE_KEY).layer
@@ -320,6 +320,7 @@ __all__ = [
     "miss_reason",
     "placeholder_inputs",
     "placeholder_plan",
+    "price_layer",
     "plan_takes",
     "requests_for",
     "speech_provider",

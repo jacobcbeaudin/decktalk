@@ -56,7 +56,7 @@ from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
 from decktalk.stages.narrate.plan import voice_id_of
-from decktalk.stages.storyboard import Slides, reports_of, slide_cues, write_page
+from decktalk.stages.storyboard import Slides, reports_of, scene_entry, slide_cues, write_page
 from decktalk.stages.verify import opted_out
 from decktalk.template import stale_runtime
 from decktalk.toolchain.assets import RUNTIME_FILE
@@ -333,7 +333,7 @@ def _sections(
     skipped = opted_out(inputs)
     for section in sections:
         run.check()
-        entry = _entry(looked.catalogs.get(section.page), section.scene)
+        entry = scene_entry(looked.catalogs.get(section.page), section.scene)
         if entry is None:
             run.note(
                 f"section {section.number} plays scene {section.scene} of {section.page}, which published no "
@@ -378,11 +378,6 @@ def _two_way(
     declared = declared_cues(looked.catalogs, sections)
     cued = [block for block in inputs.cues() if wanted(block.number)]
     return cue_findings(declared, cued, cues_path=inputs.cues_path, root=inputs.root)
-
-
-def _entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
-    """The catalog entry for one scene of one page, or None when the page published no such scene."""
-    return next((one for one in entries or () if str(one.scene) == str(scene)), None)
 
 
 __all__ = ["NEEDS_A_FRAME", "NEEDS_A_PAGE", "Look", "check"]

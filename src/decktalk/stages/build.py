@@ -41,10 +41,10 @@ from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.pipeline import Artifact, Outcome, Stage, required
-from decktalk.results import BuildResult, Layer, Result, Spend, SpendState, StageRun, Voicing
+from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, Voicing
 from decktalk.stages import assemble, clock, cue, narrate, record, since, storyboard, verify
 from decktalk.stages import soundscape as soundscape_stage
-from decktalk.stages.narrate.plan import PRICE_KEY
+from decktalk.stages.narrate.plan import price_layer
 from decktalk.stages.status import (
     BUILT,
     Kept,
@@ -439,7 +439,7 @@ def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
             dollars=0.0,
             ceiling_dollars=0.0,
             price_per_1000_characters=inputs.settings.voice.price_per_1000_characters,
-            price_layer=_price_layer(inputs),
+            price_layer=price_layer(inputs),
         )
     sections: list[int] = []
     for spend in spends:
@@ -453,14 +453,6 @@ def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
         price_per_1000_characters=spends[0].price_per_1000_characters,
         price_layer=spends[0].price_layer,
     )
-
-
-def _price_layer(inputs: Inputs) -> Layer:
-    """Which layer stated the price, so a run that bought nothing still says where its rate came from."""
-    try:
-        return inputs.layers.winner(PRICE_KEY).layer
-    except KeyError:
-        return Layer.DEFAULT
 
 
 __all__ = ["build"]

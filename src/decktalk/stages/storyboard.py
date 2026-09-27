@@ -350,7 +350,7 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Sel
         reports = reports_of(page, inputs, [one.page for one in sections])
         for section in sections:
             run.check()
-            slides = slide_cues(_entry(_catalog(reports, section.page), section.scene))
+            slides = slide_cues(scene_entry(_catalog(reports, section.page), section.scene))
             if slides is None:
                 run.note(
                     f"section {section.number} plays scene {section.scene} of {section.page}, which published no "
@@ -385,7 +385,7 @@ def _section_panels(
     return out
 
 
-def _entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
+def scene_entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
     """The catalog entry for one scene of one page, or None when the page published no such scene."""
     return next((one for one in entries or () if str(one.scene) == str(scene)), None)
 
@@ -404,6 +404,7 @@ __all__ = [
     "Selection",
     "Slides",
     "reports_of",
+    "scene_entry",
     "freeze_url",
     "panels_of",
     "slide_cues",
