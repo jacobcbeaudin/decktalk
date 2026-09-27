@@ -170,6 +170,15 @@ def test_the_motion_a_render_asks_for_joins_the_key(tmp_path: Path) -> None:
     )
 
 
+def test_the_page_policy_a_render_runs_under_joins_the_key(tmp_path: Path) -> None:
+    """A recording made trusted is never kept for an untrusted run, whose page may draw without its other origins."""
+    trusted = a_project(tmp_path)
+    sealed = Inputs.load(tmp_path, environ={}, machine={"record": {"page_policy": "untrusted"}})
+    assert section_hash(trusted, section_of(trusted, 1), "url", 10.0, ()) != section_hash(
+        sealed, section_of(sealed, 1), "url", 10.0, ()
+    )
+
+
 def test_a_swapped_asset_moves_the_key_although_no_markup_changed(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     picture = tmp_path / "deck" / "one.png"

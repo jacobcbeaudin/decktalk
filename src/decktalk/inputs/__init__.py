@@ -313,9 +313,9 @@ class Inputs:
         """The name of one frozen frame of `page`, from everything that decides how it looks before it loads.
 
         `identity` is what the caller asks the page for, which is the URL of a frozen state or the
-        section a poster stands for. The frame size, the colour scheme, the motion and the page file
-        itself decide the picture as surely as the URL does, and so does anything the origin answers
-        from memory. The files the page loads once it is open are named by the manifest beside the
+        section a poster stands for. The frame size, the colour scheme, the page policy, the motion and
+        the page file itself decide the picture as surely as the URL does, and so does anything the
+        origin answers from memory. The files the page loads once it is open are named by the manifest beside the
         frame rather than here, because nobody knows them until the page has asked.
         """
         video, record, motion = self.settings.video, self.settings.record, self.settings.motion
@@ -325,6 +325,7 @@ class Inputs:
                 *identity,
                 f"{video.width}x{video.height}",
                 record.color_scheme,
+                f"policy:{record.page_policy}",
                 f"motion:{motion.reduce}:{motion.scale:g}",
                 f"page:{page}:{file_digest(self.path(page))}",
                 *(f"served:{name}:{hashlib.sha256(body).hexdigest()}" for name, body in served),

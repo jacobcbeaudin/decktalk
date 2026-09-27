@@ -233,7 +233,9 @@ def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float,
     The page joins the key in two pieces rather than as one file, so an edit to one scene moves the
     key of the sections that play it and of no others, while an edit to the head, a style, a script
     or another shared part of the file moves every section of that page. The motion the render asks
-    for joins the key too, or a reduced build would reuse the full-motion recordings it made before.
+    for joins the key too, or a reduced build would reuse the full-motion recordings it made before,
+    and so does the page policy, because an untrusted page whose other origins are refused may draw
+    a different picture from the same page trusted.
     `assets` is every project file the page loaded, which the last run's log names, and the page file
     itself is left out of them because its two pieces are already here.
     """
@@ -246,6 +248,7 @@ def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float,
         f"{seconds:.{SECOND_DIGITS}f}",
         f"{video.width}x{video.height}@{video.output_fps}",
         record.color_scheme,
+        f"policy:{record.page_policy}",
         f"motion:{motion.reduce}:{motion.scale:g}",
         f"scene:{text_digest(parts.scene)}",
         f"page:{text_digest(parts.shared)}",

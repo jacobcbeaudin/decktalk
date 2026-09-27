@@ -343,6 +343,14 @@ def test_a_different_frame_size_is_a_different_still(tmp_path: Path) -> None:
     assert inputs.still_key(page, "url") != wide.still_key(page, "url")
 
 
+def test_a_frame_drawn_under_one_page_policy_is_never_kept_for_the_other(tmp_path: Path) -> None:
+    """An untrusted page has its other origins refused, so it can draw a different frame from the same file."""
+    inputs = a_project(tmp_path, cues=CUES)
+    sealed = Inputs.load(tmp_path, environ={}, machine={"record": {"page_policy": "untrusted"}})
+    page = inputs.document.page_sections[0].page
+    assert inputs.still_key(page, "url") != sealed.still_key(page, "url")
+
+
 def test_an_untrusted_project_draws_its_pages_untrusted(tmp_path: Path, opened: Opened) -> None:
     """A page `record` would sandbox must not reach the network through the storyboard instead."""
     a_project(tmp_path, cues=CUES)
