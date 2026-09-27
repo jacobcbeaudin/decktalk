@@ -81,6 +81,9 @@ refusal names what it read and would not accept.
 - `seamless` is set on the first section, which has no previous section.
 - A `[transition] dips` pair or a `[[mix.effects]]` row names a section that does not exist.
 - A settings value is outside its safe range.
+- A settings key only a machine may set is written here, such as `record.concurrency` or
+  `tools.ffmpeg`. The refusal names the key and the `config set` line that puts it in the machine's
+  file.
 
 An unknown key inside a known table does not fail the load. DeckTalk warns, names the closest key it
 does read, ignores the key and carries on.

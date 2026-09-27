@@ -140,6 +140,38 @@ before you trust those limits on it.
 owner can read what a recording will launch before it launches. [What leaves your
 machine](/reference/what-leaves-your-machine) is the whole list of hosts DeckTalk contacts.
 
+### How hard a machine is driven
+
+Four keys say how much work this machine takes on at once and how long it waits. They describe the
+machine rather than the film, so they are machine keys like the ones above.
+
+| Key | Default | What it decides |
+|---|---|---|
+| `record.concurrency` | `0` | How many page sections `record` records at once. Zero chooses from the CPU this process may use: one recording per two CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
+| `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
+| `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. |
+| `tools.timeout_seconds` | `600` | The longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
+
+A recording needs its CPU on time, because a frame drawn late lands its reveal late. So
+`record.concurrency` set above this machine's share costs correctness rather than only speed: a
+starved recording stalls, or reports reveals that land after their words.
+
+```console
+decktalk config set record.concurrency 2 --where machine
+```
+
+A `decktalk.toml` that sets any of the four is refused by name, because a project travels and a
+limit that suits one machine is wrong on the next:
+
+```text
+error[INPUT]: decktalk.toml: 'record.concurrency' is machine-scoped, so it belongs in this machine's file, where the machine that runs the build states what it runs.
+  hint: Remove it from decktalk.toml and run `decktalk config set record.concurrency <value> --where machine`.
+  docs: https://docs.decktalk.ai/reference/errors/INPUT
+```
+
+Each also has its environment variable, such as `DECKTALK_RECORD_CONCURRENCY`, which is how a job
+sets one for a container it does not keep.
+
 ## A page someone else wrote
 
 A deck is a web page, and its script runs in the Chromium that records it. On your own machine that
@@ -324,10 +356,12 @@ you intend to.
 
 ## Time
 
-Recording runs in real time, one section after another, so a longer film takes longer to record. The
-starter's build without voice took 69 seconds in all on a MacBook Pro with an Apple M5 Pro and 64 GB
-of memory, on a machine that already had Chromium and ffmpeg, and the film it made is 50 seconds
-long. Most of that is the recording and the encode.
+Recording runs in real time, so a section takes as long to record as it plays. Several page
+sections record at once, as many as `record.concurrency` allows, so a film of several sections
+records in about the time of its longest few rather than of all of them end to end. The starter's
+build without voice took about 27 seconds in all on a MacBook Pro with an Apple M5 Pro and 64 GB of
+memory, on a machine that already had Chromium and ffmpeg, and the film it made is 50 seconds long.
+Most of that is the recording.
 
 [Rebuild one section](/guides/rebuild-one-section) shows how to record only what changed.
 
