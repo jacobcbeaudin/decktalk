@@ -273,16 +273,18 @@ the reason when it could not be reached.
 **What you see.** `error[LOCKED]`, naming the process and the run that holds the directory, with the
 hint to wait for that run or stop it.
 
-One writing run at a time holds `build/.lock`, which carries the process id and the run id of the
-writer. A second writing run is refused rather than allowed to overwrite the first one's work.
+One writing run at a time holds an operating system lock on `build/.lock`, and the file names the
+process id and the run id of the writer while it holds it. A second writing run is refused rather
+than allowed to overwrite the first one's work.
 
 **What to do.**
 
 1. Find the run named in the message. It is usually a `--watch` build in another terminal.
-2. Let it finish, or stop it. The lock file is removed when the run ends, including when it is
-   interrupted.
-3. A lock left behind by a process that is gone is not an obstacle. The next run notices, prints a
-   warning saying it took the lock, and carries on.
+2. Let it finish, or stop it. The system releases the lock the moment the run ends, including when
+   it is killed. The empty file stays in `build/`, and that is expected.
+3. A lock is never left behind by a process that is gone, because the lock belongs to the process
+   and not to the file. When a killed run left its name in the file, the next run takes the lock,
+   prints a warning saying so, and carries on. Deleting the file is never needed.
 4. To read the project while a build is running, use `decktalk status` or
    `decktalk check --no-pages`. Neither writes, so neither takes the lock.
 

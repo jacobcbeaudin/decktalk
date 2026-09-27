@@ -116,7 +116,8 @@ decktalk schema project     # the shape of cues.json
 ```
 
 `next` is the whole command to run next, so an agent that has just read the project already knows
-what to run. `runs` lists every run of this project whose events file is still open.
+what to run. It is null once the film on disk is the one the last build measured. `runs` lists every
+run of this project whose events file is still open.
 
 ## A result that judged the project
 
@@ -484,9 +485,11 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
 | `log` | One sentence the library would have printed. | `level`, `message` |
 
-`outcome` is `ok`, `skipped` or `failed`, and it is on `run.done`, `stage.done` and `section.done`.
-One field replaces three event names, so a caller reads one field rather than branching three ways
-to learn the same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`,
+`outcome` is `ok`, `kept`, `skipped` or `failed`, and it is on `run.done`, `stage.done` and
+`section.done`. `kept` is a stage the run planned and did not repeat, because nothing it reads had
+changed since it last ran, and `skipped` is a stage the run did not plan or did not reach. One field
+replaces four event names, so a caller reads one field rather than branching four ways to learn the
+same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`,
 and `level` on a log line is `debug`, `info`, `warning` or `error`.
 
 A `finding` line carries the judgement in the same shape the result will carry, so an agent that

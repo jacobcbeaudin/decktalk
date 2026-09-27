@@ -193,9 +193,33 @@ Two fields carry the two caches.
   and the stream carries the sentence, so a reader that dispatches on the boolean is still told which
   of the several things moved.
 
-`next` is the whole command to run next, read off the pipeline rather than guessed, and `runs` lists
-any run whose events file is still open, which is how a caller finds a build it started in the
-background.
+`next` is the whole command to run next, read off the pipeline rather than guessed. It is
+`decktalk build` whenever anything on disk is stale, and null once the film on disk is the one the
+last build measured, because then there is nothing to do. `runs` lists any run whose events file is
+still open, which is how a caller finds a build it started in the background.
+
+## A build that finds nothing changed
+
+`assemble` and `verify` are pure functions of files already on disk, so when nothing either of them
+reads has moved since the last build ran them, a build keeps both rather than doing them again. It
+reports each with the outcome `kept` and reports its findings again, so the result reads as the run
+that made the film did.
+
+{/* sample: a second decktalk build --no-voice on an unchanged starter named my-lesson */}
+
+```text
+Assemble kept what it made last time, because nothing it reads has changed.
+    Assemble    0:00
+Verify kept what it made last time, because nothing it reads has changed.
+      Verify    0:00
+       Built build/final/my-lesson.mp4, $0.00, nothing found
+```
+
+On the starter that second build took under half a second. What a build compares is a digest of every
+file the two stages read and the options they ran with, kept in
+[`build/kept.json`](/reference/artifacts#build-kept-json), never a file time. Inside `assemble` each
+section cut has a key of its own in `build/sections/NN.json`, so an edit to one section cuts that
+section again and keeps the others.
 
 ## Ask for work you were not offered
 
@@ -203,7 +227,8 @@ Two flags redo work, and only one of them can cost you anything you cannot get b
 
 `--force` builds again from nothing and keeps every voiced take. It ignores each stage's own cache,
 so `narrate` plans every section it was given as one to make, `record` records every section it
-planned, and `soundscape` asks for every item again. On a run with the voice, forcing therefore buys
+planned, `soundscape` asks for every item again, and `assemble` and `verify` run and measure again
+even when nothing they read has moved. On a run with the voice, forcing therefore buys
 the speech again, and it buys the same words, so the take that lands is the take that was there.
 
 ```console

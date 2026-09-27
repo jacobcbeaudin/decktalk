@@ -65,7 +65,7 @@ Read `AGENTS.md`, then run the four calls, then act. In practice that is one ord
 
 1. Run `decktalk status --json` to learn the project's name, its script, its cue file, every section
    with what is voiced, recorded and cut, and the `next` field, which is the whole command to run
-   next.
+   next, or null when the film is built and measured.
 2. Run `decktalk check --json` before anything that spends. It judges the written files and the
    pages, makes no film, and its `spend` object prices what a voiced build would cost.
 3. Dispatch on `findings[].code`, and read `location.file` and `location.line` to know what to open.

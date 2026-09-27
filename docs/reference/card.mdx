@@ -202,7 +202,8 @@ credits are spent.
 | `decktalk verify` | Measure the finished mp4: every start, cut, seam and landing. | `--section N` |
 
 `--replace-voiced` is the one flag here that destroys money, because it discards the take it
-replaces. `--force` builds again from nothing and keeps every voiced take.
+replaces. `--force` builds again from nothing and keeps every voiced take. A build that finds nothing
+moved keeps `assemble` and `verify` and reports them as `kept`, and `--force` measures again.
 
 ### Run them all, or cut one piece out
 
@@ -285,7 +286,7 @@ is `certain` or `uncertain`. `location` carries a required `where` naming the ob
 appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are twelve names:
 `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`, `section.done`, `progress`,
 `finding`, `spend`, `take.charged`, `fetch` and `log`. `run.done`, `stage.done` and `section.done` carry an
-`outcome` of `ok`, `skipped` or `failed`.
+`outcome` of `ok`, `kept`, `skipped` or `failed`.
 
 Whole contract: [The JSON contract](/agents/json).
 

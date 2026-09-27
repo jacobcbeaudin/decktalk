@@ -74,6 +74,16 @@ local file it loads are unchanged, and when the motion settings that shaped it h
 takes are the only expensive thing in the tree, and caching them by content is what makes the tenth
 edit cheap.
 
+The same rule reaches past the takes. Several page sections record at once, each in its own
+Chromium, as many as the machine's CPU allows. A section cut is kept while the key of its encode,
+which is the whole argument list and the content of every file it read, is unchanged. A frozen frame
+is kept under a key of everything that draws it, so `check`, `storyboard` and the poster draw each
+state of a page once between them. And a build that finds nothing moved keeps `assemble` and
+`verify` whole, reports them with the outcome `kept`, and reports their findings again, because
+both are pure functions of files already on disk. Every key is a digest of content and names the
+engine, so a copy, a checkout or an upgrade never keeps something it should not. `build/.lock` is an
+operating system lock, so a writer that dies releases it with no cleanup.
+
 `tests/contract/test_imports.py` names every import that points sideways between stages, each with
 the reason it exists, so an exception is designed rather than acquired. Every one is either `build`
 and `check` calling the stages they orchestrate, or a stage asking its neighbour for a rule that
@@ -145,9 +155,9 @@ hundred megabytes. A project's `events` is that stream filtered to the runs the 
 
 There are twelve event names and the discriminator is `event`. The library mints `event`, `time`,
 `seq` and `run` onto every line, and `run.start` carries the path the lines are being appended to, so
-the stream and the file can never disagree. Skip and fail are not event names: `stage.done` and
-`section.done` carry an `outcome`, because three names for one moment forces three branches where one
-field read will do.
+the stream and the file can never disagree. Kept, skip and fail are not event names: `stage.done`
+and `section.done` carry an `outcome`, because four names for one moment forces four branches where
+one field read will do.
 
 Nothing in the library prints. The command line subscribes and renders, `--events` puts the same
 lines on stderr as they happen, and every run appends `build/events/<run>.jsonl`.
