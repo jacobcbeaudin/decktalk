@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -78,14 +80,16 @@ def fake_fetch(monkeypatch: pytest.MonkeyPatch, installs: Path | None, *, code: 
     """
     seen: list[list[str]] = []
 
-    def call(cmd: list[str], **_kwargs: object) -> int:
+    def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         seen.append(list(cmd))
+        assert kwargs["capture_output"] is True, "the installer's output is kept, never printed"
+        assert kwargs["timeout"] == chromium_fetch.FETCH_TIMEOUT_SECONDS
         if installs is not None and code == 0:
             installs.parent.mkdir(parents=True, exist_ok=True)
             installs.write_text("#!/bin/sh\n", encoding="utf-8")
-        return code
+        return subprocess.CompletedProcess(cmd, code, b"downloading", b"line 1\nERROR: host unreachable\n")
 
-    monkeypatch.setattr(chromium_fetch.subprocess, "call", call)
+    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
     return seen
 
 
@@ -139,13 +143,13 @@ def test_the_download_is_announced_before_it_starts(monkeypatch, on_disk) -> Non
     pw = FakePlaywright(FakeChromium(on_disk))
     heard: list[tuple[str, int, int | None]] = []
 
-    def call(_cmd: list[str], **_kwargs: object) -> int:
+    def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         assert heard, "the download started with nothing said about it"
         on_disk.parent.mkdir(parents=True, exist_ok=True)
         on_disk.write_text("#!/bin/sh\n", encoding="utf-8")
-        return 0
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
 
-    monkeypatch.setattr(chromium_fetch.subprocess, "call", call)
+    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
     with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
         browser.launch(pw)
     # Playwright reports its own progress to its own output, so the start is all this download knows.
@@ -180,8 +184,17 @@ def test_a_machine_that_names_its_own_chromium_is_never_sent_to_download_one(mon
 def test_a_fetch_that_fails_is_a_tool_error_rather_than_a_return_code(monkeypatch, on_disk) -> None:
     pw = FakePlaywright(FakeChromium(on_disk))
     fake_fetch(monkeypatch, on_disk, code=1)
-    with pytest.raises(ToolError, match="playwright install failed"):
+    with pytest.raises(ToolError, match=re.escape("playwright install failed: line 1 | ERROR: host unreachable")):
         browser.launch(pw)
+
+
+def test_a_fetch_that_never_finishes_is_stopped_and_refused(monkeypatch) -> None:
+    def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.TimeoutExpired(cmd, float(kwargs["timeout"]))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
+    with pytest.raises(ToolError, match="longer than"):
+        chromium_fetch.fetch_chromium()
 
 
 def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, on_disk) -> None:

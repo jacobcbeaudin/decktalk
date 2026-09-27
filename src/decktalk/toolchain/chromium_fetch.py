@@ -56,20 +56,37 @@ def installed_chromium(pw: Playwright) -> str | None:
     return str(path) if Path(path).is_file() else None
 
 
+FETCH_TIMEOUT_SECONDS = 1800
+"""Calibration: half an hour, far longer than 200 MB takes on a usable connection, so only a stuck install hits it."""
+
+TAIL_LINES = 6
+"""Truth: the installer says why it failed in its last few lines, and everything above is its progress."""
+
+
 def fetch_chromium(*, with_deps: bool = False) -> None:
     """Run `playwright install chromium` for this machine, raising a ToolError when it fails.
 
     `with_deps` adds Chromium's system libraries and may ask for a root password, so only
-    `decktalk install` passes it. Playwright's progress goes to stderr, where DeckTalk's own log
-    lines go, so stdout carries the result alone.
+    `decktalk install` passes it. The password prompt goes to the terminal itself, so it is seen
+    although the installer's own output is kept. That output is kept rather than printed, because
+    nothing in the library prints, and its last lines are the reason a failed fetch gives.
 
     The download is announced before it starts and never counted as it arrives, because Playwright
-    reports its progress to its own output and tells this process nothing.
+    reports its progress to its own output and tells this process nothing. A fetch that runs past
+    `FETCH_TIMEOUT_SECONDS` is stopped and refused, so a stalled mirror cannot hold a build forever.
     """
     announce(TOOL, 0, None)
     cmd = [sys.executable, *INSTALL_ARGS, *([WITH_DEPS] if with_deps else [])]
-    if subprocess.call(cmd, stdout=sys.stderr) != 0:
+    try:
+        done = subprocess.run(cmd, capture_output=True, timeout=FETCH_TIMEOUT_SECONDS, check=False)
+    except subprocess.TimeoutExpired as exc:
         raise ToolError(
-            "playwright install failed. See the output above.",
+            f"playwright install ran for longer than {FETCH_TIMEOUT_SECONDS} seconds, so it was stopped.",
+            hint="Check the network, then run `decktalk install`.",
+        ) from exc
+    if done.returncode != 0:
+        said = (done.stderr or done.stdout or b"").decode(errors="replace").strip().splitlines()
+        raise ToolError(
+            f"playwright install failed: {' | '.join(said[-TAIL_LINES:]) or 'it said nothing'}",
             hint="Check the network, then run `decktalk install`.",
         )
