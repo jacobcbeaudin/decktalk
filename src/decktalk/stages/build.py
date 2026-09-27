@@ -14,16 +14,21 @@ rule, asked of `status`, so a build never goes ahead on a directory the report c
 
 A voiced run draws the storyboard before it narrates, because the contact sheet is the checkpoint a
 person reads before any credit is bought, and a run that writes placeholders has nothing to check.
+
+A stage whose findings reach the caller's threshold stops the run, and the run still returns its
+result. A finding is a judgement and not an error, so the stages that ran, the findings they made and
+the money narrate already spent reach the caller as fields it can read, and `stopped_at` names the
+stage the run stopped after.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 from types import ModuleType
 
 from decktalk.errors import InputError, NotBuiltError
-from decktalk.events import StageDone
+from decktalk.events import Level, StageDone
 from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
@@ -100,15 +105,22 @@ def build(
     soundscape: bool = True,
     loudness: bool = True,
     strict: bool = False,
-    allow_unknown: bool = False,
+    allow: Collection[Code] = (),
+    stop_on: Certainty | None = Certainty.CERTAIN,
 ) -> BuildResult:
     """Run every stage of the pipeline, or the span of them `stages` names, in run order.
 
     Whether the run spends is the run's own voicing rather than a parameter, so one gate decides it
     for the library, the command line and a service alike, and the storyboard is drawn first when it
-    does. A stage that judges something certain stops the run, because a cue whose phrase is never
-    spoken leaves a slide that never appears and a page that threw recorded an empty stage, and
-    carrying on would deliver a film that is wrong in a way the run already knows about.
+    does. A stage that judges something at the `stop_on` threshold stops the run, because a cue whose
+    phrase is never spoken leaves a slide that never appears and a page that threw recorded an empty
+    stage, and carrying on would deliver a film that is wrong in a way the run already knows about.
+
+    `allow` and `stop_on` are the caller's own threshold, which is what `--allow` and `--fail-on`
+    set on the command line. A code in `allow` never stops the run, `Certainty.CERTAIN` stops on a
+    certain finding, `Certainty.UNCERTAIN` stops on any finding, and None lets every stage run so
+    that `verify` measures what the earlier stages made. The stages after a stop are reported as
+    skipped and the result names the stage in `stopped_at`.
     """
     started = clock()
     plan = _plan(stages, skip)
@@ -120,14 +132,15 @@ def build(
         "soundscape": soundscape,
         "loudness": loudness,
         "strict": strict,
-        "allow_unknown": allow_unknown,
+        "allow_unknown": Code.CUE_UNKNOWN in allow,
     }
     board = _storyboard(inputs, run, only=only)
     rows: list[StageRun] = []
     spends: list[Spend] = []
     film: Path | None = None
+    stopped_at: Stage | None = None
     for stage in Stage:
-        if stage not in plan:
+        if stage not in plan or stopped_at is not None:
             rows.append(_skipped(run, stage))
             continue
         run.check()
@@ -138,8 +151,9 @@ def build(
         spends += _spend_of(answer)
         if stage is Stage.ASSEMBLE:
             film = _film_of(answer)
-        if stage is not Stage.VERIFY:
-            _stop_on_what_is_certain(stage, answer, allow_unknown=allow_unknown)
+        if stage is not Stage.VERIFY and _stopped(stage, answer, run, plan, allow=allow, stop_on=stop_on):
+            stopped_at = stage
+    stopped = {"ok": False} if stopped_at is not None else {}
     return run.result(
         BuildResult,
         stages=tuple(rows),
@@ -147,7 +161,9 @@ def build(
         spend=_total(spends, inputs),
         film=film,
         storyboard=board,
+        stopped_at=stopped_at,
         seconds=since(started),
+        **stopped,
     )
 
 
@@ -245,37 +261,51 @@ def _film_of(answer: Result) -> Path | None:
     return Path(made) if made is not None else None
 
 
-def _stop_on_what_is_certain(stage: Stage, answer: Result, *, allow_unknown: bool) -> None:
-    """Stop the run when the stage that just ran judged something certain about its own work.
+def _stopped(
+    stage: Stage,
+    answer: Result,
+    run: Run,
+    plan: tuple[Stage, ...],
+    *,
+    allow: Collection[Code],
+    stop_on: Certainty | None,
+) -> bool:
+    """Whether the stage that just ran judged something that stops the run, said on the stream when it did.
 
-    A certain finding is a fact the run already holds, so carrying on would deliver a film that is
-    wrong in a way nobody has to watch it to discover. Only the findings that stage raised are
-    weighed, because one run carries every judgement made in it and an earlier stage's would
+    A finding at the threshold is a fact the run already holds, so carrying on would deliver a film
+    that is wrong in a way nobody has to watch it to discover. Only the findings that stage raised
+    are weighed, because one run carries every judgement made in it and an earlier stage's would
     otherwise stop the run twice. `verify` is last and measures the finished film, so its findings
     end the run rather than stop it, and they never reach here.
     """
-    certain = [found for found in answer.findings if found.stage is stage and _stops(found, allow_unknown)]
-    if not certain:
-        return
-    listed = "\n  ".join(f"{found.code.name} at {found.location.where}: {found.message}" for found in certain)
-    raise InputError(
-        f"{stage.value} found {len(certain)} thing(s) that are certainly wrong, so the build stopped "
-        "there rather than carrying them into the film.",
-        hint=f"Fix these and run the build again:\n  {listed}",
-        location=certain[0].location,
-    )
-
-
-def _stops(found: Finding, allow_unknown: bool) -> bool:
-    """Whether one finding stops the run, which every certain one does but the one a flag forgives.
-
-    A cue row no page declares is the one certain finding an author may knowingly keep, because a
-    deck under construction lists the cues of slides it has not drawn yet, and
-    `--allow CUE_UNKNOWN` is what says so.
-    """
-    if found.certainty is not Certainty.CERTAIN:
+    stopping = [found for found in answer.findings if found.stage is stage and _stops(found, allow, stop_on)]
+    if not stopping:
         return False
-    return not (allow_unknown and found.code is Code.CUE_UNKNOWN)
+    later = plan[plan.index(stage) + 1 :]
+    rest = f"before {later[0].value}" if later else "there"
+    run.note(
+        f"{stage.value.capitalize()} made {_counted(len(stopping))} that the build stops on, so the build "
+        f"stopped {rest} rather than carry {'it' if len(stopping) == 1 else 'them'} into the film.",
+        level=Level.WARNING,
+    )
+    return True
+
+
+def _counted(count: int) -> str:
+    """A number of findings as a reader says it, which is one finding or several findings."""
+    return "one finding" if count == 1 else f"{count} findings"
+
+
+def _stops(found: Finding, allow: Collection[Code], stop_on: Certainty | None) -> bool:
+    """Whether one finding stops the run, which the caller's allowed codes and threshold decide.
+
+    A cue row no page declares is the certain finding an author most often keeps on purpose,
+    because a deck under construction lists the cues of slides it has not drawn yet, and
+    `--allow CUE_UNKNOWN` is how that is said. Any other code is allowed the same way.
+    """
+    if stop_on is None or found.code in allow:
+        return False
+    return stop_on is Certainty.UNCERTAIN or found.certainty is Certainty.CERTAIN
 
 
 def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:

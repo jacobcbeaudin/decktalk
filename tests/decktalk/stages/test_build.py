@@ -259,7 +259,12 @@ def calls(monkeypatch: pytest.MonkeyPatch, answers: Answers) -> Iterator[Calls]:
 
         def fake(_inputs: Inputs, _run: Run, _name: str = name, **options: object) -> Result:
             seen.made.append((_name, options))
-            return made[_name]()
+            answer = made[_name]()
+            # A real stage reports each judgement through its run as it makes it, which is what
+            # fills the build's own result, so the fake does the same.
+            for found in answer.findings:
+                _run.found(found)
+            return answer
 
         monkeypatch.setattr(module, name, fake)
     yield seen
@@ -357,7 +362,7 @@ def test_a_placeholder_run_draws_no_storyboard(inputs: Inputs, watched: Watched,
 
 def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A stage handed a flag it does not read would accept a knob that changes nothing."""
-    build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False, allow_unknown=True)
+    build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False, allow=[Code.CUE_UNKNOWN])
     assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False}
     assert calls.options("cue") == {"only": [1], "allow_unknown": True}
     assert calls.options("record") == {"only": [1], "force": True}
@@ -370,10 +375,39 @@ def test_a_certain_finding_stops_the_run_where_it_was_found(
 ) -> None:
     """A cue whose phrase is never spoken leaves a slide that never appears, so the film is not made."""
     answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
-    with pytest.raises(InputError) as stopped:
-        build(inputs, watched.run)
-    assert "CUE_UNRESOLVED" in (stopped.value.hint or "")
+    result = build(inputs, watched.run)
     assert calls.names == ["narrate", "cue"]
+    assert result.ok is False
+    assert result.stopped_at is Stage.CUE
+    assert [found.code for found in result.findings] == [Code.CUE_UNRESOLVED]
+    assert [row.outcome for row in result.stages] == [Outcome.OK, Outcome.OK, *[Outcome.SKIPPED] * 4]
+    assert result.film is None
+
+
+def test_a_run_that_stops_says_so_in_a_sentence(
+    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+) -> None:
+    """The stream says which stage stopped the run and how many findings did it, counted in words."""
+    answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
+    build(inputs, watched.run)
+    said = [line.message for line in watched.of("log")]  # type: ignore[attr-defined]
+    assert said == ["Cue made one finding that the build stops on, so the build stopped before record rather "
+                    "than carry it into the film."]  # fmt: skip
+    assert "(s)" not in said[0]
+    assert calls.names == ["narrate", "cue"]
+
+
+@pytest.mark.usefixtures("calls")
+def test_a_stopped_run_keeps_what_narrate_already_charged(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers
+) -> None:
+    """A paid narrate followed by a cue finding still reports the money it spent."""
+    answers.narrate_dollars = 1.0
+    answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
+    watched = make_run(inputs, voice=Voicing.PAID)
+    result = build(inputs, watched.run)
+    assert result.stopped_at is Stage.CUE
+    assert result.spend.dollars == pytest.approx(1.0)
 
 
 def test_an_uncertain_finding_lets_the_run_carry_on(
@@ -381,24 +415,58 @@ def test_an_uncertain_finding_lets_the_run_carry_on(
 ) -> None:
     answers.record.append(judged(Code.PAGE_SWAP_APART, Stage.RECORD))
     assert judged(Code.PAGE_SWAP_APART, Stage.RECORD).certainty is Certainty.UNCERTAIN
-    build(inputs, watched.run)
+    result = build(inputs, watched.run)
     assert calls.names[-1] == "verify"
+    assert result.stopped_at is None
 
 
-def test_allow_unknown_lets_a_cue_no_page_declares_through(
+def test_a_threshold_of_any_finding_stops_on_an_uncertain_one(
+    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+) -> None:
+    """`--fail-on any` means the run stops where the command would fail, which is at any finding."""
+    answers.record.append(judged(Code.PAGE_SWAP_APART, Stage.RECORD))
+    result = build(inputs, watched.run, stop_on=Certainty.UNCERTAIN)
+    assert calls.names == ["narrate", "cue", "record"]
+    assert result.stopped_at is Stage.RECORD
+    assert result.ok is False
+
+
+def test_no_threshold_runs_every_stage_whatever_it_finds(
+    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+) -> None:
+    """`--fail-on never` lets a build run through to verify, which then measures what was made."""
+    answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
+    result = build(inputs, watched.run, stop_on=None)
+    assert calls.names[-1] == "verify"
+    assert result.stopped_at is None
+    assert result.ok is False
+
+
+def test_an_allowed_code_lets_a_cue_no_page_declares_through(
     inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
 ) -> None:
     """A deck under construction lists the cues of slides it has not drawn yet."""
     answers.cue.append(judged(Code.CUE_UNKNOWN, Stage.CUE))
-    build(inputs, watched.run, allow_unknown=True)
+    build(inputs, watched.run, allow=[Code.CUE_UNKNOWN])
     assert calls.names[-1] == "verify"
+    assert calls.options("cue")["allow_unknown"] is True
+
+
+def test_any_allowed_code_is_forgiven_the_same_way(
+    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+) -> None:
+    """`--allow` means what it means on every other command, not only for one code."""
+    answers.record.append(judged(Code.PAGE_BLACK, Stage.RECORD))
+    assert judged(Code.PAGE_BLACK, Stage.RECORD).certainty is Certainty.CERTAIN
+    result = build(inputs, watched.run, allow=[Code.PAGE_BLACK])
+    assert calls.names[-1] == "verify"
+    assert result.stopped_at is None
 
 
 @pytest.mark.usefixtures("calls")
 def test_the_same_cue_stops_the_run_without_that_flag(inputs: Inputs, watched: Watched, answers: Answers) -> None:
     answers.cue.append(judged(Code.CUE_UNKNOWN, Stage.CUE))
-    with pytest.raises(InputError):
-        build(inputs, watched.run)
+    assert build(inputs, watched.run).stopped_at is Stage.CUE
 
 
 def test_a_finding_an_earlier_stage_made_does_not_stop_a_later_one(

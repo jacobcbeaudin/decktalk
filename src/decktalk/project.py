@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 import re
 import threading
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from contextlib import contextmanager, nullcontext
 from http.server import ThreadingHTTPServer
 from importlib import import_module
@@ -35,7 +35,7 @@ from typing import Any, cast
 
 from decktalk.errors import Cancel, InputError, ProjectLocked
 from decktalk.events import Event, Events, Level, Subscription
-from decktalk.findings import Finding
+from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Document, Inputs, Workspace
 from decktalk.inputs.paths import at, relative
 from decktalk.machine import Machine, Run, apply_fix, fixes_of, new_run
@@ -330,13 +330,19 @@ class Project:
         soundscape: bool = True,
         loudness: bool = True,
         strict: bool = False,
-        allow_unknown: bool = False,
+        allow: Collection[Code] = (),
+        stop_on: Certainty | None = Certainty.CERTAIN,
         cancel: Cancel | None = None,
     ) -> BuildResult:
-        """Run every stage in order, or the span of them `stages` names."""
+        """Run every stage in order, or the span of them `stages` names.
+
+        A stage whose findings reach `stop_on` stops the run, unless their code is in `allow`, and
+        the result still comes back with its findings, its spend and the stage it stopped after in
+        `stopped_at`. None as `stop_on` runs every stage whatever it finds.
+        """
         return self._call("build", BuildResult, cancel=cancel, voice=voice, max_cost=max_cost, stages=stages, skip=skip,
                           only=only, force=force, replace_voiced=replace_voiced, soundscape=soundscape,
-                          loudness=loudness, strict=strict, allow_unknown=allow_unknown)  # fmt: skip
+                          loudness=loudness, strict=strict, allow=frozenset(allow), stop_on=stop_on)  # fmt: skip
 
     # ---- the six that report or cut ---------------------------------------------------------
 

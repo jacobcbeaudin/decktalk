@@ -319,6 +319,15 @@ def test_a_voicing_and_a_ceiling_reach_the_gate_rather_than_the_stage(
     assert "voice" not in options and "max_cost" not in options
 
 
+def test_the_callers_threshold_reaches_the_build(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
+    """`allow` and `stop_on` are how a caller says which findings may stop its run."""
+    project = a_project(tmp_path)
+    project.build(allow=[Code.PAGE_BLACK], stop_on=None)
+    _inputs, _run, options = fake_stages["build"][0]
+    assert options["allow"] == frozenset({Code.PAGE_BLACK})
+    assert options["stop_on"] is None
+
+
 # ---- applying a fix --------------------------------------------------------------------------------
 
 

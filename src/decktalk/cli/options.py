@@ -68,6 +68,16 @@ class FailOn(Enum):
     ANY = "any"
     NEVER = "never"
 
+    @property
+    def stops_on(self) -> Certainty | None:
+        """The least certain finding that stops a build, which is the same line the exit code draws.
+
+        A build that carried on past a finding its exit code fails on would spend on a film the
+        caller has already said is wrong, and one that stopped short of it would refuse a film the
+        caller said is fine, so the threshold is one decision read in two places.
+        """
+        return {FailOn.CERTAIN: Certainty.CERTAIN, FailOn.ANY: Certainty.UNCERTAIN, FailOn.NEVER: None}[self]
+
 
 class When(Enum):
     """When colour is written, which is the one thing `--color` decides."""

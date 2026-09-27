@@ -237,7 +237,8 @@ def build(
             force=force,
             replace_voiced=_replacing(session, replace_voiced),
             soundscape=Stage.SOUNDSCAPE not in (skip or ()),
-            allow_unknown=Code.CUE_UNKNOWN in session.allowed,
+            allow=session.allowed,
+            stop_on=session.fail_on.stops_on,
             cancel=session.cancel,
         )
     return _offered(session, project, built, fix)

@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 
 from decktalk.cli import run as commands
+from decktalk.cli.options import FailOn
 from decktalk.errors import ErrorCode
 from decktalk.events import RunStart
-from decktalk.findings import Code
+from decktalk.findings import Certainty, Code
 from decktalk.pipeline import Stage
 from decktalk.results import (
     AssembleResult,
@@ -104,6 +105,22 @@ def test_build_with_neither_end_runs_the_whole_pipeline(run, project, answers) -
     made = project(build=answers["build"])
     run("build", "--no-voice")
     assert made.called("build")["stages"] is None
+
+
+def test_build_stops_where_the_exit_code_would_fail_and_carries_on_past_what_is_allowed(run, project, answers) -> None:
+    """The threshold a build stops on is the one its exit code fails on, so the two cannot disagree."""
+    made = project(build=answers["build"])
+    run("build", "--no-voice", "--allow", Code.CUE_UNKNOWN.value)
+    asked = made.called("build")
+    assert asked["allow"] == frozenset({Code.CUE_UNKNOWN})
+    assert asked["stop_on"] is Certainty.CERTAIN
+
+
+@pytest.mark.parametrize(("flag", "stops"), [(FailOn.ANY, Certainty.UNCERTAIN), (FailOn.NEVER, None)])
+def test_fail_on_moves_where_a_build_stops(run, project, answers, flag: FailOn, stops: Certainty | None) -> None:
+    made = project(build=answers["build"])
+    run("build", "--no-voice", "--fail-on", flag.value)
+    assert made.called("build")["stop_on"] is stops
 
 
 def test_build_names_its_run_and_its_events_file_on_the_first_line_of_stderr(run, project, answers) -> None:

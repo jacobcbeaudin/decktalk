@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import typer
 
-from decktalk.cli.options import GLOBALS, allowed, one_section, pairs, sections_of, shared_for
-from decktalk.findings import Code
+from decktalk.cli.options import GLOBALS, FailOn, allowed, one_section, pairs, sections_of, shared_for
+from decktalk.findings import Certainty, Code
 from decktalk.results import RESULTS, BuildResult, InitResult, StatusResult, WordsResult
 
 
@@ -70,3 +70,9 @@ def test_every_published_result_answers_both_questions_about_its_command() -> No
         assert isinstance(model.reports_findings, bool)
         assert isinstance(model.spends, bool)
     assert InitResult.reports_findings is False
+
+
+def test_a_threshold_names_the_least_certain_finding_a_build_stops_on() -> None:
+    assert FailOn.CERTAIN.stops_on is Certainty.CERTAIN
+    assert FailOn.ANY.stops_on is Certainty.UNCERTAIN
+    assert FailOn.NEVER.stops_on is None

@@ -16,7 +16,6 @@
     "tests/decktalk/stages/narrate/test_takes.py": 2,
     "tests/decktalk/stages/record/test_checks.py": 4,
     "tests/decktalk/stages/record/test_record.py": 1,
-    "tests/decktalk/stages/test_build.py": 1,
     "tests/decktalk/stages/test_status.py": 1,
     "tests/e2e/test_pipeline.py": 1,
     "tests/e2e/test_scaffold_build.py": 1
