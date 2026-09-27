@@ -48,6 +48,7 @@ __all__ = [
     "Q",
     "QUERY",
     "REPORT",
+    "RUNTIME_MARK",
     "RaisedBy",
     "Range",
     "SLIDE_ENTRANCES",
@@ -56,6 +57,7 @@ __all__ = [
     "WIRE_MARK",
     "WORD_STYLES",
     "measurable",
+    "runtime_banner",
     "scaled",
     "stagger_span",
     "wire_id",
@@ -104,6 +106,9 @@ PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json"
 
 MOTION_SCALE_PROPERTY = "--dt-motion-scale"
 """The custom property on the root element that carries `motion.scale` into a page."""
+
+RUNTIME_MARK = "decktalk-runtime"
+"""The name the runtime bundle's first line gives, before the engine version that shipped it."""
 
 
 class Subject(Enum):
@@ -939,3 +944,12 @@ def scaled(span: float, scale: float) -> float:
     the contract declares is at or below the clamp, so at a scale of one the span comes back unchanged.
     """
     return min(span * scale, PLAYABLE_SPAN_SECONDS)
+
+
+def runtime_banner(version: str) -> str:
+    """The first line of the runtime bundle an engine of `version` ships, which a project's copy opens with.
+
+    A copy whose first line is not this one for the running engine was written by another engine, or
+    edited, and either way it is not the runtime this engine's contract describes.
+    """
+    return f"/*! {RUNTIME_MARK} {version} */"

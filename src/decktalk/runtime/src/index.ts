@@ -29,7 +29,12 @@ import { motionScale } from "./stage.ts";
 import { type Probe, type RuntimeView, setRecorder } from "./telemetry.ts";
 import { warn, warnings } from "./warn.ts";
 
-/** The version this page carries, which is the one version literal in the whole runtime. */
+/**
+ * The version this page carries, which is the one version literal in the whole runtime.
+ *
+ * The bundle's first line names the engine version from the project file, and release-please writes
+ * both, so the version a page reports and the version its file names are the same.
+ */
 const VERSION = "0.5.0"; // x-release-please-version
 
 /** How long the page waits for a promise its author handed it before it is drawn without it. */

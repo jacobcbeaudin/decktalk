@@ -12,7 +12,7 @@ thing that reads it: esbuild builds the contract as a CommonJS module, node prin
 JSON, and every artifact below is written from that JSON. No regular expression ever reads
 TypeScript, so a contract that compiles is a contract Python can be generated from.
 
-    src/decktalk/runtime/decktalk-runtime.js the bundle a deck loads
+    src/decktalk/runtime/decktalk-runtime.js the bundle a deck loads, whose first line names its version
     src/decktalk/runtime/decktalk-probe.js   the bundle the recorder injects into every page
     src/decktalk/runtime/contract.json       the intermediate, committed so the rest is pure Python
     src/decktalk/page.py                     the vocabulary the library and the CLI read
@@ -30,6 +30,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,7 @@ SOURCE = RUNTIME / "src"
 TSCONFIG = RUNTIME / "tsconfig.json"
 BIN = ROOT / "node_modules" / ".bin"
 
+PYPROJECT = ROOT / "pyproject.toml"
 CONTRACT_ENTRY = SOURCE / "contract.ts"
 CONTRACT_JSON = RUNTIME / "contract.json"
 PAGE_MODULE = ROOT / "src" / "decktalk" / "page.py"
@@ -50,6 +52,15 @@ BUNDLES: dict[str, Path] = {
     "decktalk-runtime.js": SOURCE / "index.ts",
     "decktalk-probe.js": SOURCE / "probe" / "probe.ts",
 }
+
+# The bundle a project copies, which is the one that opens with the banner naming its version. The
+# probe is injected by the engine that recorded the page, so its version is never in question.
+BANNERED = "decktalk-runtime.js"
+
+# The first line of the copied bundle, filled from the contract's mark and the engine version. The
+# generated page module formats the same line from this template, so the writer and the reader of
+# the banner share one spelling.
+BANNER = "/*! {mark} {version} */"
 
 # The browsers a bundle must run in are the ones Playwright drives and the ones an author previews
 # in, so the output is the newest syntax level every current engine parses.
@@ -92,20 +103,30 @@ def typecheck() -> None:
     run([tool("tsc"), "--noEmit", "-p", TSCONFIG])
 
 
-def bundle(entry: Path, out: Path) -> None:
+def engine_version() -> str:
+    """The version the engine is released as, which release-please writes into the project file."""
+    return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]["version"]
+
+
+def banner(data: dict[str, Any]) -> str:
+    """The first line of the copied bundle, which names the engine version that shipped it."""
+    return BANNER.format(mark=data["runtimeMark"], version=engine_version())
+
+
+def bundle(entry: Path, out: Path, first_line: str | None = None) -> None:
     """One entry point as a formatted script, which is what a page loads and what git holds."""
-    built = run(
-        [
-            tool("esbuild"),
-            entry,
-            "--bundle",
-            "--format=iife",
-            f"--target={TARGET}",
-            "--charset=utf8",
-            "--legal-comments=inline",
-        ]
-    )
-    out.write_text(biome(built, out.name), encoding="utf-8")
+    cmd: list[str | Path] = [
+        tool("esbuild"),
+        entry,
+        "--bundle",
+        "--format=iife",
+        f"--target={TARGET}",
+        "--charset=utf8",
+        "--legal-comments=inline",
+    ]
+    if first_line is not None:
+        cmd.append(f"--banner:js={first_line}")
+    out.write_text(biome(run(cmd), out.name), encoding="utf-8")
 
 
 def biome(text: str, name: str) -> str:
@@ -232,6 +253,17 @@ def scaled(span: float, scale: float) -> float:
     the contract declares is at or below the clamp, so at a scale of one the span comes back unchanged.
     """
     return min(span * scale, PLAYABLE_SPAN_SECONDS)
+'''
+
+RUNTIME_BANNER = '''
+
+def runtime_banner(version: str) -> str:
+    """The first line of the runtime bundle an engine of `version` ships, which a project's copy opens with.
+
+    A copy whose first line is not this one for the running engine was written by another engine, or
+    edited, and either way it is not the runtime this engine's contract describes.
+    """
+    return {banner}
 '''
 
 # A generated docstring is one sentence per member, and a sentence longer than this is written as
@@ -393,6 +425,7 @@ def page_module(data: dict[str, Any]) -> str:
         "PAIR_SEPARATOR",
         "PLAYABLE_SPAN_SECONDS",
         "PREVIEW_CUE_TIMES",
+        "RUNTIME_MARK",
         "Q",
         "QUERY",
         "REPORT",
@@ -405,6 +438,7 @@ def page_module(data: dict[str, Any]) -> str:
         "WORD_STYLES",
         "PageWarning",
         "measurable",
+        "runtime_banner",
         "scaled",
         "stagger_span",
         "wire_id",
@@ -439,6 +473,8 @@ def page_module(data: dict[str, Any]) -> str:
         '"""The path a previewed page asks its origin for, which answers with the last run\'s cue times."""\n',
         f"MOTION_SCALE_PROPERTY = {data['motionScaleProperty']!r}\n"
         '"""The custom property on the root element that carries `motion.scale` into a page."""\n',
+        f"RUNTIME_MARK = {data['runtimeMark']!r}\n"
+        '"""The name the runtime bundle\'s first line gives, before the engine version that shipped it."""\n',
         word_enum(
             "Subject",
             "What an attribute is written on. A container is an element whose children carry moments.",
@@ -507,6 +543,7 @@ def page_module(data: dict[str, Any]) -> str:
         "MOMENTS: tuple[Attr, ...] = (" + "".join(f"Attr.{attr_member(name)}, " for name in moments).rstrip() + ")\n"
         '"""Every attribute whose value is the local name of a cue, which is what joins the cue order."""\n',
         PAGE_FUNCTIONS,
+        RUNTIME_BANNER.replace("{banner}", "f" + repr(BANNER.format(mark="{RUNTIME_MARK}", version="{version}"))),
     ]
     return ruff("\n".join(parts), PAGE_MODULE.name)
 
@@ -578,7 +615,7 @@ def main() -> int:
             with tempfile.TemporaryDirectory() as tmp:
                 for name, entry in BUNDLES.items():
                     built = Path(tmp) / name
-                    bundle(entry, built)
+                    bundle(entry, built, banner(data) if name == BANNERED else None)
                     compare(RUNTIME / name, built.read_text(encoding="utf-8"))
             compare(CONTRACT_JSON, contract_text(data))
             compare(PAGE_MODULE, page_module(data))
@@ -588,7 +625,7 @@ def main() -> int:
         print(stale)
         return 1
     for name, entry in BUNDLES.items():
-        bundle(entry, RUNTIME / name)
+        bundle(entry, RUNTIME / name, banner(data) if name == BANNERED else None)
         print(f"wrote {(RUNTIME / name).relative_to(ROOT)}")
     CONTRACT_JSON.write_text(contract_text(data), encoding="utf-8")
     print(f"wrote {CONTRACT_JSON.relative_to(ROOT)}")

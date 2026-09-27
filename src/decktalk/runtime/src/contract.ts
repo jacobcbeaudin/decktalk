@@ -790,6 +790,15 @@ export const PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json";
 /** The custom property on the root element that carries `motion.scale` into a page, from the recorder or the author. */
 export const MOTION_SCALE_PROPERTY = "--dt-motion-scale";
 
+/**
+ * The name the runtime bundle's first line gives, followed by the engine version that shipped it.
+ *
+ * `decktalk init` copies the runtime into a project, and a copy an older engine wrote keeps playing
+ * with the older contract. The line is a legal comment every minifier keeps, so a reader holding the
+ * file can tell which engine wrote it without opening a browser.
+ */
+export const RUNTIME_MARK = "decktalk-runtime";
+
 // ---- the pure readers -----------------------------------------------------------------------
 
 /** The wire id of a local moment, which is the slide it was written in and the name the author wrote. */
@@ -894,6 +903,7 @@ export const CONTRACT = {
   listSeparator: LIST_SEPARATOR,
   previewCueTimes: PREVIEW_CUE_TIMES,
   motionScaleProperty: MOTION_SCALE_PROPERTY,
+  runtimeMark: RUNTIME_MARK,
   frameStepMs: FRAME_STEP_MS,
   measurableSpanSeconds: MEASURABLE_SPAN_SECONDS,
   playableSpanSeconds: PLAYABLE_SPAN_SECONDS,

@@ -1,3 +1,4 @@
+/*! decktalk-runtime 0.5.0 */
 "use strict";
 (() => {
   // src/decktalk/runtime/src/contract.ts
