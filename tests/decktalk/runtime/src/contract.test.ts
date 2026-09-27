@@ -11,12 +11,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  ATTENTION,
   ATTRS,
   type Attr,
   CAPTURE_FPS,
   CODES,
+  COUNTS,
   ENTRANCES,
   EXEMPT,
+  EXITS,
   FRAME_STEP_MS,
   known,
   MEASURABLE_SPAN_SECONDS,
@@ -24,10 +27,13 @@ import {
   MOMENTS,
   measurable,
   message,
+  PLAYABLE_SPAN_SECONDS,
   pairs,
   refuse,
+  SLIDE_ENTRANCES,
   scaled,
   staggerSpan,
+  WORD_STYLES,
   wireId,
 } from "../../../../src/decktalk/runtime/src/contract.ts";
 
@@ -72,7 +78,7 @@ test("a closed word set refuses every word outside it", () => {
 test("a ranged attribute refuses a value off the range or off the step", () => {
   assert.equal(refuse("data-in-seconds", "0.4"), null);
   assert.equal(refuse("data-in-seconds", "0.12"), null);
-  assert.match(String(refuse("data-in-seconds", "0.5")), /0.12 to 0.48 seconds/);
+  assert.match(String(refuse("data-in-seconds", "0.48")), /0.12 to 0.44 seconds/);
   assert.match(String(refuse("data-in-seconds", "0.3")), /a multiple of 0.04 seconds/);
   assert.match(String(refuse("data-in-seconds", "quick")), /a number of seconds/);
 });
@@ -92,6 +98,26 @@ test("a stagger's whole span is its step per earlier child plus one entrance", (
 test("a reduced render never scales a span past the ceiling", () => {
   assert.equal(scaled(0.2, 1.5), 0.30000000000000004);
   assert.equal(measurable(scaled(ENTRANCES.draw.seconds, 4)), true);
+});
+
+test("the page plays every declared span at the length the contract publishes", () => {
+  const declared: [string, number][] = [];
+  const sets = { ENTRANCES, EXITS, SLIDE_ENTRANCES, WORD_STYLES, COUNTS, ATTENTION };
+  for (const [set, rows] of Object.entries(sets)) {
+    for (const [word, row] of Object.entries(rows)) declared.push([`${set}.${word}`, row.seconds]);
+  }
+  for (const [name, row] of Object.entries(ATTRS)) {
+    if (row.span !== null) declared.push([`${name} span`, row.span]);
+    if (row.range && name !== "data-hold") declared.push([`${name} range`, row.range.max]);
+  }
+  for (const [name, seconds] of declared) {
+    assert.equal(scaled(seconds, 1), seconds, `${name} declares ${seconds} s and the page would play less`);
+  }
+});
+
+test("the playable span is one captured frame under the ceiling", () => {
+  assert.equal(PLAYABLE_SPAN_SECONDS, MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1000);
+  assert.equal(scaled(ENTRANCES.draw.seconds, 4), PLAYABLE_SPAN_SECONDS);
 });
 
 test("every attribute either carries a code or is named in the closed exemption list", () => {

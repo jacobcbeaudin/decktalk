@@ -55,11 +55,22 @@ export const FRAME_STEP_MS = 40;
  * The longest motion a cue may still be playing, in seconds.
  *
  * This one number is three things the design keeps together on purpose. It is the point at which an
- * effect marks its own cue unmeasurable, it is the ceiling `motion.scale` is clamped against, and it
- * is the total a staggered container may not pass. A page range that admitted a value above it would
+ * effect marks its own cue unmeasurable, it is the ceiling `motion.scale` is clamped one frame under,
+ * and it is the total a staggered container may not pass. A page range that admitted a value above it would
  * let an author delete a check by turning a knob.
  */
 export const MEASURABLE_SPAN_SECONDS = 0.5;
+
+/**
+ * The longest motion the page plays, in seconds, which is one captured frame under the ceiling.
+ *
+ * The frame of headroom is on purpose. A motion that ended exactly at the ceiling would be decided by
+ * whichever side of one frame boundary the recorder happened to stamp it on, so `scaled()` clamps
+ * here and every span the contract declares sits at or below it, which is what makes the length the
+ * catalog publishes the length the page plays. It is written out for the reason the frame step is,
+ * and a test holds it equal to the ceiling less one frame.
+ */
+export const PLAYABLE_SPAN_SECONDS = 0.46;
 
 /** The share of an entrance that must be drawn in its first captured frame, so verify reads an onset. */
 export const ONSET_FIRST_FRAME_PERCENT = 25;
@@ -83,7 +94,7 @@ export const ENTRANCES = {
   settle: { seconds: 0.28, liftPixels: 4, overshootPercent: 0 },
   fade: { seconds: 0.24, liftPixels: 0, overshootPercent: 0 },
   pop: { seconds: 0.2, liftPixels: 0, overshootPercent: 4 },
-  draw: { seconds: 0.48, liftPixels: 0, overshootPercent: 0 },
+  draw: { seconds: 0.44, liftPixels: 0, overshootPercent: 0 },
   cut: { seconds: 0, liftPixels: 0, overshootPercent: 0 },
 } as const;
 
@@ -107,8 +118,8 @@ export const WORD_STYLES = {
 
 /** Which number in the text counts up from zero, and how long the count runs. */
 export const COUNTS = {
-  last: { seconds: 0.48 },
-  first: { seconds: 0.48 },
+  last: { seconds: 0.44 },
+  first: { seconds: 0.44 },
 } as const;
 
 /** How long a step back and a return to the front play. */
@@ -386,8 +397,8 @@ export type AttrRow = {
  */
 const READ_FROM_THE_PAGE = null;
 
-/** How long an entrance may play, which is three to twelve captured frames. */
-const IN_SECONDS_RANGE: Range = { min: 0.12, max: 0.48, step: 0.04, unit: "seconds" };
+/** How long an entrance may play, which is three to eleven captured frames and never past the playable span. */
+const IN_SECONDS_RANGE: Range = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
 
 /** How far apart a container's children arrive, which is one to five captured frames. */
 const STAGGER_RANGE: Range = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
@@ -838,13 +849,14 @@ export function measurable(span: number): boolean {
 }
 
 /**
- * A declared span under a reduced-motion render, clamped so no scaled span crosses the ceiling.
+ * A declared span under a reduced-motion render, clamped so no scaled span passes the playable span.
  *
  * The scale multiplies the declared span as well as the duration, so a project that slows its motion
- * down cannot slow it past the point where its own cues stop being measurable.
+ * down cannot slow it past the point where its own cues stop being measurable. Every span the
+ * contract declares is at or below the clamp, so at a scale of one this returns the span unchanged.
  */
 export function scaled(span: number, scale: number): number {
-  return Math.min(span * scale, MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1000);
+  return Math.min(span * scale, PLAYABLE_SPAN_SECONDS);
 }
 
 // ---- the document the Python side reads ---------------------------------------------------------
@@ -863,6 +875,7 @@ export const CONTRACT = {
   wireMark: WIRE_MARK,
   frameStepMs: FRAME_STEP_MS,
   measurableSpanSeconds: MEASURABLE_SPAN_SECONDS,
+  playableSpanSeconds: PLAYABLE_SPAN_SECONDS,
   onsetFirstFramePercent: ONSET_FIRST_FRAME_PERCENT,
   appearWordsMax: APPEAR_WORDS_MAX,
   backOpacity: BACK_OPACITY,

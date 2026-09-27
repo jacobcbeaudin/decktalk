@@ -34,15 +34,15 @@
     appear: { seconds: 0.12 },
   };
   var COUNTS = {
-    last: { seconds: 0.48 },
-    first: { seconds: 0.48 },
+    last: { seconds: 0.44 },
+    first: { seconds: 0.44 },
   };
   var ATTENTION = {
     back: { seconds: 0.28 },
     front: { seconds: 0.2 },
   };
   var READ_FROM_THE_PAGE = null;
-  var IN_SECONDS_RANGE = { min: 0.12, max: 0.48, step: 0.04, unit: "seconds" };
+  var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
   var HOLD_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {

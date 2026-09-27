@@ -40,6 +40,7 @@ __all__ = [
     "ONSET_FIRST_FRAME_PERCENT",
     "PAIR_MARK",
     "PAIR_SEPARATOR",
+    "PLAYABLE_SPAN_SECONDS",
     "PageWarning",
     "Q",
     "QUERY",
@@ -65,6 +66,10 @@ FRAME_STEP_MS = 40
 MEASURABLE_SPAN_SECONDS = 0.5
 """The longest motion a cue may still be playing, which is the unmeasurable threshold, the
 reduced-motion clamp and the stagger ceiling in one number."""
+
+PLAYABLE_SPAN_SECONDS = 0.46
+"""The longest motion the page plays, one captured frame under the ceiling, which every declared
+span sits at or below and which a reduced-motion render is clamped to."""
 
 ONSET_FIRST_FRAME_PERCENT = 25
 """The share of an entrance that must be drawn in its first captured frame."""
@@ -424,7 +429,7 @@ ENTRANCES: dict[str, Effect] = {
     "settle": Effect(seconds=0.28, lift_pixels=4, overshoot_percent=0),
     "fade": Effect(seconds=0.24, lift_pixels=0, overshoot_percent=0),
     "pop": Effect(seconds=0.2, lift_pixels=0, overshoot_percent=4),
-    "draw": Effect(seconds=0.48, lift_pixels=0, overshoot_percent=0),
+    "draw": Effect(seconds=0.44, lift_pixels=0, overshoot_percent=0),
     "cut": Effect(seconds=0, lift_pixels=0, overshoot_percent=0),
 }
 """How long each entrance plays and how far outside its resting box it travels."""
@@ -448,8 +453,8 @@ WORD_STYLES: dict[str, Effect] = {
 """How a line is shown on the voice, and how long one word takes to arrive."""
 
 COUNTS: dict[str, Effect] = {
-    "last": Effect(seconds=0.48),
-    "first": Effect(seconds=0.48),
+    "last": Effect(seconds=0.44),
+    "first": Effect(seconds=0.44),
 }
 """Which number in the text counts up from zero, and how long the count runs."""
 
@@ -631,7 +636,7 @@ ATTRS: dict[Attr, AttrSpec] = {
         default=None,
         range=None,
         code=PageWarning.PAGE_BAD_VALUE,
-        span=0.48,
+        span=0.44,
         affects=(
             Affects.MOTION,
             Affects.STYLE,
@@ -711,7 +716,7 @@ ATTRS: dict[Attr, AttrSpec] = {
         kind=Kind.SECONDS,
         values=(),
         default=None,
-        range=Range(min=0.12, max=0.48, step=0.04, unit="seconds"),
+        range=Range(min=0.12, max=0.44, step=0.04, unit="seconds"),
         code=PageWarning.PAGE_BAD_VALUE,
         span=None,
         affects=(Affects.MOTION,),
@@ -911,9 +916,10 @@ def measurable(span: float) -> bool:
 
 
 def scaled(span: float, scale: float) -> float:
-    """A declared span under a reduced-motion render, clamped so no scaled span crosses the ceiling.
+    """A declared span under a reduced-motion render, clamped so no scaled span passes the playable span.
 
     The scale multiplies the declared span as well as the duration, so a project that slows its
-    motion down cannot slow it past the point where its own cues stop being measurable.
+    motion down cannot slow it past the point where its own cues stop being measurable. Every span
+    the contract declares is at or below the clamp, so at a scale of one the span comes back unchanged.
     """
-    return min(span * scale, MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1000)
+    return min(span * scale, PLAYABLE_SPAN_SECONDS)

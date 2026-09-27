@@ -225,12 +225,13 @@ def measurable(span: float) -> bool:
 
 
 def scaled(span: float, scale: float) -> float:
-    """A declared span under a reduced-motion render, clamped so no scaled span crosses the ceiling.
+    """A declared span under a reduced-motion render, clamped so no scaled span passes the playable span.
 
     The scale multiplies the declared span as well as the duration, so a project that slows its
-    motion down cannot slow it past the point where its own cues stop being measurable.
+    motion down cannot slow it past the point where its own cues stop being measurable. Every span
+    the contract declares is at or below the clamp, so at a scale of one the span comes back unchanged.
     """
-    return min(span * scale, MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1000)
+    return min(span * scale, PLAYABLE_SPAN_SECONDS)
 '''
 
 # A generated docstring is one sentence per member, and a sentence longer than this is written as
@@ -388,6 +389,7 @@ def page_module(data: dict[str, Any]) -> str:
         "ONSET_FIRST_FRAME_PERCENT",
         "PAIR_MARK",
         "PAIR_SEPARATOR",
+        "PLAYABLE_SPAN_SECONDS",
         "Q",
         "QUERY",
         "REPORT",
@@ -413,6 +415,9 @@ def page_module(data: dict[str, Any]) -> str:
         f"MEASURABLE_SPAN_SECONDS = {data['measurableSpanSeconds']!r}\n"
         '"""The longest motion a cue may still be playing, which is the unmeasurable threshold, the\n'
         'reduced-motion clamp and the stagger ceiling in one number."""\n',
+        f"PLAYABLE_SPAN_SECONDS = {data['playableSpanSeconds']!r}\n"
+        '"""The longest motion the page plays, one captured frame under the ceiling, which every declared\n'
+        'span sits at or below and which a reduced-motion render is clamped to."""\n',
         f"ONSET_FIRST_FRAME_PERCENT = {data['onsetFirstFramePercent']!r}\n"
         '"""The share of an entrance that must be drawn in its first captured frame."""\n',
         f"APPEAR_WORDS_MAX = {data['appearWordsMax']!r}\n"

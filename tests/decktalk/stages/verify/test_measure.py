@@ -11,6 +11,7 @@ from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.media import frames
 from decktalk.media.pagereport import PageReport
+from decktalk.page import ENTRANCES
 from decktalk.results import SkipReason
 from decktalk.settings import CLICK_LEVEL_DBFS
 from decktalk.stages.verify.measure import (
@@ -89,7 +90,7 @@ def test_a_cues_forward_span_is_read_from_the_catalog_the_page_published(assembl
         clock_start_seconds=0.2,
         report=report,
     ).write(inputs.workspace.recording_log("01"))
-    assert declared_spans(inputs, 1) == {"1.1:a": pytest.approx(0.48)}
+    assert declared_spans(inputs, 1) == {"1.1:a": pytest.approx(ENTRANCES["draw"].seconds)}
 
 
 def test_a_section_that_was_never_recorded_declares_no_span(assembled: Callable[..., Inputs]) -> None:

@@ -19,7 +19,6 @@ import {
   type Entrance,
   EXITS,
   type Exit,
-  MEASURABLE_SPAN_SECONDS,
   SLIDE_ENTRANCES,
   type SlideEntrance,
   scaled,
@@ -236,7 +235,7 @@ export function motionScale(): number {
 
 /** One element's own motion length, scaled and clamped, written where the stylesheet reads it. */
 export function span(el: HTMLElement, seconds: number): void {
-  el.style.setProperty(SPAN_PROPERTY, `${Math.min(scaled(seconds, motionScale()), MEASURABLE_SPAN_SECONDS)}s`);
+  el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds, motionScale())}s`);
 }
 
 /** Build the stage, fit it to the window, and keep it fitted for as long as the page is open. */
@@ -303,10 +302,10 @@ export function say(line: string): void {
 
 /** How long the crossfade into a slide takes, which is what the outgoing slide waits before it goes. */
 export function slideSeconds(word: SlideEntrance): number {
-  return Math.min(scaled(SLIDE_ENTRANCES[word].seconds, motionScale()), MEASURABLE_SPAN_SECONDS);
+  return scaled(SLIDE_ENTRANCES[word].seconds, motionScale());
 }
 
 /** How long a count runs, which the registry owns and a reduced render scales like any other length. */
 export function countSeconds(word: keyof typeof COUNTS): number {
-  return Math.min(scaled(COUNTS[word].seconds, motionScale()), MEASURABLE_SPAN_SECONDS);
+  return scaled(COUNTS[word].seconds, motionScale());
 }

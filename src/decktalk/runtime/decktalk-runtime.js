@@ -24,7 +24,7 @@
   var MILLISECONDS = 1e3;
   var SECOND_DIGITS = 3;
   var FRAME_STEP_MS = 40;
-  var MEASURABLE_SPAN_SECONDS = 0.5;
+  var PLAYABLE_SPAN_SECONDS = 0.46;
   var APPEAR_WORDS_MAX = 8;
   var BACK_OPACITY = 0.45;
   var ENTRANCES = {
@@ -32,7 +32,7 @@
     settle: { seconds: 0.28, liftPixels: 4, overshootPercent: 0 },
     fade: { seconds: 0.24, liftPixels: 0, overshootPercent: 0 },
     pop: { seconds: 0.2, liftPixels: 0, overshootPercent: 4 },
-    draw: { seconds: 0.48, liftPixels: 0, overshootPercent: 0 },
+    draw: { seconds: 0.44, liftPixels: 0, overshootPercent: 0 },
     cut: { seconds: 0, liftPixels: 0, overshootPercent: 0 },
   };
   var EXITS = {
@@ -48,8 +48,8 @@
     appear: { seconds: 0.12 },
   };
   var COUNTS = {
-    last: { seconds: 0.48 },
-    first: { seconds: 0.48 },
+    last: { seconds: 0.44 },
+    first: { seconds: 0.44 },
   };
   var ATTENTION = {
     back: { seconds: 0.28 },
@@ -245,7 +245,7 @@
     },
   };
   var READ_FROM_THE_PAGE = null;
-  var IN_SECONDS_RANGE = { min: 0.12, max: 0.48, step: 0.04, unit: "seconds" };
+  var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
   var HOLD_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
@@ -580,7 +580,7 @@
     return value.trim() ? null : "a value";
   }
   function scaled(span2, scale2) {
-    return Math.min(span2 * scale2, MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1e3);
+    return Math.min(span2 * scale2, PLAYABLE_SPAN_SECONDS);
   }
 
   // src/decktalk/runtime/src/clock.ts
@@ -1244,7 +1244,7 @@
     return Number.isFinite(scale2) && scale2 > 0 ? scale2 : 1;
   }
   function span(el, seconds2) {
-    el.style.setProperty(SPAN_PROPERTY, `${Math.min(scaled(seconds2, motionScale2()), MEASURABLE_SPAN_SECONDS)}s`);
+    el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds2, motionScale2())}s`);
   }
   function build(hud) {
     if (stageEl) return;
@@ -1293,10 +1293,10 @@
     if (hudEl) hudEl.textContent = line2;
   }
   function slideSeconds(word2) {
-    return Math.min(scaled(SLIDE_ENTRANCES[word2].seconds, motionScale2()), MEASURABLE_SPAN_SECONDS);
+    return scaled(SLIDE_ENTRANCES[word2].seconds, motionScale2());
   }
   function countSeconds(word2) {
-    return Math.min(scaled(COUNTS[word2].seconds, motionScale2()), MEASURABLE_SPAN_SECONDS);
+    return scaled(COUNTS[word2].seconds, motionScale2());
   }
 
   // src/decktalk/runtime/src/telemetry.ts
