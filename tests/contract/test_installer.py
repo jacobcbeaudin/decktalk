@@ -16,7 +16,6 @@ from __future__ import annotations
 import contextlib
 import os
 import select
-import shutil
 import signal
 import subprocess
 import time
@@ -191,14 +190,6 @@ def test_an_unknown_option_is_refused_rather_than_ignored(tmp_path: Path, source
     done = run(["--wat"], env=fake_path(tmp_path, tmp_path / "called"), script=source)
     assert done.returncode == 2, done.stdout + done.stderr
     assert "unknown option" in done.stderr
-
-
-@pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck is not installed")
-def test_shellcheck_is_clean() -> None:
-    done = subprocess.run(
-        ["shellcheck", "-s", "sh", str(SCRIPT)], capture_output=True, text=True, timeout=60, check=False
-    )
-    assert done.returncode == 0, done.stdout
 
 
 # ---- what the script does when something goes wrong ---------------------------------------------

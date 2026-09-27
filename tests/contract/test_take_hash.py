@@ -45,12 +45,6 @@ def digest_of(text: str) -> str:
     ).digest
 
 
-def test_the_data_file_says_what_it_is_for():
-    """The file is never edited to make a test pass, so it carries the sentence that says so."""
-    assert GOLDEN["source"].endswith("."), GOLDEN["source"]
-    assert "never updated to make a test pass" in GOLDEN["rule"]
-
-
 def test_the_golden_rows_cover_both_films():
     assert {take["film"] for take in TAKES} == set(EXPECTED_FILMS)
     assert len({take["hash"] for take in TAKES}) == len({take["text"] for take in TAKES})

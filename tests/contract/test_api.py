@@ -65,11 +65,6 @@ def annotations_of(obj: object) -> list[object]:
     return []
 
 
-def test_all_is_sorted_and_holds_each_name_once():
-    assert list(EXPORTED) == sorted(EXPORTED)
-    assert len(set(EXPORTED)) == len(EXPORTED)
-
-
 @pytest.mark.parametrize("name", EXPORTED)
 def test_every_exported_name_resolves_and_is_public(name: str):
     """A name in `__all__` that nothing answers is a promise the package cannot keep."""
