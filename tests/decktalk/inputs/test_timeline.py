@@ -20,7 +20,7 @@ def take(number: int, seconds: float) -> Take:
         section=number,
         key=f"{number:02d}",
         chapter="",
-        hash=f"h{number}",
+        hash=f"{number:016x}",
         voiced=True,
         word_count=1,
         characters=1,

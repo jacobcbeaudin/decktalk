@@ -65,7 +65,7 @@ def a_take(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: bool =
         section=1,
         key="01",
         chapter="One",
-        hash="0a",
+        hash="000000000000000a",
         voiced=voiced,
         word_count=3,
         characters=18,

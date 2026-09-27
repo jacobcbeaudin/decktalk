@@ -42,6 +42,13 @@ PLACEHOLDER_PREFIX = "placeholder-"
 PLACEHOLDER_DIGITS = 10
 """How much of the sha256 names a placeholder take, which is regenerated rather than bought."""
 
+TAKE_HASH = rf"^(?:[0-9a-f]{{{TAKE_DIGITS}}}|{PLACEHOLDER_PREFIX}[0-9a-f]{{{PLACEHOLDER_DIGITS}}})$"
+"""Every digest a take may be named by, which is the head of a sha256 in hex and nothing else.
+
+A take's digest becomes a file name under the take directory, so an index a user supplied could
+otherwise name `../` and have the narration read a file from anywhere on the machine.
+"""
+
 
 class TakeInputs(BaseModel):
     """Everything that decides what a paid take sounds like, which is everything its name is taken over.
@@ -133,7 +140,10 @@ class Take(BaseModel):
     section: SectionNumber
     key: SectionKey
     chapter: str = Field(description="The section's title, which the film's chapter marker carries.")
-    hash: str = Field(description="The digest of the inputs this take was made from, which names its files.")
+    hash: str = Field(
+        pattern=TAKE_HASH,
+        description="The digest of the inputs this take was made from, which names its files, in lowercase hex.",
+    )
     voiced: bool = Field(description="True when a provider spoke this take, false on a placeholder.")
     word_count: int = Field(ge=0, description="How many words this take speaks.")
     characters: int = Field(ge=0, description="How many characters were sent to the voice, which is what is billed.")
@@ -222,6 +232,7 @@ class Takes(Stored):
 __all__ = [
     "PLACEHOLDER_PREFIX",
     "TAKE_DIGITS",
+    "TAKE_HASH",
     "PlaceholderInputs",
     "Take",
     "TakeInputs",

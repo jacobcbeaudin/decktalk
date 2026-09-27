@@ -34,7 +34,7 @@ def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
 
 
-def a_take(section: int = 1, *, digest: str = "abc", seconds: float = 1.0) -> Take:
+def a_take(section: int = 1, *, digest: str = "0000000000000abc", seconds: float = 1.0) -> Take:
     return Take(
         section=section,
         key=f"{section:02d}",
@@ -64,7 +64,7 @@ def test_a_section_that_says_nothing_has_no_estimated_words() -> None:
 
 def test_placing_a_take_reads_its_own_bytes_and_its_own_section(inputs: Inputs) -> None:
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
-    (inputs.workspace.takes_dir / take_file("abc")).write_bytes(b"")
+    (inputs.workspace.takes_dir / take_file("0000000000000abc")).write_bytes(b"")
     placed = place(inputs, 1, a_take())
     assert placed.sound_end_seconds == pytest.approx(0.8)
     assert placed.lead_seconds == pytest.approx(0.5)
@@ -75,7 +75,7 @@ def test_placing_a_take_reads_its_own_bytes_and_its_own_section(inputs: Inputs) 
 def test_a_row_that_carries_its_sound_end_keeps_it(inputs: Inputs) -> None:
     """The file its hash names holds the same bytes it was measured on, so it is measured once."""
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
-    (inputs.workspace.takes_dir / take_file("abc")).write_bytes(b"")
+    (inputs.workspace.takes_dir / take_file("0000000000000abc")).write_bytes(b"")
     assert place(inputs, 1, a_take().model_copy(update={"sound_end_seconds": 0.25})).sound_end_seconds == 0.25
 
 
@@ -103,8 +103,8 @@ def test_a_placeholder_take_closes_on_silence_so_its_sound_end_can_be_read(
     monkeypatch.setattr(audio, "write_clicks", lambda path, duration, times, **_k: asked.append(duration))
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     (segment,) = [s for s in inputs.spoken() if s.index == 1]
-    (inputs.workspace.takes_dir / take_file("d")).write_bytes(b"")
-    write_placeholder_take(inputs, segment, "Open", "d")
+    (inputs.workspace.takes_dir / take_file("000000000000000d")).write_bytes(b"")
+    write_placeholder_take(inputs, segment, "Open", "000000000000000d")
     assert asked == [pytest.approx(segment.silent_seconds(inputs.settings.narration) + PLACEHOLDER_CLOSE_SECONDS)]
 
 
@@ -115,8 +115,8 @@ def test_a_voiced_take_writes_what_the_provider_answered(
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     (segment,) = [s for s in inputs.spoken() if s.index == 1]
     request = SpeechRequest(text=segment.tts_text, voice_id=VOICE_ID, model="m")
-    row, written = write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "0af", request)  # type: ignore[arg-type]
-    assert (inputs.workspace.takes_dir / take_file("0af")).read_bytes() == b"take"
+    row, written = write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)  # type: ignore[arg-type]
+    assert (inputs.workspace.takes_dir / take_file("00000000000000af")).read_bytes() == b"take"
     assert row.voiced is True
     assert row.speech_end_seconds == pytest.approx(1.0)
     assert fake_voice.requests == [request]  # type: ignore[attr-defined]
@@ -130,10 +130,10 @@ def test_a_voiced_take_is_charged_on_the_stream_once(
     assert fake_ffmpeg is not None and fake_voice is not None
     (segment,) = [s for s in inputs.spoken() if s.index == 1]
     request = SpeechRequest(text=segment.tts_text, voice_id=VOICE_ID, model="m")
-    write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "0af", request)  # type: ignore[arg-type]
+    write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)  # type: ignore[arg-type]
     (charged,) = watched.of("take.charged")
     assert charged.section == 1  # type: ignore[attr-defined]
-    assert charged.take == "0af"  # type: ignore[attr-defined]
+    assert charged.take == "00000000000000af"  # type: ignore[attr-defined]
     assert charged.characters == len(segment.tts_text)  # type: ignore[attr-defined]
     assert charged.dollars == pytest.approx(len(segment.tts_text) / 1000 * 0.30)  # type: ignore[attr-defined]
 
@@ -150,16 +150,16 @@ def test_the_narration_is_joined_in_the_order_the_index_holds(
         model="m",
         output_format="mp3_44100_128",
         sections=(
-            a_take(1, digest="one").model_copy(
+            a_take(1, digest="0000000000000001").model_copy(
                 update={"sound_end_seconds": 0.8, "lead_seconds": 0.5, "tail_seconds": 0.7}
             ),
-            a_take(2, digest="two").model_copy(
+            a_take(2, digest="0000000000000002").model_copy(
                 update={"sound_end_seconds": 0.4, "lead_seconds": 0.1, "tail_seconds": 0.2}
             ),
         ),
     )
     join_takes(inputs, index)
-    assert [part.path.name for part in placed] == [take_file("one"), take_file("two")]
+    assert [part.path.name for part in placed] == [take_file("0000000000000001"), take_file("0000000000000002")]
     assert [part.lead for part in placed] == [0.5, 0.1]
     assert [part.play for part in placed] == [0.8, 0.4]
     assert [part.tail for part in placed] == [0.7, 0.2]

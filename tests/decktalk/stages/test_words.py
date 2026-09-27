@@ -49,7 +49,7 @@ def a_take(number: int, *, voiced: bool = True) -> Take:
         section=number,
         key=f"{number:02d}",
         chapter=f"Section {number}",
-        hash=f"digest{number}",
+        hash=f"{number:016x}",
         voiced=voiced,
         word_count=2,
         characters=len(SPOKEN[number]),
@@ -75,7 +75,7 @@ def an_inputs(root: Path, *, numbers: tuple[int, ...] = (1, 2), voiced: bool = T
             Word(word=token.strip(",."), start=round(index * 0.5, 3), end=round(index * 0.5 + 0.4, 3))
             for index, token in enumerate(spoken)
         )
-        Words(words=rows).write(inputs.workspace.takes_dir / words_file(f"digest{number}"))
+        Words(words=rows).write(inputs.workspace.takes_dir / words_file(f"{number:016x}"))
     return inputs
 
 

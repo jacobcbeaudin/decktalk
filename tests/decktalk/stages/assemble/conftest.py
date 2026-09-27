@@ -170,7 +170,7 @@ def take_index(inputs: Inputs, rows: dict[int, tuple[str, float, float | None, l
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     takes: list[Take] = []
     for number, (chapter, span, speech_end, words) in rows.items():
-        digest = f"h{number:02d}"
+        digest = f"{number:016x}"
         Words(words=tuple(words)).write(inputs.workspace.takes_dir / f"{digest}.words.json")
         takes.append(
             Take(

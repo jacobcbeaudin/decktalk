@@ -61,7 +61,7 @@ def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_
         section=1,
         key="01",
         chapter="One",
-        hash="h",
+        hash="0123456789abcdef",
         voiced=voiced,
         word_count=3,
         characters=18,
@@ -74,7 +74,7 @@ def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_
     Takes(script="script.md", model="m", output_format="mp3_44100_128", sections=(take,)).write(
         inputs.workspace.takes_path
     )
-    Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("h"))
+    Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("0123456789abcdef"))
     if take_on_disk:
         (inputs.workspace.takes_dir / take.file).write_bytes(b"")
     if cut:

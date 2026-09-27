@@ -63,7 +63,7 @@ def a_take(section: int) -> Take:
         section=section,
         key=f"{section:02d}",
         chapter=f"Section {section}",
-        hash=f"hash{section}",
+        hash=f"{section:016x}",
         voiced=False,
         word_count=8,
         characters=40,

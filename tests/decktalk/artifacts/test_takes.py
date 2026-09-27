@@ -8,6 +8,7 @@ here needs audio, a network or a credential, because a digest is arithmetic over
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from decktalk.artifacts.takes import (
     is_placeholder,
     take_file,
 )
+from decktalk.errors import NotBuiltError
 
 BEAT = "—"
 """The dash the founder's script writes a beat with, which is data rather than prose."""
@@ -139,7 +141,7 @@ def take(section: int, *, seconds: float, voiced: bool = True, lead: float = 0.0
         section=section,
         key=f"{section:02d}",
         chapter="",
-        hash=f"h{section}",
+        hash=f"{section:016x}",
         voiced=voiced,
         word_count=2,
         characters=10,
@@ -162,7 +164,24 @@ INDEX = Takes(
 
 
 def test_a_take_is_named_by_its_digest() -> None:
-    assert take(1, seconds=1.0).file == take_file("h1")
+    assert take(1, seconds=1.0).file == take_file(f"{1:016x}")
+
+
+@pytest.mark.parametrize("hostile", ["../../../etc/passwd", "/etc/passwd", "ABCDEF0123456789", "0123", ""])
+def test_a_take_index_that_names_a_file_by_anything_but_a_digest_is_refused(tmp_path: Path, hostile: str) -> None:
+    """The digest becomes a file name under the take directory, so a path in it would read anywhere."""
+    row = take(1, seconds=1.0).model_dump(mode="json") | {"hash": hostile}
+    index = INDEX.model_dump(mode="json") | {"sections": [row]}
+    path = tmp_path / "takes.json"
+    path.write_text(json.dumps(index), encoding="utf-8")
+    with pytest.raises(NotBuiltError, match="cannot be read"):
+        Takes.read(path)
+
+
+def test_both_kinds_of_digest_name_a_take() -> None:
+    placeholder = PlaceholderInputs(words_per_minute=150.0, beat_seconds=0.35, text="hello").digest
+    for digest in (inputs_for("hello").digest, placeholder):
+        assert Take.model_validate(take(1, seconds=1.0).model_dump() | {"hash": digest}).hash == digest
 
 
 def test_a_section_runs_for_its_lead_its_sound_and_its_tail() -> None:
