@@ -74,22 +74,22 @@ command that reproduces it, because a job name scrolls away and the first line o
 
 | Group | What it runs | Needs | Where | Gates on |
 |---|---|---|---|---|
-| `lint` | `uv lock --check`, and 7 more | uv, npm | Linux | pr, main, release |
-| `unit` | `uv run pytest -q --cov --cov-report=` | uv | Linux | pr, main, release |
-| `node` | `npm ci`, and 1 more | npm | Linux | pr, main, release |
-| `browser` | `uv run pytest -q -m browser --cov --cov-report=` | uv, chromium | Linux | pr, main, release |
-| `media` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | Linux | pr, main, release |
-| `e2e` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | Linux | pr, main, release |
-| `browser-platforms` | `uv run pytest -q -m browser --cov --cov-report= --timing=report` | uv, chromium | macOS, Windows | main, release |
-| `media-platforms` | `uv run pytest -q -m media --cov --cov-report= --timing=report` | uv, ffmpeg | macOS, Windows | main, release |
-| `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report= --timing=report` | uv, chromium, ffmpeg | macOS, Windows | main, release |
-| `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
-| `generated` | `npm ci`, and 15 more | uv, npm, chromium | Linux | pr, main, release |
-| `rehearsal` | `npm ci`, and 1 more | uv, npm, chromium, history | Linux | pr, main, release |
-| `coverage` | `uv run coverage combine --keep`, and 2 more | uv | Linux | pr, main, release |
-| `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
-| `scaffold` | `uv run pytest -q -m scaffold --timing=report` | uv, chromium, ffmpeg | Linux | main, schedule |
-| `installer` | `docker run --rm -v install.sh:/install.sh:ro debian:13-slim sh -euc <shell script>`, and 5 more | docker | Linux | main, schedule |
+| `lint` | `uv lock --check`, and 7 more | npm | Linux | pr, main |
+| `unit` | `uv run pytest -q -rs -n auto --ignore=tests/contract/test_wheel.py --ignore=tests/contract/test_prose.py --ignore=tests/contract/test_vocabulary.py --ignore=tests/contract/test_numbers.py --cov --cov-report= --junitxml=tests/out/junit/unit.xml` | nothing beyond uv | Linux | pr, main |
+| `node` | `node --test tests/decktalk/runtime/src/*.test.ts tests/scripts/*.test.mjs` | npm | Linux | pr, main |
+| `browser` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | Linux | pr, main |
+| `media` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | Linux | pr, main |
+| `e2e` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report` | chromium, ffmpeg | Linux | pr, main |
+| `browser-platforms` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml --timing=report` | chromium | macOS, Windows | main |
+| `media-platforms` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml --timing=report` | ffmpeg | macOS, Windows | main |
+| `e2e-platforms` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report` | chromium, ffmpeg | macOS, Windows | main |
+| `platform` | `uv run pytest -q -rs -m platform`, and 1 more | chromium, ffmpeg | Linux, macOS, Windows | pr, main |
+| `generated` | `uv run python scripts/build_runtime.py --check`, and 13 more | npm, chromium | Linux | pr, main |
+| `rehearsal` | `uv run python scripts/rehearse_release.py` | npm, chromium, history | Linux | pr, main |
+| `coverage` | `uv run coverage combine --keep`, and 2 more | nothing beyond uv | Linux | pr, main |
+| `wheel` | `uv build`, and 2 more | nothing beyond uv | Linux, macOS, Windows | pr, main |
+| `scaffold` | `uv run pytest -q -rs -m scaffold --timing=report` | chromium, ffmpeg | Linux | schedule |
+| `installer` | `docker run --rm -v install.sh:/install.sh:ro debian:13-slim sh -euc <shell script>`, and 5 more | nothing beyond uv | Linux | main, schedule |
 
 Every group, one at a time:
 
@@ -226,7 +226,6 @@ src/decktalk/
     catalog.py           The library's own contract, walked once so every rendering of it reads the same rows.
     tomlmap.py           One loader from a mapping to typed values, with located errors and "did you mean" hints.
     settings.py          Every knob DeckTalk publishes, with the range that is safe to turn it through.
-    explain.py           One knob explained: what set it, what it feeds, and what a candidate value would do to this project.
   leaves                 one job each, and no knowledge of a project
     toolchain/           What DeckTalk fetches or ships for one machine, and where it keeps it.
       announce.py        How a download says it is happening, so a run that stops for the network says so as it happens.
@@ -244,6 +243,7 @@ src/decktalk/
       audio.py           Audio work on top of ffmpeg, so nothing above this module spells an audio filter by hand.
       browser.py         Headless Chromium through Playwright: recording a page, taking screenshots and drawing slates.
       encode.py          The settings and the tags every output shares, so each file DeckTalk writes is made the same way.
+      environment.py     The environment a browser DeckTalk launches is given, which is never the one the process holds.
       ffmpeg.py          Finding ffmpeg and ffprobe for this machine, running them, and probing what they read.
       frames.py          Frame statistics on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
       origin.py          The local origin every page is opened at, its request routing, and the server `decktalk serve` runs.
@@ -252,8 +252,9 @@ src/decktalk/
     template.py          The projects and the skills packaged in the wheel, and writing one of them into a directory.
     artifacts/           The typed build artifacts and the files they are written to.
       cue_times.py       Every cue resolved to a second on its section's own clock.
-      cuts.py            The cut list: where every section sits in the finished film.
+      cuts.py            The cut list: where every section sits in the finished film, and what each section cut was made from.
       recordings.py      Everything `record` did for one section, and everything it judged about the result.
+      stills.py          Frozen frames kept by what drew them, so one state of a page is drawn once whoever asks for it.
       stored.py          A build artifact as a file: one frozen model per file, read once and written atomically.
       takes.py           The take index, and the frozen inputs a take's name is taken over.
       words.py           The words of one take, which is the time base every other artifact is measured against.
@@ -268,6 +269,7 @@ src/decktalk/
       timeline.py        Where the narration plays in the final film: the narration clock placed on the film's clock.
       workspace.py       Every path under `build/`, named once.
     machine.py           This computer and this process, as one value, and the run every call opens on it.
+    explain.py           One knob explained: what set it, what it feeds, and what a candidate value would do to this project.
     stages/              The pipeline, one package per stage and one module per call that reports or cuts.
       build.py           The whole pipeline in order, or the span of it one run asked for.
       clip.py            A span of one built section, cut into its own file with its own sound and its own words.
@@ -293,11 +295,12 @@ src/decktalk/
       record/            Stage 3: record each page section in a headless browser, find narration t=0, and judge the result.
         capture.py       The URL a page section is opened at, and what its recording is keyed on.
         checks.py        What one finished recording is judged on, before anything is assembled from it.
+        pool.py          How many page sections record at once, and the workers that record them.
         start.py         Where narration t=0 sits in a recording.
       soundscape/        Stage 4: the music, the ambience bed and the effects this project describes are generated.
         ledger.py        What this project has already bought from the sound service, as one typed file it reads and writes.
       verify/            Stage six: the one read-only stage, over the finished film and the logs that made it.
-        measure.py       The ffmpeg calls behind the cue plan: the probes, the onset scan and the click search.
+        measure.py       The measurements behind the cue plan: the probes, the onset scan and the click search.
         plan.py          The arithmetic behind a cue check, with no ffmpeg, no file and no project.
         seams.py         The three checks that read the shape of the film rather than one cue: starts, cuts and seams.
     project.py           A project is a directory, one object opens it, and every call on it opens a run.
