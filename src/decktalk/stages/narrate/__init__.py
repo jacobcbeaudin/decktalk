@@ -24,7 +24,11 @@ receive at all is refused here before a single request is sent.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import contextvars
+import threading
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 
 from decktalk.artifacts import Take, Takes, is_placeholder
 from decktalk.errors import InputError
@@ -193,45 +197,88 @@ def _write_takes(
     model: str,
     paid: bool,
 ) -> tuple[dict[int, Take], list[SectionTake]]:
-    """Make every take this run plans, checkpointing the index after each one.
+    """Make every take this run plans, `[narration] concurrency` at a time, checkpointing after each.
 
-    The index is written again after every take, paid or not, so a run that is stopped halfway keeps
-    every take it has already bought and the next run finds them in the cache rather than buying
-    them twice.
+    A request carries its neighbours' text from the plan rather than from whatever finished before
+    it, so the order the takes arrive in changes no take. The index is written again after every
+    take under one lock, paid or not, so a run that is stopped or fails halfway keeps every take it
+    has already bought and the next run finds them in the cache rather than buying them twice.
+
+    The takes a plan found on disk are indexed after the pool has finished, because a section kept
+    for sharing another section's words reads the take that section is still making.
     """
     inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     previous = inputs.takes()
-    rows: dict[int, Take] = {take.section: take for take in previous.sections} if previous is not None else {}
-    touched: set[int] = set()
-    made: list[SectionTake] = []
-    for done, plan in enumerate(plans, start=1):
+    progress = _Progress(rows={take.section: take for take in previous.sections} if previous is not None else {})
+
+    def one(plan: TakePlan) -> None:
         number = plan.segment.index
         with run.section(Stage.NARRATE, number):
             row, status = _one_take(inputs, run, plan, provider, paid=paid)
-            rows[number] = row
-            touched.add(number)
-            made.append(
-                SectionTake(
-                    section=number,
-                    key=plan.segment.key,
-                    status=status,
-                    characters=plan.characters_sent,
-                    seconds=row.duration_seconds,
-                    file=inputs.relative(inputs.workspace.takes_dir / row.file),
-                    hash=row.hash,
-                )
+            made = SectionTake(
+                section=number,
+                key=plan.segment.key,
+                status=status,
+                characters=plan.characters_sent,
+                seconds=row.duration_seconds,
+                file=inputs.relative(inputs.workspace.takes_dir / row.file),
+                hash=row.hash,
             )
-            _index(inputs, _placed(inputs, rows, touched), model=model).write(inputs.workspace.takes_path)
-        run.progress(
-            Stage.NARRATE,
-            done=done,
-            total=len(plans),
-            unit=Unit.TAKE,
-            label=plan.chapter or plan.segment.title,
-            section=number,
-        )
-    return _placed(inputs, rows, touched), made
+            # The count is reported under the lock that raised it, so a reader of the stream sees one,
+            # two, three in that order however the pool's workers finish.
+            with progress.lock:
+                progress.rows[number] = row
+                progress.made[number] = made
+                _index(inputs, _placed(inputs, progress.rows, set(progress.made)), model=model).write(
+                    inputs.workspace.takes_path
+                )
+                progress.done += 1
+                run.progress(
+                    Stage.NARRATE,
+                    done=progress.done,
+                    total=len(plans),
+                    unit=Unit.TAKE,
+                    label=plan.chapter or plan.segment.title,
+                    section=number,
+                )
+
+    making = [plan for plan in plans if not plan.cached]
+    _in_pool(one, making, workers=inputs.settings.narration.concurrency)
+    for plan in plans:
+        if plan.cached:
+            one(plan)
+    made = [progress.made[plan.segment.index] for plan in plans]
+    return _placed(inputs, progress.rows, set(progress.made)), made
+
+
+@dataclass
+class _Progress:
+    """What the workers of one narrate share, which every one of them changes only under its lock."""
+
+    rows: dict[int, Take]
+    made: dict[int, SectionTake] = field(default_factory=dict)
+    done: int = 0
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def _in_pool(work: Callable[[TakePlan], None], plans: list[TakePlan], *, workers: int) -> None:
+    """Run `work` over the plans on at most `workers` threads, and raise the first failure.
+
+    Each worker runs in a copy of this thread's context, because the toolchain a take is measured
+    with and the listener a download reports to are bound there and a new thread inherits neither.
+    A failure stops every plan that has not started, lets the requests already sent finish, since
+    they are already paid for, and is raised once they have.
+    """
+    if not plans:
+        return
+    with ThreadPoolExecutor(max_workers=min(workers, len(plans))) as pool:
+        running = [pool.submit(contextvars.copy_context().run, work, plan) for plan in plans]
+        for finished in as_completed(running):
+            failure = finished.exception()
+            if failure is not None:
+                pool.shutdown(wait=True, cancel_futures=True)
+                raise failure
 
 
 def _one_take(

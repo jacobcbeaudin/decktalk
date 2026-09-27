@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 
 import pytest
@@ -16,7 +17,7 @@ from decktalk.results import NarrateResult, SpendState, TakeStatus, Voicing, Wor
 from decktalk.speech import PROVIDERS, SpeechRequest
 from decktalk.stages.narrate import narrate
 
-from .conftest import SCRIPT, TOML, Watched
+from .conftest import ENVIRON, SCRIPT, TOML, Watched
 
 
 @pytest.fixture(autouse=True)
@@ -117,8 +118,17 @@ def test_a_script_the_voice_would_read_out_is_refused_before_anything_is_written
     assert not project.workspace.takes_path.exists()
 
 
-def test_the_run_reports_one_take_at_a_time(inputs: Inputs, watched: Watched) -> None:
-    placeholder(inputs, watched)
+def one_at_a_time(make_inputs: Callable[..., Inputs]) -> Inputs:
+    """The project on a machine that voices one section at a time, so the pool works in script order."""
+    return Inputs.load(make_inputs().root, environ=ENVIRON, machine={"narration": {"concurrency": 1}})
+
+
+def test_the_run_reports_one_take_at_a_time(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched]
+) -> None:
+    project = one_at_a_time(make_inputs)
+    watched = make_run(project)
+    placeholder(project, watched)
     lines = watched.of("progress")
     assert [line.done for line in lines] == [1, 2, 3]  # type: ignore[attr-defined]
     assert {line.total for line in lines} == {3}  # type: ignore[attr-defined]
@@ -154,9 +164,10 @@ def test_a_take_the_run_found_on_disk_is_never_charged(
 
 
 def test_a_paid_request_carries_the_published_voice_and_its_neighbours(
-    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: object
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: object
 ) -> None:
-    narrate(inputs, make_run(inputs, voice=Voicing.PAID).run)
+    project = one_at_a_time(make_inputs)
+    narrate(project, make_run(project, voice=Voicing.PAID).run)
     sent: list[SpeechRequest] = fake_voice.requests  # type: ignore[attr-defined]
     assert {request.voice_id for request in sent} == {"voice-under-test"}
     assert sent[0].previous_text is None
@@ -215,35 +226,112 @@ def test_a_run_over_the_sections_nobody_paid_for_is_the_cheap_rehearsal(
     assert [row.section for row in result.sections] == [2, 3]
 
 
+class RefusesOneSection:
+    """A voice that answers every section but one, which it refuses as a busy provider would."""
+
+    name = "test-voice"
+
+    def __init__(self, refused: str) -> None:
+        self.refused = refused
+
+    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+        if request.text == self.refused:
+            raise ProviderError("the voice stopped answering.", retryable=True)
+        return b"take", [Word(word="A", start=0.0, end=0.4)]
+
+    def cache_key(self, _request: SpeechRequest) -> str:
+        return self.name
+
+
 def test_the_index_is_checkpointed_after_every_take(
     inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run that is stopped keeps every take it has already paid for, so the next run reuses them."""
-
-    class RefusesTheSecond:
-        name = "test-voice"
-
-        def __init__(self) -> None:
-            self.sent = 0
-
-        def speak(self, _request: SpeechRequest) -> tuple[bytes, list[Word]]:
-            self.sent += 1
-            if self.sent > 1:
-                raise ProviderError("the voice stopped answering.", retryable=True)
-            return b"take", [Word(word="A", start=0.0, end=0.4)]
-
-        def cache_key(self, _request: SpeechRequest) -> str:
-            return self.name
-
-    monkeypatch.setitem(PROVIDERS, "test-voice", lambda _context: RefusesTheSecond())
+    """A run that fails keeps every take it has already paid for, so the next run reuses them."""
+    (second,) = [segment for segment in inputs.spoken() if segment.index == 2]
+    monkeypatch.setitem(PROVIDERS, "test-voice", lambda _context: RefusesOneSection(second.tts_text))
     watched = make_run(inputs, voice=Voicing.PAID)
     with pytest.raises(ProviderError):
         narrate(inputs, watched.run)
     index = Takes.read(inputs.workspace.takes_path)
     assert index is not None
-    assert [row.section for row in index.sections] == [1]
-    # The take that was bought is on the stream even though the run failed after it.
-    assert [line.section for line in watched.of("take.charged")] == [1]  # type: ignore[attr-defined]
+    indexed = [row.section for row in index.sections]
+    assert 1 in indexed
+    assert 2 not in indexed
+    # Every take that was bought is on the stream, even though the run failed after it.
+    assert sorted(line.section for line in watched.of("take.charged")) == indexed  # type: ignore[attr-defined]
+
+
+class Overlapping:
+    """A voice that counts its requests in flight and can hold the first `hold` until all have arrived.
+
+    Holding two requests until both are in flight is what only a pool can satisfy, so a run that
+    voiced one section at a time would break the barrier rather than pass by luck.
+    """
+
+    name = "test-voice"
+
+    def __init__(self, hold: int = 2) -> None:
+        self.hold = hold
+        self.together = threading.Barrier(hold, timeout=10) if hold else None
+        self.lock = threading.Lock()
+        self.in_flight = 0
+        self.most = 0
+        self.sent = 0
+
+    def speak(self, _request: SpeechRequest) -> tuple[bytes, list[Word]]:
+        with self.lock:
+            self.sent += 1
+            self.in_flight += 1
+            self.most = max(self.most, self.in_flight)
+            held = self.together is not None and self.sent <= self.hold
+        try:
+            if held and self.together is not None:
+                self.together.wait()
+            return b"take", [Word(word="A", start=0.0, end=0.4)]
+        finally:
+            with self.lock:
+                self.in_flight -= 1
+
+    def cache_key(self, _request: SpeechRequest) -> str:
+        return self.name
+
+
+def test_sections_are_voiced_concurrently_and_reported_in_script_order(
+    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two requests are in flight at once under the default, and the result still reads in order."""
+    voice = Overlapping()
+    monkeypatch.setitem(PROVIDERS, "test-voice", lambda _context: voice)
+    watched = make_run(inputs, voice=Voicing.PAID)
+    result = narrate(inputs, watched.run)
+    assert voice.most == 2
+    assert [row.section for row in result.sections] == [1, 2, 3]
+    index = Takes.read(inputs.workspace.takes_path)
+    assert index is not None
+    assert [row.section for row in index.sections] == [1, 2, 3]
+    assert [line.done for line in watched.of("progress")] == [1, 2, 3]  # type: ignore[attr-defined]
+
+
+def test_a_concurrency_of_one_voices_one_section_at_a_time(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    voice = Overlapping(hold=0)
+    monkeypatch.setitem(PROVIDERS, "test-voice", lambda _context: voice)
+    project = one_at_a_time(make_inputs)
+    narrate(project, make_run(project, voice=Voicing.PAID).run)
+    assert voice.most == 1
+
+
+def test_two_sections_with_the_same_words_buy_one_take_under_a_pool(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: object
+) -> None:
+    """The section that shares its words is indexed after the pool, so it reads the take and buys none."""
+    doubled = make_inputs(script="## 1. Open\n\nA bowl.\n\n## 2. Middle\n\nA bowl.\n\n## 3. Close\n\nA ball.\n")
+    watched = make_run(doubled, voice=Voicing.PAID)
+    result = narrate(doubled, watched.run)
+    assert len(fake_voice.requests) == 2  # type: ignore[attr-defined]
+    assert [row.status for row in result.sections] == [TakeStatus.VOICED, TakeStatus.KEPT, TakeStatus.VOICED]
+    assert sorted(line.section for line in watched.of("take.charged")) == [1, 3]  # type: ignore[attr-defined]
 
 
 def test_a_section_that_left_the_script_leaves_the_index(
