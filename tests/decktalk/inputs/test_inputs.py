@@ -409,3 +409,55 @@ def test_the_origin_never_offers_the_project_file_the_credential_or_the_build(tm
     assert "decktalk.toml" not in served
     assert ".env" not in served
     assert "build" not in served
+
+
+# ---- every path the project names stays inside it ----------------------------------------------
+
+LINKED_TOML = """
+[project]
+name = "t"
+
+[[section]]
+number = 1
+page = "deck/index.html"
+"""
+
+
+def _outside(tmp_path: Path) -> tuple[Path, Path]:
+    """A project directory and a file beside it that no project file may reach."""
+    root, secret = tmp_path / "project", tmp_path / "host.txt"
+    root.mkdir()
+    secret.write_text("## 1. Stolen\n\nSECRET-HOST-LINE\n", encoding="utf-8")
+    return write_project(root, LINKED_TOML), secret
+
+
+def test_a_script_linked_out_of_the_project_is_refused_before_a_line_is_read(tmp_path: Path) -> None:
+    root, secret = _outside(tmp_path)
+    (root / "script.md").symlink_to(secret)
+    with pytest.raises(InputError, match="outside the project"):
+        Inputs.load(root, environ={}).script()
+
+
+def test_a_cue_file_linked_out_of_the_project_is_refused(tmp_path: Path) -> None:
+    root, secret = _outside(tmp_path)
+    (root / "cues.json").symlink_to(secret)
+    with pytest.raises(InputError, match="outside the project"):
+        Inputs.load(root, environ={}).cues()
+
+
+def test_a_page_linked_out_of_the_project_is_refused(tmp_path: Path) -> None:
+    root, secret = _outside(tmp_path)
+    (root / "deck").mkdir()
+    (root / "deck" / "index.html").symlink_to(secret)
+    inputs = Inputs.load(root, environ={})
+    with pytest.raises(InputError, match="outside the project"):
+        inputs.path(inputs.document.page_sections[0].page)
+
+
+def test_a_build_directory_linked_out_of_the_project_is_refused_at_load(tmp_path: Path) -> None:
+    root, _secret = _outside(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (root / "build").symlink_to(elsewhere, target_is_directory=True)
+    with pytest.raises(InputError, match="outside the project"):
+        Inputs.load(root, environ={})

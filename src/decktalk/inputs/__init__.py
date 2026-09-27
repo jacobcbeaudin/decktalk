@@ -46,7 +46,7 @@ from decktalk.inputs.document import (
 )
 from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
-from decktalk.inputs.paths import at, relative
+from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.script import Segment, read_script
 from decktalk.inputs.workspace import Workspace
 from decktalk.results import Word
@@ -102,7 +102,7 @@ class Inputs:
         return cls(
             root=root,
             document=document,
-            workspace=Workspace(root=root, build=root / document.build, name=document.name, takes=takes_dir),
+            workspace=Workspace(root=root, build=contained(root, document.build), name=document.name, takes=takes_dir),
             env=Env(file=root / ENV_FILE, environ=environ),
             settings=loaded.settings,
             layers=loaded.layers,
@@ -132,9 +132,12 @@ class Inputs:
     # ---- paths --------------------------------------------------------------------------
 
     def path(self, named: str | Path) -> Path:
-        """A path the document names, resolved against the project root."""
-        given = Path(named)
-        return given if given.is_absolute() else self.root / given
+        """A path the document names, joined to the project root and refused when it leads outside it.
+
+        Every file a project names is read through here, so a script, a cue file, a page, a clip or a
+        sound that links out of the project is refused with `INPUT` before anything reads it.
+        """
+        return contained(self.root, named)
 
     def relative(self, path: Path) -> Path:
         """One path as every result and every finding publishes it, which is relative to the project."""

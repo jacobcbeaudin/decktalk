@@ -7,12 +7,19 @@ why this sits at the bottom of the input layer where every filler can reach it.
 
 A path outside the project, such as a take directory `[narration] cache_dir` moved elsewhere, is
 published as it is, because a relative path with `..` in it names nothing a reader can open.
+
+Every file the project itself names is read through `contained`, which is the one rule that says a
+project path stays inside the project. `tomlmap` refuses `..` and an absolute value by their
+spelling, and a link is what that spelling cannot see: a `script.md` that links to a file elsewhere
+on the machine would have its lines voiced, captioned and published. So the rule resolves every link
+before it compares, and it lives here, where every reader of a project path already reaches.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from decktalk.errors import InputError
 from decktalk.findings import Location
 
 
@@ -22,6 +29,26 @@ def relative(path: Path, root: Path) -> Path:
         return path.resolve().relative_to(root.resolve())
     except ValueError:
         return path
+
+
+def contained(root: Path, named: str | Path) -> Path:
+    """The path a project names, joined to its root, refused when it resolves outside the project.
+
+    Links are followed before the comparison, so a link inside the project that points elsewhere is
+    refused however its name is spelled. The path comes back as the project named it rather than as
+    what it resolved to, because a link that stays inside the project is the author's own layout and
+    every name DeckTalk publishes is the one the author wrote. The refusal names the path and never
+    the place it resolved to, which belongs to the machine and not to the project.
+    """
+    given = Path(named)
+    path = given if given.is_absolute() else root / given
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise InputError(
+            f"{Path(named).as_posix()} resolves to a place outside the project, so it is not read.",
+            hint="Keep every file the project names inside the project directory, and never a link out of it.",
+            location=Location(where=path.name, file=given if not given.is_absolute() else path),
+        )
+    return path
 
 
 def at(
@@ -37,4 +64,4 @@ def at(
     return Location(where=shown.name, file=shown, line=line, section=section, cue=cue)
 
 
-__all__ = ["at", "relative"]
+__all__ = ["at", "contained", "relative"]

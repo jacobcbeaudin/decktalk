@@ -220,8 +220,12 @@ def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds
 
 
 def _out_path(inputs: Inputs, out: Path, video: Path) -> Path:
-    """Where the clip is written, refusing a name that is the section cut it reads."""
-    film = inputs.path(out)
+    """Where the clip is written, refusing a name that is the section cut it reads.
+
+    The name is the caller's own argument rather than a file the project names, so it may put the
+    clip anywhere the caller can write, and a relative name is read from the project root.
+    """
+    film = out if out.is_absolute() else inputs.root / out
     if film.resolve() == video.resolve():
         raise InputError(
             f"--out names {inputs.relative(video)}, which is the section cut this clip is read from.",
