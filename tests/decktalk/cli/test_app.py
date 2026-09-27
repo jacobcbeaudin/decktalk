@@ -117,6 +117,18 @@ def test_a_refused_command_line_is_one_usage_error_with_no_usage_block(run) -> N
     assert "Usage:" not in ran.err
 
 
+def test_an_unknown_flag_names_the_flag_it_most_likely_meant(run) -> None:
+    said = " ".join(run("build", "--secton", "3").err.split())
+    assert "--secton is not a flag of this command. Did you mean --section?" in said
+
+
+def test_an_unknown_flag_like_no_real_one_is_refused_without_a_guess(run) -> None:
+    """Click offered --verbose for --bogus, which is a guess a reader would follow and regret."""
+    said = run("build", "--bogus").err
+    assert "--bogus is not a flag of this command." in said
+    assert "--verbose" not in said
+
+
 def test_yes_is_recognised_and_refused_naming_this_command_s_own_flags(run) -> None:
     ran = run("build", "--yes")
     assert ran.exit_code == 2

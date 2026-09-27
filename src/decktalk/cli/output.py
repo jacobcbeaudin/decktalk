@@ -438,9 +438,14 @@ def _verify(result: VerifyResult) -> Iterable[RenderableType]:
 def _build(result: BuildResult) -> Iterable[RenderableType]:
     # The stages are not printed again here. Each one was reported as it ran, by the live region on
     # a terminal and by one plain line in a pipe, so this is the run's own last sentence.
-    where = result.film.as_posix() if result.film else "nothing"
-    found = f"{len(result.findings)} findings" if result.findings else "nothing found"
-    yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {_money(result.spend.dollars)}, {found}")
+    count = len(result.findings)
+    found = "nothing found" if not count else f"{count} finding{'' if count == 1 else 's'}"
+    if result.stopped_at is not None:
+        stopped = f"at {result.stopped_at.value}"
+        yield Text(f"{'Stopped'.rjust(STAGE_COLUMN)} {stopped}, {_money(result.spend.dollars)}, {found}")
+    else:
+        where = result.film.as_posix() if result.film else "nothing"
+        yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {_money(result.spend.dollars)}, {found}")
     if result.storyboard is not None:
         yield Text(f"{'Next'.rjust(STAGE_COLUMN)} open {result.storyboard.as_posix()}", style=QUIET_STYLE)
 

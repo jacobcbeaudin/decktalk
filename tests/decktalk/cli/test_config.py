@@ -66,6 +66,25 @@ def test_set_refuses_a_value_the_loader_would_refuse(run, project_dir) -> None:
     assert "crf" not in (project_dir / "decktalk.toml").read_text(encoding="utf-8")
 
 
+def test_an_out_of_range_refusal_is_two_sentences(run, project_dir) -> None:
+    """The loader's refusal ends on the value it got, and the reason it was refused is a new sentence."""
+    said = " ".join(run("-p", str(project_dir), "config", "set", "video.crf", "99").err.split())
+    assert "got 99. " in said
+
+
+def test_unset_refuses_a_name_that_is_neither_a_key_nor_a_table(run, project_dir) -> None:
+    """A slip in the name is a usage error, the way get and set refuse it, and not a file that lacks it."""
+    ran = run("-p", str(project_dir), "config", "unset", "video.crff")
+    assert ran.exit_code == 2
+    assert "Did you mean 'video.crf'?" in " ".join(ran.err.split())
+
+
+def test_get_names_the_nearest_key(run, project_dir) -> None:
+    assert "Did you mean 'video.crf'?" in " ".join(
+        run("-p", str(project_dir), "config", "get", "video.crff").err.split()
+    )
+
+
 def test_set_on_a_dry_run_reports_the_change_and_writes_nothing(run, project_dir) -> None:
     ran = run("-p", str(project_dir), "config", "set", "video.crf", "20", "--dry-run", "--json")
     assert json.loads(ran.out)["dry_run"] is True
@@ -92,7 +111,7 @@ def test_unset_prints_the_value_that_now_applies_and_the_layer_it_comes_from(run
 def test_unset_of_a_key_the_file_does_not_set_says_so(run, project_dir) -> None:
     ran = run("-p", str(project_dir), "config", "unset", "video.crf")
     assert ran.exit_code == 3
-    assert "sets nothing under" in ran.err
+    assert "decktalk.toml sets nothing under 'video.crf'." in ran.err
 
 
 def test_unset_of_a_whole_table_without_a_terminal_refuses_and_names_all(run, project_dir) -> None:

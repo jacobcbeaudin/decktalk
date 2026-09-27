@@ -319,7 +319,7 @@ class Session:
 def _spend_sentence(spend: Spend | None) -> str:
     """The sentence an approval refusal carries, with the price in it whenever the price is known."""
     if spend is None:
-        return "this run would voice narration and no terminal is here to approve it."
+        return "This run would voice narration and no terminal is here to approve it."
     return f"{spend.sentence} No terminal is here to approve it."
 
 

@@ -15,6 +15,7 @@ refused `--set` as cheap as reading a signature.
 
 from __future__ import annotations
 
+import difflib
 import functools
 import inspect
 import itertools
@@ -26,7 +27,7 @@ from typing import Annotated, cast
 import typer
 from typer._click import Context, HelpFormatter, Parameter
 from typer._click.core import Command
-from typer._click.exceptions import ClickException, UsageError
+from typer._click.exceptions import ClickException, NoSuchOption, UsageError
 from typer.core import TyperCommand, TyperGroup, TyperOption
 from typer.main import get_command
 
@@ -399,12 +400,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (UsageError, ClickException) as refused:
         return _session().reported(_usage(refused))
     except (typer.Abort, KeyboardInterrupt):
-        return _session().failed(Cancelled("the caller stopped the run."))
+        return _session().failed(Cancelled("The caller stopped the run."))
     except DeckTalkError as refused:
         return _session().failed(refused)
     except Exception as failure:  # noqa: BLE001  (anything else is a bug, reported as one)
         return _session().bug(failure)
     return int(answered or 0)
+
+
+SUGGESTION_CUTOFF = 0.75
+"""How alike an unknown flag and a real one must be before the refusal names the real one.
+
+Click's own cutoff of 0.6 offered `--verbose` for `--bogus`, which is a guess rather than a
+suggestion, while every one-letter slip of a real flag scores well above this.
+"""
+
+
+def _unknown_option(refused: NoSuchOption, where: Context | None) -> str:
+    """The refusal of a flag this command does not take, naming the one flag it most likely meant."""
+    flags = sorted(
+        flag
+        for param in (where.command.get_params(where) if where is not None else ())
+        for flag in (*param.opts, *param.secondary_opts)
+        if flag.startswith("--")
+    )
+    close = difflib.get_close_matches(refused.option_name, flags, n=1, cutoff=SUGGESTION_CUTOFF)
+    meant = f" Did you mean {close[0]}?" if close else ""
+    return f"{refused.option_name} is not a flag of this command.{meant}"
 
 
 def _session() -> Session:
@@ -420,9 +442,10 @@ def _usage(refused: ClickException) -> ErrorInfo:
     """
     where = getattr(refused, "ctx", None)
     path = where.command_path if where is not None else PROGRAM
+    said = _unknown_option(refused, where) if isinstance(refused, NoSuchOption) else refused.format_message()
     return ErrorInfo(
         code=ErrorCode.USAGE,
-        message=f"{path}: {refused.format_message()}",
+        message=f"{path}: {said}",
         hint=f"Run {path} --help for this command's flags, or decktalk schema for the whole contract.",
         docs=ErrorCode.USAGE.url,
     )

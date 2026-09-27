@@ -507,6 +507,31 @@ def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path, monk
     assert result.bias_ms is None  # the bias is measured only when a caller asks
 
 
+def test_the_browser_row_names_where_its_chromium_lives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A person told the browser is there still has to find it, so doctor names its path."""
+    executable = tmp_path / "chrome"
+    executable.write_bytes(b"")
+
+    class Launched:
+        version = "140.0"
+
+        def close(self) -> None:
+            return None
+
+    class Driver:
+        chromium = SimpleNamespace(launch=Launched, executable_path=str(executable))
+
+        def __enter__(self) -> Driver:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", Driver)
+    row = a_machine(tmp_path)._browser_row()
+    assert (row.version, row.path) == ("140.0", executable)
+
+
 def test_a_measured_doctor_keeps_the_number_it_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The one key no person may type is written by the one command that holds an honest value for it."""
     here = a_machine(tmp_path)

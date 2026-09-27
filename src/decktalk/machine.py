@@ -588,7 +588,11 @@ class Machine:
     # ---- the rows `doctor` reports ---------------------------------------------------------
 
     def _browser_row(self) -> InstalledTool:
-        """What browser this machine can launch, asked by launching it rather than by looking for a file."""
+        """What browser this machine can launch, asked by launching it rather than by looking for a file.
+
+        The row also names where that browser lives, because a person told the browser is there
+        still has to find it to clear a cache or to hand it to a container.
+        """
         try:
             # The browser driver is a heavy import and a machine without one is a row rather than a
             # refusal, so it is loaded by the one question that needs it.
@@ -602,7 +606,9 @@ class Machine:
                 browser.close()
             except Exception:  # noqa: BLE001  (a browser that will not launch is a row, never a traceback)
                 return InstalledTool(tool=CHROMIUM, version=None, path=None, fetched=False, bytes=None)
-            return InstalledTool(tool=CHROMIUM, version=version, path=None, fetched=False, bytes=None)
+            where = chromium_fetch.installed_chromium(playwright)
+            path = Path(where) if where else None
+            return InstalledTool(tool=CHROMIUM, version=version, path=path, fetched=False, bytes=None)
 
     def _encoder_rows(self) -> tuple[InstalledTool, ...]:
         """The encoder and the prober, which are one row each so a broken one names itself."""

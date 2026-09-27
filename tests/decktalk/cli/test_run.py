@@ -24,7 +24,7 @@ from decktalk.results import (
     Voicing,
 )
 
-from .conftest import spend
+from .conftest import finding, spend
 
 NARRATE = NarrateResult(ok=True, run="r", voice=Voicing.PLACEHOLDER, sections=(), spend=spend(), seconds=1.0)
 CUE = CueResult(ok=True, run="r", sections=(), seconds=1.0)
@@ -137,6 +137,14 @@ def test_fail_on_moves_where_a_build_stops(run, project, answers, flag: FailOn, 
     made = project(build=answers["build"])
     run("build", "--no-voice", "--fail-on", flag.value)
     assert made.called("build")["stop_on"] is stops
+
+
+def test_a_build_that_stopped_on_a_finding_exits_1_and_says_where(run, project, answers) -> None:
+    stopped = answers["build"].model_copy(update={"ok": False, "stopped_at": Stage.CUE, "findings": (finding(),)})
+    project(build=stopped)
+    ran = run("build", "--no-voice")
+    assert ran.exit_code == 1
+    assert f"Stopped at {Stage.CUE.value}" in ran.out
 
 
 def test_build_names_its_run_and_its_events_file_on_the_first_line_of_stderr(run, project, answers) -> None:

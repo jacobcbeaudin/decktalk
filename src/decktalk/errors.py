@@ -164,7 +164,7 @@ class Cancel:
     def check(self) -> None:
         """Raise `Cancelled` when the caller has asked the run to stop, which is what a stage calls."""
         if self._event.is_set():
-            raise Cancelled("the caller stopped this run", hint="Run the command again to start a fresh run.")
+            raise Cancelled("The caller stopped this run.", hint="Run the command again to start a fresh run.")
 
 
 class ErrorInfo(BaseModel):

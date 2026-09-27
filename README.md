@@ -111,7 +111,7 @@ Without a terminal, a voiced build refuses to spend unless `--spend` is passed, 
   "findings": [],
   "error": {
     "code": "APPROVAL",
-    "message": "voicing 3 sections costs up to $0.14, and no terminal is here to approve it.",
+    "message": "Voicing 3 sections costs up to $0.14, and no terminal is here to approve it.",
     "hint": "Run decktalk build --spend to approve that spend, or decktalk build --no-voice to finish with placeholder narration.",
     "location": null,
     "docs": "https://docs.decktalk.ai/reference/errors/APPROVAL"

@@ -36,6 +36,10 @@ from decktalk.results import (
     SettingValue,
 )
 from decktalk.tomlmap import Key as KeyRecord
+from decktalk.tomlmap import did_you_mean
+
+SENTENCE_ENDS = (".", "?", "!")
+"""The marks a refusal's own sentence may already end on, which is when no full stop is added."""
 
 PURPOSE = "List, get, set, explain or unset a setting."
 """What the command tree says about the group, which is the five verbs in the order they are met."""
@@ -145,6 +149,7 @@ def unset_key(
     describe one key and `keys` names the rest.
     """
     session = sessions.of(ctx)
+    _named(key)
     path = _file(session, where)
     if not path.exists():
         raise InputError(
@@ -236,17 +241,33 @@ def _rows(session: sessions.Session, table: str | None, *, defaults: bool, chang
 
 
 def _known(key: str) -> KeyRecord:
-    """The published record of one key, or the loader's own refusal naming the nearest name."""
+    """The published record of one key, or the refusal naming the nearest name."""
     found = knobs.BY_ID.get(key)
     if found is None:
-        raise _refused(
-            InputError(
-                f"'{key}' is not a settings key.",
-                hint="Run decktalk schema settings for every key DeckTalk reads.",
-            ),
-            "KEY",
-        )
+        raise _unknown(key)
     return found
+
+
+def _named(key: str) -> None:
+    """Refuse a name that is neither a key nor a table, before any file is read for it.
+
+    `unset` removes a key or a whole table, so either is a name it takes. A name that is neither is
+    the caller's slip on the command line, which is refused the way `get` and `set` refuse it rather
+    than reported as a file that happens not to state it.
+    """
+    if key not in knobs.BY_ID and not any(_under(one.id, key) for one in knobs.KEYS):
+        raise _unknown(key)
+
+
+def _unknown(key: str) -> typer.BadParameter:
+    """The refusal of a name no key carries, with the nearest key when one is near."""
+    return _refused(
+        InputError(
+            f"'{key}' is not a settings key.{did_you_mean(key, knobs.BY_ID)}",
+            hint="Run decktalk schema settings for every key DeckTalk reads.",
+        ),
+        "KEY",
+    )
 
 
 def _loaded(session: sessions.Session) -> knobs.Loaded:
@@ -279,7 +300,7 @@ def _stating(path: Path, key: str, *, asked: bool) -> tuple[str, ...]:
     document = knobs.read_toml(path)
     going = tuple(one.id for one in knobs.KEYS if _under(one.id, key) and _states(document, one.id))
     if not going:
-        raise InputError(f"this file sets nothing under '{key}'.", hint="Run decktalk config list --changed.")
+        raise InputError(f"{path.name} sets nothing under '{key}'.", hint="Run decktalk config list --changed.")
     if key not in knobs.BY_ID and not asked:
         raise InputError(
             f"'{key}' is a whole table, and removing it would take out {len(going)} keys at once.",
@@ -328,8 +349,12 @@ def _refused(failure: InputError, hint: str) -> typer.BadParameter:
     """A key or a value the command line got wrong, which is a usage error rather than a broken file.
 
     The sentence is the loader's own, because a second wording of one refusal is a second contract.
+    The loader's hint follows it as a sentence of its own, so a refusal that ends on the value it
+    got never runs into the reason that value was refused.
     """
-    said = f"{failure} {failure.hint}" if failure.hint else str(failure)
+    said = str(failure)
+    if failure.hint:
+        said = f"{said if said.endswith(SENTENCE_ENDS) else f'{said}.'} {failure.hint}"
     return typer.BadParameter(said, param_hint=hint)
 
 

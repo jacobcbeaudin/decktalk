@@ -11,12 +11,29 @@ from rich.console import Console
 
 from decktalk.cli import output
 from decktalk.errors import ErrorCode, ErrorInfo, InputError
-from decktalk.events import Level, Log, Progress, RunStart, StageDone
+from decktalk.events import Level, Log, Progress, RunStart, StageDone, StageStart
 from decktalk.findings import Certainty, Code
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import RESULTS, ErrorResult, StatusResult
+from decktalk.results import (
+    RESULTS,
+    BuildResult,
+    CheckResult,
+    ClipResult,
+    ConfigGetResult,
+    ConfigListResult,
+    ConfigSetResult,
+    ConfigUnsetResult,
+    CueCheck,
+    ErrorResult,
+    Layer,
+    Scope,
+    SettingValue,
+    StatusResult,
+    VerifyResult,
+    Voicing,
+)
 
-from .conftest import finding
+from .conftest import finding, spend
 
 
 def written(render, *args: object) -> str:
@@ -148,3 +165,161 @@ def _log(level: Level) -> Log:
 def _now() -> datetime:
     """One instant, which every event carries and no assertion here reads."""
     return datetime.now(UTC)
+
+
+# What a person reads in a terminal. Each test feeds one result or one stream of events into a
+# recording console and asserts the rows and the words a reader scans, never the whole text, so a
+# change of spacing is not a failure and a lost column or a wrong count is.
+
+
+def recorded(result: object, width: int = 120) -> str:
+    """One result as a terminal would show it, read back from a recording console."""
+    console = Console(record=True, width=width, no_color=True, file=io.StringIO())
+    output.render(result, console)  # ty: ignore[invalid-argument-type]
+    return console.export_text()
+
+
+def test_the_live_region_shows_each_stage_its_progress_and_its_time() -> None:
+    console = Console(record=True, width=100, no_color=True, file=io.StringIO(), force_terminal=True)
+    region = output.Region(console)
+    region.open()
+    region(StageStart(event="stage.start", time=_now(), seq=0, run="r", stage=Stage.NARRATE, index=1, count=6))
+    region(_stage_done())
+    region(
+        Progress(
+            event="progress",
+            time=_now(),
+            seq=2,
+            run="r",
+            stage=Stage.ASSEMBLE,
+            done=2,
+            total=5,
+            unit="section",
+            label="section 2",
+        )
+    )  # ty: ignore[invalid-argument-type]
+    region.close()
+    shown = console.export_text()
+    assert "Narrate" in shown
+    assert "Record" in shown
+    assert "0:58" in shown
+    assert "2/5" in shown
+
+
+def test_a_finished_build_names_its_film_its_price_and_what_it_found() -> None:
+    built = BuildResult(
+        ok=True,
+        run="r",
+        stages=(),
+        voice=Voicing.PLACEHOLDER,
+        spend=spend(),
+        film=Path("build/final/demo.mp4"),
+        findings=(finding(),),
+        seconds=1.0,
+    )
+    said = recorded(built)
+    assert "Built build/final/demo.mp4, $0.12, 1 finding" in said
+    assert "1 findings" not in said
+
+
+def test_a_build_that_stopped_says_where_it_stopped() -> None:
+    stopped = BuildResult(
+        ok=False,
+        run="r",
+        stages=(),
+        voice=Voicing.PLACEHOLDER,
+        spend=spend(),
+        stopped_at=Stage.CUE,
+        findings=(finding(), finding()),
+        seconds=1.0,
+    )
+    said = recorded(stopped)
+    assert "Stopped at cue, $0.12, 2 findings" in said
+    assert "Built" not in said
+
+
+def test_verify_prints_a_row_per_measured_cue_with_its_signed_offset() -> None:
+    measured = VerifyResult(
+        ok=True,
+        run="r",
+        film=Path("build/final/demo.mp4"),
+        film_seconds=64.0,
+        cues=(
+            CueCheck(section=2, cue="2:chart", spoken=12.4, shown=12.46, offset=0.06),
+            CueCheck(section=2, cue="2:skipped", spoken=13.0),
+        ),
+        seconds=1.0,
+    )
+    said = recorded(measured)
+    assert "Verifying build/final/demo.mp4, 1:04 long." in said
+    assert "2:chart" in said
+    assert "+0.06" in said
+    assert "2:skipped" not in said
+
+
+def test_a_clip_says_its_file_its_length_and_its_section() -> None:
+    cut = ClipResult(
+        ok=True,
+        run="r",
+        section=3,
+        film=Path("clip-3.mp4"),
+        words=Path("clip-3.words.json"),
+        start=0.5,
+        end=2.0,
+        seconds=2.0,
+        hold_seconds=0.5,
+        gain_db=0.0,
+        estimated=True,
+    )
+    assert "Cut clip-3.mp4, 2.0 seconds of section 3." in recorded(cut)
+
+
+def test_the_config_readings_name_the_key_its_value_and_its_layer() -> None:
+    listed = ConfigListResult(
+        ok=True,
+        keys=(SettingValue(key="video.crf", value=20, default=18, layer=Layer.PROJECT, file=Path("decktalk.toml")),),
+    )
+    said = recorded(listed)
+    assert "video.crf" in said
+    assert "project" in said
+    got = ConfigGetResult(ok=True, key=SettingValue(key="video.crf", value=20, default=18, layer=Layer.PROJECT))
+    assert "video.crf = 20 (project)" in recorded(got)
+
+
+def test_a_write_that_a_higher_layer_shadows_says_so() -> None:
+    shadowed = ConfigSetResult(
+        ok=True,
+        written=(Path("decktalk.toml"),),
+        key="video.crf",
+        value=20,
+        previous=None,
+        scope=Scope.PROJECT,
+        file=Path("decktalk.toml"),
+        effective=24,
+        layer=Layer.ENVIRONMENT,
+        dry_run=False,
+    )
+    said = recorded(shadowed)
+    assert "decktalk.toml set video.crf = 20" in said
+    assert "still decides it, at 24" in said
+
+
+def test_an_unset_names_every_key_the_file_no_longer_sets() -> None:
+    gone = ConfigUnsetResult(
+        ok=True,
+        written=(Path("decktalk.toml"),),
+        keys=("video.crf", "video.preset"),
+        previous=20,
+        effective=18,
+        layer=Layer.DEFAULT,
+        scope=Scope.PROJECT,
+        file=Path("decktalk.toml"),
+    )
+    assert "decktalk.toml no longer sets video.crf, video.preset." in recorded(gone)
+
+
+def test_check_states_the_price_in_the_one_sentence_the_price_writes() -> None:
+    """The price owns its sentence, so the check summary prints it rather than a second wording."""
+    judged = CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=spend())
+    said = " ".join(recorded(judged).split())
+    assert spend().sentence in said
