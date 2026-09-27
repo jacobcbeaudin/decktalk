@@ -139,17 +139,14 @@ NODE = "22"
 """The Node every leg that lists npm runs, which is the floor `package.json` sets and ci.yml reads from the matrix."""
 
 TOOLS = {
-    "ruff": "0.16.8",
-    "biome": "2.5.13",
     "shellcheck": "0.11.0.1",
     "zizmor": "1.30.1",
 }
-"""Every tool pinned outside the lockfile, and the version every other file must agree on.
+"""Every tool the lint row fetches by version, because neither the lockfile nor `package.json` holds it.
 
-`ruff` is the dev group's floor in `pyproject.toml` and the `ruff-pre-commit` rev, `biome` is
-`biome.json`'s `$schema` and the `@biomejs/biome` entry in `package.json`, `shellcheck` is the
-`shellcheck-py` rev, and `zizmor` is named here alone. A tool fetched without a version is a
-different tool on the day it releases, which is a check that changes its mind on its own.
+`shellcheck` is also the `shellcheck-py` rev in `.pre-commit-config.yaml`, and `zizmor` is named here
+alone. A tool fetched without a version is a different tool on the day it releases, which is a check
+that changes its mind on its own. Ruff is pinned by the lockfile and Biome by `package.json`.
 """
 
 PYPI_DECKTALK = "https://pypi.org/pypi/decktalk/json"

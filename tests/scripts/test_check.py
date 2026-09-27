@@ -318,3 +318,10 @@ def test_a_named_suite_whose_fixture_finds_no_tool_fails_rather_than_skips(pytes
     result = pytester.runpytest_inprocess("-p", "no:cacheprovider")
     result.assert_outcomes(errors=1)
     result.stdout.fnmatch_lines(["*chromium is not usable on this machine*decktalk install*"])
+
+
+def test_biome_json_names_the_schema_of_the_biome_package_json_pins() -> None:
+    """Biome is pinned once, in `package.json`, and a schema of another release validates other rules."""
+    pinned = json.loads((REPO / "package.json").read_text(encoding="utf-8"))["devDependencies"]["@biomejs/biome"]
+    schema = json.loads((REPO / "biome.json").read_text(encoding="utf-8"))["$schema"]
+    assert schema == f"https://biomejs.dev/schemas/{pinned}/schema.json"
