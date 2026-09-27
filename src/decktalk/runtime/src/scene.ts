@@ -36,6 +36,7 @@ import {
   type WordStyle,
   wireId,
 } from "./contract.ts";
+import type { CatalogEntry } from "./telemetry.ts";
 import { warn } from "./warn.ts";
 
 /**
@@ -112,16 +113,6 @@ export type Scene = {
   readonly id: string;
   name: string;
   slides: Slide[];
-};
-
-/** One scene as the catalog publishes it, which is what every static check reads the deck from. */
-export type CatalogEntry = {
-  scene: string;
-  name: string;
-  slides: string[];
-  cues: Record<string, string[]>;
-  spans: Record<string, number>;
-  elements?: Record<string, unknown[]>;
 };
 
 /** How a scene with no name of its own is called, which is the word the index page prints. */

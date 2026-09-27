@@ -25,7 +25,6 @@ import { typeset, ready as typesetterReady } from "./katex.ts";
 import { fire, type Mounted, prepare } from "./reveal.ts";
 import {
   all,
-  type CatalogEntry,
   type Context,
   catalog as catalogOf,
   cueOrder,
@@ -53,7 +52,7 @@ import {
   style,
   styleClass,
 } from "./stage.ts";
-import { recorder } from "./telemetry.ts";
+import { type CatalogEntry, type Mode, type Probe, recorder } from "./telemetry.ts";
 import { key, type Spoken } from "./text.ts";
 import { warn } from "./warn.ts";
 
@@ -80,9 +79,6 @@ const PREVIEW_STEP_SECONDS = 1;
 
 /** How long after the deck is done a page says so, which is what a screenshot and a test wait for. */
 const DONE = "1";
-
-/** What the page is doing, which the probe reports and a person reads in the heads-up display. */
-export type Mode = "index" | "preview" | "cue" | "freeze";
 
 /** Everything the page knows about itself, which is what `window.__decktalk` is a view onto. */
 export const state = {
@@ -448,12 +444,6 @@ function link(href: string, text: string): HTMLAnchorElement {
 
 // ---- starting ------------------------------------------------------------------------------------
 
-/** What the probe lends the page, which is the shorter freeze list and the measured boxes. */
-export type Probe = {
-  freezeCues?(order: readonly string[], slide: string, report: typeof warn): readonly string[];
-  measure?(catalog: CatalogEntry[], stage: unknown): CatalogEntry[];
-};
-
 /**
  * Read the page, pick the mode its URL asks for, and start the clock loop.
  *
@@ -474,7 +464,7 @@ export function begin(probe: Probe | null): Promise<void> {
   let listing = false;
   let waiting: Promise<void> = Promise.resolve();
   if (frozen) {
-    stop(params.get(SLIDE) ?? "", (order, slide) => probe?.freezeCues?.(order, slide, warn) ?? order);
+    stop(params.get(SLIDE) ?? "", (order, slide) => probe?.freezeCues(order, slide, warn) ?? order);
   } else if (chosen !== null || cues.length) {
     const scene =
       chosen !== null ? (all().get(chosen) ?? null) : (ownerOf((cues[0] as { id: string }).id)?.scene ?? null);
@@ -528,7 +518,7 @@ function measure(probe: Probe | null): void {
     }
   }
   layer.remove();
-  probe?.measure?.(state.catalog, {
+  probe?.measure(state.catalog, {
     scenes: all(),
     pan: pan(),
     origin: frame(),

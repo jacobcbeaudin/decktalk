@@ -464,14 +464,14 @@
     }).observe({ type: "long-animation-frame" });
   }
   function report() {
-    const view = window.__decktalk ?? {};
+    const view = window.__decktalk;
     return {
-      version: view.version ?? null,
-      mode: view.mode ?? null,
-      scene: view.scene ?? null,
-      slide: view.slide ?? null,
-      warnings: view.warnings ?? [],
-      catalog: view.catalog ?? [],
+      version: view?.version ?? null,
+      mode: view?.mode ?? null,
+      scene: view?.scene ?? null,
+      slide: view?.slide ?? null,
+      warnings: view?.warnings ?? [],
+      catalog: view?.catalog ?? [],
       cues,
       words,
       frameGaps,
@@ -552,5 +552,6 @@
     return catalog;
   }
   watchFrames();
-  window.__dtprobe = { cover, lift, ready, report, recorder, freezeCues, measure };
+  var probe = { cover, lift, ready, report, recorder, freezeCues, measure };
+  window.__dtprobe = probe;
 })();

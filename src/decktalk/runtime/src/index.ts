@@ -23,10 +23,10 @@
 
 import { now, start, started } from "./clock.ts";
 import { MILLISECONDS } from "./contract.ts";
-import { begin, buildSlide, isFrozen, type Probe, query, state, waitsForSignal } from "./modes.ts";
+import { begin, buildSlide, isFrozen, query, state, waitsForSignal } from "./modes.ts";
 import { all, declare, findSlide, type Handler, on, type SceneInput, setMotionScale } from "./scene.ts";
 import { motionScale } from "./stage.ts";
-import { type Recorder, setRecorder } from "./telemetry.ts";
+import { type Probe, type RuntimeView, setRecorder } from "./telemetry.ts";
 import { warn, warnings } from "./warn.ts";
 
 /** The version this page carries, which is the one version literal in the whole runtime. */
@@ -38,14 +38,9 @@ const GATE_SECONDS = 5;
 /** Every promise the page asked the runtime to wait for before it calls itself ready. */
 const gates: Promise<unknown>[] = [];
 
-/**
- * The probe the recorder injected, or null on every page a person opens for themselves.
- *
- * `probe.ts` declares the property on `window` as unknown, because it owns that declaration and
- * knows nothing of this module, so this is the one place the page says what it expects to find.
- */
-function injected(): (Probe & { recorder?: Recorder }) | null {
-  return (window.__dtprobe as (Probe & { recorder?: Recorder }) | undefined) ?? null;
+/** The probe the recorder injected, or null on every page a person opens for themselves. */
+function injected(): Probe | null {
+  return window.__dtprobe ?? null;
 }
 
 /**
@@ -136,7 +131,7 @@ const DeckTalk = {
  * Every field is a getter, so a reader sees the page as it stands rather than as it was when the
  * runtime started, and the probe's one report call is written from exactly these names.
  */
-const view: Record<string, unknown> = {
+const view: RuntimeView = {
   version: VERSION,
   ready: null as Promise<boolean> | null,
   get mode() {
@@ -170,8 +165,8 @@ const view: Record<string, unknown> = {
   started,
 };
 
-window.DeckTalk = DeckTalk as unknown as Window["DeckTalk"];
-window.__decktalk = view as unknown as Window["__decktalk"];
+window.DeckTalk = DeckTalk;
+window.__decktalk = view;
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
 else queueMicrotask(boot);

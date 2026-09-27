@@ -1312,9 +1312,12 @@
    * interface, and the arrays, the retention caps and the follow-up frame stamps live in the probe the
    * recorder injects. A page opened without the probe keeps the no-op default and allocates nothing.
    *
-   * This module holds the interface, the default and the one setter. It has no DOM and no state a
-   * reader can see, so a runtime module that wants to record something imports `recorder()` and calls
-   * it without ever knowing whether anyone is listening.
+   * This module holds the interface, the default and the one setter, and the types of everything that
+   * crosses the seam: the view the runtime publishes, the probe the recorder injects and the catalog
+   * the two of them fill. The runtime and the probe are two bundles that meet only on `window`, so these
+   * types are the one declaration both compile against. It has no DOM and no state a reader can see,
+   * so a runtime module that wants to record something imports `recorder()` and calls it without ever
+   * knowing whether anyone is listening.
    */
   var NOBODY = {
     cue() {},
@@ -1953,7 +1956,7 @@
     let listing = false;
     let waiting2 = Promise.resolve();
     if (frozen) {
-      stop(params.get(SLIDE) ?? "", (order2, slide) => probe?.freezeCues?.(order2, slide, warn) ?? order2);
+      stop(params.get(SLIDE) ?? "", (order2, slide) => probe?.freezeCues(order2, slide, warn) ?? order2);
     } else if (chosen !== null || cues.length) {
       const scene = chosen !== null ? (all().get(chosen) ?? null) : (ownerOf(cues[0].id)?.scene ?? null);
       if (!scene) index(`unknown scene ${chosen ?? ""}`);
@@ -1995,7 +1998,7 @@
       }
     }
     layer.remove();
-    probe?.measure?.(state.catalog, {
+    probe?.measure(state.catalog, {
       scenes: all(),
       pan: pan(),
       origin: frame2(),
