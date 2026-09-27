@@ -55,7 +55,7 @@ from decktalk.stages.check.script import script_findings
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
-from decktalk.stages.narrate.plan import VOICE_VARIABLE, voice_id_of
+from decktalk.stages.narrate.plan import voice_id_of
 from decktalk.stages.storyboard import Slides, reports_of, slide_cues, write_page
 from decktalk.stages.verify import opted_out
 from decktalk.template import stale_runtime
@@ -80,9 +80,6 @@ NEEDS_A_FRAME: tuple[Code, ...] = (
     Code.CUT_POP,
 )
 """Every judgement that needs two frozen frames, which a run without frames cannot reach."""
-
-UNKNOWN_VOICE = "there is no voice to ask, so the cache could not be checked and the whole run is priced as new."
-"""Why a price is the ceiling rather than the estimate, which is what a project with no key is told."""
 
 
 @dataclass
@@ -187,22 +184,22 @@ def _plan(inputs: Inputs, run: Run, spoken: Sequence[Segment]) -> list[TakePlan]
     if not spoken:
         return []
     model = inputs.document.voice.model or inputs.settings.narration.model
-    plans, why = voiced_plan(inputs, list(spoken), model=model, voice_id=_voice_id(inputs, run))
+    plans, why = voiced_plan(inputs, list(spoken), model=model, voice_id=_voice_id(inputs))
     if why:
-        run.note(f"{UNKNOWN_VOICE} {why}")
+        run.note(why)
     return plans
 
 
-def _voice_id(inputs: Inputs, run: Run) -> str:
+def _voice_id(inputs: Inputs) -> str:
     """The voice this project would be read in, or nothing when the project has not named one yet.
 
     A check is the command a person runs before they have a credential, so a project with no voice
-    is priced and judged rather than refused, and the plan says the cache could not be checked.
+    is priced and judged rather than refused. The plan says why the cache could not be checked, and
+    the spend it prices says what is certain and what is a ceiling, so nothing here says either again.
     """
     try:
         return voice_id_of(inputs)
     except InputError:
-        run.note(f"{VOICE_VARIABLE} is not set, so no take on disk can be matched to the voice that made it.")
         return ""
 
 

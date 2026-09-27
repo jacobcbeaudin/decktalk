@@ -67,8 +67,11 @@ def test_a_project_with_no_credential_is_priced_rather_than_refused(tmp_path: Pa
     inputs = a_project(tmp_path, cues=CUES)
     run = a_run(tmp_path)
     said = notes(run)
-    check(inputs, run, pages=False)
-    assert any("ELEVENLABS_VOICE_ID" in one for one in said)
+    result = check(inputs, run, pages=False)
+    assert result.spend.state is SpendState.ESTIMATE
+    # The plan says which credential was missing, and says it once.
+    assert len([one for one in said if "is not set" in one]) == 1
+    assert not any("priced as new" in one for one in said)
 
 
 def test_a_cue_phrase_nothing_speaks_is_judged_before_anything_is_voiced(tmp_path: Path) -> None:
