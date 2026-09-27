@@ -17,6 +17,7 @@ cuts are the same kind of thing under the same name.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import WORDS_SUFFIX, Take, Takes, Words
@@ -113,14 +114,14 @@ def clip(
     )
 
 
+@dataclass(frozen=True)
 class _Span:
     """The whole frames one clip plays, and the silence it holds after them."""
 
-    def __init__(self, first: int, last: int, hold: int, fps: int) -> None:
-        self.first = first
-        self.last = last
-        self.hold = hold
-        self.fps = fps
+    first: int
+    last: int
+    hold: int
+    fps: int
 
     @property
     def first_seconds(self) -> float:

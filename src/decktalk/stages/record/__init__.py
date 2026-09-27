@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 
 from playwright.sync_api import Browser
@@ -65,6 +66,7 @@ SECOND_DIGITS = 3
 """Truth: three decimal places of a second is one millisecond, which is finer than any frame."""
 
 
+@dataclass(eq=False)
 class LogSink:
     """Where one section's recording log is kept, cleared before the capture and written after it.
 
@@ -75,13 +77,12 @@ class LogSink:
     t=0 in it, which the next run reads as a section it has not finished recording.
     """
 
-    def __init__(self, inputs: Inputs, section: PageSection, url: str, seconds: float, path: Path) -> None:
-        self.inputs = inputs
-        self.section = section
-        self.url = url
-        self.seconds = seconds
-        self.path = path
-        self.recording: Recording | None = None
+    inputs: Inputs
+    section: PageSection
+    url: str
+    seconds: float
+    path: Path
+    recording: Recording | None = None
 
     def clear(self) -> None:
         """Delete the log of the recording that is about to be replaced, before anything is captured."""
