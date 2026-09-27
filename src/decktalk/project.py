@@ -195,9 +195,11 @@ class Origin:
 class Project:
     """One project directory, opened once, with one call per command.
 
-    Every call opens a run, takes `cancel`, and returns the frozen result named after it. Nothing
-    here prints, nothing reads the environment, and every path a result carries is relative to
-    `root`, so two projects in one process share nothing but the machine they were opened on.
+    Every stage call opens a run, takes `cancel`, and returns the frozen result named after it.
+    `apply`, `serve`, `reload` and `sections_touching` take no `cancel`, because each of them finishes
+    at once or, as `serve` does, hands back something the caller closes itself. Nothing here prints,
+    nothing reads the environment, and every path a result carries is relative to `root`, so two
+    projects in one process share nothing but the machine they were opened on.
     """
 
     root: Path
@@ -262,7 +264,17 @@ class Project:
         replace_voiced: bool = False,
         cancel: Cancel | None = None,
     ) -> NarrateResult:
-        """Speak each section of the script and time every word in it."""
+        """Speak each section of the script and time every word in it.
+
+        `voice` set to `Voicing.PAID` buys the takes that need buying, and the default buys nothing
+        and writes a click track and a word clock. `max_cost` is a ceiling in US dollars, checked
+        before the first paid request. `force` makes each take again, and keeps a paid take unless
+        `replace_voiced` is true as well.
+
+        Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`,
+        `InputError` when it would replace a paid take without `replace_voiced`, and `ProviderError`
+        when the voice service fails on a paid run.
+        """
         return self._call(Stage.NARRATE, NarrateResult, cancel=cancel, voice=voice, max_cost=max_cost,
                           only=only, force=force, replace_voiced=replace_voiced)  # fmt: skip
 
@@ -295,7 +307,15 @@ class Project:
         force: bool = False,
         cancel: Cancel | None = None,
     ) -> SoundscapeResult:
-        """Generate the music, the ambience bed and the effects this project describes."""
+        """Generate the music, the ambience bed and the effects this project describes.
+
+        `voice` set to `Voicing.PAID` buys what needs buying, and the default reports the plan and
+        buys nothing. `max_cost` is a ceiling in US dollars, checked before the first paid request.
+        `force` buys every item again, which spends again.
+
+        Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`, and
+        `ProviderError` when the sound service fails on a paid run.
+        """
         return self._call(Stage.SOUNDSCAPE, SoundscapeResult, cancel=cancel, voice=voice,
                           max_cost=max_cost, only=only, force=force)  # fmt: skip
 
@@ -336,10 +356,18 @@ class Project:
     ) -> BuildResult:
         """Run every stage in order, or the span of them `stages` names.
 
-        A stage whose findings reach `stop_on` stops the run, unless their code is in `allow`, and
-        the result still comes back with its findings, its spend and the stage it stopped after in
-        `stopped_at`. None as `stop_on` runs every stage whatever it finds. The film carries the
-        soundscape unless `skip` names that stage, which is the one knob for that decision.
+        `stages` is the span to run, in run order, and `skip` leaves stages out of it. A stage whose
+        findings reach `stop_on` stops the run, unless their code is in `allow`, and the result still
+        comes back with its findings, its spend and the stage it stopped after in `stopped_at`. None
+        as `stop_on` runs every stage whatever it finds. The film carries the soundscape unless
+        `skip` names that stage, which is the one knob for that decision. `voice`, `max_cost`,
+        `force` and `replace_voiced` mean what they mean to `narrate` and `soundscape`, and `force`
+        also measures a film that nothing changed again. `loudness` and `strict` mean what they mean
+        to `assemble`.
+
+        Raises `ApprovalRequired`, `InputError` and `ProviderError` as `narrate` does, and `ToolError`
+        when `strict` is true and the mix misses its loudness. A host never calls this on a voiced
+        run, because it draws pages in the process that holds the voice key.
         """
         return self._call("build", BuildResult, cancel=cancel, voice=voice, max_cost=max_cost, stages=stages, skip=skip,
                           only=only, force=force, replace_voiced=replace_voiced, loudness=loudness, strict=strict,

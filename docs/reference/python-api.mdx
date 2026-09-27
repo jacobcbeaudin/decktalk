@@ -132,6 +132,35 @@ stages are members of, in run order: `NARRATE`, `CUE`, `RECORD`, `SOUNDSCAPE`, `
 | `storyboard` | Freezes every slide at every cue onto one page. | `build/storyboard/` and `build/storyboard.html` |
 | `clip` | Cuts a span of one built section into its own file. | the file `out` names, and its words file |
 
+### The parameters that spend or change what a call does
+
+| Parameter | Calls | What it does |
+|---|---|---|
+| `voice` | `narrate`, `soundscape`, `build` | `Voicing.PAID` buys what needs buying. `Voicing.PLACEHOLDER`, the default, buys nothing: `narrate` writes a click track and a word clock, and `soundscape` reports its plan. |
+| `max_cost` | `narrate`, `soundscape`, `build` | A ceiling in US dollars on the most the run can cost, checked before the first paid request. A run over it raises `ApprovalRequired`. |
+| `only` | every call but `status` and `clip` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. |
+| `force` | `narrate`, `record`, `soundscape`, `build` | Does the work again where what is on disk still matches. A paid take is kept unless `replace_voiced` is true as well, and on `soundscape` every item is bought again, which spends again. |
+| `replace_voiced` | `narrate`, `build` | Voices a section again and discards the paid take it replaces. Without it, a run that would replace a paid take raises `InputError`, which names the unpaid sections to rehearse instead. |
+| `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it. |
+| `soundscape` | `assemble`, `build` | False leaves the soundscape's audio out of the mix. |
+| `loudness` | `assemble`, `build` | False skips the loudness pass, so the soundtrack is encoded as it was mixed. A placeholder narration skips it in any case. |
+| `strict` | `assemble`, `build` | True raises `ToolError` when the mix misses the loudness it was mastered to, rather than reporting `MIX_LOUDNESS` and writing the film. |
+| `allow_unknown` | `cue`, `build` | True keeps a cue that no page declares out of the findings. |
+
+### What a call raises
+
+| Exception | Raised by |
+|---|---|
+| `ApprovalRequired` | `narrate`, `soundscape` and `build`, when a run would spend and `voice` did not approve it, or when `max_cost` refuses it. |
+| `ProjectLocked` | Every call that writes, when another writer holds the build directory. |
+| `NotBuiltError` | A call that needs an artifact no earlier run made, such as `cue`, `words` or `verify` before any `narrate`. |
+| `ProviderError` | `narrate`, `soundscape` and `build` on a paid run, when the voice service fails. |
+| `ToolError` | Every call that opens a page or runs ffmpeg, when Chromium or ffmpeg is missing or fails. |
+| `InputError` | Every call, when a file the author writes is missing, unreadable or malformed. |
+| `Cancelled` | Every call, when its `cancel` token is set. |
+
+[Errors](#errors) says what each one carries.
+
 A call that writes holds a lock on the build directory for its whole length, so two writing runs
 cannot overwrite each other's work. A second writer meets `ProjectLocked`. `status`, `words` and
 `check(pages=False)` take nothing and run beside a build.
