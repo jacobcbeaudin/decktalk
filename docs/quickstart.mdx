@@ -169,33 +169,30 @@ sizes and the cache paths.
     ```
 
     ```text
-    run 819a92a4ab4f, events build/events/819a92a4ab4f.jsonl
+    run 9c218864ca64, events build/events/9c218864ca64.jsonl
          Narrate    0:00
              Cue    0:00
-          Record    0:56
+          Record    0:22
     The project declares no soundscape for this run, so there is nothing to generate.
       Soundscape    0:00
     The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
         Assemble    0:02
-    another cue sits close to 1:1.1:title, so its probes were fitted to 0.7, 1.281 seconds after it.
-    another cue sits close to 1:1.1:files, so its probes were fitted to 0.7, 1.14 seconds after it.
-    another cue sits close to 3:3.1:again, so its probes were fitted to 0.7, 0.772 seconds after it.
-    another cue sits close to 3:3.1:make, so its probes were fitted to 0.62, 1.5 seconds after it.
-          Verify    0:09
+          Verify    0:01
            Built build/final/my-lesson.mp4, $0.00, nothing found
     ```
 
     One line per stage, in run order, with the seconds it took. The last line is the one to read:
-    `Built`, the film, what the run spent, and what the measurements found. That run took 69 seconds
-    in all on a MacBook Pro with an Apple M5 Pro and 64 GB of memory, on a machine that already had
-    Chromium and ffmpeg. Recording is the long part and it runs in real time, so a longer film takes
-    longer.
+    `Built`, the film, what the run spent, and what the measurements found. That run took about 27
+    seconds in all on a MacBook Pro with an Apple M5 Pro and 64 GB of memory, on a machine that
+    already had Chromium and ffmpeg. Recording is the long part. It runs in real time, with several
+    sections recording at once as the machine's CPU allows, so a longer film takes longer.
 
-    The middle lines are the run explaining itself. The starter declares no soundscape, so that stage
-    has nothing to do. The loudness pass is skipped because normalising a click track to a broadcast
-    target would teach you nothing about the mix your voice will make. The four `verify` lines each
-    name a cue that sits close to another one, so the probes after it were fitted into the gap
-    between the two.
+    The two middle lines are the run explaining itself. The starter declares no soundscape, so that
+    stage has nothing to do. The loudness pass is skipped because normalising a click track to a
+    broadcast target would teach you nothing about the mix your voice will make.
+
+    Run the same command again and it takes under a second. Nothing changed, so every stage keeps what
+    it made, and `assemble` and `verify` say so.
 
     If this machine has never run DeckTalk before, the download comes first and the run names it.
   </Step>

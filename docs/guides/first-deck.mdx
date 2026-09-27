@@ -207,25 +207,21 @@ decktalk build --no-voice
 ```
 
 ```text
-run 348a4a0bf2af, events build/events/348a4a0bf2af.jsonl
+run a86cc81a91cc, events build/events/a86cc81a91cc.jsonl
      Narrate    0:00
          Cue    0:00
-      Record    1:10
+      Record    0:22
 The project declares no soundscape for this run, so there is nothing to generate.
   Soundscape    0:00
 The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
     Assemble    0:03
-another cue sits close to 1:1.1:title, so its probes were fitted to 0.7, 1.281 seconds after it.
-another cue sits close to 1:1.1:files, so its probes were fitted to 0.7, 1.14 seconds after it.
-another cue sits close to 3:3.1:again, so its probes were fitted to 0.7, 0.772 seconds after it.
-another cue sits close to 3:3.1:make, so its probes were fitted to 0.62, 1.5 seconds after it.
-      Verify    0:12
+      Verify    0:02
        Built build/final/my-lesson.mp4, $0.00, nothing found
 ```
 
 `--no-voice` uses estimated word times and a click track, so the new section costs nothing to try.
-The four notes above the `Verify` line are about sections 1 and 3, where two cues sat close enough
-together that the probes either side of the first had to be fitted into the gap.
+Its page records beside the other three, so a fourth section adds little to the time the build
+takes.
 
 `verify` runs as the last stage of a build, and it is also a command, so you can measure one section
 without building again.

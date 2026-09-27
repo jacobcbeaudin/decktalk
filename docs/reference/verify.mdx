@@ -186,12 +186,14 @@ from the cue being measured, so it is part of the same reveal.
 
 When a probe is spoiled, it is fitted to the longest shorter delay that nothing spoils, down to one
 frame past the offset limit, so a reveal at the late edge of that limit still shows. Two probes fitted
-to the same delay count once. `verify` says on its stream which cue was fitted and to what.
+to the same delay count once. `verify` says on its stream which cue was fitted and to what, as a
+detail line that `-v` prints, because a fitted probe is how a close pair is measured and not a
+problem.
 
-{/* sample: decktalk verify, build without voice of a fresh starter */}
+{/* sample: decktalk -v verify, build without voice of a fresh starter */}
 
 ```text
-another cue sits close to 1:1.1:title, so its probes were fitted to 0.7, 1.281 seconds after it.
+Cue 1.1:title in section 1 sits close to another cue, so verify compared the picture 0.7 s and 1.281 s after its word instead of at the usual delays. This is how a close pair is measured, not a problem.
 ```
 
 ### Change test
