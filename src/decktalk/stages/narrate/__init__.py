@@ -255,7 +255,7 @@ def _one_take(
                 hint="Run `decktalk narrate` again, or run without voice.",
                 location=_at_takes(inputs),
             )
-        row, files = write_voiced_take(inputs, provider, plan.segment, plan.chapter, digest, plan.request)
+        row, files = write_voiced_take(inputs, run, provider, plan.segment, plan.chapter, digest, plan.request)
         status = TakeStatus.VOICED
     else:
         row, files = write_placeholder_take(inputs, plan.segment, plan.chapter, digest)

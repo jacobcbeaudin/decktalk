@@ -137,6 +137,20 @@ def test_a_paid_run_sends_one_request_per_section_and_reports_what_it_charged(
     assert result.spend.state is SpendState.CHARGED
     assert result.spend.sections == (1, 2, 3)
     assert result.spend.dollars > 0
+    charged = watched.of("take.charged")
+    assert sorted(line.section for line in charged) == [1, 2, 3]  # type: ignore[attr-defined]
+    assert sum(line.characters for line in charged) == result.spend.characters  # type: ignore[attr-defined]
+
+
+def test_a_take_the_run_found_on_disk_is_never_charged(
+    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: object
+) -> None:
+    """A ledger counts what was bought, so a take the cache answered puts no charge on the stream."""
+    assert fake_voice is not None
+    narrate(inputs, make_run(inputs, voice=Voicing.PAID).run)
+    again = make_run(inputs, voice=Voicing.PAID)
+    narrate(inputs, again.run)
+    assert again.of("take.charged") == []
 
 
 def test_a_paid_request_carries_the_published_voice_and_its_neighbours(
@@ -222,11 +236,14 @@ def test_the_index_is_checkpointed_after_every_take(
             return self.name
 
     monkeypatch.setitem(PROVIDERS, "test-voice", lambda _context: RefusesTheSecond())
+    watched = make_run(inputs, voice=Voicing.PAID)
     with pytest.raises(ProviderError):
-        narrate(inputs, make_run(inputs, voice=Voicing.PAID).run)
+        narrate(inputs, watched.run)
     index = Takes.read(inputs.workspace.takes_path)
     assert index is not None
     assert [row.section for row in index.sections] == [1]
+    # The take that was bought is on the stream even though the run failed after it.
+    assert [line.section for line in watched.of("take.charged")] == [1]  # type: ignore[attr-defined]
 
 
 def test_a_section_that_left_the_script_leaves_the_index(

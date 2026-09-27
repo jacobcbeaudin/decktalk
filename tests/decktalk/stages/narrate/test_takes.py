@@ -21,7 +21,7 @@ from decktalk.stages.narrate.takes import (
     write_voiced_take,
 )
 
-from .conftest import VOICE_ID
+from .conftest import VOICE_ID, Watched
 
 
 @pytest.fixture(autouse=True)
@@ -109,18 +109,33 @@ def test_a_placeholder_take_closes_on_silence_so_its_sound_end_can_be_read(
 
 
 def test_a_voiced_take_writes_what_the_provider_answered(
-    inputs: Inputs, fake_ffmpeg: object, fake_voice: object
+    inputs: Inputs, watched: Watched, fake_ffmpeg: object, fake_voice: object
 ) -> None:
     assert fake_ffmpeg is not None
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     (segment,) = [s for s in inputs.spoken() if s.index == 1]
     request = SpeechRequest(text=segment.tts_text, voice_id=VOICE_ID, model="m")
-    row, written = write_voiced_take(inputs, fake_voice, segment, "Open", "paid", request)  # type: ignore[arg-type]
-    assert (inputs.workspace.takes_dir / take_file("paid")).read_bytes() == b"take"
+    row, written = write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "0af", request)  # type: ignore[arg-type]
+    assert (inputs.workspace.takes_dir / take_file("0af")).read_bytes() == b"take"
     assert row.voiced is True
     assert row.speech_end_seconds == pytest.approx(1.0)
     assert fake_voice.requests == [request]  # type: ignore[attr-defined]
     assert len(written) == 2
+
+
+def test_a_voiced_take_is_charged_on_the_stream_once(
+    inputs: Inputs, watched: Watched, fake_ffmpeg: object, fake_voice: object
+) -> None:
+    """The line a host's ledger reads carries the section, the take, its characters and its price."""
+    assert fake_ffmpeg is not None and fake_voice is not None
+    (segment,) = [s for s in inputs.spoken() if s.index == 1]
+    request = SpeechRequest(text=segment.tts_text, voice_id=VOICE_ID, model="m")
+    write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "0af", request)  # type: ignore[arg-type]
+    (charged,) = watched.of("take.charged")
+    assert charged.section == 1  # type: ignore[attr-defined]
+    assert charged.take == "0af"  # type: ignore[attr-defined]
+    assert charged.characters == len(segment.tts_text)  # type: ignore[attr-defined]
+    assert charged.dollars == pytest.approx(len(segment.tts_text) / 1000 * 0.30)  # type: ignore[attr-defined]
 
 
 def test_the_narration_is_joined_in_the_order_the_index_holds(

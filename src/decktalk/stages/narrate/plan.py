@@ -272,6 +272,15 @@ def placeholder_plan(inputs: Inputs, targets: list[Segment], *, force: bool = Fa
     return plan_takes(inputs, targets, digests, voiced=False, force=force)
 
 
+def dollars_for(characters: int, inputs: Inputs) -> float:
+    """What this many characters cost at the project's stated rate, unrounded.
+
+    One take's charge is stated at full precision, because a ledger that adds rounded cents per take
+    drifts from the run's own total, which is rounded once, after the sum.
+    """
+    return characters / CHARACTERS_PER_PRICE * inputs.settings.voice.price_per_1000_characters
+
+
 def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spend:
     """What these plans cost at the stated rate, with what they can cost priced beside it.
 
@@ -288,8 +297,8 @@ def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spe
         state=state,
         sections=tuple(plan.segment.index for plan in sending + maybe),
         characters=characters,
-        dollars=round(characters / CHARACTERS_PER_PRICE * rate, DOLLAR_DIGITS),
-        ceiling_dollars=round(ceiling / CHARACTERS_PER_PRICE * rate, DOLLAR_DIGITS),
+        dollars=round(dollars_for(characters, inputs), DOLLAR_DIGITS),
+        ceiling_dollars=round(dollars_for(ceiling, inputs), DOLLAR_DIGITS),
         price_per_1000_characters=rate,
         price_layer=_price_layer(inputs),
     )
@@ -306,6 +315,7 @@ def _price_layer(inputs: Inputs) -> Layer:
 __all__ = [
     "VOICE_VARIABLE",
     "TakePlan",
+    "dollars_for",
     "is_cached",
     "miss_reason",
     "placeholder_inputs",
