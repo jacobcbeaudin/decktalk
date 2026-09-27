@@ -1,8 +1,12 @@
 """Stage six: the one read-only stage, over the finished film and the logs that made it.
 
     plan.py      the probe arithmetic, with no ffmpeg, no file and no project
-    measure.py   the ffmpeg calls behind the plan, the onset scan and the cue loop
+    measure.py   the measurements behind the plan, the onset scan and the cue loop
     seams.py     the start, cut and seam checks
+
+The film is decoded once. The cues and the seams first say which frames they will read, the film is
+streamed through that one plan at each size a comparison needs, and every comparison is then made in
+this process on the frames that were kept.
 
 `verify` measures four things. Every section must open on a real picture past its dip to black. The
 narration must be quiet in the window before each cut, so no cut lands on a word. A section that
@@ -22,13 +26,13 @@ from decktalk.errors import NotBuiltError
 from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
-from decktalk.media import ffmpeg
+from decktalk.media import ffmpeg, frames
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import VerifyResult
 from decktalk.stages import clock, judge, selects, since
-from decktalk.stages.verify.measure import cue_checks, film_starts
+from decktalk.stages.verify.measure import cue_checks, film_starts, planned_cues, want_cues
 from decktalk.stages.verify.plan import default_checks, opted_out, thin_change
-from decktalk.stages.verify.seams import cut_checks, seam_checks, start_checks
+from decktalk.stages.verify.seams import cut_checks, planned_seams, seam_checks, start_checks, want_seams
 
 __all__ = ["opted_out", "thin_change", "verify"]
 
@@ -54,15 +58,20 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
     kept = {number: at for number, at in starts.items() if wanted(number)}
     _repeat_recorded(inputs, run, wanted)
     _unresolved(inputs, run, wanted)
-    checks = default_checks(inputs.cue_times(), list(kept))
+    cues = planned_cues(inputs, run, starts, total, default_checks(inputs.cue_times(), list(kept)), opted_out(inputs))
+    seams = planned_seams(inputs, kept)
+    wanted = frames.Wanted()
+    want_cues(inputs, cues, wanted)
+    want_seams(inputs, seams, wanted)
+    decoded = frames.decode(film, wanted)
     return run.result(
         VerifyResult,
         film=inputs.relative(film),
         film_seconds=round(ffmpeg.probe_duration(film), 3),
         starts=start_checks(inputs, run, film, kept),
         cuts=cut_checks(inputs, run, film, inputs.takes(), kept),
-        seams=seam_checks(inputs, run, film, kept),
-        cues=cue_checks(inputs, run, film, starts, total, checks, opted_out(inputs)),
+        seams=seam_checks(inputs, run, film, seams, decoded),
+        cues=cue_checks(inputs, run, film, cues, decoded),
         seconds=since(started),
     )
 

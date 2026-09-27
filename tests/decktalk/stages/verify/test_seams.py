@@ -8,8 +8,9 @@ import pytest
 
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
+from decktalk.machine import Run
 from decktalk.media import audio, frames
-from decktalk.stages.verify.seams import SEAM_SEARCH_FRAMES, cut_checks, seam_checks, start_checks
+from decktalk.stages.verify.seams import SEAM_SEARCH_FRAMES, cut_checks, planned_seams, seam_checks, start_checks
 
 from .conftest import PAGES_TOML, SECTION_SECONDS, Measurements, opened
 
@@ -18,6 +19,17 @@ SEAMLESS_TOML = PAGES_TOML + "seamless = true\n"
 
 STARTS = {1: 0.0, 2: SECTION_SECONDS}
 """Where the two sections of the test film sit, which the cut list also says."""
+
+
+def seams_of(inputs: Inputs, run: Run) -> tuple:
+    """Both passes of the seam check over the test film, decoded as the autouse fixture answers."""
+    return seam_checks(
+        inputs,
+        run,
+        inputs.workspace.film,
+        planned_seams(inputs, STARTS),
+        frames.decode(inputs.workspace.film, frames.Wanted()),
+    )
 
 
 # ---- the section starts ------------------------------------------------------------------------
@@ -117,7 +129,7 @@ def test_a_film_with_no_narration_track_has_no_cut_rows(assembled: Callable[...,
 def test_a_section_that_declares_nothing_is_never_checked_for_a_seam(assembled: Callable[..., Inputs]) -> None:
     inputs = assembled()
     with opened(inputs.root) as run:
-        assert seam_checks(inputs, run, inputs.workspace.film, STARTS) == ()
+        assert seams_of(inputs, run) == ()
 
 
 def test_a_seam_that_matches_at_once_has_drifted_by_nothing(
@@ -126,20 +138,19 @@ def test_a_seam_that_matches_at_once_has_drifted_by_nothing(
     inputs = assembled(toml=SEAMLESS_TOML)
     measured.changed = 0.0
     with opened(inputs.root) as run:
-        rows = seam_checks(inputs, run, inputs.workspace.film, STARTS)
+        rows = seams_of(inputs, run)
         assert run.findings == []
     assert [(row.section, row.drift) for row in rows] == [(2, 0.0)]
 
 
 def test_a_seam_whose_picture_arrives_late_reports_the_drift_in_seconds(
-    assembled: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch
+    assembled: Callable[..., Inputs], measured: Measurements
 ) -> None:
     """A picture a frame late is a section whose clock slipped, which the row says in seconds."""
     inputs = assembled(toml=SEAMLESS_TOML)
-    shares = iter([9.0, 0.0])
-    monkeypatch.setattr(frames, "changed_pixels_percent", lambda _p, _a, _b, **_kw: next(shares))
+    measured.shares = iter([9.0, 0.0])
     with opened(inputs.root) as run:
-        rows = seam_checks(inputs, run, inputs.workspace.film, STARTS)
+        rows = seams_of(inputs, run)
     assert rows[0].drift == pytest.approx(1 / inputs.settings.video.output_fps, abs=1e-3)
 
 
@@ -149,7 +160,7 @@ def test_a_seam_that_never_matches_is_a_pop_naming_the_share_and_the_limit(
     inputs = assembled(toml=SEAMLESS_TOML)
     measured.changed = 42.0
     with opened(inputs.root) as run:
-        rows = seam_checks(inputs, run, inputs.workspace.film, STARTS)
+        rows = seams_of(inputs, run)
         found = [row for row in run.findings if row.code is Code.CUT_POP]
     assert found and "42.00 percent" in found[0].message
     assert f"{inputs.settings.verify.cut_change_max_percent:.2f} percent" in found[0].message

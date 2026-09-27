@@ -3,14 +3,20 @@
 Every comparison reads the luma plane only. An RGB image would carry the decoder's chroma
 upsampling and clipping, and comparing it with a frame that never left YUV reports changed pixels
 on colored edges that did not change.
+
+A film is measured by decoding it once per size and keeping only the frames a measurement planned
+to read. `Wanted` is that plan, `decode` streams the film through it, and `Decoded` answers every
+comparison in this process. One ffmpeg call per frame compared read the same frame up to six times,
+and holding every frame of a long film would cost more memory than the render it checks.
 """
 
 from __future__ import annotations
 
 import math
 import re
-import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from fractions import Fraction
+from functools import cache
 from pathlib import Path
 
 from . import ffmpeg
@@ -60,9 +66,6 @@ def _stats(d: dict[str, float]) -> FrameStats:
 COARSE_SEEK_SECONDS = 3.0
 """Truth: far enough back that a decoder passes a keyframe before `t`, and near enough to stay quick."""
 
-LOOP_TAIL_SECONDS = 0.2
-"""Truth: the looped reference outlasts the span it is compared against, so the shortest input ends the run."""
-
 
 @dataclass(frozen=True)
 class Seek:
@@ -105,40 +108,9 @@ def luma_at(path: Path, t: float, *, crop: str | None = None) -> tuple[float, fl
     return (float(yavg.group(1)) if yavg else 0.0, float(ymax.group(1)) if ymax else 0.0)
 
 
-def write_luma_frame(path: Path, t: float, target: Path, *, width: int, height: int) -> None:
-    """Write the luma plane of the first frame at or after `t`, scaled to width x height, as a grayscale PNG.
-
-    The comparisons below read luma only. An RGB image would carry the decoder's chroma
-    upsampling and clipping, and comparing it with a frame that never left YUV reports
-    changed pixels on colored edges that did not change.
-    """
-    seek = frame_seek(t)
-    vf = f"{seek.trim()},scale={width}:{height},format=gray"
-    ffmpeg.run(*seek.before, *ffmpeg.source(path), "-vf", vf, "-frames:v", "1", str(target))
-
-
 def _changed_mask(level: int) -> str:
     """Filters that turn a luma difference into a mask of changed pixels and print its average."""
     return f"lut=c0='if(gt(val,{level}),255,0)',signalstats,metadata=print"
-
-
-def changed_pixels_percent(path: Path, t1: float, t2: float, *, level: int, width: int, height: int) -> float:
-    """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2.
-
-    Each frame is extracted once as a grayscale image and the two images are compared, which
-    every ffmpeg build handles the same way and costs two keyframe seeks.
-    """
-    with tempfile.TemporaryDirectory() as tmp:
-        a, b = Path(tmp) / "a.png", Path(tmp) / "b.png"
-        for t, target in ((t1, a), (t2, b)):
-            write_luma_frame(path, t, target, width=width, height=height)
-        err = ffmpeg.stderr(
-            *ffmpeg.source(a), *ffmpeg.source(b), "-filter_complex",
-            f"[0:v]format=gray[a];[1:v]format=gray[b];[a][b]blend=all_mode=difference,{_changed_mask(level)}",
-            "-frames:v", "1", "-f", "null", "-",
-        )  # fmt: skip
-    m = re.search(r"YAVG=([0-9.]+)", err)
-    return (float(m.group(1)) / 255 * 100) if m else 0.0
 
 
 def changed_images_percent(a: Path, b: Path, *, level: int, width: int, height: int) -> float:
@@ -156,44 +128,187 @@ def changed_images_percent(a: Path, b: Path, *, level: int, width: int, height: 
     return (float(m.group(1)) / 255 * 100) if m else 0.0
 
 
-def changed_series(
-    path: Path, ref_t: float, start: float, end: float, *, fps: int, level: int, width: int, height: int
-) -> list[tuple[float, float]]:
-    """Changed share against the frame at ref_t for every frame from start to end, as (time, percent) pairs.
+# ---- one decode of a film, and every comparison in process -------------------------------------
 
-    The reference frame is the first frame at or after ref_t. It is extracted once as a
-    grayscale image and looped for the span, which every ffmpeg build handles the same way,
-    and one run then compares the luma of each frame of the span with it. Times are the
-    frames' own positions on the 1/fps grid. When start is ref_t, the first pair is the
-    reference compared with itself, and its share is zero.
+GRID_SLACK = 1e-6
+"""Truth: far under one frame, so a time that sits on a frame's own stamp names that frame and not the next."""
+
+LANE_BITS = 16
+"""Truth: each pixel is compared in a sixteen bit lane of one integer, which holds a difference and its sign."""
+
+LANE_BIAS = 256
+"""Truth: added to every lane before the subtraction, so a difference of two bytes never borrows from its neighbour."""
+
+LANE_TOP = 1 << (LANE_BITS - 1)
+"""Truth: the top bit of a lane, which a comparison sets when the pixel it holds changed."""
+
+PERCENT = 100
+"""Truth: a share is reported out of a hundred."""
+
+
+@dataclass(frozen=True)
+class Size:
+    """The width and height a film is scaled to before a comparison reads it."""
+
+    width: int
+    height: int
+
+
+@dataclass
+class Wanted:
+    """The frames a measurement will read, as moments and spans at each size, before the film's rate is known.
+
+    A moment names the first frame at or after it, and a span names every frame from its start up to
+    but not including its end, which is what the two comparisons below read.
     """
-    span = max(end - start, 0.0)
-    if span <= 0:
-        return []
-    seek = frame_seek(start)
-    with tempfile.TemporaryDirectory() as tmp:
-        ref = Path(tmp) / "ref.png"
-        write_luma_frame(path, ref_t, ref, width=width, height=height)
-        fc = (
-            f"[0:v]format=gray[r];"
-            f"[1:v]{seek.trim(span)},scale={width}:{height},format=gray[b];"
-            f"[r][b]blend=all_mode=difference:shortest=1,{_changed_mask(level)}"
-        )
-        err = ffmpeg.stderr(
-            "-loop", "1", "-framerate", str(fps), "-t", f"{span + LOOP_TAIL_SECONDS:.3f}", *ffmpeg.source(ref),
-            *seek.before, *ffmpeg.source(path),
-            "-filter_complex", fc, "-f", "null", "-",
+
+    points: dict[Size, set[float]] = field(default_factory=dict)
+    spans: dict[Size, set[tuple[float, float]]] = field(default_factory=dict)
+
+    def point(self, size: Size, *moments: float) -> None:
+        """Plan to read the frame at each moment, at one size."""
+        self.points.setdefault(size, set()).update(moments)
+
+    def span(self, size: Size, start: float, end: float) -> None:
+        """Plan to read every frame from `start` up to `end`, at one size."""
+        self.spans.setdefault(size, set()).add((start, end))
+
+    def indices(self, rate: Fraction, count: float) -> dict[Size, set[int]]:
+        """The frame numbers the plan names at each size, on a film of `count` frames at `rate`."""
+        wanted: dict[Size, set[int]] = {}
+        for size in set(self.points) | set(self.spans):
+            chosen = {frame_index(t, rate, count) for t in self.points.get(size, ())}
+            for start, end in self.spans.get(size, ()):
+                chosen.update(span_indices(start, end, rate, count))
+            wanted[size] = chosen
+        return wanted
+
+
+def frame_index(t: float, rate: Fraction, count: float) -> int:
+    """The first frame at or after `t`, or the last frame of a film `count` frames long when `t` is past it."""
+    return int(min(count - 1, max(0, math.ceil(t * rate - GRID_SLACK))))
+
+
+def span_indices(start: float, end: float, rate: Fraction, count: float) -> range:
+    """Every frame from the one at `start` up to, and not including, the one at `end`."""
+    stop = int(min(count, max(0, math.ceil(end * rate - GRID_SLACK))))
+    return range(frame_index(start, rate, count), stop)
+
+
+@cache
+def _repeated(lanes: int, value: int) -> int:
+    """`value` in every one of `lanes` sixteen bit lanes, as one integer, which every frame of one size shares."""
+    return int.from_bytes(value.to_bytes(LANE_BITS // 8, "big") * lanes, "big")
+
+
+def _widened(frame: bytes) -> int:
+    """A frame's bytes as one integer, each byte in the low half of its own sixteen bit lane."""
+    wide = bytearray(2 * len(frame))
+    wide[1::2] = frame
+    return int.from_bytes(wide, "big")
+
+
+def changed_count(a: bytes, b: bytes, level: int) -> int:
+    """How many pixels differ by more than `level` between two frames of one size.
+
+    The frames are compared as two large integers, a pixel to a lane, so the whole comparison is a
+    handful of arithmetic steps on numbers the interpreter works on in native code. Each lane holds
+    256 plus one pixel less the other, which is between 1 and 511 and so never borrows. A pixel that
+    rose by more than `level` carries into the lane's top bit when the lane is raised by the rest of
+    half a lane, and one that fell by more than `level` leaves the top bit set when the lane is taken
+    from half a lane plus what is left below the bias, so one mask and a bit count answer both.
+    """
+    lanes = len(a)
+    one = _repeated(lanes, 1)
+    lifted = _widened(a) + LANE_BIAS * one - _widened(b)
+    rose = lifted + (LANE_TOP - 1 - LANE_BIAS - level) * one
+    fell = (LANE_TOP + LANE_BIAS - 1 - level) * one - lifted
+    return ((rose | fell) & (LANE_TOP * one)).bit_count()
+
+
+@dataclass(frozen=True)
+class Decoded:
+    """The frames of one film a plan asked for, at each size, and every comparison over them.
+
+    `ends` is how many frames the film holds, as a decode of each size found, or infinity where the
+    decode stopped at the last planned frame before the film ended.
+    """
+
+    rate: Fraction
+    frames: dict[Size, dict[int, bytes]]
+    ends: dict[Size, float]
+
+    def at(self, t: float, size: Size) -> bytes:
+        """The luma of the first frame at or after `t`, at one size, which the plan must have named."""
+        return self.frames[size][frame_index(t, self.rate, self.ends[size])]
+
+    def changed(self, t1: float, t2: float, *, level: int, size: Size) -> float:
+        """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2."""
+        a, b = self.at(t1, size), self.at(t2, size)
+        return changed_count(a, b, level) / len(a) * PERCENT
+
+    def series(self, ref_t: float, start: float, end: float, *, level: int, size: Size) -> list[tuple[float, float]]:
+        """Changed share against the frame at ref_t for every frame from start up to end, as (time, percent) pairs.
+
+        Times are the frames' own positions on the film's grid, so when start is ref_t the first pair
+        is the reference against itself, and its share is zero.
+        """
+        reference = self.at(ref_t, size)
+        kept = self.frames[size]
+        rows: list[tuple[float, float]] = []
+        for index in span_indices(start, end, self.rate, self.ends[size]):
+            share = changed_count(reference, kept[index], level) / len(reference) * PERCENT
+            rows.append((round(float(index / self.rate), 3), round(share, 4)))
+        return rows
+
+
+def decode(path: Path, wanted: Wanted) -> Decoded:
+    """Every frame `wanted` names, decoded in one pass of the film per size and kept as luma bytes.
+
+    The film is streamed, and a frame the plan did not name is dropped as soon as it has been counted,
+    so memory holds the planned frames and nothing else, however long the film runs. The last frame
+    a decode reaches is kept as well, because a moment past the end of the film reads the last frame
+    there is, as a seek past the end does.
+    """
+    if not wanted.points and not wanted.spans:
+        return Decoded(rate=Fraction(1), frames={}, ends={})
+    rate = ffmpeg.probe_rate(path)
+    frames: dict[Size, dict[int, bytes]] = {}
+    ends: dict[Size, float] = {}
+    for size, chosen in wanted.indices(rate, math.inf).items():
+        last = max(chosen, default=-1)
+        frames[size], seen = _kept(path, size, chosen, last)
+        ends[size] = seen if seen <= last else math.inf
+    return Decoded(rate=rate, frames=frames, ends=ends)
+
+
+def _kept(path: Path, size: Size, wanted: set[int], last: int) -> tuple[dict[int, bytes], int]:
+    """The frames at `wanted` of one decode of the film at `size`, and how many frames the decode reached."""
+    frame_bytes = size.width * size.height
+    kept: dict[int, bytes] = {}
+    pending = bytearray()
+    seen = 0
+    final = b""
+
+    def take(chunk: bytes) -> None:
+        nonlocal seen, final
+        pending.extend(chunk)
+        while len(pending) >= frame_bytes:
+            frame = bytes(pending[:frame_bytes])
+            if seen in wanted:
+                kept[seen] = frame
+            final = frame
+            del pending[:frame_bytes]
+            seen += 1
+
+    if last >= 0:
+        ffmpeg.stream(
+            *ffmpeg.source(path),
+            "-frames:v", str(last + 1),
+            "-vf", f"scale={size.width}:{size.height},format=gray",
+            "-f", "rawvideo", "-",
+            into=take,
         )  # fmt: skip
-    first = math.ceil(start * fps - 1e-6) / fps
-    out: list[tuple[float, float]] = []
-    pts: float | None = None
-    for line in err.splitlines():
-        m = re.search(r"pts_time:([0-9.]+)", line)
-        if m:
-            pts = float(m.group(1))
-            continue
-        mm = re.search(r"lavfi\.signalstats\.YAVG=([0-9.]+)", line)
-        if mm and pts is not None:
-            out.append((round(first + pts, 3), round(float(mm.group(1)) / 255 * 100, 4)))
-            pts = None
-    return out
+    if seen:
+        kept.setdefault(seen - 1, final)
+    return kept, seen

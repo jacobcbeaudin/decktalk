@@ -18,8 +18,8 @@ mistake this module exists to prevent. The same function is where a call is stop
 run's cancel token while the tool works and stops a call that outlives `[tools] timeout_seconds`, so
 one stuck encode can hold a worker for no longer than the machine allows.
 
-`audio.py` and `frames.py` build on the five calls here: `run`, `stderr`, `raw`, `probe_duration`
-and `has_audio`.
+`audio.py` and `frames.py` build on the calls here: `run`, `stderr`, `raw`, `stream`,
+`probe_duration`, `probe_rate` and `has_audio`.
 
 A file a project supplies is untrusted input. A clip or a music bed is a container that can name
 other files and other hosts, as an HLS playlist or a concat list does, and ffmpeg follows those names
@@ -37,6 +37,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from fractions import Fraction
 from pathlib import Path
 from typing import IO
 
@@ -456,6 +457,31 @@ def probe_duration(path: Path | str) -> float:
             location=_at(path),
         )
     return round(float(text), 3)
+
+
+def probe_rate(path: Path | str) -> Fraction:
+    """The frame rate of the file's first video stream, exactly, as the container states it."""
+    cmd = [
+        ffprobe(),
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=r_frame_rate",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        *source(path),
+    ]
+    proc = _checked(cmd, f"ffprobe on {Path(path).name}", location=_at(path))
+    text = proc.stdout.decode(errors="replace").strip()
+    try:
+        rate = Fraction(text)
+    except (ValueError, ZeroDivisionError):
+        rate = Fraction(0)
+    if rate <= 0:
+        raise ToolError(f"ffprobe could not read the frame rate of {Path(path).name}.", location=_at(path))
+    return rate
 
 
 def has_audio(path: Path | str) -> bool:

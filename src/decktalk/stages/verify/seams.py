@@ -7,6 +7,7 @@ on the picture the section before it ended on.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import Takes
@@ -16,6 +17,7 @@ from decktalk.inputs.document import frame_dip
 from decktalk.inputs.timeline import narration_offsets
 from decktalk.machine import Run
 from decktalk.media import audio, frames
+from decktalk.media.frames import Decoded, Size, Wanted
 from decktalk.pipeline import Stage
 from decktalk.results import CutCheck, SeamCheck, StartCheck
 from decktalk.stages import judge
@@ -111,37 +113,67 @@ def _step_dbfs(film: Path, at: float) -> float:
     return after - before
 
 
-def seam_checks(inputs: Inputs, run: Run, film: Path, starts: dict[int, float]) -> tuple[SeamCheck, ...]:
-    """One row per assembled section that declares itself seamless and follows an assembled section.
+@dataclass(frozen=True)
+class Seam:
+    """One seamless cut: the section it opens, the cut's second, and the two frames either side of it."""
 
-    The frames compared sit outside any dip, so a fade to black is never taken for a jump. The row
-    reports how far the picture has drifted from its own clock, which is the distance from the cut to
-    the first frame of the incoming section that still shows what the outgoing one ended on.
+    section: int
+    cut: float
+    last: float  # the outgoing section's last whole frame
+    opening: float  # the incoming section's first frame past any dip
+
+
+def planned_seams(inputs: Inputs, starts: dict[int, float]) -> list[Seam]:
+    """Every assembled section that declares itself seamless and follows an assembled section.
+
+    The frames compared sit outside any dip, so a fade to black is never taken for a jump.
     """
-    verify = inputs.settings.verify
     fps = inputs.settings.video.output_fps
     flags = inputs.document.fade_flags
     dip = frame_dip(inputs.document.transition.dip_seconds, fps)
-    size = {"level": verify.probe_diff_luma, **frame_size(inputs.settings)}
-    rows: list[SeamCheck] = []
     sections = inputs.document.sections
+    seams: list[Seam] = []
     for previous, section in zip(sections, sections[1:], strict=False):
         if not section.seamless or section.number not in starts or previous.number not in starts:
             continue
         cut = starts[section.number]
         last = cut - (dip if flags.get(previous.key, (False, False))[1] else 0.0) - TRAILING_FRAMES / fps
         opening = cut + (dip if flags.get(section.key, (False, False))[0] else 0.0) - HALF_FRAME / fps
-        opening = max(opening, cut)
-        drift, share = _drift(film, last, opening, fps, size, verify.cut_change_max_percent)
-        rows.append(SeamCheck(section=section.number, at=round(cut, 3), drift=drift))
+        seams.append(Seam(section=section.number, cut=cut, last=last, opening=max(opening, cut)))
+    return seams
+
+
+def want_seams(inputs: Inputs, seams: list[Seam], wanted: Wanted) -> None:
+    """Add the frames every seam compares, the opening and the few after it, to the film's one plan."""
+    fps = inputs.settings.video.output_fps
+    size = Size(**frame_size(inputs.settings))
+    for seam in seams:
+        wanted.point(size, seam.last, *(seam.opening + step / fps for step in range(SEAM_SEARCH_FRAMES + 1)))
+
+
+def seam_checks(inputs: Inputs, run: Run, film: Path, seams: list[Seam], decoded: Decoded) -> tuple[SeamCheck, ...]:
+    """One row per seamless cut, with how far the picture has drifted from its own clock.
+
+    The drift is the distance from the cut to the first frame of the incoming section that still
+    shows what the outgoing one ended on.
+    """
+    verify = inputs.settings.verify
+    fps = inputs.settings.video.output_fps
+    size = Size(**frame_size(inputs.settings))
+    rows: list[SeamCheck] = []
+    for seam in seams:
+        drift, share = _drift(
+            decoded, seam.last, seam.opening, fps, size, verify.probe_diff_luma, verify.cut_change_max_percent
+        )
+        rows.append(SeamCheck(section=seam.section, at=round(seam.cut, 3), drift=drift))
         if share > verify.cut_change_max_percent:
             run.found(
                 judge(
                     Code.CUT_POP,
-                    f"section {section.number} declares itself seamless and {share:.2f} percent of the picture "
-                    f"changes across its cut at {cut:.3f}s, which is over the "
+                    f"section {seam.section} declares itself seamless and {share:.2f} percent of the picture "
+                    f"changes across its cut at {seam.cut:.3f}s, which is over the "
                     f"{verify.cut_change_max_percent:.2f} percent a join may show, so the seam is visible.",
-                    Location(where=f"section {section.number}", file=inputs.relative(film), section=section.number),
+                    Location(where=f"section {seam.section}", file=inputs.relative(film), section=seam.section),
                     stage=Stage.VERIFY,
                 )
             )
@@ -149,7 +181,7 @@ def seam_checks(inputs: Inputs, run: Run, film: Path, starts: dict[int, float]) 
 
 
 def _drift(
-    film: Path, last: float, opening: float, fps: int, size: dict[str, int], limit: float
+    film: Decoded, last: float, opening: float, fps: int, size: Size, level: int, limit: float
 ) -> tuple[float, float]:
     """(how far past the cut the outgoing picture is found, the smallest share measured), in seconds.
 
@@ -158,15 +190,24 @@ def _drift(
     frames are read too, because a picture that arrives a frame or two late is a section whose clock
     has slipped rather than a section showing something else.
     """
-    best = frames.changed_pixels_percent(film, last, opening, **size)
+    best = film.changed(last, opening, level=level, size=size)
     if best <= limit:
         return 0.0, round(best, 2)
     for step in range(1, SEAM_SEARCH_FRAMES + 1):
-        share = frames.changed_pixels_percent(film, last, opening + step / fps, **size)
+        share = film.changed(last, opening + step / fps, level=level, size=size)
         best = min(best, share)
         if share <= limit + EPSILON:
             return round(step / fps, 3), round(share, 2)
     return round(SEAM_SEARCH_FRAMES / fps, 3), round(best, 2)
 
 
-__all__ = ["SEAM_SEARCH_FRAMES", "STEP_WINDOW_SECONDS", "cut_checks", "seam_checks", "start_checks"]
+__all__ = [
+    "SEAM_SEARCH_FRAMES",
+    "STEP_WINDOW_SECONDS",
+    "Seam",
+    "cut_checks",
+    "planned_seams",
+    "seam_checks",
+    "start_checks",
+    "want_seams",
+]

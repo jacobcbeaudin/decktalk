@@ -9,7 +9,9 @@ import pytest
 from decktalk.artifacts import RecordingLog
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
+from decktalk.machine import Run
 from decktalk.media import frames
+from decktalk.media.frames import Decoded
 from decktalk.media.pagereport import PageReport
 from decktalk.page import ENTRANCES
 from decktalk.results import SkipReason
@@ -21,6 +23,7 @@ from decktalk.stages.verify.measure import (
     declared_spans,
     film_starts,
     neighbours_of,
+    planned_cues,
 )
 
 from .conftest import SECTION_SECONDS, Measurements, opened
@@ -106,13 +109,10 @@ def test_every_other_cue_of_the_section_becomes_a_neighbour_on_the_films_clock()
 # ---- the probes and the click ------------------------------------------------------------------------
 
 
-def test_the_probe_with_the_largest_margin_wins(
-    assembled: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_probe_with_the_largest_margin_wins(assembled: Callable[..., Inputs], measured: Measurements) -> None:
     inputs = assembled(CUES)
-    shares = iter([1.0, 0.5, 0.5, 9.0, 0.5, 0.5])
-    monkeypatch.setattr(frames, "changed_pixels_percent", lambda _p, _a, _b, **_kw: next(shares))
-    best = best_probe(inputs.workspace.film, 1.9, 0.0, 2.0, [0.1, 0.2], inputs)
+    measured.shares = iter([1.0, 0.5, 0.5, 9.0, 0.5, 0.5])
+    best = best_probe(decoded(inputs), 1.9, 0.0, 2.0, [0.1, 0.2], inputs)
     assert best is not None
     assert best[0] == pytest.approx(8.5)
     assert best[1] == pytest.approx(9.0)
@@ -121,7 +121,7 @@ def test_the_probe_with_the_largest_margin_wins(
 
 def test_no_probe_at_all_measures_nothing(assembled: Callable[..., Inputs]) -> None:
     inputs = assembled(CUES)
-    assert best_probe(inputs.workspace.film, 1.9, 0.0, 2.0, [], inputs) is None
+    assert best_probe(decoded(inputs), 1.9, 0.0, 2.0, [], inputs) is None
 
 
 def test_the_click_is_the_loudest_sample_in_the_window(
@@ -148,12 +148,21 @@ def test_a_window_with_nothing_loud_enough_in_it_finds_no_click(
 # ---- the row each cue comes out with -------------------------------------------------------------------
 
 
-def judged(inputs: Inputs, **kwargs: object) -> tuple[tuple, list]:
+def decoded(inputs: Inputs) -> Decoded:
+    """The film as the stage decodes it, which the autouse fixture answers with the test's own numbers."""
+    return frames.decode(inputs.workspace.film, frames.Wanted())
+
+
+def checked(inputs: Inputs, run: Run, opted: set[tuple[int, str]]) -> tuple:
+    """Both passes of the cue loop over the one cue the test film declares."""
+    planned = planned_cues(inputs, run, STARTS, 2 * SECTION_SECONDS, [(1, "1.1:a")], opted)
+    return cue_checks(inputs, run, inputs.workspace.film, planned, decoded(inputs))
+
+
+def judged(inputs: Inputs) -> tuple[tuple, list]:
     """Run the cue loop over the one cue the test film declares, and hand back its rows and findings."""
     with opened(inputs.root) as run:
-        rows = cue_checks(
-            inputs, run, inputs.workspace.film, STARTS, 2 * SECTION_SECONDS, [(1, "1.1:a")], set(), **kwargs
-        )
+        rows = checked(inputs, run, set())
         return rows, list(run.findings)
 
 
@@ -220,8 +229,6 @@ def test_a_reveal_on_its_word_says_nothing_and_reports_where_it_landed(
 def test_a_cue_the_author_opted_out_of_is_skipped_and_never_measured(assembled: Callable[..., Inputs]) -> None:
     inputs = assembled(CUES)
     with opened(inputs.root) as run:
-        rows = cue_checks(
-            inputs, run, inputs.workspace.film, STARTS, 2 * SECTION_SECONDS, [(1, "1.1:a")], {(1, "1.1:a")}
-        )
+        rows = checked(inputs, run, {(1, "1.1:a")})
         assert run.findings == []
     assert rows[0].skipped is SkipReason.OPTED_OUT

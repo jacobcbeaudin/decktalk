@@ -4,7 +4,7 @@
     "src/decktalk/captions/layout.py": 11,
     "src/decktalk/media/audio.py": 4,
     "src/decktalk/media/browser.py": 3,
-    "src/decktalk/media/frames.py": 9,
+    "src/decktalk/media/frames.py": 5,
     "src/decktalk/runtime/src/contract.ts": 2,
     "src/decktalk/runtime/src/probe/probe.ts": 6
   }

@@ -1,12 +1,16 @@
-"""The ffmpeg calls behind the cue plan: the probes, the onset scan and the click search.
+"""The measurements behind the cue plan: the probes, the onset scan and the click search.
 
-`plan.py` decides what to measure and this module measures it, so every frame comparison and every
-sample read in `verify` goes through one file. The cue loop lives here too, because it is the one
-place where the arithmetic and the measurements meet.
+`plan.py` decides what to measure and this module measures it. The cue loop runs in two passes. The
+first works out, for every cue, where its reference, its probes and its controls fall and which
+frames its onset scan could read, and adds them to one `Wanted` plan. `verify` decodes the film once
+through that plan, and the second pass judges every cue from the decoded frames. The onset scan is
+planned over the span every probe could end, because which probe wins is known only once the
+frames are read.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import CueTimes
@@ -15,7 +19,8 @@ from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
 from decktalk.machine import Run
-from decktalk.media import audio, ffmpeg, frames
+from decktalk.media import audio, ffmpeg
+from decktalk.media.frames import Decoded, Size, Wanted
 from decktalk.pagescan import Measured
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, SkipReason
@@ -98,8 +103,18 @@ def neighbours_of(times: dict[str, float], spans: dict[str, float], sec_start: f
     return [Neighbour(at=sec_start + at, span=spans.get(other, 0.0)) for other, at in times.items() if other != cue]
 
 
+def probe_size(inputs: Inputs) -> Size:
+    """The size every probe, control and seam comparison is made at."""
+    return Size(**frame_size(inputs.settings))
+
+
+def blocks_size(inputs: Inputs) -> Size:
+    """The block-averaged size the onset scan reads beside the probe size, to cancel the encoder's ringing."""
+    return Size(**block_size(inputs.settings))
+
+
 def best_probe(
-    film: Path, before: float, floor: float, cue_at: float, delays: list[float], inputs: Inputs
+    film: Decoded, before: float, floor: float, cue_at: float, delays: list[float], inputs: Inputs
 ) -> tuple[float, float, float, float] | None:
     """(margin, changed, control, probe time) of the probe with the largest margin, the earlier on a tie.
 
@@ -107,14 +122,12 @@ def best_probe(
     spans of the same length that end at the reference. Motion that is always there shows in both,
     while an earlier reveal still settling shows in one.
     """
-    size = {"level": inputs.settings.verify.probe_diff_luma, **frame_size(inputs.settings)}
+    level, size = inputs.settings.verify.probe_diff_luma, probe_size(inputs)
     best: tuple[float, float, float, float] | None = None
     for delay in delays:
         after = cue_at + delay
-        changed = frames.changed_pixels_percent(film, before, after, **size)
-        controls = [
-            frames.changed_pixels_percent(film, a, b, **size) for a, b in control_spans(before, after - before, floor)
-        ]
+        changed = film.changed(before, after, level=level, size=size)
+        controls = [film.changed(a, b, level=level, size=size) for a, b in control_spans(before, after - before, floor)]
         control = min(controls) if controls else 0.0
         margin = changed - control
         if best is None or margin > best[0]:
@@ -122,7 +135,7 @@ def best_probe(
     return best
 
 
-def first_change_seconds(film: Path, before: float, after: float, cue_at: float, inputs: Inputs) -> float | None:
+def first_change_seconds(film: Decoded, before: float, after: float, cue_at: float, inputs: Inputs) -> float | None:
     """Seconds from the cue to the first frame past the reference where the reveal begins.
 
     The frames up to the cue set a noise floor, so an earlier reveal still settling does not count as
@@ -132,8 +145,8 @@ def first_change_seconds(film: Path, before: float, after: float, cue_at: float,
     verify = inputs.settings.verify
     fps = inputs.settings.video.output_fps
     series, blocks = (
-        frames.changed_series(film, before, before, after, fps=fps, level=verify.onset_diff_luma, **size)
-        for size in (frame_size(inputs.settings), block_size(inputs.settings))
+        film.series(before, before, after, level=verify.onset_diff_luma, size=size)
+        for size in (probe_size(inputs), blocks_size(inputs))
     )
     return onset_offset_seconds(
         series,
@@ -182,43 +195,84 @@ def _amplitude(dbfs: float) -> float:
     return FULL_SCALE * DECIBEL_BASE ** (min(dbfs, CLICK_LEVEL_DBFS) / DECIBEL_RATIO)
 
 
-def cue_checks(
+@dataclass(frozen=True)
+class Probed:
+    """One cue whose probes are planned: where it sits in the film, its reference, its floor and its delays."""
+
+    section: int
+    cue: str
+    at: float  # the cue's second inside its section
+    sec_start: float
+    sec_end: float
+    spoken: float  # the cue's second in the film
+    before: float  # the reference frame's second in the film
+    floor: float  # the earliest second a control span may reach back to
+    delays: tuple[float, ...]
+
+    def want(self, wanted: Wanted, probe: Size, blocks: Size) -> None:
+        """Add every frame this cue's probes, controls and onset scan could read to the film's one plan."""
+        if not self.delays:
+            return
+        for delay in self.delays:
+            after = self.spoken + delay
+            wanted.point(probe, self.before, after)
+            for a, b in control_spans(self.before, after - self.before, self.floor):
+                wanted.point(probe, a, b)
+        latest = self.spoken + max(self.delays)
+        for size in (probe, blocks):
+            wanted.point(size, self.before)
+            wanted.span(size, self.before, latest)
+
+
+def planned_cues(
     inputs: Inputs,
     run: Run,
-    film: Path,
     starts: dict[int, float],
     total: float,
     checks: list[tuple[int, str]],
     opted: set[tuple[int, str]],
+) -> list[CueCheck | Probed]:
+    """For each named cue, the row it is skipped with, or the probes it will be measured by."""
+    cue_times = inputs.cue_times()
+    return [_planned(inputs, run, starts, total, cue_times, section, cue, opted) for section, cue in checks]
+
+
+def want_cues(inputs: Inputs, planned: list[CueCheck | Probed], wanted: Wanted) -> None:
+    """Add every frame the planned cues could read to the film's one plan."""
+    probe, blocks = probe_size(inputs), blocks_size(inputs)
+    for row in planned:
+        if isinstance(row, Probed):
+            row.want(wanted, probe, blocks)
+
+
+def cue_checks(
+    inputs: Inputs, run: Run, film: Path, planned: list[CueCheck | Probed], decoded: Decoded
 ) -> tuple[CueCheck, ...]:
     """One row per named cue: where the picture changed, how far from its word, and how much of it moved."""
-    cue_times = inputs.cue_times()
     takes = inputs.takes()
     clicks = bool(takes and takes.estimated)
     rows: list[CueCheck] = []
-    for done, (section, cue) in enumerate(checks, start=1):
+    for done, row in enumerate(planned, start=1):
         run.check()
         run.progress(
-            Stage.VERIFY, done=done, total=len(checks), unit=Unit.PROBE, label=f"{section}:{cue}", section=section
-        )
-        rows.append(_one_cue(inputs, run, film, starts, total, cue_times, section, cue, opted, clicks=clicks))
+            Stage.VERIFY, done=done, total=len(planned), unit=Unit.PROBE, label=f"{row.section}:{row.cue}",
+            section=row.section,
+        )  # fmt: skip
+        rows.append(row if isinstance(row, CueCheck) else _measured(inputs, run, film, decoded, row, clicks=clicks))
     return tuple(rows)
 
 
-def _one_cue(
+def _planned(
     inputs: Inputs,
     run: Run,
-    film: Path,
     starts: dict[int, float],
     total: float,
     cue_times: CueTimes | None,
     section: int,
     cue: str,
     opted: set[tuple[int, str]],
-    *,
-    clicks: bool,
-) -> CueCheck:
-    """One cue measured on the finished film, or the one reason it could not be."""
+) -> CueCheck | Probed:
+    """One cue's probes, or the one reason it cannot be measured."""
     at = None if cue_times is None else cue_times.at(section, cue)
     sec_start = starts.get(section, 0.0)
     spoken = round(sec_start + (at or 0.0), 3)
@@ -251,16 +305,28 @@ def _one_cue(
             f"another cue sits close to {section}:{cue}, so its probes were fitted to "
             f"{', '.join(f'{delay:g}' for delay in delays)} seconds after it."
         )
-    best = best_probe(film, before, floor, spoken, delays, inputs)
+    return Probed(
+        section=section, cue=cue, at=at, sec_start=sec_start, sec_end=sec_end, spoken=spoken, before=before,
+        floor=floor, delays=tuple(delays),
+    )  # fmt: skip
+
+
+def _measured(inputs: Inputs, run: Run, film: Path, decoded: Decoded, cue: Probed, *, clicks: bool) -> CueCheck:
+    """One planned cue measured on the decoded film, or the row that says no probe fit."""
+    best = best_probe(decoded, cue.before, cue.floor, cue.spoken, list(cue.delays), inputs)
     if best is None:
-        return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.TOO_CLOSE_TO_END)
-    return _judge(inputs, run, film, section, cue, at, sec_start, sec_end, before, best, clicks=clicks)
+        return CueCheck(section=cue.section, cue=cue.cue, spoken=cue.spoken, skipped=SkipReason.TOO_CLOSE_TO_END)
+    return _judge(
+        inputs, run, film, decoded, cue.section, cue.cue, cue.at, cue.sec_start, cue.sec_end, cue.before, best,
+        clicks=clicks,
+    )  # fmt: skip
 
 
 def _judge(
     inputs: Inputs,
     run: Run,
     film: Path,
+    decoded: Decoded,
     section: int,
     cue: str,
     cue_t: float,
@@ -300,7 +366,7 @@ def _judge(
                 stage=Stage.VERIFY,
             )
         )
-    offset = first_change_seconds(film, before, after, at, inputs)
+    offset = first_change_seconds(decoded, before, after, at, inputs)
     if offset is None:
         run.found(
             judge(
@@ -371,11 +437,16 @@ def _judge_click(inputs: Inputs, run: Run, cue: str, where: Location, *, promise
 
 
 __all__ = [
+    "Probed",
     "best_probe",
+    "blocks_size",
     "click_seconds",
     "cue_checks",
     "declared_spans",
     "film_starts",
     "first_change_seconds",
     "neighbours_of",
+    "planned_cues",
+    "probe_size",
+    "want_cues",
 ]

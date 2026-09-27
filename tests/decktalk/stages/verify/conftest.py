@@ -62,6 +62,7 @@ class Measurements:
     luma: float = 200.0
     changed: float = 5.0
     control: float = 0.0
+    shares: Iterator[float] | None = None  # when set, each comparison reads the next of these instead
     series: list[tuple[float, float]] | None = None
     rms_dbfs: float = -80.0
     samples: list[int] | None = None
@@ -69,7 +70,23 @@ class Measurements:
 
     def share(self, until: float) -> float:
         """What one comparison ending at `until` reads, which is a probe past the cue and a control before it."""
+        if self.shares is not None:
+            return next(self.shares)
         return self.changed if until > CUE_SECONDS else self.control
+
+
+class FakeDecoded:
+    """A decoded film whose every comparison is the number the test named, and the plan it was asked for."""
+
+    def __init__(self, said: Measurements, wanted: frames.Wanted) -> None:
+        self.said = said
+        self.wanted = wanted
+
+    def changed(self, _t1: float, t2: float, **_kw: object) -> float:
+        return self.said.share(t2)
+
+    def series(self, *_args: object, **_kw: object) -> list[tuple[float, float]]:
+        return list(self.said.series or [])
 
 
 def a_machine(tmp_path: Path) -> Machine:
@@ -180,8 +197,7 @@ def measured(monkeypatch: pytest.MonkeyPatch) -> Measurements:
     said = Measurements()
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: said.duration)
     monkeypatch.setattr(frames, "luma_at", lambda _path, _t, crop=None: (said.luma / 2, said.luma))
-    monkeypatch.setattr(frames, "changed_pixels_percent", lambda _p, _a, b, **_kw: said.share(b))
-    monkeypatch.setattr(frames, "changed_series", lambda *_a, **_kw: list(said.series or []))
+    monkeypatch.setattr(frames, "decode", lambda _path, wanted: FakeDecoded(said, wanted))
     monkeypatch.setattr(audio, "rms_db", lambda _p, _start, _seconds: said.rms_dbfs)
     monkeypatch.setattr(audio, "pcm_span", lambda _p, _start, _seconds, **_kw: list(said.samples or []))
     return said
