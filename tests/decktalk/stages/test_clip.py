@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Take, Takes, Words, words_file
+from decktalk.artifacts import Words, words_file
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Log
 from decktalk.inputs import Inputs
@@ -14,6 +14,7 @@ from decktalk.machine import Run
 from decktalk.results import ClipResult, Word
 from decktalk.stages.clip import clip
 from support.runs import a_run
+from support.takes import a_take, write_takes
 
 TOML = """
 [project]
@@ -53,23 +54,8 @@ def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_
     (tmp_path / "media" / "b-roll.mp4").write_bytes(b"")
     (tmp_path / "decktalk.toml").write_text(TOML, encoding="utf-8")
     inputs = Inputs.load(tmp_path, environ={})
-    take = Take(
-        section=1,
-        key="01",
-        chapter="One",
-        hash="0123456789abcdef",
-        voiced=voiced,
-        word_count=3,
-        characters=18,
-        estimated_seconds=2.0,
-        duration_seconds=2.0,
-        speech_end_seconds=1.6,
-        lead_seconds=0.5,
-        spoken="Hello there again",
-    )
-    Takes(script="script.md", model="m", output_format="mp3_44100_128", sections=(take,)).write(
-        inputs.workspace.takes_path
-    )
+    take = a_take(1, seconds=2.0, hash="0123456789abcdef", voiced=voiced, lead_seconds=0.5)
+    write_takes(inputs, take)
     Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("0123456789abcdef"))
     if take_on_disk:
         (inputs.workspace.takes_dir / take.file).write_bytes(b"")

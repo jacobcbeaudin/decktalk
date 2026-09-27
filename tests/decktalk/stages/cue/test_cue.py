@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import CueTimes, Take, Takes, Words, words_file
+from decktalk.artifacts import CueTimes, Words, words_file
 from decktalk.errors import Cancelled, NotBuiltError
 from decktalk.events import Event, FindingEvent, Log, SectionStart
 from decktalk.findings import Code
@@ -18,6 +18,7 @@ from decktalk.pipeline import Stage
 from decktalk.results import CueResult, Word
 from decktalk.stages.cue import cue
 from support.runs import a_run
+from support.takes import a_take, write_takes
 
 TOML = """
 [project]
@@ -53,23 +54,7 @@ def a_project(tmp_path: Path, *, cues: dict | None = None, voiced: bool = True) 
     if cues is not None:
         (tmp_path / "cues.json").write_text(json.dumps({"sections": cues}, indent=2), encoding="utf-8")
     inputs = Inputs.load(tmp_path, environ={})
-    take = Take(
-        section=1,
-        key="01",
-        chapter="One",
-        hash="0123456789abcdef",
-        voiced=voiced,
-        word_count=len(WORDS),
-        characters=17,
-        estimated_seconds=2.0,
-        duration_seconds=2.0,
-        speech_end_seconds=1.6,
-        sound_end_seconds=1.7,
-        spoken="Hello there again",
-    )
-    Takes(script="script.md", model="m", output_format="mp3_44100_128", sections=(take,)).write(
-        inputs.workspace.takes_path
-    )
+    write_takes(inputs, a_take(1, seconds=2.0, hash="0123456789abcdef", voiced=voiced, sound_end_seconds=1.7))
     Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("0123456789abcdef"))
     return inputs
 

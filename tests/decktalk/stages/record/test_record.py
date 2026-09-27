@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts import RecordingLog, Take, Takes
+from decktalk.artifacts import RecordingLog
 from decktalk.errors import NotBuiltError
 from decktalk.events import Event, Level, Log, Progress
 from decktalk.findings import Code
@@ -27,6 +27,7 @@ from decktalk.media.pagereport import PageReport
 from decktalk.stages.record import pool, record, stale_recording
 from support.projects import write_project
 from support.runs import a_run
+from support.takes import a_take, write_takes
 
 TOML = """
 [project]
@@ -62,23 +63,6 @@ LAUNCH_WAIT_SECONDS = 10.0
 """How long a launch waits for the other worker's, which only a pool that never starts one runs out."""
 
 
-def a_take(section: int) -> Take:
-    return Take(
-        section=section,
-        key=f"{section:02d}",
-        chapter=f"Section {section}",
-        hash=f"{section:016x}",
-        voiced=False,
-        word_count=8,
-        characters=40,
-        estimated_seconds=SPAN_SECONDS,
-        duration_seconds=SPAN_SECONDS,
-        speech_end_seconds=SPAN_SECONDS,
-        sound_end_seconds=SPAN_SECONDS,
-        spoken="one two three",
-    )
-
-
 def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "", machine: dict[str, Any] | None = None) -> Inputs:
     write_project(tmp_path, TOML + extra)
     deck = tmp_path / "deck"
@@ -86,12 +70,7 @@ def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "", machine: d
     (deck / "index.html").write_text(PAGE, encoding="utf-8")
     inputs = Inputs.load(tmp_path, environ={})
     if takes:
-        Takes(
-            script="script.md",
-            model="test-model",
-            output_format="mp3_44100_128",
-            sections=(a_take(1), a_take(2)),
-        ).write(inputs.workspace.takes_path)
+        write_takes(inputs, *(a_take(section, seconds=SPAN_SECONDS, voiced=False) for section in (1, 2)))
     return Inputs.load(tmp_path, environ={}, machine=machine)
 
 

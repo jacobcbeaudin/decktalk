@@ -11,13 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Take, Takes, Words, words_file
+from decktalk.artifacts import Words, words_file
 from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from decktalk.inputs import Inputs
 from decktalk.results import Word
 from decktalk.stages.words import section_words, words
 from support.projects import write_project
 from support.runs import a_run
+from support.takes import a_take, write_takes
 
 TOML = """
 [project]
@@ -39,31 +40,10 @@ SPOKEN = {1: "Hello, there.", 2: "Second, section."}
 """What each section says, with the punctuation the script wrote and the voice drops."""
 
 
-def a_take(number: int, *, voiced: bool = True) -> Take:
-    return Take(
-        section=number,
-        key=f"{number:02d}",
-        chapter=f"Section {number}",
-        hash=f"{number:016x}",
-        voiced=voiced,
-        word_count=2,
-        characters=len(SPOKEN[number]),
-        estimated_seconds=1.0,
-        duration_seconds=1.0,
-        spoken=SPOKEN[number],
-    )
-
-
 def an_inputs(root: Path, *, numbers: tuple[int, ...] = (1, 2), voiced: bool = True) -> Inputs:
     write_project(root, TOML)
     inputs = Inputs.load(root, environ={})
-    takes = Takes(
-        script="script.md",
-        model="eleven_multilingual_v2",
-        output_format="mp3_44100_128",
-        sections=tuple(a_take(number, voiced=voiced) for number in numbers),
-    )
-    takes.write(inputs.workspace.takes_path)
+    write_takes(inputs, *(a_take(number, voiced=voiced, spoken=SPOKEN[number]) for number in numbers))
     for number in numbers:
         spoken = SPOKEN[number].split()
         rows = tuple(

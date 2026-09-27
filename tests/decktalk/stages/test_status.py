@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Take, Takes
+from decktalk.artifacts import Take
 from decktalk.events import Level, Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
@@ -18,6 +18,7 @@ from decktalk.results import SectionKind, StatusResult
 from decktalk.stages import status as stage
 from decktalk.stages.status import BUILT, next_command, source_of, status
 from support.runs import a_run
+from support.takes import a_take, write_takes
 
 TOML = """
 [project]
@@ -53,23 +54,10 @@ def a_project(tmp_path: Path, *, script: str | None = SCRIPT, toml: str = TOML) 
     return Inputs.load(tmp_path, environ={})
 
 
-def a_take(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: bool = True) -> Take:
+def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: bool = True) -> Take:
     """One take for section one, written to the index with its audio file beside it."""
-    take = Take(
-        section=1,
-        key="01",
-        chapter="One",
-        hash="000000000000000a",
-        voiced=voiced,
-        word_count=3,
-        characters=18,
-        estimated_seconds=2.0,
-        duration_seconds=2.0,
-        spoken=spoken,
-    )
-    Takes(script="script.md", model="m", output_format="mp3_44100_128", sections=(take,)).write(
-        inputs.workspace.takes_path
-    )
+    take = a_take(1, seconds=2.0, voiced=voiced, spoken=spoken)
+    write_takes(inputs, take)
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     (inputs.workspace.takes_dir / take.file).write_bytes(b"")
     return take
@@ -97,13 +85,13 @@ def test_a_project_with_nothing_built_is_told_to_rehearse_the_voice(tmp_path: Pa
 
 def test_a_project_with_takes_is_told_to_resolve_its_cues(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    a_take(inputs)
+    take_on_disk(inputs)
     assert next_command(inputs) == f"decktalk {Stage.CUE.value}"
 
 
 def test_a_project_with_cue_times_is_told_to_record(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    a_take(inputs)
+    take_on_disk(inputs)
     inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
     assert next_command(inputs) == f"decktalk {Stage.RECORD.value}"
 
@@ -111,7 +99,7 @@ def test_a_project_with_cue_times_is_told_to_record(tmp_path: Path) -> None:
 def test_a_project_that_describes_no_soundscape_is_never_told_to_generate_one(tmp_path: Path) -> None:
     """A stage with nothing to do is not the next thing to do."""
     inputs = a_project(tmp_path)
-    a_take(inputs)
+    take_on_disk(inputs)
     inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
     inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
     inputs.workspace.recording("01").write_bytes(b"")
@@ -120,7 +108,7 @@ def test_a_project_that_describes_no_soundscape_is_never_told_to_generate_one(tm
 
 def test_a_project_with_everything_built_is_told_to_measure_it(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    a_take(inputs)
+    take_on_disk(inputs)
     inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
     inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
     inputs.workspace.recording("01").write_bytes(b"")
@@ -131,7 +119,7 @@ def test_a_project_with_everything_built_is_told_to_measure_it(tmp_path: Path) -
 
 def everything_built(inputs: Inputs) -> None:
     """Every artifact on disk, with the take speaking what the script says now."""
-    a_take(inputs)
+    take_on_disk(inputs)
     inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
     inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
     inputs.workspace.recording("01").write_bytes(b"")
@@ -203,7 +191,7 @@ def test_a_page_section_names_the_scene_it_plays_with_the_runtime_s_own_word(tmp
 
 def test_a_section_is_voiced_when_a_take_of_its_current_text_is_on_disk(tmp_path: Path, fake_ffmpeg) -> None:  # noqa: ANN001
     inputs = a_project(tmp_path)
-    a_take(inputs)
+    take_on_disk(inputs)
     result = status(inputs, a_run(tmp_path))
     assert [row.voiced for row in result.sections] == [True, False]
     assert [row.kind for row in result.sections] == [SectionKind.PAGE, SectionKind.CLIP]
@@ -214,7 +202,7 @@ def test_a_placeholder_take_does_not_make_a_section_voiced(tmp_path: Path) -> No
     """`voiced` is the take's own word, so the column that says what this project has paid for
     counted a run without a voice as though it had bought every section."""
     inputs = a_project(tmp_path)
-    a_take(inputs, voiced=False)
+    take_on_disk(inputs, voiced=False)
     result = status(inputs, a_run(tmp_path))
     assert result.sections[0].voiced is False
 
@@ -222,7 +210,7 @@ def test_a_placeholder_take_does_not_make_a_section_voiced(tmp_path: Path) -> No
 def test_a_take_of_older_words_does_not_make_a_section_voiced(tmp_path: Path) -> None:
     """A take the author has since rewritten is not a take of what this section says now."""
     inputs = a_project(tmp_path)
-    a_take(inputs, spoken="Something else entirely.")
+    take_on_disk(inputs, spoken="Something else entirely.")
     result = status(inputs, a_run(tmp_path))
     assert result.sections[0].voiced is False
 

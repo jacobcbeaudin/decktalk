@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Cut, Cuts, RecordingLog, Take, Takes
+from decktalk.artifacts import Cut, Cuts, RecordingLog
 from decktalk.errors import Cancel
 from decktalk.findings import Finding
 from decktalk.inputs import Inputs
@@ -24,6 +24,7 @@ from decktalk.media import audio, ffmpeg, frames
 from decktalk.media.pagereport import PageReport
 from decktalk.results import SectionCues, Voicing
 from support.runs import a_machine
+from support.takes import a_take, write_takes
 
 PAGES_TOML = """
 [project]
@@ -97,36 +98,14 @@ def opened(root: Path) -> Iterator[Run]:
         yield run
 
 
-def take(number: int, *, start_words: float = 1.0) -> Take:
-    """One placeholder take, long enough that every cue of its section sits inside it."""
-    return Take(
-        section=number,
-        key=f"{number:02d}",
-        chapter=f"Section {number}",
-        hash=f"{number:016x}",
-        voiced=False,
-        word_count=2,
-        characters=10,
-        estimated_seconds=SECTION_SECONDS,
-        duration_seconds=SECTION_SECONDS,
-        speech_end_seconds=SECTION_SECONDS - start_words,
-        sound_end_seconds=SECTION_SECONDS,
-        spoken="hello there",
-    )
-
-
 def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> None:
     """The take index, the cut list, the cue times and the narration a finished film leaves behind."""
     workspace = inputs.workspace
     workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     workspace.final_dir.mkdir(parents=True, exist_ok=True)
     workspace.sections_dir.mkdir(parents=True, exist_ok=True)
-    Takes(
-        script="script.md",
-        model="m",
-        output_format="mp3_44100_128",
-        sections=tuple(take(section.number) for section in inputs.document.sections),
-    ).write(workspace.takes_path)
+    sections = inputs.document.sections
+    write_takes(inputs, *(a_take(section.number, seconds=SECTION_SECONDS, voiced=False) for section in sections))
     Cuts(
         fps=inputs.settings.video.output_fps,
         sections=tuple(

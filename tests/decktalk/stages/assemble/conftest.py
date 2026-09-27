@@ -21,6 +21,7 @@ from decktalk.media import ffmpeg
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.settings import ToolsConfig
 from decktalk.stages.assemble.cut import Rendered
+from support.takes import a_take, write_takes
 
 PAGES_TOML = """
 [project]
@@ -172,25 +173,11 @@ def take_index(inputs: Inputs, rows: dict[int, tuple[str, float, float | None, l
     for number, (chapter, span, speech_end, words) in rows.items():
         digest = f"{number:016x}"
         Words(words=tuple(words)).write(inputs.workspace.takes_dir / f"{digest}.words.json")
+        spoken = " ".join(word.word for word in words)
         takes.append(
-            Take(
-                section=number,
-                key=f"{number:02d}",
-                chapter=chapter,
-                hash=digest,
-                voiced=voiced,
-                word_count=len(words),
-                characters=sum(len(word.word) for word in words),
-                estimated_seconds=span,
-                duration_seconds=span,
-                speech_end_seconds=speech_end,
-                sound_end_seconds=span,
-                spoken=" ".join(word.word for word in words),
-            )
+            a_take(number, seconds=span, chapter=chapter, voiced=voiced, speech_end_seconds=speech_end, spoken=spoken)
         )
-    index = Takes(script="script.md", model="m", output_format="mp3_44100_128", sections=tuple(takes))
-    index.write(inputs.workspace.takes_path)
-    return index
+    return write_takes(inputs, *takes)
 
 
 def cue_times(inputs: Inputs, rows: dict[int, dict[str, float]]) -> CueTimes:
