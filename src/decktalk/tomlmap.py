@@ -317,9 +317,26 @@ def unknown_key_warnings(table: Mapping[str, Any], known: Iterable[str], where: 
     return [unknown_key_message(key, names, where) for key in sorted(set(table) - names)]
 
 
+NAMED_PART_MIN = 3
+"""How long the last part of a mistyped key must be before a key whose own last part holds it is offered.
+
+A shorter part, such as `db` or `a`, sits inside too many names to say which one was meant.
+"""
+
+
 def did_you_mean(key: str, known: Iterable[str]) -> str:
-    """The closest key to one nobody knows, as a clause a refusal appends, or nothing when none is near."""
-    close = difflib.get_close_matches(key, sorted(known), n=1)
+    """The key one nobody knows most likely meant, as a clause a refusal appends, or nothing when none is near.
+
+    The last part of a key names the thing it sets, and a person who remembers that thing and not
+    its table writes it under the wrong one, as `record.fps` for `video.output_fps`. So a key whose
+    last part holds the typed one is offered first, the closest spelling among them when there are
+    several, and the closest spelling of the whole key is offered only when no such key exists.
+    """
+    names = sorted(known)
+    part = key.rsplit(".", 1)[-1]
+    holding = [name for name in names if len(part) >= NAMED_PART_MIN and part in name.rsplit(".", 1)[-1]]
+    close = difflib.get_close_matches(key, holding, n=1, cutoff=0) if holding else []
+    close = close or difflib.get_close_matches(key, names, n=1)
     return f" Did you mean '{close[0]}'?" if close else ""
 
 
