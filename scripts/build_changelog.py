@@ -112,11 +112,29 @@ def parse(text: str) -> list[Release]:
     return releases
 
 
+def once(block: str) -> str:
+    """A section's lines with each change listed once, however many commits and merges carried it.
+
+    A squash merge and the commit it squashed both reach release-please, so one change can arrive
+    twice with two different links. A bullet is the same change when its words before the first link
+    are the same, and the first one is kept.
+    """
+    seen: set[str] = set()
+    kept: list[str] = []
+    for line in block.splitlines():
+        subject = line.split(" ([", 1)[0]
+        if line.startswith("* ") and subject in seen:
+            continue
+        seen.add(subject)
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def body(release: Release) -> str:
     """One release's sections as Markdown, with each section named once however many cuts wrote it."""
     parts: list[str] = []
     for name, lines in release.sections.items():
-        block = "\n".join(lines).strip("\n")
+        block = once("\n".join(lines).strip("\n"))
         if name == PREAMBLE:
             parts.append(block)
             continue
