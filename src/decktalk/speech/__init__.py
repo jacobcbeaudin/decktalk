@@ -121,9 +121,13 @@ class Voices:
 
 
 SHIPPED = Voices(factories=PROVIDERS)
-"""What a caller that holds no machine is answered with: the shipped table, the key on ElevenLabs, no retry."""
+"""What a caller that holds no machine is answered with: the shipped table, the key on ElevenLabs, no retry.
 
-BOUND: ContextVar[Voices | None] = ContextVar("decktalk_voices", default=None)
+Both switches are at their closed values, so a caller outside a run can neither send a key to
+another host nor repeat a paid request.
+"""
+
+BOUND: ContextVar[Voices] = ContextVar("decktalk_voices", default=SHIPPED)
 """The voices of the machine whose run is in progress, which `voicing` sets and `get_provider` reads."""
 
 
@@ -144,7 +148,7 @@ def get_provider(name: str, context: VoiceContext) -> SpeechProvider:
     again replace whatever the context says, so a stage cannot widen the first and a context built
     without asking the machine cannot either.
     """
-    voices = BOUND.get() or SHIPPED
+    voices = BOUND.get()
     factory = voices.factories.get(name)
     if factory is None:
         raise InputError(
