@@ -8,16 +8,16 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import Take, Takes
-from decktalk.errors import Cancel
 from decktalk.events import Level, Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Run
 from decktalk.page import Q
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, StatusResult
 from decktalk.stages import status as stage
 from decktalk.stages.status import BUILT, next_command, source_of, status
+from support.runs import a_run
 
 TOML = """
 [project]
@@ -39,12 +39,6 @@ SCRIPT = "# Demo\n\n## 1. One\n\nHello there again.\n"
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 """Every case here drives a stage that reaches for ffmpeg, so the encoder is faked at its own seam."""
-
-
-def a_run(root: Path) -> Run:
-    """One run, opened straight on a machine, because nothing here needs an events subscriber."""
-    machine = Machine(environ={}, tables={}, config_path=root / "machine.toml", cwd=root, toolchain=Toolchain())
-    return Run(machine, id="r1", cancel=Cancel(), root=root)
 
 
 def a_project(tmp_path: Path, *, script: str | None = SCRIPT, toml: str = TOML) -> Inputs:

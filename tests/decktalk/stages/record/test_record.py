@@ -17,17 +17,16 @@ from typing import Any
 import pytest
 
 from decktalk.artifacts import RecordingLog, Take, Takes
-from decktalk.errors import Cancel, NotBuiltError
+from decktalk.errors import NotBuiltError
 from decktalk.events import Event, Level, Log, Progress
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
 from decktalk.media import browser, ffmpeg, frames
 from decktalk.media.browser import Recording, RecordingSink
 from decktalk.media.pagereport import PageReport
-from decktalk.results import Voicing
 from decktalk.stages.record import pool, record, stale_recording
 from support.projects import write_project
+from support.runs import a_run
 
 TOML = """
 [project]
@@ -94,15 +93,6 @@ def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "", machine: d
             sections=(a_take(1), a_take(2)),
         ).write(inputs.workspace.takes_path)
     return Inputs.load(tmp_path, environ={}, machine=machine)
-
-
-def a_run(inputs: Inputs, lines: list[Event] | None = None) -> Run:
-    machine = Machine(
-        environ={}, tables={}, config_path=inputs.root / "machine.toml", cwd=inputs.root, toolchain=Toolchain()
-    )
-    if lines is not None:
-        machine.events.subscribe(lines.append)
-    return Run(machine, id="run-1", cancel=Cancel(), voice=Voicing.PLACEHOLDER, root=inputs.root)
 
 
 def a_report(**fields: object) -> PageReport:
@@ -194,7 +184,7 @@ def driven(monkeypatch: pytest.MonkeyPatch) -> Driven:
 
 def test_every_page_section_is_recorded_and_reported_in_section_order(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path)
-    result = record(inputs, a_run(inputs))
+    result = record(inputs, a_run(inputs.root))
     assert [row.section for row in result.sections] == [1, 2]
     assert [row.kept for row in result.sections] == [False, False]
     assert [row.file for row in result.sections] == [Path("build/recordings/01.webm"), Path("build/recordings/02.webm")]
@@ -203,28 +193,28 @@ def test_every_page_section_is_recorded_and_reported_in_section_order(tmp_path: 
 
 def test_a_host_that_marks_the_page_untrusted_records_it_under_that_policy(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path, machine={"record": {"page_policy": "untrusted"}})
-    record(inputs, a_run(inputs))
+    record(inputs, a_run(inputs.root))
     assert driven.policies == ["untrusted"]
 
 
 @pytest.mark.usefixtures("driven")
 def test_a_row_carries_the_length_and_the_frame_count_of_its_recording(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    row = record(inputs, a_run(inputs)).sections[0]
+    row = record(inputs, a_run(inputs.root)).sections[0]
     assert row.seconds == SPAN_SECONDS
     assert row.frames == round(SPAN_SECONDS * 25)
 
 
 def test_the_log_is_cleared_before_the_capture_and_written_after_it(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path)
-    record(inputs, a_run(inputs))
+    record(inputs, a_run(inputs.root))
     assert driven.order[:3] == ["cleared 01.webm", "placed 01.webm", "logged 01.webm"]
 
 
 @pytest.mark.usefixtures("driven")
 def test_the_finished_log_carries_narration_t0_the_frames_and_the_judgements(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    record(inputs, a_run(inputs))
+    record(inputs, a_run(inputs.root))
     log = RecordingLog.read(inputs.workspace.recording_log("01"))
     assert log is not None
     assert log.section == 1
@@ -237,20 +227,20 @@ def test_a_run_stopped_before_it_measured_leaves_a_log_the_next_run_records_agai
     tmp_path: Path, driven: Driven
 ) -> None:
     inputs = a_project(tmp_path)
-    record(inputs, a_run(inputs))
+    record(inputs, a_run(inputs.root))
     log = RecordingLog.read(inputs.workspace.recording_log("01"))
     assert log is not None
     log.model_copy(update={"t0_seconds": None}).write(inputs.workspace.recording_log("01"))
     driven.order.clear()
-    record(inputs, a_run(inputs))
+    record(inputs, a_run(inputs.root))
     assert "cleared 01.webm" in driven.order
 
 
 def test_a_section_nothing_moved_under_is_kept_and_no_browser_opens(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path)
-    record(inputs, a_run(inputs))
+    record(inputs, a_run(inputs.root))
     launched = driven.launched
-    again = record(inputs, a_run(inputs))
+    again = record(inputs, a_run(inputs.root))
     assert [row.kept for row in again.sections] == [True, True]
     assert driven.launched == launched
 
@@ -258,8 +248,8 @@ def test_a_section_nothing_moved_under_is_kept_and_no_browser_opens(tmp_path: Pa
 @pytest.mark.usefixtures("driven")
 def test_naming_a_section_records_it_although_nothing_moved(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    record(inputs, a_run(inputs))
-    again = record(inputs, a_run(inputs), only=[1])
+    record(inputs, a_run(inputs.root))
+    again = record(inputs, a_run(inputs.root), only=[1])
     assert [row.section for row in again.sections] == [1]
     assert again.sections[0].kept is False
 
@@ -267,15 +257,15 @@ def test_naming_a_section_records_it_although_nothing_moved(tmp_path: Path) -> N
 @pytest.mark.usefixtures("driven")
 def test_forcing_a_run_records_every_section_again(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    record(inputs, a_run(inputs))
-    again = record(inputs, a_run(inputs), force=True)
+    record(inputs, a_run(inputs.root))
+    again = record(inputs, a_run(inputs.root), force=True)
     assert [row.kept for row in again.sections] == [False, False]
 
 
 @pytest.mark.usefixtures("driven")
 def test_a_section_the_run_passed_over_with_no_recording_at_all_is_a_missing_file(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    result = record(inputs, a_run(inputs), only=[1])
+    result = record(inputs, a_run(inputs.root), only=[1])
     assert [row.code for row in result.findings] == [Code.FILE_MISSING]
     assert result.findings[0].location.section == 2
     assert not result.ok
@@ -284,14 +274,14 @@ def test_a_section_the_run_passed_over_with_no_recording_at_all_is_a_missing_fil
 def test_a_page_that_stalls_is_recorded_again_while_the_machine_is_quieter(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path)
     driven.stalls = 1
-    record(inputs, a_run(inputs), only=[1])
+    record(inputs, a_run(inputs.root), only=[1])
     assert driven.urls.count(driven.urls[0]) == 2
 
 
 def test_what_the_page_could_not_honour_reaches_the_result_as_its_own_code(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path)
     driven.report = a_report(warnings=[{"code": "PAGE_KATEX_MISSING", "message": "KaTeX never arrived."}])
-    result = record(inputs, a_run(inputs), only=[1])
+    result = record(inputs, a_run(inputs.root), only=[1])
     assert Code.PAGE_KATEX_MISSING in {row.code for row in result.findings}
 
 
@@ -299,7 +289,7 @@ def test_what_the_page_could_not_honour_reaches_the_result_as_its_own_code(tmp_p
 def test_one_progress_line_is_emitted_per_section(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     lines: list[Event] = []
-    record(inputs, a_run(inputs, lines))
+    record(inputs, a_run(inputs.root, lines=lines))
     counted = [line for line in lines if isinstance(line, Progress)]
     assert [(line.done, line.total) for line in counted] == [(1, 2), (2, 2)]
 
@@ -307,7 +297,7 @@ def test_one_progress_line_is_emitted_per_section(tmp_path: Path) -> None:
 @pytest.mark.usefixtures("driven")
 def test_every_file_the_run_wrote_is_reported(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    result = record(inputs, a_run(inputs), only=[1])
+    result = record(inputs, a_run(inputs.root), only=[1])
     assert set(result.written) == {Path("build/recordings/01.webm"), Path("build/recordings/01.json")}
 
 
@@ -315,7 +305,7 @@ def test_every_file_the_run_wrote_is_reported(tmp_path: Path) -> None:
 def test_a_project_with_no_take_index_is_not_built_yet(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, takes=False)
     with pytest.raises(NotBuiltError):
-        record(inputs, a_run(inputs))
+        record(inputs, a_run(inputs.root))
 
 
 @pytest.mark.usefixtures("driven")
@@ -323,7 +313,7 @@ def test_one_rule_decides_whether_a_recording_still_stands(tmp_path: Path) -> No
     inputs = a_project(tmp_path)
     section = inputs.document.page_sections[0]
     assert stale_recording(inputs, section) == "section 1 has no recording"
-    record(inputs, a_run(inputs))
+    record(inputs, a_run(inputs.root))
     assert stale_recording(inputs, section) is None
     (tmp_path / "deck" / "index.html").write_text(PAGE.replace("one</p>", "one more</p>"), encoding="utf-8")
     assert "changed since it was recorded" in (stale_recording(Inputs.load(tmp_path, environ={}), section) or "")
@@ -338,7 +328,7 @@ def test_sections_recorded_at_once_come_back_in_order_with_their_own_pair_of_lin
     driven.launches_together = threading.Barrier(2, timeout=LAUNCH_WAIT_SECONDS)
     inputs = a_project(tmp_path)
     lines: list[Event] = []
-    result = record(inputs, a_run(inputs, lines))
+    result = record(inputs, a_run(inputs.root, lines=lines))
     assert [row.section for row in result.sections] == [1, 2]
     assert driven.launched == 2, "each worker drives a Chromium of its own"
     for number in (1, 2):
@@ -352,6 +342,6 @@ def test_a_file_the_page_asked_for_and_the_project_lacks_is_said_on_the_stream(t
     inputs = a_project(tmp_path)
     driven.missing = ("media/gone.png",)
     lines: list[Event] = []
-    record(inputs, a_run(inputs, lines), only=[1])
+    record(inputs, a_run(inputs.root, lines=lines), only=[1])
     said = [line.message for line in lines if isinstance(line, Log) and line.level is Level.WARNING]
     assert said == ["Section 1 asked for media/gone.png, which the project does not have."]

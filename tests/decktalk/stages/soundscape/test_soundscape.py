@@ -16,11 +16,10 @@ from typing import Any
 
 import pytest
 
-from decktalk.errors import ApprovalRequired, Cancel
+from decktalk.errors import ApprovalRequired
 from decktalk.events import Event, Progress, Unit
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
 from decktalk.media import audio
 from decktalk.pipeline import Stage
 from decktalk.results import SoundKind, SoundStatus, Voicing
@@ -28,6 +27,7 @@ from decktalk.stages import soundscape as stage
 from decktalk.stages.soundscape import soundscape
 from decktalk.stages.soundscape.ledger import LEDGER_FILE, Ledger
 from support.projects import write_project
+from support.runs import a_run
 
 TOML = """
 [project]
@@ -89,11 +89,6 @@ class FakeService:
     def music(self, body: dict[str, Any], *, output_format: str) -> bytes:  # noqa: ARG002
         self.music_bodies.append(body)
         return self.answer
-
-
-def a_run(root: Path, *, voice: Voicing = Voicing.PLACEHOLDER, max_cost: float | None = None) -> Run:
-    machine = Machine(environ={}, tables={}, config_path=root / "machine.toml", cwd=root, toolchain=Toolchain())
-    return Run(machine, id="run-1", cancel=Cancel(), voice=voice, max_cost=max_cost, root=root)
 
 
 def an_inputs(root: Path, toml: str = TOML) -> Inputs:

@@ -6,16 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.errors import Cancel, Cancelled
+from decktalk.errors import Cancelled
 from decktalk.events import Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain, apply_fix
+from decktalk.machine import Run, apply_fix
 from decktalk.results import CheckResult, Scope, SpendState
 from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
+from support.runs import a_run
 
-from .conftest import Drawn, a_project, a_run, catalog
+from .conftest import Drawn, a_project, catalog
 
 CUES = {
     "1": {"cues": [{"cue": "1.1:a", "on": "there"}, {"cue": "1.1:b", "on": "again"}]},
@@ -180,10 +181,8 @@ def test_a_selection_keeps_the_sections_it_names(tmp_path: Path) -> None:
 def test_a_cancelled_run_stops_inside_the_section_it_was_in(tmp_path: Path, drawn: Drawn) -> None:
     inputs = a_project(tmp_path, cues=CUES)
     drawn.report("deck/index.html", *SCENES)
-    machine = Machine(environ={}, tables={}, config_path=tmp_path / "m.toml", cwd=tmp_path, toolchain=Toolchain())
-    token = Cancel()
-    token.cancel()
-    run = Run(machine, id="r1", cancel=token, root=tmp_path)
+    run = a_run(tmp_path)
+    run.cancel.cancel()
     with pytest.raises(Cancelled):
         check(inputs, run, frames=True)
 

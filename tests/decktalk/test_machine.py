@@ -46,19 +46,9 @@ from decktalk.speech import VoiceContext, get_provider
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
 from support.paths import REPO
+from support.runs import a_machine
 
 from .conftest import FakeVoice
-
-
-def a_machine(tmp_path: Path, **environ: str) -> Machine:
-    """A machine that read nothing, which is what every test here is handed rather than the real one."""
-    return Machine(
-        environ=environ,
-        tables={},
-        config_path=tmp_path / "config.toml",
-        cwd=tmp_path,
-        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
-    )
 
 
 def spend(dollars: float, ceiling: float, *, layer: Layer = Layer.PROJECT) -> Spend:

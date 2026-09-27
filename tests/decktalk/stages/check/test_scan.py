@@ -27,8 +27,9 @@ from decktalk.stages.check.scan import (
     static_findings,
 )
 from decktalk.stages.storyboard import Freeze, slide_cues
+from support.runs import a_run
 
-from .conftest import BOX, FakeAssets, a_project, a_report, a_run, catalog
+from .conftest import BOX, FakeAssets, a_project, a_report, catalog
 
 SLIDES = {"1.1": ("1.1:a", "1.1:b")}
 """One slide with two cues, which is enough to measure a pair and to leave one in front of it."""

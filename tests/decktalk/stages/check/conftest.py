@@ -18,9 +18,7 @@ from typing import Any
 import pytest
 
 import decktalk.stages.check as stage
-from decktalk.errors import Cancel
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
 from decktalk.media.pagereport import PageReport
 from decktalk.stages import storyboard
 from decktalk.stages.check import scan
@@ -53,12 +51,6 @@ Second section speaks as well.
 
 BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
 """One element's box, which no case here measures."""
-
-
-def a_run(root: Path, **environ: str) -> Run:
-    """One run, opened straight on a machine, because nothing here writes an events file."""
-    machine = Machine(environ=environ, tables={}, config_path=root / "machine.toml", cwd=root, toolchain=Toolchain())
-    return Run(machine, id="r1", cancel=Cancel(), root=root)
 
 
 def a_project(tmp_path: Path, *, toml: str = TOML, script: str = SCRIPT, cues: dict | None = None) -> Inputs:

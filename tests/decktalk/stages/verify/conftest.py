@@ -19,11 +19,11 @@ from decktalk.artifacts import Cut, Cuts, RecordingLog, Take, Takes
 from decktalk.errors import Cancel
 from decktalk.findings import Finding
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.media.pagereport import PageReport
 from decktalk.results import SectionCues, Voicing
-from decktalk.settings import ToolsConfig
+from support.runs import a_machine
 
 PAGES_TOML = """
 [project]
@@ -87,17 +87,6 @@ class FakeDecoded:
 
     def series(self, *_args: object, **_kw: object) -> list[tuple[float, float]]:
         return list(self.said.series or [])
-
-
-def a_machine(tmp_path: Path) -> Machine:
-    """A machine that read nothing, which is what a stage test is handed rather than the real one."""
-    return Machine(
-        environ={},
-        tables={},
-        config_path=tmp_path / "config.toml",
-        cwd=tmp_path,
-        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
-    )
 
 
 @contextmanager

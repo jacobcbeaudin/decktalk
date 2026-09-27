@@ -9,16 +9,11 @@ through the run and a test that replaced the run would measure a fake instead of
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
-from decktalk.errors import Cancel
-from decktalk.events import Event
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
-from decktalk.results import Voicing
 
 VOICE_ID = "voice-under-test"
 """The voice every project here is read in, which is one of the inputs a take's digest is over."""
@@ -72,18 +67,6 @@ Every picture waited for its word.
 """
 
 
-@dataclass
-class Watched:
-    """One run and every line it put on the stream, which is how a test reads what a stage reported."""
-
-    run: Run
-    lines: list[Event] = field(default_factory=list)
-
-    def of(self, event: str) -> list[Event]:
-        """Every line of one kind, in the order the stage emitted them."""
-        return [line for line in self.lines if line.event == event]
-
-
 @pytest.fixture
 def make_inputs(tmp_path: Path) -> Callable[..., Inputs]:
     """Write a project into its own directory and load it, so a rewrite reloads the same root."""
@@ -105,33 +88,6 @@ def inputs(make_inputs: Callable[..., Inputs]) -> Inputs:
 
 
 @pytest.fixture
-def make_run(tmp_path: Path) -> Callable[..., Watched]:
-    """A run on a machine that holds nothing but a stream, with every line it emits kept."""
-
-    def build(project: Inputs, *, voice: Voicing = Voicing.PLACEHOLDER, max_cost: float | None = None) -> Watched:
-        machine = Machine(
-            environ=ENVIRON,
-            tables={},
-            config_path=tmp_path / "decktalk-machine.toml",
-            cwd=project.root,
-            toolchain=Toolchain(),
-        )
-        watched = Watched(
-            run=Run(
-                machine,
-                id="run-under-test",
-                cancel=Cancel(),
-                voice=voice,
-                max_cost=max_cost,
-                root=project.root,
-            )
-        )
-        machine.events.subscribe(watched.lines.append)
-        return watched
-
-    return build
-
-
-@pytest.fixture
-def watched(inputs: Inputs, make_run: Callable[..., Watched]) -> Watched:
-    return make_run(inputs)
+def run_environ() -> dict[str, str]:
+    """The credential and the voice name, which every narrate run finds on its machine."""
+    return ENVIRON

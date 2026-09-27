@@ -16,8 +16,9 @@ from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SpendState, TakeStatus, Voicing, Word
 from decktalk.speech import PROVIDERS, SpeechRequest
 from decktalk.stages.narrate import narrate
+from support.runs import Watched
 
-from .conftest import ENVIRON, SCRIPT, TOML, Watched
+from .conftest import ENVIRON, SCRIPT, TOML
 
 
 @pytest.fixture(autouse=True)

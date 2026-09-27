@@ -14,11 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.errors import Cancel, InputError, NotBuiltError
-from decktalk.events import Event
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.findings import Certainty, Code, Finding, Location
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Run
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
@@ -38,9 +37,7 @@ from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import build as build_module
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.build import build
-
-RUN_ID = "run-under-test"
-"""The one run every test here opens, which every result it fakes carries."""
+from support.runs import RUN_ID, Watched
 
 RATE = 0.30
 """What the project under test states a thousand characters of speech costs."""
@@ -112,17 +109,6 @@ class Calls:
         return next(options for called, options in self.made if called == name)
 
 
-@dataclass
-class Watched:
-    """One run and every line it put on the stream, which is how a test reads what a build reported."""
-
-    run: Run
-    lines: list[Event] = field(default_factory=list)
-
-    def of(self, event: str) -> list[Event]:
-        return [line for line in self.lines if line.event == event]
-
-
 @pytest.fixture
 def inputs(tmp_path: Path) -> Inputs:
     """A two-section project with no soundscape, which is the shape most of these tests want."""
@@ -131,30 +117,6 @@ def inputs(tmp_path: Path) -> Inputs:
     (root / "decktalk.toml").write_text(TOML, encoding="utf-8")
     (root / "script.md").write_text(SCRIPT, encoding="utf-8")
     return Inputs.load(root, environ={})
-
-
-@pytest.fixture
-def make_run(tmp_path: Path) -> Callable[..., Watched]:
-    """A run on a machine that holds nothing but a stream, with every line it emits kept."""
-
-    def make(project: Inputs, *, voice: Voicing = Voicing.PLACEHOLDER) -> Watched:
-        machine = Machine(
-            environ={},
-            tables={},
-            config_path=tmp_path / "decktalk-machine.toml",
-            cwd=project.root,
-            toolchain=Toolchain(),
-        )
-        watched = Watched(run=Run(machine, id=RUN_ID, cancel=Cancel(), voice=voice, root=project.root))
-        machine.events.subscribe(watched.lines.append)
-        return watched
-
-    return make
-
-
-@pytest.fixture
-def watched(inputs: Inputs, make_run: Callable[..., Watched]) -> Watched:
-    return make_run(inputs)
 
 
 @dataclass

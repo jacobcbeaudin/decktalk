@@ -12,12 +12,12 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import Take, Takes, Words, words_file
-from decktalk.errors import Cancel, ErrorCode, InputError, NotBuiltError
+from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
 from decktalk.results import Word
 from decktalk.stages.words import section_words, words
 from support.projects import write_project
+from support.runs import a_run
 
 TOML = """
 [project]
@@ -37,11 +37,6 @@ lead_seconds = 1.25
 
 SPOKEN = {1: "Hello, there.", 2: "Second, section."}
 """What each section says, with the punctuation the script wrote and the voice drops."""
-
-
-def a_run(root: Path) -> Run:
-    machine = Machine(environ={}, tables={}, config_path=root / "machine.toml", cwd=root, toolchain=Toolchain())
-    return Run(machine, id="run-1", cancel=Cancel(), root=root)
 
 
 def a_take(number: int, *, voiced: bool = True) -> Take:

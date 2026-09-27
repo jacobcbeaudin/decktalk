@@ -8,15 +8,16 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import CueTimes, Take, Takes, Words, words_file
-from decktalk.errors import Cancel, Cancelled, NotBuiltError
+from decktalk.errors import Cancelled, NotBuiltError
 from decktalk.events import Event, FindingEvent, Log, SectionStart
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Run
 from decktalk.media.pagereport import PageReport
 from decktalk.pipeline import Stage
 from decktalk.results import CueResult, Word
 from decktalk.stages.cue import cue
+from support.runs import a_run
 
 TOML = """
 [project]
@@ -42,12 +43,6 @@ WORDS = (
 
 BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
 """One element's box, which none of these cases measures."""
-
-
-def a_run(root: Path, **environ: str) -> Run:
-    """One run, opened straight on a machine, because nothing here needs an events file."""
-    machine = Machine(environ=environ, tables={}, config_path=root / "machine.toml", cwd=root, toolchain=Toolchain())
-    return Run(machine, id="r1", cancel=Cancel(), root=root)
 
 
 def a_project(tmp_path: Path, *, cues: dict | None = None, voiced: bool = True) -> Inputs:

@@ -10,9 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.errors import Cancel
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import Panel, StoryboardResult
@@ -27,6 +25,7 @@ from decktalk.stages.storyboard import (
     storyboard,
     write_page,
 )
+from support.runs import a_run
 
 TOML = """
 [project]
@@ -49,11 +48,6 @@ CUES = {"1": {"cues": [{"cue": "1.1:a", "on": "there"}]}}
 SCRIPT = "# Demo\n\n## 1. One\n\nHello there again.\n\n## 2. Two\n\nSecond section speaks as well.\n"
 
 BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
-
-
-def a_run(root: Path) -> Run:
-    machine = Machine(environ={}, tables={}, config_path=root / "m.toml", cwd=root, toolchain=Toolchain())
-    return Run(machine, id="r1", cancel=Cancel(), root=root)
 
 
 def a_project(tmp_path: Path, *, cues: dict | None = None) -> Inputs:

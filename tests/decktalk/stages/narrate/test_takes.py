@@ -20,8 +20,9 @@ from decktalk.stages.narrate.takes import (
     write_placeholder_take,
     write_voiced_take,
 )
+from support.runs import Watched
 
-from .conftest import VOICE_ID, Watched
+from .conftest import VOICE_ID
 
 
 @pytest.fixture(autouse=True)
