@@ -1,19 +1,93 @@
 ---
-title: Moving from 0.4
-description: What a DeckTalk 0.4 project has to change to build with 0.5, from the page attributes and the cue ids to the commands and the build directory.
+title: Moving between versions
+description: What a DeckTalk project has to change to build with a newer release, from the breaking fixes in 0.6 back to the page attributes, cue ids, commands and build directory 0.5 changed.
 ---
 
-DeckTalk 0.5 rewrote the page contract, renamed three commands and moved the build directory. It
-keeps no aliases for the old names, because an alpha that carries two spellings of one idea teaches
-both, so a 0.4 project does not build under 0.5 until it is moved. The
+DeckTalk keeps no aliases for an old name and no migration code, because an alpha that carries two
+spellings of one idea teaches both. So a project written for one release may need moving before it
+builds under the next, and this page lists what moves, newest first. The
 [decision record](https://github.com/jacobcbeaudin/decktalk/blob/main/docs/decisions/no-compatibility-while-alpha.md)
 says why.
+
+## Breaking changes in 0.6
+
+Each of these is a fix. Most are refusals of something 0.5 accepted and should not have, so a project
+that meets one is told by name on its first run.
+
+**The project and its files**
+
+- **A machine-scoped key in `decktalk.toml` is refused**, from 0.5.1 on. `record.browser_path`, the
+  `[tools]` keys, the cache directories, `host.presentation_bias_ms` and the new `record.concurrency`,
+  `narration.concurrency`, `narration.retries` and `tools.timeout_seconds` describe the machine, and
+  a project file that sets one no longer loads. Move each with
+  `decktalk config set KEY VALUE --where machine`.
+- **A symbolic link that leads out of the project is refused.** A script, a cue file, a page, an asset
+  or a clip that resolves outside the project directory is not read, with an `INPUT` error that names
+  the path.
+- **A media file is read by a closed set of formats.** A clip, a music bed, an ambience bed or an
+  effect that is not MP4, MOV, M4A, WebM, MKV, AVI, MP3, WAV, Ogg, FLAC, AAC, PNG, JPEG or WebP is
+  refused, and so is a playlist or a concat list.
+- **A take index whose `hash` is not a hex digest is refused.** A hand-edited or foreign
+  `build/narrate/takes.json` that names a take any other way no longer loads.
+
+**The page**
+
+- **`data-in-seconds="0.48"` is refused as `PAGE_BAD_VALUE`.** The longest span a page may declare
+  is now 0.44 seconds, one frame under the ceiling a cue can still be measured at, so that the span
+  the page declares is the span it plays. `draw` and `data-count` now play in 0.44 seconds.
+- **A staggered container with no children publishes a span of 0.** 0.5 published its entrance.
+- **Copy the 0.6 `decktalk-runtime.js` into `deck/`.** `decktalk check` now compares the project's
+  copy with the engine's and says when they differ.
+
+**Building**
+
+- **Upgrading records every section again.** Every key that decides whether to keep a recording, a
+  section cut or a frozen frame now names the engine that made it, because a newer recorder or
+  encoder may draw the same inputs differently. Paid takes are kept, so the first build after an
+  upgrade spends nothing that a build without the upgrade would not.
+- **A build that stops on a finding exits 1.** It used to raise an `INPUT` error and exit 3. It now
+  returns its result with `ok` false, its findings, its spend and `stopped_at`, and `--allow` carries
+  it past any code rather than `CUE_UNKNOWN` alone.
+- **Stale cue times are `CUE_STALE`.** `verify` reports cue times placed from another `cues.json` as
+  `CUE_STALE`, where 0.5 reported `CUE_UNRESOLVED` and blamed the phrase.
+- **`stage.done` and `section.done` may carry the outcome `kept`**, and `status.next` is null once the
+  film on disk is the one the last build measured. A reader that dispatched on three outcomes or on
+  a non-null `next` reads the new values.
+- **`build/.lock` stays on disk.** It is an operating system lock now, and the empty file is expected.
+- **Chromium never inherits the process environment.** It is handed only the variables that say
+  where a file, a display, a locale or a proxy is, so a machine that passed Chromium anything else
+  through its own environment passes it no longer.
+
+**The command line**
+
+- **`assemble --skip` and `clip --section` take one value each.**
+- **`config unset` of a key that does not exist exits 2** as a refused command line, not 3.
+- **The price and approval sentences changed.** A script that matched the old wording reads the
+  `spend` object instead, whose fields did not change.
+
+**The Python API**
+
+- **`Project.build` takes `allow` and `stop_on`** in place of `allow_unknown`, and it takes no
+  `soundscape`. A `skip` that names `Stage.SOUNDSCAPE` leaves the soundscape out of the film.
+- **`Machine.provider()` is gone.** `Machine.providers` is the table a machine answers with, and a
+  host's table replaces the shipped one rather than sitting over it. `Machine.of` builds a machine
+  from values the host chose, and `Toolchain.of` takes the cache directory as an argument.
+- **`Project.apply` refuses an edit outside the project** and a line edit whose old text no longer
+  matches, and it runs a `command` fix only from the closed set of DeckTalk commands.
+- **`Code.decides` is gone.** Each settings key declares the codes it decides, `decktalk.explain(KEY)`
+  lists them, and the schema's finding rows keep `decides`.
+- **A missing cut or take in `clip` is `NOT_BUILT`**, not `INPUT`.
+
+## From 0.4 to 0.5
+
+DeckTalk 0.5 rewrote the page contract, renamed three commands and moved the build directory, so a
+0.4 project does not build under 0.5 until it is moved.
 
 The shortest path is a fresh project. Run `decktalk init` with 0.5, copy `script.md` across as it is,
 and then rewrite the pages and `cues.json` against the tables below. `decktalk check` names every
 attribute the new contract does not know, so the first run after the move is the checklist.
 
-## The page
+### The page
 
 A 0.4 page named a cue with its full id on the element. A 0.5 page names a moment with a local name,
 and the slide the element sits in qualifies it. Inside `<template data-slide="2.1">`,
@@ -51,14 +125,14 @@ replace `.dt-enter`, `.dt-leave`, `.dt-reveal` and `.dt-push`.
 Copy the 0.5 `decktalk-runtime.js` into `deck/` as well. The script tag is the same, and a page that
 still loads the 0.4 file plays by the 0.4 rules.
 
-## `cues.json`
+### `cues.json`
 
 The shape is the same: `sections`, then each section's `cues`, with `cue`, `on`, `offset`,
 `occurrence`, `case_sensitive` and `verify` on a row. The one change is the id, which gains the colon
 of the wire id, so `"1.1title"` becomes `"1.1:title"`. A project with no `cues.json` now earns
 [`CUE_MISSING`](/reference/findings/CUE_MISSING) rather than playing at preview timing.
 
-## `decktalk.toml`
+### `decktalk.toml`
 
 | 0.4 | 0.5 |
 |---|---|
@@ -72,13 +146,13 @@ key does not stop a load. It is reported and ignored, with the nearest new key w
 read every warning the first command prints after the move, and read
 [Configuration](/reference/configuration) for the key that replaced it.
 
-## `script.md`
+### `script.md`
 
 Nothing changes in how a section is written. A bracketed placeholder in capitals, which 0.4 refused
 to voice, is now voiced and reported as
 [`TAKE_PLACEHOLDER`](/reference/findings/TAKE_PLACEHOLDER).
 
-## The command line
+### The command line
 
 | 0.4 | 0.5 |
 |---|---|
@@ -98,7 +172,7 @@ five `decktalk config` verbs are new, and so are `--spend`, `--max-cost`, `--rep
 `--watch` and `--fix`. The exit codes keep their numbers. The JSON a command prints is one flat
 object whose `schema` is 2, and [the JSON contract](/agents/json) describes it.
 
-## The build directory
+### The build directory
 
 `build/narration/` is now `build/narrate/`, `build/out/` is `build/final/`, and the progress log is
 `build/events/<run>.jsonl`. Delete a 0.4 `build/` rather than moving it. A take is still named by the
@@ -107,7 +181,7 @@ hash of its text and its voice, but 0.5 reads takes only from `build/narrate/` a
 shape, so a 0.4 take is voiced again at the first paid build. `decktalk check` prices that build
 before anything is bought.
 
-## The Python API
+### The Python API
 
 `decktalk.Project.load(path)` is now `decktalk.open(path)`, and every stage is a call on the project
 it returns, such as `project.build(voice=Voicing.PAID)`. `align`, `preflight` and `screenshots` are

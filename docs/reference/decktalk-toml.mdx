@@ -81,6 +81,8 @@ refusal names what it read and would not accept.
 - `seamless` is set on the first section, which has no previous section.
 - A `[transition] dips` pair or a `[[mix.effects]]` row names a section that does not exist.
 - A settings value is outside its safe range.
+- A path the project names resolves outside the project, which includes a symbolic link inside the
+  project that points out of it. The refusal names the path and never the place it resolved to.
 - A settings key only a machine may set is written here, such as `record.concurrency` or
   `tools.ffmpeg`. The refusal names the key and the `config set` line that puts it in the machine's
   file.
@@ -194,6 +196,12 @@ needs no heading in the script and it is never voiced. A clip between two page s
 narration, which resumes with the next page section. DeckTalk scales and pads the clip to the frame
 size, and the chapters include it.
 [Add a clip section](/guides/clip-section) shows the whole task.
+
+Every media file a project names, which is a clip, the music, the ambience and each effect, is read
+as one file by one of a closed set of formats: MP4, MOV and M4A, WebM and MKV, AVI, MP3, WAV, Ogg,
+FLAC, AAC, PNG, JPEG and WebP. A file in any other format is refused, and so is a playlist, an HLS
+or DASH manifest, an ffmpeg concat list or an image sequence, because each of those opens files or
+hosts the project never named.
 
 ## `[voice]`
 
