@@ -9,5 +9,8 @@ result, `decktalk schema settings` and `decktalk schema page` print the two knob
 `decktalk config explain KEY` explains one knob. Every command takes `--json` and prints one object.
 `decktalk status` says where the project stands.
 
+A voiced build spends the author's money. Rehearse with a build without voice, ask the author before
+any run that spends, and never replace a paid take.
+
 The craft a command line cannot teach is in `.agents/skills/`: writing for the ear, spoken math, cue
 phrases, slide patterns, reading a finding, and the scope of a revision.
