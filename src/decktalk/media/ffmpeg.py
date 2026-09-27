@@ -7,7 +7,9 @@ other is refused rather than quietly rendered with a build it did not ask for.
 
 The keys reach this module through `using_tools`, which the machine opens for a run, because `run`
 and `stderr` are called from inside a filter chain and threading a settings object through every one
-of them would put a project in the middle of an audio filter.
+of them would put a project in the middle of an audio filter. The pair those keys name is worked out
+once per binding and dies with it, so nothing a process resolved for one machine is ever handed to
+the next, and a machine that already knows its pair binds it and resolves nothing at all.
 
 Every call goes through `_checked`, so a return code other than zero raises `ToolError` carrying
 the tail of what the tool said. A measurement that read a failure as silence, as blackness or as a
@@ -28,10 +30,10 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import threading
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from functools import lru_cache
 from pathlib import Path
 
 from ..errors import ToolError
@@ -45,23 +47,50 @@ log = logging.getLogger(__name__)
 NAMED = ("tools.ffmpeg", "tools.ffprobe")
 """The two keys that name a build of the machine's own, which are set together or not at all."""
 
-TOOLS: ContextVar[ToolsConfig | None] = ContextVar("decktalk_tools", default=None)
+
+class Bound:
+    """What one run renders with: the keys that name its toolchain, and the pair they resolve to.
+
+    The pair is worked out the first time a call needs it and kept for as long as the binding is
+    open, so a run resolves once and a second run, bound afresh, resolves for itself. A caller that
+    already holds the pair, as a machine does once its toolchain is on disk, hands it over and
+    nothing is resolved. The lock is there because a run records its sections on several threads,
+    and each of them may be the first to ask.
+    """
+
+    def __init__(self, tools: ToolsConfig, paths: tuple[Path, Path] | None = None) -> None:
+        self.tools = tools
+        self._paths = (str(paths[0]), str(paths[1])) if paths is not None else None
+        self._lock = threading.Lock()
+
+    def paths(self) -> tuple[str, str]:
+        """(ffmpeg, ffprobe) for this binding, resolved on the first question and kept after it."""
+        with self._lock:
+            if self._paths is None:
+                self._paths = _resolve(self.tools)
+            return self._paths
+
+
+TOOLS: ContextVar[Bound | None] = ContextVar("decktalk_tools", default=None)
 """What this run renders with, which `using_tools` sets and every call below reads."""
 
 
 def bound_tools() -> ToolsConfig:
     """The tools in force, which is what a run was bound to or a machine that named none of its own."""
-    return TOOLS.get() or ToolsConfig()
+    bound = TOOLS.get()
+    return bound.tools if bound is not None else ToolsConfig()
 
 
 @contextmanager
-def using_tools(tools: ToolsConfig) -> Iterator[None]:
+def using_tools(tools: ToolsConfig, *, paths: tuple[Path, Path] | None = None) -> Iterator[None]:
     """Render with the executables and the cache directory `[tools]` names, while this is open.
 
     One call binds a run to a machine's own toolchain, so nothing between the machine and an audio
-    filter has to carry a settings object to say which ffmpeg this is.
+    filter has to carry a settings object to say which ffmpeg this is. `paths` is the pair the
+    machine already resolved, when it has one, which spares the run a second resolution by a second
+    rule.
     """
-    token = TOOLS.set(tools)
+    token = TOOLS.set(Bound(tools, paths))
     try:
         with caching_in(tools.cache_dir):
             yield
@@ -189,17 +218,17 @@ def _refuse_half_a_build(tools: ToolsConfig) -> None:
 
 
 def ffmpeg_paths() -> tuple[str, str]:
-    """(ffmpeg, ffprobe) executables for the tools this run is bound to."""
-    return _resolve(bound_tools())
+    """(ffmpeg, ffprobe) executables for the tools this run is bound to.
+
+    A call outside any run resolves afresh every time, because there is no run for an answer to
+    belong to, and keeping one for the process is the leak the binding exists to prevent.
+    """
+    bound = TOOLS.get()
+    return bound.paths() if bound is not None else _resolve(ToolsConfig())
 
 
-RESOLUTIONS_KEPT = 4
-"""Truth: a process renders for one machine, and a handful of bound toolchains covers every test of it."""
-
-
-@lru_cache(maxsize=RESOLUTIONS_KEPT)
 def _resolve(tools: ToolsConfig) -> tuple[str, str]:
-    """(ffmpeg, ffprobe) executables, worked out once per set of tools a process is asked for.
+    """(ffmpeg, ffprobe) executables for one set of tools, which a binding asks for once.
 
     The keys win, and half a build is refused. The pinned build comes next,
     fetched when it is not on disk yet, so every machine renders with the same ffmpeg. A build on
@@ -235,15 +264,6 @@ def _resolve(tools: ToolsConfig) -> tuple[str, str]:
             f"ffmpeg/ffprobe not found: the pinned build could not be downloaded ({exc}) and none is on PATH. "
             "Run `decktalk install` with network access, or install ffmpeg."
         ) from exc
-
-
-def unnamed_paths() -> tuple[str, str] | None:
-    """The pair a machine has without `[tools]`, which is what `doctor` falls back to.
-
-    A key that names a file which is not there tells nothing about the other component, so the row
-    for the component that is fine still reports the build it would really use.
-    """
-    return ffmpeg_fetch.installed_pinned() or _path_pair()
 
 
 def installed_paths(tools: ToolsConfig | None = None) -> tuple[str, str] | None:

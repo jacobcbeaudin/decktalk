@@ -86,10 +86,8 @@ def pin(monkeypatch, key: str, build: fetch.FfmpegBuild) -> None:
 def isolated(tmp_path, monkeypatch):
     """A machine with nothing of its own: an empty cache, no build on PATH, and no resolution kept."""
     monkeypatch.setattr(ff.shutil, "which", lambda name: None)
-    ff._resolve.cache_clear()
     with ff.using_tools(ToolsConfig(cache_dir=str(tmp_path / "cache"))):
         yield
-    ff._resolve.cache_clear()
 
 
 def is_lock(path: Path) -> bool:
@@ -276,11 +274,31 @@ def test_no_download_and_no_path_is_a_tool_error_that_names_setup(monkeypatch):
         ff.ffmpeg_paths()
 
 
+def test_a_run_resolves_its_pair_once_and_the_next_run_resolves_its_own(tmp_path, monkeypatch):
+    """A process cache keyed on the settings answered a second machine with the first one's ffmpeg."""
+    pin(monkeypatch, "test-once", fetch.FFMPEG_BUILDS["linux-x86_64"])
+    asked: list[str] = []
+    monkeypatch.setattr(ff.shutil, "which", lambda name: asked.append(name) or f"/first/{name}")
+    monkeypatch.setattr(fetch, "fetch_ffmpeg", lambda key=None: (_ for _ in ()).throw(OSError("offline")))
+    with ff.using_tools(ToolsConfig(cache_dir=str(tmp_path / "one"))):
+        assert ff.ffmpeg_paths() == ff.ffmpeg_paths() == ("/first/ffmpeg", "/first/ffprobe")
+    assert asked == ["ffmpeg", "ffprobe"]
+    monkeypatch.setattr(ff.shutil, "which", lambda name: f"/second/{name}")
+    with ff.using_tools(ToolsConfig(cache_dir=str(tmp_path / "one"))):
+        assert ff.ffmpeg_paths() == ("/second/ffmpeg", "/second/ffprobe")
+
+
+def test_a_pair_the_machine_already_holds_is_used_without_resolving_anything(tmp_path, monkeypatch):
+    monkeypatch.setattr(ff, "_resolve", lambda tools: pytest.fail("must not resolve"))
+    held = (tmp_path / "ffmpeg", tmp_path / "ffprobe")
+    with ff.using_tools(ToolsConfig(), paths=held):
+        assert ff.ffmpeg_paths() == (str(held[0]), str(held[1]))
+
+
 def test_an_unpinned_platform_uses_path_or_says_so(monkeypatch):
     monkeypatch.setattr(fetch, "platform_key", lambda: "plan9-mips")
     with pytest.raises(ToolError, match="pins no build for plan9-mips"):
         ff.ffmpeg_paths()
-    ff._resolve.cache_clear()
     monkeypatch.setattr(ff.shutil, "which", lambda name: f"/usr/bin/{name}")
     assert ff.ffmpeg_paths() == ("/usr/bin/ffmpeg", "/usr/bin/ffprobe")
 
