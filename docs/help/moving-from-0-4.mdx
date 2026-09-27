@@ -24,6 +24,10 @@ that meets one is told by name on its first run.
 - **A symbolic link that leads out of the project is refused.** A script, a cue file, a page, an asset
   or a clip that resolves outside the project directory is not read, with an `INPUT` error that names
   the path.
+- **A build directory with a link out of it is refused**, from 0.5.1 on. Every run resolves what is
+  under the build directory before it writes there, and a link that leads outside it, or a file hard
+  linked to another name, stops the run with an `INPUT` error that names the entry. Delete the build
+  directory and run again.
 - **A media file is read by a closed set of formats.** A clip, a music bed, an ambience bed or an
   effect that is not MP4, MOV, M4A, WebM, MKV, AVI, MP3, WAV, Ogg, FLAC, AAC, PNG, JPEG or WebP is
   refused, and so is a playlist or a concat list.

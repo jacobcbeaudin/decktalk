@@ -514,7 +514,12 @@ class Project:
         max_cost: float | None = None,
         writes: bool = True,
     ) -> Iterator[Run]:
-        """One run of this project, with its lines beside the build and its lock held while it writes."""
+        """One run of this project, with its lines beside the build and its lock held while it writes.
+
+        Every run writes its event lines under the build directory and may prune old ones, so the
+        tree is confined before the run opens, whether or not the stage itself writes.
+        """
+        self.workspace.confine()
         keep = self.inputs.settings.output.events_keep_runs
         opening = new_run()
         self._runs.add(opening)

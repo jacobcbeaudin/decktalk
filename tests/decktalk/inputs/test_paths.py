@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import ErrorCode, InputError
-from decktalk.inputs.paths import at, contained, relative
+from decktalk.inputs.paths import at, confined, contained, relative
 
 
 def test_a_path_under_the_project_is_published_relative_to_it(tmp_path: Path) -> None:
@@ -69,3 +69,49 @@ def test_an_absolute_path_outside_the_project_is_refused(tmp_path: Path) -> None
     root.mkdir()
     with pytest.raises(InputError):
         contained(root, tmp_path / "elsewhere.txt")
+
+
+def test_a_build_directory_that_is_not_there_yet_is_confined_as_it_stands(tmp_path: Path) -> None:
+    assert confined(tmp_path, tmp_path / "build") == (tmp_path / "build").resolve()
+
+
+def test_a_link_that_stays_inside_the_build_directory_is_left_alone(tmp_path: Path) -> None:
+    build = tmp_path / "build"
+    (build / "final").mkdir(parents=True)
+    (build / "latest").symlink_to(build / "final", target_is_directory=True)
+    assert confined(tmp_path, build) == build.resolve()
+
+
+@pytest.mark.parametrize("depth", ["narrate", "narrate/takes"])
+def test_a_directory_under_the_build_linked_out_of_it_refuses_the_tree(tmp_path: Path, depth: str) -> None:
+    """Every path under `build/` is a plain join, so a link anywhere in it carries writes with it."""
+    root, outside = tmp_path / "project", tmp_path / "elsewhere"
+    outside.mkdir()
+    link = root / "build" / depth
+    link.parent.mkdir(parents=True)
+    link.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(InputError) as refused:
+        confined(root, root / "build")
+    assert refused.value.code is ErrorCode.INPUT
+    assert "elsewhere" not in str(refused.value)
+    assert refused.value.location is not None and refused.value.location.file == Path("build", depth)
+
+
+def test_a_file_under_the_build_linked_out_of_it_refuses_the_tree(tmp_path: Path) -> None:
+    """ffmpeg and a plain write both follow a link at the file they overwrite."""
+    root, outside = tmp_path / "project", tmp_path / "victim.mp3"
+    outside.write_bytes(b"")
+    (root / "build" / "narrate").mkdir(parents=True)
+    (root / "build" / "narrate" / "narration.mp3").symlink_to(outside)
+    with pytest.raises(InputError):
+        confined(root, root / "build")
+
+
+def test_a_file_under_the_build_hard_linked_elsewhere_refuses_the_tree(tmp_path: Path) -> None:
+    """A write that truncates a hard link truncates every other name for the same contents."""
+    root, outside = tmp_path / "project", tmp_path / "victim.json"
+    outside.write_text("{}", encoding="utf-8")
+    (root / "build").mkdir(parents=True)
+    (root / "build" / "takes.json").hardlink_to(outside)
+    with pytest.raises(InputError):
+        confined(root, root / "build")

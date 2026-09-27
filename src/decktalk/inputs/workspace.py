@@ -24,6 +24,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from decktalk.inputs.paths import confined
+
 SECTION_VIDEO = re.compile(r"\d+\.mp4")
 """What a section's cut is called, which is how a cut left over from a renumbering is spotted."""
 
@@ -39,6 +41,17 @@ class Workspace:
     build: Path
     name: str
     takes: Path | None = None
+
+    def confine(self) -> None:
+        """Refuse this build directory when anything in it leads outside it, before a run writes there.
+
+        Every path below is a plain join onto `build`, and a stage, ffmpeg and Chromium each write
+        and delete through whatever those joins find on disk. So the tree is resolved again at the
+        start of every run, which is the one moment before any of them touch it, rather than at each
+        of the places that write. DeckTalk itself never makes a link under the build directory, so a
+        tree that passes here stays inside the project for the length of the run.
+        """
+        confined(self.root, self.build)
 
     @property
     def narrate_dir(self) -> Path:

@@ -274,6 +274,51 @@ def test_a_run_writes_its_own_lines_beside_the_build(tmp_path: Path) -> None:
     assert (project.workspace.events_dir / f"{result.run}.jsonl").exists()
 
 
+@pytest.mark.usefixtures("fake_stages")
+def test_a_build_directory_linked_out_of_the_project_is_neither_pruned_nor_written(tmp_path: Path) -> None:
+    """A downloaded project chose every name under its own `build/`, links included."""
+    root, outside = tmp_path / "project", tmp_path / "elsewhere"
+    root.mkdir()
+    outside.mkdir()
+    victim = outside / "victim.jsonl"
+    victim.write_text("not the project's\n", encoding="utf-8")
+    project = a_project(root, MINIMAL_TOML + "\n[output]\nevents_keep_runs = 1\n")
+    project.workspace.build.mkdir()
+    project.workspace.events_dir.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(InputError) as refused:
+        project.status()
+    assert refused.value.code is ErrorCode.INPUT
+    assert "elsewhere" not in str(refused.value)
+    assert [path.name for path in outside.iterdir()] == ["victim.jsonl"]
+
+
+@pytest.mark.usefixtures("fake_stages")
+def test_a_take_linked_out_of_the_build_directory_refuses_the_run_that_would_write_it(tmp_path: Path) -> None:
+    root, outside = tmp_path / "project", tmp_path / "elsewhere.mp3"
+    root.mkdir()
+    outside.write_bytes(b"not the project's")
+    project = a_project(root)
+    project.workspace.narrate_dir.mkdir(parents=True)
+    (project.workspace.narrate_dir / "narration.mp3").symlink_to(outside)
+    with pytest.raises(InputError):
+        project.narrate()
+    assert outside.read_bytes() == b"not the project's"
+    assert not project.workspace.events_dir.exists()
+
+
+@pytest.mark.usefixtures("fake_stages")
+def test_a_build_directory_that_is_itself_a_link_out_of_the_project_is_refused(tmp_path: Path) -> None:
+    """The load holds the build directory to the project, and every run holds it there again."""
+    root, outside = tmp_path / "project", tmp_path / "elsewhere"
+    root.mkdir()
+    outside.mkdir()
+    project = a_project(root)
+    project.workspace.build.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(InputError):
+        project.cue()
+    assert list(outside.iterdir()) == []
+
+
 @contextmanager
 def held(lock: Path, owner: str = "1 abc\n") -> Iterator[None]:
     """The build lock taken by another writer, on a handle of its own, for as long as the block runs."""
