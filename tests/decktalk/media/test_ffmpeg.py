@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
-from decktalk.errors import ToolError
+from decktalk.errors import Cancel, Cancelled, ToolError
 from decktalk.media import ffmpeg
 from decktalk.settings import ToolsConfig
 from decktalk.toolchain.cache import cache_dir
@@ -19,15 +21,28 @@ def tools(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ffmpeg, "ffmpeg_paths", lambda: ("ffmpeg", "ffprobe"))
 
 
-def answer(monkeypatch: pytest.MonkeyPatch, *, code: int, out: bytes = b"", err: bytes = b"") -> list[list[str]]:
-    """Replace the subprocess seam with one fixed answer, and give back the commands it was asked to run."""
+SPAWN = ffmpeg._spawn
+"""The real seam, which a fake hands a small Python process to instead of a tool."""
+
+
+def answer(
+    monkeypatch: pytest.MonkeyPatch, *, code: int, out: bytes = b"", err: bytes = b"", seconds: float = 0.0
+) -> list[list[str]]:
+    """Replace the tool with a process that says one fixed thing, and give back the commands it was asked to run.
+
+    The stand-in is a real process, so the pipes, the polling and the kill are the ones a tool gets.
+    """
     seen: list[list[str]] = []
+    script = (
+        f"import sys, time; time.sleep({seconds}); sys.stdout.buffer.write({out!r}); "
+        f"sys.stderr.buffer.write({err!r}); sys.exit({code})"
+    )
 
-    def fake(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def fake(cmd: list[str]):
         seen.append(cmd)
-        return subprocess.CompletedProcess(cmd, code, out, err)
+        return SPAWN([sys.executable, "-c", script])
 
-    monkeypatch.setattr(ffmpeg.subprocess, "run", fake)
+    monkeypatch.setattr(ffmpeg, "_spawn", fake)
     return seen
 
 
@@ -216,3 +231,46 @@ def test_a_playlist_that_names_a_host_is_refused_before_anything_is_asked_of_it(
     )
     with pytest.raises(ToolError, match="not on whitelist"):
         ffmpeg.probe_duration(clip)
+
+
+# ---- a call that has to stop ------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_cancelled_run_stops_a_call_that_is_still_working(monkeypatch):
+    """A run was checked only between sections, so a long encode held its worker until it finished."""
+    answer(monkeypatch, code=0, seconds=30)
+    cancel = Cancel()
+    threading.Timer(0.2, cancel.cancel).start()
+    started = time.monotonic()
+    with ffmpeg.using_tools(ToolsConfig(), cancel=cancel), pytest.raises(Cancelled):
+        ffmpeg.run("-i", "long.mp4", "out.mp4")
+    assert time.monotonic() - started < 5
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_call_past_the_machines_limit_is_stopped_and_refused(monkeypatch):
+    answer(monkeypatch, code=0, seconds=30)
+    started = time.monotonic()
+    with ffmpeg.using_tools(ToolsConfig(timeout_seconds=0.3)), pytest.raises(ToolError, match="timeout_seconds"):
+        ffmpeg.stderr("-i", "stuck.mp4", "-f", "null", "-")
+    assert time.monotonic() - started < 5
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_stream_hands_its_bytes_over_as_they_arrive_and_keeps_none(monkeypatch):
+    answer(monkeypatch, code=0, out=b"frames" * 1000)
+    kept: list[bytes] = []
+    ffmpeg.stream("-i", "film.mp4", "-f", "rawvideo", "-", into=kept.append)
+    assert b"".join(kept) == b"frames" * 1000
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_reader_that_fails_fails_the_call_rather_than_ending_it_quietly(monkeypatch):
+    answer(monkeypatch, code=0, out=b"frames")
+
+    def refuse(_chunk: bytes) -> None:
+        raise ValueError("the frame was not the size it was planned at")
+
+    with pytest.raises(ValueError, match="not the size"):
+        ffmpeg.stream("-i", "film.mp4", "-", into=refuse)

@@ -35,6 +35,7 @@ from decktalk.machine import (
     fixes_of,
     init,
 )
+from decktalk.media import ffmpeg as ffmpeg_module
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.project import open as open_project
@@ -171,6 +172,23 @@ def test_a_toolchain_that_is_there_fetches_nothing(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(machine_module, "fetch_ffmpeg", refuse)
     chain = Toolchain(ffmpeg=tmp_path / "a", ffprobe=tmp_path / "b")
     assert chain.fetched() is chain
+
+
+def test_a_run_hands_its_pair_and_its_cancel_to_every_ffmpeg_call(tmp_path: Path) -> None:
+    """A run that could not reach ffmpeg with its cancel token would wait out an encode it was told to stop."""
+    pair = (tmp_path / "ff", tmp_path / "fp")
+    here = Machine(
+        environ={},
+        tables={},
+        config_path=tmp_path / "config.toml",
+        cwd=tmp_path,
+        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache")), ffmpeg=pair[0], ffprobe=pair[1]),
+    )
+    with here.run() as run:
+        bound = ffmpeg_module.TOOLS.get()
+        assert bound is not None
+        assert bound.cancel is run.cancel
+        assert bound.paths() == (str(pair[0]), str(pair[1]))
 
 
 # ---- the run ------------------------------------------------------------------------------

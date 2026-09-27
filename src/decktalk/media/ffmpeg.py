@@ -14,7 +14,9 @@ the next, and a machine that already knows its pair binds it and resolves nothin
 Every call goes through `_checked`, so a return code other than zero raises `ToolError` carrying
 the tail of what the tool said. A measurement that read a failure as silence, as blackness or as a
 missing audio stream would turn a broken tool into a verdict about the film, which is the one
-mistake this module exists to prevent.
+mistake this module exists to prevent. The same function is where a call is stopped: it polls the
+run's cancel token while the tool works and stops a call that outlives `[tools] timeout_seconds`, so
+one stuck encode can hold a worker for no longer than the machine allows.
 
 `audio.py` and `frames.py` build on the five calls here: `run`, `stderr`, `raw`, `probe_duration`
 and `has_audio`.
@@ -31,12 +33,14 @@ import logging
 import shutil
 import subprocess
 import threading
-from collections.abc import Iterable, Iterator
+import time
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
+from typing import IO
 
-from ..errors import ToolError
+from ..errors import Cancel, ToolError
 from ..findings import Location
 from ..settings import ToolsConfig
 from ..toolchain import ffmpeg_fetch
@@ -49,7 +53,7 @@ NAMED = ("tools.ffmpeg", "tools.ffprobe")
 
 
 class Bound:
-    """What one run renders with: the keys that name its toolchain, and the pair they resolve to.
+    """What one run renders with: the keys that name its toolchain, the pair they resolve to, and its cancel token.
 
     The pair is worked out the first time a call needs it and kept for as long as the binding is
     open, so a run resolves once and a second run, bound afresh, resolves for itself. A caller that
@@ -58,8 +62,11 @@ class Bound:
     and each of them may be the first to ask.
     """
 
-    def __init__(self, tools: ToolsConfig, paths: tuple[Path, Path] | None = None) -> None:
+    def __init__(
+        self, tools: ToolsConfig, paths: tuple[Path, Path] | None = None, cancel: Cancel | None = None
+    ) -> None:
         self.tools = tools
+        self.cancel = cancel
         self._paths = (str(paths[0]), str(paths[1])) if paths is not None else None
         self._lock = threading.Lock()
 
@@ -82,15 +89,17 @@ def bound_tools() -> ToolsConfig:
 
 
 @contextmanager
-def using_tools(tools: ToolsConfig, *, paths: tuple[Path, Path] | None = None) -> Iterator[None]:
+def using_tools(
+    tools: ToolsConfig, *, paths: tuple[Path, Path] | None = None, cancel: Cancel | None = None
+) -> Iterator[None]:
     """Render with the executables and the cache directory `[tools]` names, while this is open.
 
     One call binds a run to a machine's own toolchain, so nothing between the machine and an audio
     filter has to carry a settings object to say which ffmpeg this is. `paths` is the pair the
     machine already resolved, when it has one, which spares the run a second resolution by a second
-    rule.
+    rule. `cancel` is the run's token, which every call polls while its tool works.
     """
-    token = TOOLS.set(Bound(tools, paths))
+    token = TOOLS.set(Bound(tools, paths, cancel))
     try:
         with caching_in(tools.cache_dir):
             yield
@@ -111,17 +120,115 @@ def _tail(err: bytes) -> str:
     return " | ".join(line.strip() for line in lines[-TAIL_LINES:]) or "it said nothing"
 
 
-def _checked(cmd: list[str], what: str, *, location: Location | None = None) -> subprocess.CompletedProcess[bytes]:
+POLL_SECONDS = 0.1
+"""Calibration: how often a running call looks at the cancel token and the clock, which a person never waits on."""
+
+READ_BYTES = 1 << 16
+"""Truth: one pipe's worth of output at a time, which keeps a decoder writing while it is read."""
+
+Sink = Callable[[bytes], None]
+"""Where a call's stdout goes as it arrives, for a caller that reads a stream rather than one result."""
+
+
+def _spawn(cmd: list[str]) -> subprocess.Popen[bytes]:
+    """Start one tool with both outputs piped and no input, so it can neither wait on a terminal nor block on one."""
+    return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+class _Reader(threading.Thread):
+    """One output of a running tool, read to its end on a thread of its own so neither pipe can fill and stall it.
+
+    A sink that raises stops the reading, and the error is kept for the caller to raise, because an
+    exception on this thread would otherwise be lost and the call would read as finished.
+    """
+
+    def __init__(self, stream: IO[bytes] | None, sink: Sink) -> None:
+        super().__init__(daemon=True)
+        self.stream = stream
+        self.sink = sink
+        self.failed: BaseException | None = None
+
+    def run(self) -> None:
+        if self.stream is None:
+            return
+        try:
+            while chunk := self.stream.read(READ_BYTES):
+                self.sink(chunk)
+        except BaseException as exc:  # noqa: BLE001  (kept and raised by the caller, on the caller's thread)
+            self.failed = exc
+
+
+def _stop(proc: subprocess.Popen[bytes], readers: Iterable[_Reader]) -> None:
+    """Kill a call that has to stop, and wait for it and its readers, so nothing of it outlives the call."""
+    proc.kill()
+    proc.wait()
+    for reader in readers:
+        reader.join()
+
+
+def _watch(
+    proc: subprocess.Popen[bytes],
+    readers: tuple[_Reader, ...],
+    what: str,
+    cancel: Cancel | None,
+    limit: float,
+    location: Location | None,
+) -> None:
+    """Wait for a call to end, and stop it when the run is cancelled, the clock runs out or a reader fails."""
+    deadline = time.monotonic() + limit
+    while True:
+        try:
+            proc.wait(timeout=POLL_SECONDS)
+            return
+        except subprocess.TimeoutExpired:
+            if cancel is not None and cancel.is_set():
+                _stop(proc, readers)
+                cancel.check()
+            if failed := next((reader.failed for reader in readers if reader.failed), None):
+                _stop(proc, readers)
+                raise failed from None
+            if time.monotonic() > deadline:
+                _stop(proc, readers)
+                raise ToolError(
+                    f"{what} ran for longer than the {limit:g} seconds that tools.timeout_seconds allows, "
+                    "so it was stopped.",
+                    hint="Raise tools.timeout_seconds for a film this long, or look for what held the tool up.",
+                    location=location,
+                ) from None
+
+
+def _checked(
+    cmd: list[str], what: str, *, location: Location | None = None, into: Sink | None = None
+) -> subprocess.CompletedProcess[bytes]:
     """Run one tool call and hand back what it wrote, or raise `ToolError` carrying the tail of its complaint.
 
     Every invocation in this package comes through here, so no caller can read a failed run as a
     measurement. The output is captured as bytes, because a decoder writes samples to stdout and a
-    filter writes its report to stderr in the same call shape.
+    filter writes its report to stderr in the same call shape. `into` takes stdout as it arrives
+    instead, for a caller that keeps a few frames of a long decode rather than all of them.
+
+    The call is watched while it runs. A cancelled run kills it and raises `Cancelled`, and a call
+    that outlives `[tools] timeout_seconds` is killed and refused as a `ToolError`, so neither a
+    stopped run nor a stuck encoder keeps a worker.
     """
-    proc = subprocess.run(cmd, capture_output=True, check=False)
+    bound = TOOLS.get()
+    cancel = bound.cancel if bound is not None else None
+    limit = bound_tools().timeout_seconds
+    out: list[bytes] = []
+    err: list[bytes] = []
+    with _spawn(cmd) as proc:
+        readers = (_Reader(proc.stdout, into or out.append), _Reader(proc.stderr, err.append))
+        for reader in readers:
+            reader.start()
+        _watch(proc, readers, what, cancel, limit, location)
+        for reader in readers:
+            reader.join()
+    if failed := next((reader.failed for reader in readers if reader.failed), None):
+        raise failed
+    stderr = b"".join(err)
     if proc.returncode != 0:
-        raise ToolError(f"{what} failed: {_tail(proc.stderr)}", location=location)
-    return proc
+        raise ToolError(f"{what} failed: {_tail(stderr)}", location=location)
+    return subprocess.CompletedProcess(cmd, proc.returncode, b"".join(out), stderr)
 
 
 SOURCE_PROTOCOLS = "file"
@@ -304,6 +411,11 @@ def stderr(*args: str) -> str:
 def raw(*args: str) -> bytes:
     """ffmpeg run whose useful output is the bytes on stdout, such as decoded samples."""
     return _checked([ffmpeg(), "-v", "error", *args], "ffmpeg").stdout
+
+
+def stream(*args: str, into: Sink) -> None:
+    """ffmpeg run whose stdout is handed to `into` as it arrives, for a decode too long to hold whole."""
+    _checked([ffmpeg(), "-v", "error", *args], "ffmpeg", into=into)
 
 
 def concat_line(path: Path | str) -> str:

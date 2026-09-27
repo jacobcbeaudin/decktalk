@@ -176,14 +176,18 @@ class Toolchain:
         )
 
     @contextmanager
-    def bound(self) -> Iterator[None]:
-        """Bind the keys and the cache directory below the machine while this is open.
+    def bound(self, *, cancel: Cancel | None = None) -> Iterator[None]:
+        """Bind the keys, the pair, the cache directory and a run's cancel token below the machine.
 
         A toolchain built by hand for a test may name no cache at all, and it binds only its keys,
-        so a run that fetches nothing never asks where a fetch would land.
+        so a run that fetches nothing never asks where a fetch would land. A pair this toolchain
+        already found is handed down, so a run renders with it and resolves nothing a second time.
+        `cancel` is the token every ffmpeg call polls while its tool works, which is how a cancelled
+        run stops an encode rather than waiting for it.
         """
         known = self.tools.cache_dir or (str(self.cache) if self.cache is not None else "")
-        with caching_in(known), using_tools(self.tools):
+        paths = self.paths() if self.complete else None
+        with caching_in(known), using_tools(self.tools, paths=paths, cancel=cancel):
             yield
 
     @property
@@ -515,7 +519,7 @@ class Machine:
             # stream, so the run binds them for its own length rather than threading a machine through
             # every filter, fetcher and provider lookup.
             with (
-                self.toolchain.bound(),
+                self.toolchain.bound(cancel=run.cancel),
                 announcing(run.fetching),
                 voicing(self.voices),
                 reading_dotenv(self.dotenv),
