@@ -8,14 +8,20 @@ reintroduce AAC priming and the picture starts at pts 0 as the sound does.
 
 `cuts.json` is written from the same rows, so where a section plays, what it was made from and
 whether a slate or a black frame stands in for it are all recorded once.
+
+Every cut is encoded through `encode`, which keeps the cut on disk when its key says the same
+arguments already made it from the same files. A rebuild that changed one sentence re-encodes the
+one section it moved, and the rest of the film is read back rather than encoded again.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import Cut, Cuts, RecordingLog, Takes
+from decktalk.artifacts.cuts import CutKey
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location
@@ -36,6 +42,9 @@ def encoder(inputs: Inputs) -> Encoder:
 
 BLACK = "0x000000"
 """Truth: the colour a section with no recording plays, written the way ffmpeg reads a colour."""
+
+KEY_SUFFIX = ".json"
+"""What the key beside a section cut is called after the cut's own name, such as `03.json` beside `03.mp4`."""
 
 SLATES_DIR = "slates"
 """Where a rendered slate is kept under the final directory, so a second run draws none of them again."""
@@ -69,6 +78,32 @@ class Rendered:
     @property
     def number(self) -> int:
         return self.section.number
+
+
+def encode(out: Path, args: Sequence[str], sources: Sequence[Path]) -> bool:
+    """Encode one section cut into `out`, unless the cut there was made by these arguments from these files.
+
+    The key sits beside the cut under the same name. The old key is removed before the encode starts
+    and the new one is written only once it has finished, so a run stopped halfway leaves a cut with
+    no key, which the next run encodes again. True means the cut was encoded, and false means the
+    one on disk was kept.
+    """
+    where = out.with_suffix(KEY_SUFFIX)
+    key = CutKey.of(args, sources)
+    if out.is_file() and _key_of(where) == key:
+        return False
+    where.unlink(missing_ok=True)
+    ffmpeg.run(*args)
+    key.write(where)
+    return True
+
+
+def _key_of(path: Path) -> CutKey | None:
+    """The key a cut on disk was made under, or None when it has none or one this engine cannot read."""
+    try:
+        return CutKey.read(path)
+    except NotBuiltError:
+        return None
 
 
 def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None:
@@ -106,11 +141,11 @@ def render_clip(inputs: Inputs, run: Run, enc: Encoder, section: ClipSection, ou
     clip = inputs.path(section.clip)
     if clip.exists():
         total = ffmpeg.probe_duration(clip)
-        ffmpeg.run(
+        encode(out, (
             "-i", str(clip),
             "-filter_complex", f"[0:v]{enc.fit}{vfades(total, *fades, dip)}[v]",
             "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", str(out),
-        )  # fmt: skip
+        ), (clip,))  # fmt: skip
         sounds = ffmpeg.has_audio(clip)
         if not sounds:
             run.note(f"{section.clip} carries no audio track, so section {section.number} plays silent.",
@@ -139,11 +174,11 @@ def _render_slate_section(
         if png
         else enc.color_source(enc.v.slate_color, seconds)
     )
-    ffmpeg.run(
+    encode(out, (
         *source,
         "-filter_complex", f"[0:v]{enc.fit}{vfades(seconds, *inputs.document.fade_flags[section.key], dip)}[v]",
         "-map", "[v]", "-an", "-t", f"{seconds}", *enc.venc, "-movflags", "+faststart", str(out),
-    )  # fmt: skip
+    ), (png,) if png else ())  # fmt: skip
     return Rendered(
         section=section,
         path=out,
@@ -168,12 +203,12 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
                 hint="Run `decktalk record` first.",
             )
         run.note(f"{source} is not there, so section {section.number} plays black.", level=Level.WARNING)
-        ffmpeg.run(
+        encode(out, (
             *enc.color_source(BLACK, total),
             "-filter_complex",
             f"[0:v]{enc.fit},trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}[v]",
             "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", "-t", f"{total}", str(out),
-        )  # fmt: skip
+        ), ())  # fmt: skip
         return Rendered(section, out, ffmpeg.probe_duration(out), Substitute.BLACK.value, source,
                         substitute=Substitute.BLACK, missing=source)  # fmt: skip
     # The recorder covers the page until it starts the narration clock, so the head of the webm is
@@ -181,13 +216,13 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
     log = RecordingLog.read(inputs.workspace.recording_log(section.key))
     lead = "" if log is None else f"trim=start={log.trim_seconds},setpts=PTS-STARTPTS,"
     note = webm.name if log is None else f"{webm.name} (t0 {log.trim_seconds}s trimmed)"
-    ffmpeg.run(
+    encode(out, (
         "-i", str(webm),
         "-filter_complex",
         f"[0:v]{lead}{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},"
         f"setpts=PTS-STARTPTS{vfades(total, *fades, dip)}[v]",
         "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", "-t", f"{total}", str(out),
-    )  # fmt: skip
+    ), (webm,))  # fmt: skip
     return Rendered(section, out, ffmpeg.probe_duration(out), note, source)
 
 
@@ -363,6 +398,7 @@ __all__ = [
     "Rendered",
     "concat",
     "cut_list",
+    "encode",
     "page_target",
     "render_clip",
     "render_page",

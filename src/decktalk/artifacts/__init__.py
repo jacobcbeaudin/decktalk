@@ -9,6 +9,7 @@ the JSON key, and `Stored` is the one place a file is read from disk or written 
     build/cue-times.json              cue_times.py   every cue resolved against those words
     build/recordings/NN.json          recordings.py  what `record` did, judged and measured
     build/final/cuts.json             cuts.py        where every section sits in the finished film
+    build/sections/NN.json            cuts.py        what each section cut was encoded from
 
 What a run is doing while it does it is not an artifact. That is the event stream, and a run's
 lines are appended to `build/events/<run>.jsonl` by a subscriber rather than written here.

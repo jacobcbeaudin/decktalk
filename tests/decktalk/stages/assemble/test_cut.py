@@ -144,6 +144,71 @@ def test_a_section_the_run_did_not_name_keeps_the_cut_already_on_disk(
     assert opened.codes() == ["FILE_MISSING", "FILE_MISSING"]
 
 
+def _recorded(inputs, numbers=(1, 2, 3)) -> None:  # noqa: ANN001
+    """A webm on disk for each section, so every cut is encoded from a recording rather than from black."""
+    inputs.workspace.recordings_dir.mkdir(parents=True, exist_ok=True)
+    for number in numbers:
+        inputs.workspace.recording(f"{number:02d}").write_bytes(f"webm {number}".encode())
+
+
+def test_an_unchanged_rebuild_encodes_no_section_again(
+    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
+):
+    """A cut whose arguments and whose recording have not moved is read back rather than encoded."""
+    inputs = write_project(tmp_path)
+    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
+    _recorded(inputs)
+    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
+    assert len(fake_ffmpeg.wrote(".mp4")) == 3
+    fake_ffmpeg.calls.clear()
+    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
+    assert fake_ffmpeg.wrote(".mp4") == []
+
+
+def test_a_changed_recording_encodes_its_own_section_and_no_other(
+    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
+):
+    inputs = write_project(tmp_path)
+    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
+    _recorded(inputs)
+    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
+    fake_ffmpeg.calls.clear()
+    inputs.workspace.recording("02").write_bytes(b"recorded again")
+    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
+    assert fake_ffmpeg.wrote(".mp4") == [inputs.workspace.section_video("02")]
+
+
+def test_a_changed_fade_encodes_the_sections_it_touches_and_keeps_the_rest(
+    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
+):
+    """The key is the whole argument list, so a setting nobody thought to name still moves it."""
+    inputs = write_project(tmp_path)
+    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
+    _recorded(inputs)
+    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
+    fake_ffmpeg.calls.clear()
+    toml = (tmp_path / "decktalk.toml").read_text(encoding="utf-8") + "\n[transition]\ndips = [[2, 3]]\n"
+    changed = write_project(tmp_path, toml)
+    render_sections(changed, open_run(tmp_path).run, takes, only=None, strict=False)
+    # Only section 1 loses the fade out it had at its cut, because a page section's own entrance
+    # already stands in for a fade in, so sections 2 and 3 encode the same arguments as before.
+    assert fake_ffmpeg.wrote(".mp4") == [changed.workspace.section_video("01")]
+
+
+def test_a_cut_left_by_a_stopped_run_is_encoded_again(
+    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
+):
+    """A cut with no key beside it may be half written, so it is never kept."""
+    inputs = write_project(tmp_path)
+    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
+    _recorded(inputs)
+    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
+    fake_ffmpeg.calls.clear()
+    inputs.workspace.section_video("01").with_suffix(".json").unlink()
+    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
+    assert fake_ffmpeg.wrote(".mp4") == [inputs.workspace.section_video("01")]
+
+
 def test_the_cut_list_records_where_each_section_plays_and_what_stood_in(tmp_path, write_project, rendered):
     inputs = write_project(tmp_path, TITLED_TOML)
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})

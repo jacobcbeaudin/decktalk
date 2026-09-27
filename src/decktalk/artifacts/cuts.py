@@ -1,6 +1,7 @@
-"""The cut list: where every section sits in the finished film.
+"""The cut list: where every section sits in the finished film, and what each section cut was made from.
 
     build/final/cuts.json   one row per section, in the order they play
+    build/sections/NN.json  the key of the section cut beside it, which decides whether it is kept
 
 This is the one record of the shape of a film. The transcript page, a caption reader and anything
 that wants to jump to a section read it instead of adding up section files, and `substitute` says
@@ -9,9 +10,14 @@ plainly where a slate or a black frame stands in for something the project does 
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Sequence
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
-from decktalk.artifacts.stored import Stored
+from decktalk.artifacts.recordings import file_digest
+from decktalk.artifacts.stored import ENGINE_VERSION, Stored
 from decktalk.findings import MODEL, ProjectPath
 from decktalk.results import SectionKey, SectionKind, SectionNumber, Substitute
 
@@ -63,4 +69,23 @@ class Cuts(Stored):
         return next((cut for cut in self.sections if cut.section == section), None)
 
 
-__all__ = ["Cut", "Cuts"]
+class CutKey(Stored):
+    """What one section cut was encoded from, which is how an unchanged cut is told from a stale one.
+
+    The key is the whole argument list of the encode and the content of every file it read, so a
+    change to any filter, any encoder setting, the trim, the fades or the recording itself moves it.
+    A key taken over a hand-picked subset of those would one day miss an input and ship a stale
+    picture, which is why nothing here chooses which arguments count. The engine joins the key as
+    well, because a newer engine may encode the same arguments differently.
+    """
+
+    digest: str = Field(description="The sha256 of the encode's arguments, its inputs' content and the engine.")
+
+    @classmethod
+    def of(cls, args: Sequence[str], sources: Sequence[Path]) -> CutKey:
+        """The key of one encode, from the arguments it would run with and the files it would read."""
+        lines = [f"engine:{ENGINE_VERSION}", *args, *(f"{path.name}:{file_digest(path)}" for path in sources)]
+        return cls(digest=hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest())
+
+
+__all__ = ["Cut", "CutKey", "Cuts"]

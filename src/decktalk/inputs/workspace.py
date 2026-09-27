@@ -4,7 +4,7 @@
     build/cue-times.json  every cue resolved against those words
     build/recordings/   one webm and one recording log per page section
     build/soundscape/   the music, the ambience bed and the effects
-    build/sections/     one mp4 per section, cut to its span
+    build/sections/     one mp4 per section, cut to its span, and the key it was cut from
     build/frames/       the frozen slides `check` compares
     build/storyboard/   one still per panel, under the page that lays them out
     build/final/        the deliverables: the film, its captions, chapters, cut list,
