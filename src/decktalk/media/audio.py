@@ -46,22 +46,6 @@ PCM_BYTES_PER_SAMPLE = 2
 """Truth: the width of one signed 16-bit sample, which is what the s16le calls below read and write."""
 
 
-def write_silence(out: Path, seconds: float, *, sample_rate: int, bitrate: str) -> None:
-    ffmpeg.run(
-        "-f",
-        "lavfi",
-        "-i",
-        f"anullsrc=r={sample_rate}:cl=mono",
-        "-t",
-        f"{seconds:.3f}",
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        bitrate,
-        str(out),
-    )
-
-
 def rms_db(path: Path, start: float, seconds: float) -> float:
     """The RMS level in dBFS of the audio between start and start + seconds."""
     err = ffmpeg.stderr(
