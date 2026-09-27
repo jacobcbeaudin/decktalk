@@ -1,0 +1,120 @@
+---
+title: Moving from 0.4
+description: What a DeckTalk 0.4 project has to change to build with 0.5, from the page attributes and the cue ids to the commands and the build directory.
+---
+
+DeckTalk 0.5 rewrote the page contract, renamed three commands and moved the build directory. It
+keeps no aliases for the old names, because an alpha that carries two spellings of one idea teaches
+both, so a 0.4 project does not build under 0.5 until it is moved. The
+[decision record](https://github.com/jacobcbeaudin/decktalk/blob/main/docs/decisions/no-compatibility-while-alpha.md)
+says why.
+
+The shortest path is a fresh project. Run `decktalk init` with 0.5, copy `script.md` across as it is,
+and then rewrite the pages and `cues.json` against the tables below. `decktalk check` names every
+attribute the new contract does not know, so the first run after the move is the checklist.
+
+## The page
+
+A 0.4 page named a cue with its full id on the element. A 0.5 page names a moment with a local name,
+and the slide the element sits in qualifies it. Inside `<template data-slide="2.1">`,
+`data-in="formula"` is the wire id `2.1:formula`, and that wire id is what `cues.json` carries.
+[The page contract](/concepts/page-contract) is the whole model.
+
+| 0.4 | 0.5 |
+|---|---|
+| `data-cue="2.1formula"` | `data-in="formula"` inside the slide `2.1`, which is the wire id `2.1:formula` |
+| `data-reveal` | `data-in-style`, whose values are `rise`, `settle`, `fade`, `pop`, `draw` and `cut`. `instant` is now `cut`. |
+| `data-duration` | `data-in-seconds`, held to the range the contract publishes |
+| `data-text="count"` and `data-text="count first"` | `data-count="last"` and `data-count="first"` |
+| `data-text="spoken"` | `data-words`, which is `highlight` or `appear` |
+| `data-text="type …"` | Removed |
+| `data-delay` | Removed. Give the element a cue of its own, or leave it on screen from the moment its slide mounts. |
+| `data-camera` | Removed, with the camera push |
+| `data-preview` | Removed |
+| `data-owns` with full cue ids | `data-owns` with local names |
+
+`data-scene`, `data-name`, `data-slide`, `data-hold`, `data-describe`, `data-tex` and
+`data-tex-display` keep their names. A slide no longer owns a cue because the cue's id starts with
+the slide's id. It owns the moments it declares and the local names in its `data-owns`.
+
+Two 0.5 rules catch a moved page that looked finished. Any `data-*` attribute the contract does not
+declare raises [`PAGE_UNKNOWN_ATTR`](/reference/findings/PAGE_UNKNOWN_ATTR) inside a scene, so an
+old attribute is reported rather than ignored. And `[section.params]` in `decktalk.toml` accepts only
+the query keys the contract defines, where 0.4 accepted any key.
+
+A page that scripts its own moments changes in three places. `DeckTalk.on` takes the wire id, such
+as `"2.1:formula"`. `DeckTalk.reveal` and `DeckTalk.fire` are gone. A slide's `enter` callback is now
+`entered`, because `enter` names the slide's own transition, `crossfade` or `cut`.
+[The runtime reference](/reference/runtime) lists the whole surface, including the class names that
+replace `.dt-enter`, `.dt-leave`, `.dt-reveal` and `.dt-push`.
+
+Copy the 0.5 `decktalk-runtime.js` into `deck/` as well. The script tag is the same, and a page that
+still loads the 0.4 file plays by the 0.4 rules.
+
+## `cues.json`
+
+The shape is the same: `sections`, then each section's `cues`, with `cue`, `on`, `offset`,
+`occurrence`, `case_sensitive` and `verify` on a row. The one change is the id, which gains the colon
+of the wire id, so `"1.1title"` becomes `"1.1:title"`. A project with no `cues.json` now earns
+[`CUE_MISSING`](/reference/findings/CUE_MISSING) rather than playing at preview timing.
+
+## `decktalk.toml`
+
+| 0.4 | 0.5 |
+|---|---|
+| `[[mix.sfx]]` | `[[mix.effects]]`, whose `cue` is a wire id |
+| `[soundscape.sfx.<name>]` | `[soundscape.effects.<name>]` |
+| `narration.min_tail_seconds` | `narration.tail_min_seconds` |
+| `verify.max_pop_percent` | `verify.cut_change_max_percent` |
+
+Most `[verify]` keys were renamed as well, and several moved from frames to milliseconds. An old
+key does not stop a load. It is reported and ignored, with the nearest new key when one is close, so
+read every warning the first command prints after the move, and read
+[Configuration](/reference/configuration) for the key that replaced it.
+
+## `script.md`
+
+Nothing changes in how a section is written. A bracketed placeholder in capitals, which 0.4 refused
+to voice, is now voiced and reported as
+[`TAKE_PLACEHOLDER`](/reference/findings/TAKE_PLACEHOLDER).
+
+## The command line
+
+| 0.4 | 0.5 |
+|---|---|
+| `decktalk align` | `decktalk cue` |
+| `decktalk preflight` | `decktalk check` |
+| `decktalk screenshots` | `decktalk storyboard` |
+| `--only` | `--section` |
+| `--strict` and `--exit-zero` | `--fail-on any` and `--fail-on never` |
+| `--allow-unknown-cues` and the other `--allow-*` flags | `--allow CODE`, with the finding code |
+| `--preset`, `--crf` and `--model` | `--set video.preset=…` and the like, for any key |
+| `init --force` | `init --overwrite` |
+| `clip SECTION`, `--gain` and `--hold` | `clip --section N`, `--gain-db` and `--hold-seconds` |
+| `assemble --no-soundscape` | `assemble --skip soundscape` |
+
+`--dry-run`, `--progress`, `doctor --report` and `serve --open` are gone. `decktalk schema` and the
+five `decktalk config` verbs are new, and so are `--spend`, `--max-cost`, `--replace-voiced`,
+`--watch` and `--fix`. The exit codes keep their numbers. The JSON a command prints is one flat
+object whose `schema` is 2, and [the JSON contract](/agents/json) describes it.
+
+## The build directory
+
+`build/narration/` is now `build/narrate/`, `build/out/` is `build/final/`, and the progress log is
+`build/events/<run>.jsonl`. Delete a 0.4 `build/` rather than moving it. A take is still named by the
+hash of its text and its voice, but 0.5 reads takes only from `build/narrate/` and
+[`narration.cache_dir`](/reference/configuration#narration), and its words files have a different
+shape, so a 0.4 take is voiced again at the first paid build. `decktalk check` prices that build
+before anything is bought.
+
+## The Python API
+
+`decktalk.Project.load(path)` is now `decktalk.open(path)`, and every stage is a call on the project
+it returns, such as `project.build(voice=Voicing.PAID)`. `align`, `preflight` and `screenshots` are
+`cue`, `check` and `storyboard` there too. `ConfigError` and `MissingInputError` are `InputError` and
+`NotBuiltError`. [The Python API](/reference/python-api) is the whole surface.
+
+## Related
+
+- **Every attribute, with its values and its range:** [The page contract](/concepts/page-contract)
+- **What each release changed:** [Changelog](/changelog)
