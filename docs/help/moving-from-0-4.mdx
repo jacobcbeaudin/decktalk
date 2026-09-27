@@ -21,6 +21,9 @@ that meets one is told by name on its first run.
   `narration.concurrency`, `narration.retries` and `tools.timeout_seconds` describe the machine, and
   a project file that sets one no longer loads. Move each with
   `decktalk config set KEY VALUE --where machine`.
+- **`record.page_policy` is machine-scoped.** A project file that sets it no longer loads, so a
+  project cannot trust its own page over the machine. Set it with
+  `decktalk config set record.page_policy untrusted --where machine`, or in a host's `Machine.of`.
 - **A symbolic link that leads out of the project is refused.** A script, a cue file, a page, an asset
   or a clip that resolves outside the project directory is not read, with an `INPUT` error that names
   the path.

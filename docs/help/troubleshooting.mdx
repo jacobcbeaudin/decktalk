@@ -542,7 +542,7 @@ It is certain and it carries no fix, because only you can decide what the local 
 
 ## A sandbox that will not start
 
-**What you see.** `error[TOOL]: could not launch Chromium with its sandbox on`, on a project whose
+**What you see.** `error[TOOL]: could not launch Chromium with its sandbox on`, on a machine whose
 `[record] page_policy` is `untrusted`.
 
 An untrusted page runs only inside Chromium's sandbox, and a machine that cannot start it is refused
@@ -555,8 +555,8 @@ project clears this.
    sandbox to root.
 2. Give that container a seccomp profile that allows user namespaces. Docker's default profile does
    not, and a render as an ordinary user under it is still refused.
-3. If the project is your own work, it does not need the policy. `trusted` is the default, and
-   `decktalk config unset record.page_policy --where project` returns to it.
+3. If the pages are your own work, the machine does not need the policy. `trusted` is the default,
+   and `decktalk config unset record.page_policy --where machine` returns to it.
 
 Under `untrusted`, a request for another origin is refused rather than sent, so a page that loads a
 font or a library from a CDN renders without it. The run still names that host as `PAGE_CDN_ASSET`,

@@ -306,6 +306,13 @@ class TestScope:
         assert caught.value.location is not None
         assert caught.value.location.line == 5
 
+    def test_a_project_cannot_trust_its_own_page_over_the_machine(self) -> None:
+        """A service marks strangers' pages untrusted once, on its machine, and no project loosens that."""
+        untrusted = {"record": {"page_policy": "untrusted"}}
+        assert load(project={}, machine=untrusted, environ={}).settings.record.page_policy == "untrusted"
+        with pytest.raises(InputError, match="record.page_policy"):
+            load(project={"record": {"page_policy": "trusted"}}, machine=untrusted, environ={})
+
     def test_a_project_key_in_a_project_is_read(self) -> None:
         refuse_off_scope({"verify": {"cue_offset_max_ms": 400}}, Scope.PROJECT, file=Path("decktalk.toml"))
 

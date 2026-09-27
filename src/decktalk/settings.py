@@ -296,11 +296,14 @@ class RecordConfig:
         "trusted",
         "How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as "
         "a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not "
-        "for the project's own origin, through every channel a page can open.",
+        "for the project's own origin, through every channel a page can open. It is the machine's to set, "
+        "so a project someone else wrote cannot trust its own page.",
         bounds=Bounds(enum=PAGE_POLICIES),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
         hazard=(
-            "A service that renders pages other people wrote sets `untrusted`, because a trusted page can "
-            "reach anything the machine can, including a cloud metadata endpoint."
+            "A service that renders pages other people wrote sets `untrusted` on its machine, because a "
+            "trusted page can reach anything the machine can, including a cloud metadata endpoint."
         ),
     )
     concurrency: int = tune(

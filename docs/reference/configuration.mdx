@@ -48,7 +48,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --where machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.cache_dir`, `record.browser_path`, `record.concurrency`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds`, `tools.cache_dir` and `host.presentation_bias_ms`.
+`narration.concurrency`, `narration.retries`, `narration.cache_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds`, `tools.cache_dir` and `host.presentation_bias_ms`.
 
 ## Which key moves which failure
 
@@ -134,7 +134,7 @@ These keys tune the headless Chromium recording and how narration t=0 is found i
 | `min_cover_seconds` | number | `1.5` | must be between 0 and 30 | seconds | project |  | Shortest time from the start of the recorder to narration t=0. |
 | `browser_path` | string | `""` | takes any value of its type | path | machine |  | Chromium executable that `record` drives. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another. |
 | `color_scheme` | string | `"light"` | must be one of light, dark, no-preference |  | project |  | Color scheme that Chromium reports to the page. |
-| `page_policy` | string | `"trusted"` | must be one of trusted, untrusted |  | project |  | How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. |
+| `page_policy` | string | `"trusted"` | must be one of trusted, untrusted |  | machine |  | How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. It is the machine's to set, so a project someone else wrote cannot trust its own page. |
 | `concurrency` | integer | `0` | must be between 0 and 16 |  | machine |  | How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count. |
 | `retries` | integer | `2` | must be between 0 and 10 |  | project |  | How many more times `record` records a section whose frames stalled. |
 | `cover_scan_seconds` | number | `4.0` | must be between 0 and 30 | seconds | project |  | Seconds at the start of each recording that `record` scans for the magenta cover. |
@@ -148,7 +148,7 @@ These keys tune the headless Chromium recording and how narration t=0 is found i
 | `frame_gap_max_ms` | integer | `150` | must be between 100 and 2000 | milliseconds | project | `PAGE_STALLED` | Longest gap between two presented frames after narration t=0. A longer gap makes `record` try again. |
 
 <Warning>
-**`record.page_policy`** A service that renders pages other people wrote sets `untrusted`, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.
+**`record.page_policy`** A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.
 
 **`record.concurrency`** Each recording needs about two dedicated CPUs to present its frames on time, and a starved recording stalls or lands its reveals late, so a number above the machine's share costs correctness rather than only speed.
 

@@ -68,6 +68,21 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_RECORD_BROWSER_PATH"
         },
+        "page_policy": {
+          "description": "How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. It is the machine's to set, so a project someone else wrote cannot trust its own page.",
+          "type": "string",
+          "default": "trusted",
+          "enum": [
+            "trusted",
+            "untrusted"
+          ],
+          "x-range": "must be one of trusted, untrusted",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.",
+          "x-environment": "DECKTALK_RECORD_PAGE_POLICY"
+        },
         "concurrency": {
           "description": "How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
           "type": "integer",

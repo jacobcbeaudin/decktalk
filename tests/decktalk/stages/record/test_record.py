@@ -12,6 +12,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -79,7 +80,7 @@ def a_take(section: int) -> Take:
     )
 
 
-def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "") -> Inputs:
+def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "", machine: dict[str, Any] | None = None) -> Inputs:
     write_project(tmp_path, TOML + extra)
     deck = tmp_path / "deck"
     deck.mkdir(exist_ok=True)
@@ -92,7 +93,7 @@ def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "") -> Inputs:
             output_format="mp3_44100_128",
             sections=(a_take(1), a_take(2)),
         ).write(inputs.workspace.takes_path)
-    return Inputs.load(tmp_path, environ={})
+    return Inputs.load(tmp_path, environ={}, machine=machine)
 
 
 def a_run(inputs: Inputs, lines: list[Event] | None = None) -> Run:
@@ -201,7 +202,7 @@ def test_every_page_section_is_recorded_and_reported_in_section_order(tmp_path: 
 
 
 def test_a_host_that_marks_the_page_untrusted_records_it_under_that_policy(tmp_path: Path, driven: Driven) -> None:
-    inputs = a_project(tmp_path, extra='\n[record]\npage_policy = "untrusted"\n')
+    inputs = a_project(tmp_path, machine={"record": {"page_policy": "untrusted"}})
     record(inputs, a_run(inputs))
     assert driven.policies == ["untrusted"]
 

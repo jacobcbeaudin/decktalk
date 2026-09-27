@@ -181,7 +181,8 @@ browser, and a font or a library it loads from another origin is reported as
 
 A service that renders pages other people wrote cannot extend that trust, because a trusted page
 reaches anything the machine can reach, a cloud metadata endpoint included. `[record] page_policy`
-says how far a page is trusted.
+says how far a page is trusted. It is the machine's to set, so a project file that names it is
+refused and a project someone else wrote cannot trust its own page.
 
 | Value | What the page may do |
 |---|---|
@@ -189,7 +190,7 @@ says how far a page is trusted.
 | `untrusted` | Chromium runs with its sandbox on, and every request that is not for the project's own origin is refused, through every channel a page can open. |
 
 ```console
-decktalk config set record.page_policy untrusted --where project
+decktalk config set record.page_policy untrusted --where machine
 ```
 
 Under `untrusted`, three things hold at once.
