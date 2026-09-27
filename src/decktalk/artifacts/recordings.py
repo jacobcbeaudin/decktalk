@@ -44,11 +44,8 @@ def file_digest(path: Path) -> str:
     """The head of a file's sha256, or `gone` when the project no longer has it."""
     if not path.is_file():
         return GONE
-    digest = hashlib.sha256()
     with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()[:HASH_DIGITS]
+        return hashlib.file_digest(handle, "sha256").hexdigest()[:HASH_DIGITS]
 
 
 def text_digest(text: str) -> str:
