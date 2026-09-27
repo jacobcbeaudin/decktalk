@@ -20,6 +20,7 @@ import signal
 import subprocess
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -109,6 +110,42 @@ def run(
     )
 
 
+@dataclass(frozen=True)
+class Install:
+    """One finished run of the installer, and the files it left for a test to read."""
+
+    done: subprocess.CompletedProcess[str]
+    marker: Path
+    log: Path
+
+
+def install(root: Path, source: str, **stubs: tuple[str, ...]) -> Install:
+    """Run the whole script once with its log at a known path, so several tests can read one run."""
+    marker, log = root / "called", root / "install.log"
+    env = fake_path(root, marker, **stubs) | {"DECKTALK_INSTALL_LOG": str(log)}
+    return Install(run([], env=env, script=source), marker, log)
+
+
+# A launch of the script takes over a second, and nine tests read the same two runs, so each run
+# happens once per module and every test keeps its own assertions against it.
+
+
+@pytest.fixture(scope="module")
+def clean_run(tmp_path_factory: pytest.TempPathFactory, source: str) -> Install:
+    """The default install, with every stub on PATH and every step succeeding."""
+    return install(tmp_path_factory.mktemp("clean"), source)
+
+
+@pytest.fixture(scope="module")
+def failed_run(tmp_path_factory: pytest.TempPathFactory, source: str) -> Install:
+    """An install on a machine with no uv, where the download of uv's installer fails.
+
+    Both halves matter. Without `without=("uv",)` the script finds a uv, returns early and never
+    reaches a step that can fail, and a test of the failure passes while testing nothing.
+    """
+    return install(tmp_path_factory.mktemp("no-uv"), source, fail=("curl", "wget"), without=("uv",))
+
+
 @pytest.mark.parametrize("shell", SHELLS)
 def test_it_parses_under_every_posix_shell_here(shell: str) -> None:
     """A bashism would pass on macOS, whose /bin/sh is bash, and fail on a real POSIX shell.
@@ -121,7 +158,7 @@ def test_it_parses_under_every_posix_shell_here(shell: str) -> None:
     assert done.returncode == 0, done.stderr
 
 
-def test_it_never_asks_for_root(tmp_path: Path, source: str) -> None:
+def test_it_never_asks_for_root(clean_run: Install) -> None:
     """The one-liner must not need root, and a grep for "sudo" cannot tell an invocation from the
     sentence that tells you `decktalk install` will ask for one. So run it with a sudo on PATH that
     records being called, and require that it never is.
@@ -131,10 +168,8 @@ def test_it_never_asks_for_root(tmp_path: Path, source: str) -> None:
     `playwright install chromium --with-deps`, and Playwright uses sudo for the system libraries.
     The installer briefly did run it, behind a prompt, and this is the assertion that says it does
     not any more rather than that it asks nicely."""
-    marker = tmp_path / "called"
-    run([], env=fake_path(tmp_path, marker), script=source)
-    assert marker.exists(), "the run did nothing, so it proves nothing"
-    called = marker.read_text()
+    assert clean_run.marker.exists(), "the run did nothing, so it proves nothing"
+    called = clean_run.marker.read_text()
     assert "sudo" not in called, called
     assert "decktalk install" not in called, f"the installer ran the step that can reach sudo: {called}"
 
@@ -156,13 +191,12 @@ def test_a_truncated_download_installs_nothing(tmp_path: Path, source: str, frac
     assert "Installing" not in done.stdout, done.stdout
 
 
-def test_the_whole_script_does_install(tmp_path: Path, source: str) -> None:
+def test_the_whole_script_does_install(clean_run: Install) -> None:
     """The counterpart: the test above would pass on a script that never installs anything."""
-    marker = tmp_path / "called"
-    done = run([], env=fake_path(tmp_path, marker), script=source)
+    done = clean_run.done
     assert done.returncode == 0, done.stderr
-    assert marker.exists(), done.stdout
-    assert "uv tool install decktalk" in marker.read_text()
+    assert clean_run.marker.exists(), done.stdout
+    assert "uv tool install decktalk" in clean_run.marker.read_text()
 
 
 def test_a_pinned_version_is_the_version_it_installs(tmp_path: Path, source: str) -> None:
@@ -195,7 +229,7 @@ def test_an_unknown_option_is_refused_rather_than_ignored(tmp_path: Path, source
 # ---- what the script does when something goes wrong ---------------------------------------------
 
 
-def test_a_failing_step_stops_the_install(tmp_path: Path, source: str) -> None:
+def test_a_failing_step_stops_the_install(failed_run: Install) -> None:
     """The regression this file exists to prevent from coming back.
 
     `step` used to read `$?` after an `if` whose condition had failed. An `if` with no `else` whose
@@ -204,12 +238,9 @@ def test_a_failing_step_stops_the_install(tmp_path: Path, source: str) -> None:
     error, then reported a tick for installing uv from the empty file it had just failed to
     download, then died three lines later complaining about PATH.
     """
-    marker = tmp_path / "called"
     # No uv anywhere, so the script must download and run uv's installer, and curl fails when it
-    # tries. Both halves matter: without `without=("uv",)` the script finds a uv, returns early and
-    # never reaches a step that can fail, and the test passes while testing nothing.
-    env = fake_path(tmp_path, marker, fail=("curl", "wget"), without=("uv",))
-    done = run([], env=env, script=source)
+    # tries, which is the run `failed_run` makes.
+    done = failed_run.done
     assert "Downloading uv" in done.stdout, f"never reached the failing step:\n{done.stdout}"
     assert done.returncode != 0, f"a failed download exited 0:\n{done.stdout}\n{done.stderr}"
     # The load-bearing assertion, and the one that tells the bug apart from its symptom. With the
@@ -217,37 +248,29 @@ def test_a_failing_step_stops_the_install(tmp_path: Path, source: str) -> None:
     # asserting only on the exit code passes on the broken script. What it must not do is begin
     # the next step, running uv's installer over the empty file the download just failed to write.
     assert "Installing uv" not in done.stdout, f"it started the next step anyway:\n{done.stdout}"
-    called = marker.read_text() if marker.exists() else ""
+    called = failed_run.marker.read_text() if failed_run.marker.exists() else ""
     assert "uv tool install" not in called, f"it carried on after the failure: {called}"
 
 
-def test_a_failure_shows_the_output_it_held_back(tmp_path: Path, source: str) -> None:
+def test_a_failure_shows_the_output_it_held_back(failed_run: Install) -> None:
     """Held-back output is only worth holding back if it arrives when it is needed."""
-    marker = tmp_path / "called"
-    env = fake_path(tmp_path, marker, fail=("curl", "wget"), without=("uv",))
-    done = run([], env=env, script=source)
+    done = failed_run.done
     assert "Downloading uv" in done.stdout, f"never reached the failing step:\n{done.stdout}"
     assert "deliberate failure" in done.stdout + done.stderr, done.stdout + done.stderr
 
 
-def test_the_log_is_kept_and_named_when_something_fails(tmp_path: Path, source: str) -> None:
-    log = tmp_path / "install.log"
-    marker = tmp_path / "called"
-    env = fake_path(tmp_path, marker, fail=("curl", "wget"), without=("uv",)) | {"DECKTALK_INSTALL_LOG": str(log)}
-    done = run([], env=env, script=source)
+def test_the_log_is_kept_and_named_when_something_fails(failed_run: Install) -> None:
+    done, log = failed_run.done, failed_run.log
     assert done.returncode != 0, f"nothing failed, so there is no failure to keep a log for:\n{done.stdout}"
     assert log.exists(), "the log was removed on the one run where it was worth keeping"
     assert str(log) in done.stderr, f"the path was never printed: {done.stderr}"
     assert "exited 1" in log.read_text(), log.read_text()
 
 
-def test_the_log_is_removed_when_nothing_fails(tmp_path: Path, source: str) -> None:
-    log = tmp_path / "install.log"
-    env = fake_path(tmp_path, marker := tmp_path / "called") | {"DECKTALK_INSTALL_LOG": str(log)}
-    done = run([], env=env, script=source)
-    assert done.returncode == 0, done.stderr
-    assert marker.exists()
-    assert not log.exists(), "a clean run left a log file behind"
+def test_the_log_is_removed_when_nothing_fails(clean_run: Install) -> None:
+    assert clean_run.done.returncode == 0, clean_run.done.stderr
+    assert clean_run.marker.exists()
+    assert not clean_run.log.exists(), "a clean run left a log file behind"
 
 
 def test_keep_log_keeps_it(tmp_path: Path, source: str) -> None:
@@ -262,27 +285,27 @@ def test_keep_log_keeps_it(tmp_path: Path, source: str) -> None:
 # ---- the one step that can reach sudo -----------------------------------------------------------
 
 
-def test_it_reports_the_version_that_is_actually_on_disk(tmp_path: Path, source: str) -> None:
+def test_it_reports_the_version_that_is_actually_on_disk(clean_run: Install) -> None:
     """ "Installed" was a claim about the command that had just run, not about the one the reader is
     about to type. It is now read back from the binary."""
-    done = run([], env=fake_path(tmp_path, tmp_path / "called"), script=source)
+    done = clean_run.done
     assert "decktalk 0.0.0 is installed" in done.stdout, done.stdout
 
 
 # ---- presentation degrades rather than breaking -------------------------------------------------
 
 
-def test_nothing_writes_escape_codes_when_stdout_is_not_a_terminal(tmp_path: Path, source: str) -> None:
+def test_nothing_writes_escape_codes_when_stdout_is_not_a_terminal(clean_run: Install) -> None:
     """A CI log full of colour codes is a log nobody reads. `[ -t 1 ]` is the whole guard, and this
     is the assertion that it is actually consulted everywhere rather than in most places."""
-    done = run([], env=fake_path(tmp_path, tmp_path / "called"), script=source)
+    done = clean_run.done
     assert "\033[" not in done.stdout, repr(done.stdout)
     assert "\033[" not in done.stderr, repr(done.stderr)
 
 
-def test_the_plain_path_still_names_every_step(tmp_path: Path, source: str) -> None:
+def test_the_plain_path_still_names_every_step(clean_run: Install) -> None:
     """Without a spinner the labels are all a reader gets, so they must still be printed."""
-    done = run([], env=fake_path(tmp_path, tmp_path / "called"), script=source)
+    done = clean_run.done
     assert "Installing decktalk" in done.stdout, done.stdout
 
 
