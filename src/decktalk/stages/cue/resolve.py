@@ -17,16 +17,10 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
-from decktalk.inputs.cues import Cue, CuedSection, Spoken, norm
+from decktalk.inputs.cues import SECTION_END, SECTION_START, Cue, CuedSection, Spoken, norm
 from decktalk.pipeline import Stage
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages import SECOND_DIGITS, judge
-
-SECTION_START = "$start"
-"""The phrase that anchors a cue to its section's own beginning rather than to a spoken word."""
-
-SECTION_END = "$end"
-"""The phrase that anchors a cue to the end of the last word its section speaks."""
 
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is what a cue with no word behind it resolves to."""
@@ -248,8 +242,6 @@ def _unresolved(
 __all__ = [
     "NEAREST_MIN_RATIO",
     "REPEATS_MIN",
-    "SECTION_END",
-    "SECTION_START",
     "SECTION_START_SECONDS",
     "ambiguity",
     "anchor_time",

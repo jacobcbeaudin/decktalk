@@ -17,8 +17,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from decktalk.errors import InputError
+from decktalk.inputs.cues import SECTION_START
 from decktalk.inputs.paths import at, relative
-from decktalk.tomlmap import Table
+from decktalk.tomlmap import Table, default_of
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class Marker:
 
     name: str
     section: int
-    on: str = "$start"
+    on: str = SECTION_START
     offset: float = 0.0
     occurrence: int = 1
     case_sensitive: bool = False
@@ -76,15 +77,15 @@ def load_markers(path: Path, root: Path) -> Markers:
             Marker(
                 name=t.get_str("name", ""),
                 section=t.get_int("section", required=True),
-                on=t.get_str("on", "$start"),
-                offset=t.get_num("offset", 0.0),
-                occurrence=t.get_int("occurrence", 1),
+                on=t.get_str("on", default_of(Marker, "on")),
+                offset=t.get_num("offset", default_of(Marker, "offset")),
+                occurrence=t.get_int("occurrence", default_of(Marker, "occurrence")),
                 case_sensitive=t.get_bool("case_sensitive"),
-                mute_seconds=t.get_num("mute_seconds", 0.0),
+                mute_seconds=t.get_num("mute_seconds", default_of(Marker, "mute_seconds")),
             )
         )
     return Markers(
-        boost_db=top.get_num("boost_db", 3.0),
-        boost_seconds=top.get_num("boost_seconds", 2.0),
+        boost_db=top.get_num("boost_db", default_of(Markers, "boost_db")),
+        boost_seconds=top.get_num("boost_seconds", default_of(Markers, "boost_seconds")),
         markers=tuple(rows),
     )

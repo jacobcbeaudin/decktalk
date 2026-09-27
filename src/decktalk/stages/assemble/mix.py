@@ -23,11 +23,11 @@ from decktalk.errors import InputError
 from decktalk.events import Level
 from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs, PageSection
-from decktalk.inputs.cues import Spoken
+from decktalk.inputs.cues import SECTION_END, SECTION_START, Spoken
 from decktalk.inputs.markers import Marker
 from decktalk.inputs.timeline import narration_offsets, narration_runs
 from decktalk.machine import Run
-from decktalk.media import ffmpeg
+from decktalk.media import MILLISECONDS, ffmpeg
 from decktalk.pipeline import Artifact, Stage
 from decktalk.stages import SECOND_DIGITS, judge
 from decktalk.stages.assemble.cut import Rendered, concat, encoder, rendered_starts
@@ -35,8 +35,6 @@ from decktalk.stages.assemble.cut import Rendered, concat, encoder, rendered_sta
 CLIP_FADE_SECONDS = 0.02
 """Truth: half a frame of fade at each edge of a clip's own audio, so a cut into it never clicks."""
 
-MILLISECONDS = 1000
-"""Truth: milliseconds in one second, which is the unit ffmpeg's `adelay` reads."""
 
 DECIBEL_DECADE = 20.0
 """Truth: twenty decibels is one decade of amplitude, which is what converts a level to a factor."""
@@ -161,13 +159,13 @@ def resolve_marker_time(marker: Marker, starts: Mapping[int, float], takes: Take
     """
     if marker.section not in starts:
         return None
-    if marker.on == "$start":
+    if marker.on == SECTION_START:
         return starts[marker.section] + marker.offset
     take = takes.of(marker.section)
     if take is None:
         return None
     words = inputs.words(marker.section, take.hash)
-    if marker.on == "$end":
+    if marker.on == SECTION_END:
         return starts[marker.section] + words[-1].end + marker.offset if words else None
     found = Spoken.of(words).find(marker.on, marker.occurrence, marker.case_sensitive)
     return None if found is None else starts[marker.section] + words[found].start + marker.offset

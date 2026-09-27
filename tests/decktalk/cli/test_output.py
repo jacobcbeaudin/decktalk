@@ -261,6 +261,9 @@ def test_verify_prints_a_row_per_measured_cue_with_its_signed_offset() -> None:
     )
     said = recorded(measured)
     assert "Verifying build/final/demo.mp4, 1:04 long." in said
+    # The length is written by the clock a caption or a chapter is written by, so an hour reads as one.
+    long_film = recorded(measured.model_copy(update={"film_seconds": 3725.0}))
+    assert "Verifying build/final/demo.mp4, 1:02:05 long." in long_film
     assert "2:chart" in said
     assert "+0.06" in said
     assert "2:skipped" not in said

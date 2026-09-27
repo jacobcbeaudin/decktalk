@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decktalk.inputs import Inputs
-from decktalk.inputs.document import frame_dip
+from decktalk.inputs.document import ClipSection, Document, Mix, PageSection, Transition, frame_dip
 from support.projects import MINIMAL_TOML, write_project
 
 
@@ -29,3 +29,17 @@ def test_frame_dip_quantizes_to_whole_frames():
     assert frame_dip(0.15, 30) == 0.1333  # 4.5 frames rounds to the even 4
     assert frame_dip(0.001, 25) == 0.04  # never shorter than one frame
     assert frame_dip(0.0, 25) == 0.0
+
+
+def test_a_project_that_writes_no_value_gets_the_default_its_field_declares() -> None:
+    """The parse call and the field used to spell every default twice, so the two could disagree."""
+    doc = Document.from_toml(
+        {"section": [{"number": 1, "clip": "a.mp4"}, {"number": 2, "page": "a.html"}], "mix": {}, "transition": {}},
+        default_name="t",
+    )
+    clip, page = doc.sections
+    assert isinstance(clip, ClipSection) and clip.slate_seconds == ClipSection(number=1, clip="a.mp4").slate_seconds
+    assert (
+        isinstance(page, PageSection) and page.record_margin_seconds == PageSection(1, "a", "1").record_margin_seconds
+    )
+    assert doc.mix == Mix() and doc.transition == Transition()

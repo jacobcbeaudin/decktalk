@@ -23,7 +23,7 @@ from typing import Any
 from decktalk.errors import InputError
 from decktalk.results import SectionKind
 from decktalk.settings import BY_ID, PROJECT_FILE, Settings
-from decktalk.tomlmap import Table, unknown_key_message
+from decktalk.tomlmap import Table, default_of, unknown_key_message
 
 log = logging.getLogger(__name__)
 
@@ -317,7 +317,7 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
             number=number,
             clip=t.get_path("clip", ""),
             chapter=chapter,
-            slate_seconds=t.get_num("slate_seconds", 5.0),
+            slate_seconds=t.get_num("slate_seconds", default_of(ClipSection, "slate_seconds")),
             optional=t.get_bool("optional"),
             words=t.get_path("words"),
             seamless=t.get_bool("seamless"),
@@ -338,8 +338,8 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
         page=t.get_path("page", ""),
         scene=str(scene),
         chapter=chapter,
-        record_margin_seconds=t.get_num("record_margin_seconds", 0.3),
-        hold_seconds=t.get_num("hold_seconds", 0.0),
+        record_margin_seconds=t.get_num("record_margin_seconds", default_of(PageSection, "record_margin_seconds")),
+        hold_seconds=t.get_num("hold_seconds", default_of(PageSection, "hold_seconds")),
         ambience=t.get_bool("ambience"),
         params={str(k): str(v) for k, v in params_raw.items()},
         seamless=t.get_bool("seamless"),
@@ -372,7 +372,7 @@ def parse_voice(doc: dict[str, Any]) -> Voice:
         return Voice()
     t = Table(raw, f"{PROJECT_FILE}: [voice]", table="voice")
     warn(t.note_unknown(set(Voice.__dataclass_fields__) | tuning_keys("voice")))
-    return Voice(provider=t.get_str("provider", "elevenlabs"), model=t.get_str("model"))
+    return Voice(provider=t.get_str("provider", default_of(Voice, "provider")), model=t.get_str("model"))
 
 
 def parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
@@ -395,7 +395,9 @@ def parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
             pairs.append((pair[0], pair[1]))
         dips = tuple(pairs)
     return Transition(
-        dips=dips, dip_seconds=t.get_num("dip_seconds", 0.15), page_fades_in=t.get_bool("page_fades_in", True)
+        dips=dips,
+        dip_seconds=t.get_num("dip_seconds", default_of(Transition, "dip_seconds")),
+        page_fades_in=t.get_bool("page_fades_in", default_of(Transition, "page_fades_in")),
     )
 
 
@@ -417,20 +419,20 @@ def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
                 file=s.get_path("file", required=True),
                 section=section,
                 cue=s.get_str("cue", required=True),
-                db=s.get_num("db", -16.0),
-                offset=s.get_num("offset", 0.0),
-                caption=s.get_str("caption", ""),
+                db=s.get_num("db", default_of(MixEffect, "db")),
+                offset=s.get_num("offset", default_of(MixEffect, "offset")),
+                caption=s.get_str("caption", default_of(MixEffect, "caption")),
             )
         )
     return Mix(
         music=t.get_path("music"),
-        music_db=t.get_num("music_db", -24.0),
-        music_duck_db=t.get_num("music_duck_db", -6.0),
-        music_fade_in_seconds=t.get_num("music_fade_in_seconds", 2.0),
-        music_fade_out_seconds=t.get_num("music_fade_out_seconds", 3.0),
+        music_db=t.get_num("music_db", default_of(Mix, "music_db")),
+        music_duck_db=t.get_num("music_duck_db", default_of(Mix, "music_duck_db")),
+        music_fade_in_seconds=t.get_num("music_fade_in_seconds", default_of(Mix, "music_fade_in_seconds")),
+        music_fade_out_seconds=t.get_num("music_fade_out_seconds", default_of(Mix, "music_fade_out_seconds")),
         music_markers=t.get_path("music_markers"),
         ambience=t.get_path("ambience"),
-        ambience_db=t.get_num("ambience_db", -20.0),
+        ambience_db=t.get_num("ambience_db", default_of(Mix, "ambience_db")),
         slate=t.get_path("slate"),
         effects=tuple(effects),
     )
@@ -467,8 +469,8 @@ def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
         warn(m.note_unknown(MusicSpec.__dataclass_fields__))
         music = MusicSpec(
             prompt=m.get_str("prompt", required=True),
-            seconds=m.get_int("seconds", 360),
-            force_instrumental=m.get_bool("force_instrumental", True),
+            seconds=m.get_int("seconds", default_of(MusicSpec, "seconds")),
+            force_instrumental=m.get_bool("force_instrumental", default_of(MusicSpec, "force_instrumental")),
             out=m.get_path("out"),
             model_id=m.get_str("model_id"),
         )

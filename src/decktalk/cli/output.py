@@ -23,6 +23,7 @@ from rich.live import Live
 from rich.table import Table
 from rich.text import Text
 
+from decktalk.captions import clock
 from decktalk.errors import ErrorInfo
 from decktalk.events import Event, Fetch, Log, Progress, RunStart, StageDone, StageStart
 from decktalk.findings import Applicability, Certainty, Code, Finding, Location
@@ -81,7 +82,7 @@ class Report:
         name = self.stage.value.title().rjust(STAGE_COLUMN)
         text = Text(f"{name} {self.label}")
         if self.seconds is not None:
-            text.append(f"   {_clock(self.seconds)}", style=QUIET_STYLE)
+            text.append(f"   {clock(self.seconds)}", style=QUIET_STYLE)
         elif self.total:
             text.append(f"   {self.done}/{self.total}", style=QUIET_STYLE)
         return text
@@ -285,11 +286,6 @@ def _table(*columns: str) -> Table:
     return table
 
 
-def _clock(seconds: float) -> str:
-    """A duration as a person reads one, which is minutes and seconds."""
-    return f"{int(seconds) // 60}:{int(seconds) % 60:02d}"
-
-
 def _bytes(count: int) -> str:
     """A download as a person reads one, in megabytes."""
     return f"{count / 1_000_000:.1f} MB"
@@ -347,7 +343,7 @@ def _status(result: StatusResult) -> Iterable[RenderableType]:
         )
     yield table
     if result.film is not None:
-        yield Text(f"Film   {result.film.as_posix()}, {_clock(result.film_seconds or 0)} long")
+        yield Text(f"Film   {result.film.as_posix()}, {clock(result.film_seconds or 0)} long")
     for run in result.runs:
         yield Text(f"Live   {run.run} writing {run.events.as_posix()}", style=QUIET_STYLE)
     if result.next is not None:
@@ -420,7 +416,7 @@ def _soundscape(result: SoundscapeResult) -> Iterable[RenderableType]:
 
 
 def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
-    yield Text(f"Built {result.film.as_posix()}, {_clock(result.film_seconds)} long.")
+    yield Text(f"Built {result.film.as_posix()}, {clock(result.film_seconds)} long.")
     if result.loudness is not None:
         yield Text(
             f"Loudness {result.loudness.integrated_lufs:.1f} LUFS against {result.loudness.target_lufs:.1f}.",
@@ -429,7 +425,7 @@ def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
 
 
 def _verify(result: VerifyResult) -> Iterable[RenderableType]:
-    yield Text(f"Verifying {result.film.as_posix()}, {_clock(result.film_seconds)} long.")
+    yield Text(f"Verifying {result.film.as_posix()}, {clock(result.film_seconds)} long.")
     measured = [cue for cue in result.cues if cue.offset is not None]
     if measured:
         table = _table("Section", "Cue", "Spoken", "Shown", "Offset")

@@ -29,7 +29,13 @@ from decktalk.errors import InputError
 from decktalk.findings import Location
 from decktalk.inputs.paths import at
 from decktalk.results import Word
-from decktalk.tomlmap import Table
+from decktalk.tomlmap import Table, default_of
+
+SECTION_START = "$start"
+"""The phrase that anchors a cue or a marker to its section's own beginning rather than to a spoken word."""
+
+SECTION_END = "$end"
+"""The phrase that anchors a cue or a marker to the end of the last word its section speaks."""
 
 
 @dataclass(frozen=True)
@@ -171,10 +177,10 @@ def parse_cue(raw: dict[str, object], where: str, location: Location | None = No
     return Cue(
         cue=cue_id,
         on=on,
-        occurrence=t.get_int("occurrence", 1),
+        occurrence=t.get_int("occurrence", default_of(Cue, "occurrence")),
         case_sensitive=t.get_bool("case_sensitive"),
-        offset=t.get_num("offset", 0.0),
-        verify=t.get_bool("verify", True),
+        offset=t.get_num("offset", default_of(Cue, "offset")),
+        verify=t.get_bool("verify", default_of(Cue, "verify")),
         occurrence_set="occurrence" in raw,
     )
 

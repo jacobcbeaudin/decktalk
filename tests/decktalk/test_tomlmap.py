@@ -16,6 +16,7 @@ from decktalk.tomlmap import (
     Nature,
     Source,
     Table,
+    default_of,
     did_you_mean,
     env_names,
     from_mapping,
@@ -216,3 +217,19 @@ class TestTable:
     def test_an_array_of_tables_refuses_a_row_that_is_not_one(self) -> None:
         with pytest.raises(InputError, match="must be a table"):
             Table({"section": [1]}, "[project]").get_tables("section")
+
+
+@dataclass(frozen=True)
+class Row:
+    """One table read into a dataclass, whose field names its own default."""
+
+    seconds: float = 5.0
+
+
+def test_a_parser_reads_a_default_from_the_field_that_declares_it() -> None:
+    assert default_of(Row, "seconds") == 5.0
+
+
+def test_a_default_is_read_only_from_a_dataclass() -> None:
+    with pytest.raises(TypeError):
+        default_of(int, "seconds")

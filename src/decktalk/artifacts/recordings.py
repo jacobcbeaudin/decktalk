@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 
 from decktalk.artifacts.stored import ENGINE_VERSION, Stored
 from decktalk.findings import MODEL, Finding, ProjectPath
+from decktalk.media import MILLISECONDS
 from decktalk.media.pagereport import PageReport
 
 HASH_DIGITS = 16
@@ -37,9 +38,6 @@ HASH_DIGITS = 16
 
 GONE = "gone"
 """What a file the page asked for and the project no longer has is digested as."""
-
-MILLISECONDS = 1000
-"""Truth: milliseconds in one second, which is the one conversion between a page's clock and a film's."""
 
 
 def file_digest(path: Path) -> str:

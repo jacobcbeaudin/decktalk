@@ -69,3 +69,8 @@ def test_the_transcript_is_one_plain_page_a_viewer_can_read(tmp_path):
     assert "A clip plays here: media/b.mp4." in text
     # The page carries no script and no external reference, so it opens anywhere and offline.
     assert "<script" not in text and "http" not in text
+
+
+def test_a_time_is_written_to_the_nearest_second_the_one_way_a_person_reads_it() -> None:
+    """The terminal truncated where the transcript rounded, so 59.6 s read as 0:59 in one and 1:00 in the other."""
+    assert (clock(59.6), clock(61.0), clock(3725.0)) == ("1:00", "1:01", "1:02:05")

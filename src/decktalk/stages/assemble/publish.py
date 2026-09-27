@@ -36,7 +36,7 @@ from decktalk.errors import DeckTalkError, ToolError
 from decktalk.events import Level
 from decktalk.inputs import ClipSection, Inputs, PageSection
 from decktalk.machine import Run
-from decktalk.media import browser, ffmpeg
+from decktalk.media import MILLISECONDS, browser, ffmpeg
 from decktalk.media.encode import iso_639_2
 from decktalk.media.origin import Allowed, page_url
 from decktalk.media.pagereport import MeasuredScene
@@ -48,8 +48,6 @@ from decktalk.stages.assemble.cut import Rendered, rendered_starts
 SOUND_CAPTION_SECONDS = 1.0
 """Calibration: how long a sound's caption stays on screen, which is what SC 1.2.2 expects of one."""
 
-MILLISECONDS = 1000
-"""Truth: milliseconds in one second, which is the unit a screenshot's settle is asked for in."""
 
 WORK_MARK = "."
 """What a work file's name opens with, so nothing a viewer can open is written until the film is whole."""
