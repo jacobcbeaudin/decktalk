@@ -68,7 +68,7 @@ from decktalk.findings import (
     SettingFix,
 )
 from decktalk.inputs.env import reading_dotenv
-from decktalk.inputs.paths import at, relative
+from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
 from decktalk.media.environment import children_see
 from decktalk.media.ffmpeg import installed_paths, using_tools
@@ -791,22 +791,22 @@ def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
 
 
 def _inside(root: Path, named: Path) -> Path:
-    """The file an edit names, refused unless it resolves inside the root once every link is followed.
+    """The file an edit names, held to the project by `contained`, the one rule every project path meets.
 
-    A fix can arrive as JSON from anywhere, so its path is the one part of it an attacker chooses.
-    The check is made on the resolved path, because `..`, an absolute path and a symbolic link that
-    points out of the project all spell a file inside it until they are resolved. The path handed
-    back is spelled under the root the caller gave, so every result still names it relative to that.
+    A fix can arrive as JSON from anywhere, so its path is the one part of it an attacker chooses, and
+    the refusal says what a fix may change rather than what a project may read. The path handed back
+    is the resolved file spelled under the root the caller gave, so two edits that name one file by
+    two spellings change it once.
     """
-    home = root.resolve()
-    resolved = (home / named).resolve()
-    if not resolved.is_relative_to(home):
+    try:
+        path = contained(root, named)
+    except InputError as outside:
         raise InputError(
             f"{Path(named).as_posix()} is outside the project, so a fix may not change it.",
             hint="A fix only ever changes files inside the project it was made for.",
             location=Location(where=Path(named).as_posix()),
-        )
-    return root / resolved.relative_to(home)
+        ) from outside
+    return root / path.resolve().relative_to(root.resolve())
 
 
 def _write_key(run: Run, key: str, value: str, *, root: Path, scope: Scope, dry_run: bool = False) -> Path:
