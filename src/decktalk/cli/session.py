@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -101,17 +100,14 @@ class Session:
         self.spend = False
         self.max_cost: float | None = None
         self._said = False
-        self.out = Console(
-            file=sys.stdout,
-            no_color=flags.color is When.NEVER,
-            force_terminal=True if flags.color is When.ALWAYS else None,
-            soft_wrap=True,
-        )
-        self.err = Console(
-            stderr=True,
-            no_color=flags.color is When.NEVER,
-            force_terminal=True if flags.color is When.ALWAYS else None,
-            soft_wrap=True,
+        self.out, self.err = (
+            Console(
+                stderr=stderr,
+                no_color=flags.color is When.NEVER,
+                force_terminal=True if flags.color is When.ALWAYS else None,
+                soft_wrap=True,
+            )
+            for stderr in (False, True)
         )
         self.terminal = Terminal(
             is_terminal=self.err.is_terminal,
@@ -163,7 +159,9 @@ class Session:
         the set of notes already printed by an earlier call of the same command, which are not
         printed again.
         """
-        renderers: list[Any] = [output.Notes(self.err, verbose=self.flags.verbose, quiet=self.flags.quiet, heard=heard)]
+        renderers: list[output.Renderer] = [
+            output.Notes(self.err, verbose=self.flags.verbose, quiet=self.flags.quiet, heard=heard)
+        ]
         if opening:
             renderers.append(output.Opening(self.err))
         if self.terminal.events:
@@ -282,8 +280,7 @@ class Session:
             return self.exit_code(result)
         self._said = True
         if self.flags.json_out:
-            self.out.file.write(result.model_dump_json(indent=2) + "\n")
-            self.out.file.flush()
+            self._stdout(result.model_dump_json(indent=2))
         else:
             output.render(result, self.out)
         return self.exit_code(result)
@@ -295,9 +292,13 @@ class Session:
         `schema` set to 2 inside a document about schemas is unreadable.
         """
         self._said = True
-        self.out.file.write(json.dumps(contract, indent=2, sort_keys=False, default=str) + "\n")
-        self.out.file.flush()
+        self._stdout(json.dumps(contract, indent=2, sort_keys=False, default=str))
         return 0
+
+    def _stdout(self, text: str) -> None:
+        """Write one JSON document on stdout whole, flushed so a reader that waits on it gets it now."""
+        self.out.file.write(text + "\n")
+        self.out.file.flush()
 
     def exit_code(self, result: Result) -> int:
         """0 found nothing, 1 found something at the threshold, and the code's own when it could not run."""
@@ -317,8 +318,7 @@ class Session:
     def reported(self, info: ErrorInfo) -> int:
         """Write one refusal, and give back the exit code its own code carries."""
         if self.flags.json_out:
-            self.out.file.write(ErrorResult(ok=False, error=info).model_dump_json(indent=2) + "\n")
-            self.out.file.flush()
+            self._stdout(ErrorResult(ok=False, error=info).model_dump_json(indent=2))
         else:
             output.error_block(info, self.err)
         return info.code.exit_code

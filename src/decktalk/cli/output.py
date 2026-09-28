@@ -88,7 +88,24 @@ class Report:
         return text
 
 
-class Region:
+class Renderer:
+    """One reader of the event stream, on the console it writes to, holding nothing open unless it says so."""
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+
+    def open(self) -> None:
+        """Start whatever this reader draws, which for most of them is nothing."""
+
+    def close(self) -> None:
+        """Stop whatever this reader draws, which for most of them is nothing."""
+
+    def __call__(self, event: Event) -> None:
+        """Take one line of the stream."""
+        raise NotImplementedError
+
+
+class Region(Renderer):
     """The transient live region a terminal shows, which is one row per stage of the run.
 
     It is transient because a run's own summary is what a reader keeps, and because a region that
@@ -96,7 +113,7 @@ class Region:
     """
 
     def __init__(self, console: Console) -> None:
-        self._console = console
+        super().__init__(console)
         self._rows: dict[Stage, Report] = {}
         self._live = Live(console=console, transient=True, refresh_per_second=REFRESH_PER_SECOND)
 
@@ -126,17 +143,8 @@ class Region:
         self._live.update(Stack(*(row.line() for row in self._rows.values())))
 
 
-class Lines:
+class Lines(Renderer):
     """The plain stage lines a pipe gets, which are the live region without the cursor movement."""
-
-    def __init__(self, console: Console) -> None:
-        self._console = console
-
-    def open(self) -> None:
-        """Nothing is drawn until a stage ends, so there is nothing to start."""
-
-    def close(self) -> None:
-        """Nothing is held open, so there is nothing to stop."""
 
     def __call__(self, event: Event) -> None:
         """Write one line for every stage that ended, and nothing for the moments in between."""
@@ -145,17 +153,8 @@ class Lines:
             self._console.print(row.line())
 
 
-class Jsonl:
+class Jsonl(Renderer):
     """The JSON lines `--events` writes on stderr, which are the library's own lines untouched."""
-
-    def __init__(self, console: Console) -> None:
-        self._console = console
-
-    def open(self) -> None:
-        """A line stream has nothing to start."""
-
-    def close(self) -> None:
-        """A line stream has nothing to stop."""
 
     def __call__(self, event: Event) -> None:
         """Write one line, exactly as the library minted it."""
@@ -163,7 +162,7 @@ class Jsonl:
         self._console.file.flush()
 
 
-class Notes:
+class Notes(Renderer):
     """The log lines the library would have printed, written at the level `-v` and `-q` choose.
 
     `heard` is shared by the renderers of one command that runs the same judgement twice, as
@@ -171,16 +170,10 @@ class Notes:
     """
 
     def __init__(self, console: Console, *, verbose: bool, quiet: bool, heard: set[str] | None = None) -> None:
-        self._console = console
+        super().__init__(console)
         self._verbose = verbose
         self._quiet = quiet
         self._heard = heard
-
-    def open(self) -> None:
-        """Nothing is held open."""
-
-    def close(self) -> None:
-        """Nothing is held open."""
 
     def __call__(self, event: Event) -> None:
         """Write one log line when its level passes the two flags that choose between them."""
@@ -198,18 +191,12 @@ class Notes:
         self._console.print(Text(event.message, style=QUIET_STYLE if level in ("debug", "info") else "yellow"))
 
 
-class Opening:
+class Opening(Renderer):
     """The first line `build` writes, which names the run and the file its events are appended to."""
 
     def __init__(self, console: Console) -> None:
-        self._console = console
+        super().__init__(console)
         self.said = False
-
-    def open(self) -> None:
-        """Nothing is held open."""
-
-    def close(self) -> None:
-        """Nothing is held open."""
 
     def __call__(self, event: Event) -> None:
         """Name the run and its events file once, before the first stage of the run."""
@@ -531,6 +518,7 @@ __all__ = [
     "Notes",
     "Opening",
     "Region",
+    "Renderer",
     "error_block",
     "finding_lines",
     "render",
