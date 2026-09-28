@@ -36,11 +36,6 @@ def test_every_artifact_path_is_project_relative_and_posix() -> None:
     for artifact in Artifact:
         assert artifact.value.startswith("build/"), artifact
         assert "\\" not in artifact.value, artifact
-        assert artifact.path.parts[0] == "build"
-
-
-def test_an_artifact_resolves_under_a_root(tmp_path) -> None:
-    assert Artifact.TAKES.under(tmp_path) == tmp_path / "build" / "narrate" / "takes.json"
 
 
 def test_the_next_step_names_the_stage_that_writes_the_artifact() -> None:

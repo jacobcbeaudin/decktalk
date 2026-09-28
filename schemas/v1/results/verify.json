@@ -643,14 +643,12 @@
       "description": "Why one measurement was not taken, so a skipped row is never read as a passing one.",
       "enum": [
         "at_section_start",
-        "clip_section",
         "no_catalog",
         "no_cues",
         "no_onset",
         "no_slide",
         "not_assembled",
         "opted_out",
-        "reference_clamped",
         "too_close_to_end"
       ],
       "title": "SkipReason",

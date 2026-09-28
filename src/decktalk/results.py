@@ -149,14 +149,12 @@ class SkipReason(Enum):
     """Why one measurement was not taken, so a skipped row is never read as a passing one."""
 
     AT_SECTION_START = "at_section_start"
-    CLIP_SECTION = "clip_section"
     NO_CATALOG = "no_catalog"
     NO_CUES = "no_cues"
     NO_ONSET = "no_onset"
     NO_SLIDE = "no_slide"
     NOT_ASSEMBLED = "not_assembled"
     OPTED_OUT = "opted_out"
-    REFERENCE_CLAMPED = "reference_clamped"
     TOO_CLOSE_TO_END = "too_close_to_end"
 
 

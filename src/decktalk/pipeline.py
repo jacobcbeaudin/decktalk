@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path, PurePosixPath
 
 
 class Stage(Enum):
@@ -72,15 +71,6 @@ class Artifact(Enum):
     RECORDINGS = "build/recordings"
     SOUNDSCAPE = "build/soundscape"
     FINAL = "build/final"
-
-    @property
-    def path(self) -> PurePosixPath:
-        """The artifact's project-relative path."""
-        return PurePosixPath(self.value)
-
-    def under(self, root: Path) -> Path:
-        """The artifact's path under one project root, which is what a stage opens."""
-        return root.joinpath(*self.path.parts)
 
     @property
     def written_by(self) -> Stage | None:

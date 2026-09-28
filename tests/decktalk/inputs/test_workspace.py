@@ -26,7 +26,7 @@ SPACE = Workspace(root=ROOT, build=ROOT / "build", name="demo")
 )
 def test_every_artifact_the_pipeline_declares_is_the_path_this_module_names(artifact: Artifact, path: Path) -> None:
     """Two declarations of one path can disagree, so this holds them equal rather than trusting them."""
-    assert artifact.under(ROOT) == path
+    assert ROOT.joinpath(artifact.value) == path
 
 
 def test_the_film_is_named_after_the_project() -> None:
