@@ -125,12 +125,17 @@ def scheme(value: str) -> ColorScheme:
     A setting Chromium does not know is a project file that says something untrue about the render,
     and the browser takes it silently, so the one place that passes it on is the place that reads it.
     """
-    if value not in COLOR_SCHEMES:
+    return _one_of("color_scheme", value, COLOR_SCHEMES)
+
+
+def _one_of[S: str](key: str, value: str, choices: tuple[S, ...]) -> S:
+    """One closed `[record]` key's value, refused unless it is a settings choice, whose own entry it returns."""
+    if value not in choices:
         raise InputError(
-            f"[record] color_scheme = {value!r} is not one of {', '.join(COLOR_SCHEMES)}.",
-            hint=f"Set it to one of {', '.join(COLOR_SCHEMES)}.",
+            f"[record] {key} = {value!r} is not one of {', '.join(choices)}.",
+            hint=f"Set it to one of {', '.join(choices)}.",
         )
-    return value  # type: ignore[return-value]  (the settings tuple and the type above are held equal by a test)
+    return choices[choices.index(value)]
 
 
 SLATE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
@@ -178,12 +183,7 @@ def page_policy(value: str) -> PagePolicy:
     An unknown value is a project file that says something untrue about the render, and reading it as
     trusted would open the network to a page whose host meant to close it.
     """
-    if value not in PAGE_POLICIES:
-        raise InputError(
-            f"[record] page_policy = {value!r} is not one of {', '.join(PAGE_POLICIES)}.",
-            hint=f"Set it to one of {', '.join(PAGE_POLICIES)}.",
-        )
-    return value  # type: ignore[return-value]  (the settings tuple and the type above are held equal by a test)
+    return _one_of("page_policy", value, PAGE_POLICIES)
 
 
 def launch_options(policy: PagePolicy) -> dict[str, Any]:
@@ -331,16 +331,26 @@ def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECO
         return page.evaluate(raced)
 
 
-def instrument(page: Page) -> Page:
-    """Add decktalk-probe.js to every page `page` loads from here on, sealed. Returns the page.
+def instrument[T: (Page, BrowserContext)](target: T, *scripts: str) -> T:
+    """Add decktalk-probe.js, sealed, and then `scripts` to every page `target` loads from here on. Returns it.
 
     An init script is added to the page and not to a navigation, so a page a command drives through
     several URLs keeps one probe across all of them. The seal runs after the probe and before any
     script of the page, and it leaves an already sealed window alone.
     """
-    page.add_init_script(PROBE_JS)
-    page.add_init_script(SEAL_JS)
-    return page
+    for script in (PROBE_JS, SEAL_JS, *scripts):
+        target.add_init_script(script)
+    return target
+
+
+def _view(width: int, height: int, color_scheme: str, motion: MotionConfig) -> dict[str, Any]:
+    """The viewport, colour scheme and motion that a page and a recording context are both opened with."""
+    return {
+        "viewport": {"width": width, "height": height},
+        "device_scale_factor": 1,
+        "color_scheme": scheme(color_scheme),
+        "reduced_motion": "reduce" if motion.reduce else "no-preference",
+    }
 
 
 def open_page(
@@ -361,15 +371,8 @@ def open_page(
     """
     motion = motion or MotionConfig()
     with driving("could not open a page"):
-        page = browser.new_page(
-            viewport={"width": width, "height": height},
-            device_scale_factor=1,
-            color_scheme=scheme(color_scheme),
-            reduced_motion="reduce" if motion.reduce else "no-preference",
-        )
-    instrument(page)
-    for script in motion_scripts(motion):
-        page.add_init_script(script)
+        page = browser.new_page(**_view(width, height, color_scheme, motion))
+    instrument(page, *motion_scripts(motion))
     return page, route_pages(page, allowed, documents, trusted=trusts(browser))
 
 
@@ -501,21 +504,14 @@ def capturing(
     try:
         with driving("could not open a recording context"):
             context = browser.new_context(
-                viewport={"width": width, "height": height},
-                device_scale_factor=1,
-                color_scheme=scheme(color_scheme),
-                reduced_motion="reduce" if motion.reduce else "no-preference",
+                **_view(width, height, color_scheme, motion),
                 record_video_dir=str(directory),
                 record_video_size={"width": width, "height": height},
             )
         opened = time.monotonic()
         assets = route_pages(context, allowed, documents, trusted=trusts(browser))
         capture = Capture(context=context, assets=assets, directory=directory, opened=opened)
-        context.add_init_script(PROBE_JS)
-        context.add_init_script(SEAL_JS)
-        context.add_init_script("(" + COVER_JS + ")()")
-        for script in motion_scripts(motion):
-            context.add_init_script(script)
+        instrument(context, "(" + COVER_JS + ")()", *motion_scripts(motion))
         try:
             yield capture
         finally:
