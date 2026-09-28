@@ -161,13 +161,8 @@ class Inputs:
     @cached_property
     def _parsed(self) -> tuple[Segment, ...]:
         """The script as `script` answers it, kept on this value alone so a replaced one reads it afresh."""
-        written, _spoken = read_script(
-            self.script_path,
-            self.root,
-            declared={section.number for section in self.document.sections},
-            clips=self.document.clip_numbers,
-        )
-        return tuple(written)
+        declared = {section.number for section in self.document.sections}
+        return tuple(read_script(self.script_path, self.root, declared=declared))
 
     def spoken(self) -> tuple[Segment, ...]:
         """Every section the voice reads, which is every one that does not play a clip."""
