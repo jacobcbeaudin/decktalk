@@ -281,7 +281,13 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, write_proj
 
     catalog = (MeasuredScene.model_validate({"scene": "1", "elements": {}, "slides": ["1.1"]}),)
     monkeypatch.setattr(browser, "chromium", chromium)
-    monkeypatch.setattr(browser, "open_page", lambda *_a, **_k: (Page(), SimpleNamespace(paths=["deck/index.html"])))
+    documents: list[object] = []
+
+    def open_page(*_a: object, **named: object) -> tuple[Page, SimpleNamespace]:
+        documents.append(named.get("documents"))
+        return Page(), SimpleNamespace(paths=["deck/index.html"])
+
+    monkeypatch.setattr(browser, "open_page", open_page)
     monkeypatch.setattr(browser, "await_ready", lambda _page: None)
     monkeypatch.setattr(browser, "read_report", lambda *_a: PageReport(catalog=catalog))
     monkeypatch.setattr(browser, "screenshot", screenshot)
@@ -291,6 +297,8 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, write_proj
     assert render_poster(inputs, opened.run, out) == out
     assert launched == ["trusted"]
     assert out.read_bytes() == b"poster"
+    # The poster page answers the cue-times alias from memory, as every other frozen page does.
+    assert documents == [inputs.documents()]
     (tmp_path / "deck" / "index.html").write_text("<html>edited</html>", encoding="utf-8")
     render_poster(inputs, opened.run, out)
     assert launched == ["trusted", "trusted"]

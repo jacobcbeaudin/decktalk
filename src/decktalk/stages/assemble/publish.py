@@ -350,7 +350,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
     if section is None:
         return None
     video = inputs.settings.video
-    key = inputs.still_key(section.page, POSTER_MARK, section.scene)
+    key = inputs.still_key(section.page, POSTER_MARK, section.scene, documents=inputs.documents())
     kept = inputs.stills.find(key)
     if kept is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -365,6 +365,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
                 height=video.height,
                 color_scheme=inputs.settings.record.color_scheme,
                 motion=inputs.settings.motion,
+                documents=inputs.documents(),
             )
             page.goto(page_url(section.page))
             browser.await_ready(page)
