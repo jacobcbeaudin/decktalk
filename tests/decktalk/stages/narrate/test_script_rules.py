@@ -44,9 +44,15 @@ def test_the_voice_never_receives_what_it_would_read_out(line: str, what: str) -
 
 
 def test_only_the_body_of_a_numbered_section_is_spoken() -> None:
-    numbered = dict(spoken_lines("# Notes\n\nnever spoken\n\n## 1. Open\n\nspoken\n"))
-    assert "spoken" in numbered.values()
-    assert "never spoken" not in numbered.values()
+    spoken = [line for _number, _section, line in spoken_lines("# Notes\n\nnever spoken\n\n## 1. Open\n\nspoken\n")]
+    assert "spoken" in spoken
+    assert "never spoken" not in spoken
+
+
+def test_a_spoken_line_knows_which_section_it_is_in() -> None:
+    """A finding about one line is more use with the section an author would open to fix it."""
+    rows = list(spoken_lines("# Demo\n\n## 1. One\n\nfirst\n\n## 2. Two\n\nsecond\n"))
+    assert [(number, section) for number, section, line in rows if line] == [(5, 1), (9, 2)]
 
 
 def test_a_refused_script_names_every_line_and_the_rule() -> None:
