@@ -15,6 +15,7 @@ it. The query is typed, so no key outside the contract can reach a page.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import asdict
 
 from decktalk.findings import Code, Finding, Location
 from decktalk.inputs.document import PageSection
@@ -110,7 +111,7 @@ def landing_findings(
 ) -> list[Finding]:
     """One judgement per cue whose frozen frames say the reveal would not be measured as it stands."""
     settings = sheet.inputs.settings
-    size = {"level": settings.verify.probe_diff_luma, **frame_size(settings)}
+    size = {"level": settings.verify.probe_diff_luma, **asdict(frame_size(settings))}
     strokes = drawn_cues(entry)
     declared = element_cues(entry)
     found: list[Finding] = []
@@ -193,7 +194,7 @@ def seam_findings(
     if last is None or first is None:
         sheet.run.note(f"section {section.number} declares seamless and a side of its cut has no resolved cue.")
         return []
-    size = {"level": settings.verify.probe_diff_luma, **frame_size(settings)}
+    size = {"level": settings.verify.probe_diff_luma, **asdict(frame_size(settings))}
     share = frames.changed_images_percent(sheet.frozen(previous, last), sheet.frozen(section, first), **size)
     limit = settings.verify.cut_change_max_percent
     if share <= limit:

@@ -14,6 +14,7 @@ import pytest
 
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
+from decktalk.media.frames import Size
 from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS
 from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig
 from decktalk.stages.verify.plan import (
@@ -61,12 +62,12 @@ def test_a_wider_offset_limit_reaches_the_reference_frame_further_back() -> None
 
 def test_a_frame_is_compared_at_a_quarter_of_its_own_size() -> None:
     settings = Settings()
-    assert frame_size(settings) == {"width": settings.video.width // 4, "height": settings.video.height // 4}
+    assert frame_size(settings) == Size(settings.video.width // 4, settings.video.height // 4)
 
 
 def test_a_block_copy_is_one_pixel_per_transform_block() -> None:
     settings = Settings()
-    assert block_size(settings)["width"] == settings.video.width // 8
+    assert block_size(settings).width == settings.video.width // 8
 
 
 # ---- the reference frame -----------------------------------------------------------------------

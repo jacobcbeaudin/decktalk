@@ -21,6 +21,7 @@ from typing import cast
 
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
+from decktalk.media.frames import Size
 from decktalk.settings import NUMBERS_BY_ID, Settings, VerifyConfig
 
 EPSILON = 1e-6
@@ -55,20 +56,18 @@ def reference_lead(settings: Settings) -> float:
     return cast("float", NUMBERS_BY_ID[REFERENCE_LEAD].at(settings))
 
 
-def frame_size(settings: Settings) -> dict[str, int]:
-    """The width and the height every probe comparison is made at, as `frames` takes them."""
-    return {
-        "width": cast("int", NUMBERS_BY_ID[PROBE_WIDTH].at(settings)),
-        "height": cast("int", NUMBERS_BY_ID[PROBE_HEIGHT].at(settings)),
-    }
+def frame_size(settings: Settings) -> Size:
+    """The size every probe, control and seam comparison is made at."""
+    return Size(
+        cast("int", NUMBERS_BY_ID[PROBE_WIDTH].at(settings)), cast("int", NUMBERS_BY_ID[PROBE_HEIGHT].at(settings))
+    )
 
 
-def block_size(settings: Settings) -> dict[str, int]:
-    """The width and the height of the block-averaged copy, which cancels the encoder's ringing."""
-    return {
-        "width": cast("int", NUMBERS_BY_ID[BLOCK_WIDTH].at(settings)),
-        "height": cast("int", NUMBERS_BY_ID[BLOCK_HEIGHT].at(settings)),
-    }
+def block_size(settings: Settings) -> Size:
+    """The size of the block-averaged copy the onset scan reads, which cancels the encoder's ringing."""
+    return Size(
+        cast("int", NUMBERS_BY_ID[BLOCK_WIDTH].at(settings)), cast("int", NUMBERS_BY_ID[BLOCK_HEIGHT].at(settings))
+    )
 
 
 @dataclass(frozen=True)

@@ -146,7 +146,7 @@ def planned_seams(inputs: Inputs, starts: dict[int, float]) -> list[Seam]:
 def want_seams(inputs: Inputs, seams: list[Seam], wanted: Wanted) -> None:
     """Add the frames every seam compares, the opening and the few after it, to the film's one plan."""
     fps = inputs.settings.video.output_fps
-    size = Size(**frame_size(inputs.settings))
+    size = frame_size(inputs.settings)
     for seam in seams:
         wanted.point(size, seam.last, *(seam.opening + step / fps for step in range(SEAM_SEARCH_FRAMES + 1)))
 
@@ -159,7 +159,7 @@ def seam_checks(inputs: Inputs, run: Run, film: Path, seams: list[Seam], decoded
     """
     verify = inputs.settings.verify
     fps = inputs.settings.video.output_fps
-    size = Size(**frame_size(inputs.settings))
+    size = frame_size(inputs.settings)
     rows: list[SeamCheck] = []
     for seam in seams:
         drift, share = _drift(

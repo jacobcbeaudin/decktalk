@@ -98,16 +98,6 @@ def neighbours_of(times: dict[str, float], spans: dict[str, float], sec_start: f
     return [Neighbour(at=sec_start + at, span=spans.get(other, 0.0)) for other, at in times.items() if other != cue]
 
 
-def probe_size(inputs: Inputs) -> Size:
-    """The size every probe, control and seam comparison is made at."""
-    return Size(**frame_size(inputs.settings))
-
-
-def blocks_size(inputs: Inputs) -> Size:
-    """The block-averaged size the onset scan reads beside the probe size, to cancel the encoder's ringing."""
-    return Size(**block_size(inputs.settings))
-
-
 def best_probe(
     film: Decoded, before: float, floor: float, cue_at: float, delays: list[float], inputs: Inputs
 ) -> tuple[float, float, float, float] | None:
@@ -117,7 +107,7 @@ def best_probe(
     spans of the same length that end at the reference. Motion that is always there shows in both,
     while an earlier reveal still settling shows in one.
     """
-    level, size = inputs.settings.verify.probe_diff_luma, probe_size(inputs)
+    level, size = inputs.settings.verify.probe_diff_luma, frame_size(inputs.settings)
     best: tuple[float, float, float, float] | None = None
     for delay in delays:
         after = cue_at + delay
@@ -141,7 +131,7 @@ def first_change_seconds(film: Decoded, before: float, after: float, cue_at: flo
     fps = inputs.settings.video.output_fps
     series, blocks = (
         film.series(before, before, after, level=verify.onset_diff_luma, size=size)
-        for size in (probe_size(inputs), blocks_size(inputs))
+        for size in (frame_size(inputs.settings), block_size(inputs.settings))
     )
     return onset_offset_seconds(
         series,
@@ -247,7 +237,7 @@ def fitted_note(section: int, cue: str, delays: list[float]) -> str:
 
 def want_cues(inputs: Inputs, planned: list[CueCheck | Probed], wanted: Wanted) -> None:
     """Add every frame the planned cues could read to the film's one plan."""
-    probe, blocks = probe_size(inputs), blocks_size(inputs)
+    probe, blocks = frame_size(inputs.settings), block_size(inputs.settings)
     for row in planned:
         if isinstance(row, Probed):
             row.want(wanted, probe, blocks)
@@ -321,10 +311,7 @@ def _measured(inputs: Inputs, run: Run, film: Path, decoded: Decoded, cue: Probe
     best = best_probe(decoded, cue.before, cue.floor, cue.spoken, list(cue.delays), inputs)
     if best is None:
         return CueCheck(section=cue.section, cue=cue.cue, spoken=cue.spoken, skipped=SkipReason.TOO_CLOSE_TO_END)
-    return _judge(
-        inputs, run, film, decoded, cue.section, cue.cue, cue.at, cue.sec_start, cue.sec_end, cue.before, best,
-        clicks=clicks,
-    )  # fmt: skip
+    return _judge(inputs, run, film, decoded, cue, best, clicks=clicks)
 
 
 def _judge(
@@ -332,12 +319,7 @@ def _judge(
     run: Run,
     film: Path,
     decoded: Decoded,
-    section: int,
-    cue: str,
-    cue_t: float,
-    sec_start: float,
-    sec_end: float,
-    before: float,
+    probed: Probed,
     best: tuple[float, float, float, float],
     *,
     clicks: bool,
@@ -345,7 +327,7 @@ def _judge(
     """The row for one cue whose best probe has been measured: the landing, the onset and the word."""
     verify = inputs.settings.verify
     margin, changed, _control, after = best
-    at = round(sec_start + cue_t, 3)
+    section, cue, at = probed.section, probed.cue, probed.spoken
     where = Location(where=cue, file=inputs.relative(film), section=section, cue=cue)
     if changed < verify.changed_share_min_percent or margin < verify.margin_min_points:
         run.found(
@@ -371,7 +353,7 @@ def _judge(
                 stage=Stage.VERIFY,
             )
         )
-    offset = first_change_seconds(decoded, before, after, at, inputs)
+    offset = first_change_seconds(decoded, probed.before, after, at, inputs)
     if offset is None:
         run.found(
             judge(
@@ -393,7 +375,7 @@ def _judge(
     shown = round(at + offset, 3)
     word = at
     if clicks:
-        heard = click_seconds(film, at, inputs, floor=sec_start, ceiling=sec_end)
+        heard = click_seconds(film, at, inputs, floor=probed.sec_start, ceiling=probed.sec_end)
         if heard is not None:
             word = heard
             _judge_click(inputs, run, cue, where, promised=at, heard=heard)
@@ -444,7 +426,6 @@ def _judge_click(inputs: Inputs, run: Run, cue: str, where: Location, *, promise
 __all__ = [
     "Probed",
     "best_probe",
-    "blocks_size",
     "click_seconds",
     "cue_checks",
     "declared_spans",
@@ -453,6 +434,5 @@ __all__ = [
     "fitted_note",
     "neighbours_of",
     "planned_cues",
-    "probe_size",
     "want_cues",
 ]
