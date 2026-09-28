@@ -11,7 +11,7 @@ library's own registry.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import MISSING, Field, fields, is_dataclass
 from enum import Enum
 from typing import Any
@@ -138,19 +138,18 @@ def deciding(code: Code) -> tuple[str, ...]:
 
 def findings() -> list[dict[str, Any]]:
     """Every finding code as the library publishes it, with the keys that decide it joined on."""
-    return [{**row, "decides": list(deciding(Code(row["code"])))} for row in library.document()["findings"]]
+    return [{**row, "decides": list(deciding(Code(row["code"])))} for row in library.finding_codes()]
 
 
 def document() -> dict[str, Any]:
     """The whole instruction set in one object, which is what bare `decktalk schema` prints."""
-    published = library.document()
     return {
         "commands": walk(),
         "globals": globals_(),
         "exits": exits(),
-        "errors": published["errors"],
+        "errors": library.error_codes(),
         "findings": findings(),
-        "stages": published["stages"],
+        "stages": library.stages(),
     }
 
 
@@ -233,31 +232,29 @@ def _type_name(annotation: object) -> str:
     return {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}.get(spelled, spelled)
 
 
+CONTRACTS: dict[str, Callable[..., dict[str, Any]]] = {
+    **library.SCHEMAS,
+    "page": page_schema,
+    "project": project_schema,
+    "settings": settings_schema,
+}
+"""Every document `decktalk schema NAME` prints, by name, in the order a refusal lists them back."""
+
+
 def named(name: str, *, machine: bool = False) -> dict[str, Any]:
     """The one contract document `decktalk schema NAME` prints, whichever name was asked for."""
-    if name in RESULTS:
-        return library.result_schema(name)
-    if name == "finding":
-        return library.finding_schema()
-    if name == "error":
-        return library.error_schema()
-    if name == "event":
-        return library.event_schema()
     if name == "settings":
         return settings_schema(machine=machine)
-    if name == "page":
-        return page_schema()
-    if name == "project":
-        return project_schema()
-    raise KeyError(name)
+    return CONTRACTS[name]()
 
 
 def names() -> tuple[str, ...]:
     """Every name `decktalk schema NAME` answers to, which is what a refusal lists back."""
-    return (*sorted(RESULTS), "error", "event", "finding", "page", "project", "settings")
+    return tuple(CONTRACTS)
 
 
 __all__ = [
+    "CONTRACTS",
     "deciding",
     "document",
     "findings",

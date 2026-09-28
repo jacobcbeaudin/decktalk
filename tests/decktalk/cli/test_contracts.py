@@ -36,6 +36,11 @@ def test_a_schema_document_carries_no_reserved_keys(run) -> None:
     assert "ok" not in written
 
 
+def test_the_names_list_the_results_first_and_each_name_once() -> None:
+    assert catalog.names()[-5:] == ("event", "finding", "page", "project", "settings")
+    assert len(set(catalog.names())) == len(catalog.names())
+
+
 @pytest.mark.parametrize("name", catalog.names())
 def test_every_published_name_answers(run, name: str) -> None:
     ran = run("schema", name)

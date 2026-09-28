@@ -6,7 +6,7 @@ exists so that the sentence a code, a key or a field publishes has one home in t
 declares it, and so that two renderings of the same contract cannot disagree.
 
 What it publishes is what the library owns, which is every result's schema, every finding code with
-its sentence, every error code with its exit code, every event and every stage of the pipeline. The
+its sentence, every error code with its exit code, the event schema and every stage of the pipeline. The
 command and flag table belongs to the command line and is joined onto this by `decktalk schema`,
 which is the only place the two halves meet. The settings keys that move a finding are joined on
 there too, because each key declares the codes it decides and the keys sit above this module.
@@ -14,20 +14,16 @@ there too, because each key declares the codes it decides and the keys sit above
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import TypeAdapter
 
-from decktalk.errors import ErrorCode, ErrorInfo
+from decktalk.errors import ErrorCode
 from decktalk.events import Line
 from decktalk.findings import Code, Finding
 from decktalk.pipeline import PIPELINE
 from decktalk.results import RESULTS
-
-
-def result_schema(name: str) -> dict[str, Any]:
-    """The JSON Schema of one command's result, by the name `decktalk schema NAME` prints it under."""
-    return RESULTS[name].model_json_schema()
 
 
 def result_schemas() -> dict[str, dict[str, Any]]:
@@ -35,19 +31,17 @@ def result_schemas() -> dict[str, dict[str, Any]]:
     return {name: model.model_json_schema() for name, model in RESULTS.items()}
 
 
-def finding_schema() -> dict[str, Any]:
-    """The JSON Schema of one finding, which carries the whole code enum inside it."""
-    return Finding.model_json_schema()
+SCHEMAS: dict[str, Callable[[], dict[str, Any]]] = {
+    **{name: RESULTS[name].model_json_schema for name in sorted(RESULTS)},
+    "event": lambda: TypeAdapter(Line).json_schema(),
+    "finding": Finding.model_json_schema,
+}
+"""Every JSON Schema the library owns by the name `decktalk schema NAME` prints it under, built when asked.
 
-
-def error_schema() -> dict[str, Any]:
-    """The JSON Schema of the `error` a result carries, which carries the whole code enum inside it."""
-    return ErrorInfo.model_json_schema()
-
-
-def event_schema() -> dict[str, Any]:
-    """The JSON Schema of one line of the event stream, discriminated by its `event`."""
-    return TypeAdapter(Line).json_schema()
+A result's schema is its model's, and `error` is the result a refused command answers with, which
+carries the error object and its whole code enum. The finding schema carries the whole code enum
+too, and the event schema is one line of the stream discriminated by its `event`.
+"""
 
 
 def finding_codes() -> list[dict[str, Any]]:
@@ -82,14 +76,3 @@ def stages() -> list[dict[str, Any]]:
         }
         for spec in PIPELINE
     ]
-
-
-def document() -> dict[str, Any]:
-    """Everything the library publishes about itself, as one object a reader can hold whole."""
-    return {
-        "stages": stages(),
-        "results": result_schemas(),
-        "findings": finding_codes(),
-        "errors": error_codes(),
-        "event": event_schema(),
-    }

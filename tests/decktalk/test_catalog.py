@@ -15,8 +15,9 @@ def test_nothing_named_catalog_is_published() -> None:
     assert not hasattr(decktalk, "catalog_")
 
 
-def test_the_document_holds_every_section_the_library_owns() -> None:
-    assert set(catalog.document()) == {"stages", "results", "findings", "errors", "event"}
+def test_every_schema_the_library_owns_is_named_once() -> None:
+    assert set(catalog.SCHEMAS) == {*RESULTS, "event", "finding"}
+    assert all(catalog.SCHEMAS[name]() == schema for name, schema in catalog.result_schemas().items())
 
 
 def test_every_result_has_a_schema_under_its_own_name() -> None:
@@ -53,15 +54,15 @@ def test_every_stage_is_a_row_with_what_it_reads_and_writes() -> None:
 
 
 def test_the_finding_schema_carries_the_whole_code_list() -> None:
-    schema = catalog.finding_schema()
+    schema = catalog.SCHEMAS["finding"]()
     assert set(schema["$defs"]["Code"]["enum"]) == {code.value for code in Code}
 
 
 def test_the_error_schema_carries_the_whole_code_list() -> None:
-    schema = catalog.error_schema()
+    schema = catalog.SCHEMAS["error"]()
     assert set(schema["$defs"]["ErrorCode"]["enum"]) == {code.value for code in ErrorCode}
 
 
 def test_the_event_schema_is_discriminated_by_the_event_name() -> None:
-    schema = catalog.event_schema()
+    schema = catalog.SCHEMAS["event"]()
     assert schema["discriminator"]["propertyName"] == "event"
