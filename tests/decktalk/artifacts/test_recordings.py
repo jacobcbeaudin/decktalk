@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import recordings
+from decktalk.artifacts import stored
 from decktalk.artifacts.recordings import GONE, RecordingLog, file_digest, input_hash, text_digest
 from decktalk.findings import Code, Finding, Location
 from decktalk.media.pagereport import FrameGap, PageReport
@@ -59,7 +59,7 @@ def test_a_newer_engine_records_again_what_an_older_one_recorded(
     picture = tmp_path / "hero.png"
     picture.write_bytes(b"one")
     before = input_hash(["url"], {"hero.png": picture})
-    monkeypatch.setattr(recordings, "ENGINE_VERSION", "999.0.0")
+    monkeypatch.setattr(stored, "ENGINE_VERSION", "999.0.0")
     assert input_hash(["url"], {"hero.png": picture}) != before
 
 

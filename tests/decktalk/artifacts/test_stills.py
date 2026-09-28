@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import stills as module
+from decktalk.artifacts import stored
 from decktalk.artifacts.stills import Stills, still_key
 
 
@@ -66,7 +67,7 @@ def test_a_manifest_that_will_not_parse_is_not_trusted(tmp_path: Path) -> None:
 def test_the_key_moves_with_every_part_and_with_the_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     before = still_key(("url", "1920x1080"))
     assert still_key(("url", "1280x720")) != before
-    monkeypatch.setattr(module, "ENGINE_VERSION", "999.0.0")
+    monkeypatch.setattr(stored, "ENGINE_VERSION", "999.0.0")
     assert still_key(("url", "1920x1080")) != before
 
 

@@ -30,8 +30,8 @@ from pathlib import Path
 
 from pydantic import Field
 
-from decktalk.artifacts.recordings import file_digest, text_digest
-from decktalk.artifacts.stored import ENGINE_VERSION, Stored
+from decktalk.artifacts.recordings import HASH_DIGITS, file_digest
+from decktalk.artifacts.stored import Stored, engine_digest
 from decktalk.errors import NotBuiltError
 
 IMAGE_SUFFIX = ".png"
@@ -46,7 +46,7 @@ IDLE_SECONDS = 14 * 24 * 60 * 60
 
 def still_key(parts: Sequence[str]) -> str:
     """The name of one frozen frame, from everything that decides how it looks and the engine that drew it."""
-    return text_digest("\n".join([f"engine:{ENGINE_VERSION}", *parts]))
+    return engine_digest(*parts)[:HASH_DIGITS]
 
 
 class StillManifest(Stored):

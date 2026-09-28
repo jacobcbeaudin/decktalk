@@ -28,7 +28,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from decktalk.artifacts.stored import ENGINE_VERSION, Stored
+from decktalk.artifacts.stored import Stored, engine_digest
 from decktalk.findings import MODEL, Finding, ProjectPath
 from decktalk.media import MILLISECONDS
 from decktalk.media.pagereport import PageReport
@@ -62,8 +62,7 @@ def input_hash(parts: Sequence[str], files: Mapping[str, Path]) -> str:
     too, because a recording carries the recorder, the probe and the runtime contract that made it,
     and a newer engine keeping an older engine's recording would measure a film it did not make.
     """
-    lines = [f"engine:{ENGINE_VERSION}", *parts, *(f"{name}:{file_digest(files[name])}" for name in sorted(files))]
-    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:HASH_DIGITS]
+    return engine_digest(*parts, *(f"{name}:{file_digest(files[name])}" for name in sorted(files)))[:HASH_DIGITS]
 
 
 class Luma(BaseModel):

@@ -10,14 +10,13 @@ plainly where a slate or a black frame stands in for something the project does 
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Sequence
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from decktalk.artifacts.recordings import file_digest
-from decktalk.artifacts.stored import ENGINE_VERSION, Stored
+from decktalk.artifacts.stored import Stored, engine_digest
 from decktalk.findings import MODEL, ProjectPath
 from decktalk.results import SectionKey, SectionKind, SectionNumber, Substitute
 
@@ -84,8 +83,7 @@ class CutKey(Stored):
     @classmethod
     def of(cls, args: Sequence[str], sources: Sequence[Path]) -> CutKey:
         """The key of one encode, from the arguments it would run with and the files it would read."""
-        lines = [f"engine:{ENGINE_VERSION}", *args, *(f"{path.name}:{file_digest(path)}" for path in sources)]
-        return cls(digest=hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest())
+        return cls(digest=engine_digest(*args, *(f"{path.name}:{file_digest(path)}" for path in sources)))
 
 
 __all__ = ["Cut", "CutKey", "Cuts"]

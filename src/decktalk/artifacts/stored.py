@@ -18,6 +18,7 @@ directory.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -50,6 +51,11 @@ def engine_version() -> str:
 
 ENGINE_VERSION = engine_version()
 """The version of the engine this process runs, read once, because it cannot change under a run."""
+
+
+def engine_digest(*lines: str) -> str:
+    """The sha256 of these lines under the engine's own, which is how every kept artifact is keyed."""
+    return hashlib.sha256("\n".join([f"engine:{ENGINE_VERSION}", *lines]).encode("utf-8")).hexdigest()
 
 
 class Stored(BaseModel):
@@ -98,4 +104,4 @@ def _first_line(error: Exception) -> str:
     return next((line.strip() for line in str(error).splitlines() if line.strip()), type(error).__name__)
 
 
-__all__ = ["ENGINE_VERSION", "Stored", "engine_version"]
+__all__ = ["ENGINE_VERSION", "Stored", "engine_digest", "engine_version"]
