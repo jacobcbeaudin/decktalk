@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from decktalk import page, pagescan
 from decktalk.findings import Code
-from decktalk.pagescan import Measured
+from decktalk.media.pagereport import MeasuredScene, PageReport
+from decktalk.pagescan import Measured, measured_rows, page_findings, scene_cues, scene_entry, slide_cues
 from decktalk.settings import KEYS
 
 PAGE = "deck/index.html"
@@ -17,8 +18,82 @@ def row(cue: str | None = "1.1:open", **attrs: str) -> Measured:
     return Measured(attrs=attrs, moments=moments, text="", box=(0, 0, 100, 40))
 
 
+BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
+"""One element's box, which every catalog row here shares because none of these cases measures a box."""
+
+
 def codes(found: list) -> list[Code]:
     return [item.code for item in found]
+
+
+def entry(scene: str, moments: dict[str, list[str]], **extra: object) -> MeasuredScene:
+    """One scene of a catalog, with one element per moment the slide declares."""
+    elements = {
+        slide: [{"attrs": {}, "moments": {"data-in": wire}, "text": "", "box": BOX} for wire in wires]
+        for slide, wires in moments.items()
+    }
+    return MeasuredScene.model_validate({"scene": scene, "elements": elements, **extra})
+
+
+def a_report(**fields: object) -> PageReport:
+    return PageReport.model_validate({"version": "0.5.0", "mode": "cue", "scene": "1", "slide": "1.1", **fields})
+
+
+# ---- reading the catalog ----------------------------------------------------------------------
+
+
+def test_a_scene_entry_is_found_by_its_scene_whatever_type_the_page_wrote_it_in() -> None:
+    one, two = entry("1", {}), entry("2", {})
+    assert scene_entry((one, two), "2") is two
+    assert scene_entry((one,), "9") is None
+    assert scene_entry(None, "1") is None
+
+
+def test_a_scene_declares_its_slides_and_the_cues_it_lists_against_each() -> None:
+    listed = entry("1", {"1.1": []}, slides=["1.1"], cues={"1.1": ["1.1:a", "1.1:b"]})
+    assert slide_cues(listed) == {"1.1": ("1.1:a", "1.1:b")}
+    assert slide_cues(None) is None
+
+
+def test_a_scene_names_its_slides_in_the_order_the_page_declares_them() -> None:
+    assert list(slide_cues(entry("1", {"1.2": []}, slides=["1.1", "1.2"])) or ()) == ["1.1", "1.2"]
+    assert list(slide_cues(entry("2", {"2.1": []})) or ()) == ["2.1"]
+
+
+def test_a_scene_that_lists_no_cues_falls_back_to_the_moments_its_elements_name() -> None:
+    assert slide_cues(entry("1", {"1.1": ["1.1:a"]})) == {"1.1": ("1.1:a",)}
+
+
+def test_a_scene_declares_every_moment_its_elements_carry() -> None:
+    assert scene_cues(entry("1", {"1.1": ["1.1:a", "1.1:b"], "1.2": ["1.2:c"]})) == ("1.1:a", "1.1:b", "1.2:c")
+
+
+def test_a_scene_also_declares_the_cues_its_own_map_names() -> None:
+    """A cue a handler alone serves is in the scene's map and on no element, so both are read."""
+    one = entry("1", {"1.1": ["1.1:a"]}, cues={"1.1": ["1.1:a", "1.1:handled"]})
+    assert scene_cues(one) == ("1.1:a", "1.1:handled")
+    flat = entry("1", {}, cues=["1.1:listed"])
+    assert scene_cues(flat) == ("1.1:listed",)
+
+
+def test_a_catalog_row_becomes_the_row_this_module_judges() -> None:
+    (row,) = measured_rows(entry("1", {"1.1": ["1.1:a"]}))
+    assert row.cue == "1.1:a" and row.box == (0, 0, 10, 10)
+
+
+def test_a_staggered_row_carries_the_count_of_children_the_probe_measured() -> None:
+    """A stagger's span is judged from its children, so the count must reach the row that is judged."""
+    staggered = {"attrs": {"data-stagger": "0.08"}, "moments": {"data-in": "1.1:a"}, "text": "", "box": BOX}
+    scene = MeasuredScene.model_validate({"scene": "1", "elements": {"1.1": [{**staggered, "children": 4}]}})
+    (row,) = measured_rows(scene)
+    assert row.children == 4
+
+
+def test_a_page_that_reported_nothing_is_judged_on_nothing() -> None:
+    assert page_findings(a_report(), page=PAGE) == []
+
+
+# ---- judging the measured rows ----------------------------------------------------------------
 
 
 def test_a_motion_inside_the_ceiling_is_judged_on_nothing() -> None:

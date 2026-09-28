@@ -39,6 +39,7 @@ from decktalk.machine import Run
 from decktalk.media.browser import chromium, open_page
 from decktalk.media.origin import Allowed, Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
+from decktalk.pagescan import Slides, page_findings, scene_entry, slide_cues
 from decktalk.results import CheckResult, Panel, SectionCues, SpendState
 from decktalk.stages import judge, selects
 from decktalk.stages.check.scan import (
@@ -47,7 +48,6 @@ from decktalk.stages.check.scan import (
     landing_findings,
     opening_panels,
     origin_findings,
-    page_findings,
     seam_findings,
     static_findings,
 )
@@ -56,7 +56,7 @@ from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
 from decktalk.stages.narrate.plan import voice_id_of
-from decktalk.stages.storyboard import Slides, reports_of, scene_entry, slide_cues, write_page
+from decktalk.stages.storyboard import reports_of, write_page
 from decktalk.stages.verify import opted_out
 from decktalk.template import stale_runtime
 from decktalk.toolchain.assets import RUNTIME_FILE
@@ -313,7 +313,7 @@ def _look(
 
 def _page_judgements(report: PageReport | None, external: Sequence[str], *, where: str) -> list[Finding]:
     """What one page said about itself and what it reached for, judged once per page rather than per section."""
-    said = page_findings(report, where=where) if report is not None else []
+    said = page_findings(report, page=where) if report is not None else []
     return [*said, *origin_findings(external, where=where)]
 
 

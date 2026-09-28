@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.inputs import Inputs
-from decktalk.media.pagereport import MeasuredScene, PageReport
+from decktalk.media.pagereport import PageReport
 from decktalk.page import Q
 from decktalk.results import Panel, StoryboardResult
 from decktalk.settings import BY_ID
@@ -21,7 +21,6 @@ from decktalk.stages.storyboard import (
     Selection,
     freeze_url,
     panels_of,
-    slide_cues,
     storyboard,
     write_page,
 )
@@ -129,22 +128,6 @@ def test_a_frozen_state_asks_the_page_for_a_slide_and_a_moment() -> None:
 
 def test_a_frozen_state_names_one_file_safely() -> None:
     assert Freeze("4.1", cue="4.1:expand").label == "slide-4.1-after-4.1_expand"
-
-
-def test_a_scene_declares_its_slides_and_the_cues_it_lists_against_each() -> None:
-    entry = MeasuredScene.model_validate(catalog("1", {"1.1": ["1.1:a", "1.1:b"]}))
-    assert slide_cues(entry) == {"1.1": ("1.1:a", "1.1:b")}
-
-
-def test_a_page_that_published_no_such_scene_declares_nothing() -> None:
-    assert slide_cues(None) is None
-
-
-def test_a_scene_that_lists_no_cues_falls_back_to_the_moments_its_elements_name() -> None:
-    entry = MeasuredScene.model_validate(
-        {"scene": "1", "elements": {"1.1": [{"attrs": {}, "moments": {"data-in": "1.1:a"}, "text": "", "box": BOX}]}}
-    )
-    assert slide_cues(entry) == {"1.1": ("1.1:a",)}
 
 
 def test_a_slide_shows_the_state_it_opens_on_before_any_of_its_cues() -> None:

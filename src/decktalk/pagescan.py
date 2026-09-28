@@ -12,17 +12,24 @@ Everything in this module is arithmetic over the published contract and the meas
 `check` and `record` reach the same verdicts from the catalog each of them already has, and neither
 imports the other to do it. It ranks above `page`, which is vocabulary and arithmetic alone, and
 below the stages that hand it a catalog.
+
+It is also the one reader of the catalog itself: which entry is a section's scene, which slides that
+scene declares and which cues each slide owns, and what the page said about itself while it drew.
+Every stage that opens a catalog reads it here, so no two of them can disagree about a scene.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from decktalk import page
 from decktalk.findings import MODEL, Code, Finding, Location
+from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Attr, measurable, stagger_span
+from decktalk.pipeline import Stage
 
 MILLISECOND_DIGITS = 3
 """Truth: three decimal places of a second is one millisecond, which is finer than any frame.
@@ -38,14 +45,23 @@ Derived: it is the measurable ceiling itself, because a change still playing whe
 due is the same failure whether the page calls it a swap or calls it a motion.
 """
 
+SLIDES_FIELD = "slides"
+"""What the catalog entry calls the slides of a scene, in the order the page declares them."""
 
-def judged(code: Code, message: str, location: Location) -> Finding:
+CUES_FIELD = "cues"
+"""What the catalog entry calls the map of the cues each slide of a scene declares."""
+
+Slides = dict[str, tuple[str, ...]]
+"""Each slide of one scene, in page order, with the wire ids of the cues it declares in cue order."""
+
+
+def judged(code: Code, message: str, location: Location, *, stage: Stage | None = None) -> Finding:
     """One judgement, built through validation so the code fills its own certainty and its own page.
 
     A raiser names the code, the sentence and the place. Writing the certainty out beside the code
     would be the second spelling of one fact, which is what the code owning it exists to prevent.
     """
-    return Finding.model_validate({"code": code, "message": message, "location": location})
+    return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage})
 
 
 class Measured(BaseModel):
@@ -94,6 +110,90 @@ class Measured(BaseModel):
         if not step:
             return entrance
         return stagger_span(float(step) * scale, self.children, entrance)
+
+
+def scene_entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
+    """The catalog entry for one scene of one page, or None when the page published no such scene."""
+    return next((one for one in entries or () if str(one.scene) == str(scene)), None)
+
+
+def measured_rows(entry: MeasuredScene) -> list[Measured]:
+    """Every element the probe measured on one scene, as the rows this module judges.
+
+    The catalog speaks the page's own shapes and this module speaks the contract's, so this is the
+    one place the two sit beside each other.
+    """
+    return [
+        Measured(
+            attrs=dict(row.attrs),
+            moments=dict(row.moments),
+            text=row.text,
+            box=(int(row.box.x), int(row.box.y), int(row.box.w), int(row.box.h)),
+            children=row.children,
+        )
+        for slide in entry.elements.values()
+        for row in slide
+    ]
+
+
+def slide_cues(entry: MeasuredScene | None) -> Slides | None:
+    """Each slide of one scene with the cues it declares, or None when the page published no such scene.
+
+    Ownership is declared: a slide owns exactly the cues the catalog lists against it, which are the
+    moments its own elements name plus whatever `data-owns` adds. Nothing here reads an id prefix,
+    because a wire id is a slide and a local name and never an arithmetic about a number.
+    """
+    if entry is None:
+        return None
+    extra = entry.model_extra or {}
+    order = _names(extra.get(SLIDES_FIELD)) or list(entry.elements)
+    declared = extra.get(CUES_FIELD)
+    listed = declared if isinstance(declared, Mapping) else {}
+    return {slide: tuple(dict.fromkeys(_names(listed.get(slide)) or _moments(entry, slide))) for slide in order}
+
+
+def scene_cues(entry: MeasuredScene) -> tuple[str, ...]:
+    """Every wire id one scene declares, in the order the catalog names them and without repeats.
+
+    A moment reaches the catalog twice, once as the attribute of the element that draws it and once
+    in the scene's own cue map, and the two agree. Both are read because a scene whose cues are
+    served by a handler alone declares them in the map and on no element.
+    """
+    listed = (entry.model_extra or {}).get(CUES_FIELD)
+    named = [wire for ids in listed.values() for wire in _names(ids)] if isinstance(listed, Mapping) else _names(listed)
+    found = [wire for row in measured_rows(entry) for wire in row.moments.values() if wire]
+    return tuple(dict.fromkeys(found + named))
+
+
+def _names(given: object) -> list[str]:
+    """One list of names as the page wrote it, which is nothing at all when it wrote something else."""
+    if isinstance(given, str | bytes) or not isinstance(given, Sequence):
+        return []
+    return [str(one) for one in given]
+
+
+def _moments(entry: MeasuredScene, slide: str) -> list[str]:
+    """The wire ids one slide's own elements name, for a scene that lists its cues nowhere else."""
+    return [wire for row in entry.elements.get(slide, ()) for wire in row.moments.values() if wire]
+
+
+def page_findings(
+    report: PageReport, *, page: str, section: int | None = None, stage: Stage | None = None
+) -> list[Finding]:
+    """One judgement per thing the page could not honour, dispatched on the code the page carried.
+
+    The media layer has already refused a code the page has no business raising, so every row here
+    is a page code the contract publishes and the sentence is the page's own, written for a person.
+    """
+    return [
+        judged(
+            row.code,
+            row.message,
+            Location(where=row.slide or row.cue or page, file=Path(page), section=section, cue=row.cue),
+            stage=stage,
+        )
+        for row in report.warnings
+    ]
 
 
 def motion_findings(rows: Iterable[Measured], *, where: str, section: int | None, scale: float) -> list[Finding]:
@@ -221,14 +321,22 @@ def slide_findings(
 
 
 __all__ = [
+    "CUES_FIELD",
     "MILLISECOND_DIGITS",
+    "SLIDES_FIELD",
     "SWAP_APART_SECONDS",
     "Measured",
+    "Slides",
     "asset_findings",
     "description_findings",
     "judged",
+    "measured_rows",
     "motion_findings",
     "overlap_findings",
+    "page_findings",
+    "scene_cues",
+    "scene_entry",
+    "slide_cues",
     "slide_findings",
     "swap_findings",
 ]

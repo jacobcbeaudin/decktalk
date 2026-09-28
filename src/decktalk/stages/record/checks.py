@@ -15,8 +15,7 @@ from decktalk.artifacts import Luma, RecordingChecks
 from decktalk.findings import Code, Finding, Location
 from decktalk.media import ffmpeg, frames
 from decktalk.media.browser import Recording
-from decktalk.media.pagereport import PageReport
-from decktalk.pagescan import asset_findings
+from decktalk.pagescan import asset_findings, page_findings
 from decktalk.pipeline import Stage
 from decktalk.settings import Settings
 from decktalk.stages import judge
@@ -48,23 +47,6 @@ def check_recording(webm: Path, recording: Recording) -> RecordingChecks:
         wanted_seconds=recording.requested_seconds,
         luma=measure_luma(webm, duration),
     )
-
-
-def page_findings(report: PageReport, *, page: str, section: int) -> list[Finding]:
-    """One judgement per thing the page could not honour, dispatched on the code the page carried.
-
-    The media layer has already refused a code the page has no business raising, so every row here
-    is a page code the contract publishes and the sentence is the page's own, written for a person.
-    """
-    return [
-        judge(
-            row.code,
-            row.message,
-            Location(where=row.slide or row.cue or page, file=Path(page), section=section, cue=row.cue),
-            stage=Stage.RECORD,
-        )
-        for row in report.warnings
-    ]
 
 
 def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settings: Settings) -> list[Finding]:
@@ -126,7 +108,7 @@ def recording_findings(
     which of three places a sentence came from.
     """
     found = [
-        *page_findings(recording.report, page=page, section=section),
+        *page_findings(recording.report, page=page, section=section, stage=Stage.RECORD),
         *frame_findings(checks, where=where, section=section, settings=settings),
         *asset_findings(recording.external, where=page, section=section),
     ]
@@ -141,7 +123,6 @@ __all__ = [
     "check_recording",
     "frame_findings",
     "measure_luma",
-    "page_findings",
     "recording_findings",
     "stall_finding",
 ]

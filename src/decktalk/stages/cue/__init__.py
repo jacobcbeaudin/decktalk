@@ -30,11 +30,11 @@ from decktalk.inputs import CuedSection, Inputs
 from decktalk.inputs.cues import Spoken
 from decktalk.machine import Run
 from decktalk.media.pagereport import MeasuredScene
-from decktalk.pagescan import overlap_findings
+from decktalk.pagescan import measured_rows, overlap_findings, scene_entry
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import CueResult, SectionCues, Word
 from decktalk.stages import clock, selects, since
-from decktalk.stages.cue.catalog import cue_findings, declared_cues, measured_rows
+from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import ambiguity, resolve_sections, short_section
 
 __all__ = ["cue"]
@@ -147,11 +147,8 @@ def _overlap_findings(inputs: Inputs, sections: Sequence[SectionCues]) -> list[F
     found: list[Finding] = []
     for section in inputs.document.page_sections:
         block = by_number.get(section.number)
-        entries = catalogs.get(section.page)
-        if block is None or entries is None:
-            continue
-        entry = next((one for one in entries if str(one.scene) == str(section.scene)), None)
-        if entry is None:
+        entry = scene_entry(catalogs.get(section.page), section.scene)
+        if block is None or entry is None:
             continue
         times = {row.cue: row.seconds for row in block.cues if row.seconds is not None}
         found += [

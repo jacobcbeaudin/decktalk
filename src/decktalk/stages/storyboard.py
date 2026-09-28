@@ -8,11 +8,10 @@ person can see the whole deck before a single second of speech is bought. One pa
 is still a storyboard, which is why the name survives a run that asks for one section.
 
 This module also owns the vocabulary of a frozen state, because a frozen state is what a panel is:
-`Freeze` names one, `slide_cues` reads what a scene declares off the catalog the page published,
-`still` draws one or reads it back from the frames the project keeps, and `write_page` lays a set of
-panels out. `check` freezes the same states to compare them, so it reads all four from here rather
-than keeping a second spelling of any of them, and a state either command drew is one the other
-reads back rather than draws again.
+`Freeze` names one, `still` draws one or reads it back from the frames the project keeps, and
+`write_page` lays a set of panels out. `check` freezes the same states to compare them, so it reads
+all three from here rather than keeping a second spelling of any of them, and a state either command
+drew is one the other reads back rather than draws again.
 """
 
 from __future__ import annotations
@@ -35,15 +34,10 @@ from decktalk.media.browser import await_ready, chromium, open_page, read_report
 from decktalk.media.origin import Allowed, Assets, page_url
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Q
+from decktalk.pagescan import Slides, scene_entry, slide_cues
 from decktalk.results import Panel, StoryboardResult
 from decktalk.stages import SECOND_DIGITS, selects
 from decktalk.stages.record.capture import as_query, words_query
-
-SLIDES_FIELD = "slides"
-"""What the catalog entry calls the slides of a scene, in the order the page declares them."""
-
-CUES_FIELD = "cues"
-"""What the catalog entry calls the map of the cues each slide of a scene declares."""
 
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
@@ -53,9 +47,6 @@ LABEL_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 PAGE_TITLE = "storyboard"
 """What the contact sheet calls itself, beside the name of the project it is a storyboard of."""
-
-Slides = dict[str, tuple[str, ...]]
-"""Each slide of one scene, in page order, with the wire ids of the cues it declares in cue order."""
 
 
 @dataclass(frozen=True)
@@ -120,34 +111,6 @@ class Freeze:
         """This state as one file name, such as `slide-4.1-after-4.1_expand`."""
         text = "-".join(part for key, value in self.query().items() for part in (key.value, value))
         return LABEL_SAFE.sub("_", text)
-
-
-def slide_cues(entry: MeasuredScene | None) -> Slides | None:
-    """Each slide of one scene with the cues it declares, or None when the page published no such scene.
-
-    Ownership is declared: a slide owns exactly the cues the catalog lists against it, which are the
-    moments its own elements name plus whatever `data-owns` adds. Nothing here reads an id prefix,
-    because a wire id is a slide and a local name and never an arithmetic about a number.
-    """
-    if entry is None:
-        return None
-    extra = entry.model_extra or {}
-    order = _names(extra.get(SLIDES_FIELD)) or list(entry.elements)
-    declared = extra.get(CUES_FIELD)
-    listed = declared if isinstance(declared, Mapping) else {}
-    return {slide: tuple(dict.fromkeys(_names(listed.get(slide)) or _moments(entry, slide))) for slide in order}
-
-
-def _names(given: object) -> list[str]:
-    """One list of names as the page wrote it, which is nothing at all when it wrote something else."""
-    if isinstance(given, str | bytes) or not isinstance(given, Sequence):
-        return []
-    return [str(one) for one in given]
-
-
-def _moments(entry: MeasuredScene, slide: str) -> list[str]:
-    """The wire ids one slide's own elements name, for a scene that lists its cues nowhere else."""
-    return [wire for row in entry.elements.get(slide, ()) for wire in row.moments.values() if wire]
 
 
 def reports_of(page: Page, inputs: Inputs, files: Sequence[str]) -> dict[str, PageReport]:
@@ -385,11 +348,6 @@ def _section_panels(
     return out
 
 
-def scene_entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
-    """The catalog entry for one scene of one page, or None when the page published no such scene."""
-    return next((one for one in entries or () if str(one.scene) == str(scene)), None)
-
-
 def _catalog(reports: Mapping[str, PageReport], page: str) -> tuple[MeasuredScene, ...] | None:
     """What one page published, or None when it published nothing this run could read."""
     report = reports.get(page)
@@ -397,17 +355,12 @@ def _catalog(reports: Mapping[str, PageReport], page: str) -> tuple[MeasuredScen
 
 
 __all__ = [
-    "CUES_FIELD",
     "EVERY_PANEL",
-    "SLIDES_FIELD",
     "Freeze",
     "Selection",
-    "Slides",
     "reports_of",
-    "scene_entry",
     "freeze_url",
     "panels_of",
-    "slide_cues",
     "still",
     "storyboard",
     "write_page",

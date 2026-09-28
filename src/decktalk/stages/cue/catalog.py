@@ -28,12 +28,9 @@ from decktalk.inputs.cues import CuedSection
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.paths import relative
 from decktalk.media.pagereport import MeasuredScene
-from decktalk.pagescan import Measured
+from decktalk.pagescan import scene_cues, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.stages import judge
-
-CUES_FIELD = "cues"
-"""What the catalog entry calls the map of the cues each slide of a scene declares."""
 
 JSON_INDENT = 2
 """How a scaffolded `cues.json` is indented, which keeps a diff of one readable in a terminal."""
@@ -51,51 +48,6 @@ SECTIONS_KEY = re.compile(r'^(?P<indent>\s*)"sections"\s*:\s*\{')
 """The line the sections object opens on, which is where a whole new section block is written."""
 
 
-def scene_cues(entry: MeasuredScene) -> tuple[str, ...]:
-    """Every wire id one scene declares, in the order the catalog names them and without repeats.
-
-    A moment reaches the catalog twice, once as the attribute of the element that draws it and once
-    in the scene's own cue map, and the two agree. Both are read because a scene whose cues are
-    served by a handler alone declares them in the map and on no element.
-    """
-    found = [wire for row in measured_rows(entry) for wire in row.moments.values() if wire]
-    return tuple(dict.fromkeys(found + _listed(entry)))
-
-
-def measured_rows(entry: MeasuredScene) -> list[Measured]:
-    """Every element the probe measured on one scene, as the rows `pagescan` judges.
-
-    The catalog speaks the page's own shapes and `pagescan` speaks the contract's, so this is the
-    one place the two sit beside each other.
-    """
-    return [
-        Measured(
-            attrs=dict(row.attrs),
-            moments=dict(row.moments),
-            text=row.text,
-            box=(int(row.box.x), int(row.box.y), int(row.box.w), int(row.box.h)),
-            children=row.children,
-        )
-        for slide in entry.elements.values()
-        for row in slide
-    ]
-
-
-def _listed(entry: MeasuredScene) -> list[str]:
-    """The wire ids the scene's own cue map names, which is a map of slide to ids or a plain list."""
-    listed = (entry.model_extra or {}).get(CUES_FIELD)
-    if isinstance(listed, Mapping):
-        return [str(wire) for ids in listed.values() for wire in _ids(ids)]
-    return _ids(listed)
-
-
-def _ids(given: object) -> list[str]:
-    """One list of wire ids as the page wrote it, which is nothing at all when it wrote something else."""
-    if isinstance(given, str | bytes) or not isinstance(given, Sequence):
-        return []
-    return [str(wire) for wire in given]
-
-
 def declared_cues(
     catalogs: Mapping[str, Sequence[MeasuredScene]],
     sections: Iterable[PageSection],
@@ -108,10 +60,7 @@ def declared_cues(
     """
     out: dict[int, tuple[str, ...]] = {}
     for section in sections:
-        entries = catalogs.get(section.page)
-        if entries is None:
-            continue
-        entry = next((one for one in entries if str(one.scene) == str(section.scene)), None)
+        entry = scene_entry(catalogs.get(section.page), section.scene)
         if entry is not None:
             out[section.number] = scene_cues(entry)
     return out
@@ -414,11 +363,8 @@ def _as_applied(text: str, edit: Edit) -> str:
 
 
 __all__ = [
-    "CUES_FIELD",
     "EMPTY_PHRASE",
     "Placement",
     "cue_findings",
     "declared_cues",
-    "measured_rows",
-    "scene_cues",
 ]

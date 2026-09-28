@@ -26,15 +26,14 @@ from decktalk.inputs.document import PageSection
 from decktalk.machine import Run
 from decktalk.media import frames
 from decktalk.media.origin import Assets
-from decktalk.media.pagereport import MeasuredScene, PageReport
+from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Attr
-from decktalk.pagescan import asset_findings, slide_findings
+from decktalk.pagescan import Slides, asset_findings, measured_rows, slide_findings
 from decktalk.results import Panel, SkipReason
 from decktalk.settings import Settings
 from decktalk.stages import SECOND_DIGITS, judge
 from decktalk.stages.check.freeze import FramePair, first_state, last_state, plan_frames
-from decktalk.stages.cue.catalog import measured_rows
-from decktalk.stages.storyboard import Freeze, Slides, freeze_url, still
+from decktalk.stages.storyboard import Freeze, freeze_url, still
 from decktalk.stages.verify import thin_change
 from decktalk.stages.verify.plan import frame_size
 
@@ -121,18 +120,6 @@ def share_message(code: Code, cue: str, share: float, settings: Settings) -> str
         f"freezing the slide either side of {cue} changes {share:.2f} percent of the frame, which passes the "
         f"{floor:.2f} percent floor by less than the {cfg.thin_change_factor:g} times a clean reveal clears it."
     )
-
-
-def page_findings(report: PageReport, *, where: str, section: int | None = None) -> list[Finding]:
-    """Everything the page said about itself while it was frozen, as the codes it named.
-
-    The page carries its own code on every warning, so nothing here reads a sentence to work out
-    what happened, which is the channel that used to be prose classified by substring.
-    """
-    return [
-        judge(row.code, row.message, Location(where=row.slide or where, section=section, cue=row.cue))
-        for row in report.warnings
-    ]
 
 
 def origin_findings(origins: Iterable[str], *, where: str, section: int | None = None) -> list[Finding]:
@@ -291,7 +278,6 @@ __all__ = [
     "landing_findings",
     "opening_panels",
     "origin_findings",
-    "page_findings",
     "seam_findings",
     "share_code",
     "share_message",

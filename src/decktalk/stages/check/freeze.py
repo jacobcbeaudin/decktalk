@@ -19,8 +19,9 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from decktalk.pagescan import Slides
 from decktalk.results import SkipReason
-from decktalk.stages.storyboard import Freeze, Slides
+from decktalk.stages.storyboard import Freeze
 
 ORDER_NOTE = "the slide's cues fire in another order when frozen, so these frames may differ from the recording."
 """Why a pair of frames may not be the pair the recorder would show, said once where it is noticed."""

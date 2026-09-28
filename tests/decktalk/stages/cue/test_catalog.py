@@ -10,7 +10,7 @@ from decktalk.inputs.cues import Cue, CuedSection
 from decktalk.inputs.document import PageSection
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pipeline import Stage
-from decktalk.stages.cue.catalog import cue_findings, declared_cues, measured_rows, scene_cues
+from decktalk.stages.cue.catalog import cue_findings, declared_cues
 
 BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
 """One element's box, which every row here shares because none of these cases measures a box."""
@@ -49,31 +49,6 @@ def applied(path: Path, root: Path, findings: list) -> None:
 
 
 # ---- reading the catalog ----------------------------------------------------------------------
-
-
-def test_a_scene_declares_every_moment_its_elements_carry() -> None:
-    assert scene_cues(entry("1", {"1.1": ["1.1:a", "1.1:b"], "1.2": ["1.2:c"]})) == ("1.1:a", "1.1:b", "1.2:c")
-
-
-def test_a_scene_also_declares_the_cues_its_own_map_names() -> None:
-    """A cue a handler alone serves is in the scene's map and on no element, so both are read."""
-    one = entry("1", {"1.1": ["1.1:a"]}, cues={"1.1": ["1.1:a", "1.1:handled"]})
-    assert scene_cues(one) == ("1.1:a", "1.1:handled")
-    flat = entry("1", {}, cues=["1.1:listed"])
-    assert scene_cues(flat) == ("1.1:listed",)
-
-
-def test_a_catalog_row_becomes_the_row_pagescan_judges() -> None:
-    (row,) = measured_rows(entry("1", {"1.1": ["1.1:a"]}))
-    assert row.cue == "1.1:a" and row.box == (0, 0, 10, 10)
-
-
-def test_a_staggered_row_carries_the_count_of_children_the_probe_measured() -> None:
-    """A stagger's span is judged from its children, so the count must reach the row that is judged."""
-    staggered = {"attrs": {"data-stagger": "0.08"}, "moments": {"data-in": "1.1:a"}, "text": "", "box": BOX}
-    scene = MeasuredScene.model_validate({"scene": "1", "elements": {"1.1": [{**staggered, "children": 4}]}})
-    (row,) = measured_rows(scene)
-    assert row.children == 4
 
 
 def test_a_section_whose_page_published_nothing_is_left_unjudged() -> None:

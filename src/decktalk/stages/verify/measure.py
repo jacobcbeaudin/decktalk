@@ -21,7 +21,7 @@ from decktalk.inputs.document import frame_dip
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.media.frames import Decoded, Size, Wanted
-from decktalk.pagescan import Measured
+from decktalk.pagescan import measured_rows, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, SkipReason
 from decktalk.settings import CLICK_LEVEL_DBFS
@@ -86,15 +86,10 @@ def declared_spans(inputs: Inputs, section: int) -> dict[str, float]:
         return {}
     scale = inputs.settings.motion.scale
     spans: dict[str, float] = {}
-    for entry in log.report.catalog:
-        if entry.scene != scene:
-            continue
-        for rows in entry.elements.values():
-            for row in rows:
-                measured = Measured(attrs=dict(row.attrs), moments=dict(row.moments), text=row.text)
-                cue = measured.cue
-                if cue is not None:
-                    spans[cue] = max(spans.get(cue, 0.0), measured.span(scale))
+    entry = scene_entry(log.report.catalog, scene)
+    for measured in measured_rows(entry) if entry is not None else ():
+        if measured.cue is not None:
+            spans[measured.cue] = max(spans.get(measured.cue, 0.0), measured.span(scale))
     return spans
 
 

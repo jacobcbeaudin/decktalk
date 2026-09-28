@@ -9,6 +9,7 @@ import pytest
 from decktalk.events import Log
 from decktalk.findings import Code
 from decktalk.media.pagereport import MeasuredScene
+from decktalk.pagescan import page_findings, slide_cues
 from decktalk.settings import Settings
 from decktalk.stages import storyboard
 from decktalk.stages.check import scan
@@ -20,13 +21,12 @@ from decktalk.stages.check.scan import (
     landing_findings,
     opening_panels,
     origin_findings,
-    page_findings,
     seam_findings,
     share_code,
     share_message,
     static_findings,
 )
-from decktalk.stages.storyboard import Freeze, slide_cues
+from decktalk.stages.storyboard import Freeze
 from support.runs import a_run
 
 from .conftest import BOX, FakeAssets, a_project, a_report, catalog
@@ -106,7 +106,7 @@ def test_every_sentence_carries_the_number_it_measured(code: Code) -> None:
 def test_a_page_warning_is_judged_by_the_code_the_page_named() -> None:
     """The page carries its own code, so nothing here reads a sentence to work out what happened."""
     report = a_report(warnings=[{"code": "PAGE_KATEX_ERROR", "message": "KaTeX refused it.", "slide": "1.1"}])
-    (found,) = page_findings(report, where="deck/index.html", section=1)
+    (found,) = page_findings(report, page="deck/index.html", section=1)
     assert found.code is Code.PAGE_KATEX_ERROR
     assert found.location.where == "1.1"
     assert found.location.section == 1

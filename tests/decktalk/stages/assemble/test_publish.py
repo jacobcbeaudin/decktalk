@@ -32,7 +32,6 @@ from decktalk.stages.assemble.publish import (
     poster_query,
     publish,
     render_poster,
-    scene_slides,
     sound_captions,
     transcript_sections,
     uncaptioned_sounds,
@@ -239,14 +238,6 @@ def test_no_two_captions_are_ever_on_screen_at_once():
 
 
 # ---- the poster --------------------------------------------------------------------------------
-
-
-def test_a_scene_names_its_slides_in_the_order_the_page_declares_them():
-    declared = MeasuredScene.model_validate({"scene": "1", "elements": {"1.2": []}, "slides": ["1.1", "1.2"]})
-    measured_only = MeasuredScene(scene="2", elements={"2.1": ()})
-    assert scene_slides((declared,), "1") == ("1.1", "1.2")
-    assert scene_slides((measured_only,), "2") == ("2.1",)
-    assert scene_slides((declared,), "9") == ()
 
 
 def test_the_poster_freezes_the_opening_slide_with_its_reveals_fired(tmp_path, write_project):

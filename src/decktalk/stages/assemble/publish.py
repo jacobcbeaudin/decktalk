@@ -41,6 +41,7 @@ from decktalk.media.encode import iso_639_2
 from decktalk.media.origin import Allowed, page_url
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Q
+from decktalk.pagescan import scene_entry, slide_cues
 from decktalk.results import SectionKind, Word
 from decktalk.stages import SECOND_DIGITS
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
@@ -327,29 +328,14 @@ def transcript_sections(inputs: Inputs, cuts: Cuts, texts: Mapping[int, str]) ->
 # ---- the poster -------------------------------------------------------------------------------
 
 
-def scene_slides(catalog: tuple[MeasuredScene, ...], scene: str) -> tuple[str, ...]:
-    """Every slide of one scene, in the order the page declares them.
-
-    The catalog keeps what its model does not name, so the declared order is read from the entry
-    itself and the measured rows stand in only for a page that published no order at all.
-    """
-    entry = next((row for row in catalog if row.scene == scene), None)
-    if entry is None:
-        return ()
-    declared = (entry.model_extra or {}).get("slides")
-    if isinstance(declared, list):
-        return tuple(str(slide) for slide in declared)
-    return tuple(entry.elements)
-
-
 def poster_query(catalog: tuple[MeasuredScene, ...], section: PageSection) -> dict[Q, str] | None:
     """The freeze query for a section's opening slide with every one of its reveals already fired.
 
     A poster is the one picture that has to stand for the film, and a cue-driven slide before its
     first cue is an empty stage, so the slide is frozen in the state it ends in.
     """
-    slides = scene_slides(catalog, section.scene)
-    return None if not slides else {Q.SLIDE: slides[0]}
+    slides = slide_cues(scene_entry(catalog, section.scene))
+    return None if not slides else {Q.SLIDE: next(iter(slides))}
 
 
 def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
@@ -447,7 +433,6 @@ __all__ = [
     "poster_query",
     "publish",
     "render_poster",
-    "scene_slides",
     "shifted",
     "sound_captions",
     "transcript_sections",
