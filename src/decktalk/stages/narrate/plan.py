@@ -140,13 +140,6 @@ class TakePlan:
         """How many characters of script this section would send, which is what a provider bills."""
         return len(self.request.text) if self.request else len(self.segment.tts_text)
 
-    @property
-    def context_characters(self) -> int:
-        """The neighbouring sections the request carries for prosody, which travel with the text."""
-        if self.request is None:
-            return 0
-        return len(self.request.previous_text or "") + len(self.request.next_text or "")
-
 
 def requests_for(inputs: Inputs, targets: list[Segment], *, model: str, voice_id: str) -> dict[int, SpeechRequest]:
     """One request per target section, each carrying the sections either side of it for prosody."""

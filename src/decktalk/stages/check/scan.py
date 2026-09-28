@@ -39,9 +39,6 @@ too thin to see rather than a reveal that never happened, which is why the two c
 The page cannot raise it, because the floor it is read against is a settings key no browser reads.
 """
 
-FROZEN_CONTROL_PERCENT = 0.0
-"""Truth: two frozen frames hold nothing in motion, so the control share between them is zero."""
-
 
 def share_code(share: float, settings: Settings, *, drawn: bool) -> Code | None:
     """What one frozen share means, or None when the reveal is plainly there.
@@ -218,7 +215,6 @@ def judged_pages(sections: Sequence[PageSection], extra: Sequence[str]) -> tuple
 
 __all__ = [
     "DRAW_STYLE",
-    "FROZEN_CONTROL_PERCENT",
     "drawn_cues",
     "judged_pages",
     "landing_findings",
