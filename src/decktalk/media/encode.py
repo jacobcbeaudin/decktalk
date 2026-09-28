@@ -9,45 +9,7 @@ because a stylesheet and an encoder write one colour two ways.
 
 from __future__ import annotations
 
-from typing import Protocol
-
-
-class VideoSettings(Protocol):
-    """What one output is made from, which is the whole of `[video]` this module reads.
-
-    The encoder names the keys it reads rather than importing the settings class, because what an
-    output is made from is a fact about encoding and a project is what supplies it. Every member is
-    read-only, because an encoder reads its settings and never writes them, and a frozen record of
-    the same keys therefore satisfies this without being cast to it.
-    """
-
-    @property
-    def width(self) -> int: ...
-
-    @property
-    def height(self) -> int: ...
-
-    @property
-    def output_fps(self) -> int: ...
-
-    @property
-    def crf(self) -> int: ...
-
-    @property
-    def preset(self) -> str: ...
-
-    @property
-    def sample_rate(self) -> int: ...
-
-    @property
-    def channels(self) -> int: ...
-
-    @property
-    def audio_bitrate(self) -> str: ...
-
-    @property
-    def slate_color(self) -> str: ...
-
+from ..settings import VideoConfig
 
 # An mp4 stream's language is an ISO 639-2 three-letter code, while `[project] language` is the BCP 47
 # tag the page and the caption files carry, so the primary subtag is mapped here. A language this
@@ -101,7 +63,7 @@ class Encoder:
     those flags.
     """
 
-    def __init__(self, video: VideoSettings) -> None:
+    def __init__(self, video: VideoConfig) -> None:
         self.v = video
         self.fit = (
             f"scale={video.width}:{video.height}:force_original_aspect_ratio=decrease,"
