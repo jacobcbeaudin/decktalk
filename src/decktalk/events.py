@@ -20,10 +20,11 @@ import itertools
 import threading
 from collections.abc import Callable, Iterable
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self, TypeVar, get_args
+from typing import Annotated, Any, Literal, Self, get_args
 
 from pydantic import BaseModel, Field
 
@@ -204,7 +205,6 @@ Line = Annotated[
 EVENTS: dict[str, type[Event]] = {kind.model_fields["event"].default: kind for kind in get_args(get_args(Line)[0])}
 """Every event by its name, which is the closed list `decktalk schema event` prints, read off `Line`."""
 
-E = TypeVar("E", bound=Event)
 Listener = Callable[[Event], None]
 
 DELIVERING: ContextVar[bool] = ContextVar("decktalk_delivering", default=False)
@@ -217,25 +217,21 @@ would otherwise each see the other's delivery and drop their own failure lines.
 """
 
 
+@dataclass(eq=False)
 class Subscription:
     """One renderer attached to the stream, which detaches by closing or by leaving its `with`."""
 
-    def __init__(self, stream: Events, listener: Listener, runs: frozenset[str] | None) -> None:
-        self._stream = stream
-        self._listener = listener
-        self._runs = runs
+    stream: Events
+    listener: Listener
+    runs: frozenset[str] | None
 
     def wants(self, event: Event) -> bool:
         """True when this subscriber asked for the run the event belongs to."""
-        return self._runs is None or event.run in self._runs
-
-    def deliver(self, event: Event) -> None:
-        """Hand one event to the renderer."""
-        self._listener(event)
+        return self.runs is None or event.run in self.runs
 
     def close(self) -> None:
         """Detach this renderer, after which it receives nothing."""
-        self._stream.detach(self)
+        self.stream.detach(self)
 
     def __enter__(self) -> Self:
         return self
@@ -262,13 +258,9 @@ class Events:
     def subscribe(self, listener: Listener, *, runs: Iterable[str] | None = None) -> Subscription:
         """Attach a renderer, which receives every event of the named runs, or of every run."""
         subscription = Subscription(self._source, listener, None if runs is None else frozenset(runs))
-        self._source.attach(subscription)
+        with self._source._lock:
+            self._source._subscriptions.append(subscription)
         return subscription
-
-    def attach(self, subscription: Subscription) -> None:
-        """Add one subscription to the stream, which `subscribe` calls and nothing else needs."""
-        with self._lock:
-            self._subscriptions.append(subscription)
 
     def detach(self, subscription: Subscription) -> None:
         """Remove one subscription, which `Subscription.close` calls and nothing else needs."""
@@ -276,7 +268,7 @@ class Events:
             if subscription in self._subscriptions:
                 self._subscriptions.remove(subscription)
 
-    def emit(self, run: str, kind: type[E], **fields: Any) -> E:  # noqa: ANN401
+    def emit[E: Event](self, run: str, kind: type[E], **fields: Any) -> E:  # noqa: ANN401
         """Mint the four fields onto one event, hand it to every renderer, and give it back.
 
         The fields are typed Any because they are whatever the named event class declares, and the
@@ -313,7 +305,7 @@ class Events:
                 if not subscription.wants(event):
                     continue
                 try:
-                    subscription.deliver(event)
+                    subscription.listener(event)
                 except Exception as failure:  # noqa: BLE001  (a renderer must never stop a run)
                     failures.append(f"A subscriber raised {type(failure).__name__} on a {event.event} line.")
         finally:
