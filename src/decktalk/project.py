@@ -163,21 +163,10 @@ class ProjectEvents(Events):
 class Origin:
     """A local origin serving one project, which `serve` hands back and a watch loop holds open."""
 
-    def __init__(self, server: ThreadingHTTPServer, result: ServeResult, run: Run) -> None:
+    def __init__(self, server: ThreadingHTTPServer, result: ServeResult) -> None:
         self._server = server
         self._stopped = threading.Event()
         self.result = result
-        self.run = run
-
-    @property
-    def url(self) -> str:
-        """Where the deck is served, which is what an author opens and a recorder drives."""
-        return self.result.url
-
-    @property
-    def port(self) -> int:
-        """The port the origin listens on, which a caller reads when it asked for any free one."""
-        return self.result.port
 
     def wait(self) -> None:
         """Block until the origin is closed, which is what a command with no other work to do does."""
@@ -470,19 +459,18 @@ class Project:
         URL and the build directory is not served.
         """
         # The server is the media layer's, which carries the routing every recorded page also uses.
-        from decktalk.media.origin import Allowed, bound_host, open_server  # noqa: PLC0415
+        from decktalk.media.origin import Allowed, open_server, served_url  # noqa: PLC0415
 
         with self._open(writes=False) as run:
             server = open_server(Allowed.of(self.root, self.inputs.served_paths()), host, port)
-            address = f"{bound_host(server)}:{server.server_address[1]}"
             result = run.result(
                 ServeResult,
-                url=f"http://{address}",
+                url=served_url(server),
                 port=int(server.server_address[1]),
                 root=relative(self.root, self.root),
             )
             threading.Thread(target=server.serve_forever, daemon=True).start()
-            return Origin(server, result, run)
+            return Origin(server, result)
 
     # ---- how every call is made -----------------------------------------------------------------
 

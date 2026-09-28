@@ -31,12 +31,11 @@ from __future__ import annotations
 
 import errno
 import io
-import ipaddress
 import logging
 import mimetypes
 import os
 import socket
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from http import HTTPStatus
@@ -437,33 +436,11 @@ def open_server(
         raise ToolError(f"could not serve {host}:{port} ({exc.strerror or exc}). Pass another {flag}.") from exc
 
 
-def bound_host(server: ThreadingHTTPServer) -> str:
-    """The address the socket is actually bound to, which is what the author needs to be told."""
-    return str(server.server_address[0])
+def served_url(server: ThreadingHTTPServer) -> str:
+    """Where a running server answers, named by the address its socket is bound to.
 
-
-def reachable_warning(server: ThreadingHTTPServer) -> str:
-    """One line for a bind that is not loopback, or an empty string when only this machine can reach it."""
-    host = bound_host(server)
-    try:
-        loopback = ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        loopback = host in ("localhost", "")
-    if loopback:
-        return ""
-    return (
-        f"serving on {host}, so every machine on this network can read the project directory. "
-        "Pass --host 127.0.0.1 to keep it on this machine."
-    )
-
-
-def served_urls(server: ThreadingHTTPServer, pages: Iterator[str] | list[str]) -> list[str]:
-    """The URL of each project page on a running server, which `serve` prints for an author to open.
-
-    The host is the one the socket is bound to, so a server reachable from the network says so in
-    every URL it prints.
+    An author reads the URL to know who can reach the page, so it names the real bind rather than
+    loopback, and an IPv6 address is bracketed as a URL requires.
     """
-    host, port = bound_host(server), server.server_address[1]
-    shown = host or "127.0.0.1"
-    base = f"http://[{shown}]:{port}" if ":" in shown else f"http://{shown}:{port}"
-    return [f"{base}/{quote(Path(page).as_posix())}" for page in pages]
+    host, port = str(server.server_address[0]) or "127.0.0.1", server.server_address[1]
+    return f"http://[{host}]:{port}" if ":" in host else f"http://{host}:{port}"

@@ -25,9 +25,8 @@ from decktalk.media.origin import (
     local_target,
     open_server,
     page_url,
-    reachable_warning,
     route_pages,
-    served_urls,
+    served_url,
 )
 from decktalk.page import Q
 
@@ -244,8 +243,8 @@ def test_the_server_serves_the_project_and_names_every_page(tmp_path):
     (tmp_path / "deck" / "index.html").write_text("<p>served</p>", encoding="utf-8")
     server = open_server(whole(tmp_path), "127.0.0.1", 0)
     with server:
-        [url] = served_urls(server, ["deck/index.html"])
-        assert url.startswith("http://127.0.0.1:") and url.endswith("/deck/index.html")
+        url = f"{served_url(server)}/deck/index.html"
+        assert url.startswith("http://127.0.0.1:")
         Thread(target=server.serve_forever, daemon=True).start()
         with urllib.request.urlopen(url, timeout=5) as response:
             assert response.read() == b"<p>served</p>"
@@ -297,23 +296,14 @@ def test_the_ipv6_loopback_binds_as_readily_as_the_ipv4_one(tmp_path):
     """`--host` offers a loopback address, so the safest one an author can name has to work."""
     server = open_server(whole(tmp_path), "::1", 0)
     with server:
-        [url] = served_urls(server, ["index.html"])
-        assert url.startswith("http://[::1]:") and reachable_warning(server) == ""
+        assert served_url(server).startswith("http://[::1]:")
 
 
 def test_the_printed_url_names_the_address_the_socket_is_bound_to(tmp_path):
     """An author reads the URL to know who can reach the page, so it may not say loopback for any bind."""
     server = open_server(whole(tmp_path), "0.0.0.0", 0)
     with server:
-        [url] = served_urls(server, ["index.html"])
-        assert url.startswith("http://0.0.0.0:")
-        assert "every machine on this network" in reachable_warning(server)
-
-
-def test_a_loopback_bind_warns_about_nothing(tmp_path):
-    server = open_server(whole(tmp_path), "127.0.0.1", 0)
-    with server:
-        assert reachable_warning(server) == ""
+        assert served_url(server).startswith("http://0.0.0.0:")
 
 
 def test_a_port_already_in_use_says_which_flag_to_change(tmp_path):
