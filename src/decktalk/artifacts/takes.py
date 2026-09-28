@@ -50,14 +50,23 @@ otherwise name `../` and have the narration read a file from anywhere on the mac
 """
 
 
-class TakeInputs(BaseModel):
+class _Digested(BaseModel):
+    """A frozen set of inputs whose digest is taken over its payload."""
+
+    model_config = MODEL
+
+    @property
+    def payload(self) -> str:
+        """The bytes the digest is taken of, which is every field in declaration order, newline separated."""
+        return "\n".join(str(getattr(self, name)) for name in type(self).model_fields)
+
+
+class TakeInputs(_Digested):
     """Everything that decides what a paid take sounds like, which is everything its name is taken over.
 
     The payload is the fields below joined by newlines, in the order they are declared. A reader
     who wants to know why a take was voiced again compares two of these rather than guessing.
     """
-
-    model_config = MODEL
 
     provider: str = Field(description="The speech provider that spoke this take, such as elevenlabs.")
     voice: str = Field(description="The provider's id for the voice, which is a published name and not a secret.")
@@ -88,33 +97,21 @@ class TakeInputs(BaseModel):
         )
 
     @property
-    def payload(self) -> str:
-        """The bytes the digest is taken of, which is every field in declaration order, newline separated."""
-        return "\n".join(str(getattr(self, name)) for name in type(self).model_fields)
-
-    @property
     def digest(self) -> str:
         """The take's name, which is the head of the sha256 of the payload."""
         return hashlib.sha256(self.payload.encode("utf-8")).hexdigest()[:TAKE_DIGITS]
 
 
-class PlaceholderInputs(BaseModel):
+class PlaceholderInputs(_Digested):
     """Everything that decides what a placeholder take sounds like, which is its length and its clicks.
 
     No credit is spent on one, so its digest exists only to let an unchanged section be skipped, and
     its prefix keeps it out of the paid takes a run must never overwrite.
     """
 
-    model_config = MODEL
-
     words_per_minute: float = Field(gt=0, description="The pace the placeholder is sized at.")
     beat_seconds: float = Field(ge=0, description="How long a declared pause is held in a placeholder.")
     text: str = Field(description="The spoken text this placeholder stands in for.")
-
-    @property
-    def payload(self) -> str:
-        """The bytes the digest is taken of, which is every field in declaration order, newline separated."""
-        return "\n".join(str(getattr(self, name)) for name in type(self).model_fields)
 
     @property
     def digest(self) -> str:
