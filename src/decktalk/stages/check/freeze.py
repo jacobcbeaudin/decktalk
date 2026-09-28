@@ -132,10 +132,7 @@ def _pair(
 
 def _previous_state(slides: Slides, times: Mapping[str, float], slide: str, second: float) -> Freeze:
     """The state the slide before this one was left in, which is what a viewer was looking at."""
-    fired = fired_by(slides, times, slide, second, inclusive=False)
-    if fired:
-        return Freeze(slide, cue=fired[-1])
-    return Freeze(slide, before=slides[slide][0]) if slides[slide] else Freeze(slide)
+    return Freeze.state(slide, fired_by(slides, times, slide, second, inclusive=False), slides[slide])
 
 
 def last_state(slides: Slides, times: Mapping[str, float]) -> Freeze | None:
@@ -154,10 +151,7 @@ def first_state(slides: Slides, times: Mapping[str, float], fps: int) -> Freeze 
     if not order:
         return None
     slide = order[0][0]
-    fired = fired_by(slides, times, slide, FIRST_FRAME / fps, inclusive=False)
-    if fired:
-        return Freeze(slide, cue=fired[-1])
-    return Freeze(slide, before=slides[slide][0]) if slides[slide] else Freeze(slide)
+    return Freeze.state(slide, fired_by(slides, times, slide, FIRST_FRAME / fps, inclusive=False), slides[slide])
 
 
 __all__ = [

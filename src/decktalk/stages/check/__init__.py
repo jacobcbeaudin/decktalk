@@ -43,7 +43,6 @@ from decktalk.pagescan import Slides, page_findings, scene_entry, slide_cues
 from decktalk.results import CheckResult, Panel, SectionCues, SpendState
 from decktalk.stages import judge, selects
 from decktalk.stages.check.scan import (
-    Sheet,
     judged_pages,
     landing_findings,
     opening_panels,
@@ -56,7 +55,7 @@ from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
 from decktalk.stages.narrate.plan import voice_id_of
-from decktalk.stages.storyboard import reports_of, write_page
+from decktalk.stages.storyboard import Sheet, reports_of, write_page
 from decktalk.stages.verify import opted_out
 from decktalk.template import stale_runtime
 from decktalk.toolchain.assets import RUNTIME_FILE
@@ -328,7 +327,7 @@ def _sections(
     frames: bool,
 ) -> None:
     """Judge every named section from the catalog its page published, and freeze its frames when asked."""
-    sheet = Sheet(inputs, run, opened)
+    sheet = Sheet(inputs, run, opened, inputs.workspace.frames_dir)
     slides: dict[int, Slides] = {}
     skipped = opted_out(inputs)
     for section in sections:

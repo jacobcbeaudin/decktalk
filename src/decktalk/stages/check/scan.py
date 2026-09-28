@@ -15,25 +15,19 @@ it. The query is typed, so no key outside the contract can reach a page.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
-
-from playwright.sync_api import Page
 
 from decktalk.findings import Code, Finding, Location
-from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
 from decktalk.machine import Run
 from decktalk.media import frames
-from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Attr
 from decktalk.pagescan import Slides, asset_findings, measured_rows, slide_findings
-from decktalk.results import Panel, SkipReason
+from decktalk.results import SkipReason
 from decktalk.settings import Settings
-from decktalk.stages import SECOND_DIGITS, judge
+from decktalk.stages import judge
 from decktalk.stages.check.freeze import FramePair, first_state, last_state, plan_frames
-from decktalk.stages.storyboard import Freeze, freeze_url, still
+from decktalk.stages.storyboard import Freeze, Sheet
 from decktalk.stages.verify import thin_change
 from decktalk.stages.verify.plan import frame_size
 
@@ -47,47 +41,6 @@ The page cannot raise it, because the floor it is read against is a settings key
 
 FROZEN_CONTROL_PERCENT = 0.0
 """Truth: two frozen frames hold nothing in motion, so the control share between them is zero."""
-
-
-@dataclass
-class Sheet:
-    """One browser page drawing frozen states, with what it drew and where it put each one.
-
-    A state is drawn once however many cues are measured between it and another, because the same
-    URL is the same picture, and every file it writes is reported through the run.
-    """
-
-    inputs: Inputs
-    run: Run
-    pages: Mapping[str, tuple[Page, Assets]]
-    drawn: dict[str, Path] = field(default_factory=dict)
-    panels: list[Panel] = field(default_factory=list)
-
-    def frozen(self, section: PageSection, freeze: Freeze) -> Path:
-        """The file holding one frozen state of one section, drawn now or read back from the kept frames."""
-        url = freeze_url(self.inputs, section, freeze)
-        if url not in self.drawn:
-            target = self.inputs.workspace.frames_dir / section.key / f"{freeze.label}.png"
-            page, assets = self.pages[section.page]
-            still(self.inputs, page, assets, section, freeze, target)
-            self.run.wrote(target)
-            self.drawn[url] = target
-        return self.drawn[url]
-
-    def panel(self, section: PageSection, freeze: Freeze, cue: str | None, at: float) -> None:
-        """Keep one drawn state as a panel of the storyboard this check writes."""
-        image = self.drawn.get(freeze_url(self.inputs, section, freeze))
-        if image is None:
-            return
-        self.panels.append(
-            Panel(
-                section=section.number,
-                slide=freeze.slide,
-                cue=cue,
-                at=round(at, SECOND_DIGITS),
-                image=self.inputs.relative(image),
-            )
-        )
 
 
 def share_code(share: float, settings: Settings, *, drawn: bool) -> Code | None:
@@ -223,8 +176,7 @@ def opening_panels(sheet: Sheet, section: PageSection, slides: Slides, times: Ma
     """
     for slide, wires in slides.items():
         resolved = [times[wire] for wire in wires if wire in times]
-        opening = Freeze(slide, before=wires[0]) if wires else Freeze(slide)
-        sheet.panel(section, opening, None, min(resolved) if resolved else 0.0)
+        sheet.panel(section, Freeze.state(slide, (), wires), None, min(resolved) if resolved else 0.0)
 
 
 def seam_findings(
@@ -272,7 +224,6 @@ def judged_pages(sections: Sequence[PageSection], extra: Sequence[str]) -> tuple
 __all__ = [
     "DRAW_STYLE",
     "FROZEN_CONTROL_PERCENT",
-    "Sheet",
     "drawn_cues",
     "judged_pages",
     "landing_findings",

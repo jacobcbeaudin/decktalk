@@ -15,7 +15,6 @@ from decktalk.stages import storyboard
 from decktalk.stages.check import scan
 from decktalk.stages.check.scan import (
     DRAW_STYLE,
-    Sheet,
     drawn_cues,
     judged_pages,
     landing_findings,
@@ -26,7 +25,7 @@ from decktalk.stages.check.scan import (
     share_message,
     static_findings,
 )
-from decktalk.stages.storyboard import Freeze
+from decktalk.stages.storyboard import Freeze, Sheet
 from support.runs import a_run
 
 from .conftest import BOX, FakeAssets, a_project, a_report, catalog
@@ -151,7 +150,7 @@ def test_a_state_is_drawn_once_however_many_pairs_name_it(tmp_path: Path, monkey
     inputs = a_project(tmp_path)
     shots: list[str] = []
     monkeypatch.setattr(storyboard, "screenshot", lambda _p, url, out, **_k: (shots.append(url), wrote(out)) and None)
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())})
+    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     section = inputs.document.page_sections[0]
     first = sheet.frozen(section, Freeze("1.1", cue="1.1:a"))
     assert sheet.frozen(section, Freeze("1.1", cue="1.1:a")) == first
@@ -161,7 +160,7 @@ def test_a_state_is_drawn_once_however_many_pairs_name_it(tmp_path: Path, monkey
 def test_a_thin_frozen_share_is_judged_against_the_frame_it_was_read_on(tmp_path: Path, frozen: list[float]) -> None:
     inputs = a_project(tmp_path)
     frozen[0] = 0.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())})
+    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     section = inputs.document.page_sections[0]
     found = landing_findings(sheet, section, entry_of({"1.1": list(SLIDES["1.1"])}), SLIDES, TIMES, skipped=set())
     assert {one.code for one in found} == {Code.CUE_NO_CHANGE}
@@ -171,7 +170,7 @@ def test_a_thin_frozen_share_is_judged_against_the_frame_it_was_read_on(tmp_path
 def test_a_clean_frozen_share_judges_nothing(tmp_path: Path, frozen: list[float]) -> None:
     inputs = a_project(tmp_path)
     frozen[0] = 40.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())})
+    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     section = inputs.document.page_sections[0]
     assert landing_findings(sheet, section, entry_of({"1.1": list(SLIDES["1.1"])}), SLIDES, TIMES, skipped=set()) == []
 
@@ -183,7 +182,7 @@ def test_a_cue_no_element_declares_is_passed_over_rather_than_judged(tmp_path: P
     run = a_run(tmp_path)
     said: list[str] = []
     run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
-    sheet = Sheet(inputs, run, {"deck/index.html": (object(), FakeAssets())})
+    sheet = Sheet(inputs, run, {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     section = inputs.document.page_sections[0]
     found = landing_findings(sheet, section, entry_of({"1.1": ["1.1:a"]}), SLIDES, TIMES, skipped=set())
     assert [one.location.cue for one in found] == ["1.1:a"]
@@ -193,7 +192,7 @@ def test_a_cue_no_element_declares_is_passed_over_rather_than_judged(tmp_path: P
 def test_a_cue_the_cue_file_opts_out_of_is_never_measured(tmp_path: Path, frozen: list[float]) -> None:
     inputs = a_project(tmp_path)
     frozen[0] = 0.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())})
+    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     section = inputs.document.page_sections[0]
     entry = entry_of({"1.1": list(SLIDES["1.1"])})
     assert landing_findings(sheet, section, entry, SLIDES, TIMES, skipped={(1, "1.1:a"), (1, "1.1:b")}) == []
@@ -202,7 +201,7 @@ def test_a_cue_the_cue_file_opts_out_of_is_never_measured(tmp_path: Path, frozen
 def test_a_seam_that_would_show_is_a_pop_at_the_cut(tmp_path: Path, frozen: list[float]) -> None:
     inputs = a_project(tmp_path, toml=SEAMLESS)
     frozen[0] = 50.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())})
+    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     first, second = inputs.document.page_sections
     slides = {1: {"1.1": ("1.1:a",)}, 2: {"2.1": ("2.1:a",)}}
     times = {1: {"1.1:a": 1.0}, 2: {"2.1:a": 1.0}}
@@ -214,7 +213,7 @@ def test_a_seam_that_would_show_is_a_pop_at_the_cut(tmp_path: Path, frozen: list
 def test_a_seam_that_holds_its_picture_is_no_judgement(tmp_path: Path, frozen: list[float]) -> None:
     inputs = a_project(tmp_path, toml=SEAMLESS)
     frozen[0] = 0.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())})
+    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     first, second = inputs.document.page_sections
     slides = {1: {"1.1": ("1.1:a",)}, 2: {"2.1": ("2.1:a",)}}
     times = {1: {"1.1:a": 1.0}, 2: {"2.1:a": 1.0}}
@@ -223,7 +222,7 @@ def test_a_seam_that_holds_its_picture_is_no_judgement(tmp_path: Path, frozen: l
 
 def test_a_seam_whose_side_published_no_catalog_is_a_line_and_no_judgement(tmp_path: Path, frozen: list[float]) -> None:
     inputs = a_project(tmp_path, toml=SEAMLESS)
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())})
+    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     first, second = inputs.document.page_sections
     assert seam_findings(sheet, first, second, {}, {}) == []
     assert frozen[0] == 0.0
@@ -232,7 +231,7 @@ def test_a_seam_whose_side_published_no_catalog_is_a_line_and_no_judgement(tmp_p
 def test_every_slide_keeps_the_state_it_opens_on_as_a_panel(tmp_path: Path, frozen: list[float]) -> None:
     inputs = a_project(tmp_path)
     frozen[0] = 0.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())})
+    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     section = inputs.document.page_sections[0]
     landing_findings(sheet, section, entry_of({"1.1": list(SLIDES["1.1"])}), SLIDES, TIMES, skipped=set())
     opening_panels(sheet, section, SLIDES, TIMES)

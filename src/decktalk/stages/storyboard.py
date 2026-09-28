@@ -8,10 +8,10 @@ person can see the whole deck before a single second of speech is bought. One pa
 is still a storyboard, which is why the name survives a run that asks for one section.
 
 This module also owns the vocabulary of a frozen state, because a frozen state is what a panel is:
-`Freeze` names one, `still` draws one or reads it back from the frames the project keeps, and
-`write_page` lays a set of panels out. `check` freezes the same states to compare them, so it reads
-all three from here rather than keeping a second spelling of any of them, and a state either command
-drew is one the other reads back rather than draws again.
+`Freeze` names one, `still` draws one or reads it back from the frames the project keeps, `Sheet`
+draws each state a run names once, and `write_page` lays a set of panels out. `check` freezes the
+same states to compare them, so it reads all four from here rather than keeping a second spelling of
+any of them, and a state either command drew is one the other reads back rather than draws again.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import html
 import re
 import shutil
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from playwright.sync_api import Page
@@ -98,6 +98,13 @@ class Freeze:
     cue: str | None = None
     before: str | None = None
 
+    @classmethod
+    def state(cls, slide: str, fired: Sequence[str], wires: Sequence[str]) -> Freeze:
+        """The state `slide` is in once `fired` has fired, which is before its first cue when nothing has."""
+        if fired:
+            return cls(slide, cue=fired[-1])
+        return cls(slide, before=wires[0]) if wires else cls(slide)
+
     def query(self) -> dict[Q, str]:
         """What this state asks the page for, in the contract's own query keys and no others."""
         if self.cue is not None:
@@ -148,6 +155,48 @@ def still(inputs: Inputs, page: Page, assets: Assets, section: PageSection, free
     return True
 
 
+@dataclass
+class Sheet:
+    """One browser drawing frozen states under one directory, with what it drew and the panels it kept.
+
+    A state is drawn once however many panels or measured cues name it, because the same URL is the
+    same picture, and every file it writes is reported through the run.
+    """
+
+    inputs: Inputs
+    run: Run
+    pages: Mapping[str, tuple[Page, Assets]]
+    directory: Path
+    drawn: dict[str, Path] = field(default_factory=dict)
+    panels: list[Panel] = field(default_factory=list)
+
+    def frozen(self, section: PageSection, freeze: Freeze) -> Path:
+        """The file holding one frozen state of one section, drawn now or read back from the kept frames."""
+        url = freeze_url(self.inputs, section, freeze)
+        if url not in self.drawn:
+            target = self.directory / section.key / f"{freeze.label}.png"
+            page, assets = self.pages[section.page]
+            still(self.inputs, page, assets, section, freeze, target)
+            self.run.wrote(target)
+            self.drawn[url] = target
+        return self.drawn[url]
+
+    def panel(self, section: PageSection, freeze: Freeze, cue: str | None, at: float) -> None:
+        """Keep one drawn state as a panel of the contact sheet."""
+        image = self.drawn.get(freeze_url(self.inputs, section, freeze))
+        if image is None:
+            return
+        self.panels.append(
+            Panel(
+                section=section.number,
+                slide=freeze.slide,
+                cue=cue,
+                at=round(at, SECOND_DIGITS),
+                image=self.inputs.relative(image),
+            )
+        )
+
+
 def freeze_url(inputs: Inputs, section: PageSection, freeze: Freeze) -> str:
     """The URL of one frozen state of one section, with the section's own params and its own words.
 
@@ -186,7 +235,7 @@ def panels_of(
             out += [(Freeze(slide, cue=wire), wire, at[wire]) for wire in wires if wire in chosen.after]
             out += [(Freeze(slide, before=wire), wire, at[wire]) for wire in wires if wire in chosen.before]
             continue
-        out.append((Freeze(slide, before=wires[0]) if wires else Freeze(slide), None, round(opening, SECOND_DIGITS)))
+        out.append((Freeze.state(slide, (), wires), None, round(opening, SECOND_DIGITS)))
         out += [(Freeze(slide, cue=wire), wire, at[wire]) for wire in wires]
     return _at(out, chosen.at) if chosen.at else out
 
@@ -299,7 +348,6 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Sel
     """Every panel of every named section, drawn by one browser holding one page open."""
     video, cfg = inputs.settings.video, inputs.settings.record
     times = inputs.cue_times()
-    drawn: list[Panel] = []
     with chromium(cfg.browser_path, policy=cfg.page_policy) as browser:
         page, assets = open_page(
             browser,
@@ -311,6 +359,7 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Sel
             documents=inputs.documents(),
         )
         reports = reports_of(page, inputs, [one.page for one in sections])
+        sheet = Sheet(inputs, run, {one.page: (page, assets) for one in sections}, inputs.workspace.storyboard_dir)
         for section in sections:
             run.check()
             slides = slide_cues(scene_entry(_catalog(reports, section.page), section.scene))
@@ -322,30 +371,10 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Sel
                 )
                 continue
             resolved = times.times(section.number) if times is not None else {}
-            drawn += _section_panels(inputs, run, (page, assets), section, slides, resolved, chosen)
-    return drawn
-
-
-def _section_panels(
-    inputs: Inputs,
-    run: Run,
-    opened: tuple[Page, Assets],
-    section: PageSection,
-    slides: Slides,
-    times: Mapping[str, float],
-    chosen: Selection,
-) -> list[Panel]:
-    """Every panel of one section, each still written under that section's own directory."""
-    out: list[Panel] = []
-    page, assets = opened
-    for freeze, wire, at in panels_of(slides, times, chosen):
-        target = inputs.workspace.storyboard_dir / section.key / f"{freeze.label}.png"
-        still(inputs, page, assets, section, freeze, target)
-        run.wrote(target)
-        out.append(
-            Panel(section=section.number, slide=freeze.slide, cue=wire, at=at, image=inputs.relative(target)),
-        )
-    return out
+            for freeze, wire, at in panels_of(slides, resolved, chosen):
+                sheet.frozen(section, freeze)
+                sheet.panel(section, freeze, wire, at)
+    return sheet.panels
 
 
 def _catalog(reports: Mapping[str, PageReport], page: str) -> tuple[MeasuredScene, ...] | None:
@@ -358,6 +387,7 @@ __all__ = [
     "EVERY_PANEL",
     "Freeze",
     "Selection",
+    "Sheet",
     "reports_of",
     "freeze_url",
     "panels_of",
