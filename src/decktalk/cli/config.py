@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from pydantic import BaseModel
 from typer._click import Context
 
 from decktalk import settings as knobs
@@ -32,6 +33,7 @@ from decktalk.results import (
     ConfigSetResult,
     ConfigUnsetResult,
     Layer,
+    Result,
     Scope,
     SettingValue,
 )
@@ -117,18 +119,7 @@ def set_key(
         written = knobs.write(path, key, value, scope=where, environ=session.machine.environ, dry_run=dry_run)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
-    return ConfigSetResult(
-        ok=True,
-        written=() if dry_run else (written.file,),
-        key=written.key,
-        value=written.value,
-        previous=written.previous,
-        scope=written.scope,
-        file=written.file,
-        effective=written.effective,
-        layer=written.layer,
-        dry_run=written.dry_run,
-    )
+    return ConfigSetResult(ok=True, written=() if dry_run else (written.file,), **_shared(written, ConfigSetResult))
 
 
 @command("unset", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'unset')}")
@@ -158,16 +149,10 @@ def unset_key(
         )
     going = _stating(path, key, asked=session.approve(whole or None, f"Remove everything {key} sets?"))
     removed = tuple(knobs.unset(path, one, scope=where, environ=session.machine.environ) for one in going)
-    first = removed[0]
     return ConfigUnsetResult(
         ok=True,
         written=(path,),
-        keys=tuple(name for one in removed for name in one.keys),
-        previous=first.previous,
-        effective=first.effective,
-        layer=first.layer,
-        scope=first.scope,
-        file=first.file,
+        **_shared(removed[0], ConfigUnsetResult, keys=tuple(name for one in removed for name in one.keys)),
     )
 
 
@@ -195,24 +180,17 @@ def explain_key(
     winner = next((layer for layer in read.layers if layer.layer is read.winner), None)
     return ConfigExplainResult(
         ok=True,
-        key=read.key,
-        type=read.type,
         sentence=read.description,
-        value=read.value,
-        default=read.default,
-        unit=read.unit,
-        range=read.range,
         layer=read.winner,
         file=winner.file if winner else None,
         line=winner.line if winner else None,
-        layers=read.layers,
-        environment=read.environment,
-        decides=read.decides,
-        numbers=read.numbers,
-        clamped=read.clamped,
-        hazard=read.hazard,
-        docs=read.docs,
+        **_shared(read, ConfigExplainResult),
     )
+
+
+def _shared(record: BaseModel, result: type[Result], **stated: object) -> dict[str, Any]:
+    """The fields a library record and its result both name, carried across by name, with `stated` on top."""
+    return {name: value for name, value in record if name in result.model_fields} | stated
 
 
 def _rows(session: sessions.Session, table: str | None, *, defaults: bool, changed: bool) -> tuple[SettingValue, ...]:
