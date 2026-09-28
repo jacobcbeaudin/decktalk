@@ -45,16 +45,6 @@ def locate(text: str, key: str) -> int | None:
     return None
 
 
-def locate_table(text: str, table: str) -> int | None:
-    """The one-based line the header of `table` is written on, or null when the text has no such header."""
-    wanted = _path(table)
-    for number, line in enumerate(text.splitlines(), start=1):
-        header = TABLE.match(line)
-        if header and _path(header.group(1)) == wanted:
-            return number
-    return None
-
-
 def refused_line(error: tomllib.TOMLDecodeError) -> int | None:
     """The line a TOML parser refused, read from the attribute it carries or from its own sentence.
 
@@ -68,4 +58,4 @@ def refused_line(error: tomllib.TOMLDecodeError) -> int | None:
     return int(named.group(1)) if named else None
 
 
-__all__ = ["locate", "locate_table", "refused_line"]
+__all__ = ["locate", "refused_line"]
