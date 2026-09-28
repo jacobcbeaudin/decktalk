@@ -124,7 +124,6 @@ def test_naming_one_half_of_the_build_is_refused_rather_than_ignored(tmp_path):
     binary = tmp_path / "ffmpeg"
     binary.write_text("")
     half = ToolsConfig(ffmpeg=str(binary))
-    assert ffmpeg.unpaired_tool(half) == ["tools.ffprobe"]
     with ffmpeg.using_tools(half), pytest.raises(ToolError) as raised:
         ffmpeg.ffmpeg_paths()
     assert "tools.ffprobe" in str(raised.value)
@@ -135,9 +134,10 @@ def test_naming_one_half_of_the_build_is_refused_rather_than_ignored(tmp_path):
 def test_a_key_that_names_a_file_which_is_not_there_is_refused_rather_than_resolved(tmp_path):
     """A typo told `doctor` the machine was ready and then died inside the first render."""
     both = ToolsConfig(ffmpeg=str(tmp_path / "nope"), ffprobe=str(tmp_path / "also-nope"))
-    assert ffmpeg.missing_tools(both) == ["tools.ffmpeg", "tools.ffprobe"]
-    with ffmpeg.using_tools(both), pytest.raises(ToolError, match="tools.ffmpeg"):
+    with ffmpeg.using_tools(both), pytest.raises(ToolError, match="tools.ffmpeg, tools.ffprobe names a file"):
         ffmpeg.ffmpeg_paths()
+    # `doctor` says there is no usable pair rather than reporting the pinned build the key overrides.
+    assert ffmpeg.installed_paths(both) is None
 
 
 def test_naming_both_halves_is_the_build_this_machine_renders_with(tmp_path):
@@ -145,7 +145,6 @@ def test_naming_both_halves_is_the_build_this_machine_renders_with(tmp_path):
     ff.write_text("")
     fp.write_text("")
     tools = ToolsConfig(ffmpeg=str(ff), ffprobe=str(fp))
-    assert ffmpeg.unpaired_tool(tools) == [] and ffmpeg.missing_tools(tools) == []
     with ffmpeg.using_tools(tools):
         assert ffmpeg.ffmpeg_paths() == (str(ff), str(fp))
         assert ffmpeg.installed_paths() == (str(ff), str(fp))

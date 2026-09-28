@@ -269,50 +269,30 @@ def _at(path: Path | str) -> Location:
 
 
 def _named(tools: ToolsConfig) -> tuple[str, str] | None:
-    """The pair `[tools]` names, when both keys are set and both name a file that is there."""
-    if not (tools.ffmpeg and tools.ffprobe):
-        return None
-    return (tools.ffmpeg, tools.ffprobe) if not missing_tools(tools) else None
+    """The pair `[tools]` names, or None when it names neither half, refusing half a build or a missing file.
 
-
-def missing_tools(tools: ToolsConfig | None = None) -> list[str]:
-    """The keys that name a file which is not there, so a typo is reported and never resolved.
-
-    `doctor` reports this and `ffmpeg_paths` refuses on it, which is the difference between a command
-    whose work is to report what a machine has and one that needs the tool to do anything at all.
+    ffmpeg and ffprobe are one build, so naming one and leaving the other to PATH would render with
+    two builds. The half that is missing is named, because a machine that set one key meant to set
+    both, and a key that names no file is refused so that a typo is reported and never resolved.
     """
-    named = _stated(tools or bound_tools())
-    return [key for key, value in named.items() if not Path(value).is_file()]
-
-
-def unpaired_tool(tools: ToolsConfig | None = None) -> list[str]:
-    """The half of the pair that is not set, when the other half is, which is never a usable build.
-
-    ffmpeg and ffprobe are one build, so naming one of them and leaving the other to PATH renders
-    with two builds. The half that is missing is named rather than ignored, because a machine that
-    set one key meant to set both and would otherwise never learn that nothing happened.
-    """
-    stated = _stated(tools or bound_tools())
-    return [] if len(stated) != 1 else [key for key in NAMED if key not in stated]
-
-
-def _stated(tools: ToolsConfig) -> dict[str, str]:
-    """Each of the two keys a machine actually filled in, against the path it filled in."""
-    return {key: value for key, value in zip(NAMED, (tools.ffmpeg, tools.ffprobe), strict=True) if value}
+    stated = {key: value for key, value in zip(NAMED, (tools.ffmpeg, tools.ffprobe), strict=True) if value}
+    if len(stated) == 1:
+        raise ToolError(
+            f"{', '.join(key for key in NAMED if key not in stated)} is not set, "
+            "and ffmpeg and ffprobe have to come from one build.",
+            hint=f"Set {' and '.join(NAMED)} together, or clear both to use the pinned build.",
+        )
+    if missing := [key for key, value in stated.items() if not Path(value).is_file()]:
+        raise ToolError(
+            f"{', '.join(missing)} names a file that is not there.",
+            hint="Point the key at an executable, or clear it to use the pinned build.",
+        )
+    return (tools.ffmpeg, tools.ffprobe) if tools.ffmpeg and tools.ffprobe else None
 
 
 def _path_pair() -> tuple[str, str] | None:
     ff, fp = shutil.which("ffmpeg"), shutil.which("ffprobe")
     return (ff, fp) if ff and fp else None
-
-
-def _refuse_half_a_build(tools: ToolsConfig) -> None:
-    """Refuse a machine that named one executable of the pair, naming the key it left out."""
-    if unpaired := unpaired_tool(tools):
-        raise ToolError(
-            f"{', '.join(unpaired)} is not set, and ffmpeg and ffprobe have to come from one build.",
-            hint=f"Set {' and '.join(NAMED)} together, or clear both to use the pinned build.",
-        )
 
 
 def ffmpeg_paths() -> tuple[str, str]:
@@ -327,12 +307,6 @@ def ffmpeg_paths() -> tuple[str, str]:
 
 def _resolve(tools: ToolsConfig) -> tuple[str, str]:
     """(ffmpeg, ffprobe) executables for one set of tools, which a binding asks for once."""
-    _refuse_half_a_build(tools)
-    if missing := missing_tools(tools):
-        raise ToolError(
-            f"{', '.join(missing)} names a file that is not there.",
-            hint="Point the key at an executable, or clear it to use the pinned build.",
-        )
     if named := _named(tools):
         return named
     if installed := ffmpeg_fetch.installed_pinned():
@@ -361,13 +335,14 @@ def _resolve(tools: ToolsConfig) -> tuple[str, str]:
 def installed_paths(tools: ToolsConfig | None = None) -> tuple[str, str] | None:
     """The (ffmpeg, ffprobe) pair that ffmpeg_paths() would return without downloading anything.
 
-    None means only a fetch could provide them, or that `[tools]` names half a build. `decktalk
-    doctor` reports on that instead of triggering it.
+    None means only a fetch could provide them, or that `[tools]` names half a build or a file that
+    is not there. `decktalk doctor` reports on that instead of triggering it.
     """
-    tools = tools or bound_tools()
-    if unpaired_tool(tools):
+    try:
+        named = _named(tools or bound_tools())
+    except ToolError:
         return None
-    return _named(tools) or ffmpeg_fetch.installed_pinned() or _path_pair()
+    return named or ffmpeg_fetch.installed_pinned() or _path_pair()
 
 
 def ffmpeg() -> str:
