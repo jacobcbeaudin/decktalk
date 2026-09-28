@@ -1391,7 +1391,7 @@ def _layers(
     texts = {layer: path.read_text(encoding="utf-8") if path and path.exists() else "" for layer, path in files.items()}
     rows: dict[str, tuple[LayerValue, ...]] = {}
     for key in KEYS:
-        found = [LayerValue(layer=Layer.DEFAULT, value=_json(key.default))]
+        found = [LayerValue(layer=Layer.DEFAULT, value=json_value(key.default))]
         for layer, doc in ((Layer.MACHINE, machine), (Layer.PROJECT, project)):
             stated = _stated(doc, key.id)
             if stated is not _ABSENT:
@@ -1399,7 +1399,7 @@ def _layers(
                 found.append(
                     LayerValue(
                         layer=layer,
-                        value=_json(stated),
+                        value=json_value(stated),
                         file=path,
                         line=locate(texts.get(layer, ""), key.id) if path else None,
                     )
@@ -1410,7 +1410,7 @@ def _layers(
             found.append(LayerValue(layer=Layer.OVERRIDE, value=overrides[key.id]))
         # The winning row carries the value the tree holds rather than the text a layer wrote, so a
         # reader of the record and a reader of the settings never disagree about one number.
-        found[-1] = found[-1].model_copy(update={"value": _json(value_of(settings, key.id))})
+        found[-1] = found[-1].model_copy(update={"value": json_value(value_of(settings, key.id))})
         rows[key.id] = tuple(found)
     return Layers(rows=rows)
 
@@ -1429,10 +1429,10 @@ def _stated(doc: Mapping[str, Any], dotted: str) -> object:
     return found
 
 
-def _json(value: object) -> JsonValue:
+def json_value(value: object) -> JsonValue:
     """One value as JSON carries it, which turns the tuple a TOML array becomes into a list."""
     if isinstance(value, tuple):
-        return [_json(item) for item in value]
+        return [json_value(item) for item in value]
     return cast("JsonValue", value)
 
 
@@ -1563,8 +1563,8 @@ def write(
         path.write_text(text, encoding="utf-8")
     return SettingWrite(
         key=key,
-        value=_json(typed),
-        previous=None if previous is _ABSENT else _json(previous),
+        value=json_value(typed),
+        previous=None if previous is _ABSENT else json_value(previous),
         scope=scope,
         file=path,
         line=locate(text, key),
@@ -1606,10 +1606,10 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
     tree = _in_force(path, scope, {}, environ)
     return SettingUnset(
         keys=(key,),
-        previous=None if previous is _ABSENT else _json(previous),
+        previous=None if previous is _ABSENT else json_value(previous),
         scope=scope,
         file=path,
-        effective=_json(value_of(tree.settings, key)),
+        effective=json_value(value_of(tree.settings, key)),
         layer=tree.layers.winner(key).layer,
     )
 
@@ -1671,8 +1671,8 @@ def _in_force(path: Path, scope: Scope, stated: Mapping[str, object], environ: M
     alone states nothing about it either.
     """
     return load(
-        machine=_nested(stated) if scope is Scope.MACHINE else {},
-        project=_nested(stated) if scope is Scope.PROJECT else {},
+        machine=nested(stated) if scope is Scope.MACHINE else {},
+        project=nested(stated) if scope is Scope.PROJECT else {},
         machine_path=path if scope is Scope.MACHINE else None,
         environ=environ,
     )
@@ -1688,13 +1688,13 @@ def _after(path: Path, key: str, scope: Scope, typed: object, environ: Mapping[s
     winner = tree.layers.winner(key)
     own = Layer.MACHINE if scope is Scope.MACHINE else Layer.PROJECT
     return {
-        "effective": _json(value_of(tree.settings, key)),
+        "effective": json_value(value_of(tree.settings, key)),
         "layer": winner.layer,
         "shadowed": winner.layer is not own,
     }
 
 
-def _nested(flat: Mapping[str, object]) -> dict[str, Any]:
+def nested(flat: Mapping[str, object]) -> dict[str, Any]:
     """Dotted keys as the nested tables a layer is read from."""
     out: dict[str, Any] = {}
     for dotted, value in flat.items():
@@ -1708,6 +1708,8 @@ def _nested(flat: Mapping[str, object]) -> dict[str, Any]:
 
 __all__ = [
     "ALLOW_ANY_API_BASE",
+    "json_value",
+    "nested",
     "BY_ID",
     "CONFIG_VARIABLE",
     "DOCUMENT_TABLES",

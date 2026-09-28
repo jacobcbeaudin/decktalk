@@ -10,7 +10,7 @@ own resolved times, through the artifact that holds them and the build directory
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import itertools
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,12 +24,24 @@ from .results import Layer, LayerValue, NumberView, Scope, SectionCues
 from .settings import (
     BY_ID,
     NUMBERS,
+    NUMBERS_BY_ID,
     Loaded,
     Settings,
+    json_value,
     load,
+    nested,
     value_of,
 )
 from .tomlmap import Key, Nature, Source, did_you_mean
+
+Cue = tuple[float, str]
+"""One resolved cue as the explainer reads it, which is its second and its wire id, in that order so it sorts."""
+
+TYPE_NAMES: dict[object, str] = {bool: "boolean", int: "integer", float: "number", str: "string"}
+"""A scalar key's type as the schema names it."""
+
+ARRAY_TYPE = "array of numbers"
+"""The type of every key that is not a scalar, which is a TOML array of numbers."""
 
 
 class Explanation(BaseModel):
@@ -68,14 +80,6 @@ class Explanation(BaseModel):
     docs: str = Field(description="The docs page for this key.")
 
 
-@dataclass(frozen=True)
-class _Cue:
-    """One resolved cue as the explainer reads it, which is its wire id and its second."""
-
-    id: str
-    at: float
-
-
 def explain(
     key: str, *, project: Path | None = None, value: str | None = None, machine: Machine | None = None
 ) -> Explanation:
@@ -107,10 +111,10 @@ def explain(
     return Explanation(
         key=known.id,
         description=known.description,
-        type=_type_name(known),
+        type=TYPE_NAMES.get(known.annotation, ARRAY_TYPE),
         unit=known.unit,
-        default=_json(known.default),
-        value=_json(value_of(here.settings, known.id)),
+        default=json_value(known.default),
+        value=json_value(value_of(here.settings, known.id)),
         range=known.range,
         typed_range=known.typed.sentence if known.typed else None,
         scope=known.scope,
@@ -125,7 +129,7 @@ def explain(
         layers=here.layers.of(known.id),
         winner=here.layers.winner(known.id).layer,
         numbers=_numbers(known, here.settings, candidate),
-        candidate=None if candidate is None else _json(value_of(candidate, known.id)),
+        candidate=None if candidate is None else json_value(value_of(candidate, known.id)),
         clamped=_clamped(known, candidate or here.settings, cues),
         measured=bool(cues),
         docs=f"{DOCS}/configuration#{known.id.rsplit('.', 1)[0].replace('.', '-')}",
@@ -159,17 +163,10 @@ def _candidate(key: Key, here: Loaded, value: str | None) -> Settings | None:
 
 def _layer(here: Loaded, scope: Scope) -> dict[str, Any]:
     """The project's own stated keys, so a candidate is explained against the file rather than the defaults."""
-    out: dict[str, Any] = {}
-    for dotted, rows in here.layers.rows.items():
-        stated = [row for row in rows if row.layer is Layer.PROJECT] if scope is Scope.PROJECT else []
-        if not stated:
-            continue
-        table = out
-        parts = dotted.split(".")
-        for part in parts[:-1]:
-            table = table.setdefault(part, {})
-        table[parts[-1]] = stated[-1].value
-    return out
+    if scope is not Scope.PROJECT:
+        return {}
+    rows = here.layers.rows.items()
+    return nested({key: said[-1].value for key, row in rows if (said := [r for r in row if r.layer is Layer.PROJECT])})
 
 
 def _numbers(key: Key, here: Settings, candidate: Settings | None) -> tuple[NumberView, ...]:
@@ -178,9 +175,9 @@ def _numbers(key: Key, here: Settings, candidate: Settings | None) -> tuple[Numb
         NumberView(
             id=number.id,
             formula=number.formula,
-            reads={name: _json(_read(here, name)) for name in number.reads},
-            value=_json(number.at(here)),
-            candidate=None if candidate is None else _json(number.at(candidate)),
+            reads={name: json_value(_read(here, name)) for name in number.reads},
+            value=json_value(number.at(here)),
+            candidate=None if candidate is None else json_value(number.at(candidate)),
             unit=number.unit,
             sentence=number.sentence,
         )
@@ -191,12 +188,10 @@ def _numbers(key: Key, here: Settings, candidate: Settings | None) -> tuple[Numb
 
 def _read(settings: Settings, name: str) -> object:
     """One input of a formula at its effective value, whether it is a key or a published number."""
-    if name in BY_ID:
-        return value_of(settings, name)
-    return next(number.at(settings) for number in NUMBERS if number.id == name)
+    return value_of(settings, name) if name in BY_ID else NUMBERS_BY_ID[name].at(settings)
 
 
-def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[_Cue, ...]], ...]) -> tuple[str, ...]:
+def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[Cue, ...]], ...]) -> tuple[str, ...]:
     """The cues whose reference frame this value pulls back into the cue before them.
 
     The reference frame is read one lead before a cue, so two cues closer together than that lead
@@ -204,19 +199,19 @@ def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[_Cue, ..
     against a frame the same change had already reached. Only the keys the lead is computed from
     can do that, which is why every other key names no cue rather than guessing at one.
     """
-    feeds = next((number for number in NUMBERS if number.id == "verify.reference_lead_seconds"), None)
+    feeds = NUMBERS_BY_ID.get("verify.reference_lead_seconds")
     if feeds is None or key.id not in feeds.reads:
         return ()
     lead = float(cast("float", feeds.at(settings)))
     out: list[str] = []
     for _section, rows in cues:
-        for earlier, later in zip(rows, rows[1:], strict=False):
-            if later.at - earlier.at < lead:
-                out.append(later.id)
+        for (earlier, _), (later, cue) in itertools.pairwise(rows):
+            if later - earlier < lead:
+                out.append(cue)
     return tuple(out)
 
 
-def _cues(project: Inputs) -> tuple[tuple[str, tuple[_Cue, ...]], ...]:
+def _cues(project: Inputs) -> tuple[tuple[str, tuple[Cue, ...]], ...]:
     """Every resolved cue of this project in section order, or nothing when the stage has not run.
 
     The times are read through `CueTimes`, the model `cue` writes them with, from the build directory
@@ -233,31 +228,9 @@ def _cues(project: Inputs) -> tuple[tuple[str, tuple[_Cue, ...]], ...]:
     return tuple(_block(block) for block in resolved.sections)
 
 
-def _block(section: SectionCues) -> tuple[str, tuple[_Cue, ...]]:
+def _block(section: SectionCues) -> tuple[str, tuple[Cue, ...]]:
     """One section of the artifact as the explainer reads it, which is its key and its resolved cues."""
-    rows = tuple(_Cue(id=row.cue, at=row.seconds) for row in section.cues if row.seconds is not None)
-    return section.key, tuple(sorted(rows, key=lambda row: row.at))
-
-
-def _type_name(key: Key) -> str:
-    """The key's type as the schema names it, which is one word for a scalar and a phrase for an array."""
-    annotation = key.annotation
-    if annotation is bool:
-        return "boolean"
-    if annotation is int:
-        return "integer"
-    if annotation is float:
-        return "number"
-    if annotation is str:
-        return "string"
-    return "array of numbers"
-
-
-def _json(value: object) -> JsonValue:
-    """One value as JSON carries it, which turns the tuple a TOML array becomes into a list."""
-    if isinstance(value, tuple):
-        return [_json(item) for item in value]
-    return cast("JsonValue", value)
+    return section.key, tuple(sorted((row.seconds, row.cue) for row in section.cues if row.seconds is not None))
 
 
 __all__ = ["Explanation", "explain"]
