@@ -25,7 +25,6 @@ from decktalk import catalog as library
 from decktalk import page
 from decktalk import settings as knobs
 from decktalk.cli.app import PROGRAM, app
-from decktalk.errors import ErrorCode
 from decktalk.findings import Code
 from decktalk.results import RESULTS, Result
 from decktalk.tomlmap import PUBLISHED, Key
@@ -256,11 +255,6 @@ def named(name: str, *, machine: bool = False) -> dict[str, Any]:
 def names() -> tuple[str, ...]:
     """Every name `decktalk schema NAME` answers to, which is what a refusal lists back."""
     return (*sorted(RESULTS), "error", "event", "finding", "page", "project", "settings")
-
-
-def codes() -> tuple[str, ...]:
-    """Every error code, which the reference page prints with its exit code beside it."""
-    return tuple(code.value for code in ErrorCode)
 
 
 __all__ = [

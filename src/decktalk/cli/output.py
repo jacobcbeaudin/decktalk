@@ -13,7 +13,7 @@ error block is the same block, and nothing prints a second vocabulary for a read
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from rich import box
@@ -26,7 +26,7 @@ from rich.text import Text
 from decktalk.captions import clock
 from decktalk.errors import ErrorInfo
 from decktalk.events import Event, Fetch, Log, Progress, RunStart, StageDone, StageStart
-from decktalk.findings import Applicability, Certainty, Code, Finding, Location
+from decktalk.findings import Applicability, Certainty, Finding, Location
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
@@ -525,21 +525,7 @@ RENDERERS: dict[type[Result], Callable[[Any], Iterable[RenderableType]]] = {
 """One reading per result, so the command returns its result and the reading lives in one place."""
 
 
-@dataclass
-class Counted:
-    """How a run's judgements land against the threshold the caller set."""
-
-    findings: tuple[Finding, ...] = ()
-    allowed: frozenset[Code] = field(default_factory=frozenset)
-
-    @property
-    def judged(self) -> tuple[Finding, ...]:
-        """Every judgement the caller did not carry on past with `--allow`."""
-        return tuple(found for found in self.findings if found.code not in self.allowed)
-
-
 __all__ = [
-    "Counted",
     "Jsonl",
     "Lines",
     "Notes",
