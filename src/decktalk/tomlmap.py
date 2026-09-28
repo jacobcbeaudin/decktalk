@@ -600,6 +600,10 @@ def _as_written(annotation: Any, raw: Any) -> Any:
         raise TypeError("a boolean is not a number")
     if annotation is float and isinstance(raw, int):
         return float(raw)
+    # JSON Schema counts a float with no fraction as an integer, so a file an editor validated
+    # against the published schema reads the same here rather than being refused as a float.
+    if annotation is int and isinstance(raw, float) and raw.is_integer():
+        return int(raw)
     if isinstance(annotation, type) and not isinstance(raw, annotation):
         raise TypeError(f"a {type(raw).__name__} is not {'an' if annotation is int else 'a'} {annotation.__name__}")
     return raw

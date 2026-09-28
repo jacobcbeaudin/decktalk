@@ -90,16 +90,15 @@ def values(key_id: str) -> st.SearchStrategy[object]:
     key = BY_ID[key_id]
     assert key.bounds is not None
     if key.bounds.items is not None:
-        return st.lists(around(key.bounds.items, whole=False), max_size=3)
-    return around(key.bounds, whole=key.annotation is int, words=key.annotation is str)
+        return st.lists(around(key.bounds.items), max_size=3)
+    return around(key.bounds, words=key.annotation is str)
 
 
-def around(bounds: Bounds, *, whole: bool, words: bool = False) -> st.SearchStrategy[object]:
+def around(bounds: Bounds, *, words: bool = False) -> st.SearchStrategy[object]:
     """A range's edges exactly, and numbers of either type on each side of every edge.
 
-    A float key is also handed integers, because TOML writes both. An integer key is handed floats
-    with a fraction alone: JSON Schema counts `320.0` as an integer and the loader refuses it as a
-    float, which is a disagreement the track note records rather than one this sweep asserts.
+    A float key is also handed integers and an integer key floats, because TOML writes both, and
+    JSON Schema counts a float with no fraction such as `320.0` as an integer, as the loader does.
     """
     if bounds.enum is not None:
         members = st.sampled_from(bounds.enum)
@@ -110,7 +109,7 @@ def around(bounds: Bounds, *, whole: bool, words: bool = False) -> st.SearchStra
     return st.sampled_from(edges).flatmap(
         lambda edge: (
             st.just(edge)
-            | st.floats(min_value=edge - 1, max_value=edge + 1).filter(lambda one: not (whole and one.is_integer()))
+            | st.floats(min_value=edge - 1, max_value=edge + 1)
             | st.integers(min_value=int(edge) - 2, max_value=int(edge) + 2)
         )
     )
