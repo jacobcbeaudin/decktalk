@@ -28,9 +28,10 @@ from decktalk.inputs.markers import Marker
 from decktalk.inputs.timeline import narration_offsets, narration_runs
 from decktalk.machine import Run
 from decktalk.media import MILLISECONDS, ffmpeg
+from decktalk.media.encode import Encoder
 from decktalk.pipeline import Artifact, Stage
 from decktalk.stages import SECOND_DIGITS, judge
-from decktalk.stages.assemble.cut import Rendered, concat, encoder, rendered_starts
+from decktalk.stages.assemble.cut import Rendered, concat, rendered_starts
 
 CLIP_FADE_SECONDS = 0.02
 """Truth: half a frame of fade at each edge of a clip's own audio, so a cut into it never clicks."""
@@ -143,16 +144,16 @@ def max_expr(terms: list[str]) -> str:
     return expression
 
 
-def encode_soundtrack(inputs: Inputs, src: Path, dst: Path) -> None:
-    """Copy the picture and encode the mixed soundtrack to the delivery codec, once.
+def encode_soundtrack(inputs: Inputs, src: Path, dst: Path, *, filters: str | None = None) -> None:
+    """Copy the picture and encode the mixed soundtrack to the delivery codec, once, through `filters` when given.
 
-    This is the path a build takes when the loudness pass is skipped, so the soundtrack still meets
-    the delivery encoder exactly once rather than never or twice.
+    Both the loudness pass and the path a build takes when that pass is skipped end here, so the
+    soundtrack meets the delivery encoder exactly once rather than never or twice.
     """
-    enc = encoder(inputs)
+    shaped = ("-af", filters) if filters else ()
     ffmpeg.run(
         "-i", str(src), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
-        *enc.aenc, "-movflags", "+faststart", str(dst),
+        *shaped, *Encoder(inputs.settings.video).aenc, "-movflags", "+faststart", str(dst),
     )  # fmt: skip
 
 
@@ -373,7 +374,7 @@ def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes,
         )
     concat(concat_files, picture)
     plan = plan_mix(inputs, run, rows, takes, soundscape=soundscape)
-    enc = encoder(inputs)
+    enc = Encoder(inputs.settings.video)
     try:
         ffmpeg.run(
             "-i", str(picture), *mix_input_args(plan),

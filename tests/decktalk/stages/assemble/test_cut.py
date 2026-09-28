@@ -9,6 +9,7 @@ import pytest
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs
 from decktalk.media import browser, ffmpeg
+from decktalk.media.encode import Encoder
 from decktalk.results import SectionKind, Substitute
 from decktalk.settings import BY_ID
 from decktalk.stages.assemble.cut import (
@@ -24,7 +25,6 @@ from decktalk.stages.assemble.cut import (
     section_targets,
     vfades,
 )
-from decktalk.stages.assemble.cut import encoder as make_encoder
 
 from .conftest import MID_CLIP_TOML, TITLED_TOML
 
@@ -99,7 +99,7 @@ def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, write
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
     monkeypatch.setattr("decktalk.stages.assemble.cut.section_slate", lambda *_args: None)
-    enc = make_encoder(inputs)
+    enc = Encoder(inputs.settings.video)
     (slot,) = inputs.document.clip_sections
     row = render_clip(inputs, opened.run, enc, slot, tmp_path / "out.mp4", 0.0, strict=False)
     _judge_missing(opened.run, [row])
@@ -117,7 +117,7 @@ def test_strict_refuses_a_missing_clip_unless_the_section_is_optional(tmp_path, 
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
     monkeypatch.setattr("decktalk.stages.assemble.cut.section_slate", lambda *_args: None)
-    enc = make_encoder(inputs)
+    enc = Encoder(inputs.settings.video)
     real, slot = inputs.document.clip_sections
     out = tmp_path / "out.mp4"
 
@@ -274,7 +274,9 @@ def test_a_clip_the_project_names_opens_as_one_file_and_follows_no_name_inside_i
     (tmp_path / "media").mkdir()
     (tmp_path / "media" / "clip.mp4").write_bytes(b"")
     (slot,) = inputs.document.clip_sections
-    render_clip(inputs, open_run(tmp_path).run, make_encoder(inputs), slot, tmp_path / "out.mp4", 0.0, strict=True)
+    render_clip(
+        inputs, open_run(tmp_path).run, Encoder(inputs.settings.video), slot, tmp_path / "out.mp4", 0.0, strict=True
+    )
     opened = ffmpeg.source(inputs.path("media/clip.mp4"))
     assert any(call[: len(opened)] == opened for call in fake_ffmpeg.calls)
 

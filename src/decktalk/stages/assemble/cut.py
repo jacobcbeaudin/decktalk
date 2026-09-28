@@ -34,12 +34,6 @@ from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
 from decktalk.stages import SECOND_DIGITS, judge, selects
 
-
-def encoder(inputs: Inputs) -> Encoder:
-    """The encoder every output of this stage is made with, built from `[video]` once."""
-    return Encoder(inputs.settings.video)
-
-
 BLACK = "0x000000"
 """Truth: the colour a section with no recording plays, written the way ffmpeg reads a colour."""
 
@@ -98,6 +92,17 @@ def encode(out: Path, args: Sequence[str], sources: Sequence[Path]) -> bool:
     return True
 
 
+def _cut(
+    out: Path, enc: Encoder, source: Sequence[str], chain: str, sources: Sequence[Path], *, seconds: float | None = None
+) -> None:
+    """Encode one silent section cut from one input through one video filter chain, cut to `seconds` when given."""
+    limit = ("-t", f"{seconds}") if seconds is not None else ()
+    encode(out, (
+        *source, "-filter_complex", f"[0:v]{chain}[v]",
+        "-map", "[v]", "-an", *limit, *enc.venc, "-movflags", "+faststart", str(out),
+    ), sources)  # fmt: skip
+
+
 def _key_of(path: Path) -> CutKey | None:
     """The key a cut on disk was made under, or None when it has none or one this engine cannot read."""
     try:
@@ -142,11 +147,7 @@ def render_clip(inputs: Inputs, run: Run, enc: Encoder, section: ClipSection, ou
     clip = inputs.path(section.clip)
     if clip.exists():
         total = ffmpeg.probe_duration(clip)
-        encode(out, (
-            *ffmpeg.source(clip),
-            "-filter_complex", f"[0:v]{enc.fit}{vfades(total, *fades, dip)}[v]",
-            "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", str(out),
-        ), (clip,))  # fmt: skip
+        _cut(out, enc, ffmpeg.source(clip), f"{enc.fit}{vfades(total, *fades, dip)}", (clip,))
         sounds = ffmpeg.has_audio(clip)
         if not sounds:
             run.note(f"{section.clip} carries no audio track, so section {section.number} plays silent.",
@@ -175,11 +176,8 @@ def _render_slate_section(
         if png
         else enc.color_source(enc.v.slate_color, seconds)
     )
-    encode(out, (
-        *source,
-        "-filter_complex", f"[0:v]{enc.fit}{vfades(seconds, *inputs.document.fade_flags[section.key], dip)}[v]",
-        "-map", "[v]", "-an", "-t", f"{seconds}", *enc.venc, "-movflags", "+faststart", str(out),
-    ), (png,) if png else ())  # fmt: skip
+    fades = vfades(seconds, *inputs.document.fade_flags[section.key], dip)
+    _cut(out, enc, source, f"{enc.fit}{fades}", (png,) if png else (), seconds=seconds)
     return Rendered(
         section=section,
         path=out,
@@ -203,12 +201,8 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
                 f"section {section.number} has no recording at {source}.", hint=Artifact.RECORDINGS.next_step
             )
         run.note(f"{source} is not there, so section {section.number} plays black.", level=Level.WARNING)
-        encode(out, (
-            *enc.color_source(BLACK, total),
-            "-filter_complex",
-            f"[0:v]{enc.fit},trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}[v]",
-            "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", "-t", f"{total}", str(out),
-        ), ())  # fmt: skip
+        chain = f"{enc.fit},trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
+        _cut(out, enc, enc.color_source(BLACK, total), chain, (), seconds=total)
         return Rendered(section, out, ffmpeg.probe_duration(out), Substitute.BLACK.value, source,
                         substitute=Substitute.BLACK, missing=source)  # fmt: skip
     # The recorder covers the page until it starts the narration clock, so the head of the webm is
@@ -216,13 +210,11 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
     log = RecordingLog.read(inputs.workspace.recording_log(section.key))
     lead = "" if log is None else f"trim=start={log.trim_seconds},setpts=PTS-STARTPTS,"
     note = webm.name if log is None else f"{webm.name} (t0 {log.trim_seconds}s trimmed)"
-    encode(out, (
-        *ffmpeg.source(webm),
-        "-filter_complex",
-        f"[0:v]{lead}{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},"
-        f"setpts=PTS-STARTPTS{vfades(total, *fades, dip)}[v]",
-        "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", "-t", f"{total}", str(out),
-    ), (webm,))  # fmt: skip
+    chain = (
+        f"{lead}{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},"
+        f"setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
+    )
+    _cut(out, enc, ffmpeg.source(webm), chain, (webm,), seconds=total)
     return Rendered(section, out, ffmpeg.probe_duration(out), note, source)
 
 
@@ -247,7 +239,7 @@ def render_sections(
     `passes` is how many passes the whole stage runs, so the cuts count against the same total the
     passes after them do and a renderer never sees one bar restart inside one stage.
     """
-    enc = encoder(inputs)
+    enc = Encoder(inputs.settings.video)
     inputs.workspace.final_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.sections_dir.mkdir(parents=True, exist_ok=True)
     dip = frame_dip(inputs.document.transition.dip_seconds, enc.v.output_fps)

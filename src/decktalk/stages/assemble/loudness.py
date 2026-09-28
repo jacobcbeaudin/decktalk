@@ -13,12 +13,11 @@ from pathlib import Path
 from decktalk.findings import Code, Finding, Location
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
-from decktalk.media import audio, ffmpeg
+from decktalk.media import audio
 from decktalk.pipeline import Stage
 from decktalk.results import Loudness
 from decktalk.stages import judge
-from decktalk.stages.assemble.cut import encoder
-from decktalk.stages.assemble.mix import gain
+from decktalk.stages.assemble.mix import encode_soundtrack, gain
 
 LIMITER_HEADROOM_DB = 0.3
 """Calibration: the limiter works on oversampled samples, so it sits this far under the ceiling."""
@@ -44,20 +43,19 @@ def normalize_loudness(inputs: Inputs, src: Path, dst: Path) -> tuple[audio.Loud
     ceiling promises.
     """
     loudness = inputs.settings.mix.loudness
-    enc = encoder(inputs)
     before = audio.measure_loudness(
         src, i=loudness.target_lufs, tp=loudness.true_peak_max_dbtp, lra=loudness.range_max_lu
     )
     lift = loudness.target_lufs - before.i
     ceiling = gain(loudness.true_peak_max_dbtp - LIMITER_HEADROOM_DB)
-    ffmpeg.run(
-        "-i", str(src), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
-        "-af",
-        f"volume={lift:.2f}dB,aresample={LIMITER_OVERSAMPLE_RATE},"
+    encode_soundtrack(
+        inputs,
+        src,
+        dst,
+        filters=f"volume={lift:.2f}dB,aresample={LIMITER_OVERSAMPLE_RATE},"
         f"alimiter=limit={ceiling:.4f}:attack={LIMITER_ATTACK_MS}:release={LIMITER_RELEASE_MS}:level=false,"
-        f"aresample={enc.v.sample_rate}",
-        *enc.aenc, "-movflags", "+faststart", str(dst),
-    )  # fmt: skip
+        f"aresample={inputs.settings.video.sample_rate}",
+    )
     after = audio.measure_loudness(
         dst, i=loudness.target_lufs, tp=loudness.true_peak_max_dbtp, lra=loudness.range_max_lu
     )
