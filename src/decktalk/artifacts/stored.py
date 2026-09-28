@@ -24,10 +24,10 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Self
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from decktalk.errors import NotBuiltError
-from decktalk.findings import MODEL
+from decktalk.findings import Model
 from decktalk.pipeline import Artifact
 
 INDENT = 2
@@ -58,10 +58,8 @@ def engine_digest(*lines: str) -> str:
     return hashlib.sha256("\n".join([f"engine:{ENGINE_VERSION}", *lines]).encode("utf-8")).hexdigest()
 
 
-class Stored(BaseModel):
+class Stored(Model):
     """One file under `build/`, which knows how to read itself and how to write itself."""
-
-    model_config = MODEL
 
     @classmethod
     def read(cls, path: Path) -> Self | None:

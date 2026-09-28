@@ -23,10 +23,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from decktalk import page
-from decktalk.findings import MODEL, Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, Model
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Attr, measurable, stagger_span
 from decktalk.pipeline import Stage
@@ -64,10 +64,8 @@ def judged(code: Code, message: str, location: Location, *, stage: Stage | None 
     return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage})
 
 
-class Measured(BaseModel):
+class Measured(Model):
     """One element the probe measured, as the contract's own attribute names spell it."""
-
-    model_config = MODEL
 
     attrs: dict[str, str] = Field(description="Every contract attribute this element carries, by name.")
     moments: dict[str, str] = Field(description="The wire id of each moment this element names, by attribute.")

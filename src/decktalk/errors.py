@@ -21,9 +21,9 @@ import threading
 from enum import Enum
 from typing import ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from decktalk.findings import DOCS, MODEL, Location
+from decktalk.findings import DOCS, Location, Model
 
 REFUSED = 2
 """A command line DeckTalk refused, which a retry as written would refuse again."""
@@ -167,14 +167,12 @@ class Cancel:
             raise Cancelled("The caller stopped this run.", hint="Run the command again to start a fresh run.")
 
 
-class ErrorInfo(BaseModel):
+class ErrorInfo(Model):
     """The `error` of a result: why the command could not run, and what would let it.
 
     It is filled only when the command could not run at all, so a reader that finds it null knows
     the command ran and that every judgement is in `findings`.
     """
-
-    model_config = MODEL
 
     code: ErrorCode = Field(description="The code a caller dispatches on, such as NOT_BUILT.")
     message: str = Field(description="One sentence saying what is wrong, with the measured detail in it.")

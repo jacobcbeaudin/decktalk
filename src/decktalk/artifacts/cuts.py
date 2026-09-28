@@ -13,18 +13,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from decktalk.artifacts.recordings import file_digest
 from decktalk.artifacts.stored import Stored, engine_digest
-from decktalk.findings import MODEL, ProjectPath
+from decktalk.findings import Model, ProjectPath
 from decktalk.results import SectionKey, SectionKind, SectionNumber, Substitute
 
 
-class Cut(BaseModel):
+class Cut(Model):
     """One section in the finished film: where it plays, what it was made from, and what it says."""
-
-    model_config = MODEL
 
     section: SectionNumber
     key: SectionKey

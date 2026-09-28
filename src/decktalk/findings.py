@@ -28,6 +28,13 @@ from decktalk.pipeline import Stage
 MODEL = ConfigDict(frozen=True, extra="forbid", populate_by_name=True, serialize_by_alias=True)
 """The configuration every model in the package uses, so a result is hashable, closed and one shape."""
 
+
+class Model(BaseModel):
+    """The base of every model in the package, which is what carries `MODEL` to each of them."""
+
+    model_config = MODEL
+
+
 ProjectPath = Annotated[Path, PlainSerializer(Path.as_posix, return_type=str)]
 """A path as JSON receives it, which is project-relative with forward slashes on every platform."""
 
@@ -390,14 +397,12 @@ class Applicability(Enum):
     DISPLAY = "display"
 
 
-class Location(BaseModel):
+class Location(Model):
     """Where a finding is, as the five facts that travel together into a renderer and into a fix.
 
     `where` is never null, because the object a finding judges is what tells a reader which side of
     the spend it came from, and the other four are filled by whoever knows them.
     """
-
-    model_config = MODEL
 
     where: str = Field(description="The object this finding judges, such as a cue id, a slide or a file.")
     file: ProjectPath | None = Field(None, description="The file to open, project-relative, or null.")
@@ -406,14 +411,12 @@ class Location(BaseModel):
     cue: str | None = Field(None, description="The wire id of the cue this is about, or null.")
 
 
-class Edit(BaseModel):
+class Edit(Model):
     """One change to one file, named by exactly one locator so an agent can apply it without guessing.
 
     A pointer addresses a place in a JSON file, a key addresses a place in a TOML file, and a line
     addresses a place in any other text file.
     """
-
-    model_config = MODEL
 
     file: ProjectPath = Field(description="The file this edit changes, project-relative.")
     pointer: str | None = Field(None, description="A JSON pointer into that file, or null.")
@@ -432,10 +435,8 @@ class Edit(BaseModel):
         return self
 
 
-class EditFix(BaseModel):
+class EditFix(Model):
     """A fix that changes files, which is what scaffolds a missing cue row or repairs a phrase."""
-
-    model_config = MODEL
 
     kind: Literal["edit"] = Field("edit", description="The kind of fix, which is how a reader dispatches on it.")
     title: str = Field(description="One sentence saying what applying this fix does.")
@@ -443,10 +444,8 @@ class EditFix(BaseModel):
     edits: tuple[Edit, ...] = Field(description="Every change this fix makes, applied together or not at all.")
 
 
-class SettingFix(BaseModel):
+class SettingFix(Model):
     """A fix that turns a knob, which is the same key space `config set` and `--set` take."""
-
-    model_config = MODEL
 
     kind: Literal["setting"] = Field("setting", description="The kind of fix, which is how a reader dispatches on it.")
     title: str = Field(description="One sentence saying what applying this fix does.")
@@ -464,10 +463,8 @@ here by name.
 """
 
 
-class CommandFix(BaseModel):
+class CommandFix(Model):
     """A fix that runs one of DeckTalk's own commands, spelled as the argv a person would type."""
-
-    model_config = MODEL
 
     kind: Literal["command"] = Field("command", description="The kind of fix, which is how a reader dispatches on it.")
     title: str = Field(description="One sentence saying what applying this fix does.")
@@ -493,7 +490,7 @@ Fix = Annotated[EditFix | SettingFix | CommandFix, Field(discriminator="kind")]
 """The three moves an agent can make, which are editing a file, turning a knob and running a command."""
 
 
-class Finding(BaseModel):
+class Finding(Model):
     """One judgement, in the shape every renderer, every schema and every agent receives.
 
     `certainty` and `url` are the code's own and are written into the object rather than left for a
@@ -503,8 +500,6 @@ class Finding(BaseModel):
     code and nothing else. Neither default is ever the value in force, because the code fills both
     before this model is built and refuses any finding whose code it does not know.
     """
-
-    model_config = MODEL
 
     code: Code = Field(description="The stable code a caller dispatches on, such as CUE_OFF.")
     message: str = Field(description="One sentence, with every measured number and its limit written into it.")

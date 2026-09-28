@@ -26,10 +26,10 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from decktalk.artifacts.stored import Stored, engine_digest
-from decktalk.findings import MODEL, Finding, ProjectPath
+from decktalk.findings import Finding, Model, ProjectPath
 from decktalk.media.pagereport import PageReport
 
 HASH_DIGITS = 16
@@ -64,10 +64,8 @@ def input_hash(parts: Sequence[str], files: Mapping[str, Path]) -> str:
     return engine_digest(*parts, *(f"{name}:{file_digest(files[name])}" for name in sorted(files)))[:HASH_DIGITS]
 
 
-class Luma(BaseModel):
+class Luma(Model):
     """How bright a recording is at a tenth, a half and nine tenths of its length."""
-
-    model_config = MODEL
 
     at_tenth: float = Field(ge=0, description="The mean luma one tenth of the way through.")
     at_half: float = Field(ge=0, description="The mean luma half way through.")
@@ -75,10 +73,8 @@ class Luma(BaseModel):
     peak_at_half: float = Field(ge=0, description="The brightest pixel half way through, which a dark slide has.")
 
 
-class RecordingChecks(BaseModel):
+class RecordingChecks(Model):
     """What the frames of one recording measured, against what the recorder asked for."""
-
-    model_config = MODEL
 
     duration_seconds: float = Field(ge=0, description="How long the recording runs.")
     wanted_seconds: float = Field(ge=0, description="How long the recorder asked for.")

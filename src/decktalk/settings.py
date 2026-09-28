@@ -33,10 +33,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import tomlkit
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import Field, JsonValue
 
 from .errors import InputError
-from .findings import MODEL, Code, Location, ProjectPath
+from .findings import Code, Location, Model, ProjectPath
 from .locate import locate, refused_line
 from .page import CAPTURE_FPS, MEASURABLE_SPAN_SECONDS
 from .results import Layer, LayerValue, Scope
@@ -1062,15 +1062,13 @@ NUMBERS: tuple[Number, ...] = (
 NUMBERS_BY_ID: dict[str, Number] = {number.id: number for number in NUMBERS}
 
 
-class Layers(BaseModel):
+class Layers(Model):
     """What every layer said about every key, which is the record `config explain` renders.
 
     It is built at load and again at reload, so a watch loop that sees an edited `decktalk.toml`
     sees the layer that set each key move with it. A finding that names a knob quotes the winning
     row, because a value without its layer cannot tell a deliberate choice from a default.
     """
-
-    model_config = MODEL
 
     rows: dict[str, tuple[LayerValue, ...]] = Field(
         description="Every key by its dotted name, with one row per layer that stated it, lowest first."
@@ -1101,15 +1099,13 @@ class Loaded:
     layers: Layers
 
 
-class SettingWrite(BaseModel):
+class SettingWrite(Model):
     """What a write to a settings file changed, or would change on a dry run.
 
     It reports the effective value as well as the written one, because a write to the project file
     that an environment variable still shadows changes the file and not the run, and an agent that
     is told only what it wrote will believe the opposite.
     """
-
-    model_config = MODEL
 
     key: str = Field(description="The key's dotted name.")
     value: JsonValue = Field(description="The value this call wrote, or would write.")
@@ -1123,15 +1119,13 @@ class SettingWrite(BaseModel):
     shadowed: bool = Field(description="True when a higher layer still decides this key despite the write.")
 
 
-class SettingUnset(BaseModel):
+class SettingUnset(Model):
     """What a removal from a settings file took out, and what decides the key once it is gone.
 
     It reports the value in force as well as the value it removed, because the layer that shows
     through may be the default or an environment variable that was shadowed all along, and an agent
     that is told only what it removed cannot tell which of the two it is now running on.
     """
-
-    model_config = MODEL
 
     keys: tuple[str, ...] = Field(description="Every key that file no longer sets, in the order this call named them.")
     previous: JsonValue = Field(None, description="The value that file held before, or null when it held none.")

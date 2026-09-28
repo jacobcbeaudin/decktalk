@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from ..findings import MODEL, Code, RaisedBy
+from ..findings import Code, Model, RaisedBy
 from ..page import REPORT
 from . import MILLISECONDS
 
@@ -181,7 +181,7 @@ ROWS: dict[str, type[BaseModel]] = {
 """Each list field of the report against the model one of its rows has to be, which is what `read` walks."""
 
 
-class Recording(BaseModel):
+class Recording(Model):
     """One section recorded: what the page loaded, what it said, and where narration t=0 sits in the webm.
 
     This is what the recorder knows. Whether the recording still matches the project, and what the
@@ -189,8 +189,6 @@ class Recording(BaseModel):
     report it carries rather than beside the recorder that fills it, so an artifact can hold one
     whole without importing the browser driver.
     """
-
-    model_config = MODEL
 
     url: str = Field(description="The page URL that was recorded, with its query.")
     assets: tuple[str, ...] = Field(description="Every project file the page loaded, project-relative.")

@@ -26,9 +26,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from decktalk.findings import MODEL, Finding, ProjectPath
+from decktalk.findings import Finding, Model, ProjectPath
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Elapsed, Run, SectionNumber, Spend
 
@@ -55,10 +55,8 @@ class Level(Enum):
     ERROR = "error"
 
 
-class Event(BaseModel):
+class Event(Model):
     """What every line of the stream carries, whichever moment it reports."""
-
-    model_config = MODEL
 
     event: str = Field(description=MOMENT)
     time: datetime = Field(description="When this happened, as an instant.", json_schema_extra={"volatile": True})

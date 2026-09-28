@@ -27,10 +27,10 @@ import hashlib
 import json
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from decktalk.artifacts.stored import Stored
-from decktalk.findings import MODEL
+from decktalk.findings import Model
 from decktalk.results import SectionKey, SectionNumber
 
 TAKE_DIGITS = 16
@@ -50,10 +50,8 @@ otherwise name `../` and have the narration read a file from anywhere on the mac
 """
 
 
-class _Digested(BaseModel):
+class _Digested(Model):
     """A frozen set of inputs whose digest is taken over its payload."""
-
-    model_config = MODEL
 
     @property
     def payload(self) -> str:
@@ -129,10 +127,8 @@ def is_placeholder(digest: str) -> bool:
     return digest.startswith(PLACEHOLDER_PREFIX)
 
 
-class Take(BaseModel):
+class Take(Model):
     """One section's take: the files it names, what it cost to make, and where it lands."""
-
-    model_config = MODEL
 
     section: SectionNumber
     key: SectionKey

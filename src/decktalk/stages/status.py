@@ -35,12 +35,12 @@ import json
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
 from decktalk.artifacts.stored import ENGINE_VERSION, Stored
 from decktalk.errors import DeckTalkError, NotBuiltError
 from decktalk.events import Level, Line, StageStart
-from decktalk.findings import MODEL, Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, Model
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.paths import at
 from decktalk.inputs.workspace import EVENTS_SUFFIX
@@ -94,10 +94,8 @@ FIELD_END = b"\0"
 """What ends each field of a digest, which no path, no version and no JSON text contains."""
 
 
-class KeptStage(BaseModel):
+class KeptStage(Model):
     """What one stage read, what it wrote and what it found the last time a build ran it."""
-
-    model_config = MODEL
 
     key: str = Field(description="The digest of everything the stage read, with the options it was run with.")
     options: dict[str, JsonValue] = Field(description="The options the stage was run with, as the build passed them.")

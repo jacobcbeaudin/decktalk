@@ -14,10 +14,10 @@ import itertools
 from pathlib import Path
 from typing import Any, cast
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import Field, JsonValue
 
 from .errors import DeckTalkError, InputError
-from .findings import DOCS, MODEL, Code
+from .findings import DOCS, Code, Model
 from .inputs import Inputs
 from .machine import Machine
 from .results import Layer, LayerValue, NumberView, Scope, SectionCues
@@ -44,15 +44,13 @@ ARRAY_TYPE = "array of numbers"
 """The type of every key that is not a scalar, which is a TOML array of numbers."""
 
 
-class Explanation(BaseModel):
+class Explanation(Model):
     """One knob read whole, with the layers under it and the arithmetic above it.
 
     It is the explainer's own result rather than a command's, because the same three computations
     serve `config explain`, a fix an agent applies and a renderer that shows a knob beside the
     finding it moves.
     """
-
-    model_config = MODEL
 
     key: str = Field(description="The key's dotted name.")
     description: str = Field(description="What this key changes, in one sentence.")
