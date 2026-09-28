@@ -16,7 +16,7 @@ from typer._click import Context
 
 from decktalk.cli import session as sessions
 from decktalk.cli import watch as watching
-from decktalk.cli.app import command, docs_for
+from decktalk.cli.app import command
 from decktalk.cli.options import (
     Fix,
     Force,
@@ -42,11 +42,6 @@ from decktalk.results import (
     SoundscapeResult,
     VerifyResult,
 )
-
-BUILD_EPILOG = f"""\
-Writes build/final/<name>.mp4 with its captions, chapters, transcript page
-and poster. The JSON object carries run, stages, seconds, written, findings
-and error. Docs: {docs_for("build")}"""
 
 BUILD_SHORT = "Run every stage in order, or a span of them."
 """What the command tree says about `build`, where its own help names the two flags that span it."""
@@ -107,9 +102,7 @@ Watch = Annotated[
 ]
 
 
-@command(
-    group=Group.STAGE, epilog=f"The JSON object carries run, sections, spend and takes. Docs: {docs_for('narrate')}"
-)
+@command(group=Group.STAGE)
 def narrate(
     ctx: Context,
     section: Sections = None,
@@ -136,7 +129,7 @@ def narrate(
         )
 
 
-@command(group=Group.STAGE, epilog=f"The JSON object carries run, sections and file. Docs: {docs_for('cue')}")
+@command(group=Group.STAGE)
 def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueResult:
     """Turn each cue phrase into a second on its section clock.
 
@@ -155,7 +148,6 @@ def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueRe
 
 @command(
     group=Group.STAGE,
-    epilog=f"The JSON object carries run, sections and written. Docs: {docs_for('record')}",
     helps=RECORD_AGAIN,
 )
 def record(ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None) -> RecordResult:
@@ -172,7 +164,6 @@ def record(ctx: Context, section: Sections = None, force: Force = False, set_: O
 
 @command(
     group=Group.STAGE,
-    epilog=f"The JSON object carries run, items and spend. Docs: {docs_for('soundscape')}",
     helps=SOUNDSCAPE_SPENDING,
 )
 def soundscape(
@@ -196,9 +187,7 @@ def soundscape(
         )
 
 
-@command(
-    group=Group.STAGE, epilog=f"The JSON object carries run, film, sections and loudness. Docs: {docs_for('assemble')}"
-)
+@command(group=Group.STAGE)
 def assemble(
     ctx: Context, section: Sections = None, skip: SkipSoundscape = None, set_: Overrides = None
 ) -> AssembleResult:
@@ -228,7 +217,6 @@ def _skipped_here(skip: Stage | None) -> Stage | None:
 
 @command(
     group=Group.STAGE,
-    epilog=f"The JSON object carries run, film, starts, cuts, seams and cues. Docs: {docs_for('verify')}",
 )
 def verify(ctx: Context, section: Sections = None, set_: Overrides = None) -> VerifyResult:
     """Measure the finished mp4: every start, cut, seam and landing.
@@ -242,7 +230,12 @@ def verify(ctx: Context, section: Sections = None, set_: Overrides = None) -> Ve
         return project.verify(only=sections_of(section), cancel=session.cancel)
 
 
-@command(group=Group.WHOLE, epilog=BUILD_EPILOG, short_help=BUILD_SHORT, helps=BUILD_AGAIN)
+@command(
+    group=Group.WHOLE,
+    epilog="Writes build/final/<name>.mp4 with its captions, chapters, transcript page and poster.",
+    short_help=BUILD_SHORT,
+    helps=BUILD_AGAIN,
+)
 def build(
     ctx: Context,
     from_stage: FromStage = None,
@@ -304,7 +297,7 @@ def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, 
     return built
 
 
-@command(group=Group.WHOLE, epilog=f"The JSON object carries run, film, words and written. Docs: {docs_for('clip')}")
+@command(group=Group.WHOLE)
 def clip(
     ctx: Context,
     section: OneSection = None,

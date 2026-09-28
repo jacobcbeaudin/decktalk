@@ -106,6 +106,15 @@ def _model(row: dict[str, object]) -> type[Result] | None:
 
 
 @pytest.mark.parametrize("name", sorted(rows()))
+def test_every_command_help_names_every_field_its_result_carries_and_its_docs(run, name: str) -> None:
+    said = flat(run(*name.split(), "--help").out)
+    model = _model(rows()[name])
+    for field in model.model_fields.keys() - Result.model_fields.keys() if model else ():
+        assert field in said, f"{name} --help leaves out {field}"
+    assert f"#decktalk-{name.replace(' ', '-')}" in said
+
+
+@pytest.mark.parametrize("name", sorted(rows()))
 def test_every_command_carries_the_globals_after_its_own_name(name: str) -> None:
     flags = {opt for param in rows()[name]["params"] for opt in param["opts"]}  # ty: ignore[not-iterable]
     assert {"--json", "--events", "--color", "--no-input", "-v", "-q", "-p"} <= flags

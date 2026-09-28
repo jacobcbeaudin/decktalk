@@ -20,6 +20,7 @@ import functools
 import inspect
 import itertools
 import sys
+import textwrap
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, Any, cast
@@ -98,6 +99,9 @@ _current: Session | None = None
 
 _order = itertools.count()
 """Where each command sits in the source, which is the order its group prints it in."""
+
+EPILOG_WIDTH = 78
+"""How wide a command's closing paragraph is wrapped, which is the width the tree's own footer is written at."""
 
 CONTEXT = {"help_option_names": ["-h", "--help"], "show_default": False}
 """Settings every command shares. A default is written into its own sentence, never in brackets."""
@@ -225,8 +229,10 @@ def command[F: Callable[..., object]](
 
     `eval_str` is load bearing: the modules are written under postponed annotations, so the return
     annotation is the string `"BuildResult"` until it is evaluated, and the shared flags are chosen
-    from the model it names. `helps` gives a flag this command's own sentence, because a flag that
-    means something narrower here has to say so on the one help screen a reader of this command sees.
+    from the model it names. `epilog` is the command's own lead sentence, which the closing
+    paragraph follows with the fields of that model and the command's docs link. `helps` gives a
+    flag this command's own sentence, because a flag that means something narrower here has to say
+    so on the one help screen a reader of this command sees.
     """
 
     def register(fn: F) -> F:
@@ -240,16 +246,32 @@ def command[F: Callable[..., object]](
         wrapper.__annotations__ = {param.name: param.annotation for param in parameters}
         wrapper.result = result  # ty: ignore[unresolved-attribute]
         wrapper.order = next(_order)  # ty: ignore[unresolved-attribute]
+        called = name or str(getattr(fn, "__name__", ""))
+        path = (str(to.info.name), called) if to is not None else (called,)
         (to or app).command(
-            name or str(getattr(fn, "__name__", "")),
+            called,
             cls=DeckTalkCommand,
             rich_help_panel=group.value,
-            epilog=epilog or None,
+            epilog=_epilog(epilog, result, path),
             short_help=short_help or None,
         )(wrapper)
         return fn
 
     return register
+
+
+def _epilog(lead: str, result: object, path: tuple[str, ...]) -> str:
+    """A command's closing paragraph: its lead, the fields its JSON object carries, and its docs link.
+
+    The fields are read off the result model, beside the envelope every result shares, because a
+    list written by hand beside the command drifts the moment the model gains a field.
+    """
+    fields = result.model_fields if isinstance(result, type) and issubclass(result, Result) else {}
+    own = [field.alias or name for name, field in fields.items() if name not in Result.model_fields]
+    listed = f"{', '.join(own[:-1])} and {own[-1]}" if len(own) > 1 else "".join(own)
+    carried = f"The JSON object carries {listed}." if own else ""
+    said = textwrap.fill(" ".join(filter(None, (lead, carried))), width=EPILOG_WIDTH, break_on_hyphens=False)
+    return "\n".join(filter(None, (said, f"Docs: {docs_for(*path)}")))
 
 
 def _reworded(parameters: list[inspect.Parameter], helps: Mapping[str, str]) -> list[inspect.Parameter]:

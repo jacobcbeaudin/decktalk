@@ -21,7 +21,7 @@ from typer._click import Context
 
 from decktalk import settings as knobs
 from decktalk.cli import session as sessions
-from decktalk.cli.app import CONTEXT, DeckTalkGroup, app, command, docs_for
+from decktalk.cli.app import CONTEXT, DeckTalkGroup, app, command
 from decktalk.cli.catalog import json_value
 from decktalk.cli.options import Group
 from decktalk.errors import InputError
@@ -48,6 +48,7 @@ PURPOSE = "List, get, set, explain or unset a setting."
 
 config = typer.Typer(
     cls=DeckTalkGroup,
+    name="config",
     help=PURPOSE,
     add_completion=False,
     pretty_exceptions_enable=False,
@@ -65,7 +66,7 @@ Scoped = Annotated[
 ]
 
 
-@command("list", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'list')}")
+@command("list", group=Group.CONTRACTS, to=config)
 def list_keys(
     ctx: Context,
     table: Annotated[str | None, typer.Argument(metavar="TABLE", help="One table, such as verify.")] = None,
@@ -81,7 +82,7 @@ def list_keys(
     return ConfigListResult(ok=True, keys=_rows(session, table, defaults=defaults, changed=changed))
 
 
-@command("get", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'get')}")
+@command("get", group=Group.CONTRACTS, to=config)
 def get_key(ctx: Context, key: Named) -> ConfigGetResult:
     """Print one key's value and the layer that set it."""
     session = sessions.of(ctx)
@@ -100,7 +101,7 @@ def get_key(ctx: Context, key: Named) -> ConfigGetResult:
     )
 
 
-@command("set", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'set')}")
+@command("set", group=Group.CONTRACTS, to=config)
 def set_key(
     ctx: Context,
     key: Named,
@@ -122,7 +123,7 @@ def set_key(
     return ConfigSetResult(ok=True, written=() if dry_run else (written.file,), **_shared(written, ConfigSetResult))
 
 
-@command("unset", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'unset')}")
+@command("unset", group=Group.CONTRACTS, to=config)
 def unset_key(
     ctx: Context,
     key: Named,
@@ -156,7 +157,7 @@ def unset_key(
     )
 
 
-@command("explain", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'explain')}")
+@command("explain", group=Group.CONTRACTS, to=config)
 def explain_key(
     ctx: Context,
     key: Named,

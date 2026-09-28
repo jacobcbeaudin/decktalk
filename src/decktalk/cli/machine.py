@@ -15,27 +15,15 @@ from typer._click import Context
 
 from decktalk import machine as machines
 from decktalk.cli import session as sessions
-from decktalk.cli.app import command, docs_for
+from decktalk.cli.app import command
 from decktalk.cli.options import Fix, Group
 from decktalk.results import DoctorResult, InitResult, InstallResult
 from decktalk.template import STARTER, listed_names
 
-INIT_EPILOG = f"""\
-Writes decktalk.toml, script.md, cues.json and a deck that builds with no
-credential. The JSON object carries run, root, name, example, skills and
-written. Docs: {docs_for("init")}"""
 
-INSTALL_EPILOG = f"""\
-Fetches into this machine's cache, which doctor names. The JSON object
-carries run, tools and cache. Docs: {docs_for("install")}"""
-
-DOCTOR_EPILOG = f"""\
-Reads this machine and fetches nothing, and --measure writes the bias it
-measured. The JSON object carries run, written, tools, cache, python,
-platform, voice_key and bias_ms. Docs: {docs_for("doctor")}"""
-
-
-@command(group=Group.MACHINE, epilog=INIT_EPILOG)
+@command(
+    group=Group.MACHINE, epilog="Writes decktalk.toml, script.md, cues.json and a deck that builds with no credential."
+)
 def init(
     ctx: Context,
     directory: Annotated[Path, typer.Argument(metavar="DIR", help="Where to write the project.")],
@@ -100,7 +88,7 @@ def _occupied(root: Path) -> bool:
     return root.is_dir() and any(root.iterdir())
 
 
-@command(group=Group.MACHINE, epilog=INSTALL_EPILOG)
+@command(group=Group.MACHINE, epilog="Fetches into this machine's cache, which doctor names.")
 def install(ctx: Context) -> InstallResult:
     """Fetch Chromium and ffmpeg before a build needs them.
 
@@ -129,7 +117,9 @@ def _asks_for_sudo() -> bool:
     return sys.platform.startswith("linux")
 
 
-@command(group=Group.MACHINE, epilog=DOCTOR_EPILOG)
+@command(
+    group=Group.MACHINE, epilog="Reads this machine and fetches nothing, and --measure writes the bias it measured."
+)
 def doctor(
     ctx: Context,
     measure: Annotated[

@@ -15,31 +15,9 @@ import typer
 from typer._click import Context
 
 from decktalk.cli import session as sessions
-from decktalk.cli.app import command, docs_for
+from decktalk.cli.app import command
 from decktalk.cli.options import Fix, Group, Overrides, Panel, Sections, sections_of
 from decktalk.results import CheckResult, ServeResult, StatusResult, StoryboardResult, WordsResult
-
-STATUS_EPILOG = f"""\
-Reads the project and writes nothing. The JSON object carries run, name,
-script, cues, sections, film, runs and next. Docs: {docs_for("status")}"""
-
-CHECK_EPILOG = f"""\
-Judges the written files and the pages, and prices what a voiced build costs.
-The JSON object carries run, judged, pages, frames, spend, storyboard,
-written and findings. Docs: {docs_for("check")}"""
-
-WORDS_EPILOG = f"""\
-Prints the clock a cue phrase is written against. The JSON object carries run
-and sections. Docs: {docs_for("words")}"""
-
-STORYBOARD_EPILOG = f"""\
-Writes build/storyboard.html, which is the checkpoint before credits are
-spent. The JSON object carries run, storyboard, panels and written.
-Docs: {docs_for("storyboard")}"""
-
-SERVE_EPILOG = f"""\
-Serves the deck directory and the files decktalk.toml declares, and nothing
-else. The JSON object carries run, url, port and root. Docs: {docs_for("serve")}"""
 
 DEFAULT_HOST = "127.0.0.1"
 """Where the origin listens, which is this machine alone until a caller names another interface."""
@@ -85,7 +63,7 @@ At = Annotated[
 ]
 
 
-@command(group=Group.PROJECT, epilog=STATUS_EPILOG)
+@command(group=Group.PROJECT, epilog="Reads the project and writes nothing.")
 def status(ctx: Context, set_: Overrides = None) -> StatusResult:
     """Report what is written, what is built and what is stale.
 
@@ -99,7 +77,7 @@ def status(ctx: Context, set_: Overrides = None) -> StatusResult:
         return project.status(cancel=session.cancel)
 
 
-@command(group=Group.PROJECT, epilog=CHECK_EPILOG)
+@command(group=Group.PROJECT, epilog="Judges the written files and the pages, and prices what a voiced build costs.")
 def check(
     ctx: Context,
     paths: Annotated[
@@ -156,7 +134,7 @@ def _fixed(
         return fresh.check(*paths, **asked, cancel=session.cancel)
 
 
-@command(group=Group.PROJECT, epilog=WORDS_EPILOG)
+@command(group=Group.PROJECT, epilog="Prints the clock a cue phrase is written against.")
 def words(ctx: Context, section: Sections = None, set_: Overrides = None) -> WordsResult:
     """Print every spoken word with its start and end.
 
@@ -168,7 +146,7 @@ def words(ctx: Context, section: Sections = None, set_: Overrides = None) -> Wor
         return project.words(only=sections_of(section), cancel=session.cancel)
 
 
-@command(group=Group.PROJECT, epilog=STORYBOARD_EPILOG)
+@command(group=Group.PROJECT, epilog="Writes build/storyboard.html, which is the checkpoint before credits are spent.")
 def storyboard(
     ctx: Context,
     section: Sections = None,
@@ -193,7 +171,9 @@ def storyboard(
         )
 
 
-@command(group=Group.PROJECT, epilog=SERVE_EPILOG)
+@command(
+    group=Group.PROJECT, epilog="Serves the deck directory and the files decktalk.toml declares, and nothing else."
+)
 def serve(
     ctx: Context,
     host: Annotated[str, typer.Option("--host", metavar="HOST", help="The interface to listen on.")] = DEFAULT_HOST,
