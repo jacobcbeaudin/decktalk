@@ -30,15 +30,12 @@ from decktalk.machine import Run
 from decktalk.media import MILLISECONDS, ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.pipeline import Artifact, Stage
-from decktalk.stages import SECOND_DIGITS, judge
+from decktalk.stages import SECOND_DIGITS, gain, judge
 from decktalk.stages.assemble.cut import Rendered, concat, rendered_starts
 
 CLIP_FADE_SECONDS = 0.02
 """Truth: half a frame of fade at each edge of a clip's own audio, so a cut into it never clicks."""
 
-
-DECIBEL_DECADE = 20.0
-"""Truth: twenty decibels is one decade of amplitude, which is what converts a level to a factor."""
 
 ONCE = "once"
 """An input read from its start, once, such as the narration track or one sound effect."""
@@ -113,15 +110,6 @@ class Chain:
         """The plan, with every layer summed into one track as long as the picture."""
         summed = "".join(self.labels) + f"amix=inputs={len(self.labels)}:duration=first:normalize=0[a]"
         return MixPlan(inputs=tuple(self.inputs), filter=";".join([*self.fragments, summed]), total=total)
-
-
-DECIBEL_BASE = 10
-"""Truth: a decibel is a base ten ratio, so a level becomes an amplitude through ten to a power."""
-
-
-def gain(level_db: float) -> float:
-    """The amplitude factor one level in decibels asks for, which is what `volume` reads."""
-    return DECIBEL_BASE ** (level_db / DECIBEL_DECADE)
 
 
 def delay(seconds: float) -> str:
@@ -396,7 +384,6 @@ __all__ = [
     "MixPlan",
     "delay",
     "encode_soundtrack",
-    "gain",
     "max_expr",
     "mix_input_args",
     "mix_soundtrack",

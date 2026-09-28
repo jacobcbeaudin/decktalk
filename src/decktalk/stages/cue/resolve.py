@@ -20,10 +20,7 @@ from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Locat
 from decktalk.inputs.cues import SECTION_END, SECTION_START, Cue, CuedSection, Spoken, norm
 from decktalk.pipeline import Stage
 from decktalk.results import CueTime, SectionCues, Word
-from decktalk.stages import SECOND_DIGITS, judge
-
-SECTION_START_SECONDS = 0.0
-"""Where a section's own clock begins, which is what a cue with no word behind it resolves to."""
+from decktalk.stages import SECOND_DIGITS, SECTION_START_SECONDS, judge
 
 REPEATS_MIN = 2
 """How many times a phrase has to occur before a cue that names no occurrence is ambiguous."""
@@ -242,7 +239,6 @@ def _unresolved(
 __all__ = [
     "NEAREST_MIN_RATIO",
     "REPEATS_MIN",
-    "SECTION_START_SECONDS",
     "ambiguity",
     "anchor_time",
     "nearest_phrase",

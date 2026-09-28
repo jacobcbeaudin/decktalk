@@ -13,7 +13,6 @@ from decktalk.stages.assemble.mix import (
     MixInput,
     MixPlan,
     delay,
-    gain,
     max_expr,
     mix_input_args,
     plan_mix,
@@ -40,12 +39,6 @@ def three_page_plan(inputs, opened, take_index, spoken, rendered, *, soundscape:
         },
     )
     return plan_mix(inputs, opened.run, rendered(inputs, THREE_PAGES), takes, soundscape=soundscape)
-
-
-def test_a_level_becomes_the_factor_that_plays_it():
-    assert gain(0) == 1.0
-    assert round(gain(-6), 3) == 0.501
-    assert round(gain(20), 3) == 10.0
 
 
 def test_a_second_becomes_the_milliseconds_adelay_reads():

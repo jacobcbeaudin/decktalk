@@ -21,14 +21,19 @@ from typing import cast
 
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
+from decktalk.media import MILLISECONDS
 from decktalk.media.frames import Size
 from decktalk.settings import NUMBERS_BY_ID, Settings, VerifyConfig
 
 EPSILON = 1e-6
 """Truth: the slack two measured seconds need to compare equal, which is far under one frame."""
 
-MILLISECONDS = 1000
-"""Truth: milliseconds in one second, which is the one conversion between a limit and a measurement."""
+HALF_FRAME = 0.5
+"""Truth: half a frame, which a read aims inside its frame by and a limit written in frames is read with.
+
+A frame is the first one at or after its time, so a read aimed half a frame inside it never lands on
+its neighbour, and a limit that allows half a frame more is not failed by its own rounding.
+"""
 
 PROBE_TAIL_SECONDS = 0.05
 """Calibration: how close to the end of a section a probe may still fall, so a probe never reads the next one.
@@ -264,7 +269,7 @@ def onset_offset_seconds(
 
 __all__ = [
     "EPSILON",
-    "MILLISECONDS",
+    "HALF_FRAME",
     "PROBE_TAIL_SECONDS",
     "Neighbour",
     "apart",

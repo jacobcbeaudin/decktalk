@@ -16,8 +16,8 @@ from decktalk.machine import Run
 from decktalk.media import audio
 from decktalk.pipeline import Stage
 from decktalk.results import Loudness
-from decktalk.stages import judge
-from decktalk.stages.assemble.mix import encode_soundtrack, gain
+from decktalk.stages import gain, judge
+from decktalk.stages.assemble.mix import encode_soundtrack
 
 LIMITER_HEADROOM_DB = 0.3
 """Calibration: the limiter works on oversampled samples, so it sits this far under the ceiling."""

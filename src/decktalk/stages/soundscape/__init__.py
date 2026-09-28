@@ -40,7 +40,7 @@ from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs, MusicSpec, SoundSpec
 from decktalk.machine import Run
-from decktalk.media import audio, ffmpeg
+from decktalk.media import MILLISECONDS, audio, ffmpeg
 from decktalk.pipeline import Stage
 from decktalk.results import (
     SoundItem,
@@ -77,9 +77,6 @@ MUSIC_PATH = "/music"
 
 SOUND_PROVIDER = "elevenlabs"
 """The voice the soundscape buys from, which is the one provider that also makes sounds and music."""
-
-MILLISECONDS = 1000
-"""Truth: milliseconds in one second, which is the unit the music service takes its length in."""
 
 
 @dataclass(frozen=True)

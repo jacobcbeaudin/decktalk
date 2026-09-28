@@ -19,15 +19,15 @@ from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
 from decktalk.machine import Run
-from decktalk.media import audio, ffmpeg
+from decktalk.media import MILLISECONDS, audio, ffmpeg
 from decktalk.media.frames import Decoded, Size, Wanted
 from decktalk.pagescan import measured_rows, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, SkipReason
 from decktalk.settings import CLICK_LEVEL_DBFS
-from decktalk.stages import judge
+from decktalk.stages import gain, judge
 from decktalk.stages.verify.plan import (
-    MILLISECONDS,
+    HALF_FRAME,
     Neighbour,
     block_size,
     control_spans,
@@ -41,15 +41,6 @@ from decktalk.stages.verify.plan import (
 
 FULL_SCALE = 32767
 """Truth: the largest magnitude a sixteen bit sample can carry, which every level is measured against."""
-
-DECIBEL_BASE = 10
-"""Truth: a decibel is a base ten ratio, so a level becomes an amplitude through ten to a power."""
-
-DECIBEL_RATIO = 20
-"""Truth: an amplitude ratio in decibels is twenty times its base ten logarithm."""
-
-HALF_FRAME = 0.5
-"""Truth: a tolerance of half a frame, so a limit written in frames is not failed by its own rounding."""
 
 
 def film_starts(inputs: Inputs, film: Path) -> tuple[dict[int, float], float]:
@@ -177,7 +168,7 @@ def _amplitude(dbfs: float) -> float:
     DeckTalk generates its own click at `CLICK_LEVEL_DBFS`, so a floor at or above that level would
     find no click at all, which is what the key's own hazard sentence warns about.
     """
-    return FULL_SCALE * DECIBEL_BASE ** (min(dbfs, CLICK_LEVEL_DBFS) / DECIBEL_RATIO)
+    return FULL_SCALE * gain(min(dbfs, CLICK_LEVEL_DBFS))
 
 
 @dataclass(frozen=True)

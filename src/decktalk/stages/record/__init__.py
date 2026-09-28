@@ -49,7 +49,7 @@ from decktalk.media.origin import Allowed
 from decktalk.page import CAPTURE_FPS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
-from decktalk.stages import clock, judge, selects, since
+from decktalk.stages import SECOND_DIGITS, clock, judge, selects, since
 from decktalk.stages.record.capture import (
     Job,
     plan_job,
@@ -61,9 +61,6 @@ from decktalk.stages.record.capture import (
 from decktalk.stages.record.checks import check_recording, recording_findings
 from decktalk.stages.record.pool import Halt, Pool, automatic
 from decktalk.stages.record.start import Start, find_start
-
-SECOND_DIGITS = 3
-"""Truth: three decimal places of a second is one millisecond, which is finer than any frame."""
 
 
 @dataclass(eq=False)

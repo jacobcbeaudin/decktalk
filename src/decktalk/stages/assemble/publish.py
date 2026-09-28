@@ -414,6 +414,7 @@ def write_transcript_page(inputs: Inputs, path: Path, cuts: Cuts, texts: Mapping
 
 __all__ = [
     "SOUND_CAPTION_SECONDS",
+    "WORK_MARK",
     "build_captions",
     "build_chapters",
     "caption_texts",

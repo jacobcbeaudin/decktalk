@@ -34,12 +34,10 @@ from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
 from decktalk.page import LIST_SEPARATOR, TIME_MARK, Q
 from decktalk.results import Word
+from decktalk.stages import SECOND_DIGITS
 
 SIGNAL = "signal"
 """What `t0` is set to so the page starts its clock on the recorder's signal rather than on a second."""
-
-SECOND_DIGITS = 3
-"""Truth: three decimal places of a second is one millisecond, which is finer than any frame."""
 
 WORD_DIGITS = 2
 """How precisely a word's start is written into the page URL, which is a hundredth of a second."""

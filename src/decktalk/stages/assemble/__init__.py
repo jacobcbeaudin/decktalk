@@ -30,6 +30,7 @@ from decktalk.stages.assemble.cut import Rendered, cut_list, remove_stray_cuts, 
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
 from decktalk.stages.assemble.mix import MixPlan, encode_soundtrack, mix_soundtrack
 from decktalk.stages.assemble.publish import (
+    WORK_MARK,
     build_captions,
     build_chapters,
     caption_texts,
@@ -42,9 +43,6 @@ from decktalk.stages.assemble.publish import (
     write_caption_files,
     write_transcript_page,
 )
-
-WORK_MARK = "."
-"""What the name of a file only this run may read opens with, so no viewer ever opens a half-made one."""
 
 DELIVERY_PASSES: tuple[str, ...] = (
     "mix the soundtrack",

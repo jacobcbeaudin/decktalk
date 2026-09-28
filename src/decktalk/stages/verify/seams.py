@@ -21,7 +21,7 @@ from decktalk.media.frames import Decoded, Size, Wanted
 from decktalk.pipeline import Stage
 from decktalk.results import CutCheck, SeamCheck, StartCheck
 from decktalk.stages import judge
-from decktalk.stages.verify.plan import EPSILON, frame_size
+from decktalk.stages.verify.plan import EPSILON, HALF_FRAME, frame_size
 
 STEP_WINDOW_SECONDS = 0.05
 """Calibration: how much of the waveform either side of a cut the step is measured over.
@@ -36,9 +36,6 @@ SEAM_SEARCH_FRAMES = 3
 A picture that arrives later than this is not drifting, it is a different picture, and the share the
 seam check measures says so on its own.
 """
-
-HALF_FRAME = 0.5
-"""Truth: a frame is the first one at or after its time, so a read aims half a frame inside it."""
 
 TRAILING_FRAMES = 1.5
 """Truth: the last whole frame of a section sits one and a half frames before the cut that ends it."""

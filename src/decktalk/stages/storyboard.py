@@ -36,11 +36,8 @@ from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.pagescan import Slides, scene_entry, slide_cues
 from decktalk.results import Panel, StoryboardResult
-from decktalk.stages import SECOND_DIGITS, selects
+from decktalk.stages import SECOND_DIGITS, SECTION_START_SECONDS, selects
 from decktalk.stages.record.capture import as_query, words_query
-
-SECTION_START_SECONDS = 0.0
-"""Where a section's own clock begins, which is when its first slide is already on screen."""
 
 LABEL_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 """Everything a frozen state's name may not carry into a file name, which becomes one underscore."""

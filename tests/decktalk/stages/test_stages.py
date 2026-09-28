@@ -1,6 +1,6 @@
 """What every stage shares: how a judgement is built, how a selection is read and how a stage is timed.
 
-These four helpers are the only code the stage package holds above its own stages, so what they
+These helpers are the only code the stage package holds above its own stages, so what they
 promise is held here rather than in each of the twelve modules that call them.
 """
 
@@ -10,7 +10,7 @@ import pytest
 
 from decktalk.findings import Applicability, Certainty, Code, Edit, EditFix, Location
 from decktalk.pipeline import Stage
-from decktalk.stages import judge, selects, since
+from decktalk.stages import gain, judge, selects, since
 
 
 def test_a_judgement_takes_its_certainty_and_its_page_from_its_code() -> None:
@@ -57,3 +57,9 @@ def test_a_stage_is_timed_in_milliseconds(monkeypatch: pytest.MonkeyPatch) -> No
     """The clock is held still, because two readings of a running clock differ by the tick between them."""
     monkeypatch.setattr("decktalk.stages.time.monotonic", lambda: 12.3456789)
     assert since(2.0) == 10.346
+
+
+def test_a_level_becomes_the_factor_that_plays_it() -> None:
+    assert gain(0) == 1.0
+    assert round(gain(-6), 3) == 0.501
+    assert round(gain(20), 3) == 10.0
