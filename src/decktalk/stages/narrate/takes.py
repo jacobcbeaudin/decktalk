@@ -220,10 +220,7 @@ def planned_words(inputs: Inputs, plan: TakePlan) -> tuple[tuple[Word, ...], flo
         # There is no voice to ask, and the take on disk was voiced from this exact text.
         return inputs.words(number, paid.hash), place(inputs, number, paid).span_seconds, False
     length = segment.silent_seconds(inputs.settings.narration)
-    shifted = tuple(
-        Word(word=word.word, start=round(word.start + lead, SECOND_DIGITS), end=round(word.end + lead, SECOND_DIGITS))
-        for word in estimated_words(segment, length)
-    )
+    shifted = Words(words=tuple(estimated_words(segment, length))).shifted(lead)
     return shifted, round(lead + length + tail, SECOND_DIGITS), True
 
 

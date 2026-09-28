@@ -63,14 +63,6 @@ STAMP_FORMAT = "%Y%m%d-%H%M"
 # ---- captions ---------------------------------------------------------------------------------
 
 
-def shifted(words: tuple[Word, ...], by: float) -> list[Word]:
-    """The same words moved later by one offset, which is how a section's clock joins the film's."""
-    return [
-        Word(word=word.word, start=round(word.start + by, SECOND_DIGITS), end=round(word.end + by, SECOND_DIGITS))
-        for word in words
-    ]
-
-
 def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], texts: Mapping[int, str]) -> list[
     CaptionCue
 ]:  # fmt: skip
@@ -83,7 +75,7 @@ def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], t
     cues: list[CaptionCue] = []
     for take in takes.sections:
         shift = offsets.get(take.section, 0.0) + (takes.start(take.section) or 0.0)
-        words = shifted(inputs.words(take.section, take.hash), shift)
+        words = list(Words(words=inputs.words(take.section, take.hash)).shifted(shift))
         text = texts.get(take.section)
         cues += caption_cues(display_words(words, text) if text else words)
     return cues
@@ -434,7 +426,6 @@ __all__ = [
     "poster_query",
     "publish",
     "render_poster",
-    "shifted",
     "sound_captions",
     "transcript_sections",
     "uncaptioned_sounds",
