@@ -24,6 +24,7 @@ rather than by a hand-written strip in every test.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, ClassVar, Literal
@@ -776,31 +777,14 @@ class ApplyResult(Result):
 
 
 RESULTS: dict[str, type[Result]] = {
-    "apply": ApplyResult,
-    "assemble": AssembleResult,
-    "build": BuildResult,
-    "check": CheckResult,
-    "clip": ClipResult,
-    "config-explain": ConfigExplainResult,
-    "config-get": ConfigGetResult,
-    "config-list": ConfigListResult,
-    "config-set": ConfigSetResult,
-    "config-unset": ConfigUnsetResult,
-    "cue": CueResult,
-    "doctor": DoctorResult,
-    "error": ErrorResult,
-    "init": InitResult,
-    "install": InstallResult,
-    "narrate": NarrateResult,
-    "record": RecordResult,
-    "serve": ServeResult,
-    "soundscape": SoundscapeResult,
-    "status": StatusResult,
-    "storyboard": StoryboardResult,
-    "verify": VerifyResult,
-    "words": WordsResult,
+    re.sub(r"(?<=[a-z])(?=[A-Z])", "-", kind.__name__.removesuffix("Result")).lower(): kind
+    for kind in sorted(Result.__subclasses__(), key=lambda kind: kind.__name__)
 }
-"""Every result by the name `decktalk schema NAME` prints it under, which is its command's own name."""
+"""Every result by the name `decktalk schema NAME` prints it under, which is its command's own name.
+
+The name is spelled from the class, so `ConfigExplainResult` is `config-explain`. It is read when this
+module loads, so a result declared anywhere else never joins it.
+"""
 
 
 __all__ = [
