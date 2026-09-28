@@ -31,7 +31,7 @@ import sys
 import time
 import uuid
 from collections.abc import Iterable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field, replace
 from importlib import import_module
 from pathlib import Path
@@ -272,30 +272,28 @@ class Run:
         """Raise `Cancelled` when the caller has asked the run to stop, which a stage calls between sections."""
         self.cancel.check()
 
-    @contextmanager
-    def stage(self, stage: Stage, *, index: int = 1, count: int = 1) -> Iterator[None]:
+    def stage(self, stage: Stage, *, index: int = 1, count: int = 1) -> AbstractContextManager[None]:
         """Open and close one stage on the stream, whatever the stage does inside."""
-        started = _clock()
-        self.emit(StageStart, stage=stage, index=index, count=count)
-        try:
-            yield
-        except BaseException:
-            self.emit(StageDone, stage=stage, outcome=Outcome.FAILED, seconds=_clock() - started)
-            raise
-        self.emit(StageDone, stage=stage, outcome=Outcome.OK, seconds=_clock() - started)
+        return self._timed(StageStart, StageDone, stage=stage, opening={"index": index, "count": count})
 
-    @contextmanager
-    def section(self, stage: Stage, section: int) -> Iterator[None]:
+    def section(self, stage: Stage, section: int) -> AbstractContextManager[None]:
         """Open and close one section of one stage on the stream, and check the cancel token first."""
         self.check()
-        started = _clock()
-        self.emit(SectionStart, stage=stage, section=section)
+        return self._timed(SectionStart, SectionDone, stage=stage, section=section)
+
+    @contextmanager
+    def _timed(
+        self, start: type[Event], done: type[Event], *, opening: Mapping[str, int] | None = None, **both: object
+    ) -> Iterator[None]:
+        """Emit `start`, run the block, and emit `done` with how it ended and how long it took."""
+        started = time.monotonic()
+        self.emit(start, **both, **(opening or {}))
         try:
             yield
         except BaseException:
-            self.emit(SectionDone, stage=stage, section=section, outcome=Outcome.FAILED, seconds=_clock() - started)
+            self.emit(done, **both, outcome=Outcome.FAILED, seconds=time.monotonic() - started)
             raise
-        self.emit(SectionDone, stage=stage, section=section, outcome=Outcome.OK, seconds=_clock() - started)
+        self.emit(done, **both, outcome=Outcome.OK, seconds=time.monotonic() - started)
 
     def fetching(self, tool: str, done_bytes: int, total_bytes: int | None = None) -> None:
         """A tool is arriving, which is the one moment a run stops for the network.
@@ -512,7 +510,7 @@ class Machine:
             if keep_runs is not None:
                 JsonlSink.prune(events_path.parent, keep_runs)
             sink = self.events.subscribe(JsonlSink(events_path), runs=[run.id])
-        started = _clock()
+        started = time.monotonic()
         self.events.emit(run.id, RunStart, events_path=relative(events_path, root) if events_path and root else None)
         outcome = Outcome.OK
         try:
@@ -533,7 +531,7 @@ class Machine:
             outcome = Outcome.FAILED
             raise
         finally:
-            self.events.emit(run.id, RunDone, outcome=outcome, seconds=_clock() - started)
+            self.events.emit(run.id, RunDone, outcome=outcome, seconds=time.monotonic() - started)
             if sink is not None:
                 sink.close()
 
@@ -910,11 +908,6 @@ def _settings_file(run: Run, root: Path, scope: Scope) -> Path:
 def _pairs(overrides: Mapping[str, str]) -> tuple[str, ...]:
     """A routed override map spelled back the way the loader takes it, which is one string per pair."""
     return tuple(f"{key}={value}" for key, value in overrides.items())
-
-
-def _clock() -> float:
-    """A monotonic reading in seconds, which is what every elapsed number on the stream is taken from."""
-    return time.monotonic()
 
 
 __all__ = ["Machine", "Run", "Toolchain", "init"]
