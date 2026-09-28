@@ -52,9 +52,9 @@ from decktalk.results import (
     Voicing,
 )
 from decktalk.settings import ElevenLabsConfig
-from decktalk.speech import VoiceContext, get_provider
+from decktalk.speech import get_provider
 from decktalk.speech.elevenlabs import ElevenLabs
-from decktalk.stages import clock, judge, selects, since
+from decktalk.stages import DOLLAR_DIGITS, clock, dollars_for, judge, price_layer, selects, since, voice_context
 from decktalk.stages.soundscape.ledger import (
     LEDGER_FILE,
     UNFINISHED_DIGEST,
@@ -77,12 +77,6 @@ MUSIC_PATH = "/music"
 
 SOUND_PROVIDER = "elevenlabs"
 """The voice the soundscape buys from, which is the one provider that also makes sounds and music."""
-
-PRICE_KEY = "voice.price_per_1000_characters"
-"""The key that states what speech costs, which is the only rate this project publishes."""
-
-CHARACTERS_PER_PRICE_UNIT = 1000
-"""Truth: the price is stated per thousand characters, which is the unit the key's own name carries."""
 
 MILLISECONDS = 1000
 """Truth: milliseconds in one second, which is the unit the music service takes its length in."""
@@ -256,17 +250,16 @@ def spend_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | Non
     is the figure the spend gate holds and never an invoice.
     """
     chosen = selects(only)
-    rate = inputs.settings.voice.price_per_1000_characters
     characters = sum(item.characters for item in items)
-    dollars = round(characters / CHARACTERS_PER_PRICE_UNIT * rate, 2)
+    dollars = round(dollars_for(characters, inputs), DOLLAR_DIGITS)
     return Spend(
         state=SpendState.ESTIMATE,
         sections=tuple(section.number for section in inputs.document.sections if chosen(section.number)),
         characters=characters,
         dollars=dollars,
         ceiling_dollars=dollars,
-        price_per_1000_characters=rate,
-        price_layer=inputs.layers.winner(PRICE_KEY).layer,
+        price_per_1000_characters=inputs.settings.voice.price_per_1000_characters,
+        price_layer=price_layer(inputs),
     )
 
 
@@ -276,17 +269,7 @@ def client_for(inputs: Inputs) -> ElevenLabs:
     It is looked up in the machine's voices like narrate's, so a host that handed its machine another
     voice is never billed through the shipped one, and the machine's switch and retries apply here too.
     """
-    settings = inputs.settings
-    client = get_provider(
-        SOUND_PROVIDER,
-        VoiceContext(
-            secrets=inputs.env,
-            api_base=settings.elevenlabs.api_base,
-            context_chars=settings.narration.context_chars,
-            speech_timeout_seconds=settings.narration.timeout_seconds,
-            sound_timeout_seconds=settings.elevenlabs.timeout_seconds,
-        ),
-    )
+    client = get_provider(SOUND_PROVIDER, voice_context(inputs))
     if not isinstance(client, ElevenLabs):
         raise InputError(
             f"this machine's {SOUND_PROVIDER!r} voice cannot make sounds, so the soundscape has nothing to buy from.",
@@ -307,26 +290,23 @@ def _buy_sound(run: Run, inputs: Inputs, client: ElevenLabs, item: Planned, ledg
     item.out.parent.mkdir(parents=True, exist_ok=True)
     item.out.write_bytes(client.sound_effect(item.bodies[0], output_format=inputs.settings.narration.output_format))
     run.wrote(item.out)
-    entry = SoundEntry(
-        name=item.name,
-        kind=item.kind,
-        digest=item.digest,
-        file=inputs.relative(item.out),
-        seconds=ffmpeg.probe_duration(item.out),
-        request=item.request,
-    )
     run.wrote(path)
-    return _keep(ledger, path, entry)
+    return _keep(ledger, path, _entry(inputs, item, item.digest))
 
 
-def _unfinished(inputs: Inputs, item: Planned, parts: Sequence[str]) -> SoundEntry:
-    """The row a music item carries while its parts are still being bought, which matches no request."""
+def _entry(inputs: Inputs, item: Planned, digest: str, parts: Sequence[str] = ()) -> SoundEntry:
+    """One item's ledger row, measured once its audio is whole and unmeasured while its parts are still bought.
+
+    A row whose parts are still being bought carries `UNFINISHED_DIGEST`, which matches no request, so
+    a run stopped half way through buys the rest rather than keeping a piece that was never joined.
+    """
+    whole = digest != UNFINISHED_DIGEST
     return SoundEntry(
         name=item.name,
         kind=item.kind,
-        digest=UNFINISHED_DIGEST,
+        digest=digest,
         file=inputs.relative(item.out),
-        seconds=None,
+        seconds=ffmpeg.probe_duration(item.out) if whole else None,
         parts=tuple(parts),
         request=item.request,
     )
@@ -339,7 +319,8 @@ def _buy_music(run: Run, inputs: Inputs, client: ElevenLabs, item: Planned, ledg
     keeps what it has already bought and asks only for the rest.
     """
     cfg = inputs.settings.elevenlabs
-    known = (ledger.of(item.name) or _unfinished(inputs, item, ())).parts
+    previous = ledger.of(item.name)
+    known = previous.parts if previous is not None else ()
     item.out.parent.mkdir(parents=True, exist_ok=True)
     parts: list[Path] = []
     digests: list[str] = []
@@ -354,20 +335,11 @@ def _buy_music(run: Run, inputs: Inputs, client: ElevenLabs, item: Planned, ledg
             run.wrote(part)
         digests.append(digest)
         parts.append(part)
-        ledger = _keep(ledger, path, _unfinished(inputs, item, digests))
+        ledger = _keep(ledger, path, _entry(inputs, item, UNFINISHED_DIGEST, digests))
     audio.crossfade_join(parts, item.out, crossfade_seconds=cfg.music_crossfade_seconds, bitrate=cfg.music_bitrate)
     run.wrote(item.out)
     run.wrote(path)
-    entry = SoundEntry(
-        name=item.name,
-        kind=item.kind,
-        digest=item.digest,
-        file=inputs.relative(item.out),
-        seconds=ffmpeg.probe_duration(item.out),
-        parts=tuple(digests),
-        request=item.request,
-    )
-    return _keep(ledger, path, entry)
+    return _keep(ledger, path, _entry(inputs, item, item.digest, digests))
 
 
 def _row(inputs: Inputs, item: Planned, status: SoundStatus, seconds: float | None) -> SoundItem:

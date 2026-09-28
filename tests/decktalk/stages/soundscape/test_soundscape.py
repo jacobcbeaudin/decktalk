@@ -22,7 +22,7 @@ from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.media import audio
 from decktalk.pipeline import Stage
-from decktalk.results import SoundKind, SoundStatus, Voicing
+from decktalk.results import Layer, SoundKind, SoundStatus, Voicing
 from decktalk.stages import soundscape as stage
 from decktalk.stages.soundscape import soundscape
 from decktalk.stages.soundscape.ledger import LEDGER_FILE, Ledger
@@ -168,6 +168,19 @@ def test_the_price_is_the_prompt_characters_at_the_rate_the_project_states(tmp_p
     assert result.spend.characters == len("a quiet room") + len("a bright chime") + len("warm strings")
     assert result.spend.dollars == result.spend.ceiling_dollars
     assert result.spend.sections == (1, 2)
+
+
+def test_a_price_no_layer_records_is_the_default_price_and_not_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The layer table may hold no row for the price, which narrate and build already read as the default."""
+    inputs = an_inputs(tmp_path)
+
+    def unstated(_layers: object, key: str) -> None:
+        raise KeyError(key)
+
+    monkeypatch.setattr(type(inputs.layers), "winner", unstated)
+    assert soundscape(inputs, a_run(tmp_path)).spend.price_layer is Layer.DEFAULT
 
 
 # ---- what the run buys ------------------------------------------------------------------------

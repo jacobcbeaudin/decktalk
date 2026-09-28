@@ -29,8 +29,8 @@ from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.results import Word
 from decktalk.speech import SpeechProvider, SpeechRequest
-from decktalk.stages import SECOND_DIGITS
-from decktalk.stages.narrate.plan import TakePlan, dollars_for, is_cached
+from decktalk.stages import SECOND_DIGITS, dollars_for
+from decktalk.stages.narrate.plan import TakePlan, is_cached
 
 PLACEHOLDER_CLOSE_SECONDS = 0.1
 """Calibration: the silence a click track ends on, which is long enough that where its sound ends can be measured."""

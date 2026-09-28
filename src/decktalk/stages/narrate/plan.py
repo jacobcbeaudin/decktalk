@@ -25,21 +25,13 @@ from typing import Any
 from decktalk.artifacts import PlaceholderInputs, TakeInputs, Takes, take_file, words_file
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import Segment
-from decktalk.results import Layer, Spend, SpendState, TakeStatus
+from decktalk.results import Spend, SpendState, TakeStatus
 from decktalk.settings import VoiceConfig
-from decktalk.speech import SpeechProvider, SpeechRequest, VoiceContext, get_provider
+from decktalk.speech import SpeechProvider, SpeechRequest, get_provider
+from decktalk.stages import DOLLAR_DIGITS, dollars_for, price_layer, voice_context
 
 WITHOUT_A_VOICE = "no voice is named, so the cache cannot be checked"
 """Why a section's take is unknown, which is the one state a plan cannot resolve on its own."""
-
-PRICE_KEY = "voice.price_per_1000_characters"
-"""The key whose layer decides whether a spend ceiling may refuse a run, which `Spend` publishes."""
-
-CHARACTERS_PER_PRICE = 1000
-"""Truth: the price is stated per thousand characters, which is how every provider bills speech."""
-
-DOLLAR_DIGITS = 2
-"""Truth: a price in dollars is read to the cent, which is the smallest unit anybody is charged."""
 
 
 def voice_settings(voice: VoiceConfig) -> dict[str, Any]:
@@ -86,21 +78,8 @@ def is_cached(digest: str, takes_dir: Path) -> bool:
 
 
 def speech_provider(inputs: Inputs) -> SpeechProvider:
-    """The provider `[voice] provider` names, built from this project's tuning and its own `.env`.
-
-    The context carries five values and no settings tree, so the speech layer imports no settings
-    class and a provider built in a test is built the way a run builds one.
-    """
-    return get_provider(
-        inputs.document.voice.provider,
-        VoiceContext(
-            secrets=inputs.env,
-            api_base=inputs.settings.elevenlabs.api_base,
-            context_chars=inputs.settings.narration.context_chars,
-            speech_timeout_seconds=inputs.settings.narration.timeout_seconds,
-            sound_timeout_seconds=inputs.settings.elevenlabs.timeout_seconds,
-        ),
-    )
+    """The provider `[voice] provider` names, built from this project's tuning and its own `.env`."""
+    return get_provider(inputs.document.voice.provider, voice_context(inputs))
 
 
 def voice_id_of(inputs: Inputs) -> str:
@@ -265,15 +244,6 @@ def placeholder_plan(inputs: Inputs, targets: list[Segment], *, force: bool = Fa
     return plan_takes(inputs, targets, digests, voiced=False, force=force)
 
 
-def dollars_for(characters: int, inputs: Inputs) -> float:
-    """What this many characters cost at the project's stated rate, unrounded.
-
-    One take's charge is stated at full precision, because a ledger that adds rounded cents per take
-    drifts from the run's own total, which is rounded once, after the sum.
-    """
-    return characters / CHARACTERS_PER_PRICE * inputs.settings.voice.price_per_1000_characters
-
-
 def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spend:
     """What these plans cost at the stated rate, with what they can cost priced beside it.
 
@@ -297,23 +267,13 @@ def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spe
     )
 
 
-def price_layer(inputs: Inputs) -> Layer:
-    """Which layer stated the price, because a ceiling may not guard a price nobody has stated."""
-    try:
-        return inputs.layers.winner(PRICE_KEY).layer
-    except KeyError:
-        return Layer.DEFAULT
-
-
 __all__ = [
     "VOICE_VARIABLE",
     "TakePlan",
-    "dollars_for",
     "is_cached",
     "miss_reason",
     "placeholder_inputs",
     "placeholder_plan",
-    "price_layer",
     "plan_takes",
     "requests_for",
     "speech_provider",

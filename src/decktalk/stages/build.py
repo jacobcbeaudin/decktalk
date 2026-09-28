@@ -43,9 +43,8 @@ from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.pipeline import Artifact, Outcome, Stage, required
 from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, Voicing
-from decktalk.stages import assemble, clock, cue, narrate, record, since, storyboard, verify
+from decktalk.stages import DOLLAR_DIGITS, assemble, clock, cue, narrate, record, since, storyboard, verify
 from decktalk.stages import soundscape as soundscape_stage
-from decktalk.stages.narrate.plan import price_layer
 from decktalk.stages.status import (
     BUILT,
     Kept,
@@ -65,9 +64,6 @@ NOTHING = 0.0
 
 FIRST = 1
 """Where a run's first stage sits in its own plan, because a person counts stages from one."""
-
-DOLLAR_DIGITS = 2
-"""Truth: a price is stated to the cent, which is what every spend in the product is rounded to."""
 
 MODULES: dict[Stage, ModuleType] = {
     Stage.NARRATE: narrate,
@@ -391,15 +387,7 @@ def _stops(found: Finding, allow: Collection[Code], stop_on: Certainty | None) -
 def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
     """What the whole run cost, which is every stage that priced anything added together."""
     if not spends:
-        return Spend(
-            state=SpendState.ESTIMATE,
-            sections=(),
-            characters=0,
-            dollars=0.0,
-            ceiling_dollars=0.0,
-            price_per_1000_characters=inputs.settings.voice.price_per_1000_characters,
-            price_layer=price_layer(inputs),
-        )
+        return narrate.spend_of([], inputs, state=SpendState.ESTIMATE)
     sections: list[int] = []
     for spend in spends:
         sections += [number for number in spend.sections if number not in sections]
