@@ -33,7 +33,6 @@ from dataclasses import dataclass, field
 from decktalk.artifacts import Take, Takes, is_placeholder
 from decktalk.errors import InputError
 from decktalk.events import Level, Unit
-from decktalk.findings import Location
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
@@ -60,10 +59,10 @@ from decktalk.stages.narrate.script_rules import (
 )
 from decktalk.stages.narrate.takes import (
     estimated_words,
-    index_cached_take,
     join_takes,
     place,
     planned_words,
+    take_row,
     write_placeholder_take,
     write_voiced_take,
 )
@@ -128,7 +127,7 @@ def _targets(inputs: Inputs, only: Sequence[int] | None) -> list[Segment]:
             f"the script heading for section {second.index} comes after section {first.index}, "
             "so the sections do not ascend and the narration would be joined in an order nothing else agrees with.",
             hint=f"Move '## {second.index}. {second.title}' after '## {first.index}. {first.title}'.",
-            location=_at_script(inputs),
+            location=at(inputs.script_path, inputs.root),
         )
     check_script(inputs.relative(inputs.script_path).as_posix(), inputs.script_path.read_text(encoding="utf-8"))
     wanted = selects(only)
@@ -138,14 +137,9 @@ def _targets(inputs: Inputs, only: Sequence[int] | None) -> list[Segment]:
         raise InputError(
             f"no spoken section matches {list(only or ())}, so there is nothing to narrate.",
             hint=f"The spoken sections are {every}.",
-            location=_at_script(inputs),
+            location=at(inputs.script_path, inputs.root),
         )
     return spoken
-
-
-def _at_script(inputs: Inputs) -> Location:
-    """Where a refusal about the script points, which is the script itself."""
-    return at(inputs.script_path, inputs.root)
 
 
 def _refuse_over_paid(inputs: Inputs, previous: Takes | None, targets: list[Segment], *, replace_voiced: bool) -> None:
@@ -173,13 +167,8 @@ def _refuse_over_paid(inputs: Inputs, previous: Takes | None, targets: list[Segm
         f"The take index holds paid takes for section(s) {', '.join(str(number) for number in paid)}, and a run "
         "without voice would replace them, so the next voiced build would buy all of them again.",
         hint=f"{advice} Pass --replace-voiced to replace them anyway.",
-        location=_at_takes(inputs),
+        location=at(inputs.workspace.takes_path, inputs.root),
     )
-
-
-def _at_takes(inputs: Inputs) -> Location:
-    """Where a refusal about the take index points, which is the index itself."""
-    return at(inputs.workspace.takes_path, inputs.root)
 
 
 def _write_takes(
@@ -279,17 +268,17 @@ def _one_take(
         raise InputError(
             f"section {plan.segment.index} has no take digest, so the voice could not be set up.",
             hint="Set ELEVENLABS_API_KEY in .env, or run without voice.",
-            location=_at_takes(inputs),
+            location=at(inputs.workspace.takes_path, inputs.root),
         )
     if plan.cached and is_cached(digest, inputs.workspace.takes_dir):
         voiced = not is_placeholder(digest)
-        return index_cached_take(inputs, plan.segment, plan.chapter, digest, voiced=voiced), TakeStatus.KEPT
+        return take_row(inputs, plan.segment, plan.chapter, digest, voiced=voiced), TakeStatus.KEPT
     if paid:
         if provider is None or plan.request is None:
             raise InputError(
                 f"section {plan.segment.index} would be voiced and this run has no request for it.",
                 hint="Run `decktalk narrate` again, or run without voice.",
-                location=_at_takes(inputs),
+                location=at(inputs.workspace.takes_path, inputs.root),
             )
         row, files = write_voiced_take(inputs, run, provider, plan.segment, plan.chapter, digest, plan.request)
         status = TakeStatus.VOICED

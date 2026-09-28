@@ -39,14 +39,13 @@ from decktalk.machine import Run
 from decktalk.media.browser import chromium, open_page
 from decktalk.media.origin import Allowed, Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
-from decktalk.pagescan import Slides, page_findings, scene_entry, slide_cues
+from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
 from decktalk.results import CheckResult, Panel, SectionCues, SpendState
 from decktalk.stages import judge, selects
 from decktalk.stages.check.scan import (
     judged_pages,
     landing_findings,
     opening_panels,
-    origin_findings,
     seam_findings,
     static_findings,
 )
@@ -296,7 +295,7 @@ def _look(
 def _page_judgements(report: PageReport | None, external: Sequence[str], *, where: str) -> list[Finding]:
     """What one page said about itself and what it reached for, judged once per page rather than per section."""
     said = page_findings(report, page=where) if report is not None else []
-    return [*said, *origin_findings(external, where=where)]
+    return [*said, *asset_findings(external, where=where)]
 
 
 def _sections(

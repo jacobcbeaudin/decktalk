@@ -19,7 +19,6 @@ from decktalk.stages.check.scan import (
     judged_pages,
     landing_findings,
     opening_panels,
-    origin_findings,
     seam_findings,
     share_code,
     share_message,
@@ -109,12 +108,6 @@ def test_a_page_warning_is_judged_by_the_code_the_page_named() -> None:
     assert found.code is Code.PAGE_KATEX_ERROR
     assert found.location.where == "1.1"
     assert found.location.section == 1
-
-
-def test_an_origin_the_page_reached_for_is_judged_against_the_page() -> None:
-    (found,) = origin_findings(["https://cdn.example"], where="deck/index.html")
-    assert found.code is Code.PAGE_CDN_ASSET
-    assert "cdn.example" in found.message
 
 
 def test_an_element_that_describes_nothing_is_judged_from_the_catalog_alone() -> None:

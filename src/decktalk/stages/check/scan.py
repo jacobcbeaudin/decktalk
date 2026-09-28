@@ -14,7 +14,7 @@ it. The query is typed, so no key outside the contract can reach a page.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from decktalk.findings import Code, Finding, Location
 from decktalk.inputs.document import PageSection
@@ -22,7 +22,7 @@ from decktalk.machine import Run
 from decktalk.media import frames
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Attr
-from decktalk.pagescan import Slides, asset_findings, measured_rows, slide_findings
+from decktalk.pagescan import Slides, measured_rows, slide_findings
 from decktalk.results import SkipReason
 from decktalk.settings import Settings
 from decktalk.stages import judge
@@ -73,11 +73,6 @@ def share_message(code: Code, cue: str, share: float, settings: Settings) -> str
         f"freezing the slide either side of {cue} changes {share:.2f} percent of the frame, which passes the "
         f"{floor:.2f} percent floor by less than the {cfg.thin_change_factor:g} times a clean reveal clears it."
     )
-
-
-def origin_findings(origins: Iterable[str], *, where: str, section: int | None = None) -> list[Finding]:
-    """One judgement per other origin a page reached for, which the film does not own and cannot replay."""
-    return asset_findings(origins, where=where, section=section)
 
 
 def static_findings(
@@ -228,7 +223,6 @@ __all__ = [
     "judged_pages",
     "landing_findings",
     "opening_panels",
-    "origin_findings",
     "seam_findings",
     "share_code",
     "share_message",

@@ -29,6 +29,7 @@ stage the run stopped after.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
@@ -84,18 +85,18 @@ the facade. One word therefore names the stage, its module, its function and its
 """
 
 OPTIONS: dict[Stage, tuple[str, ...]] = {
-    Stage.NARRATE: ("only", "force", "replace_voiced"),
-    Stage.CUE: ("only", "allow_unknown"),
-    Stage.RECORD: ("only", "force"),
-    Stage.SOUNDSCAPE: ("only", "force"),
-    Stage.ASSEMBLE: ("only", "soundscape", "loudness", "strict"),
-    Stage.VERIFY: ("only",),
+    stage: tuple(
+        name
+        for name, parameter in inspect.signature(getattr(module, stage.value)).parameters.items()
+        if parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    )
+    for stage, module in MODULES.items()
 }
-"""Which of a build's options each stage takes, which is the whole of what a build passes on.
+"""Which of a build's options each stage takes, read off the keywords each stage function declares.
 
 The options are selected per stage rather than passed whole, because a stage handed keywords it does
 not read would accept a flag that changes nothing, which is the false entry in the instruction set
-the founder's thesis exists to prevent.
+the founder's thesis exists to prevent. They are read at import, before a test replaces a stage.
 """
 
 ARTIFACTS: dict[Artifact, str] = {

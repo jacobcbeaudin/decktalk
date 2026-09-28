@@ -162,11 +162,6 @@ def write_voiced_take(
     return take_row(inputs, segment, chapter, digest, voiced=True), [out, written]
 
 
-def index_cached_take(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voiced: bool) -> Take:
-    """The row for a take already on disk, placed by the same rule as a take this run wrote."""
-    return take_row(inputs, segment, chapter, digest, voiced=voiced)
-
-
 def join_takes(inputs: Inputs, takes: Takes) -> Path:
     """Join the takes into one narration track, in the order the index holds them.
 
@@ -227,7 +222,6 @@ def planned_words(inputs: Inputs, plan: TakePlan) -> tuple[tuple[Word, ...], flo
 __all__ = [
     "PLACEHOLDER_CLOSE_SECONDS",
     "estimated_words",
-    "index_cached_take",
     "join_takes",
     "place",
     "planned_words",

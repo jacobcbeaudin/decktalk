@@ -88,7 +88,7 @@ def assemble(
 ) -> AssembleResult:
     """Cut, mix, normalize and publish the whole film, with everything a viewer receives beside it."""
     started = clock()
-    takes = _takes(inputs)
+    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
     remove_stray_cuts(inputs)
     passes = Passes(run, len(inputs.document.sections))
     rows = render_sections(
@@ -129,11 +129,6 @@ def assemble(
         loudness=None if after is None else measured(inputs, after),
         seconds=since(started),
     )
-
-
-def _takes(inputs: Inputs) -> Takes:
-    """The take index, or the refusal that names the stage which writes it."""
-    return Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
 
 
 def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *, loudness: bool, strict: bool
