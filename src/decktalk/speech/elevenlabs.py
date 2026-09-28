@@ -91,49 +91,32 @@ class ElevenLabs:
     the provider is built.
     """
 
+    context: VoiceContext
+    """The tuning that shapes every request, and the machine's switch and retries that `get_provider` set on it."""
     api_key: Secret
-    api_base: str
-    context_chars: int  # [narration] context_chars
-    speech_timeout_seconds: int  # [narration] timeout_seconds
-    sound_timeout_seconds: int  # [elevenlabs] timeout_seconds
     name: str = "elevenlabs"
-    retries: int = 0
-    """How many more times a busy or failed request is sent, which is the machine's `[narration] retries`."""
-    allow_any_api_base: bool = False
-    """Whether `api_base` may name any host, which only the machine decides and which is off unless it says so."""
     checked_base: str = field(init=False)
 
     def __post_init__(self) -> None:
         # Every URL is built from the base that passed the check, and never from the setting again.
-        checked = check_api_base(self.api_base, allow_any=self.allow_any_api_base)
-        object.__setattr__(self, "checked_base", checked.rstrip("/"))
+        checked = check_api_base(self.context.api_base, allow_any=self.context.allow_any_api_base)
+        self.checked_base = checked.rstrip("/")
 
     @classmethod
     def for_context(cls, context: VoiceContext) -> ElevenLabs:
         """The provider one project asks for: its key, and the tuning that shapes its requests."""
         (api_key,) = context.secrets.require("ELEVENLABS_API_KEY")
-        return cls(
-            api_key=api_key,
-            api_base=context.api_base,
-            context_chars=context.context_chars,
-            speech_timeout_seconds=context.speech_timeout_seconds,
-            sound_timeout_seconds=context.sound_timeout_seconds,
-            retries=context.retries,
-            allow_any_api_base=context.allow_any_api_base,
-        )
+        return cls(context, api_key)
 
     def cache_key(self, request: SpeechRequest) -> str:
         """Everything but the text that changes the audio. The voice id is part of the take hash."""
         return f"{self.name}\n{request.voice_id}\n{request.model}\n{request.output_format}"
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
-        return self.synthesize(request)
-
     def _headers(self) -> dict[str, str]:
         """The one place the key is revealed, which is the request that is allowed to carry it."""
         return {"xi-api-key": self.api_key.reveal(), "Content-Type": "application/json", "Accept": "audio/mpeg"}
 
-    def synthesize(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
         """One section read aloud, as the mp3 bytes and a start and an end time per word.
 
         The neighbouring sections travel with the request so the voice carries its prosody across a
@@ -147,15 +130,15 @@ class ElevenLabs:
             "voice_settings": request.voice_settings,
         }
         if request.previous_text:
-            payload["previous_text"] = request.previous_text[-self.context_chars :]
+            payload["previous_text"] = request.previous_text[-self.context.context_chars :]
         if request.next_text:
-            payload["next_text"] = request.next_text[: self.context_chars]
+            payload["next_text"] = request.next_text[: self.context.context_chars]
         reply = post_json(
             f"{url}?output_format={request.output_format}",
             payload,
             self._headers(),
-            timeout=self.speech_timeout_seconds,
-            retries=self.retries,
+            timeout=self.context.speech_timeout_seconds,
+            retries=self.context.retries,
         )
         return self._audio(reply), self._words(reply)
 
@@ -185,8 +168,12 @@ class ElevenLabs:
 
     def sound_effect(self, body: dict[str, Any], *, output_format: str) -> bytes:
         url = f"{self.checked_base}/sound-generation?output_format={output_format}"
-        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds, retries=self.retries)
+        return post_bytes(
+            url, body, self._headers(), timeout=self.context.sound_timeout_seconds, retries=self.context.retries
+        )
 
     def music(self, body: dict[str, Any], *, output_format: str) -> bytes:
         url = f"{self.checked_base}/music?output_format={output_format}"
-        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds, retries=self.retries)
+        return post_bytes(
+            url, body, self._headers(), timeout=self.context.sound_timeout_seconds, retries=self.context.retries
+        )
