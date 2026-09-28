@@ -85,9 +85,11 @@ class Code(Enum):
         cls,
         code: str,
         sentence: str,
-        certainty: Certainty,
-        raised_by: RaisedBy,
+        certainty: Certainty = Certainty.CERTAIN,
+        raised_by: RaisedBy = RaisedBy.RUNTIME,
     ) -> Code:
+        # A row that names no certainty is certain and one that names no side is the page's, because
+        # most rows are both, and a row that differs says so where it is written.
         member = object.__new__(cls)
         member._value_ = code
         member.sentence = sentence
@@ -107,164 +109,110 @@ class Code(Enum):
     PAGE_UNKNOWN_ATTR = (
         "PAGE_UNKNOWN_ATTR",
         "An element carries a data attribute the contract does not declare, so nothing reads it.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_BAD_VALUE = (
         "PAGE_BAD_VALUE",
         "An attribute's value is outside the range the contract publishes for it.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_MOMENT_UNKNOWN = (
         "PAGE_MOMENT_UNKNOWN",
         "An element outside every slide template names a moment, so no slide owns its cue and it never plays.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_MOMENT_ORDER = (
         "PAGE_MOMENT_ORDER",
         "An element's exit is declared at or before its own entrance, so the exit never plays.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_CUE_UNKNOWN = (
         "PAGE_CUE_UNKNOWN",
         "A cue fired that no reveal, no handler and no slide in the deck declares, so nothing answered it.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_NO_OWNER = (
         "PAGE_NO_OWNER",
         "A cue the scene plays is owned by none of its slides, so nothing is mounted for it.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_SCENE_EMPTY = (
         "PAGE_SCENE_EMPTY",
         "A scene holds no slide template, so its section has no slide to show.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_SLIDE_NO_ID = (
         "PAGE_SLIDE_NO_ID",
         "A slide template carries no id, so no cue and no section can name it.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_SLIDE_DOUBLED = (
         "PAGE_SLIDE_DOUBLED",
         "Two slide templates carry the same id, so a cue that names it is ambiguous.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_SLIDE_UNUSED = (
         "PAGE_SLIDE_UNUSED",
         "No section plays this slide, so nothing on it reaches the film.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_TEMPLATE_IGNORED = (
         "PAGE_TEMPLATE_IGNORED",
         "A template nested inside a slide declares no slide of its own, so nothing ever mounts it.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_WORDS_NOT_FOUND = (
         "PAGE_WORDS_NOT_FOUND",
         "An element syncs to words the transcript does not hold, so word timing cannot start.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_KATEX_MISSING = (
         "PAGE_KATEX_MISSING",
         "The page asks for KaTeX and the library is not loaded, so every formula shows its source.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_KATEX_ERROR = (
         "PAGE_KATEX_ERROR",
         "KaTeX refused a formula, so the element shows the readable text the author wrote in its place.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_FREEZE_CUE_UNKNOWN = (
         "PAGE_FREEZE_CUE_UNKNOWN",
         "A freeze was asked for a cue the slide does not declare, so no frame could be made.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_RENDER_THREW = (
         "PAGE_RENDER_THREW",
         "A slide's render threw, so the slide is drawn without what the render would have written.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_ENTER_THREW = (
         "PAGE_ENTER_THREW",
         "A slide's enter threw, so its opening moment never ran.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_SLIDE_HANDLER_THREW = (
         "PAGE_SLIDE_HANDLER_THREW",
         "A slide's own moment handler threw, so that moment did not play.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_HANDLER_THREW = (
         "PAGE_HANDLER_THREW",
         "A moment handler threw, so the change it was to make never happened.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_WAIT_REJECTED = (
         "PAGE_WAIT_REJECTED",
         "A wait the page declared was rejected, so the runtime carried on without what it waited for.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_WAIT_UNSETTLED = (
         "PAGE_WAIT_UNSETTLED",
         "A wait the page declared never settled inside its budget, so the runtime carried on without it.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_CLASS_UNDESCRIBED = (
         "PAGE_CLASS_UNDESCRIBED",
         "An element changes class with no description, so the transcript cannot say what changed.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_CLASS_NOT_REDUCED = (
         "PAGE_CLASS_NOT_REDUCED",
         "A class change declares no reduced form, so a reduced render would animate anyway.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_SWAP_AMBIGUOUS = (
         "PAGE_SWAP_AMBIGUOUS",
         "A swap finds no element or several elements leaving at its cue, so it cannot tell which one it replaces.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_PREVIEW_AMBIGUOUS = (
         "PAGE_PREVIEW_AMBIGUOUS",
         "Two sections name one scene, so a preview cannot choose whose cue times to play.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_APPEAR_TOO_LONG = (
         "PAGE_APPEAR_TOO_LONG",
         "A line shown with data-words=appear holds more words than one cue can carry one at a time.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
     PAGE_STAGGER_EMPTY = (
         "PAGE_STAGGER_EMPTY",
         "An element staggers its children and has none, so the stagger plays nothing.",
-        Certainty.CERTAIN,
-        RaisedBy.RUNTIME,
     )
 
     # Measured in Python, about the page.
