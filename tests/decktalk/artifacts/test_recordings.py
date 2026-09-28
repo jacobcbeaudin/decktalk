@@ -9,7 +9,7 @@ import pytest
 from decktalk.artifacts import stored
 from decktalk.artifacts.recordings import GONE, RecordingLog, file_digest, input_hash, text_digest
 from decktalk.findings import Code, Finding, Location
-from decktalk.media.pagereport import FrameGap, PageReport
+from decktalk.media.pagereport import PageReport
 
 
 def log(**fields: object) -> RecordingLog:
@@ -61,17 +61,6 @@ def test_a_newer_engine_records_again_what_an_older_one_recorded(
     before = input_hash(["url"], {"hero.png": picture})
     monkeypatch.setattr(stored, "ENGINE_VERSION", "999.0.0")
     assert input_hash(["url"], {"hero.png": picture}) != before
-
-
-def test_the_worst_stall_counts_only_what_a_viewer_can_see() -> None:
-    """Frames before the clock starts sit under the cover and are trimmed, so a scene may warm up."""
-    gaps = (FrameGap(at=None, ms=900), FrameGap(at=0.05, ms=400), FrameGap(at=2.0, ms=120))
-    stalls = log(report=PageReport(frameGaps=gaps))
-    assert stalls.worst_stall_milliseconds == 120
-
-
-def test_a_recording_with_no_gap_stalls_for_nothing() -> None:
-    assert log().worst_stall_milliseconds == 0
 
 
 def test_the_head_is_cut_at_the_cover_when_one_was_found_and_at_the_estimate_otherwise() -> None:

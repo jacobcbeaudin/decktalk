@@ -30,7 +30,6 @@ from pydantic import BaseModel, Field
 
 from decktalk.artifacts.stored import Stored, engine_digest
 from decktalk.findings import MODEL, Finding, ProjectPath
-from decktalk.media import MILLISECONDS
 from decktalk.media.pagereport import PageReport
 
 HASH_DIGITS = 16
@@ -104,18 +103,6 @@ class RecordingLog(Stored):
     findings: tuple[Finding, ...] = Field((), description="Every judgement the page and the frames made.")
     checks: RecordingChecks | None = Field(None, description="What the frames measured, or null when none were.")
     report: PageReport = Field(description="What the page said about itself, read once as it was recorded.")
-
-    @property
-    def worst_stall_milliseconds(self) -> int:
-        """The longest stall a viewer can see, counting only the part of each gap after narration t=0.
-
-        Frames before t=0 sit under the cover and are trimmed from the cut, so a scene may warm up
-        there. A gap is recorded when it ends, so a gap that began before t=0 counts only the
-        milliseconds after t=0, and a gap that ended before t=0 counts nothing at all.
-        """
-        gaps = self.report.frame_gaps
-        visible = (0.0 if gap.at is None else min(gap.ms, gap.at * MILLISECONDS) for gap in gaps)
-        return int(max((seen for seen in visible if seen > 0), default=0))
 
     @property
     def trim_seconds(self) -> float:

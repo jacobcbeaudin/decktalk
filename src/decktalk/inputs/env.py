@@ -111,10 +111,6 @@ class Env:
         value = self.environ.get(name) or stated.get(name, "")
         return Secret("" if value.startswith(PLACEHOLDER_MARK) else value, name)
 
-    def has(self, *names: str) -> bool:
-        """True when every one of these variables is set, which is what `doctor` reports without reading one."""
-        return all(self.get(name) for name in names)
-
     def require(self, *names: str) -> list[Secret]:
         """The values of these variables, or an `INPUT` refusal naming every one that is not set."""
         values = [self.get(name) for name in names]

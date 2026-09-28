@@ -31,33 +31,13 @@ class CueTimes(Stored):
 
     sections: tuple[SectionCues, ...] = Field((), description="Every section that declares a cue, in section order.")
 
-    @property
-    def estimated(self) -> bool:
-        """True when any section's seconds come from estimated words rather than a voiced take."""
-        return any(block.estimated for block in self.sections)
-
-    def of(self, section: int) -> SectionCues | None:
-        """One section's block, or None when that section declares no cue."""
-        return next((block for block in self.sections if block.section == section), None)
-
     def rows(self, section: int) -> tuple[CueTime, ...]:
         """One section's cues, in the order they play."""
-        block = self.of(section)
-        return block.cues if block else ()
-
-    def row(self, section: int, cue: str) -> CueTime | None:
-        """One cue of one section, or None when that section does not declare it."""
-        return next((row for row in self.rows(section) if row.cue == cue), None)
+        return next((block.cues for block in self.sections if block.section == section), ())
 
     def at(self, section: int, cue: str) -> float | None:
         """Where one cue lands, or None when it was never resolved."""
-        row = self.row(section, cue)
-        return None if row is None else row.seconds
-
-    def word_at(self, section: int, cue: str) -> float | None:
-        """Where the word behind one cue begins, before the author's nudge, or None when it has none."""
-        row = self.row(section, cue)
-        return None if row is None or row.seconds is None else round(row.seconds - row.offset, 3)
+        return self.times(section).get(cue)
 
     def times(self, section: int) -> dict[str, float]:
         """One section's resolved cues, keyed by wire id, with the unresolved ones left out."""

@@ -261,16 +261,6 @@ class Document:
         return flags
 
     @property
-    def cut_summary(self) -> str:
-        """What happens at the section cuts: straight cuts, or dips at some or all of them."""
-        dips = sum(1 for _fade_in, fade_out in self.fade_flags.values() if fade_out)
-        if dips == 0:
-            return "straight cuts"
-        if self.transition.dips is None:
-            return "dips at every cut"
-        return f"dips at {dips} cut{'s' if dips != 1 else ''}"
-
-    @property
     def page_files(self) -> list[str]:
         """Each page file once, in section order."""
         seen: list[str] = []

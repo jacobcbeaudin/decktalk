@@ -37,11 +37,6 @@ class Cut(BaseModel):
     dip_in: bool = Field(False, description="True when the picture dips to black on the way into this section.")
     dip_out: bool = Field(False, description="True when the picture dips to black on the way out of it.")
 
-    @property
-    def seconds(self) -> float:
-        """How long this section runs in the film."""
-        return round(self.end - self.start, 3)
-
 
 class Cuts(Stored):
     """The cut list of one finished film."""
@@ -53,11 +48,6 @@ class Cuts(Stored):
     def total_seconds(self) -> float:
         """How long the whole film runs, which is where its last section ends."""
         return self.sections[-1].end if self.sections else 0.0
-
-    @property
-    def substituted(self) -> tuple[Cut, ...]:
-        """Every section that played a slate or black, which is what a strict run refuses."""
-        return tuple(cut for cut in self.sections if cut.substitute is not None)
 
     def at(self, seconds: float) -> Cut | None:
         """The section playing at one second of the film, or None past its end."""

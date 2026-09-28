@@ -24,7 +24,6 @@ RESOLVED = CueTimes(
 
 
 def test_a_section_nothing_resolved_has_no_rows() -> None:
-    assert RESOLVED.of(9) is None
     assert RESOLVED.rows(9) == ()
     assert RESOLVED.query(9) is None
 
@@ -38,21 +37,10 @@ def test_the_times_are_keyed_by_wire_id() -> None:
     assert RESOLVED.times(3) == {"3.1:expand": 1.2, "3.2:zero": 2.5}
 
 
-def test_the_word_behind_a_cue_is_its_second_without_the_author_nudge() -> None:
-    assert RESOLVED.word_at(3, "3.2:zero") == 2.2
-    assert RESOLVED.word_at(3, "3.3:never") is None
-
-
-def test_one_row_is_found_by_its_section_and_its_wire_id() -> None:
-    assert RESOLVED.row(3, "3.1:expand").phrase == "On a typical"
-    assert RESOLVED.row(3, "nothing") is None
+def test_one_cue_is_found_by_its_section_and_its_wire_id() -> None:
     assert RESOLVED.at(3, "3.1:expand") == 1.2
-
-
-def test_the_file_is_estimated_when_any_section_is() -> None:
-    assert not RESOLVED.estimated
-    guessed = RESOLVED.sections[0].model_copy(update={"estimated": True})
-    assert CueTimes(sections=(guessed,)).estimated
+    assert RESOLVED.at(3, "3.3:never") is None
+    assert RESOLVED.at(3, "nothing") is None
 
 
 def test_the_cue_times_round_trip_through_their_own_file(tmp_path: Path) -> None:

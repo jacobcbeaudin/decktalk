@@ -28,7 +28,6 @@ SECTION_RE = re.compile(
 DIRECTION_RE = re.compile(r"\[(?![A-Z][A-Z0-9_]*\])[^\]]*\]")
 # "[pause 3]" or "[pause 2.5]": a timed pause, in seconds, in place of the default direction pause.
 PAUSE_RE = re.compile(r"\[\s*pause\s+(?P<seconds>\d+(?:\.\d+)?)\s*\]", re.IGNORECASE)
-PLACEHOLDER_RE = re.compile(r"\[([A-Z][A-Z0-9_]*)\]")
 BREAK_RE = re.compile(r'<break time="([0-9.]+)s"\s*/>')
 PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 
@@ -62,10 +61,6 @@ class Segment:
     @property
     def word_count(self) -> int:
         return len(self.spoken.split())
-
-    @property
-    def placeholders(self) -> list[str]:
-        return sorted(set(PLACEHOLDER_RE.findall(self.text)))
 
     @property
     def target_seconds(self) -> float | None:
