@@ -257,7 +257,7 @@ class InstalledTool(BaseModel):
     tool: str = Field(description="What the tool is called, such as ffmpeg or chromium.")
     version: str | None = Field(None, description="The version this machine holds, or null when it cannot be read.")
     path: ProjectPath | None = Field(None, description="Where the tool is, or null when it is not there.")
-    fetched: bool = Field(description="True when this run downloaded it rather than finding it.")
+    fetched: bool = Field(False, description="True when this run downloaded it rather than finding it.")
     bytes: int | None = Field(None, ge=0, description="How large the download was, or null when nothing was fetched.")
 
 

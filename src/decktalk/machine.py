@@ -553,14 +553,7 @@ class Machine:
             # so `install` cannot print the browser as missing a second after it downloaded one.
             browser = self._browser_row().model_copy(update={"fetched": True})
             held = self.toolchain.complete
-            toolchain = self.toolchain.fetched()
-            tools = (
-                browser,
-                InstalledTool(tool=FFMPEG, version=FFMPEG_VERSION, path=toolchain.ffmpeg, fetched=not held, bytes=None),
-                InstalledTool(
-                    tool=FFPROBE, version=FFMPEG_VERSION, path=toolchain.ffprobe, fetched=not held, bytes=None
-                ),
-            )
+            tools = (browser, *_encoder_rows(self.toolchain.fetched(), fetched=not held))
             return run.result(InstallResult, tools=tools, cache=self.cache_dir)
 
     def doctor(self, *, measure: bool = False, cancel: Cancel | None = None) -> DoctorResult:
@@ -571,7 +564,7 @@ class Machine:
         No variable's value is reported, because a variable may hold a credential.
         """
         with self.run(cancel=cancel) as run:
-            tools = (self._browser_row(), *self._encoder_rows(), self._katex_row())
+            tools = (self._browser_row(), *_encoder_rows(self.toolchain), self._katex_row())
             findings = tuple(run.found(found) for found in _missing_findings(tools))
             return run.result(
                 DoctorResult,
@@ -606,41 +599,24 @@ class Machine:
             # refusal, so it is loaded by the one question that needs it.
             from playwright.sync_api import sync_playwright  # noqa: PLC0415
         except ImportError:
-            return InstalledTool(tool=CHROMIUM, version=None, path=None, fetched=False, bytes=None)
+            return InstalledTool(tool=CHROMIUM)
         with sync_playwright() as playwright:
             try:
                 browser = playwright.chromium.launch()
                 version = browser.version
                 browser.close()
             except Exception:  # noqa: BLE001  (a browser that will not launch is a row, never a traceback)
-                return InstalledTool(tool=CHROMIUM, version=None, path=None, fetched=False, bytes=None)
+                return InstalledTool(tool=CHROMIUM)
             where = chromium_fetch.installed_chromium(playwright)
             path = Path(where) if where else None
-            return InstalledTool(tool=CHROMIUM, version=version, path=path, fetched=False, bytes=None)
-
-    def _encoder_rows(self) -> tuple[InstalledTool, ...]:
-        """The encoder and the prober, which are one row each so a broken one names itself."""
-        return tuple(
-            InstalledTool(
-                tool=name,
-                version=FFMPEG_VERSION if path else None,
-                path=path,
-                fetched=False,
-                bytes=None,
-            )
-            for name, path in ((FFMPEG, self.toolchain.ffmpeg), (FFPROBE, self.toolchain.ffprobe))
-        )
+            return InstalledTool(tool=CHROMIUM, version=version, path=path)
 
     def _katex_row(self) -> InstalledTool:
         """The maths the wheel carries, which a deck copies beside its pages."""
         missing = assets.katex_missing()
-        return InstalledTool(
-            tool=KATEX,
-            version=None if missing else assets.KATEX_VERSION,
-            path=None if missing else assets.katex_dir(),
-            fetched=False,
-            bytes=None,
-        )
+        if missing:
+            return InstalledTool(tool=KATEX)
+        return InstalledTool(tool=KATEX, version=assets.KATEX_VERSION, path=assets.katex_dir())
 
     def _bias(self, run: Run, *, measure: bool) -> float | None:
         """This host's presentation bias, measured only when asked, because measuring drives a browser.
@@ -659,6 +635,14 @@ class Machine:
         write(self.config_path, BIAS_KEY, str(bias), scope=SettingScope.MACHINE, environ=self.environ, measured=True)
         run.wrote(self.config_path)
         return bias
+
+
+def _encoder_rows(toolchain: Toolchain, *, fetched: bool = False) -> tuple[InstalledTool, ...]:
+    """The encoder and the prober, which are one row each so a broken one names itself."""
+    return tuple(
+        InstalledTool(tool=name, version=FFMPEG_VERSION if path else None, path=path, fetched=fetched)
+        for name, path in ((FFMPEG, toolchain.ffmpeg), (FFPROBE, toolchain.ffprobe))
+    )
 
 
 def init(

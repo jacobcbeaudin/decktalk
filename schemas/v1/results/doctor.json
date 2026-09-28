@@ -416,6 +416,7 @@
           "title": "Path"
         },
         "fetched": {
+          "default": false,
           "description": "True when this run downloaded it rather than finding it.",
           "title": "Fetched",
           "type": "boolean"
@@ -436,8 +437,7 @@
         }
       },
       "required": [
-        "tool",
-        "fetched"
+        "tool"
       ],
       "title": "InstalledTool",
       "type": "object"
