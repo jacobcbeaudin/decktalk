@@ -44,7 +44,7 @@ def loop(
     the run it was watching rather than nothing.
     """
     origin = project.serve()
-    session.say(f"Serving {origin.url}")
+    session.say(f"Serving {origin.result.url}")
     session.say("Watching for saves. Nothing here spends, so a voiced take goes stale rather than being replaced.")
     built = _once(session, project, skip=skip, only=only, force=force)
     seen = _stamps(project.root)

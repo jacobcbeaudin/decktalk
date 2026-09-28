@@ -9,7 +9,7 @@ import pytest
 from decktalk.cli import watch
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import InputError
-from decktalk.results import BuildResult, SectionKind, SectionStatus, StatusResult, Voicing
+from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, Voicing
 
 from .conftest import Fake, spend
 
@@ -19,7 +19,7 @@ BUILT = BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spen
 class Origin:
     """A local origin that is already there, which is what the loop starts before it builds."""
 
-    url = "http://127.0.0.1:8000"
+    result = ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000, root=Path("."))
 
     def __init__(self) -> None:
         self.closed = False
