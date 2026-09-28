@@ -119,6 +119,10 @@ class Quiet:
                 param.show_default = False
         return params
 
+    def get_help_option(self, ctx: Context) -> TyperOption | None:
+        """The help option with our own sentence on it."""
+        return _help_option(super().get_help_option(ctx))  # ty: ignore[unresolved-attribute]
+
 
 class DeckTalkCommand(Quiet, TyperCommand):
     """One command, whose options are printed under the headings the command itself declared."""
@@ -141,10 +145,6 @@ class DeckTalkCommand(Quiet, TyperCommand):
         _write_block(formatter, SHARED_LINE, indent=True)
         if self.epilog:
             _write_block(formatter, self.epilog, indent=False)
-
-    def get_help_option(self, ctx: Context) -> TyperOption | None:
-        """The help option with our own sentence on it."""
-        return _help_option(super().get_help_option(ctx))
 
 
 class DeckTalkGroup(Quiet, TyperGroup):
@@ -173,10 +173,6 @@ class DeckTalkGroup(Quiet, TyperGroup):
         """Write the footer as it was written, which is the contract a reader leaves the page with."""
         if self.epilog:
             _write_block(formatter, self.epilog, indent=False)
-
-    def get_help_option(self, ctx: Context) -> TyperOption | None:
-        """The help option with our own sentence on it."""
-        return _help_option(super().get_help_option(ctx))
 
 
 def written(command: Command) -> int:

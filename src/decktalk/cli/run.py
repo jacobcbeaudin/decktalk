@@ -8,7 +8,6 @@ the `stage` of an event line all read.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
 
@@ -29,7 +28,6 @@ from decktalk.cli.options import (
     Sections,
     Skip,
     one_section,
-    pairs,
     sections_of,
 )
 from decktalk.findings import Code
@@ -136,7 +134,7 @@ def narrate(
     word clock every later stage measures against.
     """
     session = sessions.of(ctx)
-    project = _opened(session, set_)
+    project = session.opened(set_)
     voice = session.voicing(project)
     with session.watching(project.events):
         return project.narrate(
@@ -157,7 +155,7 @@ def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueRe
     page moment names a cue, so the stage is called what everything around it is called.
     """
     session = sessions.of(ctx)
-    project = _opened(session, set_)
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.cue(
             only=sections_of(section),
@@ -174,7 +172,7 @@ def record(ctx: Context, section: Sections = None, force: RecordAgain = False, s
     anything is cut.
     """
     session = sessions.of(ctx)
-    project = _opened(session, set_)
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.record(only=sections_of(section), force=force, cancel=session.cancel)
 
@@ -193,7 +191,7 @@ def soundscape(
     because the mix consumes what it writes.
     """
     session = sessions.of(ctx)
-    project = _opened(session, set_)
+    project = session.opened(set_)
     voice = session.voicing(project)
     with session.watching(project.events):
         return project.soundscape(
@@ -217,7 +215,7 @@ def assemble(
     name one of the things it does.
     """
     session = sessions.of(ctx)
-    project = _opened(session, set_)
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.assemble(
             only=sections_of(section),
@@ -246,7 +244,7 @@ def verify(ctx: Context, section: Sections = None, set_: Overrides = None) -> Ve
     claim written as a measurement.
     """
     session = sessions.of(ctx)
-    project = _opened(session, set_)
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.verify(only=sections_of(section), cancel=session.cancel)
 
@@ -270,7 +268,7 @@ def build(
     and asks before it buys. Without a terminal it refuses unless --spend or --no-voice is passed.
     """
     session = sessions.of(ctx)
-    project = _opened(session, set_)
+    project = session.opened(set_)
     only = sections_of(section)
     if watch:
         return watching.loop(session, project, skip=tuple(skip or ()), only=only, force=force)
@@ -304,11 +302,8 @@ def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, 
     A fix changes an input, so the film beside it is the film the old input made. The run is not
     repeated here, because repeating a paid run without being asked is how credits are spent twice.
     """
-    offered = [found for found in built.findings if found.fix is not None]
+    offered = sessions_.fixes_wanted(built.findings, fix)
     if not offered:
-        return built
-    wanted = fix if fix is not None else sessions_.asks and sessions_.confirm(f"Apply {len(offered)} fixes?")
-    if not wanted:
         return built
     applied = project.apply(offered)
     changed = sum(1 for outcome in applied.fixes if outcome.applied)
@@ -338,7 +333,7 @@ def clip(
     is called what the file is called.
     """
     session = sessions.of(ctx)
-    project = _opened(session, set_)
+    project = session.opened(set_)
     chosen = one_section((section,) if section else None)
     with session.watching(project.events):
         return project.clip(
@@ -350,12 +345,6 @@ def clip(
             hold_seconds=hold_seconds,
             cancel=session.cancel,
         )
-
-
-def _opened(session: sessions.Session, overrides: Sequence[str] | None) -> Project:
-    """This run's project, opened with its `--set` pairs, which the loader validates before a stage runs."""
-    session.overriding(pairs(overrides))
-    return session.project()
 
 
 def _replacing(session: sessions.Session, asked: bool) -> bool:

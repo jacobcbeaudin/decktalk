@@ -28,10 +28,10 @@ from typer._click import Context
 
 from decktalk import project as projects
 from decktalk.cli import output
-from decktalk.cli.options import FailOn, When
+from decktalk.cli.options import FailOn, When, pairs
 from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorCode, ErrorInfo
 from decktalk.events import Events
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Certainty, Code, Finding
 from decktalk.machine import Machine
 from decktalk.project import Project
 from decktalk.results import ErrorResult, Result, Spend, Voicing
@@ -129,6 +129,11 @@ class Session:
         """Hold this run's `--set` pairs, which are validated by the loader the first call opens."""
         self._overrides = tuple(overrides)
 
+    def opened(self, overrides: Sequence[str] | None) -> Project:
+        """This run's project, opened with its `--set` pairs, which the loader validates before a stage runs."""
+        self.overriding(pairs(overrides))
+        return self.project()
+
     @cached_property
     def machine(self) -> Machine:
         """This machine, read once, which is the only reading of the environment there is."""
@@ -137,6 +142,18 @@ class Session:
     def project(self) -> Project:
         """The project this run is about, opened on this machine with this run's overrides."""
         return projects.open(self.flags.project, machine=self.machine, overrides=self._overrides)
+
+    def fixes_wanted(self, findings: Sequence[Finding], fix: bool | None) -> list[Finding]:
+        """The findings whose fixes the caller wants applied, asked once on a terminal, or none.
+
+        `fix` is the caller's own answer when it gave one. Without it a terminal is asked, and a run
+        with no terminal applies nothing, so an agent applies the fixes itself from the objects it holds.
+        """
+        offered = [found for found in findings if found.fix is not None]
+        if not offered:
+            return []
+        wanted = fix if fix is not None else self.asks and self.confirm(f"Apply {len(offered)} fixes?")
+        return offered if wanted else []
 
     # ---- the stream -------------------------------------------------------------------------
 

@@ -16,7 +16,7 @@ from typer._click import Context
 
 from decktalk.cli import session as sessions
 from decktalk.cli.app import command, docs_for
-from decktalk.cli.options import Fix, Group, Overrides, Panel, Sections, pairs, sections_of
+from decktalk.cli.options import Fix, Group, Overrides, Panel, Sections, sections_of
 from decktalk.results import CheckResult, ServeResult, StatusResult, StoryboardResult, WordsResult
 
 STATUS_EPILOG = f"""\
@@ -94,8 +94,7 @@ def status(ctx: Context, set_: Overrides = None) -> StatusResult:
     `check` and `verify`.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.status(cancel=session.cancel)
 
@@ -122,8 +121,7 @@ def check(
     of a run makes this one call.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
+    project = session.opened(set_)
     asked = {"only": sections_of(section), "pages": not no_pages, "frames": not no_frames}
     heard: set[str] = set()
     with session.watching(project.events, heard=heard):
@@ -148,11 +146,8 @@ def _fixed(
     widened to the whole project priced sections the caller never named. A note the first judgement
     printed is in `heard` and is not printed again, because the second judgement says it too.
     """
-    offered = [found for found in judged.findings if found.fix is not None]
+    offered = session.fixes_wanted(judged.findings, fix)
     if not offered:
-        return judged
-    wanted = fix if fix is not None else session.asks and session.confirm(f"Apply {len(offered)} fixes?")
-    if not wanted:
         return judged
     project = session.project()
     project.apply(offered)
@@ -168,8 +163,7 @@ def words(ctx: Context, section: Sections = None, set_: Overrides = None) -> Wor
     It is the one command that maps script text to seconds, which is how a cue phrase is written.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.words(only=sections_of(section), cancel=session.cancel)
 
@@ -192,8 +186,7 @@ def storyboard(
     number that matches no section already does.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.storyboard(
             only=sections_of(section), slide=slide, after=after, before=before, at=at, cancel=session.cancel
@@ -213,8 +206,7 @@ def serve(
     reads one object and is not left waiting on a stream that never ends.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
+    project = session.opened(set_)
     origin = project.serve(host=host, port=port)
     session.report(origin.result)
     session.out.file.flush()

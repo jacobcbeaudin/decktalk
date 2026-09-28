@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-from pydantic import JsonValue
 from typer._click import Context
 
 from decktalk import settings as knobs
 from decktalk.cli import session as sessions
 from decktalk.cli.app import CONTEXT, DeckTalkGroup, app, command, docs_for
+from decktalk.cli.catalog import json_value
 from decktalk.cli.options import Group, Where
 from decktalk.errors import InputError
 from decktalk.explain import explain as explained
@@ -90,8 +90,8 @@ def get_key(ctx: Context, key: Named) -> ConfigGetResult:
         ok=True,
         key=SettingValue(
             key=known.id,
-            value=_json(knobs.value_of(here.settings, known.id)),
-            default=_json(known.default),
+            value=json_value(knobs.value_of(here.settings, known.id)),
+            default=json_value(known.default),
             layer=winner.layer,
             file=winner.file,
         ),
@@ -229,8 +229,8 @@ def _rows(session: sessions.Session, table: str | None, *, defaults: bool, chang
         rows.append(
             SettingValue(
                 key=key.id,
-                value=_json(key.default) if defaults else _json(knobs.value_of(here.settings, key.id)),
-                default=_json(key.default),
+                value=json_value(key.default) if defaults else json_value(knobs.value_of(here.settings, key.id)),
+                default=json_value(key.default),
                 layer=Layer.DEFAULT if defaults else winner.layer,
                 file=winner.file,
             )
@@ -322,15 +322,6 @@ def _states(document: Mapping[str, Any], key: str) -> bool:
             return False
         here = here[part]
     return True
-
-
-def _json(value: object) -> JsonValue:
-    """One value as JSON carries it, which is what a row and a schema both publish."""
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if isinstance(value, (tuple, list)):
-        return [_json(item) for item in value]
-    return str(value)
 
 
 def _file(session: sessions.Session, where: Where) -> Path:

@@ -92,7 +92,7 @@ def _param(param: Parameter, context: Context) -> dict[str, Any]:
         "opts": list(param.opts) + list(param.secondary_opts),
         "type": param.type.name,
         "metavar": param.make_metavar(context) if param.metavar else param.metavar,
-        "default": _plain(param.default),
+        "default": json_value(param.default),
         "repeatable": bool(getattr(param, "multiple", False)) or param.nargs == -1,
         "required": param.required,
         "envvar": param.envvar,
@@ -104,12 +104,12 @@ def _param(param: Parameter, context: Context) -> dict[str, Any]:
     return row
 
 
-def _plain(value: object) -> JsonValue:
-    """A default as JSON carries it, which is its own value for a scalar and its name for an enum."""
+def json_value(value: object) -> JsonValue:
+    """A value as JSON carries it, which is its own value for a scalar and its name for an enum."""
     if isinstance(value, Enum):
-        return _plain(value.value)
+        return json_value(value.value)
     if isinstance(value, (list, tuple)):
-        return [_plain(item) for item in value]
+        return [json_value(item) for item in value]
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
@@ -163,7 +163,7 @@ def settings_schema(*, machine: bool = False) -> dict[str, Any]:
     """
     wanted = [key for key in knobs.KEYS if not machine or key.scope.value == "machine"]
     return {
-        "keys": [{name: _plain(_published(key, name)) for name in PUBLISHED} for key in wanted],
+        "keys": [{name: json_value(_published(key, name)) for name in PUBLISHED} for key in wanted],
         "numbers": [
             {
                 "id": number.id,
@@ -225,7 +225,7 @@ def project_schema() -> dict[str, Any]:
 
 def _default(field: Field[object]) -> JsonValue:
     """What a row holds when the author writes nothing, or null when the key is required."""
-    return None if field.default is MISSING else _plain(field.default)
+    return None if field.default is MISSING else json_value(field.default)
 
 
 def _type_name(annotation: object) -> str:
@@ -268,6 +268,7 @@ __all__ = [
     "document",
     "findings",
     "globals_",
+    "json_value",
     "named",
     "names",
     "page_schema",
