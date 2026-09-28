@@ -137,11 +137,5 @@ class Encoder:
         self.silence = f"anullsrc=r={video.sample_rate}:cl=stereo"
 
     def color_source(self, color: str, seconds: float) -> list[str]:
-        return [
-            "-f",
-            "lavfi",
-            "-t",
-            f"{seconds}",
-            "-i",
-            f"color=c={color}:s={self.v.width}x{self.v.height}:r={self.v.output_fps}",
-        ]
+        size = f"{self.v.width}x{self.v.height}"
+        return ["-f", "lavfi", "-t", f"{seconds}", "-i", f"color=c={color}:s={size}:r={self.v.output_fps}"]

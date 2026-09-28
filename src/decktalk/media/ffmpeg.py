@@ -260,14 +260,7 @@ def source(path: Path | str) -> list[str]:
     options it returns apply to that one input, so a caller may still put its own input options,
     such as a seek, ahead of it.
     """
-    return [
-        "-protocol_whitelist",
-        SOURCE_PROTOCOLS,
-        "-format_whitelist",
-        ",".join(SOURCE_FORMATS),
-        "-i",
-        str(path),
-    ]
+    return ["-protocol_whitelist", SOURCE_PROTOCOLS, "-format_whitelist", ",".join(SOURCE_FORMATS), "-i", str(path)]
 
 
 def _at(path: Path | str) -> Location:
@@ -427,19 +420,19 @@ def concat_list(paths: Iterable[Path | str]) -> str:
     return "".join(concat_line(path) for path in paths)
 
 
+VALUE_ONLY = ("-of", "default=noprint_wrappers=1:nokey=1")
+"""Truth: the output format that prints each probed value alone on its line, with no key and no section."""
+
+
+def _probe(path: Path | str, *entries: str) -> subprocess.CompletedProcess[bytes]:
+    """Run ffprobe with these entry options on one input, refusing a failure as the file's own."""
+    cmd = [ffprobe(), "-v", "error", *entries, *source(path)]
+    return _checked(cmd, f"ffprobe on {Path(path).name}", location=_at(path))
+
+
 def probe_duration(path: Path | str) -> float:
     """The length the container reports, in seconds."""
-    cmd = [
-        ffprobe(),
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        *source(path),
-    ]
-    proc = _checked(cmd, f"ffprobe on {Path(path).name}", location=_at(path))
+    proc = _probe(path, "-show_entries", "format=duration", *VALUE_ONLY)
     text = proc.stdout.decode(errors="replace").strip()
     if not text:
         raise ToolError(
@@ -452,19 +445,7 @@ def probe_duration(path: Path | str) -> float:
 
 def probe_rate(path: Path | str) -> Fraction:
     """The frame rate of the file's first video stream, exactly, as the container states it."""
-    cmd = [
-        ffprobe(),
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=r_frame_rate",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        *source(path),
-    ]
-    proc = _checked(cmd, f"ffprobe on {Path(path).name}", location=_at(path))
+    proc = _probe(path, "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", *VALUE_ONLY)
     text = proc.stdout.decode(errors="replace").strip()
     try:
         rate = Fraction(text)
@@ -481,17 +462,5 @@ def has_audio(path: Path | str) -> bool:
     A failed probe is a tool failure and never an answer, because reading it as no audio would let a
     broken ffprobe publish a verdict about a film it never opened.
     """
-    cmd = [
-        ffprobe(),
-        "-v",
-        "error",
-        "-select_streams",
-        "a",
-        "-show_entries",
-        "stream=codec_type",
-        "-of",
-        "csv=p=0",
-        *source(path),
-    ]
-    proc = _checked(cmd, f"ffprobe on {Path(path).name}", location=_at(path))
+    proc = _probe(path, "-select_streams", "a", "-show_entries", "stream=codec_type", "-of", "csv=p=0")
     return bool(proc.stdout.decode(errors="replace").strip())

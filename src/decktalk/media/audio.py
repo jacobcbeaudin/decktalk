@@ -169,19 +169,9 @@ def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate
     pads = "".join(steps)
     labels = "".join(f"[l{i}]" if i in shaped else f"[{i}:a]" for i in range(len(parts)))
     ffmpeg.run(
-        *inputs,
-        "-filter_complex",
-        f"{pads}{labels}concat=n={len(parts)}:v=0:a=1[a]",
-        "-map",
-        "[a]",
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        bitrate,
-        "-ar",
-        str(sample_rate),
-        str(out),
-    )
+        *inputs, "-filter_complex", f"{pads}{labels}concat=n={len(parts)}:v=0:a=1[a]",
+        "-map", "[a]", "-c:a", "libmp3lame", "-b:a", bitrate, "-ar", str(sample_rate), str(out),
+    )  # fmt: skip
 
 
 def crossfade_join(parts: list[Path], out: Path, *, crossfade_seconds: float, bitrate: str) -> None:
@@ -215,15 +205,9 @@ class Loudness:
 
 def measure_loudness(path: Path, *, i: float, tp: float, lra: float) -> Loudness:
     err = ffmpeg.stderr(
-        *ffmpeg.source(path),
-        "-map",
-        "0:a",
-        "-af",
-        f"loudnorm=I={i}:TP={tp}:LRA={lra}:print_format=json",
-        "-f",
-        "null",
-        "-",
-    )
+        *ffmpeg.source(path), "-map", "0:a",
+        "-af", f"loudnorm=I={i}:TP={tp}:LRA={lra}:print_format=json", "-f", "null", "-",
+    )  # fmt: skip
 
     def field(name: str) -> float:
         m = re.search(rf'"{name}"\s*:\s*"([-0-9.]+)"', err)
