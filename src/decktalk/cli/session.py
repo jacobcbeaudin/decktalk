@@ -133,7 +133,7 @@ class Session:
     @cached_property
     def machine(self) -> Machine:
         """This machine, read once, which is the only reading of the environment there is."""
-        return Machine.from_environment(overrides=_split(self._overrides))
+        return Machine.from_environment(overrides=projects._split(self._overrides))
 
     def project(self) -> Project:
         """The project this run is about, opened on this machine with this run's overrides."""
@@ -349,11 +349,6 @@ def _spend_hint(command: str) -> str:
         f"Run decktalk {command} --spend to approve that spend, or decktalk {command} --no-voice to "
         "finish with placeholder narration."
     )
-
-
-def _split(overrides: Sequence[str]) -> tuple[tuple[str, str], ...]:
-    """Each `--set` pair as its two halves, which is how a machine takes them."""
-    return tuple((pair.partition("=")[0], pair.partition("=")[2]) for pair in overrides)
 
 
 def of(ctx: Context) -> Session:
