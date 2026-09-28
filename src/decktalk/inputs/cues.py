@@ -76,6 +76,18 @@ class CuedSection:
     min_seconds: float | None = None
 
 
+def json_of(text: str, path: Path, root: Path) -> object:
+    """The JSON a project file holds, refused with the line the parser stopped on when it is not valid JSON."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise InputError(
+            f"{path.name} is not valid JSON: {exc.msg}.",
+            hint="Check the brackets and the commas on the line named here.",
+            location=at(path, root, line=exc.lineno),
+        ) from exc
+
+
 def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...]:
     """Parsed and validated `cues.json`, which is empty when the file does not exist.
 
@@ -85,14 +97,7 @@ def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...
     if not path.exists():
         return ()
     text = path.read_text(encoding="utf-8")
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise InputError(
-            f"{path.name} is not valid JSON: {exc.msg}.",
-            hint="Check the brackets and the commas on the line named here.",
-            location=at(path, root, line=exc.lineno),
-        ) from exc
+    data = json_of(text, path, root)
     sections_raw = data.get("sections") if isinstance(data, dict) else None
     if not isinstance(sections_raw, dict):
         raise InputError(

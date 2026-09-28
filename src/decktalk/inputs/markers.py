@@ -11,13 +11,12 @@ reported by `assemble` and skipped.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from decktalk.errors import InputError
-from decktalk.inputs.cues import SECTION_START
+from decktalk.inputs.cues import SECTION_START, json_of
 from decktalk.inputs.paths import at, relative
 from decktalk.tomlmap import Table, default_of
 
@@ -52,14 +51,7 @@ class Markers:
 
 def load_markers(path: Path, root: Path) -> Markers:
     """The parsed markers file. A malformed file fails here, with the file and the row named."""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise InputError(
-            f"{path.name} is not valid JSON: {exc.msg}.",
-            hint="Check the brackets and the commas on the line named here.",
-            location=at(path, root, line=exc.lineno),
-        ) from exc
+    data = json_of(path.read_text(encoding="utf-8"), path, root)
     if not isinstance(data, dict):
         raise InputError(
             f"{path.name} has no top-level 'markers' array.",
