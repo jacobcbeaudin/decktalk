@@ -9,11 +9,12 @@ reporting judgements gains `--fail-on` by saying so on its result model and in n
 from __future__ import annotations
 
 import pytest
+import typer
 
 from decktalk.cli import catalog
-from decktalk.cli.app import PROMPT_FLAGS
+from decktalk.cli.app import PROMPT_FLAGS, command
 from decktalk.cli.options import Group
-from decktalk.results import RESULTS, Result
+from decktalk.results import RESULTS, Result, WordsResult
 
 TOP_LINES = (
     "Every picture lands on its word. DeckTalk turns a markdown script, HTML",
@@ -153,3 +154,17 @@ def test_a_global_works_before_and_after_the_command_name(run, project, answers)
 def test_every_flag_that_answers_a_prompt_is_one_the_tree_really_has() -> None:
     flags = {opt for row in rows().values() for param in row["params"] for opt in param["opts"]}
     assert PROMPT_FLAGS <= flags
+
+
+def test_a_sentence_for_a_flag_the_command_does_not_take_is_refused() -> None:
+    def words(ctx: object) -> WordsResult:  # pragma: no cover  (refused before it is registered)
+        raise AssertionError(ctx)
+
+    with pytest.raises(TypeError, match="spend"):
+        command(group=Group.PROJECT, to=typer.Typer(), helps={"spend": "Buy it."})(words)
+
+
+def test_the_root_shows_the_globals_every_command_hides() -> None:
+    shown = {opt for param in catalog.globals_() if not param["hidden"] for opt in param["opts"]}
+    assert {"--project", "--json", "--events", "--color", "--no-input", "--verbose", "--quiet", "--version"} <= shown
+    assert "--yes" not in shown

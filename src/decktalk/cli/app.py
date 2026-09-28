@@ -22,7 +22,7 @@ import itertools
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 import typer
 from typer._click import Context, HelpFormatter, Parameter
@@ -32,7 +32,7 @@ from typer.core import TyperCommand, TyperGroup, TyperOption
 from typer.main import get_command
 
 from decktalk import __version__
-from decktalk.cli.options import DOCS, GLOBALS, SHARED, FailOn, Group, Panel, When, allowed, shared_for
+from decktalk.cli.options import DOCS, GLOBALS, SHARED, FailOn, Group, Panel, restated, shared_for
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import Cancelled, DeckTalkError, ErrorCode, ErrorInfo
 from decktalk.findings import Code
@@ -225,13 +225,14 @@ def command[F: Callable[..., object]](
 
     `eval_str` is load bearing: the modules are written under postponed annotations, so the return
     annotation is the string `"BuildResult"` until it is evaluated, and the shared flags are chosen
-    from the model it names. `helps` gives a shared flag this command's own sentence.
+    from the model it names. `helps` gives a flag this command's own sentence, because a flag that
+    means something narrower here has to say so on the one help screen a reader of this command sees.
     """
 
     def register(fn: F) -> F:
         signature = inspect.signature(fn, eval_str=True)
         result = signature.return_annotation
-        parameters = [*signature.parameters.values(), *shared_for(result, helps)]
+        parameters = _reworded([*signature.parameters.values(), *shared_for(result)], helps or {})
         wrapper = _client(fn, name or str(getattr(fn, "__name__", "")))
         wrapper.__signature__ = signature.replace(  # ty: ignore[unresolved-attribute]
             parameters=parameters, return_annotation=inspect.Signature.empty
@@ -251,6 +252,17 @@ def command[F: Callable[..., object]](
     return register
 
 
+def _reworded(parameters: list[inspect.Parameter], helps: Mapping[str, str]) -> list[inspect.Parameter]:
+    """The parameters with this command's own sentences on them, refusing a sentence for a flag it lacks."""
+    stray = sorted(set(helps) - {param.name for param in parameters})
+    if stray:
+        raise TypeError(f"help was reworded for {', '.join(stray)}, which this command does not take")
+    return [
+        param.replace(annotation=restated(param.annotation, help=helps[param.name])) if param.name in helps else param
+        for param in parameters
+    ]
+
+
 def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
     """Wrap one command so that it takes its own parameters alone and answers with an exit code.
 
@@ -267,7 +279,7 @@ def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
             raise _yes_refused(context)
         session.judging(
             fail_on=cast("FailOn", shared.get("fail_on") or FailOn.CERTAIN),
-            allow=allowed(cast("Sequence[Code] | None", shared.get("allow"))),
+            allow=frozenset(cast("Sequence[Code] | None", shared.get("allow")) or ()),
         )
         session.spending(
             no_voice=bool(shared.get("no_voice")),
@@ -322,63 +334,51 @@ def _version(value: bool) -> None:
     raise typer.Exit(0)
 
 
-@app.callback()
 def root(
     ctx: Context,
-    project: Annotated[
-        str | None,
-        typer.Option(
-            "-p",
-            "--project",
-            metavar="DIR",
-            help="The project directory. Default: DECKTALK_PROJECT, else the current directory.",
-        ),
-    ] = None,
-    json_out: Annotated[
-        bool, typer.Option("--json", help="Print one JSON object on stdout and nothing else there.")
-    ] = False,
-    events: Annotated[bool, typer.Option("--events", help="Print one JSON line per progress event on stderr.")] = False,
-    color: Annotated[
-        When, typer.Option("--color", metavar="WHEN", help="auto, always or never. Default: auto.")
-    ] = When.AUTO,
-    no_input: Annotated[
-        bool,
-        typer.Option(
-            "--no-input",
-            help="Never prompt. Take the safe default, or refuse and name the flag that would have answered.",
-        ),
-    ] = False,
-    verbose: Annotated[
-        bool, typer.Option("-v", "--verbose", help="Debug lines on stderr, and the traceback of a bug.")
-    ] = False,
-    quiet: Annotated[bool, typer.Option("-q", "--quiet", help="Warnings and errors only on stderr.")] = False,
     version: Annotated[  # noqa: ARG001  (the eager callback reads it and exits before the body runs)
         bool,
         typer.Option("--version", callback=_version, is_eager=True, help="Print the version and exit."),
     ] = False,
+    **flags: object,
 ) -> int:
     """Every picture lands on its word. DeckTalk turns a markdown script, HTML slides and your voice
     into one narrated mp4."""
     global _current  # noqa: PLW0603  (one process runs one command, and a refusal must still render)
-    flags = Globals(
-        project=Path(project) if project else None,
-        json_out=json_out,
-        events=events,
-        color=color,
-        no_input=no_input,
-        verbose=verbose,
-        quiet=quiet,
-    )
-    session = Session(flags, command="")
+    session = Session(Globals(**cast("dict[str, Any]", flags)), command="")
     ctx.obj = session
     _current = session
     if ctx.invoked_subcommand is None:
         # The help is written as Click formatted it, because a renderer that rewrapped it would
         # print a different page from the one `--help` prints.
         session.err.file.write(ctx.get_help() + "\n")
-        session.err.file.write(f"\nProject: {(flags.project or Path.cwd()).as_posix()}\n")
+        session.err.file.write(f"\nProject: {(session.flags.project or Path.cwd()).as_posix()}\n")
         raise typer.Exit(0)
     return 0
+
+
+def _rooted(fn: Callable[..., int]) -> Callable[..., int]:
+    """The root callback with the globals put in place of its `**flags`, shown on the root's own help.
+
+    They are read from the one declaration every command takes them from, and `--yes` stays off the
+    root because the root asks nothing for it to refuse.
+    """
+    signature = inspect.signature(fn, eval_str=True)
+    ctx, version = signature.parameters["ctx"], signature.parameters["version"]
+    flags = [
+        inspect.Parameter(
+            name, inspect.Parameter.KEYWORD_ONLY, annotation=restated(annotation, hidden=False), default=default
+        )
+        for name, annotation, default in GLOBALS
+        if name != "yes"
+    ]
+    fn.__signature__ = signature.replace(  # ty: ignore[unresolved-attribute]
+        parameters=[ctx, *flags, version.replace(kind=inspect.Parameter.KEYWORD_ONLY)]
+    )
+    return fn
+
+
+app.callback()(_rooted(root))
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -22,7 +22,7 @@ from decktalk import settings as knobs
 from decktalk.cli import session as sessions
 from decktalk.cli.app import CONTEXT, DeckTalkGroup, app, command, docs_for
 from decktalk.cli.catalog import json_value
-from decktalk.cli.options import Group, Where
+from decktalk.cli.options import Group
 from decktalk.errors import InputError
 from decktalk.explain import explain as explained
 from decktalk.results import (
@@ -58,7 +58,7 @@ app.add_typer(config, name="config", rich_help_panel=Group.CONTRACTS.value)
 
 Named = Annotated[str, typer.Argument(metavar="KEY", help="The key's dotted name, such as video.crf.")]
 Scoped = Annotated[
-    Where,
+    Scope,
     typer.Option("--where", metavar="SCOPE", help="project writes decktalk.toml, machine writes this machine's file."),
 ]
 
@@ -103,7 +103,7 @@ def set_key(
     ctx: Context,
     key: Named,
     value: Annotated[str, typer.Argument(metavar="VALUE", help="The value, spelled as a command line spells it.")],
-    where: Scoped = Where.PROJECT,
+    where: Scoped = Scope.PROJECT,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the change and write nothing.")] = False,
 ) -> ConfigSetResult:
     """Write one key into decktalk.toml or into this machine's file.
@@ -114,7 +114,7 @@ def set_key(
     session = sessions.of(ctx)
     path = _file(session, where)
     try:
-        written = knobs.write(path, key, value, scope=_scope(where), environ=session.machine.environ, dry_run=dry_run)
+        written = knobs.write(path, key, value, scope=where, environ=session.machine.environ, dry_run=dry_run)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
     return ConfigSetResult(
@@ -135,7 +135,7 @@ def set_key(
 def unset_key(
     ctx: Context,
     key: Named,
-    where: Scoped = Where.PROJECT,
+    where: Scoped = Scope.PROJECT,
     whole: Annotated[bool, typer.Option("--all", help="Remove a whole table rather than one key.")] = False,
 ) -> ConfigUnsetResult:
     """Remove one key so the layer below it wins again.
@@ -156,9 +156,8 @@ def unset_key(
             f"{path.as_posix()} is not there, so it sets nothing to remove.",
             hint=f"Run decktalk config set {key} VALUE first.",
         )
-    scope = _scope(where)
     going = _stating(path, key, asked=_asked(session, key, whole=whole))
-    removed = tuple(knobs.unset(path, one, scope=scope, environ=session.machine.environ) for one in going)
+    removed = tuple(knobs.unset(path, one, scope=where, environ=session.machine.environ) for one in going)
     first = removed[0]
     return ConfigUnsetResult(
         ok=True,
@@ -324,16 +323,11 @@ def _states(document: Mapping[str, Any], key: str) -> bool:
     return True
 
 
-def _file(session: sessions.Session, where: Where) -> Path:
+def _file(session: sessions.Session, where: Scope) -> Path:
     """The file a write lands in, which is the project's own or this machine's."""
-    if where is Where.MACHINE:
+    if where is Scope.MACHINE:
         return session.machine.config_path
     return (session.flags.project or Path.cwd()) / knobs.PROJECT_FILE
-
-
-def _scope(where: Where) -> Scope:
-    """The library's word for the file a write lands in."""
-    return Scope.MACHINE if where is Where.MACHINE else Scope.PROJECT
 
 
 def _refused(failure: InputError, hint: str) -> typer.BadParameter:

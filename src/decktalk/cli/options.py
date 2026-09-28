@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import copy
 import inspect
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any, get_args
@@ -86,13 +86,6 @@ class When(Enum):
     AUTO = "auto"
     ALWAYS = "always"
     NEVER = "never"
-
-
-class Where(Enum):
-    """Which settings file a `config` write lands in."""
-
-    PROJECT = "project"
-    MACHINE = "machine"
 
 
 # The shared families, each written once and derived onto the commands that carry it. A hidden
@@ -226,14 +219,6 @@ Force = Annotated[
         help="Build again from nothing, keeping every voiced take.",
     ),
 ]
-BuildForce = Annotated[
-    bool,
-    typer.Option(
-        "--force",
-        rich_help_panel=Panel.REDOING.value,
-        help="Build again from nothing, keeping every voiced take, and measure the film again.",
-    ),
-]
 ReplaceVoiced = Annotated[
     bool,
     typer.Option(
@@ -272,13 +257,11 @@ SHARED: frozenset[str] = frozenset(name for name, _, _ in (*GLOBALS, *FINDING_FA
 """Every parameter name the wrapper takes off a command's own call, so a command reads none of them."""
 
 
-def shared_for(result: object, helps: Mapping[str, str] | None = None) -> list[inspect.Parameter]:
+def shared_for(result: object) -> list[inspect.Parameter]:
     """The parameters this command shares with others, read off the result its signature returns.
 
     The families come first so that they sit in their own panels above the hidden globals, and the
     globals come last because a reader who wants them reads the line that names them all at once.
-    `helps` rewords a shared flag for one command, because a flag that means something narrower
-    there has to say so on the one help screen a reader of that command sees.
     """
     families = list(GLOBALS)
     if isinstance(result, type) and issubclass(result, Result):
@@ -286,26 +269,18 @@ def shared_for(result: object, helps: Mapping[str, str] | None = None) -> list[i
             families = [*FINDING_FAMILY, *families]
         if result.spends:
             families = [*SPEND_FAMILY, *families]
-    known = {name for name, _, _ in families}
-    stray = sorted(set(helps or {}) - known)
-    if stray:
-        raise TypeError(f"help was reworded for {', '.join(stray)}, which this command does not share")
     return [
-        inspect.Parameter(
-            name,
-            inspect.Parameter.KEYWORD_ONLY,
-            annotation=reworded(annotation, helps[name]) if helps and name in helps else annotation,
-            default=default,
-        )
+        inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, annotation=annotation, default=default)
         for name, annotation, default in families
     ]
 
 
-def reworded(annotation: object, sentence: str) -> object:
-    """The same flag with one command's own sentence, leaving the shared declaration untouched."""
+def restated(annotation: object, **changes: object) -> object:
+    """The same flag with some of its declaration changed for one command, leaving the shared one untouched."""
     base, info, *rest = get_args(annotation)
     mine = copy.copy(info)
-    mine.help = sentence
+    for name, value in changes.items():
+        setattr(mine, name, value)
     return Annotated[base, mine, *rest]
 
 
@@ -334,11 +309,6 @@ def one_section(values: Sequence[str] | None) -> int:
     return sections[0]
 
 
-def allowed(codes: Iterable[Code] | None) -> frozenset[Code]:
-    """The finding codes a run carries on past, which the exit code is worked out without."""
-    return frozenset(codes or ())
-
-
 def pairs(values: Sequence[str] | None) -> tuple[str, ...]:
     """Every `--set` override, each refused here when it is not a pair at all.
 
@@ -361,7 +331,6 @@ __all__ = [
     "Fail",
     "FailOn",
     "Fix",
-    "BuildForce",
     "Force",
     "Group",
     "Json",
@@ -378,12 +347,10 @@ __all__ = [
     "Spend",
     "Verbose",
     "When",
-    "Where",
     "Yes",
-    "allowed",
     "one_section",
     "pairs",
-    "reworded",
+    "restated",
     "sections_of",
     "shared_for",
 ]

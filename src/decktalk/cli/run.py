@@ -18,7 +18,6 @@ from decktalk.cli import session as sessions
 from decktalk.cli import watch as watching
 from decktalk.cli.app import command, docs_for
 from decktalk.cli.options import (
-    BuildForce,
     Fix,
     Force,
     Group,
@@ -85,28 +84,18 @@ OneSection = Annotated[
         help="The one section to cut the clip from, such as 3.",
     ),
 ]
-RecordAgain = Annotated[
-    bool,
-    typer.Option(
-        "--force",
-        rich_help_panel=Panel.REDOING.value,
-        help="Record every section again, even one whose recording still matches its page.",
-    ),
-]
-BuyAgain = Annotated[
-    bool,
-    typer.Option(
-        "--force",
-        rich_help_panel=Panel.REDOING.value,
-        help="Buy every item again, even one the ledger already holds, which spends again.",
-    ),
-]
-
 SOUNDSCAPE_SPENDING = {
     "no_voice": "Buy nothing: report the plan and write nothing.",
     "spend": "Buy what needs it without asking first.",
+    "force": "Buy every item again, even one the ledger already holds, which spends again.",
 }
 """The spending flags as `soundscape` means them, where the thing bought is sound rather than a voice."""
+
+RECORD_AGAIN = {"force": "Record every section again, even one whose recording still matches its page."}
+"""What `--force` redoes on `record`, which is the capture rather than the whole build."""
+
+BUILD_AGAIN = {"force": "Build again from nothing, keeping every voiced take, and measure the film again."}
+"""What `--force` redoes on `build`, which also measures the film again."""
 
 Watch = Annotated[
     bool,
@@ -164,8 +153,12 @@ def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueRe
         )
 
 
-@command(group=Group.STAGE, epilog=f"The JSON object carries run, sections and written. Docs: {docs_for('record')}")
-def record(ctx: Context, section: Sections = None, force: RecordAgain = False, set_: Overrides = None) -> RecordResult:
+@command(
+    group=Group.STAGE,
+    epilog=f"The JSON object carries run, sections and written. Docs: {docs_for('record')}",
+    helps=RECORD_AGAIN,
+)
+def record(ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None) -> RecordResult:
     """Record each page section in headless Chromium.
 
     The pages are played against the seconds the cues named, so the picture lands on its word before
@@ -183,7 +176,7 @@ def record(ctx: Context, section: Sections = None, force: RecordAgain = False, s
     helps=SOUNDSCAPE_SPENDING,
 )
 def soundscape(
-    ctx: Context, section: Sections = None, force: BuyAgain = False, set_: Overrides = None
+    ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None
 ) -> SoundscapeResult:
     """Generate the music, the ambience bed and the effects.
 
@@ -249,7 +242,7 @@ def verify(ctx: Context, section: Sections = None, set_: Overrides = None) -> Ve
         return project.verify(only=sections_of(section), cancel=session.cancel)
 
 
-@command(group=Group.WHOLE, epilog=BUILD_EPILOG, short_help=BUILD_SHORT)
+@command(group=Group.WHOLE, epilog=BUILD_EPILOG, short_help=BUILD_SHORT, helps=BUILD_AGAIN)
 def build(
     ctx: Context,
     from_stage: FromStage = None,
@@ -257,7 +250,7 @@ def build(
     skip: Skip = None,
     section: Sections = None,
     fix: Fix = None,
-    force: BuildForce = False,
+    force: Force = False,
     replace_voiced: ReplaceVoiced = False,
     set_: Overrides = None,
     watch: Watch = False,
