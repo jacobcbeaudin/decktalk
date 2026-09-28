@@ -24,6 +24,7 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Playwright
 
 from ..errors import ToolError
+from . import tail
 from .announce import announce
 
 log = logging.getLogger(__name__)
@@ -36,10 +37,6 @@ TOOL = "chromium"
 INSTALL_ARGS = ("-m", "playwright", "install", "chromium")
 # The flag that reaches sudo, named once so it is clear which call passes it and which does not.
 WITH_DEPS = "--with-deps"
-# What the download weighs, for the line printed before it starts. Playwright fetches the browser
-# and its headless shell, which came to 223 MiB on macOS arm64 in September 2026. Every platform is
-# within a few tens of megabytes of this, and the number sets an expectation rather than a promise.
-DOWNLOAD_SIZE = "about 200 MB"
 
 
 def installed_chromium(pw: Playwright) -> str | None:
@@ -58,9 +55,6 @@ def installed_chromium(pw: Playwright) -> str | None:
 
 FETCH_TIMEOUT_SECONDS = 1800
 """Calibration: half an hour, far longer than 200 MB takes on a usable connection, so only a stuck install hits it."""
-
-TAIL_LINES = 6
-"""Truth: the installer says why it failed in its last few lines, and everything above is its progress."""
 
 
 def fetch_chromium(*, with_deps: bool = False) -> None:
@@ -85,8 +79,7 @@ def fetch_chromium(*, with_deps: bool = False) -> None:
             hint="Check the network, then run `decktalk install`.",
         ) from exc
     if done.returncode != 0:
-        said = (done.stderr or done.stdout or b"").decode(errors="replace").strip().splitlines()
         raise ToolError(
-            f"playwright install failed: {' | '.join(said[-TAIL_LINES:]) or 'it said nothing'}",
+            f"playwright install failed: {tail(done.stderr or done.stdout or b'')}",
             hint="Check the network, then run `decktalk install`.",
         )

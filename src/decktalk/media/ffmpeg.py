@@ -44,7 +44,7 @@ from typing import IO
 from ..errors import Cancel, ToolError
 from ..findings import Location
 from ..settings import ToolsConfig
-from ..toolchain import ffmpeg_fetch
+from ..toolchain import ffmpeg_fetch, tail
 from ..toolchain.cache import caching_in
 from .environment import child_environment
 
@@ -109,17 +109,8 @@ def using_tools(
         TOOLS.reset(token)
 
 
-TAIL_LINES = 6
-"""Truth: ffmpeg says what it could not do in its last few lines, and everything above is what it read."""
-
 HINT_CHARS = 200
 """Truth: a hint is read in one glance beside the sentence it follows, so it carries about two lines."""
-
-
-def _tail(err: bytes) -> str:
-    """The last lines of what a tool wrote, as one line, which is where the reason for a failure is."""
-    lines = err.decode(errors="replace").strip().splitlines()
-    return " | ".join(line.strip() for line in lines[-TAIL_LINES:]) or "it said nothing"
 
 
 POLL_SECONDS = 0.1
@@ -225,7 +216,7 @@ def _checked(
         raise failed
     stderr = b"".join(err)
     if proc.returncode != 0:
-        raise ToolError(f"{what} failed: {_tail(stderr)}", location=location)
+        raise ToolError(f"{what} failed: {tail(stderr)}", location=location)
     return subprocess.CompletedProcess(cmd, proc.returncode, b"".join(out), stderr)
 
 
