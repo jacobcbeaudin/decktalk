@@ -160,11 +160,7 @@ def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
 
 
 def _segments(inputs: Inputs, run: Run) -> list[Segment]:
-    """Every section of the script, or a judgement and no sections when it cannot be read.
-
-    A script that is missing or will not parse is what this command exists to report, so it is a
-    finding rather than the refusal it is on every command that would have spent something.
-    """
+    """Every section of the script, or a judgement and no sections when it cannot be read."""
     try:
         return list(inputs.script())
     except InputError as refused:
@@ -191,12 +187,7 @@ def _plan(inputs: Inputs, run: Run, spoken: Sequence[Segment]) -> list[TakePlan]
 
 
 def _voice_id(inputs: Inputs) -> str:
-    """The voice this project would be read in, or nothing when the project has not named one yet.
-
-    A check is the command a person runs before they have a credential, so a project with no voice
-    is priced and judged rather than refused. The plan says why the cache could not be checked, and
-    the spend it prices says what is certain and what is a ceiling, so nothing here says either again.
-    """
+    """The voice this project would be read in, or nothing when the project has not named one yet."""
     try:
         return voice_id_of(inputs)
     except InputError:
@@ -233,11 +224,7 @@ def _resolve(
 
 
 def _named_pages(inputs: Inputs, paths: Sequence[Path]) -> tuple[str, ...]:
-    """Every page a caller named on the command line, as the project sees it.
-
-    A deck page no section plays yet is still a page worth judging, which is why `check` takes paths
-    at all, so a page nobody has wired into `decktalk.toml` is opened beside the ones that are.
-    """
+    """Every page a caller named on the command line, as the project sees it."""
     return tuple(dict.fromkeys(inputs.relative(inputs.path(one)).as_posix() for one in paths))
 
 
@@ -248,11 +235,7 @@ def _judged(
     sections: Sequence[PageSection],
     extra: Sequence[str],
 ) -> tuple[ProjectPath, ...]:
-    """Every file and page this call judged, project-relative and in the order it met them.
-
-    A run without pages opened none of them, so it names the script and the cue file alone. A page
-    listed by a run that never read it sends a reader looking for a judgement nobody made.
-    """
+    """Every file and page this call judged, project-relative and in the order it met them."""
     files: list[Path] = [script]
     if resolved or inputs.cues_path.is_file():
         files.append(inputs.relative(inputs.cues_path))

@@ -78,11 +78,7 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
 
 
 def _repeat_recorded(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
-    """Report again what every recording log judged, which this stage repeats and never re-measures.
-
-    A judgement a recording made is still true of the film that was cut from it, and the log is the
-    only record of it after the run that recorded it has ended.
-    """
+    """Report again what every recording log judged, which this stage repeats and never re-measures."""
     for section in inputs.document.page_sections:
         if not wanted(section.number):
             continue

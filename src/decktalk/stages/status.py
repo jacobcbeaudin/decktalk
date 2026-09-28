@@ -331,11 +331,7 @@ def section_rows(inputs: Inputs, run: Run) -> tuple[SectionStatus, ...]:
 
 
 def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool) -> bool:
-    """Whether this section's recording no longer matches the project, with the reason as a line.
-
-    The row carries the fact and the stream carries the sentence, because a reader that dispatches
-    on a boolean still wants to be told which of the several things that moved.
-    """
+    """Whether this section's recording no longer matches the project, with the reason as a line."""
     if not recorded or not isinstance(section, PageSection):
         return False
     why = stale_recording(inputs, section)

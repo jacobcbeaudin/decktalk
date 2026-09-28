@@ -245,12 +245,7 @@ def _standing(stage: Stage, inputs: Inputs, kept: Kept, key: str) -> KeptStage |
 
 
 def _keep(stage: Stage, run: Run, record: KeptStage) -> list[Finding]:
-    """Report a stage this run keeps, and report again what it found when it last ran.
-
-    A kept stage never opens, so it reports one end whose outcome says it was kept. What it found
-    is still true of the film, so each finding is reported again and the result reads as the run
-    that made it did.
-    """
+    """Report a stage this run keeps, and report again what it found when it last ran."""
     run.note(f"{stage.value.capitalize()} kept what it made last time, because nothing it reads has changed.")
     run.emit(StageDone, stage=stage, outcome=Outcome.KEPT, seconds=NOTHING)
     for found in record.findings:
@@ -286,12 +281,7 @@ def _as_json(taken: Mapping[str, object]) -> dict[str, JsonValue]:
 
 
 def _plan(stages: Sequence[Stage] | None, skip: Sequence[Stage]) -> tuple[Stage, ...]:
-    """The stages this run performs, in the pipeline's own order, with the skipped ones removed.
-
-    `stages` is the span a caller asked for, which is every stage when it names none. A run left
-    with no stage at all is refused, because a build that did nothing and exited clean is a false
-    answer to the question the caller asked.
-    """
+    """The stages this run performs, in the pipeline's own order, with the skipped ones removed."""
     wanted = set(stages) if stages is not None else set(Stage)
     plan = tuple(stage for stage in Stage if stage in wanted and stage not in set(skip))
     if not plan:
@@ -305,15 +295,7 @@ def _plan(stages: Sequence[Stage] | None, skip: Sequence[Stage]) -> tuple[Stage,
 
 
 def _require_what_the_plan_skips(inputs: Inputs, plan: tuple[Stage, ...], *, soundscape: bool) -> None:
-    """Refuse a run that reads an artifact no stage of it writes and nothing has written yet.
-
-    The list comes from `PIPELINE` and the test of each artifact from `BUILT`, so the precondition,
-    the refusal's next step and the one `status` reports are three readings of one table. A
-    recordings directory that holds some sections and not others is refused here, because the
-    encoder would otherwise meet the gap and report it as an ffmpeg message instead of a next step.
-    The soundscape is the single artifact a project may honestly have none of, so it is asked for
-    only when the project declares one and the run was not told to leave it out.
-    """
+    """Refuse a run that reads an artifact no stage of it writes and nothing has written yet."""
     for artifact in required(plan):
         if artifact is Artifact.SOUNDSCAPE and not soundscape:
             continue
@@ -340,11 +322,7 @@ def _where(inputs: Inputs, artifact: Artifact) -> Path:
 
 
 def _storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None) -> Path | None:
-    """The contact sheet a voiced run draws before it narrates, or None when nothing is bought.
-
-    The storyboard is the checkpoint before voice credits are spent, so a run that is going to spend
-    draws it first and a run that writes placeholders has nothing to check and draws none.
-    """
+    """The contact sheet a voiced run draws before it narrates, or None when nothing is bought."""
     if run.voice is not Voicing.PAID:
         return None
     answer = storyboard.storyboard(inputs, run, only=only)
@@ -352,11 +330,7 @@ def _storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None) -> Path
 
 
 def _skipped(run: Run, stage: Stage) -> StageRun:
-    """Close a stage this run leaves out, so a renderer meets every stage of the pipeline once.
-
-    A skipped stage never opens, so it reports no start and one end carrying the outcome that says
-    why, which is the one field that replaces a second event name.
-    """
+    """Close a stage this run leaves out, so a renderer meets every stage of the pipeline once."""
     run.emit(StageDone, stage=stage, outcome=Outcome.SKIPPED, seconds=NOTHING)
     return StageRun(stage=stage, outcome=Outcome.SKIPPED, seconds=NOTHING)
 
@@ -387,14 +361,7 @@ def _stopped(
     allow: Collection[Code],
     stop_on: Certainty | None,
 ) -> bool:
-    """Whether the stage that just ran judged something that stops the run, said on the stream when it did.
-
-    A finding at the threshold is a fact the run already holds, so carrying on would deliver a film
-    that is wrong in a way nobody has to watch it to discover. Only the findings that stage raised
-    are handed in, because one run carries every judgement made in it and an earlier stage's would
-    otherwise stop the run twice. `verify` is last and measures the finished film, so its findings
-    end the run rather than stop it, and they never reach here.
-    """
+    """Whether the stage that just ran judged something that stops the run, said on the stream when it did."""
     stopping = [found for found in findings if _stops(found, allow, stop_on)]
     if not stopping:
         return False
@@ -414,23 +381,14 @@ def _counted(count: int) -> str:
 
 
 def _stops(found: Finding, allow: Collection[Code], stop_on: Certainty | None) -> bool:
-    """Whether one finding stops the run, which the caller's allowed codes and threshold decide.
-
-    A cue row no page declares is the certain finding an author most often keeps on purpose,
-    because a deck under construction lists the cues of slides it has not drawn yet, and
-    `--allow CUE_UNKNOWN` is how that is said. Any other code is allowed the same way.
-    """
+    """Whether one finding stops the run, which the caller's allowed codes and threshold decide."""
     if stop_on is None or found.code in allow:
         return False
     return stop_on is Certainty.UNCERTAIN or found.certainty is Certainty.CERTAIN
 
 
 def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
-    """What the whole run cost, which is every stage that priced anything added together.
-
-    A run where nothing was priced still reports a spend, because a reader that met a null there
-    would have to know which stages price and which do not before it could say the run cost nothing.
-    """
+    """What the whole run cost, which is every stage that priced anything added together."""
     if not spends:
         return Spend(
             state=SpendState.ESTIMATE,

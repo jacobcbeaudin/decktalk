@@ -194,12 +194,7 @@ def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]
 
 
 def _anchor(chain: Chain) -> None:
-    """A silence as long as the picture, which fixes the length of the mix.
-
-    The picture carries no audio of its own, so without this layer the mix would be as long as
-    whichever other layer happened to run longest. Its length is the plan's own, which
-    `MixInput.args` writes onto the generated input.
-    """
+    """A silence as long as the picture, which fixes the length of the mix."""
     chain.layer(chain.add(LAVFI, f"anullsrc=r={chain.sample_rate}:cl=stereo"), "", "anchor")
 
 

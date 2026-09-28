@@ -119,13 +119,7 @@ def narrate(
 
 
 def _targets(inputs: Inputs, only: Sequence[int] | None) -> list[Segment]:
-    """The spoken sections this run works on, with the whole script checked before any of them.
-
-    The script is read against three rules before a plan exists: every heading has a section, the
-    headings ascend, and the spoken text holds nothing the voice would read out. The second is here
-    because the take index is the one order the narration is joined in, so a script that counts
-    backwards would place its takes in an order no other reading of the project agrees with.
-    """
+    """The spoken sections this run works on, with the whole script checked before any of them."""
     segments = inputs.script()
     out_of_order = ascending(segments)
     if out_of_order is not None:
@@ -198,11 +192,6 @@ def _write_takes(
     paid: bool,
 ) -> tuple[dict[int, Take], list[SectionTake]]:
     """Make every take this run plans, `[narration] concurrency` at a time, checkpointing after each.
-
-    A request carries its neighbours' text from the plan rather than from whatever finished before
-    it, so the order the takes arrive in changes no take. The index is written again after every
-    take under one lock, paid or not, so a run that is stopped or fails halfway keeps every take it
-    has already bought and the next run finds them in the cache rather than buying them twice.
 
     The takes a plan found on disk are indexed after the pool has finished, because a section kept
     for sharing another section's words reads the take that section is still making.
@@ -313,11 +302,7 @@ def _one_take(
 
 
 def _placed(inputs: Inputs, rows: dict[int, Take], touched: set[int]) -> dict[int, Take]:
-    """Every row of the index, with the ones this run did not touch placed by the same rule.
-
-    A section a selection left out keeps the take it already has, and is placed by its own settings
-    like every other, so its lead and its tail follow the project whichever sections this run made.
-    """
+    """Every row of the index, with the ones this run did not touch placed by the same rule."""
     spoken = {segment.index for segment in inputs.spoken()}
     return {
         number: row if number in touched else place(inputs, number, row)
