@@ -17,14 +17,15 @@ named, rather than deep inside ffmpeg.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import MISSING, dataclass, field, fields
 from pathlib import PurePosixPath
-from typing import Any
+from types import NoneType
+from typing import Any, cast, get_args, get_type_hints
 
 from decktalk.errors import InputError
 from decktalk.results import SectionKind
 from decktalk.settings import BY_ID, PROJECT_FILE, Settings
-from decktalk.tomlmap import Table, default_of, unknown_key_message
+from decktalk.tomlmap import Table, unknown_key_message
 
 log = logging.getLogger(__name__)
 
@@ -279,6 +280,29 @@ def tuning_keys(table: str) -> set[str]:
     return {key.id.rsplit(".", 1)[1] for key in BY_ID.values() if key.id.rsplit(".", 1)[0] == table}
 
 
+PATH_KEYS = ("clip", "words", "page", "file", "music", "music_markers", "ambience", "slate", "out")
+"""The text keys of the project tables that name a project file, which `get_path` keeps inside the project."""
+
+
+def fill[T](t: Table, cls: type[T], **given: object) -> T:
+    """One dataclass read from a table, each field through the getter its type names and with the default it declares.
+
+    A field in `given` is read by the caller, which is how a key with a rule of its own stays
+    explicit, and a text field named in `PATH_KEYS` is read as a project path.
+    """
+    hints = get_type_hints(cls)
+    readers: dict[type, Any] = {str: t.get_str, float: t.get_num, int: t.get_int, bool: t.get_bool}
+    values = dict(given)
+    for each in fields(cast("Any", cls)):
+        if each.name in values:
+            continue
+        kind = next(arg for arg in get_args(hints[each.name]) or (hints[each.name],) if arg is not NoneType)
+        read = t.get_path if kind is str and each.name in PATH_KEYS else readers[kind]
+        missing = each.default is MISSING
+        values[each.name] = read(each.name, required=True) if missing else read(each.name, each.default)
+    return cls(**values)
+
+
 def warn(notes: list[str]) -> None:
     """Say what the document parser found, which is where an ignored key reaches a person today."""
     for note in notes:
@@ -299,20 +323,11 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
     t = Table(raw, f"{PROJECT_FILE}: [[section]] #{index}")
     number = t.get_int("number", required=True)
     t.where = f"{PROJECT_FILE}: [[section]] number={number}"
-    chapter = t.get_str("chapter", "")
     if "clip" in raw and "page" in raw:
         raise InputError(f"{t.where}: give either 'clip' or 'page', not both")
     if "clip" in raw:
         warn_section_keys(t, clip=True)
-        return ClipSection(
-            number=number,
-            clip=t.get_path("clip", ""),
-            chapter=chapter,
-            slate_seconds=t.get_num("slate_seconds", default_of(ClipSection, "slate_seconds")),
-            optional=t.get_bool("optional"),
-            words=t.get_path("words"),
-            seamless=t.get_bool("seamless"),
-        )
+        return fill(t, ClipSection, number=number)
     if "page" not in raw:
         raise InputError(f"{t.where}: needs 'page' (an HTML file) or 'clip' (a video file)")
     warn_section_keys(t, clip=False)
@@ -332,19 +347,8 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
         value = t.get_num(key)
         if value is not None and value < 0:
             raise InputError(f"{t.where}: '{key}' must be 0 or more, got {value:g}")
-    return PageSection(
-        number=number,
-        page=page,
-        scene=str(scene),
-        chapter=chapter,
-        record_margin_seconds=t.get_num("record_margin_seconds", default_of(PageSection, "record_margin_seconds")),
-        hold_seconds=t.get_num("hold_seconds", default_of(PageSection, "hold_seconds")),
-        ambience=t.get_bool("ambience"),
-        params={str(k): str(v) for k, v in params_raw.items()},
-        seamless=t.get_bool("seamless"),
-        lead_seconds=t.get_num("lead_seconds"),
-        tail_seconds=t.get_num("tail_seconds"),
-    )
+    params = {str(k): str(v) for k, v in params_raw.items()}
+    return fill(t, PageSection, number=number, page=page, scene=str(scene), params=params)
 
 
 def parse_sections(doc: dict[str, Any]) -> list[Section]:
@@ -371,7 +375,7 @@ def parse_voice(doc: dict[str, Any]) -> Voice:
         return Voice()
     t = Table(raw, f"{PROJECT_FILE}: [voice]", table="voice")
     warn(t.note_unknown(set(Voice.__dataclass_fields__) | tuning_keys("voice")))
-    return Voice(provider=t.get_str("provider", default_of(Voice, "provider")), model=t.get_str("model"))
+    return fill(t, Voice)
 
 
 def parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
@@ -393,11 +397,7 @@ def parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
                 raise InputError(f"{t.where}: dips entry {pair!r} names a section that does not exist")
             pairs.append((pair[0], pair[1]))
         dips = tuple(pairs)
-    return Transition(
-        dips=dips,
-        dip_seconds=t.get_num("dip_seconds", default_of(Transition, "dip_seconds")),
-        page_fades_in=t.get_bool("page_fades_in", default_of(Transition, "page_fades_in")),
-    )
+    return fill(t, Transition, dips=dips)
 
 
 def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
@@ -413,40 +413,14 @@ def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
         section = s.get_int("section", required=True)
         if section not in numbers:
             raise InputError(f"{s.where}: section {section} does not exist")
-        effects.append(
-            MixEffect(
-                file=s.get_path("file", required=True),
-                section=section,
-                cue=s.get_str("cue", required=True),
-                db=s.get_num("db", default_of(MixEffect, "db")),
-                offset=s.get_num("offset", default_of(MixEffect, "offset")),
-                caption=s.get_str("caption", default_of(MixEffect, "caption")),
-            )
-        )
-    return Mix(
-        music=t.get_path("music"),
-        music_db=t.get_num("music_db", default_of(Mix, "music_db")),
-        music_duck_db=t.get_num("music_duck_db", default_of(Mix, "music_duck_db")),
-        music_fade_in_seconds=t.get_num("music_fade_in_seconds", default_of(Mix, "music_fade_in_seconds")),
-        music_fade_out_seconds=t.get_num("music_fade_out_seconds", default_of(Mix, "music_fade_out_seconds")),
-        music_markers=t.get_path("music_markers"),
-        ambience=t.get_path("ambience"),
-        ambience_db=t.get_num("ambience_db", default_of(Mix, "ambience_db")),
-        slate=t.get_path("slate"),
-        effects=tuple(effects),
-    )
+        effects.append(fill(s, MixEffect, section=section))
+    return fill(t, Mix, effects=tuple(effects))
 
 
 def parse_sound(raw: dict[str, Any], where: str) -> SoundSpec:
     t = Table(raw, where)
     warn(t.note_unknown(SoundSpec.__dataclass_fields__))
-    return SoundSpec(
-        text=t.get_str("text", required=True),
-        out=t.get_path("out"),
-        duration_seconds=t.get_num("duration_seconds"),
-        prompt_influence=t.get_num("prompt_influence"),
-        model_id=t.get_str("model_id"),
-    )
+    return fill(t, SoundSpec)
 
 
 def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
@@ -466,13 +440,7 @@ def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
     if music_raw is not None:
         m = Table(music_raw, f"{PROJECT_FILE}: [soundscape.music]")
         warn(m.note_unknown(MusicSpec.__dataclass_fields__))
-        music = MusicSpec(
-            prompt=m.get_str("prompt", required=True),
-            seconds=m.get_int("seconds", default_of(MusicSpec, "seconds")),
-            force_instrumental=m.get_bool("force_instrumental", default_of(MusicSpec, "force_instrumental")),
-            out=m.get_path("out"),
-            model_id=m.get_str("model_id"),
-        )
+        music = fill(m, MusicSpec)
     return Soundscape(
         ambience=parse_sound(amb_raw, f"{PROJECT_FILE}: [soundscape.ambience]") if amb_raw is not None else None,
         effects=effects,

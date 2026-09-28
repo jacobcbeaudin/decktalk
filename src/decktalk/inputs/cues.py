@@ -27,9 +27,10 @@ from pathlib import Path
 
 from decktalk.errors import InputError
 from decktalk.findings import Location
+from decktalk.inputs.document import fill
 from decktalk.inputs.paths import at
 from decktalk.results import Word
-from decktalk.tomlmap import Table, default_of
+from decktalk.tomlmap import Table
 
 SECTION_START = "$start"
 """The phrase that anchors a cue or a marker to its section's own beginning rather than to a spoken word."""
@@ -174,20 +175,10 @@ def parse_cue(raw: dict[str, object], where: str, location: Location | None = No
             hint=f"The keys of a cue are {', '.join(sorted(CUE_KEYS))}.",
             location=location,
         )
-    t = Table(raw, where)
-    cue_id = t.get_str("cue", required=True)
-    on = t.get_str("on", required=True)
-    if not cue_id:
+    cue = fill(Table(raw, where), Cue, occurrence_set="occurrence" in raw)
+    if not cue.cue:
         raise InputError(f"{where}: 'cue' must not be empty", location=location)
-    return Cue(
-        cue=cue_id,
-        on=on,
-        occurrence=t.get_int("occurrence", default_of(Cue, "occurrence")),
-        case_sensitive=t.get_bool("case_sensitive"),
-        offset=t.get_num("offset", default_of(Cue, "offset")),
-        verify=t.get_bool("verify", default_of(Cue, "verify")),
-        occurrence_set="occurrence" in raw,
-    )
+    return cue
 
 
 UNMATCHED = re.compile(r"[^0-9A-Za-z']")

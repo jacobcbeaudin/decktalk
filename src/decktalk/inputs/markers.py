@@ -17,8 +17,9 @@ from pathlib import Path
 
 from decktalk.errors import InputError
 from decktalk.inputs.cues import SECTION_START, json_of
+from decktalk.inputs.document import fill
 from decktalk.inputs.paths import at, relative
-from decktalk.tomlmap import Table, default_of
+from decktalk.tomlmap import Table
 
 log = logging.getLogger(__name__)
 
@@ -65,19 +66,5 @@ def load_markers(path: Path, root: Path) -> Markers:
         t = Table(raw, f"{path.name}: markers #{i + 1}", shown)
         for note in t.note_unknown(Marker.__dataclass_fields__):
             log.warning(note)
-        rows.append(
-            Marker(
-                name=t.get_str("name", ""),
-                section=t.get_int("section", required=True),
-                on=t.get_str("on", default_of(Marker, "on")),
-                offset=t.get_num("offset", default_of(Marker, "offset")),
-                occurrence=t.get_int("occurrence", default_of(Marker, "occurrence")),
-                case_sensitive=t.get_bool("case_sensitive"),
-                mute_seconds=t.get_num("mute_seconds", default_of(Marker, "mute_seconds")),
-            )
-        )
-    return Markers(
-        boost_db=top.get_num("boost_db", default_of(Markers, "boost_db")),
-        boost_seconds=top.get_num("boost_seconds", default_of(Markers, "boost_seconds")),
-        markers=tuple(rows),
-    )
+        rows.append(fill(t, Marker, name=t.get_str("name", "")))
+    return fill(top, Markers, markers=tuple(rows))
