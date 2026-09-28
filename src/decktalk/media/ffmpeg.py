@@ -208,17 +208,7 @@ def _watch(
 def _checked(
     cmd: list[str], what: str, *, location: Location | None = None, into: Sink | None = None
 ) -> subprocess.CompletedProcess[bytes]:
-    """Run one tool call and hand back what it wrote, or raise `ToolError` carrying the tail of its complaint.
-
-    Every invocation in this package comes through here, so no caller can read a failed run as a
-    measurement. The output is captured as bytes, because a decoder writes samples to stdout and a
-    filter writes its report to stderr in the same call shape. `into` takes stdout as it arrives
-    instead, for a caller that keeps a few frames of a long decode rather than all of them.
-
-    The call is watched while it runs. A cancelled run kills it and raises `Cancelled`, and a call
-    that outlives `[tools] timeout_seconds` is killed and refused as a `ToolError`, so neither a
-    stopped run nor a stuck encoder keeps a worker.
-    """
+    """Run one tool call and hand back what it wrote, or raise `ToolError` carrying the tail of its complaint."""
     bound = TOOLS.get()
     cancel = bound.cancel if bound is not None else None
     limit = bound_tools().timeout_seconds
@@ -343,14 +333,7 @@ def ffmpeg_paths() -> tuple[str, str]:
 
 
 def _resolve(tools: ToolsConfig) -> tuple[str, str]:
-    """(ffmpeg, ffprobe) executables for one set of tools, which a binding asks for once.
-
-    The keys win, and half a build is refused. The pinned build comes next,
-    fetched when it is not on disk yet, so every machine renders with the same ffmpeg. A build on
-    PATH is the fallback when there is no pinned build for this platform or the download cannot run.
-    A download whose digest does not match is never used and never falls back, because that is the
-    one failure that must stop a run.
-    """
+    """(ffmpeg, ffprobe) executables for one set of tools, which a binding asks for once."""
     _refuse_half_a_build(tools)
     if missing := missing_tools(tools):
         raise ToolError(
@@ -371,6 +354,7 @@ def _resolve(tools: ToolsConfig) -> tuple[str, str]:
         )
     try:
         return ffmpeg_fetch.fetch_ffmpeg()
+    # A digest that does not match raises ToolError and never falls back, because it must stop a run.
     except OSError as exc:
         if on_path:
             log.warning("could not download the pinned ffmpeg (%s), so %s is used instead", exc, on_path[0])
