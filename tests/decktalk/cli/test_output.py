@@ -109,7 +109,7 @@ Found 1 finding, 1 certain.
 """,
         "CheckResult": """\
 Checking build/final/demo.mp4.
-This run costs $1.50 for 1 characters at $1.50 per 1,000 characters.
+This run costs $1.50 for 1 character at $1.50 per 1,000 characters.
 Storyboard build/final/demo.mp4
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
@@ -179,7 +179,7 @@ Wrote     build/final/demo.mp4
 Found 1 finding, 1 certain.
 """,
         "InitResult": """\
-Wrote build/final/demo.mp4 from the one example, 1 files.
+Wrote build/final/demo.mp4 from the one example, 1 file.
 Next   cd build/final/demo.mp4 && decktalk build --no-voice
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
@@ -241,7 +241,7 @@ Next   one
 Found 1 finding, 1 certain.
 """,
         "StoryboardResult": """\
-Wrote build/final/demo.mp4, 1 panels.
+Wrote build/final/demo.mp4, 1 panel.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,

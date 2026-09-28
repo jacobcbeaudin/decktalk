@@ -52,6 +52,7 @@ from decktalk.results import (
     StoryboardResult,
     VerifyResult,
     WordsResult,
+    counted,
 )
 
 STAGE_COLUMN = 12
@@ -289,7 +290,9 @@ def _yes(state: bool) -> str:
 
 
 def _init(result: InitResult) -> Iterable[RenderableType]:
-    yield Text(f"Wrote {result.root.as_posix()} from the {result.example} example, {len(result.written)} files.")
+    yield Text(
+        f"Wrote {result.root.as_posix()} from the {result.example} example, {counted(len(result.written), 'file')}."
+    )
     yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-voice", style=QUIET_STYLE)
 
 
@@ -354,7 +357,7 @@ def _words(result: WordsResult) -> Iterable[RenderableType]:
 
 def _storyboard(result: StoryboardResult) -> Iterable[RenderableType]:
     where = result.storyboard.as_posix() if result.storyboard else "nothing"
-    yield Text(f"Wrote {where}, {len(result.panels)} panels.")
+    yield Text(f"Wrote {where}, {counted(len(result.panels), 'panel')}.")
 
 
 def _serve(result: ServeResult) -> Iterable[RenderableType]:
@@ -431,7 +434,7 @@ def _build(result: BuildResult) -> Iterable[RenderableType]:
     # The stages are not printed again here. Each one was reported as it ran, by the live region on
     # a terminal and by one plain line in a pipe, so this is the run's own last sentence.
     count = len(result.findings)
-    found = "nothing found" if not count else f"{count} finding{'' if count == 1 else 's'}"
+    found = "nothing found" if not count else counted(count, "finding")
     if result.stopped_at is not None:
         stopped = f"at {result.stopped_at.value}"
         yield Text(f"{'Stopped'.rjust(STAGE_COLUMN)} {stopped}, {_money(result.spend.dollars)}, {found}")

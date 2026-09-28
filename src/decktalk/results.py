@@ -158,6 +158,11 @@ class SkipReason(Enum):
     TOO_CLOSE_TO_END = "too_close_to_end"
 
 
+def counted(count: int, noun: str) -> str:
+    """A count and its noun, singular for one and plural otherwise, which every sentence that counts uses."""
+    return f"{count:,} {noun}{'' if count == 1 else 's'}"
+
+
 class Spend(Model):
     """What a run costs, priced once so a caller never works it out from a character count.
 
@@ -186,11 +191,11 @@ class Spend(Model):
         if self.state is SpendState.CHARGED:
             if self.dollars == self.ceiling_dollars == 0:
                 return "This run bought nothing."
-            return f"This run spent {_money(self.dollars)} on {self.characters:,} characters at {rate}."
+            return f"This run spent {_money(self.dollars)} on {counted(self.characters, 'character')} at {rate}."
         if self.ceiling_dollars == 0:
             return "This run buys nothing."
         if self.dollars == self.ceiling_dollars:
-            return f"This run costs {_money(self.dollars)} for {self.characters:,} characters at {rate}."
+            return f"This run costs {_money(self.dollars)} for {counted(self.characters, 'character')} at {rate}."
         if self.dollars == 0:
             return (
                 "The takes on disk could not be matched to a voice, so this run costs up to "
