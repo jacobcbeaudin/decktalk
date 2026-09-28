@@ -101,49 +101,19 @@ RUNTIME_VERSION = re.compile(r'\bvar VERSION = "([^"]+)";')
 """How the runtime bundle carries the version it reports, which is its one version literal."""
 
 
-@dataclass(frozen=True)
-class StaleRuntime:
-    """A project's copy of the runtime that is not the one this engine ships, with both of their versions."""
-
-    path: Path
-    """The copy, as the caller named it."""
-
-    version: str | None
-    """The version the copy carries, or None when it carries none this engine can read."""
-
-    shipped: str | None
-    """The version the engine's own runtime carries."""
-
-    @property
-    def sentence(self) -> str:
-        """What a reader is told about this copy, with both versions named when they differ."""
-        theirs = f"version {self.version}" if self.version else "no version this engine can read"
-        where = self.path.as_posix()
-        if self.version is not None and self.version == self.shipped:
-            return (
-                f"{where} is not the runtime this engine ships, although both say version {self.version}, so the "
-                "page may play a contract this engine does not measure. Run `decktalk init` into an empty "
-                "directory and copy its runtime over this one."
-            )
-        return (
-            f"{where} carries {theirs} and this engine ships version {self.shipped}, so the page plays a "
-            "contract this engine does not measure. Run `decktalk init` into an empty directory and copy its "
-            "runtime over this one."
-        )
-
-
 def runtime_version(text: str) -> str | None:
     """The version a runtime bundle carries, or None when it carries none this engine can read."""
     found = RUNTIME_VERSION.search(text)
     return found.group(1) if found else None
 
 
-def stale_runtime(copy: Path, named: Path | None = None) -> StaleRuntime | None:
-    """The copy at `copy` when it is not the runtime this engine ships, or None when it is, or is not there.
+def stale_runtime(copy: Path, named: Path | None = None) -> str | None:
+    """What a reader is told about the copy at `copy` when it is not the runtime this engine ships, or None.
 
     The two files are compared whole rather than by the version they carry, because an engine built
     between two releases ships a runtime that still carries the last release's version. `named` is
-    how the caller wants the copy named, which is its path inside the project.
+    how the caller wants the copy named, which is its path inside the project. Both versions are
+    named when they differ.
     """
     if not copy.is_file():
         return None
@@ -151,10 +121,19 @@ def stale_runtime(copy: Path, named: Path | None = None) -> StaleRuntime | None:
     theirs = copy.read_bytes()
     if theirs == ours:
         return None
-    return StaleRuntime(
-        path=named or copy,
-        version=runtime_version(theirs.decode("utf-8", errors="replace")),
-        shipped=runtime_version(ours.decode("utf-8", errors="replace")),
+    version = runtime_version(theirs.decode("utf-8", errors="replace"))
+    shipped = runtime_version(ours.decode("utf-8", errors="replace"))
+    where = (named or copy).as_posix()
+    advice = "Run `decktalk init` into an empty directory and copy its runtime over this one."
+    if version is not None and version == shipped:
+        return (
+            f"{where} is not the runtime this engine ships, although both say version {version}, so the page "
+            f"may play a contract this engine does not measure. {advice}"
+        )
+    theirs_said = f"version {version}" if version else "no version this engine can read"
+    return (
+        f"{where} carries {theirs_said} and this engine ships version {shipped}, so the page plays a contract "
+        f"this engine does not measure. {advice}"
     )
 
 

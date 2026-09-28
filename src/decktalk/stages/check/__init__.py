@@ -155,7 +155,7 @@ def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
         copy = inputs.path(named)
         stale = stale_runtime(copy, named)
         if stale is not None:
-            run.found(judge(Code.PAGE_RUNTIME_STALE, stale.sentence, at(copy, inputs.root)))
+            run.found(judge(Code.PAGE_RUNTIME_STALE, stale, at(copy, inputs.root)))
 
 
 def _segments(inputs: Inputs, run: Run) -> list[Segment]:

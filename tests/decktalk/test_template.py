@@ -130,9 +130,9 @@ def test_a_copy_an_older_engine_wrote_names_both_versions(tmp_path: Path) -> Non
     copy.write_text('(() => {\n  var VERSION = "0.4.0";\n})();\n', encoding="utf-8")
     stale = stale_runtime(copy, Path("deck") / assets.RUNTIME_FILE)
     shipped = runtime_version(assets.runtime_path().read_text(encoding="utf-8"))
-    assert stale is not None and (stale.version, stale.shipped) == ("0.4.0", shipped)
-    assert "deck/decktalk-runtime.js carries version 0.4.0" in stale.sentence
-    assert f"ships version {shipped}" in stale.sentence
+    assert stale is not None
+    assert "deck/decktalk-runtime.js carries version 0.4.0" in stale
+    assert f"ships version {shipped}" in stale
 
 
 def test_an_edited_copy_is_stale_although_it_names_the_same_version(tmp_path: Path) -> None:
@@ -140,8 +140,7 @@ def test_an_edited_copy_is_stale_although_it_names_the_same_version(tmp_path: Pa
     copy = tmp_path / assets.RUNTIME_FILE
     copy.write_text(assets.runtime_path().read_text(encoding="utf-8") + "\n// edited\n", encoding="utf-8")
     stale = stale_runtime(copy)
-    assert stale is not None and stale.version == stale.shipped
-    assert "although both say version" in stale.sentence
+    assert stale is not None and "although both say version" in stale
 
 
 def test_a_project_with_no_copy_has_nothing_stale(tmp_path: Path) -> None:
