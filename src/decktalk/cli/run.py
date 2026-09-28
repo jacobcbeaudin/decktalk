@@ -346,11 +346,7 @@ def _replacing(session: sessions.Session, asked: bool) -> bool:
     Without a terminal the flag is the authorisation, because a run that was told to replace a take
     was told so on purpose and the safe default without the flag is to keep every take.
     """
-    if not asked:
-        return False
-    if session.asks and not session.confirm("This discards every take it replaces. Carry on?"):
-        return False
-    return True
+    return asked and (not session.asks or session.confirm("This discards every take it replaces. Carry on?"))
 
 
 __all__ = ["assemble", "build", "clip", "cue", "narrate", "record", "soundscape", "verify"]

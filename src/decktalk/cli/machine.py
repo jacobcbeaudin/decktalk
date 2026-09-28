@@ -58,7 +58,9 @@ def init(
     session = sessions.of(ctx)
     root = directory.expanduser()
     chosen, picked, skills = _guided(session, root, name=name, example=example, no_skills=no_skills, ask=not defaults)
-    if _occupied(root) and not overwrite and not _agreed(session, root):
+    if _occupied(root) and not session.approve(
+        overwrite or None, f"{root.name} is not empty. Write the project into it?"
+    ):
         raise session.refuse(
             f"{root.name} already holds files, and writing a project over them could lose work.",
             hint=f"Run decktalk init {directory} --overwrite to write into it anyway.",
@@ -96,11 +98,6 @@ def _guided(
 def _occupied(root: Path) -> bool:
     """True when the directory holds anything at all, which is what makes `init` a different risk."""
     return root.is_dir() and any(root.iterdir())
-
-
-def _agreed(session: sessions.Session, root: Path) -> bool:
-    """Whether a person at a terminal said to write into a directory that already holds files."""
-    return session.asks and session.confirm(f"{root.name} is not empty. Write the project into it?")
 
 
 @command(group=Group.MACHINE, epilog=INSTALL_EPILOG)
@@ -148,18 +145,11 @@ def doctor(
     session = sessions.of(ctx)
     with session.watching(session.machine.events):
         reported = session.machine.doctor(measure=measure, cancel=session.cancel)
-    if reported.findings and _fixing(session, fix):
+    if reported.findings and session.approve(fix, "Fetch what is missing now?", default=True):
         session.machine.apply(reported.findings)
         with session.watching(session.machine.events):
             return session.machine.doctor(measure=measure, cancel=session.cancel)
     return reported
-
-
-def _fixing(session: sessions.Session, fix: bool | None) -> bool:
-    """Whether the safe fixes are applied, which the flag decides and a terminal may be asked."""
-    if fix is not None:
-        return fix
-    return session.asks and session.confirm("Fetch what is missing now?", default=True)
 
 
 __all__ = ["doctor", "init", "install"]

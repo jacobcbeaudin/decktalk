@@ -156,7 +156,7 @@ def unset_key(
             f"{path.as_posix()} is not there, so it sets nothing to remove.",
             hint=f"Run decktalk config set {key} VALUE first.",
         )
-    going = _stating(path, key, asked=_asked(session, key, whole=whole))
+    going = _stating(path, key, asked=session.approve(whole or None, f"Remove everything {key} sets?"))
     removed = tuple(knobs.unset(path, one, scope=where, environ=session.machine.environ) for one in going)
     first = removed[0]
     return ConfigUnsetResult(
@@ -279,15 +279,6 @@ def _loaded(session: sessions.Session) -> knobs.Loaded:
         machine_path=machine.config_path,
         environ=machine.environ,
     )
-
-
-def _asked(session: sessions.Session, key: str, *, whole: bool) -> bool:
-    """Whether a whole table may go, which one key never needs and a table needs `--all` or a person."""
-    if whole:
-        return True
-    if not session.asks:
-        return False
-    return session.confirm(f"Remove everything {key} sets?")
 
 
 def _stating(path: Path, key: str, *, asked: bool) -> tuple[str, ...]:

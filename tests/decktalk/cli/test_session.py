@@ -107,6 +107,17 @@ def test_nothing_is_asked_under_no_input_on_a_terminal() -> None:
     assert not made.asks
 
 
+def test_a_flag_answers_before_a_terminal_is_asked(monkeypatch: pytest.MonkeyPatch) -> None:
+    made = session()
+    made.terminal = terminal()
+    monkeypatch.setattr(made, "confirm", lambda question, *, default=False: question == "Carry on?" or default)
+    assert made.approve(False, "Carry on?") is False
+    assert made.approve(True, "Stop?") is True
+    assert made.approve(None, "Carry on?") is True
+    made.terminal = terminal(is_terminal=False)
+    assert made.approve(None, "Carry on?", default=True) is False
+
+
 def test_a_spend_with_no_terminal_refuses_and_names_both_flags() -> None:
     made = session()
     made.terminal = terminal(is_terminal=False)

@@ -146,14 +146,11 @@ class Session:
     def fixes_wanted(self, findings: Sequence[Finding], fix: bool | None) -> list[Finding]:
         """The findings whose fixes the caller wants applied, asked once on a terminal, or none.
 
-        `fix` is the caller's own answer when it gave one. Without it a terminal is asked, and a run
-        with no terminal applies nothing, so an agent applies the fixes itself from the objects it holds.
+        A run with no terminal and no `fix` applies nothing, so an agent applies the fixes itself
+        from the objects it holds.
         """
         offered = [found for found in findings if found.fix is not None]
-        if not offered:
-            return []
-        wanted = fix if fix is not None else self.asks and self.confirm(f"Apply {len(offered)} fixes?")
-        return offered if wanted else []
+        return offered if offered and self.approve(fix, f"Apply {len(offered)} fixes?") else []
 
     # ---- the stream -------------------------------------------------------------------------
 
@@ -194,6 +191,12 @@ class Session:
     def asks(self) -> bool:
         """True when this run may ask a person a question, which needs a terminal and no `--no-input`."""
         return self.terminal.is_terminal and not self.flags.no_input and not self.flags.json_out
+
+    def approve(self, flag: bool | None, question: str, *, default: bool = False) -> bool:
+        """The caller's own answer when a flag gave one, else a person's on a terminal, else no."""
+        if flag is not None:
+            return flag
+        return self.asks and self.confirm(question, default=default)
 
     def confirm(self, question: str, *, default: bool = False) -> bool:
         """Ask one yes or no question on stderr, which is only ever called when `asks` is true."""
