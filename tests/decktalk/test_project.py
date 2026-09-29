@@ -360,6 +360,27 @@ def test_a_check_that_opens_pages_holds_the_build_and_one_that_reads_alone_does_
 
 
 @pytest.mark.usefixtures("fake_stages")
+@pytest.mark.parametrize("planted", ["link", "directory"])
+def test_a_lock_file_that_cannot_be_a_lock_is_a_refusal_that_names_it(tmp_path: Path, planted: str) -> None:
+    """A link inside the build stays inside, so confinement lets it through, and the lock must refuse it."""
+    project = a_project(tmp_path)
+    build = project.workspace.build
+    build.mkdir(parents=True, exist_ok=True)
+    (build / "kept.json").write_text("{}", encoding="utf-8")
+    try:
+        if planted == "link":
+            (build / LOCK_FILE).symlink_to(build / "kept.json")
+        else:
+            (build / LOCK_FILE).mkdir()
+    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
+        pytest.skip("this machine does not let an unprivileged user make a link")
+    with pytest.raises(InputError, match=r"\.lock cannot be used as the build lock") as refused:
+        project.cue()
+    assert refused.value.code is ErrorCode.INPUT
+    assert (build / "kept.json").read_text(encoding="utf-8") == "{}"
+
+
+@pytest.mark.usefixtures("fake_stages")
 def test_a_second_writer_is_refused_while_the_first_holds_the_build(tmp_path: Path) -> None:
     """The trigger is a build run by hand under a live watch loop, not a service."""
     project = a_project(tmp_path)

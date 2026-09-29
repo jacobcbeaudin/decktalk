@@ -551,6 +551,15 @@ class Project:
                 hint="Wait for that run to finish, or stop it and run this again.",
                 location=at(path, self.root),
             ) from None
+        except OSError as unusable:
+            # filelock opens the file without following a link, so a link planted inside the build,
+            # which confinement lets through because it stays inside, is refused here, as is a
+            # directory under the lock's name.
+            raise InputError(
+                f"{LOCK_FILE} cannot be used as the build lock ({unusable.strerror or unusable}).",
+                hint=f"Delete {LOCK_FILE} from the build directory and run again.",
+                location=at(path, self.root),
+            ) from unusable
         with held:
             if _read_owner(note) is not None:
                 gone = f"A run that is no longer there left {OWNER_FILE} behind, so this run took it."
