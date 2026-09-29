@@ -7,9 +7,11 @@ the lock it holds, the arguments it hands down and the result it insists on.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import types
+import urllib.request
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -25,6 +27,7 @@ from decktalk.events import Event, Level, Log
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain
+from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
 from decktalk.project import LOCK_FILE, OWNER_FILE, Origin, Project, section_numbers, stage_call
 from decktalk.results import (
@@ -534,3 +537,10 @@ def test_an_origin_is_closed_by_leaving_the_block_it_was_opened_in(tmp_path: Pat
         assert origin.result.root == Path()
     with pytest.raises(OSError, match="Bad file descriptor|closed"):
         origin._server.socket.getsockname()
+
+
+def test_a_served_preview_reads_its_cue_times_from_the_alias_the_recorder_uses(tmp_path: Path) -> None:
+    """A preview has no recorder to put its cues in its URL, so the origin answers the one alias."""
+    project = a_project(tmp_path)
+    with project.serve(port=0) as origin, urllib.request.urlopen(origin.result.url + PREVIEW_CUE_TIMES) as sent:
+        assert json.loads(sent.read()) == project.inputs.preview_cues()

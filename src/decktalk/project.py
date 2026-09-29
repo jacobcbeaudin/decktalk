@@ -457,7 +457,8 @@ class Project:
         from decktalk.media.origin import Allowed, open_server, served_url  # noqa: PLC0415
 
         with self._open(writes=False) as run:
-            server = open_server(Allowed.of(self.root, self.inputs.served_paths()), host, port)
+            allowed = Allowed.of(self.root, self.inputs.served_paths())
+            server = open_server(allowed, host, port, self.inputs.documents())
             result = run.result(
                 ServeResult,
                 url=served_url(server),
