@@ -11,7 +11,8 @@ where unset says exactly what happens: the override is removed and the layer bel
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -25,6 +26,7 @@ from decktalk.cli.app import CONTEXT, DeckTalkGroup, app, command
 from decktalk.cli.catalog import json_value
 from decktalk.cli.options import Group
 from decktalk.errors import InputError
+from decktalk.events import Level
 from decktalk.explain import explain as explained
 from decktalk.results import (
     ConfigExplainResult,
@@ -78,7 +80,8 @@ def list_keys(
     once, and `config explain` is the call that reads one whole.
     """
     session = sessions.of(ctx)
-    return ConfigListResult(ok=True, keys=_rows(session, table, defaults=defaults, changed=changed))
+    with _told(session):
+        return ConfigListResult(ok=True, keys=_rows(session, table, defaults=defaults, changed=changed))
 
 
 @command("get", group=Group.CONTRACTS, to=config)
@@ -86,7 +89,8 @@ def get_key(ctx: Context, key: Named) -> ConfigGetResult:
     """Print one key's value and the layer that set it."""
     session = sessions.of(ctx)
     known = _known(key)
-    here = _loaded(session)
+    with _told(session):
+        here = _loaded(session)
     winner = here.layers.winner(known.id)
     return ConfigGetResult(
         ok=True,
@@ -116,7 +120,8 @@ def set_key(
     session = sessions.of(ctx)
     path = _file(session, where)
     try:
-        written = knobs.write(path, key, value, scope=where, environ=session.machine.environ, dry_run=dry_run)
+        with _told(session):
+            written = knobs.write(path, key, value, scope=where, environ=session.machine.environ, dry_run=dry_run)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
     return ConfigSetResult(ok=True, written=() if dry_run else (written.file,), **_shared(written, ConfigSetResult))
@@ -148,7 +153,8 @@ def unset_key(
             hint=f"Run decktalk config set {key} VALUE first.",
         )
     going = _stating(path, key, asked=session.approve(whole or None, f"Remove everything {key} sets?"))
-    removed = tuple(knobs.unset(path, one, scope=where, environ=session.machine.environ) for one in going)
+    with _told(session):
+        removed = tuple(knobs.unset(path, one, scope=where, environ=session.machine.environ) for one in going)
     return ConfigUnsetResult(
         ok=True,
         written=(path,),
@@ -171,10 +177,11 @@ def explain_key(
     does it move.
     """
     session = sessions.of(ctx)
-    root = session.flags.project or Path.cwd()
+    root = _root(session)
     here = root if (root / knobs.PROJECT_FILE).exists() else None
     try:
-        read = explained(key, project=here, value=value, machine=session.machine)
+        with _told(session):
+            read = explained(key, project=here, value=value, machine=session.machine)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
     winner = next((layer for layer in read.layers if layer.layer is read.winner), None)
@@ -186,6 +193,28 @@ def explain_key(
         line=winner.line if winner else None,
         **_shared(read, ConfigExplainResult),
     )
+
+
+@contextmanager
+def _told(session: sessions.Session) -> Iterator[None]:
+    """Say what the machine and the project file hold that DeckTalk does not read, then run the verb.
+
+    A misspelled key or `DECKTALK_` variable is ignored, so the value these verbs report is the
+    default it left in force, and the sentence that names the typo is what explains that default. A
+    verb opens a run on the machine for that reason alone, because a run is where the machine says
+    what it noticed and where a renderer is listening.
+    """
+    root = _root(session)
+    project = knobs.read_project_toml(root) if (root / knobs.PROJECT_FILE).is_file() else {}
+    with session.watching(session.machine.events), session.machine.run() as run:
+        for note in knobs.key_warnings(project, knobs.PROJECT_FILE):
+            run.note(note, level=Level.WARNING)
+        yield
+
+
+def _root(session: sessions.Session) -> Path:
+    """The project directory these verbs act on, which is the one `-p` names or the working directory."""
+    return session.flags.project or Path.cwd()
 
 
 def _shared(record: BaseModel, result: type[Result], **stated: object) -> dict[str, Any]:
@@ -243,7 +272,7 @@ def _unknown(key: str) -> typer.BadParameter:
 
 def _loaded(session: sessions.Session) -> knobs.Loaded:
     """Every layer resolved for this directory, which answers about the machine when no project is here."""
-    root = session.flags.project or Path.cwd()
+    root = _root(session)
     machine = session.machine
     return knobs.load(
         root if (root / knobs.PROJECT_FILE).exists() else None,
@@ -290,7 +319,7 @@ def _file(session: sessions.Session, where: Scope) -> Path:
     """The file a write lands in, which is the project's own or this machine's."""
     if where is Scope.MACHINE:
         return session.machine.config_path
-    return (session.flags.project or Path.cwd()) / knobs.PROJECT_FILE
+    return _root(session) / knobs.PROJECT_FILE
 
 
 def _refused(failure: InputError, hint: str) -> typer.BadParameter:

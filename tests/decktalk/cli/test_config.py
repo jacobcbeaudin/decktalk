@@ -161,3 +161,22 @@ def test_the_five_verbs_are_registered_on_the_one_nested_group() -> None:
     assert {"list", "get", "set", "unset", "explain"} == {
         registered.name for registered in commands.config.registered_commands
     }
+
+
+@pytest.mark.parametrize(
+    "verb", [("list",), ("get", "video.crf"), ("set", "video.width", "1280"), ("explain", "video.crf")]
+)
+def test_every_config_verb_says_a_project_key_is_misspelled(run, project_dir, verb) -> None:
+    """The command that says which layer set a key is the one that must say a typo left it at its default."""
+    toml = project_dir / "decktalk.toml"
+    toml.write_text(toml.read_text(encoding="utf-8") + "\n[video]\ncrff = 20\n", encoding="utf-8")
+    ran = run("-p", str(project_dir), "config", *verb)
+    assert ran.exit_code == 0, ran.err
+    assert "ignoring unknown key 'crff' (did you mean 'crf'?)" in ran.err
+
+
+def test_a_config_verb_says_a_decktalk_variable_is_misspelled(run, project_dir, monkeypatch) -> None:
+    monkeypatch.setenv("DECKTALK_VIDEO_CRFF", "20")
+    ran = run("-p", str(project_dir), "config", "get", "video.crf")
+    assert ran.exit_code == 0, ran.err
+    assert "DECKTALK_VIDEO_CRFF" in ran.err and "DECKTALK_VIDEO_CRF" in ran.err.replace("DECKTALK_VIDEO_CRFF", "")
