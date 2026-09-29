@@ -80,6 +80,9 @@ dev = [
     # A property test states a rule over every input and draws the examples, where a list of cases
     # names the ones its author thought of. `tests/conftest.py` fixes the seed, so every run agrees.
     "hypothesis>=6.168",
+    # `scripts/build_assets.py` traces the wordmark's letters out of a WOFF2 face, and fontTools reads
+    # WOFF2 only with the Brotli decoder its `woff` extra brings.
+    "fonttools[woff]>=4.50",
     # `contract/test_results.py` validates every real output against the committed JSON Schema, so the
     # validator is a development dependency rather than something the schema generator reimplements.
     # What a renderer writes is held as the literal text in the test. CI only ever compares: the `CI`
@@ -92,8 +95,8 @@ dev = [
     "pytest-timeout>=2.3",
     # The unit row runs under `-n auto`, which halves the time every push waits on.
     "pytest-xdist>=3.6",
-    # `scripts/test_check.py` reads `ci.yml` against the check table, so the workflow is parsed as the
-    # YAML it is rather than searched as text.
+    # `scripts/check_docs_links.py` parses each page's front matter, and `scripts/test_check.py` reads
+    # `ci.yml` against the check table, so both read YAML as the YAML it is rather than search it as text.
     "pyyaml>=6",
     "ruff>=0.16.8",
     "ty>=0.0.83",

@@ -1,7 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["pyyaml>=6"]
-# ///
 """Check every page's front matter, every internal link in docs/ and the navigation in docs/docs.json.
 
     uv run scripts/check_docs_links.py            # print what was checked, and every problem

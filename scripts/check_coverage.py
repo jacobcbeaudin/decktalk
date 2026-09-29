@@ -33,10 +33,9 @@ takes a different branch here and there: a timeout that fires, a page that answe
 asked. That is a fact about the machine rather than about the change, so the gate is the recorded
 measurement less `MARGIN`, and a real regression is far larger than that.
 
-This script carries no `# /// script` header, unlike every other script here, because it reads the
-coverage data through the same `coverage` the suite wrote it with. The other two commands of the
-`coverage` group run from the project environment for the same reason, so all three agree about what
-a run scored.
+This script carries no `# /// script` header because it reads the coverage data through the same
+`coverage` the suite wrote it with. The other two commands of the `coverage` group run from the
+project environment for the same reason, so all three agree about what a run scored.
 
 The record holds whole percentages. A fraction of a point moves with a runner's own skip set and is
 not a fact about the code, so the record rounds down and reads as a floor rather than as a

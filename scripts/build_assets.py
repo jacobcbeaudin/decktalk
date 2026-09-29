@@ -1,7 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["playwright>=1.50", "fonttools[woff]>=4.50"]
-# ///
 """Generate every graphic from one source. The graphics are the hero, how-it-works (wide and
 stacked), the pipeline, narration zero, the verify probes and onset, the edit cycle, the narration
 split, the duck lane, the cue offset, the mark and its lockups, the favicon set, the social card
@@ -49,6 +45,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 import generated
+from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.ttLib import TTFont
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -230,15 +229,7 @@ def glyph_outlines(text: str, size: float, tracking: float) -> tuple[str, float]
 
     The display face (a static instance at the wordmark's weight) places each glyph by its own
     advance width, with `tracking` (in em) added between letters.
-
-    fontTools is not a dependency of the project. The one command that runs this generator adds it,
-    so the tracer's imports sit in the only function that traces and every other part of the file,
-    including the comparison its own test judges, imports with the project alone.
     """
-    from fontTools.pens.svgPathPen import SVGPathPen  # noqa: PLC0415  (fontTools is the wordmark's, not the project's)
-    from fontTools.pens.transformPen import TransformPen  # noqa: PLC0415
-    from fontTools.ttLib import TTFont  # noqa: PLC0415
-
     font = TTFont(FONTS / DISPLAY_FACE[1])
     scale = size / font["head"].unitsPerEm
     cmap = font.getBestCmap()
