@@ -85,12 +85,6 @@ def test_the_frame_step_is_the_capture_rate_written_the_other_way_round():
     assert 1000 / CAPTURE_FPS == FRAME_STEP_MS
 
 
-def test_a_reduced_render_never_scales_a_span_past_the_ceiling():
-    """The reduced motion scale multiplies a declared span, so it is clamped by the same one number."""
-    assert page.measurable(page.scaled(page.ENTRANCES["draw"].seconds, 4))
-    assert page.scaled(0.1, 2) == pytest.approx(0.2)
-
-
 def test_a_staggers_whole_span_is_its_step_per_earlier_child_plus_one_entrance():
     """The arithmetic is exact, which is why the overrun it can cause is a certain finding."""
     assert page.stagger_span(0.08, 4, 0.32) == pytest.approx(0.56)
@@ -98,9 +92,8 @@ def test_a_staggers_whole_span_is_its_step_per_earlier_child_plus_one_entrance()
     assert not page.measurable(page.stagger_span(0.08, 4, 0.32))
 
 
-def test_a_moment_qualifies_into_the_id_the_project_file_carries():
-    """The page owns a name local to its slide, and the wire id is what `cues.json` is keyed by."""
-    assert page.wire_id("4.1", "expand") == "4.1:expand"
+def test_an_element_has_four_moments_in_the_order_it_meets_them():
+    """It arrives, steps back, comes to the front and leaves, and each of those names a cue."""
     assert page.MOMENTS == (Attr.IN, Attr.BACK, Attr.FRONT, Attr.OUT)
 
 
@@ -164,13 +157,14 @@ def test_the_page_codes_carry_the_same_certainty_the_finding_codes_carry():
 
 
 CONTRACT_CASES = ROOT / "tests" / "data" / "contract_cases.json"
-"""The table of cases both languages answer, which node runs against the TypeScript and this runs against Python."""
+"""The table of cases node runs against the TypeScript, and this runs against every function Python also computes."""
 
 
 def contract_cases() -> list[tuple[str, list[object], object]]:
-    """Every row of the shared case table, named by the function it calls."""
+    """Every row of the shared case table whose function the generated Python publishes, named by that function."""
     table = json.loads(CONTRACT_CASES.read_text(encoding="utf-8"))
-    return [(name, row["args"], row["want"]) for name, rows in table.items() if isinstance(rows, list) for row in rows]
+    named = [(name, rows) for name, rows in table.items() if isinstance(rows, list) and name in page.__all__]
+    return [(name, row["args"], row["want"]) for name, rows in named for row in rows]
 
 
 @pytest.mark.parametrize(("name", "args", "want"), contract_cases())

@@ -1,19 +1,19 @@
 """The banner `scripts/build_runtime.py` writes on the runtime bundle, which is how a copy names its engine.
 
-`decktalk init` copies the runtime into a project, and the check that the copy matches the engine
-reads the copy's first line without a browser. These tests hold the committed bundles to the line the
-generated page module formats, so the writer of the banner and its reader cannot drift apart. The
-bundles themselves are held to their sources by `build_runtime.py --check` in the generated group.
+`decktalk init` copies the runtime into a project, and a person who opens that copy reads which
+engine shipped it on its first line. The committed bundles are held to their sources by
+`build_runtime.py --check`, which builds both sides the same way, so these tests are what holds the
+banner to the first line once the formatter has run.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
 
-from decktalk import page
 from support.paths import REPO
 
 
@@ -39,20 +39,14 @@ def first_line(path: Path) -> str:
         return handle.readline().rstrip("\n")
 
 
+MARK: str = json.loads(build_runtime.CONTRACT_JSON.read_text(encoding="utf-8"))["runtimeMark"]
+"""The name the banner gives before the version, read from the committed contract."""
+
+
 def test_the_runtime_bundle_opens_with_the_banner_of_this_engine() -> None:
     version = build_runtime.engine_version()
-    assert first_line(RUNTIME / build_runtime.BANNERED) == page.runtime_banner(version)
-
-
-def test_the_writer_and_the_reader_spell_the_banner_the_same_way() -> None:
-    data = {"runtimeMark": page.RUNTIME_MARK}
-    assert build_runtime.banner(data) == page.runtime_banner(build_runtime.engine_version())
-
-
-def test_a_banner_names_the_version_it_was_given() -> None:
-    assert page.runtime_banner("9.9.9") == f"/*! {page.RUNTIME_MARK} 9.9.9 */"
-    assert page.runtime_banner("9.9.9") != page.runtime_banner("9.9.10")
+    assert first_line(RUNTIME / build_runtime.BANNERED) == f"/*! {MARK} {version} */"
 
 
 def test_the_probe_carries_no_banner_because_no_project_copies_it() -> None:
-    assert page.RUNTIME_MARK not in first_line(RUNTIME / "decktalk-probe.js")
+    assert MARK not in first_line(RUNTIME / "decktalk-probe.js")
