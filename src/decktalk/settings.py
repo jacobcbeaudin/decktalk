@@ -913,6 +913,11 @@ class Number:
         """Whether this number is computed from the keys or fixed, which is what `x-numbers` publishes."""
         return "derived" if self.nature is Nature.DERIVED else "constant"
 
+    @classmethod
+    def fixed(cls, name: str, value: float, unit: str, nature: Nature, sentence: str) -> Number:
+        """A number that reads no key, whose formula is its own value and whose value never moves."""
+        return cls(name, str(value), (), unit, nature, sentence, lambda _settings: value)
+
 
 def probe_width(settings: Settings) -> int:
     """The width every frame is scaled to before a comparison, which is a quarter of the frame."""
@@ -996,62 +1001,50 @@ NUMBERS: tuple[Number, ...] = (
         at=reference_lead_seconds,
         decides=(Code.CUE_OFF, Code.CUE_NO_ONSET),
     ),
-    Number(
-        id="CAPTURE_FPS",
-        formula=str(CAPTURE_FPS),
-        reads=(),
-        unit="frames per second",
-        nature=Nature.TRUTH,
-        sentence="Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for.",
-        at=lambda _settings: CAPTURE_FPS,
+    Number.fixed(
+        "CAPTURE_FPS",
+        CAPTURE_FPS,
+        "frames per second",
+        Nature.TRUTH,
+        "Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for.",
     ),
-    Number(
-        id="BLOCK_PX",
-        formula=str(BLOCK_PX),
-        reads=(),
-        unit="pixels",
-        nature=Nature.TRUTH,
-        sentence="Truth: the H.264 transform block the block-averaged copy of a frame cancels ringing over.",
-        at=lambda _settings: BLOCK_PX,
+    Number.fixed(
+        "BLOCK_PX",
+        BLOCK_PX,
+        "pixels",
+        Nature.TRUTH,
+        "Truth: the H.264 transform block the block-averaged copy of a frame cancels ringing over.",
     ),
-    Number(
-        id="GUARD_FRAMES",
-        formula=str(GUARD_FRAMES),
-        reads=(),
-        unit="frames",
-        nature=Nature.TRUTH,
-        sentence="Truth: half a frame of rounding guard on each side of the window the offset limit allows.",
-        at=lambda _settings: GUARD_FRAMES,
+    Number.fixed(
+        "GUARD_FRAMES",
+        GUARD_FRAMES,
+        "frames",
+        Nature.TRUTH,
+        "Truth: half a frame of rounding guard on each side of the window the offset limit allows.",
     ),
-    Number(
-        id="REPORT_FRAME_GAP_MS",
-        formula=str(REPORT_FRAME_GAP_MS),
-        reads=(),
-        unit="milliseconds",
-        nature=Nature.CALIBRATION,
-        sentence="Calibration: the runtime's own reporting floor, under which a frame gap cannot be seen.",
-        at=lambda _settings: REPORT_FRAME_GAP_MS,
+    Number.fixed(
+        "REPORT_FRAME_GAP_MS",
+        REPORT_FRAME_GAP_MS,
+        "milliseconds",
+        Nature.CALIBRATION,
+        "Calibration: the runtime's own reporting floor, under which a frame gap cannot be seen.",
     ),
-    Number(
-        id="CLICK_LEVEL_DBFS",
-        formula=str(CLICK_LEVEL_DBFS),
-        reads=(),
-        unit="dBFS",
-        nature=Nature.TRUTH,
-        sentence="Truth: the level DeckTalk generates its own click at, which every click floor sits under.",
-        at=lambda _settings: CLICK_LEVEL_DBFS,
+    Number.fixed(
+        "CLICK_LEVEL_DBFS",
+        CLICK_LEVEL_DBFS,
+        "dBFS",
+        Nature.TRUTH,
+        "Truth: the level DeckTalk generates its own click at, which every click floor sits under.",
     ),
-    Number(
-        id="MEASURABLE_SPAN_SECONDS",
-        formula=str(MEASURABLE_SPAN_SECONDS),
-        reads=(),
-        unit="seconds",
-        nature=Nature.TRUTH,
-        sentence=(
+    Number.fixed(
+        "MEASURABLE_SPAN_SECONDS",
+        MEASURABLE_SPAN_SECONDS,
+        "seconds",
+        Nature.TRUTH,
+        (
             "Truth: the span at which an effect covers its own cue, which is the ceiling every declared "
             "span, every scaled span and every staggered total is held under."
         ),
-        at=lambda _settings: MEASURABLE_SPAN_SECONDS,
     ),
 )
 """Every number that is not a knob, with the formula or the fact that fixes it."""
