@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -31,8 +32,10 @@ def invoked(script: Path, *flags: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.parametrize("script", GENERATORS, ids=lambda path: path.name)
-def test_a_generator_hands_its_files_to_the_runner(script: Path) -> None:
-    assert "generated.run(" in script.read_text(encoding="utf-8"), f"{script.name} does not use scripts/generated.py"
+def test_a_generator_hands_its_files_to_the_runner_and_exits_with_its_answer(script: Path) -> None:
+    """A generator that dropped the runner's exit code would pass `--check` over any stale file."""
+    text = script.read_text(encoding="utf-8")
+    assert "sys.exit(generated.run(" in text, f"{script.name} does not exit with what scripts/generated.py says"
 
 
 @pytest.mark.parametrize("script", GENERATORS, ids=lambda path: path.name)
@@ -70,3 +73,25 @@ def test_a_stale_file_names_the_first_line_that_moved(tmp_path: Path) -> None:
     assert generated.differs(committed, "one\nthree\n") == "line 2 differs from its source"
     assert generated.differs(committed, "one\ntwo\nthree\n") == "its length differs from its source"
     assert generated.differs(tmp_path / "missing.md", "one\n") == "it is not committed"
+
+
+def test_a_check_over_a_stale_file_and_an_orphan_exits_1_and_names_both(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The exit code is the whole contract of `--check`, and the orphan branch is what refuses an extra schema."""
+    owned = tmp_path / "owned"
+    owned.mkdir()
+    (owned / "kept.json").write_text("old\n", encoding="utf-8")
+    (owned / "orphan.json").write_text("left\n", encoding="utf-8")
+    monkeypatch.setattr(generated, "ROOT", tmp_path)
+    monkeypatch.setitem(sys.modules, "__main__", types.ModuleType("__main__", "A generator under test."))
+    monkeypatch.setattr(sys.modules["__main__"], "__file__", str(tmp_path / "build_test.py"), raising=False)
+    monkeypatch.setattr(sys, "argv", ["build_test.py", "--check"])
+    code = generated.run(lambda: {owned / "kept.json": "new\n"}, owned=[owned / "*.json"])
+    said = capsys.readouterr().out.splitlines()
+    assert code == 1
+    assert said == [
+        generated.STALE.format(path="owned/kept.json", reason="line 1 differs from its source", script="build_test.py"),
+        generated.STALE.format(path="owned/orphan.json", reason=generated.GONE, script="build_test.py"),
+    ]
+    assert (owned / "orphan.json").exists() and (owned / "kept.json").read_text(encoding="utf-8") == "old\n"
