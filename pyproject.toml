@@ -104,7 +104,6 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py312"
 
 [tool.ruff.lint]
 select = [
@@ -136,12 +135,6 @@ known-first-party = ["decktalk", "support"]
 [tool.ruff.lint.flake8-unused-arguments]
 # A fake of a third-party seam takes the arguments the real one takes, and reads the ones it judges.
 ignore-variadic-names = true
-
-[tool.ruff.format]
-quote-style = "double"
-
-[tool.ty.environment]
-python-version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -176,5 +169,4 @@ parallel = true
 # from a real run and gated by `scripts/check_coverage.py`, and a second floor typed into this file
 # would be a number nobody measured that fails `coverage report` on its own.
 [tool.coverage.report]
-show_missing = false
 skip_empty = true

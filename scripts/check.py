@@ -156,8 +156,7 @@ RUNTIME_TESTS = "tests/decktalk/runtime/src/*.test.ts"
 
 `node --test <dir>` searches the directory on Node 24 and later and runs the directory itself as a
 module on Node 22, which is the version `package.json` sets as the floor and the version CI has. A
-pattern is expanded by the test runner on every version, so this one string is what both this table
-and the `test` script in `package.json` name.
+pattern is expanded by the test runner on every version.
 """
 
 SCRIPT_TESTS = "tests/scripts/*.test.mjs"
