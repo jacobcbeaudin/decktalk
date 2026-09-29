@@ -16,8 +16,6 @@ from decktalk.findings import Code
 from decktalk.media import ffmpeg, frames
 from decktalk.media.browser import Recording
 from decktalk.media.pagereport import FrameGap, PageReport, PageWarningRow
-from decktalk.pagescan import page_findings
-from decktalk.pipeline import Stage
 from decktalk.settings import Settings
 from decktalk.stages.record.checks import (
     check_recording,
@@ -89,26 +87,6 @@ def test_the_checks_measure_the_file_against_what_the_recorder_asked_for(
     monkeypatch.setattr(frames, "luma_at", lambda _path, _at, **_kwargs: (90.0, 210.0))
     measured = check_recording(tmp_path / "01.webm", a_recording(a_report(), wanted=10.0))
     assert (measured.duration_seconds, measured.wanted_seconds) == (9.5, 10.0)
-
-
-def test_every_page_warning_becomes_the_finding_of_the_code_the_page_carried() -> None:
-    report = a_report(
-        warnings=[
-            {"code": "PAGE_KATEX_ERROR", "message": "KaTeX refused $x$.", "slide": "1.1", "cue": None, "attr": None},
-            {
-                "code": "PAGE_UNKNOWN_ATTR",
-                "message": "data-nope is not a knob.",
-                "slide": None,
-                "cue": "1.1:open",
-                "attr": "data-nope",
-            },
-        ]
-    )
-    found = page_findings(report, page=PAGE, section=SECTION, stage=Stage.RECORD)
-    assert [row.code for row in found] == [Code.PAGE_KATEX_ERROR, Code.PAGE_UNKNOWN_ATTR]
-    assert [row.location.where for row in found] == ["1.1", "1.1:open"]
-    assert found[0].location.file == Path(PAGE)
-    assert {row.stage for row in found} == {Stage.RECORD}
 
 
 def test_a_dark_frame_half_way_through_is_black(settings: Settings) -> None:

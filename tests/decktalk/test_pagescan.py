@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from decktalk import page, pagescan
 from decktalk.findings import Code
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Measured, measured_rows, page_findings, scene_cues, scene_entry, slide_cues
+from decktalk.pipeline import Stage
 from decktalk.settings import KEYS
 
 PAGE = "deck/index.html"
@@ -91,6 +94,32 @@ def test_a_staggered_row_carries_the_count_of_children_the_probe_measured() -> N
 
 def test_a_page_that_reported_nothing_is_judged_on_nothing() -> None:
     assert page_findings(a_report(), page=PAGE) == []
+
+
+def test_every_page_warning_becomes_the_finding_of_the_code_the_page_carried() -> None:
+    report = a_report(
+        warnings=[
+            {
+                "code": Code.PAGE_KATEX_ERROR.value,
+                "message": "KaTeX refused $x$.",
+                "slide": "1.1",
+                "cue": None,
+                "attr": None,
+            },
+            {
+                "code": Code.PAGE_UNKNOWN_ATTR.value,
+                "message": "data-nope is not a knob.",
+                "slide": None,
+                "cue": "1.1:open",
+                "attr": "data-nope",
+            },
+        ]
+    )
+    found = page_findings(report, page=PAGE, section=1, stage=Stage.RECORD)
+    assert [row.code for row in found] == [Code.PAGE_KATEX_ERROR, Code.PAGE_UNKNOWN_ATTR]
+    assert [row.location.where for row in found] == ["1.1", "1.1:open"]
+    assert found[0].location.file == Path(PAGE)
+    assert {row.stage for row in found} == {Stage.RECORD}
 
 
 # ---- judging the measured rows ----------------------------------------------------------------
