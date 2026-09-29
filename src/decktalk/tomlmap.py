@@ -363,9 +363,6 @@ class Table:
         # The dotted name of this table inside the file, which a key's own name is not enough to
         # find, because the same key name sits in several tables.
         self.table = table
-        # Every sentence this table has to say about keys it does not read, in the order it read
-        # them, which the caller folds into what it returns.
-        self.notes: list[str] = []
 
     def _refuse(self, message: str, key: str, hint: str | None = None) -> InputError:
         dotted = f"{self.table}.{key}" if self.table else key
@@ -471,16 +468,14 @@ class Table:
         return sorted(set(self.data) - set(known))
 
     def note_unknown(self, known: Iterable[str]) -> list[str]:
-        """Every key this table does not read, as one sentence each, collected on the table.
+        """Every key this table does not read, as one sentence each.
 
         An unknown key is ignored rather than refused, so the sentence is a note a caller carries
         into what it returns. It is not written anywhere here, because a library that decided where
         a note went would decide it for every caller, and a note nobody can read is a note nobody
         acts on.
         """
-        found = unknown_key_warnings(self.data, known, self.where)
-        self.notes += found
-        return found
+        return unknown_key_warnings(self.data, known, self.where)
 
 
 def _is_optional(annotation: Any) -> bool:

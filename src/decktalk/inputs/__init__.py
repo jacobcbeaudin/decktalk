@@ -99,7 +99,7 @@ class Inputs:
         document = Document.from_toml(toml, default_name=root.name)
         loaded = load(root, project=toml, machine=machine, environ=environ, overrides=overrides)
         takes_dir = cls._takes_dir(root, loaded.settings)
-        notes = tuple(key_warnings(toml, PROJECT_FILE)) + cls._takes_note(root, takes_dir)
+        notes = document.notes + tuple(key_warnings(toml, PROJECT_FILE)) + cls._takes_note(root, takes_dir)
         return cls(
             root=root,
             document=document,

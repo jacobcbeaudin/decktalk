@@ -23,7 +23,6 @@ reader who cannot find a knob learns the number is deliberately not one.
 
 from __future__ import annotations
 
-import logging
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Mapping, MutableMapping
@@ -57,8 +56,6 @@ from .tomlmap import (
     unknown_key_message,
     unknown_key_warnings,
 )
-
-log = logging.getLogger(__name__)
 
 PROJECT_FILE = "decktalk.toml"
 ENV_PREFIX = "decktalk"
@@ -1225,8 +1222,6 @@ def read_machine_toml(path: Path) -> dict[str, Any]:
             location=Location(where=path.name, file=path),
         )
     refuse_off_scope(data, Scope.MACHINE, file=path, text=text)
-    for message in key_warnings(data, path.name):
-        log.warning(message)
     return data
 
 
@@ -1351,13 +1346,6 @@ def load(
     project_text = project_file.read_text(encoding="utf-8") if root and project_file.is_file() else None
     refuse_off_scope(from_project, Scope.PROJECT, file=project_file, text=project_text)
     pairs = route(overrides)
-    for message in env_warnings(env):
-        log.warning(message)
-    # A caller that parsed the project file itself holds its warnings and reports them on its run,
-    # which is what a project does with `Inputs.notes`, so only a file this call read is warned here.
-    if project is None and root is not None:
-        for message in key_warnings(from_project, PROJECT_FILE):
-            log.warning(message)
     base = merge_tables(from_machine, from_project)
     env_and_overrides = {**env, **{BY_ID[key].environment: value for key, value in pairs.items()}}
     settings = from_mapping(Settings, base=base, prefixes=[ENV_PREFIX], environ=env_and_overrides)

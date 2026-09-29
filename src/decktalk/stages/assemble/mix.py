@@ -230,6 +230,8 @@ def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, fl
     if markers is None:
         run.note(f"{mix.music_markers} is not there, so the music plays with no structure.", level=Level.WARNING)
         return factors
+    for note in markers.notes:
+        run.note(note, level=Level.WARNING)
     boosts: list[str] = []
     mutes: list[str] = []
     for marker in markers.markers:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from pathlib import Path
 
@@ -149,7 +148,7 @@ def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch
     assert "abc" not in str(info.value)
 
 
-def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, monkeypatch, caplog):
+def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monkeypatch):
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
     toml = (
         "[project]\nname = 't'\nscirpt = 'script.md'\n"
@@ -160,10 +159,10 @@ def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, mon
         "[soundscape.music]\nprompt = 'calm'\nsecond = 60\n"
         "[video]\npresett = 'veryfast'\n"
     )
-    with caplog.at_level("WARNING", logger="decktalk"):
-        p = Inputs.load(write_project(tmp_path, toml), environ={})
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
     page = "."
-    assert [r.getMessage() for r in caplog.records] == [
+    # Each is a note the caller reports on its run, because the library never prints.
+    assert p.notes == (
         f"decktalk.toml: [project]: ignoring unknown key 'scirpt' (did you mean 'script'?){page}",
         f"decktalk.toml: [[section]] number=1: ignoring unknown key 'scnee' (did you mean 'scene'?){page}",
         "decktalk.toml: [[section]] number=1: ignoring 'slate_seconds', which applies only to a clip section",
@@ -171,16 +170,15 @@ def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, mon
         f"decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?){page}",
         f"decktalk.toml: [mix]: ignoring unknown key 'music_dbb' (did you mean 'music_db'?){page}",
         f"decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'seconds'?){page}",
-    ]
-    # A tuning table's own misspelling is a note the caller reports on its run, because the library never prints.
-    assert p.notes == (f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",)
+        f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",
+    )
     # A warning, not an error: the load succeeds and every misspelled key keeps its default.
     assert p.settings.voice.stability == 0.55
     assert p.settings.video.preset == "medium"
     assert p.document.soundscape.music.seconds == 360
 
 
-def test_a_table_reads_every_key_its_dataclass_declares(tmp_path, caplog):
+def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     """Each key is written once, as a field, so a table's reader and its class cannot drift apart."""
     toml = (
         "[project]\nname = 't'\nscript = 'script.md'\ncues = 'cues.json'\nbuild = 'build'\nlanguage = 'fr'\n"
@@ -196,9 +194,8 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path, caplog):
         "[soundscape.music]\nprompt = 'calm'\nseconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
         "model_id = 'music'\n"
     )
-    with caplog.at_level("WARNING", logger="decktalk"):
-        p = Inputs.load(write_project(tmp_path, toml), environ={})
-    assert [r.getMessage() for r in caplog.records] == []
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
+    assert p.notes == ()
     assert p.document.language == "fr"
     # `[voice]` and `[mix]` are shared, so the document reads its half and neither warns about the other.
     assert (p.document.voice.provider, p.document.voice.model) == ("elevenlabs", "m")
@@ -222,15 +219,14 @@ def test_a_section_with_no_chapter_is_titled_by_its_script_heading(tmp_path):
     assert Inputs.load(root, environ={}).chapters() == {1: "Section 1", 2: "Its own"}
 
 
-def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
+def test_seamless_parses_on_any_section_but_the_first(tmp_path):
     toml = (
         "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
         "[[section]]\nnumber = 2\nclip = 'b.mp4'\nseamless = true\n"
         "[[section]]\nnumber = 3\npage = 'deck/a.html'\nseamless = true\n"
     )
-    with caplog.at_level("WARNING", logger="decktalk"):
-        p = Inputs.load(write_project(tmp_path, toml), environ={})
-    assert [s.seamless for s in p.document.sections] == [False, True, True] and not caplog.records
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
+    assert [s.seamless for s in p.document.sections] == [False, True, True] and not p.notes
     first = toml.replace("number = 1\npage = 'deck/a.html'\n", "number = 1\npage = 'deck/a.html'\nseamless = true\n")
     with pytest.raises(InputError, match="number=1: seamless is set on the first section"):
         Inputs.load(write_project(tmp_path, first), environ={})
@@ -245,18 +241,17 @@ def test_a_clip_section_reads_its_words_key(tmp_path):
     assert plain.document.sections[1].words is None
 
 
-def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkeypatch, caplog):
-    monkeypatch.setattr(logging.getLogger("decktalk"), "propagate", True)
+def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path):
     toml = (
         "[[section]]\nnumber = 1\npage = 'deck/a.html'\nlead_seconds = 1.5\ntail_seconds = 2\n"
         "[[section]]\nnumber = 2\nclip = 'c.mp4'\nlead_seconds = 1\n"
     )
-    with caplog.at_level(logging.WARNING, logger="decktalk"):
-        p = Inputs.load(write_project(tmp_path, toml), environ={})
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
     page = p.document.page_sections[0]
     assert (page.lead_seconds, page.tail_seconds) == (1.5, 2.0)
     assert p.lead_seconds(1) == 1.5 and p.lead_seconds(2) == 0.0
-    assert "ignoring 'lead_seconds', which applies only to a page section" in caplog.text
+    said = "decktalk.toml: [[section]] number=2: ignoring 'lead_seconds', which applies only to a page section"
+    assert p.notes == (said,)
     assert Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={}).document.page_sections[0].tail_seconds is None
 
 

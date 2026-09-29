@@ -93,6 +93,8 @@ from decktalk.settings import (
     CONFIG_VARIABLE,
     PROJECT_FILE,
     ToolsConfig,
+    env_warnings,
+    key_warnings,
     load,
     machine_config_path,
     read_machine_toml,
@@ -392,6 +394,8 @@ class Machine:
     hand decides it, and a key is never sent elsewhere because the process that runs a call happened
     to have the switch set.
     """
+    notes: tuple[str, ...] = field(default=(), compare=False)
+    """What reading the machine noticed, such as a misspelled variable or key, which every run says."""
 
     @classmethod
     def from_environment(cls, *, overrides: Iterable[tuple[str, str]] = ()) -> Machine:
@@ -444,6 +448,7 @@ class Machine:
             providers=providers,
             dotenv=dotenv,
             allow_any_api_base=allow_any_api_base,
+            notes=(*env_warnings(environ), *key_warnings(tables, config_path.name)),
         )
 
     @property
@@ -513,6 +518,10 @@ class Machine:
             sink = self.events.subscribe(JsonlSink(events_path), runs=[run.id])
         started = time.monotonic()
         self.events.emit(run.id, RunStart, events_path=relative(events_path, root) if events_path and root else None)
+        # What the machine noticed when it was read is said on every run, because a line on the stream
+        # reaches `--json` and the events file where a log line does not.
+        for note in self.notes:
+            run.note(note, level=Level.WARNING)
         outcome = Outcome.OK
         try:
             # The toolchain, the download listener, the voices, the rule about `.env` and the

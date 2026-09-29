@@ -11,7 +11,6 @@ reported by `assemble` and skipped.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,8 +19,6 @@ from decktalk.inputs.cues import SECTION_START, json_of
 from decktalk.inputs.document import fill
 from decktalk.inputs.paths import at, relative
 from decktalk.tomlmap import Table
-
-log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -48,6 +45,8 @@ class Markers:
     boost_db: float = 3.0
     boost_seconds: float = 2.0
     markers: tuple[Marker, ...] = field(default_factory=tuple)
+    notes: tuple[str, ...] = ()
+    """One sentence per key the file holds and nothing reads, which the run that loads it reports."""
 
 
 def load_markers(path: Path, root: Path) -> Markers:
@@ -62,9 +61,9 @@ def load_markers(path: Path, root: Path) -> Markers:
     shown = relative(path, root)
     top = Table(data, path.name, shown)
     rows: list[Marker] = []
+    notes: list[str] = []
     for i, raw in enumerate(top.get_tables("markers")):
         t = Table(raw, f"{path.name}: markers #{i + 1}", shown)
-        for note in t.note_unknown(Marker.__dataclass_fields__):
-            log.warning(note)
+        notes += t.note_unknown(Marker.__dataclass_fields__)
         rows.append(fill(t, Marker, name=t.get_str("name", "")))
-    return fill(top, Markers, markers=tuple(rows))
+    return fill(top, Markers, markers=tuple(rows), notes=tuple(notes))

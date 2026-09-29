@@ -397,6 +397,20 @@ def a_host(tmp_path: Path, **choices: object) -> Machine:
     return Machine.of(**values)  # type: ignore[arg-type]
 
 
+def test_what_reading_the_machine_noticed_is_a_warning_on_every_run(tmp_path: Path) -> None:
+    """A misspelled variable or machine key in a log line never reached `--json`, so it is a line of the run."""
+    config = tmp_path / "host" / "machine.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text("[video]\npresett = 'veryfast'\n", encoding="utf-8")
+    here = a_host(tmp_path, environ={"DECKTALK_VIDEO_CRV": "20"}, config_path=config)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here.run():
+        pass
+    warned = [line.message for line in seen if isinstance(line, Log) and line.level is Level.WARNING]
+    assert tuple(warned) == here.notes
+    assert [("CRV" in note, "presett" in note) for note in warned] == [(True, False), (False, True)]
+
+
 @pytest.fixture
 def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail the test the moment anything opens a connection or looks up a host name."""
