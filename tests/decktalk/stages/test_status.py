@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Take
+from decktalk.artifacts import Take, file_digest
 from decktalk.events import Level, Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
@@ -125,9 +125,7 @@ def measured(inputs: Inputs) -> None:
     made = stage.assemble_key(inputs, options)  # type: ignore[arg-type]
     film = inputs.relative(inputs.workspace.film).as_posix()
     stage.Kept(
-        assemble=stage.KeptStage(
-            key=made, options={"only": None}, outputs={film: stage.digest_of(inputs.workspace.film)}
-        ),
+        assemble=stage.KeptStage(key=made, options={"only": None}, outputs={film: file_digest(inputs.workspace.film)}),
         verify=stage.KeptStage(key=stage.verify_key(inputs, made, {"only": None}), options={"only": None}),
     ).write(stage.kept_path(inputs))
 

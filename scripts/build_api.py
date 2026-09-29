@@ -61,10 +61,8 @@ reachable from an exported annotation, so a type a result can hand you is a type
 Everything not in it may move without notice.
 """'''
 
-VERSION_BLOCK = '''try:
-    __version__ = version("decktalk")
-except PackageNotFoundError:  # running from a checkout without an install
-    __version__ = "0+unknown"'''
+VERSION_IMPORT = ("artifacts.stored", ["ENGINE_VERSION as __version__"])
+"""Where `__version__` comes from, which is the one reading of the engine version every cache key carries."""
 
 
 def seeds() -> dict[str, list[str]]:
@@ -137,10 +135,8 @@ def render(exported: dict[str, list[str]]) -> str:
         "",
         "from __future__ import annotations",
         "",
-        "from importlib.metadata import PackageNotFoundError, version",
-        "",
     ]
-    for module, names in exported.items():
+    for module, names in sorted([*exported.items(), VERSION_IMPORT]):
         statement = f"from .{module} import {', '.join(names)}"
         if len(statement) <= LINE_LENGTH:
             lines.append(statement)
@@ -149,7 +145,7 @@ def render(exported: dict[str, list[str]]) -> str:
             lines += [f"    {name}," for name in names]
             lines.append(")")
     every = sorted({name for names in exported.values() for name in names} | {"__version__"})
-    lines += ["", VERSION_BLOCK, "", "__all__ = ["]
+    lines += ["", "__all__ = ["]
     lines += [f'    "{name}",' for name in every]
     lines.append("]")
     return "\n".join(lines) + "\n"

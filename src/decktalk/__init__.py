@@ -14,8 +14,6 @@ Everything not in it may move without notice.
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
-
 from .artifacts import (
     PLACEHOLDER_PREFIX,
     TAKE_DIGITS,
@@ -39,6 +37,7 @@ from .artifacts import (
     text_digest,
     words_file,
 )
+from .artifacts.stored import ENGINE_VERSION as __version__
 from .errors import (
     ApprovalRequired,
     Cancel,
@@ -200,11 +199,6 @@ from .settings import (
     VoiceConfig,
 )
 from .tomlmap import Nature, Source
-
-try:
-    __version__ = version("decktalk")
-except PackageNotFoundError:  # running from a checkout without an install
-    __version__ = "0+unknown"
 
 __all__ = [
     "Applicability",

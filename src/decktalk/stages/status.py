@@ -30,14 +30,14 @@ over file times, because a copy or a checkout moves every time and changes no by
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import json
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
 from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
-from decktalk.artifacts.stored import ENGINE_VERSION, Stored
+from decktalk.artifacts.recordings import file_digest
+from decktalk.artifacts.stored import Stored, engine_digest
 from decktalk.errors import DeckTalkError, NotBuiltError
 from decktalk.events import Level, Line, StageStart
 from decktalk.findings import Code, Finding, Location, Model
@@ -86,12 +86,6 @@ build` may put the whole build directory somewhere else and the workspace is wha
 
 KEPT_FILE = "kept.json"
 """What the record of the last assemble and verify is called, under the project's build directory."""
-
-DIGEST = "blake2b"
-"""The hash every kept digest is taken with, which is fast on large files and in the standard library."""
-
-FIELD_END = b"\0"
-"""What ends each field of a digest, which no path, no version and no JSON text contains."""
 
 
 class KeptStage(Model):
@@ -142,11 +136,9 @@ def assemble_key(inputs: Inputs, options: Mapping[str, JsonValue]) -> str:
     input would ship a film the inputs no longer describe, and one that reads too much costs only a
     repeated assemble.
     """
-    fields = [ENGINE_VERSION, json.dumps(dataclasses.asdict(inputs.settings), sort_keys=True, default=str)]
-    fields.append(json.dumps(options, sort_keys=True))
-    for path in _assemble_reads(inputs):
-        fields += [inputs.relative(path).as_posix(), digest_of(path) if path.is_file() else ""]
-    return _digest(fields)
+    settings = json.dumps(dataclasses.asdict(inputs.settings), sort_keys=True, default=str)
+    read = (f"{inputs.relative(path).as_posix()}:{file_digest(path)}" for path in _assemble_reads(inputs))
+    return engine_digest(settings, json.dumps(options, sort_keys=True), *read)
 
 
 def verify_key(inputs: Inputs, assembled: str, options: Mapping[str, JsonValue]) -> str:
@@ -155,13 +147,12 @@ def verify_key(inputs: Inputs, assembled: str, options: Mapping[str, JsonValue])
     What made the film is the assemble digest, which already carries every setting and every file
     the measurement is judged against, so the film is the only input added here.
     """
-    film = inputs.workspace.film
-    return _digest([assembled, digest_of(film) if film.is_file() else "", json.dumps(options, sort_keys=True)])
+    return engine_digest(assembled, file_digest(inputs.workspace.film), json.dumps(options, sort_keys=True))
 
 
 def outputs_of(inputs: Inputs, paths: Iterable[Path]) -> dict[str, str]:
     """Each of these files that is on disk, project-relative, against the digest of its bytes."""
-    return {inputs.relative(path).as_posix(): digest_of(path) for path in paths if path.is_file()}
+    return {inputs.relative(path).as_posix(): file_digest(path) for path in paths if path.is_file()}
 
 
 def intact(inputs: Inputs, stage: KeptStage) -> bool:
@@ -170,10 +161,7 @@ def intact(inputs: Inputs, stage: KeptStage) -> bool:
     A stage run on its own after the build, such as `decktalk assemble --no-loudness`, rewrites the
     film without touching the record, and this is what stops the next build keeping that film.
     """
-    return all(
-        (inputs.root / name).is_file() and digest_of(inputs.root / name) == digest
-        for name, digest in stage.outputs.items()
-    )
+    return all(file_digest(inputs.root / name) == digest for name, digest in stage.outputs.items())
 
 
 def assembled(inputs: Inputs, kept: Kept) -> str | None:
@@ -192,21 +180,6 @@ def assembled(inputs: Inputs, kept: Kept) -> str | None:
 def holds_film(inputs: Inputs, record: KeptStage) -> bool:
     """Whether a kept assemble wrote the film on disk, byte for byte, along with everything beside it."""
     return inputs.relative(inputs.workspace.film).as_posix() in record.outputs and intact(inputs, record)
-
-
-def digest_of(path: Path) -> str:
-    """The digest of one file's bytes, read in blocks so a long film is never held in memory."""
-    with path.open("rb") as handle:
-        return hashlib.file_digest(handle, DIGEST).hexdigest()
-
-
-def _digest(fields: Iterable[str]) -> str:
-    """The digest of several fields, each ended by a byte no field holds so two cannot run together."""
-    hashed = hashlib.new(DIGEST)
-    for text in fields:
-        hashed.update(text.encode("utf-8"))
-        hashed.update(FIELD_END)
-    return hashed.hexdigest()
 
 
 def _assemble_reads(inputs: Inputs) -> list[Path]:
