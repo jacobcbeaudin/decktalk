@@ -100,15 +100,37 @@ class Inputs:
         loaded = load(root, project=toml, machine=machine, environ=environ, overrides=overrides)
         takes_dir = cls._takes_dir(root, loaded.settings)
         notes = document.notes + tuple(key_warnings(toml, PROJECT_FILE)) + cls._takes_note(root, takes_dir)
+        build = contained(root, document.build)
+        cls._refuse_served_build(root, build, document)
         return cls(
             root=root,
             document=document,
-            workspace=Workspace(root=root, build=contained(root, document.build), name=document.name, takes=takes_dir),
+            workspace=Workspace(root=root, build=build, name=document.name, takes=takes_dir),
             env=Env(file=root / ENV_FILE, environ=environ),
             settings=loaded.settings,
             layers=loaded.layers,
             notes=notes,
         )
+
+    @staticmethod
+    def _refuse_served_build(root: Path, build: Path, document: Document) -> None:
+        """Refuse a build directory that shares a directory the origin serves, in either direction.
+
+        The origin serves each page's whole directory, so a build inside one, or a page directory
+        inside the build, hands the page the takes, the event lines, the recordings and the stills.
+        Only a page's directory is served whole, so it is the one kind of served path that can hold
+        the build, and every other served path is a single file.
+        """
+        held = build.resolve()
+        for page in document.page_files:
+            served = (root / page).parent.resolve()
+            if held.is_relative_to(served) or served.is_relative_to(held):
+                raise InputError(
+                    f"the build directory {document.build} shares {Path(page).parent.as_posix()}, "
+                    "which is served to the page, so the page could read what a build writes.",
+                    hint="Keep the build directory and every page's directory apart, such as build/ and deck/.",
+                    location=at(root / PROJECT_FILE, root),
+                )
 
     @staticmethod
     def _takes_dir(root: Path, settings: Settings) -> Path | None:

@@ -10,7 +10,7 @@ import pytest
 
 from decktalk.artifacts import CueTimes, Words
 from decktalk.artifacts.words import words_file
-from decktalk.errors import InputError
+from decktalk.errors import ErrorCode, InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.env import reading_dotenv
 from decktalk.results import CueTime, SectionCues, Word
@@ -417,6 +417,25 @@ def test_a_page_at_the_project_root_is_refused_because_its_directory_is_the_whol
     toml = SERVED_TOML.replace('page = "deck/one.html"', f'page = "{page}"')
     with pytest.raises(InputError, match="sits at the project root"):
         Inputs.load(write_project(tmp_path, toml), environ={})
+
+
+@pytest.mark.parametrize(
+    ("build", "page"),
+    [
+        ("deck", "deck/one.html"),
+        ("deck/out", "deck/one.html"),
+        ("build", "build/one.html"),
+        ("out", "out/deck/one.html"),
+    ],
+)
+def test_a_build_directory_that_shares_a_served_directory_is_refused(tmp_path, build, page):
+    """A page reads what its origin serves, and the build holds the takes, the event lines and the recordings."""
+    toml = SERVED_TOML.replace('name = "demo"', f'name = "demo"\nbuild = "{build}"').replace(
+        'page = "deck/one.html"', f'page = "{page}"'
+    )
+    with pytest.raises(InputError, match="build directory") as refused:
+        Inputs.load(write_project(tmp_path, toml), environ={})
+    assert refused.value.code is ErrorCode.INPUT
 
 
 def test_a_declared_name_that_folds_to_the_project_root_is_never_offered(tmp_path):
