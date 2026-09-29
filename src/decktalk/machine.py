@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import os
 import platform
-import shutil
 import subprocess
 import sys
 import time
@@ -56,6 +55,7 @@ from decktalk.events import (
 )
 from decktalk.events import FindingEvent as FindingLine
 from decktalk.events import SpendEvent as SpendLine
+from decktalk.files import replace_all
 from decktalk.findings import (
     FIX_COMMANDS,
     Applicability,
@@ -93,6 +93,7 @@ from decktalk.settings import (
     CONFIG_VARIABLE,
     PROJECT_FILE,
     ToolsConfig,
+    edit,
     env_warnings,
     key_warnings,
     load,
@@ -100,6 +101,7 @@ from decktalk.settings import (
     read_machine_toml,
     route,
     scoped,
+    validate,
     write,
 )
 from decktalk.settings import Scope as SettingScope
@@ -693,7 +695,9 @@ def apply_fix(run: Run, code: Code, fix: Fix, *, root: Path, scope: Scope, unsaf
     """Carry out one fix, or say in one sentence why it was left alone.
 
     A display fix is a change only a person can make, so it is reported and never applied, and an
-    unsafe fix can lose the author's work, so it is applied only when the caller asked for that.
+    unsafe fix can lose the author's work, so it is applied only when the caller asked for that. A
+    file the system will not let DeckTalk read or write is a refusal like any other, because the fix
+    changed nothing and the caller is owed a sentence rather than an exception.
     """
     if fix.applicability is Applicability.DISPLAY:
         return FixOutcome(code=code, title=fix.title, applied=False, why="only a person can make this change.")
@@ -704,18 +708,30 @@ def apply_fix(run: Run, code: Code, fix: Fix, *, root: Path, scope: Scope, unsaf
         files = _carry_out(run, fix, root=root, scope=scope)
     except DeckTalkError as refused:
         return FixOutcome(code=code, title=fix.title, applied=False, why=str(refused))
+    except (OSError, UnicodeDecodeError) as failed:
+        return FixOutcome(code=code, title=fix.title, applied=False, why=_unchanged(failed, root))
     for path in files:
         run.wrote(path)
     changed = tuple(relative(path, root) for path in files)
     return FixOutcome(code=code, title=fix.title, applied=True, files=changed)
 
 
+def _unchanged(failed: OSError | UnicodeDecodeError, root: Path) -> str:
+    """The sentence for a fix the system stopped, naming the file when the failure names one."""
+    named = failed.filename if isinstance(failed, OSError) else None
+    what = relative(Path(named), root).as_posix() if isinstance(named, str) else "a file this fix names"
+    reason = failed.strerror if isinstance(failed, OSError) and failed.strerror else str(failed)
+    return f"{what} could not be read or written ({reason}), so every file was left as it was."
+
+
 def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, ...]:
     """Make the change one fix describes, and give back every file it changed.
 
-    Every edit is checked and made in memory before any file is touched, and every file is written
-    under a temporary name before any of them replaces its target, so a fix whose second edit is
-    refused has not already written its first and a fix that stops halfway leaves every file whole.
+    Every edit is made in memory before any file is touched. A key edit is staged as text in the
+    same place as a line edit, so a fix that edits the lines of `decktalk.toml` and sets a key in it
+    changes one text, and a settings file the fix touched is loaded whole before anything is written.
+    Every file is then replaced together by `replace_all`, so a fix whose last edit is refused, or
+    whose last file cannot be written, leaves every file as it was.
     """
     if isinstance(fix, SettingFix):
         return (_write_key(run, fix.key, fix.value, root=root, scope=scope),)
@@ -724,22 +740,26 @@ def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, .
         return ()
     if isinstance(fix, RuntimeFix):
         return (_replace_runtime(root, fix.file),)
-    targets = [(edit, _inside(root, edit.file)) for edit in fix.edits]
-    staged: dict[Path, list[str]] = {}
-    keys: list[tuple[str, str]] = []
-    changed: list[Path] = []
-    for edit, path in targets:
-        if edit.key is not None:
-            keys.append((edit.key, edit.new))
-            changed.append(_write_key(run, edit.key, edit.new, root=root, scope=scope, dry_run=True))
+    settings_file = _settings_file(run, root, scope)
+    staged: dict[Path, str] = {}
+    for one in fix.edits:
+        path = _inside(root, one.file)
+        if one.key is not None:
+            text = staged[settings_file] if settings_file in staged else _read(settings_file)
+            staged[settings_file] = edit(text, one.key, one.new, scope=scope, file=settings_file).text
             continue
-        lines = staged[path] if path in staged else _lines_under(edit, path, root)
-        staged[path] = _edited(edit, lines, path, root)
-        changed.append(path)
-    _replace_all({path: "".join(lines) for path, lines in staged.items()})
-    for key, value in keys:
-        _write_key(run, key, value, root=root, scope=scope)
-    return tuple(dict.fromkeys(changed))
+        lines = staged[path].splitlines(keepends=True) if path in staged else _lines_under(one, path, root)
+        staged[path] = "".join(_edited(one, lines, path, root))
+    for path, holds in _settings_files(run, root).items():
+        if path in staged:
+            validate(staged[path], path, holds)
+    replace_all(staged)
+    return tuple(staged)
+
+
+def _read(path: Path) -> str:
+    """The text of a file a fix changes, which is empty when the fix is the one that creates it."""
+    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def _replace_runtime(root: Path, named: Path) -> Path:
@@ -755,36 +775,8 @@ def _replace_runtime(root: Path, named: Path) -> Path:
             hint=f"A runtime fix only ever replaces a file called {assets.RUNTIME_FILE}.",
             location=Location(where=Path(named).as_posix()),
         )
-    _replace_all({path: assets.runtime_path().read_bytes()})
+    replace_all({path: assets.runtime_path().read_bytes()})
     return path
-
-
-def _replace_all(texts: Mapping[Path, str | bytes]) -> None:
-    """Write every text under a temporary name beside its file, then move each over its file.
-
-    A failure while writing leaves every target as it was, and the moves that follow cannot be
-    refused for anything a fix said, so the files change together. Each temporary file is created
-    fresh, so a link a project planted under that name is refused rather than written through, and it
-    takes the mode of the file it replaces, so a fix never changes who may read a file.
-    """
-    temporary = {path: path.with_name(f".{path.name}.{os.getpid()}.fixing") for path in texts}
-    try:
-        for path, text in texts.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            # Bytes are written as they are, because a copy of an engine file must match it exactly.
-            if isinstance(text, bytes):
-                with temporary[path].open("xb") as handle:
-                    handle.write(text)
-            else:
-                with temporary[path].open("x", encoding="utf-8") as handle:
-                    handle.write(text)
-            if path.exists():
-                shutil.copymode(path, temporary[path])
-        for path, written in temporary.items():
-            written.replace(path)
-    finally:
-        for written in temporary.values():
-            written.unlink(missing_ok=True)
 
 
 def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
@@ -843,10 +835,10 @@ def _inside(root: Path, named: Path) -> Path:
     return root / path.resolve().relative_to(root.resolve())
 
 
-def _write_key(run: Run, key: str, value: str, *, root: Path, scope: Scope, dry_run: bool = False) -> Path:
-    """Set one settings key, or only check that it could be set, and name the file it lands in."""
+def _write_key(run: Run, key: str, value: str, *, root: Path, scope: Scope) -> Path:
+    """Set one settings key through the settings writer, and name the file it lands in."""
     file = _settings_file(run, root, scope)
-    return write(file, key, value, scope=scope, environ=run.machine.environ, dry_run=dry_run).file
+    return write(file, key, value, scope=scope, environ=run.machine.environ).file
 
 
 def _edited(edit: Edit, lines: list[str], path: Path, root: Path) -> list[str]:
@@ -931,12 +923,23 @@ def _missing_findings(tools: tuple[InstalledTool, ...]) -> tuple[Finding, ...]:
 
 
 def _settings_file(run: Run, root: Path, scope: Scope) -> Path:
-    """The file a settings write lands in, which is the project's own or the one this machine was built from.
+    """The file a settings change lands in, which is the project's own or the one this machine was built from.
 
     The machine's file is the one it holds, and never the one the process environment would name,
-    so a fix applied through a machine a host built by hand lands in that host's file.
+    so a fix applied through a machine a host built by hand lands in that host's file. The project's
+    file is held to the project like every file a fix names, so a link out of it is refused.
     """
-    return root / PROJECT_FILE if scope is Scope.PROJECT else run.machine.config_path
+    return _inside(root, Path(PROJECT_FILE)) if scope is Scope.PROJECT else _machine_file(run)
+
+
+def _settings_files(run: Run, root: Path) -> dict[Path, Scope]:
+    """Both settings files a fix may reach, each with the scope its keys belong to."""
+    return {_settings_file(run, root, held): held for held in Scope}
+
+
+def _machine_file(run: Run) -> Path:
+    """This machine's settings file with its links followed, which is where a change to it lands."""
+    return run.machine.config_path.resolve()
 
 
 def _pairs(overrides: Mapping[str, str]) -> tuple[str, ...]:

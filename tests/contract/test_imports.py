@@ -26,37 +26,39 @@ from support.paths import REPO
 SRC = REPO / "src" / "decktalk"
 
 LAYERS: dict[str, tuple[str, int]] = {
-    # The words every layer above shares, which import nothing but each other.
-    "pipeline": ("vocabulary", 0),
-    "findings": ("vocabulary", 1),
-    "errors": ("vocabulary", 2),
-    "locate": ("vocabulary", 3),
-    "secret": ("vocabulary", 4),
-    "page": ("vocabulary", 5),
+    # The words every layer above shares, which import nothing but each other, and the one rule by
+    # which a file a person owns is replaced.
+    "files": ("vocabulary", 0),
+    "pipeline": ("vocabulary", 1),
+    "findings": ("vocabulary", 2),
+    "errors": ("vocabulary", 3),
+    "locate": ("vocabulary", 4),
+    "secret": ("vocabulary", 5),
+    "page": ("vocabulary", 6),
     # The frozen models and the settings tree, which every layer above reads and none of them writes.
-    "results": ("models", 6),
-    "events": ("models", 7),
-    "catalog": ("models", 8),
-    "tomlmap": ("models", 9),
-    "settings": ("models", 10),
+    "results": ("models", 7),
+    "events": ("models", 8),
+    "catalog": ("models", 9),
+    "tomlmap": ("models", 10),
+    "settings": ("models", 11),
     # One job each, and no knowledge of a project.
-    "toolchain": ("leaves", 11),
-    "captions": ("leaves", 12),
-    "speech": ("leaves", 13),
-    "media": ("leaves", 14),
-    "pagescan": ("leaves", 15),
-    "template": ("leaves", 16),
-    "artifacts": ("leaves", 17),
+    "toolchain": ("leaves", 12),
+    "captions": ("leaves", 13),
+    "speech": ("leaves", 14),
+    "media": ("leaves", 15),
+    "pagescan": ("leaves", 16),
+    "template": ("leaves", 17),
+    "artifacts": ("leaves", 18),
     # The object a caller drives, and the stages it drives.
-    "inputs": ("sdk", 18),
-    "machine": ("sdk", 19),
-    "explain": ("sdk", 20),
-    "stages": ("sdk", 21),
-    "project": ("sdk", 22),
+    "inputs": ("sdk", 19),
+    "machine": ("sdk", 20),
+    "explain": ("sdk", 21),
+    "stages": ("sdk", 22),
+    "project": ("sdk", 23),
     # The first client, and the package's public surface.
-    "cli": ("cli", 23),
-    "__init__": ("cli", 24),
-    "__main__": ("cli", 25),
+    "cli": ("cli", 24),
+    "__init__": ("cli", 25),
+    "__main__": ("cli", 26),
 }
 """Every top-level module and package of decktalk, with its layer and its rank inside that layer.
 

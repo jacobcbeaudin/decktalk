@@ -476,6 +476,29 @@ class TestTheWriter:
         assert written.layer is Layer.ENVIRONMENT
         assert written.effective == "slow"
 
+    def test_a_file_that_is_not_valid_toml_is_refused_in_a_sentence_and_left_alone(self, tmp_path: Path) -> None:
+        """tomlkit's own parser error is not a refusal, so a caller that catches refusals met a traceback."""
+        path = tmp_path / "decktalk.toml"
+        path.write_text("[video\n", encoding="utf-8")
+        with pytest.raises(InputError, match="is not valid TOML") as refused:
+            write(path, "video.width", "1280", scope=Scope.PROJECT, environ={})
+        assert refused.value.location is not None and refused.value.location.line == 1
+        assert path.read_text(encoding="utf-8") == "[video\n"
+
+    def test_a_machine_file_kept_behind_a_link_is_written_where_the_link_points(self, tmp_path: Path) -> None:
+        """A machine file often lives in a dotfiles repository, and replacing the link would unhook it."""
+        kept = tmp_path / "dotfiles" / "decktalk.toml"
+        kept.parent.mkdir()
+        kept.write_text("", encoding="utf-8")
+        path = tmp_path / "decktalk.toml"
+        try:
+            path.symlink_to(kept)
+        except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
+            pytest.skip("this machine does not let an unprivileged user make a link")
+        write(path, "record.concurrency", "2", scope=Scope.MACHINE, environ={})
+        assert path.is_symlink()
+        assert "concurrency = 2" in kept.read_text(encoding="utf-8")
+
 
 class TestTheRemover:
     """A removal is the write's opposite, and it answers with the layer that shows through."""

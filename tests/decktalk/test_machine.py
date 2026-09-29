@@ -862,21 +862,127 @@ def test_two_edits_to_one_file_are_made_in_order_and_written_once(tmp_path: Path
     assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "first\nsecond\n"
 
 
-def test_a_link_planted_where_a_fix_writes_its_draft_is_never_written_through(tmp_path: Path) -> None:
-    """A project may carry any file, so the draft a fix writes beside its target is always a new one."""
+def test_a_link_planted_where_a_fix_writes_its_draft_is_a_refusal_and_is_never_written_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A draft's name is random, and a name a project did plant is refused in a sentence, never followed."""
+    monkeypatch.setattr("decktalk.files.secrets.token_hex", lambda _size: "planted")
     root = tmp_path / "project"
     root.mkdir()
     (root / "notes.txt").write_text("one\n", encoding="utf-8")
     elsewhere = tmp_path / "elsewhere.txt"
     elsewhere.write_text("mine\n", encoding="utf-8")
     try:
-        (root / f".notes.txt.{os.getpid()}.fixing").symlink_to(elsewhere)
+        (root / ".notes.txt.planted.draft").symlink_to(elsewhere)
     except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
         pytest.skip("this machine does not let an unprivileged user make a link")
-    with pytest.raises(FileExistsError):
-        applied(a_machine(tmp_path), an_edit("notes.txt", line=1, old="one"), root)
+    done, why = applied(a_machine(tmp_path), an_edit("notes.txt", line=1, old="one"), root)
+    assert not done and "could not be read or written" in why
     assert elsewhere.read_text(encoding="utf-8") == "mine\n"
     assert (root / "notes.txt").read_text(encoding="utf-8") == "one\n"
+    assert (root / ".notes.txt.planted.draft").is_symlink()
+
+
+def test_a_fix_that_breaks_the_project_file_and_sets_a_key_in_it_changes_nothing(tmp_path: Path) -> None:
+    """A key edit is staged with the line edits, so the file both change is judged whole before any lands."""
+    (tmp_path / "script.md").write_text("one\n", encoding="utf-8")
+    (tmp_path / "decktalk.toml").write_text('[project]\nname = "t"\n', encoding="utf-8")
+    fix = EditFix(
+        title="t",
+        applicability=Applicability.SAFE,
+        edits=(
+            Edit(file=Path("script.md"), line=1, old="one", new="changed"),
+            Edit(file=Path("decktalk.toml"), line=1, old="[project]", new="[project"),
+            Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
+        ),
+    )
+    done, why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert not done and "not valid TOML" in why
+    assert (tmp_path / "script.md").read_text(encoding="utf-8") == "one\n"
+    assert (tmp_path / "decktalk.toml").read_text(encoding="utf-8") == '[project]\nname = "t"\n'
+
+
+def test_a_line_edit_and_a_key_edit_of_the_project_file_both_land_in_one_write(tmp_path: Path) -> None:
+    (tmp_path / "decktalk.toml").write_text('[project]\nname = "t"\n', encoding="utf-8")
+    fix = EditFix(
+        title="t",
+        applicability=Applicability.SAFE,
+        edits=(
+            Edit(file=Path("decktalk.toml"), line=2, old='name = "t"', new='name = "renamed"'),
+            Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
+        ),
+    )
+    done, why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert done, why
+    written = (tmp_path / "decktalk.toml").read_text(encoding="utf-8")
+    assert 'name = "renamed"' in written and "width = 1280" in written
+
+
+def test_a_file_the_system_refuses_to_replace_puts_back_every_file_already_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second move that fails, as a full disk or an editor holding a file open makes it, is a refusal."""
+    (tmp_path / "first.txt").write_text("one\n", encoding="utf-8")
+    (tmp_path / "second.txt").write_text("two\n", encoding="utf-8")
+    moves: list[Path] = []
+    real = Path.replace
+
+    def full(self: Path, target: Path) -> Path:
+        moves.append(Path(target))
+        if len(moves) == 2:
+            raise OSError(28, "No space left on device", str(target))
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", full)
+    fix = EditFix(
+        title="t",
+        applicability=Applicability.SAFE,
+        edits=(
+            Edit(file=Path("first.txt"), line=1, old="one", new="changed"),
+            Edit(file=Path("second.txt"), line=1, old="two", new="changed"),
+        ),
+    )
+    done, why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert (
+        not done
+        and why
+        == "second.txt could not be read or written (No space left on device), so every file was left as it was."
+    )
+    assert (tmp_path / "first.txt").read_text(encoding="utf-8") == "one\n"
+    assert (tmp_path / "second.txt").read_text(encoding="utf-8") == "two\n"
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.endswith(".draft")) == []
+
+
+def test_a_runtime_fix_aimed_at_a_directory_is_a_refusal(tmp_path: Path) -> None:
+    (tmp_path / "deck" / assets.RUNTIME_FILE).mkdir(parents=True)
+    done, why = applied(a_machine(tmp_path), a_runtime_fix(f"deck/{assets.RUNTIME_FILE}"), tmp_path)
+    assert not done and "could not be read or written" in why
+
+
+@pytest.mark.parametrize("link", ["symbolic", "hard"])
+def test_a_settings_fix_never_writes_through_a_project_file_linked_out_of_the_project(
+    tmp_path: Path, link: str
+) -> None:
+    """A project that arrives with its `decktalk.toml` linked elsewhere chose where a settings fix writes."""
+    root = tmp_path / "project"
+    root.mkdir()
+    outside = tmp_path / "victim.toml"
+    outside.write_text('[project]\nname = "victim"\n', encoding="utf-8")
+    try:
+        if link == "symbolic":
+            (root / "decktalk.toml").symlink_to(outside)
+        else:
+            os.link(outside, root / "decktalk.toml")
+    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
+        pytest.skip("this machine does not let an unprivileged user make a link")
+    fix = SettingFix(title="t", applicability=Applicability.SAFE, key="video.width", value="1280")
+    with a_machine(tmp_path).run() as run:
+        outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
+    assert outside.read_text(encoding="utf-8") == '[project]\nname = "victim"\n'
+    if link == "symbolic":
+        assert not outcome.applied and "outside the project" in (outcome.why or "")
+    else:
+        assert outcome.applied and "width = 1280" in (root / "decktalk.toml").read_text(encoding="utf-8")
 
 
 def test_a_line_that_no_longer_reads_what_the_fix_expected_is_left_alone(tmp_path: Path) -> None:

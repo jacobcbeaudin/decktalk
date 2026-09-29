@@ -191,6 +191,7 @@ from the same table, so what you read here is what the suite enforces.
 ```text
 src/decktalk/
   vocabulary             the names every layer above shares, which import nothing but each other
+    files.py             How DeckTalk replaces files a person owns, which is all of them together or none of them.
     pipeline.py          The run declared once: the six stages in order, the artifacts they pass between them, and how a moment ended.
     findings.py          A finding: the code a caller dispatches on, the sentence a reader meets, where it is, and the fix.
     errors.py            The refusals DeckTalk makes on purpose: nine codes, seven classes and the exit code each one takes.

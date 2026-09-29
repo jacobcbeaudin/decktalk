@@ -33,8 +33,10 @@ from typing import Any, cast
 
 import tomlkit
 from pydantic import Field, JsonValue
+from tomlkit.exceptions import ParseError
 
 from .errors import InputError
+from .files import replace_all
 from .findings import Code, Location, Model, ProjectPath
 from .locate import locate, refused_line
 from .page import CAPTURE_FPS, MEASURABLE_SPAN_SECONDS
@@ -1477,6 +1479,51 @@ def _scoped_key(key: str, scope: Scope, *, action: str, rerun: str) -> Key:
     return known
 
 
+@dataclass(frozen=True)
+class Edited:
+    """One settings file's text with one key set in it, and what that key held before.
+
+    It is text rather than a written file, because a fix that also edits lines of the same file
+    stages both changes before either lands, and the whole file is judged once they are all made.
+    """
+
+    text: str
+    value: object
+    previous: object
+
+
+def edit(text: str, key: str, value: str, *, scope: Scope, file: Path, measured: bool = False) -> Edited:
+    """Set one key in the text of one settings file, keeping every comment the file already has.
+
+    The key is refused when no key has that name, when it belongs in the other file, or when the
+    value is not one the key takes. The document is edited rather than rewritten, because a person
+    wrote the comments around the key and a writer that dumped a parsed tree would delete them the
+    first time an agent turned a knob. The text that comes back is not yet validated as a whole,
+    because a caller may have more changes to make to it first.
+
+    `measured` is the door the one command that takes a measurement comes through. A measured key is
+    refused by hand because a number typed into it is a guess, and the command that measured it is
+    holding the only honest value there is, so the refusal has to have exactly one exception and it
+    has to be named at the call rather than assumed from the key.
+    """
+    known = _scoped_key(key, scope, action="written to", rerun=f"decktalk config set {key} {value}")
+    if known.source is Source.MEASURED and not measured:
+        raise InputError(
+            f"'{key}' is measured rather than chosen, so a value written by hand would be a guess.",
+            hint=f"Run `{known.evidence}`.",
+        )
+    if measured and known.source is not Source.MEASURED:
+        raise InputError(
+            f"'{key}' is chosen rather than measured, so nothing may write it as a measurement.",
+            hint=f"Run `decktalk config set {key} {value}`.",
+        )
+    typed = parse_value(known, value)
+    document = _document(text, file)
+    previous = _stated(document, key)
+    _put(document, key.split("."), typed)
+    return Edited(text=tomlkit.dumps(document), value=typed, previous=previous)
+
+
 def write(
     path: Path,
     key: str,
@@ -1491,49 +1538,29 @@ def write(
 
     The would-be file is built first and loaded whole, so a value that no run could use never lands
     and the refusal a caller meets is the loader's own, with its file, its line and its near name.
-    The document is edited rather than rewritten, because a person wrote the comments around the
-    key and a writer that dumped a parsed tree would delete them the first time an agent turned a
-    knob.
-
-    `measured` is the door the one command that takes a measurement comes through. A measured key is
-    refused by hand because a number typed into it is a guess, and the command that measured it is
-    holding the only honest value there is, so the refusal has to have exactly one exception and it
-    has to be named at the call rather than assumed from the key.
+    The file is then replaced whole rather than written in place, so a write that fails leaves it as
+    it was. `measured` is the door `edit` describes.
 
     `environ` is the machine's environment, which is the layer over the file that decides whether
     the value written is the value in force.
     """
-    known = _scoped_key(key, scope, action="written to", rerun=f"decktalk config set {key} {value}")
-    if known.source is Source.MEASURED and not measured:
-        raise InputError(
-            f"'{key}' is measured rather than chosen, so a value written by hand would be a guess.",
-            hint=f"Run `{known.evidence}`.",
-        )
-    if measured and known.source is not Source.MEASURED:
-        raise InputError(
-            f"'{key}' is chosen rather than measured, so nothing may write it as a measurement.",
-            hint=f"Run `decktalk config set {key} {value}`.",
-        )
-    typed = parse_value(known, value)
-    document = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
-    previous = _stated(document, key)
-    _put(document, key.split("."), typed)
-    text = tomlkit.dumps(document)
-    _validate(text, path, scope)
+    # A link is followed, so a machine file kept in a dotfiles repository stays where its owner keeps it.
+    target = path.resolve()
+    edited = edit(_text(target), key, value, scope=scope, file=path, measured=measured)
+    validate(edited.text, path, scope)
     if not dry_run:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        replace_all({target: edited.text})
     # A write that a higher layer shadows changes the file and not the run, so the result says so
     # rather than reporting a new value the next command will not use.
-    tree = _in_force(path, scope, {key: typed}, environ)
+    tree = _in_force(path, scope, {key: edited.value}, environ)
     winner = tree.layers.winner(key)
     return SettingWrite(
         key=key,
-        value=json_value(typed),
-        previous=None if previous is _ABSENT else json_value(previous),
+        value=json_value(edited.value),
+        previous=None if edited.previous is _ABSENT else json_value(edited.previous),
         scope=scope,
         file=path,
-        line=locate(text, key),
+        line=locate(edited.text, key),
         dry_run=dry_run,
         effective=json_value(value_of(tree.settings, key)),
         layer=winner.layer,
@@ -1553,13 +1580,14 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
     a way back to the default.
     """
     _scoped_key(key, scope, action="taken out of", rerun=f"decktalk config unset {key}")
-    document = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
+    target = path.resolve()
+    document = _document(_text(target), path)
     previous = _stated(document, key)
     if previous is not _ABSENT:
         _take(document, key.split("."))
         text = tomlkit.dumps(document)
-        _validate(text, path, scope)
-        path.write_text(text, encoding="utf-8")
+        validate(text, path, scope)
+        replace_all({target: text})
     tree = _in_force(path, scope, {}, environ)
     return SettingUnset(
         keys=(key,),
@@ -1569,6 +1597,23 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
         effective=json_value(value_of(tree.settings, key)),
         layer=tree.layers.winner(key).layer,
     )
+
+
+def _text(path: Path) -> str:
+    """The text of a settings file, which is empty when the file is not there yet."""
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def _document(text: str, file: Path) -> tomlkit.TOMLDocument:
+    """A settings file parsed for editing, or the loader's own refusal when it is not valid TOML."""
+    try:
+        return tomlkit.parse(text)
+    except ParseError as exc:
+        raise InputError(
+            f"{file.name} is not valid TOML: {exc}.",
+            hint="Fix the line this message names, which is usually a quote or a bracket left open.",
+            location=Location(where=file.name, file=file, line=exc.line),
+        ) from exc
 
 
 def _put(document: MutableMapping[str, Any], parts: list[str], value: object) -> None:
@@ -1593,12 +1638,20 @@ def _take(document: MutableMapping[str, Any], parts: list[str]) -> None:
     del table[parts[-1]]
 
 
-def _validate(text: str, path: Path, scope: Scope) -> None:
-    """The whole settings tree built on the would-be file, so a bad value never reaches the disk."""
+def validate(text: str, path: Path, scope: Scope) -> None:
+    """The whole settings tree built on the would-be file, so a bad value never reaches the disk.
+
+    A fix may also edit the lines of the file around a key, so the text is parsed here as well as
+    loaded, and a line edit that breaks the TOML is refused as the loader would refuse it.
+    """
     try:
         data = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:  # pragma: no cover  (tomlkit writes only valid TOML)
-        raise InputError(f"{path.name} would not be valid TOML: {exc}.") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise InputError(
+            f"{path.name} would not be valid TOML: {exc}.",
+            hint="The change was not made, so the file is as it was.",
+            location=Location(where=path.name, file=path, line=refused_line(exc)),
+        ) from exc
     if scope is Scope.MACHINE:
         refuse_off_scope(data, Scope.MACHINE, file=path, text=text)
     load(
@@ -1662,6 +1715,7 @@ __all__ = [
     "Number",
     "OutputConfig",
     "RecordConfig",
+    "Edited",
     "SettingUnset",
     "SettingWrite",
     "Settings",
@@ -1669,6 +1723,7 @@ __all__ = [
     "VerifyConfig",
     "VideoConfig",
     "VoiceConfig",
+    "edit",
     "env_warnings",
     "key_warnings",
     "load",
@@ -1684,6 +1739,7 @@ __all__ = [
     "route",
     "scoped",
     "unset",
+    "validate",
     "value_of",
     "write",
 ]
