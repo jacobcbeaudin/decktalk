@@ -18,6 +18,7 @@ from decktalk.media.pagereport import CueRow, MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
 from decktalk.settings import BY_ID
+from decktalk.stages import storyboard
 from decktalk.stages.assemble.cut import cut_list
 from decktalk.stages.assemble.publish import (
     SOUND_CAPTION_SECONDS,
@@ -287,7 +288,7 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, write_proj
         documents.append(named.get("documents"))
         return Page(), SimpleNamespace(paths=["deck/index.html"])
 
-    monkeypatch.setattr(browser, "open_page", open_page)
+    monkeypatch.setattr(storyboard, "open_page", open_page)
     monkeypatch.setattr(browser, "await_ready", lambda _page: None)
     monkeypatch.setattr(browser, "read_report", lambda *_a: PageReport(catalog=catalog))
     monkeypatch.setattr(browser, "screenshot", screenshot)

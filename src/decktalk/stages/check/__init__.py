@@ -36,8 +36,8 @@ from decktalk.inputs.document import PageSection
 from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
 from decktalk.machine import Run
-from decktalk.media.browser import chromium, open_page
-from decktalk.media.origin import Allowed, Assets
+from decktalk.media.browser import chromium
+from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
 from decktalk.results import CheckResult, Panel, SectionCues, SpendState
@@ -54,7 +54,7 @@ from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
 from decktalk.stages.narrate.plan import voice_id_of
-from decktalk.stages.storyboard import Sheet, reports_of, write_page
+from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
 from decktalk.stages.verify import opted_out
 from decktalk.template import stale_runtime
 from decktalk.toolchain.assets import RUNTIME_FILE
@@ -269,26 +269,17 @@ def _look(
     frames: bool,
 ) -> Look:
     """Open every page once, keep what it published, and judge as much of it as this run asked for."""
-    video, cfg = inputs.settings.video, inputs.settings.record
+    cfg = inputs.settings.record
     files = judged_pages(sections, extra)
     looked = Look()
     if not files:
         return looked
-    allowed = Allowed.of(inputs.root, inputs.served_paths())
     with chromium(cfg.browser_path, policy=cfg.page_policy) as browser:
         opened: dict[str, tuple[Page, Assets]] = {}
         for page in files:
             if not inputs.path(page).exists():
                 continue
-            drawn, assets = open_page(
-                browser,
-                allowed,
-                width=video.width,
-                height=video.height,
-                color_scheme=cfg.color_scheme,
-                motion=inputs.settings.motion,
-                documents=inputs.documents(),
-            )
+            drawn, assets = open_project_page(browser, inputs)
             opened[page] = (drawn, assets)
             report = reports_of(drawn, inputs, [page]).get(page)
             looked.findings += _page_judgements(report, assets.external, where=page)

@@ -23,7 +23,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from playwright.sync_api import Page
+from playwright.sync_api import Browser, Page
 
 from decktalk.events import Level
 from decktalk.inputs import Inputs
@@ -115,6 +115,25 @@ class Freeze:
         """This state as one file name, such as `slide-4.1-after-4.1_expand`."""
         text = "-".join(part for key, value in self.query().items() for part in (key.value, value))
         return LABEL_SAFE.sub("_", text)
+
+
+def open_project_page(browser: Browser, inputs: Inputs) -> tuple[Page, Assets]:
+    """A page of this project, opened the one way every command that freezes or reads one opens it.
+
+    The page is served only what the project serves, drawn at the film's size in the film's colour
+    scheme and motion, and handed the documents a previewed page asks its origin for, so a frame
+    frozen here is a frame of the film being built.
+    """
+    video, record = inputs.settings.video, inputs.settings.record
+    return open_page(
+        browser,
+        Allowed.of(inputs.root, inputs.served_paths()),
+        width=video.width,
+        height=video.height,
+        color_scheme=record.color_scheme,
+        motion=inputs.settings.motion,
+        documents=inputs.documents(),
+    )
 
 
 def reports_of(page: Page, inputs: Inputs, files: Sequence[str]) -> dict[str, PageReport]:
@@ -343,18 +362,10 @@ def storyboard(
 
 def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Selection) -> list[Panel]:
     """Every panel of every named section, drawn by one browser holding one page open."""
-    video, cfg = inputs.settings.video, inputs.settings.record
+    cfg = inputs.settings.record
     times = inputs.cue_times()
     with chromium(cfg.browser_path, policy=cfg.page_policy) as browser:
-        page, assets = open_page(
-            browser,
-            Allowed.of(inputs.root, inputs.served_paths()),
-            width=video.width,
-            height=video.height,
-            color_scheme=cfg.color_scheme,
-            motion=inputs.settings.motion,
-            documents=inputs.documents(),
-        )
+        page, assets = open_project_page(browser, inputs)
         reports = reports_of(page, inputs, [one.page for one in sections])
         sheet = Sheet(inputs, run, {one.page: (page, assets) for one in sections}, inputs.workspace.storyboard_dir)
         for section in sections:

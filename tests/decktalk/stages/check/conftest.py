@@ -131,7 +131,7 @@ def drawn(monkeypatch: pytest.MonkeyPatch) -> Drawn:
         made.policies.append(policy)
         yield object()
 
-    def open_page(*_args: object, **_kwargs: object) -> tuple[FakePage, FakeAssets]:
+    def open_project_page(*_args: object, **_kwargs: object) -> tuple[FakePage, FakeAssets]:
         return made.page, made.assets
 
     def reports_of(_page: object, _inputs: Inputs, files: Sequence[str]) -> dict[str, PageReport]:
@@ -143,7 +143,7 @@ def drawn(monkeypatch: pytest.MonkeyPatch) -> Drawn:
         out.write_bytes(b"png")
 
     monkeypatch.setattr(stage, "chromium", chromium)
-    monkeypatch.setattr(stage, "open_page", open_page)
+    monkeypatch.setattr(stage, "open_project_page", open_project_page)
     monkeypatch.setattr(stage, "reports_of", reports_of)
     monkeypatch.setattr(storyboard, "screenshot", screenshot)
     monkeypatch.setattr(scan.frames, "changed_images_percent", lambda *_a, **_k: made.share)

@@ -38,13 +38,14 @@ from decktalk.inputs import ClipSection, Inputs, PageSection
 from decktalk.machine import Run
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import iso_639_2
-from decktalk.media.origin import Allowed, page_url
+from decktalk.media.origin import page_url
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Q
 from decktalk.pagescan import scene_entry, slide_cues
 from decktalk.results import SectionKind, Word
 from decktalk.stages import SECOND_DIGITS
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
+from decktalk.stages.storyboard import open_project_page
 
 SOUND_CAPTION_SECONDS = 1.0
 """Calibration: how long a sound's caption stays on screen, which is what SC 1.2.2 expects of one."""
@@ -341,7 +342,6 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
     section = next((s for s in inputs.document.sections if isinstance(s, PageSection)), None)
     if section is None:
         return None
-    video = inputs.settings.video
     key = inputs.still_key(section.page, POSTER_MARK, section.scene, documents=inputs.documents())
     kept = inputs.stills.find(key)
     if kept is not None:
@@ -350,15 +350,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
         return out
     try:
         with browser.chromium(inputs.settings.record.browser_path, policy=inputs.settings.record.page_policy) as chrome:
-            page, assets = browser.open_page(
-                chrome,
-                Allowed.of(inputs.root, inputs.served_paths()),
-                width=video.width,
-                height=video.height,
-                color_scheme=inputs.settings.record.color_scheme,
-                motion=inputs.settings.motion,
-                documents=inputs.documents(),
-            )
+            page, assets = open_project_page(chrome, inputs)
             page.goto(page_url(section.page))
             browser.await_ready(page)
             query = poster_query(browser.read_report(page, out.stem).catalog, section)
